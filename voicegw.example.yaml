@@ -1,0 +1,234 @@
+# VoiceGateway Configuration
+# Place at ./voicegw.yaml or ~/.config/voicegateway/voicegw.yaml
+# API keys can also be set via environment variables (e.g., DEEPGRAM_API_KEY)
+
+providers:
+  deepgram:
+    api_key: ${DEEPGRAM_API_KEY}
+
+  openai:
+    api_key: ${OPENAI_API_KEY}
+
+  anthropic:
+    api_key: ${ANTHROPIC_API_KEY}
+
+  groq:
+    api_key: ${GROQ_API_KEY}
+
+  cartesia:
+    api_key: ${CARTESIA_API_KEY}
+
+  elevenlabs:
+    api_key: ${ELEVENLABS_API_KEY}
+
+  assemblyai:
+    api_key: ${ASSEMBLYAI_API_KEY}
+
+  # Local providers (no API keys needed)
+  ollama:
+    base_url: http://localhost:11434
+
+  whisper:
+    model_path: large-v3
+    device: auto
+    compute_type: float16
+
+  kokoro:
+    model: kokoro-v0.19
+    voice: af_heart
+
+  piper:
+    model_dir: ~/.local/share/piper-voices/
+    default_voice: en_US-lessac-medium
+
+models:
+  stt:
+    deepgram/nova-3:
+      provider: deepgram
+      model: nova-3
+
+    deepgram/nova-2:
+      provider: deepgram
+      model: nova-2
+
+    assemblyai/universal-2:
+      provider: assemblyai
+      model: universal-2
+
+    openai/whisper-1:
+      provider: openai
+      model: whisper-1
+
+    groq/whisper-large-v3:
+      provider: groq
+      model: whisper-large-v3
+
+    local/whisper-large-v3:
+      provider: whisper
+      model: large-v3
+
+    local/whisper-turbo:
+      provider: whisper
+      model: turbo
+
+    local/whisper-base:
+      provider: whisper
+      model: base
+
+  llm:
+    openai/gpt-4.1-mini:
+      provider: openai
+      model: gpt-4.1-mini
+
+    openai/gpt-4o:
+      provider: openai
+      model: gpt-4o
+
+    openai/gpt-4o-mini:
+      provider: openai
+      model: gpt-4o-mini
+
+    anthropic/claude-3.5-sonnet:
+      provider: anthropic
+      model: claude-3-5-sonnet-20241022
+
+    groq/llama-3.1-70b:
+      provider: groq
+      model: llama-3.1-70b-versatile
+
+    groq/llama-3.1-8b:
+      provider: groq
+      model: llama-3.1-8b-instant
+
+    ollama/qwen2.5:3b:
+      provider: ollama
+      model: qwen2.5:3b
+
+    ollama/qwen2.5:7b:
+      provider: ollama
+      model: qwen2.5:7b
+
+    ollama/llama3.2:3b:
+      provider: ollama
+      model: llama3.2:3b
+
+    ollama/phi4-mini:
+      provider: ollama
+      model: phi4-mini
+
+  tts:
+    cartesia/sonic-3:
+      provider: cartesia
+      model: sonic-3
+      default_voice: 9626c31c-bec5-4cca-baa8-f8ba9e84c8bc
+
+    elevenlabs/eleven_turbo_v2_5:
+      provider: elevenlabs
+      model: eleven_turbo_v2_5
+      default_voice: cgSgspJ2msm6clMCkdW9
+
+    deepgram/aura-2:
+      provider: deepgram
+      model: aura-2
+      default_voice: athena
+
+    openai/tts-1:
+      provider: openai
+      model: tts-1
+      default_voice: alloy
+
+    local/kokoro:
+      provider: kokoro
+      default_voice: af_heart
+
+    local/piper:
+      provider: piper
+      default_voice: en_US-lessac-medium
+
+fallbacks:
+  stt:
+    - deepgram/nova-3
+    - groq/whisper-large-v3
+    - local/whisper-large-v3
+
+  llm:
+    - openai/gpt-4.1-mini
+    - groq/llama-3.1-70b
+    - ollama/qwen2.5:3b
+
+  tts:
+    - cartesia/sonic-3
+    - elevenlabs/eleven_turbo_v2_5
+    - local/kokoro
+
+cost_tracking:
+  enabled: true
+  storage: sqlite
+  db_path: ~/.config/voicegateway/voicegw.db
+  daily_budget_alert: 10.00
+
+latency:
+  enabled: true
+  ttfb_warning_ms: 500
+  percentiles: [50, 95, 99]
+
+rate_limits:
+  deepgram:
+    requests_per_minute: 100
+  openai:
+    requests_per_minute: 60
+  groq:
+    requests_per_minute: 30
+
+dashboard:
+  enabled: true
+  host: 0.0.0.0
+  port: 9090
+
+# ============================================================
+# Stacks — named shortcuts for common STT+LLM+TTS combinations
+# ============================================================
+# Use via gw.stack("premium"), gw.stack("budget"), gw.stack("local").
+
+stacks:
+  premium:
+    stt: deepgram/nova-3
+    llm: openai/gpt-4.1-mini
+    tts: cartesia/sonic-3
+
+  budget:
+    stt: groq/whisper-large-v3
+    llm: groq/llama-3.1-70b
+    tts: openai/tts-1
+
+  local:
+    stt: local/whisper-large-v3
+    llm: ollama/qwen2.5:3b
+    tts: local/kokoro
+
+# ============================================================
+# Projects — tag requests with a project ID for per-project
+# cost tracking, budgets, and dashboard filtering.
+# ============================================================
+
+projects:
+  restaurant-agent:
+    name: "Restaurant Receptionist"
+    description: "AI receptionist for Tony's Pizza"
+    default_stack: premium
+    daily_budget: 5.00
+    tags: ["production", "client-ian"]
+
+  dental-bot:
+    name: "Dental Clinic Bot"
+    description: "Appointment scheduling for Bright Smile Dental"
+    default_stack: budget
+    daily_budget: 3.00
+    tags: ["staging", "client-demo"]
+
+  dev-testing:
+    name: "Development Testing"
+    description: "Local development and experiments"
+    default_stack: local
+    daily_budget: 0.00
+    tags: ["development"]

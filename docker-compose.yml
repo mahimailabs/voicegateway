@@ -1,0 +1,74 @@
+version: "3.8"
+
+services:
+  voicegateway:
+    build: .
+    container_name: voicegateway
+    ports:
+      - "8080:8080"
+    volumes:
+      - voicegw-data:/data
+      - ./voicegw.yaml:/app/voicegw.yaml:ro
+    environment:
+      - VOICEGW_CONFIG=/app/voicegw.yaml
+      - VOICEGW_DB_PATH=/data/voicegw.db
+      - VOICEGW_PROFILE=${VOICEGW_PROFILE:-production}
+      # Provider API keys (pass from .env or host env)
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - CARTESIA_API_KEY=${CARTESIA_API_KEY:-}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
+      - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - voicegw-net
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    container_name: voicegateway-dash
+    ports:
+      - "9090:9090"
+    volumes:
+      - voicegw-data:/data:ro
+    environment:
+      - VOICEGW_API_URL=http://voicegateway:8080
+      - VOICEGW_DB_PATH=/data/voicegw.db
+    depends_on:
+      voicegateway:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - voicegw-net
+
+  # Optional: local LLM via Ollama
+  ollama:
+    image: ollama/ollama:latest
+    container_name: voicegateway-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    profiles:
+      - local  # Only starts with: docker compose --profile local up
+    restart: unless-stopped
+    networks:
+      - voicegw-net
+
+volumes:
+  voicegw-data:
+    driver: local
+  ollama-models:
+    driver: local
+
+networks:
+  voicegw-net:
+    driver: bridge
