@@ -184,3 +184,112 @@ async def test_get_logs_limit_too_high(gateway):
     tool = _tool("get_logs")
     with pytest.raises(ValidationError):
         await tool.handler(gateway, {"limit": 99999})
+
+
+# --------------------------------------------------------------------
+# Providers
+# --------------------------------------------------------------------
+
+
+async def test_list_providers_from_yaml(gateway):
+    tool = _tool("list_providers")
+    result = await tool.handler(gateway, {})
+    ids = {p["provider_id"] for p in result["providers"]}
+    assert "openai" in ids
+    assert "deepgram" in ids
+
+
+async def test_get_provider_yaml(gateway):
+    tool = _tool("get_provider")
+    result = await tool.handler(gateway, {"provider_id": "openai"})
+    assert result["provider_id"] == "openai"
+    assert result["source"] == "yaml"
+
+
+async def test_get_provider_not_found(gateway):
+    from voicegateway.mcp.errors import ProviderNotFoundError
+    tool = _tool("get_provider")
+    with pytest.raises(ProviderNotFoundError):
+        await tool.handler(gateway, {"provider_id": "doesnt-exist"})
+
+
+async def test_add_provider_yaml_conflict(gateway):
+    from voicegateway.mcp.errors import ProviderAlreadyExistsError
+    tool = _tool("add_provider")
+    with pytest.raises(ProviderAlreadyExistsError):
+        await tool.handler(gateway, {
+            "provider_id": "openai",
+            "provider_type": "openai",
+            "api_key": "sk-test",
+        })
+
+
+async def test_add_provider_unknown_type(gateway):
+    tool = _tool("add_provider")
+    with pytest.raises(ValidationError):
+        await tool.handler(gateway, {
+            "provider_id": "bogus",
+            "provider_type": "nonexistent-provider",
+            "api_key": "x",
+        })
+
+
+async def test_add_provider_local_succeeds(gateway):
+    """Local providers don't need credentials tested."""
+    tool = _tool("add_provider")
+    result = await tool.handler(gateway, {
+        "provider_id": "my-ollama",
+        "provider_type": "ollama",
+        "api_key": "",
+        "base_url": "http://localhost:11434",
+    })
+    assert result["created"] is True
+    assert result["source"] == "db"
+
+
+async def test_delete_provider_yaml_readonly(gateway):
+    from voicegateway.mcp.errors import ReadOnlyResourceError
+    tool = _tool("delete_provider")
+    with pytest.raises(ReadOnlyResourceError):
+        await tool.handler(gateway, {"provider_id": "openai", "confirm": True})
+
+
+async def test_delete_provider_not_found(gateway):
+    from voicegateway.mcp.errors import ProviderNotFoundError
+    tool = _tool("delete_provider")
+    with pytest.raises(ProviderNotFoundError):
+        await tool.handler(gateway, {"provider_id": "never-added", "confirm": True})
+
+
+async def test_delete_provider_requires_confirm(gateway):
+    from voicegateway.mcp.errors import ConfirmationRequiredError
+    # First add a managed one
+    add_tool = _tool("add_provider")
+    await add_tool.handler(gateway, {
+        "provider_id": "ollama-custom",
+        "provider_type": "ollama",
+        "api_key": "",
+    })
+    del_tool = _tool("delete_provider")
+    with pytest.raises(ConfirmationRequiredError):
+        await del_tool.handler(gateway, {"provider_id": "ollama-custom", "confirm": False})
+
+
+async def test_delete_provider_with_confirm(gateway):
+    add_tool = _tool("add_provider")
+    await add_tool.handler(gateway, {
+        "provider_id": "ollama-one",
+        "provider_type": "ollama",
+        "api_key": "",
+    })
+    del_tool = _tool("delete_provider")
+    result = await del_tool.handler(gateway, {"provider_id": "ollama-one", "confirm": True})
+    assert result["action"] == "deleted"
+    assert result["provider_id"] == "ollama-one"
+
+
+async def test_test_provider_not_found(gateway):
+    from voicegateway.mcp.errors import ProviderNotFoundError
+    tool = _tool("test_provider")
+    with pytest.raises(ProviderNotFoundError):
+        await tool.handler(gateway, {"provider_id": "never-added"})
