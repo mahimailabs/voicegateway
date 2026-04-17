@@ -62,6 +62,45 @@ SELECT
     AVG(ttfb_ms) as avg_ttfb
 FROM requests
 GROUP BY project, day, modality, model_id;
+
+CREATE TABLE IF NOT EXISTS managed_providers (
+    provider_id TEXT PRIMARY KEY,
+    provider_type TEXT NOT NULL,
+    api_key_encrypted TEXT NOT NULL DEFAULT '',
+    base_url TEXT,
+    extra_config TEXT NOT NULL DEFAULT '{}',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS managed_models (
+    model_id TEXT PRIMARY KEY,
+    modality TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    model_name TEXT NOT NULL,
+    display_name TEXT,
+    default_language TEXT,
+    default_voice TEXT,
+    extra_config TEXT NOT NULL DEFAULT '{}',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS managed_projects (
+    project_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    daily_budget REAL NOT NULL DEFAULT 0,
+    budget_action TEXT NOT NULL DEFAULT 'warn',
+    default_stack TEXT,
+    stt_model TEXT,
+    llm_model TEXT,
+    tts_model TEXT,
+    tags TEXT NOT NULL DEFAULT '[]',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
 """
 
 
@@ -326,5 +365,283 @@ class SQLiteStorage:
                 "avg_ttfb_ms": float(row[2]) if row[2] is not None else None,
                 "avg_latency_ms": float(row[3]) if row[3] is not None else None,
             }
+        finally:
+            await db.close()
+
+    # ------------------------------------------------------------------
+    # Managed providers / models / projects
+    # ------------------------------------------------------------------
+
+    async def list_managed_providers(self) -> list[dict[str, Any]]:
+        db = await self._ensure_initialized()
+        try:
+            cursor = await db.execute(
+                "SELECT provider_id, provider_type, api_key_encrypted, base_url, "
+                "extra_config, created_at, updated_at FROM managed_providers "
+                "ORDER BY created_at ASC"
+            )
+            rows = []
+            async for row in cursor:
+                rows.append({
+                    "provider_id": row[0],
+                    "provider_type": row[1],
+                    "api_key": row[2],
+                    "base_url": row[3],
+                    "extra_config": json.loads(row[4] or "{}"),
+                    "created_at": row[5],
+                    "updated_at": row[6],
+                })
+            return rows
+        finally:
+            await db.close()
+
+    async def get_managed_provider(self, provider_id: str) -> dict[str, Any] | None:
+        db = await self._ensure_initialized()
+        try:
+            cursor = await db.execute(
+                "SELECT provider_id, provider_type, api_key_encrypted, base_url, "
+                "extra_config, created_at, updated_at FROM managed_providers "
+                "WHERE provider_id = ?",
+                (provider_id,),
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                return None
+            return {
+                "provider_id": row[0],
+                "provider_type": row[1],
+                "api_key": row[2],
+                "base_url": row[3],
+                "extra_config": json.loads(row[4] or "{}"),
+                "created_at": row[5],
+                "updated_at": row[6],
+            }
+        finally:
+            await db.close()
+
+    async def upsert_managed_provider(
+        self,
+        provider_id: str,
+        provider_type: str,
+        api_key: str,
+        base_url: str | None = None,
+        extra_config: dict[str, Any] | None = None,
+    ) -> None:
+        db = await self._ensure_initialized()
+        try:
+            now = time.time()
+            await db.execute(
+                """INSERT INTO managed_providers
+                       (provider_id, provider_type, api_key_encrypted, base_url,
+                        extra_config, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(provider_id) DO UPDATE SET
+                       provider_type=excluded.provider_type,
+                       api_key_encrypted=excluded.api_key_encrypted,
+                       base_url=excluded.base_url,
+                       extra_config=excluded.extra_config,
+                       updated_at=excluded.updated_at""",
+                (
+                    provider_id,
+                    provider_type,
+                    api_key,
+                    base_url,
+                    json.dumps(extra_config or {}),
+                    now,
+                    now,
+                ),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
+    async def delete_managed_provider(self, provider_id: str) -> bool:
+        db = await self._ensure_initialized()
+        try:
+            cursor = await db.execute(
+                "DELETE FROM managed_providers WHERE provider_id = ?", (provider_id,)
+            )
+            await db.commit()
+            return (cursor.rowcount or 0) > 0
+        finally:
+            await db.close()
+
+    # Managed models
+
+    async def list_managed_models(self) -> list[dict[str, Any]]:
+        db = await self._ensure_initialized()
+        try:
+            cursor = await db.execute(
+                "SELECT model_id, modality, provider_id, model_name, display_name, "
+                "default_language, default_voice, extra_config, enabled, "
+                "created_at, updated_at FROM managed_models ORDER BY created_at ASC"
+            )
+            rows = []
+            async for row in cursor:
+                rows.append({
+                    "model_id": row[0],
+                    "modality": row[1],
+                    "provider_id": row[2],
+                    "model_name": row[3],
+                    "display_name": row[4],
+                    "default_language": row[5],
+                    "default_voice": row[6],
+                    "extra_config": json.loads(row[7] or "{}"),
+                    "enabled": bool(row[8]),
+                    "created_at": row[9],
+                    "updated_at": row[10],
+                })
+            return rows
+        finally:
+            await db.close()
+
+    async def get_managed_model(self, model_id: str) -> dict[str, Any] | None:
+        for m in await self.list_managed_models():
+            if m["model_id"] == model_id:
+                return m
+        return None
+
+    async def upsert_managed_model(
+        self,
+        model_id: str,
+        modality: str,
+        provider_id: str,
+        model_name: str,
+        display_name: str | None = None,
+        default_language: str | None = None,
+        default_voice: str | None = None,
+        extra_config: dict[str, Any] | None = None,
+        enabled: bool = True,
+    ) -> None:
+        db = await self._ensure_initialized()
+        try:
+            now = time.time()
+            await db.execute(
+                """INSERT INTO managed_models
+                       (model_id, modality, provider_id, model_name, display_name,
+                        default_language, default_voice, extra_config, enabled,
+                        created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(model_id) DO UPDATE SET
+                       modality=excluded.modality,
+                       provider_id=excluded.provider_id,
+                       model_name=excluded.model_name,
+                       display_name=excluded.display_name,
+                       default_language=excluded.default_language,
+                       default_voice=excluded.default_voice,
+                       extra_config=excluded.extra_config,
+                       enabled=excluded.enabled,
+                       updated_at=excluded.updated_at""",
+                (
+                    model_id, modality, provider_id, model_name, display_name,
+                    default_language, default_voice,
+                    json.dumps(extra_config or {}),
+                    1 if enabled else 0,
+                    now, now,
+                ),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
+    async def delete_managed_model(self, model_id: str) -> bool:
+        db = await self._ensure_initialized()
+        try:
+            cursor = await db.execute(
+                "DELETE FROM managed_models WHERE model_id = ?", (model_id,)
+            )
+            await db.commit()
+            return (cursor.rowcount or 0) > 0
+        finally:
+            await db.close()
+
+    # Managed projects
+
+    async def list_managed_projects(self) -> list[dict[str, Any]]:
+        db = await self._ensure_initialized()
+        try:
+            cursor = await db.execute(
+                "SELECT project_id, name, description, daily_budget, budget_action, "
+                "default_stack, stt_model, llm_model, tts_model, tags, "
+                "created_at, updated_at FROM managed_projects ORDER BY created_at ASC"
+            )
+            rows = []
+            async for row in cursor:
+                rows.append({
+                    "project_id": row[0],
+                    "name": row[1],
+                    "description": row[2],
+                    "daily_budget": row[3],
+                    "budget_action": row[4],
+                    "default_stack": row[5],
+                    "stt_model": row[6],
+                    "llm_model": row[7],
+                    "tts_model": row[8],
+                    "tags": json.loads(row[9] or "[]"),
+                    "created_at": row[10],
+                    "updated_at": row[11],
+                })
+            return rows
+        finally:
+            await db.close()
+
+    async def get_managed_project(self, project_id: str) -> dict[str, Any] | None:
+        for p in await self.list_managed_projects():
+            if p["project_id"] == project_id:
+                return p
+        return None
+
+    async def upsert_managed_project(
+        self,
+        project_id: str,
+        name: str,
+        description: str = "",
+        daily_budget: float = 0.0,
+        budget_action: str = "warn",
+        default_stack: str | None = None,
+        stt_model: str | None = None,
+        llm_model: str | None = None,
+        tts_model: str | None = None,
+        tags: list[str] | None = None,
+    ) -> None:
+        db = await self._ensure_initialized()
+        try:
+            now = time.time()
+            await db.execute(
+                """INSERT INTO managed_projects
+                       (project_id, name, description, daily_budget, budget_action,
+                        default_stack, stt_model, llm_model, tts_model, tags,
+                        created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(project_id) DO UPDATE SET
+                       name=excluded.name,
+                       description=excluded.description,
+                       daily_budget=excluded.daily_budget,
+                       budget_action=excluded.budget_action,
+                       default_stack=excluded.default_stack,
+                       stt_model=excluded.stt_model,
+                       llm_model=excluded.llm_model,
+                       tts_model=excluded.tts_model,
+                       tags=excluded.tags,
+                       updated_at=excluded.updated_at""",
+                (
+                    project_id, name, description, daily_budget, budget_action,
+                    default_stack, stt_model, llm_model, tts_model,
+                    json.dumps(tags or []),
+                    now, now,
+                ),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
+    async def delete_managed_project(self, project_id: str) -> bool:
+        db = await self._ensure_initialized()
+        try:
+            cursor = await db.execute(
+                "DELETE FROM managed_projects WHERE project_id = ?", (project_id,)
+            )
+            await db.commit()
+            return (cursor.rowcount or 0) > 0
         finally:
             await db.close()
