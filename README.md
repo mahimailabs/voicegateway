@@ -28,10 +28,32 @@ docker compose --profile local up -d
 docker exec voicegateway-ollama ollama pull qwen2.5:3b
 ```
 
+## Installation
+
+**Core engine (recommended):**
+```bash
+pip install voicegateway
+```
+
+**With web dashboard:**
+```bash
+pip install "voicegateway[dashboard]"
+```
+
+**With all cloud providers:**
+```bash
+pip install "voicegateway[cloud]"
+```
+
+**Everything:**
+```bash
+pip install "voicegateway[all,dashboard]"
+```
+
 ## Quick Start (pip install)
 
 ```bash
-pip install "voicegateway[cloud,local]"
+pip install "voicegateway[cloud,dashboard]"
 
 voicegw init              # creates voicegw.yaml
 # edit voicegw.yaml with your API keys
