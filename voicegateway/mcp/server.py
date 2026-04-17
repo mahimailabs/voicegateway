@@ -34,7 +34,7 @@ def _format_tool_result(result: Any) -> str:
     return json.dumps(result, default=str, indent=2)
 
 
-def create_server(gateway: "Gateway") -> Any:
+def create_server(gateway: Gateway) -> Any:
     """Create an MCP server wired to the given gateway instance.
 
     Returns a low-level ``mcp.server.Server`` with all 17 tools registered.
@@ -87,7 +87,7 @@ def create_server(gateway: "Gateway") -> Any:
     return server
 
 
-async def serve_stdio(gateway: "Gateway") -> None:
+async def serve_stdio(gateway: Gateway) -> None:
     """Run the MCP server over stdio (for local coding agents)."""
     try:
         from mcp.server.stdio import stdio_server
@@ -102,7 +102,7 @@ async def serve_stdio(gateway: "Gateway") -> None:
 
 
 async def serve_http(
-    gateway: "Gateway",
+    gateway: Gateway,
     host: str = "127.0.0.1",
     port: int = 8090,
 ) -> None:
@@ -145,17 +145,27 @@ async def serve_http(
             )
         return Response()
 
-    async def handle_messages(request: Request) -> Response:
+    async def messages_app(scope: Any, receive: Any, send: Any) -> None:
+        # Auth check by building a request-like view over headers.
+        headers = dict(scope.get("headers") or [])
+        auth_header_bytes = headers.get(b"authorization")
+        auth_header = auth_header_bytes.decode() if auth_header_bytes else None
         try:
-            check_authorization_header(request.headers.get("Authorization"))
+            check_authorization_header(auth_header)
         except AuthError as exc:
-            return Response(exc.message, status_code=exc.status_code)
-        return await sse.handle_post_message(request.scope, request.receive, request._send)
+            await send({
+                "type": "http.response.start",
+                "status": exc.status_code,
+                "headers": [(b"content-type", b"text/plain")],
+            })
+            await send({"type": "http.response.body", "body": exc.message.encode()})
+            return
+        await sse.handle_post_message(scope, receive, send)
 
     app = Starlette(
         routes=[
             Route("/sse", endpoint=handle_sse),
-            Mount("/messages/", app=handle_messages),
+            Mount("/messages/", app=messages_app),
         ]
     )
 
