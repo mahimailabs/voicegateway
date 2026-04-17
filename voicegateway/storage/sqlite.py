@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,8 @@ from typing import Any
 import aiosqlite
 
 from voicegateway.storage.models import RequestRecord
+
+_logger = logging.getLogger(__name__)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS requests (
@@ -134,9 +137,140 @@ class SQLiteStorage:
                     "CREATE INDEX IF NOT EXISTS idx_requests_project_timestamp "
                     "ON requests(project, timestamp)"
                 )
+            # Audit log table
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS config_audit_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp REAL NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    entity_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    changes_json TEXT,
+                    source TEXT NOT NULL DEFAULT 'api'
+                )
+            """)
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_timestamp "
+                "ON config_audit_log(timestamp)"
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_entity "
+                "ON config_audit_log(entity_type, entity_id)"
+            )
+
+            # Indexes on managed tables
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_managed_providers_type "
+                "ON managed_providers(provider_type)"
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_managed_models_modality "
+                "ON managed_models(modality)"
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_managed_models_provider "
+                "ON managed_models(provider_id)"
+            )
+
+            # Migrate plaintext API keys to encrypted
+            await self._migrate_plaintext_keys(db)
+
             await db.commit()
             self._initialized = True
         return db
+
+    async def _migrate_plaintext_keys(self, db: aiosqlite.Connection) -> None:
+        """Encrypt any plaintext API keys left over from before encryption was added."""
+        from voicegateway.core.crypto import encrypt, is_fernet_token
+
+        cursor = await db.execute(
+            "SELECT provider_id, api_key_encrypted FROM managed_providers "
+            "WHERE api_key_encrypted != ''"
+        )
+        rows = await cursor.fetchall()
+        migrated = 0
+        for row in rows:
+            provider_id, raw_key = row[0], row[1]
+            if not is_fernet_token(raw_key):
+                encrypted = encrypt(raw_key)
+                await db.execute(
+                    "UPDATE managed_providers SET api_key_encrypted = ? WHERE provider_id = ?",
+                    (encrypted, provider_id),
+                )
+                migrated += 1
+        if migrated:
+            _logger.warning("Migrated %d plaintext API key(s) to encrypted storage.", migrated)
+
+    # ------------------------------------------------------------------
+    # Audit log
+    # ------------------------------------------------------------------
+
+    async def log_audit_event(
+        self,
+        entity_type: str,
+        entity_id: str,
+        action: str,
+        changes: dict[str, Any] | None = None,
+        source: str = "api",
+    ) -> None:
+        """Write an entry to the config_audit_log table. Best-effort — never raises."""
+        db = await self._ensure_initialized()
+        try:
+            await db.execute(
+                "INSERT INTO config_audit_log (timestamp, entity_type, entity_id, "
+                "action, changes_json, source) VALUES (?, ?, ?, ?, ?, ?)",
+                (time.time(), entity_type, entity_id, action,
+                 json.dumps(changes) if changes else None, source),
+            )
+            await db.commit()
+        except Exception:  # noqa: BLE001
+            _logger.warning(
+                "Failed to write audit log for %s/%s action=%s",
+                entity_type, entity_id, action, exc_info=True,
+            )
+        finally:
+            await db.close()
+
+    async def get_audit_log(
+        self,
+        limit: int = 50,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        action: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return recent audit log entries."""
+        db = await self._ensure_initialized()
+        try:
+            conditions: list[str] = []
+            params: list[Any] = []
+            if entity_type:
+                conditions.append("entity_type = ?")
+                params.append(entity_type)
+            if entity_id:
+                conditions.append("entity_id = ?")
+                params.append(entity_id)
+            if action:
+                conditions.append("action = ?")
+                params.append(action)
+            where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            query = f"SELECT id, timestamp, entity_type, entity_id, action, changes_json, source FROM config_audit_log {where} ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+
+            cursor = await db.execute(query, tuple(params))
+            rows = []
+            async for row in cursor:
+                rows.append({
+                    "id": row[0],
+                    "timestamp": row[1],
+                    "entity_type": row[2],
+                    "entity_id": row[3],
+                    "action": row[4],
+                    "changes": json.loads(row[5]) if row[5] else None,
+                    "source": row[6],
+                })
+            return rows
+        finally:
+            await db.close()
 
     # ------------------------------------------------------------------
     # Writes
@@ -373,6 +507,7 @@ class SQLiteStorage:
     # ------------------------------------------------------------------
 
     async def list_managed_providers(self) -> list[dict[str, Any]]:
+        """Return managed providers. api_key_encrypted is ciphertext; callers must decrypt."""
         db = await self._ensure_initialized()
         try:
             cursor = await db.execute(
@@ -385,7 +520,7 @@ class SQLiteStorage:
                 rows.append({
                     "provider_id": row[0],
                     "provider_type": row[1],
-                    "api_key": row[2],
+                    "api_key_encrypted": row[2],
                     "base_url": row[3],
                     "extra_config": json.loads(row[4] or "{}"),
                     "created_at": row[5],
@@ -396,6 +531,7 @@ class SQLiteStorage:
             await db.close()
 
     async def get_managed_provider(self, provider_id: str) -> dict[str, Any] | None:
+        """Return a managed provider. api_key_encrypted is ciphertext."""
         db = await self._ensure_initialized()
         try:
             cursor = await db.execute(
@@ -410,7 +546,7 @@ class SQLiteStorage:
             return {
                 "provider_id": row[0],
                 "provider_type": row[1],
-                "api_key": row[2],
+                "api_key_encrypted": row[2],
                 "base_url": row[3],
                 "extra_config": json.loads(row[4] or "{}"),
                 "created_at": row[5],
@@ -427,9 +563,12 @@ class SQLiteStorage:
         base_url: str | None = None,
         extra_config: dict[str, Any] | None = None,
     ) -> None:
+        from voicegateway.core.crypto import encrypt
+
         db = await self._ensure_initialized()
         try:
             now = time.time()
+            encrypted_key = encrypt(api_key)
             await db.execute(
                 """INSERT INTO managed_providers
                        (provider_id, provider_type, api_key_encrypted, base_url,
@@ -444,7 +583,7 @@ class SQLiteStorage:
                 (
                     provider_id,
                     provider_type,
-                    api_key,
+                    encrypted_key,
                     base_url,
                     json.dumps(extra_config or {}),
                     now,

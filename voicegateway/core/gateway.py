@@ -8,6 +8,7 @@ from collections.abc import Coroutine
 from typing import Any, TypeVar
 
 from voicegateway.core.config import GatewayConfig
+from voicegateway.core.config_manager import ConfigManager
 from voicegateway.core.router import (
     Router,
 )
@@ -57,6 +58,13 @@ class Gateway:
         else:
             self._storage = None
 
+        # ConfigManager for merging YAML + SQLite managed resources
+        self._config_manager = ConfigManager(self._config, self._storage)
+
+        # Merge managed resources from SQLite at startup
+        self._config = _run_async(self._config_manager.load_merged())
+        self._router = Router(self._config)
+
         self._cost_tracker = CostTracker(self._storage)
         self._latency_monitor = LatencyMonitor(
             ttfb_warning_ms=self._config.latency.get("ttfb_warning_ms", 500.0)
@@ -96,6 +104,21 @@ class Gateway:
     def cost_tracker(self) -> CostTracker:
         """Return the cost tracker."""
         return self._cost_tracker
+
+    async def refresh_config(self) -> None:
+        """Reload config from YAML + SQLite. Called after any managed_* write."""
+        self._config = await self._config_manager.refresh()
+        self._router = Router(self._config)
+        self._budget_enforcer = BudgetEnforcer(self._config, self._storage)
+        # Rebuild fallback chains so they capture the new router.resolve
+        for modality, chain_list in self._config.fallbacks.items():
+            if chain_list:
+                self._fallback_chains[modality] = FallbackChain(
+                    chain=chain_list,
+                    resolver=self._router.resolve,
+                    modality=modality,
+                    on_fallback=self._logger.log_fallback,
+                )
 
     # ------------------------------------------------------------------
     # Model factories
