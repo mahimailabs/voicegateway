@@ -293,3 +293,94 @@ async def test_test_provider_not_found(gateway):
     tool = _tool("test_provider")
     with pytest.raises(ProviderNotFoundError):
         await tool.handler(gateway, {"provider_id": "never-added"})
+
+
+# --------------------------------------------------------------------
+# Models
+# --------------------------------------------------------------------
+
+
+async def test_list_models_all(gateway):
+    tool = _tool("list_models")
+    result = await tool.handler(gateway, {})
+    ids = {m["model_id"] for m in result["models"]}
+    assert "deepgram/nova-3" in ids
+    assert "openai/gpt-4o-mini" in ids
+
+
+async def test_list_models_filter_modality(gateway):
+    tool = _tool("list_models")
+    result = await tool.handler(gateway, {"modality": "llm"})
+    assert all(m["modality"] == "llm" for m in result["models"])
+
+
+async def test_list_models_filter_provider(gateway):
+    tool = _tool("list_models")
+    result = await tool.handler(gateway, {"provider_id": "openai"})
+    assert all(m["provider_id"] == "openai" for m in result["models"])
+
+
+async def test_register_model_new(gateway):
+    # First need a provider — use an existing YAML one.
+    tool = _tool("register_model")
+    result = await tool.handler(gateway, {
+        "modality": "llm",
+        "provider_id": "openai",
+        "model_name": "gpt-5-turbo",
+    })
+    assert result["created"] is True
+    assert result["model_id"] == "openai/gpt-5-turbo"
+
+
+async def test_register_model_yaml_conflict(gateway):
+    from voicegateway.mcp.errors import ModelAlreadyExistsError
+    tool = _tool("register_model")
+    with pytest.raises(ModelAlreadyExistsError):
+        await tool.handler(gateway, {
+            "modality": "llm",
+            "provider_id": "openai",
+            "model_name": "gpt-4o-mini",
+        })
+
+
+async def test_register_model_unknown_provider(gateway):
+    from voicegateway.mcp.errors import ProviderNotFoundError
+    tool = _tool("register_model")
+    with pytest.raises(ProviderNotFoundError):
+        await tool.handler(gateway, {
+            "modality": "llm",
+            "provider_id": "nonexistent",
+            "model_name": "foo",
+        })
+
+
+async def test_delete_model_yaml_readonly(gateway):
+    from voicegateway.mcp.errors import ReadOnlyResourceError
+    tool = _tool("delete_model")
+    with pytest.raises(ReadOnlyResourceError):
+        await tool.handler(gateway, {"model_id": "deepgram/nova-3", "confirm": True})
+
+
+async def test_delete_model_confirm_flow(gateway):
+    # Register → preview → delete
+    reg = _tool("register_model")
+    await reg.handler(gateway, {
+        "modality": "llm",
+        "provider_id": "openai",
+        "model_name": "custom-llm",
+    })
+
+    from voicegateway.mcp.errors import ConfirmationRequiredError
+    del_tool = _tool("delete_model")
+    with pytest.raises(ConfirmationRequiredError):
+        await del_tool.handler(gateway, {"model_id": "openai/custom-llm", "confirm": False})
+
+    result = await del_tool.handler(gateway, {"model_id": "openai/custom-llm", "confirm": True})
+    assert result["action"] == "deleted"
+
+
+async def test_delete_model_not_found(gateway):
+    from voicegateway.mcp.errors import ModelNotFoundError
+    tool = _tool("delete_model")
+    with pytest.raises(ModelNotFoundError):
+        await tool.handler(gateway, {"model_id": "never/existed", "confirm": True})
