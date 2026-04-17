@@ -92,7 +92,7 @@ build-backend = "hatchling.build"
 source = "vcs"
 
 [tool.hatch.build.hooks.vcs]
-version-file = "src/voicequant/_version.py"
+version-file = "voicegateway/_version.py"
 
 [tool.pyright]
 typeCheckingMode = "off"
