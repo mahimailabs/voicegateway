@@ -10,8 +10,8 @@ A drop-in routing layer that gives self-hosters the same `provider/model` develo
 
 ```bash
 # 1. Clone
-git clone https://github.com/mahimairaja/livekit-inference-gateway.git
-cd livekit-inference-gateway
+git clone https://github.com/mahimailabs/voicegateway.git
+cd voicegateway
 
 # 2. Configure
 cp .env.example .env
