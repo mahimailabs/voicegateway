@@ -61,15 +61,9 @@ function ProvidersTab() {
   const [showAdd, setShowAdd] = useState(false);
 
   const refresh = useCallback(() => {
-    fetchJson<{ providers: Record<string, { configured: boolean; type: string }> }>('/api/status').then((d) => {
-      const mapped: ProviderRow[] = Object.entries(d.providers).map(([id, p]) => ({
-        provider_id: id,
-        source: p.type === 'local' ? 'auto' : 'yaml',
-        api_key_masked: '',
-        base_url: null,
-      }));
-      setProviders(mapped);
-    });
+    fetchJson<{ providers: ProviderRow[] }>('/v1/providers')
+      .then((d) => setProviders(d.providers))
+      .catch(() => setProviders([]));
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
@@ -107,7 +101,7 @@ function ProvidersTab() {
 
 async function testProvider(id: string) {
   try {
-    const res = await fetch(`/v1/providers/${id}/test`, { method: 'POST' });
+    const res = await fetch(`/v1/providers/${encodeURIComponent(id)}/test`, { method: 'POST' });
     const data = await res.json();
     alert(data.status === 'ok' ? `${id}: OK (${data.latency_ms}ms)` : `${id}: ${data.message}`);
   } catch {
@@ -151,7 +145,7 @@ function AddProviderModal({ onClose }: { onClose: () => void }) {
       <div className="neo-modal" onClick={(e) => e.stopPropagation()}>
         <h3>Add Provider</h3>
         <label className="label">Provider Type</label>
-        <select className="neo-select" value={providerType} onChange={(e) => { setProviderType(e.target.value); if (!providerId) setProviderId(''); }}>
+        <select className="neo-select" value={providerType} onChange={(e) => { const v = e.target.value; setProviderType(v); if (!providerId) setProviderId(v); }}>
           {['deepgram','openai','anthropic','groq','cartesia','elevenlabs','assemblyai','ollama','whisper','kokoro','piper'].map(t => (
             <option key={t} value={t}>{t}</option>
           ))}
@@ -269,14 +263,19 @@ function GeneralTab() {
 function AuditLogTab() {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [filterType, setFilterType] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setError(null);
     const url = filterType ? `/v1/audit-log?entity_type=${filterType}` : '/v1/audit-log';
-    fetchJson<AuditEntry[]>(url).then(setEntries).catch(() => setEntries([]));
+    fetchJson<AuditEntry[]>(url)
+      .then(setEntries)
+      .catch((e) => { setEntries([]); setError(e.message || 'Failed to load audit log'); });
   }, [filterType]);
 
   return (
     <div className="mt-lg">
+      {error && <div className="neo-card" style={{ borderLeft: '6px solid var(--accent-pink)', marginBottom: 16 }}>{error}</div>}
       <div className="filter-bar">
         <span className="label">Entity Type</span>
         <select className="neo-select" value={filterType} onChange={(e) => setFilterType(e.target.value)}>

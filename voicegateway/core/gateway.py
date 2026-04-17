@@ -110,6 +110,15 @@ class Gateway:
         self._config = await self._config_manager.refresh()
         self._router = Router(self._config)
         self._budget_enforcer = BudgetEnforcer(self._config, self._storage)
+        # Rebuild fallback chains so they capture the new router.resolve
+        for modality, chain_list in self._config.fallbacks.items():
+            if chain_list:
+                self._fallback_chains[modality] = FallbackChain(
+                    chain=chain_list,
+                    resolver=self._router.resolve,
+                    modality=modality,
+                    on_fallback=self._logger.log_fallback,
+                )
 
     # ------------------------------------------------------------------
     # Model factories

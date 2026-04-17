@@ -234,6 +234,7 @@ def build_app(gateway: Gateway) -> FastAPI:
 
     @app.post("/v1/providers")
     async def v1_create_provider(body: dict[str, Any]) -> dict:
+        from voicegateway.core.crypto import mask
         from voicegateway.core.registry import _PROVIDER_REGISTRY
 
         pid = body.get("provider_id", "")
@@ -241,6 +242,8 @@ def build_app(gateway: Gateway) -> FastAPI:
         api_key = body.get("api_key", "")
         base_url = body.get("base_url")
 
+        if not pid or not isinstance(pid, str):
+            raise HTTPException(400, "provider_id is required and must be a string")
         if ptype not in _PROVIDER_REGISTRY:
             raise HTTPException(400, f"Unknown provider_type '{ptype}'")
         if pid in gateway.config.providers:
@@ -251,14 +254,16 @@ def build_app(gateway: Gateway) -> FastAPI:
             raise HTTPException(400, "Storage not enabled")
 
         await gateway.storage.upsert_managed_provider(pid, ptype, api_key, base_url)
-        await gateway.storage.log_audit_event("provider", pid, "create", body, "api")
+        audit_body = {**body, "api_key": "<redacted>"} if "api_key" in body else body
+        await gateway.storage.log_audit_event("provider", pid, "create", audit_body, "api")
         await gateway.refresh_config()
 
-        from voicegateway.core.crypto import mask
         return {"provider_id": pid, "source": "db", "api_key_masked": mask(api_key)}
 
     @app.patch("/v1/providers/{provider_id}")
     async def v1_update_provider(provider_id: str, body: dict[str, Any]) -> dict:
+        from voicegateway.core.registry import _PROVIDER_REGISTRY
+
         if gateway.storage is None:
             raise HTTPException(400, "Storage not enabled")
         existing = await gateway.storage.get_managed_provider(provider_id)
@@ -270,9 +275,12 @@ def build_app(gateway: Gateway) -> FastAPI:
         api_key = body.get("api_key", current_key)
         base_url = body.get("base_url", existing.get("base_url"))
         ptype = body.get("provider_type", existing["provider_type"])
+        if ptype not in _PROVIDER_REGISTRY:
+            raise HTTPException(400, f"Unknown provider_type '{ptype}'")
 
         await gateway.storage.upsert_managed_provider(provider_id, ptype, api_key, base_url)
-        await gateway.storage.log_audit_event("provider", provider_id, "update", body, "api")
+        audit_body = {**body, "api_key": "<redacted>"} if "api_key" in body else body
+        await gateway.storage.log_audit_event("provider", provider_id, "update", audit_body, "api")
         await gateway.refresh_config()
         return {"provider_id": provider_id, "updated": True}
 
@@ -298,21 +306,28 @@ def build_app(gateway: Gateway) -> FastAPI:
 
     @app.post("/v1/providers/{provider_id}/test")
     async def v1_test_provider(provider_id: str) -> dict:
+        import asyncio as _asyncio
+        import logging as _logging
+
         from voicegateway.core.registry import _PROVIDER_REGISTRY, create_provider
 
+        _test_log = _logging.getLogger(__name__)
         pcfg = gateway.config.providers.get(provider_id)
         if pcfg is None:
             raise HTTPException(404, f"No provider '{provider_id}'")
         ptype = pcfg.get("provider_type", provider_id) if isinstance(pcfg, dict) else provider_id
         if ptype not in _PROVIDER_REGISTRY:
-            return {"status": "failed", "message": f"Unknown type '{ptype}'"}
+            return {"status": "failed", "message": f"Unknown type '{ptype}'", "latency_ms": 0}
         try:
             inst = create_provider(ptype, pcfg if isinstance(pcfg, dict) else {})
             start = time.time()
-            ok = await inst.health_check()
+            ok = await _asyncio.wait_for(inst.health_check(), timeout=10.0)
             latency_ms = int((time.time() - start) * 1000)
+        except TimeoutError:
+            return {"status": "failed", "message": "Provider health check timed out", "latency_ms": 10000}
         except Exception as exc:  # noqa: BLE001
-            return {"status": "failed", "message": str(exc), "latency_ms": 0}
+            _test_log.warning("Provider test for '%s' failed: %s", provider_id, exc)
+            return {"status": "failed", "message": "Provider health check failed", "latency_ms": 0}
         return {"status": "ok" if ok else "failed", "latency_ms": latency_ms}
 
     # ------------------------------------------------------------------

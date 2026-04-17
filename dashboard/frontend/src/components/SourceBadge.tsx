@@ -12,7 +12,7 @@ const STYLES: Record<string, { bg: string; label: string }> = {
 };
 
 export default function SourceBadge({ source }: Props) {
-  const style = STYLES[source] ?? STYLES.yaml;
+  const style = STYLES[source] ?? { bg: '#aaaaaa', label: 'Unknown' };
   return (
     <span
       className="neo-badge"

@@ -39,7 +39,11 @@ class ConfigManager:
             pid = row["provider_id"]
             if pid in merged.providers:
                 continue  # YAML takes precedence (don't overwrite)
-            plaintext_key = decrypt(row.get("api_key_encrypted", ""))
+            try:
+                plaintext_key = decrypt(row.get("api_key_encrypted", ""))
+            except ValueError:
+                _logger.warning("Failed to decrypt key for provider '%s', skipping", pid)
+                plaintext_key = ""
             merged.providers[pid] = {
                 "api_key": plaintext_key,
                 "base_url": row.get("base_url"),
@@ -71,7 +75,10 @@ class ConfigManager:
                 continue
             tags_raw = row.get("tags")
             if isinstance(tags_raw, str):
-                tags = json.loads(tags_raw)
+                try:
+                    tags = json.loads(tags_raw)
+                except (json.JSONDecodeError, ValueError):
+                    tags = []
             elif isinstance(tags_raw, list):
                 tags = tags_raw
             else:

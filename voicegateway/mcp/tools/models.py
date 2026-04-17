@@ -40,6 +40,8 @@ async def _gather_models(gateway: Gateway) -> list[dict[str, Any]]:
         for model_id, mcfg in modality_models.items():
             if not isinstance(mcfg, dict):
                 continue
+            if mcfg.get("_source") == "db":
+                continue  # will be added from storage below
             out.append({
                 "model_id": model_id,
                 "modality": modality,
