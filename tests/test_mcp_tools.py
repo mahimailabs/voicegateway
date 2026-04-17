@@ -8,7 +8,7 @@ import uuid
 import pytest
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.mcp.errors import ValidationError
+from voicegateway.mcp.errors import ModelNotFoundError, ValidationError
 from voicegateway.mcp.tools import ALL_TOOLS
 from voicegateway.storage.models import RequestRecord
 
@@ -384,3 +384,113 @@ async def test_delete_model_not_found(gateway):
     tool = _tool("delete_model")
     with pytest.raises(ModelNotFoundError):
         await tool.handler(gateway, {"model_id": "never/existed", "confirm": True})
+
+
+# --------------------------------------------------------------------
+# Projects
+# --------------------------------------------------------------------
+
+
+async def test_list_projects_yaml(gateway):
+    tool = _tool("list_projects")
+    result = await tool.handler(gateway, {})
+    ids = {p["id"] for p in result["projects"]}
+    assert "test-project" in ids
+    assert "blocked-project" in ids
+
+
+async def test_get_project_yaml(gateway):
+    tool = _tool("get_project")
+    result = await tool.handler(gateway, {"project_id": "test-project"})
+    assert result["id"] == "test-project"
+    assert result["daily_budget"] == 10.0
+
+
+async def test_get_project_not_found(gateway):
+    from voicegateway.mcp.errors import ProjectNotFoundError
+    tool = _tool("get_project")
+    with pytest.raises(ProjectNotFoundError):
+        await tool.handler(gateway, {"project_id": "never-created"})
+
+
+async def test_create_project_happy_path(gateway):
+    tool = _tool("create_project")
+    result = await tool.handler(gateway, {
+        "project_id": "new-proj",
+        "name": "New Project",
+        "description": "Testing",
+        "daily_budget": 2.5,
+        "budget_action": "warn",
+    })
+    assert result["created"] is True
+    assert result["project_id"] == "new-proj"
+
+
+async def test_create_project_conflict(gateway):
+    from voicegateway.mcp.errors import ProjectAlreadyExistsError
+    tool = _tool("create_project")
+    with pytest.raises(ProjectAlreadyExistsError):
+        await tool.handler(gateway, {
+            "project_id": "test-project",
+            "name": "dup",
+        })
+
+
+async def test_create_project_unknown_model(gateway):
+    tool = _tool("create_project")
+    with pytest.raises(ModelNotFoundError):
+        await tool.handler(gateway, {
+            "project_id": "broken-proj",
+            "name": "Broken",
+            "llm_model": "openai/gpt-99",
+        })
+
+
+async def test_create_project_default_stack_and_model_conflict(gateway):
+    tool = _tool("create_project")
+    with pytest.raises(ValidationError):
+        await tool.handler(gateway, {
+            "project_id": "conflict",
+            "name": "X",
+            "default_stack": "default",
+            "llm_model": "openai/gpt-4o-mini",
+        })
+
+
+async def test_create_project_negative_budget(gateway):
+    tool = _tool("create_project")
+    with pytest.raises(ValidationError):
+        await tool.handler(gateway, {
+            "project_id": "neg",
+            "name": "X",
+            "daily_budget": -1.0,
+        })
+
+
+async def test_delete_project_yaml_readonly(gateway):
+    from voicegateway.mcp.errors import ReadOnlyResourceError
+    tool = _tool("delete_project")
+    with pytest.raises(ReadOnlyResourceError):
+        await tool.handler(gateway, {"project_id": "test-project", "confirm": True})
+
+
+async def test_delete_project_confirm_flow(gateway):
+    from voicegateway.mcp.errors import ConfirmationRequiredError
+    create = _tool("create_project")
+    await create.handler(gateway, {"project_id": "delete-me", "name": "Del"})
+
+    delete = _tool("delete_project")
+    with pytest.raises(ConfirmationRequiredError):
+        await delete.handler(gateway, {"project_id": "delete-me", "confirm": False})
+
+    result = await delete.handler(gateway, {"project_id": "delete-me", "confirm": True})
+    assert result["action"] == "deleted"
+
+
+async def test_delete_project_not_found(gateway):
+    from voicegateway.mcp.errors import ProjectNotFoundError
+    tool = _tool("delete_project")
+    with pytest.raises(ProjectNotFoundError):
+        await tool.handler(gateway, {"project_id": "not-real", "confirm": True})
+
+
