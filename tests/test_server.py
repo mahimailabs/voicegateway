@@ -1,16 +1,11 @@
 """Tests for voicegateway/server.py — HTTP API endpoints."""
 
-import os
-import time
-import uuid
 
 import pytest
-import yaml
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
 from voicegateway.server import build_app
-from voicegateway.storage.models import RequestRecord
 
 
 @pytest.fixture

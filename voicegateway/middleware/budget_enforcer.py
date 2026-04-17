@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from voicegateway.core.config import GatewayConfig, ProjectConfig
@@ -53,8 +53,8 @@ class BudgetEnforcer:
 
     def __init__(
         self,
-        config: "GatewayConfig",
-        storage: "SQLiteStorage | None",
+        config: GatewayConfig,
+        storage: SQLiteStorage | None,
         cache_ttl_seconds: float = 30.0,
     ):
         self._config = config
@@ -63,7 +63,7 @@ class BudgetEnforcer:
         # Cache: project -> (timestamp, spend_usd)
         self._cache: dict[str, tuple[float, float]] = {}
 
-    def _get_project_config(self, project: str) -> "ProjectConfig | None":
+    def _get_project_config(self, project: str) -> ProjectConfig | None:
         return self._config.get_project(project)
 
     async def _get_today_spend(self, project: str) -> float:
@@ -79,7 +79,7 @@ class BudgetEnforcer:
             return 0.0
 
         summary = await self._storage.get_cost_summary("today", project=project)
-        spend = summary.get("total", 0.0)
+        spend = float(summary.get("total", 0.0))
         self._cache[project] = (now, spend)
         return spend
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from voicegateway.providers.base import BaseProvider
 from voicegateway.pricing.catalog import get_pricing
+from voicegateway.providers.base import BaseProvider
 
 
 class ElevenLabsProvider(BaseProvider):
@@ -17,10 +17,10 @@ class ElevenLabsProvider(BaseProvider):
         try:
             from livekit.plugins import elevenlabs
             return elevenlabs
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
                 "ElevenLabs plugin not installed. Run: pip install voicegateway[elevenlabs]"
-            )
+            ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:
         self._unsupported("stt")
@@ -39,6 +39,8 @@ class ElevenLabsProvider(BaseProvider):
 
     async def health_check(self) -> bool:
         import httpx
+        if not self.api_key:
+            return False
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(

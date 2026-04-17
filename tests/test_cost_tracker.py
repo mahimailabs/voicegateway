@@ -73,7 +73,7 @@ async def test_cost_summary_by_model(tmp_path):
     storage = SQLiteStorage(str(db))
     tracker = CostTracker(storage)
 
-    for i in range(3):
+    for _i in range(3):
         record = tracker.create_record(
             model_id="deepgram/nova-3",
             modality="stt",

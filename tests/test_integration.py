@@ -1,13 +1,10 @@
 """Integration test — exercises the full Gateway → Router → Provider → Storage flow."""
 
-import time
-import uuid
 
 import pytest
 import yaml
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.middleware.instrumented_provider import InstrumentedLLM
 
 
 @pytest.fixture

@@ -7,7 +7,6 @@ import logging
 from typing import Any
 
 from voicegateway.providers.base import BaseProvider
-from voicegateway.pricing.catalog import get_pricing
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +21,10 @@ class KokoroProvider(BaseProvider):
         try:
             import kokoro_onnx
             return kokoro_onnx
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
                 "kokoro-onnx not installed. Run: pip install voicegateway[kokoro]"
-            )
+            ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:
         self._unsupported("stt")
@@ -75,4 +74,4 @@ class KokoroTTS:
         )
         import numpy as np
         audio_int16 = (samples * 32767).astype(np.int16)
-        return audio_int16.tobytes()
+        return bytes(audio_int16.tobytes())

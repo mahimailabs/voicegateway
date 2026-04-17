@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from voicegateway.providers.base import BaseProvider
@@ -24,7 +24,7 @@ _PROVIDER_REGISTRY: dict[str, tuple[str, str]] = {
 }
 
 
-def create_provider(provider_name: str, config: dict[str, Any]) -> "BaseProvider":
+def create_provider(provider_name: str, config: dict[str, Any]) -> BaseProvider:
     """Create a provider instance by name.
 
     Args:
@@ -55,7 +55,8 @@ def create_provider(provider_name: str, config: dict[str, Any]) -> "BaseProvider
         ) from e
 
     cls = getattr(module, class_name)
-    return cls(config)
+    provider: BaseProvider = cls(config)
+    return provider
 
 
 def list_providers() -> list[str]:

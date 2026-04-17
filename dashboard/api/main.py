@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+
+if TYPE_CHECKING:
+    from voicegateway.core.gateway import Gateway
 
 app = FastAPI(
     title="VoiceGateway Dashboard",
@@ -26,10 +29,10 @@ app.add_middleware(
 _gateway: Any = None
 
 
-def _get_gateway():
+def _get_gateway() -> Gateway:
     if _gateway is None:
         raise RuntimeError("Gateway not initialized. Start via: voicegw dashboard")
-    return _gateway
+    return _gateway  # type: ignore[no-any-return]
 
 
 @app.get("/api/status")

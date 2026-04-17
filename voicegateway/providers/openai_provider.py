@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from voicegateway.providers.base import BaseProvider
 from voicegateway.pricing.catalog import get_pricing
+from voicegateway.providers.base import BaseProvider
 
 
 class OpenAIProvider(BaseProvider):
@@ -19,10 +19,10 @@ class OpenAIProvider(BaseProvider):
         try:
             from livekit.plugins import openai
             return openai
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
                 "OpenAI plugin not installed. Run: pip install voicegateway[openai]"
-            )
+            ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:
         openai = self._ensure_plugin()

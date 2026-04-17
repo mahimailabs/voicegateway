@@ -1,14 +1,13 @@
 """Tests for additional middleware components."""
 
-import asyncio
 import logging
 import time
 
 import pytest
 
 from voicegateway.middleware.latency_monitor import LatencyMonitor
-from voicegateway.middleware.rate_limiter import RateLimiter, RateLimitExceeded
 from voicegateway.middleware.logger import RequestLogger
+from voicegateway.middleware.rate_limiter import RateLimiter, RateLimitExceeded
 
 
 def test_latency_monitor_basic():

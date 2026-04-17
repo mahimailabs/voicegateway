@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import shutil
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -40,7 +39,7 @@ def _load_gateway(config_path: str | None):
         return Gateway(config_path=config_path)
     except Exception as e:
         console.print(f"[red]Error loading config: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -257,12 +256,12 @@ def serve_cmd(
     """Start the VoiceGateway HTTP API server."""
     try:
         import uvicorn
-    except ImportError:
+    except ImportError as e:
         console.print(
             "[red]Dashboard dependencies not installed. "
             "Run: pip install 'voicegateway[dashboard]'[/red]"
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     gw = _load_gateway(config)
     from voicegateway.server import build_app
@@ -280,12 +279,12 @@ def dashboard_cmd(
     """Start the web dashboard."""
     try:
         import uvicorn
-    except ImportError:
+    except ImportError as e:
         console.print(
             "[red]Dashboard dependencies not installed. "
             "Run: pip install 'voicegateway[dashboard]'[/red]"
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     gw = _load_gateway(config)
     console.print(f"[green]VoiceGateway dashboard at http://{host}:{port}[/green]")

@@ -64,7 +64,7 @@ class LatencyConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     ttfb_warning_ms: float = 500.0
-    percentiles: list[float] = Field(default_factory=lambda: [50, 95, 99])
+    percentiles: list[float] = Field(default_factory=lambda: [50.0, 95.0, 99.0])
 
 
 class RateLimitEntry(BaseModel):

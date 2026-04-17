@@ -1,9 +1,9 @@
 """Tests for config loading and env var substitution."""
 
-import os
 import pytest
+import yaml
 
-from voicegateway.core.config import GatewayConfig, ConfigError
+from voicegateway.core.config import ConfigError, GatewayConfig
 
 
 def test_load_example_config(example_config_path):
@@ -40,8 +40,6 @@ def test_fallbacks_loaded(example_config_path):
 
 
 # --- Schema validation tests ---
-
-import yaml
 
 
 def test_unknown_top_level_key_raises_error(tmp_path):

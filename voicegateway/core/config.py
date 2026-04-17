@@ -11,7 +11,6 @@ from typing import Any
 
 import yaml
 
-
 _ENV_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
 # Preferred (new) search paths — voicegw.yaml first.
@@ -126,6 +125,7 @@ class GatewayConfig:
     def _validate(cls, raw: dict) -> None:
         """Validate raw config dict against the Pydantic schema."""
         from pydantic import ValidationError
+
         from voicegateway.core.schema import VoiceGatewayConfig
         try:
             VoiceGatewayConfig.model_validate(raw)
@@ -186,12 +186,12 @@ class GatewayConfig:
                     continue
                 projects[pid] = ProjectConfig(
                     id=pid,
-                    name=pcfg.get("name", pid),
-                    description=pcfg.get("description", ""),
-                    default_stack=pcfg.get("default_stack", ""),
+                    name=str(pcfg.get("name") or pid),
+                    description=str(pcfg.get("description") or ""),
+                    default_stack=str(pcfg.get("default_stack") or ""),
                     daily_budget=float(pcfg.get("daily_budget", 0.0) or 0.0),
-                    budget_action=pcfg.get("budget_action", "warn"),
-                    tags=list(pcfg.get("tags", []) or []),
+                    budget_action=str(pcfg.get("budget_action") or "warn"),
+                    tags=list(pcfg.get("tags") or []),
                 )
 
         return cls(

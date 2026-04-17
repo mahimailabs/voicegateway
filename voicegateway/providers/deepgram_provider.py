@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from voicegateway.providers.base import BaseProvider
 from voicegateway.pricing.catalog import get_pricing
+from voicegateway.providers.base import BaseProvider
 
 
 class DeepgramProvider(BaseProvider):
@@ -17,10 +17,10 @@ class DeepgramProvider(BaseProvider):
         try:
             from livekit.plugins import deepgram
             return deepgram
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
                 "Deepgram plugin not installed. Run: pip install voicegateway[deepgram]"
-            )
+            ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:
         deepgram = self._ensure_plugin()

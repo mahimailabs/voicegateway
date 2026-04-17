@@ -19,7 +19,7 @@ jobs:
       - name: Setup Python
         run: uv python install 3.12
       - name: Install dependencies
-        run: uv pip install --system -e ".[dev]" ruff mypy
+        run: uv pip install --system -e ".[dev]" ruff mypy types-PyYAML
       - name: Ruff
         run: ruff check voicegateway dashboard tests
       - name: Mypy

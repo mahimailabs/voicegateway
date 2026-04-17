@@ -2,7 +2,6 @@
 
 import os
 
-import pytest
 from typer.testing import CliRunner
 
 from voicegateway.cli import app

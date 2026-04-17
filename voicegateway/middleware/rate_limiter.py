@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import time
 import asyncio
 import logging
+import time
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
