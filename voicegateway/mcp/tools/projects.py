@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-from voicegateway.core.config import ProjectConfig
 from voicegateway.mcp.errors import (
     ConfirmationRequiredError,
     ModelNotFoundError,
@@ -261,17 +260,7 @@ async def _handle_create_project(gateway: Gateway, arguments: dict[str, Any]) ->
         tts_model=payload.tts_model,
         tags=tags,
     )
-
-    # Mirror into the running config so the gateway routes immediately.
-    gateway.config.projects[payload.project_id] = ProjectConfig(
-        id=payload.project_id,
-        name=payload.name,
-        description=payload.description,
-        default_stack=payload.default_stack or "",
-        daily_budget=payload.daily_budget,
-        budget_action=payload.budget_action,
-        tags=tags,
-    )
+    await gateway.refresh_config()
 
     return {
         "project_id": payload.project_id,
@@ -362,7 +351,7 @@ async def _handle_delete_project(gateway: Gateway, arguments: dict[str, Any]) ->
         )
 
     await gateway.storage.delete_managed_project(payload.project_id)
-    gateway.config.projects.pop(payload.project_id, None)
+    await gateway.refresh_config()
 
     return {
         "action": "deleted",

@@ -188,14 +188,7 @@ async def _handle_register_model(gateway: Gateway, arguments: dict[str, Any]) ->
         enabled=True,
     )
 
-    # Mirror into the running config so routing works immediately.
-    modality_bucket = gateway.config.models.setdefault(payload.modality, {})
-    modality_bucket[model_id] = {
-        "provider": payload.provider_id,
-        "model": payload.model_name,
-        **({"default_voice": payload.default_voice} if payload.default_voice else {}),
-        **({"default_language": payload.default_language} if payload.default_language else {}),
-    }
+    await gateway.refresh_config()
 
     return {
         "model_id": model_id,
@@ -293,11 +286,7 @@ async def _handle_delete_model(gateway: Gateway, arguments: dict[str, Any]) -> d
         )
 
     await gateway.storage.delete_managed_model(payload.model_id)
-
-    # Remove from the running config.
-    for modality_models in gateway.config.models.values():
-        if isinstance(modality_models, dict):
-            modality_models.pop(payload.model_id, None)
+    await gateway.refresh_config()
 
     return {
         "action": "deleted",
