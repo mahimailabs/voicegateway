@@ -79,11 +79,6 @@ source = ["voicegateway", "dashboard"]
 show_missing = true
 skip_empty = true
 
-[project.urls]
-Homepage = "https://github.com/mahimailabs/voicegateway"
-Repository = "https://github.com/mahimailabs/voicegateway"
-Issues = "https://github.com/mahimailabs/voicegateway/issues"
-
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
