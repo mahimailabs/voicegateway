@@ -37,3 +37,55 @@ def test_fallbacks_loaded(example_config_path):
     assert "llm" in config.fallbacks
     assert "tts" in config.fallbacks
     assert len(config.fallbacks["stt"]) >= 2
+
+
+# --- Schema validation tests ---
+
+import yaml
+
+
+def test_unknown_top_level_key_raises_error(tmp_path):
+    path = tmp_path / "bad.yaml"
+    with open(path, "w") as f:
+        yaml.dump({"providrs": {"openai": {"api_key": "test"}}}, f)
+    with pytest.raises(ConfigError, match="providrs"):
+        GatewayConfig.load(str(path))
+
+
+def test_unknown_top_level_key_suggests_correction(tmp_path):
+    path = tmp_path / "bad.yaml"
+    with open(path, "w") as f:
+        yaml.dump({"providrs": {}}, f)
+    with pytest.raises(ConfigError, match="did you mean"):
+        GatewayConfig.load(str(path))
+
+
+def test_negative_daily_budget_raises_error(tmp_path):
+    path = tmp_path / "bad.yaml"
+    cfg = {
+        "providers": {},
+        "models": {"stt": {}},
+        "projects": {"test": {"name": "T", "daily_budget": -5}},
+    }
+    with open(path, "w") as f:
+        yaml.dump(cfg, f)
+    with pytest.raises(ConfigError, match="daily_budget"):
+        GatewayConfig.load(str(path))
+
+
+def test_invalid_budget_action_raises_error(tmp_path):
+    path = tmp_path / "bad.yaml"
+    cfg = {
+        "providers": {},
+        "models": {"stt": {}},
+        "projects": {"test": {"name": "T", "budget_action": "explode"}},
+    }
+    with open(path, "w") as f:
+        yaml.dump(cfg, f)
+    with pytest.raises(ConfigError, match="budget_action"):
+        GatewayConfig.load(str(path))
+
+
+def test_observability_config_loaded(example_config_path):
+    config = GatewayConfig.load(example_config_path)
+    assert config.observability.get("latency_tracking") is True

@@ -1,10 +1,6 @@
-[build-system]
-requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "voicegateway"
-version = "0.1.0"
+version = "0.0.1"
 description = "Self-hosted inference gateway for voice AI — route STT, LLM, and TTS to any provider or local model"
 readme = "README.md"
 license = "MIT"
@@ -13,8 +9,11 @@ authors = [{name = "Mahimai Raja", email = "hello@mahimai.dev"}]
 keywords = ["voice-ai", "voicegateway", "inference", "gateway", "self-hosted", "ollama", "livekit"]
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "Programming Language :: Python :: 3.11",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 
 dependencies = [
@@ -72,3 +71,57 @@ include = ["voicegateway*", "dashboard*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["voicegateway", "dashboard"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+[project.urls]
+Homepage = "https://github.com/mahimailabs/voicegateway"
+Repository = "https://github.com/mahimailabs/voicegateway"
+Issues = "https://github.com/mahimailabs/voicegateway/issues"
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/voicequant/_version.py"
+
+[tool.pyright]
+typeCheckingMode = "off"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long, handled by black
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+    "W191",  # indentation contains tabs
+]
+
+[tool.mypy]
+# --- UPDATE THIS LINE ---
+python_version = "3.11" #  project's minimum Python version
+# ------------------------
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true # Can be helpful initially
