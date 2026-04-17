@@ -138,18 +138,26 @@ def build_app(gateway: "Gateway") -> FastAPI:
         pcfg = gateway.config.get_project(project_id)
         if pcfg is None:
             return {"error": f"project not found: {project_id}"}
-        data = {
+        data: dict[str, Any] = {
             "id": pcfg.id,
             "name": pcfg.name,
             "description": pcfg.description,
             "daily_budget": pcfg.daily_budget,
+            "budget_action": pcfg.budget_action,
             "default_stack": pcfg.default_stack,
             "tags": list(pcfg.tags),
             "accent": pcfg.accent,
+            "today_spend": 0.0,
+            "budget_status": "ok",
         }
         if gateway.storage is not None:
             data["today"] = await gateway.storage.get_project_stats(project_id)
-            data["costs_today"] = await gateway.storage.get_cost_summary("today", project=project_id)
+            costs_today = await gateway.storage.get_cost_summary("today", project=project_id)
+            data["costs_today"] = costs_today
+            today_spend = costs_today.get("total", 0.0)
+            data["today_spend"] = today_spend
+            enforcer = gateway._budget_enforcer
+            data["budget_status"] = enforcer.get_budget_status(project_id, today_spend)
         return data
 
     @app.get("/v1/logs")
