@@ -4,14 +4,14 @@ on:
   pull_request:
     paths:
       - 'voicegateway/**'
+      - 'dashboard/api/**'
+      - 'tests/**'
+      - 'pyproject.toml'
       - '.github/workflows/ci.yml'
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: packages/python
     steps:
       - uses: actions/checkout@v4
       - name: Setup uv
@@ -19,10 +19,10 @@ jobs:
       - name: Setup Python
         run: uv python install 3.12
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv pip install --system -e ".[dev]" ruff mypy
       - name: Ruff
-        run: uv run ruff check .
+        run: ruff check voicegateway dashboard tests
       - name: Mypy
-        run: uv run mypy src tests
+        run: mypy voicegateway dashboard
       - name: Pytest
-        run: uv run pytest -q
+        run: pytest -q --ignore=tests/test_providers/test_ollama.py

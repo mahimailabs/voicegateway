@@ -32,12 +32,10 @@ jobs:
         pip install build
 
     - name: Build package
-      run: |
-        cd packages/python
-        python -m build
+      run: python -m build
 
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         password: ${{ secrets.PYPI_API_TOKEN }}
-        packages-dir: packages/python/dist/
+        packages-dir: dist/
