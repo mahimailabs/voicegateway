@@ -16,6 +16,7 @@ from voicegateway.middleware.cost_tracker import CostTracker
 from voicegateway.middleware.latency_monitor import LatencyMonitor
 from voicegateway.middleware.rate_limiter import RateLimiter
 from voicegateway.middleware.logger import RequestLogger
+from voicegateway.middleware.budget_enforcer import BudgetEnforcer
 from voicegateway.middleware.fallback import FallbackChain, FallbackError
 from voicegateway.middleware.instrumented_provider import wrap_provider
 from voicegateway.storage.sqlite import SQLiteStorage
@@ -65,6 +66,9 @@ class Gateway:
         obs = self._config.observability
         self._latency_tracking = obs.get("latency_tracking", True)
 
+        # Budget enforcement
+        self._budget_enforcer = BudgetEnforcer(self._config, self._storage)
+
         # Build fallback chains
         self._fallback_chains: dict[str, FallbackChain] = {}
         for modality, chain in self._config.fallbacks.items():
@@ -111,6 +115,12 @@ class Gateway:
             storage=self._storage,
         )
 
+    def _check_budget(self, project: str) -> None:
+        """Check project budget before resolving a model."""
+        if project == DEFAULT_PROJECT:
+            return
+        _run_async(self._budget_enforcer.check_budget(project))
+
     def stt(self, model_id: str, project: str | None = None, **kwargs: Any) -> Any:
         """Create an STT instance for the given model ID.
 
@@ -120,6 +130,7 @@ class Gateway:
             **kwargs: Additional provider-specific options.
         """
         proj = self._resolve_project(project)
+        self._check_budget(proj)
         instance = self._router.resolve(model_id, "stt", project=proj, **kwargs)
         return self._wrap(instance, model_id, "stt", proj)
 
@@ -132,6 +143,7 @@ class Gateway:
             **kwargs: Additional provider-specific options.
         """
         proj = self._resolve_project(project)
+        self._check_budget(proj)
         instance = self._router.resolve(model_id, "llm", project=proj, **kwargs)
         return self._wrap(instance, model_id, "llm", proj)
 
@@ -144,6 +156,7 @@ class Gateway:
             **kwargs: Additional provider-specific options.
         """
         proj = self._resolve_project(project)
+        self._check_budget(proj)
         instance = self._router.resolve(model_id, "tts", project=proj, **kwargs)
         return self._wrap(instance, model_id, "tts", proj)
 

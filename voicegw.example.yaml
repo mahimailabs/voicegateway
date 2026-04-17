@@ -226,6 +226,7 @@ projects:
     description: "AI receptionist for Tony's Pizza"
     default_stack: premium
     daily_budget: 5.00
+    budget_action: warn      # warn | throttle | block (default: warn)
     tags: ["production", "client-ian"]
 
   dental-bot:
@@ -233,6 +234,7 @@ projects:
     description: "Appointment scheduling for Bright Smile Dental"
     default_stack: budget
     daily_budget: 3.00
+    budget_action: block
     tags: ["staging", "client-demo"]
 
   dev-testing:
