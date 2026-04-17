@@ -685,3 +685,112 @@ a { color: inherit; text-decoration: none; }
   font-weight: 700;
   font-size: 16px;
 }
+
+/* Settings + Projects accent colors */
+.nav-item--projects { --nav-accent: #FB8500; }
+.nav-item--projects.nav-item--active { background: #FB8500; color: #fff; }
+.nav-item--settings { --nav-accent: #7B2FF7; }
+.nav-item--settings.nav-item--active { background: #7B2FF7; color: #fff; }
+
+.neo-card--strip-orange { border-left: 6px solid #FB8500; }
+.neo-card--strip-purple { border-left: 6px solid #7B2FF7; }
+
+/* Tabs */
+.neo-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: var(--border-width) solid var(--border);
+  margin-bottom: 24px;
+}
+
+.neo-tab {
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.neo-tab--active {
+  color: var(--text-primary);
+  border-bottom-color: #7B2FF7;
+}
+
+/* Modal */
+.neo-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.neo-modal {
+  background: var(--bg-card);
+  border: var(--border-width) solid var(--border);
+  box-shadow: 6px 6px 0 var(--border);
+  padding: 32px;
+  min-width: 420px;
+  max-width: 560px;
+  width: 90%;
+}
+
+/* Form inputs */
+.neo-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: var(--border-width) solid var(--border);
+  background: var(--bg-page);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.neo-input:focus {
+  outline: 3px solid #7B2FF7;
+  outline-offset: 1px;
+}
+
+/* Budget bar */
+.budget-bar {
+  height: 8px;
+  background: var(--bg-page);
+  border: 1.5px solid var(--border);
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.budget-bar__fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+/* Info table for General tab */
+.info-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.info-table td {
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.info-table td:first-child {
+  width: 180px;
+  font-weight: 600;
+}
+
+/* Small button variant */
+.neo-btn--sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}

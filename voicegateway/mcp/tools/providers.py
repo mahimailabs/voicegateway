@@ -61,13 +61,23 @@ async def _gather_providers(gateway: Gateway) -> list[dict[str, Any]]:
         })
 
     if gateway.storage is not None:
+        import logging
+
+        from voicegateway.core.crypto import decrypt, mask
+
+        _log = logging.getLogger(__name__)
         for row in await gateway.storage.list_managed_providers():
+            try:
+                plaintext_key = decrypt(row.get("api_key_encrypted", ""))
+            except ValueError:
+                _log.warning("Failed to decrypt key for provider '%s'", row["provider_id"])
+                plaintext_key = ""
             out.append({
                 "provider_id": row["provider_id"],
                 "provider_type": row["provider_type"],
                 "source": "db",
-                "enabled": True,
-                "api_key_masked": _mask_api_key(row.get("api_key")),
+                "enabled": bool(plaintext_key),
+                "api_key_masked": mask(plaintext_key) if plaintext_key else None,
                 "base_url": row.get("base_url"),
                 "type": "local" if row["provider_type"] in local_names else "cloud",
             })
@@ -181,9 +191,11 @@ async def _handle_test_provider(gateway: Gateway, arguments: dict[str, Any]) -> 
     elif gateway.storage is not None:
         row = await gateway.storage.get_managed_provider(payload.provider_id)
         if row is not None:
+            from voicegateway.core.crypto import decrypt
+
             provider_type = row["provider_type"]
             provider_cfg = {
-                "api_key": row.get("api_key"),
+                "api_key": decrypt(row.get("api_key_encrypted", "")),
                 "base_url": row.get("base_url"),
                 **(row.get("extra_config") or {}),
             }
@@ -309,12 +321,7 @@ async def _handle_add_provider(gateway: Gateway, arguments: dict[str, Any]) -> d
         api_key=payload.api_key,
         base_url=payload.base_url,
     )
-
-    # Make it visible to the running gateway.
-    gateway.config.providers[payload.provider_id] = {
-        "api_key": payload.api_key,
-        **({"base_url": payload.base_url} if payload.base_url else {}),
-    }
+    await gateway.refresh_config()
 
     return {
         "provider_id": payload.provider_id,
@@ -355,13 +362,12 @@ Raises:
 async def _handle_delete_provider(gateway: Gateway, arguments: dict[str, Any]) -> dict[str, Any]:
     payload = _parse(DeleteProviderInput, arguments)
 
-    if payload.provider_id in gateway.config.providers and not (
-        gateway.storage
-        and await gateway.storage.get_managed_provider(payload.provider_id) is not None
-    ):
-        # Defined in YAML only — not deletable.
-        if payload.provider_id not in (gateway.config.providers or {}):
-            pass
+    # Check if this is a YAML-only provider (not in managed table)
+    is_in_config = payload.provider_id in gateway.config.providers
+    is_managed = False
+    if gateway.storage is not None:
+        is_managed = await gateway.storage.get_managed_provider(payload.provider_id) is not None
+    if is_in_config and not is_managed:
         raise ReadOnlyResourceError(
             f"Provider '{payload.provider_id}' is defined in voicegw.yaml and "
             "cannot be deleted via MCP. Remove it from YAML and restart.",
@@ -412,7 +418,7 @@ async def _handle_delete_provider(gateway: Gateway, arguments: dict[str, Any]) -
         )
 
     await gateway.storage.delete_managed_provider(payload.provider_id)
-    gateway.config.providers.pop(payload.provider_id, None)
+    await gateway.refresh_config()
 
     return {
         "action": "deleted",

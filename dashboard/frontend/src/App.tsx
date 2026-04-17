@@ -5,15 +5,19 @@ import Models from './pages/Models';
 import Costs from './pages/Costs';
 import Latency from './pages/Latency';
 import Logs from './pages/Logs';
+import Projects from './pages/Projects';
+import Settings from './pages/Settings';
 import type { StatusResponse } from './lib/types';
 import { fetchJson } from './lib/api';
 
 const PAGES = [
-  { to: '/',        label: 'Overview', id: 'overview' },
-  { to: '/models',  label: 'Models',   id: 'models'   },
-  { to: '/costs',   label: 'Costs',    id: 'costs'    },
-  { to: '/latency', label: 'Latency',  id: 'latency'  },
-  { to: '/logs',    label: 'Logs',     id: 'logs'     },
+  { to: '/',         label: 'Overview',  id: 'overview' },
+  { to: '/models',   label: 'Models',    id: 'models'   },
+  { to: '/costs',    label: 'Costs',     id: 'costs'    },
+  { to: '/latency',  label: 'Latency',   id: 'latency'  },
+  { to: '/logs',     label: 'Logs',      id: 'logs'     },
+  { to: '/projects', label: 'Projects',  id: 'projects' },
+  { to: '/settings', label: 'Settings',  id: 'settings' },
 ] as const;
 
 export default function App() {
@@ -34,6 +38,9 @@ export default function App() {
             <Route path="/costs" element={<Costs />} />
             <Route path="/latency" element={<Latency />} />
             <Route path="/logs" element={<Logs />} />
+            <Route path="/projects" element={<Projects />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/settings/audit-log" element={<Settings tab="audit" />} />
           </Routes>
         </main>
       </div>

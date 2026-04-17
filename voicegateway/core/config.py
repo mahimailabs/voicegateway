@@ -57,6 +57,7 @@ class ProjectConfig:
     daily_budget: float = 0.0
     budget_action: str = "warn"
     tags: list[str] = field(default_factory=list)
+    source: str = "yaml"
 
     @property
     def accent(self) -> str:
