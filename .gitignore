@@ -1,5 +1,6 @@
 .claude
 prompt.md
+voicegateway/_version.py
 .venv
 
 
