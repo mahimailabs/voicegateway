@@ -86,6 +86,11 @@ class GatewayConfig:
     dashboard: dict[str, Any] = field(default_factory=dict)
     projects: dict[str, ProjectConfig] = field(default_factory=dict)
     stacks: dict[str, dict[str, str]] = field(default_factory=dict)
+    observability: dict[str, Any] = field(default_factory=lambda: {
+        "latency_tracking": True,
+        "cost_tracking": True,
+        "request_logging": True,
+    })
 
     @classmethod
     def load(cls, config_path: str | Path | None = None) -> GatewayConfig:
@@ -179,6 +184,11 @@ class GatewayConfig:
             dashboard=raw.get("dashboard", {}) or {},
             projects=projects,
             stacks=raw.get("stacks", {}) or {},
+            observability=raw.get("observability", {
+                "latency_tracking": True,
+                "cost_tracking": True,
+                "request_logging": True,
+            }),
         )
 
     def get_provider_config(self, provider_name: str) -> dict[str, Any]:

@@ -186,6 +186,15 @@ dashboard:
   port: 9090
 
 # ============================================================
+# Observability — control automatic instrumentation
+# ============================================================
+
+observability:
+  latency_tracking: true    # Wrap providers to measure TTFB and total latency
+  cost_tracking: true       # Calculate and log per-request costs
+  request_logging: true     # Log each request to the console
+
+# ============================================================
 # Stacks — named shortcuts for common STT+LLM+TTS combinations
 # ============================================================
 # Use via gw.stack("premium"), gw.stack("budget"), gw.stack("local").

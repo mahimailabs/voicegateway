@@ -17,6 +17,7 @@ from voicegateway.middleware.latency_monitor import LatencyMonitor
 from voicegateway.middleware.rate_limiter import RateLimiter
 from voicegateway.middleware.logger import RequestLogger
 from voicegateway.middleware.fallback import FallbackChain, FallbackError
+from voicegateway.middleware.instrumented_provider import wrap_provider
 from voicegateway.storage.sqlite import SQLiteStorage
 
 DEFAULT_PROJECT = "default"
@@ -60,6 +61,10 @@ class Gateway:
         self._rate_limiter = RateLimiter(self._config.rate_limits)
         self._logger = RequestLogger()
 
+        # Observability config
+        obs = self._config.observability
+        self._latency_tracking = obs.get("latency_tracking", True)
+
         # Build fallback chains
         self._fallback_chains: dict[str, FallbackChain] = {}
         for modality, chain in self._config.fallbacks.items():
@@ -90,6 +95,22 @@ class Gateway:
     # Model factories
     # ------------------------------------------------------------------
 
+    def _wrap(self, instance: Any, model_id: str, modality: str, project: str) -> Any:
+        """Wrap a provider instance with instrumentation if enabled."""
+        if not self._latency_tracking:
+            return instance
+        from voicegateway.core.model_id import ModelId
+        parsed = ModelId.parse(model_id)
+        return wrap_provider(
+            instance=instance,
+            modality=modality,
+            model_id=model_id,
+            provider=parsed.provider,
+            project=project,
+            cost_tracker=self._cost_tracker,
+            storage=self._storage,
+        )
+
     def stt(self, model_id: str, project: str | None = None, **kwargs: Any) -> Any:
         """Create an STT instance for the given model ID.
 
@@ -98,9 +119,9 @@ class Gateway:
             project: Optional project ID to tag requests with.
             **kwargs: Additional provider-specific options.
         """
-        return self._router.resolve(
-            model_id, "stt", project=self._resolve_project(project), **kwargs
-        )
+        proj = self._resolve_project(project)
+        instance = self._router.resolve(model_id, "stt", project=proj, **kwargs)
+        return self._wrap(instance, model_id, "stt", proj)
 
     def llm(self, model_id: str, project: str | None = None, **kwargs: Any) -> Any:
         """Create an LLM instance for the given model ID.
@@ -110,9 +131,9 @@ class Gateway:
             project: Optional project ID to tag requests with.
             **kwargs: Additional provider-specific options.
         """
-        return self._router.resolve(
-            model_id, "llm", project=self._resolve_project(project), **kwargs
-        )
+        proj = self._resolve_project(project)
+        instance = self._router.resolve(model_id, "llm", project=proj, **kwargs)
+        return self._wrap(instance, model_id, "llm", proj)
 
     def tts(self, model_id: str, project: str | None = None, **kwargs: Any) -> Any:
         """Create a TTS instance for the given model ID.
@@ -122,9 +143,9 @@ class Gateway:
             project: Optional project ID to tag requests with.
             **kwargs: Additional provider-specific options.
         """
-        return self._router.resolve(
-            model_id, "tts", project=self._resolve_project(project), **kwargs
-        )
+        proj = self._resolve_project(project)
+        instance = self._router.resolve(model_id, "tts", project=proj, **kwargs)
+        return self._wrap(instance, model_id, "tts", proj)
 
     def stack(
         self, name: str, project: str | None = None, **kwargs: Any
