@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import stat
 
 import pytest
@@ -52,7 +53,7 @@ def test_wrong_key_raises(monkeypatch, tmp_path):
 
 
 def test_mask_long():
-    assert mask("sk-abc123xyz4f8a") == "sk-a...4f8a"
+    assert mask("secret-abc12345") == "secr...2345"
 
 
 def test_mask_short():
@@ -63,6 +64,7 @@ def test_mask_empty():
     assert mask("") == ""
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file permissions not available on Windows")
 def test_secret_file_created_with_600_perms(tmp_path, monkeypatch):
     secret_file = tmp_path / ".secret"
     monkeypatch.setattr("voicegateway.core.crypto._SECRET_FILE", secret_file)

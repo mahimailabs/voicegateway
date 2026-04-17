@@ -26,7 +26,8 @@ export default function Projects() {
 
   const refresh = () => {
     fetchJson<{ projects: ProjectEntry[]; stats: Record<string, ProjectStats> }>('/api/projects')
-      .then((d) => { setProjects(d.projects); setStats(d.stats); });
+      .then((d) => { setProjects(d.projects); setStats(d.stats); })
+      .catch(() => { setProjects([]); setStats({}); });
   };
 
   useEffect(() => { refresh(); }, []);
@@ -48,27 +49,29 @@ export default function Projects() {
         {projects.map((p) => {
           const s = stats[p.id];
           const spent = s?.cost_today ?? 0;
-          const pct = p.daily_budget > 0 ? Math.min((spent / p.daily_budget) * 100, 100) : 0;
+          const dailyBudget = p.daily_budget ?? 0;
+          const pct = dailyBudget > 0 ? Math.min((spent / dailyBudget) * 100, 100) : 0;
           const barColor = pct >= 100 ? 'var(--accent-pink)' : pct >= 80 ? '#FFD166' : 'var(--accent-green)';
+          const tags = p.tags ?? [];
 
           return (
             <div key={p.id} className="neo-card neo-card--strip-orange">
               <div className="flex-row" style={{ justifyContent: 'space-between' }}>
                 <strong>{p.name}</strong>
-                <SourceBadge source={p.accent === 'blue' ? 'yaml' : 'db'} />
+                <SourceBadge source={'source' in p ? String((p as {source?: string}).source) : 'yaml'} />
               </div>
               <div className="label mt-sm">{p.description || p.id}</div>
 
-              {p.tags.length > 0 && (
+              {tags.length > 0 && (
                 <div className="flex-row flex-wrap mt-sm">
-                  {p.tags.map((t) => (
+                  {tags.map((t) => (
                     <span key={t} className="neo-badge neo-badge--black">{t}</span>
                   ))}
                 </div>
               )}
 
               <div className="mt-md">
-                <div className="label">Budget: ${spent.toFixed(2)} / ${p.daily_budget.toFixed(2)}</div>
+                <div className="label">Budget: ${spent.toFixed(2)} / ${dailyBudget.toFixed(2)}</div>
                 <div className="budget-bar mt-sm">
                   <div className="budget-bar__fill" style={{ width: `${pct}%`, background: barColor }} />
                 </div>

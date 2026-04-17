@@ -187,8 +187,9 @@ class SQLiteStorage:
             "SELECT provider_id, api_key_encrypted FROM managed_providers "
             "WHERE api_key_encrypted != ''"
         )
+        rows = await cursor.fetchall()
         migrated = 0
-        async for row in cursor:
+        for row in rows:
             provider_id, raw_key = row[0], row[1]
             if not is_fernet_token(raw_key):
                 encrypted = encrypt(raw_key)
@@ -212,7 +213,7 @@ class SQLiteStorage:
         changes: dict[str, Any] | None = None,
         source: str = "api",
     ) -> None:
-        """Write an entry to the config_audit_log table."""
+        """Write an entry to the config_audit_log table. Best-effort — never raises."""
         db = await self._ensure_initialized()
         try:
             await db.execute(
@@ -222,6 +223,11 @@ class SQLiteStorage:
                  json.dumps(changes) if changes else None, source),
             )
             await db.commit()
+        except Exception:  # noqa: BLE001
+            _logger.warning(
+                "Failed to write audit log for %s/%s action=%s",
+                entity_type, entity_id, action, exc_info=True,
+            )
         finally:
             await db.close()
 

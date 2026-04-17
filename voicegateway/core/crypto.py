@@ -29,13 +29,22 @@ def get_secret() -> bytes:
         return env_secret.encode()
 
     if _SECRET_FILE.exists():
+        _SECRET_FILE.chmod(stat.S_IRUSR | stat.S_IWUSR)  # enforce 0600
         return _SECRET_FILE.read_bytes().strip()
 
-    # First run — generate and persist
+    # First run — generate and persist atomically
     key = Fernet.generate_key()
     _SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _SECRET_FILE.write_bytes(key)
-    _SECRET_FILE.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0600
+    fd = os.open(
+        str(_SECRET_FILE.parent / ".secret.tmp"),
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        stat.S_IRUSR | stat.S_IWUSR,  # 0600 from the start
+    )
+    try:
+        os.write(fd, key)
+    finally:
+        os.close(fd)
+    os.replace(str(_SECRET_FILE.parent / ".secret.tmp"), str(_SECRET_FILE))
     return key
 
 
@@ -89,7 +98,7 @@ def is_fernet_token(value: str) -> bool:
 
 
 def mask(value: str) -> str:
-    """Mask a secret for display: 'sk-abc123xyz4f8a' -> 'sk-a...4f8a'."""
+    """Mask a secret for display: 'secret-abc12345' -> 'secr...2345'."""
     if not value:
         return ""
     if len(value) <= 8:
