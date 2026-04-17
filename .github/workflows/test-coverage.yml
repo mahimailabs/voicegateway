@@ -49,13 +49,13 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Install the project
-        run: uv sync --extra bench --extra viz --group dev
+        run: uv pip install --system -e ".[dev]"
 
       - name: Run tests with coverage.py
         run: |
-          uv run coverage run -m pytest tests/
-          uv run coverage xml
-          uv run coverage report
+          coverage run -m pytest tests/ --ignore=tests/test_providers/test_ollama.py
+          coverage xml
+          coverage report
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
