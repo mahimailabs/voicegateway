@@ -5,6 +5,14 @@ import pytest
 from voicegateway.providers.ollama_provider import OllamaProvider
 
 
+def _has_openai_plugin():
+    try:
+        __import__("livekit.plugins.openai")
+        return True
+    except (ImportError, ModuleNotFoundError):
+        return False
+
+
 def test_ollama_defaults():
     provider = OllamaProvider({})
     assert provider.base_url == "http://localhost:11434"
@@ -27,6 +35,10 @@ def test_ollama_tts_unsupported():
         provider.create_tts(model="anything")
 
 
+@pytest.mark.skipif(
+    not _has_openai_plugin(),
+    reason="openai plugin not installed",
+)
 def test_ollama_creates_llm():
     provider = OllamaProvider({})
     llm = provider.create_llm(model="qwen2.5:3b")
