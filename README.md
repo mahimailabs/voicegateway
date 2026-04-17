@@ -78,6 +78,57 @@ session = AgentSession(
 
 ---
 
+## Manage from your coding agent (MCP)
+
+VoiceGateway ships a first-class Model Context Protocol (MCP) server. Your
+Claude Code, Cursor, or Codex instance can manage the gateway conversationally —
+list providers, add API keys, register models, create projects, inspect
+costs and latency, tail logs.
+
+**Install:**
+
+```bash
+pip install "voicegateway[mcp]"
+```
+
+**Claude Code:**
+
+```bash
+claude mcp add voicegateway --command "voicegw mcp --transport stdio"
+```
+
+Now in Claude Code you can say things like:
+
+- "List all my providers"
+- "Add Deepgram with API key dg_live_..."
+- "Create a project for Tony's Pizza with a $5 daily budget using the premium stack"
+- "Show me yesterday's costs for tonys-pizza"
+- "What's our P95 TTFB this week?"
+
+**Remote / team deployment (HTTP/SSE):**
+
+```bash
+export VOICEGW_MCP_TOKEN=$(openssl rand -hex 32)
+voicegw mcp --transport http --port 8090
+```
+
+Then point your agent's MCP config at `http://your-host:8090/sse` with the
+token as a bearer header.
+
+**Available tools (17):** `get_health`, `get_provider_status`, `get_costs`,
+`get_latency_stats`, `list_providers`, `get_provider`, `test_provider`,
+`add_provider`, `delete_provider`, `list_models`, `register_model`,
+`delete_model`, `list_projects`, `get_project`, `create_project`,
+`delete_project`, `get_logs`.
+
+Destructive operations (`delete_*`) require an explicit `confirm=True` — the
+agent first receives a preview with impact details, shows it to you, and
+only deletes after you confirm.
+
+Full tool reference in [`docs/mcp.md`](docs/mcp.md).
+
+---
+
 ## Architecture
 
 ```mermaid
