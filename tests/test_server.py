@@ -125,3 +125,185 @@ async def test_v1_metrics(client):
     assert resp.status_code == 200
     assert "voicegw_uptime_seconds" in resp.text
     assert "voicegw_providers_configured" in resp.text
+
+
+# --------------------------------------------------------------------
+# CRUD — Providers
+# --------------------------------------------------------------------
+
+
+async def test_list_providers(client):
+    resp = await client.get("/v1/providers")
+    assert resp.status_code == 200
+    assert "providers" in resp.json()
+
+
+async def test_create_provider(client):
+    resp = await client.post("/v1/providers", json={
+        "provider_id": "ollama-test",
+        "provider_type": "ollama",
+        "api_key": "",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["source"] == "db"
+
+
+async def test_create_provider_yaml_conflict(client):
+    resp = await client.post("/v1/providers", json={
+        "provider_id": "openai",
+        "provider_type": "openai",
+        "api_key": "sk-test",
+    })
+    assert resp.status_code == 409
+
+
+async def test_create_provider_bad_type(client):
+    resp = await client.post("/v1/providers", json={
+        "provider_id": "bad",
+        "provider_type": "nonexistent",
+        "api_key": "",
+    })
+    assert resp.status_code == 400
+
+
+async def test_delete_provider_preview(client):
+    await client.post("/v1/providers", json={
+        "provider_id": "del-me", "provider_type": "ollama", "api_key": "",
+    })
+    resp = await client.delete("/v1/providers/del-me")
+    assert resp.status_code == 200
+    assert "would_delete" in resp.json()
+
+
+async def test_delete_provider_confirm(client):
+    await client.post("/v1/providers", json={
+        "provider_id": "del-me2", "provider_type": "ollama", "api_key": "",
+    })
+    resp = await client.delete("/v1/providers/del-me2?confirm=true")
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == "del-me2"
+
+
+async def test_delete_provider_yaml_forbidden(client):
+    resp = await client.delete("/v1/providers/openai?confirm=true")
+    assert resp.status_code == 403
+
+
+async def test_patch_provider(client):
+    await client.post("/v1/providers", json={
+        "provider_id": "patch-me", "provider_type": "ollama", "api_key": "",
+    })
+    resp = await client.patch("/v1/providers/patch-me", json={"base_url": "http://new:11434"})
+    assert resp.status_code == 200
+    assert resp.json()["updated"] is True
+
+
+async def test_test_provider_not_found(client):
+    resp = await client.post("/v1/providers/nonexistent/test")
+    assert resp.status_code == 404
+
+
+# --------------------------------------------------------------------
+# CRUD — Models
+# --------------------------------------------------------------------
+
+
+async def test_create_model(client):
+    resp = await client.post("/v1/models", json={
+        "modality": "llm",
+        "provider_id": "openai",
+        "model_name": "gpt-5-test",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["model_id"] == "openai/gpt-5-test"
+
+
+async def test_create_model_yaml_conflict(client):
+    resp = await client.post("/v1/models", json={
+        "modality": "llm",
+        "provider_id": "openai",
+        "model_name": "gpt-4o-mini",
+    })
+    assert resp.status_code == 409
+
+
+async def test_delete_model_yaml_forbidden(client):
+    resp = await client.delete("/v1/models/deepgram/nova-3?confirm=true")
+    assert resp.status_code == 403
+
+
+async def test_delete_model_confirm(client):
+    await client.post("/v1/models", json={
+        "modality": "llm",
+        "provider_id": "openai",
+        "model_name": "to-delete",
+    })
+    resp = await client.delete("/v1/models/openai/to-delete?confirm=true")
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == "openai/to-delete"
+
+
+# --------------------------------------------------------------------
+# CRUD — Projects
+# --------------------------------------------------------------------
+
+
+async def test_create_project(client):
+    resp = await client.post("/v1/projects", json={
+        "project_id": "http-proj",
+        "name": "HTTP Project",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["source"] == "db"
+
+
+async def test_create_project_conflict(client):
+    resp = await client.post("/v1/projects", json={
+        "project_id": "test-project",
+        "name": "dup",
+    })
+    assert resp.status_code == 409
+
+
+async def test_patch_project(client):
+    await client.post("/v1/projects", json={
+        "project_id": "update-me", "name": "Original",
+    })
+    resp = await client.patch("/v1/projects/update-me", json={"name": "Updated"})
+    assert resp.status_code == 200
+    assert resp.json()["updated"] is True
+
+
+async def test_delete_project_yaml_forbidden(client):
+    resp = await client.delete("/v1/projects/test-project?confirm=true")
+    assert resp.status_code == 403
+
+
+async def test_delete_project_confirm(client):
+    await client.post("/v1/projects", json={
+        "project_id": "kill-me", "name": "K",
+    })
+    resp = await client.delete("/v1/projects/kill-me?confirm=true")
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == "kill-me"
+
+
+# --------------------------------------------------------------------
+# Audit log
+# --------------------------------------------------------------------
+
+
+async def test_audit_log_records_crud(client):
+    await client.post("/v1/providers", json={
+        "provider_id": "audit-test", "provider_type": "ollama", "api_key": "",
+    })
+    resp = await client.get("/v1/audit-log?entity_type=provider")
+    assert resp.status_code == 200
+    entries = resp.json()
+    assert any(e["entity_id"] == "audit-test" for e in entries)
+
+
+async def test_audit_log_empty(client):
+    resp = await client.get("/v1/audit-log?entity_type=nonexistent")
+    assert resp.status_code == 200
+    assert resp.json() == []
