@@ -314,12 +314,7 @@ async def _handle_add_provider(gateway: Gateway, arguments: dict[str, Any]) -> d
         api_key=payload.api_key,
         base_url=payload.base_url,
     )
-
-    # Make it visible to the running gateway.
-    gateway.config.providers[payload.provider_id] = {
-        "api_key": payload.api_key,
-        **({"base_url": payload.base_url} if payload.base_url else {}),
-    }
+    await gateway.refresh_config()
 
     return {
         "provider_id": payload.provider_id,
@@ -417,7 +412,7 @@ async def _handle_delete_provider(gateway: Gateway, arguments: dict[str, Any]) -
         )
 
     await gateway.storage.delete_managed_provider(payload.provider_id)
-    gateway.config.providers.pop(payload.provider_id, None)
+    await gateway.refresh_config()
 
     return {
         "action": "deleted",
