@@ -56,6 +56,7 @@ class ProjectConfig:
     description: str = ""
     default_stack: str = ""
     daily_budget: float = 0.0
+    budget_action: str = "warn"
     tags: list[str] = field(default_factory=list)
 
     @property
@@ -118,7 +119,25 @@ class GatewayConfig:
         path = cls._resolve_path(config_path)
         raw = cls._read_yaml(path)
         raw = _substitute_env_vars(raw)
+        cls._validate(raw)
         return cls._parse(raw)
+
+    @classmethod
+    def _validate(cls, raw: dict) -> None:
+        """Validate raw config dict against the Pydantic schema."""
+        from pydantic import ValidationError
+        from voicegateway.core.schema import VoiceGatewayConfig
+        try:
+            VoiceGatewayConfig.model_validate(raw)
+        except ValidationError as e:
+            lines = ["Configuration validation failed:"]
+            for err in e.errors():
+                loc = ".".join(str(p) for p in err["loc"])
+                msg = err["msg"]
+                lines.append(f"  - {loc}: {msg}")
+            lines.append("")
+            lines.append("Check your voicegw.yaml for typos or invalid values.")
+            raise ConfigError("\n".join(lines)) from None
 
     @classmethod
     def _resolve_path(cls, config_path: str | Path | None) -> Path:
@@ -171,6 +190,7 @@ class GatewayConfig:
                     description=pcfg.get("description", ""),
                     default_stack=pcfg.get("default_stack", ""),
                     daily_budget=float(pcfg.get("daily_budget", 0.0) or 0.0),
+                    budget_action=pcfg.get("budget_action", "warn"),
                     tags=list(pcfg.get("tags", []) or []),
                 )
 
