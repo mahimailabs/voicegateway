@@ -18,11 +18,13 @@ jobs:
         uses: astral-sh/setup-uv@v5
       - name: Setup Python
         run: uv python install 3.12
-      - name: Install dependencies
-        run: uv pip install --system -e ".[dev]" ruff mypy types-PyYAML
+      - name: Create venv and install
+        run: |
+          uv venv
+          uv pip install -e ".[dev]" ruff mypy types-PyYAML
       - name: Ruff
-        run: ruff check voicegateway dashboard tests
+        run: uv run ruff check voicegateway dashboard tests
       - name: Mypy
-        run: mypy voicegateway dashboard
+        run: uv run mypy voicegateway dashboard
       - name: Pytest
-        run: pytest -q --ignore=tests/test_providers/test_ollama.py
+        run: uv run pytest -q --ignore=tests/test_providers/test_ollama.py
