@@ -62,7 +62,7 @@ def init(
     else:
         dest.write_text(
             "# VoiceGateway Configuration\n"
-            "# See: https://github.com/mahimairaja/livekit-inference-gateway\n\n"
+            "# See: https://github.com/mahimailabs/voicegateway\n\n"
             "providers: {}\nmodels:\n  stt: {}\n  llm: {}\n  tts: {}\n"
             "projects: {}\n"
         )

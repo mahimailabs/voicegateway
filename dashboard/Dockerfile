@@ -22,4 +22,4 @@ COPY --from=builder /app/dist ./dashboard/frontend/dist
 
 EXPOSE 9090
 
-CMD ["python", "-m", "dashboard.api.main", "--host", "0.0.0.0", "--port", "9090"]
+CMD ["uvicorn", "dashboard.api.main:app", "--host", "0.0.0.0", "--port", "9090"]
