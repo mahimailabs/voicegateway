@@ -10,7 +10,7 @@ This is what the dashboard consumes and what external monitoring tools
 from __future__ import annotations
 
 import time
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
 
 
-def build_app(gateway: "Gateway") -> FastAPI:
+def build_app(gateway: Gateway) -> FastAPI:
     """Build a FastAPI app bound to the given Gateway instance."""
     app = FastAPI(
         title="VoiceGateway API",

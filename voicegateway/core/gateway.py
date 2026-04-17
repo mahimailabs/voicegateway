@@ -4,22 +4,23 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any
+from collections.abc import Coroutine
+from typing import Any, TypeVar
 
 from voicegateway.core.config import GatewayConfig
 from voicegateway.core.router import (
     Router,
-    ModelNotFoundError,
-    ProviderNotConfiguredError,
 )
-from voicegateway.middleware.cost_tracker import CostTracker
-from voicegateway.middleware.latency_monitor import LatencyMonitor
-from voicegateway.middleware.rate_limiter import RateLimiter
-from voicegateway.middleware.logger import RequestLogger
 from voicegateway.middleware.budget_enforcer import BudgetEnforcer
-from voicegateway.middleware.fallback import FallbackChain, FallbackError
+from voicegateway.middleware.cost_tracker import CostTracker
+from voicegateway.middleware.fallback import FallbackChain
 from voicegateway.middleware.instrumented_provider import wrap_provider
+from voicegateway.middleware.latency_monitor import LatencyMonitor
+from voicegateway.middleware.logger import RequestLogger
+from voicegateway.middleware.rate_limiter import RateLimiter
 from voicegateway.storage.sqlite import SQLiteStorage
+
+T = TypeVar("T")
 
 DEFAULT_PROJECT = "default"
 DEFAULT_DB_PATH = "~/.config/voicegateway/voicegw.db"
@@ -49,6 +50,7 @@ class Gateway:
         cost_cfg = self._config.cost_tracking
         env_db = os.environ.get("VOICEGW_DB_PATH")
         enabled = cost_cfg.get("enabled", False) or bool(env_db)
+        self._storage: SQLiteStorage | None
         if enabled:
             db_path = env_db or cost_cfg.get("db_path", DEFAULT_DB_PATH)
             self._storage = SQLiteStorage(db_path)
@@ -268,7 +270,7 @@ class Gateway:
         return project
 
 
-def _run_async(coro):
+def _run_async(coro: Coroutine[Any, Any, T]) -> T:
     """Run a coroutine synchronously, even from inside a running loop."""
     try:
         loop = asyncio.get_event_loop()

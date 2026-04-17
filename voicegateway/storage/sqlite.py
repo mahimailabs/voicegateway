@@ -284,7 +284,7 @@ class SQLiteStorage:
             columns = [d[0] for d in cursor.description]
             rows = []
             async for row in cursor:
-                record = dict(zip(columns, row))
+                record = dict(zip(columns, row, strict=False))
                 if record.get("metadata"):
                     try:
                         record["metadata"] = json.loads(record["metadata"])
@@ -311,6 +311,14 @@ class SQLiteStorage:
                 (project, since_today),
             )
             row = await cursor.fetchone()
+            if row is None:
+                return {
+                    "project": project,
+                    "requests_today": 0,
+                    "cost_today": 0.0,
+                    "avg_ttfb_ms": None,
+                    "avg_latency_ms": None,
+                }
             return {
                 "project": project,
                 "requests_today": int(row[0] or 0),

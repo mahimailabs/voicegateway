@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
-import uuid
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from voicegateway.middleware.cost_tracker import CostTracker
@@ -30,8 +29,8 @@ class _InstrumentedBase:
         model_id: str,
         provider: str,
         project: str,
-        cost_tracker: "CostTracker",
-        storage: "SQLiteStorage | None",
+        cost_tracker: CostTracker,
+        storage: SQLiteStorage | None,
     ):
         # Use object.__setattr__ to avoid triggering __setattr__ proxy
         object.__setattr__(self, "_wrapped", wrapped)
@@ -127,8 +126,8 @@ def wrap_provider(
     model_id: str,
     provider: str,
     project: str,
-    cost_tracker: "CostTracker",
-    storage: "SQLiteStorage | None",
+    cost_tracker: CostTracker,
+    storage: SQLiteStorage | None,
 ) -> Any:
     """Wrap a provider instance with instrumentation.
 

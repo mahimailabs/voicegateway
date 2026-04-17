@@ -7,7 +7,6 @@ import logging
 from typing import Any
 
 from voicegateway.providers.base import BaseProvider
-from voicegateway.pricing.catalog import get_pricing
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +22,10 @@ class WhisperProvider(BaseProvider):
         try:
             import faster_whisper
             return faster_whisper
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
                 "faster-whisper not installed. Run: pip install voicegateway[whisper]"
-            )
+            ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:
         """Create a Whisper STT that uses StreamAdapter for streaming."""
@@ -62,7 +61,6 @@ class WhisperSTT:
 
     def __init__(self, model: str = "large-v3", device: str = "auto",
                  compute_type: str = "float16"):
-        from livekit.agents import stt
 
         self._model_name = model
         self._device = device

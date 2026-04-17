@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from voicegateway.core.model_id import ModelId
 from voicegateway.core.registry import create_provider
@@ -27,11 +27,11 @@ class Router:
     plugins that aren't needed.
     """
 
-    def __init__(self, config: "GatewayConfig"):
+    def __init__(self, config: GatewayConfig):
         self._config = config
-        self._providers: dict[str, "BaseProvider"] = {}
+        self._providers: dict[str, BaseProvider] = {}
 
-    def _get_provider(self, provider_name: str) -> "BaseProvider":
+    def _get_provider(self, provider_name: str) -> BaseProvider:
         """Get or create a provider instance."""
         if provider_name not in self._providers:
             provider_config = self._config.get_provider_config(provider_name)
@@ -104,6 +104,6 @@ class Router:
     def get_provider_status(self) -> dict[str, dict]:
         """Return status for all initialized providers."""
         status = {}
-        for name, provider in self._providers.items():
+        for name in self._providers:
             status[name] = {"initialized": True}
         return status

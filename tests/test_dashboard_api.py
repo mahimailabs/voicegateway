@@ -1,9 +1,7 @@
 """Tests for dashboard/api/main.py endpoints."""
 
-import os
 
 import pytest
-import yaml
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway

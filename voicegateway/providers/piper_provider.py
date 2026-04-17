@@ -7,7 +7,6 @@ import logging
 from typing import Any
 
 from voicegateway.providers.base import BaseProvider
-from voicegateway.pricing.catalog import get_pricing
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +20,10 @@ class PiperProvider(BaseProvider):
         try:
             import piper
             return piper
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
                 "piper-tts not installed. Run: pip install voicegateway[piper]"
-            )
+            ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:
         self._unsupported("stt")
@@ -64,8 +63,9 @@ class PiperTTS:
 
     async def _load_model(self):
         if self._piper is None:
-            import piper
             from pathlib import Path
+
+            import piper
             model_dir = Path(self._model_dir).expanduser()
             model_path = model_dir / f"{self._voice}.onnx"
             logger.info(f"Loading Piper TTS model: {model_path}")
