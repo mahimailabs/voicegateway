@@ -1,6 +1,6 @@
 [project]
 name = "voicegateway"
-version = "0.0.1"
+dynamic = ["version"]
 description = "Self-hosted inference gateway for voice AI — route STT, LLM, and TTS to any provider or local model"
 readme = "README.md"
 license = "MIT"
