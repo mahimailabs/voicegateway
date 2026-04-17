@@ -1,0 +1,28 @@
+name: Continuous Integration
+
+on:
+  pull_request:
+    paths:
+      - 'voicegateway/**'
+      - '.github/workflows/ci.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/python
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+      - name: Setup Python
+        run: uv python install 3.12
+      - name: Install dependencies
+        run: uv sync --group dev
+      - name: Ruff
+        run: uv run ruff check .
+      - name: Mypy
+        run: uv run mypy src tests
+      - name: Pytest
+        run: uv run pytest -q
