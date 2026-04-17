@@ -61,13 +61,16 @@ async def _gather_providers(gateway: Gateway) -> list[dict[str, Any]]:
         })
 
     if gateway.storage is not None:
+        from voicegateway.core.crypto import decrypt, mask
+
         for row in await gateway.storage.list_managed_providers():
+            plaintext_key = decrypt(row.get("api_key_encrypted", ""))
             out.append({
                 "provider_id": row["provider_id"],
                 "provider_type": row["provider_type"],
                 "source": "db",
                 "enabled": True,
-                "api_key_masked": _mask_api_key(row.get("api_key")),
+                "api_key_masked": mask(plaintext_key),
                 "base_url": row.get("base_url"),
                 "type": "local" if row["provider_type"] in local_names else "cloud",
             })
@@ -181,9 +184,11 @@ async def _handle_test_provider(gateway: Gateway, arguments: dict[str, Any]) -> 
     elif gateway.storage is not None:
         row = await gateway.storage.get_managed_provider(payload.provider_id)
         if row is not None:
+            from voicegateway.core.crypto import decrypt
+
             provider_type = row["provider_type"]
             provider_cfg = {
-                "api_key": row.get("api_key"),
+                "api_key": decrypt(row.get("api_key_encrypted", "")),
                 "base_url": row.get("base_url"),
                 **(row.get("extra_config") or {}),
             }
