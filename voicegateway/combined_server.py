@@ -33,13 +33,12 @@ def build_combined_app(gateway: Gateway) -> Any:
         return app
 
     try:
-        from voicegateway.mcp.server import create_server
-
         from starlette.requests import Request
         from starlette.responses import JSONResponse, Response
         from starlette.routing import Mount, Route
 
         from voicegateway.mcp.auth import AuthError, check_authorization_header
+        from voicegateway.mcp.server import create_server
 
         mcp_server = create_server(gateway)
         sse = SseServerTransport("/mcp/messages/")
