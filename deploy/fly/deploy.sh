@@ -18,6 +18,7 @@ log_error()   { echo -e "${RED}✗${NC} $*" >&2; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env.deploy"
+IS_FIRST_DEPLOY=false
 
 # ---------------------------------------------------------------------------
 # Preflight checks
@@ -80,6 +81,7 @@ is_first_time() {
 }
 
 first_time_deploy() {
+  IS_FIRST_DEPLOY=true
   log_info "First-time deployment. Creating Fly app..."
 
   cd "$REPO_ROOT"
@@ -130,6 +132,13 @@ redeploy() {
   local app_name
   app_name=$(grep -E '^app = ' "$SCRIPT_DIR/fly.toml" | cut -d'"' -f2)
   log_info "Redeploying $app_name..."
+
+  # Sync the MCP token to Fly secrets in case it was rotated locally
+  log_info "Syncing MCP token to Fly secrets..."
+  flyctl secrets set \
+    --app "$app_name" \
+    "VOICEGW_MCP_TOKEN=$VOICEGW_MCP_TOKEN"
+
   cd "$REPO_ROOT"
   flyctl deploy \
     --app "$app_name" \
@@ -153,16 +162,33 @@ print_success() {
   echo ""
   echo "  Dashboard:    $url"
   echo "  MCP endpoint: $url/mcp/sse"
-  echo "  MCP token:    $VOICEGW_MCP_TOKEN"
+
+  if [[ "$IS_FIRST_DEPLOY" == "true" ]]; then
+    echo "  MCP token:    $VOICEGW_MCP_TOKEN"
+  else
+    echo "  MCP token:    (stored in $ENV_FILE)"
+  fi
+
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
   echo "Next: add to Claude Code"
   echo ""
-  echo "  claude mcp add voicegateway \\"
-  echo "    --transport sse \\"
-  echo "    --url $url/mcp/sse \\"
-  echo "    --header \"Authorization: Bearer $VOICEGW_MCP_TOKEN\""
+
+  if [[ "$IS_FIRST_DEPLOY" == "true" ]]; then
+    echo "  claude mcp add voicegateway \\"
+    echo "    --transport sse \\"
+    echo "    --url $url/mcp/sse \\"
+    echo "    --header \"Authorization: Bearer $VOICEGW_MCP_TOKEN\""
+  else
+    echo "  # Token is in: $ENV_FILE"
+    echo "  # To view:  cat $ENV_FILE"
+    echo "  claude mcp add voicegateway \\"
+    echo "    --transport sse \\"
+    echo "    --url $url/mcp/sse \\"
+    echo "    --header \"Authorization: Bearer \$(grep VOICEGW_MCP_TOKEN $ENV_FILE | cut -d= -f2)\""
+  fi
+
   echo ""
   echo "Then in Claude Code, try:"
   echo "  > List my voicegateway providers"

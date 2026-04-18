@@ -4,7 +4,7 @@ One-command deployment with public URL, persistent storage, and MCP-ready out of
 
 ## Prerequisites
 
-- [Fly.io account](https://fly.io/app/sign-up) (free tier available, credit card required)
+- [Fly.io account](https://fly.io/app/sign-up) (credit card required; new accounts get a limited trial before pay-as-you-go billing)
 - [flyctl](https://fly.io/docs/hands-on/install-flyctl/) installed
 - Authenticated: `fly auth login`
 
@@ -22,18 +22,20 @@ First-time deployment takes ~3 minutes. Redeploys take ~30 seconds.
 - Dashboard at the root URL
 - MCP SSE endpoint at `/mcp/sse` with bearer auth
 - Persistent 1GB volume for SQLite + encryption secret
-- Suspend-on-idle (costs near $0 when unused)
+- Suspend-on-idle for cost savings when unused
 - Auto-wake in ~2 seconds when traffic arrives
 
 ## Costs
 
-| Usage pattern | Monthly cost |
-|---|---|
-| Idle / light dev use | $0-$2 (within Fly's included allowances) |
-| Moderate traffic (1K-10K requests/day) | $2-$8 |
-| Heavy traffic | Scale up (see below) |
+Fly.io uses pay-as-you-go pricing. New accounts get a short trial (check [fly.io/docs/about/pricing](https://fly.io/docs/about/pricing/) for current details), after which usage is billed.
 
-Fly's free allowances include 3 shared-cpu-1x VMs and 3GB storage. VoiceGateway uses 1 VM + 1GB volume, fitting comfortably within the free tier for light use. Costs accrue beyond the allowance.
+| Resource | Cost |
+|---|---|
+| shared-cpu-1x / 512MB VM | ~$1.94/month when running continuously |
+| 1GB persistent volume | ~$0.15/month (billed even when machine is suspended) |
+| Suspended machine | No compute charge, but volume storage still billed |
+
+Use the [Fly pricing calculator](https://fly.io/calculator) for exact estimates. For light dev/test use, expect $1-3/month total.
 
 ## Scaling up
 
@@ -50,9 +52,9 @@ fly regions add fra syd
 
 ## Limitations
 
-- **Local models (Whisper, Kokoro, Piper, Ollama) not supported on default tier.** They need more RAM/CPU and won't fit on shared-cpu-1x/512MB. Use Docker Compose on Hetzner or similar for local models.
+- **Local models (Whisper, Kokoro, Piper, Ollama) not supported on default tier.** They need more RAM/CPU than shared-cpu-1x/512MB provides. Use Docker Compose on Hetzner or similar for local models.
 - **Single-machine deploy by default.** For HA, set `min_machines_running = 2` and add regions.
-- **No GPU.** Fly doesn't offer GPU instances. GPU-dependent models need a separate host.
+- **CPU-only by default.** This template provisions shared CPU VMs. Fly does offer GPU Machines (deprecated, available until Aug 1 2026) which you can provision separately if needed for GPU-dependent models.
 
 ## Troubleshooting
 
@@ -62,10 +64,17 @@ fly regions add fra syd
 
 ### MCP connection refused
 
-Verify the token matches:
+`fly secrets list` confirms the secret **exists** but does not show its value. To verify/re-sync the token:
+
 ```bash
-fly secrets list
+# Check the secret exists on Fly
+fly secrets list | grep VOICEGW_MCP_TOKEN
+
+# View your local token
 cat .env.deploy
+
+# Re-sync if they're out of date (e.g., after token rotation)
+fly secrets set "VOICEGW_MCP_TOKEN=$(grep VOICEGW_MCP_TOKEN .env.deploy | cut -d= -f2)"
 ```
 
 ### Machine won't start
