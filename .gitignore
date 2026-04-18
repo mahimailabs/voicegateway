@@ -3,6 +3,10 @@ prompt.md
 voicegateway/_version.py
 .venv
 
+# VitePress
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+docs/node_modules/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
