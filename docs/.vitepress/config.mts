@@ -146,6 +146,7 @@ export default defineConfig({
             { text: 'Local-Only Stack', link: '/examples/local-only' },
             { text: 'Claude Code Integration', link: '/examples/claude-code-integration' },
             { text: 'Docker Deployment', link: '/examples/docker-deployment' },
+            { text: 'Fly.io Deployment', link: '/examples/fly-deployment' },
           ],
         },
       ],

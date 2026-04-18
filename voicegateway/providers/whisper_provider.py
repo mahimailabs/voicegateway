@@ -21,6 +21,7 @@ class WhisperProvider(BaseProvider):
     def _ensure_library(self):
         try:
             import faster_whisper
+
             return faster_whisper
         except ImportError as e:
             raise ImportError(
@@ -59,8 +60,12 @@ class WhisperSTT:
     Inherits from livekit.agents.stt.STT to be compatible with LiveKit agents.
     """
 
-    def __init__(self, model: str = "large-v3", device: str = "auto",
-                 compute_type: str = "float16"):
+    def __init__(
+        self,
+        model: str = "large-v3",
+        device: str = "auto",
+        compute_type: str = "float16",
+    ):
 
         self._model_name = model
         self._device = device
@@ -72,14 +77,17 @@ class WhisperSTT:
     def _load_model(self):
         if self._whisper_model is None:
             from faster_whisper import WhisperModel
+
             device = self._device
             if device == "auto":
                 import platform
+
                 if platform.processor() == "arm":
                     device = "cpu"
                 else:
                     try:
                         import torch
+
                         device = "cuda" if torch.cuda.is_available() else "cpu"
                     except ImportError:
                         device = "cpu"
@@ -95,8 +103,11 @@ class WhisperSTT:
         """Transcribe audio buffer."""
         model = await asyncio.to_thread(self._load_model)
         import numpy as np
-        if hasattr(buffer, 'data'):
-            audio_data = np.frombuffer(buffer.data, dtype=np.int16).astype(np.float32) / 32768.0
+
+        if hasattr(buffer, "data"):
+            audio_data = (
+                np.frombuffer(buffer.data, dtype=np.int16).astype(np.float32) / 32768.0
+            )
         else:
             audio_data = buffer
 

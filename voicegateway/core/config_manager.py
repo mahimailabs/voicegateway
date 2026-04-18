@@ -42,7 +42,9 @@ class ConfigManager:
             try:
                 plaintext_key = decrypt(row.get("api_key_encrypted", ""))
             except ValueError:
-                _logger.warning("Failed to decrypt key for provider '%s', skipping", pid)
+                _logger.warning(
+                    "Failed to decrypt key for provider '%s', skipping", pid
+                )
                 plaintext_key = ""
             merged.providers[pid] = {
                 "api_key": plaintext_key,
@@ -64,8 +66,16 @@ class ConfigManager:
                 "provider": row["provider_id"],
                 "model": row["model_name"],
                 "_source": "db",
-                **({"default_voice": row["default_voice"]} if row.get("default_voice") else {}),
-                **({"default_language": row["default_language"]} if row.get("default_language") else {}),
+                **(
+                    {"default_voice": row["default_voice"]}
+                    if row.get("default_voice")
+                    else {}
+                ),
+                **(
+                    {"default_language": row["default_language"]}
+                    if row.get("default_language")
+                    else {}
+                ),
             }
 
         # Layer in managed projects

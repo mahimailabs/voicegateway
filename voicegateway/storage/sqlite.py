@@ -199,7 +199,9 @@ class SQLiteStorage:
                 )
                 migrated += 1
         if migrated:
-            _logger.warning("Migrated %d plaintext API key(s) to encrypted storage.", migrated)
+            _logger.warning(
+                "Migrated %d plaintext API key(s) to encrypted storage.", migrated
+            )
 
     # ------------------------------------------------------------------
     # Audit log
@@ -219,14 +221,23 @@ class SQLiteStorage:
             await db.execute(
                 "INSERT INTO config_audit_log (timestamp, entity_type, entity_id, "
                 "action, changes_json, source) VALUES (?, ?, ?, ?, ?, ?)",
-                (time.time(), entity_type, entity_id, action,
-                 json.dumps(changes) if changes else None, source),
+                (
+                    time.time(),
+                    entity_type,
+                    entity_id,
+                    action,
+                    json.dumps(changes) if changes else None,
+                    source,
+                ),
             )
             await db.commit()
         except Exception:  # noqa: BLE001
             _logger.warning(
                 "Failed to write audit log for %s/%s action=%s",
-                entity_type, entity_id, action, exc_info=True,
+                entity_type,
+                entity_id,
+                action,
+                exc_info=True,
             )
         finally:
             await db.close()
@@ -259,15 +270,17 @@ class SQLiteStorage:
             cursor = await db.execute(query, tuple(params))
             rows = []
             async for row in cursor:
-                rows.append({
-                    "id": row[0],
-                    "timestamp": row[1],
-                    "entity_type": row[2],
-                    "entity_id": row[3],
-                    "action": row[4],
-                    "changes": json.loads(row[5]) if row[5] else None,
-                    "source": row[6],
-                })
+                rows.append(
+                    {
+                        "id": row[0],
+                        "timestamp": row[1],
+                        "entity_type": row[2],
+                        "entity_id": row[3],
+                        "action": row[4],
+                        "changes": json.loads(row[5]) if row[5] else None,
+                        "source": row[6],
+                    }
+                )
             return rows
         finally:
             await db.close()
@@ -354,8 +367,7 @@ class SQLiteStorage:
                 tuple(params),
             )
             by_provider = {
-                row[0]: {"cost": row[1], "requests": row[2]}
-                async for row in cursor
+                row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor
             }
 
             # By model
@@ -366,8 +378,7 @@ class SQLiteStorage:
                 tuple(params),
             )
             by_model = {
-                row[0]: {"cost": row[1], "requests": row[2]}
-                async for row in cursor
+                row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor
             }
 
             return {
@@ -392,8 +403,7 @@ class SQLiteStorage:
                 (since,),
             )
             return {
-                row[0]: {"cost": row[1], "requests": row[2]}
-                async for row in cursor
+                row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor
             }
         finally:
             await db.close()
@@ -517,15 +527,17 @@ class SQLiteStorage:
             )
             rows = []
             async for row in cursor:
-                rows.append({
-                    "provider_id": row[0],
-                    "provider_type": row[1],
-                    "api_key_encrypted": row[2],
-                    "base_url": row[3],
-                    "extra_config": json.loads(row[4] or "{}"),
-                    "created_at": row[5],
-                    "updated_at": row[6],
-                })
+                rows.append(
+                    {
+                        "provider_id": row[0],
+                        "provider_type": row[1],
+                        "api_key_encrypted": row[2],
+                        "base_url": row[3],
+                        "extra_config": json.loads(row[4] or "{}"),
+                        "created_at": row[5],
+                        "updated_at": row[6],
+                    }
+                )
             return rows
         finally:
             await db.close()
@@ -617,19 +629,21 @@ class SQLiteStorage:
             )
             rows = []
             async for row in cursor:
-                rows.append({
-                    "model_id": row[0],
-                    "modality": row[1],
-                    "provider_id": row[2],
-                    "model_name": row[3],
-                    "display_name": row[4],
-                    "default_language": row[5],
-                    "default_voice": row[6],
-                    "extra_config": json.loads(row[7] or "{}"),
-                    "enabled": bool(row[8]),
-                    "created_at": row[9],
-                    "updated_at": row[10],
-                })
+                rows.append(
+                    {
+                        "model_id": row[0],
+                        "modality": row[1],
+                        "provider_id": row[2],
+                        "model_name": row[3],
+                        "display_name": row[4],
+                        "default_language": row[5],
+                        "default_voice": row[6],
+                        "extra_config": json.loads(row[7] or "{}"),
+                        "enabled": bool(row[8]),
+                        "created_at": row[9],
+                        "updated_at": row[10],
+                    }
+                )
             return rows
         finally:
             await db.close()
@@ -672,11 +686,17 @@ class SQLiteStorage:
                        enabled=excluded.enabled,
                        updated_at=excluded.updated_at""",
                 (
-                    model_id, modality, provider_id, model_name, display_name,
-                    default_language, default_voice,
+                    model_id,
+                    modality,
+                    provider_id,
+                    model_name,
+                    display_name,
+                    default_language,
+                    default_voice,
                     json.dumps(extra_config or {}),
                     1 if enabled else 0,
-                    now, now,
+                    now,
+                    now,
                 ),
             )
             await db.commit()
@@ -706,20 +726,22 @@ class SQLiteStorage:
             )
             rows = []
             async for row in cursor:
-                rows.append({
-                    "project_id": row[0],
-                    "name": row[1],
-                    "description": row[2],
-                    "daily_budget": row[3],
-                    "budget_action": row[4],
-                    "default_stack": row[5],
-                    "stt_model": row[6],
-                    "llm_model": row[7],
-                    "tts_model": row[8],
-                    "tags": json.loads(row[9] or "[]"),
-                    "created_at": row[10],
-                    "updated_at": row[11],
-                })
+                rows.append(
+                    {
+                        "project_id": row[0],
+                        "name": row[1],
+                        "description": row[2],
+                        "daily_budget": row[3],
+                        "budget_action": row[4],
+                        "default_stack": row[5],
+                        "stt_model": row[6],
+                        "llm_model": row[7],
+                        "tts_model": row[8],
+                        "tags": json.loads(row[9] or "[]"),
+                        "created_at": row[10],
+                        "updated_at": row[11],
+                    }
+                )
             return rows
         finally:
             await db.close()
@@ -764,10 +786,18 @@ class SQLiteStorage:
                        tags=excluded.tags,
                        updated_at=excluded.updated_at""",
                 (
-                    project_id, name, description, daily_budget, budget_action,
-                    default_stack, stt_model, llm_model, tts_model,
+                    project_id,
+                    name,
+                    description,
+                    daily_budget,
+                    budget_action,
+                    default_stack,
+                    stt_model,
+                    llm_model,
+                    tts_model,
                     json.dumps(tags or []),
-                    now, now,
+                    now,
+                    now,
                 ),
             )
             await db.commit()

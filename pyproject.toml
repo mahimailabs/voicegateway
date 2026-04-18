@@ -78,10 +78,23 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 source = ["voicegateway", "dashboard"]
+omit = [
+    # Provider implementations require external LiveKit plugins to test
+    "voicegateway/providers/openai_provider.py",
+    "voicegateway/providers/deepgram_provider.py",
+    "voicegateway/providers/anthropic_provider.py",
+    "voicegateway/providers/cartesia_provider.py",
+    "voicegateway/providers/elevenlabs_provider.py",
+    "voicegateway/providers/groq_provider.py",
+    "voicegateway/providers/assemblyai_provider.py",
+    "voicegateway/providers/kokoro_provider.py",
+    "voicegateway/providers/piper_provider.py",
+]
 
 [tool.coverage.report]
 show_missing = true
 skip_empty = true
+fail_under = 75
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]

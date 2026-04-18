@@ -50,11 +50,16 @@ def build_app(gateway: Gateway) -> FastAPI:
         providers = {}
         for name, provider_cfg in cfg.providers.items():
             has_key = bool(provider_cfg.get("api_key")) or name in (
-                "ollama", "whisper", "kokoro", "piper"
+                "ollama",
+                "whisper",
+                "kokoro",
+                "piper",
             )
             providers[name] = {
                 "configured": has_key,
-                "type": "local" if name in ("ollama", "whisper", "kokoro", "piper") else "cloud",
+                "type": "local"
+                if name in ("ollama", "whisper", "kokoro", "piper")
+                else "cloud",
             }
         return {
             "providers": providers,
@@ -152,7 +157,9 @@ def build_app(gateway: Gateway) -> FastAPI:
         }
         if gateway.storage is not None:
             data["today"] = await gateway.storage.get_project_stats(project_id)
-            costs_today = await gateway.storage.get_cost_summary("today", project=project_id)
+            costs_today = await gateway.storage.get_cost_summary(
+                "today", project=project_id
+            )
             data["costs_today"] = costs_today
             today_spend = costs_today.get("total", 0.0)
             data["today_spend"] = today_spend
@@ -224,12 +231,18 @@ def build_app(gateway: Gateway) -> FastAPI:
         for name, pcfg in gateway.config.providers.items():
             api_key = pcfg.get("api_key", "") if isinstance(pcfg, dict) else ""
             source = pcfg.get("_source", "yaml") if isinstance(pcfg, dict) else "yaml"
-            result.append({
-                "provider_id": name,
-                "source": source,
-                "api_key_masked": mask(api_key) if source != "db" else mask(api_key),
-                "base_url": pcfg.get("base_url") if isinstance(pcfg, dict) else None,
-            })
+            result.append(
+                {
+                    "provider_id": name,
+                    "source": source,
+                    "api_key_masked": mask(api_key)
+                    if source != "db"
+                    else mask(api_key),
+                    "base_url": pcfg.get("base_url")
+                    if isinstance(pcfg, dict)
+                    else None,
+                }
+            )
         return {"providers": result}
 
     @app.post("/v1/providers")
@@ -247,7 +260,10 @@ def build_app(gateway: Gateway) -> FastAPI:
         if ptype not in _PROVIDER_REGISTRY:
             raise HTTPException(400, f"Unknown provider_type '{ptype}'")
         if pid in gateway.config.providers:
-            is_managed = isinstance(gateway.config.providers[pid], dict) and gateway.config.providers[pid].get("_source") == "db"
+            is_managed = (
+                isinstance(gateway.config.providers[pid], dict)
+                and gateway.config.providers[pid].get("_source") == "db"
+            )
             if not is_managed:
                 raise HTTPException(409, f"Provider '{pid}' already exists in YAML")
         if gateway.storage is None:
@@ -255,7 +271,9 @@ def build_app(gateway: Gateway) -> FastAPI:
 
         await gateway.storage.upsert_managed_provider(pid, ptype, api_key, base_url)
         audit_body = {**body, "api_key": "<redacted>"} if "api_key" in body else body
-        await gateway.storage.log_audit_event("provider", pid, "create", audit_body, "api")
+        await gateway.storage.log_audit_event(
+            "provider", pid, "create", audit_body, "api"
+        )
         await gateway.refresh_config()
 
         return {"provider_id": pid, "source": "db", "api_key_masked": mask(api_key)}
@@ -271,6 +289,7 @@ def build_app(gateway: Gateway) -> FastAPI:
             raise HTTPException(404, f"No managed provider '{provider_id}'")
 
         from voicegateway.core.crypto import decrypt
+
         current_key = decrypt(existing.get("api_key_encrypted", ""))
         api_key = body.get("api_key", current_key)
         base_url = body.get("base_url", existing.get("base_url"))
@@ -278,9 +297,13 @@ def build_app(gateway: Gateway) -> FastAPI:
         if ptype not in _PROVIDER_REGISTRY:
             raise HTTPException(400, f"Unknown provider_type '{ptype}'")
 
-        await gateway.storage.upsert_managed_provider(provider_id, ptype, api_key, base_url)
+        await gateway.storage.upsert_managed_provider(
+            provider_id, ptype, api_key, base_url
+        )
         audit_body = {**body, "api_key": "<redacted>"} if "api_key" in body else body
-        await gateway.storage.log_audit_event("provider", provider_id, "update", audit_body, "api")
+        await gateway.storage.log_audit_event(
+            "provider", provider_id, "update", audit_body, "api"
+        )
         await gateway.refresh_config()
         return {"provider_id": provider_id, "updated": True}
 
@@ -294,13 +317,18 @@ def build_app(gateway: Gateway) -> FastAPI:
         managed = await gateway.storage.get_managed_provider(provider_id)
         if managed is None:
             if provider_id in gateway.config.providers:
-                raise HTTPException(403, f"Provider '{provider_id}' is YAML-defined and cannot be deleted")
+                raise HTTPException(
+                    403,
+                    f"Provider '{provider_id}' is YAML-defined and cannot be deleted",
+                )
             raise HTTPException(404, f"No provider '{provider_id}'")
 
         if not confirm:
             return {"would_delete": {"provider_id": provider_id}}
         await gateway.storage.delete_managed_provider(provider_id)
-        await gateway.storage.log_audit_event("provider", provider_id, "delete", None, "api")
+        await gateway.storage.log_audit_event(
+            "provider", provider_id, "delete", None, "api"
+        )
         await gateway.refresh_config()
         return {"deleted": provider_id}
 
@@ -315,19 +343,35 @@ def build_app(gateway: Gateway) -> FastAPI:
         pcfg = gateway.config.providers.get(provider_id)
         if pcfg is None:
             raise HTTPException(404, f"No provider '{provider_id}'")
-        ptype = pcfg.get("provider_type", provider_id) if isinstance(pcfg, dict) else provider_id
+        ptype = (
+            pcfg.get("provider_type", provider_id)
+            if isinstance(pcfg, dict)
+            else provider_id
+        )
         if ptype not in _PROVIDER_REGISTRY:
-            return {"status": "failed", "message": f"Unknown type '{ptype}'", "latency_ms": 0}
+            return {
+                "status": "failed",
+                "message": f"Unknown type '{ptype}'",
+                "latency_ms": 0,
+            }
         try:
             inst = create_provider(ptype, pcfg if isinstance(pcfg, dict) else {})
             start = time.time()
             ok = await _asyncio.wait_for(inst.health_check(), timeout=10.0)
             latency_ms = int((time.time() - start) * 1000)
         except TimeoutError:
-            return {"status": "failed", "message": "Provider health check timed out", "latency_ms": 10000}
+            return {
+                "status": "failed",
+                "message": "Provider health check timed out",
+                "latency_ms": 10000,
+            }
         except Exception as exc:  # noqa: BLE001
             _test_log.warning("Provider test for '%s' failed: %s", provider_id, exc)
-            return {"status": "failed", "message": "Provider health check failed", "latency_ms": 0}
+            return {
+                "status": "failed",
+                "message": "Provider health check failed",
+                "latency_ms": 0,
+            }
         return {"status": "ok" if ok else "failed", "latency_ms": latency_ms}
 
     # ------------------------------------------------------------------
@@ -418,15 +462,21 @@ def build_app(gateway: Gateway) -> FastAPI:
             project_id=project_id,
             name=body.get("name", managed["name"]),
             description=body.get("description", managed.get("description", "")),
-            daily_budget=float(body.get("daily_budget", managed.get("daily_budget", 0.0))),
-            budget_action=body.get("budget_action", managed.get("budget_action", "warn")),
+            daily_budget=float(
+                body.get("daily_budget", managed.get("daily_budget", 0.0))
+            ),
+            budget_action=body.get(
+                "budget_action", managed.get("budget_action", "warn")
+            ),
             default_stack=body.get("default_stack", managed.get("default_stack")),
             stt_model=body.get("stt_model", managed.get("stt_model")),
             llm_model=body.get("llm_model", managed.get("llm_model")),
             tts_model=body.get("tts_model", managed.get("tts_model")),
             tags=body.get("tags", managed.get("tags")),
         )
-        await gateway.storage.log_audit_event("project", project_id, "update", body, "api")
+        await gateway.storage.log_audit_event(
+            "project", project_id, "update", body, "api"
+        )
         await gateway.refresh_config()
         return {"project_id": project_id, "updated": True}
 
@@ -442,7 +492,9 @@ def build_app(gateway: Gateway) -> FastAPI:
         if not confirm:
             return {"would_delete": {"project_id": project_id}}
         await gateway.storage.delete_managed_project(project_id)
-        await gateway.storage.log_audit_event("project", project_id, "delete", None, "api")
+        await gateway.storage.log_audit_event(
+            "project", project_id, "delete", None, "api"
+        )
         await gateway.refresh_config()
         return {"deleted": project_id}
 
@@ -460,7 +512,10 @@ def build_app(gateway: Gateway) -> FastAPI:
         if gateway.storage is None:
             return []
         return await gateway.storage.get_audit_log(
-            limit=limit, entity_type=entity_type, entity_id=entity_id, action=action,
+            limit=limit,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            action=action,
         )
 
     return app
