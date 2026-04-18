@@ -91,7 +91,7 @@ Create an STT (speech-to-text) provider instance for the given model ID.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `model_id` | `str` | required | Model identifier in `"provider/model"` or `"provider/model:language"` format. |
+| `model_id` | `str` | required | Model identifier in `"provider/model"` format (e.g., `"deepgram/nova-3"`). |
 | `project` | `str \| None` | `None` | Project ID to tag requests with for cost tracking. Falls back to `"default"`. |
 | `**kwargs` | `Any` | | Additional provider-specific options passed to the resolver. |
 
@@ -111,9 +111,6 @@ stt = gw.stt("deepgram/nova-3")
 
 # With project tracking
 stt = gw.stt("deepgram/nova-3", project="tonys-pizza")
-
-# With language hint
-stt = gw.stt("deepgram/nova-3:es")
 ```
 
 ### `llm()`
@@ -162,7 +159,7 @@ Create a TTS (text-to-speech) provider instance.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `model_id` | `str` | required | Model identifier in `"provider/model"` or `"provider/model:voice_id"` format. |
+| `model_id` | `str` | required | Model identifier in `"provider/model"` format. For local TTS, use `"local/model:voice"` to select a voice variant. |
 | `project` | `str \| None` | `None` | Project ID for cost tracking. |
 | `**kwargs` | `Any` | | Additional provider-specific options. |
 
@@ -172,8 +169,7 @@ Create a TTS (text-to-speech) provider instance.
 
 ```python
 tts = gw.tts("cartesia/sonic-3", project="my-app")
-tts = gw.tts("elevenlabs/eleven_multilingual_v2:voice_abc123")
-tts = gw.tts("kokoro/kokoro-v1")  # local model
+tts = gw.tts("local/kokoro:af_heart")  # local model with voice variant
 ```
 
 ### `stack()`
