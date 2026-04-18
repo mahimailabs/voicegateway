@@ -8,6 +8,24 @@ A drop-in routing layer that gives self-hosters the same `provider/model` develo
 
 ---
 
+## Deploy in 2 minutes
+
+```bash
+git clone https://github.com/mahimailabs/voicegateway
+cd voicegateway/deploy/fly
+./deploy.sh
+```
+
+You get:
+- A public HTTPS URL for the dashboard and API
+- An MCP endpoint your coding agent (Claude Code, Cursor, Codex) can connect to
+- Persistent SQLite storage with encrypted API keys
+- Suspend-on-idle for ~$0-2/month cost at low traffic
+
+See [deployment guide](deploy/fly/README.md) for details, or use Docker Compose for local/self-hosted setups below.
+
+---
+
 ## Quick Start (Docker Compose)
 
 ```bash
