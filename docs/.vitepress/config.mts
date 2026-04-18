@@ -7,7 +7,7 @@ export default defineConfig({
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
     ['meta', { name: 'og:type', content: 'website' }],
-    ['meta', { name: 'og:image', content: 'https://docs.voicegateway.dev/og-image.png' }],
+    ['meta', { name: 'og:image', content: 'https://vg.openrtc.tech/og-image.png' }],
     ['meta', { name: 'theme-color', content: '#C67B3C' }],
   ],
 
