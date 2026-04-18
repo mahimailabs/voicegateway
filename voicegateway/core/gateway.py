@@ -129,6 +129,7 @@ class Gateway:
         if not self._latency_tracking:
             return instance
         from voicegateway.core.model_id import ModelId
+
         parsed = ModelId.parse(model_id)
         return wrap_provider(
             instance=instance,
@@ -205,9 +206,21 @@ class Gateway:
             )
         stack = stacks[name]
         proj = self._resolve_project(project)
-        stt = self._router.resolve(stack["stt"], "stt", project=proj, **kwargs) if "stt" in stack else None
-        llm = self._router.resolve(stack["llm"], "llm", project=proj, **kwargs) if "llm" in stack else None
-        tts = self._router.resolve(stack["tts"], "tts", project=proj, **kwargs) if "tts" in stack else None
+        stt = (
+            self._router.resolve(stack["stt"], "stt", project=proj, **kwargs)
+            if "stt" in stack
+            else None
+        )
+        llm = (
+            self._router.resolve(stack["llm"], "llm", project=proj, **kwargs)
+            if "llm" in stack
+            else None
+        )
+        tts = (
+            self._router.resolve(stack["tts"], "tts", project=proj, **kwargs)
+            if "tts" in stack
+            else None
+        )
         return stt, llm, tts
 
     def stt_with_fallback(self, project: str | None = None, **kwargs: Any) -> Any:
@@ -267,15 +280,17 @@ class Gateway:
         """Return configured projects as a list of serializable dicts."""
         result = []
         for pid, pcfg in self._config.projects.items():
-            result.append({
-                "id": pid,
-                "name": pcfg.name,
-                "description": pcfg.description,
-                "daily_budget": pcfg.daily_budget,
-                "default_stack": pcfg.default_stack,
-                "tags": list(pcfg.tags),
-                "accent": pcfg.accent,
-            })
+            result.append(
+                {
+                    "id": pid,
+                    "name": pcfg.name,
+                    "description": pcfg.description,
+                    "daily_budget": pcfg.daily_budget,
+                    "default_stack": pcfg.default_stack,
+                    "tags": list(pcfg.tags),
+                    "accent": pcfg.accent,
+                }
+            )
         return result
 
     # ------------------------------------------------------------------
@@ -301,6 +316,7 @@ def _run_async(coro: Coroutine[Any, Any, T]) -> T:
         return asyncio.run(coro)
     if loop.is_running():
         import concurrent.futures
+
         with concurrent.futures.ThreadPoolExecutor() as pool:
             return pool.submit(asyncio.run, coro).result()
     return asyncio.run(coro)

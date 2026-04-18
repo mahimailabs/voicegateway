@@ -49,16 +49,22 @@ async def _gather_providers(gateway: Gateway) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
 
     for name, provider_cfg in cfg.providers.items():
-        api_key = provider_cfg.get("api_key") if isinstance(provider_cfg, dict) else None
-        out.append({
-            "provider_id": name,
-            "provider_type": name,
-            "source": "yaml",
-            "enabled": True,
-            "api_key_masked": _mask_api_key(api_key),
-            "base_url": provider_cfg.get("base_url") if isinstance(provider_cfg, dict) else None,
-            "type": "local" if name in local_names else "cloud",
-        })
+        api_key = (
+            provider_cfg.get("api_key") if isinstance(provider_cfg, dict) else None
+        )
+        out.append(
+            {
+                "provider_id": name,
+                "provider_type": name,
+                "source": "yaml",
+                "enabled": True,
+                "api_key_masked": _mask_api_key(api_key),
+                "base_url": provider_cfg.get("base_url")
+                if isinstance(provider_cfg, dict)
+                else None,
+                "type": "local" if name in local_names else "cloud",
+            }
+        )
 
     if gateway.storage is not None:
         import logging
@@ -70,17 +76,21 @@ async def _gather_providers(gateway: Gateway) -> list[dict[str, Any]]:
             try:
                 plaintext_key = decrypt(row.get("api_key_encrypted", ""))
             except ValueError:
-                _log.warning("Failed to decrypt key for provider '%s'", row["provider_id"])
+                _log.warning(
+                    "Failed to decrypt key for provider '%s'", row["provider_id"]
+                )
                 plaintext_key = ""
-            out.append({
-                "provider_id": row["provider_id"],
-                "provider_type": row["provider_type"],
-                "source": "db",
-                "enabled": bool(plaintext_key),
-                "api_key_masked": mask(plaintext_key) if plaintext_key else None,
-                "base_url": row.get("base_url"),
-                "type": "local" if row["provider_type"] in local_names else "cloud",
-            })
+            out.append(
+                {
+                    "provider_id": row["provider_id"],
+                    "provider_type": row["provider_type"],
+                    "source": "db",
+                    "enabled": bool(plaintext_key),
+                    "api_key_masked": mask(plaintext_key) if plaintext_key else None,
+                    "base_url": row.get("base_url"),
+                    "type": "local" if row["provider_type"] in local_names else "cloud",
+                }
+            )
 
     return out
 
@@ -105,7 +115,9 @@ Returns:
 """
 
 
-async def _handle_list_providers(gateway: Gateway, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _handle_list_providers(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
     _parse(ListProvidersInput, arguments)
     providers = await _gather_providers(gateway)
     return {"providers": providers, "count": len(providers)}
@@ -133,7 +145,9 @@ Raises:
 """
 
 
-async def _handle_get_provider(gateway: Gateway, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _handle_get_provider(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
     payload = _parse(GetProviderInput, arguments)
     providers = await _gather_providers(gateway)
     for p in providers:
@@ -144,7 +158,10 @@ async def _handle_get_provider(gateway: Gateway, arguments: dict[str, Any]) -> d
                 if not isinstance(modality_models, dict):
                     continue
                 for mcfg in modality_models.values():
-                    if isinstance(mcfg, dict) and mcfg.get("provider") == payload.provider_id:
+                    if (
+                        isinstance(mcfg, dict)
+                        and mcfg.get("provider") == payload.provider_id
+                    ):
                         model_count += 1
             result = dict(p)
             result["model_count"] = model_count
@@ -179,7 +196,9 @@ Raises:
 """
 
 
-async def _handle_test_provider(gateway: Gateway, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _handle_test_provider(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
     payload = _parse(TestProviderInput, arguments)
 
     # Look up provider config from YAML first, then managed table.
@@ -215,6 +234,7 @@ async def _handle_test_provider(gateway: Gateway, arguments: dict[str, Any]) -> 
 
     try:
         from voicegateway.core.registry import create_provider
+
         provider = create_provider(provider_type, provider_cfg)
     except ImportError as exc:
         return {"status": "failed", "latency_ms": 0, "message": str(exc)}
@@ -264,7 +284,9 @@ Raises:
 """
 
 
-async def _handle_add_provider(gateway: Gateway, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _handle_add_provider(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
     payload = _parse(AddProviderInput, arguments)
 
     if payload.provider_type not in _PROVIDER_REGISTRY:
@@ -294,6 +316,7 @@ async def _handle_add_provider(gateway: Gateway, arguments: dict[str, Any]) -> d
     if not local:
         try:
             from voicegateway.core.registry import create_provider
+
             provider_instance = create_provider(payload.provider_type, test_cfg)
             ok = await provider_instance.health_check()
             if not ok:
@@ -359,14 +382,18 @@ Raises:
 """
 
 
-async def _handle_delete_provider(gateway: Gateway, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _handle_delete_provider(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
     payload = _parse(DeleteProviderInput, arguments)
 
     # Check if this is a YAML-only provider (not in managed table)
     is_in_config = payload.provider_id in gateway.config.providers
     is_managed = False
     if gateway.storage is not None:
-        is_managed = await gateway.storage.get_managed_provider(payload.provider_id) is not None
+        is_managed = (
+            await gateway.storage.get_managed_provider(payload.provider_id) is not None
+        )
     if is_in_config and not is_managed:
         raise ReadOnlyResourceError(
             f"Provider '{payload.provider_id}' is defined in voicegw.yaml and "
@@ -433,9 +460,18 @@ async def _handle_delete_provider(gateway: Gateway, arguments: dict[str, Any]) -
 # ---------------------------------------------------------------------------
 
 PROVIDER_TOOLS: list[ToolDef] = [
-    make_tool("list_providers", LIST_PROVIDERS_DOC, ListProvidersInput, _handle_list_providers),
+    make_tool(
+        "list_providers", LIST_PROVIDERS_DOC, ListProvidersInput, _handle_list_providers
+    ),
     make_tool("get_provider", GET_PROVIDER_DOC, GetProviderInput, _handle_get_provider),
-    make_tool("test_provider", TEST_PROVIDER_DOC, TestProviderInput, _handle_test_provider),
+    make_tool(
+        "test_provider", TEST_PROVIDER_DOC, TestProviderInput, _handle_test_provider
+    ),
     make_tool("add_provider", ADD_PROVIDER_DOC, AddProviderInput, _handle_add_provider),
-    make_tool("delete_provider", DELETE_PROVIDER_DOC, DeleteProviderInput, _handle_delete_provider),
+    make_tool(
+        "delete_provider",
+        DELETE_PROVIDER_DOC,
+        DeleteProviderInput,
+        _handle_delete_provider,
+    ),
 ]

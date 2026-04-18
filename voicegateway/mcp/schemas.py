@@ -13,6 +13,7 @@ class _Strict(BaseModel):
 
 # --- Observability ---
 
+
 class GetHealthInput(_Strict):
     pass
 
@@ -33,6 +34,7 @@ class GetLatencyStatsInput(_Strict):
 
 
 # --- Providers ---
+
 
 class ListProvidersInput(_Strict):
     pass
@@ -60,6 +62,7 @@ class DeleteProviderInput(_Strict):
 
 # --- Models ---
 
+
 class ListModelsInput(_Strict):
     modality: Literal["stt", "llm", "tts"] | None = None
     provider_id: str | None = None
@@ -82,6 +85,7 @@ class DeleteModelInput(_Strict):
 
 
 # --- Projects ---
+
 
 class ListProjectsInput(_Strict):
     pass
@@ -110,6 +114,7 @@ class DeleteProjectInput(_Strict):
 
 
 # --- Logs ---
+
 
 class GetLogsInput(_Strict):
     project: str | None = None

@@ -54,7 +54,9 @@ Returns:
 """
 
 
-async def _handle_get_health(gateway: Gateway, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _handle_get_health(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
     _parse(GetHealthInput, arguments)
     cfg = gateway.config
     return {
@@ -122,7 +124,9 @@ async def _handle_get_provider_status(
         pcfg = cfg.providers.get(payload.provider_id)
         if pcfg is None:
             return {"providers": {}, "missing": [payload.provider_id]}
-        return {"providers": {payload.provider_id: _status_for(payload.provider_id, pcfg)}}
+        return {
+            "providers": {payload.provider_id: _status_for(payload.provider_id, pcfg)}
+        }
 
     return {
         "providers": {
@@ -152,7 +156,9 @@ Returns:
 """
 
 
-async def _handle_get_costs(gateway: Gateway, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _handle_get_costs(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
     payload = _parse(GetCostsInput, arguments)
     if gateway.storage is None:
         return {
@@ -163,7 +169,9 @@ async def _handle_get_costs(gateway: Gateway, arguments: dict[str, Any]) -> dict
             "by_model": {},
             "by_project": {},
         }
-    summary = await gateway.storage.get_cost_summary(payload.period, project=payload.project)
+    summary = await gateway.storage.get_cost_summary(
+        payload.period, project=payload.project
+    )
     result = {
         "period": payload.period,
         "project": payload.project,
@@ -213,14 +221,22 @@ async def _handle_get_latency_stats(
     payload = _parse(GetLatencyStatsInput, arguments)
     if gateway.storage is None:
         return {
-            "overall": {"p50_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "avg_ms": 0.0, "request_count": 0},
+            "overall": {
+                "p50_ms": 0.0,
+                "p95_ms": 0.0,
+                "p99_ms": 0.0,
+                "avg_ms": 0.0,
+                "request_count": 0,
+            },
             "by_model": {},
             "period": payload.period,
             "project": payload.project,
             "modality": payload.modality,
         }
 
-    by_model = await gateway.storage.get_latency_stats(payload.period, project=payload.project)
+    by_model = await gateway.storage.get_latency_stats(
+        payload.period, project=payload.project
+    )
 
     # Optional modality filter (storage currently keys by model_id only, not modality).
     if payload.modality:
@@ -240,7 +256,9 @@ async def _handle_get_latency_stats(
         for stats in by_model.values()
         if (stats.get("avg_ttfb_ms") or 0) > 0
     )
-    total_requests = sum(int(stats.get("request_count") or 0) for stats in by_model.values())
+    total_requests = sum(
+        int(stats.get("request_count") or 0) for stats in by_model.values()
+    )
     avg_ms = (sum(ttfb_samples) / len(ttfb_samples)) if ttfb_samples else 0.0
 
     return {
@@ -281,7 +299,9 @@ Returns:
 """
 
 
-async def _handle_get_logs(gateway: Gateway, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+async def _handle_get_logs(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> list[dict[str, Any]]:
     payload = _parse(GetLogsInput, arguments)
     if gateway.storage is None:
         return []

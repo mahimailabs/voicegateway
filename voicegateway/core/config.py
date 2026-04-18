@@ -35,10 +35,12 @@ class ConfigError(Exception):
 def _substitute_env_vars(value: Any) -> Any:
     """Recursively substitute ${ENV_VAR} patterns in config values."""
     if isinstance(value, str):
+
         def _replace(match: re.Match) -> str:
             var_name = match.group(1)
             env_val = os.environ.get(var_name, "")
             return env_val
+
         return _ENV_VAR_PATTERN.sub(_replace, value)
     elif isinstance(value, dict):
         return {k: _substitute_env_vars(v) for k, v in value.items()}
@@ -50,6 +52,7 @@ def _substitute_env_vars(value: Any) -> Any:
 @dataclass
 class ProjectConfig:
     """Configuration for a single project."""
+
     id: str
     name: str
     description: str = ""
@@ -87,11 +90,13 @@ class GatewayConfig:
     dashboard: dict[str, Any] = field(default_factory=dict)
     projects: dict[str, ProjectConfig] = field(default_factory=dict)
     stacks: dict[str, dict[str, str]] = field(default_factory=dict)
-    observability: dict[str, Any] = field(default_factory=lambda: {
-        "latency_tracking": True,
-        "cost_tracking": True,
-        "request_logging": True,
-    })
+    observability: dict[str, Any] = field(
+        default_factory=lambda: {
+            "latency_tracking": True,
+            "cost_tracking": True,
+            "request_logging": True,
+        }
+    )
 
     @classmethod
     def load(cls, config_path: str | Path | None = None) -> GatewayConfig:
@@ -109,11 +114,16 @@ class GatewayConfig:
         """
         # Allow VOICEGW_CONFIG env var to override if no explicit path given
         if config_path is None:
-            config_path = os.environ.get("VOICEGW_CONFIG") or os.environ.get("INFERENCE_GATEWAY_CONFIG")
-            if os.environ.get("INFERENCE_GATEWAY_CONFIG") and not os.environ.get("VOICEGW_CONFIG"):
+            config_path = os.environ.get("VOICEGW_CONFIG") or os.environ.get(
+                "INFERENCE_GATEWAY_CONFIG"
+            )
+            if os.environ.get("INFERENCE_GATEWAY_CONFIG") and not os.environ.get(
+                "VOICEGW_CONFIG"
+            ):
                 warnings.warn(
                     "INFERENCE_GATEWAY_CONFIG is deprecated; use VOICEGW_CONFIG instead.",
-                    DeprecationWarning, stacklevel=2,
+                    DeprecationWarning,
+                    stacklevel=2,
                 )
 
         path = cls._resolve_path(config_path)
@@ -128,6 +138,7 @@ class GatewayConfig:
         from pydantic import ValidationError
 
         from voicegateway.core.schema import VoiceGatewayConfig
+
         try:
             VoiceGatewayConfig.model_validate(raw)
         except ValidationError as e:
@@ -157,13 +168,12 @@ class GatewayConfig:
                 warnings.warn(
                     f"Using legacy config path {p}. Rename to 'voicegw.yaml' and "
                     f"move to ~/.config/voicegateway/ to silence this warning.",
-                    DeprecationWarning, stacklevel=3,
+                    DeprecationWarning,
+                    stacklevel=3,
                 )
                 return p
 
-        raise ConfigError(
-            "No voicegw.yaml found. Create one with: voicegw init"
-        )
+        raise ConfigError("No voicegw.yaml found. Create one with: voicegw init")
 
     @classmethod
     def _read_yaml(cls, path: Path) -> dict:
@@ -205,11 +215,14 @@ class GatewayConfig:
             dashboard=raw.get("dashboard", {}) or {},
             projects=projects,
             stacks=raw.get("stacks", {}) or {},
-            observability=raw.get("observability", {
-                "latency_tracking": True,
-                "cost_tracking": True,
-                "request_logging": True,
-            }),
+            observability=raw.get(
+                "observability",
+                {
+                    "latency_tracking": True,
+                    "cost_tracking": True,
+                    "request_logging": True,
+                },
+            ),
         )
 
     def get_provider_config(self, provider_name: str) -> dict[str, Any]:

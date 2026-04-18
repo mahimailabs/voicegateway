@@ -40,6 +40,6 @@ def check_authorization_header(authorization: str | None) -> None:
     if not authorization.startswith("Bearer "):
         raise AuthError("Missing bearer token")
 
-    provided_token = authorization[len("Bearer "):]
+    provided_token = authorization[len("Bearer ") :]
     if not hmac.compare_digest(provided_token, expected_token):
         raise AuthError("Invalid token")

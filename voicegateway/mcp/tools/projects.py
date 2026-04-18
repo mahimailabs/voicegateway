@@ -59,7 +59,9 @@ Returns:
 """
 
 
-async def _handle_list_projects(gateway: Gateway, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _handle_list_projects(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
     _parse(ListProjectsInput, arguments)
 
     projects: list[dict[str, Any]] = []
@@ -77,19 +79,21 @@ async def _handle_list_projects(gateway: Gateway, arguments: dict[str, Any]) -> 
             today_requests = int(stats.get("requests_today", 0) or 0)
 
         budget_status = gateway._budget_enforcer.get_budget_status(pid, today_spend)
-        projects.append({
-            "id": pid,
-            "name": pcfg.name,
-            "description": pcfg.description,
-            "daily_budget": pcfg.daily_budget,
-            "budget_action": pcfg.budget_action,
-            "budget_status": budget_status,
-            "today_spend": today_spend,
-            "today_requests": today_requests,
-            "tags": list(pcfg.tags),
-            "default_stack": pcfg.default_stack,
-            "source": "db" if pid in managed_ids else "yaml",
-        })
+        projects.append(
+            {
+                "id": pid,
+                "name": pcfg.name,
+                "description": pcfg.description,
+                "daily_budget": pcfg.daily_budget,
+                "budget_action": pcfg.budget_action,
+                "budget_status": budget_status,
+                "today_spend": today_spend,
+                "today_requests": today_requests,
+                "tags": list(pcfg.tags),
+                "default_stack": pcfg.default_stack,
+                "source": "db" if pid in managed_ids else "yaml",
+            }
+        )
 
     return {"projects": projects, "count": len(projects)}
 
@@ -117,7 +121,9 @@ Raises:
 """
 
 
-async def _handle_get_project(gateway: Gateway, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _handle_get_project(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
     payload = _parse(GetProjectInput, arguments)
 
     pcfg = gateway.config.get_project(payload.project_id)
@@ -138,7 +144,9 @@ async def _handle_get_project(gateway: Gateway, arguments: dict[str, Any]) -> di
         managed_row = await gateway.storage.get_managed_project(payload.project_id)
 
     today_spend = today_stats.get("cost_today", 0.0) or 0.0
-    budget_status = gateway._budget_enforcer.get_budget_status(payload.project_id, today_spend)
+    budget_status = gateway._budget_enforcer.get_budget_status(
+        payload.project_id, today_spend
+    )
 
     stt_model = managed_row.get("stt_model") if managed_row else None
     llm_model = managed_row.get("llm_model") if managed_row else None
@@ -200,7 +208,9 @@ Raises:
 """
 
 
-async def _handle_create_project(gateway: Gateway, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _handle_create_project(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
     payload = _parse(CreateProjectInput, arguments)
 
     if gateway.storage is None:
@@ -305,7 +315,9 @@ Raises:
 """
 
 
-async def _handle_delete_project(gateway: Gateway, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _handle_delete_project(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
     payload = _parse(DeleteProjectInput, arguments)
 
     if payload.project_id not in gateway.config.projects:
@@ -329,13 +341,17 @@ async def _handle_delete_project(gateway: Gateway, arguments: dict[str, Any]) ->
         )
 
     # Impact preview.
-    all_time_summary = await gateway.storage.get_cost_summary("all", project=payload.project_id)
+    all_time_summary = await gateway.storage.get_cost_summary(
+        "all", project=payload.project_id
+    )
     total_spend = all_time_summary.get("total", 0.0)
     total_requests = sum(
         int(d.get("requests", 0) or 0)
         for d in (all_time_summary.get("by_provider", {}) or {}).values()
     )
-    recent = await gateway.storage.get_recent_requests(limit=1, project=payload.project_id)
+    recent = await gateway.storage.get_recent_requests(
+        limit=1, project=payload.project_id
+    )
     last_activity = recent[0]["timestamp"] if recent else None
 
     if not payload.confirm:
@@ -366,8 +382,14 @@ async def _handle_delete_project(gateway: Gateway, arguments: dict[str, Any]) ->
 # ---------------------------------------------------------------------------
 
 PROJECT_TOOLS: list[ToolDef] = [
-    make_tool("list_projects", LIST_PROJECTS_DOC, ListProjectsInput, _handle_list_projects),
+    make_tool(
+        "list_projects", LIST_PROJECTS_DOC, ListProjectsInput, _handle_list_projects
+    ),
     make_tool("get_project", GET_PROJECT_DOC, GetProjectInput, _handle_get_project),
-    make_tool("create_project", CREATE_PROJECT_DOC, CreateProjectInput, _handle_create_project),
-    make_tool("delete_project", DELETE_PROJECT_DOC, DeleteProjectInput, _handle_delete_project),
+    make_tool(
+        "create_project", CREATE_PROJECT_DOC, CreateProjectInput, _handle_create_project
+    ),
+    make_tool(
+        "delete_project", DELETE_PROJECT_DOC, DeleteProjectInput, _handle_delete_project
+    ),
 ]

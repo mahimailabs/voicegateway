@@ -42,34 +42,40 @@ async def _gather_models(gateway: Gateway) -> list[dict[str, Any]]:
                 continue
             if mcfg.get("_source") == "db":
                 continue  # will be added from storage below
-            out.append({
-                "model_id": model_id,
-                "modality": modality,
-                "provider_id": mcfg.get("provider", ""),
-                "model_name": mcfg.get("model", ""),
-                "default_voice": mcfg.get("default_voice"),
-                "source": "yaml",
-                "enabled": True,
-            })
+            out.append(
+                {
+                    "model_id": model_id,
+                    "modality": modality,
+                    "provider_id": mcfg.get("provider", ""),
+                    "model_name": mcfg.get("model", ""),
+                    "default_voice": mcfg.get("default_voice"),
+                    "source": "yaml",
+                    "enabled": True,
+                }
+            )
 
     if gateway.storage is not None:
         for row in await gateway.storage.list_managed_models():
-            out.append({
-                "model_id": row["model_id"],
-                "modality": row["modality"],
-                "provider_id": row["provider_id"],
-                "model_name": row["model_name"],
-                "display_name": row.get("display_name"),
-                "default_language": row.get("default_language"),
-                "default_voice": row.get("default_voice"),
-                "source": "db",
-                "enabled": row.get("enabled", True),
-            })
+            out.append(
+                {
+                    "model_id": row["model_id"],
+                    "modality": row["modality"],
+                    "provider_id": row["provider_id"],
+                    "model_name": row["model_name"],
+                    "display_name": row.get("display_name"),
+                    "default_language": row.get("default_language"),
+                    "default_voice": row.get("default_voice"),
+                    "source": "db",
+                    "enabled": row.get("enabled", True),
+                }
+            )
 
     return out
 
 
-def _provider_exists(gateway: Gateway, provider_id: str, managed: list[dict[str, Any]] | None = None) -> bool:
+def _provider_exists(
+    gateway: Gateway, provider_id: str, managed: list[dict[str, Any]] | None = None
+) -> bool:
     if provider_id in gateway.config.providers:
         return True
     # managed is the list cached from gateway.storage.list_managed_providers()
@@ -100,7 +106,9 @@ Returns:
 """
 
 
-async def _handle_list_models(gateway: Gateway, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _handle_list_models(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
     payload = _parse(ListModelsInput, arguments)
     models = await _gather_models(gateway)
 
@@ -142,7 +150,9 @@ Raises:
 """
 
 
-async def _handle_register_model(gateway: Gateway, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _handle_register_model(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
     payload = _parse(RegisterModelInput, arguments)
 
     if gateway.storage is None:
@@ -230,7 +240,9 @@ Raises:
 """
 
 
-async def _handle_delete_model(gateway: Gateway, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _handle_delete_model(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
     payload = _parse(DeleteModelInput, arguments)
 
     # YAML check: find the model in any modality.
@@ -303,6 +315,8 @@ async def _handle_delete_model(gateway: Gateway, arguments: dict[str, Any]) -> d
 
 MODEL_TOOLS: list[ToolDef] = [
     make_tool("list_models", LIST_MODELS_DOC, ListModelsInput, _handle_list_models),
-    make_tool("register_model", REGISTER_MODEL_DOC, RegisterModelInput, _handle_register_model),
+    make_tool(
+        "register_model", REGISTER_MODEL_DOC, RegisterModelInput, _handle_register_model
+    ),
     make_tool("delete_model", DELETE_MODEL_DOC, DeleteModelInput, _handle_delete_model),
 ]

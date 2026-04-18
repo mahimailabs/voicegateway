@@ -9,6 +9,7 @@ from typing import Any
 @dataclass
 class RequestRecord:
     """A single inference request record."""
+
     id: str
     timestamp: float
     modality: str  # 'stt', 'llm', 'tts'

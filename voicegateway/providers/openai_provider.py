@@ -18,6 +18,7 @@ class OpenAIProvider(BaseProvider):
     def _ensure_plugin(self):
         try:
             from livekit.plugins import openai
+
             return openai
         except ImportError as e:
             raise ImportError(
@@ -55,12 +56,15 @@ class OpenAIProvider(BaseProvider):
 
     async def health_check(self) -> bool:
         import httpx
+
         try:
             async with httpx.AsyncClient() as client:
                 url = self.base_url or "https://api.openai.com"
-                resp = await client.get(f"{url}/v1/models", headers={
-                    "Authorization": f"Bearer {self.api_key}"
-                }, timeout=5.0)
+                resp = await client.get(
+                    f"{url}/v1/models",
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    timeout=5.0,
+                )
                 return resp.status_code == 200
         except Exception:
             return False
