@@ -40,8 +40,8 @@ providers:
 - **Modalities:** LLM
 - **Required config:** `api_key`
 - **Recommended models:**
-  - LLM: `anthropic/claude-sonnet-4-20250514` (balanced), `anthropic/claude-haiku-3-5` (fast and cheap)
-- **Pricing notes:** Per-token pricing. Claude Haiku is significantly cheaper for high-volume voice agent use cases.
+  - LLM: `anthropic/claude-3.5-sonnet` (balanced)
+- **Pricing notes:** Per-token pricing. Check Anthropic's pricing page for latest rates.
 
 ```yaml
 providers:

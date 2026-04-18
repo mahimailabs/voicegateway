@@ -82,24 +82,33 @@ spec:
 
 ## Can I export metrics to Prometheus/Grafana?
 
-VoiceGateway exposes a `/v1/metrics` endpoint that returns JSON metrics. For Prometheus scraping, you can:
+VoiceGateway exposes a `GET /v1/metrics` endpoint that returns metrics in **Prometheus text format** (`text/plain`). You can scrape it directly with Prometheus:
 
-1. Use a sidecar that reads `/v1/metrics` and exposes them in Prometheus format
-2. Use the SQLite database directly with a custom exporter
-3. Use the dashboard's built-in charts for visual monitoring
-
-A native Prometheus `/metrics` endpoint is planned for a future release.
-
-The `/v1/metrics` endpoint returns:
-
-```json
-{
-  "total_requests": 1234,
-  "total_cost_usd": 45.67,
-  "requests_by_modality": {"stt": 400, "llm": 600, "tts": 234},
-  "avg_latency_ms": {"stt": 150, "llm": 450, "tts": 200}
-}
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: voicegateway
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: /v1/metrics
 ```
+
+Example response:
+
+```
+# HELP voicegw_uptime_seconds Process uptime
+# TYPE voicegw_uptime_seconds gauge
+voicegw_uptime_seconds 3421.5
+# HELP voicegw_providers_configured Configured providers
+# TYPE voicegw_providers_configured gauge
+voicegw_providers_configured 5
+# HELP voicegw_cost_usd_total Total cost in USD (today)
+# TYPE voicegw_cost_usd_total counter
+voicegw_cost_usd_total{period="today"} 12.340000
+voicegw_requests_total{provider="deepgram"} 142
+```
+
+For Grafana, point it at Prometheus and query `voicegw_cost_usd_total` or `voicegw_requests_total`.
 
 ---
 

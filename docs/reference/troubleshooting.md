@@ -132,9 +132,16 @@ voicegw serve
    ```bash
    docker compose logs dashboard
    ```
-2. Ensure the config file is mounted:
+2. Ensure the config file is mounted in your `docker-compose.yml`:
+   ```yaml
+   services:
+     voicegateway:
+       volumes:
+         - ./voicegw.yaml:/app/voicegw.yaml:ro
+   ```
+   Then restart:
    ```bash
-   docker compose up -d -v ./voicegw.yaml:/app/voicegw.yaml
+   docker compose up -d
    ```
 3. Check port availability (default: 9090):
    ```bash
@@ -191,13 +198,14 @@ voicegw serve
 
 **Fix:**
 
-1. VoiceGateway is async throughout. Use `await` for all Gateway methods:
+1. Gateway model factory methods (`stt()`, `llm()`, `tts()`) are **synchronous** and handle event loop bridging internally via `_run_async()`. However, this can conflict if called inside an already-running event loop (e.g., Jupyter, web frameworks):
    ```python
-   # Wrong
-   result = gw.stt("deepgram/nova-3")
+   # This works in a normal script
+   stt = gw.stt("deepgram/nova-3", project="my-app")
 
-   # Right (in an async context)
-   result = gw.stt("deepgram/nova-3", project="my-app")
+   # In an async context, the Gateway handles it — but if you get
+   # loop errors, wrap your setup in a separate thread or use
+   # nest_asyncio (see below).
    ```
 2. If running in a script (not an async framework), use `asyncio.run()`:
    ```python
