@@ -94,6 +94,7 @@ services:
   dashboard:
     image: mahimairaja/voicegateway-dashboard:latest
     ports: ["9090:9090"]
+    volumes: ["./voicegw-data:/data:ro"]
     depends_on: [voicegateway]
 ```
 

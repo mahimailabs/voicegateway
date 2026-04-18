@@ -15,6 +15,7 @@ docker run -d \
   --name voicegateway-dashboard \
   --link voicegateway:voicegateway \
   -p 9090:9090 \
+  --volumes-from voicegateway \
   mahimairaja/voicegateway-dashboard:latest
 ```
 

@@ -48,6 +48,8 @@ services:
   dashboard:
     image: mahimairaja/voicegateway-dashboard:latest
     ports: ["9090:9090"]
+    volumes:
+      - ./voicegw-data:/data:ro
     depends_on:
       - voicegateway
 ```
@@ -62,18 +64,22 @@ Dashboard at `http://localhost:9090`.
 
 ## MCP Server (agent-native management)
 
-The combined server includes MCP SSE at `/mcp/sse`. Set a bearer token:
+The combined server includes MCP SSE at `/mcp/sse`. Generate and export a bearer token, then pass it to both Docker and Claude Code:
 
 ```bash
+# Generate token on the host
+export VOICEGW_MCP_TOKEN=$(openssl rand -hex 32)
+
+# Run with the token
 docker run -d \
   --name voicegateway \
   -p 8080:8080 \
   -v $(pwd)/voicegw-data:/data \
-  -e VOICEGW_MCP_TOKEN=$(openssl rand -hex 32) \
+  -e VOICEGW_MCP_TOKEN \
   mahimairaja/voicegateway:latest
 ```
 
-Then add to Claude Code:
+Then add to Claude Code (uses the same token from the host env):
 
 ```bash
 claude mcp add voicegateway \

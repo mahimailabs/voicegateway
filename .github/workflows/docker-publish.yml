@@ -4,7 +4,6 @@ on:
   push:
     tags:
       - 'v*.*.*'
-  workflow_dispatch:
 
 concurrency:
   group: docker-publish-${{ github.ref }}
@@ -67,17 +66,18 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.CORE_IMAGE }}
+          flavor: |
+            latest=auto
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
           labels: |
             org.opencontainers.image.title=VoiceGateway
             org.opencontainers.image.description=Self-hosted inference gateway for voice AI with MCP
             org.opencontainers.image.url=https://voicegateway.dev
             org.opencontainers.image.documentation=https://docs.voicegateway.dev
             org.opencontainers.image.source=https://github.com/mahimailabs/voicegateway
-            org.opencontainers.image.authors=Mahimai Labs
+            org.opencontainers.image.authors=Mahimai Raja J
             org.opencontainers.image.licenses=MIT
 
       - name: Build and push core image
@@ -136,15 +136,16 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.DASHBOARD_IMAGE }}
+          flavor: |
+            latest=auto
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
           labels: |
             org.opencontainers.image.title=VoiceGateway Dashboard
             org.opencontainers.image.description=Web dashboard for VoiceGateway with full CRUD
             org.opencontainers.image.source=https://github.com/mahimailabs/voicegateway
-            org.opencontainers.image.authors=Mahimai Labs
+            org.opencontainers.image.authors=Mahimai Raja J
             org.opencontainers.image.licenses=MIT
 
       - name: Build and push dashboard image
