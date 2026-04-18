@@ -31,7 +31,7 @@ COPY voicegateway/ ./voicegateway/
 ARG VERSION=0.1.0
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 
-RUN pip install --prefix=/install ".[cloud,mcp]"
+RUN pip install --prefix=/install ".[cloud,mcp,dashboard]"
 
 # -------- Stage 3: Runtime --------
 FROM python:3.12-slim AS runtime

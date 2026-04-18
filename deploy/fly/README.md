@@ -14,17 +14,19 @@ One-command deployment with public URL, persistent storage, and MCP-ready out of
 ./deploy.sh
 ```
 
-First-time deployment takes ~3 minutes. Redeploys take ~30 seconds.
-
 ## Deployment speed
 
-By default, `deploy.sh` uses the published image `mahimairaja/voicegateway:latest`
-from Docker Hub. First-time deploys take ~30 seconds.
+By default, `deploy.sh` pulls the published image `mahimairaja/voicegateway:latest`
+from Docker Hub:
+- **First-time deploy:** ~1 minute (app creation + image pull)
+- **Redeploys:** ~30 seconds
 
-To build from source instead (slower, useful for testing unreleased changes):
+To build from source instead (useful for testing unreleased changes):
 
 ```bash
 ./deploy.sh --from-source
+# First-time: ~3 minutes (builds from Dockerfile)
+# Redeploys: ~1-2 minutes
 ```
 
 ## What you get
