@@ -25,15 +25,15 @@ def build_combined_app(gateway: Gateway) -> Any:
     """Build a FastAPI app that serves API + Dashboard + MCP SSE."""
     app = build_app(gateway)
 
-    # Mount MCP SSE endpoints if mcp is installed
+    # Mount MCP SSE endpoints if mcp package is installed
+    try:
+        from mcp.server.sse import SseServerTransport
+    except ImportError:
+        logger.info("MCP SSE transport not available (mcp package not installed)")
+        return app
+
     try:
         from voicegateway.mcp.server import create_server
-
-        try:
-            from mcp.server.sse import SseServerTransport
-        except ImportError:
-            logger.info("MCP SSE transport not available (mcp package missing)")
-            return app
 
         from starlette.requests import Request
         from starlette.responses import JSONResponse, Response

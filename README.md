@@ -47,7 +47,7 @@ cd voicegateway/deploy/fly
 ./deploy.sh
 ```
 
-You get a `*.fly.dev` URL, an MCP endpoint your coding agent can connect to, encrypted API key storage, and ~$0–2/month cost at low traffic thanks to Fly's suspend-on-idle. [Deployment guide →](deploy/fly/README.md)
+You get a `*.fly.dev` URL, an MCP endpoint your coding agent can connect to, and encrypted API key storage. Fly uses pay-as-you-go pricing (~$1-3/month for light use; volumes billed even when suspended). [Deployment guide →](deploy/fly/README.md)
 
 **Other options**: Docker Compose locally, Hetzner/Oracle for cheap self-host, or any Docker host. See [docs.voicegateway.dev/guide/installation](https://docs.voicegateway.dev/guide/installation).
 
@@ -313,7 +313,7 @@ A self-hosted web UI at `http://localhost:9090` with:
 
 API keys are encrypted with Fernet before storage. The sidebar project switcher filters every page.
 
-> *TODO: screenshot of Settings page with Providers tab*
+<!-- Screenshot: Settings page with Providers tab (see https://github.com/mahimailabs/voicegateway/issues) -->
 
 ---
 

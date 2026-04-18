@@ -7,9 +7,9 @@ Deploy VoiceGateway to Fly.io with one command. Get a public HTTPS URL with pers
 | Feature | Details |
 |---------|---------|
 | Time to deploy | ~3 minutes first time, ~30s redeploys |
-| Cost | $0-$2/month for light use (within Fly's free allowances) |
+| Cost | ~$1-3/month pay-as-you-go ([pricing calculator](https://fly.io/calculator)) |
 | HTTPS | Automatic via Fly's edge |
-| Storage | 1GB persistent volume for SQLite |
+| Storage | 1GB persistent volume (~$0.15/month, billed even when suspended) |
 | MCP | SSE endpoint at `/mcp/sse` with bearer auth |
 | Cold start | ~2 seconds from suspended state |
 
@@ -99,14 +99,14 @@ Once connected, ask Claude Code:
 
 ### Expected monthly costs
 
-Fly's free tier includes 3 shared-cpu-1x VMs and 3GB persistent storage. VoiceGateway uses 1 VM + 1GB, fitting within the free tier for development and light production use.
+Fly.io uses pay-as-you-go pricing. New accounts get a limited trial (2 VM-hours or 7 days), after which all usage is billed. See [Fly's pricing docs](https://fly.io/docs/about/pricing/) for current details.
 
-| Scenario | Cost |
+| Resource | Cost |
 |----------|------|
-| Development / testing | $0 (within free tier) |
-| Light production (<1K req/day) | $0-$2 |
-| Moderate production (1K-10K req/day) | $2-$8 |
-| Heavy production | Scale up (see below) |
+| shared-cpu-1x / 512MB VM | ~$1.94/month continuously |
+| 1GB persistent volume | ~$0.15/month (billed even when suspended) |
+| Light production (<1K req/day) | ~$2-3/month total |
+| Moderate production (1K-10K req/day) | ~$3-8/month |
 
 ### Scaling up
 
@@ -125,7 +125,7 @@ fly regions add fra syd
 
 - **No local models on default tier.** Whisper, Kokoro, Piper, and Ollama require more RAM than 512MB. For local models, use [Docker Compose](/examples/docker-deployment) on a larger machine.
 - **Single machine by default.** For high availability, increase `min_machines_running` and add regions.
-- **No GPU.** GPU-dependent models need a separate host.
+- **CPU-only by default.** This template provisions shared CPU VMs. Fly does offer GPU Machines (deprecated, available until Aug 1 2026) which you can provision separately if needed.
 
 ## Troubleshooting
 
@@ -139,9 +139,10 @@ fly logs
 
 ### MCP tools return errors
 
-1. Verify the token: `cat deploy/fly/.env.deploy`
-2. Verify it matches: `fly secrets list`
-3. Test manually: `curl -H "Authorization: Bearer <token>" https://<app>.fly.dev/mcp/sse`
+1. View your local token: `cat deploy/fly/.env.deploy`
+2. Confirm the secret exists on Fly: `fly secrets list | grep VOICEGW_MCP_TOKEN` (this shows the secret exists but not its value)
+3. Re-sync if needed: `fly secrets set "VOICEGW_MCP_TOKEN=$(grep VOICEGW_MCP_TOKEN deploy/fly/.env.deploy | cut -d= -f2)"`
+4. Test manually: `curl -H "Authorization: Bearer <token>" https://<app>.fly.dev/mcp/sse`
 
 ### Data lost after redeploy
 
