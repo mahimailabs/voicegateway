@@ -2,6 +2,8 @@
 
 **Self-hosted inference gateway for voice AI. One config. Any provider. Local models included.**
 
+**Full docs: [docs.voicegateway.dev](https://docs.voicegateway.dev)**
+
 A drop-in routing layer that gives self-hosters the same `provider/model` developer experience as LiveKit Inference Cloud — but with *your* API keys, local models (Ollama, Whisper, Kokoro, Piper), automatic fallback chains, project-based cost tracking, and a web dashboard.
 
 ---
