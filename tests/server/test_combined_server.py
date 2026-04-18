@@ -53,7 +53,8 @@ async def test_mcp_sse_requires_auth(gateway, monkeypatch):
     """MCP SSE endpoint rejects requests without a valid token when auth is enabled."""
     monkeypatch.setenv("VOICEGW_MCP_TOKEN", "test-secret-token")
     # Rebuild app with token set so auth middleware picks it up
-    from voicegateway.mcp.auth import check_authorization_header, AuthError
+    from voicegateway.mcp.auth import AuthError, check_authorization_header
+
     with pytest.raises(AuthError):
         check_authorization_header(None)
 
@@ -62,6 +63,7 @@ async def test_mcp_sse_no_auth_when_disabled(gateway, monkeypatch):
     """Auth is disabled when no token is set."""
     monkeypatch.delenv("VOICEGW_MCP_TOKEN", raising=False)
     from voicegateway.mcp.auth import check_authorization_header
+
     # Should not raise
     check_authorization_header(None)
 
@@ -69,7 +71,8 @@ async def test_mcp_sse_no_auth_when_disabled(gateway, monkeypatch):
 async def test_mcp_sse_wrong_token_rejected(gateway, monkeypatch):
     """Wrong bearer token is rejected."""
     monkeypatch.setenv("VOICEGW_MCP_TOKEN", "correct-token")
-    from voicegateway.mcp.auth import check_authorization_header, AuthError
+    from voicegateway.mcp.auth import AuthError, check_authorization_header
+
     with pytest.raises(AuthError):
         check_authorization_header("Bearer wrong-token")
 
@@ -78,6 +81,7 @@ async def test_mcp_sse_correct_token_accepted(gateway, monkeypatch):
     """Correct bearer token passes auth."""
     monkeypatch.setenv("VOICEGW_MCP_TOKEN", "correct-token")
     from voicegateway.mcp.auth import check_authorization_header
+
     check_authorization_header("Bearer correct-token")
 
 
