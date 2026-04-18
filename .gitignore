@@ -3,6 +3,10 @@ prompt.md
 voicegateway/_version.py
 .venv
 
+# Fly.io deploy
+deploy/fly/.env.deploy
+deploy/fly/.fly/
+
 # VitePress
 docs/.vitepress/cache/
 docs/.vitepress/dist/

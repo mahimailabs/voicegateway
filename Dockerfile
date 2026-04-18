@@ -7,13 +7,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install voicegateway
+# Install voicegateway with cloud providers, dashboard, and MCP
 COPY pyproject.toml README.md ./
 COPY voicegateway/ ./voicegateway/
-RUN pip install --no-cache-dir -e ".[cloud,dashboard]"
+COPY dashboard/ ./dashboard/
+RUN pip install --no-cache-dir -e ".[cloud,dashboard,mcp]"
 
-# Create data directory
+# Create data directory (Fly volume mounts here)
 RUN mkdir -p /data
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash voicegw \
+    && chown -R voicegw:voicegw /app /data
+
+USER voicegw
 
 # Health check endpoint
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
@@ -21,4 +28,5 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 
 EXPOSE 8080
 
-CMD ["voicegw", "serve", "--host", "0.0.0.0", "--port", "8080"]
+# Combined server: API + Dashboard + MCP SSE on single port
+CMD ["python", "-m", "voicegateway.combined_server"]
