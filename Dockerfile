@@ -51,7 +51,7 @@ LABEL org.opencontainers.image.title="VoiceGateway" \
       org.opencontainers.image.url="https://voicegateway.dev" \
       org.opencontainers.image.documentation="https://docs.voicegateway.dev" \
       org.opencontainers.image.source="https://github.com/mahimailabs/voicegateway" \
-      org.opencontainers.image.authors="Mahimai Labs" \
+      org.opencontainers.image.authors="Mahimai Raja J" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.vendor="Mahimai Labs"
 
