@@ -5,8 +5,11 @@
 app = "CHANGEME"
 primary_region = "ord"
 
+# Use published image for fast deploys (~30s vs ~3min from source)
 [build]
-  dockerfile = "../../Dockerfile"
+  image = "mahimairaja/voicegateway:latest"
+  # To build from source instead, comment out 'image' and uncomment:
+  # dockerfile = "../../Dockerfile"
 
 [env]
   VOICEGW_CONFIG = "/data/voicegw.yaml"

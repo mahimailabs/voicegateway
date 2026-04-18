@@ -65,11 +65,40 @@ voicegw status            # verify providers
 voicegw dashboard         # http://localhost:9090
 ```
 
-### Option 2: Docker Compose (recommended for self-hosting)
+### Option 2: Docker (production-ready)
+
+Pull the official image from Docker Hub — no build required:
 
 ```bash
-git clone https://github.com/mahimailabs/voicegateway.git
-cd voicegateway
+docker run -p 8080:8080 \
+  -v $(pwd)/voicegw-data:/data \
+  -e OPENAI_API_KEY=sk-... \
+  -e DEEPGRAM_API_KEY=dg_... \
+  mahimairaja/voicegateway:latest
+```
+
+Multi-arch images for `linux/amd64` and `linux/arm64`.
+[Docker Hub →](https://hub.docker.com/r/mahimairaja/voicegateway)
+
+### Option 3: Docker Compose (recommended for self-hosting)
+
+```yaml
+# docker-compose.yml
+services:
+  voicegateway:
+    image: mahimairaja/voicegateway:latest
+    ports: ["8080:8080"]
+    volumes: ["./voicegw-data:/data"]
+    env_file: .env
+
+  dashboard:
+    image: mahimairaja/voicegateway-dashboard:latest
+    ports: ["9090:9090"]
+    volumes: ["./voicegw-data:/data:ro"]
+    depends_on: [voicegateway]
+```
+
+```bash
 cp .env.example .env      # edit with your API keys
 docker compose up -d
 open http://localhost:9090

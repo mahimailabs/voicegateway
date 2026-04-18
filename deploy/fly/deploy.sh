@@ -19,6 +19,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env.deploy"
 IS_FIRST_DEPLOY=false
+FROM_SOURCE=false
+
+if [[ "${1:-}" == "--from-source" ]]; then
+  FROM_SOURCE=true
+  log_info "Building from source (slower but uses latest code)"
+fi
 
 # ---------------------------------------------------------------------------
 # Preflight checks
@@ -106,6 +112,14 @@ first_time_deploy() {
 
   log_success "Created app: $app_name in region $region"
 
+  # Switch to build-from-source if requested
+  if [[ "$FROM_SOURCE" == "true" ]]; then
+    sed -i.bak 's|^  image = .*|  # image = "mahimairaja/voicegateway:latest"|' "$SCRIPT_DIR/fly.toml"
+    sed -i.bak 's|^  # dockerfile = .*|  dockerfile = "../../Dockerfile"|' "$SCRIPT_DIR/fly.toml"
+    rm -f "$SCRIPT_DIR/fly.toml.bak"
+    log_info "Switched fly.toml to build from source"
+  fi
+
   # Create persistent volume
   log_info "Creating persistent volume for SQLite storage..."
   flyctl volumes create voicegw_data \
@@ -132,6 +146,14 @@ redeploy() {
   local app_name
   app_name=$(grep -E '^app = ' "$SCRIPT_DIR/fly.toml" | cut -d'"' -f2)
   log_info "Redeploying $app_name..."
+
+  # Switch to build-from-source if requested
+  if [[ "$FROM_SOURCE" == "true" ]]; then
+    sed -i.bak 's|^  image = .*|  # image = "mahimairaja/voicegateway:latest"|' "$SCRIPT_DIR/fly.toml"
+    sed -i.bak 's|^  # dockerfile = .*|  dockerfile = "../../Dockerfile"|' "$SCRIPT_DIR/fly.toml"
+    rm -f "$SCRIPT_DIR/fly.toml.bak"
+    log_info "Switched fly.toml to build from source"
+  fi
 
   # Sync the MCP token to Fly secrets in case it was rotated locally
   log_info "Syncing MCP token to Fly secrets..."
