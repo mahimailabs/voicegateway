@@ -70,7 +70,13 @@ def create_server(gateway: Gateway) -> Any:
         tool_def = tool_registry.get(name)
         if tool_def is None:
             payload = json.dumps(
-                {"error": {"code": "UNKNOWN_TOOL", "message": f"No such tool: {name}", "details": {}}}
+                {
+                    "error": {
+                        "code": "UNKNOWN_TOOL",
+                        "message": f"No such tool: {name}",
+                        "details": {},
+                    }
+                }
             )
             return [TextContent(type="text", text=payload)]
 
@@ -98,7 +104,9 @@ async def serve_stdio(gateway: Gateway) -> None:
 
     server = create_server(gateway)
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+        await server.run(
+            read_stream, write_stream, server.create_initialization_options()
+        )
 
 
 async def serve_http(
@@ -153,11 +161,13 @@ async def serve_http(
         try:
             check_authorization_header(auth_header)
         except AuthError as exc:
-            await send({
-                "type": "http.response.start",
-                "status": exc.status_code,
-                "headers": [(b"content-type", b"text/plain")],
-            })
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": exc.status_code,
+                    "headers": [(b"content-type", b"text/plain")],
+                }
+            )
             await send({"type": "http.response.body", "body": exc.message.encode()})
             return
         await sse.handle_post_message(scope, receive, send)

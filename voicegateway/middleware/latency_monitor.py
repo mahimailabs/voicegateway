@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class LatencyMeasurement:
     """Result of a latency measurement."""
+
     ttfb_ms: float
     total_ms: float
     model_id: str
@@ -42,7 +43,9 @@ class _LatencyTimer:
             self._first_byte = time.perf_counter()
             ttfb = (self._first_byte - self._start) * 1000
             if ttfb > self._ttfb_warning_ms:
-                logger.warning(f"High TTFB: {ttfb:.1f}ms (threshold: {self._ttfb_warning_ms}ms)")
+                logger.warning(
+                    f"High TTFB: {ttfb:.1f}ms (threshold: {self._ttfb_warning_ms}ms)"
+                )
 
     def finish(self, model_id: str = "") -> LatencyMeasurement:
         """Finish timing and return the measurement."""

@@ -50,8 +50,7 @@ class RateLimiter:
 
             if len(self._buckets[provider]) >= rpm:
                 raise RateLimitExceeded(
-                    f"Rate limit exceeded for {provider}: "
-                    f"{rpm} requests per minute"
+                    f"Rate limit exceeded for {provider}: {rpm} requests per minute"
                 )
 
             self._buckets[provider].append(now)

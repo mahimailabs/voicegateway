@@ -20,6 +20,7 @@ class KokoroProvider(BaseProvider):
     def _ensure_library(self):
         try:
             import kokoro_onnx
+
             return kokoro_onnx
         except ImportError as e:
             raise ImportError(
@@ -62,6 +63,7 @@ class KokoroTTS:
     async def _load_model(self):
         if self._model is None:
             import kokoro_onnx
+
             logger.info("Loading Kokoro TTS model...")
             self._model = await asyncio.to_thread(kokoro_onnx.Kokoro)
         return self._model
@@ -73,5 +75,6 @@ class KokoroTTS:
             model.create, text, voice=self._voice, speed=1.0
         )
         import numpy as np
+
         audio_int16 = (samples * 32767).astype(np.int16)
         return bytes(audio_int16.tobytes())

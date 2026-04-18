@@ -16,6 +16,7 @@ class AnthropicProvider(BaseProvider):
     def _ensure_plugin(self):
         try:
             from livekit.plugins import anthropic
+
             return anthropic
         except ImportError as e:
             raise ImportError(
@@ -37,6 +38,7 @@ class AnthropicProvider(BaseProvider):
 
     async def health_check(self) -> bool:
         import httpx
+
         if not self.api_key:
             return False
         try:

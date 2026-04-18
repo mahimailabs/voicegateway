@@ -35,6 +35,7 @@ def _find_example_config() -> Path | None:
 
 def _load_gateway(config_path: str | None):
     from voicegateway import Gateway
+
     try:
         return Gateway(config_path=config_path)
     except Exception as e:
@@ -90,13 +91,19 @@ def status(
 
     for provider_name, provider_config in sorted(cfg.providers.items()):
         has_key = bool(provider_config.get("api_key")) or provider_name in (
-            "ollama", "whisper", "kokoro", "piper"
+            "ollama",
+            "whisper",
+            "kokoro",
+            "piper",
         )
         model_count = 0
         for modality_models in cfg.models.values():
             if isinstance(modality_models, dict):
                 for model_cfg in modality_models.values():
-                    if isinstance(model_cfg, dict) and model_cfg.get("provider") == provider_name:
+                    if (
+                        isinstance(model_cfg, dict)
+                        and model_cfg.get("provider") == provider_name
+                    ):
                         model_count += 1
         status_str = "[green]Yes[/green]" if has_key else "[red]No API key[/red]"
         table.add_row(provider_name, status_str, str(model_count))
@@ -157,7 +164,9 @@ def projects_cmd(
     gw = _load_gateway(config)
 
     if not gw.config.projects:
-        console.print("[yellow]No projects configured. Add a 'projects:' section to voicegw.yaml.[/yellow]")
+        console.print(
+            "[yellow]No projects configured. Add a 'projects:' section to voicegw.yaml.[/yellow]"
+        )
         raise typer.Exit(0)
 
     table = Table(title="Projects")
@@ -199,8 +208,10 @@ def project_cmd(
 
     if gw.storage is not None:
         today = asyncio.run(gw.storage.get_cost_summary("today", project=project_id))
-        console.print(f"\n[bold]Today[/bold]: ${today['total']:.4f} "
-                      f"({sum(v['requests'] for v in today['by_provider'].values())} requests)")
+        console.print(
+            f"\n[bold]Today[/bold]: ${today['total']:.4f} "
+            f"({sum(v['requests'] for v in today['by_provider'].values())} requests)"
+        )
 
 
 @app.command(name="logs")
@@ -216,9 +227,9 @@ def logs_cmd(
         console.print("[yellow]Cost tracking is not enabled in voicegw.yaml[/yellow]")
         raise typer.Exit(0)
 
-    rows = asyncio.run(gw.storage.get_recent_requests(
-        limit=tail, modality=modality, project=project
-    ))
+    rows = asyncio.run(
+        gw.storage.get_recent_requests(limit=tail, modality=modality, project=project)
+    )
     if not rows:
         console.print("[dim]No logs found.[/dim]")
         return
@@ -233,6 +244,7 @@ def logs_cmd(
     table.add_column("Status")
 
     import datetime
+
     for r in rows:
         ts = datetime.datetime.fromtimestamp(r["timestamp"]).strftime("%H:%M:%S")
         table.add_row(
@@ -265,6 +277,7 @@ def serve_cmd(
 
     gw = _load_gateway(config)
     from voicegateway.server import build_app
+
     api_app = build_app(gw)
     console.print(f"[green]VoiceGateway API starting at http://{host}:{port}[/green]")
     uvicorn.run(api_app, host=host, port=port)
@@ -290,6 +303,7 @@ def dashboard_cmd(
     console.print(f"[green]VoiceGateway dashboard at http://{host}:{port}[/green]")
 
     import dashboard.api.main as dashboard_app
+
     dashboard_app._gateway = gw
     uvicorn.run(dashboard_app.app, host=host, port=port)
 
@@ -297,7 +311,9 @@ def dashboard_cmd(
 @app.command(name="mcp")
 def mcp_cmd(
     transport: str = typer.Option(
-        "stdio", "--transport", "-t",
+        "stdio",
+        "--transport",
+        "-t",
         help="Transport layer: 'stdio' for local agents, 'http' for remote/SSE.",
     ),
     host: str = typer.Option("127.0.0.1", "--host", help="HTTP bind host (http only)"),
@@ -317,7 +333,9 @@ def mcp_cmd(
     Authentication (HTTP only) via VOICEGW_MCP_TOKEN env var.
     """
     if transport not in ("stdio", "http"):
-        console.print(f"[red]Unknown transport: {transport}. Use 'stdio' or 'http'.[/red]")
+        console.print(
+            f"[red]Unknown transport: {transport}. Use 'stdio' or 'http'.[/red]"
+        )
         raise typer.Exit(1)
 
     try:
