@@ -32,13 +32,9 @@ class RequestLogger:
             f"({latency_ms:.0f}ms, ${cost_usd:.6f})",
         )
 
-    def log_fallback(
-        self, original: str, fallback: str, reason: str
-    ) -> None:
+    def log_fallback(self, original: str, fallback: str, reason: str) -> None:
         """Log a fallback event."""
-        logger.warning(
-            f"[FALLBACK] {original} → {fallback} (reason: {reason})"
-        )
+        logger.warning(f"[FALLBACK] {original} → {fallback} (reason: {reason})")
 
     def log_error(self, model_id: str, error: str) -> None:
         """Log an error."""

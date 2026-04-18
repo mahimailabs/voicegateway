@@ -16,6 +16,7 @@ class DeepgramProvider(BaseProvider):
     def _ensure_plugin(self):
         try:
             from livekit.plugins import deepgram
+
             return deepgram
         except ImportError as e:
             raise ImportError(
@@ -44,6 +45,7 @@ class DeepgramProvider(BaseProvider):
 
     async def health_check(self) -> bool:
         import httpx
+
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(

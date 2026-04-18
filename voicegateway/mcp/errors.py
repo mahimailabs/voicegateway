@@ -62,11 +62,13 @@ class ProjectAlreadyExistsError(MCPToolError):
 
 class ConfirmationRequiredError(MCPToolError):
     """Raised when a destructive op is called without confirm=True."""
+
     error_code = "CONFIRMATION_REQUIRED"
 
 
 class ReadOnlyResourceError(MCPToolError):
     """Raised when trying to delete a YAML-defined resource."""
+
     error_code = "READ_ONLY_RESOURCE"
 
 

@@ -10,11 +10,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 class _StrictBase(BaseModel):
     """Base with extra='forbid' for catching typos."""
+
     model_config = ConfigDict(extra="forbid")
 
 
 class ProviderConfig(BaseModel):
     """Provider config — allows arbitrary provider-specific keys."""
+
     model_config = ConfigDict(extra="allow")
 
     api_key: str | None = None
@@ -24,6 +26,7 @@ class ProviderConfig(BaseModel):
 
 class ModelEntryConfig(BaseModel):
     """Single model entry under models.{stt|llm|tts}."""
+
     model_config = ConfigDict(extra="allow")
 
     provider: str
@@ -83,6 +86,7 @@ class DashboardConfig(BaseModel):
 
 class FallbackConfig(BaseModel):
     """Fallback chains — allows any modality key."""
+
     model_config = ConfigDict(extra="allow")
 
     stt: list[str] = Field(default_factory=list)
@@ -91,14 +95,22 @@ class FallbackConfig(BaseModel):
 
 
 _VALID_TOP_LEVEL_KEYS = {
-    "providers", "models", "stacks", "projects", "fallbacks",
-    "observability", "cost_tracking", "latency", "rate_limits",
+    "providers",
+    "models",
+    "stacks",
+    "projects",
+    "fallbacks",
+    "observability",
+    "cost_tracking",
+    "latency",
+    "rate_limits",
     "dashboard",
 }
 
 
 class VoiceGatewayConfig(BaseModel):
     """Top-level config schema for voicegw.yaml."""
+
     model_config = ConfigDict(extra="forbid")
 
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
@@ -120,7 +132,9 @@ class VoiceGatewayConfig(BaseModel):
             return values
         for key in list(values.keys()):
             if key not in _VALID_TOP_LEVEL_KEYS:
-                matches = difflib.get_close_matches(key, _VALID_TOP_LEVEL_KEYS, n=1, cutoff=0.6)
+                matches = difflib.get_close_matches(
+                    key, _VALID_TOP_LEVEL_KEYS, n=1, cutoff=0.6
+                )
                 if matches:
                     raise ValueError(
                         f"Unknown config key '{key}' (did you mean '{matches[0]}'?)"

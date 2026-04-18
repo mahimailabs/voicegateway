@@ -109,12 +109,16 @@ class BudgetEnforcer:
         if action == "warn":
             logger.warning(
                 "Project '%s' exceeded daily budget: $%.2f / $%.2f",
-                project, today_spend, pcfg.daily_budget,
+                project,
+                today_spend,
+                pcfg.daily_budget,
             )
         elif action == "throttle":
             logger.warning(
                 "Project '%s' exceeded budget, throttling: $%.2f / $%.2f",
-                project, today_spend, pcfg.daily_budget,
+                project,
+                today_spend,
+                pcfg.daily_budget,
             )
             raise BudgetThrottleSignal(project, today_spend, pcfg.daily_budget)
         elif action == "block":

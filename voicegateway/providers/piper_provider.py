@@ -19,6 +19,7 @@ class PiperProvider(BaseProvider):
     def _ensure_library(self):
         try:
             import piper
+
             return piper
         except ImportError as e:
             raise ImportError(
@@ -55,8 +56,11 @@ class PiperTTS:
     Lazily loads the voice model on first use.
     """
 
-    def __init__(self, voice: str = "en_US-lessac-medium",
-                 model_dir: str = "~/.local/share/piper-voices/"):
+    def __init__(
+        self,
+        voice: str = "en_US-lessac-medium",
+        model_dir: str = "~/.local/share/piper-voices/",
+    ):
         self._voice = voice
         self._model_dir = model_dir
         self._piper = None
@@ -66,6 +70,7 @@ class PiperTTS:
             from pathlib import Path
 
             import piper
+
             model_dir = Path(self._model_dir).expanduser()
             model_path = model_dir / f"{self._voice}.onnx"
             logger.info(f"Loading Piper TTS model: {model_path}")
@@ -79,6 +84,7 @@ class PiperTTS:
         voice = await self._load_model()
         import io
         import wave
+
         wav_buffer = io.BytesIO()
         with wave.open(wav_buffer, "wb") as wav:
             voice.synthesize(text, wav)
