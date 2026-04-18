@@ -16,6 +16,17 @@ One-command deployment with public URL, persistent storage, and MCP-ready out of
 
 First-time deployment takes ~3 minutes. Redeploys take ~30 seconds.
 
+## Deployment speed
+
+By default, `deploy.sh` uses the published image `mahimairaja/voicegateway:latest`
+from Docker Hub. First-time deploys take ~30 seconds.
+
+To build from source instead (slower, useful for testing unreleased changes):
+
+```bash
+./deploy.sh --from-source
+```
+
 ## What you get
 
 - Public HTTPS URL: `https://<generated-name>.fly.dev`
