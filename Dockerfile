@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml README.md ./
 COPY voicegateway/ ./voicegateway/
 COPY dashboard/ ./dashboard/
+ARG SETUPTOOLS_SCM_PRETEND_VERSION=0.1.0
+ENV SETUPTOOLS_SCM_PRETEND_VERSION=${SETUPTOOLS_SCM_PRETEND_VERSION}
 RUN pip install --no-cache-dir -e ".[cloud,dashboard,mcp]"
 
 # Create data directory (Fly volume mounts here)
