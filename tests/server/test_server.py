@@ -127,6 +127,55 @@ async def test_v1_metrics(client):
     assert "voicegw_providers_configured" in resp.text
 
 
+async def test_v1_latency_includes_percentiles(client, gateway):
+    """/v1/latency now returns percentile buckets per model."""
+    import time
+    import uuid
+
+    from voicegateway.storage.models import RequestRecord
+
+    now = time.time()
+    for i in range(1, 21):
+        await gateway.storage.log_request(RequestRecord(
+            id=str(uuid.uuid4()), timestamp=now - i,
+            modality="stt", model_id="deepgram/nova-3",
+            provider="deepgram",
+            ttfb_ms=float(i * 10),
+            total_latency_ms=float(i * 20),
+        ))
+    resp = await client.get("/v1/latency")
+    data = resp.json()
+    assert "deepgram/nova-3" in data
+    entry = data["deepgram/nova-3"]
+    assert set(entry["ttfb_percentiles"].keys()) == {"p50", "p95", "p99"}
+    assert entry["ttfb_percentiles"]["p95"] > entry["ttfb_percentiles"]["p50"]
+
+
+async def test_v1_metrics_emits_latency_summary(client, gateway):
+    import time
+    import uuid
+
+    from voicegateway.storage.models import RequestRecord
+
+    now = time.time()
+    for i in range(1, 11):
+        await gateway.storage.log_request(RequestRecord(
+            id=str(uuid.uuid4()), timestamp=now - i,
+            modality="llm", model_id="openai/gpt-4o-mini",
+            provider="openai",
+            ttfb_ms=float(i * 50),
+            total_latency_ms=float(i * 100),
+        ))
+    resp = await client.get("/v1/metrics")
+    text = resp.text
+    assert "voicegw_request_ttfb_seconds" in text
+    assert "voicegw_request_total_latency_seconds" in text
+    assert 'quantile="0.5"' in text
+    assert 'quantile="0.95"' in text
+    assert 'quantile="0.99"' in text
+    assert 'model="openai/gpt-4o-mini"' in text
+
+
 # --------------------------------------------------------------------
 # CRUD — Providers
 # --------------------------------------------------------------------

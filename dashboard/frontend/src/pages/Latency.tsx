@@ -4,13 +4,19 @@ import StatusCard from '../components/StatusCard';
 import LatencyChart from '../components/LatencyChart';
 import { fetchJson } from '../lib/api';
 import { latencyBadgeClass, formatMs } from '../lib/ui';
-import type { LatencyResponse } from '../lib/types';
+import type { LatencyResponse, LatencyStats } from '../lib/types';
 
-function percentile(values: number[], pct: number): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.floor((sorted.length * pct) / 100);
-  return sorted[Math.min(idx, sorted.length - 1)];
+function worstP(entries: [string, LatencyStats][], key: 'p50' | 'p95' | 'p99'): number {
+  let max = 0;
+  for (const [, s] of entries) {
+    const v = s.ttfb_percentiles?.[key];
+    if (typeof v === 'number' && v > max) max = v;
+  }
+  return max;
+}
+
+function fmtP(v: number | null | undefined): string {
+  return typeof v === 'number' ? formatMs(v) : '—';
 }
 
 export default function Latency() {
@@ -23,14 +29,17 @@ export default function Latency() {
   if (!data) return <div className="empty-state">Loading latency...</div>;
 
   const entries = Object.entries(data);
-  const ttfb = entries.map(([, s]) => s.avg_ttfb_ms || 0);
-  const p50 = percentile(ttfb, 50);
-  const p95 = percentile(ttfb, 95);
-  const p99 = percentile(ttfb, 99);
+  const p50 = worstP(entries, 'p50');
+  const p95 = worstP(entries, 'p95');
+  const p99 = worstP(entries, 'p99');
 
   return (
     <div>
-      <PageHeader title="Latency" subtitle="Time to first byte (TTFB) and total" accent="pink" />
+      <PageHeader
+        title="Latency"
+        subtitle="Worst-model TTFB percentiles across today's requests"
+        accent="pink"
+      />
 
       <div className="grid grid-cols-3 mb-lg">
         <StatusCard label="P50 TTFB" value={`${p50.toFixed(0)}ms`} accent="pink" icon="50" />
@@ -48,7 +57,8 @@ export default function Latency() {
             <tr>
               <th>Model</th>
               <th>Avg TTFB</th>
-              <th>Avg Total</th>
+              <th>P95 TTFB</th>
+              <th>P95 Total</th>
               <th>Requests</th>
             </tr>
           </thead>
@@ -62,8 +72,13 @@ export default function Latency() {
                   </span>
                 </td>
                 <td>
-                  <span className={`neo-badge ${latencyBadgeClass(stats.avg_latency_ms)}`}>
-                    {formatMs(stats.avg_latency_ms)}
+                  <span className={`neo-badge ${latencyBadgeClass(stats.ttfb_percentiles?.p95 ?? stats.avg_ttfb_ms)}`}>
+                    {fmtP(stats.ttfb_percentiles?.p95)}
+                  </span>
+                </td>
+                <td>
+                  <span className={`neo-badge ${latencyBadgeClass(stats.latency_percentiles?.p95 ?? stats.avg_latency_ms)}`}>
+                    {fmtP(stats.latency_percentiles?.p95)}
                   </span>
                 </td>
                 <td>

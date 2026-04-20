@@ -23,6 +23,7 @@ from voicegateway.core.auth import (
     load_api_keys,
     resolve_cors_origins,
 )
+from voicegateway.storage._percentiles import quantile_label
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -165,7 +166,10 @@ def build_app(gateway: Gateway) -> FastAPI:
     ) -> dict:
         if gateway.storage is None:
             return {}
-        return await gateway.storage.get_latency_stats(period, project=project)
+        pcts = gateway.config.latency.get("percentiles") or [50.0, 95.0, 99.0]
+        return await gateway.storage.get_latency_stats(
+            period, project=project, percentiles=pcts
+        )
 
     @app.get("/v1/projects")
     async def v1_projects() -> dict:
@@ -256,6 +260,40 @@ def build_app(gateway: Gateway) -> FastAPI:
                 lines.append(
                     f'voicegw_cost_usd_total{{project="{pid}"}} {data["cost"]:.6f}'
                 )
+
+            # Per-model latency summaries. Prometheus ``summary`` convention:
+            # one series per quantile label, values in seconds.
+            pcts = gateway.config.latency.get("percentiles") or [50.0, 95.0, 99.0]
+            latency = await gateway.storage.get_latency_stats(
+                "today", percentiles=pcts
+            )
+            if latency:
+                lines += [
+                    "# HELP voicegw_request_ttfb_seconds "
+                    "Per-model time to first byte (seconds, summary)",
+                    "# TYPE voicegw_request_ttfb_seconds summary",
+                    "# HELP voicegw_request_total_latency_seconds "
+                    "Per-model total latency (seconds, summary)",
+                    "# TYPE voicegw_request_total_latency_seconds summary",
+                ]
+                for model, s in latency.items():
+                    for p in pcts:
+                        key = f"p{int(p)}"
+                        q = quantile_label(p)
+                        ttfb_v = s.get("ttfb_percentiles", {}).get(key)
+                        if ttfb_v is not None:
+                            lines.append(
+                                f'voicegw_request_ttfb_seconds'
+                                f'{{model="{model}",quantile="{q}"}} '
+                                f"{ttfb_v / 1000:.6f}"
+                            )
+                        lat_v = s.get("latency_percentiles", {}).get(key)
+                        if lat_v is not None:
+                            lines.append(
+                                f'voicegw_request_total_latency_seconds'
+                                f'{{model="{model}",quantile="{q}"}} '
+                                f"{lat_v / 1000:.6f}"
+                            )
 
         return "\n".join(lines) + "\n"
 

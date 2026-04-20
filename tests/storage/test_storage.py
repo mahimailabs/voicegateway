@@ -111,4 +111,62 @@ async def test_get_latency_stats(storage):
     ))
     stats = await storage.get_latency_stats("today")
     assert "openai/gpt-4o-mini" in stats
-    assert stats["openai/gpt-4o-mini"]["avg_ttfb_ms"] == pytest.approx(150.0)
+    entry = stats["openai/gpt-4o-mini"]
+    assert entry["avg_ttfb_ms"] == pytest.approx(150.0)
+    # Single sample: every percentile mirrors the sample value.
+    assert entry["ttfb_percentiles"] == {"p50": 150.0, "p95": 150.0, "p99": 150.0}
+    assert entry["latency_percentiles"] == {
+        "p50": 500.0, "p95": 500.0, "p99": 500.0,
+    }
+
+
+async def test_get_latency_stats_percentiles_with_many_samples(storage):
+    """Log 100 requests per model and assert server-side p50/p95/p99."""
+    now = time.time()
+    for i in range(1, 101):
+        await storage.log_request(RequestRecord(
+            id=str(uuid.uuid4()), timestamp=now - i,
+            modality="llm", model_id="openai/gpt-4o",
+            provider="openai",
+            ttfb_ms=float(i),
+            total_latency_ms=float(i * 2),
+        ))
+
+    stats = await storage.get_latency_stats("today")
+    ttfb = stats["openai/gpt-4o"]["ttfb_percentiles"]
+    # Linear-interp percentiles of [1..100]: p50=50.5, p95=95.05, p99=99.01
+    assert ttfb["p50"] == pytest.approx(50.5)
+    assert ttfb["p95"] == pytest.approx(95.05)
+    assert ttfb["p99"] == pytest.approx(99.01)
+
+
+async def test_get_latency_stats_custom_percentiles(storage):
+    """Caller-supplied percentiles override the defaults."""
+    now = time.time()
+    for i in range(1, 21):
+        await storage.log_request(RequestRecord(
+            id=str(uuid.uuid4()), timestamp=now - i,
+            modality="llm", model_id="openai/gpt-4o",
+            provider="openai", ttfb_ms=float(i), total_latency_ms=float(i),
+        ))
+    stats = await storage.get_latency_stats(
+        "today", percentiles=[25.0, 75.0]
+    )
+    ttfb = stats["openai/gpt-4o"]["ttfb_percentiles"]
+    assert set(ttfb.keys()) == {"p25", "p75"}
+
+
+async def test_get_latency_samples(storage):
+    """Raw-sample accessor returns (ttfb, total) lists."""
+    now = time.time()
+    for i in range(1, 6):
+        await storage.log_request(RequestRecord(
+            id=str(uuid.uuid4()), timestamp=now - i,
+            modality="stt", model_id="deepgram/nova-3",
+            provider="deepgram",
+            ttfb_ms=float(i * 10),
+            total_latency_ms=float(i * 20),
+        ))
+    ttfb, total = await storage.get_latency_samples("today")
+    assert sorted(ttfb) == [10.0, 20.0, 30.0, 40.0, 50.0]
+    assert sorted(total) == [20.0, 40.0, 60.0, 80.0, 100.0]
