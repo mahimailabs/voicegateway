@@ -76,8 +76,11 @@ class Gateway:
         obs = self._config.observability
         self._latency_tracking = obs.get("latency_tracking", True)
 
-        # Budget enforcement
+        # Budget enforcement — wired into the cost tracker so newly logged
+        # requests update the enforcer's in-memory spend cache, closing the
+        # TTL blind spot where a burst of requests can race past the check.
         self._budget_enforcer = BudgetEnforcer(self._config, self._storage)
+        self._cost_tracker.set_budget_enforcer(self._budget_enforcer)
 
         # Build fallback chains
         self._fallback_chains: dict[str, FallbackChain] = {}
@@ -110,6 +113,7 @@ class Gateway:
         self._config = await self._config_manager.refresh()
         self._router = Router(self._config)
         self._budget_enforcer = BudgetEnforcer(self._config, self._storage)
+        self._cost_tracker.set_budget_enforcer(self._budget_enforcer)
         # Rebuild fallback chains so they capture the new router.resolve
         for modality, chain_list in self._config.fallbacks.items():
             if chain_list:
