@@ -74,10 +74,19 @@ def test_out_of_range_percentiles_clamp():
     assert out["p150"] == 3.0
 
 
-def test_fractional_percentile_key_drops_decimal():
-    out = compute_percentiles([1.0, 2.0, 3.0, 4.0], [99.9])
+def test_fractional_percentile_preserves_decimal_in_key():
+    """99.9 is a distinct percentile from 99 and must map to a distinct key."""
+    out = compute_percentiles([1.0, 2.0, 3.0, 4.0], [99.0, 99.9])
     assert "p99" in out
+    assert "p99_9" in out
     assert out["p99"] is not None
+    assert out["p99_9"] is not None
+
+
+def test_integer_and_float_integer_collide():
+    """99 and 99.0 both normalize to p99 — deliberately."""
+    with pytest.raises(ValueError, match="Duplicate"):
+        compute_percentiles([1.0, 2.0], [99, 99.0])
 
 
 def test_quantile_label_format():

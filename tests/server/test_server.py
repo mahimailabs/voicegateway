@@ -127,14 +127,21 @@ async def test_v1_metrics(client):
     assert "voicegw_providers_configured" in resp.text
 
 
+def _midday_today() -> float:
+    import datetime as _dt
+
+    return _dt.datetime.combine(
+        _dt.date.today(), _dt.time(12, 0)
+    ).timestamp()
+
+
 async def test_v1_latency_includes_percentiles(client, gateway):
     """/v1/latency now returns percentile buckets per model."""
-    import time
     import uuid
 
     from voicegateway.storage.models import RequestRecord
 
-    now = time.time()
+    now = _midday_today()
     for i in range(1, 21):
         await gateway.storage.log_request(RequestRecord(
             id=str(uuid.uuid4()), timestamp=now - i,
@@ -152,12 +159,11 @@ async def test_v1_latency_includes_percentiles(client, gateway):
 
 
 async def test_v1_metrics_emits_latency_summary(client, gateway):
-    import time
     import uuid
 
     from voicegateway.storage.models import RequestRecord
 
-    now = time.time()
+    now = _midday_today()
     for i in range(1, 11):
         await gateway.storage.log_request(RequestRecord(
             id=str(uuid.uuid4()), timestamp=now - i,

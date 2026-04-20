@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, useMatch } from 'react-router-dom';
 import Overview from './pages/Overview';
 import Models from './pages/Models';
@@ -9,7 +9,7 @@ import Projects from './pages/Projects';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import type { StatusResponse } from './lib/types';
-import { fetchJson, getToken } from './lib/api';
+import { AUTH_REQUIRED_EVENT, clearToken, fetchJson, getToken } from './lib/api';
 
 const PAGES = [
   { to: '/',         label: 'Overview',  id: 'overview' },
@@ -36,11 +36,26 @@ export default function App() {
           setAuthState('ready');
         }
       })
-      .catch(() => {
-        // If auth-status itself fails (older server, network), fall through
-        // to the main app rather than locking the user out.
+      .catch((err) => {
+        // If auth-status itself fails (older server, network), fall
+        // through to the main app rather than locking the user out.
+        // Log so a 500-looking bootstrap is still debuggable.
+        console.warn('auth-status check failed; proceeding without gate', err);
         setAuthState('ready');
       });
+  }, []);
+
+  // Server-side 401/403 → token's expired/revoked → show login again.
+  useEffect(() => {
+    const onAuthRequired = () => setAuthState('needs-login');
+    window.addEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
+    return () => window.removeEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
+  }, []);
+
+  const signOut = useCallback(() => {
+    clearToken();
+    setStatus(null);
+    setAuthState('needs-login');
   }, []);
 
   useEffect(() => {
@@ -56,7 +71,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="app-shell">
-        <Sidebar status={status} />
+        <Sidebar status={status} onSignOut={signOut} />
         <main className="main">
           <Routes>
             <Route path="/" element={<Overview />} />
@@ -74,9 +89,16 @@ export default function App() {
   );
 }
 
-function Sidebar({ status }: { status: StatusResponse | null }) {
+function Sidebar({
+  status,
+  onSignOut,
+}: {
+  status: StatusResponse | null;
+  onSignOut: () => void;
+}) {
   const providerCount = status ? Object.keys(status.providers).length : 0;
   const modelCount = status ? Object.keys(status.models).length : 0;
+  const hasToken = !!getToken();
 
   return (
     <aside className="sidebar">
@@ -100,6 +122,16 @@ function Sidebar({ status }: { status: StatusResponse | null }) {
           {providerCount} Providers · {modelCount} Models
         </div>
         <span className="version-pill">v0.1.0</span>
+        {hasToken && (
+          <button
+            type="button"
+            className="neo-btn mt-sm"
+            style={{ width: '100%' }}
+            onClick={onSignOut}
+          >
+            Sign out
+          </button>
+        )}
       </div>
     </aside>
   );

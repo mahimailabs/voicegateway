@@ -22,10 +22,13 @@ export interface CostsResponse {
 }
 
 export interface PercentileBucket {
-  p50: number | null;
-  p95: number | null;
-  p99: number | null;
-  // extra keys tolerated for forward-compat if config.latency.percentiles changes
+  // Known percentiles are optional — the API only emits what the config
+  // asks for, so callers must treat missing keys as "unknown".
+  p50?: number | null;
+  p95?: number | null;
+  p99?: number | null;
+  // Extra keys tolerated so non-default percentile lists (e.g. p99_9)
+  // still round-trip through the type.
   [key: string]: number | null | undefined;
 }
 

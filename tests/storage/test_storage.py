@@ -120,9 +120,23 @@ async def test_get_latency_stats(storage):
     }
 
 
+def _midday_today() -> float:
+    """Return a Unix timestamp anchored at 12:00 today.
+
+    Using ``time.time() - i`` seconds in a test near midnight can drift
+    into yesterday and drop samples from the "today" window. Anchoring
+    at noon gives us ~12h of headroom on either side.
+    """
+    import datetime as _dt
+
+    return _dt.datetime.combine(
+        _dt.date.today(), _dt.time(12, 0)
+    ).timestamp()
+
+
 async def test_get_latency_stats_percentiles_with_many_samples(storage):
     """Log 100 requests per model and assert server-side p50/p95/p99."""
-    now = time.time()
+    now = _midday_today()
     for i in range(1, 101):
         await storage.log_request(RequestRecord(
             id=str(uuid.uuid4()), timestamp=now - i,
@@ -142,7 +156,7 @@ async def test_get_latency_stats_percentiles_with_many_samples(storage):
 
 async def test_get_latency_stats_custom_percentiles(storage):
     """Caller-supplied percentiles override the defaults."""
-    now = time.time()
+    now = _midday_today()
     for i in range(1, 21):
         await storage.log_request(RequestRecord(
             id=str(uuid.uuid4()), timestamp=now - i,
@@ -158,7 +172,7 @@ async def test_get_latency_stats_custom_percentiles(storage):
 
 async def test_get_latency_samples(storage):
     """Raw-sample accessor returns (ttfb, total) lists."""
-    now = time.time()
+    now = _midday_today()
     for i in range(1, 6):
         await storage.log_request(RequestRecord(
             id=str(uuid.uuid4()), timestamp=now - i,
@@ -170,3 +184,42 @@ async def test_get_latency_samples(storage):
     ttfb, total = await storage.get_latency_samples("today")
     assert sorted(ttfb) == [10.0, 20.0, 30.0, 40.0, 50.0]
     assert sorted(total) == [20.0, 40.0, 60.0, 80.0, 100.0]
+
+
+async def test_get_latency_samples_modality_filter(storage):
+    """modality= arg drops samples from other modalities."""
+    now = _midday_today()
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=now - 1,
+        modality="stt", model_id="deepgram/nova-3",
+        provider="deepgram", ttfb_ms=100.0, total_latency_ms=200.0,
+    ))
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=now - 2,
+        modality="llm", model_id="openai/gpt-4o",
+        provider="openai", ttfb_ms=300.0, total_latency_ms=600.0,
+    ))
+    stt_ttfb, _ = await storage.get_latency_samples("today", modality="stt")
+    llm_ttfb, _ = await storage.get_latency_samples("today", modality="llm")
+    assert stt_ttfb == [100.0]
+    assert llm_ttfb == [300.0]
+
+
+async def test_get_latency_stats_includes_models_without_ttfb(storage):
+    """Rows with only total_latency_ms still appear with latency_percentiles."""
+    now = _midday_today()
+    for i in range(1, 6):
+        await storage.log_request(RequestRecord(
+            id=str(uuid.uuid4()), timestamp=now - i,
+            modality="tts", model_id="local/piper",
+            provider="piper",
+            ttfb_ms=None,  # local TTS may not report TTFB
+            total_latency_ms=float(i * 30),
+        ))
+    stats = await storage.get_latency_stats("today")
+    assert "local/piper" in stats
+    entry = stats["local/piper"]
+    # No TTFB samples → percentiles all None.
+    assert entry["ttfb_percentiles"]["p50"] is None
+    # Total-latency percentiles come from the 5 samples.
+    assert entry["latency_percentiles"]["p50"] is not None

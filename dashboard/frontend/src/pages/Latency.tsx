@@ -6,17 +6,26 @@ import { fetchJson } from '../lib/api';
 import { latencyBadgeClass, formatMs } from '../lib/ui';
 import type { LatencyResponse, LatencyStats } from '../lib/types';
 
-function worstP(entries: [string, LatencyStats][], key: 'p50' | 'p95' | 'p99'): number {
-  let max = 0;
+/** Return the highest model percentile, or null when no model has that key. */
+function worstP(
+  entries: [string, LatencyStats][],
+  key: 'p50' | 'p95' | 'p99',
+): number | null {
+  let max: number | null = null;
   for (const [, s] of entries) {
     const v = s.ttfb_percentiles?.[key];
-    if (typeof v === 'number' && v > max) max = v;
+    if (typeof v === 'number' && (max === null || v > max)) max = v;
   }
   return max;
 }
 
 function fmtP(v: number | null | undefined): string {
   return typeof v === 'number' ? formatMs(v) : '—';
+}
+
+/** Badge class given a (possibly missing) latency value. */
+function badgeFor(v: number | null | undefined): string {
+  return typeof v === 'number' ? latencyBadgeClass(v) : 'neo-badge--black';
 }
 
 export default function Latency() {
@@ -42,9 +51,9 @@ export default function Latency() {
       />
 
       <div className="grid grid-cols-3 mb-lg">
-        <StatusCard label="P50 TTFB" value={`${p50.toFixed(0)}ms`} accent="pink" icon="50" />
-        <StatusCard label="P95 TTFB" value={`${p95.toFixed(0)}ms`} accent="pink" icon="95" />
-        <StatusCard label="P99 TTFB" value={`${p99.toFixed(0)}ms`} accent="pink" icon="99" />
+        <StatusCard label="P50 TTFB" value={fmtP(p50)} accent="pink" icon="50" />
+        <StatusCard label="P95 TTFB" value={fmtP(p95)} accent="pink" icon="95" />
+        <StatusCard label="P99 TTFB" value={fmtP(p99)} accent="pink" icon="99" />
       </div>
 
       <div className="mb-lg">
@@ -63,29 +72,33 @@ export default function Latency() {
             </tr>
           </thead>
           <tbody>
-            {entries.map(([model, stats]) => (
-              <tr key={model}>
-                <td className="mono">{model}</td>
-                <td>
-                  <span className={`neo-badge ${latencyBadgeClass(stats.avg_ttfb_ms)}`}>
-                    {formatMs(stats.avg_ttfb_ms)}
-                  </span>
-                </td>
-                <td>
-                  <span className={`neo-badge ${latencyBadgeClass(stats.ttfb_percentiles?.p95 ?? stats.avg_ttfb_ms)}`}>
-                    {fmtP(stats.ttfb_percentiles?.p95)}
-                  </span>
-                </td>
-                <td>
-                  <span className={`neo-badge ${latencyBadgeClass(stats.latency_percentiles?.p95 ?? stats.avg_latency_ms)}`}>
-                    {fmtP(stats.latency_percentiles?.p95)}
-                  </span>
-                </td>
-                <td>
-                  <span className="neo-badge neo-badge--black">{stats.request_count}</span>
-                </td>
-              </tr>
-            ))}
+            {entries.map(([model, stats]) => {
+              const ttfbP95 = stats.ttfb_percentiles?.p95;
+              const latP95 = stats.latency_percentiles?.p95;
+              return (
+                <tr key={model}>
+                  <td className="mono">{model}</td>
+                  <td>
+                    <span className={`neo-badge ${latencyBadgeClass(stats.avg_ttfb_ms)}`}>
+                      {formatMs(stats.avg_ttfb_ms)}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`neo-badge ${badgeFor(ttfbP95)}`}>
+                      {fmtP(ttfbP95)}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`neo-badge ${badgeFor(latP95)}`}>
+                      {fmtP(latP95)}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="neo-badge neo-badge--black">{stats.request_count}</span>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
