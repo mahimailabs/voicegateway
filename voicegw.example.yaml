@@ -186,6 +186,26 @@ dashboard:
   port: 9090
 
 # ============================================================
+# Auth — optional bearer-token authentication for the HTTP API.
+# When this block is absent and VOICEGW_API_KEY is unset, all
+# /v1/* endpoints are unauthenticated (preserves local dev UX).
+# /health and /v1/metrics are always public so LBs and Prometheus
+# can scrape them regardless of auth config.
+# ============================================================
+
+# auth:
+#   api_keys:
+#     - token: ${VOICEGW_API_KEY}
+#       name: dashboard
+#       scopes: ["*"]           # "*" = any scope. Alternatives: "read", "write".
+#   cors_origins:
+#     - http://localhost:9090   # dashboard (same-origin prod)
+#     - http://localhost:5173   # vite dev server
+#
+# Shortcut: set VOICEGW_API_KEY without any auth block to use a single
+# wildcard-scope key. Useful for docker run / fly.io deployments.
+
+# ============================================================
 # Observability — control automatic instrumentation
 # ============================================================
 

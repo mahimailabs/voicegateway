@@ -7,8 +7,9 @@ import Latency from './pages/Latency';
 import Logs from './pages/Logs';
 import Projects from './pages/Projects';
 import Settings from './pages/Settings';
+import Login from './pages/Login';
 import type { StatusResponse } from './lib/types';
-import { fetchJson } from './lib/api';
+import { fetchJson, getToken } from './lib/api';
 
 const PAGES = [
   { to: '/',         label: 'Overview',  id: 'overview' },
@@ -20,12 +21,37 @@ const PAGES = [
   { to: '/settings', label: 'Settings',  id: 'settings' },
 ] as const;
 
+type AuthState = 'checking' | 'needs-login' | 'ready';
+
 export default function App() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
+  const [authState, setAuthState] = useState<AuthState>('checking');
 
   useEffect(() => {
-    fetchJson<StatusResponse>('/api/status').then(setStatus).catch(() => setStatus(null));
+    fetchJson<{ auth_required: boolean }>('/api/auth-status')
+      .then(({ auth_required }) => {
+        if (auth_required && !getToken()) {
+          setAuthState('needs-login');
+        } else {
+          setAuthState('ready');
+        }
+      })
+      .catch(() => {
+        // If auth-status itself fails (older server, network), fall through
+        // to the main app rather than locking the user out.
+        setAuthState('ready');
+      });
   }, []);
+
+  useEffect(() => {
+    if (authState !== 'ready') return;
+    fetchJson<StatusResponse>('/api/status').then(setStatus).catch(() => setStatus(null));
+  }, [authState]);
+
+  if (authState === 'checking') return null;
+  if (authState === 'needs-login') {
+    return <Login onAuthed={() => setAuthState('ready')} />;
+  }
 
   return (
     <BrowserRouter>
