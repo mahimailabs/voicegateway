@@ -258,8 +258,12 @@ async def _handle_get_latency_stats(
         }
 
     # Real overall percentiles from the raw samples (not per-model averages).
+    # Pass the same modality filter used on by_model so overall matches the
+    # visible set rather than leaking across modalities.
     ttfb_samples, total_samples = await gateway.storage.get_latency_samples(
-        payload.period, project=payload.project
+        payload.period,
+        project=payload.project,
+        modality=payload.modality,
     )
     request_count = len(ttfb_samples)
     avg_ttfb = sum(ttfb_samples) / request_count if request_count else 0.0

@@ -229,6 +229,54 @@ async def test_record_spend_no_entry_is_noop():
     assert "p" not in enforcer._cache
 
 
+async def test_record_spend_skips_when_cache_refreshed_after_write():
+    """A refresh that happened AFTER storage.log_request already
+    reflects the cost, so a late record_spend must not double-count.
+    """
+    import time as _time
+
+    config = _make_config({
+        "p": ProjectConfig(id="p", name="P", daily_budget=10.0),
+    })
+    storage = _CountingStorage(spend=2.0)
+    enforcer = BudgetEnforcer(config, storage, cache_ttl_seconds=60)
+
+    # Pre-warm cache (ts_old).
+    await enforcer.check_budget("p")
+    # Simulate the race: storage.log_request completed at t_write, then
+    # a concurrent _get_today_spend refreshed the cache at a LATER moment
+    # (ts_new > t_write) with the new total already including the cost.
+    t_write = _time.monotonic()
+    storage.spend = 2.5  # storage now includes the $0.50 write
+    await enforcer.invalidate("p")
+    await enforcer.check_budget("p")  # refreshes cache at ts_new > t_write
+    cached_ts, cached_spend = enforcer._cache["p"]
+    assert cached_ts > t_write
+    assert cached_spend == 2.5
+
+    # Late record_spend with logged_at=t_write: cached ts > logged_at,
+    # so the increment must be skipped.
+    await enforcer.record_spend("p", 0.50, logged_at=t_write)
+    assert enforcer._cache["p"] == (cached_ts, 2.5)
+
+
+async def test_record_spend_applies_when_cache_predates_write():
+    """Warm cache (ts_old) + later write → increment applies."""
+    import time as _time
+
+    config = _make_config({
+        "p": ProjectConfig(id="p", name="P", daily_budget=10.0),
+    })
+    storage = _CountingStorage(spend=2.0)
+    enforcer = BudgetEnforcer(config, storage, cache_ttl_seconds=60)
+
+    await enforcer.check_budget("p")
+    cached_ts, _ = enforcer._cache["p"]
+    later = _time.monotonic() + 1.0  # guaranteed > cached_ts
+    await enforcer.record_spend("p", 0.50, logged_at=later)
+    assert enforcer._cache["p"] == (cached_ts, 2.5)
+
+
 async def test_invalidate_drops_cache(storage_with_spend):
     config = _make_config({
         "expensive-project": ProjectConfig(

@@ -423,16 +423,26 @@ class SQLiteStorage:
         ``avg_latency_ms``, ``request_count``) plus nested
         ``ttfb_percentiles`` and ``latency_percentiles`` dicts keyed by
         ``p50`` / ``p95`` / ``p99`` (or whatever ``percentiles`` asks
-        for). With fewer than two samples for a model, every percentile
-        mirrors the single value — see ``compute_percentiles`` for edge
-        cases.
+        for). Models appear if they have *any* latency sample (either
+        TTFB or total) — the averages and percentiles are computed
+        independently, so a model with only ``total_latency_ms`` still
+        gets ``latency_percentiles`` populated.
+
+        With fewer than two samples for a particular metric, that
+        metric's percentiles mirror the single value — see
+        ``compute_percentiles`` for edge cases.
         """
         pcts = percentiles or _DEFAULT_PERCENTILES
         db = await self._ensure_initialized()
         try:
             since = self._period_since(period)
             params: list[Any] = [since]
-            where = "WHERE timestamp >= ? AND ttfb_ms IS NOT NULL"
+            # Include any row with at least one latency metric so models
+            # with only total_latency_ms aren't silently dropped.
+            where = (
+                "WHERE timestamp >= ? "
+                "AND (ttfb_ms IS NOT NULL OR total_latency_ms IS NOT NULL)"
+            )
             if project:
                 where += " AND project = ?"
                 params.append(project)
@@ -490,13 +500,19 @@ class SQLiteStorage:
             await db.close()
 
     async def get_latency_samples(
-        self, period: str = "today", project: str | None = None
+        self,
+        period: str = "today",
+        project: str | None = None,
+        modality: str | None = None,
     ) -> tuple[list[float], list[float]]:
         """Return ``(ttfb_samples, total_latency_samples)`` for ``period``.
 
         Used by callers that want overall (cross-model) percentiles —
         e.g. the MCP observability tool and the Prometheus summary
-        lines. Rows with NULL latencies are omitted.
+        lines. Rows with NULL latencies are omitted. ``modality``
+        restricts samples to ``"stt"`` / ``"llm"`` / ``"tts"`` so the
+        "overall" block in callers can reflect the same filter applied
+        to their per-model view.
         """
         db = await self._ensure_initialized()
         try:
@@ -506,6 +522,9 @@ class SQLiteStorage:
             if project:
                 where += " AND project = ?"
                 params.append(project)
+            if modality:
+                where += " AND modality = ?"
+                params.append(modality)
 
             cursor = await db.execute(
                 f"""SELECT ttfb_ms, total_latency_ms

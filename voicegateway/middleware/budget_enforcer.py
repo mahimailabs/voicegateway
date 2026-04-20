@@ -108,26 +108,43 @@ class BudgetEnforcer:
             self._cache[project] = (now, spend)
             return spend
 
-    async def record_spend(self, project: str, cost_usd: float) -> None:
+    async def record_spend(
+        self,
+        project: str,
+        cost_usd: float,
+        logged_at: float | None = None,
+    ) -> None:
         """Optimistically update the cached spend after a request is logged.
 
         Without this, the TTL window is a blind spot: spend logged to
-        storage during the window is invisible to ``check_budget`` until the
-        cache expires. Updating the cached value keeps in-memory accounting
-        close to reality between refreshes.
+        storage during the window is invisible to ``check_budget`` until
+        the cache expires. Updating the cached value keeps in-memory
+        accounting close to reality between refreshes.
 
-        Note: this only mutates an existing cache entry. If there is no
-        entry yet, the next ``check_budget`` will read authoritative spend
+        ``logged_at`` is ``time.monotonic()`` captured by the caller
+        immediately after ``storage.log_request`` returned. When the
+        cached entry's timestamp is >= ``logged_at`` the cache was
+        refreshed *after* our row hit storage, so the refresh already
+        includes this cost — skip the increment to avoid double-count.
+
+        This only mutates an existing cache entry. If there is no entry
+        yet, the next ``check_budget`` will read authoritative spend
         from storage anyway.
         """
         if cost_usd <= 0:
             return
+        if logged_at is None:
+            logged_at = time.monotonic()
         lock = await self._lock_for(project)
         async with lock:
             cached = self._cache.get(project)
             if cached is None:
                 return
             ts, spend = cached
+            if ts >= logged_at:
+                # Cache refreshed from storage after this row was written;
+                # it already reflects the cost. Leave it alone.
+                return
             self._cache[project] = (ts, spend + cost_usd)
 
     async def invalidate(self, project: str | None = None) -> None:

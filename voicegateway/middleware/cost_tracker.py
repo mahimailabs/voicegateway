@@ -96,22 +96,34 @@ class CostTracker:
         )
 
     async def log_request(self, record: RequestRecord) -> None:
-        """Log a request record to storage and update the budget cache."""
-        if self._storage:
-            await self._storage.log_request(record)
-        await self.notify_spend(record)
+        """Log a request record to storage and update the budget cache.
 
-    async def notify_spend(self, record: RequestRecord) -> None:
-        """Notify the budget enforcer of a newly logged request.
-
-        Safe to call even when storage write failed — the enforcer will
-        simply re-read from storage on next TTL expiry.
+        The budget cache update runs in a ``finally`` so a transient
+        storage failure doesn't leave the enforcer out of sync with the
+        cost we just incurred — the request happened, the cost is real,
+        and skipping the notify would silently undercount.
         """
+        try:
+            if self._storage:
+                await self._storage.log_request(record)
+        finally:
+            # ``logged_at`` is captured after the write attempt so the
+            # enforcer can skip its optimistic increment when a concurrent
+            # cache refresh has already observed this row.
+            logged_at = time.monotonic()
+            await self.notify_spend(record, logged_at=logged_at)
+
+    async def notify_spend(
+        self, record: RequestRecord, logged_at: float | None = None
+    ) -> None:
+        """Notify the budget enforcer of a newly logged request."""
         if self._budget_enforcer is None or not record.cost_usd:
             return
+        if logged_at is None:
+            logged_at = time.monotonic()
         try:
             await self._budget_enforcer.record_spend(
-                record.project, record.cost_usd
+                record.project, record.cost_usd, logged_at=logged_at
             )
         except Exception:
             logger.warning("Failed to update budget cache", exc_info=True)

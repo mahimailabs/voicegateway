@@ -76,6 +76,11 @@ def load_api_keys(auth_config: AuthConfig | None) -> list[ApiKey]:
             continue
         name = str(entry.get("name") or "")
         raw_scopes = entry.get("scopes") or [_WILDCARD_SCOPE]
+        # Guard against a YAML scalar (``scopes: "write"``) that would
+        # otherwise iterate as characters. Pydantic validation rejects
+        # this, but the dataclass path doesn't go through Pydantic.
+        if isinstance(raw_scopes, (str, bytes)):
+            raw_scopes = [raw_scopes]
         scopes = tuple(str(s) for s in raw_scopes if str(s))
         if not scopes:
             scopes = (_WILDCARD_SCOPE,)
@@ -92,11 +97,19 @@ def load_api_keys(auth_config: AuthConfig | None) -> list[ApiKey]:
 
 
 def _extract_bearer(authorization: str | None) -> str | None:
+    """Extract the token from an ``Authorization: Bearer …`` header.
+
+    Scheme matching is case-insensitive (RFC 7235 §2.1). Returns
+    ``None`` when the header is missing, uses a different scheme, or
+    has an empty token.
+    """
     if not authorization:
         return None
-    if not authorization.startswith("Bearer "):
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer":
         return None
-    return authorization[len("Bearer ") :]
+    token = token.strip()
+    return token or None
 
 
 def check_request(
@@ -147,12 +160,15 @@ def check_request(
 def resolve_cors_origins(auth_config: AuthConfig | None) -> list[str]:
     """Return the CORS allow-list. Empty config falls back to ``["*"]``.
 
-    When the fallback kicks in, callers should log a warning so operators
-    notice the permissive default.
+    Blank/falsey entries are filtered out; if that leaves no origins at
+    all, fall back to ``["*"]`` too — otherwise CORS would reject every
+    browser request, which is almost certainly not what the operator
+    intended. Callers should log a warning when this fallback applies.
     """
     if auth_config is None or not auth_config.cors_origins:
         return ["*"]
-    return [str(o) for o in auth_config.cors_origins if str(o)]
+    filtered = [str(o) for o in auth_config.cors_origins if str(o)]
+    return filtered if filtered else ["*"]
 
 
 def describe_auth(keys: list[ApiKey]) -> str:
