@@ -7,9 +7,8 @@ style of ``tests/mcp/test_auth.py``) and the end-to-end enforcement on
 
 from __future__ import annotations
 
-import yaml
-
 import pytest
+import yaml
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.auth import (
@@ -19,10 +18,9 @@ from voicegateway.core.auth import (
     load_api_keys,
     resolve_cors_origins,
 )
-from voicegateway.core.config import AuthConfig, GatewayConfig
+from voicegateway.core.config import AuthConfig
 from voicegateway.core.gateway import Gateway
 from voicegateway.server import build_app
-
 
 # ---------------------------------------------------------------------------
 # Unit: core/auth.py primitives
