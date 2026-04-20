@@ -17,7 +17,7 @@ import hmac
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from voicegateway.core.config import AuthConfig
