@@ -1,5 +1,6 @@
 """Tests for voicegateway/middleware/budget_enforcer.py."""
 
+import asyncio
 import time
 import uuid
 
@@ -143,3 +144,100 @@ async def test_unknown_project_no_action():
     config = _make_config({})
     enforcer = BudgetEnforcer(config, None)
     await enforcer.check_budget("unknown")  # should not raise
+
+
+class _CountingStorage:
+    """Minimal storage stub that counts get_cost_summary calls and lets the
+    test control what spend each call reports."""
+
+    def __init__(self, spend: float = 0.0):
+        self.calls = 0
+        self.spend = spend
+
+    async def get_cost_summary(self, period: str, project: str | None = None):
+        self.calls += 1
+        # Simulate a slow-ish DB query so concurrent callers have time
+        # to pile up behind the lock.
+        await asyncio.sleep(0.01)
+        return {"total": self.spend}
+
+
+async def test_concurrent_check_budget_coalesces_storage_calls():
+    """N concurrent budget checks for the same project hit storage once.
+
+    Without the per-project lock, each racing task would see an empty
+    cache and fire its own storage query; the cache writes would also
+    race. Both behaviors are safety-relevant for the 'block' action.
+    """
+    config = _make_config({
+        "expensive-project": ProjectConfig(
+            id="expensive-project", name="Expensive",
+            daily_budget=1.0, budget_action="warn",
+        ),
+    })
+    storage = _CountingStorage(spend=0.5)
+    enforcer = BudgetEnforcer(config, storage, cache_ttl_seconds=60)
+
+    # 50 concurrent callers, all for the same project.
+    await asyncio.gather(*(
+        enforcer.check_budget("expensive-project") for _ in range(50)
+    ))
+
+    # All racing readers coalesce onto one storage query.
+    assert storage.calls == 1
+    # Cache populated exactly once.
+    assert "expensive-project" in enforcer._cache
+
+
+async def test_record_spend_updates_cache_within_ttl():
+    """Post-request spend notifications close the TTL blind spot.
+
+    Before: cache says $0.50 for 30s; a flood of in-flight requests all
+    see $0.50 < $1.00 budget and sail through. After: each logged
+    request increments the cached spend so the block kicks in promptly.
+    """
+    config = _make_config({
+        "p": ProjectConfig(
+            id="p", name="P", daily_budget=1.0, budget_action="block",
+        ),
+    })
+    storage = _CountingStorage(spend=0.5)
+    enforcer = BudgetEnforcer(config, storage, cache_ttl_seconds=60)
+
+    # Warm the cache — under budget, so no raise.
+    await enforcer.check_budget("p")
+
+    # Simulate 10 logged requests at $0.10 each pushing us over $1.00.
+    for _ in range(10):
+        await enforcer.record_spend("p", 0.10)
+
+    # Cache TTL has NOT expired, so without record_spend the check would
+    # still see $0.50. With record_spend, the cache shows $1.50 and we
+    # block. Storage should still only have been queried once.
+    with pytest.raises(BudgetExceededError):
+        await enforcer.check_budget("p")
+    assert storage.calls == 1
+
+
+async def test_record_spend_no_entry_is_noop():
+    """record_spend before any check_budget is a no-op, not an error."""
+    config = _make_config({
+        "p": ProjectConfig(id="p", name="P", daily_budget=1.0),
+    })
+    enforcer = BudgetEnforcer(config, None)
+    await enforcer.record_spend("p", 0.25)  # must not raise
+    assert "p" not in enforcer._cache
+
+
+async def test_invalidate_drops_cache(storage_with_spend):
+    config = _make_config({
+        "expensive-project": ProjectConfig(
+            id="expensive-project", name="Expensive",
+            daily_budget=2.0, budget_action="warn",
+        ),
+    })
+    enforcer = BudgetEnforcer(config, storage_with_spend)
+    await enforcer.check_budget("expensive-project")
+    assert "expensive-project" in enforcer._cache
+    await enforcer.invalidate("expensive-project")
+    assert "expensive-project" not in enforcer._cache
