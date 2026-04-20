@@ -94,11 +94,17 @@ jobs:
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
 
+      # Docker Hub's REST API (used to PATCH the README) rejects tokens
+      # scoped only to repo push/pull. Supply DOCKERHUB_PASSWORD as either
+      # the account password or a PAT with Read/Write/Delete permissions.
+      # Falls back to DOCKERHUB_TOKEN and is non-fatal so a failed
+      # description update doesn't fail an otherwise successful release.
       - name: Update Docker Hub README
         uses: peter-evans/dockerhub-description@v4
+        continue-on-error: true
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD || secrets.DOCKERHUB_TOKEN }}
           repository: ${{ env.CORE_IMAGE }}
           readme-filepath: ./docker/README.voicegateway.md
           short-description: "Self-hosted inference gateway for voice AI with MCP"
@@ -160,11 +166,14 @@ jobs:
           cache-from: type=gha,scope=dashboard
           cache-to: type=gha,mode=max,scope=dashboard
 
+      # See note in publish-core: requires DOCKERHUB_PASSWORD (account
+      # password or PAT with Read/Write/Delete) to update the Hub README.
       - name: Update Docker Hub README
         uses: peter-evans/dockerhub-description@v4
+        continue-on-error: true
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD || secrets.DOCKERHUB_TOKEN }}
           repository: ${{ env.DASHBOARD_IMAGE }}
           readme-filepath: ./docker/README.dashboard.md
           short-description: "Web dashboard for VoiceGateway"
