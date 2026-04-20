@@ -130,7 +130,10 @@ async def get_latency(
     gw = _get_gateway()
     if gw.storage is None:
         return {}
-    return await gw.storage.get_latency_stats(period, project=project)
+    pcts = gw.config.latency.get("percentiles") or [50.0, 95.0, 99.0]
+    return await gw.storage.get_latency_stats(
+        period, project=project, percentiles=pcts
+    )
 
 
 @app.get("/api/logs")

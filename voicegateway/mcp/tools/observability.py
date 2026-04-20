@@ -202,30 +202,40 @@ Args:
     modality: Optional "stt" | "llm" | "tts" filter.
 
 Returns:
-    A dict: {overall: {p50_ms, p95_ms, p99_ms, avg_ms, request_count},
-    by_model: {model_id: {avg_ttfb_ms, avg_latency_ms, request_count}}}.
+    {
+      overall: {
+        ttfb_percentiles: {p50, p95, p99},  # request-level, not averages
+        latency_percentiles: {p50, p95, p99},
+        avg_ttfb_ms, avg_latency_ms, request_count,
+      },
+      by_model: {
+        <model_id>: {
+          avg_ttfb_ms, avg_latency_ms, request_count,
+          ttfb_percentiles: {p50, p95, p99},
+          latency_percentiles: {p50, p95, p99},
+        },
+      },
+    }
 """
-
-
-def _percentile(sorted_values: list[float], pct: float) -> float:
-    if not sorted_values:
-        return 0.0
-    idx = int(len(sorted_values) * pct / 100.0)
-    idx = min(idx, len(sorted_values) - 1)
-    return sorted_values[idx]
 
 
 async def _handle_get_latency_stats(
     gateway: Gateway, arguments: dict[str, Any]
 ) -> dict[str, Any]:
+    from voicegateway.storage._percentiles import compute_percentiles
+
     payload = _parse(GetLatencyStatsInput, arguments)
+    pcts = gateway.config.latency.get("percentiles") or [50.0, 95.0, 99.0]
+
+    empty_buckets = compute_percentiles([], pcts)
+
     if gateway.storage is None:
         return {
             "overall": {
-                "p50_ms": 0.0,
-                "p95_ms": 0.0,
-                "p99_ms": 0.0,
-                "avg_ms": 0.0,
+                "ttfb_percentiles": empty_buckets,
+                "latency_percentiles": empty_buckets,
+                "avg_ttfb_ms": 0.0,
+                "avg_latency_ms": 0.0,
                 "request_count": 0,
             },
             "by_model": {},
@@ -235,42 +245,38 @@ async def _handle_get_latency_stats(
         }
 
     by_model = await gateway.storage.get_latency_stats(
+        payload.period, project=payload.project, percentiles=pcts
+    )
+
+    # Optional modality filter — storage keys by model_id only.
+    if payload.modality:
+        modality_map = gateway.config.models.get(payload.modality) or {}
+        by_model = {
+            model_id: stats
+            for model_id, stats in by_model.items()
+            if model_id in modality_map
+        }
+
+    # Real overall percentiles from the raw samples (not per-model averages).
+    ttfb_samples, total_samples = await gateway.storage.get_latency_samples(
         payload.period, project=payload.project
     )
-
-    # Optional modality filter (storage currently keys by model_id only, not modality).
-    if payload.modality:
-        # Filter by examining each model's configured modality.
-        filtered: dict[str, Any] = {}
-        modality_map = gateway.config.models.get(payload.modality) or {}
-        for model_id, stats in by_model.items():
-            if model_id in modality_map:
-                filtered[model_id] = stats
-        by_model = filtered
-
-    # Derive overall percentiles from per-model averages. For a request-level
-    # percentile calculation we'd need per-request data; using per-model
-    # averages is a good approximation that matches the dashboard.
-    ttfb_samples = sorted(
-        float(stats.get("avg_ttfb_ms") or 0)
-        for stats in by_model.values()
-        if (stats.get("avg_ttfb_ms") or 0) > 0
+    request_count = len(ttfb_samples)
+    avg_ttfb = sum(ttfb_samples) / request_count if request_count else 0.0
+    avg_total = (
+        sum(total_samples) / len(total_samples) if total_samples else 0.0
     )
-    total_requests = sum(
-        int(stats.get("request_count") or 0) for stats in by_model.values()
-    )
-    avg_ms = (sum(ttfb_samples) / len(ttfb_samples)) if ttfb_samples else 0.0
 
     return {
         "period": payload.period,
         "project": payload.project,
         "modality": payload.modality,
         "overall": {
-            "p50_ms": _percentile(ttfb_samples, 50),
-            "p95_ms": _percentile(ttfb_samples, 95),
-            "p99_ms": _percentile(ttfb_samples, 99),
-            "avg_ms": avg_ms,
-            "request_count": total_requests,
+            "ttfb_percentiles": compute_percentiles(ttfb_samples, pcts),
+            "latency_percentiles": compute_percentiles(total_samples, pcts),
+            "avg_ttfb_ms": avg_ttfb,
+            "avg_latency_ms": avg_total,
+            "request_count": request_count,
         },
         "by_model": by_model,
     }

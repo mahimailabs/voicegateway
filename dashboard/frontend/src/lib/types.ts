@@ -21,10 +21,20 @@ export interface CostsResponse {
   by_project: Record<string, { cost: number; requests: number }>;
 }
 
+export interface PercentileBucket {
+  p50: number | null;
+  p95: number | null;
+  p99: number | null;
+  // extra keys tolerated for forward-compat if config.latency.percentiles changes
+  [key: string]: number | null | undefined;
+}
+
 export interface LatencyStats {
   avg_ttfb_ms: number;
   avg_latency_ms: number;
   request_count: number;
+  ttfb_percentiles: PercentileBucket;
+  latency_percentiles: PercentileBucket;
 }
 
 export type LatencyResponse = Record<string, LatencyStats>;
