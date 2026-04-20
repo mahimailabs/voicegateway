@@ -84,6 +84,19 @@ class DashboardConfig(BaseModel):
     port: int = 9090
 
 
+class ApiKeyEntry(_StrictBase):
+    """One entry under auth.api_keys."""
+
+    token: str
+    name: str = ""
+    scopes: list[str] = Field(default_factory=lambda: ["*"])
+
+
+class AuthConfig(_StrictBase):
+    api_keys: list[ApiKeyEntry] = Field(default_factory=list)
+    cors_origins: list[str] = Field(default_factory=list)
+
+
 class FallbackConfig(BaseModel):
     """Fallback chains — allows any modality key."""
 
@@ -105,6 +118,7 @@ _VALID_TOP_LEVEL_KEYS = {
     "latency",
     "rate_limits",
     "dashboard",
+    "auth",
 }
 
 
@@ -123,6 +137,7 @@ class VoiceGatewayConfig(BaseModel):
     latency: LatencyConfig = Field(default_factory=LatencyConfig)
     rate_limits: dict[str, RateLimitEntry] = Field(default_factory=dict)
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
 
     @model_validator(mode="before")
     @classmethod

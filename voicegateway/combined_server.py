@@ -124,7 +124,10 @@ def main() -> None:
     gw = Gateway(config_path=config_path)
     app = build_combined_app(gw)
 
+    from voicegateway.core.auth import describe_auth, load_api_keys
+
     logger.info("Starting combined server on %s:%d", host, port)
+    logger.info(describe_auth(load_api_keys(gw.config.auth)))
     uvicorn.run(app, host=host, port=port)
 
 

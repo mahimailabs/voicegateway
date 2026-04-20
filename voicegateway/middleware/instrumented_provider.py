@@ -101,6 +101,11 @@ class _InstrumentedBase:
             except Exception:
                 logger.warning("Failed to log request record", exc_info=True)
 
+        # Update the budget enforcer's spend cache so the next check within
+        # the TTL window sees this request's cost. Done regardless of
+        # whether storage is enabled — the enforcer's cache is in-memory.
+        await cost_tracker.notify_spend(record)
+
 
 class InstrumentedSTT(_InstrumentedBase):
     """Wrapper for STT instances that records latency and cost."""

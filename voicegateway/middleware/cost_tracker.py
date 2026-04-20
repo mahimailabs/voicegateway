@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from voicegateway.pricing.catalog import get_pricing
 from voicegateway.storage.models import RequestRecord
+
+if TYPE_CHECKING:
+    from voicegateway.middleware.budget_enforcer import BudgetEnforcer
+
+logger = logging.getLogger(__name__)
 
 
 class CostTracker:
@@ -20,6 +26,11 @@ class CostTracker:
 
     def __init__(self, storage: Any = None):
         self._storage = storage
+        self._budget_enforcer: BudgetEnforcer | None = None
+
+    def set_budget_enforcer(self, enforcer: BudgetEnforcer | None) -> None:
+        """Wire in a BudgetEnforcer so cost writes update its spend cache."""
+        self._budget_enforcer = enforcer
 
     def calculate_cost(
         self,
@@ -85,6 +96,34 @@ class CostTracker:
         )
 
     async def log_request(self, record: RequestRecord) -> None:
-        """Log a request record to storage."""
-        if self._storage:
-            await self._storage.log_request(record)
+        """Log a request record to storage and update the budget cache.
+
+        The budget cache update runs in a ``finally`` so a transient
+        storage failure doesn't leave the enforcer out of sync with the
+        cost we just incurred — the request happened, the cost is real,
+        and skipping the notify would silently undercount.
+        """
+        try:
+            if self._storage:
+                await self._storage.log_request(record)
+        finally:
+            # ``logged_at`` is captured after the write attempt so the
+            # enforcer can skip its optimistic increment when a concurrent
+            # cache refresh has already observed this row.
+            logged_at = time.monotonic()
+            await self.notify_spend(record, logged_at=logged_at)
+
+    async def notify_spend(
+        self, record: RequestRecord, logged_at: float | None = None
+    ) -> None:
+        """Notify the budget enforcer of a newly logged request."""
+        if self._budget_enforcer is None or not record.cost_usd:
+            return
+        if logged_at is None:
+            logged_at = time.monotonic()
+        try:
+            await self._budget_enforcer.record_spend(
+                record.project, record.cost_usd, logged_at=logged_at
+            )
+        except Exception:
+            logger.warning("Failed to update budget cache", exc_info=True)
