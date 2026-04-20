@@ -276,10 +276,12 @@ def serve_cmd(
         raise typer.Exit(1) from e
 
     gw = _load_gateway(config)
+    from voicegateway.core.auth import describe_auth, load_api_keys
     from voicegateway.server import build_app
 
     api_app = build_app(gw)
     console.print(f"[green]VoiceGateway API starting at http://{host}:{port}[/green]")
+    console.print(f"[cyan]{describe_auth(load_api_keys(gw.config.auth))}[/cyan]")
     uvicorn.run(api_app, host=host, port=port)
 
 
@@ -300,11 +302,14 @@ def dashboard_cmd(
         raise typer.Exit(1) from e
 
     gw = _load_gateway(config)
+    from voicegateway.core.auth import describe_auth, load_api_keys
+
     console.print(f"[green]VoiceGateway dashboard at http://{host}:{port}[/green]")
+    console.print(f"[cyan]{describe_auth(load_api_keys(gw.config.auth))}[/cyan]")
 
     import dashboard.api.main as dashboard_app
 
-    dashboard_app._gateway = gw
+    dashboard_app.configure(gw)
     uvicorn.run(dashboard_app.app, host=host, port=port)
 
 

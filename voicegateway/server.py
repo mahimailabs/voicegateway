@@ -9,15 +9,26 @@ This is what the dashboard consumes and what external monitoring tools
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import TYPE_CHECKING, Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 
+from voicegateway.core.auth import (
+    AuthError,
+    check_request,
+    load_api_keys,
+    resolve_cors_origins,
+)
+from voicegateway.storage._percentiles import quantile_label
+
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
+
+logger = logging.getLogger(__name__)
 
 
 def build_app(gateway: Gateway) -> FastAPI:
@@ -27,12 +38,42 @@ def build_app(gateway: Gateway) -> FastAPI:
         version="0.1.0",
         description="HTTP API for the VoiceGateway self-hosted inference gateway.",
     )
+
+    # Auth is opt-in. When no keys are configured, check_request passes
+    # every request and require_scope becomes a no-op dependency.
+    api_keys = load_api_keys(gateway.config.auth)
+    cors_origins = resolve_cors_origins(gateway.config.auth)
+    if cors_origins == ["*"]:
+        logger.warning(
+            "CORS: allow_origins=['*']. Set auth.cors_origins in "
+            "voicegw.yaml to restrict."
+        )
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=cors_origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    def require_scope(scope: str):
+        """Return a FastAPI dependency enforcing ``scope`` on a request."""
+
+        async def _dep(request: Request) -> None:
+            try:
+                check_request(
+                    request.headers.get("Authorization"),
+                    scope,
+                    api_keys,
+                )
+            except AuthError as exc:
+                raise HTTPException(
+                    status_code=exc.status_code, detail=exc.message
+                ) from None
+
+        return _dep
+
+    write_dep = Depends(require_scope("write"))
 
     started_at = time.time()
 
@@ -125,7 +166,10 @@ def build_app(gateway: Gateway) -> FastAPI:
     ) -> dict:
         if gateway.storage is None:
             return {}
-        return await gateway.storage.get_latency_stats(period, project=project)
+        pcts = gateway.config.latency.get("percentiles") or [50.0, 95.0, 99.0]
+        return await gateway.storage.get_latency_stats(
+            period, project=project, percentiles=pcts
+        )
 
     @app.get("/v1/projects")
     async def v1_projects() -> dict:
@@ -217,6 +261,40 @@ def build_app(gateway: Gateway) -> FastAPI:
                     f'voicegw_cost_usd_total{{project="{pid}"}} {data["cost"]:.6f}'
                 )
 
+            # Per-model latency summaries. Prometheus ``summary`` convention:
+            # one series per quantile label, values in seconds.
+            pcts = gateway.config.latency.get("percentiles") or [50.0, 95.0, 99.0]
+            latency = await gateway.storage.get_latency_stats(
+                "today", percentiles=pcts
+            )
+            if latency:
+                lines += [
+                    "# HELP voicegw_request_ttfb_seconds "
+                    "Per-model time to first byte (seconds, summary)",
+                    "# TYPE voicegw_request_ttfb_seconds summary",
+                    "# HELP voicegw_request_total_latency_seconds "
+                    "Per-model total latency (seconds, summary)",
+                    "# TYPE voicegw_request_total_latency_seconds summary",
+                ]
+                for model, s in latency.items():
+                    for p in pcts:
+                        key = f"p{int(p)}"
+                        q = quantile_label(p)
+                        ttfb_v = s.get("ttfb_percentiles", {}).get(key)
+                        if ttfb_v is not None:
+                            lines.append(
+                                f'voicegw_request_ttfb_seconds'
+                                f'{{model="{model}",quantile="{q}"}} '
+                                f"{ttfb_v / 1000:.6f}"
+                            )
+                        lat_v = s.get("latency_percentiles", {}).get(key)
+                        if lat_v is not None:
+                            lines.append(
+                                f'voicegw_request_total_latency_seconds'
+                                f'{{model="{model}",quantile="{q}"}} '
+                                f"{lat_v / 1000:.6f}"
+                            )
+
         return "\n".join(lines) + "\n"
 
     # ------------------------------------------------------------------
@@ -245,7 +323,7 @@ def build_app(gateway: Gateway) -> FastAPI:
             )
         return {"providers": result}
 
-    @app.post("/v1/providers")
+    @app.post("/v1/providers", dependencies=[write_dep])
     async def v1_create_provider(body: dict[str, Any]) -> dict:
         from voicegateway.core.crypto import mask
         from voicegateway.core.registry import _PROVIDER_REGISTRY
@@ -278,7 +356,7 @@ def build_app(gateway: Gateway) -> FastAPI:
 
         return {"provider_id": pid, "source": "db", "api_key_masked": mask(api_key)}
 
-    @app.patch("/v1/providers/{provider_id}")
+    @app.patch("/v1/providers/{provider_id}", dependencies=[write_dep])
     async def v1_update_provider(provider_id: str, body: dict[str, Any]) -> dict:
         from voicegateway.core.registry import _PROVIDER_REGISTRY
 
@@ -307,7 +385,7 @@ def build_app(gateway: Gateway) -> FastAPI:
         await gateway.refresh_config()
         return {"provider_id": provider_id, "updated": True}
 
-    @app.delete("/v1/providers/{provider_id}")
+    @app.delete("/v1/providers/{provider_id}", dependencies=[write_dep])
     async def v1_delete_provider(
         provider_id: str,
         confirm: bool = Query(False),
@@ -332,7 +410,7 @@ def build_app(gateway: Gateway) -> FastAPI:
         await gateway.refresh_config()
         return {"deleted": provider_id}
 
-    @app.post("/v1/providers/{provider_id}/test")
+    @app.post("/v1/providers/{provider_id}/test", dependencies=[write_dep])
     async def v1_test_provider(provider_id: str) -> dict:
         import asyncio as _asyncio
         import logging as _logging
@@ -378,7 +456,7 @@ def build_app(gateway: Gateway) -> FastAPI:
     # CRUD — Models
     # ------------------------------------------------------------------
 
-    @app.post("/v1/models")
+    @app.post("/v1/models", dependencies=[write_dep])
     async def v1_create_model(body: dict[str, Any]) -> dict:
         if gateway.storage is None:
             raise HTTPException(400, "Storage not enabled")
@@ -407,7 +485,7 @@ def build_app(gateway: Gateway) -> FastAPI:
         await gateway.refresh_config()
         return {"model_id": model_id, "source": "db", "created": True}
 
-    @app.delete("/v1/models/{model_id:path}")
+    @app.delete("/v1/models/{model_id:path}", dependencies=[write_dep])
     async def v1_delete_model(model_id: str, confirm: bool = Query(False)) -> dict:
         if gateway.storage is None:
             raise HTTPException(400, "Storage not enabled")
@@ -428,7 +506,7 @@ def build_app(gateway: Gateway) -> FastAPI:
     # CRUD — Projects
     # ------------------------------------------------------------------
 
-    @app.post("/v1/projects")
+    @app.post("/v1/projects", dependencies=[write_dep])
     async def v1_create_project(body: dict[str, Any]) -> dict:
         if gateway.storage is None:
             raise HTTPException(400, "Storage not enabled")
@@ -451,7 +529,7 @@ def build_app(gateway: Gateway) -> FastAPI:
         await gateway.refresh_config()
         return {"project_id": pid, "source": "db", "created": True}
 
-    @app.patch("/v1/projects/{project_id}")
+    @app.patch("/v1/projects/{project_id}", dependencies=[write_dep])
     async def v1_update_project(project_id: str, body: dict[str, Any]) -> dict:
         if gateway.storage is None:
             raise HTTPException(400, "Storage not enabled")
@@ -480,7 +558,7 @@ def build_app(gateway: Gateway) -> FastAPI:
         await gateway.refresh_config()
         return {"project_id": project_id, "updated": True}
 
-    @app.delete("/v1/projects/{project_id}")
+    @app.delete("/v1/projects/{project_id}", dependencies=[write_dep])
     async def v1_delete_project(project_id: str, confirm: bool = Query(False)) -> dict:
         if gateway.storage is None:
             raise HTTPException(400, "Storage not enabled")

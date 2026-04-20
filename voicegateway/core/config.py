@@ -78,6 +78,20 @@ class ProjectConfig:
 
 
 @dataclass
+class AuthConfig:
+    """HTTP API authentication settings.
+
+    ``api_keys`` is kept as a list of raw dicts (parsed but unresolved)
+    — ``voicegateway.core.auth.load_api_keys`` turns them into concrete
+    ``ApiKey`` instances, skipping entries with empty tokens (e.g. when
+    ``${VOICEGW_API_KEY}`` isn't set).
+    """
+
+    api_keys: list[dict[str, Any]] = field(default_factory=list)
+    cors_origins: list[str] = field(default_factory=list)
+
+
+@dataclass
 class GatewayConfig:
     """Parsed VoiceGateway configuration."""
 
@@ -90,6 +104,7 @@ class GatewayConfig:
     dashboard: dict[str, Any] = field(default_factory=dict)
     projects: dict[str, ProjectConfig] = field(default_factory=dict)
     stacks: dict[str, dict[str, str]] = field(default_factory=dict)
+    auth: AuthConfig = field(default_factory=AuthConfig)
     observability: dict[str, Any] = field(
         default_factory=lambda: {
             "latency_tracking": True,
@@ -205,6 +220,18 @@ class GatewayConfig:
                     tags=list(pcfg.get("tags") or []),
                 )
 
+        auth_raw = raw.get("auth", {}) or {}
+        auth = AuthConfig(
+            api_keys=[
+                dict(entry)
+                for entry in (auth_raw.get("api_keys") or [])
+                if isinstance(entry, dict)
+            ],
+            cors_origins=[
+                str(o) for o in (auth_raw.get("cors_origins") or []) if o
+            ],
+        )
+
         return cls(
             providers=raw.get("providers", {}) or {},
             models=raw.get("models", {}) or {},
@@ -215,6 +242,7 @@ class GatewayConfig:
             dashboard=raw.get("dashboard", {}) or {},
             projects=projects,
             stacks=raw.get("stacks", {}) or {},
+            auth=auth,
             observability=raw.get(
                 "observability",
                 {

@@ -107,9 +107,8 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const save = async () => {
     setSaving(true);
     try {
-      const res = await fetch('/v1/projects', {
+      await fetchJson('/v1/projects', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           project_id: projectId || slug(name),
           name,
@@ -118,12 +117,9 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
           budget_action: budgetAction,
         }),
       });
-      if (res.ok) {
-        onClose();
-      } else {
-        const err = await res.json();
-        alert(err.detail || 'Failed to create project');
-      }
+      onClose();
+    } catch (e) {
+      alert((e as Error).message || 'Failed to create project');
     } finally {
       setSaving(false);
     }

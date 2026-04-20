@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import TYPE_CHECKING
@@ -62,26 +63,101 @@ class BudgetEnforcer:
         self._ttl = cache_ttl_seconds
         # Cache: project -> (timestamp, spend_usd)
         self._cache: dict[str, tuple[float, float]] = {}
+        # Per-project locks coalesce concurrent DB queries and serialize
+        # cache read-modify-write. A single global lock would be simpler but
+        # would serialize unrelated projects against each other.
+        self._locks: dict[str, asyncio.Lock] = {}
+        # Protects _locks itself (the map, not the locks it holds).
+        self._locks_guard = asyncio.Lock()
 
     def _get_project_config(self, project: str) -> ProjectConfig | None:
         return self._config.get_project(project)
 
+    async def _lock_for(self, project: str) -> asyncio.Lock:
+        async with self._locks_guard:
+            lock = self._locks.get(project)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._locks[project] = lock
+            return lock
+
     async def _get_today_spend(self, project: str) -> float:
-        """Get today's spend for a project, using cache if fresh."""
-        now = time.monotonic()
-        cached = self._cache.get(project)
-        if cached is not None:
+        """Get today's spend for a project, using cache if fresh.
+
+        Concurrent callers for the same project coalesce onto one storage
+        query; the cache read and write happen under the same lock so they
+        cannot be torn by another task.
+        """
+        lock = await self._lock_for(project)
+        async with lock:
+            now = time.monotonic()
+            cached = self._cache.get(project)
+            if cached is not None:
+                ts, spend = cached
+                if now - ts < self._ttl:
+                    return spend
+
+            if self._storage is None:
+                # Don't cache a zero answer when we have no storage — if
+                # storage is attached later the cache would mask real spend
+                # until the TTL expires.
+                return 0.0
+
+            summary = await self._storage.get_cost_summary("today", project=project)
+            spend = float(summary.get("total", 0.0))
+            self._cache[project] = (now, spend)
+            return spend
+
+    async def record_spend(
+        self,
+        project: str,
+        cost_usd: float,
+        logged_at: float | None = None,
+    ) -> None:
+        """Optimistically update the cached spend after a request is logged.
+
+        Without this, the TTL window is a blind spot: spend logged to
+        storage during the window is invisible to ``check_budget`` until
+        the cache expires. Updating the cached value keeps in-memory
+        accounting close to reality between refreshes.
+
+        ``logged_at`` is ``time.monotonic()`` captured by the caller
+        immediately after ``storage.log_request`` returned. When the
+        cached entry's timestamp is >= ``logged_at`` the cache was
+        refreshed *after* our row hit storage, so the refresh already
+        includes this cost — skip the increment to avoid double-count.
+
+        This only mutates an existing cache entry. If there is no entry
+        yet, the next ``check_budget`` will read authoritative spend
+        from storage anyway.
+        """
+        if cost_usd <= 0:
+            return
+        if logged_at is None:
+            logged_at = time.monotonic()
+        lock = await self._lock_for(project)
+        async with lock:
+            cached = self._cache.get(project)
+            if cached is None:
+                return
             ts, spend = cached
-            if now - ts < self._ttl:
-                return spend
+            if ts >= logged_at:
+                # Cache refreshed from storage after this row was written;
+                # it already reflects the cost. Leave it alone.
+                return
+            self._cache[project] = (ts, spend + cost_usd)
 
-        if self._storage is None:
-            return 0.0
-
-        summary = await self._storage.get_cost_summary("today", project=project)
-        spend = float(summary.get("total", 0.0))
-        self._cache[project] = (now, spend)
-        return spend
+    async def invalidate(self, project: str | None = None) -> None:
+        """Drop cached spend for ``project`` (or all projects if None)."""
+        if project is None:
+            async with self._locks_guard:
+                projects = list(self._cache.keys())
+        else:
+            projects = [project]
+        for p in projects:
+            lock = await self._lock_for(p)
+            async with lock:
+                self._cache.pop(p, None)
 
     async def check_budget(self, project: str) -> None:
         """Check project budget, take action if exceeded.

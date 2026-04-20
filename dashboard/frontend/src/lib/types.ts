@@ -21,10 +21,23 @@ export interface CostsResponse {
   by_project: Record<string, { cost: number; requests: number }>;
 }
 
+export interface PercentileBucket {
+  // Known percentiles are optional — the API only emits what the config
+  // asks for, so callers must treat missing keys as "unknown".
+  p50?: number | null;
+  p95?: number | null;
+  p99?: number | null;
+  // Extra keys tolerated so non-default percentile lists (e.g. p99_9)
+  // still round-trip through the type.
+  [key: string]: number | null | undefined;
+}
+
 export interface LatencyStats {
   avg_ttfb_ms: number;
   avg_latency_ms: number;
   request_count: number;
+  ttfb_percentiles: PercentileBucket;
+  latency_percentiles: PercentileBucket;
 }
 
 export type LatencyResponse = Record<string, LatencyStats>;

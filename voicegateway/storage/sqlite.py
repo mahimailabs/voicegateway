@@ -10,7 +10,10 @@ from typing import Any
 
 import aiosqlite
 
+from voicegateway.storage._percentiles import compute_percentiles
 from voicegateway.storage.models import RequestRecord
+
+_DEFAULT_PERCENTILES: list[float] = [50.0, 95.0, 99.0]
 
 _logger = logging.getLogger(__name__)
 
@@ -409,14 +412,37 @@ class SQLiteStorage:
             await db.close()
 
     async def get_latency_stats(
-        self, period: str = "today", project: str | None = None
+        self,
+        period: str = "today",
+        project: str | None = None,
+        percentiles: list[float] | None = None,
     ) -> dict[str, Any]:
-        """Get latency statistics for the given period, optionally filtered by project."""
+        """Get per-model latency stats for ``period``.
+
+        Each entry contains the existing averages (``avg_ttfb_ms``,
+        ``avg_latency_ms``, ``request_count``) plus nested
+        ``ttfb_percentiles`` and ``latency_percentiles`` dicts keyed by
+        ``p50`` / ``p95`` / ``p99`` (or whatever ``percentiles`` asks
+        for). Models appear if they have *any* latency sample (either
+        TTFB or total) — the averages and percentiles are computed
+        independently, so a model with only ``total_latency_ms`` still
+        gets ``latency_percentiles`` populated.
+
+        With fewer than two samples for a particular metric, that
+        metric's percentiles mirror the single value — see
+        ``compute_percentiles`` for edge cases.
+        """
+        pcts = percentiles or _DEFAULT_PERCENTILES
         db = await self._ensure_initialized()
         try:
             since = self._period_since(period)
             params: list[Any] = [since]
-            where = "WHERE timestamp >= ? AND ttfb_ms IS NOT NULL"
+            # Include any row with at least one latency metric so models
+            # with only total_latency_ms aren't silently dropped.
+            where = (
+                "WHERE timestamp >= ? "
+                "AND (ttfb_ms IS NOT NULL OR total_latency_ms IS NOT NULL)"
+            )
             if project:
                 where += " AND project = ?"
                 params.append(project)
@@ -431,14 +457,89 @@ class SQLiteStorage:
                     GROUP BY model_id""",
                 tuple(params),
             )
-            stats = {}
+            stats: dict[str, dict[str, Any]] = {}
             async for row in cursor:
                 stats[row[0]] = {
                     "avg_ttfb_ms": row[1],
                     "avg_latency_ms": row[2],
                     "request_count": row[3],
+                    "ttfb_percentiles": compute_percentiles([], pcts),
+                    "latency_percentiles": compute_percentiles([], pcts),
                 }
+            await cursor.close()
+
+            if not stats:
+                return stats
+
+            sample_cursor = await db.execute(
+                f"""SELECT model_id, ttfb_ms, total_latency_ms
+                    FROM requests
+                    {where}""",
+                tuple(params),
+            )
+            ttfb_by_model: dict[str, list[float]] = {}
+            lat_by_model: dict[str, list[float]] = {}
+            async for row in sample_cursor:
+                model_id = row[0]
+                if row[1] is not None:
+                    ttfb_by_model.setdefault(model_id, []).append(float(row[1]))
+                if row[2] is not None:
+                    lat_by_model.setdefault(model_id, []).append(float(row[2]))
+            await sample_cursor.close()
+
+            for model_id, entry in stats.items():
+                entry["ttfb_percentiles"] = compute_percentiles(
+                    ttfb_by_model.get(model_id, []), pcts
+                )
+                entry["latency_percentiles"] = compute_percentiles(
+                    lat_by_model.get(model_id, []), pcts
+                )
+
             return stats
+        finally:
+            await db.close()
+
+    async def get_latency_samples(
+        self,
+        period: str = "today",
+        project: str | None = None,
+        modality: str | None = None,
+    ) -> tuple[list[float], list[float]]:
+        """Return ``(ttfb_samples, total_latency_samples)`` for ``period``.
+
+        Used by callers that want overall (cross-model) percentiles —
+        e.g. the MCP observability tool and the Prometheus summary
+        lines. Rows with NULL latencies are omitted. ``modality``
+        restricts samples to ``"stt"`` / ``"llm"`` / ``"tts"`` so the
+        "overall" block in callers can reflect the same filter applied
+        to their per-model view.
+        """
+        db = await self._ensure_initialized()
+        try:
+            since = self._period_since(period)
+            params: list[Any] = [since]
+            where = "WHERE timestamp >= ?"
+            if project:
+                where += " AND project = ?"
+                params.append(project)
+            if modality:
+                where += " AND modality = ?"
+                params.append(modality)
+
+            cursor = await db.execute(
+                f"""SELECT ttfb_ms, total_latency_ms
+                    FROM requests
+                    {where}""",
+                tuple(params),
+            )
+            ttfb: list[float] = []
+            total: list[float] = []
+            async for row in cursor:
+                if row[0] is not None:
+                    ttfb.append(float(row[0]))
+                if row[1] is not None:
+                    total.append(float(row[1]))
+            return ttfb, total
         finally:
             await db.close()
 

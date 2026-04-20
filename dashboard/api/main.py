@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -10,29 +11,66 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from voicegateway.core.auth import load_api_keys, resolve_cors_origins
+
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="VoiceGateway Dashboard",
     version="0.1.0",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Set by the CLI when starting the dashboard
+# Set by the CLI / combined server when starting the dashboard.
 _gateway: Any = None
+# Tracks whether CORS has been configured so configure() is idempotent.
+_cors_configured = False
 
 
 def _get_gateway() -> Gateway:
     if _gateway is None:
         raise RuntimeError("Gateway not initialized. Start via: voicegw dashboard")
     return _gateway  # type: ignore[no-any-return]
+
+
+def configure(gateway: Gateway) -> None:
+    """Attach a Gateway and configure CORS from its auth settings.
+
+    Called by the CLI before starting uvicorn. The combined server does
+    not call this — it mounts the dashboard routes onto its own app,
+    which already has CORS configured by voicegateway.server.build_app.
+    """
+    global _gateway, _cors_configured  # noqa: PLW0603
+    _gateway = gateway
+    if _cors_configured:
+        return
+    origins = resolve_cors_origins(gateway.config.auth)
+    if origins == ["*"]:
+        logger.warning(
+            "Dashboard CORS: allow_origins=['*']. Set auth.cors_origins "
+            "in voicegw.yaml to restrict."
+        )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    _cors_configured = True
+
+
+@app.get("/api/auth-status")
+async def get_auth_status() -> dict:
+    """Report whether the gateway requires a token for mutating endpoints.
+
+    Used by the frontend to decide whether to show the login gate. The
+    response never exposes key material.
+    """
+    gw = _get_gateway()
+    keys = load_api_keys(gw.config.auth)
+    return {"auth_required": bool(keys)}
 
 
 @app.get("/api/status")
@@ -92,7 +130,10 @@ async def get_latency(
     gw = _get_gateway()
     if gw.storage is None:
         return {}
-    return await gw.storage.get_latency_stats(period, project=project)
+    pcts = gw.config.latency.get("percentiles") or [50.0, 95.0, 99.0]
+    return await gw.storage.get_latency_stats(
+        period, project=project, percentiles=pcts
+    )
 
 
 @app.get("/api/logs")
