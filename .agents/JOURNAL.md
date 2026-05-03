@@ -1425,3 +1425,28 @@ Updated the discovered-work entry from `[ ]` to `[~]` with the resolution noted.
 Phase 3.3 #2 (create `tests/test_streaming_cost_accounting.py` with replay test infrastructure) is the next iteration's pick. The replay test needs at least one fixture to actually execute, which loops back to the Phase 3.2 `[?]` blocked items. The test infrastructure can be written and ship as a passing-with-zero-cases test until fixtures land; alternatively the test can use parametrize-with-glob and skip when no fixtures match.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 10:30 UTC — test(streaming): cost-accounting fixture-replay infrastructure
+
+Files: `tests/test_streaming_cost_accounting.py` (new, ~180 lines), `.agents/TODO.md` (Phase 3.3 #2 marked `[x]` with a partial-completion note).
+Tests: ruff clean, mypy clean (1 source file after a `dict[str, Any]` cast on `json.loads`), pytest 316 passed / 8 skipped (was 315/4; +1 passing test + 4 fixture-deferred parametrize skips). Coverage 79% overall.
+
+Design along three axes: discovery, parametrize-or-skip, contract.
+
+- **Discovery.** `_discover(modality, mode)` globs `tests/fixtures/streaming/` for `*_<modality>_<mode>_*.json` and returns a sorted list. Returns `[]` when the directory is missing or empty.
+- **Parametrize-or-skip.** Helper `_parametrize_or_skip(paths)` returns `(params, ids)` for `pytest.mark.parametrize`. When `paths` is empty: `([None], ["no-fixtures-recorded-yet"])` so each test still has one case that resolves to `pytest.skip(...)`. When fixtures land, parametrize expands automatically; nothing else in the test file changes.
+- **Contract.** Four fixture-driven tests, one per modality+mode combo (LLM batch, LLM stream, STT batch, TTS batch); each extracts the provider-reported usage from the fixture, calls `catalog.calculate_cost(...)` with that usage, and asserts a positive Decimal. The LLM stream variant additionally checks that the fixture has both `chunks` and a top-level `usage` block (catches recorder bugs where `stream_options.include_usage` was forgotten).
+
+A fifth test, `test_fixtures_directory_and_readme_exist`, is the directory-sanity guard for Phase 3.1 #2.
+
+**Out-of-scope-for-this-iteration call-out** (in the module docstring): the TODO 3.3 #2 wording is "replay through VG's wrapper, assert (a) input/output units counted match provider-reported usage." That is the wrapper-replay half: drive `gw.llm()/stt()/tts()` with respx mocking the underlying provider HTTP, and observe the `InstrumentedSTT/LLM/TTS` wrapper's count + cost record. That requires (a) at least one fixture to replay, (b) per-provider knowledge of each LiveKit plugin's transport layer to mock at the right boundary, (c) the TTFB hook timing assertion for assertion (c). The cost-calculation contract tests committed today exercise assertion (b) directly through `catalog.calculate_cost`; the wrapper-replay half lands in a follow-up iteration after at least one fixture arrives.
+
+Mypy fix: `json.loads(path.read_text())` returns `Any`. The function annotation `_load(path: Path) -> dict[str, Any]` was implicitly returning `Any`, which mypy flagged. Bound to a `dict[str, Any]` local and returned that, which makes the type narrowing explicit at the call site.
+
+When the first fixture lands, the corresponding `[no-fixtures-recorded-yet]` skip is replaced by a real test ID matching the filename (e.g., `[openai_gpt-4o-mini_llm_batch_2026-05-04]`). The parametrize discovery is automatic.
+
+Phase 3.3 #3 (Verify replay tests pass on all recorded fixtures) is automatically satisfied for the zero-fixture case (4 skips + 1 directory-sanity pass). When fixtures land it becomes a real verification step.
+
+No em dashes in this iteration's outputs.

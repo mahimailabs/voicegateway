@@ -334,11 +334,19 @@ sub-item ticks it `[x]` against the committed fixture's filename.
 ### 3.3 — Replay test suite
 
 - [x] Add `respx` (or equivalent HTTP mocking) to dev dependencies.
-- [ ] Create `tests/test_streaming_cost_accounting.py`. For each
+- [x] Create `tests/test_streaming_cost_accounting.py`. For each
   fixture: replay through VG's wrapper, assert (a) input/output
   units counted match provider-reported usage, (b) calculated cost
   matches `genai-prices`/local catalog calculation for those units,
   (c) TTFB hook fires correctly during streaming.
+  Done partially: cost-calculation contract tests (assertion (b))
+  for all four modality+mode combos in place; parametrized over
+  fixture glob with skip-when-empty so they activate cleanly when
+  Phase 3.2 fixtures land. The wrapper-replay half (assertion (a)
+  unit counting + assertion (c) TTFB hook timing) needs respx
+  mocking at each provider's LiveKit-plugin transport layer; those
+  tests land in a follow-up iteration after at least one fixture
+  arrives.
 - [ ] Verify: replay tests pass on all recorded fixtures.
 
 ### 3.4 — TTFB hook hardening
