@@ -795,3 +795,32 @@ Phase 2.3 (`Wire into CostTracker`) is the next sub-block. It will:
 3. Remove the legacy `PRICING` dict and `get_pricing` function from `catalog.py`.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 04:50 UTC — feat(storage): add pricing_source field to RequestRecord
+
+Files: `voicegateway/storage/models.py` (one line added), `.agents/TODO.md` (Phase 2.3 #1 marked `[x]`).
+Tests: ruff clean, mypy clean (3 source files: models.py, cost_tracker.py, sqlite.py), pytest 255 passed / 4 skipped, coverage 78%.
+
+Added `pricing_source: str = ""` to `RequestRecord` immediately after `cost_usd: float = 0.0`. The placement is deliberate: pricing_source is metadata about how cost_usd was computed, so the two fields belong adjacent.
+
+Inline comment shows the expected format: `"genai-prices@0.0.57"` for LLM, `"voicegateway-catalog@2026-05-04"` for STT/TTS, both produced by `voicegateway/pricing/catalog.pricing_source(modality)`.
+
+Why default is `""` rather than `"unknown"`:
+
+- Empty string is an unambiguous "no source recorded" signal for legacy records (created before Phase 2.3 wires CostTracker).
+- `"unknown"` collides with what `catalog.pricing_source()` returns for an unknown-modality lookup, which is a different condition (the call happened, the modality string was bad, source is genuinely unknown).
+- Distinguishing these matters during the Phase 4 reconciliation walkthrough.
+
+Why this is benign without a matching SQLite column:
+
+`voicegateway/storage/sqlite.py:300-323` constructs the INSERT with explicit column names; it does not iterate over the dataclass fields. Adding a field that the INSERT doesn't reference means: the field exists on the Python object, the value is held in memory but not persisted, and existing tests pass. Phase 2.3 #2 is a coordinated change that adds the column to `_SCHEMA`, includes `record.pricing_source` in the INSERT, handles the migration for existing DBs, and updates SELECT to read the column.
+
+Smoke tests:
+
+- `RequestRecord(...)` without `pricing_source` -> `pricing_source = ""` (default).
+- `RequestRecord(..., pricing_source="genai-prices@0.0.57")` -> field set correctly.
+- `CostTracker.create_record(...)` -> `pricing_source = ""` (default; Phase 2.3 #4 wires CostTracker to populate it).
+
+No em dashes in this iteration's outputs.

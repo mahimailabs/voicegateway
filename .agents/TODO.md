@@ -211,7 +211,7 @@ catalog with explicit source-date metadata.
 
 ### 2.3 — Wire into CostTracker
 
-- [ ] Add `pricing_source: str` field to `RequestRecord`
+- [x] Add `pricing_source: str` field to `RequestRecord`
   (`voicegateway/storage/models.py`).
 - [ ] Add `pricing_source` column to SQLite schema. Migration script
   for existing DBs (or a one-time conversion at startup).
