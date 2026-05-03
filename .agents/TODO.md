@@ -643,7 +643,31 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
   `0.1.0` cleanly. Tag is local-only; `git push` is mahimairaja's
   call. All gates remain green: ruff clean, mypy clean (57 source
   files), pytest 370 passed / 8 skipped.
-- [ ] Verify Docker build succeeds locally with new version tag.
+- [?] Verify Docker build succeeds locally with new version tag.
+  Blocked: Docker daemon is not running in this Ralph loop's
+  environment (`docker info` returns "Cannot connect to the Docker
+  daemon"). The CLI is installed but the daemon is not, and
+  starting Docker Desktop requires interactive UI access this
+  loop cannot trigger.
+
+  Structural verification done in this iteration:
+  - `Dockerfile` already declares `ARG VERSION=0.1.0` (matches
+    the v0.1.0 tag from iter 64) and the same in stage 3.
+  - All referenced paths exist: `dashboard/__init__.py`,
+    `dashboard/api/main.py`, `dashboard/frontend/dist/index.html`,
+    `voicegateway/combined_server.py`, `voicegw.example.yaml`.
+  - Multi-stage build is sane (frontend-builder, python builder,
+    runtime); installs `.[cloud,mcp,dashboard]` extras.
+  - Non-root user `voicegw:voicegw` (uid/gid 1000); healthcheck
+    against `/health`; default CMD invokes
+    `voicegateway.combined_server`.
+
+  To unblock: mahimairaja runs `docker build -t voicegateway:v0.1.0 .`
+  outside this loop and confirms the image builds and starts
+  cleanly. The build should pick up the v0.1.0 tag via hatch-vcs
+  during the python-builder stage; if hatch-vcs cannot read git
+  metadata (e.g., shallow clone), the `SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}`
+  env var in stage 2 falls through to `0.1.0`.
 - [ ] Final smoke test: fresh checkout, fresh venv, install,
   `voicegw init`, `voicegw status`, end-to-end happy path. Document
   any issues in JOURNAL.md.
