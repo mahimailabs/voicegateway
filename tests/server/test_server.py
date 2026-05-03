@@ -112,6 +112,30 @@ async def test_v1_costs_include_pricing_source_when_requested(client):
     # populated entries is exercised in tests/storage/test_storage.py.
 
 
+async def test_v1_costs_with_iso_date_window(client):
+    """`?start=` and `?end=` ISO dates are accepted; response stays valid."""
+    resp = await client.get("/v1/costs?start=2026-05-01&end=2026-05-04")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "by_model" in data
+    assert "by_provider" in data
+
+
+async def test_v1_costs_with_invalid_iso_date_returns_400(client):
+    """Malformed `?start=` returns 400 with a helpful error message."""
+    resp = await client.get("/v1/costs?start=not-a-date")
+    assert resp.status_code == 400
+    assert "YYYY-MM-DD" in resp.json()["detail"]
+
+
+async def test_v1_costs_with_only_start_or_only_end(client):
+    """Either bound is independently optional; missing bound is open-ended."""
+    resp = await client.get("/v1/costs?start=2026-05-01")
+    assert resp.status_code == 200
+    resp = await client.get("/v1/costs?end=2026-05-04")
+    assert resp.status_code == 200
+
+
 async def test_v1_latency_empty(client):
     resp = await client.get("/v1/latency")
     assert resp.status_code == 200

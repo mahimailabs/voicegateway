@@ -1584,3 +1584,30 @@ The empty-string fallback (`row[3] or ""`) matters because SQLite's `GROUP_CONCA
 Phase 4.1 #3 (`?start=` and `?end=` ISO date parameters, coexisting with the existing `period=today|week|month`) is the next iteration's pick. The storage-layer `_period_since` helper currently only handles the named-period strings; #3 needs a parallel `_window_from_iso` helper that returns a `(start_ts, end_ts)` pair, plus updates to the four cost-summary methods to accept it.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 12:30 UTC: feat(server): /v1/costs ?start= and ?end= ISO date params
+
+Files: `voicegateway/storage/sqlite.py` (new `_resolve_window` helper; three cost methods accept `start_ts`/`end_ts`), `voicegateway/server.py` (new module-level `_parse_iso_date` helper; `/v1/costs` accepts `start`/`end` query params; passes through to storage), `tests/storage/test_storage.py` (+3 tests), `tests/server/test_server.py` (+3 tests), `.agents/TODO.md` (Phase 4.1 #3 marked `[x]`).
+Tests: ruff clean, mypy clean (56 source files), pytest 337 passed / 8 skipped (was 331/8; +6 new tests). Coverage 80%.
+
+Phase 4.1's third sub-item: explicit window selection on the costs endpoint, replacing the fixed `period=today|week|month` for the cases where the operator wants to match a specific provider invoice period (e.g., "OpenAI bills me May 1 to May 31, what did VG record?").
+
+**Window resolution.** Added `SQLiteStorage._resolve_window(period, start_ts, end_ts) -> (since, until)`. When either explicit bound is set, the explicit window wins and `period` is ignored. Missing bound is unbounded on that side (since defaults to 0.0; until None). Falls back to existing `_period_since` semantics when both explicit bounds are None, which preserves every prior call site's behavior.
+
+**Storage methods.** All three cost methods (`get_cost_summary`, `get_cost_by_project`, `get_cost_by_modality`) gained `start_ts: float | None` and `end_ts: float | None` parameters. The WHERE clause builder is now uniform: `timestamp >= ?` always, plus `AND timestamp < ?` when an upper bound is set. The half-open convention (start inclusive, end exclusive) makes window arithmetic clean: `[2026-05-01, 2026-05-04+1day)` includes all of May 1 through May 4.
+
+**HTTP layer.** Added module-level `_parse_iso_date(value, *, end_of_day)`. Parses YYYY-MM-DD strictly; raises `HTTPException(400, "invalid date 'X': expected YYYY-MM-DD")` on malformed input. With `end_of_day=True` advances one day, so the operator types "end=2026-05-04" and the storage layer sees the exclusive upper bound at midnight UTC on May 5. The `/v1/costs` endpoint gains `start: str | None` and `end: str | None`. Either is independently optional; missing bound means open-ended on that side. The existing `period=today` behavior is preserved when neither bound is set.
+
+**Tests.** Six new:
+- Three storage tests, each per cost method, log records at base, base-5d, and base-10d, then query `[base-7d, base-2d)` and assert only the middle record falls inside.
+- One server test confirms a well-formed pair of dates returns 200 and the expected response shape.
+- One server test asserts a malformed `start=not-a-date` returns 400 with `YYYY-MM-DD` in the detail message.
+- One server test confirms half-open windows (only `start`, only `end`) are independently accepted.
+
+Date semantics deliberately date-only, not full ISO 8601 datetimes. The use case is "match a daily provider invoice"; sub-day granularity is rare. The operator who wants finer control can use `period=today` (last 24h) or extend later if real users ask for it; YAGNI says keep the simpler interface for now.
+
+Phase 4.1 #4 ("Tests for new query parameters") is the next iteration's pick. Each of the three preceding sub-items shipped with smoke tests, so #4 is largely satisfied already. The follow-up iteration can mark it `[x]` vacuously, then move on to Phase 4.2 (`voicegw export-costs` CLI), or extend coverage with a `live-traffic` end-to-end test that exercises all three new params together against a populated DB.
+
+No em dashes in this iteration's outputs.

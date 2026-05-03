@@ -182,6 +182,72 @@ async def test_get_cost_summary_pricing_source_concats_distinct(storage):
     assert sources == ["genai-prices@0.0.57", "genai-prices@0.0.58"]
 
 
+async def test_get_cost_summary_explicit_window(storage):
+    """`start_ts`/`end_ts` overrides `period`; rows outside the window are excluded."""
+    base = time.time()
+    # Three records: one well-old, one inside the window, one well-fresh.
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=base - 86400 * 10, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai", cost_usd=0.05,
+    ))
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=base - 86400 * 5, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai", cost_usd=0.10,
+    ))
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=base, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai", cost_usd=0.07,
+    ))
+    summary = await storage.get_cost_summary(
+        "today",
+        start_ts=base - 86400 * 7,
+        end_ts=base - 86400 * 2,
+    )
+    # Only the middle record (5 days back) falls in the window.
+    assert summary["total"] == pytest.approx(0.10, abs=0.001)
+
+
+async def test_get_cost_by_project_explicit_window(storage):
+    """Project breakdown respects the explicit window too."""
+    base = time.time()
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=base - 86400 * 10, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai",
+        project="alpha", cost_usd=0.05,
+    ))
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=base - 86400 * 5, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai",
+        project="alpha", cost_usd=0.10,
+    ))
+    by_project = await storage.get_cost_by_project(
+        "today",
+        start_ts=base - 86400 * 7,
+        end_ts=base - 86400 * 2,
+    )
+    assert by_project["alpha"]["cost"] == pytest.approx(0.10, abs=0.001)
+    assert by_project["alpha"]["requests"] == 1
+
+
+async def test_get_cost_by_modality_explicit_window(storage):
+    """Modality breakdown respects the explicit window too."""
+    base = time.time()
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=base - 86400 * 10, modality="stt",
+        model_id="deepgram/nova-3", provider="deepgram", cost_usd=0.05,
+    ))
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=base - 86400 * 5, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai", cost_usd=0.10,
+    ))
+    by_modality = await storage.get_cost_by_modality(
+        "today",
+        start_ts=base - 86400 * 7,
+        end_ts=base - 86400 * 2,
+    )
+    assert by_modality == {"llm": {"cost": pytest.approx(0.10, abs=0.001), "requests": 1}}
+
+
 async def test_get_project_stats(storage):
     now = time.time()
     await storage.log_request(RequestRecord(

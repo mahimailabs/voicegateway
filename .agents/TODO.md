@@ -429,9 +429,21 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
   Tests: 5 new (3 storage: opt-in adds field, default omits, distinct
   sources comma-joined for mid-period upgrade case; 2 server: default
   off, opt-in accepted with empty traffic).
-- [ ] Add `?start=` and `?end=` ISO date parameters. Replaces fixed
+- [x] Add `?start=` and `?end=` ISO date parameters. Replaces fixed
   `period=today|week|month` (keep the old `period` param for
   backward compat — both can coexist).
+  Done: storage helper `_resolve_window(period, start_ts, end_ts)`
+  centralizes "named period vs explicit window" logic; when either
+  bound is set, period is ignored. All three cost methods
+  (`get_cost_summary`, `get_cost_by_project`, `get_cost_by_modality`)
+  accept the new bounds. HTTP layer parses ISO dates (YYYY-MM-DD)
+  via `_parse_iso_date(value, end_of_day=...)`; `end` interpreted
+  as inclusive day (advances one day for the exclusive upper
+  bound). Invalid dates return 400 with a helpful error.
+  Tests: 6 new (3 storage covering get_cost_summary /
+  get_cost_by_project / get_cost_by_modality each respecting the
+  window; 3 server covering ISO parse, invalid-date 400, and
+  half-open windows).
 - [ ] Tests for new query parameters.
 
 ### 4.2 — `voicegw export-costs` CLI

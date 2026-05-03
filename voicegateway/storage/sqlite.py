@@ -349,24 +349,53 @@ class SQLiteStorage:
             return now - 30 * 86400
         return 0
 
+    @staticmethod
+    def _resolve_window(
+        period: str = "today",
+        start_ts: float | None = None,
+        end_ts: float | None = None,
+    ) -> tuple[float, float | None]:
+        """Resolve a query window into a `(since, until)` timestamp pair.
+
+        When either `start_ts` or `end_ts` is provided, the explicit
+        bounds win and `period` is ignored. Missing bound defaults to
+        unbounded on that side (``since=0`` / ``until=None``).
+
+        When neither is provided, falls back to the named-period semantics
+        via ``_period_since`` and returns ``until=None`` (no upper bound),
+        preserving existing call sites' behavior.
+        """
+        if start_ts is not None or end_ts is not None:
+            return (start_ts if start_ts is not None else 0.0, end_ts)
+        return (SQLiteStorage._period_since(period), None)
+
     async def get_cost_summary(
         self,
         period: str = "today",
         project: str | None = None,
         include_pricing_source: bool = False,
+        start_ts: float | None = None,
+        end_ts: float | None = None,
     ) -> dict[str, Any]:
         """Get cost summary for the given period, optionally filtered by project.
 
         With ``include_pricing_source=True``, each entry in ``by_model``
         gains a ``pricing_source`` field carrying the catalog (or
         catalogs, comma-joined) that priced that model's requests.
+
+        Pass `start_ts` and/or `end_ts` (POSIX timestamps) to override
+        the named-period window. When either is set, `period` is
+        ignored. `start_ts` is inclusive, `end_ts` is exclusive.
         """
         db = await self._ensure_initialized()
         try:
-            since = self._period_since(period)
+            since, until = self._resolve_window(period, start_ts, end_ts)
 
             params: list[Any] = [since]
             where = "WHERE timestamp >= ?"
+            if until is not None:
+                where += " AND timestamp < ?"
+                params.append(until)
             if project:
                 where += " AND project = ?"
                 params.append(project)
@@ -429,16 +458,26 @@ class SQLiteStorage:
         finally:
             await db.close()
 
-    async def get_cost_by_project(self, period: str = "today") -> dict[str, Any]:
+    async def get_cost_by_project(
+        self,
+        period: str = "today",
+        start_ts: float | None = None,
+        end_ts: float | None = None,
+    ) -> dict[str, Any]:
         """Get cost summary grouped by project."""
         db = await self._ensure_initialized()
         try:
-            since = self._period_since(period)
+            since, until = self._resolve_window(period, start_ts, end_ts)
+            params: list[Any] = [since]
+            where = "WHERE timestamp >= ?"
+            if until is not None:
+                where += " AND timestamp < ?"
+                params.append(until)
             cursor = await db.execute(
-                """SELECT project, SUM(cost_usd) as cost, COUNT(*) as count
-                   FROM requests WHERE timestamp >= ?
-                   GROUP BY project ORDER BY cost DESC""",
-                (since,),
+                f"""SELECT project, SUM(cost_usd) as cost, COUNT(*) as count
+                    FROM requests {where}
+                    GROUP BY project ORDER BY cost DESC""",
+                tuple(params),
             )
             return {
                 row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor
@@ -447,7 +486,11 @@ class SQLiteStorage:
             await db.close()
 
     async def get_cost_by_modality(
-        self, period: str = "today", project: str | None = None
+        self,
+        period: str = "today",
+        project: str | None = None,
+        start_ts: float | None = None,
+        end_ts: float | None = None,
     ) -> dict[str, Any]:
         """Get cost summary grouped by modality (stt/llm/tts).
 
@@ -458,9 +501,12 @@ class SQLiteStorage:
         """
         db = await self._ensure_initialized()
         try:
-            since = self._period_since(period)
+            since, until = self._resolve_window(period, start_ts, end_ts)
             params: list[Any] = [since]
             where = "WHERE timestamp >= ?"
+            if until is not None:
+                where += " AND timestamp < ?"
+                params.append(until)
             if project:
                 where += " AND project = ?"
                 params.append(project)

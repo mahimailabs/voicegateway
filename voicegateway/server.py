@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -30,6 +31,24 @@ if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_iso_date(value: str, *, end_of_day: bool) -> float:
+    """Parse a YYYY-MM-DD string into a UTC POSIX timestamp.
+
+    With `end_of_day=True`, advance one day so the timestamp is the
+    exclusive upper bound for "include all of YYYY-MM-DD."
+    """
+    try:
+        d = datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=UTC)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"invalid date {value!r}: expected YYYY-MM-DD",
+        ) from e
+    if end_of_day:
+        d += timedelta(days=1)
+    return d.timestamp()
 
 
 def build_app(gateway: Gateway) -> FastAPI:
@@ -144,6 +163,8 @@ def build_app(gateway: Gateway) -> FastAPI:
         project: str | None = Query(None),
         per_modality: bool = Query(False),
         include_pricing_source: bool = Query(False),
+        start: str | None = Query(None),
+        end: str | None = Query(None),
     ) -> dict:
         # Top-level `pricing_sources` records the catalog the running
         # instance is currently using (per modality). When
@@ -154,6 +175,12 @@ def build_app(gateway: Gateway) -> FastAPI:
             modality: catalog.pricing_source(modality)
             for modality in ("llm", "stt", "tts")
         }
+        # Explicit start/end ISO dates (YYYY-MM-DD) override `period`.
+        # Both bounds are interpreted at UTC midnight; `end` is the
+        # inclusive day, so internally we advance one day for the
+        # exclusive upper bound. Either bound is independently optional.
+        start_ts = _parse_iso_date(start, end_of_day=False) if start else None
+        end_ts = _parse_iso_date(end, end_of_day=True) if end else None
         if gateway.storage is None:
             empty: dict[str, Any] = {
                 "period": period,
@@ -168,16 +195,22 @@ def build_app(gateway: Gateway) -> FastAPI:
                 empty["by_modality"] = {}
             return empty
         summary = await gateway.storage.get_cost_summary(
-            period, project=project, include_pricing_source=include_pricing_source
+            period,
+            project=project,
+            include_pricing_source=include_pricing_source,
+            start_ts=start_ts,
+            end_ts=end_ts,
         )
         # Always include a by_project breakdown for the "All Projects" view
         if project is None:
-            summary["by_project"] = await gateway.storage.get_cost_by_project(period)
+            summary["by_project"] = await gateway.storage.get_cost_by_project(
+                period, start_ts=start_ts, end_ts=end_ts
+            )
         else:
             summary["by_project"] = {}
         if per_modality:
             summary["by_modality"] = await gateway.storage.get_cost_by_modality(
-                period, project=project
+                period, project=project, start_ts=start_ts, end_ts=end_ts
             )
         summary["pricing_sources"] = pricing_sources
         return summary
