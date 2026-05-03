@@ -541,7 +541,22 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
   match canonical file's pair; Cartesia characters pass through.
   16 module-level tests cover parse, aggregate, reconcile, and the
   three formatters; comprehensive CLI tests are 4.3 #5.
-- [ ] Tests for reconcile command.
+- [x] Tests for reconcile command.
+  Done: 8 new CliRunner tests via `tests/test_cli.py`. Cover (a)
+  text default with deepgram unit label `audio_s`, (b) CSV format
+  emits diff schema header + per-model rows; matched-in flags
+  surface as `True`/`False` strings, (c) JSON format with diff
+  math: provider 3600s vs VG 3000s gives `units_diff_abs == 600`
+  and `cost_diff_abs == 0.030`, (d) unsupported provider
+  (`anthropic`) returns exit 2 before storage touched, (e) missing
+  provider-usage-file returns exit 2 with "not found", (f)
+  unknown `--format xml` returns exit 2, (g) malformed `--start`
+  returns exit 2 with `YYYY-MM-DD` hint, (h) asymmetric models
+  (vg has nova-3, file has nova-2) appear with the right
+  matched-in flags. Shared `_seed_reconcile_records` helper
+  populates VG with two STT records (50min total) and one LLM
+  record so reconcile can be exercised against both per-token
+  and per-second canonical files.
 
 ### 4.4 — Reconciliation docs
 

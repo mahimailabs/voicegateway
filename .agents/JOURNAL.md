@@ -1813,3 +1813,30 @@ Phase 4.3 #4: the diff side of the reconcile workflow. With OpenAI/Deepgram/Cart
 Phase 4.3 #5 (tests for reconcile command) is the next iteration's pick. The 16 module-level tests cover the diff math; the CLI-level tests need to cover (a) end-to-end CliRunner invocation with a populated DB and a fixture provider file, (b) text/csv/json output rendering through the command, (c) missing/malformed provider file handling, (d) unknown provider exit code 2.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 15:25 UTC: test(cli): comprehensive CLI tests for voicegw reconcile
+
+Files: `tests/test_cli.py` (+8 tests + shared `_seed_reconcile_records` helper, ~190 LOC; `import pytest` added at module level), `.agents/TODO.md` (Phase 4.3 #5 marked `[x]`).
+Tests: ruff clean, mypy clean (57 source files), pytest 370 passed / 8 skipped (was 362/8; +8 new tests). Coverage 80%.
+
+Phase 4.3 #5: end-to-end CliRunner coverage for `voicegw reconcile`. The 16 module-level tests in iter 59 covered the diff math against fixture inputs; this iteration verifies the wiring through Typer, the storage layer, and the file-IO boundary works end-to-end.
+
+**Shared seed helper.** `_seed_reconcile_records(db_path) -> (start, end)` populates a fresh DB with three records: two Deepgram STT entries (30min + 20min = 50min total = 3000 canonical seconds) and one OpenAI LLM entry (1500 input + 750 output = 2250 tokens). Returns ISO date strings for a 1-day window. Each test calls the helper, then runs the reconcile command with the returned start/end.
+
+**Eight tests.**
+1. **Text default.** Deepgram run with a perfectly-matched provider file; output contains `Model`, `nova-3`, and the deepgram unit label `audio_s`. Catches future regressions where the unit-label mapping breaks.
+2. **CSV format.** OpenAI run with `--format csv`; parsed via `csv.DictReader`; verifies the diff schema header (`model, vg_units, provider_units, units_diff_abs, ...`) and the matched-in flags surface as `"True"` / `"False"` strings.
+3. **JSON format.** Deepgram run where the provider file has 3600s but VG has 3000s (a deliberate 600s gap = $0.030 diff); JSON parses; `units_diff_abs == 600.0`; `cost_diff_abs == 0.030`. The pivotal test: confirms the unit translation (Deepgram VG-minutes -> seconds) and the diff math both work end-to-end through the CLI.
+4. **Unknown provider.** `--provider anthropic` returns exit 2 with "Unsupported provider" before touching storage or files.
+5. **Missing provider file.** Path that doesn't exist returns exit 2 with "not found".
+6. **Invalid format.** `--format xml` returns exit 2 with "Unknown format".
+7. **Invalid date.** `--start not-a-date` returns exit 2 with "YYYY-MM-DD".
+8. **Asymmetric models.** VG has `nova-3` only; provider file has `nova-2` only. Both surface in the JSON output with the correct `matched_in_vg` / `matched_in_provider` flags. This catches a regression where one-sided models would silently disappear.
+
+**`import pytest` added.** The reconcile JSON test uses `pytest.approx` for the float-diff assertions; previous tests in this file did not need pytest at module level, so adding it surfaced cleanly. No other test changes.
+
+**Phase 4.3 progress.** Five of six 4.3 sub-items now done. The remaining sub-item is 4.3 #6 (none defined; #5 was the last). Looking at the TODO list: Phase 4.3 has 5 sub-items in total, and all five are now `[x]`. Phase 4.4 (reconciliation walkthrough docs) is the next iteration's pick.
+
+No em dashes in this iteration's outputs.
