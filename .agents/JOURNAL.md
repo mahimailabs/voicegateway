@@ -561,3 +561,49 @@ This is the only new external dependency approved for v0.1.0 per `.agents/PROPMT
 Phase 2.1 #3 (`uv lock` to refresh the lockfile + fresh-venv install verification) is the next iteration.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 02:50 UTC — chore(deps): refresh uv.lock with genai-prices; verify fresh-venv install; remove broken milestone tag
+
+Files: `uv.lock` (regenerated to include genai-prices 0.0.57 and its 5 transitive deps), `pyproject.toml` (no net change; raw-options experiment reverted), `.agents/TODO.md` (Phase 2.1 #3 marked `[x]`; one new discovered-work item; iteration 19 milestone-tag entry annotated to record the deletion). Local tag `v0.1.0-phase1` deleted.
+Tests: `uv lock` (134 packages resolved); fresh-venv install via `uv venv /tmp/voicegw-fresh-venv --seed --clear` + `VIRTUAL_ENV=/tmp/voicegw-fresh-venv uv pip install -e ".[dev,dashboard,mcp]"` succeeded; smoke test `from genai_prices import Usage, calc_price; calc_price(Usage(input_tokens=1000, output_tokens=100), model_ref='gpt-4o', provider_id='openai')` returned `total_price = 0.0035` matching the expected GPT-4o pricing ($0.0025 for 1k input + $0.001 for 100 output).
+
+Verifications:
+
+- **uv.lock:** Regenerated. genai-prices 0.0.57 added with its transitive deps (none required new top-level entries; genai-prices is a small package).
+- **Fresh venv install:** `voicegateway==0.1.dev77+gd1f815bda` (the auto-generated dev version since no semver tag exists; expected) installed cleanly with the `dev`, `dashboard`, and `mcp` extras.
+- **genai-prices runtime:** `genai_prices.__version__` exposes `'0.0.57'` as a module attribute, answering one of the open questions from iteration 20: the wrapper can use `genai_prices.__version__` directly for the `pricing_source = "genai-prices@<version>"` string.
+- **calc_price smoke test:** GPT-4o priced correctly through the public API. The integration surface documented in iteration 20 holds.
+
+### Side issue: the `v0.1.0-phase1` milestone tag broke hatch-vcs
+
+The literal tag name `v0.1.0-phase1` is not a PEP 440-valid version. setuptools-scm's default `tag_regex` happily matches `v0.1.0-phase1` and extracts the version `0.1.0-phase1`, which then fails PEP 440 validation with `InvalidVersion: Invalid version: 'v0.1.0-phase1'`. This blocked `hatch-vcs prepare_metadata_for_build_editable`, which `uv lock` calls during dependency resolution.
+
+I tried two fixes inside `[tool.hatch.version.raw-options]`:
+
+```toml
+tag_regex = '^v(?P<version>\d+\.\d+\.\d+)$'
+fallback_version = "0.1.0.dev0"
+```
+
+Neither change made `uv lock` pass. The error switched from `InvalidVersion` to `AssertionError: Error getting the version from source vcs:` with no further detail. Either `raw-options` are not piped through to setuptools-scm by hatch-vcs in the version this project uses, or the keys need a different name. Spent ~10 minutes on this; declined to dig deeper since the practical answer is to delete the broken tag.
+
+`SETUPTOOLS_SCM_PRETEND_VERSION=0.1.0.dev0 uv lock` works as an env-var override (already used by the Dockerfile per the conversation summary), but that does not help local dev without setting the env var every time.
+
+**Resolution:** deleted the local tag (`git tag -d v0.1.0-phase1`). With no tag at all, hatch-vcs falls back to its default behavior of generating `0.1.dev<N>+g<hash>` from the most recent commit, which is what the install showed (`0.1.dev77+gd1f815bda`). pyproject.toml `raw-options` experiment reverted; net diff to pyproject.toml from this iteration is zero (only the genai-prices line from iteration 21 remains).
+
+The Phase 1 milestone is captured in:
+
+- Commit `bf42481` (the chore(verify) verification commit).
+- Iteration 19's journal entry titled "Phase 1 verification gates pass; tag v0.1.0-phase1".
+
+Marked the iteration-19 milestone-tag TODO entry with an explicit "tag was created then deleted" note.
+
+Added a discovered-work item asking: which milestone-tag scheme should ceremonial markers (Phase 1 complete, Phase 2 complete, etc.) use? Options listed: (a) drop the `v` prefix (`phase1-complete`); (b) PEP 440 local segment (`v0.1.0+phase1`); (c) hatch-vcs `tag_regex` restriction + `fallback_version` (needs the right config syntax). Until mahimairaja decides, milestone markers stay in journal entries only. Phase 2-4 do not depend on the tag.
+
+### Phase 2.1 complete
+
+All three sub-items done: research (iter 20), pyproject.toml dep (iter 21), uv lock + fresh-venv verification (this iter). Phase 2.2 (pricing module split) starts in the next iteration.
+
+No em dashes in this iteration's outputs.

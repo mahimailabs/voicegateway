@@ -160,6 +160,13 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
   `uv run coverage report` shows TOTAL 79% (above the 75% gate set
   in `pyproject.toml:97`).
 - [x] Commit Phase 1 milestone tag locally (`v0.1.0-phase1`).
+  Note: tag was created in iteration 19, then deleted in
+  iteration 22 because the literal name `v0.1.0-phase1` is not a
+  PEP 440-valid version and broke `hatch-vcs` build metadata
+  (`InvalidVersion: Invalid version: 'v0.1.0-phase1'`). Phase 1
+  milestone is captured in commit `bf42481` and the iteration-19
+  journal entry. See discovered-work for the milestone-tag scheme
+  decision.
 
 ---
 
@@ -175,7 +182,7 @@ catalog with explicit source-date metadata.
   call, what they return).
 - [x] Add `genai-prices` to `pyproject.toml` runtime dependencies. Pin
   to a specific minor (e.g., `>=0.0.52,<0.1`).
-- [ ] Run `uv lock` to update lockfile. Verify install works in a
+- [x] Run `uv lock` to update lockfile. Verify install works in a
   fresh venv.
 
 ### 2.2 — Pricing module split
@@ -456,6 +463,18 @@ note them and continue with current task.)
     `docs/configuration/stacks.md`,
     `docs/examples/local-only.md`) treats voice ID as part of
     model ID; catalog has just `local/piper`.
+
+- [ ] Decide milestone-tag scheme for ceremonial markers (Phase 1
+  complete, Phase 2 complete, etc). The literal `v0.1.0-phase1`
+  used in iteration 19 broke `hatch-vcs` (PEP 440-invalid).
+  Options: (a) drop literal "v" prefix, e.g. `phase1-complete`,
+  which `hatch-vcs` ignores by default; (b) use PEP 440 local
+  version segment, e.g. `v0.1.0+phase1`; (c) restrict
+  `hatch-vcs` `tag_regex` to strict semver and add a
+  `fallback_version` so non-version tags are simply ignored
+  (attempted in iteration 22 via `[tool.hatch.version.raw-options]`,
+  did not work; needs deeper investigation). Until decided, milestone
+  markers stay in journal entries only.
 
 - [ ] Clean up stale `model: default` lines in `local/kokoro:`
   YAML blocks introduced by 1.3.5c (the value before the sweep
