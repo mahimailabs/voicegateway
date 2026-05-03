@@ -632,7 +632,17 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
   validation, LLM 5% drift, blocked Phase 3.2 sub-items, milestone-
   tag scheme). The prior content was retitled "v0.0.x baseline"
   and kept below for completeness. Docs build clean (3.01s).
-- [ ] Tag `v0.1.0` locally. Do NOT push — that's mahimairaja's call.
+- [x] Tag `v0.1.0` locally. Do NOT push — that's mahimairaja's call.
+  Done: created `git tag -a v0.1.0 -m "..."` at HEAD `633c67e`
+  (the Phase 4.5 #2 changelog commit). Strict-semver, so the
+  hatch-vcs warning the iter-22/iter-45 tags hit does not apply
+  here. Verified: `uv pip install -e .` regenerated
+  `voicegateway/_version.py` with `__version__ = '0.1.0'`
+  (was `0.1.dev100+g7c98e6900.d20260503` pre-tag), and `uv run
+  python -c "from voicegateway import __version__"` returns
+  `0.1.0` cleanly. Tag is local-only; `git push` is mahimairaja's
+  call. All gates remain green: ruff clean, mypy clean (57 source
+  files), pytest 370 passed / 8 skipped.
 - [ ] Verify Docker build succeeds locally with new version tag.
 - [ ] Final smoke test: fresh checkout, fresh venv, install,
   `voicegw init`, `voicegw status`, end-to-end happy path. Document

@@ -1922,3 +1922,47 @@ Phase 4.5 #2: write the actual v0.1.0 changelog. The existing top entry was misl
 Phase 4.5 #3 (tag `v0.1.0` locally) is the next iteration's pick. The milestone-tag resolution (iter 45) noted the actual `v0.1.0` release tag is a real strict-semver tag and works cleanly with hatch-vcs; that iteration creates the tag and verifies the version resolves. The current `0.1.dev100+g...` from `_version.py` should become a clean `0.1.0` once the tag exists.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 16:50 UTC: chore(release): create local v0.1.0 git tag
+
+Files: `.agents/TODO.md` (Phase 4.5 #3 marked `[x]`).
+Tag: `v0.1.0` (annotated) at commit `633c67e` (Phase 4.5 #2 changelog commit).
+Tests: ruff clean, mypy clean (57 source files), pytest 370 passed / 8 skipped. Coverage 80%.
+
+The pivotal release-prep step. The milestone-tag resolution from iter 45 said the actual `v0.1.0` release tag would be a real strict-semver tag and would work cleanly with hatch-vcs; this iteration confirmed that empirically.
+
+**Tag command.**
+
+```
+git tag -a v0.1.0 -m "v0.1.0: cost-tracking foundation rebuild ..."
+```
+
+Annotated (not lightweight) so the tag carries the release rationale. Placed at HEAD which is `633c67e` (the changelog rewrite from iter 63), since that is the last release-relevant artifact: code stopped changing at iter 60 (Phase 4.3 #5 reconcile CLI tests); the only commits since are docs and bookkeeping.
+
+**hatch-vcs verification.**
+
+Before tag:
+```
+voicegateway/_version.py: __version__ = '0.1.dev100+g7c98e6900.d20260503'
+```
+
+After `git tag -a v0.1.0 ...` and `uv pip install -e .` (which forces hatch-vcs to regenerate `_version.py`):
+```
+voicegateway/_version.py: __version__ = '0.1.0'
+```
+
+`uv run python -c "from voicegateway import __version__"` returns `0.1.0` (matches the hard-coded string in `voicegateway/__init__.py:8`; both sources are now coherent).
+
+The two prior tag attempts (iter 19's `v0.1.0-phase1`, iter 40's `phase2-complete`) both broke `hatch-vcs prepare_metadata_for_build_editable` because setuptools-scm's default tag regex matched their non-PEP-440 forms and tried to parse them as versions. `v0.1.0` is strict PEP 440, so this tag works without any tag_regex tuning.
+
+**Local-only.** The tag is not pushed. Per the operating rules: "mahimairaja decides when tags are pushed." The tag sits in `.git/refs/tags/v0.1.0` waiting for `git push origin v0.1.0` (or `git push --tags`) when mahimairaja chooses.
+
+**No new commit for this iteration's tag-creation.** The tag points at a previous commit; this iteration's TODO + journal updates are post-tag bookkeeping, committed separately. The tag does not move.
+
+**Reversibility.** If Phase 4.5 #4 (Docker build) or 4.5 #5 (smoke test) surface a release-blocker, delete the tag with `git tag -d v0.1.0`, fix forward, and re-tag at the new HEAD. The local-only constraint makes this safe; if the tag had been pushed, deletion would be more disruptive.
+
+**Phase 4.5 progress.** Three of five sub-items now done (#1 vacuous version bump, #2 CHANGELOG, #3 tag). Phase 4.5 #4 (verify Docker build succeeds locally) is the next iteration's pick. The Dockerfile is already wired (`ARG VERSION=0.1.0`); the verification is `docker build -t voicegateway:v0.1.0 .` and confirming the image starts cleanly. Phase 4.5 #5 (final smoke test on a fresh checkout/venv with `voicegw init`/`voicegw status`/end-to-end happy path) follows.
+
+No em dashes in this iteration's outputs.
