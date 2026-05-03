@@ -129,6 +129,30 @@ open http://localhost:9090
 
 ### Your first agent
 
+The example below runs a LiveKit Agents worker. You need a LiveKit server and credentials before it will connect.
+
+**LiveKit Cloud (free tier):** sign up at [livekit.io](https://livekit.io/), create a project, and copy the URL plus API key and secret from project settings.
+
+**Self-hosted (local dev):**
+
+```bash
+docker run --rm -p 7880:7880 -p 7881:7881 -p 7882:7882/udp \
+  livekit/livekit-server --dev
+```
+
+Default keys are `devkey` / `secret`. Full self-host guide: [livekit.io self-hosting](https://docs.livekit.io/home/self-hosting/local/).
+
+Install the agents SDK and export credentials:
+
+```bash
+pip install livekit-agents
+export LIVEKIT_URL=wss://<project>.livekit.cloud   # or ws://localhost:7880
+export LIVEKIT_API_KEY=<key>                       # `devkey` for local --dev
+export LIVEKIT_API_SECRET=<secret>                 # `secret` for local --dev
+```
+
+Without these the agent fails with `ConnectionError: Failed to connect`.
+
 ```python
 from voicegateway import Gateway
 from livekit.agents import AgentSession

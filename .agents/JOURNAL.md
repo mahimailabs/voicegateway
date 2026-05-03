@@ -117,3 +117,20 @@ New badge: `[![Tests](https://github.com/mahimailabs/voicegateway/actions/workfl
 Rationale for picking `test-coverage.yml` over `ci.yml`: the test-coverage workflow runs on push-to-main and on PRs, so its "passing" state actually reflects what is live on main. `ci.yml` runs on PRs only, so its main-branch state is always stale.
 
 Held back: a Codecov badge could be added (`codecov-action@v5` is already wired at `.github/workflows/test-coverage.yml:62-66`). Captured as discovered-work for the docs sweep or release-prep pass; out of scope for "verify all are current and accurate."
+
+---
+
+## 2026-05-03 22:15 UTC — docs(readme): surface LiveKit prerequisite before the agent example
+
+Files: `README.md` (24 lines inserted between the "Your first agent" heading and the existing Python snippet), `.agents/TODO.md` (Phase 1.2 #4 marked `[x]`).
+Tests: n/a (markdown-only change).
+
+Notes — placement and rationale:
+
+- **Placement decision: contextual prereq inside "Your first agent", not a top-of-Quick-Start callout.** The pip / Docker / Compose install paths all work without LiveKit; only the agent example needs it. A top-level prerequisites callout would mislead users running `voicegw status` or `voicegw dashboard` who do not need LiveKit at all. Putting the warning right before the snippet that fails without LiveKit puts it at the actual point of failure.
+- **Two paths covered.** LiveKit Cloud (free tier, "sign up + copy creds") and self-hosted via the official `livekit/livekit-server --dev` Docker command, with a link to LiveKit's self-hosting guide for a full setup. Names the default `--dev` keys (`devkey` / `secret`) inline so a reader can paste them straight into the env vars.
+- **Names the failure mode verbatim.** "Without these the agent fails with `ConnectionError: Failed to connect`" so a user who hits the error can grep their logs for that exact string and find this section. Same trick the audit recommended.
+- **Does not touch the existing Python snippet.** The snippet has a separate latent issue (uses literal `cartesia/sonic-3:voice_id` placeholder for the voice ID) that is part of credibility-issues C5 (model-ID consistency). Out of scope here.
+- **No em dashes introduced.** Pre-existing em dash at `README.md:93` (Docker section) is left for the broader em-dash sweep already on the discovered-work list.
+
+Phase 1.2 (README rewrite) is now complete: hero (#1), features (#2), badges (#3), and install instructions (#4) all done. Phase 1.3 (docs site rewrites) starts in the next iteration.

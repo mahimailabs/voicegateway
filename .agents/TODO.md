@@ -41,7 +41,7 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
   (d) MCP server for agent self-service. Honest tone — link to
   decision-tree page for "is this right for me?"
 - [x] Update README badges. Verify all are current and accurate.
-- [ ] Update README install instructions. LiveKit prerequisite visible
+- [x] Update README install instructions. LiveKit prerequisite visible
   up-front so users don't get stuck on `ConnectionError`.
 
 ### 1.3 — Docs site rewrites
