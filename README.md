@@ -9,6 +9,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Tests](https://github.com/mahimailabs/voicegateway/actions/workflows/test-coverage.yml/badge.svg?branch=main)](https://github.com/mahimailabs/voicegateway/actions/workflows/test-coverage.yml)
+[![Coverage](https://codecov.io/gh/mahimailabs/voicegateway/branch/main/graph/badge.svg)](https://codecov.io/gh/mahimailabs/voicegateway)
 
 [**Docs**](https://docs.voicegateway.dev) · [**Quick Start**](#quick-start) · [**MCP Setup**](#manage-from-your-coding-agent-mcp) · [**Deploy**](#deploy)
 

@@ -778,12 +778,16 @@ note them and continue with current task.)
   description and the journal-entry format example in PROMPT.md:121
   also use em dashes.
 
-- [ ] Add a Codecov coverage badge to README. `codecov-action@v5`
+- [x] Add a Codecov coverage badge to README. `codecov-action@v5`
   is already wired in `.github/workflows/test-coverage.yml:62-66`
   with `secrets.CODECOV_TOKEN`, so a `https://codecov.io/gh/mahimailabs/voicegateway/branch/main/graph/badge.svg`
   badge would render dynamically. Held back from this iteration to
   keep "verify and update" scope minimal; revisit during the docs
   sweep or a release-prep pass.
+  Done: added the Coverage badge alongside the Tests badge in
+  the README header. Single line edit; renders dynamically once
+  `secrets.CODECOV_TOKEN` is set in the GitHub Actions
+  environment (already wired). Docs build clean (3.07s).
 
 - [ ] LLM model IDs across docs (deferred from 1.3.5c). Docs use
   `anthropic/claude-sonnet-4-20250514` (16 occurrences) and

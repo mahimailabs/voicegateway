@@ -2168,3 +2168,26 @@ Iter 71 picks the next discovered-work item. Candidates ranked by effort:
 Iter 71 takes the Codecov badge.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 19:10 UTC: docs(readme): add Codecov coverage badge
+
+Files: `README.md` (one line added under the existing Tests badge), `.agents/TODO.md` (Codecov badge discovered-work item marked `[x]`).
+Tests: docs build clean (3.07s); existing pytest 371 passed / 8 skipped (no code touched).
+
+The smallest discovered-work item: a single `[![Coverage](...)](...)` line added to the README's badge block. The Codecov GitHub Action (`codecov/codecov-action@v5`) was already wired in `.github/workflows/test-coverage.yml:63` with `secrets.CODECOV_TOKEN`, so the badge URL `https://codecov.io/gh/mahimailabs/voicegateway/branch/main/graph/badge.svg` will render dynamically once the workflow has run on `main` after this change merges (or any subsequent push). The TODO entry from earlier iterations explicitly noted this was held back to keep verification scope minimal; closing it here since the v0.1.0 cycle has settled and the badge sits alongside the existing Tests badge cleanly.
+
+**Discovered-work surface narrows.** Open `[ ]` items: 5 (was 6 before this iteration). Remaining: em-dash sweep, LLM model-id sweep, model-id inconsistencies cleanup, legacy `PRICING`/`get_pricing` removal, kokoro yaml `model: default` cleanup.
+
+**Iter 72 candidate ranking.**
+
+- **Kokoro yaml `model: default` cleanup** (a few YAML files; mechanical). Smallest remaining.
+- **LLM model-id sweep** (~13 occurrences across ~6 docs files). Medium.
+- **Model-id inconsistencies cleanup** (kokoro, assemblyai, groq, ollama, anthropic, piper across ~10 files). Medium-large.
+- **Legacy `PRICING`/`get_pricing` removal** (~10 files including 6 cloud provider implementations and 2 tests). Larger; needs the test rewrites.
+- **Em-dash sweep** (~24+ occurrences across many files). Largest text touch.
+
+Iter 72 takes the Kokoro yaml cleanup. Each subsequent iteration narrows further until the surface contains only the genuinely-blocked `[?]` items, at which point Phase 4.6's completion-promise sub-item becomes the only `[ ]` and criterion #1 is reachable.
+
+No em dashes in this iteration's outputs.
