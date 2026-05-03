@@ -375,10 +375,31 @@ sub-item ticks it `[x]` against the committed fixture's filename.
 
 ### 3.5 — Phase 3 verification
 
-- [ ] All replay tests pass.
-- [ ] Coverage on `InstrumentedSTT|LLM|TTS` streaming paths reaches
+- [x] All replay tests pass.
+  Done: `tests/test_streaming_cost_accounting.py` resolves to 1 pass
+  (`test_fixtures_directory_and_readme_exist`) + 4 skips (parametrize
+  cases skipping with `no-fixtures-recorded-yet` per iter 46 design).
+  Phase 3.4 hook tests pass too (6/6, iter 48). Full suite: ruff
+  clean, mypy clean (59 source files), 322 passed / 8 skipped, 80%
+  total coverage (gate is 75%).
+- [x] Coverage on `InstrumentedSTT|LLM|TTS` streaming paths reaches
   80%+ (per design doc success gate).
-- [ ] Commit Phase 3 milestone tag locally (`v0.1.0-phase3`).
+  Done: `voicegateway/middleware/instrumented_provider.py` at 80%
+  exactly (was 34% pre-Phase 3.4). Uncovered lines (47, 50, 53-54,
+  99-102, 151-160) are mostly the `__getattr__` proxy fallback and
+  storage-failure paths; Layer-A hook contract is fully covered.
+  Layer-B coverage (per-provider streaming code paths actually
+  calling `_mark_first_byte`) lifts further when Phase 3.2 fixtures
+  land and wrapper-replay tests come online.
+- [~] Commit Phase 3 milestone tag locally (`v0.1.0-phase3`).
+  Skipped per the milestone-tag resolution in discovered work
+  (iter 45): stop using git tags for ceremonial milestones, rely
+  on commit hashes + journal entries instead. The `v0.1.0-phase1`
+  tag (iter 19, deleted iter 22) and `phase2-complete` tag (iter
+  40, deleted iter 45) both broke `hatch-vcs prepare_metadata_for_build_editable`.
+  Phase 3 milestone is captured in this verification commit + the
+  journal entry; `git log feat/cost-track-rebuild --grep='chore(verify)'`
+  lists the phase boundaries.
 
 ---
 

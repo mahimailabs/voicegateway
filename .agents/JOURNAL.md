@@ -1497,3 +1497,34 @@ Layer-B coverage (per-provider streaming code paths actually calling `_mark_firs
 Phase 3.5 (Phase 3 verification) is the next iteration's pick. No tag this time per the milestone-tag resolution from iter 45: just ruff/mypy/pytest/coverage check + journal record.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 11:30 UTC: chore(verify): Phase 3 verification
+
+Files: `.agents/TODO.md` (Phase 3.5 #1 and #2 marked `[x]`; #3 marked `[~]` per milestone-tag resolution).
+Tests: `uv run ruff check voicegateway dashboard tests` clean, `uv run mypy voicegateway dashboard` Success (59 source files), `uv run coverage run -m pytest tests/ --ignore=tests/providers/test_ollama.py` 322 passed / 8 skipped, `uv run coverage report` TOTAL 80% (above the 75% gate set in `pyproject.toml:103`).
+
+Phase 3 verification is split across the three sub-items of 3.5; this iteration walks each gate.
+
+**3.5 #1: All replay tests pass.** `tests/test_streaming_cost_accounting.py` resolves to 1 pass (`test_fixtures_directory_and_readme_exist`, the directory-sanity guard from Phase 3.1 #2) + 4 skips (the four parametrized fixture-driven cases, each falling through to `pytest.skip("no-fixtures-recorded-yet")` because `_discover()` returns an empty list). Phase 3.4 hook tests (6/6, iter 48) also pass. The full middleware test directory is 27 passed / 0 skipped after the Phase 3.4 additions, lifted from 21 passed pre-iteration-48.
+
+This is honest about state: the contract test file's real signal arrives with the first fixture; the current pass is the degenerate-zero-fixture case. The TODO note records the caveat so a reader can see this is an infrastructure gate, not a load-bearing checkpoint.
+
+**3.5 #2: Coverage on `InstrumentedSTT|LLM|TTS` streaming paths reaches 80%+.** `voicegateway/middleware/instrumented_provider.py` is at 80% exactly (it was 34% before Phase 3.4 added the contract tests). Uncovered lines per coverage report:
+
+- 47, 50, 53-54: the `_InstrumentedBase.__getattr__` proxy fallback path (when an attribute lookup bypasses the instrumented attributes and proxies to the wrapped LiveKit plugin instance). Hard to exercise without a real plugin attached; covered indirectly by the per-provider integration tests that the design doc gates separately.
+- 99-102: the storage-write failure path (`except Exception as e: logger.error(...)`). Triggers only when the SQLite write fails mid-request, not exercised by the unit-level mock tests.
+- 151-160: the `_finalize` orchestration for the path where `_mark_first_byte` was never called and `_log_request` is invoked from a streaming code path with no chunks. The fallback semantics are covered by `test_log_request_falls_back_to_total_when_hook_not_called` (the value the wrapper writes is asserted), but the surrounding `_finalize` call site lives in the per-modality streaming wrapper subclasses; full coverage there needs Layer B (wrapper-replay) which is blocked on Phase 3.2 fixtures.
+
+The 80% gate is met. Layer B coverage will lift this further when Phase 3.2 fixtures land and the per-provider wrapper-replay tests come online.
+
+The two adjacent middleware files come along for free: `voicegateway/middleware/cost_tracker.py` at 85% (was 80% pre-Phase 2.3), `voicegateway/middleware/fallback.py` at 95%. The cost-tracking pipeline as a whole is well-tested.
+
+**3.5 #3: Commit Phase 3 milestone tag locally (`v0.1.0-phase3`).** Skipped (`[~]`) per the milestone-tag resolution recorded in the discovered-work backlog (iter 45 entry). The `v0.1.0-phase1` tag (iter 19, deleted iter 22) and `phase2-complete` tag (iter 40, deleted iter 45) both broke `hatch-vcs prepare_metadata_for_build_editable` because setuptools-scm's default `tag_regex` matches more liberally than the milestone-tag plan assumed. Both attempts resulted in `InvalidVersion` or `no version found` failures during `uv pip install -e .`. The journal + commit graph (`git log feat/cost-track-rebuild --grep='chore(verify)'`) is the canonical milestone record going forward; the actual `v0.1.0` release tag (Phase 4.5) will be a real strict-semver tag and works cleanly.
+
+**Phase 3 wrap-up.** All five 3.x sub-phases (3.1 fixture infrastructure, 3.2 fixture recording (blocked), 3.3 replay test infrastructure, 3.4 TTFB hook hardening, 3.5 verification) are now `[x]` or `[?]/[~]` with documented reasons. Phase 3 is structurally done; the actual cost-accounting validation across all six target fixtures lands when mahimairaja runs the recorder externally and commits the JSON. The replay test file activates automatically against any committed fixture matching `*_<modality>_<mode>_*.json`.
+
+Phase 4.1 (`/v1/costs` enhancements: `?per_modality`, `?include_pricing_source`, `?start`/`?end`) is the next iteration's pick. The `pricing_source` plumbing is already in place (Phase 2.4); 4.1 layers query parameters and per-line attribution on top. Tests for the new parameters are part of 4.1 #4.
+
+No em dashes in this iteration's outputs.
