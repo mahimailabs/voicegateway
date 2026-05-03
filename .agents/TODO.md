@@ -270,8 +270,20 @@ catalog with explicit source-date metadata.
 
 ### 2.8 — Phase 2 verification
 
-- [ ] `make test` passes; coverage ≥ 75%.
-- [ ] Commit Phase 2 milestone tag locally (`v0.1.0-phase2`).
+- [x] `make test` passes; coverage ≥ 75%.
+  Done: `uv run ruff check voicegateway dashboard tests` (clean),
+  `uv run mypy voicegateway dashboard` (Success, 59 source files),
+  `uv run coverage run -m pytest tests/ --ignore=tests/providers/test_ollama.py`
+  (315 passed / 4 skipped), `uv run coverage report` shows 79%
+  total (above the 75% gate). Docs build also clean (3.21s).
+- [x] Commit Phase 2 milestone tag locally (`v0.1.0-phase2`).
+  Tagged as `phase2-complete` (no `v` prefix) instead of
+  `v0.1.0-phase2` to avoid the hatch-vcs / setuptools-scm
+  incompatibility documented in iteration 22's journal entry. The
+  hatch-vcs default tag regex matches `vX.Y.Z*` patterns and chokes
+  on a non-PEP-440 suffix; tags without the `v` prefix are ignored
+  by the version-derivation path. Phase 2 milestone is captured in
+  the commit graph + this journal; tag is the convenient pointer.
 
 ---
 

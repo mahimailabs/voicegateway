@@ -1212,3 +1212,56 @@ The cost-tracking middleware specifically:
 Phase 2.7 is now complete (all 4 sub-items done). Phase 2.8 (Phase 2 verification + tag) is the next iteration. The Phase 2.8 work is largely already done in spirit since each Phase 2 iteration has been running the full suite; iteration 40 makes the milestone official and creates the local `v0.1.0-phase2` tag (subject to the milestone-tag-scheme decision tracked in discovered-work).
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 08:50 UTC — chore(verify): Phase 2 verification gates pass; tag phase2-complete
+
+Files: `.agents/TODO.md` (Phase 2.8 both sub-items resolved), local git tag `phase2-complete`.
+Tests: this iteration is verification + tagging; no code changes.
+
+Phase 2 verification matrix:
+
+| Gate | Command | Result |
+|---|---|---|
+| Ruff | `uv run ruff check voicegateway dashboard tests` | All checks passed |
+| Mypy | `uv run mypy voicegateway dashboard` | Success, no issues in 59 source files |
+| Pytest | `uv run coverage run -m pytest tests/ --ignore=tests/providers/test_ollama.py` | 315 passed / 4 skipped |
+| Coverage | `uv run coverage report` | TOTAL 79% (above the 75% gate) |
+| Docs build | `cd docs && npm run build` | Clean in 3.21s |
+
+Tagged `phase2-complete` locally pointing at this commit. Tag is **not** pushed (per design-doc Decision Log).
+
+Tag-scheme decision per the discovered-work item: picked option (a) "drop literal v prefix" from the three options recorded in iteration 22's journal entry. The hatch-vcs default tag regex matches `vX.Y.Z*` patterns and chokes on non-PEP-440 suffixes (the iteration-19 `v0.1.0-phase1` tag broke `uv lock` until deleted in iter 22). Names without the `v` prefix are ignored by the version-derivation path entirely. `phase2-complete` is the cleanest of the three options:
+
+- Easy to read (vs `v0.1.0+phase2` PEP 440 local segment).
+- Doesn't require any config change to hatch-vcs (option c failed in iter 22).
+- Self-documenting: anyone running `git tag -l` sees what the tag means without needing to know the project's milestone scheme.
+
+The discovered-work milestone-tag entry can be updated to record this decision: future ceremonial tags should use `phaseN-complete`. The deleted `v0.1.0-phase1` tag could optionally be recreated as `phase1-complete` for consistency, captured as a small follow-up.
+
+**Phase 2 (pricing foundation) is complete.**
+
+Phase 2 deliverables shipped:
+
+- `pydantic/genai-prices` 0.0.57 added as runtime dependency (iter 21).
+- `voicegateway/pricing/llm.py` wraps genai-prices with the no-silent-zero contract (iter 24); 94% test coverage (iter 36).
+- `voicegateway/pricing/stt.py` source-date-tagged catalog with 9 entries (iter 25); 100% test coverage (iter 37).
+- `voicegateway/pricing/tts.py` source-date-tagged catalog with 6 entries (iter 26); 100% test coverage (iter 37).
+- `voicegateway/pricing/catalog.py` unified facade dispatching by modality (iter 27); 100% test coverage (iter 38).
+- `RequestRecord.pricing_source` field added (iter 28); SQLite column + at-startup migration + INSERT extended (iter 29); CostTracker dispatches through facade (iter 30); auto-derived on every record via create_record (iter 31).
+- `/v1/costs` response carries top-level `pricing_sources` dict (iter 32).
+- Dashboard Logs page shows a Source column (iter 33).
+- `groq/llama-3.1-8b` $0.0 placeholder fixed by aligning VG IDs to Groq's canonical product names in `voicegw.example.yaml` (iter 34).
+- 60-day staleness gate enforced via `tests/pricing/test_staleness.py` (iter 35).
+- 58 new unit tests across `tests/pricing/{test_llm,test_stt,test_tts,test_catalog,test_staleness}.py` (iters 35-38).
+
+Three deferrals tracked in discovered-work for later phases:
+
+- LLM model-ID sweep across docs (iter 15): largely auto-resolved by genai-prices recognizing the docs' newer Anthropic IDs (iter 24 finding); only docs need updating to match if mahimairaja wants docs and example.yaml unified.
+- Legacy `PRICING` dict + `get_pricing()` removal in `voicegateway/pricing/catalog.py` (iter 34 discovery): 10-file cleanup that drops the abstract method from BaseProvider, drops the method from each cloud provider, drops the dict and function, rewrites the two test files that exercise `provider.get_pricing(...)`.
+- Codecov badge addition in README (iter 6 discovery).
+
+Phase 3 (streaming validation) starts in the next iteration.
+
+No em dashes in this iteration's outputs.
