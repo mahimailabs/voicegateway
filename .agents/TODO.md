@@ -173,7 +173,7 @@ catalog with explicit source-date metadata.
 - [x] Read `pydantic/genai-prices` README and Python package docs.
   Document the integration surface in JOURNAL.md (which functions to
   call, what they return).
-- [ ] Add `genai-prices` to `pyproject.toml` runtime dependencies. Pin
+- [x] Add `genai-prices` to `pyproject.toml` runtime dependencies. Pin
   to a specific minor (e.g., `>=0.0.52,<0.1`).
 - [ ] Run `uv lock` to update lockfile. Verify install works in a
   fresh venv.

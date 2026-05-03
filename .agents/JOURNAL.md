@@ -543,3 +543,21 @@ Notes on the wrapper design:
 Phase 2.1 #2 (add the dependency to pyproject.toml) and #3 (uv lock + fresh-venv verification) follow in the next iterations.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 02:35 UTC — feat(deps): add genai-prices runtime dependency to pyproject.toml
+
+Files: `pyproject.toml` (one line added to `dependencies`), `.agents/TODO.md` (Phase 2.1 #2 marked `[x]`).
+Tests: pyproject.toml parses cleanly via `python3 -c "import tomllib"`; full deps list verified.
+
+Added `"genai-prices>=0.0.52,<0.1"` to the runtime `dependencies` array. Pin per design doc §5.1: lower bound `0.0.52` matches the design's stated minimum; upper bound `<0.1` caps before any potential 0.1.0 schema break. Latest published version on PyPI is `0.0.57` (per the previous iteration's research), which falls cleanly inside this range.
+
+This is the only new external dependency approved for v0.1.0 per `.agents/PROPMT.md` ("Never introduce a new external dependency without an explicit TODO.md task approving it. genai-prices is the one approved new dep this release."). The pin is conservative on both ends:
+
+- The lower bound `>=0.0.52` is design-doc-stated; we do not yet know if older versions of genai-prices have the `Usage` shape and `calc_price` signature documented in the previous iteration's research. Lowering to `>=0.0.5` or `>=0.0.40` could be done later if a real user reports trouble with 0.0.52.
+- The upper bound `<0.1` reflects pre-1.0 software where minor-version bumps may break the API. Once genai-prices ships 0.1.0, we can re-test, validate the API shape, and bump.
+
+Phase 2.1 #3 (`uv lock` to refresh the lockfile + fresh-venv install verification) is the next iteration.
+
+No em dashes in this iteration's outputs.
