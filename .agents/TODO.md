@@ -293,10 +293,15 @@ Build fixture-based test suite for streaming cost accounting.
 
 ### 3.1 — Fixture recording infrastructure
 
-- [ ] Create `scripts/record-streaming-fixtures.py`. CLI tool gated
+- [x] Create `scripts/record-streaming-fixtures.py`. CLI tool gated
   behind `--record` flag. Hits real provider APIs with a test prompt,
   saves response with provider-reported usage. Saves to
   `tests/fixtures/streaming/<provider>_<model>_<modality>_<batch|stream>_<date>.json`.
+  Done with framework + OpenAI LLM (batch + stream) end-to-end.
+  Deepgram and Cartesia recorders raise `NotImplementedError` with
+  follow-up notes; their full implementations land in iterations
+  alongside the corresponding 3.2 recording sub-items (those need
+  audio fixtures + deepgram-sdk/cartesia SDK integration).
 - [ ] Create `tests/fixtures/streaming/` directory with README
   explaining how fixtures are recorded and how to refresh them.
 - [ ] Add `.env.fixtures.example` documenting required API keys for
