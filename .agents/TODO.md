@@ -254,7 +254,7 @@ catalog with explicit source-date metadata.
 
 ### 2.6 — Staleness gate
 
-- [ ] Add unit test: every STT/TTS catalog entry's
+- [x] Add unit test: every STT/TTS catalog entry's
   `pricing_source_date` must be ≤ 60 days old. Test fails CI if any
   entry stale, forcing a manual refresh with each release.
 

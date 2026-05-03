@@ -1021,3 +1021,41 @@ Removing them is a 10-file change: drop the abstract method from `BaseProvider`,
 Phase 2.6 (60-day staleness gate enforced via unit test) is the next iteration. Phase 2.7 (unit tests for the pricing modules) follows.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 07:15 UTC — feat(pricing): 60-day staleness gate for STT and TTS catalogs
+
+Files: `tests/pricing/__init__.py` (new, empty package marker), `tests/pricing/test_staleness.py` (new, 50 lines), `.agents/TODO.md` (Phase 2.6 marked `[x]`).
+Tests: ruff clean, mypy clean (1 source file), pytest 257 passed / 4 skipped (up from 255 with the 2 new tests added), coverage 79%.
+
+The gate: two pytest cases, one per local catalog (`stt.CATALOG`, `tts.CATALOG`), assert that no entry's `pricing_source_date` is more than 60 days older than `date.today()`. Maintainers re-verify each rate against the linked `pricing_source_url` and bump the date before any release that would otherwise tip an entry past the threshold.
+
+Why this is the right shape:
+
+- **CI runs every PR + push.** The check is wall-clock-driven; it stays passing today and fails one day in the future when an entry crosses 60 days. That's the intent; the staleness gate is a constraint on shipping, not a check on the moment-of-test.
+- **Coverage:** STT/TTS only. `genai-prices` handles LLM pricing freshness upstream (it ships a fresh catalog with each version release; users get freshness by upgrading the dep).
+- **Helper extracted.** `_stale_entries(catalog, today)` accepts an explicit date so future tests / debugging tools can simulate stale states. The two public test functions pass `date.today()`.
+- **Failure message names names.** Format: `"STT catalog has 9 entries older than 60 days: deepgram/nova-3 (120d), deepgram/nova-2 (120d), ..."`. Maintainers see exactly which rates to refresh and how stale each is. Suffix points them to the pricing_source_url for the refresh.
+
+Failure path verified (offline, with a simulated future date):
+
+```
+$ uv run python -c "from datetime import date; \
+    from tests.pricing.test_staleness import _stale_entries, _format_failure; \
+    from voicegateway.pricing.stt import CATALOG as STT_CATALOG; \
+    print(_format_failure('STT', _stale_entries(STT_CATALOG, date(2026, 9, 1))))"
+
+STT catalog has 9 entries older than 60 days: deepgram/nova-3 (120d),
+deepgram/nova-2 (120d), deepgram/flux-general (120d), assemblyai/universal-2
+(120d), openai/whisper-1 (120d), groq/whisper-large-v3 (120d),
+local/whisper-large-v3 (120d), local/whisper-turbo (120d),
+local/whisper-base (120d). Re-verify each rate against the linked
+pricing_source_url and bump pricing_source_date.
+```
+
+All 9 STT entries flagged correctly; same logic for TTS. Today's run passes both tests because all entries are dated 2026-05-04 (0 days old).
+
+Phase 2.7 (unit tests for the pricing modules: `tests/pricing/test_llm.py`, `tests/pricing/test_stt.py`, `tests/pricing/test_tts.py`, `tests/pricing/test_catalog.py`) is the next iteration block. Phase 2.8 verification + tag follows.
+
+No em dashes in this iteration's outputs.
