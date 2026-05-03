@@ -52,6 +52,7 @@ export default defineConfig({
           text: 'Getting Started',
           items: [
             { text: 'What is VoiceGateway?', link: '/guide/what-is-voicegateway' },
+            { text: 'Decision Tree', link: '/guide/decision-tree' },
             { text: 'Quick Start', link: '/guide/quick-start' },
             { text: 'Installation', link: '/guide/installation' },
             { text: 'Your First Agent', link: '/guide/first-agent' },

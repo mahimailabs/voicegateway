@@ -53,7 +53,7 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
   competitive ("we're better") to complementary ("LiteLLM for general
   LLM gateway use; VoiceGateway purpose-built for LiveKit voice
   agents"). Specifically fix lines 12-19 cited in the audit.
-- [ ] Create `docs/guide/decision-tree.md`. Single page. Honest matrix:
+- [x] Create `docs/guide/decision-tree.md`. Single page. Honest matrix:
   - Building a LiveKit voice agent? → VoiceGateway
   - Building text-only LLM apps? → LiteLLM
   - Want hosted multi-tenant with no ops? → OpenRouter

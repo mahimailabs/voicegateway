@@ -174,3 +174,19 @@ Notes:
 - **Added "A note on the audio endpoints" section.** Explicit acknowledgment that LiteLLM's audio endpoints exist and are well suited to request/response audio (batch transcription, async TTS rendering). Differentiates VG by the LiveKit `AgentSession` plugin-instance shape.
 - **Forward-pointing links.** `/guide/decision-tree`, `/guide/cost-reconciliation`, `/examples/livekit-fallback-adapter` all 404 today; created in Phase 1.3 #5 (decision tree), 1.4 (FallbackAdapter), 4.4 (cost reconciliation).
 - **No em dashes introduced.** Verified clean via grep on the file.
+
+---
+
+## 2026-05-03 23:10 UTC — docs(guide): create decision-tree page and add to /guide/ sidebar
+
+Files: `docs/guide/decision-tree.md` (new, ~70 lines), `docs/.vitepress/config.mts` (one sidebar entry inserted), `.agents/TODO.md` (Phase 1.3 #3 marked `[x]`).
+Tests: n/a (markdown + config; will be exercised at docs build in Phase 1.5).
+
+Notes:
+
+- **Page structure: short answer first, then breakdown.** Six-row matrix at the top maps a user's situation to the right tool: VG (LiveKit voice agent + cost tracking, self-hosted voice with local + cloud unification), LiteLLM (text-only LLM, OpenAI-compat HTTP shim needed), OpenRouter (hosted multi-tenant, no ops), Cloudflare AI Gateway (already on Cloudflare), LiveKit Inference (managed LiveKit Cloud, happy with bundled pricing). Detailed breakdown section gives the rationale per row.
+- **Honest "What VoiceGateway is not" section.** Explicitly disclaims four common misconceptions: not an OpenAI-compat HTTP proxy (no `/v1/chat/completions`), not horizontally scaled multi-tenant (SQLite single-writer, per-instance budget caches), not a real-time fallback engine (resolver-time only; refers to LiveKit FallbackAdapter), not a key-rotation system (no MultiFernet / KMS today). This is the page that buys back credibility from the broader audit findings.
+- **External links chosen for stability.** LiteLLM (`docs.litellm.ai/`), OpenRouter (`openrouter.ai/`), Cloudflare AI Gateway (`developers.cloudflare.com/ai-gateway/`) are all top-level / well-known URLs unlikely to 404. LiveKit Inference referenced via the LiveKit Cloud landing page (`livekit.io/cloud`) rather than guessing a specific docs path.
+- **Sidebar entry added.** `docs/.vitepress/config.mts` had a manually-curated sidebar; the new page would not appear in `/guide/` nav without an entry. Added "Decision Tree" right after "What is VoiceGateway?" and before "Quick Start" so a reader hits "is this for me?" before "how do I install it?". One-line edit; logically scoped to this iteration since the page is otherwise undiscoverable from the in-product nav.
+- **Forward-pointing link kept.** `/examples/livekit-fallback-adapter` referenced in the "Not a real-time fallback engine" disclaimer; created in Phase 1.4.
+- **No em dashes.** Verified via grep on the new page.
