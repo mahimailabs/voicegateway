@@ -113,12 +113,19 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
   plan (FAQ line 5 still says "v0.1.0 (alpha)"; will be accurate
   once Phase 4.5 bumps `pyproject.toml` to 0.1.0).
 
-- [ ] **1.3.5e** Final mop-up. H6 `from-livekit-inference.md:62-74`
+- [x] **1.3.5e** Final mop-up. H6 `from-livekit-inference.md:62-74`
   LiveKit Cloud Inference cost-comparison table: add a
   "Pricing as of YYYY-MM-DD; verify via the LiveKit dashboard"
   attribution or remove the table. L3
   `docs/migration/version-upgrades.md` synced at Phase 4 CHANGELOG
   (mark `[~]` here, picked up there).
+  Done: H6 attribution snapshot dated 2026-05-04 + provider-pages
+  cross-reference added; minor `--` to colon and `--` to `n/a`
+  cleanups in the same paragraph. L3 deferred to Phase 4.5
+  CHANGELOG / release-prep sweep, where the v0.1.0 stanza of
+  `docs/migration/version-upgrades.md` will be rewritten with the
+  actual v0.1.0 deltas (genai-prices, framing reframe,
+  reconciliation tooling).
 
 ### 1.4 — LiveKit FallbackAdapter docs
 

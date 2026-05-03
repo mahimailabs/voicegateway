@@ -63,15 +63,17 @@ This is identical to how you would wire LiveKit Cloud Inference, except `gw.stt(
 
 With LiveKit Cloud Inference, you pay LiveKit's per-unit pricing. With VoiceGateway, you pay the underlying providers directly. Example monthly cost for a moderate workload (10,000 minutes STT, 5M LLM tokens, 2M TTS characters):
 
+> Provider pricing snapshot as of 2026-05-04. Verify against each provider's pricing page (Deepgram, OpenAI, Cartesia) and the LiveKit Cloud dashboard before basing a migration decision on these numbers; provider rates change.
+
 | Component | LiveKit Cloud (estimated) | VoiceGateway + direct keys |
 |---|---|---|
 | STT (Deepgram Nova-3) | Bundled in LiveKit pricing | $43.00 |
 | LLM (GPT-4o-mini) | Bundled in LiveKit pricing | $3.75 |
 | TTS (Cartesia Sonic-3) | Bundled in LiveKit pricing | $130.00 |
-| VoiceGateway | -- | Free (MIT license) |
+| VoiceGateway | n/a | Free (MIT license) |
 | **Total** | Varies by LiveKit plan | **$176.75** |
 
-The exact savings depend on your LiveKit plan and volume. VoiceGateway eliminates the inference markup -- you pay provider prices directly.
+The exact savings depend on your LiveKit plan and volume. VoiceGateway eliminates the inference markup: you pay provider prices directly.
 
 ## Step-by-step migration
 

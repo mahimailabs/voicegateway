@@ -339,3 +339,19 @@ Per-edit notes:
 H1 deferred per plan: line 5 still reads "v0.1.0 (alpha)" while the published PyPI version is 0.0.3. This will be accurate after Phase 4.5 bumps `pyproject.toml` to 0.1.0; keeping the deferral avoids a duplicate edit at release time.
 
 No em dashes introduced; verified by spot-check on the four edits.
+
+---
+
+## 2026-05-04 01:30 UTC — docs(migration): add date attribution to LiveKit cost comparison; defer version-upgrades.md to Phase 4.5
+
+Files: `docs/migration/from-livekit-inference.md` (cost-comparison section), `.agents/TODO.md` (1.3.5e marked `[x]` with completion note).
+Tests: n/a (markdown only).
+
+Per-fix notes:
+
+- **H6 (cost-comparison attribution).** Inserted a blockquote between the introductory paragraph and the table: "Provider pricing snapshot as of 2026-05-04. Verify against each provider's pricing page (Deepgram, OpenAI, Cartesia) and the LiveKit Cloud dashboard before basing a migration decision on these numbers; provider rates change." This gives any reader who lands on a stale snapshot a clear instruction (verify against provider pages) and a date to check against. Also did two micro-cleanups in the same section: the `| -- |` placeholder in the table swapped to `| n/a |` (clearer intent, and `--` may render as en-dash via VitePress smart-typography); and the trailing prose `eliminates the inference markup -- you pay provider prices directly` became `eliminates the inference markup: you pay provider prices directly` (colon for the same effect, no risk of em-dash rendering).
+- **L3 (version-upgrades.md).** Deferred to Phase 4.5 release-prep per the original TODO plan. Reading the current file confirms it is not empty: it has an "Upgrade process" section, a versioning policy section, and a placeholder v0.1.0 stanza with release date `2026-04-17` and "no breaking changes to migrate from" (which was true for the actual `v0.0.3` initial release this stanza was written for). Phase 4.5 will rewrite the v0.1.0 stanza with the real v0.1.0 deltas (genai-prices integration, framing reframe, reconciliation tooling, fallback-doc reframing, etc.) and align the release date. No edits in this iteration.
+
+Phase 1.3 is now structurally complete: hero (1.3 #1), from-litellm rewrite (1.3 #2), decision-tree page (1.3 #3), first-agent prerequisites (1.3 #4), and credibility sweep (1.3 #5 split across 1.3.5a-e) all done. Three deferrals are explicit and tracked: H1 FAQ version stamp (Phase 4.5), L3 version-upgrades stanza (Phase 4.5), and the LLM model-ID sweep (Phase 2 genai-prices). Phase 1.4 (LiveKit FallbackAdapter docs page) starts in the next iteration.
+
+No em dashes introduced.
