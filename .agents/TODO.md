@@ -215,7 +215,7 @@ catalog with explicit source-date metadata.
   (`voicegateway/storage/models.py`).
 - [x] Add `pricing_source` column to SQLite schema. Migration script
   for existing DBs (or a one-time conversion at startup).
-- [ ] Update `CostTracker.calculate_cost()` to dispatch by modality
+- [x] Update `CostTracker.calculate_cost()` to dispatch by modality
   via `voicegateway/pricing/catalog.py`.
 - [ ] Update `InstrumentedSTT|LLM|TTS` to capture and pass through
   `pricing_source` to logged requests.

@@ -865,3 +865,39 @@ This proves the migration ALTER fires automatically at first connection, the col
 Phase 2.3 #3 (`CostTracker.calculate_cost()` dispatch through `catalog.calculate_cost`) is the next iteration. Phase 2.3 #4 (CostTracker populates `record.pricing_source` via `catalog.pricing_source(modality)`) follows.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 05:25 UTC — feat(cost): dispatch CostTracker.calculate_cost through the catalog facade
+
+Files: `voicegateway/middleware/cost_tracker.py` (legacy `get_pricing` import replaced; `calculate_cost` body rewritten to dispatch through `catalog.calculate_cost`), `.agents/TODO.md` (Phase 2.3 #3 marked `[x]`).
+Tests: ruff clean, mypy clean (1 source file), pytest 255 passed / 4 skipped (no test modifications), coverage 79% (up from 78% — more cost_tracker.py paths exercised).
+
+Pre-iteration smoke test confirmed catalog returns:
+
+| Test case | Catalog returns | Test expects |
+|---|---|---|
+| `openai/gpt-4.1-mini`, 1000+500 LLM | `0.0012` | `0.0012` ✓ |
+| `ollama/qwen2.5:3b`, 10000+5000 LLM | `None` (genai-prices doesn't recognize Ollama) | `0.0` |
+| `cartesia/sonic-3`, 100 chars TTS | `0.006500` | `0.0065` ✓ |
+| `deepgram/nova-3`, 60s STT | `0.0043` | `0.0043` (when input_units=1.0 minute) ✓ |
+| `deepgram/nova-3`, 150s STT | `0.01075` | `0.01075` (when input_units=2.5 minutes) ✓ |
+| `local/whisper-large-v3`, 60s STT | `0` (in catalog) | `0.0` ✓ |
+| `unknown/model`, 300s STT | `None` | `0.0` |
+
+Two None-return cases needed handling to preserve the legacy float-returning test contract:
+
+- **Known free providers (`local/`, `ollama/`).** Prefix check returns `0.0` without a warning log. Ollama is intentionally free and we don't carry pricing for it; logging a warning would spam users every request. The user-facing "this provider costs $0" expectation is preserved.
+- **Truly unknown models.** Returns `0.0` with a `logger.warning(...)` describing the modality and model id. This is the visibility piece replacing the old silent-zero behavior. Users who add a model VG doesn't recognize will see warnings in their logs and can investigate or update the catalog.
+
+Other implementation details:
+
+- **STT unit conversion at the boundary.** Legacy CostTracker contract is `input_units` in MINUTES for STT; the new STT module uses audio_seconds. Multiply by 60 at dispatch time so the test cases at 1.0 / 2.5 minutes resolve through `audio_seconds=60` / `audio_seconds=150` to match the catalog's per-minute calculation. Inline comment explains the conversion.
+- **Decimal to float.** `catalog.calculate_cost` returns `Decimal | None`. The CostTracker still returns `float` to avoid blast radius into instrumented_provider (which stores `record.cost_usd: float`). `float(decimal)` at the boundary; precision loss is acceptable at the per-request level (sub-cent rounding). Phase 4 reconciliation works with the original Decimal values via `voicegw export-costs --format csv` so the precision survives where it matters.
+- **Import cleanup.** `from voicegateway.pricing.catalog import get_pricing` replaced with `from voicegateway.pricing import catalog`. The legacy `get_pricing` and `PRICING` dict in `catalog.py` are now orphaned (no callers); Phase 2.5 removes them.
+
+No test modifications were needed: the legacy `cost == 0.0043` / `cost == 0.0012` / `cost == 0.0` style assertions all hold through the new dispatch path because the rates round-trip cleanly. The behavior shift is internal: dispatch now happens through the new modules, and unknown models log warnings.
+
+Phase 2.3 #4 (Update `InstrumentedSTT|LLM|TTS` to capture `pricing_source`) starts in the next iteration.
+
+No em dashes in this iteration's outputs.

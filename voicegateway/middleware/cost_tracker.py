@@ -7,7 +7,7 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from voicegateway.pricing.catalog import get_pricing
+from voicegateway.pricing import catalog
 from voicegateway.storage.models import RequestRecord
 
 if TYPE_CHECKING:
@@ -41,6 +41,10 @@ class CostTracker:
     ) -> float:
         """Calculate cost for a request.
 
+        Dispatches through `voicegateway.pricing.catalog.calculate_cost`.
+        For LLM, that wraps `pydantic/genai-prices`; for STT and TTS,
+        the local source-date-tagged catalogs.
+
         Args:
             model_id: Full model ID (e.g., "deepgram/nova-3").
             modality: "stt", "llm", or "tts".
@@ -48,19 +52,44 @@ class CostTracker:
             output_units: Output tokens (LLM only).
 
         Returns:
-            Cost in USD.
+            Cost in USD as float. The catalog returns Decimal | None;
+            this method coerces Decimal to float and translates None
+            into 0.0 with a warning log (except for known free
+            providers like local/* and ollama/* where 0.0 is the
+            correct answer and no warning fires).
         """
-        pricing = get_pricing(model_id, modality)
-
         if modality == "stt":
-            return input_units * pricing.get("per_minute", 0.0)
+            # The legacy CostTracker contract for STT is `input_units`
+            # in MINUTES. The new STT module uses audio_seconds. Convert
+            # at the boundary to keep the legacy callers' semantics.
+            cost = catalog.calculate_cost(
+                "stt", model_id, audio_seconds=input_units * 60
+            )
         elif modality == "llm":
-            input_cost = input_units * pricing.get("input_per_1k", 0.0) / 1000
-            output_cost = output_units * pricing.get("output_per_1k", 0.0) / 1000
-            return input_cost + output_cost
+            cost = catalog.calculate_cost(
+                "llm",
+                model_id,
+                input_tokens=int(input_units),
+                output_tokens=int(output_units),
+            )
         elif modality == "tts":
-            return input_units * pricing.get("per_character", 0.0)
-        return 0.0
+            cost = catalog.calculate_cost(
+                "tts", model_id, character_count=int(input_units)
+            )
+        else:
+            return 0.0
+
+        if cost is None:
+            # local/* and ollama/* are intentionally free; no catalog
+            # entry is expected and no warning is appropriate.
+            if not model_id.startswith(("local/", "ollama/")):
+                logger.warning(
+                    "No pricing data for %s model %r; cost recorded as $0.",
+                    modality,
+                    model_id,
+                )
+            return 0.0
+        return float(cost)
 
     def create_record(
         self,
