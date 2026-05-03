@@ -627,3 +627,43 @@ __pycache__/   (build artifact; ignored)
 Both `__init__.py` and `catalog.py` were part of the initial codebase. No directory creation needed. This iteration is a no-op verification step. Phase 2.2 #2 (create `voicegateway/pricing/llm.py` wrapping genai-prices) starts in the next iteration.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 03:25 UTC — feat(pricing): wrap genai-prices in voicegateway/pricing/llm.py
+
+Files: `voicegateway/pricing/llm.py` (new, 60 lines), `.agents/TODO.md` (Phase 2.2 #2 marked `[x]`).
+Tests: ruff clean, mypy clean (1 source file), pytest 255 passed / 4 skipped, coverage 78% (down 1 point from 79% because the new module has no tests yet; Phase 2.7 adds them; still above the 75% gate).
+
+Module exports:
+
+- `PRICING_SOURCE: str` constant. Resolves at import time to `f"genai-prices@{genai_prices.__version__}"`. Currently `"genai-prices@0.0.57"`. Used by callers that want to log the per-request pricing-source attribution.
+- `calculate_llm_cost(model: str, input_tokens: int, output_tokens: int) -> Decimal | None`. Returns Decimal total price in USD when genai-prices recognized the model; returns None when the model is unknown.
+
+Implementation notes:
+
+- **Model-ID split.** VG model IDs are `provider/model` (e.g. `openai/gpt-4o-mini`). The function partitions on `/` and passes both halves to `genai_prices.calc_price()` as `provider_id` and `model_ref` for higher-precision matching. Bare model names without a slash are accepted: provider becomes `None` and genai-prices searches across all providers.
+- **None on unknown, not zero.** Per design doc §5.1 ("no silent zero"), the function returns `None` rather than `Decimal("0")` for unknown models. Callers (the `CostTracker` in Phase 2.3) decide whether to log a warning and write `cost_usd=0.0` or skip the record.
+- **LookupError handling.** During the smoke test I discovered genai-prices' Python implementation raises `LookupError` (not returns `None`) when `provider_id` is unknown. The iteration-20 research, drawn from the JS docs, claimed null-on-unknown universally; the Python behavior diverges. Wrapped `calc_price` in `try/except LookupError` so both shapes return `None` from the wrapper. Added a comment explaining the divergence.
+- **Decimal vs float.** `genai_prices.calc_price()` returns a `PriceCalculation` with `float` prices. `Decimal(str(price.total_price))` converts via the str representation to avoid the binary-rounding artifacts that `Decimal(price.total_price)` would carry. This matters for the Phase 4 reconciliation tooling, which sums many small Decimals across thousands of requests.
+- **Imports.** `from genai_prices import Usage, calc_price` for the API; `import genai_prices` for `__version__` only. Kept narrow.
+
+Smoke-test results (run against the live genai-prices 0.0.57 catalog in the project venv):
+
+| Input | Expected behavior | Actual |
+|---|---|---|
+| `openai/gpt-4o-mini`, 1000+100 | known, ~$0.00021 | $0.00021 ✓ |
+| `openai/gpt-4o`, 1000+100 | known, $0.0035 | $0.0035 ✓ |
+| `anthropic/claude-3.5-sonnet`, 1000+100 | known, $0.0045 | $0.0045 ✓ |
+| `anthropic/claude-sonnet-4-20250514`, 1000+100 | should be known (newer sonnet) | **$0.0045 ✓** |
+| `foo/bar-baz`, 1000+100 | unknown provider, None | None ✓ |
+| `openai/totally-fake-model`, 1000+100 | known provider, unknown model, None | None ✓ |
+| `gpt-4o-mini`, 1000+100 (no slash) | known, $0.00021 | $0.00021 ✓ |
+| `openai/gpt-4o-mini`, 0+0 (zero usage) | known, ~$0 | $0.000 ✓ |
+| `""`, 100+50 (empty model) | unknown, None | None ✓ |
+
+The bonus finding: `anthropic/claude-sonnet-4-20250514` IS recognized by genai-prices and prices at the same per-1k input/output rates as 3.5 Sonnet. This validates the iteration-15 decision to defer the LLM model-ID sweep: the docs' newer Anthropic IDs will resolve correctly once Phase 2 wires the LLM cost path through this module. The LLM ID sweep that the credibility audit flagged is essentially auto-resolved by Phase 2 itself.
+
+Phase 2.2 #3 (create `voicegateway/pricing/stt.py` with local source-date-tagged catalog) starts in the next iteration.
+
+No em dashes in this iteration's outputs.
