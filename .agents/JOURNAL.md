@@ -1131,3 +1131,50 @@ Coverage gain:
 Phase 2.7 third sub-item (unit tests for `voicegateway/pricing/catalog.py` modality dispatch) is the next iteration.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 08:15 UTC — test(pricing): unit tests for catalog.py dispatch facade
+
+Files: `tests/pricing/test_catalog.py` (new, 16 tests), `.agents/TODO.md` (Phase 2.7 third sub-item marked `[x]`).
+Tests: ruff clean (one auto-fix for import block), mypy clean (1 source file), pytest 315 passed / 4 skipped (up from 299 with 16 new tests), coverage on `voicegateway/pricing/catalog.py` jumps from 83% to **100%**, overall 79%.
+
+Test layout (three sections):
+
+**`calculate_cost` dispatch (7 tests):**
+
+- `test_dispatch_llm_routes_to_llm_module`: facade output equals `llm.calculate_llm_cost(...)` direct.
+- `test_dispatch_stt_routes_to_stt_module`: facade output equals `stt.calculate_stt_cost(...)` direct; `deepgram/nova-3` 60s = $0.0043.
+- `test_dispatch_tts_routes_to_tts_module`: facade output equals `tts.calculate_tts_cost(...)` direct; `cartesia/sonic-3` 1000c = $0.065.
+- `test_dispatch_unknown_modality_returns_none`: `"foo"` and `""` both return `None`.
+- `test_dispatch_unknown_model_propagates_none`: known modality + unknown model returns `None` for all three modalities (no silent zero).
+- `test_dispatch_zero_usage`: zero usage returns `Decimal("0")` for all three modalities (distinct from None).
+- `test_dispatch_kwargs_for_other_modalities_ignored`: passing all four kwargs at once works; the dispatcher ignores the irrelevant ones (TTS only reads `character_count`).
+
+**`pricing_source` (4 tests):**
+
+- `test_pricing_source_llm`: catalog.pricing_source("llm") == llm.PRICING_SOURCE; starts with `genai-prices@`.
+- `test_pricing_source_stt`: same for STT; starts with `voicegateway-catalog@`.
+- `test_pricing_source_tts`: same for TTS; starts with `voicegateway-catalog@`.
+- `test_pricing_source_unknown_modality`: `"foo"` and `""` both return `"unknown"` (the literal sentinel).
+
+**Legacy API still works (5 tests):**
+
+- `test_legacy_pricing_dict_present`: `catalog.PRICING` is a dict with `stt`, `llm`, `tts` keys (transition state until Phase 2.5 cleanup).
+- `test_legacy_get_pricing_known_stt`: returns `{"per_minute": 0.0043}` for `deepgram/nova-3`.
+- `test_legacy_get_pricing_known_llm`: returns `{"input_per_1k": 0.0004, "output_per_1k": 0.0016}` for `gpt-4.1-mini`.
+- `test_legacy_get_pricing_known_tts`: returns `{"per_character": 0.000065}` for `cartesia/sonic-3`.
+- `test_legacy_get_pricing_unknown_returns_empty`: unknown model or modality returns `{}`.
+
+Coverage gain:
+
+- `voicegateway/pricing/catalog.py`: 83% -> **100%**.
+- `voicegateway/pricing/stt.py`: 100% (unchanged from iter 37).
+- `voicegateway/pricing/tts.py`: 100% (unchanged from iter 37).
+- `voicegateway/pricing/llm.py`: 94% (unchanged from iter 36; single multi-line close-paren quirk).
+
+The legacy API tests will become "this is what we WANT to remove" markers when the discovered-work item for legacy code removal lands; deleting `PRICING` and `get_pricing()` will require deleting these five tests at the same time. Captured in journal so the connection is explicit.
+
+Phase 2.7 fourth sub-item (Verify all existing cost-tracking tests still pass) is the next iteration. That is mostly a verification step since all of Phase 2's iterations have run the full suite each time and 315 tests currently pass; iter 39 makes it explicit per the TODO and tags Phase 2.7 done.
+
+No em dashes in this iteration's outputs.

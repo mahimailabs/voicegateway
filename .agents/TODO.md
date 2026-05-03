@@ -264,7 +264,7 @@ catalog with explicit source-date metadata.
   unknown model, edge cases (zero tokens, very large counts).
 - [x] Unit tests for `voicegateway/pricing/stt.py` and `tts.py`:
   known model, unknown model, source-date metadata present.
-- [ ] Unit tests for `voicegateway/pricing/catalog.py`: modality
+- [x] Unit tests for `voicegateway/pricing/catalog.py`: modality
   dispatch correctness, fallback behavior when modality is unknown.
 - [ ] Verify all existing cost-tracking tests still pass.
 
