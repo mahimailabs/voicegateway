@@ -1777,3 +1777,39 @@ This split is the practical FinOps win: reconciliation that surfaces only one nu
 **Phase 4.3 progress.** Three of six 4.3 sub-items now done (#1 OpenAI, #2 Deepgram, #3 Cartesia). Next iteration picks 4.3 #4: implement `voicegw reconcile` itself. The implementation reads VG's logs for the period (via `get_requests_in_window` from iter 54), reads the provider's usage file (per the schemas in this docs page), produces a per-model diff with absolute and percent differences. The hard part is unit translation: `voicegw reconcile --provider deepgram` aggregates VG's logged `input_units` (audio seconds) per model and diffs against the Deepgram usage file's `audio_seconds` column. Same shape, different unit names per provider.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 15:00 UTC: feat(reconcile): voicegw reconcile command
+
+Files: `voicegateway/reconcile.py` (new, ~190 LOC), `voicegateway/cli.py` (`reconcile_cmd` added), `tests/test_reconcile.py` (new, 16 tests, ~190 LOC), `.agents/TODO.md` (Phase 4.3 #4 marked `[x]`).
+Tests: ruff clean, mypy clean (57 source files), pytest 362 passed / 8 skipped (was 346/8; +16 new tests). Coverage holds at 80%.
+
+Phase 4.3 #4: the diff side of the reconcile workflow. With OpenAI/Deepgram/Cartesia schemas defined (iters 56-58) and `get_requests_in_window` shipping per-record VG-side rows (iter 54), this iteration implements the comparison.
+
+**Module structure.** `voicegateway/reconcile.py` is a pure-Python module with no I/O at module load: `parse_provider_file`, `aggregate_vg_records`, `reconcile`, and three formatters (`format_text`, `format_csv`, `format_json`). The CLI command in `cli.py::reconcile_cmd` is the I/O boundary; the module is testable without spinning up Typer or SQLite.
+
+**Unit translation.** This is the trickiest piece because each provider's billing unit and VG's logging unit drift slightly:
+
+- **OpenAI.** Canonical file has `input_tokens` and `output_tokens` separately. VG records the same as `input_units` and `output_units`. The reconcile diff treats `vg_units = input_units + output_units` and `provider_units = input_tokens + output_tokens` so the comparison is one number; the per-modality split would need a richer diff structure that v0.1.0 does not need.
+- **Deepgram.** Canonical file has `audio_seconds`. VG records `input_units` in MINUTES (the legacy CostTracker convention; see iter 24-30 work and the comment in `voicegateway/middleware/cost_tracker.py`). Translation: `vg_units = input_units * 60`. The conversion lives in `aggregate_vg_records`, not in the storage layer, because the storage layer is the canonical record-of-truth and shouldn't be mutated for one consumer's preferred unit.
+- **Cartesia.** Canonical file has `characters`. VG records `input_units` as character count too. No translation.
+
+**ReconcileLine dataclass.** Carries both sides of the diff plus `matched_in_vg` and `matched_in_provider` flags. A model present on only one side still gets a row; the missing-side fields are zero, and the flags surface the asymmetry. The text formatter shows `(vg-missing)` or `(prov-missing)` suffixes for these cases.
+
+**Output formats.** Three: `text` (default; aligned-column terminal table with provider-specific unit label like `audio_s` for Deepgram and `tokens` for OpenAI), `csv` (one diff row per model with all 11 columns including the matched-in flags), `json` (array of dicts via `dataclass.__dict__`).
+
+**Sixteen tests.** Cover (a) per-provider CSV/JSON parsing including `cartesia` JSON path, (b) error paths (unknown provider, unknown extension, missing file), (c) aggregator: Deepgram minutes-to-seconds conversion, OpenAI input+output sum, and other-provider filtering, (d) full reconcile cycle: perfect match, divergence, model-only-in-provider, model-only-in-vg, (e) all three formatters render the expected fields.
+
+**CLI smoke verified** via `voicegw reconcile --help`. The command requires `--provider`, `--start`, `--end`, and `--provider-usage-file`; `--format` defaults to `text`. The exit codes mirror `export-costs`: 2 on bad input (unknown provider, malformed date, parse error), 1 on missing storage, 0 on success.
+
+**Combined export-then-reconcile workflow.** With both commands now shipping, the operator pipeline is:
+
+1. `voicegw export-costs --start --end --format csv > vg-costs.csv` (iter 54, optional, for inspection).
+2. Download the provider's usage CSV from their dashboard.
+3. Convert via the snippet in `docs/reference/reconcile-formats.md` (iters 56-58).
+4. `voicegw reconcile --provider X --start --end --provider-usage-file converted.csv` for the diff.
+
+Phase 4.3 #5 (tests for reconcile command) is the next iteration's pick. The 16 module-level tests cover the diff math; the CLI-level tests need to cover (a) end-to-end CliRunner invocation with a populated DB and a fixture provider file, (b) text/csv/json output rendering through the command, (c) missing/malformed provider file handling, (d) unknown provider exit code 2.
+
+No em dashes in this iteration's outputs.

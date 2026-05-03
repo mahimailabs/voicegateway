@@ -1,0 +1,210 @@
+"""Smoke tests for `voicegateway/reconcile.py` diff math.
+
+Comprehensive CLI-side tests (CliRunner) belong to Phase 4.3 #5.
+These tests exercise the parse + aggregate + diff logic directly.
+"""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from voicegateway import reconcile
+
+
+def test_parse_provider_file_openai_csv(tmp_path):
+    path = tmp_path / "openai.csv"
+    path.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o-mini,1000000,500000,500,0.225\n"
+    )
+    parsed = reconcile.parse_provider_file("openai", path)
+    assert parsed["gpt-4o-mini"]["units"] == 1_500_000  # input + output
+    assert parsed["gpt-4o-mini"]["cost"] == pytest.approx(0.225, abs=0.001)
+
+
+def test_parse_provider_file_deepgram_csv(tmp_path):
+    path = tmp_path / "deepgram.csv"
+    path.write_text(
+        "model,audio_seconds,n_requests,cost_usd\n"
+        "nova-3,180000.0,1500,8.700\n"
+    )
+    parsed = reconcile.parse_provider_file("deepgram", path)
+    assert parsed["nova-3"]["units"] == pytest.approx(180000.0, abs=0.1)
+    assert parsed["nova-3"]["cost"] == pytest.approx(8.700, abs=0.001)
+
+
+def test_parse_provider_file_cartesia_json(tmp_path):
+    path = tmp_path / "cartesia.json"
+    path.write_text(json.dumps([
+        {"model": "sonic-3", "characters": 2_500_000, "credits": 250_000,
+         "n_requests": 1000, "cost_usd": 30.0},
+    ]))
+    parsed = reconcile.parse_provider_file("cartesia", path)
+    assert parsed["sonic-3"]["units"] == 2_500_000
+
+
+def test_parse_provider_file_unknown_provider_raises(tmp_path):
+    path = tmp_path / "x.csv"
+    path.write_text("model\n")
+    with pytest.raises(ValueError, match="unsupported provider"):
+        reconcile.parse_provider_file("anthropic", path)
+
+
+def test_parse_provider_file_unknown_extension_raises(tmp_path):
+    path = tmp_path / "x.tsv"
+    path.write_text("model\n")
+    with pytest.raises(ValueError, match="unrecognized"):
+        reconcile.parse_provider_file("openai", path)
+
+
+def test_parse_provider_file_missing_raises(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        reconcile.parse_provider_file("openai", tmp_path / "not-here.csv")
+
+
+def test_aggregate_vg_records_deepgram_minutes_to_seconds():
+    """STT records carry minutes in input_units; reconcile compares against seconds."""
+    records = [
+        {"model_id": "deepgram/nova-3", "input_units": 1.0, "cost_usd": 0.005},
+        {"model_id": "deepgram/nova-3", "input_units": 2.5, "cost_usd": 0.0125},
+    ]
+    agg = reconcile.aggregate_vg_records("deepgram", records)
+    assert agg["nova-3"]["units"] == pytest.approx(3.5 * 60, abs=0.1)
+    assert agg["nova-3"]["cost"] == pytest.approx(0.0175, abs=0.001)
+
+
+def test_aggregate_vg_records_filters_other_providers():
+    """Records from other providers are skipped."""
+    records = [
+        {"model_id": "deepgram/nova-3", "input_units": 1.0, "cost_usd": 0.005},
+        {"model_id": "openai/gpt-4o-mini", "input_units": 100, "cost_usd": 0.001},
+    ]
+    agg = reconcile.aggregate_vg_records("deepgram", records)
+    assert "gpt-4o-mini" not in agg
+    assert agg["nova-3"]["units"] == pytest.approx(60.0, abs=0.1)
+
+
+def test_aggregate_vg_records_openai_sums_input_and_output():
+    """OpenAI: VG units = input_tokens + output_tokens, matching the canonical file."""
+    records = [
+        {"model_id": "openai/gpt-4o-mini",
+         "input_units": 1000, "output_units": 500, "cost_usd": 0.001},
+    ]
+    agg = reconcile.aggregate_vg_records("openai", records)
+    assert agg["gpt-4o-mini"]["units"] == 1500.0
+
+
+def test_reconcile_perfect_match(tmp_path):
+    path = tmp_path / "openai.csv"
+    path.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o-mini,1000,500,1,0.001\n"
+    )
+    records = [
+        {"model_id": "openai/gpt-4o-mini",
+         "input_units": 1000, "output_units": 500, "cost_usd": 0.001},
+    ]
+    lines = reconcile.reconcile("openai", records, path)
+    assert len(lines) == 1
+    line = lines[0]
+    assert line.units_diff_abs == 0
+    assert line.cost_diff_abs == pytest.approx(0.0, abs=0.0001)
+    assert line.matched_in_vg is True
+    assert line.matched_in_provider is True
+
+
+def test_reconcile_surfaces_divergence(tmp_path):
+    """When VG and the provider disagree, the diff carries the gap."""
+    path = tmp_path / "deepgram.csv"
+    path.write_text(
+        "model,audio_seconds,n_requests,cost_usd\n"
+        "nova-3,3600.0,5,0.180\n"  # provider: 1 hour, $0.18
+    )
+    records = [
+        # VG: 50 minutes (= 3000 seconds), $0.150
+        {"model_id": "deepgram/nova-3", "input_units": 50.0, "cost_usd": 0.150},
+    ]
+    lines = reconcile.reconcile("deepgram", records, path)
+    assert len(lines) == 1
+    line = lines[0]
+    assert line.vg_units == pytest.approx(3000.0, abs=0.1)
+    assert line.provider_units == pytest.approx(3600.0, abs=0.1)
+    assert line.units_diff_abs == pytest.approx(600.0, abs=0.1)
+    assert line.units_diff_pct == pytest.approx(16.666, abs=0.01)
+    assert line.cost_diff_abs == pytest.approx(0.030, abs=0.001)
+
+
+def test_reconcile_model_only_in_provider(tmp_path):
+    """Model in provider file but absent from VG records: still a row."""
+    path = tmp_path / "openai.csv"
+    path.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o,1000,500,1,0.005\n"
+    )
+    lines = reconcile.reconcile("openai", [], path)
+    assert len(lines) == 1
+    assert lines[0].matched_in_vg is False
+    assert lines[0].matched_in_provider is True
+    assert lines[0].vg_cost == 0.0
+
+
+def test_reconcile_model_only_in_vg(tmp_path):
+    """Model in VG records but absent from provider file: still a row."""
+    path = tmp_path / "openai.csv"
+    path.write_text("model,input_tokens,output_tokens,n_requests,cost_usd\n")
+    records = [
+        {"model_id": "openai/gpt-4o-mini",
+         "input_units": 100, "output_units": 50, "cost_usd": 0.0001},
+    ]
+    lines = reconcile.reconcile("openai", records, path)
+    assert len(lines) == 1
+    assert lines[0].matched_in_vg is True
+    assert lines[0].matched_in_provider is False
+
+
+def test_format_text_includes_header_and_columns():
+    lines = [
+        reconcile.ReconcileLine(
+            model="nova-3", vg_units=3000.0, provider_units=3600.0,
+            units_diff_abs=600.0, units_diff_pct=16.667,
+            vg_cost=0.150, provider_cost=0.180,
+            cost_diff_abs=0.030, cost_diff_pct=16.667,
+            matched_in_vg=True, matched_in_provider=True,
+        ),
+    ]
+    out = reconcile.format_text(lines, "deepgram")
+    assert "Model" in out
+    assert "nova-3" in out
+    assert "audio_s" in out  # the unit label for deepgram
+
+
+def test_format_csv_writes_diff_rows():
+    lines = [
+        reconcile.ReconcileLine(
+            model="gpt-4o-mini", vg_units=1500.0, provider_units=1500.0,
+            units_diff_abs=0.0, units_diff_pct=0.0,
+            vg_cost=0.001, provider_cost=0.001,
+            cost_diff_abs=0.0, cost_diff_pct=0.0,
+            matched_in_vg=True, matched_in_provider=True,
+        ),
+    ]
+    out = reconcile.format_csv(lines)
+    assert "model,vg_units,provider_units" in out
+    assert "gpt-4o-mini" in out
+
+
+def test_format_json_writes_array_of_records():
+    lines = [
+        reconcile.ReconcileLine(
+            model="sonic-3", vg_units=1000.0, provider_units=1000.0,
+            units_diff_abs=0.0, units_diff_pct=0.0,
+            vg_cost=0.012, provider_cost=0.012,
+            cost_diff_abs=0.0, cost_diff_pct=0.0,
+            matched_in_vg=True, matched_in_provider=True,
+        ),
+    ]
+    payload = json.loads(reconcile.format_json(lines))
+    assert isinstance(payload, list)
+    assert payload[0]["model"] == "sonic-3"

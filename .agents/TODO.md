@@ -524,11 +524,23 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
   Conversion snippet for the Cartesia billing portal CSV. Docs
   build clean (2.97s). Anthropic/ElevenLabs/AssemblyAI deferred
   to a future v0.1.x release.
-- [ ] Implement `voicegw reconcile` command. Args: `--provider`,
+- [x] Implement `voicegw reconcile` command. Args: `--provider`,
   `--start`, `--end`, `--provider-usage-file`, `--format
   text|csv|json`. Reads VG's logs for the period, reads provider's
   usage file, produces per-model diff table with absolute and
   percent differences.
+  Done: new module `voicegateway/reconcile.py` (~190 LOC) with
+  `parse_provider_file`, `aggregate_vg_records`, `reconcile`, and
+  three formatters (`format_text`, `format_csv`, `format_json`).
+  CLI command at `voicegateway/cli.py::reconcile_cmd` reads VG's
+  per-request rows via `get_requests_in_window` (iter 54), parses
+  the provider's normalized file (per the schemas in iters 56-58),
+  and dispatches to the chosen output formatter. Per-modality unit
+  translation handled at the boundary: Deepgram VG-side minutes to
+  seconds via *60; OpenAI VG-side input + output tokens summed to
+  match canonical file's pair; Cartesia characters pass through.
+  16 module-level tests cover parse, aggregate, reconcile, and the
+  three formatters; comprehensive CLI tests are 4.3 #5.
 - [ ] Tests for reconcile command.
 
 ### 4.4 — Reconciliation docs
