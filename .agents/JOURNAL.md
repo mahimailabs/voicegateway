@@ -1093,3 +1093,41 @@ The Phase 2.5 regression guard (`test_groq_canonical_id_priced_correctly`) is a 
 Phase 2.7 second sub-item (unit tests for `voicegateway/pricing/stt.py` and `tts.py`) is the next iteration.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 07:55 UTC — test(pricing): unit tests for stt.py and tts.py
+
+Files: `tests/pricing/test_stt.py` (new, 13 tests), `tests/pricing/test_tts.py` (new, 13 tests), `.agents/TODO.md` (Phase 2.7 second sub-item marked `[x]`).
+Tests: ruff clean, mypy clean (2 source files), pytest 299 passed / 4 skipped (up from 273 with 26 new tests), coverage on `voicegateway/pricing/stt.py` and `tts.py` both 100%, overall 79%.
+
+Test layout (mirror-shaped because the modules mirror each other):
+
+| Aspect | STT test | TTS test |
+|---|---|---|
+| PRICING_SOURCE format | `voicegateway-catalog@<iso-date>` parses cleanly | same |
+| PRICING_SOURCE uses oldest date | matches `min(entry.pricing_source_date)` | same |
+| Catalog not empty | yes | yes |
+| Every entry has metadata | per_minute Decimal + source date + http(s) URL | per_character Decimal + source date + http(s) URL |
+| Known cloud rate | `deepgram/nova-3` 60s = $0.0043 | `cartesia/sonic-3` 1000c = $0.065 |
+| Phase 2.5 regression guard | `groq/whisper-large-v3` 3600s = $0.111 | n/a |
+| Other cloud rate(s) | n/a | `elevenlabs/eleven_turbo_v2_5` 1000c = $0.18; `openai/tts-1` 1000c = $0.015 |
+| Local models priced zero | 3 local Whisper models | local/kokoro + local/piper |
+| Unknown model returns None | yes | yes |
+| Zero usage returns Decimal('0') | yes | yes |
+| Fractional / decimal precision | `30s` = `0.5 min` -> `$0.00215`; `3600s` -> `$0.258` | `1M chars` -> `$65` |
+| Return type Decimal | yes | yes |
+| Expected models present | regression guard against accidental drops | regression guard |
+
+The `test_groq_whisper_no_longer_silent_zero` is a deliberate Phase 2.5 regression guard: if a future iteration (or merge) reverts the catalog to the v0.0.x `$0.0` placeholder, this test fails immediately. Same for the `test_expected_models_present` cases on both sides — protects against accidental catalog drops in code review.
+
+Coverage gain:
+
+- `voicegateway/pricing/stt.py`: untested -> **100%**.
+- `voicegateway/pricing/tts.py`: untested -> **100%**.
+- `voicegateway/pricing/llm.py`: 94% (from iter 36, unchanged).
+- `voicegateway/pricing/catalog.py`: 83% (legacy get_pricing path uncovered; will reach higher after Phase 2.7 third sub-item adds catalog facade tests, and full coverage after the discovered-work legacy code removal).
+
+Phase 2.7 third sub-item (unit tests for `voicegateway/pricing/catalog.py` modality dispatch) is the next iteration.
+
+No em dashes in this iteration's outputs.

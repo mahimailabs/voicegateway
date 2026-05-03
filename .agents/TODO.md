@@ -262,7 +262,7 @@ catalog with explicit source-date metadata.
 
 - [x] Unit tests for `voicegateway/pricing/llm.py`: known model,
   unknown model, edge cases (zero tokens, very large counts).
-- [ ] Unit tests for `voicegateway/pricing/stt.py` and `tts.py`:
+- [x] Unit tests for `voicegateway/pricing/stt.py` and `tts.py`:
   known model, unknown model, source-date metadata present.
 - [ ] Unit tests for `voicegateway/pricing/catalog.py`: modality
   dispatch correctness, fallback behavior when modality is unknown.
