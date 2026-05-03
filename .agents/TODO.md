@@ -310,12 +310,26 @@ Build fixture-based test suite for streaming cost accounting.
 
 ### 3.2 — Record minimum fixture set
 
-- [ ] Record OpenAI gpt-4o-mini batch + stream fixtures.
-- [ ] Record Deepgram nova-3 batch + stream fixtures.
-- [ ] Record Cartesia sonic-3 batch + stream fixtures.
-- [ ] (Stretch) Record Anthropic claude-haiku batch + stream.
-- [ ] (Stretch) Record AssemblyAI batch + stream.
-- [ ] (Stretch) Record ElevenLabs batch + stream.
+All six sub-items are blocked on real provider API access. The
+`scripts/record-streaming-fixtures.py` recorder is ready (Phase 3.1
+#1); the OpenAI implementation is end-to-end working, the Deepgram
+and Cartesia implementations are stubs awaiting their first run.
+Running the recorder requires real API keys outside this Ralph
+loop's environment. Marking `[?]` (blocked, per PROMPT.md orient
+rule) rather than `[~]` (which would require mahimairaja's explicit
+deferral approval per the slip plan).
+
+To unblock: mahimairaja runs the recorder externally with
+`.env.fixtures` populated, commits the JSON fixtures to
+`tests/fixtures/streaming/`, and the iteration that picks each
+sub-item ticks it `[x]` against the committed fixture's filename.
+
+- [?] Record OpenAI gpt-4o-mini batch + stream fixtures.
+- [?] Record Deepgram nova-3 batch + stream fixtures.
+- [?] Record Cartesia sonic-3 batch + stream fixtures.
+- [?] (Stretch) Record Anthropic claude-haiku batch + stream.
+- [?] (Stretch) Record AssemblyAI batch + stream.
+- [?] (Stretch) Record ElevenLabs batch + stream.
 
 ### 3.3 — Replay test suite
 
