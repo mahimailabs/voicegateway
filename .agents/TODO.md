@@ -30,7 +30,7 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
 
 ### 1.2 — README rewrite
 
-- [ ] Rewrite README hero. New framing: "VoiceGateway gives LiveKit
+- [x] Rewrite README hero. New framing: "VoiceGateway gives LiveKit
   voice agents modality-aware cost estimation backed by
   pydantic/genai-prices, plus reconciliation tooling so you can
   verify our numbers against your actual provider invoices." Drop

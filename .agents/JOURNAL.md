@@ -60,3 +60,21 @@ Notes — audit said "assume 3-5 more" beyond the two known issues. Found 16 mor
 - **LOW (3).** L1 — static "tests-200+_passing" badge will go stale. L2 — Mermaid diagram in fallback-chains primes runtime mental model. L3 — `version-upgrades.md` empty; sync at Phase 4 CHANGELOG.
 
 Verifications run: grep `journal_mode|PRAGMA` (only `PRAGMA table_info` found), grep `voicegw_(uptime|providers|cost|requests)` (Prometheus metric names match FAQ claim — accurate), grep `claude-sonnet-4|claude-3-5|claude-3.5-sonnet` (three competing identifier formats across docs and code).
+
+---
+
+## 2026-05-03 21:35 UTC — docs(readme): rewrite hero with the wedge reframe
+
+Files: `README.md` (lines 5-6 replaced), `.agents/TODO.md` (Phase 1 task 1.2 #1 marked `[x]`).
+Tests: n/a (markdown-only change).
+
+Notes — replaced two bold subtitle lines under the title, leaving title, badges, and quick-link nav untouched (those are Phase 1.2 tasks #2-#4).
+
+- **Old line 5:** `**Self-hosted inference gateway for voice AI.**`
+- **Old line 6:** `**Unified STT + LLM + TTS routing. Your API keys. Local models included. Agent-managed via MCP.**`
+- **New line 5:** `**Cost tracking and reconciliation for LiveKit voice agents.**`
+- **New line 6:** `**Modality-aware unit accounting (audio-minutes, tokens, characters). LLM prices from [pydantic/genai-prices](https://github.com/pydantic/genai-prices). Verify against provider invoices with voicegw reconcile.**`
+
+Rationale: design-doc framing is "modality-aware cost estimation backed by pydantic/genai-prices, plus reconciliation tooling so you can verify our numbers against your actual provider invoices" (38 words). Compressed to two bold lines: line 5 is the wedge in 7 words ("Cost tracking and reconciliation for LiveKit voice agents"), line 6 names the three concrete differentiators (modality-aware units, genai-prices source, reconcile command). Avoids banned words ("leverage", "robust", "comprehensive", "seamless"). Surfaces the actual command name (`voicegw reconcile`) so a reader can grep for it.
+
+The "Why VoiceGateway" comparison table at README.md:21-37 still has the old generic-gateway framing and the stale LiteLLM STT/TTS = ❌ row; it will be rewritten by Phase 1.2 #2 in a later iteration.

@@ -2,8 +2,8 @@
 
 # VoiceGateway
 
-**Self-hosted inference gateway for voice AI.**
-**Unified STT + LLM + TTS routing. Your API keys. Local models included. Agent-managed via MCP.**
+**Cost tracking and reconciliation for LiveKit voice agents.**
+**Modality-aware unit accounting (audio-minutes, tokens, characters). LLM prices from [`pydantic/genai-prices`](https://github.com/pydantic/genai-prices). Verify against provider invoices with `voicegw reconcile`.**
 
 [![PyPI version](https://img.shields.io/pypi/v/voicegateway)](https://pypi.org/project/voicegateway/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
