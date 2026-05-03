@@ -846,12 +846,21 @@ note them and continue with current task.)
   tag (Phase 4.5) will be a real strict-semver tag and will work
   cleanly.
 
-- [ ] Add `voicegw --version` flag. Typer's standard
+- [x] Add `voicegw --version` flag. Typer's standard
   `--version` option pattern via `typer.Option(callback=version_callback)`.
   Discovered during the Phase 4.5 #5 smoke test (iter 66) when
   `voicegw --version` returned "No such option". Not a release
   blocker since `from voicegateway import __version__` works,
   but it is the standard CLI affordance users expect.
+  Done: added `_version_callback` and `_root` callback to
+  `voicegateway/cli.py`. The callback reads `voicegateway.__version__`
+  and prints it via the rich console, then exits cleanly. Eager
+  flag (`is_eager=True`) so `--version` short-circuits before
+  any subcommand resolution. New test
+  `test_version_flag_prints_runtime_version` asserts the runtime
+  version appears in stdout. Smoke verified: `voicegw --version`
+  prints `0.1.0`; `voicegw --help` shows `--version` in the
+  Options block.
 
 - [x] Add CLI reference pages for the new commands at
   `docs/cli/export-costs.md` and `docs/cli/reconcile.md`.

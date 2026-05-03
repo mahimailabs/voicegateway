@@ -2125,3 +2125,46 @@ The `[?]` blocked items (Phase 3.2 six fixture-recording sub-items, Phase 4.5 #4
 Iter 70 picks the next discovered-work item. Candidates: `voicegw --version` flag (small Python change with one test), kokoro yaml cleanup (mechanical YAML edits), or Codecov badge (one README line edit). The `voicegw --version` fix has the highest user-visible value and lands cleanly in one iteration.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 18:55 UTC: feat(cli): voicegw --version flag
+
+Files: `voicegateway/cli.py` (`_version_callback` + `_root` callback added under the existing `app = typer.Typer(...)` block), `tests/test_cli.py` (`test_version_flag_prints_runtime_version` added), `.agents/TODO.md` (the discovered-work item from iter 66 marked `[x]`).
+Tests: ruff clean, mypy clean (57 source files), pytest 371 passed / 8 skipped (was 370/8; +1 new test).
+
+Phase 4.5 #5 smoke test (iter 66) flagged that `voicegw --version` returned "No such option". This iteration adds the standard Typer pattern.
+
+**Implementation.** Two pieces:
+
+1. `_version_callback(value: bool)` is a small function that imports `voicegateway.__version__` (deferred import to avoid making the version-flag handler depend on the heavyweight `Gateway` import chain), prints it via the rich `console`, then `raise typer.Exit()`.
+2. `_root` is the new `@app.callback()` hosting the `--version` option. It declares `version: bool = typer.Option(False, "--version", callback=_version_callback, is_eager=True)`. `is_eager=True` means the callback runs before subcommand parsing so `voicegw --version` short-circuits cleanly without trying to resolve a subcommand.
+
+Both go into `voicegateway/cli.py` immediately under the `app = typer.Typer(...)` instantiation so they sit at the top of the module and any reader can find the global options at the obvious place.
+
+**The deferred import.** I considered a top-level `from voicegateway import __version__` but that would couple module-load time to the package's `__init__.py`, which (a) is fine today but (b) historically has been the place where heavy provider imports could leak in via star-imports or sub-module loading. Keeping the import inside the callback is the conservative choice and matches the pattern used elsewhere in this CLI (`_load_gateway` defers `from voicegateway import Gateway`).
+
+**Test.** `test_version_flag_prints_runtime_version` invokes `app, ["--version"]` via `CliRunner` and asserts `__version__` appears in the output. The test imports `__version__` from `voicegateway` directly so it always asserts against whatever the installed runtime version is, not a literal string that would drift.
+
+**Smoke verified.**
+
+- `voicegw --version` prints `0.1.0` and exits 0.
+- `voicegw --help` shows `--version` in the Options block.
+- The eager-flag behavior means `voicegw --version --config /nonexistent` still works (does not try to load the config).
+
+**Discovered-work surface narrows.** Open `[ ]` items: 6 (was 7 before this iteration's close). Remaining: em-dash sweep, Codecov badge, LLM model-id sweep, model-id inconsistencies cleanup, legacy `PRICING`/`get_pricing` removal, kokoro yaml `model: default` cleanup.
+
+The `[?]` blocked items (Phase 3.2 six fixture-recording sub-items, Phase 4.5 #4 Docker build) remain untouched.
+
+Iter 71 picks the next discovered-work item. Candidates ranked by effort:
+
+- **Codecov badge** (small README edit, ~1 line). Low risk; high signal.
+- **Kokoro yaml `model: default` cleanup** (a few YAML files). Mechanical.
+- **Legacy `PRICING` removal** (~10 files including 6 cloud provider implementations and 2 tests). Larger; needs the test rewrites.
+- **LLM model-id sweep** (~13 occurrences across ~6 files). Medium.
+- **Model-id inconsistencies cleanup** (~5 distinct issues across many files). Medium.
+- **Em-dash sweep** (~24+ occurrences). Largest text touch; cosmetic.
+
+Iter 71 takes the Codecov badge.
+
+No em dashes in this iteration's outputs.

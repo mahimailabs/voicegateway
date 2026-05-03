@@ -18,6 +18,28 @@ app = typer.Typer(
 )
 console = Console()
 
+
+def _version_callback(value: bool) -> None:
+    """Print the package version and exit (eager option)."""
+    if value:
+        from voicegateway import __version__
+
+        console.print(__version__)
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the VoiceGateway version and exit.",
+    ),
+) -> None:
+    """Root callback hosting global options like --version."""
+
 # The example config ships next to the package. Try both the new and legacy names.
 _PACKAGE_ROOT = Path(__file__).parent.parent
 _EXAMPLE_CONFIG_CANDIDATES = [

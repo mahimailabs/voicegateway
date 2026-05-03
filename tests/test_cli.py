@@ -17,6 +17,15 @@ def test_init_creates_config(tmp_path, monkeypatch):
     assert (tmp_path / "voicegw.yaml").exists()
 
 
+def test_version_flag_prints_runtime_version():
+    """`voicegw --version` prints the runtime version and exits 0."""
+    from voicegateway import __version__
+
+    result = runner.invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert __version__ in result.output
+
+
 def test_init_custom_output(tmp_path):
     out = str(tmp_path / "custom.yaml")
     result = runner.invoke(app, ["init", "--output", out])
