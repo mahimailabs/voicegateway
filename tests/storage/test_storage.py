@@ -135,6 +135,53 @@ async def test_get_cost_by_modality_with_project_filter(storage):
     assert by_modality == {"stt": {"cost": pytest.approx(0.05, abs=0.001), "requests": 1}}
 
 
+async def test_get_cost_summary_include_pricing_source(storage):
+    """`by_model` carries pricing_source attribution when requested."""
+    now = time.time()
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=now, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai",
+        cost_usd=0.10, pricing_source="genai-prices@0.0.57",
+    ))
+    summary = await storage.get_cost_summary("today", include_pricing_source=True)
+    entry = summary["by_model"]["openai/gpt-4o-mini"]
+    assert entry["cost"] == pytest.approx(0.10, abs=0.001)
+    assert entry["pricing_source"] == "genai-prices@0.0.57"
+
+
+async def test_get_cost_summary_pricing_source_omitted_by_default(storage):
+    """Default response shape stays stable: no pricing_source key in by_model."""
+    now = time.time()
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=now, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai",
+        cost_usd=0.10, pricing_source="genai-prices@0.0.57",
+    ))
+    summary = await storage.get_cost_summary("today")
+    entry = summary["by_model"]["openai/gpt-4o-mini"]
+    assert "pricing_source" not in entry
+
+
+async def test_get_cost_summary_pricing_source_concats_distinct(storage):
+    """Multiple distinct sources for one model become a comma-joined string.
+
+    Happens when the gateway is upgraded mid-period (e.g., genai-prices
+    bumped from one minor to the next). Surfacing both is more honest
+    than picking one arbitrarily.
+    """
+    now = time.time()
+    for source in ["genai-prices@0.0.57", "genai-prices@0.0.58"]:
+        await storage.log_request(RequestRecord(
+            id=str(uuid.uuid4()), timestamp=now, modality="llm",
+            model_id="openai/gpt-4o-mini", provider="openai",
+            cost_usd=0.05, pricing_source=source,
+        ))
+    summary = await storage.get_cost_summary("today", include_pricing_source=True)
+    entry = summary["by_model"]["openai/gpt-4o-mini"]
+    sources = sorted(entry["pricing_source"].split(","))
+    assert sources == ["genai-prices@0.0.57", "genai-prices@0.0.58"]
+
+
 async def test_get_project_stats(storage):
     now = time.time()
     await storage.log_request(RequestRecord(

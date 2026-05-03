@@ -350,9 +350,17 @@ class SQLiteStorage:
         return 0
 
     async def get_cost_summary(
-        self, period: str = "today", project: str | None = None
+        self,
+        period: str = "today",
+        project: str | None = None,
+        include_pricing_source: bool = False,
     ) -> dict[str, Any]:
-        """Get cost summary for the given period, optionally filtered by project."""
+        """Get cost summary for the given period, optionally filtered by project.
+
+        With ``include_pricing_source=True``, each entry in ``by_model``
+        gains a ``pricing_source`` field carrying the catalog (or
+        catalogs, comma-joined) that priced that model's requests.
+        """
         db = await self._ensure_initialized()
         try:
             since = self._period_since(period)
@@ -383,15 +391,33 @@ class SQLiteStorage:
             }
 
             # By model
-            cursor = await db.execute(
-                f"""SELECT model_id, SUM(cost_usd) as cost, COUNT(*) as count
-                    FROM requests {where}
-                    GROUP BY model_id ORDER BY cost DESC""",
-                tuple(params),
-            )
-            by_model = {
-                row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor
-            }
+            if include_pricing_source:
+                cursor = await db.execute(
+                    f"""SELECT model_id, SUM(cost_usd) as cost, COUNT(*) as count,
+                               GROUP_CONCAT(DISTINCT pricing_source) as sources
+                        FROM requests {where}
+                        GROUP BY model_id ORDER BY cost DESC""",
+                    tuple(params),
+                )
+                by_model = {
+                    row[0]: {
+                        "cost": row[1],
+                        "requests": row[2],
+                        "pricing_source": row[3] or "",
+                    }
+                    async for row in cursor
+                }
+            else:
+                cursor = await db.execute(
+                    f"""SELECT model_id, SUM(cost_usd) as cost, COUNT(*) as count
+                        FROM requests {where}
+                        GROUP BY model_id ORDER BY cost DESC""",
+                    tuple(params),
+                )
+                by_model = {
+                    row[0]: {"cost": row[1], "requests": row[2]}
+                    async for row in cursor
+                }
 
             return {
                 "period": period,

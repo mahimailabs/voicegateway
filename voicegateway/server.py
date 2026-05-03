@@ -143,12 +143,13 @@ def build_app(gateway: Gateway) -> FastAPI:
         period: str = Query("today"),
         project: str | None = Query(None),
         per_modality: bool = Query(False),
+        include_pricing_source: bool = Query(False),
     ) -> dict:
-        # Pricing-source attribution per modality: which catalog
-        # produced the numbers in this response. Constant per running
-        # instance (genai-prices version + local catalog refresh date).
-        # Phase 4.1 will add `?include_pricing_source=true` for
-        # per-line attribution from the actual logged records.
+        # Top-level `pricing_sources` records the catalog the running
+        # instance is currently using (per modality). When
+        # `include_pricing_source=true`, each `by_model` entry also
+        # carries the source(s) that priced its historical records,
+        # which is what reconciliation against an invoice needs.
         pricing_sources = {
             modality: catalog.pricing_source(modality)
             for modality in ("llm", "stt", "tts")
@@ -166,7 +167,9 @@ def build_app(gateway: Gateway) -> FastAPI:
             if per_modality:
                 empty["by_modality"] = {}
             return empty
-        summary = await gateway.storage.get_cost_summary(period, project=project)
+        summary = await gateway.storage.get_cost_summary(
+            period, project=project, include_pricing_source=include_pricing_source
+        )
         # Always include a by_project breakdown for the "All Projects" view
         if project is None:
             summary["by_project"] = await gateway.storage.get_cost_by_project(period)

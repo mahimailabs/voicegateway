@@ -1549,3 +1549,38 @@ Default-stable matters because `/v1/costs` is consumed by the dashboard frontend
 Phase 4.1 #2 (`?include_pricing_source=true` for per-line attribution) is the next iteration's pick. That one needs storage-side support too: `get_cost_summary` currently aggregates without surfacing the underlying `pricing_source` per record. The likely shape is a per-line option on `get_recent_requests` or a separate `get_cost_summary_with_sources` method.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 12:10 UTC: feat(server): /v1/costs ?include_pricing_source query param
+
+Files: `voicegateway/storage/sqlite.py` (`get_cost_summary` gains `include_pricing_source: bool = False` parameter; SQL switches to `GROUP_CONCAT(DISTINCT pricing_source)` when set), `voicegateway/server.py` (`include_pricing_source: bool = Query(False)` added; passed through to storage), `tests/storage/test_storage.py` (+3 storage tests), `tests/server/test_server.py` (+2 server tests), `.agents/TODO.md` (Phase 4.1 #2 marked `[x]`).
+Tests: ruff clean, mypy clean (56 source files), pytest 331 passed / 8 skipped (was 326/8; +5 new tests). Coverage holds at 80%.
+
+Phase 4.1's second sub-item: per-line attribution on the costs endpoint. Why per-model and not per-row: an aggregate endpoint with one row per request would just be a duplicate of `/v1/logs`. The right level for `/v1/costs` is the model-id aggregation row, where attribution stays useful and the response shape stays compact.
+
+**Storage layer.** `get_cost_summary` switches to a different SQL when `include_pricing_source=True`:
+
+```sql
+SELECT model_id, SUM(cost_usd), COUNT(*),
+       GROUP_CONCAT(DISTINCT pricing_source) as sources
+FROM requests {where}
+GROUP BY model_id ORDER BY cost DESC
+```
+
+`GROUP_CONCAT(DISTINCT)` is widely supported in SQLite and produces a comma-joined string of distinct sources. Usually one entry per model; a model can have multiple sources only when the gateway was upgraded mid-period (e.g., `genai-prices@0.0.57` for the first half of the day, `genai-prices@0.0.58` for the second half). Surfacing both is more honest than picking one arbitrarily; an operator reconciling against an invoice can see which source the gateway used for which window.
+
+**HTTP layer.** `include_pricing_source: bool = Query(False)` added; passed through to the storage call. Default behavior unchanged: `by_model` entries do not gain the new field unless the client opts in. The top-level `pricing_sources` dict (the running-instance-wide attribution) stays present in both modes; per-line attribution is the additional information when requested.
+
+**Tests.** Five new tests:
+- `test_get_cost_summary_include_pricing_source`: opt-in returns the field with the recorded value.
+- `test_get_cost_summary_pricing_source_omitted_by_default`: default keeps `pricing_source` out of `by_model` entries.
+- `test_get_cost_summary_pricing_source_concats_distinct`: two records with different sources for the same model produce a comma-joined string. Sorts the parts to assert order-independent.
+- `test_v1_costs_include_pricing_source_default_off`: HTTP default leaves `by_model` entries clean.
+- `test_v1_costs_include_pricing_source_when_requested`: HTTP opt-in is accepted; smoke check on the response shape.
+
+The empty-string fallback (`row[3] or ""`) matters because SQLite's `GROUP_CONCAT(DISTINCT NULL)` returns NULL, not the empty string, and pre-Phase-2.3 records have NULL or empty `pricing_source`. The defensive `or ""` keeps the response JSON-serializable and predictable.
+
+Phase 4.1 #3 (`?start=` and `?end=` ISO date parameters, coexisting with the existing `period=today|week|month`) is the next iteration's pick. The storage-layer `_period_since` helper currently only handles the named-period strings; #3 needs a parallel `_window_from_iso` helper that returns a `(start_ts, end_ts)` pair, plus updates to the four cost-summary methods to accept it.
+
+No em dashes in this iteration's outputs.

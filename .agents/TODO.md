@@ -419,8 +419,16 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
   default omits, opt-in includes). Storage method excludes
   modalities with zero requests; the test covers project-filter
   scoping.
-- [ ] Add `?include_pricing_source=true` query parameter. Adds source
+- [x] Add `?include_pricing_source=true` query parameter. Adds source
   attribution per line.
+  Done: storage `get_cost_summary` accepts `include_pricing_source`;
+  when set, the SQL `GROUP_CONCAT(DISTINCT pricing_source)` adds a
+  `pricing_source` field to each `by_model` entry. Default behavior
+  preserves the existing response shape (no new key in `by_model`
+  entries). Server endpoint accepts `?include_pricing_source=true`.
+  Tests: 5 new (3 storage: opt-in adds field, default omits, distinct
+  sources comma-joined for mid-period upgrade case; 2 server: default
+  off, opt-in accepted with empty traffic).
 - [ ] Add `?start=` and `?end=` ISO date parameters. Replaces fixed
   `period=today|week|month` (keep the old `period` param for
   backward compat — both can coexist).

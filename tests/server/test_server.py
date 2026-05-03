@@ -93,6 +93,25 @@ async def test_v1_costs_per_modality_when_requested(client):
     assert data["by_modality"] == {}
 
 
+async def test_v1_costs_include_pricing_source_default_off(client):
+    """Default response leaves by_model entries without per-line attribution."""
+    resp = await client.get("/v1/costs")
+    assert resp.status_code == 200
+    by_model = resp.json().get("by_model", {})
+    for entry in by_model.values():
+        assert "pricing_source" not in entry
+
+
+async def test_v1_costs_include_pricing_source_when_requested(client):
+    """`?include_pricing_source=true` is accepted; response shape stays valid."""
+    resp = await client.get("/v1/costs?include_pricing_source=true")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "by_model" in data
+    # Empty traffic means no entries to attribute. The flag's effect on
+    # populated entries is exercised in tests/storage/test_storage.py.
+
+
 async def test_v1_latency_empty(client):
     resp = await client.get("/v1/latency")
     assert resp.status_code == 200
