@@ -654,6 +654,51 @@ class SQLiteStorage:
         finally:
             await db.close()
 
+    async def get_requests_in_window(
+        self,
+        start_ts: float | None = None,
+        end_ts: float | None = None,
+        project: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return every request record falling in `[start_ts, end_ts)`.
+
+        Differs from `get_recent_requests` in two ways: no row limit
+        (intended for export, not display), and time window is the
+        primary filter. `start_ts` is inclusive, `end_ts` is exclusive,
+        either is optional. Project is an optional secondary filter.
+        Rows are returned ordered by timestamp ascending so a CSV
+        export reads chronologically.
+        """
+        db = await self._ensure_initialized()
+        try:
+            conditions: list[str] = []
+            params: list[Any] = []
+            if start_ts is not None:
+                conditions.append("timestamp >= ?")
+                params.append(start_ts)
+            if end_ts is not None:
+                conditions.append("timestamp < ?")
+                params.append(end_ts)
+            if project:
+                conditions.append("project = ?")
+                params.append(project)
+            where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            query = f"SELECT * FROM requests {where} ORDER BY timestamp ASC"
+            cursor = await db.execute(query, tuple(params))
+            columns = [d[0] for d in cursor.description]
+            rows = []
+            async for row in cursor:
+                record = dict(zip(columns, row, strict=False))
+                if record.get("metadata"):
+                    try:
+                        record["metadata"] = json.loads(record["metadata"])
+                    except (ValueError, TypeError):
+                        pass
+                rows.append(record)
+            return rows
+        finally:
+            await db.close()
+
     async def get_recent_requests(
         self,
         limit: int = 100,

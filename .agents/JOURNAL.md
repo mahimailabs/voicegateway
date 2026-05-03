@@ -1642,3 +1642,29 @@ The per-param smoke tests assert each parameter alone behaves right (default-omi
 Phase 4.1 is now `[x]` across all four sub-items. Phase 4.2 (`voicegw export-costs` CLI) is the next iteration's pick. The export-costs command needs `--start`/`--end`/`--project`/`--format csv|json` args; output is per-request line items with `timestamp, project, modality, provider, model, input_units, output_units, calculated_cost, pricing_source, status`. The storage layer already has `get_recent_requests(project=, modality=)`; #1 of 4.2 will likely extend that to accept the same window kwargs added in iter 52.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 13:10 UTC: feat(cli): voicegw export-costs command
+
+Files: `voicegateway/storage/sqlite.py` (`get_requests_in_window` added), `voicegateway/cli.py` (`export-costs` command + `_EXPORT_COLUMNS` constant + `_parse_iso_date_arg` helper), `tests/storage/test_storage.py` (+2 storage tests), `.agents/TODO.md` (Phase 4.2 #1 marked `[x]`).
+Tests: ruff clean, mypy clean (56 source files), pytest 340 passed / 8 skipped (was 338/8; +2 new tests). Coverage 80%.
+
+The reconcile workflow's first half: pull a CSV (or JSON) of per-request line items for a date range, then compare against a provider invoice. This iteration ships the export half; iter 55 will add the comprehensive CLI tests, and 4.3 will ship `voicegw reconcile`.
+
+**Storage method.** Added `SQLiteStorage.get_requests_in_window(start_ts, end_ts, project)`. Differs from `get_recent_requests` in two deliberate ways:
+
+1. No row limit. The export use case wants every record in the window. `get_recent_requests(limit=N)` is a display affordance (dashboard "last N").
+2. `ORDER BY timestamp ASC`. CSV exports read chronologically top to bottom; that matches how a human reading the output expects things to flow, and matches the order most provider invoices are sorted in too.
+
+Both bounds are independently optional (nil = unbounded on that side). Project filter is the same one already plumbed through the cost methods. The half-open `[start_ts, end_ts)` convention matches iter 52's window semantics so shoulder methods compose without translation.
+
+**CLI command.** `voicegw export-costs --start YYYY-MM-DD --end YYYY-MM-DD [--project p] [--format csv|json] [--output FILE|-]`. Defaults: format=csv, output=- (stdout). `--start` and `--end` are typer-required (raises if absent). Both dates UTC; date-only matches the ISO date semantics on `/v1/costs?start=&end=` (iter 52). The `_EXPORT_COLUMNS` module-level tuple (`timestamp, project, modality, provider, model_id, input_units, output_units, cost_usd, pricing_source, status`) is the contract: pin the column set here so `voicegw reconcile` (Phase 4.3) reads a stable format. CSV writes via `csv.writer`; JSON writes a list of dicts via `json.dump(default=str, indent=2)` so timestamps and Decimals serialize cleanly.
+
+**Smoke verification.** `voicegw export-costs --help` renders the full option list with the right help text. Two storage tests cover (a) window correctness (3 records at base-10d / base-5d / base-0d, query [base-7d, base-2d) returns just the middle record), (b) chronological ordering (4 records logged out-of-order, returned in ascending timestamp).
+
+**Out of scope this iteration.** Comprehensive end-to-end CLI tests (the typer.testing.CliRunner pattern) belong to 4.2 #2. The smoke `--help` and storage-layer coverage are enough to verify the wiring is sound; full output-validation lands next iteration.
+
+Phase 4.2 #2 (CLI tests) is the next iteration's pick. The Typer test harness pattern is `from typer.testing import CliRunner; result = runner.invoke(app, ["export-costs", ...])` then assert on `result.exit_code` and `result.stdout`. Cover (a) CSV header + row format, (b) JSON shape, (c) malformed date returns 2, (d) `--project` filter, (e) the storage-None case returns 1 with a yellow warning.
+
+No em dashes in this iteration's outputs.

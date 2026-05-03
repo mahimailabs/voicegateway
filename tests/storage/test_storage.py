@@ -229,6 +229,48 @@ async def test_get_cost_by_project_explicit_window(storage):
     assert by_project["alpha"]["requests"] == 1
 
 
+async def test_get_requests_in_window(storage):
+    """`get_requests_in_window` returns full per-record rows in chronological order."""
+    base = time.time()
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=base - 86400 * 10, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai", cost_usd=0.05,
+        pricing_source="genai-prices@0.0.57",
+    ))
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=base - 86400 * 5, modality="stt",
+        model_id="deepgram/nova-3", provider="deepgram", cost_usd=0.10,
+        pricing_source="local-stt@2026-05-04",
+    ))
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=base, modality="tts",
+        model_id="cartesia/sonic-3", provider="cartesia", cost_usd=0.07,
+        pricing_source="local-tts@2026-05-04",
+    ))
+    rows = await storage.get_requests_in_window(
+        start_ts=base - 86400 * 7,
+        end_ts=base - 86400 * 2,
+    )
+    # Only the middle record is in the window.
+    assert len(rows) == 1
+    assert rows[0]["model_id"] == "deepgram/nova-3"
+    assert rows[0]["pricing_source"] == "local-stt@2026-05-04"
+    assert rows[0]["cost_usd"] == pytest.approx(0.10, abs=0.001)
+
+
+async def test_get_requests_in_window_orders_chronologically(storage):
+    """`ORDER BY timestamp ASC` so a CSV export reads top-to-bottom in time."""
+    base = time.time()
+    for offset in (5, 1, 10, 3):
+        await storage.log_request(RequestRecord(
+            id=str(uuid.uuid4()), timestamp=base - offset, modality="llm",
+            model_id="openai/gpt-4o-mini", provider="openai", cost_usd=0.01,
+        ))
+    rows = await storage.get_requests_in_window(start_ts=base - 100)
+    timestamps = [r["timestamp"] for r in rows]
+    assert timestamps == sorted(timestamps)
+
+
 async def test_get_cost_by_modality_explicit_window(storage):
     """Modality breakdown respects the explicit window too."""
     base = time.time()

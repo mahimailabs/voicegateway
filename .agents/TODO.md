@@ -459,12 +459,22 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
 
 ### 4.2 — `voicegw export-costs` CLI
 
-- [ ] Implement `voicegw export-costs` command.
+- [x] Implement `voicegw export-costs` command.
   Args: `--start`, `--end`, `--project` (optional), `--format
   csv|json` (default csv).
   Output: per-request line items with timestamp, project, modality,
   provider, model, input_units, output_units, calculated_cost,
   pricing_source, status.
+  Done: command at `voicegateway/cli.py::export_costs_cmd` writes
+  to stdout (default) or `--output FILE`. Storage helper
+  `SQLiteStorage.get_requests_in_window(start_ts, end_ts, project)`
+  returns full per-record rows ordered by timestamp ascending so
+  CSV reads chronologically. CLI helper `_parse_iso_date_arg`
+  rejects malformed dates with `Exit(2)`. `_EXPORT_COLUMNS` constant
+  pins the CSV/JSON column set so reconcile (4.3) reads a stable
+  format. Smoke verified: `voicegw export-costs --help` renders
+  full option list. Storage method has 2 unit tests (window + chrono
+  order). End-to-end CLI tests are 4.2 #2.
 - [ ] Tests for export-costs command (text-mode + CSV output
   validation).
 

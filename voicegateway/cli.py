@@ -313,6 +313,116 @@ def dashboard_cmd(
     uvicorn.run(dashboard_app.app, host=host, port=port)
 
 
+_EXPORT_COLUMNS = (
+    "timestamp",
+    "project",
+    "modality",
+    "provider",
+    "model_id",
+    "input_units",
+    "output_units",
+    "cost_usd",
+    "pricing_source",
+    "status",
+)
+
+
+def _parse_iso_date_arg(value: str, *, end_of_day: bool) -> float:
+    """Parse YYYY-MM-DD into a UTC timestamp for CLI use.
+
+    With `end_of_day=True`, advance one day so the timestamp is the
+    exclusive upper bound for "include all of YYYY-MM-DD."
+    """
+    import datetime as _dt
+
+    try:
+        d = _dt.datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=_dt.UTC)
+    except ValueError as e:
+        console.print(
+            f"[red]Invalid date {value!r}: expected YYYY-MM-DD[/red]"
+        )
+        raise typer.Exit(2) from e
+    if end_of_day:
+        d += _dt.timedelta(days=1)
+    return d.timestamp()
+
+
+@app.command(name="export-costs")
+def export_costs_cmd(
+    config: str = typer.Option(None, "--config", "-c", help="Path to voicegw.yaml"),
+    start: str = typer.Option(
+        ..., "--start", help="Start date (YYYY-MM-DD, inclusive, UTC)."
+    ),
+    end: str = typer.Option(
+        ..., "--end", help="End date (YYYY-MM-DD, inclusive, UTC)."
+    ),
+    project: str = typer.Option(
+        None, "--project", "-p", help="Optional project filter."
+    ),
+    fmt: str = typer.Option(
+        "csv", "--format", "-f", help="Output format: csv (default) or json."
+    ),
+    output: str = typer.Option(
+        "-", "--output", "-o", help="Output path; '-' (default) writes to stdout."
+    ),
+):
+    """Export per-request cost line items for a date window.
+
+    Output columns: timestamp, project, modality, provider, model_id,
+    input_units, output_units, cost_usd, pricing_source, status.
+
+    Pair with `voicegw reconcile` (Phase 4.3) to compare against a
+    provider's invoice.
+    """
+    if fmt not in ("csv", "json"):
+        console.print(f"[red]Unknown format: {fmt}. Use 'csv' or 'json'.[/red]")
+        raise typer.Exit(2)
+
+    gw = _load_gateway(config)
+    if gw.storage is None:
+        console.print(
+            "[yellow]Cost tracking is not enabled in voicegw.yaml[/yellow]"
+        )
+        raise typer.Exit(1)
+
+    start_ts = _parse_iso_date_arg(start, end_of_day=False)
+    end_ts = _parse_iso_date_arg(end, end_of_day=True)
+
+    rows = asyncio.run(
+        gw.storage.get_requests_in_window(
+            start_ts=start_ts, end_ts=end_ts, project=project
+        )
+    )
+
+    import io
+    import json as _json
+    import sys
+
+    buf = io.StringIO()
+    if fmt == "csv":
+        import csv
+
+        writer = csv.writer(buf)
+        writer.writerow(_EXPORT_COLUMNS)
+        for r in rows:
+            writer.writerow([r.get(col, "") for col in _EXPORT_COLUMNS])
+    else:
+        export_rows = [
+            {col: r.get(col) for col in _EXPORT_COLUMNS} for r in rows
+        ]
+        _json.dump(export_rows, buf, default=str, indent=2)
+        buf.write("\n")
+
+    payload = buf.getvalue()
+    if output == "-":
+        sys.stdout.write(payload)
+    else:
+        Path(output).write_text(payload)
+        console.print(
+            f"[green]Wrote {len(rows)} record(s) to {output}[/green]"
+        )
+
+
 @app.command(name="mcp")
 def mcp_cmd(
     transport: str = typer.Option(
