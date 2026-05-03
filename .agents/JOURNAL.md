@@ -1996,3 +1996,37 @@ When this verification lands externally, a future iteration ticks the sub-item `
 **Phase 4.5 progress now four of five** (with the Docker step blocked but structurally audited). Phase 4.5 #5 (fresh-checkout smoke test) is the next iteration's pick. That step is doable in this Ralph loop because it does not need Docker: a fresh `uv venv && uv pip install -e ".[dev]" && voicegw init && voicegw status` flow runs purely in user-space.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 17:30 UTC: chore(release): Phase 4.5 #5 fresh-checkout smoke test
+
+Files: `.agents/TODO.md` (Phase 4.5 #5 marked `[x]`; new discovered-work entry for `voicegw --version` flag).
+Tests: ruff/mypy/pytest unchanged (no source code touched).
+
+**Smoke test recipe.** Created a fresh tmp dir at `/var/folders/.../vg-smoke-...`, made a fresh CPython 3.13.5 venv via `uv venv`, then ran `SETUPTOOLS_SCM_PRETEND_VERSION=0.1.0 uv pip install --force-reinstall --no-deps <repo>` to pin the install to a clean `0.1.0` (without the pretend-version, hatch-vcs reports `0.1.1.dev2+g2b3b45671` because the loop is two bookkeeping commits past the v0.1.0 tag from iter 64; the pretend-version mirrors what the Dockerfile's stage-2 build does for the same reason).
+
+**End-to-end results.**
+
+- `from voicegateway import __version__` -> `0.1.0`. The runtime version is what the user-facing string says (`voicegateway/__init__.py:8`) and the hatch-vcs `_version.py` agree.
+- `voicegw init` -> writes a minimal `voicegw.yaml` with empty `providers`/`models`/`projects`.
+- `voicegw status` -> renders the Provider Status Rich table (empty body, since the yaml has no providers configured).
+- `voicegw export-costs --start 2026-05-01 --end 2026-05-04` -> writes the CSV header `timestamp,project,modality,provider,model_id,input_units,output_units,cost_usd,pricing_source,status` to stdout. Body is empty (no records logged in this fresh DB), which is the expected zero-row output.
+- `voicegw reconcile --provider openai --start 2026-05-01 --end 2026-05-04 --provider-usage-file <test.csv>` against an `openai-test.csv` containing `gpt-4o-mini,1000,500,1,0.001` -> renders the diff table with the correct provider-specific unit label `tokens`, the `(vg-missing)` flag (VG has zero records), the right Δ% (100% on both units and cost), and the correct absolute diffs (1500 tokens, $0.001).
+
+The reconcile diff is the most useful canary because it exercises three v0.1.0 deliverables in one command: `get_requests_in_window` (iter 54), the canonical OpenAI parser (iter 56), the per-model diff math (iter 59), and the text formatter's provider-specific unit label.
+
+**Discovered: `voicegw --version` not supported.** Typer reports "No such option: --version". Captured as discovered work; standard pattern is a `typer.Option(callback=version_callback, is_eager=True)` on the root command. Not a release blocker because `from voicegateway import __version__` works (the Python-API source of truth) and the Docker image label has `org.opencontainers.image.version=0.1.0`. Adds to v0.1.x backlog.
+
+**Cleanup.** `rm -rf <smoke-dir>` removed the tmp tree.
+
+**Phase 4.5 wrap-up.** All five sub-items now `[x]` or `[?]`:
+- #1 Version bump: `[x]` vacuous (already 0.1.0 across all surfaces).
+- #2 CHANGELOG: `[x]` rewritten with Added/Changed/Fixed/Disclosed sections.
+- #3 v0.1.0 tag: `[x]` created locally, hatch-vcs resolves cleanly.
+- #4 Docker build: `[?]` blocked on Docker daemon; structural audit done.
+- #5 Smoke test: `[x]` end-to-end happy path verified across all four v0.1.0-deliverable commands.
+
+Phase 4.6 (final verification + completion-promise emission) is the next iteration's pick. The completion criteria in PROMPT.md require (a) every TODO marked `[x]` or `[~]`, (b) tests + lint + typecheck passing, (c) Phase 1-4 verifications all `[x]`, (d) CHANGELOG written, (e) pyproject version 0.1.0, (f) v0.1.0 tag created. The remaining `[?]`-blocked items (Phase 3.2 fixture recordings, Phase 4.5 #4 Docker build) are non-`[x]` non-`[~]` and would technically violate criterion (a). Need to think carefully about whether `<promise>VOICEGATEWAY_V01_COMPLETE</promise>` is emittable while those items remain blocked, or whether they need explicit conversion to `[~]` (deferred to v0.1.1) with mahimairaja's approval, or whether the structural-audit closure of Docker is sufficient. Iter 67 considers and decides.
+
+No em dashes in this iteration's outputs.

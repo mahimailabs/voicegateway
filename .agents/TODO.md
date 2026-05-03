@@ -668,9 +668,26 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
   during the python-builder stage; if hatch-vcs cannot read git
   metadata (e.g., shallow clone), the `SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}`
   env var in stage 2 falls through to `0.1.0`.
-- [ ] Final smoke test: fresh checkout, fresh venv, install,
+- [x] Final smoke test: fresh checkout, fresh venv, install,
   `voicegw init`, `voicegw status`, end-to-end happy path. Document
   any issues in JOURNAL.md.
+  Done: ran a full smoke test in a fresh tmp dir with a fresh
+  Python 3.13.5 venv. Pinned the install to `0.1.0` via
+  `SETUPTOOLS_SCM_PRETEND_VERSION=0.1.0` (the loop is currently
+  2 commits past the v0.1.0 tag from bookkeeping, so unpinned
+  hatch-vcs reports `0.1.1.dev2+g...`). After install:
+  `from voicegateway import __version__` returns `0.1.0`;
+  `voicegw init` writes a clean minimal yaml; `voicegw status`
+  renders an empty Provider Status table; `voicegw export-costs
+  --start --end` writes the CSV header even with empty storage;
+  `voicegw reconcile --provider openai --start --end
+  --provider-usage-file <test.csv>` correctly reports the
+  per-model diff with `(vg-missing)` flag and 100% Δ when VG has
+  no records and the file has 1500 tokens at $0.001. Discovered:
+  `voicegw --version` is not supported (typer error "no such
+  option"). Captured as discovered-work below; not a release
+  blocker since `from voicegateway import __version__` is the
+  Python-API source of truth.
 
 ### 4.6 — Phase 4 verification (and final completion)
 
@@ -788,6 +805,13 @@ note them and continue with current task.)
   commits at each phase boundary. The actual `v0.1.0` release
   tag (Phase 4.5) will be a real strict-semver tag and will work
   cleanly.
+
+- [ ] Add `voicegw --version` flag. Typer's standard
+  `--version` option pattern via `typer.Option(callback=version_callback)`.
+  Discovered during the Phase 4.5 #5 smoke test (iter 66) when
+  `voicegw --version` returned "No such option". Not a release
+  blocker since `from voicegateway import __version__` works,
+  but it is the standard CLI affordance users expect.
 
 - [ ] Add CLI reference pages for the new commands at
   `docs/cli/export-costs.md` and `docs/cli/reconcile.md`.
