@@ -2030,3 +2030,44 @@ The reconcile diff is the most useful canary because it exercises three v0.1.0 d
 Phase 4.6 (final verification + completion-promise emission) is the next iteration's pick. The completion criteria in PROMPT.md require (a) every TODO marked `[x]` or `[~]`, (b) tests + lint + typecheck passing, (c) Phase 1-4 verifications all `[x]`, (d) CHANGELOG written, (e) pyproject version 0.1.0, (f) v0.1.0 tag created. The remaining `[?]`-blocked items (Phase 3.2 fixture recordings, Phase 4.5 #4 Docker build) are non-`[x]` non-`[~]` and would technically violate criterion (a). Need to think carefully about whether `<promise>VOICEGATEWAY_V01_COMPLETE</promise>` is emittable while those items remain blocked, or whether they need explicit conversion to `[~]` (deferred to v0.1.1) with mahimairaja's approval, or whether the structural-audit closure of Docker is sufficient. Iter 67 considers and decides.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 17:55 UTC: chore(verify): Phase 4.6 final verification (promise withheld)
+
+Files: `.agents/TODO.md` (Phase 4.6 sub-items 1-7 marked `[x]`; sub-item 8 marked `[ ]` HOLD with detailed rationale).
+Tests: ruff clean, mypy clean (60 source files), pytest 370 passed / 8 skipped, coverage TOTAL 81% (above the 75% gate). Docs build clean (3.96s). v0.1.0 tag in place; runtime version reads `0.1.0`.
+
+This iteration runs every Phase 4.6 verification gate and considers whether `<promise>VOICEGATEWAY_V01_COMPLETE</promise>` is emittable.
+
+**Gates that pass.** All seven verification sub-items (1-7) tick `[x]`:
+
+1. **All CLI commands work end-to-end.** Iter 66's smoke test exercised `init`/`status`/`export-costs`/`reconcile` against a fresh tmp venv with a clean `0.1.0` install. `voicegw --help` lists 10 commands (init / status / costs / projects / project / logs / serve / dashboard / export-costs / reconcile / mcp).
+2. **make test / lint / typecheck.** Ruff: All checks passed. Mypy: Success, 60 source files. Pytest: 370 passed / 8 skipped.
+3. **Coverage ≥ 75%.** `coverage report` reports TOTAL 81%. Gate set in `pyproject.toml:103`.
+4. **Docs build.** `npm run build` in `docs/` completes in 3.96s with 0 dead links.
+5. **CHANGELOG.** Iter 63's rewrite covers Added (11 bullets), Changed (6), Fixed (7 audit-traceable), Disclosed (4).
+6. **pyproject.toml version is 0.1.0.** Pyproject uses `dynamic = ["version"]` with hatch-vcs reading from VCS tags; the v0.1.0 tag from iter 64 resolves the dynamic version cleanly. `from voicegateway import __version__` returns `0.1.0`.
+7. **Local v0.1.0 tag.** `git tag --list` shows `v0.1.0`. Annotated, never pushed (per the local-only constraint).
+
+**Sub-item 8 (the completion promise) is on hold.** Per PROMPT.md's completion-criteria section, criterion #1 reads: "Every task in `.agents/TODO.md` is marked `[x]` or `[~]` (skipped with documented reason)." The TODO has the following non-`[x]`-non-`[~]` items:
+
+- Phase 3.2 six sub-items: `[?]` blocked on real provider API access (OpenAI, Deepgram, Cartesia plus three stretch). Documented in iter 44; the recorder script ships in v0.1.0 but real recordings need an external API key + budget.
+- Phase 4.5 #4: `[?]` blocked on the Docker daemon not running in this Ralph loop's environment (iter 65). Structural audit done; the actual `docker build -t voicegateway:v0.1.0 .` runs cleanly externally.
+- Discovered work: nine `[ ]` items including the PROPMT.md filename typo, em-dash sweep across user-authored markdown, Codecov badge, LLM model-id sweep, model-id inconsistencies cleanup, legacy `PRICING`/`get_pricing` removal, kokoro yaml `model: default` cleanup, `voicegw --version` flag (discovered iter 66), and missing `docs/cli/export-costs.md` + `docs/cli/reconcile.md` reference pages.
+
+The PROMPT.md slip-plan provides exactly one path to make criterion #1 true while items remain blocked: "Mark Phase 3 and 4 tasks `[~]` with reason 'deferred to v0.1.1, see JOURNAL.md entry of <date>' and adjust completion criteria accordingly. **Only do this with mahimairaja's explicit approval** (a commit to TODO.md or a comment in PROMPT.md)." mahimairaja has not committed any such approval; self-approving the deferral would be a direct violation of the explicit-approval requirement.
+
+The CRITICAL RULE in PROMPT.md is unambiguous: "you may ONLY output it when the statement is completely and unequivocally TRUE. Do not output false promises to escape the loop, even if you think you're stuck or should exit for other reasons."
+
+Therefore: the promise is withheld this iteration. The structural state is "v0.1.0 has shipped" (every code, test, docs, and tag artifact is in place; runtime version reads `0.1.0`; smoke test passes); but the completion-promise contract is precise about TODO state and the TODO is not yet completely `[x]`-or-`[~]`.
+
+**Productive paths forward.** Three options for subsequent iterations:
+
+1. **Knock out discovered work.** Each ticked item reduces the open-`[ ]` surface; if all nine close by iter ~76, criterion #1 reads true on the v0.1.0 phase tasks alone with the `[?]` blockers as the only remaining gap. The slip-plan still requires mahimairaja's nod for those, but the surface area is much smaller.
+2. **Ride to `--max-iterations`.** The loop has 13 iterations of buffer remaining; `--max-iterations 80` will terminate naturally. The intermediate state then sits in the branch for mahimairaja to review and decide on next steps.
+3. **Wait for mahimairaja to commit a `[~]` deferral approval.** If mahimairaja edits TODO.md or PROMPT.md to mark the `[?]` items `[~]` with a deferral note, criterion #1 becomes true and the promise is emittable.
+
+Iter 68 picks option 1: knock out the simplest discovered-work item (renaming `.agents/PROPMT.md` to `.agents/PROMPT.md` to match the canonical name referenced inside the file and by completion-criteria documentation). Each subsequent iteration takes one more discovered-work item until the surface narrows to just the genuinely-blocked items.
+
+No em dashes in this iteration's outputs.

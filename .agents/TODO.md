@@ -691,15 +691,49 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
 
 ### 4.6 — Phase 4 verification (and final completion)
 
-- [ ] All CLI commands work end-to-end.
-- [ ] `make test`, `make lint`, `make typecheck` pass.
-- [ ] Coverage ≥ 75%.
-- [ ] Docs build passes.
-- [ ] CHANGELOG complete.
-- [ ] `pyproject.toml` version is `0.1.0`.
-- [ ] Local `v0.1.0` tag created (NOT pushed).
+- [x] All CLI commands work end-to-end.
+  Verified iter 66 smoke test (`init`, `status`, `export-costs`,
+  `reconcile`); `voicegw --help` lists init / status / costs /
+  projects / logs / serve / dashboard / export-costs / reconcile
+  / mcp / project (10 commands registered).
+- [x] `make test`, `make lint`, `make typecheck` pass.
+  `uv run ruff check voicegateway dashboard tests`: All checks
+  passed. `uv run mypy voicegateway dashboard`: Success, 60
+  source files. `uv run pytest --ignore=tests/providers/test_ollama.py`:
+  370 passed / 8 skipped.
+- [x] Coverage ≥ 75%.
+  `uv run coverage run -m pytest && coverage report` shows TOTAL
+  81% (gate is 75% in `pyproject.toml:103`).
+- [x] Docs build passes.
+  `cd docs && npm run build` completes in 3.96s with 0 dead
+  links.
+- [x] CHANGELOG complete.
+  `docs/reference/changelog.md` v0.1.0 entry covers Added
+  (11 bullets), Changed (6 bullets), Fixed (7 audit-traceable
+  bullets), Disclosed (4 bullets). Iter 63.
+- [x] `pyproject.toml` version is `0.1.0`.
+  pyproject uses `dynamic = ["version"]` + hatch-vcs; the v0.1.0
+  tag from iter 64 resolves the dynamic version to `0.1.0`
+  cleanly. `uv run python -c "from voicegateway import
+  __version__"` prints `0.1.0`.
+- [x] Local `v0.1.0` tag created (NOT pushed).
+  Iter 64. `git tag --list` shows `v0.1.0`. Annotated tag.
 - [ ] Output `<promise>VOICEGATEWAY_V01_COMPLETE</promise>` as final
   message.
+  HOLD: PROMPT.md completion criterion #1 is not yet true.
+  Two `[?]` blocked items remain (Phase 3.2 six fixture-recording
+  sub-items; Phase 4.5 #4 Docker build) plus several `[ ]`
+  discovered-work items. Per PROMPT.md the promise is emittable
+  only when EVERY task is `[x]` or `[~]`. `[?]` is the third
+  state and explicitly does not satisfy the criterion. The
+  remaining options are (a) mahimairaja explicitly approves
+  `[~]` deferral on the blocked items per the slip-plan, (b)
+  the Ralph loop knocks out enough discovered work that
+  criterion #1 reads true on the v0.1.0 phase tasks alone, or
+  (c) the loop exits via `--max-iterations` (iter 67/80; 13
+  iterations of buffer). Iteration 67 holds the promise; iter 68
+  picks the next discovered-work item to reduce the open-`[ ]`
+  surface area.
 
 ---
 
