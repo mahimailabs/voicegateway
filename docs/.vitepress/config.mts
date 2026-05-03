@@ -96,6 +96,8 @@ export default defineConfig({
             { text: 'init', link: '/cli/init' },
             { text: 'status', link: '/cli/status' },
             { text: 'costs', link: '/cli/costs' },
+            { text: 'export-costs', link: '/cli/export-costs' },
+            { text: 'reconcile', link: '/cli/reconcile' },
             { text: 'projects', link: '/cli/projects' },
             { text: 'logs', link: '/cli/logs' },
             { text: 'serve', link: '/cli/serve' },

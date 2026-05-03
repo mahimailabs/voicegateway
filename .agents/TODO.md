@@ -853,7 +853,7 @@ note them and continue with current task.)
   blocker since `from voicegateway import __version__` works,
   but it is the standard CLI affordance users expect.
 
-- [ ] Add CLI reference pages for the new commands at
+- [x] Add CLI reference pages for the new commands at
   `docs/cli/export-costs.md` and `docs/cli/reconcile.md`.
   Phase 4.4's walkthrough at `docs/guide/cost-reconciliation.md`
   references them; the See-also block was downgraded to
@@ -864,6 +864,16 @@ note them and continue with current task.)
   add export-costs and reconcile entries when pages land.
   Light touch: each page mirrors the `--help` output plus a
   link back to `/guide/cost-reconciliation`.
+  Done: created `docs/cli/export-costs.md` and
+  `docs/cli/reconcile.md` matching the existing CLI page style
+  (`docs/cli/costs.md` was the template). Each page covers
+  Purpose, Syntax, Options table, Prerequisites, Output (CSV
+  columns / format variants), Examples, Exit codes, Related
+  commands, See also. Sidebar updated to include both new
+  pages (between `costs` and `projects`). The cost-reconciliation
+  walkthrough's See-also block was upgraded from bare `--help`
+  references to actual link references. Docs build clean
+  (3.17s).
 
 - [ ] Clean up stale `model: default` lines in `local/kokoro:`
   YAML blocks introduced by 1.3.5c (the value before the sweep

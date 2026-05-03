@@ -218,5 +218,5 @@ and reconcile against the provider invoice for the official number.
 
 - [Reconcile File Formats](/reference/reconcile-formats): per-provider
   schema VoiceGateway expects.
-- `voicegw export-costs --help`: inspect VG's per-request rows directly.
-- `voicegw reconcile --help`: the diff command itself.
+- [`voicegw export-costs`](/cli/export-costs): inspect VG's per-request rows directly.
+- [`voicegw reconcile`](/cli/reconcile): the diff command itself.

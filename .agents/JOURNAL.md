@@ -2098,3 +2098,30 @@ The Phase 4.5 #4 Docker `[?]` and Phase 3.2 six `[?]` fixture-recording items re
 Iter 69 picks the next discovered-work item. The most natural next pick is the missing CLI reference pages (`docs/cli/export-costs.md` and `docs/cli/reconcile.md`); they are mechanical to write (mirror `--help` plus a link back to `/guide/cost-reconciliation`) and the cost-reconciliation walkthrough's See-also section currently shows bare `--help` references where it should link to those pages. Closing them lifts criterion #1 closer to true and improves the docs surface.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 18:35 UTC: docs(cli): reference pages for export-costs and reconcile
+
+Files: `docs/cli/export-costs.md` (new, ~95 lines), `docs/cli/reconcile.md` (new, ~95 lines), `docs/.vitepress/config.mts` (sidebar updated under `/cli/` to include both new pages between `costs` and `projects`), `docs/guide/cost-reconciliation.md` (See-also block upgraded from bare `--help` references to actual link references), `.agents/TODO.md` (CLI-pages discovered-work item marked `[x]`).
+Tests: docs build clean (3.17s); existing pytest 370 passed / 8 skipped (no code touched).
+
+Mechanical follow-up to Phase 4.4's cost-reconciliation walkthrough. Each page matches the existing CLI reference style (`docs/cli/costs.md` was the template): Purpose, Syntax, Options table, Prerequisites, Output, Examples, Exit codes, Related commands, See also.
+
+**`docs/cli/export-costs.md`** documents the iter-54 CLI command. Options table covers `--start` / `--end` (required), `--project`, `--format`, `--output`, `--config` with their defaults. Output-columns table maps the 10 CSV columns to their type and per-modality semantics (input_units = tokens for LLM, minutes for STT, characters for TTS; output_units only populated for LLM). Three examples: stdout-CSV for May 2026, file-output with confirmation line, JSON for one project.
+
+**`docs/cli/reconcile.md`** documents the iter-59 CLI command. Options table covers `--provider` / `--start` / `--end` / `--provider-usage-file` (all required), `--format`, `--config`. Output section explains the per-provider unit label (`tokens` for OpenAI, `audio_s` for Deepgram, `chars` for Cartesia) and the three format variants. Three examples cover the basic OpenAI run, Deepgram + jq for filtering, and Cartesia with a JSON-variant input file. The "missing in only one side" rows are described with the `(vg-missing)` / `(prov-missing)` flag semantics that match `voicegateway/reconcile.py`'s `ReconcileLine` dataclass.
+
+**Sidebar wiring.** Both pages added between `costs` and `projects` in the CLI sidebar so they sit alongside the cost-related commands. Order matches the verb-noun grouping in the existing nav (init, status, costs, export-costs, reconcile, projects, logs, serve, dashboard, mcp).
+
+**Cost-reconciliation walkthrough upgraded.** The See-also block at the bottom of `docs/guide/cost-reconciliation.md` was downgraded in iter 61 to bare `voicegw <cmd> --help` references because the linked pages did not exist. Now upgraded to actual link references that point at the new CLI pages. The discovered-work entry that flagged this gap is closed.
+
+**Style discipline.** Audited both new pages for em dashes (per CLAUDE.md) and AI-flavored prose (per PROMPT.md content quality bar). Clean. The Options tables use the same `--` ASCII dash convention the rest of the docs use.
+
+**Discovered-work surface narrows.** Open `[ ]` items: 7 (was 8 before this iteration's close). Remaining: em-dash sweep, Codecov badge, LLM model-id sweep, model-id inconsistencies cleanup, legacy `PRICING`/`get_pricing` removal, kokoro yaml `model: default` cleanup, `voicegw --version` flag.
+
+The `[?]` blocked items (Phase 3.2 six fixture-recording sub-items, Phase 4.5 #4 Docker build) remain untouched.
+
+Iter 70 picks the next discovered-work item. Candidates: `voicegw --version` flag (small Python change with one test), kokoro yaml cleanup (mechanical YAML edits), or Codecov badge (one README line edit). The `voicegw --version` fix has the highest user-visible value and lands cleanly in one iteration.
+
+No em dashes in this iteration's outputs.
