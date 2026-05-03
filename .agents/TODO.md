@@ -23,7 +23,7 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
 - [x] Grep entire repo for "self-hosted inference gateway" and similar
   generic gateway framing. Record findings to
   `.agents/framing-occurrences.md`.
-- [ ] Audit every page in `docs/` for claims that don't match code.
+- [x] Audit every page in `docs/` for claims that don't match code.
   Audit found `docs/migration/from-litellm.md:12-19` and the README
   "Cloud outage" claim as known issues. Assume there are 3-5 more.
   Record findings to `.agents/credibility-issues.md`.
