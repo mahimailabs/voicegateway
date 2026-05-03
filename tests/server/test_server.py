@@ -136,6 +136,71 @@ async def test_v1_costs_with_only_start_or_only_end(client):
     assert resp.status_code == 200
 
 
+async def test_v1_costs_combined_query_params(client, gateway):
+    """All three new params (per_modality, include_pricing_source, start/end) compose.
+
+    Pop a populated DB across three modalities and three days, then
+    hit `/v1/costs?per_modality=true&include_pricing_source=true` with
+    a window that excludes the oldest record. Asserts the response
+    surfaces `by_modality`, per-line `pricing_source`, and the
+    out-of-window record is not in the totals.
+    """
+    import datetime as _dt
+    import uuid
+
+    from voicegateway.storage.models import RequestRecord
+
+    today = _dt.date.today()
+    in_window = _dt.datetime.combine(today, _dt.time(12, 0)).timestamp()
+    out_of_window = (
+        _dt.datetime.combine(today - _dt.timedelta(days=10), _dt.time(12, 0)).timestamp()
+    )
+    await gateway.storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=in_window, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai",
+        cost_usd=0.10, pricing_source="genai-prices@0.0.57",
+    ))
+    await gateway.storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=in_window, modality="stt",
+        model_id="deepgram/nova-3", provider="deepgram",
+        cost_usd=0.05, pricing_source="local-stt@2026-05-04",
+    ))
+    await gateway.storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=in_window, modality="tts",
+        model_id="cartesia/sonic-3", provider="cartesia",
+        cost_usd=0.03, pricing_source="local-tts@2026-05-04",
+    ))
+    await gateway.storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=out_of_window, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai",
+        cost_usd=99.0, pricing_source="genai-prices@0.0.57",
+    ))
+
+    start = (today - _dt.timedelta(days=1)).isoformat()
+    end = today.isoformat()
+    resp = await client.get(
+        "/v1/costs"
+        f"?per_modality=true&include_pricing_source=true&start={start}&end={end}"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert data["total"] == pytest.approx(0.18, abs=0.001)
+    assert data["by_modality"].keys() == {"llm", "stt", "tts"}
+    assert data["by_modality"]["llm"]["cost"] == pytest.approx(0.10, abs=0.001)
+    assert (
+        data["by_model"]["openai/gpt-4o-mini"]["pricing_source"]
+        == "genai-prices@0.0.57"
+    )
+    assert (
+        data["by_model"]["deepgram/nova-3"]["pricing_source"]
+        == "local-stt@2026-05-04"
+    )
+    # The 99.0 out-of-window record must not leak into any aggregate.
+    assert data["by_modality"]["llm"]["requests"] == 1
+    assert data["by_provider"]["openai"]["requests"] == 1
+
+
 async def test_v1_latency_empty(client):
     resp = await client.get("/v1/latency")
     assert resp.status_code == 200

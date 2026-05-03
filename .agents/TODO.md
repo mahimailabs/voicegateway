@@ -444,7 +444,18 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
   get_cost_by_project / get_cost_by_modality each respecting the
   window; 3 server covering ISO parse, invalid-date 400, and
   half-open windows).
-- [ ] Tests for new query parameters.
+- [x] Tests for new query parameters.
+  Done: each of 4.1 #1, #2, #3 shipped with smoke tests at the
+  storage layer and the HTTP layer. This iteration adds one
+  combined integration test (`test_v1_costs_combined_query_params`)
+  that pops a populated DB across three modalities and three days
+  and exercises `?per_modality=true&include_pricing_source=true&start=&end=`
+  together. Asserts (a) total matches the in-window sum, (b)
+  by_modality has all three modality keys with right requests
+  count, (c) per-line pricing_source attribution surfaces, (d) the
+  out-of-window 99.0 record does not leak into any aggregate.
+  Catches regressions where two params interfere even though each
+  works independently.
 
 ### 4.2 — `voicegw export-costs` CLI
 

@@ -1611,3 +1611,34 @@ Date semantics deliberately date-only, not full ISO 8601 datetimes. The use case
 Phase 4.1 #4 ("Tests for new query parameters") is the next iteration's pick. Each of the three preceding sub-items shipped with smoke tests, so #4 is largely satisfied already. The follow-up iteration can mark it `[x]` vacuously, then move on to Phase 4.2 (`voicegw export-costs` CLI), or extend coverage with a `live-traffic` end-to-end test that exercises all three new params together against a populated DB.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 12:50 UTC: test(server): combined integration test for /v1/costs query params
+
+Files: `tests/server/test_server.py` (`test_v1_costs_combined_query_params` added; ~55 LOC), `.agents/TODO.md` (Phase 4.1 #4 marked `[x]`).
+Tests: ruff clean, mypy clean (56 source files), pytest 338 passed / 8 skipped (was 337/8; +1 new test). Coverage 80%.
+
+Phase 4.1 #4 was largely satisfied already: each of #1 (per_modality), #2 (include_pricing_source), #3 (start/end) shipped with smoke tests at both the storage layer and the HTTP layer. Rather than mark this item vacuously and move on, this iteration adds the one piece of coverage the per-param tests missed: a combined integration test that exercises all three params against a populated DB, catching regressions where the params interfere even when each works in isolation.
+
+**Test setup.** `gateway.storage.log_request` populates the DB with four records:
+- LLM ($0.10) at midday today, `genai-prices@0.0.57` source.
+- STT ($0.05) at midday today, `local-stt@2026-05-04` source.
+- TTS ($0.03) at midday today, `local-tts@2026-05-04` source.
+- LLM ($99.0) at midday 10 days ago, same `genai-prices` source.
+
+**Query.** `/v1/costs?per_modality=true&include_pricing_source=true&start=<yesterday>&end=<today>`.
+
+**Assertions.**
+- `total == 0.18` (just the three in-window records summed; the 99.0 record is excluded).
+- `by_modality.keys() == {"llm", "stt", "tts"}` (per_modality breakdown surfaces all three).
+- `by_modality["llm"]["cost"] == 0.10` (the in-window LLM total, not 99.10).
+- `by_model["openai/gpt-4o-mini"]["pricing_source"] == "genai-prices@0.0.57"` (per-line source surfaces).
+- `by_model["deepgram/nova-3"]["pricing_source"] == "local-stt@2026-05-04"` (different sources for different modalities surface independently).
+- `by_modality["llm"]["requests"] == 1` and `by_provider["openai"]["requests"] == 1` (the 99.0 record does not leak through any aggregate).
+
+The per-param smoke tests assert each parameter alone behaves right (default-omit, opt-in adds, malformed 400, etc.). This integration test covers the case the smoke tests cannot: that the WHERE clause, the GROUP_CONCAT, and the optional `by_modality` build correctly when activated together. A future regression that, say, inadvertently dropped the time-window filter from `get_cost_by_modality` while leaving it on `get_cost_summary` would slip past the per-param tests but fail this one.
+
+Phase 4.1 is now `[x]` across all four sub-items. Phase 4.2 (`voicegw export-costs` CLI) is the next iteration's pick. The export-costs command needs `--start`/`--end`/`--project`/`--format csv|json` args; output is per-request line items with `timestamp, project, modality, provider, model, input_units, output_units, calculated_cost, pricing_source, status`. The storage layer already has `get_recent_requests(project=, modality=)`; #1 of 4.2 will likely extend that to accept the same window kwargs added in iter 52.
+
+No em dashes in this iteration's outputs.
