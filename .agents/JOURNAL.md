@@ -1059,3 +1059,37 @@ All 9 STT entries flagged correctly; same logic for TTS. Today's run passes both
 Phase 2.7 (unit tests for the pricing modules: `tests/pricing/test_llm.py`, `tests/pricing/test_stt.py`, `tests/pricing/test_tts.py`, `tests/pricing/test_catalog.py`) is the next iteration block. Phase 2.8 verification + tag follows.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 07:35 UTC — test(pricing): unit tests for voicegateway/pricing/llm.py
+
+Files: `tests/pricing/test_llm.py` (new, 16 tests covering 14 unique cases plus a 3-row parametrize), `.agents/TODO.md` (Phase 2.7 first sub-item marked `[x]`).
+Tests: ruff clean, mypy clean (1 source file), pytest 273 passed / 4 skipped (up from 257 with the 16 new tests added), coverage 79% overall, `voicegateway/pricing/llm.py` at 94%.
+
+Test coverage:
+
+| Test | Asserts |
+|---|---|
+| `test_pricing_source_format` | `PRICING_SOURCE` starts with `"genai-prices@"` and the version segment is non-empty. |
+| `test_known_openai_model_priced_correctly` | `gpt-4o` at 1000+100 = `Decimal("0.0035")` (matches OpenAI's $0.0025/1k input + $0.01/1k output). |
+| `test_known_anthropic_model_priced_correctly` | `claude-3.5-sonnet` at 1000+100 = `Decimal("0.0045")`. |
+| `test_unknown_provider_returns_none` | `foo/bar-baz` returns `None` (LookupError caught). |
+| `test_known_provider_unknown_model_returns_none` | `openai/totally-fake-model-2099` returns `None`. |
+| `test_bare_model_name_without_slash` | `gpt-4o` (no `/` prefix) resolves correctly via genai-prices. |
+| `test_zero_tokens_returns_zero_decimal` | Zero input + zero output returns `Decimal("0")`, not `None`. |
+| `test_only_input_tokens` | `gpt-4o` 1000+0 = `Decimal("0.0025")`. |
+| `test_only_output_tokens` | `gpt-4o` 0+1000 = `Decimal("0.01")`. |
+| `test_very_large_token_counts` | 1M+1M for `gpt-4o-mini` = `Decimal("0.75")`. |
+| `test_empty_model_string_returns_none` | Empty model returns `None`. |
+| `test_groq_canonical_id_priced_correctly` | Phase 2.5 sentinel: `groq/llama-3.1-8b-instant` and `groq/llama-3.1-70b-versatile` both return non-zero costs (regression guard against the v0.0.x silent zero). |
+| `test_return_type_is_decimal` | Successful calls return `Decimal`, not `float`. |
+| `test_decimal_avoids_binary_float_artifacts` (parametrized 3x) | Decimal arithmetic for three known-priced models stays > 0 without binary-float surprises. |
+
+Coverage on `voicegateway/pricing/llm.py` is now 94% (16 / 17 statements). The single uncovered line is the close-paren of the multi-line `calc_price(...)` call inside the `try` block; a coverage-tool quirk on multi-line expressions, not a missing test path. The LookupError except branch IS covered (via `test_unknown_provider_returns_none` which routes through `foo/bar-baz`).
+
+The Phase 2.5 regression guard (`test_groq_canonical_id_priced_correctly`) is a key piece: if a future genai-prices upgrade drops Groq Llama or renames the canonical IDs, this test fails and the maintainer fixes the catalog/yaml. Cheap to maintain, high signal.
+
+Phase 2.7 second sub-item (unit tests for `voicegateway/pricing/stt.py` and `tts.py`) is the next iteration.
+
+No em dashes in this iteration's outputs.

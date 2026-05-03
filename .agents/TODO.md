@@ -260,7 +260,7 @@ catalog with explicit source-date metadata.
 
 ### 2.7 — Tests
 
-- [ ] Unit tests for `voicegateway/pricing/llm.py`: known model,
+- [x] Unit tests for `voicegateway/pricing/llm.py`: known model,
   unknown model, edge cases (zero tokens, very large counts).
 - [ ] Unit tests for `voicegateway/pricing/stt.py` and `tts.py`:
   known model, unknown model, source-date metadata present.
