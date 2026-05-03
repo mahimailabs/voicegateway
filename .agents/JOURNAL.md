@@ -1896,3 +1896,29 @@ This iteration is a one-line TODO edit + journal entry. The remaining 4.5 sub-it
 Phase 4.5 #2 (CHANGELOG entry for v0.1.0) is the next iteration's pick. The TODO spec for it lists Added/Changed/Fixed/Disclosed sections with specific bullets per the design doc.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 16:30 UTC: docs(release): rewrite v0.1.0 CHANGELOG entry
+
+Files: `docs/reference/changelog.md` (top section rewritten; prior content retitled), `.agents/TODO.md` (Phase 4.5 #2 marked `[x]`).
+Tests: docs build clean (3.01s); existing pytest 370 passed / 8 skipped (no code changed).
+
+Phase 4.5 #2: write the actual v0.1.0 changelog. The existing top entry was misleadingly headed `v0.1.0 -- 2026-04-17` but documented v0.0.x feature scope: providers, middleware, storage, dashboard, MCP, CLI as it shipped pre-rebuild. That entry was written before the 2026-05-02 audit and the cost-tracking foundation rebuild that drove this release. Leaving it in place would have made the v0.1.0 ship look like a re-announcement of v0.0.x.
+
+**Two-section layout.** New `v0.1.0 -- 2026-05-04` entry at the top covers the rebuild deliverables across the four required sections. Below it, the prior content is retitled `v0.0.x baseline (prior to the rebuild)` with a one-line preamble explaining that those features ship unchanged into v0.1.0. The reader sees the rebuild story first, with the inherited surface area visible below.
+
+**Section coverage versus TODO spec.**
+
+- **Added:** 11 bullets covering every TODO-spec item plus the additional Phase 3.4/3.5 deliverables that landed during the rebuild: TTFB hook contract tests, the streaming fixture infrastructure (recorder script + parametrize-or-skip replay tests), the decision tree, the reconcile-formats reference, the cost-reconciliation walkthrough.
+- **Changed:** 6 bullets. Beyond the TODO-spec items (framing reframe, from-litellm rewrite, LLM pricing source) the entry captures the runtime-fallback language softening (audit C1/H5/L2), the STT/TTS model-id sweep (Phase 1.3.5c), and the coverage gate raise from 70% to 75%.
+- **Fixed:** 7 bullets. The groq placeholder (audit C2), dashboard title (C4), SQLite backup advice (C3), env-var typo (H4), VoiceAssistant import (M4), FAQ accuracy claims (H2/H3/M1/M2), and the LiveKit Cloud Inference table snapshot date (H6). All audit-traceable.
+- **Disclosed:** 4 bullets. Fixture-not-prod-traffic validation, LLM ~5% drift bound, Phase 3.2 fixture-blocked sub-items being operator-side work, and the milestone-tag scheme (no `v0.1.0-phaseN` tags because hatch-vcs rejects them).
+
+**Tone discipline.** Audited the rewritten section for AI-flavored prose (no "leverage", "seamless", "robust", "comprehensive", "underscore", "essential", "delve into", "important to note", "worth mentioning") and em dashes (none in the new content; the v0.0.x baseline section keeps the existing `--` ASCII double-dashes from the original copy). The grep also matched "recommended composition" in the FallbackAdapter bullet, which is precise framing for what that integration guide describes, not an upsell phrase.
+
+**Length and scannability.** ~100 lines for the v0.1.0 entry. Each bullet is a single sentence or two, with file paths inline so a reader can jump to the source. The Disclosed section deliberately leads with the "not validated against production traffic" admission; that is the most important honesty signal for a foundation-rebuild release.
+
+Phase 4.5 #3 (tag `v0.1.0` locally) is the next iteration's pick. The milestone-tag resolution (iter 45) noted the actual `v0.1.0` release tag is a real strict-semver tag and works cleanly with hatch-vcs; that iteration creates the tag and verifies the version resolves. The current `0.1.dev100+g...` from `_version.py` should become a clean `0.1.0` once the tag exists.
+
+No em dashes in this iteration's outputs.

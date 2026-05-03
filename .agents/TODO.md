@@ -595,7 +595,7 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
   git tag exists yet; that resolves cleanly when 4.5 #3 creates
   the tag. Verified `uv run python -c "from voicegateway import
   __version__; print(__version__)"` returns `0.1.0`.
-- [ ] Write CHANGELOG entry for v0.1.0. Sections:
+- [x] Write CHANGELOG entry for v0.1.0. Sections:
   - **Added:** genai-prices integration (LLM pricing now sourced
     from pydantic/genai-prices); pricing_source attribution on every
     request; voicegw export-costs and voicegw reconcile commands;
@@ -614,6 +614,24 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
     fixture-recorded provider responses, not against real production
     traffic. Reconcile your numbers against your provider invoice
     during the first 30 days. LLM costs estimated, may drift up to 5%.
+  Done: rewrote `docs/reference/changelog.md`. The prior
+  "v0.1.0 -- 2026-04-17" header documented v0.0.x scope (written
+  before the audit-driven rebuild) and was misleading. New
+  v0.1.0 -- 2026-05-04 entry at the top covers the rebuild
+  deliverables across all four required sections (Added: 11
+  bullets including all spec items plus phase-3 fixture
+  infrastructure, TTFB hook tests, decision tree, reconcile-
+  formats reference, cost-reconciliation walkthrough; Changed: 6
+  bullets including framing reframe, from-litellm rewrite, LLM
+  pricing source change, first-agent prereqs, runtime-fallback
+  language, model-id sweep + coverage gate raise; Fixed: 7 audit-
+  driven bullets including the groq placeholder, dashboard title,
+  SQLite backup advice, env-var typo, broken VoiceAssistant
+  import, FAQ accuracy claims, LiveKit Cloud Inference snapshot
+  date; Disclosed: 4 bullets covering fixture-not-prod-traffic
+  validation, LLM 5% drift, blocked Phase 3.2 sub-items, milestone-
+  tag scheme). The prior content was retitled "v0.0.x baseline"
+  and kept below for completeness. Docs build clean (3.01s).
 - [ ] Tag `v0.1.0` locally. Do NOT push — that's mahimairaja's call.
 - [ ] Verify Docker build succeeds locally with new version tag.
 - [ ] Final smoke test: fresh checkout, fresh venv, install,
