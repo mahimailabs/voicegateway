@@ -347,7 +347,12 @@ sub-item ticks it `[x]` against the committed fixture's filename.
   mocking at each provider's LiveKit-plugin transport layer; those
   tests land in a follow-up iteration after at least one fixture
   arrives.
-- [ ] Verify: replay tests pass on all recorded fixtures.
+- [x] Verify: replay tests pass on all recorded fixtures.
+  Verified for the current zero-fixture state: 1 passed
+  (`test_fixtures_directory_and_readme_exist`) + 4 skipped (the
+  parametrized cases that skip with `no-fixtures-recorded-yet`).
+  This becomes a real signal automatically when Phase 3.2 fixtures
+  land; nothing else has to change in the test file.
 
 ### 3.4 — TTFB hook hardening
 

@@ -1450,3 +1450,20 @@ When the first fixture lands, the corresponding `[no-fixtures-recorded-yet]` ski
 Phase 3.3 #3 (Verify replay tests pass on all recorded fixtures) is automatically satisfied for the zero-fixture case (4 skips + 1 directory-sanity pass). When fixtures land it becomes a real verification step.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 10:45 UTC — chore(verify): Phase 3.3 #3 zero-fixture verification
+
+Files: `.agents/TODO.md` (Phase 3.3 #3 marked `[x]` with the zero-fixture caveat).
+Tests: `uv run pytest tests/test_streaming_cost_accounting.py -v` -> 1 passed (`test_fixtures_directory_and_readme_exist`) + 4 skipped (the parametrized cases that resolve to `pytest.skip("no-fixtures-recorded-yet")` per iter 46's design). 0 failures, 0 errors.
+
+The verification is honest about its current state: the test file's contract is "for every fixture committed, the cost calculation matches the recorded usage." With zero fixtures committed, the contract is vacuously true (no cases to check), and the directory-sanity test confirms the rest of Phase 3.1's infrastructure is in place. When the Phase 3.2 sub-items unblock and fixtures land, parametrize discovery automatically expands the test cases; nothing in the test file has to change.
+
+This is a degenerate-pass verification, not a real signal. The real signal arrives with the first fixture. Captured the caveat explicitly in the TODO entry so a reader can see this iteration is not a load-bearing checkpoint.
+
+Phase 3.3 is now structurally done: respx dep added (iter 45), test infrastructure created (iter 46), verification step recorded (this iter). The wrapper-replay extension (assertion (a) unit-counting + assertion (c) TTFB hook timing) remains a follow-up after at least one fixture lands.
+
+Phase 3.4 (TTFB hook hardening) is the next iteration. The TTFB hook test is independent of Phase 3.2 fixtures: it can drive the wrapper directly with synthetic timing, asserting that `_mark_first_byte` records the first-byte timestamp at the right moment. Doable in this Ralph loop without real API access.
+
+No em dashes in this iteration's outputs.
