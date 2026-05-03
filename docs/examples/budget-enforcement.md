@@ -37,7 +37,6 @@ models:
       default_voice: 794f9389-aac1-45b6-b726-9d9369183238
     local/kokoro:
       provider: kokoro
-      model: default
 
 stacks:
   cloud:

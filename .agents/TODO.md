@@ -888,7 +888,7 @@ note them and continue with current task.)
   references to actual link references. Docs build clean
   (3.17s).
 
-- [ ] Clean up stale `model: default` lines in `local/kokoro:`
+- [x] Clean up stale `model: default` lines in `local/kokoro:`
   YAML blocks introduced by 1.3.5c (the value before the sweep
   was `kokoro/default` with `model: default`; after the sweep
   the key reads `local/kokoro:` but the `model:` line is now a
@@ -898,3 +898,12 @@ note them and continue with current task.)
   `docs/examples/budget-enforcement.md`,
   `docs/examples/multi-project.md`, plus any others that used
   the `model: default` form.
+  Done: removed the stale `model:` line from each of the four
+  example files plus `docs/migration/from-livekit-inference.md`
+  (which had `model: kokoro` instead of `model: default` but
+  was the same redundancy). Canonical pattern now matches
+  `voicegw.example.yaml`'s `local/kokoro:` block (just
+  `provider: kokoro`, optional `default_voice:`). Verified via
+  `grep -rn "model: default\|model: kokoro" docs/` returns
+  zero matches. Docs build clean (3.06s); tests still pass
+  (371/8).

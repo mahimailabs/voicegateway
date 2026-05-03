@@ -51,7 +51,6 @@ models:
   tts:
     local/kokoro:
       provider: kokoro
-      model: default
 
 stacks:
   local:

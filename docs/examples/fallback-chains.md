@@ -51,7 +51,6 @@ models:
       default_voice: pNInz6obpgDQGcFmaJgB
     local/kokoro:
       provider: kokoro
-      model: default
 
 # Fallback chains: first model is primary, rest are backups
 fallbacks:

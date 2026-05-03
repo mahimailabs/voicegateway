@@ -209,7 +209,6 @@ models:
   tts:
     local/kokoro:
       provider: kokoro
-      model: kokoro
 ```
 
 ### 8. Deploy with Docker

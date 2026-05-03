@@ -2191,3 +2191,29 @@ The smallest discovered-work item: a single `[![Coverage](...)](...)` line added
 Iter 72 takes the Kokoro yaml cleanup. Each subsequent iteration narrows further until the surface contains only the genuinely-blocked `[?]` items, at which point Phase 4.6's completion-promise sub-item becomes the only `[ ]` and criterion #1 is reachable.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 19:25 UTC: docs(examples): drop redundant `model:` lines under `local/kokoro:` blocks
+
+Files: `docs/examples/fallback-chains.md`, `docs/examples/local-only.md`, `docs/examples/budget-enforcement.md`, `docs/examples/multi-project.md`, `docs/migration/from-livekit-inference.md` (one line removed per file under each `local/kokoro:` YAML block); `.agents/TODO.md` (kokoro yaml cleanup discovered-work item marked `[x]`).
+Tests: docs build clean (3.06s); existing pytest 371 passed / 8 skipped (no code touched).
+
+The Phase 1.3.5c model-id sweep (iter 14) renamed `kokoro/default:` to `local/kokoro:` across the docs but left the inner `model: default` line in place. After the rename, the YAML key `local/kokoro` already encodes the model id ("kokoro"); the inner `model:` line was a redundant no-op that the gateway parser tolerated via `extra="allow"` but was visually misleading. The canonical pattern in `voicegw.example.yaml` is just `provider: kokoro` plus an optional `default_voice:`.
+
+**Five files touched.** Four example files had `model: default` (the post-rename leftover). `docs/migration/from-livekit-inference.md:212` had `model: kokoro` instead of `default` but was the same redundancy. All five removed.
+
+**Verification.** `grep -rn "model: default\|model: kokoro" docs/` returns zero matches after the edits. Docs build clean (3.06s); test suite unchanged (371 passed / 8 skipped) since no code paths touched.
+
+**Discovered-work surface narrows.** Open `[ ]` items: 4 (was 5 before this iteration's close). Remaining: em-dash sweep, LLM model-id sweep, model-id inconsistencies cleanup, legacy `PRICING`/`get_pricing` removal.
+
+**Iter 73 candidate ranking.**
+
+- **LLM model-id sweep** (~13 occurrences across ~6 docs files; updates docs to reference the model IDs that ship in the genai-prices catalog). Medium effort.
+- **Model-id inconsistencies cleanup** (kokoro, assemblyai, groq, ollama, anthropic, piper across ~10 files). Medium-large.
+- **Legacy `PRICING`/`get_pricing` removal** (~10 files including 6 cloud provider implementations and 2 tests). Larger; requires touching cloud-provider files this Ralph loop's environment cannot fully exercise (most cloud-provider tests are skipped in coverage/omit list).
+- **Em-dash sweep** (~24+ occurrences across many files). Largest text touch; cosmetic.
+
+Iter 73 takes the LLM model-id sweep because it directly aligns docs with what `genai-prices` already recognizes, which makes the v0.1.0 documentation honest about which model IDs the user can plug into VG and get a non-null cost.
+
+No em dashes in this iteration's outputs.
