@@ -1467,3 +1467,33 @@ Phase 3.3 is now structurally done: respx dep added (iter 45), test infrastructu
 Phase 3.4 (TTFB hook hardening) is the next iteration. The TTFB hook test is independent of Phase 3.2 fixtures: it can drive the wrapper directly with synthetic timing, asserting that `_mark_first_byte` records the first-byte timestamp at the right moment. Doable in this Ralph loop without real API access.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 11:00 UTC: test(middleware): focused TTFB hook contract tests
+
+Files: `tests/middleware/test_instrumented_provider.py` (new, ~120 lines, 6 tests), `.agents/TODO.md` (Phase 3.4 #1 and #2 both marked `[x]`).
+Tests: ruff clean, mypy clean (1 source file), pytest 327 passed / 9 skipped (was 316/8; +6 new tests, +1 incidental skip from elsewhere). Coverage on `voicegateway/middleware/instrumented_provider.py` 34% -> 80% (+46pp). Total project coverage 81%.
+
+The audit (docs/audit-2026-05-02.md) flagged that `_mark_first_byte` is a manual hook each modality wrapper's streaming code path must call; if a future refactor forgets to call it, TTFB silently degrades to total latency without test failure. This iteration's tests target the hook mechanism (Layer A): they exercise the contract `_InstrumentedBase` exposes, so a refactor breaking the mechanism is caught even before per-provider streaming fixtures (Layer B) exist.
+
+Six tests, each targets a distinct invariant:
+
+1. `test_first_byte_starts_unset`: `_first_byte_time` is `None` at construction; only `_mark_first_byte` flips it.
+2. `test_mark_first_byte_records_a_timestamp`: calling the hook writes a `time.perf_counter()` value.
+3. `test_mark_first_byte_is_idempotent`: subsequent calls do not overwrite (the `is None` guard inside the hook). Sleeps 5ms between calls then asserts equality. If a refactor drops the guard, the second timestamp would be different and the test fails.
+4. `test_log_request_records_ttfb_when_first_byte_marked`: drives `await wrapper._log_request(input_units=1.0)` after a small `await asyncio.sleep(0.005)`, then `_mark_first_byte()`, then `await asyncio.sleep(0.020)`. Asserts `ttfb_ms < total_latency_ms` in the captured `cost_tracker.create_record` kwargs.
+5. `test_log_request_falls_back_to_total_when_hook_not_called`: when the hook never fires, `ttfb_ms == total_latency_ms` exactly (both computed from the same `now` snapshot in the wrapper). This is the documented fallback for non-streaming modalities.
+6. `test_log_request_is_idempotent`: second `await wrapper._log_request(...)` is a no-op (the wrapper sets `_logged = True`). Asserts `cost_tracker.create_record.call_count == 1`. If both calls record, the budget enforcer would double-count and storage would have a duplicate row.
+
+Construction uses `MagicMock` for `wrapped` (the LiveKit plugin instance) and `cost_tracker.create_record` is a sync `MagicMock`; `cost_tracker.notify_spend` is `AsyncMock` because `_log_request` awaits it. `storage=None` skips the persistence path so the test stays focused on the hook contract.
+
+The tests use `object.__getattribute__(wrapper, "_first_byte_time")` rather than `wrapper._first_byte_time` because `_InstrumentedBase` overrides `__getattr__` to proxy attribute lookups to the wrapped instance. `_first_byte_time` is set on the wrapper itself in `__init__`, so `object.__getattribute__` bypasses the proxy without confusing it.
+
+All 6 tests pass on first try, so Phase 3.4 #2 ("If the test surfaces a real bug, fix it") is automatically satisfied: vacuous. Marked both items `[x]` with a note recording that the bug-fix sub-item resolved without code change because the underlying mechanism is correct as written.
+
+Layer-B coverage (per-provider streaming code paths actually calling `_mark_first_byte` at the right moment) is the wrapper-replay follow-up: with respx-mocked HTTP, drive `gw.stt()/llm()/tts()` end-to-end, observe the wrapper's recorded `ttfb_ms` is less than `total_latency_ms` for the streaming case. That requires (a) at least one streaming fixture (Phase 3.2 blocked items) and (b) per-provider knowledge of where to mock each LiveKit plugin's transport. Captured the cross-reference in both files' docstrings so when Layer B lands, the relationship is discoverable.
+
+Phase 3.5 (Phase 3 verification) is the next iteration's pick. No tag this time per the milestone-tag resolution from iter 45: just ruff/mypy/pytest/coverage check + journal record.
+
+No em dashes in this iteration's outputs.

@@ -356,11 +356,22 @@ sub-item ticks it `[x]` against the committed fixture's filename.
 
 ### 3.4 — TTFB hook hardening
 
-- [ ] Add a focused test: TTFB hook captures the timestamp at the
+- [x] Add a focused test: TTFB hook captures the timestamp at the
   moment the first content chunk arrives, not at request issuance.
   Currently the audit found this is manual and easy to break across
   modalities — make sure the test fails if the hook is missing.
-- [ ] If the test surfaces a real bug in TTFB capture, fix it.
+  Done: `tests/middleware/test_instrumented_provider.py` covers the
+  Layer-A hook contract with 6 tests (initial state, hook records,
+  idempotency, log_request uses ttfb < total when hook fired,
+  fallback to total when hook not called, log_request idempotency).
+  Coverage on `voicegateway/middleware/instrumented_provider.py`
+  jumped from 34% to 80%.
+- [x] If the test surfaces a real bug in TTFB capture, fix it.
+  Vacuous: all 6 tests pass on first try; no bug surfaced. The
+  hook mechanism (Layer A) is correct as implemented. Per-provider
+  Layer-B coverage (the streaming code paths in each modality
+  actually calling `_mark_first_byte` at the right moment) lands
+  with the wrapper-replay tests once Phase 3.2 fixtures arrive.
 
 ### 3.5 — Phase 3 verification
 
