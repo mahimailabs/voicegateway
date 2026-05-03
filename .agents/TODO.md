@@ -20,7 +20,7 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
 
 - [x] Read `docs/design/v0.1.0.md` end-to-end. Record key decisions
   in JOURNAL.md as the first entry.
-- [ ] Grep entire repo for "self-hosted inference gateway" and similar
+- [x] Grep entire repo for "self-hosted inference gateway" and similar
   generic gateway framing. Record findings to
   `.agents/framing-occurrences.md`.
 - [ ] Audit every page in `docs/` for claims that don't match code.
