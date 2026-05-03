@@ -475,8 +475,17 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
   format. Smoke verified: `voicegw export-costs --help` renders
   full option list. Storage method has 2 unit tests (window + chrono
   order). End-to-end CLI tests are 4.2 #2.
-- [ ] Tests for export-costs command (text-mode + CSV output
+- [x] Tests for export-costs command (text-mode + CSV output
   validation).
+  Done: 6 new tests via `typer.testing.CliRunner` cover (a) CSV
+  default with header + per-record rows from a 3-record seeded DB
+  (out-of-window 99.0 record excluded), (b) JSON format returns a
+  list of dicts, (c) `--project alpha` filter excludes beta rows,
+  (d) `--output FILE` writes there and prints a summary line, (e)
+  malformed date `--start not-a-date` returns exit 2 with
+  YYYY-MM-DD error, (f) unknown `--format xml` returns exit 2
+  before touching storage. Shared `_seed_export_records` helper
+  pops the DB with realistic 3-modality / 2-project / 3-day data.
 
 ### 4.3 — `voicegw reconcile` CLI
 
