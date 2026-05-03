@@ -333,7 +333,7 @@ sub-item ticks it `[x]` against the committed fixture's filename.
 
 ### 3.3 — Replay test suite
 
-- [ ] Add `respx` (or equivalent HTTP mocking) to dev dependencies.
+- [x] Add `respx` (or equivalent HTTP mocking) to dev dependencies.
 - [ ] Create `tests/test_streaming_cost_accounting.py`. For each
   fixture: replay through VG's wrapper, assert (a) input/output
   units counted match provider-reported usage, (b) calculated cost
@@ -535,17 +535,19 @@ note them and continue with current task.)
   rewrite the two tests to dispatch through `catalog.calculate_cost`
   instead. ~10 file touch.
 
-- [ ] Decide milestone-tag scheme for ceremonial markers (Phase 1
-  complete, Phase 2 complete, etc). The literal `v0.1.0-phase1`
-  used in iteration 19 broke `hatch-vcs` (PEP 440-invalid).
-  Options: (a) drop literal "v" prefix, e.g. `phase1-complete`,
-  which `hatch-vcs` ignores by default; (b) use PEP 440 local
-  version segment, e.g. `v0.1.0+phase1`; (c) restrict
-  `hatch-vcs` `tag_regex` to strict semver and add a
-  `fallback_version` so non-version tags are simply ignored
-  (attempted in iteration 22 via `[tool.hatch.version.raw-options]`,
-  did not work; needs deeper investigation). Until decided, milestone
-  markers stay in journal entries only.
+- [~] Decide milestone-tag scheme for ceremonial markers (Phase 1
+  complete, Phase 2 complete, etc). RESOLVED: stop using git tags
+  for ceremonial milestones; rely on commit hashes + journal
+  entries instead. The literal `v0.1.0-phase1` (iter 19) and the
+  `phase2-complete` no-v-prefix variant (iter 40) both broke
+  `hatch-vcs prepare_metadata_for_build_editable` because
+  setuptools-scm's default `tag_regex` matches more liberally
+  than expected. Both tags were eventually deleted (iters 22 and
+  45). The journal is the canonical milestone record;
+  `git log feat/cost-track-rebuild` shows the chore(verify)
+  commits at each phase boundary. The actual `v0.1.0` release
+  tag (Phase 4.5) will be a real strict-semver tag and will work
+  cleanly.
 
 - [ ] Clean up stale `model: default` lines in `local/kokoro:`
   YAML blocks introduced by 1.3.5c (the value before the sweep

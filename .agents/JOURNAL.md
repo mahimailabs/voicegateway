@@ -1389,3 +1389,39 @@ Side note: the Deepgram and Cartesia stubs in the recorder script (iter 41) will
 Phase 3.3 #1 (add `respx` to dev dependencies) is doable in this Ralph loop and is the next iteration's pick.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 10:10 UTC — feat(deps): add respx to dev dependencies; delete phase2-complete tag
+
+Files: `pyproject.toml` (`respx>=0.21.0` added to `dev` extras), `.agents/TODO.md` (Phase 3.3 #1 marked `[x]`; milestone-tag discovered-work entry updated to `[~]` with the resolution).
+Tests: ruff clean, mypy clean (59 source files), pytest 315 passed / 4 skipped, `import respx` works.
+
+Two changes:
+
+**1. `respx>=0.21.0` added to dev extras.** Reformatted the `dev` array onto multiple lines for readability now that there are four entries:
+
+```toml
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0",
+    "respx>=0.21.0",
+]
+```
+
+`respx` is the canonical httpx-based HTTP mocking library; integrates as a pytest fixture or as a context manager for ad-hoc patching. Phase 3.3 #2's `tests/test_streaming_cost_accounting.py` will use it to intercept the OpenAI / Anthropic / Cartesia HTTP calls and feed the recorded fixtures back to VG's instrumented wrappers.
+
+`uv lock` resolved 135 packages (was 134; one new direct dep, no transitive newcomers). Latest version installed: `respx==0.23.1`.
+
+**2. Deleted `phase2-complete` ceremonial git tag (created in iter 40).** Discovered during this iteration's `uv pip install` that setuptools-scm tries to parse the tag and warns "tag 'phase2-complete' no version found", which downstream causes `hatchling.build.build_editable` to raise `AssertionError: Error getting the version from source vcs`. Same root cause as the iter-22 `v0.1.0-phase1` failure but a different surface symptom: the `v` prefix isn't the issue, the entire question of "any non-strict-semver tag" is.
+
+Lesson: setuptools-scm's default `tag_regex` is more liberal than the iter-40 plan assumed. There is no reliable "ignore this tag" knob without deeper hatch-vcs config that I couldn't get working in iter 22. The cleanest resolution is to **stop using git tags for ceremonial milestones entirely.** The journal entries + commit hashes (e.g., `bf42481` for Phase 1, `c6ddac3` for Phase 2) are the canonical record. `git log feat/cost-track-rebuild --grep='chore(verify)'` lists the phase boundaries.
+
+The actual `v0.1.0` release tag (Phase 4.5) will be a real strict-semver tag and will work cleanly with hatch-vcs.
+
+Updated the discovered-work entry from `[ ]` to `[~]` with the resolution noted. Deleted both `phase2-complete` (iter 40) and `v0.1.0-phase1` (already deleted in iter 22) milestone tags.
+
+Phase 3.3 #2 (create `tests/test_streaming_cost_accounting.py` with replay test infrastructure) is the next iteration's pick. The replay test needs at least one fixture to actually execute, which loops back to the Phase 3.2 `[?]` blocked items. The test infrastructure can be written and ship as a passing-with-zero-cases test until fixtures land; alternatively the test can use parametrize-with-glob and skip when no fixtures match.
+
+No em dashes in this iteration's outputs.
