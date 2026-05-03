@@ -23,6 +23,7 @@ from voicegateway.core.auth import (
     load_api_keys,
     resolve_cors_origins,
 )
+from voicegateway.pricing import catalog
 from voicegateway.storage._percentiles import quantile_label
 
 if TYPE_CHECKING:
@@ -142,6 +143,15 @@ def build_app(gateway: Gateway) -> FastAPI:
         period: str = Query("today"),
         project: str | None = Query(None),
     ) -> dict:
+        # Pricing-source attribution per modality: which catalog
+        # produced the numbers in this response. Constant per running
+        # instance (genai-prices version + local catalog refresh date).
+        # Phase 4.1 will add `?include_pricing_source=true` for
+        # per-line attribution from the actual logged records.
+        pricing_sources = {
+            modality: catalog.pricing_source(modality)
+            for modality in ("llm", "stt", "tts")
+        }
         if gateway.storage is None:
             return {
                 "period": period,
@@ -150,6 +160,7 @@ def build_app(gateway: Gateway) -> FastAPI:
                 "by_provider": {},
                 "by_model": {},
                 "by_project": {},
+                "pricing_sources": pricing_sources,
             }
         summary = await gateway.storage.get_cost_summary(period, project=project)
         # Always include a by_project breakdown for the "All Projects" view
@@ -157,6 +168,7 @@ def build_app(gateway: Gateway) -> FastAPI:
             summary["by_project"] = await gateway.storage.get_cost_by_project(period)
         else:
             summary["by_project"] = {}
+        summary["pricing_sources"] = pricing_sources
         return summary
 
     @app.get("/v1/latency")

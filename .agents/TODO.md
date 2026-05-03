@@ -229,9 +229,14 @@ catalog with explicit source-date metadata.
 
 ### 2.4 — Surface pricing source
 
-- [ ] Add `pricing_source` to `/v1/costs` response (already part of
+- [x] Add `pricing_source` to `/v1/costs` response (already part of
   the `include_pricing_source` query param work in Phase 4, but the
   field needs to exist in the schema now).
+  Done: response now includes a `pricing_sources` dict keyed by
+  modality (e.g. `{"llm": "genai-prices@0.0.57", "stt": ..., "tts": ...}`)
+  showing which catalog the running instance is using. Phase 4.1
+  will layer `?include_pricing_source=true` for per-line attribution
+  from the actual logged records.
 - [ ] Add `pricing_source` to dashboard request log view (light
   touch — text column, no new charts).
 

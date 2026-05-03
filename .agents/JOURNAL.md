@@ -933,3 +933,42 @@ Records flow `wrapper -> create_record -> RequestRecord -> storage.log_request -
 Phase 2.4 (Surface `pricing_source` in `/v1/costs` response and dashboard request log view) is the next iteration. Phase 2.5 (Fix `groq/llama-3.1-8b: $0.0` placeholder bug; remove the legacy `PRICING` dict / `get_pricing` from catalog.py) follows.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 06:10 UTC — feat(api): add pricing_sources field to /v1/costs response
+
+Files: `voicegateway/server.py` (one new import + one block extension in the `/v1/costs` handler), `.agents/TODO.md` (Phase 2.4 #1 marked `[x]`).
+Tests: ruff clean, mypy clean, pytest 255 passed / 4 skipped, coverage 79%.
+
+The endpoint at `voicegateway/server.py:140-160` now adds a top-level `pricing_sources` dict to its JSON response:
+
+```json
+{
+  "period": "today",
+  "project": null,
+  "total": 0.0,
+  "by_provider": {...},
+  "by_model": {...},
+  "by_project": {...},
+  "pricing_sources": {
+    "llm": "genai-prices@0.0.57",
+    "stt": "voicegateway-catalog@2026-05-04",
+    "tts": "voicegateway-catalog@2026-05-04"
+  }
+}
+```
+
+The `pricing_sources` dict is built via three calls to `catalog.pricing_source(modality)`. Constant per running instance (it depends on the `genai-prices` package version and the local STT/TTS catalogs' oldest entry date). Returned regardless of `gateway.storage` availability, so even an empty / no-storage VG response still tells the caller which catalogs the instance has loaded.
+
+Why a top-level dict rather than per-line on `by_model`:
+
+The Phase 4.1 work (`?include_pricing_source=true` query param) is the per-line attribution path: each `by_model` entry will gain its own pricing_source from the actual `RequestRecord` rows in storage. That work needs the SQLite column populated (done in iter 29 + iter 31).
+
+The top-level dict is complementary, not redundant: it gives a quick "which catalogs is this instance using" answer without hitting storage or threading a query param. Useful for the dashboard's status / "current run state" UI element. When Phase 4.1 lands, the response will carry both: top-level `pricing_sources` (instance-level) and per-line `pricing_source` (record-level).
+
+Why no test modifications were needed: the existing tests in `tests/server/test_server.py:61-78` assert on key presence (`"by_provider" in data`, `data["total"] == 0.0`, `data["period"] == "week"`) but not on exact shape. Adding a new top-level key does not break them.
+
+Phase 2.4 #2 (Add `pricing_source` to dashboard request log view) is the next iteration. The dashboard's React frontend needs a "source" column on the Logs page; light touch, no new charts.
+
+No em dashes in this iteration's outputs.
