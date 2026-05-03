@@ -18,22 +18,45 @@
 
 ## Why VoiceGateway
 
-Every LLM gateway routes LLMs. None routes the full voice pipeline STT, LLM, and TTS through one unified interface with local model support, project-based budgeting, and agent-native management.
+VoiceGateway is purpose-built for LiveKit voice agents. Four things make it different from general-purpose LLM gateways:
 
-VoiceGateway is that missing layer. Drop-in LiveKit compatibility, bring your own API keys, optional local-only operation, and a first-class MCP server that lets Claude Code, Cursor, or Codex configure it for you.
+### 1. Returns LiveKit plugin instances directly
 
-|                          | LiteLLM | Cloudflare AI Gateway | LiveKit Inference (Cloud) | **VoiceGateway** |
-| ------------------------ | :-----: | :-------------------: | :-----------------------: | :--------------: |
-| LLM routing              |    ✅   |           ✅          |             ✅            |        ✅        |
-| STT routing              |    ❌   |           ❌          |             ✅            |        ✅        |
-| TTS routing              |    ❌   |           ❌          |             ✅            |        ✅        |
-| Local models             | Partial |           ❌          |             ❌            |        ✅        |
-| Self-hostable            |    ✅   |           ❌          |             ❌            |        ✅        |
-| Project-based budgets    |    ✅   |           ❌          |             ❌            |        ✅        |
-| Fallback chains          | Limited |           ✅          |           Limited         |        ✅        |
-| MCP server               |    ❌   |           ❌          |             ❌            |        ✅        |
-| LiveKit plugin native    |    ❌   |           ❌          |             ✅            |        ✅        |
-| License                  |   MIT   |        Commercial     |         Commercial        |        MIT       |
+`gw.stt()` / `gw.llm()` / `gw.tts()` return native LiveKit plugin instances. They drop straight into `AgentSession(stt=, llm=, tts=)` with no proxy hop, no plugin shim, and no rewriting of your existing pipeline code.
+
+```python
+from voicegateway import Gateway
+from livekit.agents import AgentSession
+
+gw = Gateway()
+
+session = AgentSession(
+    stt=gw.stt("deepgram/nova-3", project="my-app"),
+    llm=gw.llm("openai/gpt-4o-mini", project="my-app"),
+    tts=gw.tts("cartesia/sonic-3", project="my-app"),
+)
+```
+
+### 2. Modality-aware unit accounting
+
+LLM cost is per-1k-token, STT cost is per-audio-minute, TTS cost is per-character. Each modality is billed natively against its own provider unit rather than flattened to a single token-equivalent.
+
+LLM prices come from [`pydantic/genai-prices`](https://github.com/pydantic/genai-prices): 1,100+ models, monthly releases, historic price tracking. VG does not maintain its own LLM pricing catalog. STT and TTS prices live in a local catalog with an explicit `pricing_source_date` per entry; CI fails when any entry is more than 60 days old, forcing a manual refresh per release.
+
+### 3. Reconciliation tooling
+
+```bash
+voicegw export-costs --start 2026-04-01 --end 2026-04-30 --format csv
+voicegw reconcile --provider openai --provider-usage-file openai-usage.csv
+```
+
+Per-request line items carry `pricing_source` attribution (`genai-prices@<version>` for LLM, `voicegateway-catalog@<date>` for STT/TTS). The `reconcile` command compares VG's logged costs against your provider's usage export and produces a per-model diff. LLM costs are estimated and may drift up to ~5%; reconciliation against your provider invoice is the verification path.
+
+### 4. MCP server for agent-managed configuration
+
+A first-class [Model Context Protocol](https://modelcontextprotocol.io) server exposes 17 tools (configure providers, create projects with daily budgets, query costs, tail logs, run health checks) over stdio and HTTP/SSE. Claude Code, Cursor, Codex, and Cline can all manage your gateway conversationally.
+
+**Is VoiceGateway right for you?** If you are building a text-only LLM application without a voice component, [LiteLLM](https://docs.litellm.ai/) is likely a better fit. It has a broader LLM-provider catalog and an OpenAI-compatible HTTP proxy. See the [decision tree](https://docs.voicegateway.dev/guide/decision-tree) for a longer breakdown.
 
 ---
 

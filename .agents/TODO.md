@@ -35,7 +35,7 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
   pydantic/genai-prices, plus reconciliation tooling so you can
   verify our numbers against your actual provider invoices." Drop
   generic "inference gateway" framing.
-- [ ] Rewrite README "Why VoiceGateway?" / features section. Lead
+- [x] Rewrite README "Why VoiceGateway?" / features section. Lead
   with: (a) LiveKit-native return types, (b) modality-aware unit
   accounting + genai-prices integration, (c) reconciliation tooling,
   (d) MCP server for agent self-service. Honest tone — link to
@@ -330,3 +330,12 @@ note them and continue with current task.)
   filename; the canonical name `PROMPT.md` is referenced by the
   slash command, by the file's own content ("Read PROMPT.md"), and
   by completion-criteria documentation.
+
+- [ ] Sweep user-authored markdown for em dashes per the global
+  CLAUDE.md hard convention ("No em dashes anywhere"). Pre-existing
+  occurrences in `README.md` (e.g. line 93), `docs/**/*.md`, and
+  the `.agents/*.md` files I authored carry em dashes that should
+  be replaced with colons, periods, or parentheses. Phase 1.3 sweep
+  may pick up the docs/ ones incidentally; the CLAUDE.md project
+  description and the journal-entry format example in PROPMT.md:121
+  also use em dashes.

@@ -78,3 +78,22 @@ Notes — replaced two bold subtitle lines under the title, leaving title, badge
 Rationale: design-doc framing is "modality-aware cost estimation backed by pydantic/genai-prices, plus reconciliation tooling so you can verify our numbers against your actual provider invoices" (38 words). Compressed to two bold lines: line 5 is the wedge in 7 words ("Cost tracking and reconciliation for LiveKit voice agents"), line 6 names the three concrete differentiators (modality-aware units, genai-prices source, reconcile command). Avoids banned words ("leverage", "robust", "comprehensive", "seamless"). Surfaces the actual command name (`voicegw reconcile`) so a reader can grep for it.
 
 The "Why VoiceGateway" comparison table at README.md:21-37 still has the old generic-gateway framing and the stale LiteLLM STT/TTS = ❌ row; it will be rewritten by Phase 1.2 #2 in a later iteration.
+
+---
+
+## 2026-05-03 21:50 UTC — docs(readme): rewrite features section, drop competitive table
+
+Files: `README.md` (lines 19-36 replaced with a new four-pillar features section ending at line 59), `.agents/TODO.md` (Phase 1.2 #2 marked `[x]`; one new discovered-work item added).
+Tests: n/a (markdown-only change).
+
+Notes (per task spec, lead with the four ordered differentiators, honest tone, link to decision-tree page):
+
+- **Section 1: Returns LiveKit plugin instances directly.** Concrete `gw.stt()/llm()/tts()` example dropping into `AgentSession(stt=, llm=, tts=)`. Names "no proxy hop, no plugin shim, no rewriting" so the differentiation is verifiable from one code block.
+- **Section 2: Modality-aware unit accounting.** Names the units (per-1k-token, per-audio-minute, per-character). Names the LLM source (`pydantic/genai-prices`, 1,100+ models) and the local STT/TTS catalog with `pricing_source_date`. States the 60-day staleness gate.
+- **Section 3: Reconciliation tooling.** Two CLI invocations (`voicegw export-costs`, `voicegw reconcile`). States the ~5% drift disclaimer and positions reconciliation as the verification path. This is the "honest about accuracy" framing from the design doc.
+- **Section 4: MCP server.** 17 tools, dual transport, named agents (Claude Code, Cursor, Codex, Cline). One paragraph.
+- **Closing paragraph:** "Is VoiceGateway right for you?" sends text-only LLM use cases to LiteLLM with a link to the decision-tree page (which Phase 1.3 #5 will create). Complementary, not competitive.
+
+Dropped the competitive comparison table (old `README.md:25-36`). The table had three problems flagged by the credibility audit: (1) LiteLLM STT/TTS rows were `❌` but LiteLLM has both as of May 2026; (2) "Fallback chains" `✅` for VG repeated the over-promised runtime-fallback claim; (3) the framing was head-to-head competitive when the design doc calls for complementary positioning. The decision-tree page will replace it with an honest matrix.
+
+Em-dash sweep: removed three em dashes I introduced in the new section (replaced with `: `, `(...)`, and `. `), per CLAUDE.md hard convention. Pre-existing em dashes elsewhere in the repo (e.g., `README.md:93`) are left for the surrounding-task sweep. Added a discovered-work item to flag the broader em-dash cleanup. Journal-entry headers continue to use em dashes to match the prior format and the example in `PROPMT.md:121`; this is the one consistent format-level use, called out in the discovered-work entry for resolution.
