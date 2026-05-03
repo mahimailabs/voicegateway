@@ -1178,3 +1178,37 @@ The legacy API tests will become "this is what we WANT to remove" markers when t
 Phase 2.7 fourth sub-item (Verify all existing cost-tracking tests still pass) is the next iteration. That is mostly a verification step since all of Phase 2's iterations have run the full suite each time and 315 tests currently pass; iter 39 makes it explicit per the TODO and tags Phase 2.7 done.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 08:30 UTC — chore(verify): existing cost-tracking tests pass through Phase 2 dispatch
+
+Files: `.agents/TODO.md` (Phase 2.7 fourth sub-item marked `[x]`), `.agents/JOURNAL.md` (this entry).
+Tests: this iteration is verification only; no code changes.
+
+Verification results:
+
+- `ruff check voicegateway dashboard tests`: **All checks passed.**
+- `mypy voicegateway dashboard`: **Success: no issues found in 59 source files.**
+- `pytest tests/` (full suite, ollama provider tests excluded as always): **315 passed / 4 skipped in 2.35s.**
+- Coverage: **79% TOTAL (above 75% gate).** Per-module:
+  - `voicegateway/pricing/catalog.py`: 100%
+  - `voicegateway/pricing/stt.py`: 100%
+  - `voicegateway/pricing/tts.py`: 100%
+  - `voicegateway/pricing/llm.py`: 94%
+  - `voicegateway/storage/models.py`: 100%
+  - `voicegateway/storage/sqlite.py`: 91%
+  - `voicegateway/server.py`: 86%
+
+The cost-tracking middleware specifically:
+
+- `tests/middleware/test_cost_tracker.py`: 7 / 7 pass (`test_stt_cost_calculation`, `test_llm_cost_calculation`, `test_tts_cost_calculation`, `test_local_model_is_free`, `test_unknown_model_cost_zero`, `test_log_and_query_request`, `test_cost_summary_by_model`).
+- `tests/middleware/test_budget.py`: all pass.
+- `tests/middleware/test_fallback.py`: all pass.
+- `tests/middleware/test_middleware.py`: all pass.
+
+**Strongest evidence of "existing tests still pass":** `git log -- tests/middleware/test_cost_tracker.py` returns no commits since Phase 2 started (last commit was iteration 19 of the original audit/reliability pass, `1b9476e`, well before 2026-05-04). The file's 7 test functions are byte-identical to their pre-Phase-2 state and all 7 pass against the new dispatch path. The legacy assertions (`cost == 0.0043`, `cost == 0.0012`, `cost == 0.0`, etc.) round-trip cleanly through `catalog.calculate_cost` -> `llm.calculate_llm_cost` / `stt.calculate_stt_cost` / `tts.calculate_tts_cost` because the rates round-trip identically and the None-on-unknown contract is collapsed to `0.0` at the CostTracker boundary (with a warning log for non-`local/`/`ollama/` prefixes; iteration 30).
+
+Phase 2.7 is now complete (all 4 sub-items done). Phase 2.8 (Phase 2 verification + tag) is the next iteration. The Phase 2.8 work is largely already done in spirit since each Phase 2 iteration has been running the full suite; iteration 40 makes the milestone official and creates the local `v0.1.0-phase2` tag (subject to the milestone-tag-scheme decision tracked in discovered-work).
+
+No em dashes in this iteration's outputs.

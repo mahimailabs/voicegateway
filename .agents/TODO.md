@@ -266,7 +266,7 @@ catalog with explicit source-date metadata.
   known model, unknown model, source-date metadata present.
 - [x] Unit tests for `voicegateway/pricing/catalog.py`: modality
   dispatch correctness, fallback behavior when modality is unknown.
-- [ ] Verify all existing cost-tracking tests still pass.
+- [x] Verify all existing cost-tracking tests still pass.
 
 ### 2.8 — Phase 2 verification
 
