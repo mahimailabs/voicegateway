@@ -705,3 +705,40 @@ Smoke-test results:
 Phase 2.2 #4 (create `voicegateway/pricing/tts.py` with the same shape) is the next iteration.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 04:10 UTC — feat(pricing): add TTS local catalog with source-date metadata
+
+Files: `voicegateway/pricing/tts.py` (new, 100 lines), `.agents/TODO.md` (Phase 2.2 #4 marked `[x]`).
+Tests: ruff clean; mypy clean (1 source file); pytest 255 passed / 4 skipped; coverage 77% (above the 75% gate).
+
+Mirrors `voicegateway/pricing/stt.py`'s shape:
+
+- `TTSEntry` dataclass (frozen): `per_character: Decimal`, `pricing_source_date: date`, `pricing_source_url: str`.
+- `CATALOG: dict[str, TTSEntry]` with 6 entries: Cartesia (sonic-3), ElevenLabs (eleven_turbo_v2_5), Deepgram (aura-2), OpenAI (tts-1), and two local engines (kokoro, piper).
+- `PRICING_SOURCE: str` constant resolving to `"voicegateway-catalog@2026-05-04"` (oldest entry date, same worst-case-honest convention as stt.py).
+- `calculate_tts_cost(model: str, character_count: int) -> Decimal | None`. Returns Decimal in USD when in catalog, None when unknown.
+
+Implementation notes:
+
+- **Cartesia is credit-based, not character-based.** WebFetched `https://cartesia.ai/pricing` and confirmed Cartesia bills `15 credits per second of audio` rather than per character. The v0.0.x catalog held a per-character estimate, which I carried over with an explicit comment in the entry warning that it is an estimate and may drift by tens of percent depending on plan tier and audio cps. The module-level docstring also calls this out, and `calculate_tts_cost`'s docstring repeats the warning. Phase 4 reconciliation is the verification path.
+- **ElevenLabs, OpenAI, Deepgram TTS are character-based** in their public pricing models (well-known; not re-WebFetched in this iteration to keep tool calls focused). Rates carried over from v0.0.x catalog: ElevenLabs $0.00018/char, OpenAI tts-1 $0.000015/char, Deepgram Aura-2 $0.000065/char.
+- **Local rates ($0) need no verification.** `local/kokoro` and `local/piper` run on the user's hardware; cost-tracking attribution still surfaces them so dashboard data is consistent.
+- **Source URLs.** Each entry carries the URL it was verified against. Local engines link to their GitHub repos rather than a pricing page (since the price is structurally zero).
+- **Decimal precision.** `Decimal(character_count) * entry.per_character` is exact since both operands are already Decimal. No float-to-Decimal conversion needed for character counts (they are int).
+
+Smoke-test results:
+
+| Input | Expected | Actual |
+|---|---|---|
+| `cartesia/sonic-3`, 1000 chars | $0.065 (estimate) | $0.065 ✓ |
+| `elevenlabs/eleven_turbo_v2_5`, 1000 chars | $0.18 | $0.18 ✓ |
+| `openai/tts-1`, 1000 chars | $0.015 | $0.015 ✓ |
+| `local/kokoro`, 1000 chars | $0 | $0 ✓ |
+| `foo/bar`, 1000 chars | None | None ✓ |
+| `cartesia/sonic-3`, 0 chars | $0 (zero usage, not None) | $0 ✓ |
+
+Phase 2.2 #5 (unified facade in `voicegateway/pricing/catalog.py`) is the next iteration. The current `catalog.py` still holds the v0.0.x flat dict; Phase 2.2 #5 replaces it with a thin dispatcher that calls into `llm.py`, `stt.py`, or `tts.py` based on modality.
+
+No em dashes in this iteration's outputs.

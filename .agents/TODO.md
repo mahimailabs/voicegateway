@@ -199,7 +199,7 @@ catalog with explicit source-date metadata.
 - [x] Create `voicegateway/pricing/stt.py`. Local catalog with
   `pricing_source_date: date` and `pricing_source_url: str` per
   entry. `calculate_stt_cost(model, audio_seconds) -> Decimal`.
-- [ ] Create `voicegateway/pricing/tts.py`. Same shape as stt.py.
+- [x] Create `voicegateway/pricing/tts.py`. Same shape as stt.py.
   `calculate_tts_cost(model, character_count) -> Decimal`.
 - [ ] Create `voicegateway/pricing/catalog.py`. Unified facade.
   Dispatches by modality. Replaces the current pricing dict.
