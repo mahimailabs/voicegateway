@@ -97,3 +97,23 @@ Notes (per task spec, lead with the four ordered differentiators, honest tone, l
 Dropped the competitive comparison table (old `README.md:25-36`). The table had three problems flagged by the credibility audit: (1) LiteLLM STT/TTS rows were `❌` but LiteLLM has both as of May 2026; (2) "Fallback chains" `✅` for VG repeated the over-promised runtime-fallback claim; (3) the framing was head-to-head competitive when the design doc calls for complementary positioning. The decision-tree page will replace it with an honest matrix.
 
 Em-dash sweep: removed three em dashes I introduced in the new section (replaced with `: `, `(...)`, and `. `), per CLAUDE.md hard convention. Pre-existing em dashes elsewhere in the repo (e.g., `README.md:93`) are left for the surrounding-task sweep. Added a discovered-work item to flag the broader em-dash cleanup. Journal-entry headers continue to use em dashes to match the prior format and the example in `PROPMT.md:121`; this is the one consistent format-level use, called out in the discovered-work entry for resolution.
+
+---
+
+## 2026-05-03 22:00 UTC — docs(readme): replace static tests badge with dynamic CI status
+
+Files: `README.md` (line 11 badge URL replaced), `.agents/TODO.md` (Phase 1.2 #3 marked `[x]`; one new discovered-work item added).
+Tests: n/a (markdown-only change).
+
+Verification of each existing badge:
+
+- **PyPI version** (`https://img.shields.io/pypi/v/voicegateway` → `https://pypi.org/project/voicegateway/`): dynamic via shields.io, target package exists. Accurate. Kept as-is.
+- **Python 3.11+** (static `python-3.11+-blue` → `python.org/downloads/`): matches `pyproject.toml:7` (`requires-python = ">=3.11"`) and the `Programming Language :: Python :: 3.11/3.12/3.13` classifiers at lines 14-16. Accurate. Kept as-is.
+- **License: MIT** (static `license-MIT-green` → `LICENSE`): matches `pyproject.toml:6` (`license = "MIT"`). Accurate. Kept as-is.
+- **Tests** (was static `tests-200+_passing-brightgreen` → `tests/`): the static count would silently go stale as tests are added (flagged in `credibility-issues.md` L1). Replaced with a dynamic GitHub Actions workflow status badge from `test-coverage.yml`, scoped to `branch=main` so it reflects main-branch state rather than the most recent run on any branch.
+
+New badge: `[![Tests](https://github.com/mahimailabs/voicegateway/actions/workflows/test-coverage.yml/badge.svg?branch=main)](https://github.com/mahimailabs/voicegateway/actions/workflows/test-coverage.yml)`
+
+Rationale for picking `test-coverage.yml` over `ci.yml`: the test-coverage workflow runs on push-to-main and on PRs, so its "passing" state actually reflects what is live on main. `ci.yml` runs on PRs only, so its main-branch state is always stale.
+
+Held back: a Codecov badge could be added (`codecov-action@v5` is already wired at `.github/workflows/test-coverage.yml:62-66`). Captured as discovered-work for the docs sweep or release-prep pass; out of scope for "verify all are current and accurate."

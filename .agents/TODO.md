@@ -40,7 +40,7 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
   accounting + genai-prices integration, (c) reconciliation tooling,
   (d) MCP server for agent self-service. Honest tone — link to
   decision-tree page for "is this right for me?"
-- [ ] Update README badges. Verify all are current and accurate.
+- [x] Update README badges. Verify all are current and accurate.
 - [ ] Update README install instructions. LiveKit prerequisite visible
   up-front so users don't get stuck on `ConnectionError`.
 
@@ -339,3 +339,10 @@ note them and continue with current task.)
   may pick up the docs/ ones incidentally; the CLAUDE.md project
   description and the journal-entry format example in PROPMT.md:121
   also use em dashes.
+
+- [ ] Add a Codecov coverage badge to README. `codecov-action@v5`
+  is already wired in `.github/workflows/test-coverage.yml:62-66`
+  with `secrets.CODECOV_TOKEN`, so a `https://codecov.io/gh/mahimailabs/voicegateway/branch/main/graph/badge.svg`
+  badge would render dynamically. Held back from this iteration to
+  keep "verify and update" scope minimal; revisit during the docs
+  sweep or a release-prep pass.
