@@ -46,7 +46,7 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
 
 ### 1.3 — Docs site rewrites
 
-- [ ] Rewrite `docs/index.md` hero and feature grid to match new
+- [x] Rewrite `docs/index.md` hero and feature grid to match new
   README framing.
 - [ ] Rewrite `docs/migration/from-litellm.md`. Acknowledge LiteLLM
   has STT and TTS endpoints (live since early 2026). Reframe from

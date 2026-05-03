@@ -134,3 +134,24 @@ Notes — placement and rationale:
 - **No em dashes introduced.** Pre-existing em dash at `README.md:93` (Docker section) is left for the broader em-dash sweep already on the discovered-work list.
 
 Phase 1.2 (README rewrite) is now complete: hero (#1), features (#2), badges (#3), and install instructions (#4) all done. Phase 1.3 (docs site rewrites) starts in the next iteration.
+
+---
+
+## 2026-05-03 22:30 UTC — docs(index): rewrite hero and feature grid to match new README framing
+
+Files: `docs/index.md` (front-matter `hero` + `features` blocks replaced; lines 2-54 rewritten), `.agents/TODO.md` (Phase 1.3 #1 marked `[x]`).
+Tests: n/a (markdown-only change; will be exercised when the docs site rebuilds in Phase 1.5).
+
+Notes:
+
+- **Hero text and tagline** now mirror the README hero verbatim. `text: Cost tracking and reconciliation for LiveKit voice agents`. `tagline: Modality-aware unit accounting. LLM prices from pydantic/genai-prices. Verify against provider invoices with voicegw reconcile.` Same wording as `README.md:5-6`.
+- **Feature grid collapsed from six to four**, matching the four pillars from README §"Why VoiceGateway":
+  1. LiveKit-native plugin returns (icon `\U0001F50C` plug)
+  2. Modality-aware unit accounting (icon `\U0001F4B0` money bag, kept from prior grid)
+  3. Reconciliation tooling (icon `\U0001F9FE` receipt)
+  4. MCP server for agent-managed config (icon `\U0001F916` robot, kept from prior grid)
+- **Dropped features** that did not match the wedge or were over-promised: "Unified STT + LLM + TTS" (generic gateway framing), "Self-Hosted, Your Data" (adjacent, not a pillar), "Budget Enforcement" (subsumed under #2 modality-aware accounting), "Automatic Fallbacks" (the C1 over-promise — runtime fallback is LiveKit FallbackAdapter territory, see Phase 1.4 doc), "Production Observability" (adjacent, not a pillar).
+- **Forward-pointing links.** Feature #3 `link: /guide/cost-reconciliation` points to a page Phase 4.4 will create. Feature #1 `link: /guide/quick-start`, #2 `link: /configuration/observability`, #4 `link: /mcp/` already exist.
+- **YAML quoting.** All four `details:` strings are double-quoted, protecting against any unintended YAML interpretation of commas / parentheses / colons.
+- **Out of scope** (handled by 1.3 sweep task): the post-frontmatter "Why VoiceGateway" prose section + competitive comparison table at the bottom of `docs/index.md` still has the old generic-gateway framing and stale LiteLLM No-on-STT/TTS rows. Same content the README used to have; the README dropped its version. Sweep task will harmonize.
+- **No em dashes introduced.** Pre-existing em dash at `docs/index.md:47` (in the prose section) is left for the sweep.
