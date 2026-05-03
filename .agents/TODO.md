@@ -170,7 +170,7 @@ catalog with explicit source-date metadata.
 
 ### 2.1 — Add genai-prices dependency
 
-- [ ] Read `pydantic/genai-prices` README and Python package docs.
+- [x] Read `pydantic/genai-prices` README and Python package docs.
   Document the integration surface in JOURNAL.md (which functions to
   call, what they return).
 - [ ] Add `genai-prices` to `pyproject.toml` runtime dependencies. Pin

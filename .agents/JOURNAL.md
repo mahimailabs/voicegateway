@@ -428,3 +428,118 @@ Three explicit deferrals tracked in discovered-work for later phases:
 Phase 2 (pricing foundation) starts in the next iteration.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 02:25 UTC — chore(research): document genai-prices integration surface for Phase 2
+
+Files: `.agents/JOURNAL.md` (this entry), `.agents/TODO.md` (Phase 2.1 #1 marked `[x]`).
+Tests: n/a (research only).
+
+Researched `pydantic/genai-prices` via the context7 MCP (`resolve-library-id` then `query-docs` against `/pydantic/genai-prices`), and pulled the latest PyPI version via `WebFetch` against `pypi.org/pypi/genai-prices/json`. Below is the integration surface VoiceGateway needs for Phase 2.
+
+### Package facts
+
+- PyPI name: `genai-prices` (Python package import: `genai_prices`).
+- Latest version on PyPI as of 2026-05-04: **0.0.57** (uploaded 2026-04-21).
+- Install: `uv add genai-prices` or `pip install genai-prices`. Optional CLI: `pip install "genai-prices[cli]"`.
+- Pinning per design doc §5.1: target `>=0.0.52,<0.1` (allows minor catalog updates; caps before any 0.1.0 schema change). 0.0.57 is well within this range.
+- Bundled price catalog ships with each version; `UpdatePrices` (covered below) optionally fetches fresher data from GitHub at runtime.
+
+### Core API: `calc_price`
+
+```python
+from genai_prices import Usage, calc_price
+
+usage = Usage(input_tokens=1000, output_tokens=100)
+price = calc_price(usage, model_ref='gpt-4o', provider_id='openai')
+
+if price is None:
+    # model/provider not matched
+    ...
+else:
+    print(price.total_price, price.input_price, price.output_price)
+    print(price.model.name, price.provider.name)
+```
+
+Signature:
+- `calc_price(usage: Usage, model_ref: str, *, provider_id: str | None = None, provider_api_url: str | None = None, timestamp: datetime | None = None) -> PriceCalculation | None`
+- Returns `None` when the model/provider cannot be matched. **No exception.** This is the path VG must handle.
+
+`Usage` fields (per docs):
+- `input_tokens: int` (required-ish; default 0)
+- `output_tokens: int`
+- `cache_write_tokens: int` (Anthropic-style prompt caching)
+- `cache_read_tokens: int`
+- `input_audio_tokens: int` (multimodal: GPT-4o-audio etc.)
+- `output_audio_tokens: int`
+
+`PriceCalculation` fields:
+- `total_price: float` (USD)
+- `input_price: float` (USD)
+- `output_price: float` (USD)
+- `model: Model` with `.name`, `.provider_name`
+- `provider: Provider` with `.name`
+- `auto_update_timestamp` (set when prices were freshened by `UpdatePrices`)
+
+Provider matching alternatives if `provider_id` is unknown:
+- `provider_api_url`: pass the API base URL; library matches against its provider catalog.
+- Both `provider_id` and `provider_api_url` are optional; either or neither works, with reduced match precision when neither is set.
+
+### Auto-update: `UpdatePrices`
+
+Background updater that periodically fetches the latest catalog from `https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/data.json`.
+
+```python
+from genai_prices import UpdatePrices, Usage, calc_price
+
+with UpdatePrices() as updater:
+    updater.wait()  # blocks until first fetch completes
+    price = calc_price(Usage(input_tokens=1000, output_tokens=100), 'gpt-4o')
+```
+
+Defaults: 1-hour interval. Configurable via `UpdatePrices(update_interval=1800, url=...)`. Manual control via `.start(wait=True)` / `.stop()`. Async helpers `wait_prices_updated_async` and `wait_prices_updated_sync` exist for callers without an `UpdatePrices` reference.
+
+**Decision for v0.1.0:** do NOT wire `UpdatePrices` into VoiceGateway. Reasoning: (a) the bundled catalog updates with each release of `genai-prices`, so a redeploy refreshes prices anyway; (b) a background thread fetching from GitHub on every VG instance is opt-in rather than default; (c) air-gapped users can pin a version. If users ask for fresh pricing without a redeploy, we can add `UpdatePrices` as an opt-in feature in a later release. v0.1.0 ships with bundled data only.
+
+### Integration surface for VoiceGateway
+
+`voicegateway/pricing/llm.py` will wrap genai-prices behind a small synchronous function:
+
+```python
+from decimal import Decimal
+from typing import Optional
+from genai_prices import Usage, calc_price
+
+def calculate_llm_cost(
+    model_ref: str,
+    input_tokens: int,
+    output_tokens: int,
+    provider_id: Optional[str] = None,
+) -> Optional[Decimal]:
+    """Return total LLM cost in USD as Decimal, or None if model not in genai-prices."""
+    usage = Usage(input_tokens=input_tokens, output_tokens=output_tokens)
+    price = calc_price(usage, model_ref=model_ref, provider_id=provider_id)
+    if price is None:
+        return None
+    # genai-prices returns float; convert to Decimal via str() to preserve digits.
+    return Decimal(str(price.total_price))
+```
+
+Notes on the wrapper design:
+
+- **Decimal vs float.** genai-prices returns `float`. VoiceGateway's `RequestRecord.cost_usd` is currently `float`; design doc §5.1 doesn't explicitly mandate Decimal. Returning `Decimal` from this wrapper future-proofs Phase 4's reconciliation tooling (sum-of-decimals avoids float-rounding drift across thousands of requests). Conversion via `Decimal(str(float))` rather than `Decimal(float)` because the latter introduces binary-rounding artifacts.
+- **None-on-unknown.** Per design-doc §5.1 ("Returns `None` if model not in their catalog (no silent zero)"), the wrapper passes through `None`. The caller (`CostTracker`) must decide what to log: `cost_usd=0.0` with a warning, or skip the record. Recommend: log a warning ("LLM model X not in genai-prices catalog") and store `cost_usd=0.0` so the request still appears in dashboards but cost is honestly absent.
+- **`pricing_source` value.** Per design-doc §5.1, the field reads `genai-prices@<version>`. `genai_prices.__version__` exposes the package version (need to verify in the wrapper); fallback to `importlib.metadata.version("genai-prices")` if not.
+- **Provider hint.** VG's model IDs are `provider/model` (e.g., `openai/gpt-4o-mini`). We can split on `/` to derive `provider_id` and pass it to `calc_price` for higher-precision matching. The wrapper signature should accept the `provider_id` separately so the caller (which already has the parsed `ModelId`) does not have to re-split.
+- **Cache and audio tokens.** v0.1.0 ignores cache_*_tokens and *_audio_tokens. Per design doc §3, advanced features are out of scope. The wrapper signature stays narrow (input + output only); we can broaden later without a breaking change.
+
+### Open questions for the implementation iterations (not blocking)
+
+- Does `genai_prices.__version__` exist as a top-level attribute? If not, use `importlib.metadata.version("genai-prices")`.
+- Does `calc_price` accept a `Usage` object for STT/TTS workloads at all? Probably not — STT and TTS have different unit shapes (audio-seconds, characters) that genai-prices does not model. Hence the design's modality split: LLM via genai-prices, STT/TTS via local catalog.
+- Pricing snapshot timestamp: do we surface `price.auto_update_timestamp` in the `pricing_source` string when it is set? For v0.1 (no `UpdatePrices`), the timestamp is None and the source string just says `genai-prices@<version>`.
+
+Phase 2.1 #2 (add the dependency to pyproject.toml) and #3 (uv lock + fresh-venv verification) follow in the next iterations.
+
+No em dashes in this iteration's outputs.
