@@ -213,7 +213,7 @@ catalog with explicit source-date metadata.
 
 - [x] Add `pricing_source: str` field to `RequestRecord`
   (`voicegateway/storage/models.py`).
-- [ ] Add `pricing_source` column to SQLite schema. Migration script
+- [x] Add `pricing_source` column to SQLite schema. Migration script
   for existing DBs (or a one-time conversion at startup).
 - [ ] Update `CostTracker.calculate_cost()` to dispatch by modality
   via `voicegateway/pricing/catalog.py`.

@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS requests (
     input_units REAL DEFAULT 0,
     output_units REAL DEFAULT 0,
     cost_usd REAL DEFAULT 0,
+    pricing_source TEXT NOT NULL DEFAULT '',
     ttfb_ms REAL,
     total_latency_ms REAL,
     status TEXT DEFAULT 'success',
@@ -139,6 +140,13 @@ class SQLiteStorage:
                 await db.execute(
                     "CREATE INDEX IF NOT EXISTS idx_requests_project_timestamp "
                     "ON requests(project, timestamp)"
+                )
+            # Migration: add `pricing_source` column if missing (Phase 2.3 v0.1.0).
+            # Pre-v0.1 rows get the empty-string default; new rows carry a real
+            # value via CostTracker once Phase 2.3 #4 wires it through.
+            if "pricing_source" not in cols:
+                await db.execute(
+                    "ALTER TABLE requests ADD COLUMN pricing_source TEXT NOT NULL DEFAULT ''"
                 )
             # Audit log table
             await db.execute("""
@@ -299,10 +307,10 @@ class SQLiteStorage:
             await db.execute(
                 """INSERT INTO requests
                    (id, timestamp, project, modality, model_id, provider,
-                    input_units, output_units, cost_usd,
+                    input_units, output_units, cost_usd, pricing_source,
                     ttfb_ms, total_latency_ms, status,
                     fallback_from, error_message, metadata)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     record.id,
                     record.timestamp,
@@ -313,6 +321,7 @@ class SQLiteStorage:
                     record.input_units,
                     record.output_units,
                     record.cost_usd,
+                    record.pricing_source,
                     record.ttfb_ms,
                     record.total_latency_ms,
                     record.status,

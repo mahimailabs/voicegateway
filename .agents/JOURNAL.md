@@ -824,3 +824,44 @@ Smoke tests:
 - `CostTracker.create_record(...)` -> `pricing_source = ""` (default; Phase 2.3 #4 wires CostTracker to populate it).
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 05:05 UTC — feat(storage): add pricing_source column to SQLite schema with at-startup migration
+
+Files: `voicegateway/storage/sqlite.py` (three coordinated edits: `_SCHEMA` adds column, `_ensure_initialized` adds the migration ALTER, `log_request` INSERT extended), `.agents/TODO.md` (Phase 2.3 #2 marked `[x]`).
+Tests: ruff clean, mypy clean (3 source files), pytest 255 passed / 4 skipped, coverage 78%. Plus an explicit end-to-end migration smoke test.
+
+Three edits:
+
+1. **Schema (`_SCHEMA` constant).** Added `pricing_source TEXT NOT NULL DEFAULT ''` between `cost_usd REAL DEFAULT 0,` and `ttfb_ms REAL,`. Placement matches the dataclass field order from Phase 2.3 #1. `NOT NULL DEFAULT ''` so the column never holds NULL; legacy rows get the empty-string default at migration time.
+
+2. **Migration (`_ensure_initialized`).** Added a parallel branch to the existing `project`-column migration:
+
+   ```python
+   if "pricing_source" not in cols:
+       await db.execute(
+           "ALTER TABLE requests ADD COLUMN pricing_source TEXT NOT NULL DEFAULT ''"
+       )
+   ```
+
+   `PRAGMA table_info(requests)` already populates `cols` for the `project` migration check; reusing it for `pricing_source` is a one-line addition. Comment explains the migration is the v0.1.0 cost-tracking-rebuild path: pre-v0.1 rows get the empty-string default; new rows get a real value via CostTracker once Phase 2.3 #4 wires the call.
+
+3. **INSERT (`log_request`).** Added `pricing_source` to the column list and an extra `?` placeholder; added `record.pricing_source` to the value tuple. 16 columns + placeholders + values total (was 15).
+
+Why no SELECT updates: `get_recent_requests` uses `SELECT * FROM requests` and converts rows to dicts via `cursor.description`, so the new column appears automatically. Aggregation queries (`SELECT cost_usd, COUNT, ...`) don't read pricing_source.
+
+Migration smoke test (run manually in this iteration):
+
+1. Created an old-schema DB with the v0.0.x 15-column shape, plus one legacy row.
+2. Confirmed pre-migration columns: 15 (no pricing_source).
+3. Opened it via `SQLiteStorage(...)` and called `log_request(...)` with a new record carrying `pricing_source="genai-prices@0.0.57"`.
+4. Read back via raw SQL:
+   - Legacy row: `pricing_source = ''` (default).
+   - New row: `pricing_source = 'genai-prices@0.0.57'`.
+
+This proves the migration ALTER fires automatically at first connection, the column gets the right default for existing rows, and new INSERTs persist the value correctly.
+
+Phase 2.3 #3 (`CostTracker.calculate_cost()` dispatch through `catalog.calculate_cost`) is the next iteration. Phase 2.3 #4 (CostTracker populates `record.pricing_source` via `catalog.pricing_source(modality)`) follows.
+
+No em dashes in this iteration's outputs.
