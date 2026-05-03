@@ -1296,3 +1296,30 @@ Ruff auto-fixes (5 total): `from typing import Awaitable, Callable` -> `from col
 Phase 3.1 #2 (`tests/fixtures/streaming/` directory + README) is the next iteration. Phase 3.1 #3 (`.env.fixtures.example`) follows.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 09:25 UTC — docs(fixtures): create tests/fixtures/streaming/ with README
+
+Files: `tests/fixtures/streaming/README.md` (new, 185 lines), `.agents/TODO.md` (Phase 3.1 #2 marked `[x]`).
+Tests: n/a (documentation only).
+
+The README answers seven questions readers will have when they hit this directory:
+
+1. **What lives here.** JSON fixtures captured from real provider APIs that `tests/test_streaming_cost_accounting.py` replays via HTTP mocking.
+2. **Filename convention.** `<provider>_<model>_<modality>_<mode>_<YYYY-MM-DD>.json`. Date suffix tracks when each rate was last verified; refresh history shows in `git log`.
+3. **Payload shape.** Common keys (provider, model, modality, mode, recorded_at, request) plus mode-specific keys (batch -> response/usage; stream -> chunks/usage). Documents that exact `usage` keys come from the provider.
+4. **How to record a fixture.** Four steps: install provider SDKs, set env vars, run `scripts/record-streaming-fixtures.py --record ...`, commit. Notes that the recorder hits real APIs and costs real money but the prompts are sub-cent each.
+5. **How to refresh a fixture.** Three triggers (price change, response shape change, new wrapper feature). Three steps: `git rm`, re-record, commit deletions and additions in one commit.
+6. **Per-provider notes.** OpenAI gets the canonical model + the `stream_options.include_usage` requirement. Deepgram and Cartesia entries note that the recorder is a stub awaiting follow-up iterations.
+7. **Why these fixtures are committed.** Avoids real-money CI cost, eliminates rate-limit / outage flakiness, removes the secret-management surface from CI. Explicit instruction to NOT exclude the directory from git.
+
+Closes with a pointer to `docs/design/v0.1.0.md` §5.2 for the full reasoning behind the substitute-validation approach (instead of dogfooding-as-gate).
+
+Side benefit of writing the README first: the directory now exists with a tracked file, so future fixture commits have an obvious place to land. Without the README, git would treat the empty directory as untrackable and the first fixture would have to create the directory implicitly.
+
+Verified clean of em dashes via `grep —` on the file (CLAUDE.md hard convention).
+
+Phase 3.1 #3 (`.env.fixtures.example` documenting required API keys for recording) is the next iteration.
+
+No em dashes in this iteration's outputs.
