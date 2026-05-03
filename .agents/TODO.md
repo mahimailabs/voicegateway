@@ -500,7 +500,17 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
   isolates VG from those changes. Sidebar entry added at
   `/reference/reconcile-formats`. Docs build clean (2.96s).
   Deepgram and Cartesia sections land with 4.3 #2 and #3.
-- [ ] Define format for Deepgram export. Document.
+- [x] Define format for Deepgram export. Document.
+  Done: appended Deepgram section to
+  `docs/reference/reconcile-formats.md`. Schema: CSV/JSON with
+  columns `model, audio_seconds, n_requests, cost_usd` (audio
+  duration in seconds, matching the unit
+  `livekit-plugins-deepgram` emits and `pricing/stt.py` uses).
+  Field-by-field semantics table, Python conversion snippet for
+  console exports (with a minutes-to-seconds multiplier note),
+  pointer to the management API for ops who prefer JSON over
+  CSV. Documented why seconds (not minutes) is the canonical
+  unit. Docs build clean (3.03s).
 - [ ] Define format for Cartesia export. Document.
 - [ ] Implement `voicegw reconcile` command. Args: `--provider`,
   `--start`, `--end`, `--provider-usage-file`, `--format

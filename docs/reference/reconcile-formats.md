@@ -129,8 +129,116 @@ When real users surface that the conversion is annoying, we will ship
 a built-in `voicegw reconcile-import openai <NATIVE-FILE>` helper.
 Until then: the small Python snippet is the contract.
 
+## Deepgram
+
+### Canonical input shape
+
+`voicegw reconcile --provider deepgram --provider-usage-file <FILE>`
+expects either CSV or JSON. The format is auto-detected from the file
+extension; the schemas are equivalent.
+
+**CSV** (header row required, column order does not matter):
+
+```csv
+model,audio_seconds,n_requests,cost_usd
+nova-3,180000.0,1500,8.700
+nova-2,42000.5,300,2.100
+```
+
+**JSON** (top-level array of objects):
+
+```json
+[
+  {
+    "model": "nova-3",
+    "audio_seconds": 180000.0,
+    "n_requests": 1500,
+    "cost_usd": 8.700
+  },
+  {
+    "model": "nova-2",
+    "audio_seconds": 42000.5,
+    "n_requests": 300,
+    "cost_usd": 2.100
+  }
+]
+```
+
+### Field semantics
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `model` | yes | Deepgram model id without the `deepgram/` prefix. VoiceGateway prepends the prefix when matching against its own logs. |
+| `audio_seconds` | yes | Aggregate transcribed audio duration, in seconds, across the reconcile window. Deepgram bills per-minute, so audio-minutes from the dashboard multiplied by 60 is the value to use. Float allowed. |
+| `n_requests` | optional | Used for sanity checks; reconcile reports a warning if VG's request count diverges by more than 10%. Omit if your export does not include it. |
+| `cost_usd` | yes | Aggregate cost Deepgram charged for that model in the window. The reconcile diff is computed against this number. |
+
+Real-time vs pre-recorded vs streaming distinctions are not in this
+schema. Sum the durations across all delivery modes for a given model
+into a single row; if your account uses different rate cards per
+mode, split into separate model rows (e.g., `nova-3-realtime`,
+`nova-3-prerecorded`) and record those same suffixed names in
+`voicegw.yaml` so VG's logs match.
+
+### Producing the canonical format from the Deepgram console
+
+Deepgram's [console](https://console.deepgram.com/usage) exposes a
+usage page with per-model rollups. Two paths to the canonical CSV:
+
+**Path A: console export.** Click "Export CSV" on the Usage page for
+your billing window. The exported columns this guide assumes:
+
+- `model` (or `model_name`): the model id.
+- `seconds_total` (or `duration_seconds_total`): maps to
+  `audio_seconds`. If your export reports minutes, multiply by 60.
+- `requests_total`: maps to `n_requests`.
+- `total_cost_usd` (or `amount_usd`): maps to `cost_usd`.
+
+**Path B: management API.** The
+[GET /v1/projects/{id}/usage/requests](https://developers.deepgram.com/reference/management-api/usage/list-usage-requests)
+endpoint returns per-request rows; aggregate them per-model client-side.
+
+A short Python conversion for Path A:
+
+```python
+import csv
+from collections import defaultdict
+from pathlib import Path
+
+src = Path("deepgram-usage-2026-05-01-to-2026-05-31.csv")
+dst = Path("deepgram-vg-format.csv")
+
+agg = defaultdict(lambda: {"seconds": 0.0, "requests": 0, "cost": 0.0})
+with src.open() as f:
+    for row in csv.DictReader(f):
+        m = row["model"]
+        agg[m]["seconds"] += float(row.get("seconds_total", 0))
+        agg[m]["requests"] += int(row.get("requests_total", 0))
+        agg[m]["cost"] += float(row.get("total_cost_usd", 0))
+
+with dst.open("w", newline="") as f:
+    w = csv.writer(f)
+    w.writerow(["model", "audio_seconds", "n_requests", "cost_usd"])
+    for model, v in agg.items():
+        w.writerow([model, v["seconds"], v["requests"], f"{v['cost']:.6f}"])
+```
+
+If your Deepgram export reports minutes instead of seconds, replace
+`float(row.get("seconds_total", 0))` with
+`float(row.get("minutes_total", 0)) * 60`.
+
+### Why audio_seconds and not minutes
+
+Deepgram's billing dashboards display minutes by default, but VG
+records audio duration in seconds (the unit `livekit-plugins-deepgram`
+emits on its `usage_collected` event, and the unit
+`voicegateway/pricing/stt.py` calculates against). Storing seconds in
+the canonical reconcile file keeps both sides of the comparison in
+the same unit. If your export hands you minutes, the conversion above
+multiplies in.
+
 ## Other providers
 
-Definitions for Deepgram, Cartesia, and additional providers ship in
-follow-up Phase 4.3 sub-items. This page will append a section per
-provider as those format definitions land.
+Definitions for Cartesia and additional providers ship in follow-up
+Phase 4.3 sub-items. This page will append a section per provider as
+those format definitions land.

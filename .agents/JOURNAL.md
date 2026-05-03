@@ -1724,3 +1724,26 @@ Phase 4.3 #1 is purely a content task: define the canonical schema VG's `voicegw
 Phase 4.3 #2 (Deepgram usage-file format) is the next iteration's pick. Deepgram's billing model is per-minute audio, so the schema columns differ from OpenAI's per-token. Same docs file (append a section); same approach (canonical normalized format + conversion notes). The Cartesia format (#3) lands one iteration after that.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 14:15 UTC: docs(reference): Deepgram usage-file format
+
+Files: `docs/reference/reconcile-formats.md` (Deepgram section appended), `.agents/TODO.md` (Phase 4.3 #2 marked `[x]`).
+Tests: docs build clean (3.03s); ruff/mypy/pytest unchanged (no code touched, 346 passed / 8 skipped).
+
+Phase 4.3 #2: extend `reconcile-formats.md` with Deepgram's canonical schema. Symmetric structure to the OpenAI section (schema + field semantics + conversion + rationale).
+
+**Schema chosen.** CSV with `model, audio_seconds, n_requests, cost_usd`. Four columns (one fewer than OpenAI because Deepgram has no input-vs-output token split). `audio_seconds` is the unit-of-billing translation: Deepgram bills per-minute on their dashboard but VG records `audio_duration_seconds` (the unit `livekit-plugins-deepgram` emits on its `usage_collected` event, and the unit `voicegateway/pricing/stt.py` calculates against). Keeping the canonical file in seconds means both sides of the reconcile comparison are in matched units; if the operator's export hands them minutes, the documented conversion multiplies in.
+
+**Conversion paths documented.** Two paths for Deepgram:
+- **Console export.** `console.deepgram.com/usage` ships a CSV per project. Documented column-name assumptions (`seconds_total`, `requests_total`, `total_cost_usd`) plus how to handle minutes-vs-seconds reports.
+- **Management API.** `GET /v1/projects/{id}/usage/requests` returns per-request rows for ops who prefer JSON over CSV. Linked to Deepgram's reference docs.
+
+**Real-time vs pre-recorded.** Documented that Deepgram bills realtime and pre-recorded at different rates, but VG's canonical reconcile file does not encode the delivery mode. Operators with mixed delivery modes either sum across or split into suffixed model rows (`nova-3-realtime`, `nova-3-prerecorded`) and mirror the same naming in `voicegw.yaml` so VG's logs match. This is a documentation choice, not a code constraint.
+
+**Style discipline.** Audited the appended section for em dashes (per CLAUDE.md) and AI-flavored prose (per PROMPT.md content quality bar). Clean. No "leverage", "seamless", "robust", "comprehensive", "underscore", "essential", "delve into", "important to note", "worth mentioning"; no em dashes.
+
+Phase 4.3 #3 (Cartesia usage-file format) is the next iteration's pick. Cartesia bills credit-based not per-character at the time of writing (verified in iter 26 during pricing catalog work), so the schema definition has to navigate that ambiguity. The likely shape: same `model, characters, n_requests, cost_usd` skeleton with notes about credit conversions, since real users will have a USD-denominated invoice they want to match against rather than raw credits.
+
+No em dashes in this iteration's outputs.
