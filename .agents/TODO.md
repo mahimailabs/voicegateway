@@ -63,8 +63,56 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
   Setup" prerequisites section *before* VG steps. Cover both LiveKit
   Cloud and self-hosted `livekit-server` paths. Include the
   `LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` env var setup.
-- [ ] Sweep all pages identified in `.agents/credibility-issues.md`.
-  Fix or remove every stale claim.
+- [ ] **1.3.5a** Sweep runtime-fallback over-promise (C1 + H5; touches
+  L2). Reframe the "automatic failover during a call" claims as
+  resolver-time-only, with pointers to the upcoming
+  `docs/examples/livekit-fallback-adapter.md` (Phase 1.4). Files:
+  `README.md` (lines 237, 255), `docs/examples/fallback-chains.md`
+  (hero line 3, lines 178 and 193, and the Mermaid diagram per L2),
+  `docs/reference/changelog.md:39`,
+  `docs/architecture/middleware.md:160`,
+  `docs/migration/from-livekit-inference.md:166`. The post-frontmatter
+  "Why" prose + comparison table at `docs/index.md:45-69` rolls in
+  here too (parallels the README's dropped table).
+
+- [ ] **1.3.5b** Fix critical surface bugs from the audit. Single-line
+  or near-single-line edits:
+  - C4: `dashboard/frontend/index.html:6`
+    `<title>LiveKit Inference Gateway</title>` to a correct VG title.
+  - C3: `docs/reference/faq.md:175` SQLite WAL claim. Either enable
+    WAL in `voicegateway/storage/sqlite.py` initialization (a
+    separate one-line code change) or rewrite the backup advice to
+    use `sqlite3 .backup`.
+  - H4: `docs/reference/troubleshooting.md:119`
+    `VOICEGW_ENCRYPTION_KEY` to `VOICEGW_SECRET` (canonical name in
+    `voicegateway/core/crypto.py`).
+  - M4: `docs/examples/fallback-chains.md:198` `from livekit.agents.voice_assistant import VoiceAssistant` is broken on
+    `livekit-agents>=1.5.0`; rewrite to the AgentSession idiom used
+    in `examples/basic_agent.py`.
+
+- [ ] **1.3.5c** Sweep model-ID inconsistencies (C5). Decide a single
+  canonical Anthropic model ID and sweep all 13+ files. Same class
+  issue with `whisper/large-v3` vs `local/whisper-large-v3` and
+  `groq/llama-3.3-70b-versatile` vs `groq/llama-3.1-70b`.
+  Cross-reference `voicegateway/pricing/catalog.py`. Consider
+  deferring LLM ID alignment until Phase 2 (genai-prices integration)
+  which may resolve them upstream; STT/TTS IDs should still align
+  to the local catalog.
+
+- [ ] **1.3.5d** Fix remaining FAQ accuracy claims. H2 coverage
+  ("over 70%" to 75% or current actual); H3 perf numbers (soften the
+  unbacked "~1ms / under 5ms" claims or remove); M1 multi-instance
+  scaling caveat (add the budget-cache divergence note); M2 Postgres
+  "planned" tightened to "v0.3+ scope". H1 (`v0.1.0 alpha`) self-
+  resolves at release; mark it `[~]` deferred to Phase 4.5
+  release-prep sweep.
+
+- [ ] **1.3.5e** Final mop-up. H6 `from-livekit-inference.md:62-74`
+  LiveKit Cloud Inference cost-comparison table: add a
+  "Pricing as of YYYY-MM-DD; verify via the LiveKit dashboard"
+  attribution or remove the table. L3
+  `docs/migration/version-upgrades.md` synced at Phase 4 CHANGELOG
+  (mark `[~]` here, picked up there).
 
 ### 1.4 — LiveKit FallbackAdapter docs
 

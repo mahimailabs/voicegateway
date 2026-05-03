@@ -207,3 +207,28 @@ Notes:
 - **Verify step.** Three `echo` commands print the values; non-empty output means setup is good. No `python -c` assertion (would raise KeyError on missing env vars, cryptic).
 - **Out of scope, captured for sweep.** Step 1 onwards still uses `anthropic/claude-sonnet-4-20250514` (credibility issue C5) and the `examples` block at the bottom uses `gw.stack(...)` which returns a tuple via splat (`stt, llm, tts = gw.stack(...)`). The model-ID sweep is Phase 1.3 #5; no action here.
 - **No em dashes introduced.** Verified via grep on the file.
+
+---
+
+## 2026-05-03 23:50 UTC — chore: split Phase 1.3 #5 (credibility sweep) into five subtasks
+
+Files: `.agents/TODO.md` (single `[ ]` "Sweep all pages" line replaced with `[ ]` items `1.3.5a` through `1.3.5e`).
+Tests: n/a.
+
+Notes — per PROMPT.md ("If a TODO item feels larger, your first action is to break it into smaller items in TODO.md, commit that breakdown as `chore: split <task> into subtasks`, and exit"). The single sweep item covered 14+ remaining credibility-issues across many files; the 30-90 minute / one logical unit / one commit budget could not absorb that.
+
+Five subtasks chosen by mechanism / file cluster:
+
+- **1.3.5a — Runtime-fallback over-promise sweep.** Same-shape claim repeated across README, fallback-chains examples, changelog, middleware architecture, and from-livekit-inference migration. One mental model fix, multiple files. Folds in L2 (Mermaid diagram) and the docs/index.md "Why" prose + comparison table, since both also carry over-promised fallback framing.
+- **1.3.5b — Critical surface bug fixes.** Four discrete single-line-ish edits (dashboard `<title>`, SQLite WAL backup advice, `VOICEGW_ENCRYPTION_KEY` to `VOICEGW_SECRET`, broken `VoiceAssistant` import). Each is an independent fix; one commit.
+- **1.3.5c — Model-ID consistency sweep.** Single decision (which canonical Anthropic ID) drives 13+ doc edits. Worth its own iteration because the decision interacts with Phase 2 (genai-prices may resolve LLM IDs upstream).
+- **1.3.5d — FAQ accuracy claims.** Three accuracy issues plus a multi-instance caveat, all in `docs/reference/faq.md`. One file, one commit.
+- **1.3.5e — Final mop-up.** Cost-comparison attribution in from-livekit-inference, plus version-upgrades.md sync deferred to Phase 4 CHANGELOG.
+
+Did NOT split:
+- C2 (LiteLLM has STT/TTS) — already done (Iteration 5 dropped the README table, Iteration 9 rewrote from-litellm migration).
+- L1 (static "200+ passing" badge) — already done (Iteration 6).
+- M3 (first-agent.md prereqs) — already done (Iteration 11).
+- H1 (v0.1.0 alpha in FAQ) — self-resolves at release; will be `[~]` deferred to Phase 4.5.
+
+No fix work performed in this iteration. Next iteration picks 1.3.5a.
