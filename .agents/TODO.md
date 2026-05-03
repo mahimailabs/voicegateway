@@ -237,7 +237,7 @@ catalog with explicit source-date metadata.
   showing which catalog the running instance is using. Phase 4.1
   will layer `?include_pricing_source=true` for per-line attribution
   from the actual logged records.
-- [ ] Add `pricing_source` to dashboard request log view (light
+- [x] Add `pricing_source` to dashboard request log view (light
   touch — text column, no new charts).
 
 ### 2.5 — Fix the placeholder bug

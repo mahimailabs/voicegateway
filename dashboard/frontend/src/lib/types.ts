@@ -50,6 +50,7 @@ export interface LogRecord {
   provider: string;
   project: string;
   cost_usd: number;
+  pricing_source: string;
   ttfb_ms: number | null;
   total_latency_ms: number | null;
   status: string;

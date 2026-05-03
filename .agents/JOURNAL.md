@@ -972,3 +972,22 @@ Why no test modifications were needed: the existing tests in `tests/server/test_
 Phase 2.4 #2 (Add `pricing_source` to dashboard request log view) is the next iteration. The dashboard's React frontend needs a "source" column on the Logs page; light touch, no new charts.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 06:30 UTC — feat(dashboard): add Source column to Logs page
+
+Files: `dashboard/frontend/src/lib/types.ts` (one field added to `LogRecord`), `dashboard/frontend/src/components/LogTable.tsx` (one column added between Cost and Latency), `.agents/TODO.md` (Phase 2.4 #2 marked `[x]`).
+Tests: frontend `npm run build` (tsc + vite) clean in 913ms; pytest 255 passed / 4 skipped, coverage 79%.
+
+The Logs page (`dashboard/frontend/src/pages/Logs.tsx`) now shows a "Source" column. Each row's source is the per-record `pricing_source` string from `RequestRecord` (e.g., `"genai-prices@0.0.57"` for LLM, `"voicegateway-catalog@2026-05-04"` for STT/TTS). Empty for legacy records that predate Phase 2.3.
+
+Light-touch as specified: text-only column with mono styling matching the Model and Cost columns. No badges, no charts, no filters yet. Position chosen so Cost + Source sit visually adjacent (the source explains where the cost number came from).
+
+Why no backend changes were needed: `dashboard/api/main.py:139-149` calls `gw.storage.get_recent_requests(...)` which uses `SELECT * FROM requests`. Iteration 29 added the column to the schema and migration; the dict-from-cursor.description path automatically surfaces the new field to the JSON response. The frontend just consumes whatever comes through.
+
+The TypeScript change to `LogRecord` is one new field, `pricing_source: string`. Required (not optional) so legacy records without the field would break TypeScript type-checking; in practice the dashboard backend always returns the field (default empty string per the schema's `NOT NULL DEFAULT ''`).
+
+Phase 2.4 complete. Phase 2.5 (Fix `groq/llama-3.1-8b: $0.0` placeholder bug) is next; with the dispatch through genai-prices in iter 30, the legacy `PRICING` dict's $0.0 entry for that model is no longer load-bearing — Phase 2.5 just removes the legacy code.
+
+No em dashes in this iteration's outputs.
