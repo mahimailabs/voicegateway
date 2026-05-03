@@ -217,8 +217,15 @@ catalog with explicit source-date metadata.
   for existing DBs (or a one-time conversion at startup).
 - [x] Update `CostTracker.calculate_cost()` to dispatch by modality
   via `voicegateway/pricing/catalog.py`.
-- [ ] Update `InstrumentedSTT|LLM|TTS` to capture and pass through
+- [x] Update `InstrumentedSTT|LLM|TTS` to capture and pass through
   `pricing_source` to logged requests.
+  Done by extending `CostTracker.create_record` to auto-derive
+  `pricing_source` from `modality` via `catalog.pricing_source(modality)`
+  when no explicit value is provided. The InstrumentedSTT/LLM/TTS
+  wrappers do not need code changes: they call create_record as
+  before, and the resulting RequestRecord carries the source
+  automatically. Explicit `pricing_source=` kwarg is still accepted
+  for callers that want to override.
 
 ### 2.4 — Surface pricing source
 

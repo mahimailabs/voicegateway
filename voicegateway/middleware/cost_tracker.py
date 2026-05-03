@@ -104,9 +104,18 @@ class CostTracker:
         status: str = "success",
         fallback_from: str | None = None,
         error_message: str | None = None,
+        pricing_source: str = "",
     ) -> RequestRecord:
-        """Create a request record with cost calculated."""
+        """Create a request record with cost calculated.
+
+        ``pricing_source`` defaults to the catalog facade's per-modality
+        attribution string when not explicitly provided, so every record
+        produced through the InstrumentedSTT/LLM/TTS wrappers carries
+        the source automatically.
+        """
         cost = self.calculate_cost(model_id, modality, input_units, output_units)
+        if not pricing_source:
+            pricing_source = catalog.pricing_source(modality)
         return RequestRecord(
             id=str(uuid.uuid4()),
             timestamp=time.time(),
@@ -117,6 +126,7 @@ class CostTracker:
             input_units=input_units,
             output_units=output_units,
             cost_usd=cost,
+            pricing_source=pricing_source,
             ttfb_ms=ttfb_ms,
             total_latency_ms=total_latency_ms,
             status=status,

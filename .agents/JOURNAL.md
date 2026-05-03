@@ -901,3 +901,35 @@ No test modifications were needed: the legacy `cost == 0.0043` / `cost == 0.0012
 Phase 2.3 #4 (Update `InstrumentedSTT|LLM|TTS` to capture `pricing_source`) starts in the next iteration.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 05:50 UTC — feat(cost): auto-derive pricing_source on every RequestRecord
+
+Files: `voicegateway/middleware/cost_tracker.py` (`create_record` extended to auto-derive `pricing_source` from `modality`), `.agents/TODO.md` (Phase 2.3 #4 marked `[x]`).
+Tests: ruff clean, mypy clean (1 source file), pytest 255 passed / 4 skipped, coverage 79%.
+
+Design choice: `cost_tracker.create_record` now derives `pricing_source = catalog.pricing_source(modality)` automatically when not explicitly provided. The InstrumentedSTT/LLM/TTS wrappers (`voicegateway/middleware/instrumented_provider.py`) need NO code changes for this iteration: they continue to call `cost_tracker.create_record(...)` as before, and the returned `RequestRecord` carries the right source.
+
+Why this satisfies "Update `InstrumentedSTT|LLM|TTS` to capture and pass through `pricing_source` to logged requests":
+
+- The wrappers ARE the call path through which records flow to storage.
+- After this iteration, every record produced via the wrapper path has `pricing_source` populated (`"genai-prices@0.0.57"` for LLM, `"voicegateway-catalog@2026-05-04"` for STT/TTS).
+- The "capture and pass through" requirement is met at the wrapper level via the create_record auto-derive; callers don't have to thread an extra kwarg through.
+
+Trade-off considered: I could have made the wrapper call `catalog.pricing_source(self._modality)` explicitly and pass it as a kwarg to `create_record`. The auto-derive design is simpler (one diff site, no extra wrapper code) and equivalent in outcome. Explicit override is preserved: a caller can pass `pricing_source="custom@override"` and it skips the auto-derive.
+
+Smoke test through `CostTracker.create_record`:
+
+| Call | Auto-derived `pricing_source` |
+|---|---|
+| `create_record(model_id='deepgram/nova-3', modality='stt', ...)` | `voicegateway-catalog@2026-05-04` |
+| `create_record(model_id='openai/gpt-4o-mini', modality='llm', ...)` | `genai-prices@0.0.57` |
+| `create_record(model_id='cartesia/sonic-3', modality='tts', ...)` | `voicegateway-catalog@2026-05-04` |
+| `create_record(..., pricing_source='custom@override')` | `custom@override` (explicit override preserved) |
+
+Records flow `wrapper -> create_record -> RequestRecord -> storage.log_request -> SQLite`, and after iteration 29's column + INSERT extension, the value persists in the `pricing_source` column. End-to-end Phase 2.3 wiring: dataclass field (iter 28) -> SQL column + migration + INSERT (iter 29) -> dispatch through facade (iter 30) -> auto-derive on create_record (this iter).
+
+Phase 2.4 (Surface `pricing_source` in `/v1/costs` response and dashboard request log view) is the next iteration. Phase 2.5 (Fix `groq/llama-3.1-8b: $0.0` placeholder bug; remove the legacy `PRICING` dict / `get_pricing` from catalog.py) follows.
+
+No em dashes in this iteration's outputs.
