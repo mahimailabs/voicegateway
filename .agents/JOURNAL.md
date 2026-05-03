@@ -1747,3 +1747,33 @@ Phase 4.3 #2: extend `reconcile-formats.md` with Deepgram's canonical schema. Sy
 Phase 4.3 #3 (Cartesia usage-file format) is the next iteration's pick. Cartesia bills credit-based not per-character at the time of writing (verified in iter 26 during pricing catalog work), so the schema definition has to navigate that ambiguity. The likely shape: same `model, characters, n_requests, cost_usd` skeleton with notes about credit conversions, since real users will have a USD-denominated invoice they want to match against rather than raw credits.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 14:35 UTC: docs(reference): Cartesia usage-file format
+
+Files: `docs/reference/reconcile-formats.md` (Cartesia section appended), `.agents/TODO.md` (Phase 4.3 #3 marked `[x]`).
+Tests: docs build clean (2.97s); ruff/mypy/pytest unchanged (no code touched, 346 passed / 8 skipped).
+
+Phase 4.3 #3 navigates the credits-vs-USD ambiguity that iter 26 surfaced when adding Cartesia to the pricing catalog. Cartesia's billing portal lists usage in credits primarily, but VG's LiveKit plugin records character counts on the `usage_collected` event, and `voicegateway/pricing/tts.py` computes a USD estimate from those character counts at a documented per-character rate.
+
+**Schema chosen.** Five columns: `model, characters, credits, n_requests, cost_usd`. Both `characters` and `credits` are surfaced so reconcile can run two diffs:
+
+- **Units check.** VG's character count vs Cartesia's character count. If these diverge, the LiveKit plugin's `usage_collected` event count is wrong (or VG missed events).
+- **Cost diff.** VG's calculated USD (from characters times the per-character rate in `pricing/tts.py`) vs Cartesia's billed USD. If these diverge but the units agreed, the per-character rate in `pricing/tts.py` is stale relative to the operator's plan tier; refresh that catalog entry and re-run.
+
+This split is the practical FinOps win: reconciliation that surfaces only one number ("you're off by 3%") is unactionable; this one tells the operator which side of the math to investigate. Captured the interpretation in the docs explicitly.
+
+**Credits-as-optional.** Set `credits = 0` if your Cartesia account is invoiced flat-USD instead of credit-based; only the cost diff is meaningful in that case. The `characters` column is still required because that is the unit VG actually records.
+
+**Rate sheet.** Cartesia's USD-per-credit conversion depends on the account's plan tier and is visible on the billing portal's rate sheet. Documented as a manual lookup the operator does at conversion time, not a value VG carries.
+
+**Voice-id selection** documented as out-of-schema. Cartesia lets a request switch voices per call, but billing does not currently differentiate by voice. Aggregate voices into a single per-model row. If a future Cartesia rate card differentiates by voice, the operator splits into suffixed model rows (e.g., `sonic-3-staging`, `sonic-3-production`) and matches the same names in `voicegw.yaml` for VG's logs to align.
+
+**Stretch providers.** The "Other providers" section now points to a GitHub issue path rather than promising a specific delivery. Anthropic, ElevenLabs, AssemblyAI sit in the v0.1.0 stretch-providers tier (Phase 3.2 stretch fixtures); their reconcile schemas can be added as v0.1.1 sub-items, or earlier if real users surface a need.
+
+**Style discipline.** Audited the appended section for em dashes (per CLAUDE.md) and AI-flavored prose (per PROMPT.md content quality bar). Clean.
+
+**Phase 4.3 progress.** Three of six 4.3 sub-items now done (#1 OpenAI, #2 Deepgram, #3 Cartesia). Next iteration picks 4.3 #4: implement `voicegw reconcile` itself. The implementation reads VG's logs for the period (via `get_requests_in_window` from iter 54), reads the provider's usage file (per the schemas in this docs page), produces a per-model diff with absolute and percent differences. The hard part is unit translation: `voicegw reconcile --provider deepgram` aggregates VG's logged `input_units` (audio seconds) per model and diffs against the Deepgram usage file's `audio_seconds` column. Same shape, different unit names per provider.
+
+No em dashes in this iteration's outputs.

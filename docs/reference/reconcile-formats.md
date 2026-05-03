@@ -237,8 +237,126 @@ the canonical reconcile file keeps both sides of the comparison in
 the same unit. If your export hands you minutes, the conversion above
 multiplies in.
 
+## Cartesia
+
+### Canonical input shape
+
+`voicegw reconcile --provider cartesia --provider-usage-file <FILE>`
+expects either CSV or JSON. The format is auto-detected from the file
+extension; the schemas are equivalent.
+
+**CSV** (header row required, column order does not matter):
+
+```csv
+model,characters,credits,n_requests,cost_usd
+sonic-3,2500000,250000,1000,30.000
+sonic-2,500000,50000,200,6.000
+```
+
+**JSON** (top-level array of objects):
+
+```json
+[
+  {
+    "model": "sonic-3",
+    "characters": 2500000,
+    "credits": 250000,
+    "n_requests": 1000,
+    "cost_usd": 30.000
+  },
+  {
+    "model": "sonic-2",
+    "characters": 500000,
+    "credits": 50000,
+    "n_requests": 200,
+    "cost_usd": 6.000
+  }
+]
+```
+
+### Field semantics
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `model` | yes | Cartesia model id without the `cartesia/` prefix. VoiceGateway prepends the prefix when matching against its own logs. |
+| `characters` | yes | Aggregate synthesized character count across the reconcile window. This is what VG records (the unit `livekit-plugins-cartesia` emits on its `usage_collected` event), so the reconcile diff against VG's logs uses this column. Set to 0 if your export only ships credits. |
+| `credits` | optional | Aggregate Cartesia credits consumed in the window. Cartesia's billing portal exposes credits as the primary unit; surfacing them here lets reconcile cross-check the credits-to-USD math even when characters are absent. |
+| `n_requests` | optional | Used for sanity checks; reconcile reports a warning if VG's request count diverges by more than 10%. Omit if your export does not include it. |
+| `cost_usd` | yes | Aggregate cost Cartesia charged for that model in the window. The reconcile diff is computed against this number. Convert credits-to-USD via your account's rate sheet (see below). |
+
+Voice-id selection (Cartesia lets you switch voices per-request) is not
+in this schema. Voice id does not affect billing in Cartesia's current
+pricing; aggregate across all voices for a given model into a single
+row. If a future Cartesia rate card differentiates by voice, split into
+suffixed model rows (e.g., `sonic-3-staging`, `sonic-3-production`) and
+mirror those names in `voicegw.yaml`.
+
+### Producing the canonical format from the Cartesia portal
+
+Cartesia's [billing portal](https://play.cartesia.ai/) lists usage by
+model with both a character count and a credits column. The portal CSV
+columns this guide assumes:
+
+- `model` (or `model_id`): the model id.
+- `chars_synthesized` (or `characters_total`): maps to `characters`.
+- `credits_used` (or `credits_consumed`): maps to `credits`.
+- `requests` (or `n_requests`): maps to `n_requests`.
+- `cost_usd` (or `total_cost`): maps to `cost_usd`.
+
+A short Python conversion:
+
+```python
+import csv
+from collections import defaultdict
+from pathlib import Path
+
+src = Path("cartesia-usage-2026-05-01-to-2026-05-31.csv")
+dst = Path("cartesia-vg-format.csv")
+
+agg = defaultdict(lambda: {"chars": 0, "credits": 0, "requests": 0, "cost": 0.0})
+with src.open() as f:
+    for row in csv.DictReader(f):
+        m = row["model"]
+        agg[m]["chars"] += int(row.get("chars_synthesized", 0))
+        agg[m]["credits"] += int(row.get("credits_used", 0))
+        agg[m]["requests"] += int(row.get("requests", 0))
+        agg[m]["cost"] += float(row.get("cost_usd", 0))
+
+with dst.open("w", newline="") as f:
+    w = csv.writer(f)
+    w.writerow(["model", "characters", "credits", "n_requests", "cost_usd"])
+    for model, v in agg.items():
+        w.writerow([model, v["chars"], v["credits"], v["requests"], f"{v['cost']:.6f}"])
+```
+
+If your Cartesia portal export does not ship `cost_usd` directly,
+multiply `credits_used` by your account's USD-per-credit rate (visible
+on the billing portal's rate sheet) and write that into `cost_usd`.
+
+### Why both characters and credits
+
+Cartesia is currently credit-based: the billing portal's primary unit
+is credits, and the credits-to-USD conversion depends on the account's
+plan tier. VG records characters (the LiveKit plugin's
+`usage_collected` event ships character counts, not credits) and
+calculates an estimated cost via a documented per-character rate in
+`voicegateway/pricing/tts.py`. Surfacing both columns lets reconcile
+report two diffs:
+
+- VG's character-count vs Cartesia's character-count (a units check).
+- VG's calculated USD vs Cartesia's billed USD (the cost diff).
+
+If the units agree but the dollars disagree, VG's per-character rate
+in `pricing/tts.py` is stale relative to your plan; refresh that
+catalog entry and re-run.
+
+If your account is invoiced as flat-USD (not credits), set
+`credits = 0` and only the cost diff is meaningful.
+
 ## Other providers
 
-Definitions for Cartesia and additional providers ship in follow-up
-Phase 4.3 sub-items. This page will append a section per provider as
-those format definitions land.
+Reconcile schemas for Anthropic, ElevenLabs, AssemblyAI, and
+additional providers can be added as sub-items of a future
+v0.1.x release. Open an issue at
+[github.com/mahimailabs/voicegateway](https://github.com/mahimailabs/voicegateway)
+if you need a provider that is not listed here.

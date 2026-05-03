@@ -511,7 +511,19 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
   pointer to the management API for ops who prefer JSON over
   CSV. Documented why seconds (not minutes) is the canonical
   unit. Docs build clean (3.03s).
-- [ ] Define format for Cartesia export. Document.
+- [x] Define format for Cartesia export. Document.
+  Done: appended Cartesia section to
+  `docs/reference/reconcile-formats.md`. Schema: CSV/JSON with
+  columns `model, characters, credits, n_requests, cost_usd`.
+  Both `characters` and `credits` are recorded so reconcile can
+  produce two diffs: a units check (VG character count vs
+  Cartesia character count) and a cost diff (VG calculated USD
+  vs billed USD). Documented credit-vs-USD reasoning so the
+  operator can interpret which side of the diff (units or
+  per-character rate in `voicegateway/pricing/tts.py`) is stale.
+  Conversion snippet for the Cartesia billing portal CSV. Docs
+  build clean (2.97s). Anthropic/ElevenLabs/AssemblyAI deferred
+  to a future v0.1.x release.
 - [ ] Implement `voicegw reconcile` command. Args: `--provider`,
   `--start`, `--end`, `--provider-usage-file`, `--format
   text|csv|json`. Reads VG's logs for the period, reads provider's
