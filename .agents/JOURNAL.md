@@ -1840,3 +1840,31 @@ Phase 4.3 #5: end-to-end CliRunner coverage for `voicegw reconcile`. The 16 modu
 **Phase 4.3 progress.** Five of six 4.3 sub-items now done. The remaining sub-item is 4.3 #6 (none defined; #5 was the last). Looking at the TODO list: Phase 4.3 has 5 sub-items in total, and all five are now `[x]`. Phase 4.4 (reconciliation walkthrough docs) is the next iteration's pick.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 15:50 UTC: docs(guide): cost reconciliation walkthrough
+
+Files: `docs/guide/cost-reconciliation.md` (new, ~190 lines), `docs/.vitepress/config.mts` (sidebar entry under Guide; removed the `ignoreDeadLinks` entry pointing at this page), `.agents/TODO.md` (Phase 4.4 marked `[x]`; discovered work added for missing `/cli/export-costs.md` and `/cli/reconcile.md` reference pages).
+Tests: docs build clean (3.04s); existing pytest 370 passed / 8 skipped (no code changed).
+
+Phase 4.4: the operator-facing walkthrough that ties iters 56-60 (file formats, export command, reconcile command) together into a usable workflow. The audit emphasized the wedge framing as "modality-aware estimation backed by genai-prices, plus reconciliation tooling so you can verify our numbers"; this page is the verification half made concrete.
+
+**Page structure.** Six sections plus See-also:
+
+1. **Opening framing.** "VG records what it thinks you spent. Your provider records what they actually charged. These should agree but will not agree exactly." Sets expectation that drift is by design (estimate vs invoice), not a bug. Ties the 5% LLM tolerance to genai-prices upstream.
+2. **When to reconcile.** Four triggers: first 30 days post-deployment, after a provider rate change, before billing milestones to clients, when divergence is >5%. Explicitly: "you do not need to reconcile every billing period." This is honest about the cadence; some operators want a monthly ritual but for v0.1.0 the spot-check model is the right one.
+3. **Prerequisites.** Storage configured, provider export available, `voicegw` on PATH.
+4. **Workflow.** Three-step. Step 1 (export-costs for inspection) is optional and called out as such. Step 2 is the conversion via the snippets in `reconcile-formats.md`. Step 3 runs reconcile and shows a concrete sample text-table output with a 3.85% drift on `gpt-4o` and a `(prov-missing)` row to make the asymmetric case real.
+5. **Interpreting the diff.** Three sub-cases: units-agree-but-cost-diverges (rate sheet drift; for LLM either upgrade genai-prices or accept that a discount applies; for STT/TTS refresh the local catalog), units-disagree (missed events or unit-of-billing mismatch with debugging hints), single-sided rows (`prov-missing` likely a billing dashboard lag; `vg-missing` likely a non-VG client sharing the API key). Concludes with an expected-drift table per modality (LLM ~5%, STT ~1%, TTS ~2% with investigate-at thresholds).
+6. **Why VG estimates instead of mirroring.** Three reasons: provider billing API lag (24-72 hours), maintenance cost (seven different billing APIs), reconciliation IS the audit (the right model is fast estimation + on-demand audit). Closes with the FinOps caveat: "if every dollar must match for accounting, VG is the wrong cost-of-record; use it for observability and reconcile against the invoice."
+
+**Tone discipline.** The audit's content quality bar is the bar this page is held to. Audited for AI-flavored prose (no "leverage", "seamless", "robust", "comprehensive", "underscore", "essential", "delve into", "important to note", "worth mentioning") and em dashes (none). The drift-tolerance table is a real operator decision tool, not a vague "consider the trade-offs" placeholder. The "why we estimate" section is the most opinionated section; it gives operators a clear "use VG as the official cost-of-record? no, here is why" answer rather than dancing around it.
+
+**Sidebar wiring.** Added under Guide between Core Concepts and the Configuration sub-tree. Removed the `ignoreDeadLinks` entry that Phase 1.5 (iter 17) added when the page was a forward reference; that entry is now obsolete and gone.
+
+**Discovered work.** The walkthrough's See-also block originally pointed at `/cli/export-costs` and `/cli/reconcile` reference pages that do not exist; downgraded those links to bare `voicegw <cmd> --help` references and added a discovered-work entry capturing the gap. Light touch when the pages do land: each mirrors the `--help` output plus a link back to this guide.
+
+Phase 4.4 is now `[x]`. Phase 4.5 (release prep: version bump to 0.1.0, CHANGELOG, Docker build, smoke test, v0.1.0 tag) is the next iteration's pick. The iteration after that is 4.6 (final verification + completion-promise emission), which is the last work before the loop terminates.
+
+No em dashes in this iteration's outputs.

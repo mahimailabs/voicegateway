@@ -560,11 +560,23 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
 
 ### 4.4 — Reconciliation docs
 
-- [ ] Create `docs/guide/cost-reconciliation.md`. Walkthrough:
+- [x] Create `docs/guide/cost-reconciliation.md`. Walkthrough:
   - How to download usage exports from each provider's dashboard
   - How to run `voicegw reconcile` against the export
   - How to interpret the diff (when to investigate, when to ignore)
   - Honest disclaimer: estimation vs invoice, expected drift up to ~5%
+  Done: ~190-line walkthrough at `docs/guide/cost-reconciliation.md`.
+  Sections: when-to-reconcile (4 trigger cases), prerequisites,
+  3-step workflow (export-costs as optional inspection, provider
+  conversion, voicegw reconcile), interpreting-the-diff (units
+  agree but cost diverges, units disagree, single-sided model
+  rows), expected-drift table per modality (LLM ~5%, STT ~1%,
+  TTS ~2% with investigate-at thresholds), why-VG-estimates-vs-
+  mirroring rationale (3 reasons: provider billing API lag,
+  maintenance cost, reconciliation IS the audit). Sidebar entry
+  added under Guide. The `/guide/cost-reconciliation`
+  `ignoreDeadLinks` entry that Phase 1.5 added (iter 17) is now
+  removed since the page exists. Docs build clean (3.04s).
 
 ### 4.5 — Release prep
 
@@ -710,6 +722,18 @@ note them and continue with current task.)
   commits at each phase boundary. The actual `v0.1.0` release
   tag (Phase 4.5) will be a real strict-semver tag and will work
   cleanly.
+
+- [ ] Add CLI reference pages for the new commands at
+  `docs/cli/export-costs.md` and `docs/cli/reconcile.md`.
+  Phase 4.4's walkthrough at `docs/guide/cost-reconciliation.md`
+  references them; the See-also block was downgraded to
+  `voicegw export-costs --help` / `voicegw reconcile --help`
+  bare references rather than dead links until pages land.
+  Sidebar in `docs/.vitepress/config.mts` already lists
+  init/status/costs/projects/logs/serve/dashboard/mcp;
+  add export-costs and reconcile entries when pages land.
+  Light touch: each page mirrors the `--help` output plus a
+  link back to `/guide/cost-reconciliation`.
 
 - [ ] Clean up stale `model: default` lines in `local/kokoro:`
   YAML blocks introduced by 1.3.5c (the value before the sweep

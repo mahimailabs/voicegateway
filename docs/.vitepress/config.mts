@@ -15,10 +15,6 @@ export default defineConfig({
   lastUpdated: true,
   ignoreDeadLinks: [
     /localhost/,
-    // /guide/cost-reconciliation is a forward-pointing link to a
-    // page Phase 4.4 (cost reconciliation tooling) will create.
-    // Remove this entry when the page lands.
-    '/guide/cost-reconciliation',
   ],
 
   markdown: {
@@ -63,6 +59,7 @@ export default defineConfig({
             { text: 'Installation', link: '/guide/installation' },
             { text: 'Your First Agent', link: '/guide/first-agent' },
             { text: 'Core Concepts', link: '/guide/core-concepts' },
+            { text: 'Cost Reconciliation', link: '/guide/cost-reconciliation' },
           ],
         },
       ],
