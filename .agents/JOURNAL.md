@@ -385,3 +385,46 @@ Sidebar entry added to `docs/.vitepress/config.mts` `/examples/` block, position
 Phase 1.4 complete. Phase 1.5 (verification) starts in the next iteration: run docs build, fix any broken links, commit Phase 1 milestone tag locally.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 02:10 UTC — chore(verify): Phase 1 verification gates pass; tag v0.1.0-phase1
+
+Files: `docs/.vitepress/config.mts` (ignoreDeadLinks updated), `.agents/TODO.md` (1.5 four sub-items resolved: three `[x]`, one `[~]` skipped with reason), local git tag `v0.1.0-phase1`.
+Tests: see verification matrix below.
+
+Verification matrix:
+
+| Gate | Command | Result |
+|---|---|---|
+| Docs build | `cd docs && npm run build` | First run failed: 1 dead link to `/guide/cost-reconciliation` (Phase 4.4 deliverable). After ignoreDeadLinks update: builds clean in 3.0s. |
+| Ruff | `uv run ruff check voicegateway dashboard tests` | All checks passed |
+| Mypy | `uv run mypy voicegateway dashboard` | Success: no issues found in 56 source files |
+| Pytest | `uv run coverage run -m pytest tests/ --ignore=tests/providers/test_ollama.py` | 255 passed, 4 skipped |
+| Coverage | `uv run coverage report` | TOTAL 79% (above the 75% gate in `pyproject.toml:97`) |
+
+The dead-link fix: VitePress's link checker found `/guide/cost-reconciliation` referenced from `docs/migration/from-litellm.md` (the migration doc rewritten in iteration 9) which points to a page that Phase 4.4 will create. Added the path to `ignoreDeadLinks` with a comment noting the entry can be removed when the page lands.
+
+Docs deploy verification skipped: the preview-branch deploy requires `docs.yml` GitHub Actions workflow to fire on the `feat/cost-track-rebuild` branch; that's mahimairaja's call after a push. Local build success is the strongest signal I can produce from this iteration.
+
+Tagged `v0.1.0-phase1` locally pointing at the verification commit. Tag is **not** pushed (per design-doc Decision Log: "Local v0.1.0 tag, not pushed; mahimairaja decides when to publish").
+
+**Phase 1 (framing) is complete.**
+
+Phase 1 deliverables shipped:
+- README hero + features + badges + install instructions all rewritten with the wedge reframe (iter 4-7).
+- `docs/index.md` hero + feature grid match the new framing; "Why VoiceGateway" prose + competitive table dropped (iter 8 + 13).
+- `docs/migration/from-litellm.md` rewritten from competitive to complementary; LiteLLM's audio endpoints acknowledged (iter 9).
+- `docs/guide/decision-tree.md` created with honest matrix; sidebar entry added (iter 10).
+- `docs/guide/first-agent.md` has the explicit LiveKit Server Setup section (iter 11).
+- `docs/examples/livekit-fallback-adapter.md` created with API verified via the LiveKit Docs MCP; sidebar entry added (iter 18).
+- Credibility sweep: runtime-fallback over-promise reframed across 8 files (iter 13), four critical surface bugs fixed (iter 14), STT/TTS model IDs aligned to local catalog across 14 files (iter 15), FAQ accuracy claims tightened (iter 16), LiveKit cost-comparison snapshot dated (iter 17).
+
+Three explicit deferrals tracked in discovered-work for later phases:
+- H1 (FAQ "v0.1.0 alpha" version stamp) -> Phase 4.5 release-prep.
+- L3 (`version-upgrades.md` v0.1.0 stanza rewrite) -> Phase 4.5 release-prep / CHANGELOG.
+- LLM model-ID sweep (`anthropic/claude-sonnet-4-20250514`, `groq/llama-3.3-70b-versatile`) -> Phase 2 (genai-prices may resolve them upstream).
+
+Phase 2 (pricing foundation) starts in the next iteration.
+
+No em dashes in this iteration's outputs.

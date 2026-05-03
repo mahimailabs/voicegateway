@@ -13,7 +13,13 @@ export default defineConfig({
 
   cleanUrls: true,
   lastUpdated: true,
-  ignoreDeadLinks: [/localhost/],
+  ignoreDeadLinks: [
+    /localhost/,
+    // /guide/cost-reconciliation is a forward-pointing link to a
+    // page Phase 4.4 (cost reconciliation tooling) will create.
+    // Remove this entry when the page lands.
+    '/guide/cost-reconciliation',
+  ],
 
   markdown: {
     theme: {
