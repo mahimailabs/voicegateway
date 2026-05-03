@@ -77,6 +77,22 @@ async def test_v1_costs_with_project(client):
     assert resp.status_code == 200
 
 
+async def test_v1_costs_per_modality_excluded_by_default(client):
+    """`by_modality` is opt-in via the query param to keep the default response stable."""
+    resp = await client.get("/v1/costs")
+    assert resp.status_code == 200
+    assert "by_modality" not in resp.json()
+
+
+async def test_v1_costs_per_modality_when_requested(client):
+    """`?per_modality=true` adds the breakdown; empty dict when no traffic recorded."""
+    resp = await client.get("/v1/costs?per_modality=true")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "by_modality" in data
+    assert data["by_modality"] == {}
+
+
 async def test_v1_latency_empty(client):
     resp = await client.get("/v1/latency")
     assert resp.status_code == 200

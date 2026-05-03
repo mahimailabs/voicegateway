@@ -409,8 +409,16 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
 
 ### 4.1 — `/v1/costs` enhancements
 
-- [ ] Add `?per_modality=true` query parameter. Returns separate
+- [x] Add `?per_modality=true` query parameter. Returns separate
   STT/LLM/TTS sums.
+  Done: storage method `get_cost_by_modality(period, project=None)`
+  groups `requests.modality` SUM(cost_usd) and COUNT(*); server
+  exposes `?per_modality=true` query param and adds `by_modality`
+  to the response only when set (default-stable: omitted otherwise).
+  Tests: 4 new (2 storage: aggregation, project filter; 2 server:
+  default omits, opt-in includes). Storage method excludes
+  modalities with zero requests; the test covers project-filter
+  scoping.
 - [ ] Add `?include_pricing_source=true` query parameter. Adds source
   attribution per line.
 - [ ] Add `?start=` and `?end=` ISO date parameters. Replaces fixed

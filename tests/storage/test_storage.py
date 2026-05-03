@@ -90,6 +90,51 @@ async def test_get_cost_by_project(storage):
     assert by_project["proj-a"]["cost"] == pytest.approx(0.05, abs=0.001)
 
 
+async def test_get_cost_by_modality(storage):
+    """STT/LLM/TTS costs aggregate independently by modality."""
+    now = time.time()
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=now, modality="stt",
+        model_id="deepgram/nova-3", provider="deepgram", cost_usd=0.05,
+    ))
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=now, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai", cost_usd=0.10,
+    ))
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=now, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai", cost_usd=0.02,
+    ))
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=now, modality="tts",
+        model_id="cartesia/sonic-3", provider="cartesia", cost_usd=0.03,
+    ))
+    by_modality = await storage.get_cost_by_modality("today")
+    assert by_modality["stt"]["cost"] == pytest.approx(0.05, abs=0.001)
+    assert by_modality["stt"]["requests"] == 1
+    assert by_modality["llm"]["cost"] == pytest.approx(0.12, abs=0.001)
+    assert by_modality["llm"]["requests"] == 2
+    assert by_modality["tts"]["cost"] == pytest.approx(0.03, abs=0.001)
+    assert by_modality["tts"]["requests"] == 1
+
+
+async def test_get_cost_by_modality_with_project_filter(storage):
+    """Project filter applies to the modality breakdown too."""
+    now = time.time()
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=now, modality="stt",
+        model_id="deepgram/nova-3", provider="deepgram",
+        project="alpha", cost_usd=0.05,
+    ))
+    await storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=now, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai",
+        project="beta", cost_usd=0.10,
+    ))
+    by_modality = await storage.get_cost_by_modality("today", project="alpha")
+    assert by_modality == {"stt": {"cost": pytest.approx(0.05, abs=0.001), "requests": 1}}
+
+
 async def test_get_project_stats(storage):
     now = time.time()
     await storage.log_request(RequestRecord(

@@ -142,6 +142,7 @@ def build_app(gateway: Gateway) -> FastAPI:
     async def v1_costs(
         period: str = Query("today"),
         project: str | None = Query(None),
+        per_modality: bool = Query(False),
     ) -> dict:
         # Pricing-source attribution per modality: which catalog
         # produced the numbers in this response. Constant per running
@@ -153,7 +154,7 @@ def build_app(gateway: Gateway) -> FastAPI:
             for modality in ("llm", "stt", "tts")
         }
         if gateway.storage is None:
-            return {
+            empty: dict[str, Any] = {
                 "period": period,
                 "project": project,
                 "total": 0.0,
@@ -162,12 +163,19 @@ def build_app(gateway: Gateway) -> FastAPI:
                 "by_project": {},
                 "pricing_sources": pricing_sources,
             }
+            if per_modality:
+                empty["by_modality"] = {}
+            return empty
         summary = await gateway.storage.get_cost_summary(period, project=project)
         # Always include a by_project breakdown for the "All Projects" view
         if project is None:
             summary["by_project"] = await gateway.storage.get_cost_by_project(period)
         else:
             summary["by_project"] = {}
+        if per_modality:
+            summary["by_modality"] = await gateway.storage.get_cost_by_modality(
+                period, project=project
+            )
         summary["pricing_sources"] = pricing_sources
         return summary
 

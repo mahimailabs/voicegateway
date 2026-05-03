@@ -420,6 +420,36 @@ class SQLiteStorage:
         finally:
             await db.close()
 
+    async def get_cost_by_modality(
+        self, period: str = "today", project: str | None = None
+    ) -> dict[str, Any]:
+        """Get cost summary grouped by modality (stt/llm/tts).
+
+        Returns a dict keyed by modality. Modalities with no requests in
+        the period are absent from the result; callers that want a
+        zero-filled view should overlay onto a {"stt": {...}, "llm":
+        {...}, "tts": {...}} template.
+        """
+        db = await self._ensure_initialized()
+        try:
+            since = self._period_since(period)
+            params: list[Any] = [since]
+            where = "WHERE timestamp >= ?"
+            if project:
+                where += " AND project = ?"
+                params.append(project)
+            cursor = await db.execute(
+                f"""SELECT modality, SUM(cost_usd) as cost, COUNT(*) as count
+                    FROM requests {where}
+                    GROUP BY modality ORDER BY cost DESC""",
+                tuple(params),
+            )
+            return {
+                row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor
+            }
+        finally:
+            await db.close()
+
     async def get_latency_stats(
         self,
         period: str = "today",

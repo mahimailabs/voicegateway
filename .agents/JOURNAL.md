@@ -1528,3 +1528,24 @@ The two adjacent middleware files come along for free: `voicegateway/middleware/
 Phase 4.1 (`/v1/costs` enhancements: `?per_modality`, `?include_pricing_source`, `?start`/`?end`) is the next iteration's pick. The `pricing_source` plumbing is already in place (Phase 2.4); 4.1 layers query parameters and per-line attribution on top. Tests for the new parameters are part of 4.1 #4.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 11:50 UTC: feat(server): /v1/costs ?per_modality query param
+
+Files: `voicegateway/storage/sqlite.py` (`get_cost_by_modality(period, project)` added), `voicegateway/server.py` (`per_modality: bool = Query(False)` added; conditionally adds `by_modality` to response), `tests/storage/test_storage.py` (+2 storage tests), `tests/server/test_server.py` (+2 server tests), `.agents/TODO.md` (Phase 4.1 #1 marked `[x]`).
+Tests: ruff clean, mypy clean (56 source files), pytest 326 passed / 8 skipped (was 322/8; +4 new tests). Coverage stays at 80% total.
+
+Phase 4.1's first sub-item: opt-in modality breakdown on the costs endpoint. The wedge-frame is "modality-aware" (cost by modality is a first-class slice); FinOps-grade reconciliation needs to compare STT and LLM and TTS spend independently against the per-product line items on a provider invoice.
+
+**Storage layer.** `get_cost_by_modality(period, project=None)` returns `{modality: {"cost": float, "requests": int}}`. Mirrors the `get_cost_by_project` shape exactly, just keyed differently. The SELECT is `GROUP BY modality ORDER BY cost DESC`, so empty-traffic modalities are absent from the result. The docstring records the zero-fill convention so callers that want a stable `{"stt": ..., "llm": ..., "tts": ...}` template know they need to overlay; the server doesn't currently zero-fill, but if a frontend chart later wants three guaranteed bars that overlay belongs in the frontend, not in the storage method.
+
+**HTTP layer.** `per_modality: bool = Query(False)` added to `v1_costs`. Default behavior is unchanged (the previous response shape is preserved). When `?per_modality=true`, `by_modality` is added to the response. The storage-None branch (no DB configured) returns `by_modality: {}` for symmetry. The pricing-source attribution stays at the existing top-level `pricing_sources` dict; per-line attribution lands with `?include_pricing_source` (next iteration's task).
+
+**Tests.** Two storage tests cover (a) aggregation correctness across the three modalities (4 logged requests across STT, LLM x2, TTS asserts the LLM total adds 0.10 + 0.02 = 0.12 with `requests=2`), (b) project filter scoping (logged requests for two projects, `project="alpha"` filter strips the LLM-on-beta request out). Two server tests cover (a) default omission (`?per_modality` not specified means `by_modality not in response`), (b) opt-in inclusion with empty traffic returns `by_modality == {}`.
+
+Default-stable matters because `/v1/costs` is consumed by the dashboard frontend. Adding a new key unconditionally would force a frontend update before the API change can ship; keeping the new field opt-in lets the API ship now and the dashboard pick it up in a follow-up iteration without coupling the changes.
+
+Phase 4.1 #2 (`?include_pricing_source=true` for per-line attribution) is the next iteration's pick. That one needs storage-side support too: `get_cost_summary` currently aggregates without surfacing the underlying `pricing_source` per record. The likely shape is a per-line option on `get_recent_requests` or a separate `get_cost_summary_with_sources` method.
+
+No em dashes in this iteration's outputs.
