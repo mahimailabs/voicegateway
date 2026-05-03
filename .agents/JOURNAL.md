@@ -742,3 +742,56 @@ Smoke-test results:
 Phase 2.2 #5 (unified facade in `voicegateway/pricing/catalog.py`) is the next iteration. The current `catalog.py` still holds the v0.0.x flat dict; Phase 2.2 #5 replaces it with a thin dispatcher that calls into `llm.py`, `stt.py`, or `tts.py` based on modality.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 04:30 UTC — feat(pricing): add catalog facade dispatching by modality
+
+Files: `voicegateway/pricing/catalog.py` (rewritten: new facade on top, legacy v0.0.x API at the bottom with a DEPRECATED header), `.agents/TODO.md` (Phase 2.2 #5 marked `[x]` with a partial-completion note).
+Tests: ruff clean (one auto-fix to import block), mypy clean, pytest 255 passed / 4 skipped, coverage 78% (above the 75% gate).
+
+Module exports:
+
+- `calculate_cost(modality, model, *, audio_seconds, input_tokens, output_tokens, character_count) -> Decimal | None`. Dispatches by modality:
+  - `"llm"` calls `llm.calculate_llm_cost(model, input_tokens, output_tokens)`.
+  - `"stt"` calls `stt.calculate_stt_cost(model, audio_seconds)`.
+  - `"tts"` calls `tts.calculate_tts_cost(model, character_count)`.
+  - Unknown modality returns `None`.
+  All four kwargs default to 0 / 0.0; callers pass only the ones relevant to the modality.
+- `pricing_source(modality) -> str`. Returns the per-modality attribution string for per-request logging:
+  - `"llm"` -> `genai-prices@<version>` (currently `genai-prices@0.0.57`).
+  - `"stt"` -> `voicegateway-catalog@<oldest-stt-date>` (currently `voicegateway-catalog@2026-05-04`).
+  - `"tts"` -> `voicegateway-catalog@<oldest-tts-date>` (currently `voicegateway-catalog@2026-05-04`).
+  - Unknown modality returns `"unknown"`.
+- `PRICING` dict and `get_pricing(model_id, modality) -> dict[str, float]` kept at the bottom with a DEPRECATED comment block. These exist solely so `voicegateway/middleware/cost_tracker.py:10` (`from voicegateway.pricing.catalog import get_pricing`) and the matching tests in `tests/middleware/test_cost_tracker.py` keep working until Phase 2.3 wires CostTracker through `calculate_cost` and removes the legacy.
+
+Why partial completion (kept the legacy dict instead of fully replacing it):
+
+The TODO entry says "Replaces the current pricing dict" but the existing `tests/middleware/test_cost_tracker.py` asserts on specific values via the legacy API: `tracker.calculate_cost("openai/gpt-4.1-mini", "llm", input_units=1000, output_units=500) == 0.0012` (relies on `get_pricing` returning `{"input_per_1k": 0.0004, "output_per_1k": 0.0016}`). genai-prices does not expose per-1k rates as a dict, so a clean shim into the new facade for the LLM modality is not possible without either (a) tearing up the test or (b) calling `calc_price` twice per lookup with synthetic 1000-token usages and back-computing the rates. PROPMT.md explicitly forbids deleting tests to make new code pass, and (b) is fragile (volume-tiered pricing breaks the back-computation).
+
+Cleanest move: keep the legacy as-is for one iteration, mark it DEPRECATED in the file header, and let Phase 2.3 do the swap-over (which inherently rewrites both `cost_tracker.py` and the matching tests in a coordinated change). The duplication is a transition state, not a permanent design.
+
+Ruff auto-fix: ruff flagged the import block as unsorted (extra blank line between `from voicegateway.pricing import llm, stt, tts` and the next non-import line). `ruff check --fix` removed the extra blank. No other lint issues.
+
+Smoke tests:
+
+| Call | Expected | Actual |
+|---|---|---|
+| `calculate_cost('llm', 'openai/gpt-4o-mini', input_tokens=1000, output_tokens=100)` | `0.00021` | `0.00021` ✓ |
+| `calculate_cost('stt', 'deepgram/nova-3', audio_seconds=60)` | `0.0043` | `0.0043` ✓ |
+| `calculate_cost('tts', 'cartesia/sonic-3', character_count=1000)` | `0.065` | `0.065000` ✓ |
+| `calculate_cost('foo', 'bar', ...)` | `None` | `None` ✓ |
+| `pricing_source('llm')` | `genai-prices@0.0.57` | matches ✓ |
+| `pricing_source('stt')` | `voicegateway-catalog@2026-05-04` | matches ✓ |
+| `pricing_source('tts')` | `voicegateway-catalog@2026-05-04` | matches ✓ |
+| `pricing_source('foo')` | `unknown` | matches ✓ |
+| Legacy `get_pricing('deepgram/nova-3', 'stt')` | `{'per_minute': 0.0043}` | matches ✓ |
+| Legacy `get_pricing('openai/gpt-4.1-mini', 'llm')` | `{'input_per_1k': 0.0004, 'output_per_1k': 0.0016}` | matches ✓ |
+
+Phase 2.3 (`Wire into CostTracker`) is the next sub-block. It will:
+
+1. Replace `cost_tracker.calculate_cost(...)` to dispatch through `catalog.calculate_cost`.
+2. Update `tests/middleware/test_cost_tracker.py` to match the new signature (and the new no-silent-zero contract).
+3. Remove the legacy `PRICING` dict and `get_pricing` function from `catalog.py`.
+
+No em dashes in this iteration's outputs.

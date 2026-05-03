@@ -201,8 +201,13 @@ catalog with explicit source-date metadata.
   entry. `calculate_stt_cost(model, audio_seconds) -> Decimal`.
 - [x] Create `voicegateway/pricing/tts.py`. Same shape as stt.py.
   `calculate_tts_cost(model, character_count) -> Decimal`.
-- [ ] Create `voicegateway/pricing/catalog.py`. Unified facade.
+- [x] Create `voicegateway/pricing/catalog.py`. Unified facade.
   Dispatches by modality. Replaces the current pricing dict.
+  Done partially: new facade `calculate_cost(modality, model, **)`
+  and `pricing_source(modality)` added at the top; legacy `PRICING`
+  dict and `get_pricing()` kept at the bottom with a DEPRECATED
+  marker so existing CostTracker tests stay green. Phase 2.3 wires
+  CostTracker through the new facade and removes the legacy code.
 
 ### 2.3 — Wire into CostTracker
 
