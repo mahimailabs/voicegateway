@@ -489,7 +489,17 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
 
 ### 4.3 — `voicegw reconcile` CLI
 
-- [ ] Define provider-usage-file format for OpenAI export. Document.
+- [x] Define provider-usage-file format for OpenAI export. Document.
+  Done: created `docs/reference/reconcile-formats.md` with the
+  canonical OpenAI schema (CSV + JSON, equivalent shape; CSV
+  header `model, input_tokens, output_tokens, n_requests,
+  cost_usd`). Field-by-field semantics table, plus a worked
+  Python conversion from OpenAI's dashboard CSV. Documented why
+  VG accepts a normalized format (not a direct dashboard parser):
+  OpenAI's CSV columns drift over time, the normalized format
+  isolates VG from those changes. Sidebar entry added at
+  `/reference/reconcile-formats`. Docs build clean (2.96s).
+  Deepgram and Cartesia sections land with 4.3 #2 and #3.
 - [ ] Define format for Deepgram export. Document.
 - [ ] Define format for Cartesia export. Document.
 - [ ] Implement `voicegw reconcile` command. Args: `--provider`,

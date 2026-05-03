@@ -186,6 +186,7 @@ export default defineConfig({
           items: [
             { text: 'Troubleshooting', link: '/reference/troubleshooting' },
             { text: 'FAQ', link: '/reference/faq' },
+            { text: 'Reconcile File Formats', link: '/reference/reconcile-formats' },
             { text: 'Changelog', link: '/reference/changelog' },
           ],
         },

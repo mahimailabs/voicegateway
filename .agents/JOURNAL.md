@@ -1701,3 +1701,26 @@ The seed records are deliberately diverse:
 Phase 4.2 is now `[x]` across both sub-items. Phase 4.3 (`voicegw reconcile` CLI) is the next iteration's pick. Reconcile is the consumption side of the export pair: read VG's logs for the period (this iteration's command), read the provider's usage file (4.3 #1, 4.3 #2, 4.3 #3 define per-provider formats), produce a per-model diff with absolute and percent differences (4.3 #4 implements). Six items in 4.3 total; 4.3 #1 (define OpenAI export format) is the right next step because the format definition unblocks 4.3 #4.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 13:55 UTC: docs(reference): OpenAI usage-file format for voicegw reconcile
+
+Files: `docs/reference/reconcile-formats.md` (new, ~120 lines), `docs/.vitepress/config.mts` (sidebar entry under Reference), `.agents/TODO.md` (Phase 4.3 #1 marked `[x]`).
+Tests: docs build clean (2.96s); existing pytest 346 passed / 8 skipped (no code changed). Ruff clean, mypy clean.
+
+Phase 4.3 #1 is purely a content task: define the canonical schema VG's `voicegw reconcile` will accept, document how to produce it from OpenAI's native dashboard export, and explain why VG took the normalized-format route instead of building a direct dashboard parser.
+
+**Schema chosen.** CSV with header `model, input_tokens, output_tokens, n_requests, cost_usd`, or equivalent JSON array of objects. Five columns; `n_requests` is the only optional one. The schema deliberately stays minimal: it covers what reconcile needs (input/output unit counts, total cost) and excludes everything else (cached-token rollups, audio-token modalities, batch-vs-realtime split). Operators with audio modalities or embedding lines can drop those rows or include them with their own model id and let reconcile flag them as unmatched.
+
+**Conversion documented inline.** A short Python snippet (~15 lines) reads OpenAI's dashboard CSV, aggregates per-model totals, and writes VG's canonical CSV. The snippet uses `csv.DictReader` and `defaultdict` so it tolerates extra columns OpenAI ships in their export. Documented as a one-time conversion that the operator runs alongside their VG checkout; no built-in `voicegw reconcile-import` until users actually surface friction with this.
+
+**Why normalized-format and not native parser.** OpenAI's dashboard CSV columns have drifted during 2025-2026 as audio, embeddings, and batch APIs shipped. A direct parser would tie us to whatever shape was current the week we shipped. The normalized format is small enough that the conversion is a few lines of Python, and stable enough that VG's reconcile semantics do not regress when OpenAI changes their export. Documented this rationale in the docs page so a reader who wonders "why am I doing extra work" has the answer.
+
+**Sidebar wiring.** Added `Reconcile File Formats` under Reference (between FAQ and Changelog). Selected Reference (over Guide or CLI) because this is a schema reference page, not a workflow walkthrough; the workflow walkthrough lives at `/guide/cost-reconciliation` which Phase 4.4 creates and links here for the schema details.
+
+**Style discipline.** Audited the file for em dashes (per CLAUDE.md) and AI-flavored prose (per PROMPT.md content quality bar): no "leverage", "seamless", "robust", "comprehensive", "underscore", "essential" in promotional sense, "delve into", "important to note", "worth mentioning". Also no em dashes.
+
+Phase 4.3 #2 (Deepgram usage-file format) is the next iteration's pick. Deepgram's billing model is per-minute audio, so the schema columns differ from OpenAI's per-token. Same docs file (append a section); same approach (canonical normalized format + conversion notes). The Cartesia format (#3) lands one iteration after that.
+
+No em dashes in this iteration's outputs.
