@@ -102,8 +102,8 @@ If you have the MCP server running (`voicegw mcp`), you can register models thro
 | `groq/whisper-large-v3` | Groq | Fast Whisper via Groq |
 | `assemblyai/best` | AssemblyAI | Highest accuracy |
 | `assemblyai/nano` | AssemblyAI | Fastest, lower accuracy |
-| `whisper/large-v3` | Whisper (local) | Best local STT |
-| `whisper/base` | Whisper (local) | Fastest local STT |
+| `local/whisper-large-v3` | Whisper (local) | Best local STT |
+| `local/whisper-base` | Whisper (local) | Fastest local STT |
 
 ### LLM models
 
@@ -128,7 +128,7 @@ If you have the MCP server running (`voicegw mcp`), you can register models thro
 | `elevenlabs/eleven_multilingual_v2` | ElevenLabs | 29 languages |
 | `elevenlabs/eleven_turbo_v2` | ElevenLabs | Faster, English-focused |
 | `deepgram/aura-asteria-en` | Deepgram | Deepgram TTS |
-| `kokoro/default` | Kokoro (local) | Lightweight local TTS |
+| `local/kokoro` | Kokoro (local) | Lightweight local TTS |
 | `piper/en_US-lessac-medium` | Piper (local) | Fast offline TTS |
 
 See: [Providers](/configuration/providers), [Stacks](/configuration/stacks), [voicegw.yaml Reference](/configuration/voicegw-yaml)

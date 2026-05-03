@@ -26,7 +26,7 @@ Returns the configuration status of all providers, registered models, and fallba
     "openai/gpt-4o-mini": { "modality": "llm", "provider": "openai" }
   },
   "fallbacks": {
-    "stt": ["deepgram/nova-3", "whisper/large-v3"],
+    "stt": ["deepgram/nova-3", "local/whisper-large-v3"],
     "llm": ["openai/gpt-4o-mini", "groq/llama-3.3-70b-versatile"],
     "tts": ["cartesia/sonic-3", "kokoro/kokoro-v1"]
   }

@@ -22,7 +22,7 @@ models:
     deepgram/nova-3:
       provider: deepgram
       model: nova-3
-    whisper/large-v3:
+    local/whisper-large-v3:
       provider: whisper
       model: large-v3
   llm:
@@ -40,7 +40,7 @@ models:
       provider: cartesia
       model: sonic-3
       default_voice: 794f9389-aac1-45b6-b726-9d9369183238
-    kokoro/default:
+    local/kokoro:
       provider: kokoro
       model: default
 
@@ -54,9 +54,9 @@ stacks:
     llm: groq/llama-3.3-70b-versatile
     tts: cartesia/sonic-3
   local:
-    stt: whisper/large-v3
+    stt: local/whisper-large-v3
     llm: ollama/qwen2.5:3b
-    tts: kokoro/default
+    tts: local/kokoro
 
 projects:
   prod:

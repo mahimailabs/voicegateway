@@ -117,7 +117,7 @@ Local providers run on your own hardware with no API keys required. They are use
 - **Modalities:** STT
 - **Required config:** None (downloads model on first use)
 - **Recommended models:**
-  - STT: `whisper/large-v3` (best accuracy), `whisper/base` (fastest)
+  - STT: `local/whisper-large-v3` (best accuracy), `local/whisper-base` (fastest)
 - **Notes:** Runs OpenAI Whisper locally via faster-whisper. Requires a capable CPU or GPU.
 
 ```yaml
@@ -145,7 +145,7 @@ providers:
 - **Modalities:** TTS
 - **Required config:** None
 - **Recommended models:**
-  - TTS: `kokoro/default`
+  - TTS: `local/kokoro`
 - **Notes:** Lightweight local TTS. Good for development and testing.
 
 ```yaml

@@ -112,9 +112,9 @@ stacks:
     llm: groq/llama-3.3-70b-versatile
     tts: piper/en_US-lessac-medium
   local:
-    stt: whisper/large-v3
+    stt: local/whisper-large-v3
     llm: ollama/llama3
-    tts: kokoro/default
+    tts: local/kokoro
 ```
 
 See: [Stacks](/configuration/stacks)
@@ -156,7 +156,7 @@ fallbacks:
   stt:
     - deepgram/nova-3
     - openai/whisper-1
-    - whisper/large-v3
+    - local/whisper-large-v3
   llm:
     - anthropic/claude-sonnet-4-20250514
     - openai/gpt-4.1-mini
@@ -164,7 +164,7 @@ fallbacks:
   tts:
     - cartesia/sonic-3
     - elevenlabs/eleven_multilingual_v2
-    - kokoro/default
+    - local/kokoro
 ```
 
 ---

@@ -90,7 +90,7 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
     `livekit-agents>=1.5.0`; rewrite to the AgentSession idiom used
     in `examples/basic_agent.py`.
 
-- [ ] **1.3.5c** Sweep model-ID inconsistencies (C5). Decide a single
+- [x] **1.3.5c** Sweep model-ID inconsistencies (C5). Decide a single
   canonical Anthropic model ID and sweep all 13+ files. Same class
   issue with `whisper/large-v3` vs `local/whisper-large-v3` and
   `groq/llama-3.3-70b-versatile` vs `groq/llama-3.1-70b`.
@@ -98,6 +98,9 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
   deferring LLM ID alignment until Phase 2 (genai-prices integration)
   which may resolve them upstream; STT/TTS IDs should still align
   to the local catalog.
+  Done: STT/TTS IDs swept (`whisper/large-v3` and `whisper/base` to
+  the `local/` prefix; `kokoro/default` to `local/kokoro`). LLM IDs
+  deferred per the TODO note; surfaced as discovered-work below.
 
 - [ ] **1.3.5d** Fix remaining FAQ accuracy claims. H2 coverage
   ("over 70%" to 75% or current actual); H3 perf numbers (soften the
@@ -394,3 +397,48 @@ note them and continue with current task.)
   badge would render dynamically. Held back from this iteration to
   keep "verify and update" scope minimal; revisit during the docs
   sweep or a release-prep pass.
+
+- [ ] LLM model IDs across docs (deferred from 1.3.5c). Docs use
+  `anthropic/claude-sonnet-4-20250514` (16 occurrences) and
+  `groq/llama-3.3-70b-versatile` (13 occurrences); pricing catalog
+  has `anthropic/claude-3.5-sonnet` and `groq/llama-3.1-70b`.
+  Phase 2 wires genai-prices, which carries the newer model IDs
+  natively, so the docs' newer IDs may resolve upstream rather
+  than needing a downward sweep. Decision should be made during
+  Phase 2.
+
+- [ ] Other model-ID inconsistencies surfaced during the 1.3.5c
+  sweep (defer to Phase 2 or a follow-up sweep):
+  - `kokoro/kokoro-v1` (`docs/api/dashboard-api.md:31`,
+    `docs/mcp/tools/projects.md:266`) vs catalog `local/kokoro`.
+  - `assemblyai/best` and `assemblyai/nano`
+    (`docs/configuration/models.md:103-104`) vs catalog
+    `assemblyai/universal-2`.
+  - `groq/llama-3.1-8b-instant`
+    (`docs/configuration/models.md:117`,
+    `docs/configuration/providers.md:58`) vs catalog
+    `groq/llama-3.1-8b`.
+  - `ollama/llama3`, `ollama/mistral`
+    (`docs/configuration/models.md:118-119`,
+    `docs/migration/from-livekit-inference.md:163`) vs catalog
+    `ollama/llama3.2:3b` etc.
+  - `anthropic/claude-haiku-3-5`
+    (`docs/configuration/models.md:115`) not in catalog.
+  - `piper/en_US-lessac-medium`, `piper/en_US-amy-low`
+    (`docs/configuration/models.md:132`,
+    `docs/configuration/providers.md:162`,
+    `docs/configuration/voicegw-yaml.md`,
+    `docs/configuration/stacks.md`,
+    `docs/examples/local-only.md`) treats voice ID as part of
+    model ID; catalog has just `local/piper`.
+
+- [ ] Clean up stale `model: default` lines in `local/kokoro:`
+  YAML blocks introduced by 1.3.5c (the value before the sweep
+  was `kokoro/default` with `model: default`; after the sweep
+  the key reads `local/kokoro:` but the `model:` line is now a
+  no-op string. Schema `extra="allow"` so harmless, but ugly).
+  Files: `docs/examples/fallback-chains.md`,
+  `docs/examples/local-only.md`,
+  `docs/examples/budget-enforcement.md`,
+  `docs/examples/multi-project.md`, plus any others that used
+  the `model: default` form.

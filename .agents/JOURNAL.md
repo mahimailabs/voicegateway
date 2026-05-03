@@ -286,3 +286,38 @@ Verifications run after edits:
 The remaining matches in `.agents/credibility-issues.md` and `.agents/TODO.md` are intentional quotes of the audit findings, kept verbatim.
 
 No em dashes introduced.
+
+---
+
+## 2026-05-04 00:55 UTC — docs(sweep): align STT/TTS model IDs to local catalog
+
+Files: 14 docs files updated via `replace_all` Edits across three sweeps; `.agents/TODO.md` (1.3.5c marked `[x]` with completion note + three new discovered-work items).
+Tests: n/a (markdown only).
+
+Three sweeps done in this iteration:
+
+- **`whisper/large-v3` to `local/whisper-large-v3`** across 14 files: `docs/api/dashboard-api.md`, `docs/api/python-sdk.md`, `docs/examples/fallback-chains.md`, `docs/examples/local-only.md`, `docs/examples/budget-enforcement.md`, `docs/examples/multi-project.md`, `docs/configuration/models.md`, `docs/architecture/middleware.md`, `docs/configuration/providers.md`, `docs/configuration/stacks.md`, `docs/architecture/gateway-core.md`, `docs/configuration/voicegw-yaml.md`, `docs/mcp/tools/observability.md`, `docs/mcp/tools/projects.md`.
+- **`whisper/base` to `local/whisper-base`** across 3 files: `docs/examples/local-only.md`, `docs/configuration/models.md`, `docs/configuration/providers.md`.
+- **`kokoro/default` to `local/kokoro`** across 9 files: `docs/examples/fallback-chains.md`, `docs/examples/local-only.md`, `docs/examples/budget-enforcement.md`, `docs/examples/multi-project.md`, `docs/architecture/gateway-core.md`, `docs/configuration/stacks.md`, `docs/configuration/providers.md`, `docs/configuration/voicegw-yaml.md`, `docs/configuration/models.md`.
+
+All three sweeps now match `voicegateway/pricing/catalog.py` and the model registry in `voicegw.example.yaml:66-76, 140-146`. Verified clean via grep `\bwhisper/large-v3|\bwhisper/base|kokoro/default`: no matches remain in `docs/`.
+
+Why `replace_all` was safe: the catalog also has `groq/whisper-large-v3` (the Groq-hosted Whisper) which was a collision concern. Confirmed via grep that the substring `whisper/large-v3` (slash form) does not appear inside `groq/whisper-large-v3` (the latter uses `whisper-large-v3` with a hyphen). Same logic for `whisper/base`. Replace_all distinguished them cleanly.
+
+Deferred per the original TODO note ("Consider deferring LLM ID alignment until Phase 2"):
+
+- `anthropic/claude-sonnet-4-20250514` (16 doc occurrences) vs catalog `anthropic/claude-3.5-sonnet`. Phase 2 (genai-prices) carries the newer ID natively; deferring means the docs' newer IDs become accurate in Phase 2 rather than requiring a downward sweep now.
+- `groq/llama-3.3-70b-versatile` (13 doc occurrences) vs catalog `groq/llama-3.1-70b`. Same reasoning.
+
+Other model-ID inconsistencies surfaced while reading the 14 files (none fixed in this iteration; all added to `.agents/TODO.md` discovered-work for Phase 2 evaluation):
+
+- `kokoro/kokoro-v1` in `docs/api/dashboard-api.md` and `docs/mcp/tools/projects.md`.
+- `assemblyai/best` and `assemblyai/nano` in `docs/configuration/models.md`.
+- `groq/llama-3.1-8b-instant` in `docs/configuration/models.md` and `docs/configuration/providers.md`.
+- `ollama/llama3`, `ollama/mistral` in `docs/configuration/models.md` and `docs/migration/from-livekit-inference.md`.
+- `anthropic/claude-haiku-3-5` in `docs/configuration/models.md`.
+- `piper/en_US-lessac-medium`, `piper/en_US-amy-low` (treats voice as part of model ID; catalog uses just `local/piper`).
+
+Side effect of the kokoro sweep: the YAML blocks now read `local/kokoro:` with a stale `model: default` line below. The schema (`voicegateway/core/schema.py:30-34`) uses `extra="allow"` so the field is harmless, but it is non-canonical relative to `voicegw.example.yaml:140-142` which has no `model:` field on `local/kokoro:`. Captured as a separate discovered-work item.
+
+No em dashes introduced in this iteration.

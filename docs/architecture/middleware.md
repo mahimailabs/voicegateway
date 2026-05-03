@@ -165,7 +165,7 @@ fallbacks:
   stt:
     - deepgram/nova-3
     - openai/whisper-1
-    - whisper/large-v3
+    - local/whisper-large-v3
   tts:
     - cartesia/sonic-3
     - elevenlabs/turbo-v2.5
@@ -177,7 +177,7 @@ graph LR
     B -->|Success| C["Return instance"]
     B -->|Failure| D["Try openai/whisper-1"]
     D -->|Success| C
-    D -->|Failure| E["Try whisper/large-v3"]
+    D -->|Failure| E["Try local/whisper-large-v3"]
     E -->|Success| C
     E -->|Failure| F["Raise FallbackError"]
 ```

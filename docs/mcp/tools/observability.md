@@ -256,7 +256,7 @@ Return latency statistics computed from the request log. Provides overall percen
       "avg_latency_ms": 142.0,
       "request_count": 310
     },
-    "whisper/large-v3": {
+    "local/whisper-large-v3": {
       "avg_ttfb_ms": 280.0,
       "avg_latency_ms": 890.0,
       "request_count": 30

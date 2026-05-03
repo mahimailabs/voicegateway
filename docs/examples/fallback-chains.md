@@ -27,7 +27,7 @@ models:
     openai/whisper-1:
       provider: openai
       model: whisper-1
-    whisper/large-v3:
+    local/whisper-large-v3:
       provider: whisper
       model: large-v3
   llm:
@@ -49,7 +49,7 @@ models:
       provider: elevenlabs
       model: eleven_turbo_v2_5
       default_voice: pNInz6obpgDQGcFmaJgB
-    kokoro/default:
+    local/kokoro:
       provider: kokoro
       model: default
 
@@ -58,7 +58,7 @@ fallbacks:
   stt:
     - deepgram/nova-3       # Primary: fastest, best accuracy
     - openai/whisper-1       # Backup: good accuracy, higher latency
-    - whisper/large-v3       # Last resort: local, no API dependency
+    - local/whisper-large-v3       # Last resort: local, no API dependency
   llm:
     - openai/gpt-4.1-mini   # Primary: best quality
     - groq/llama-3.3-70b-versatile  # Backup: fast, good quality
@@ -66,7 +66,7 @@ fallbacks:
   tts:
     - cartesia/sonic-3       # Primary: lowest latency
     - elevenlabs/turbo-v2.5  # Backup: highest quality
-    - kokoro/default         # Last resort: local
+    - local/kokoro         # Last resort: local
 
 cost_tracking:
   enabled: true
@@ -96,7 +96,7 @@ graph TD
     B -->|ImportError / init error| D["Log: debug + warning"]
     D --> E["Resolve openai/whisper-1"]
     E -->|Success| F["Return OpenAI Whisper instance"]
-    E -->|Init error| G["Resolve whisper/large-v3"]
+    E -->|Init error| G["Resolve local/whisper-large-v3"]
     G -->|Success| H["Return local Whisper instance"]
     G -->|Init error| I["Raise FallbackError"]
 ```
@@ -150,7 +150,7 @@ chain = gw._fallback_chains["stt"]
 print(chain.primary)  # "deepgram/nova-3"
 
 # Full chain
-print(chain.chain)  # ["deepgram/nova-3", "openai/whisper-1", "whisper/large-v3"]
+print(chain.chain)  # ["deepgram/nova-3", "openai/whisper-1", "local/whisper-large-v3"]
 ```
 
 ## Monitoring Fallback Events
@@ -185,13 +185,13 @@ A common pattern is to configure cloud models as primaries with local models as 
 fallbacks:
   stt:
     - deepgram/nova-3       # Cloud: best accuracy
-    - whisper/large-v3       # Local: works offline
+    - local/whisper-large-v3       # Local: works offline
   llm:
     - openai/gpt-4.1-mini   # Cloud: best quality
     - ollama/qwen2.5:3b     # Local: works offline
   tts:
     - cartesia/sonic-3       # Cloud: lowest latency
-    - kokoro/default         # Local: works offline
+    - local/kokoro         # Local: works offline
 ```
 
 This handles the cold-start case: every cloud provider unreachable when the agent starts means the local model is selected and the agent comes up. It does not handle the warm-failure case: if Deepgram is healthy at startup and starts returning 500s mid-call, VG keeps the Deepgram instance for the rest of the call. For warm failover, see [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter).

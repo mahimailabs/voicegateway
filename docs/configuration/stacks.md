@@ -17,9 +17,9 @@ stacks:
     llm: groq/llama-3.3-70b-versatile
     tts: piper/en_US-lessac-medium
   local:
-    stt: whisper/large-v3
+    stt: local/whisper-large-v3
     llm: ollama/llama3
-    tts: kokoro/default
+    tts: local/kokoro
 ```
 
 ## Using stacks from code

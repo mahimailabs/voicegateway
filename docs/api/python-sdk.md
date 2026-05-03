@@ -240,7 +240,7 @@ Create an STT instance using the configured fallback chain. If the primary provi
 ```python
 # voicegw.yaml:
 # fallbacks:
-#   stt: [deepgram/nova-3, assemblyai/universal, whisper/large-v3]
+#   stt: [deepgram/nova-3, assemblyai/universal, local/whisper-large-v3]
 
 stt = gw.stt_with_fallback(project="production")
 ```
