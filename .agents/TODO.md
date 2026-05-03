@@ -242,8 +242,15 @@ catalog with explicit source-date metadata.
 
 ### 2.5 — Fix the placeholder bug
 
-- [ ] Fix `groq/llama-3.1-8b` $0.0 placeholder in the new local
+- [x] Fix `groq/llama-3.1-8b` $0.0 placeholder in the new local
   catalog. Use Groq's actual paid-tier pricing.
+  Done: renamed `groq/llama-3.1-8b` and `groq/llama-3.1-70b` in
+  `voicegw.example.yaml` to use Groq's canonical product IDs
+  (`-instant` and `-versatile` suffixes). genai-prices recognizes
+  the canonical names and now returns paid-tier rates ($0.00009/1k
+  for 8b-instant, $0.000985/1k for 70b-versatile). The bare-name
+  lookup in genai-prices returns None; CostTracker logs a warning
+  and records $0, matching the no-silent-zero contract.
 
 ### 2.6 — Staleness gate
 
@@ -483,6 +490,19 @@ note them and continue with current task.)
     `docs/configuration/stacks.md`,
     `docs/examples/local-only.md`) treats voice ID as part of
     model ID; catalog has just `local/piper`.
+
+- [ ] Remove the legacy `PRICING` dict and `get_pricing()` function
+  from `voicegateway/pricing/catalog.py`. After Phase 2.3 dispatch
+  (iter 30), the only callers are `BaseProvider.get_pricing` (an
+  abstract method) and 6 cloud provider implementations
+  (anthropic, cartesia, deepgram, elevenlabs, groq, openai). None
+  of those are called in production code paths; only `tests/
+  providers/test_whisper.py:39` and `tests/providers/test_ollama.py:51`
+  exercise `provider.get_pricing(...)`. Plan: drop `BaseProvider.
+  get_pricing` from the ABC, drop the method from each cloud
+  provider, drop `PRICING` and `get_pricing` from catalog.py,
+  rewrite the two tests to dispatch through `catalog.calculate_cost`
+  instead. ~10 file touch.
 
 - [ ] Decide milestone-tag scheme for ceremonial markers (Phase 1
   complete, Phase 2 complete, etc). The literal `v0.1.0-phase1`

@@ -92,11 +92,11 @@ models:
       provider: anthropic
       model: claude-3-5-sonnet-20241022
 
-    groq/llama-3.1-70b:
+    groq/llama-3.1-70b-versatile:
       provider: groq
       model: llama-3.1-70b-versatile
 
-    groq/llama-3.1-8b:
+    groq/llama-3.1-8b-instant:
       provider: groq
       model: llama-3.1-8b-instant
 
@@ -153,7 +153,7 @@ fallbacks:
 
   llm:
     - openai/gpt-4.1-mini
-    - groq/llama-3.1-70b
+    - groq/llama-3.1-70b-versatile
     - ollama/qwen2.5:3b
 
   tts:
@@ -227,7 +227,7 @@ stacks:
 
   budget:
     stt: groq/whisper-large-v3
-    llm: groq/llama-3.1-70b
+    llm: groq/llama-3.1-70b-versatile
     tts: openai/tts-1
 
   local:
