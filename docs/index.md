@@ -42,19 +42,9 @@ features:
     linkText: Explore MCP
 ---
 
-## Why VoiceGateway
+## Where VoiceGateway fits
 
-Every existing LLM gateway routes LLMs. Nobody routes the full voice pipeline — STT, LLM, AND TTS — through one interface with local model support and first-class MCP. That is the gap VoiceGateway fills.
-
-|                          | LiteLLM | OpenRouter | Portkey | LiveKit Inference | VoiceGateway |
-| ------------------------ | :-----: | :--------: | :-----: | :---------------: | :----------: |
-| LLM routing              |   Yes   |    Yes     |   Yes   |       Yes         |     Yes      |
-| STT routing              |   No    |    No      |   No    |       Yes         |     Yes      |
-| TTS routing              |   No    |    No      |   No    |       Yes         |     Yes      |
-| Local models             | Partial |    No      |   No    |       No          |     Yes      |
-| Self-hostable            |   Yes   |    No      | Partial |       No          |     Yes      |
-| MCP server               |   No    |    No      |   No    |       No          |     Yes      |
-| LiveKit native           |   No    |    No      |   No    |       Yes         |     Yes      |
+VoiceGateway is purpose-built for LiveKit voice agents that want cost visibility per modality (audio-minutes for STT, tokens for LLM, characters for TTS) and reconciliation against actual provider invoices. For a longer breakdown of which tool fits which workload, see the [decision tree](/guide/decision-tree).
 
 ## Install
 

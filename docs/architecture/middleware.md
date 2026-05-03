@@ -157,7 +157,7 @@ The limiter maintains a list of timestamps for each provider. On each `acquire()
 
 **File:** `voicegateway/middleware/fallback.py`
 
-Manages automatic failover between models within a modality.
+Manages resolver-time fallback between models within a modality. At construction (`gw.stt_with_fallback()` / `gw.llm_with_fallback()` / `gw.tts_with_fallback()`), walks the chain and returns the first model whose provider resolves successfully. Once that model is wired into a LiveKit `AgentSession`, the call uses that model for its lifetime: VG does not swap providers mid-call. For runtime / mid-call failover, compose LiveKit's `FallbackAdapter` around VG provider instances; see the [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter) guide.
 
 ```yaml
 # voicegw.yaml

@@ -63,7 +63,7 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
   Setup" prerequisites section *before* VG steps. Cover both LiveKit
   Cloud and self-hosted `livekit-server` paths. Include the
   `LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` env var setup.
-- [ ] **1.3.5a** Sweep runtime-fallback over-promise (C1 + H5; touches
+- [x] **1.3.5a** Sweep runtime-fallback over-promise (C1 + H5; touches
   L2). Reframe the "automatic failover during a call" claims as
   resolver-time-only, with pointers to the upcoming
   `docs/examples/livekit-fallback-adapter.md` (Phase 1.4). Files:

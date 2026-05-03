@@ -281,7 +281,7 @@ voicegw logs --project restaurant-agent   # recent requests
 
 ## Fallback Chains
 
-Automatic failover across providers stay running even when a cloud provider has an outage.
+Resolver-time fallback. At agent startup, `gw.stt_with_fallback()` walks the chain and returns the first model whose provider resolves successfully. Useful when a primary provider's credentials are temporarily wrong, its SDK is not installed, or its initialization handshake fails.
 
 ```yaml
 # voicegw.yaml
@@ -299,7 +299,7 @@ session = AgentSession(
 )
 ```
 
-If Deepgram returns 500s, requests automatically route to Groq. If both fail, local Whisper kicks in. Your agent never goes offline.
+Once `AgentSession` starts, the resolved model is used for the whole call: VoiceGateway does not swap providers mid-call. For runtime failover when a provider degrades during an active call, compose [LiveKit's FallbackAdapter](https://docs.voicegateway.dev/examples/livekit-fallback-adapter) around VG provider instances.
 
 ---
 

@@ -36,7 +36,7 @@ All notable changes to VoiceGateway are documented here. This project follows [S
 
 - **Cost tracker** -- per-request cost calculation using built-in pricing catalog
 - **Budget enforcer** -- per-project daily budgets with `warn` or `block` actions
-- **Fallback chains** -- per-modality automatic failover when providers are down
+- **Fallback chains** -- per-modality resolver-time fallback (try the next model if the primary fails to resolve at agent startup; not a runtime/mid-call switch)
 - **Rate limiter** -- configurable per-provider request rate limits
 - **Latency monitor** -- TTFB and total latency tracking per request
 - **Request logger** -- full request metadata stored for audit

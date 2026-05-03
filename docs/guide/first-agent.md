@@ -175,7 +175,7 @@ Open `http://localhost:9090` in your browser to see live cost tracking, latency 
 
 ## Using fallbacks instead of stacks
 
-If you prefer automatic failover over explicit model selection, use fallback methods:
+If you prefer resolver-time fallback (try the next model in the chain when the primary fails to resolve at startup) over explicit model selection, use fallback methods:
 
 ```python
 stt = gw.stt_with_fallback(project="my-agent")

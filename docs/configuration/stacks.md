@@ -73,7 +73,7 @@ projects:
 
 - **Use stacks** when you have well-defined quality/cost tiers and want to switch all three modalities together.
 - **Use individual models** (e.g., `gw.stt("deepgram/nova-3")`) when you need fine-grained control over each modality independently.
-- **Use fallback chains** when you want automatic failover rather than a fixed model selection.
+- **Use fallback chains** when you want resolver-time fallback (try the next model if the primary fails to resolve at startup) rather than a fixed model selection.
 
 ## Validation
 

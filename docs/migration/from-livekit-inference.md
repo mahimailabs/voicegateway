@@ -163,18 +163,20 @@ tts = gw.tts("cartesia/sonic-3", project="voice-app")
 
 ### 5. Add fallback chains
 
-VoiceGateway can automatically fail over when a provider is down:
+VoiceGateway provides resolver-time fallback. At agent startup, the chain is walked and the first model whose provider resolves successfully is selected; that model is then used for the entire call. Useful for cold-start coverage when a primary's credentials, plugin SDK, or initialization handshake fails.
 
 ```yaml
 fallbacks:
   stt:
-    - openai/whisper-1        # if Deepgram is down
-    - groq/whisper-large-v3   # if OpenAI is down too
+    - openai/whisper-1        # if Deepgram fails to resolve at startup
+    - groq/whisper-large-v3   # if OpenAI fails too
   llm:
     - anthropic/claude-3.5-sonnet
   tts:
     - elevenlabs/eleven_turbo_v2_5
 ```
+
+For runtime/mid-call failover when a provider degrades during an active call, compose LiveKit's `FallbackAdapter` around VG providers. See the [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter) guide.
 
 ### 6. Start the dashboard
 

@@ -232,3 +232,34 @@ Did NOT split:
 - H1 (v0.1.0 alpha in FAQ) — self-resolves at release; will be `[~]` deferred to Phase 4.5.
 
 No fix work performed in this iteration. Next iteration picks 1.3.5a.
+
+---
+
+## 2026-05-04 00:10 UTC — docs(sweep): reframe runtime-fallback over-promise as resolver-time
+
+Files: `README.md` (Fallback Chains section), `docs/examples/fallback-chains.md` (hero, Mermaid section, Cloud-to-Local section), `docs/reference/changelog.md:39`, `docs/architecture/middleware.md` (FallbackChain section), `docs/migration/from-livekit-inference.md` (Step 5 fallback chains), `docs/index.md` ("Why VoiceGateway" prose + comparison table replaced with one-paragraph pointer to decision tree), `docs/guide/first-agent.md` (incidental "Using fallbacks" line tightened), `docs/configuration/stacks.md` (incidental "When to use" line tightened), `.agents/TODO.md` (1.3.5a marked `[x]`).
+Tests: n/a (markdown-only).
+
+Summary of the reframing applied across all eight files:
+
+- **Old framing:** "automatic failover during a call", "your agent never goes offline", "if Deepgram returns 500s, requests automatically route to Groq".
+- **New framing:** "resolver-time fallback at agent startup; once a model is wired into AgentSession, VG does not swap providers mid-call. For runtime/mid-call failover, compose LiveKit's FallbackAdapter."
+
+Per credibility-issues C1, the implementation in `voicegateway/middleware/fallback.py:21-79` only triggers on resolver failure. Everything that read like runtime/error-driven mid-call failover was the over-promise.
+
+Per-file notes:
+
+- **README.md `## Fallback Chains` (was 282-302).** Replaced the "Automatic failover across providers stay running even when a cloud provider has an outage." opener with a resolver-time framing. Replaced the "If Deepgram returns 500s ... Your agent never goes offline." closer with "VoiceGateway does not swap providers mid-call. For runtime failover ... compose LiveKit's FallbackAdapter."
+- **docs/examples/fallback-chains.md hero (line 3).** Was "Configure automatic failover ... your voice agent stays available even when a provider goes down." Replaced with a resolver-time description plus a pointer to the FallbackAdapter doc for runtime failover.
+- **docs/examples/fallback-chains.md `## How Fallback Works` (lines 86-105 / L2).** Added a one-line caption above the Mermaid diagram clarifying it is construction-time, not call-time. Updated diagram labels: "Try X" -> "Resolve X", "API Error" -> "init error". Updated narrative under the diagram to consistently say "fail to resolve at construction."
+- **docs/examples/fallback-chains.md `## Cloud-to-Local Fallback Strategy` (lines 176-193).** Was "ensuring your agent never goes completely offline ... This guarantees that even if all cloud providers are down, your agent can still function using local models." Replaced with two-paragraph honest framing: handles cold-start case (everything unreachable at startup; local model selected), does not handle warm-failure case (mid-call provider degradation). Pointer to FallbackAdapter doc for warm failover.
+- **docs/reference/changelog.md:39.** Was "Fallback chains -- per-modality automatic failover when providers are down". Now: "per-modality resolver-time fallback (try the next model if the primary fails to resolve at agent startup; not a runtime/mid-call switch)".
+- **docs/architecture/middleware.md `## FallbackChain` (lines 156-160).** Was "Manages automatic failover between models within a modality." Now: full sentence on construction-time semantics, AgentSession lifetime, and the FallbackAdapter pointer for runtime failover.
+- **docs/migration/from-livekit-inference.md `### 5. Add fallback chains` (lines 164-167).** Was "VoiceGateway can automatically fail over when a provider is down". Now: "resolver-time fallback ... at agent startup ... that model is then used for the entire call. For runtime/mid-call failover, compose LiveKit's FallbackAdapter."
+- **docs/index.md `## Why VoiceGateway` (lines 45-57).** Replaced the entire 13-line prose-plus-comparison-table block with a single one-paragraph "Where VoiceGateway fits" pointer to the decision tree. The competitive table mirrored the README's dropped table; the feature grid in the front-matter and the decision-tree page already cover the same ground.
+- **docs/guide/first-agent.md (incidental, line 178).** "If you prefer automatic failover over explicit model selection" tightened to "If you prefer resolver-time fallback (try the next model in the chain when the primary fails to resolve at startup) over explicit model selection". Caught by a follow-up grep after the primary edits.
+- **docs/configuration/stacks.md (incidental, line 76).** Same pattern: "automatic failover" tightened to "resolver-time fallback (try the next model if the primary fails to resolve at startup)". Caught by the same grep.
+
+Verification: `grep "automatic failover|never goes offline|automatically route"` across `docs/` and the README returned zero hits afterward (matches in `.agents/TODO.md` and `.agents/credibility-issues.md` are intentional quotes of the old framing in the audit/task descriptions).
+
+No em dashes introduced. The Mermaid diagram in fallback-chains was modernized rather than removed.
