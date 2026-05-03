@@ -129,7 +129,7 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
 
 ### 1.4 — LiveKit FallbackAdapter docs
 
-- [ ] Create `docs/examples/livekit-fallback-adapter.md`. Show
+- [x] Create `docs/examples/livekit-fallback-adapter.md`. Show
   recommended composition pattern: VG providers wrapped in LiveKit's
   `FallbackAdapter` for STT/LLM/TTS. Cover (a) what triggers fallback,
   (b) how VG's cost tracking interacts (each attempt logged

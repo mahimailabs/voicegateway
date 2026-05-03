@@ -144,6 +144,7 @@ export default defineConfig({
             { text: 'Multi-Project Setup', link: '/examples/multi-project' },
             { text: 'Budget Enforcement', link: '/examples/budget-enforcement' },
             { text: 'Fallback Chains', link: '/examples/fallback-chains' },
+            { text: 'LiveKit FallbackAdapter', link: '/examples/livekit-fallback-adapter' },
             { text: 'Local-Only Stack', link: '/examples/local-only' },
             { text: 'Claude Code Integration', link: '/examples/claude-code-integration' },
             { text: 'Docker Deployment', link: '/examples/docker-deployment' },

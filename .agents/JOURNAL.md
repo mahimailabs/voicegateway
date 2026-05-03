@@ -355,3 +355,33 @@ Per-fix notes:
 Phase 1.3 is now structurally complete: hero (1.3 #1), from-litellm rewrite (1.3 #2), decision-tree page (1.3 #3), first-agent prerequisites (1.3 #4), and credibility sweep (1.3 #5 split across 1.3.5a-e) all done. Three deferrals are explicit and tracked: H1 FAQ version stamp (Phase 4.5), L3 version-upgrades stanza (Phase 4.5), and the LLM model-ID sweep (Phase 2 genai-prices). Phase 1.4 (LiveKit FallbackAdapter docs page) starts in the next iteration.
 
 No em dashes introduced.
+
+---
+
+## 2026-05-04 01:50 UTC — docs(examples): create LiveKit FallbackAdapter integration guide
+
+Files: `docs/examples/livekit-fallback-adapter.md` (new, ~80 lines), `docs/.vitepress/config.mts` (one sidebar entry inserted between "Fallback Chains" and "Local-Only Stack"), `.agents/TODO.md` (1.4 marked `[x]`).
+Tests: n/a (markdown + config; will be exercised at docs build in 1.5).
+
+API surface verified before writing the page: used the LiveKit Docs MCP (`mcp__claude_ai_Livekit_Docs__docs_search` and `mcp__claude_ai_Livekit_Docs__get_pages` against `/reference/agents/events/?agents-sdk=python`). Confirmed:
+
+- `from livekit.agents import llm, stt, tts` exposes `FallbackAdapter` per modality.
+- API signature is `stt.FallbackAdapter([provider1, provider2, ...])` etc.
+- Behavior: failed request resubmitted to next provider, failed provider marked unhealthy, periodic background recheck, traffic shifts back when primary recovers.
+- `AgentSession` emits `ErrorEvent` with `error.recoverable` flag when chain is exhausted (`False`) or successfully advanced (`True`).
+- `stt.FallbackAdapter` is Python-only (called out in the "When this is not what you need" section); LLM and TTS adapters work on Node.js too.
+
+Page structure addresses all four TODO sub-bullets:
+
+- **(a) what triggers fallback** in the "What triggers fallback" section, citing the LiveKit reference for the canonical behavior list.
+- **(b) cost-tracking interaction** in "How VoiceGateway's cost tracking interacts": each attempt is logged as a separate `RequestRecord` (primary as `status=error`, secondary as `status=success`); explicit note that the `fallback_from` field is populated by VG's resolver-time chain, not by `FallbackAdapter`; clarifies that both attempts count against the project budget independently because providers count failed requests too.
+- **(c) recommended chain patterns** in "Recommended chain patterns": cloud-to-cloud-to-local, modality-specific latency guidance (lowest-latency provider first for STT and TTS; quality-first for LLM), local anchor for true outage coverage.
+- **(d) why this over VG's own** in "Why LiveKit FallbackAdapter, not VG's own": the three reasons (already exists in same framework, LiveKit team maintains it, integrates with `ErrorEvent` flow). Plus a "When this is not what you need" section pointing back to VG's resolver-time chain for startup-only selection cases.
+
+The working code snippet uses canonical model IDs from `voicegateway/pricing/catalog.py` and `voicegw.example.yaml` (deepgram/nova-3, groq/whisper-large-v3, local/whisper-large-v3, openai/gpt-4.1-mini, anthropic/claude-3.5-sonnet, ollama/qwen2.5:3b, cartesia/sonic-3, elevenlabs/eleven_turbo_v2_5, local/kokoro). All are priceable today via the catalog.
+
+Sidebar entry added to `docs/.vitepress/config.mts` `/examples/` block, positioned after "Fallback Chains" and before "Local-Only Stack" so the resolver-time + runtime pair sits together in nav order.
+
+Phase 1.4 complete. Phase 1.5 (verification) starts in the next iteration: run docs build, fix any broken links, commit Phase 1 milestone tag locally.
+
+No em dashes in this iteration's outputs.
