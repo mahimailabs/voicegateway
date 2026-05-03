@@ -48,7 +48,7 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
 
 - [x] Rewrite `docs/index.md` hero and feature grid to match new
   README framing.
-- [ ] Rewrite `docs/migration/from-litellm.md`. Acknowledge LiteLLM
+- [x] Rewrite `docs/migration/from-litellm.md`. Acknowledge LiteLLM
   has STT and TTS endpoints (live since early 2026). Reframe from
   competitive ("we're better") to complementary ("LiteLLM for general
   LLM gateway use; VoiceGateway purpose-built for LiveKit voice

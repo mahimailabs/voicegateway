@@ -155,3 +155,22 @@ Notes:
 - **YAML quoting.** All four `details:` strings are double-quoted, protecting against any unintended YAML interpretation of commas / parentheses / colons.
 - **Out of scope** (handled by 1.3 sweep task): the post-frontmatter "Why VoiceGateway" prose section + competitive comparison table at the bottom of `docs/index.md` still has the old generic-gateway framing and stale LiteLLM No-on-STT/TTS rows. Same content the README used to have; the README dropped its version. Sweep task will harmonize.
 - **No em dashes introduced.** Pre-existing em dash at `docs/index.md:47` (in the prose section) is left for the sweep.
+
+---
+
+## 2026-05-03 22:50 UTC — docs(migration): rewrite from-litellm from competitive to complementary
+
+Files: `docs/migration/from-litellm.md` (full rewrite, ~140 lines), `.agents/TODO.md` (Phase 1.3 #2 marked `[x]`).
+Tests: n/a (markdown-only change).
+
+Notes:
+
+- **Stale claims fixed.** The old comparison table at lines 12-13 had `STT routing | -- | ...` and `TTS routing | -- | ...` for LiteLLM. Verified false: LiteLLM has shipped `/v1/audio/transcriptions` (Whisper, Deepgram, ElevenLabs Scribe) and `/v1/audio/speech` (OpenAI, Azure, Gemini, ElevenLabs) since early 2026. Old line 141 ("unified cost visibility ... something LiteLLM cannot provide") and the lines-153/162 framing ("when to stay with LiteLLM: text-only" / "when to switch: STT or TTS") all said the same wrong thing. All removed.
+- **Reframed from competitive to complementary.** Opening paragraph names LiteLLM's strengths up front (100+ providers, OpenAI-compatible HTTP proxy, multi-level budgets, mature admin UI, audio endpoints). Second paragraph states VoiceGateway is not a replacement, it is a complementary tool for LiveKit voice agents.
+- **Replaced the comparison table** with a "Where each one fits" matrix that assigns use cases to the better fit (LiteLLM or VoiceGateway). Both columns are honest: LiteLLM wins on text-only LLM, multi-provider catalog, OpenAI-compat shim, multi-tenant Postgres scale, and budget granularity. VoiceGateway wins on LiveKit voice agents, modality-aware unit accounting, reconciliation, MCP, and local model unification. No more head-to-head checkmarks.
+- **Added "Using both together" section.** Acknowledges the most common composition: LiteLLM for non-LiveKit text workloads, VoiceGateway for the LiveKit agent path. Both can read the same provider keys.
+- **Added "When to migrate" section.** States the two conditions that must both be true: LiveKit voice agent + want unified per-modality cost tracking with reconciliation. If only #1 is true and current cost tracking is fine, keep LiteLLM and add VG alongside.
+- **Migration steps preserved but tightened.** Six steps, each with concrete commands. Step 3 is now explicit that for non-agent text workloads, the user should keep LiteLLM. Step 5 introduces the `voicegw export-costs` and `voicegw reconcile` commands with the ~5% drift disclaimer; this is the cost-rebuild Phase 4 deliverable surfacing in the migration story.
+- **Added "A note on the audio endpoints" section.** Explicit acknowledgment that LiteLLM's audio endpoints exist and are well suited to request/response audio (batch transcription, async TTS rendering). Differentiates VG by the LiveKit `AgentSession` plugin-instance shape.
+- **Forward-pointing links.** `/guide/decision-tree`, `/guide/cost-reconciliation`, `/examples/livekit-fallback-adapter` all 404 today; created in Phase 1.3 #5 (decision tree), 1.4 (FallbackAdapter), 4.4 (cost reconciliation).
+- **No em dashes introduced.** Verified clean via grep on the file.
