@@ -59,7 +59,7 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
   - Want hosted multi-tenant with no ops? → OpenRouter
   - At scale on Cloudflare? → AI Gateway
   - Self-hosting voice with full local + cloud unification? → VoiceGateway
-- [ ] Update `docs/guide/first-agent.md`. Add explicit "LiveKit Server
+- [x] Update `docs/guide/first-agent.md`. Add explicit "LiveKit Server
   Setup" prerequisites section *before* VG steps. Cover both LiveKit
   Cloud and self-hosted `livekit-server` paths. Include the
   `LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` env var setup.

@@ -190,3 +190,20 @@ Notes:
 - **Sidebar entry added.** `docs/.vitepress/config.mts` had a manually-curated sidebar; the new page would not appear in `/guide/` nav without an entry. Added "Decision Tree" right after "What is VoiceGateway?" and before "Quick Start" so a reader hits "is this for me?" before "how do I install it?". One-line edit; logically scoped to this iteration since the page is otherwise undiscoverable from the in-product nav.
 - **Forward-pointing link kept.** `/examples/livekit-fallback-adapter` referenced in the "Not a real-time fallback engine" disclaimer; created in Phase 1.4.
 - **No em dashes.** Verified via grep on the new page.
+
+---
+
+## 2026-05-03 23:30 UTC — docs(guide): add LiveKit Server Setup section to first-agent.md
+
+Files: `docs/guide/first-agent.md` (one-line bullet rewritten + new H2 section inserted, ~50 lines added before "Step 1"), `.agents/TODO.md` (Phase 1.3 #4 marked `[x]`).
+Tests: n/a (markdown-only change).
+
+Notes:
+
+- **Placement.** New `## LiveKit Server Setup` section sits between the existing Prerequisites bullet list and `## Step 1: Configure VoiceGateway`. Numbered steps preserved verbatim; the new section is unnumbered to avoid renumbering Steps 1-4.
+- **Bullet 5 rewritten.** Old: `- A LiveKit server (local or cloud) -- see [LiveKit docs](https://docs.livekit.io/home/get-started/)`. New: `- A LiveKit server (Cloud or self-hosted): setup walkthrough below`. Drops the double-hyphen (which VitePress smart-typography may render as en-dash) and points to the in-page section instead of an external generic doc.
+- **Both paths covered.** Option A walks through LiveKit Cloud signup + project creation + credential copy. Option B uses `docker run --rm livekit/livekit-server --dev` with the default `devkey`/`secret` credentials, plus a link to LiveKit's self-hosting guide for production setups.
+- **Three env vars surfaced.** Two parallel `export` blocks (Cloud + self-hosted local --dev) so the reader copies the right one. Names the verbatim `ConnectionError: Failed to connect` failure mode so a user hitting that error can grep their logs and find this section.
+- **Verify step.** Three `echo` commands print the values; non-empty output means setup is good. No `python -c` assertion (would raise KeyError on missing env vars, cryptic).
+- **Out of scope, captured for sweep.** Step 1 onwards still uses `anthropic/claude-sonnet-4-20250514` (credibility issue C5) and the `examples` block at the bottom uses `gw.stack(...)` which returns a tuple via splat (`stt, llm, tts = gw.stack(...)`). The model-ID sweep is Phase 1.3 #5; no action here.
+- **No em dashes introduced.** Verified via grep on the file.

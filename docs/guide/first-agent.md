@@ -8,7 +8,57 @@ This guide walks through building a voice AI agent using VoiceGateway with [Live
 - VoiceGateway installed with cloud providers: `pip install voicegateway[cloud]`
 - LiveKit Agents SDK: `pip install livekit-agents`
 - API keys for at least one STT, LLM, and TTS provider
-- A LiveKit server (local or cloud) -- see [LiveKit docs](https://docs.livekit.io/home/get-started/)
+- A LiveKit server (Cloud or self-hosted): setup walkthrough below
+
+## LiveKit Server Setup
+
+A LiveKit Agents worker connects to a LiveKit server over WebSocket. You have two options.
+
+### Option A: LiveKit Cloud (free tier)
+
+1. Sign up at [livekit.io](https://livekit.io/).
+2. Create a project from the Cloud dashboard.
+3. On the project's settings page, copy the WebSocket URL and the API key + secret pair.
+
+### Option B: self-hosted `livekit-server` (local development)
+
+The fastest path on your laptop is the official Docker image with the development flag:
+
+```bash
+docker run --rm \
+  -p 7880:7880 \
+  -p 7881:7881 \
+  -p 7882:7882/udp \
+  livekit/livekit-server --dev
+```
+
+The `--dev` flag uses default credentials: API key `devkey`, API secret `secret`. For a production self-hosted setup, follow the [LiveKit self-hosting guide](https://docs.livekit.io/home/self-hosting/local/).
+
+### Export credentials
+
+Set three environment variables that `livekit-agents` reads at startup:
+
+```bash
+# LiveKit Cloud
+export LIVEKIT_URL=wss://<your-project>.livekit.cloud
+export LIVEKIT_API_KEY=<your-key>
+export LIVEKIT_API_SECRET=<your-secret>
+
+# Self-hosted local --dev
+export LIVEKIT_URL=ws://localhost:7880
+export LIVEKIT_API_KEY=devkey
+export LIVEKIT_API_SECRET=secret
+```
+
+A worker started without these env vars fails with `ConnectionError: Failed to connect`. Verify they are set:
+
+```bash
+echo "LIVEKIT_URL=$LIVEKIT_URL"
+echo "LIVEKIT_API_KEY=$LIVEKIT_API_KEY"
+echo "LIVEKIT_API_SECRET=$LIVEKIT_API_SECRET"
+```
+
+If the values print and are non-empty, you are ready for Step 1.
 
 ## Step 1: Configure VoiceGateway
 
