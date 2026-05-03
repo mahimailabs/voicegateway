@@ -667,3 +667,41 @@ The bonus finding: `anthropic/claude-sonnet-4-20250514` IS recognized by genai-p
 Phase 2.2 #3 (create `voicegateway/pricing/stt.py` with local source-date-tagged catalog) starts in the next iteration.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 03:50 UTC — feat(pricing): add STT local catalog with source-date metadata
+
+Files: `voicegateway/pricing/stt.py` (new, 110 lines), `.agents/TODO.md` (Phase 2.2 #3 marked `[x]`).
+Tests: ruff clean; mypy clean (1 source file); pytest 255 passed / 4 skipped; coverage 78% (above the 75% gate).
+
+Module exports:
+
+- `STTEntry` dataclass (frozen): `per_minute: Decimal`, `pricing_source_date: date`, `pricing_source_url: str`.
+- `CATALOG: dict[str, STTEntry]` with 9 entries covering Deepgram (nova-3, nova-2, flux-general), AssemblyAI (universal-2), OpenAI (whisper-1), Groq (whisper-large-v3), and three local Whisper variants (large-v3, turbo, base).
+- `PRICING_SOURCE: str` constant. Resolves to `f"voicegateway-catalog@{oldest_date}"`. Currently `"voicegateway-catalog@2026-05-04"`. Uses the OLDEST entry date so the per-request attribution string is honest about worst-case freshness, not the most-recently-touched.
+- `calculate_stt_cost(model: str, audio_seconds: float) -> Decimal | None`. Returns Decimal in USD when in catalog, None when unknown. Matches the LLM module's no-silent-zero contract.
+
+Implementation notes:
+
+- **Decimal everywhere.** `per_minute` is stored as Decimal in the catalog (not float). `audio_seconds` is float at the call site (most clocks return float), converted via `Decimal(str(audio_seconds))` to avoid binary-rounding artifacts. Division by 60 produces a precise Decimal even for repeating decimals (default precision 28 digits).
+- **Source dates are real.** All 9 entries are dated `2026-05-04` (today). I verified the Deepgram, AssemblyAI, OpenAI, and Groq rates against their public pricing pages; the local-whisper rates are $0 by definition. Phase 2.6 enforces a 60-day staleness gate, so entries left untouched for >60 days will fail CI and force a refresh.
+- **Groq placeholder bug fix.** The v0.0.x catalog had `groq/whisper-large-v3` at $0.0 (silent under-count of any non-free-tier Groq STT cost). Replaced with `Decimal("0.00185")` per Groq's published `$0.111/hour` (verified via WebFetch against `https://groq.com/pricing` in this iteration). Comment in code explains the change.
+- **`pricing_source_url` per entry.** Each entry carries the URL it was verified against. Future maintainers refreshing rates can re-fetch the same page; the URL also gives readers a way to audit numbers.
+- **Worst-case PRICING_SOURCE.** The module-level constant uses `min(entry.pricing_source_date)` rather than the most-recent date. Rationale: a per-request attribution string saying "voicegateway-catalog@<date>" should reflect the catalog's WEAKEST link (the oldest entry), not the strongest. This is the same pattern Phase 2.4 will follow when surfacing pricing source per request.
+- **`audio_seconds` floor.** The function does not model Groq's "10s minimum per request" billing floor. For typical voice agent workloads (10s+ utterances), this is a no-op. For very short transcriptions it slightly under-counts. Captured as a future-work note in the discovered-work backlog (not added now to keep scope focused).
+
+Smoke-test results:
+
+| Input | Expected | Actual |
+|---|---|---|
+| `deepgram/nova-3`, 60s | $0.0043 | $0.0043 ✓ |
+| `deepgram/nova-3`, 30s | $0.00215 | $0.00215 ✓ |
+| `groq/whisper-large-v3`, 3600s (1 hour) | $0.111 (matches Groq's $0.111/hr) | $0.11100 ✓ |
+| `local/whisper-large-v3`, 60s | $0 | $0 ✓ |
+| `foo/bar`, 60s | None | None ✓ |
+| `deepgram/nova-3`, 0s | $0 (zero usage, not None) | $0.0000 ✓ |
+
+Phase 2.2 #4 (create `voicegateway/pricing/tts.py` with the same shape) is the next iteration.
+
+No em dashes in this iteration's outputs.

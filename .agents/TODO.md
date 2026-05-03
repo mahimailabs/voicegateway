@@ -196,7 +196,7 @@ catalog with explicit source-date metadata.
   `calculate_llm_cost(model, input_tokens, output_tokens) -> Decimal`.
   Returns `None` if model not in genai-prices catalog (no silent zero).
   Surfaces `pricing_source = "genai-prices@<version>"`.
-- [ ] Create `voicegateway/pricing/stt.py`. Local catalog with
+- [x] Create `voicegateway/pricing/stt.py`. Local catalog with
   `pricing_source_date: date` and `pricing_source_url: str` per
   entry. `calculate_stt_cost(model, audio_seconds) -> Decimal`.
 - [ ] Create `voicegateway/pricing/tts.py`. Same shape as stt.py.
