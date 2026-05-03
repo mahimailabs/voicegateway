@@ -103,30 +103,34 @@ stt, llm, tts = gw.stack("local", project="local-dev")
 ## LiveKit Agent with Local Models
 
 ```python
-from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli, llm as lk_llm
-from livekit.agents.voice_assistant import VoiceAssistant
+from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
+from livekit.plugins import silero
 from voicegateway import Gateway
 
 gw = Gateway()
 
 
 async def entrypoint(ctx: JobContext):
-    await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+    await ctx.connect()
 
     stt, llm, tts = gw.stack("local", project="local-dev")
 
-    initial_ctx = lk_llm.ChatContext()
-    initial_ctx.append(
-        role="system",
-        text=(
-            "You are a helpful voice assistant running entirely on local hardware. "
-            "Be concise -- local models work best with shorter responses."
-        ),
+    session = AgentSession(
+        vad=silero.VAD.load(),
+        stt=stt,
+        llm=llm,
+        tts=tts,
     )
 
-    assistant = VoiceAssistant(stt=stt, llm=llm, tts=tts, chat_ctx=initial_ctx)
-    assistant.start(ctx.room)
-    await assistant.say("Hello! I'm running completely locally.")
+    await session.start(
+        agent=Agent(
+            instructions=(
+                "You are a helpful voice assistant running entirely on local hardware. "
+                "Be concise: local models work best with shorter responses."
+            ),
+        ),
+        room=ctx.room,
+    )
 
 
 if __name__ == "__main__":

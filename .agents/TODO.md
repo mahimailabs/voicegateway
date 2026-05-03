@@ -75,7 +75,7 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
   "Why" prose + comparison table at `docs/index.md:45-69` rolls in
   here too (parallels the README's dropped table).
 
-- [ ] **1.3.5b** Fix critical surface bugs from the audit. Single-line
+- [x] **1.3.5b** Fix critical surface bugs from the audit. Single-line
   or near-single-line edits:
   - C4: `dashboard/frontend/index.html:6`
     `<title>LiveKit Inference Gateway</title>` to a correct VG title.

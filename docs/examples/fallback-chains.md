@@ -199,8 +199,8 @@ This handles the cold-start case: every cloud provider unreachable when the agen
 ## LiveKit Agent with Fallback
 
 ```python
-from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli, llm as lk_llm
-from livekit.agents.voice_assistant import VoiceAssistant
+from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
+from livekit.plugins import silero
 from voicegateway import Gateway
 from voicegateway.middleware.fallback import FallbackError
 
@@ -208,23 +208,28 @@ gw = Gateway()
 
 
 async def entrypoint(ctx: JobContext):
-    await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+    await ctx.connect()
 
     try:
         stt = gw.stt_with_fallback(project="prod")
         llm = gw.llm_with_fallback(project="prod")
         tts = gw.tts_with_fallback(project="prod")
     except FallbackError as e:
-        # All providers down -- cannot start
+        # Every model in every chain failed to resolve at startup
         print(f"Cannot start voice agent: {e}")
         return
 
-    initial_ctx = lk_llm.ChatContext()
-    initial_ctx.append(role="system", text="You are a helpful voice assistant.")
+    session = AgentSession(
+        vad=silero.VAD.load(),
+        stt=stt,
+        llm=llm,
+        tts=tts,
+    )
 
-    assistant = VoiceAssistant(stt=stt, llm=llm, tts=tts, chat_ctx=initial_ctx)
-    assistant.start(ctx.room)
-    await assistant.say("Hello! How can I help you?")
+    await session.start(
+        agent=Agent(instructions="You are a helpful voice assistant."),
+        room=ctx.room,
+    )
 
 
 if __name__ == "__main__":

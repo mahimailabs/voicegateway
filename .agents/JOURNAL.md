@@ -263,3 +263,26 @@ Per-file notes:
 Verification: `grep "automatic failover|never goes offline|automatically route"` across `docs/` and the README returned zero hits afterward (matches in `.agents/TODO.md` and `.agents/credibility-issues.md` are intentional quotes of the old framing in the audit/task descriptions).
 
 No em dashes introduced. The Mermaid diagram in fallback-chains was modernized rather than removed.
+
+---
+
+## 2026-05-04 00:30 UTC — docs(sweep): fix four critical surface bugs from the audit
+
+Files: `dashboard/frontend/index.html` (C4), `docs/reference/faq.md` (C3 backup advice rewrite), `docs/reference/troubleshooting.md` (H4 env var rename), `docs/examples/fallback-chains.md` + `docs/examples/local-only.md` + `docs/examples/basic-voice-agent.md` (M4 VoiceAssistant -> AgentSession), `.agents/TODO.md` (1.3.5b marked `[x]`).
+Tests: n/a (markdown + HTML; no Python touched).
+
+Per-fix notes:
+
+- **C4: dashboard `<title>`.** `dashboard/frontend/index.html:6` was `<title>LiveKit Inference Gateway</title>`, copying LiveKit's product name. Replaced with `<title>VoiceGateway Dashboard</title>`. One-line fix; verified by grep that no other `LiveKit Inference Gateway` strings exist in `dashboard/`.
+- **C3: FAQ backup advice.** Old advice was `cp ~/.config/voicegateway/voicegw.db ~/backups/...` annotated as "safe while gateway is running -- SQLite uses WAL mode." But `grep PRAGMA voicegateway/storage/sqlite.py` returns only `PRAGMA table_info`; WAL is NOT set. Rewrote the section to use `sqlite3 ~/.config/voicegateway/voicegw.db ".backup ~/backups/..."`. The `.backup` command is atomic, respects SQLite's locking protocol, and works regardless of journal mode. Explicitly states "VoiceGateway does not enable WAL journaling" so a reader who reads the previous advice elsewhere knows the rewrite is intentional. Updated the cron example too.
+- **H4: troubleshooting env var name.** `docs/reference/troubleshooting.md:119` referenced `VOICEGW_ENCRYPTION_KEY`. The canonical name in `voicegateway/core/crypto.py` is `VOICEGW_SECRET`. One-word rename, plus an inline pointer to crypto.py and the fallback resolution order (env -> `~/.config/voicegateway/.secret` -> auto-generated) so a confused reader can follow up.
+- **M4: VoiceAssistant -> AgentSession.** `docs/examples/fallback-chains.md` line 198 had `from livekit.agents.voice_assistant import VoiceAssistant`, which raises `ImportError` on `livekit-agents>=1.5.0` (the project's pinned floor in `pyproject.toml:20`). Rewrote that example using the modern `AgentSession` + `Agent` + `silero.VAD` pattern from `examples/basic_agent.py`. Found two more files with the same bug via grep (`docs/examples/local-only.md:107,127` and `docs/examples/basic-voice-agent.md:68,91`); rewrote both. The credibility-issues entry M4 explicitly listed this as in-scope: "Same fix applicable in any other doc that imports VoiceAssistant."
+
+Verifications run after edits:
+- `grep VoiceAssistant docs/` -> no files found.
+- `grep VOICEGW_ENCRYPTION_KEY docs/` -> no files found.
+- `grep "LiveKit Inference Gateway" dashboard/` -> no matches.
+
+The remaining matches in `.agents/credibility-issues.md` and `.agents/TODO.md` are intentional quotes of the audit findings, kept verbatim.
+
+No em dashes introduced.

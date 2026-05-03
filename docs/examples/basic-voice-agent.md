@@ -64,39 +64,34 @@ tts = gw.tts("cartesia/sonic-3")
 ## LiveKit Agent Integration
 
 ```python
-from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli, llm as lk_llm
-from livekit.agents.voice_assistant import VoiceAssistant
+from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
+from livekit.plugins import silero
 from voicegateway import Gateway
 
 gw = Gateway()
 
 
 async def entrypoint(ctx: JobContext):
-    # Connect to the LiveKit room
-    await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+    await ctx.connect()
 
     # Create the voice pipeline through VoiceGateway
     stt = gw.stt("deepgram/nova-3", project="voice-agent")
     llm = gw.llm("openai/gpt-4.1-mini", project="voice-agent")
     tts = gw.tts("cartesia/sonic-3", project="voice-agent")
 
-    # Set up the system prompt
-    initial_ctx = lk_llm.ChatContext()
-    initial_ctx.append(
-        role="system",
-        text="You are a helpful voice assistant. Be concise in your responses.",
-    )
-
-    # Create and start the voice assistant
-    assistant = VoiceAssistant(
-        vad=ctx.proc.userdata.get("vad"),
+    session = AgentSession(
+        vad=silero.VAD.load(),
         stt=stt,
         llm=llm,
         tts=tts,
-        chat_ctx=initial_ctx,
     )
-    assistant.start(ctx.room)
-    await assistant.say("Hello! How can I help you today?")
+
+    await session.start(
+        agent=Agent(
+            instructions="You are a helpful voice assistant. Be concise in your responses.",
+        ),
+        room=ctx.room,
+    )
 
 
 if __name__ == "__main__":

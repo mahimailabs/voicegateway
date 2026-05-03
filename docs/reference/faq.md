@@ -165,22 +165,21 @@ Voice IDs are provider-specific:
 
 ## How do I back up my data?
 
-VoiceGateway stores all data in a single SQLite database file (default: `~/.config/voicegateway/voicegw.db`). To back up:
+VoiceGateway stores all data in a single SQLite database file (default: `~/.config/voicegateway/voicegw.db`).
+
+The safe way to copy the database while the gateway is running is the SQLite `.backup` command. It is atomic and respects SQLite's locking protocol, so it produces a consistent snapshot even if a write is in flight:
 
 ```bash
-# Find the database path
-echo $VOICEGW_DB_PATH
-# Or check your config's cost_tracking.db_path
-
-# Copy the file (safe while gateway is running -- SQLite uses WAL mode)
-cp ~/.config/voicegateway/voicegw.db ~/backups/voicegw-$(date +%Y%m%d).db
+sqlite3 ~/.config/voicegateway/voicegw.db ".backup ~/backups/voicegw-$(date +%Y%m%d).db"
 ```
+
+`cp` is not safe by default. VoiceGateway does not enable WAL journaling, so a partial-write `cp` while the gateway is mid-transaction can produce a corrupt backup. `.backup` handles this correctly.
 
 For automated backups:
 
 ```bash
-# Add to crontab
-0 2 * * * cp ~/.config/voicegateway/voicegw.db /backups/voicegw-$(date +\%Y\%m\%d).db
+# crontab
+0 2 * * * sqlite3 ~/.config/voicegateway/voicegw.db ".backup /backups/voicegw-$(date +\%Y\%m\%d).db"
 ```
 
 The database contains request logs, cost records, and project metadata. Configuration lives in `voicegw.yaml` (back that up separately).
