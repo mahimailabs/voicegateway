@@ -102,13 +102,16 @@ Cheapest, highest-leverage work. Readers landing on docs during weeks
   the `local/` prefix; `kokoro/default` to `local/kokoro`). LLM IDs
   deferred per the TODO note; surfaced as discovered-work below.
 
-- [ ] **1.3.5d** Fix remaining FAQ accuracy claims. H2 coverage
+- [x] **1.3.5d** Fix remaining FAQ accuracy claims. H2 coverage
   ("over 70%" to 75% or current actual); H3 perf numbers (soften the
   unbacked "~1ms / under 5ms" claims or remove); M1 multi-instance
   scaling caveat (add the budget-cache divergence note); M2 Postgres
   "planned" tightened to "v0.3+ scope". H1 (`v0.1.0 alpha`) self-
   resolves at release; mark it `[~]` deferred to Phase 4.5
   release-prep sweep.
+  Done: H2, H3, M1, M2 edits applied. H1 deferred to Phase 4.5 per
+  plan (FAQ line 5 still says "v0.1.0 (alpha)"; will be accurate
+  once Phase 4.5 bumps `pyproject.toml` to 0.1.0).
 
 - [ ] **1.3.5e** Final mop-up. H6 `from-livekit-inference.md:62-74`
   LiveKit Cloud Inference cost-comparison table: add a

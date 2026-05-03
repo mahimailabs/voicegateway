@@ -321,3 +321,21 @@ Other model-ID inconsistencies surfaced while reading the 14 files (none fixed i
 Side effect of the kokoro sweep: the YAML blocks now read `local/kokoro:` with a stale `model: default` line below. The schema (`voicegateway/core/schema.py:30-34`) uses `extra="allow"` so the field is harmless, but it is non-canonical relative to `voicegw.example.yaml:140-142` which has no `model:` field on `local/kokoro:`. Captured as a separate discovered-work item.
 
 No em dashes introduced in this iteration.
+
+---
+
+## 2026-05-04 01:15 UTC — docs(faq): tighten coverage, perf, multi-instance, and Postgres claims
+
+Files: `docs/reference/faq.md` (four targeted edits), `.agents/TODO.md` (1.3.5d marked `[x]` with completion note).
+Tests: n/a (markdown only).
+
+Per-edit notes:
+
+- **H2 (coverage drift).** Line 5 said `200+ tests with over 70% code coverage`. Aligned to the actual CI gate: `200+ tests with 75%+ code coverage enforced by CI (pyproject.toml sets fail_under = 75)`. Names the file and the setting so a reader can verify it themselves.
+- **H3 (unbacked perf numbers).** Removed the four bulleted figures (microseconds for routing, ~1ms for cost-tracking write, ~1ms for budget check, nanoseconds for latency monitoring) and the `under 5ms total` claim. Replaced with prose that names the actual operations VG does per request (config-dict resolution, async SQLite write, async SQLite read on cache miss, timestamp diff), surfaces the architectural facts ("no extra network hop and no inter-process boundary", "cost-tracking writes are non-blocking", "budget check is cached in memory with a 30-second TTL so most requests do not hit the database"), and explicitly disclaims that VG ships no benchmark suite. Anyone needing a precise figure is told to run one for their own hardware. Replaces unmeasured precision with measured architectural framing.
+- **M1 (multi-instance budget cache caveat).** Appended one paragraph to the K8s scaling section after the existing "Important" callout: with separate per-replica DBs, the in-memory budget cache does not sync across replicas. A project-wide daily budget cannot be strictly enforced across instances. Single-instance is the supported topology for project-wide budgets; a shared backend is v0.3+ scope. Closes the audit Section 2b finding that the docs glossed over this structural ceiling.
+- **M2 (Postgres "planned").** Line 233 said `Switch to a different storage backend (PostgreSQL support is planned)`. Tightened to `(PostgreSQL is v0.3+ scope; until then VG runs on a single instance for write workloads)`. Matches design doc §9 ordering and gives a reader a concrete answer to "when?".
+
+H1 deferred per plan: line 5 still reads "v0.1.0 (alpha)" while the published PyPI version is 0.0.3. This will be accurate after Phase 4.5 bumps `pyproject.toml` to 0.1.0; keeping the deferral avoids a duplicate edit at release time.
+
+No em dashes introduced; verified by spot-check on the four edits.

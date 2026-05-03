@@ -2,7 +2,7 @@
 
 ## Is VoiceGateway production-ready?
 
-VoiceGateway is currently at v0.1.0 (alpha). It is suitable for development, staging, and low-to-medium traffic production workloads. The core routing, cost tracking, and fallback features are stable and covered by 200+ tests with over 70% code coverage. For high-traffic production, you should:
+VoiceGateway is currently at v0.1.0 (alpha). It is suitable for development, staging, and low-to-medium traffic production workloads. The core routing, cost tracking, and fallback features are stable and covered by 200+ tests with 75%+ code coverage enforced by CI (`pyproject.toml` sets `fail_under = 75`). For high-traffic production, you should:
 
 - Run thorough load tests against your specific workload
 - Monitor the dashboard for latency and error rates
@@ -27,14 +27,11 @@ The MCP server's 17 tools work with any agent framework that supports MCP (Claud
 
 ## What is the performance overhead?
 
-VoiceGateway adds minimal overhead to provider calls:
+VoiceGateway adds in-process middleware around each provider call: routing resolution from a config dict, an async SQLite write per logged request (cost + latency record), an async SQLite read on cache miss for the project budget check, and timestamp diffs for TTFB and total latency.
 
-- **Routing resolution:** microseconds (in-memory dict lookup)
-- **Cost tracking:** ~1ms per request (async SQLite write)
-- **Budget check:** ~1ms per request (async SQLite read)
-- **Latency monitoring:** nanoseconds (timestamp diff)
+There is no extra network hop and no inter-process boundary. Cost-tracking writes are non-blocking; the budget check is cached in memory with a 30-second TTL so most requests do not hit the database. The latency floor for any voice agent is provider latency (typically 50ms-2000ms for STT, LLM, and TTS calls), and VG's middleware is designed to be a small fraction of that.
 
-The total overhead is typically under 5ms per request, which is negligible compared to provider latency (50ms-2000ms for most API calls). All middleware operations are async and non-blocking.
+VG does not ship a benchmark suite. If you need a precise overhead number for your hardware and workload, run one against your stack rather than relying on a published figure.
 
 ---
 
@@ -77,6 +74,8 @@ spec:
 ```
 
 **Important:** Since VoiceGateway uses SQLite, run a single replica for writes. If you need horizontal scaling, put a load balancer in front with sticky sessions, or use the Gateway as a library within each worker process (each gets its own DB).
+
+Note: with separate per-replica DBs, the in-memory budget cache does not sync across replicas. A project-wide daily budget cannot be strictly enforced across instances, only within each one. For project-wide budgets across multiple instances, single-instance is currently the only supported topology. A shared backend (Redis or PostgreSQL) is v0.3+ scope.
 
 ---
 
@@ -230,7 +229,7 @@ For the SQLite storage layer, writes are serialized (one writer at a time), but 
 
 - Disable cost tracking for non-critical workloads
 - Use separate database files per process
-- Switch to a different storage backend (PostgreSQL support is planned)
+- Switch to a different storage backend (PostgreSQL is v0.3+ scope; until then VG runs on a single instance for write workloads)
 
 ## Related pages
 
