@@ -580,7 +580,21 @@ CSV export, reconciliation CLI, /v1/costs enhancements.
 
 ### 4.5 — Release prep
 
-- [ ] Bump version in `pyproject.toml` from `0.0.3` to `0.1.0`.
+- [x] Bump version in `pyproject.toml` from `0.0.3` to `0.1.0`.
+  Vacuous: the version is already `0.1.0` everywhere it matters.
+  `pyproject.toml` uses `dynamic = ["version"]` with hatch-vcs
+  reading from git tags, so there is no static `0.0.3` literal in
+  pyproject.toml to edit. Hard-coded `"0.1.0"` strings already
+  ship in: `voicegateway/__init__.py:8` (`__version__ = "0.1.0"`),
+  `voicegateway/server.py:58` (FastAPI `version="0.1.0"`),
+  `dashboard/api/main.py:23` (dashboard FastAPI `version="0.1.0"`),
+  `dashboard/frontend/package.json:3` (`"version": "0.1.0"`),
+  `Dockerfile` (`ARG VERSION=0.1.0`), `dashboard/Dockerfile`
+  (same). The hatch-vcs auto-generated `voicegateway/_version.py`
+  currently shows a dev tag (`0.1.dev100+...`) because no v0.1.0
+  git tag exists yet; that resolves cleanly when 4.5 #3 creates
+  the tag. Verified `uv run python -c "from voicegateway import
+  __version__; print(__version__)"` returns `0.1.0`.
 - [ ] Write CHANGELOG entry for v0.1.0. Sections:
   - **Added:** genai-prices integration (LLM pricing now sourced
     from pydantic/genai-prices); pricing_source attribution on every

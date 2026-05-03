@@ -1868,3 +1868,31 @@ Phase 4.4: the operator-facing walkthrough that ties iters 56-60 (file formats, 
 Phase 4.4 is now `[x]`. Phase 4.5 (release prep: version bump to 0.1.0, CHANGELOG, Docker build, smoke test, v0.1.0 tag) is the next iteration's pick. The iteration after that is 4.6 (final verification + completion-promise emission), which is the last work before the loop terminates.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 16:05 UTC: chore(release): close Phase 4.5 #1 (version bump already done)
+
+Files: `.agents/TODO.md` (Phase 4.5 #1 marked `[x]` with vacuous-closure note).
+Tests: ruff/mypy/pytest unchanged (no code touched, 370 passed / 8 skipped).
+
+Phase 4.5 #1 written as "Bump version in `pyproject.toml` from `0.0.3` to `0.1.0`." The literal task is unactionable: `pyproject.toml` uses `dynamic = ["version"]` with hatch-vcs reading from git tags, so there is no static `0.0.3` literal anywhere in `pyproject.toml` to edit. The static version assumption was carried over from a pre-hatch-vcs era of the repo.
+
+Verified via grep that no `0.0.3` exists anywhere in the tree. The hard-coded `"0.1.0"` strings that the runtime actually exposes already ship across six places:
+
+- `voicegateway/__init__.py:8`: `__version__ = "0.1.0"` (the user-facing Python version).
+- `voicegateway/server.py:58`: FastAPI app `version="0.1.0"`.
+- `dashboard/api/main.py:23`: dashboard FastAPI `version="0.1.0"`.
+- `dashboard/frontend/package.json:3`: `"version": "0.1.0"`.
+- `Dockerfile`: `ARG VERSION=0.1.0`.
+- `dashboard/Dockerfile`: same.
+
+Smoke verified: `uv run python -c "from voicegateway import __version__; print(__version__)"` returns `0.1.0`. The hatch-vcs auto-generated `voicegateway/_version.py` currently reads `0.1.dev100+g7c98e6900.d20260503` because no `v0.1.0` git tag exists yet; that resolves to `0.1.0` cleanly when Phase 4.5 #3 creates the tag (the milestone-tag resolution from iter 45 specifically said "the actual `v0.1.0` release tag will be a real strict-semver tag and will work cleanly").
+
+The cleaner alternative considered: make `voicegateway/__init__.py` re-export `__version__` from the hatch-vcs `_version.py` so the runtime version follows the VCS tag. Rejected because (a) it conflates the running-instance version (which a user might want to be `0.1.0` while testing) with the released-tag version, (b) it forces a tag dance every time you change the version string, and (c) the existing hard-coded approach is what the codebase already does. Captured the consideration here so future maintainers understand the choice.
+
+This iteration is a one-line TODO edit + journal entry. The remaining 4.5 sub-items (#2 CHANGELOG, #3 v0.1.0 tag, #4 Docker build, #5 smoke test) are real work and each is its own iteration.
+
+Phase 4.5 #2 (CHANGELOG entry for v0.1.0) is the next iteration's pick. The TODO spec for it lists Added/Changed/Fixed/Disclosed sections with specific bullets per the design doc.
+
+No em dashes in this iteration's outputs.
