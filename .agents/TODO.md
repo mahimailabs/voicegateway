@@ -187,8 +187,11 @@ catalog with explicit source-date metadata.
 
 ### 2.2 — Pricing module split
 
-- [ ] Create `voicegateway/pricing/` package directory (it may already
+- [x] Create `voicegateway/pricing/` package directory (it may already
   exist — check first).
+  Already existed: `voicegateway/pricing/__init__.py` (empty) and
+  `voicegateway/pricing/catalog.py` (the v0.0.x static pricing dict)
+  were committed in the initial codebase. No-op verification.
 - [ ] Create `voicegateway/pricing/llm.py`. Wraps `genai-prices`.
   `calculate_llm_cost(model, input_tokens, output_tokens) -> Decimal`.
   Returns `None` if model not in genai-prices catalog (no silent zero).

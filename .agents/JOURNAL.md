@@ -607,3 +607,23 @@ Added a discovered-work item asking: which milestone-tag scheme should ceremonia
 All three sub-items done: research (iter 20), pyproject.toml dep (iter 21), uv lock + fresh-venv verification (this iter). Phase 2.2 (pricing module split) starts in the next iteration.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 03:05 UTC — chore(pricing): verify pricing/ package directory already exists
+
+Files: `.agents/TODO.md` (Phase 2.2 #1 marked `[x]` with "already existed" note).
+Tests: n/a (verification only, no code changed).
+
+The TODO entry was a defensive check ("Create voicegateway/pricing/ package directory (it may already exist — check first)"). Verification:
+
+```
+$ ls -la voicegateway/pricing/
+__init__.py    (empty)
+catalog.py     (the v0.0.x static pricing dict; will be replaced by the unified facade in Phase 2.2 #5)
+__pycache__/   (build artifact; ignored)
+```
+
+Both `__init__.py` and `catalog.py` were part of the initial codebase. No directory creation needed. This iteration is a no-op verification step. Phase 2.2 #2 (create `voicegateway/pricing/llm.py` wrapping genai-prices) starts in the next iteration.
+
+No em dashes in this iteration's outputs.
