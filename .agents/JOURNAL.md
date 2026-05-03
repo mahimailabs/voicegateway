@@ -2071,3 +2071,30 @@ Therefore: the promise is withheld this iteration. The structural state is "v0.1
 Iter 68 picks option 1: knock out the simplest discovered-work item (renaming `.agents/PROPMT.md` to `.agents/PROMPT.md` to match the canonical name referenced inside the file and by completion-criteria documentation). Each subsequent iteration takes one more discovered-work item until the surface narrows to just the genuinely-blocked items.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 18:15 UTC: chore(agents): rename PROPMT.md to PROMPT.md (filename typo fix)
+
+Files: `.agents/PROPMT.md` -> `.agents/PROMPT.md` (via `git mv` to preserve history), `.agents/TODO.md` (discovered-work item marked `[x]`; cross-reference at line 778 updated from `PROPMT.md:121` to `PROMPT.md:121`), `.agents/framing-occurrences.md` (line 93 audit-table reference updated to the new filename).
+Tests: ruff clean, mypy clean, pytest 370 passed / 8 skipped (no code touched, just an `.agents/` rename and three cross-reference updates).
+
+The simplest discovered-work item to close. The typo in `.agents/PROPMT.md` was a long-standing inconsistency: the file's own content references "PROMPT.md" (the canonical name) in multiple places (line 53 "Read PROMPT.md, TODO.md...", line 195 "comment in this PROMPT.md"), and every Stop-hook re-prompt the Ralph loop generates says "Read .agents/PROMPT.md for the full operating instructions" (this was the user's invocation prompt; the file's typo'd name was the gap, not the prompt's canonical reference).
+
+**Verified the rename does not break the loop.** The ralph-loop plugin (`~/.claude/plugins/cache/claude-plugins-official/ralph-loop/1.0.0/`) does not reference any `.agents/` file by name. The Stop hook (`hooks/stop-hook.sh`) re-feeds the user-provided prompt text from `RALPH_STATE_FILE`; the prompt text comes from the user's `/ralph-loop` invocation. Since the user's invocation already says "Read .agents/PROMPT.md", the rename actually aligns the file with what the loop already expects. Greppped both the plugin's commands directory and its scripts directory; no occurrences of `PROPMT` or `.agents/PROPMT.md` anywhere.
+
+**Three cross-reference updates.**
+
+1. `git mv .agents/PROPMT.md .agents/PROMPT.md` (preserves git history of the file).
+2. The em-dash sweep discovered-work entry at TODO.md:778 cross-referenced `PROPMT.md:121` for the journal-entry format example. Updated to `PROMPT.md:121`. Line numbers unchanged because the file content was not modified, only the filename.
+3. The audit table in `.agents/framing-occurrences.md:93` listed `.agents/PROPMT.md` as a known historical occurrence of the old framing. Updated the path to the new name (the file is the same content; only the path is corrected).
+
+**Historical references retained as-is.** Several old journal entries (lines 44, 99, 556, 770, 2057, 2071) and the iter-67 journal entry mention `PROPMT.md` in past-tense narrative form. These are append-only journal records; rewriting them would amount to retroactive editing of the loop's history. The references are unambiguous in context (each describes the file as it was named at the time of writing); leaving them alone keeps the journal a faithful record.
+
+**Discovered-work surface narrows.** Open `[ ]` items in TODO.md as of this iteration: 8 (was 9 before this rename). Remaining: em-dash sweep, Codecov badge, LLM model-id sweep, model-id inconsistencies cleanup, legacy `PRICING`/`get_pricing` removal, kokoro yaml `model: default` cleanup, `voicegw --version` flag, missing `docs/cli/export-costs.md` + `docs/cli/reconcile.md` reference pages.
+
+The Phase 4.5 #4 Docker `[?]` and Phase 3.2 six `[?]` fixture-recording items remain untouched; those are the genuinely-blocked items requiring external action.
+
+Iter 69 picks the next discovered-work item. The most natural next pick is the missing CLI reference pages (`docs/cli/export-costs.md` and `docs/cli/reconcile.md`); they are mechanical to write (mirror `--help` plus a link back to `/guide/cost-reconciliation`) and the cost-reconciliation walkthrough's See-also section currently shows bare `--help` references where it should link to those pages. Closing them lifts criterion #1 closer to true and improves the docs surface.
+
+No em dashes in this iteration's outputs.

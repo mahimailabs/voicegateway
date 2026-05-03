@@ -758,10 +758,16 @@ approval** (a commit to TODO.md or a comment in PROMPT.md).
 (Add new tasks as they come up. Do NOT pivot to them mid-iteration —
 note them and continue with current task.)
 
-- [ ] Rename `.agents/PROPMT.md` → `.agents/PROMPT.md`. Typo in
+- [x] Rename `.agents/PROPMT.md` → `.agents/PROMPT.md`. Typo in
   filename; the canonical name `PROMPT.md` is referenced by the
   slash command, by the file's own content ("Read PROMPT.md"), and
   by completion-criteria documentation.
+  Done: `git mv .agents/PROPMT.md .agents/PROMPT.md`. The
+  ralph-loop plugin does not reference the file by name (its
+  stop-hook re-feeds the user-provided prompt text, which has
+  always said "Read .agents/PROMPT.md"; the typo'd file name was
+  the discrepancy). The file's own content already used PROMPT.md
+  in references, so no content edits needed.
 
 - [ ] Sweep user-authored markdown for em dashes per the global
   CLAUDE.md hard convention ("No em dashes anywhere"). Pre-existing
@@ -769,7 +775,7 @@ note them and continue with current task.)
   the `.agents/*.md` files I authored carry em dashes that should
   be replaced with colons, periods, or parentheses. Phase 1.3 sweep
   may pick up the docs/ ones incidentally; the CLAUDE.md project
-  description and the journal-entry format example in PROPMT.md:121
+  description and the journal-entry format example in PROMPT.md:121
   also use em dashes.
 
 - [ ] Add a Codecov coverage badge to README. `codecov-action@v5`

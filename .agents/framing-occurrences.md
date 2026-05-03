@@ -90,7 +90,7 @@ following occurrences must stay:
 | `docs/design/v0.1.0.md` | 47, 198 | Design doc explicitly quotes the old framing as the thing being replaced. |
 | `.agents/JOURNAL.md` | 15 | First-iteration journal entry quoting old framing for the wedge-reframe note. |
 | `.agents/TODO.md` | 23, 37, 54, 60 | Task descriptions referring to the old framing. |
-| `.agents/PROPMT.md` | 37, 141 | Operating-prompt instructions quoting the old framing. |
+| `.agents/PROMPT.md` | 37, 141 | Operating-prompt instructions quoting the old framing. |
 
 ## Summary counts
 
