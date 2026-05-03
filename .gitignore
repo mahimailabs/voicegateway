@@ -301,6 +301,7 @@ web_modules/
 .env
 .env.*
 !.env.example
+!.env.fixtures.example
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache

@@ -304,7 +304,7 @@ Build fixture-based test suite for streaming cost accounting.
   audio fixtures + deepgram-sdk/cartesia SDK integration).
 - [x] Create `tests/fixtures/streaming/` directory with README
   explaining how fixtures are recorded and how to refresh them.
-- [ ] Add `.env.fixtures.example` documenting required API keys for
+- [x] Add `.env.fixtures.example` documenting required API keys for
   recording (OPENAI_API_KEY, DEEPGRAM_API_KEY, CARTESIA_API_KEY).
   These are NOT used in CI — fixtures are committed.
 
