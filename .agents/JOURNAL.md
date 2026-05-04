@@ -2477,3 +2477,36 @@ Marginal gain per test for those remaining lines. The 42% on mcp/server.py is a 
 **Iter 80 outlook.** Final iteration before `--max-iterations`. Same situation as iter 79 unless mahimairaja intervenes. The `[?]` blocked items (Phase 3.2 fixtures, Phase 4.5 #4 Docker) cannot be unblocked from inside this loop. Iter 80 will likely re-run gates one final time, document state, and exit. The branch sits in the structurally-complete-but-promise-withheld state for mahimairaja's review.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 22:50 UTC: test(core): unit tests for Router unknown-modality + status helpers
+
+Files: `tests/core/test_router.py` (+3 tests, ~40 lines), `.agents/TODO.md` (release-readiness snapshot test count updated 377 -> 380).
+Tests: ruff clean, mypy clean (57 source files), pytest 380 passed / 8 skipped (was 377; +3 new tests). Coverage on `voicegateway/core/router.py` jumps from 50% to 78%; total project coverage holds at 82%.
+
+The final buffer iteration before `--max-iterations` (80). Same logic as iter 78 and 79: with the discovered-work backlog cleared and the completion-promise gate genuinely held by `[?]` blocked items the loop cannot unblock, the most defensible iteration-80 work is targeted coverage improvements on still-low-coverage core files.
+
+**Three tests in tests/core/test_router.py.**
+
+1. `test_resolve_unknown_modality_raises_value_error`: stubs `_config.get_model_config` and `_get_provider` so the test reaches the modality-dispatch tail without depending on yaml entries or installed plugins. Asserts `ValueError("Unknown modality")` for `modality="embedding"`. Hits the previously-uncovered final `else` branch on line 102.
+2. `test_get_provider_status_empty_before_resolve`: confirms an empty cache produces an empty status dict.
+3. `test_get_provider_status_reflects_initialized_providers`: manually populates the `_providers` cache with a `MagicMock` (the test environment usually does not have the real plugin installed, so this is the cheapest way to verify the status surface).
+
+The remaining uncovered lines (36-41 = `_get_provider` cache build, 88-100 = the resolve happy-path body that calls into create_stt/llm/tts) all require a real provider class to instantiate. That is exactly the surface the existing `test_*_resolves` tests skip when the plugin is not installed; in CI with the cloud extras installed, those tests run and bring the coverage further. 78% on this file in the baseline test environment is a defensible stopping point.
+
+**Iter 80 close-out summary.** The Ralph loop ran 80 iterations against the v0.1.0 task list. Final state:
+
+- All Phase 1-4 main sub-items: `[x]` or `[?]` or `[~]` with documented reasons.
+- Discovered-work backlog: fully cleared (was 9 `[ ]` items at iter 67; 0 now).
+- Tests: 380 passed, 8 skipped (5 of which are the parametrized fixture-deferred replay tests that activate when Phase 3.2 fixtures land).
+- Coverage: 82% (gate 75%).
+- v0.1.0 tag created locally at `633c67e` (iter 64).
+- Runtime version: `0.1.0`.
+- Docs build clean (3.03s).
+
+The completion-promise was withheld throughout per PROMPT.md criterion #1, which requires every TODO task to be `[x]` or `[~]`. The seven remaining `[?]` blocked items (six Phase 3.2 fixture recordings + Phase 4.5 #4 Docker build) genuinely require external resources the loop cannot reach. The Ralph loop cannot self-approve a `[~]` deferral; that requires mahimairaja's explicit commit to TODO.md or PROMPT.md per the slip plan.
+
+The `feat/cost-track-rebuild` branch is in a defensible release-candidate state. mahimairaja can either (a) approve the slip plan converting `[?]` to `[~]` deferred-to-v0.1.1, at which point a future Ralph run can emit the promise, (b) run the externally-blocked work (record fixtures, run `docker build`) and tick the items `[x]`, or (c) merge as-is and treat the `[?]` items as known v0.1.1 follow-ups.
+
+No em dashes in this iteration's outputs.
