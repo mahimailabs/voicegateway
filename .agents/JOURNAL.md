@@ -2446,3 +2446,34 @@ This iteration is genuinely productive, not busy-work. The release-readiness sna
 **Iter 79 outlook.** Coverage scan for any other quick wins. `combined_server.py` (47%) and `mcp/server.py` (41%) are the next-lowest non-omit-listed files; they may have testable surface that does not require external dependencies. Failing that, iter 79 stays a confirm-gates-and-document iteration. Two iterations remaining before `--max-iterations` (80).
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 22:30 UTC: test(mcp): unit tests for _format_tool_error and _format_tool_result helpers
+
+Files: `tests/mcp/test_server_helpers.py` (new, 6 tests, ~70 lines), `.agents/TODO.md` (release-readiness snapshot test count updated 371 -> 377).
+Tests: ruff clean, mypy clean (57 source files), pytest 377 passed / 8 skipped (was 371; +6 new tests). Coverage on `voicegateway/mcp/server.py` ticked from 41% to 42% (just line 21 added; the remaining uncovered surface is the `serve_stdio` / `serve_http` bodies that require real stdio / uvicorn). Total project coverage holds at 82%.
+
+Following iter 78's pattern. The mcp/server.py module's two leaf helpers (`_format_tool_error`, `_format_tool_result`) were exercised only indirectly by the existing transport integration tests; a focused unit test surfaces breakage faster and documents the contract more clearly.
+
+**Six tests in tests/mcp/test_server_helpers.py.**
+
+1. `test_format_tool_error_with_mcp_tool_error_uses_to_dict`: an `MCPToolError` subclass (`ProviderNotFoundError`) serializes via the `to_dict()` envelope, surfacing the right `error.code`, `error.message`, and `error.details`.
+2. `test_format_tool_error_with_unknown_exception_uses_internal_envelope`: a plain `ValueError` falls through to the `INTERNAL_ERROR` code.
+3. `test_format_tool_error_falls_back_to_class_name_when_message_empty`: an exception with empty `str()` surfaces its class name in `error.message` (the `or exc.__class__.__name__` branch in line 25).
+4. `test_format_tool_error_with_subclass_of_mcp_tool_error`: a base-class `MCPToolError` instantiated with an explicit `error_code` surfaces that code.
+5. `test_format_tool_result_serializes_dict`: a dict round-trips through `json.dumps` cleanly.
+6. `test_format_tool_result_uses_default_str_for_non_serializable`: `Decimal` (and similar non-JSON-native types) coerce to str via the `default=str` argument.
+
+The remaining uncovered surface in mcp/server.py:
+
+- 46-47: ImportError path in `create_server` (would need monkey-patching `mcp.server.Server`).
+- 87-89: the `except Exception` catch-all in `call_tool` (already exercised indirectly by the integration tests; testing it directly would require a tool that raises a non-`MCPToolError`).
+- 98-107: `serve_stdio` body (needs real stdio).
+- 118-183: `serve_http` body (needs uvicorn).
+
+Marginal gain per test for those remaining lines. The 42% on mcp/server.py is a defensible stopping point given the surface that requires real transport infrastructure.
+
+**Iter 80 outlook.** Final iteration before `--max-iterations`. Same situation as iter 79 unless mahimairaja intervenes. The `[?]` blocked items (Phase 3.2 fixtures, Phase 4.5 #4 Docker) cannot be unblocked from inside this loop. Iter 80 will likely re-run gates one final time, document state, and exit. The branch sits in the structurally-complete-but-promise-withheld state for mahimairaja's review.
+
+No em dashes in this iteration's outputs.
