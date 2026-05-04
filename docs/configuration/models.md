@@ -100,8 +100,7 @@ If you have the MCP server running (`voicegw mcp`), you can register models thro
 | `deepgram/nova-2` | Deepgram | Lower cost alternative |
 | `openai/whisper-1` | OpenAI | OpenAI-hosted Whisper |
 | `groq/whisper-large-v3` | Groq | Fast Whisper via Groq |
-| `assemblyai/best` | AssemblyAI | Highest accuracy |
-| `assemblyai/nano` | AssemblyAI | Fastest, lower accuracy |
+| `assemblyai/universal-2` | AssemblyAI | High accuracy, single tier |
 | `local/whisper-large-v3` | Whisper (local) | Best local STT |
 | `local/whisper-base` | Whisper (local) | Fastest local STT |
 
@@ -115,8 +114,8 @@ If you have the MCP server running (`voicegw mcp`), you can register models thro
 | `anthropic/claude-haiku-4-5` | Anthropic | Fast and cheap |
 | `groq/llama-3.3-70b-versatile` | Groq | Fast open-source LLM |
 | `groq/llama-3.1-8b-instant` | Groq | Ultra-fast, smaller model |
-| `ollama/llama3` | Ollama (local) | Local LLM via Ollama |
-| `ollama/mistral` | Ollama (local) | Local Mistral |
+| `ollama/llama3.2:3b` | Ollama (local) | Local LLM via Ollama |
+| `ollama/mistral:7b` | Ollama (local) | Local Mistral |
 
 ### TTS models
 
@@ -129,6 +128,6 @@ If you have the MCP server running (`voicegw mcp`), you can register models thro
 | `elevenlabs/eleven_turbo_v2` | ElevenLabs | Faster, English-focused |
 | `deepgram/aura-asteria-en` | Deepgram | Deepgram TTS |
 | `local/kokoro` | Kokoro (local) | Lightweight local TTS |
-| `piper/en_US-lessac-medium` | Piper (local) | Fast offline TTS |
+| `local/piper:en_US-lessac-medium` | Piper (local) | Fast offline TTS (voice ID after `:`) |
 
 See: [Providers](/configuration/providers), [Stacks](/configuration/stacks), [voicegw.yaml Reference](/configuration/voicegw-yaml)

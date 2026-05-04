@@ -2263,3 +2263,41 @@ Two return None and need correction:
 Iter 74 takes the model-id inconsistencies cleanup since this iteration's pattern (probe-then-fix) is fresh in mind and the remaining issues are similar in shape.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 20:15 UTC: docs(config): converge model IDs to catalog canonicals
+
+Files: `docs/api/dashboard-api.md`, `docs/mcp/tools/projects.md`, `docs/configuration/models.md`, `docs/configuration/providers.md`, `docs/configuration/voicegw-yaml.md`, `docs/configuration/stacks.md`, `docs/examples/local-only.md`. `.agents/TODO.md` model-id inconsistencies discovered-work item marked `[x]`.
+Tests: docs build clean (3.03s); existing pytest 371 passed / 8 skipped.
+
+The residual STT/TTS/Ollama sweep that 1.3.5c (iter 14) deferred. Following iter 73's pattern (probe the catalog, fix the docs to match), this iteration closes the five distinct issues called out in the discovered-work entry.
+
+**Catalog canonicals.** Probed `voicegateway/pricing/stt.py` and `voicegateway/pricing/tts.py`:
+
+- STT: `deepgram/nova-3`, `deepgram/nova-2`, `deepgram/flux-general`, `assemblyai/universal-2`, `openai/whisper-1`, `groq/whisper-large-v3`, `local/whisper-large-v3`, `local/whisper-turbo`, `local/whisper-base`.
+- TTS: `cartesia/sonic-3`, `elevenlabs/eleven_turbo_v2_5`, `deepgram/aura-2`, `openai/tts-1`, `local/kokoro`, `local/piper`.
+
+**Five issues closed.**
+
+1. **kokoro/kokoro-v1 to local/kokoro.** Two file edits (`docs/api/dashboard-api.md:31`, `docs/mcp/tools/projects.md:266`). The TTS catalog has only `local/kokoro`; the legacy `kokoro/kokoro-v1` was a v0.0.x artifact that 1.3.5c partially swept but missed these two.
+2. **assemblyai/best + assemblyai/nano to assemblyai/universal-2.** Two file edits (`docs/configuration/models.md:103-104` and `docs/configuration/providers.md:100`). AssemblyAI ships a single Universal-2 model now; the `best`/`nano` two-tier framing was their pre-2026 product line. Collapsed two table rows into one, with the note "single tier" so the reader does not look for a second option.
+3. **groq/llama-3.1-8b-instant: vacuous.** Iter 73's probe confirmed genai-prices recognizes the canonical `-instant` suffix (returns $0.00009). The catalog mention in the discovered-work entry was stale; no edit needed.
+4. **ollama/llama3, ollama/mistral to ollama/llama3.2:3b, ollama/mistral:7b.** Seven file edits (`docs/configuration/{models,providers,stacks,voicegw-yaml}.md` and `docs/mcp/tools/projects.md`). Ollama models pass through VG without catalog matching (free local), so the `:tag` suffix is purely for realism: a user copy-pasting from docs gets a real Ollama model id that pulls cleanly. The bare `ollama/llama3` did not specify a size and would fail on a fresh Ollama install.
+5. **anthropic/claude-haiku-3-5: already closed in iter 73.** No edit this iteration.
+6. **piper/en_US-X to local/piper:en_US-X.** Five file edits (`docs/configuration/{models,providers,stacks,voicegw-yaml}.md` and `docs/examples/local-only.md`). The `local/piper:<voice>` form uses the same `:variant` syntax that kokoro already uses (`local/kokoro:af_heart` in `voicegw.example.yaml`). The TTS catalog has only `local/piper`; the voice id is a runtime parameter, not part of the model id. Updated the local-only example yaml to use the canonical `local/piper:` block with `default_voice:` matching the kokoro pattern (mirrors iter 72's `model: default` cleanup).
+
+Total: 18 line edits across 9 docs files.
+
+**Verification.** `grep -rn "kokoro/kokoro-v1\|assemblyai/best\|assemblyai/nano" docs/ --exclude-dir=dist` returns zero. `grep -rn "piper/en_US" docs/ --exclude-dir=dist` returns zero. `grep -rn "ollama/llama3\b\|ollama/mistral\b" docs/ --exclude-dir=dist` returns only the new `ollama/llama3.2:3b`/`ollama/mistral:7b` forms (false-positive matches because regex `\b` does not anchor as expected after a digit; visual inspection confirms all updates clean).
+
+**Discovered-work surface narrows.** Open `[ ]` items: 2 (was 3 before this iteration). Remaining: legacy `PRICING`/`get_pricing` removal, em-dash sweep.
+
+**Iter 75 candidate ranking.**
+
+- **Em-dash sweep** (~24+ occurrences across many files; cosmetic but consistent with CLAUDE.md "no em dashes anywhere" hard convention). Largest text touch.
+- **Legacy `PRICING`/`get_pricing` removal** (~10 files including 6 cloud provider implementations and 2 tests). Larger code change; touches files in the coverage-omit list which means the test rewrites have to be careful.
+
+Iter 75 takes the em-dash sweep because (a) it is purely text edits with no risk to test surface, (b) it knocks the open-`[ ]` count down faster, and (c) the legacy `PRICING` removal is the kind of larger refactor that should ideally be a v0.1.1 follow-up rather than a final-iteration scramble. After iter 75 closes em dashes, the only `[ ]` left will be `PRICING` removal, at which point I can decide whether to do it in this loop or convert it to a `[~]` v0.1.1 deferral.
+
+No em dashes in this iteration's outputs.

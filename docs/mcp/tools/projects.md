@@ -262,8 +262,8 @@ Create a new project for cost tracking and routing. You can either set `default_
     "daily_budget": 1.0,
     "budget_action": "block",
     "stt_model": "local/whisper-large-v3",
-    "llm_model": "ollama/llama3",
-    "tts_model": "kokoro/kokoro-v1"
+    "llm_model": "ollama/llama3.2:3b",
+    "tts_model": "local/kokoro"
   }
 }
 ```

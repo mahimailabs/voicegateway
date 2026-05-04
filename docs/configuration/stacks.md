@@ -15,10 +15,10 @@ stacks:
   budget:
     stt: groq/whisper-large-v3
     llm: groq/llama-3.3-70b-versatile
-    tts: piper/en_US-lessac-medium
+    tts: local/piper:en_US-lessac-medium
   local:
     stt: local/whisper-large-v3
-    llm: ollama/llama3
+    llm: ollama/llama3.2:3b
     tts: local/kokoro
 ```
 

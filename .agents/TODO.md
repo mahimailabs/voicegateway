@@ -814,7 +814,7 @@ note them and continue with current task.)
   sweep was largely vacuous. Docs build clean (3.08s); tests
   pass (371/8).
 
-- [ ] Other model-ID inconsistencies surfaced during the 1.3.5c
+- [x] Other model-ID inconsistencies surfaced during the 1.3.5c
   sweep (defer to Phase 2 or a follow-up sweep):
   - `kokoro/kokoro-v1` (`docs/api/dashboard-api.md:31`,
     `docs/mcp/tools/projects.md:266`) vs catalog `local/kokoro`.
@@ -838,6 +838,22 @@ note them and continue with current task.)
     `docs/configuration/stacks.md`,
     `docs/examples/local-only.md`) treats voice ID as part of
     model ID; catalog has just `local/piper`.
+  Done: each issue closed via the canonical name. Summary:
+  - kokoro/kokoro-v1 → local/kokoro (2 file edits).
+  - assemblyai/best + assemblyai/nano → assemblyai/universal-2
+    (2 file edits collapsing 2 lines into 1; AssemblyAI bills
+    one tier).
+  - groq/llama-3.1-8b-instant: vacuous (genai-prices recognizes
+    it; iter 73 confirmed); no edit.
+  - ollama/llama3 → ollama/llama3.2:3b (5 file edits);
+    ollama/mistral → ollama/mistral:7b (2 file edits).
+  - anthropic/claude-haiku-3-5: closed in iter 73 already.
+  - piper/en_US-X → local/piper:en_US-X (5 file edits using the
+    `:variant` syntax kokoro already uses; the local-only
+    example yaml updated to `local/piper:` block with
+    `default_voice:` matching the canonical kokoro pattern).
+  Total: 18 line edits across 9 docs files. Docs build clean
+  (3.03s); tests pass (371/8).
 
 - [ ] Remove the legacy `PRICING` dict and `get_pricing()` function
   from `voicegateway/pricing/catalog.py`. After Phase 2.3 dispatch

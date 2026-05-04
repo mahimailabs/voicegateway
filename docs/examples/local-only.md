@@ -218,9 +218,9 @@ providers:
 
 models:
   tts:
-    piper/en_US-lessac-medium:
+    local/piper:
       provider: piper
-      model: en_US-lessac-medium
+      default_voice: en_US-lessac-medium
 ```
 
 ```bash
