@@ -112,7 +112,7 @@ If you have the MCP server running (`voicegw mcp`), you can register models thro
 | `openai/gpt-4.1-mini` | OpenAI | Good cost/quality balance |
 | `openai/gpt-4.1` | OpenAI | Best quality |
 | `anthropic/claude-sonnet-4-20250514` | Anthropic | Strong reasoning |
-| `anthropic/claude-haiku-3-5` | Anthropic | Fast and cheap |
+| `anthropic/claude-haiku-4-5` | Anthropic | Fast and cheap |
 | `groq/llama-3.3-70b-versatile` | Groq | Fast open-source LLM |
 | `groq/llama-3.1-8b-instant` | Groq | Ultra-fast, smaller model |
 | `ollama/llama3` | Ollama (local) | Local LLM via Ollama |

@@ -296,7 +296,7 @@ pip list | grep livekit
    fallbacks:
      llm:
        - anthropic/claude-3.5-sonnet
-       - groq/llama-3.1-70b
+       - groq/llama-3.1-70b-versatile
    ```
 3. Check your provider dashboard for current usage and limits
 

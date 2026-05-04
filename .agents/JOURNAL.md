@@ -2217,3 +2217,49 @@ The Phase 1.3.5c model-id sweep (iter 14) renamed `kokoro/default:` to `local/ko
 Iter 73 takes the LLM model-id sweep because it directly aligns docs with what `genai-prices` already recognizes, which makes the v0.1.0 documentation honest about which model IDs the user can plug into VG and get a non-null cost.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 19:50 UTC: docs(config): fix two broken LLM model IDs surfaced by genai-prices probe
+
+Files: `docs/configuration/models.md` (one model-id fix), `docs/reference/troubleshooting.md` (one model-id fix), `.agents/TODO.md` (LLM model-id sweep discovered-work item marked `[x]`).
+Tests: docs build clean (3.08s); existing pytest 371 passed / 8 skipped (no code touched).
+
+The LLM model-id sweep was deferred from Phase 1.3.5c (iter 14) with the rationale "Phase 2 wires genai-prices, which carries the newer model IDs natively, so the docs' newer IDs may resolve upstream rather than needing a downward sweep." Phase 2 (iter 24) wired genai-prices; this iteration confirms the deferral was correct AND finds two genuine broken IDs that needed fixing.
+
+**Probe.** Ran `voicegateway.pricing.llm.calculate_llm_cost(<id>, 1000, 500)` for every LLM ID in the docs (one-off Python). Most return non-None costs cleanly:
+
+| ID | genai-prices result |
+| --- | --- |
+| `anthropic/claude-sonnet-4-20250514` | $0.0105 |
+| `anthropic/claude-3.5-sonnet` | $0.0105 |
+| `groq/llama-3.3-70b-versatile` | $0.000985 |
+| `groq/llama-3.1-70b-versatile` | $0.000985 |
+| `groq/llama-3.1-8b-instant` | $0.00009 |
+| `openai/gpt-4o-mini` | $0.00045 |
+| `openai/gpt-4.1-mini` | $0.0012 |
+
+Two return None and need correction:
+
+| Broken ID | File | Replacement | Replacement price |
+| --- | --- | --- | --- |
+| `anthropic/claude-haiku-3-5` | `docs/configuration/models.md:115` | `anthropic/claude-haiku-4-5` | $0.0035 |
+| `groq/llama-3.1-70b` | `docs/reference/troubleshooting.md:299` | `groq/llama-3.1-70b-versatile` | $0.000985 |
+
+**Why claude-haiku-4-5 over claude-3.5-haiku.** Both work upstream. The docs entry sits in a "Common Models" table labeled "Fast and cheap." The 4-5 generation is the current Anthropic Haiku and what a new user would naturally reach for; 3.5 Haiku is older. Picking the current generation keeps the docs forward-looking. Both are well within "fast and cheap" on the price axis.
+
+**Why llama-3.1-70b-versatile over llama-3.3-70b-versatile.** In context, the troubleshooting example showed a fallback chain: `anthropic/claude-3.5-sonnet` then `groq/llama-3.1-70b`. Keeping the 70b version of the same series (3.1 to 3.1-versatile) is a smaller change and leaves the implied "older fallback" intent intact. If the docs author wanted 3.3 they would have written it; the bug was the missing `-versatile` suffix.
+
+**The 16 + 13 occurrence counts in the original TODO entry** were misleading. Those counts came from a grep run pre-Phase-2; once genai-prices was wired upstream, those occurrences resolved cleanly without code changes. The "sweep" turned out to be a 2-line fix on top of the genai-prices integration.
+
+**Discovered-work surface narrows.** Open `[ ]` items: 3 (was 4 before this iteration). Remaining: model-id inconsistencies cleanup (kokoro, assemblyai, groq-bare, ollama, anthropic-haiku, piper across ~10 files), legacy `PRICING`/`get_pricing` removal, em-dash sweep.
+
+**Iter 74 candidate ranking.**
+
+- **Model-id inconsistencies cleanup** (~5 distinct issues across ~10 files; this is the residual STT/TTS sweep that 1.3.5c partially closed). Several of these (kokoro, anthropic-haiku) overlap with this iteration's fixes; the rest (assemblyai, ollama variants, piper voice-IDs) are similar small fixes.
+- **Legacy `PRICING` removal** (~10 files). Larger.
+- **Em-dash sweep** (~24+). Largest.
+
+Iter 74 takes the model-id inconsistencies cleanup since this iteration's pattern (probe-then-fix) is fresh in mind and the remaining issues are similar in shape.
+
+No em dashes in this iteration's outputs.

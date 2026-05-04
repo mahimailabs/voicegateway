@@ -789,7 +789,7 @@ note them and continue with current task.)
   `secrets.CODECOV_TOKEN` is set in the GitHub Actions
   environment (already wired). Docs build clean (3.07s).
 
-- [ ] LLM model IDs across docs (deferred from 1.3.5c). Docs use
+- [x] LLM model IDs across docs (deferred from 1.3.5c). Docs use
   `anthropic/claude-sonnet-4-20250514` (16 occurrences) and
   `groq/llama-3.3-70b-versatile` (13 occurrences); pricing catalog
   has `anthropic/claude-3.5-sonnet` and `groq/llama-3.1-70b`.
@@ -797,6 +797,22 @@ note them and continue with current task.)
   natively, so the docs' newer IDs may resolve upstream rather
   than needing a downward sweep. Decision should be made during
   Phase 2.
+  Done: probed `voicegateway.pricing.llm.calculate_llm_cost` for
+  every LLM ID the docs use. Result: most docs IDs work cleanly
+  upstream (`anthropic/claude-sonnet-4-20250514`,
+  `anthropic/claude-3.5-sonnet`, `groq/llama-3.3-70b-versatile`,
+  `groq/llama-3.1-8b-instant`, `groq/llama-3.1-70b-versatile`,
+  all `openai/gpt-*` variants). Only two IDs needed correction:
+  `anthropic/claude-haiku-3-5` (broken: returned None) in
+  `docs/configuration/models.md:115` updated to
+  `anthropic/claude-haiku-4-5` ($0.0035, current haiku
+  generation); `groq/llama-3.1-70b` (broken: returned None) in
+  `docs/reference/troubleshooting.md:299` updated to
+  `groq/llama-3.1-70b-versatile` ($0.000985). The "16
+  occurrences" / "13 occurrences" counts in the original TODO
+  entry referred to occurrences that were already correct; the
+  sweep was largely vacuous. Docs build clean (3.08s); tests
+  pass (371/8).
 
 - [ ] Other model-ID inconsistencies surfaced during the 1.3.5c
   sweep (defer to Phase 2 or a follow-up sweep):
