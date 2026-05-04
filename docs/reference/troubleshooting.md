@@ -203,8 +203,9 @@ voicegw serve
    # This works in a normal script
    stt = gw.stt("deepgram/nova-3", project="my-app")
 
-   # In an async context, the Gateway handles it. If you get
-   # loop errors, wrap your setup in a separate thread or use
+   # The Gateway usually works in async contexts too. If an event
+   # loop is already running and you see "already running event loop"
+   # errors, isolate the setup in a separate thread or apply
    # nest_asyncio (see below).
    ```
 2. If running in a script (not an async framework), use `asyncio.run()`:

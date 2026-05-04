@@ -110,6 +110,10 @@ def calculate_stt_cost(model: str, audio_seconds: float) -> Decimal | None:
         model; matches the LLM module's no-silent-zero contract so
         callers can distinguish "free" from "unknown".
     """
+    if audio_seconds < 0:
+        raise ValueError(
+            f"audio_seconds must be non-negative, got {audio_seconds}"
+        )
     entry = CATALOG.get(model)
     if entry is None:
         return None

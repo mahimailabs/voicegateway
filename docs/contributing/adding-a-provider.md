@@ -162,11 +162,24 @@ async def test_health_check(provider):
     ...
 
 
-def test_pricing_resolves(provider):
-    """Pricing for a known model resolves to a positive Decimal via the catalog."""
+def test_pricing_resolves_stt(provider):
+    """Pricing for a known STT model resolves to a positive Decimal via the catalog."""
     from voicegateway.pricing import catalog
     cost = catalog.calculate_cost("stt", "<name>/model-name", audio_seconds=60)
     assert cost is not None and cost > 0
+
+
+# For an LLM provider, dispatch with token kwargs:
+#
+#     cost = catalog.calculate_cost(
+#         "llm", "<name>/model-name", input_tokens=1000, output_tokens=500
+#     )
+#
+# For a TTS provider, use character_count:
+#
+#     cost = catalog.calculate_cost(
+#         "tts", "<name>/model-name", character_count=100
+#     )
 ```
 
 See the [testing guide](/contributing/testing) for mock patterns and fixture usage.

@@ -439,7 +439,13 @@ def export_costs_cmd(
     if output == "-":
         sys.stdout.write(payload)
     else:
-        Path(output).write_text(payload)
+        out_path = Path(output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            out_path.write_text(payload, encoding="utf-8")
+        except OSError as e:
+            console.print(f"[red]Failed to write {output}: {e}[/red]")
+            raise typer.Exit(1) from e
         console.print(
             f"[green]Wrote {len(rows)} record(s) to {output}[/green]"
         )

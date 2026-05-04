@@ -23,6 +23,18 @@ from typing import Any
 # - cartesia: VG logs characters; canonical file's `characters` matches.
 SUPPORTED_PROVIDERS = ("openai", "deepgram", "cartesia")
 
+# Each canonical reconcile-input file is modality-specific (per
+# docs/reference/reconcile-formats.md). Aggregating VG records that
+# happen to share the provider prefix but a different modality (e.g.
+# `openai/whisper-1` STT rows mixed into an OpenAI LLM reconcile) would
+# corrupt the diff. The map below pins the canonical billing modality
+# per provider so `aggregate_vg_records` can filter on it.
+_PROVIDER_MODALITY = {
+    "openai": "llm",
+    "deepgram": "stt",
+    "cartesia": "tts",
+}
+
 
 @dataclass
 class ReconcileLine:
@@ -79,7 +91,7 @@ def parse_provider_file(provider: str, path: Path) -> dict[str, dict[str, float]
     out: dict[str, dict[str, float]] = {}
     for row in rows:
         model = str(row["model"])
-        cost = float(row.get("cost_usd", 0))
+        cost = float(row.get("cost_usd", 0) or 0)
         n_requests = int(float(row.get("n_requests", 0) or 0))
 
         if provider == "openai":
@@ -109,10 +121,18 @@ def aggregate_vg_records(
     Deepgram VG-minutes go to seconds via *60).
     """
     prefix = f"{provider}/"
+    expected_modality = _PROVIDER_MODALITY.get(provider)
     out: dict[str, dict[str, float]] = {}
     for r in records:
         model_id = r.get("model_id", "")
         if not model_id.startswith(prefix):
+            continue
+        # A provider can appear under multiple modalities in the same
+        # window (e.g. `openai/whisper-1` STT rows alongside
+        # `openai/gpt-4o-mini` LLM rows). The canonical reconcile-input
+        # file is modality-specific per provider, so skip rows whose
+        # modality does not match.
+        if expected_modality and r.get("modality") != expected_modality:
             continue
         bare_model = model_id[len(prefix):]
         bucket = out.setdefault(
@@ -183,7 +203,7 @@ def format_text(lines: list[ReconcileLine], provider: str) -> str:
         "openai": "tokens",
         "deepgram": "audio_s",
         "cartesia": "chars",
-    }[provider]
+    }.get(provider, "units")
     header = (
         f"{'Model':<35} {'VG ' + unit_label:>14} {'Provider ' + unit_label:>14} "
         f"{'Δ%':>7} {'VG cost':>10} {'Prov cost':>10} {'Δ$':>10} {'Δ%':>7}"

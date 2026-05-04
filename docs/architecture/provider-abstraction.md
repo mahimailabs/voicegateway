@@ -47,6 +47,8 @@ class BaseProvider(ABC):
 
 Pricing is no longer a provider-level concern. LLM rates resolve via `pydantic/genai-prices` (see `voicegateway/pricing/llm.py`); STT and TTS rates resolve via the local source-date-tagged catalogs in `voicegateway/pricing/{stt,tts}.py`. Use `voicegateway.pricing.catalog.calculate_cost(modality, model, ...)` from anywhere that needs a per-request cost.
 
+> **Argument order trap.** `voicegateway.pricing.catalog.calculate_cost(modality, model, ...)` takes `modality` first; the legacy `CostTracker.calculate_cost(model_id, modality, ...)` on `voicegateway.middleware.cost_tracker` takes `model_id` first. The two helpers serve different layers (catalog is the pricing facade; CostTracker bridges to the storage record), but the reversed positional order is easy to transpose. When in doubt, use keyword arguments or call the catalog directly.
+
 ## Provider Registry
 
 All 11 providers are registered in `voicegateway/core/registry.py` as `(module_path, class_name)` tuples. The Registry uses `importlib.import_module()` for lazy loading -- a provider's SDK is only imported when that provider is first used.

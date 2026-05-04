@@ -52,7 +52,7 @@ All notable changes to VoiceGateway are documented here. This project follows [S
 
 ---
 
-## v0.0.x baseline (prior to the rebuild)
+## v0.0.x baseline (before the rebuild)
 
 The features below shipped in the v0.0.x line and carry forward unchanged into v0.1.0. They predate the cost-tracking foundation rebuild and are listed here for completeness.
 

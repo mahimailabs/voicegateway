@@ -85,13 +85,18 @@ this guide assumes are stable:
 
 A short Python conversion (one-time, drop alongside your VG checkout):
 
+Save the snippet below as `convert-openai.py` and invoke it with the
+source export and the desired destination filename:
+`python convert-openai.py <openai-export.csv> <vg-format.csv>`.
+
 ```python
 import csv
+import sys
 from collections import defaultdict
 from pathlib import Path
 
-src = Path("openai-usage-2026-05-01-to-2026-05-31.csv")
-dst = Path("openai-vg-format.csv")
+src = Path(sys.argv[1])
+dst = Path(sys.argv[2])
 
 agg = defaultdict(lambda: {"input": 0, "output": 0, "requests": 0, "cost": 0.0})
 with src.open() as f:
@@ -200,13 +205,17 @@ endpoint returns per-request rows; aggregate them per-model client-side.
 
 A short Python conversion for Path A:
 
+Save the snippet below as `convert-deepgram.py` and invoke it as
+`python convert-deepgram.py <deepgram-export.csv> <vg-format.csv>`.
+
 ```python
 import csv
+import sys
 from collections import defaultdict
 from pathlib import Path
 
-src = Path("deepgram-usage-2026-05-01-to-2026-05-31.csv")
-dst = Path("deepgram-vg-format.csv")
+src = Path(sys.argv[1])
+dst = Path(sys.argv[2])
 
 agg = defaultdict(lambda: {"seconds": 0.0, "requests": 0, "cost": 0.0})
 with src.open() as f:
@@ -303,15 +312,17 @@ columns this guide assumes:
 - `requests` (or `n_requests`): maps to `n_requests`.
 - `cost_usd` (or `total_cost`): maps to `cost_usd`.
 
-A short Python conversion:
+A short Python conversion. Save as `convert-cartesia.py` and invoke
+as `python convert-cartesia.py <cartesia-export.csv> <vg-format.csv>`.
 
 ```python
 import csv
+import sys
 from collections import defaultdict
 from pathlib import Path
 
-src = Path("cartesia-usage-2026-05-01-to-2026-05-31.csv")
-dst = Path("cartesia-vg-format.csv")
+src = Path(sys.argv[1])
+dst = Path(sys.argv[2])
 
 agg = defaultdict(lambda: {"chars": 0, "credits": 0, "requests": 0, "cost": 0.0})
 with src.open() as f:

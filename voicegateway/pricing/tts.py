@@ -109,6 +109,10 @@ def calculate_tts_cost(model: str, character_count: int) -> Decimal | None:
     drift by tens of percent. Reconcile via `voicegw reconcile`
     (Phase 4) for FinOps-grade accuracy.
     """
+    if character_count < 0:
+        raise ValueError(
+            f"character_count must be non-negative, got {character_count}"
+        )
     entry = CATALOG.get(model)
     if entry is None:
         return None

@@ -23,8 +23,6 @@ import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from voicegateway.middleware.instrumented_provider import InstrumentedSTT
 
 
@@ -72,7 +70,6 @@ def test_mark_first_byte_is_idempotent() -> None:
     )
 
 
-@pytest.mark.asyncio
 async def test_log_request_records_ttfb_when_first_byte_marked() -> None:
     """`_log_request` records ttfb_ms < total_latency_ms when the hook fired partway."""
     wrapper = _make_wrapper()
@@ -99,7 +96,6 @@ async def test_log_request_records_ttfb_when_first_byte_marked() -> None:
     )
 
 
-@pytest.mark.asyncio
 async def test_log_request_falls_back_to_total_when_hook_not_called() -> None:
     """When the hook never fires, `ttfb_ms == total_latency_ms` (documented fallback)."""
     wrapper = _make_wrapper()
@@ -124,7 +120,6 @@ async def test_log_request_falls_back_to_total_when_hook_not_called() -> None:
     )
 
 
-@pytest.mark.asyncio
 async def test_log_request_is_idempotent() -> None:
     """Calling `_log_request` twice records only once (the wrapper sets `_logged`)."""
     wrapper = _make_wrapper()

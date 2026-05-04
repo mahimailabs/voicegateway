@@ -115,7 +115,15 @@ class CostTracker:
         """
         cost = self.calculate_cost(model_id, modality, input_units, output_units)
         if not pricing_source:
-            pricing_source = catalog.pricing_source(modality)
+            # Only attribute to the catalog when it actually priced the
+            # request. Unknown models that fell through to $0 must not
+            # claim a catalog produced their number; that would mislead
+            # /v1/costs?include_pricing_source and `voicegw reconcile`.
+            # `local/*` and `ollama/*` are intentionally free, so the
+            # catalog *did* price them as $0 and the source is honest.
+            is_known_free = model_id.startswith(("local/", "ollama/"))
+            if cost > 0.0 or is_known_free:
+                pricing_source = catalog.pricing_source(modality)
         return RequestRecord(
             id=str(uuid.uuid4()),
             timestamp=time.time(),

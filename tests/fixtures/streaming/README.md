@@ -17,7 +17,7 @@ the source of truth.
 
 ## Fixture filename convention
 
-```
+```text
 <provider>_<model>_<modality>_<mode>_<YYYY-MM-DD>.json
 ```
 

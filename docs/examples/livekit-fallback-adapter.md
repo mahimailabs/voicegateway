@@ -105,7 +105,7 @@ If `event.error.recoverable` is `True`, the chain advanced to the next provider 
 
 ## When this is not what you need
 
-- **You only want startup-time provider selection.** Use VoiceGateway's `gw.stt_with_fallback() / llm_with_fallback() / tts_with_fallback()`. See [Fallback Chains](/examples/fallback-chains).
+- **You only want startup-time provider selection.** Use VoiceGateway's `gw.stt_with_fallback()` / `gw.llm_with_fallback()` / `gw.tts_with_fallback()`. See [Fallback Chains](/examples/fallback-chains).
 - **You only have one cloud provider configured.** `FallbackAdapter` is overkill. A single-provider config plus a circuit breaker outside the agent is simpler.
 - **You are on Node.js.** `stt.FallbackAdapter` is Python-only. `llm.FallbackAdapter` and `tts.FallbackAdapter` are available on Node.js per the [LiveKit reference](https://docs.livekit.io/reference/agents/events/); for STT failover on Node.js you need a different approach.
 

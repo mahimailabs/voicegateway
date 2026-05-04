@@ -67,8 +67,10 @@ def test_parse_provider_file_missing_raises(tmp_path):
 def test_aggregate_vg_records_deepgram_minutes_to_seconds():
     """STT records carry minutes in input_units; reconcile compares against seconds."""
     records = [
-        {"model_id": "deepgram/nova-3", "input_units": 1.0, "cost_usd": 0.005},
-        {"model_id": "deepgram/nova-3", "input_units": 2.5, "cost_usd": 0.0125},
+        {"model_id": "deepgram/nova-3", "modality": "stt",
+         "input_units": 1.0, "cost_usd": 0.005},
+        {"model_id": "deepgram/nova-3", "modality": "stt",
+         "input_units": 2.5, "cost_usd": 0.0125},
     ]
     agg = reconcile.aggregate_vg_records("deepgram", records)
     assert agg["nova-3"]["units"] == pytest.approx(3.5 * 60, abs=0.1)
@@ -78,18 +80,41 @@ def test_aggregate_vg_records_deepgram_minutes_to_seconds():
 def test_aggregate_vg_records_filters_other_providers():
     """Records from other providers are skipped."""
     records = [
-        {"model_id": "deepgram/nova-3", "input_units": 1.0, "cost_usd": 0.005},
-        {"model_id": "openai/gpt-4o-mini", "input_units": 100, "cost_usd": 0.001},
+        {"model_id": "deepgram/nova-3", "modality": "stt",
+         "input_units": 1.0, "cost_usd": 0.005},
+        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
+         "input_units": 100, "cost_usd": 0.001},
     ]
     agg = reconcile.aggregate_vg_records("deepgram", records)
     assert "gpt-4o-mini" not in agg
     assert agg["nova-3"]["units"] == pytest.approx(60.0, abs=0.1)
 
 
+def test_aggregate_vg_records_filters_other_modalities():
+    """Records with the right provider but wrong modality are skipped.
+
+    Catches the multi-modality bug: an `openai/whisper-1` STT row
+    must NOT be summed into the OpenAI LLM reconcile (where it would
+    show up as bogus token counts).
+    """
+    records = [
+        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
+         "input_units": 1000, "output_units": 500, "cost_usd": 0.001},
+        {"model_id": "openai/whisper-1", "modality": "stt",
+         "input_units": 5.0, "cost_usd": 0.030},
+        {"model_id": "openai/tts-1", "modality": "tts",
+         "input_units": 200, "cost_usd": 0.003},
+    ]
+    agg = reconcile.aggregate_vg_records("openai", records)
+    assert set(agg.keys()) == {"gpt-4o-mini"}
+    assert agg["gpt-4o-mini"]["units"] == 1500.0
+    assert agg["gpt-4o-mini"]["cost"] == pytest.approx(0.001, abs=0.0001)
+
+
 def test_aggregate_vg_records_openai_sums_input_and_output():
     """OpenAI: VG units = input_tokens + output_tokens, matching the canonical file."""
     records = [
-        {"model_id": "openai/gpt-4o-mini",
+        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
          "input_units": 1000, "output_units": 500, "cost_usd": 0.001},
     ]
     agg = reconcile.aggregate_vg_records("openai", records)
@@ -103,7 +128,7 @@ def test_reconcile_perfect_match(tmp_path):
         "gpt-4o-mini,1000,500,1,0.001\n"
     )
     records = [
-        {"model_id": "openai/gpt-4o-mini",
+        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
          "input_units": 1000, "output_units": 500, "cost_usd": 0.001},
     ]
     lines = reconcile.reconcile("openai", records, path)
@@ -124,7 +149,8 @@ def test_reconcile_surfaces_divergence(tmp_path):
     )
     records = [
         # VG: 50 minutes (= 3000 seconds), $0.150
-        {"model_id": "deepgram/nova-3", "input_units": 50.0, "cost_usd": 0.150},
+        {"model_id": "deepgram/nova-3", "modality": "stt",
+         "input_units": 50.0, "cost_usd": 0.150},
     ]
     lines = reconcile.reconcile("deepgram", records, path)
     assert len(lines) == 1
@@ -155,7 +181,7 @@ def test_reconcile_model_only_in_vg(tmp_path):
     path = tmp_path / "openai.csv"
     path.write_text("model,input_tokens,output_tokens,n_requests,cost_usd\n")
     records = [
-        {"model_id": "openai/gpt-4o-mini",
+        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
          "input_units": 100, "output_units": 50, "cost_usd": 0.0001},
     ]
     lines = reconcile.reconcile("openai", records, path)
@@ -178,6 +204,32 @@ def test_format_text_includes_header_and_columns():
     assert "Model" in out
     assert "nova-3" in out
     assert "audio_s" in out  # the unit label for deepgram
+
+
+def test_format_text_unknown_provider_falls_back_to_units_label():
+    """An unsupported provider gets a generic `units` header rather than KeyError."""
+    lines = [
+        reconcile.ReconcileLine(
+            model="some-model", vg_units=0.0, provider_units=0.0,
+            units_diff_abs=0.0, units_diff_pct=0.0,
+            vg_cost=0.0, provider_cost=0.0,
+            cost_diff_abs=0.0, cost_diff_pct=0.0,
+            matched_in_vg=True, matched_in_provider=True,
+        ),
+    ]
+    out = reconcile.format_text(lines, "anthropic")
+    assert "VG units" in out  # generic fallback label
+
+
+def test_parse_provider_file_handles_empty_cost_string(tmp_path):
+    """An empty `cost_usd` cell should not crash float() — guarded by `or 0`."""
+    path = tmp_path / "openai.csv"
+    path.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o-mini,1000,500,1,\n"  # empty cost cell
+    )
+    parsed = reconcile.parse_provider_file("openai", path)
+    assert parsed["gpt-4o-mini"]["cost"] == 0.0
 
 
 def test_format_csv_writes_diff_rows():
