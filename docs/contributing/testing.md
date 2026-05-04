@@ -156,12 +156,15 @@ def test_router_resolution(temp_config):
 ### Testing cost calculations
 
 ```python
-from voicegateway.pricing.catalog import get_pricing
+from decimal import Decimal
+
+from voicegateway.pricing import catalog
 
 
 def test_deepgram_nova3_pricing():
-    pricing = get_pricing("deepgram/nova-3", "stt")
-    assert pricing["per_minute"] == 0.0043
+    """One minute of Deepgram Nova-3 STT prices at $0.0043 via the catalog."""
+    cost = catalog.calculate_cost("stt", "deepgram/nova-3", audio_seconds=60)
+    assert cost == Decimal("0.0043")
 ```
 
 ### Testing middleware

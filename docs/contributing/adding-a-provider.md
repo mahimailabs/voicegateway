@@ -47,16 +47,11 @@ class <Name>Provider(BaseProvider):
         """Check if the provider is reachable."""
         # Make a lightweight API call to verify connectivity
         return True
-
-    def get_pricing(self, model: str, modality: str) -> dict[str, float]:
-        """Return pricing info for a model."""
-        from voicegateway.pricing.catalog import get_pricing
-        return get_pricing(f"<name>/{model}", modality)
 ```
 
 ### 2. Implement the BaseProvider ABC
 
-The `BaseProvider` abstract class in `voicegateway/providers/base.py` requires five methods:
+The `BaseProvider` abstract class in `voicegateway/providers/base.py` requires four methods:
 
 | Method | Purpose | Return type |
 |---|---|---|
@@ -64,9 +59,10 @@ The `BaseProvider` abstract class in `voicegateway/providers/base.py` requires f
 | `create_llm(model, **kwargs)` | Create an LLM plugin instance | LiveKit LLM plugin or `None` |
 | `create_tts(model, voice, **kwargs)` | Create a TTS plugin instance | LiveKit TTS plugin or `None` |
 | `health_check()` | Verify provider connectivity | `bool` |
-| `get_pricing(model, modality)` | Return per-unit pricing | `dict[str, float]` |
 
 For modalities the provider does not support, call `self._unsupported("modality_name")` to raise a clear error.
+
+Pricing is not a provider-level concern. LLM rates resolve via `pydantic/genai-prices` upstream; STT and TTS rates live in the local source-date-tagged catalogs at `voicegateway/pricing/{stt,tts}.py`. To add pricing for a new model, see step 4.
 
 ### 3. Register the provider
 
@@ -83,27 +79,27 @@ The registry uses lazy imports -- your provider module is only loaded when a use
 
 ### 4. Add pricing data
 
-Add entries to `voicegateway/pricing/catalog.py`:
+LLM models do not need a VoiceGateway entry: `pydantic/genai-prices` already covers 1,100+ models via its upstream catalog. Confirm the upstream id works with `voicegateway.pricing.llm.calculate_llm_cost("<name>/<model>", 1000, 500)`. If it returns None, file an upstream issue at [pydantic/genai-prices](https://github.com/pydantic/genai-prices).
+
+STT and TTS models live in the local catalogs:
 
 ```python
-PRICING: dict[str, dict[str, dict[str, float]]] = {
-    "stt": {
-        # ... existing entries ...
-        "<name>/<model>": {"per_minute": 0.005},
-    },
-    "llm": {
-        "<name>/<model>": {"input_per_1k": 0.001, "output_per_1k": 0.002},
-    },
-    "tts": {
-        "<name>/<model>": {"per_character": 0.0001},
-    },
-}
+# voicegateway/pricing/stt.py
+"<name>/<model>": STTEntry(
+    per_minute=Decimal("0.005"),
+    pricing_source_date=date(2026, 5, 4),
+    pricing_source_url="https://<provider>/pricing",
+),
+
+# voicegateway/pricing/tts.py
+"<name>/<model>": TTSEntry(
+    per_character=Decimal("0.0001"),
+    pricing_source_date=date(2026, 5, 4),
+    pricing_source_url="https://<provider>/pricing",
+),
 ```
 
-Use the pricing units that match the provider's billing:
-- STT: `per_minute`
-- LLM: `input_per_1k` and `output_per_1k` (per 1,000 tokens)
-- TTS: `per_character`
+The `pricing_source_date` field is enforced by a 60-day staleness gate in CI; refresh entries each release.
 
 ### 5. Add optional dependency
 
@@ -166,10 +162,11 @@ async def test_health_check(provider):
     ...
 
 
-def test_get_pricing(provider):
-    pricing = provider.get_pricing("model-name", "stt")
-    assert "per_minute" in pricing
-    assert pricing["per_minute"] > 0
+def test_pricing_resolves(provider):
+    """Pricing for a known model resolves to a positive Decimal via the catalog."""
+    from voicegateway.pricing import catalog
+    cost = catalog.calculate_cost("stt", "<name>/model-name", audio_seconds=60)
+    assert cost is not None and cost > 0
 ```
 
 See the [testing guide](/contributing/testing) for mock patterns and fixture usage.

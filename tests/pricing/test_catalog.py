@@ -2,8 +2,7 @@
 
 Covers the unified facade: modality dispatch correctness for
 calculate_cost(), pricing_source() per-modality attribution, and
-unknown-modality fallback behavior. Also covers the legacy
-PRICING / get_pricing API kept temporarily until Phase 2.5 cleanup.
+unknown-modality fallback behavior.
 """
 
 from __future__ import annotations
@@ -123,36 +122,3 @@ def test_pricing_source_unknown_modality() -> None:
     """Unknown modality returns the literal 'unknown' string."""
     assert catalog.pricing_source("foo") == "unknown"
     assert catalog.pricing_source("") == "unknown"
-
-
-# ----- legacy API (PRICING dict + get_pricing) -------------------------
-
-
-def test_legacy_pricing_dict_present() -> None:
-    """Legacy PRICING dict is kept until Phase 2.5 cleanup."""
-    assert isinstance(catalog.PRICING, dict)
-    assert {"stt", "llm", "tts"}.issubset(catalog.PRICING.keys())
-
-
-def test_legacy_get_pricing_known_stt() -> None:
-    """Legacy get_pricing returns a dict with per_minute for known STT models."""
-    pricing = catalog.get_pricing("deepgram/nova-3", "stt")
-    assert pricing == {"per_minute": 0.0043}
-
-
-def test_legacy_get_pricing_known_llm() -> None:
-    """Legacy get_pricing returns input_per_1k/output_per_1k for known LLM models."""
-    pricing = catalog.get_pricing("openai/gpt-4.1-mini", "llm")
-    assert pricing == {"input_per_1k": 0.0004, "output_per_1k": 0.0016}
-
-
-def test_legacy_get_pricing_known_tts() -> None:
-    """Legacy get_pricing returns per_character for known TTS models."""
-    pricing = catalog.get_pricing("cartesia/sonic-3", "tts")
-    assert pricing == {"per_character": 0.000065}
-
-
-def test_legacy_get_pricing_unknown_returns_empty() -> None:
-    """Legacy get_pricing returns {} for unknown model or modality."""
-    assert catalog.get_pricing("unknown/model", "stt") == {}
-    assert catalog.get_pricing("deepgram/nova-3", "unknown-modality") == {}

@@ -50,9 +50,6 @@ class WhisperProvider(BaseProvider):
         except ImportError:
             return False
 
-    def get_pricing(self, model: str, modality: str) -> dict[str, float]:
-        return {"per_minute": 0.0}
-
 
 class WhisperSTT:
     """Local Whisper STT using faster-whisper with StreamAdapter pattern.

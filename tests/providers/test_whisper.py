@@ -35,6 +35,10 @@ def test_whisper_requires_library():
 
 
 def test_whisper_pricing_zero():
-    provider = WhisperProvider({})
-    pricing = provider.get_pricing("large-v3", "stt")
-    assert pricing["per_minute"] == 0.0
+    """Local Whisper STT prices at $0 via the unified catalog."""
+    from decimal import Decimal
+
+    from voicegateway.pricing import catalog
+
+    cost = catalog.calculate_cost("stt", "local/whisper-large-v3", audio_seconds=60)
+    assert cost == Decimal("0")

@@ -29,11 +29,6 @@ class BaseProvider(ABC):
         """Check if the provider is reachable."""
         ...
 
-    @abstractmethod
-    def get_pricing(self, model: str, modality: str) -> dict[str, float]:
-        """Return pricing info (per_minute, input_per_1k, output_per_1k, per_character)."""
-        ...
-
     def _unsupported(self, modality: str) -> None:
         """Raise NotImplementedError for unsupported modalities."""
         raise NotImplementedError(
@@ -49,7 +44,8 @@ class BaseProvider(ABC):
 | `create_llm(model, **kwargs)` | LiveKit-compatible LLM instance | Call `self._unsupported("llm")` |
 | `create_tts(model, voice, **kwargs)` | LiveKit-compatible TTS instance | Call `self._unsupported("tts")` |
 | `health_check()` | `True` if reachable, `False` otherwise | Must always be implemented |
-| `get_pricing(model, modality)` | Dict with pricing keys | Return `{}` for unsupported |
+
+Pricing is no longer a provider-level concern. LLM rates resolve via `pydantic/genai-prices` (see `voicegateway/pricing/llm.py`); STT and TTS rates resolve via the local source-date-tagged catalogs in `voicegateway/pricing/{stt,tts}.py`. Use `voicegateway.pricing.catalog.calculate_cost(modality, model, ...)` from anywhere that needs a per-request cost.
 
 ## Provider Registry
 
@@ -120,11 +116,6 @@ class DeepgramProvider(BaseProvider):
     async def health_check(self) -> bool:
         # Lightweight API call to verify credentials
         ...
-
-    def get_pricing(self, model: str, modality: str) -> dict[str, float]:
-        if modality == "stt":
-            return {"per_minute": 0.0043}  # Nova-3 pricing
-        return {}
 ```
 
 ### Key patterns:

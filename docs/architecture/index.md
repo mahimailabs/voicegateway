@@ -131,7 +131,7 @@ voicegateway/
     schema.py           # Pydantic validation for voicegw.yaml
     crypto.py           # Fernet encryption for stored secrets
   providers/
-    base.py             # BaseProvider ABC (create_stt/llm/tts, health_check, get_pricing)
+    base.py             # BaseProvider ABC (create_stt/llm/tts, health_check)
     openai_provider.py  # OpenAI (STT + LLM + TTS)
     deepgram_provider.py
     cartesia_provider.py

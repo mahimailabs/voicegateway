@@ -879,7 +879,7 @@ note them and continue with current task.)
   Total: 18 line edits across 9 docs files. Docs build clean
   (3.03s); tests pass (371/8).
 
-- [ ] Remove the legacy `PRICING` dict and `get_pricing()` function
+- [x] Remove the legacy `PRICING` dict and `get_pricing()` function
   from `voicegateway/pricing/catalog.py`. After Phase 2.3 dispatch
   (iter 30), the only callers are `BaseProvider.get_pricing` (an
   abstract method) and 6 cloud provider implementations
@@ -891,6 +891,33 @@ note them and continue with current task.)
   provider, drop `PRICING` and `get_pricing` from catalog.py,
   rewrite the two tests to dispatch through `catalog.calculate_cost`
   instead. ~10 file touch.
+  Done: full removal in iter 76. Touched 18 files total.
+  Source code (12 files): catalog.py (PRICING dict + get_pricing
+  + DEPRECATED docstring section removed); base.py (abstract
+  get_pricing dropped from the ABC); 7 cloud providers
+  (anthropic, cartesia, deepgram, elevenlabs, groq, openai,
+  assemblyai) lost the get_pricing method + the
+  `from voicegateway.pricing.catalog import get_pricing` import;
+  4 local providers (whisper, kokoro, piper, ollama) lost the
+  get_pricing method (they did not have the import since they
+  hardcoded zeros). Tests (2 files rewritten): test_whisper.py
+  uses catalog.calculate_cost("stt", "local/whisper-large-v3",
+  audio_seconds=60); test_ollama.py uses CostTracker.calculate_cost
+  (which silently zero-handles ollama/* prefixes per iter 30).
+  Tests dropped (1 file, 5 tests in tests/pricing/test_catalog.py):
+  test_legacy_pricing_dict_present + 4 get_pricing tests. Docs
+  (4 files): architecture/index.md (file-tree comment cleaned);
+  architecture/provider-abstraction.md (ABC example, table row,
+  Deepgram example all updated); contributing/adding-a-provider.md
+  (provider skeleton, ABC method count from 5 to 4, pricing
+  guidance rewritten with genai-prices + STTEntry/TTSEntry
+  examples, test example updated to catalog.calculate_cost);
+  contributing/testing.md (cost-calc test rewritten); changelog
+  (Changed bullet rewritten to say "removed entirely"). Net test
+  count: 366 (was 371; -5 dropped legacy + 0 net for the 2
+  rewritten provider tests). All gates green: ruff clean, mypy
+  clean (57 source files), 366 passed / 8 skipped, docs build
+  3.19s.
 
 - [~] Decide milestone-tag scheme for ceremonial markers (Phase 1
   complete, Phase 2 complete, etc). RESOLVED: stop using git tags

@@ -47,7 +47,11 @@ def test_ollama_creates_llm():
 
 
 def test_ollama_pricing_zero():
-    provider = OllamaProvider({})
-    pricing = provider.get_pricing("qwen2.5:3b", "llm")
-    assert pricing["input_per_1k"] == 0.0
-    assert pricing["output_per_1k"] == 0.0
+    """Ollama LLMs price at $0 via the unified catalog (free local provider)."""
+    from voicegateway.middleware.cost_tracker import CostTracker
+
+    tracker = CostTracker()
+    cost = tracker.calculate_cost(
+        "ollama/qwen2.5:3b", "llm", input_units=1000, output_units=500
+    )
+    assert cost == 0.0

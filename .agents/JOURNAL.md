@@ -2346,3 +2346,57 @@ This is doable in one iteration but is the largest of the remaining items. It al
 Iter 76 takes the removal because the open-`[ ]` count is 1 and emitting the completion promise becomes possible after this is done (modulo the `[?]` blocked items, which still require mahimairaja's slip-plan call). Having the legacy code linger as a `[ ]` indefinitely is worse than removing it now and accepting one slightly-larger iteration. If the diff is too large, I can split it.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 21:30 UTC: refactor(pricing): remove legacy PRICING dict + get_pricing
+
+Files: 18 total. `voicegateway/pricing/catalog.py` (PRICING dict + get_pricing function + DEPRECATED docstring section removed); `voicegateway/providers/base.py` (abstract `get_pricing` dropped from ABC); 7 cloud providers (`anthropic_provider.py`, `cartesia_provider.py`, `deepgram_provider.py`, `elevenlabs_provider.py`, `groq_provider.py`, `openai_provider.py`, `assemblyai_provider.py`); 4 local providers (`whisper_provider.py`, `kokoro_provider.py`, `piper_provider.py`, `ollama_provider.py`); 3 test files (`tests/pricing/test_catalog.py`, `tests/providers/test_whisper.py`, `tests/providers/test_ollama.py`); 4 doc files (`docs/architecture/index.md`, `docs/architecture/provider-abstraction.md`, `docs/contributing/adding-a-provider.md`, `docs/contributing/testing.md`, `docs/reference/changelog.md`); `.agents/TODO.md` (legacy-PRICING discovered-work item marked `[x]`).
+Tests: ruff clean, mypy clean (57 source files), pytest 366 passed / 8 skipped (was 371; -5 dropped legacy tests, 0 net for 2 rewritten provider tests). Docs build clean (3.19s).
+
+The last open `[ ]` discovered-work item. The legacy `PRICING: dict[str, dict[str, dict[str, float]]]` lookup table and its `get_pricing(model_id, modality)` accessor were the v0.0.x pricing API; Phase 2.3 (iter 30) wired CostTracker through the new `calculate_cost(modality, model, **kwargs)` facade and the legacy API stayed alive only for backward-compat with three test surfaces (test_catalog.py legacy tests, test_whisper.py:39, test_ollama.py:51). This iteration completes the removal.
+
+**Source-code surface (12 files).**
+
+- `catalog.py`: dropped the `PRICING` dict (~40 lines), `get_pricing()` (~12 lines), and the DEPRECATED-marker docstring section (~6 lines).
+- `base.py`: dropped the `@abstractmethod def get_pricing(self, model, modality) -> dict[str, float]` from the BaseProvider ABC.
+- 7 cloud providers: each lost the import `from voicegateway.pricing.catalog import get_pricing` and the `def get_pricing(self, model, modality): return get_pricing(f"<provider>/{model}", modality)` two-line method.
+- 4 local providers (whisper, kokoro, piper, ollama): each lost just the `get_pricing` method (they hardcoded zeros and never imported the catalog accessor).
+
+**Test surface.**
+
+- `tests/pricing/test_catalog.py`: 5 legacy tests dropped (`test_legacy_pricing_dict_present`, four `test_legacy_get_pricing_*`).
+- `tests/providers/test_whisper.py:test_whisper_pricing_zero`: rewritten to `catalog.calculate_cost("stt", "local/whisper-large-v3", audio_seconds=60) == Decimal("0")`.
+- `tests/providers/test_ollama.py:test_ollama_pricing_zero`: rewritten to `CostTracker().calculate_cost("ollama/qwen2.5:3b", "llm", input_units=1000, output_units=500) == 0.0`. Used CostTracker (not catalog directly) because catalog returns None for unknown LLM IDs; CostTracker has the special `local/*`/`ollama/*` zero-handling per iter 30.
+
+**Doc surface (5 files).**
+
+- `architecture/index.md`: file-tree comment dropped `, get_pricing` from the BaseProvider description.
+- `architecture/provider-abstraction.md`: ABC example, method-contracts table row, and Deepgram concrete example all updated. Replaced the table row with a paragraph pointing readers at `voicegateway.pricing.catalog.calculate_cost`.
+- `contributing/adding-a-provider.md`: the new-provider skeleton, the "ABC requires N methods" section (5 to 4), and the "Add pricing data" section all updated. Pricing guidance rewritten to point at genai-prices for LLM models and the STTEntry/TTSEntry examples for STT/TTS, with a note about the 60-day staleness gate.
+- `contributing/testing.md`: cost-calc test example rewritten to use `catalog.calculate_cost("stt", "deepgram/nova-3", audio_seconds=60) == Decimal("0.0043")`.
+- `reference/changelog.md`: the Changed bullet about LLM pricing was downgraded from "remain as deprecated shims" to "removed entirely (with `BaseProvider.get_pricing` along with them)".
+
+**Verification.** `grep -rn "from voicegateway.pricing.catalog import get_pricing\|catalog.PRICING\b\|catalog.get_pricing" --include="*.py"` returns zero. Remaining `PRICING` matches in the source tree are all `PRICING_SOURCE` (per-modality attribution string, intentionally kept; iter 27+).
+
+**Discovered-work surface.** Open `[ ]` items: 0 (was 1 before this iteration). The discovered-work backlog is now fully cleared except for the historical `[~]` milestone-tag-resolution entry (iter 45, already closed).
+
+**State of completion criteria.** PROMPT.md criterion #1 says "Every task in `.agents/TODO.md` is marked `[x]` or `[~]`." With this iteration's commit, the only non-`[x]`-non-`[~]` items remaining are:
+
+- Phase 3.2 six `[?]` (fixture recordings, blocked on real provider API access this loop's environment cannot reach).
+- Phase 4.5 #4 `[?]` (Docker build, blocked on Docker daemon not running in this loop's environment).
+- Phase 4.6 #8 `[ ]` (the completion-promise sub-item, which is the gate the promise emission would close).
+
+`[?]` is the third state and explicitly does not satisfy criterion #1. Per PROMPT.md, the only way to make criterion #1 true while items remain blocked is mahimairaja's explicit `[~]` deferral approval. Self-approving would violate the explicit-approval requirement.
+
+So even with the discovered-work cleared, the completion promise stays withheld. The Phase 3.2 fixture-recording items genuinely require external API access; the Phase 4.5 #4 Docker build genuinely requires the Docker daemon. Both can be unblocked externally without code changes.
+
+**Iter 77 plan.** With all `[ ]` discovered-work cleared, there is no next open task. The remaining iterations until `--max-iterations` (current iter 76 of 80; 4 iterations of buffer) can either:
+
+1. **Sit idle** running just the verification gates each iteration to keep the v0.1.0 state warm.
+2. **Convert the `[?]` items to `[~]` deferred-to-v0.1.1** if mahimairaja approves the slip plan.
+3. **Run the externally-blocked items** if mahimairaja runs Docker/fixture-recording outside the loop.
+
+The most useful next iteration is to surface the situation clearly: re-run all gates, document the cleared TODO state and the blocked-`[?]` items, and ask mahimairaja explicitly via the journal/TODO whether the slip plan should activate. The loop will continue until mahimairaja reads the state and decides; criterion #1 cannot become true through more code-side work.
+
+No em dashes in this iteration's outputs.

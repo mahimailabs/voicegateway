@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from voicegateway.pricing.catalog import get_pricing
 from voicegateway.providers.base import BaseProvider
 
 
@@ -59,6 +58,3 @@ class GroqProvider(BaseProvider):
                 return resp.status_code == 200
         except Exception:
             return False
-
-    def get_pricing(self, model: str, modality: str) -> dict[str, float]:
-        return get_pricing(f"groq/{model}", modality)
