@@ -203,7 +203,7 @@ voicegw serve
    # This works in a normal script
    stt = gw.stt("deepgram/nova-3", project="my-app")
 
-   # In an async context, the Gateway handles it — but if you get
+   # In an async context, the Gateway handles it. If you get
    # loop errors, wrap your setup in a separate thread or use
    # nest_asyncio (see below).
    ```

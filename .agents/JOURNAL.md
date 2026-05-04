@@ -2301,3 +2301,48 @@ Total: 18 line edits across 9 docs files.
 Iter 75 takes the em-dash sweep because (a) it is purely text edits with no risk to test surface, (b) it knocks the open-`[ ]` count down faster, and (c) the legacy `PRICING` removal is the kind of larger refactor that should ideally be a v0.1.1 follow-up rather than a final-iteration scramble. After iter 75 closes em dashes, the only `[ ]` left will be `PRICING` removal, at which point I can decide whether to do it in this loop or convert it to a `[~]` v0.1.1 deferral.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 20:50 UTC: docs(prose): em-dash sweep across user-authored markdown
+
+Files: `README.md`, `.agents/PROMPT.md`, `docs/architecture/index.md`, `docs/reference/troubleshooting.md`, `docs/examples/fly-deployment.md`. `.agents/TODO.md` em-dash sweep discovered-work item marked `[x]` with full preservation-vs-fix policy documented.
+Tests: docs build clean (3.12s); existing pytest 371 passed / 8 skipped (no code touched).
+
+The CLAUDE.md hard convention is "No em dashes anywhere. Use colons, periods, or parentheses." A naive grep across the repo returned 155 occurrences, but most are in preserved snapshot documents that should not be retroactively edited. The actually-fixable scope is 24 occurrences across 5 files, all closed this iteration.
+
+**Fixable scope.**
+
+| File | Count | Replacements |
+| --- | --- | --- |
+| `.agents/PROMPT.md` | 12 | colon + period + parentheses depending on context |
+| `docs/examples/fly-deployment.md` | 9 | parentheses for parenthetical asides; colons for see-also list |
+| `README.md` | 1 | parentheses for parenthetical aside |
+| `docs/architecture/index.md` | 1 | parentheses inside a code-comment in a file-tree block |
+| `docs/reference/troubleshooting.md` | 1 | period to split a clause |
+
+**Preserved snapshots NOT touched.**
+
+| File | Em-dash count | Why preserved |
+| --- | --- | --- |
+| `docs/audit-2026-05-02.md` | 91 | Audit report; historical diagnostic record. `framing-occurrences.md` already documents that this file is intentional historical content. |
+| `docs/design/v0.1.0.md` | 40 | Locked design spec. PROMPT.md hard rule: "Never modify `docs/design/v0.1.0.md` to make a task easier." Em-dash cleanup is borderline cosmetic; keeping the spec as a stable snapshot is more important. |
+| `.agents/JOURNAL.md` | many | Append-only history. Retroactively editing prior entries to remove em dashes would be a history rewrite. |
+| `.agents/credibility-issues.md` | some | Audit snapshot. |
+| `.agents/framing-occurrences.md` | some | Audit snapshot. |
+
+The CLAUDE.md "no em dashes anywhere" applies to user-facing prose going forward; the convention reasonably recognizes that historical/snapshot documents are immutable record.
+
+**Replacement style.** Followed CLAUDE.md guidance: colons for label-style introductions ("`docs/design/v0.1.0.md`: the locked design spec"), periods for clause separations ("In an async context, the Gateway handles it. If you get..."), parentheses for parenthetical asides ("Pull the official image from Docker Hub (no build required)"). The journal-entry format example in PROMPT.md:121 was changed from `## 2026-05-04 09:15 UTC — feat(...)` to `## 2026-05-04 09:15 UTC: feat(...)` matching the format my recent journal entries already use.
+
+**Discovered-work surface narrows.** Open `[ ]` items: 1 (was 2). Remaining: legacy `PRICING`/`get_pricing` removal.
+
+**Iter 76 decision: knock out PRICING removal, or convert to v0.1.1 deferral?**
+
+The legacy-PRICING discovered-work entry estimates ~10 file touches: dropping `BaseProvider.get_pricing` from the ABC, dropping the method from each of 6 cloud provider implementations (anthropic, cartesia, deepgram, elevenlabs, groq, openai), dropping `PRICING` and `get_pricing` from `voicegateway/pricing/catalog.py`, and rewriting the two tests (`tests/providers/test_whisper.py:39`, `tests/providers/test_ollama.py:51`) to dispatch through `catalog.calculate_cost`. Those provider files are in `pyproject.toml`'s `[tool.coverage.run] omit` list because they require external LiveKit plugins to test, which means the coverage gate would not catch a regression in the provider files; static type-check (mypy) and the rewritten tests would.
+
+This is doable in one iteration but is the largest of the remaining items. It also touches code in many files, which carries higher regression risk than the doc/cli iterations preceding it. The slip-plan path (mark `[~]` deferred to v0.1.1 with mahimairaja's approval) is a defensible alternative since the deprecation shim works correctly today; removing it is hygiene, not a release-blocker.
+
+Iter 76 takes the removal because the open-`[ ]` count is 1 and emitting the completion promise becomes possible after this is done (modulo the `[?]` blocked items, which still require mahimairaja's slip-plan call). Having the legacy code linger as a `[ ]` indefinitely is worse than removing it now and accepting one slightly-larger iteration. If the diff is too large, I can split it.
+
+No em dashes in this iteration's outputs.

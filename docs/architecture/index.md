@@ -122,7 +122,7 @@ sequenceDiagram
 ```
 voicegateway/
   core/
-    gateway.py          # Main Gateway class — orchestrator
+    gateway.py          # Main Gateway class (orchestrator)
     config.py           # YAML config loader with ${ENV_VAR} substitution
     config_manager.py   # Merges YAML + SQLite + env (priority: env > db > yaml)
     router.py           # Resolves "provider/model" to provider instances

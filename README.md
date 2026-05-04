@@ -91,7 +91,7 @@ voicegw dashboard         # http://localhost:9090
 
 ### Option 2: Docker (production-ready)
 
-Pull the official image from Docker Hub — no build required:
+Pull the official image from Docker Hub (no build required):
 
 ```bash
 docker run -p 8080:8080 \

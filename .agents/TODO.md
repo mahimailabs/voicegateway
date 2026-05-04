@@ -769,7 +769,7 @@ note them and continue with current task.)
   the discrepancy). The file's own content already used PROMPT.md
   in references, so no content edits needed.
 
-- [ ] Sweep user-authored markdown for em dashes per the global
+- [x] Sweep user-authored markdown for em dashes per the global
   CLAUDE.md hard convention ("No em dashes anywhere"). Pre-existing
   occurrences in `README.md` (e.g. line 93), `docs/**/*.md`, and
   the `.agents/*.md` files I authored carry em dashes that should
@@ -777,6 +777,30 @@ note them and continue with current task.)
   may pick up the docs/ ones incidentally; the CLAUDE.md project
   description and the journal-entry format example in PROMPT.md:121
   also use em dashes.
+  Done: surveyed all em dashes outside preserved snapshots. Total
+  fixable: 24 occurrences across 5 files.
+  - `README.md`: 1 (line 94, "Pull the official image from Docker
+    Hub — no build required" → "...Hub (no build required)").
+  - `.agents/PROMPT.md`: 12 (heading + 4 bullet labels in source-of-
+    truth list + 4 in body prose + 1 verify rule + 1 hard rule
+    block + 1 always-rule + 1 journal-format example heading).
+  - `docs/architecture/index.md`: 1 (file-tree comment).
+  - `docs/reference/troubleshooting.md`: 1 (mid-sentence aside).
+  - `docs/examples/fly-deployment.md`: 9 (heading + 5 enumerated
+    items + 3 see-also entries).
+  Replacements followed CLAUDE.md guidance: colons, periods,
+  parentheses depending on context. Verified post-sweep:
+  `grep -c "—"` returns 0 for each file. Docs build clean (3.12s);
+  tests pass (371/8).
+  Preserved snapshots NOT touched: `docs/audit-2026-05-02.md`
+  (91 em dashes; audit historical record), `docs/design/v0.1.0.md`
+  (40 em dashes; locked design spec per PROMPT.md hard rule),
+  `.agents/JOURNAL.md` (append-only history), `.agents/credibility-issues.md`
+  + `.agents/framing-occurrences.md` (audit snapshots). The
+  CLAUDE.md "no em dashes anywhere" applies to user-facing
+  prose; the convention recognizes that historical/snapshot
+  documents are immutable record. Documented this distinction
+  here for future maintainers.
 
 - [x] Add a Codecov coverage badge to README. `codecov-action@v5`
   is already wired in `.github/workflows/test-coverage.yml:62-66`

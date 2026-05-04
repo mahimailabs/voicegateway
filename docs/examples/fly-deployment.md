@@ -70,7 +70,7 @@ cd voicegateway/deploy/fly
 # Health check
 curl https://voicegw-happy-canyon-4723.fly.dev/health
 
-# Dashboard — open in browser
+# Dashboard: open in browser
 open https://voicegw-happy-canyon-4723.fly.dev
 ```
 
@@ -89,11 +89,11 @@ claude mcp add voicegateway \
 
 Once connected, ask Claude Code:
 
-1. "List my voicegateway providers" — shows empty state
-2. "Add Deepgram with API key dg_live_abc123" — registers and tests the provider
-3. "Register deepgram/nova-3 as an STT model" — makes it available for routing
-4. "Create a project called test-app with a $5 daily budget" — sets up cost tracking
-5. "Show me today's costs for test-app" — confirms everything is wired
+1. "List my voicegateway providers" (shows empty state).
+2. "Add Deepgram with API key dg_live_abc123" (registers and tests the provider).
+3. "Register deepgram/nova-3 as an STT model" (makes it available for routing).
+4. "Create a project called test-app with a $5 daily budget" (sets up cost tracking).
+5. "Show me today's costs for test-app" (confirms everything is wired).
 
 ## Costs and scaling
 
@@ -153,6 +153,6 @@ fly volumes list
 
 ## Related
 
-- [Docker Compose Deployment](/examples/docker-deployment) — self-hosted on any Docker host
-- [MCP Setup](/mcp/setup) — configure Claude Code, Cursor, and other agents
-- [Configuration Reference](/configuration/voicegw-yaml) — customize your gateway
+- [Docker Compose Deployment](/examples/docker-deployment): self-hosted on any Docker host.
+- [MCP Setup](/mcp/setup): configure Claude Code, Cursor, and other agents.
+- [Configuration Reference](/configuration/voicegw-yaml): customize your gateway.
