@@ -11,6 +11,45 @@ Phases 1-2 ship as v0.1.0 and Phases 3-4 defer to v0.1.1.**
 
 ---
 
+## Release readiness snapshot (2026-05-04)
+
+Phases 1-4 structurally complete. Discovered-work backlog cleared.
+v0.1.0 tag created locally at commit `633c67e`. All gates pass:
+
+- ruff clean, mypy clean (60 source files).
+- pytest 366 passed / 8 skipped.
+- coverage 81% (gate is 75%).
+- docs build clean (3.03s).
+- `voicegw --version` returns `0.1.0`.
+
+Three items prevent the completion-promise from being emitted:
+
+- **6 `[?]` Phase 3.2 fixture-recording sub-items** (Section 3.2).
+  Blocked on real provider API access this Ralph loop's environment
+  cannot reach. Recorder script ships in v0.1.0; mahimairaja runs
+  the recorder externally with `.env.fixtures` populated, commits
+  the JSON files to `tests/fixtures/streaming/`, and a future
+  iteration ticks each sub-item `[x]`.
+- **1 `[?]` Phase 4.5 #4 Docker build** (Section 4.5).
+  Blocked on the Docker daemon not running in this loop's
+  environment. Structural audit done. mahimairaja runs
+  `docker build -t voicegateway:v0.1.0 .` externally; three
+  verification gates documented in the journal entry of iter 65.
+- **1 `[ ]` Phase 4.6 #8 completion-promise emission** (Section 4.6).
+  Gated by criterion #1 of PROMPT.md, which requires every task
+  to be `[x]` or `[~]`. The three `[?]` items above are the
+  remaining gap.
+
+Per PROMPT.md slip-plan: "Mark Phase 3 and 4 tasks `[~]` with reason
+'deferred to v0.1.1, see JOURNAL.md entry of <date>' ... only with
+mahimairaja's explicit approval (a commit to TODO.md or a comment
+in PROMPT.md)." The Ralph loop cannot self-approve this; it
+continues iterating until either mahimairaja approves the deferral
+(at which point the promise becomes emittable) or
+`--max-iterations` (80) is reached and the loop exits naturally.
+
+---
+
 ## Phase 1 — Framing Fixes (Week 1, May 3–9)
 
 Cheapest, highest-leverage work. Readers landing on docs during weeks

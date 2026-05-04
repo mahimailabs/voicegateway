@@ -2400,3 +2400,24 @@ So even with the discovered-work cleared, the completion promise stays withheld.
 The most useful next iteration is to surface the situation clearly: re-run all gates, document the cleared TODO state and the blocked-`[?]` items, and ask mahimairaja explicitly via the journal/TODO whether the slip plan should activate. The loop will continue until mahimairaja reads the state and decides; criterion #1 cannot become true through more code-side work.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 21:50 UTC: docs(agents): release-readiness snapshot at top of TODO
+
+Files: `.agents/TODO.md` (release-readiness snapshot section added near the top, just below the existing legend/timeline preamble and before Phase 1).
+Tests: re-ran all gates this iteration. ruff clean, mypy clean (60 source files), pytest 366 passed / 8 skipped, coverage TOTAL 81% (above 75% gate), docs build clean (3.03s). `voicegw --version` returns `0.1.0`. `git tag --list` shows `v0.1.0`.
+
+With discovered-work cleared (iter 76) and no further code-side action that can advance criterion #1, this iteration's productive contribution is documentation: a single concise snapshot at the top of TODO.md so a future reader (mahimairaja in particular) sees the situation at a glance without scrolling through ~770 lines of phase entries and discovered-work history.
+
+**Snapshot contents (under "Release readiness snapshot (2026-05-04)").**
+
+- One paragraph confirming structural completion: phases 1-4 done, discovered-work cleared, v0.1.0 tag at `633c67e`, all gates pass with their numbers inline (366/8 tests, 81% coverage, 60 mypy source files, 3.03s docs build, `voicegw --version` returns `0.1.0`).
+- Three bullets enumerating the three items preventing the promise: 6 `[?]` Phase 3.2 fixture recordings, 1 `[?]` Phase 4.5 #4 Docker build, 1 `[ ]` Phase 4.6 #8 completion-promise emission. Each bullet documents (a) why it is blocked, (b) what unblocking would look like.
+- Closing paragraph quoting the PROMPT.md slip-plan rule and explaining that the Ralph loop cannot self-approve `[~]` deferral; it continues iterating until mahimairaja approves or `--max-iterations` (80) is reached.
+
+**No new work executed.** This iteration is a documentation honesty pass. The journal already covered the situation extensively in iters 67 and 76, but those entries are buried in a long file; the TODO snapshot serves the "tell me the state in 30 seconds" need.
+
+**Iter 78 outlook.** Same situation as iter 77 unless mahimairaja intervenes. Iterations 78-80 likely re-run the gates and document state without meaningful change. The most defensible iteration-78 action is identical to this one: confirm gates still pass, leave the TODO snapshot in place (or update its "as of" date), and exit. If `--max-iterations` (80) is reached, the loop exits naturally with the `feat/cost-track-rebuild` branch sitting in the structurally-complete-but-promise-withheld state.
+
+No em dashes in this iteration's outputs.
