@@ -17,8 +17,8 @@ Phases 1-4 structurally complete. Discovered-work backlog cleared.
 v0.1.0 tag created locally at commit `633c67e`. All gates pass:
 
 - ruff clean, mypy clean (60 source files).
-- pytest 366 passed / 8 skipped.
-- coverage 81% (gate is 75%).
+- pytest 371 passed / 8 skipped.
+- coverage 82% (gate is 75%).
 - docs build clean (3.03s).
 - `voicegw --version` returns `0.1.0`.
 

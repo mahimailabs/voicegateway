@@ -2421,3 +2421,28 @@ With discovered-work cleared (iter 76) and no further code-side action that can 
 **Iter 78 outlook.** Same situation as iter 77 unless mahimairaja intervenes. Iterations 78-80 likely re-run the gates and document state without meaningful change. The most defensible iteration-78 action is identical to this one: confirm gates still pass, leave the TODO snapshot in place (or update its "as of" date), and exit. If `--max-iterations` (80) is reached, the loop exits naturally with the `feat/cost-track-rebuild` branch sitting in the structurally-complete-but-promise-withheld state.
 
 No em dashes in this iteration's outputs.
+
+---
+
+## 2026-05-04 22:10 UTC: test(core): unit coverage for voicegateway.core.registry
+
+Files: `tests/core/test_registry.py` (new, 5 tests, ~55 lines), `.agents/TODO.md` (release-readiness snapshot updated: 366 -> 371 tests, 81% -> 82% coverage).
+Tests: ruff clean, mypy clean (57 source files), pytest 371 passed / 8 skipped (was 366; +5 new tests). Coverage on `voicegateway/core/registry.py` jumped from 29% to 88%; total project coverage 81% -> 82%.
+
+Iter 78 was originally going to be a state-confirmation no-op iteration with mahimairaja yet to intervene, but a coverage-report scan surfaced a real gap: `voicegateway/core/registry.py` was at 29%. The file holds the provider name-to-class mapping plus a `create_provider` factory function (lazy `importlib.import_module` for the SDK so optional deps do not break the install). The factory was exercised indirectly by Gateway-level integration tests, but no direct unit tests covered (a) the unknown-name ValueError path, (b) the value of the error message, or (c) `list_providers`.
+
+**Five tests added.**
+
+1. `test_list_providers_returns_sorted_known_names` confirms the list is alphabetical and contains all 11 v0.1.0 providers.
+2. `test_create_provider_unknown_name_raises_value_error` asserts ValueError on unknown name.
+3. `test_create_provider_unknown_error_lists_alternatives` asserts the error message includes at least one known provider name (so the user has a hint, not a dead-end error).
+4. `test_create_provider_known_name_returns_instance` creates an OllamaProvider and asserts it is a BaseProvider subclass. Ollama is the safest provider to test against because it has no SDK install requirement (plain HTTP) and no API-key requirement.
+5. `test_create_provider_passes_config_through` confirms the `config` dict is forwarded to the provider constructor (asserted by reading the resulting `OllamaProvider.base_url` attribute).
+
+Lines 52-53 of registry.py remain uncovered: that is the `ImportError` path when an SDK fails to import. Testing it would require monkey-patching `importlib.import_module` to fail, which is over-engineering for v0.1.0; 88% on a 17-statement file is plenty.
+
+This iteration is genuinely productive, not busy-work. The release-readiness snapshot at the top of TODO.md was updated to reflect the new numbers (371 tests, 82% coverage).
+
+**Iter 79 outlook.** Coverage scan for any other quick wins. `combined_server.py` (47%) and `mcp/server.py` (41%) are the next-lowest non-omit-listed files; they may have testable surface that does not require external dependencies. Failing that, iter 79 stays a confirm-gates-and-document iteration. Two iterations remaining before `--max-iterations` (80).
+
+No em dashes in this iteration's outputs.
