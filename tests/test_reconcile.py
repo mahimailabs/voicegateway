@@ -383,6 +383,83 @@ def test_reconcile_model_only_in_vg(tmp_path):
     assert lines[0].matched_in_provider is False
 
 
+def test_reconcile_flags_lines_above_threshold(tmp_path):
+    """Default 5% threshold flips ReconcileLine.flagged when |cost_diff_pct| > 5."""
+    path = tmp_path / "openai.csv"
+    # provider reports $1.00; VG would compute $0.94 -> -6% diff > 5%.
+    path.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o-mini,1000,500,1,1.00\n"
+    )
+    records = [
+        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
+         "input_units": 1000, "output_units": 500, "cost_usd": 0.94},
+    ]
+    lines = reconcile.reconcile("openai", records, path)
+    assert len(lines) == 1
+    line = lines[0]
+    assert abs(line.cost_diff_pct) > 5.0
+    assert line.flagged is True
+
+
+def test_reconcile_does_not_flag_within_threshold(tmp_path):
+    """A 3% drift stays under the default 5% threshold; flagged stays False."""
+    path = tmp_path / "openai.csv"
+    path.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o-mini,1000,500,1,1.00\n"
+    )
+    # VG cost 0.97 vs provider 1.00 -> +3% drift, under threshold.
+    records = [
+        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
+         "input_units": 1000, "output_units": 500, "cost_usd": 0.97},
+    ]
+    lines = reconcile.reconcile("openai", records, path)
+    assert lines[0].flagged is False
+    assert abs(lines[0].cost_diff_pct) < 5.0
+
+
+def test_reconcile_threshold_is_configurable(tmp_path):
+    """Lowering threshold to 1% flips a 3% drift to flagged."""
+    path = tmp_path / "openai.csv"
+    path.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o-mini,1000,500,1,1.00\n"
+    )
+    records = [
+        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
+         "input_units": 1000, "output_units": 500, "cost_usd": 0.97},
+    ]
+    lines = reconcile.reconcile(
+        "openai", records, path, threshold_pct=1.0
+    )
+    assert lines[0].flagged is True
+
+
+def test_reconcile_does_not_flag_missing_sides(tmp_path):
+    """Lines missing data on either side carry undefined percent diff;
+    flagged must stay False so users do not get false positives just
+    because a model is unique to one source.
+    """
+    path = tmp_path / "openai.csv"
+    # Provider lists a model VG has no records for.
+    path.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o-mini,1000,500,1,1.00\n"
+    )
+    # VG has a different model only.
+    records = [
+        {"model_id": "openai/gpt-4-turbo", "modality": "llm",
+         "input_units": 100, "output_units": 50, "cost_usd": 0.50},
+    ]
+    lines = reconcile.reconcile("openai", records, path)
+    by_model = {ln.model: ln for ln in lines}
+    assert by_model["gpt-4o-mini"].matched_in_vg is False
+    assert by_model["gpt-4o-mini"].flagged is False
+    assert by_model["gpt-4-turbo"].matched_in_provider is False
+    assert by_model["gpt-4-turbo"].flagged is False
+
+
 def test_format_text_includes_header_and_columns():
     lines = [
         reconcile.ReconcileLine(

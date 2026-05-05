@@ -36,6 +36,9 @@ _PROVIDER_MODALITY = {
 }
 
 
+DEFAULT_DIFF_THRESHOLD_PCT = 5.0
+
+
 @dataclass
 class ReconcileLine:
     """One per-model row in the reconcile output."""
@@ -51,6 +54,7 @@ class ReconcileLine:
     cost_diff_pct: float
     matched_in_vg: bool
     matched_in_provider: bool
+    flagged: bool = False
 
 
 def _pct(diff: float, base: float) -> float:
@@ -159,6 +163,7 @@ def reconcile(
     provider: str,
     vg_records: list[dict[str, Any]],
     provider_file: Path,
+    threshold_pct: float = DEFAULT_DIFF_THRESHOLD_PCT,
 ) -> list[ReconcileLine]:
     """Produce the per-model diff between VG's logs and the provider file.
 
@@ -166,6 +171,12 @@ def reconcile(
     plus the absolute and percent differences. Models present on
     only one side are still surfaced (with the missing-side fields at
     zero and `matched_in_*` flags reflecting which side has data).
+
+    Lines whose ``abs(cost_diff_pct)`` exceeds ``threshold_pct`` are
+    flagged via ``ReconcileLine.flagged = True``. Default threshold
+    is 5.0% per design §3.3 — informed by the v0.0.4 disclosure that
+    LLM cost estimates can drift up to ~5%. Lines that lack data on
+    either side are NOT flagged (the percent diff is undefined).
     """
     vg_agg = aggregate_vg_records(provider, vg_records)
     provider_agg = parse_provider_file(provider, provider_file)
@@ -177,6 +188,12 @@ def reconcile(
         prov = provider_agg.get(model, {"units": 0.0, "cost": 0.0})
         units_diff = prov["units"] - vg["units"]
         cost_diff = prov["cost"] - vg["cost"]
+        cost_diff_pct = _pct(cost_diff, prov["cost"])
+        matched_both = (model in vg_agg) and (model in provider_agg)
+        # Flag only when both sides have data; missing-side rows
+        # produce undefined percent diffs (the cost on the missing
+        # side is zero) and would otherwise always flag.
+        flagged = matched_both and abs(cost_diff_pct) > threshold_pct
         lines.append(
             ReconcileLine(
                 model=model,
@@ -187,9 +204,10 @@ def reconcile(
                 vg_cost=vg["cost"],
                 provider_cost=prov["cost"],
                 cost_diff_abs=cost_diff,
-                cost_diff_pct=_pct(cost_diff, prov["cost"]),
+                cost_diff_pct=cost_diff_pct,
                 matched_in_vg=model in vg_agg,
                 matched_in_provider=model in provider_agg,
+                flagged=flagged,
             )
         )
     return lines
