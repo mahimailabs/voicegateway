@@ -98,6 +98,19 @@ _COST_ESTIMATES_USD: dict[tuple[str, str, str, str], Decimal] = {
     ("cartesia", "sonic-3", "tts", "stream"): Decimal("0.00620"),
 }
 
+# The six Phase 3 fixtures, in the order --all records them.
+# Order is chosen to fail fast on auth issues per provider:
+# OpenAI (batch + stream), Deepgram (batch + stream), Cartesia
+# (batch + stream).
+_ALL_FIXTURES: list[tuple[str, str, str, str]] = [
+    ("openai", "gpt-4o-mini", "llm", "batch"),
+    ("openai", "gpt-4o-mini", "llm", "stream"),
+    ("deepgram", "nova-3", "stt", "batch"),
+    ("deepgram", "nova-3", "stt", "stream"),
+    ("cartesia", "sonic-3", "tts", "batch"),
+    ("cartesia", "sonic-3", "tts", "stream"),
+]
+
 
 def _fixture_path(provider: str, model: str, modality: str, mode: str) -> Path:
     today = date.today().isoformat()
@@ -622,6 +635,32 @@ def _print_cost_estimate(
     )
 
 
+def _print_all_cost_estimate() -> None:
+    """Print the per-fixture and aggregate cost estimate for --all."""
+    print("About to record all 6 Phase 3 fixtures:")
+    print()
+    total = Decimal("0")
+    for provider, model, modality, mode in _ALL_FIXTURES:
+        estimate = _estimate_cost_usd(provider, model, modality, mode)
+        if estimate is None:
+            print(
+                f"  {provider}/{model} {modality}/{mode}    "
+                "estimate unavailable"
+            )
+            continue
+        total += estimate
+        print(
+            f"  {provider}/{model:<14s} {modality:>3s}/{mode:<6s}  ~${estimate} USD"
+        )
+    print()
+    print(f"Estimated total: ~${total} USD")
+    print()
+    print(
+        "Pass --confirm in addition to --record --all to actually hit "
+        "the APIs."
+    )
+
+
 def _compute_expected_cost_usd(
     provider: str,
     model: str,
@@ -758,6 +797,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "Without --confirm the script prints a cost estimate and exits.",
     )
     parser.add_argument(
+        "--all",
+        dest="all_fixtures",
+        action="store_true",
+        help="Record all 6 Phase 3 fixtures sequentially with a single "
+        "--confirm. Mutually exclusive with --provider/--modality/"
+        "--model/--mode.",
+    )
+    parser.add_argument(
         "--provider", choices=["openai", "deepgram", "cartesia"]
     )
     parser.add_argument("--modality", choices=["llm", "stt", "tts"])
@@ -766,6 +813,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "--mode", choices=["batch", "stream"], default="batch"
     )
     return parser
+
+
+async def _run_all() -> list[Path]:
+    """Sequentially record every Phase 3 fixture; return the written paths."""
+    written: list[Path] = []
+    for provider, model, modality, mode in _ALL_FIXTURES:
+        path = await _run(provider, modality, model, mode)
+        written.append(path)
+    return written
 
 
 def main() -> None:
@@ -777,11 +833,27 @@ def main() -> None:
         _print_recording_disabled()
         return
 
+    if args.all_fixtures:
+        # --all is mutually exclusive with the per-fixture identity
+        # flags. Reject early so a typo does not silently ignore one
+        # of them.
+        if args.provider or args.modality or args.model:
+            parser.error(
+                "--all is mutually exclusive with --provider, "
+                "--modality, --model. Pick one path."
+            )
+        if not args.confirm:
+            _print_all_cost_estimate()
+            return
+        asyncio.run(_run_all())
+        return
+
     # --record requires the per-fixture identity flags so the cost
     # estimate and the fixture filename are unambiguous.
     if not (args.provider and args.modality and args.model):
         parser.error(
-            "--provider, --modality, --model are required with --record"
+            "--provider, --modality, --model are required with --record "
+            "(unless --all is used)"
         )
 
     # --record without --confirm: dry-run cost estimate, no API call.
