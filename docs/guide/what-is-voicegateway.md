@@ -1,6 +1,6 @@
 # What is VoiceGateway?
 
-VoiceGateway is a **self-hosted inference gateway** purpose-built for voice AI applications. It sits between your application code and the speech/language model providers you depend on, giving you a single interface to route STT (speech-to-text), LLM (large language model), and TTS (text-to-speech) requests across cloud services and local models.
+VoiceGateway is **cost tracking and reconciliation for LiveKit voice agents**. It returns native LiveKit STT, LLM, and TTS plugin instances that drop straight into `AgentSession`, with modality-aware unit accounting (audio-minutes for STT, tokens for LLM, characters for TTS), LLM prices sourced from [`pydantic/genai-prices`](https://github.com/pydantic/genai-prices), and a `voicegw reconcile` command to verify VoiceGateway's recorded numbers against your provider invoices.
 
 ## The problem
 

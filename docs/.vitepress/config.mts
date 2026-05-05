@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   title: 'VoiceGateway',
-  description: 'Self-hosted inference gateway for voice AI. STT, LLM, TTS with agent-native MCP management.',
+  description: 'Cost tracking and reconciliation for LiveKit voice agents. Modality-aware unit accounting with prices from pydantic/genai-prices.',
 
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],

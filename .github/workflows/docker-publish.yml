@@ -73,7 +73,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
           labels: |
             org.opencontainers.image.title=VoiceGateway
-            org.opencontainers.image.description=Self-hosted inference gateway for voice AI with MCP
+            org.opencontainers.image.description=Cost tracking and reconciliation for LiveKit voice agents, with MCP server for coding agents
             org.opencontainers.image.url=https://voicegateway.dev
             org.opencontainers.image.documentation=https://docs.voicegateway.dev
             org.opencontainers.image.source=https://github.com/mahimailabs/voicegateway
@@ -101,7 +101,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ env.CORE_IMAGE }}
           readme-filepath: ./docker/README.voicegateway.md
-          short-description: "Self-hosted inference gateway for voice AI with MCP"
+          short-description: "Cost tracking and reconciliation for LiveKit voice agents, with MCP"
 
   publish-dashboard:
     needs: test

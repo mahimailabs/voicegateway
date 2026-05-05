@@ -1,7 +1,7 @@
 [project]
 name = "voicegateway"
 dynamic = ["version"]
-description = "Self-hosted inference gateway for voice AI — route STT, LLM, and TTS to any provider or local model"
+description = "Cost tracking and reconciliation for LiveKit voice agents: modality-aware unit accounting (audio-minutes, tokens, characters) backed by pydantic/genai-prices."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"

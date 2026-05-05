@@ -1,6 +1,6 @@
 # Architecture Overview
 
-VoiceGateway is a self-hosted inference gateway for voice AI. It provides unified routing for STT, LLM, and TTS requests across cloud providers and local models, with cost tracking, fallback chains, rate limiting, budget enforcement, and a web dashboard.
+VoiceGateway is cost tracking and reconciliation for LiveKit voice agents. It returns native LiveKit STT, LLM, and TTS plugin instances across cloud providers and local models, with modality-aware unit accounting (audio-minutes, tokens, characters), resolver-time fallback chains, rate limiting, budget enforcement, a `voicegw reconcile` command, and a web dashboard.
 
 ## System Architecture
 

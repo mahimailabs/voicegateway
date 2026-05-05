@@ -46,7 +46,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH="/install/lib/python3.12/site-packages"
 
 LABEL org.opencontainers.image.title="VoiceGateway" \
-      org.opencontainers.image.description="Self-hosted inference gateway for voice AI with MCP" \
+      org.opencontainers.image.description="Cost tracking and reconciliation for LiveKit voice agents, with MCP server for coding agents" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.url="https://voicegateway.dev" \
       org.opencontainers.image.documentation="https://docs.voicegateway.dev" \
