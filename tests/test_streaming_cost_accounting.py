@@ -45,6 +45,7 @@ automatically; nothing in this file changes.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,9 @@ from tests.fixtures.streaming._loader import (
     discover_fixtures,
 )
 from tests.fixtures.streaming._schema import StreamingFixture
+from voicegateway.pricing.catalog import calculate_cost
+
+_COST_PRECISION = Decimal("0.00000001")
 
 
 def _streaming_fixture_params() -> list[Any]:
@@ -266,6 +270,74 @@ def test_unit_counts_are_consistent_with_response_stream(
             f"{fid}: unknown modality {f.metadata.modality!r}; expected "
             "stt, llm, or tts."
         )
+
+
+# ---------- §3.5 #3 cost-calculation assertion -------------------------
+
+
+def _calculate_cost_from_usage(f: StreamingFixture) -> Decimal:
+    """Run provider_reported_usage through the catalog facade for f's modality."""
+    full_model = f"{f.metadata.provider}/{f.metadata.model}"
+    usage = f.provider_reported_usage
+    if f.metadata.modality == "llm":
+        cost = calculate_cost(
+            "llm",
+            full_model,
+            input_tokens=int(usage["input_tokens"]),
+            output_tokens=int(usage["output_tokens"]),
+        )
+    elif f.metadata.modality == "stt":
+        cost = calculate_cost(
+            "stt",
+            full_model,
+            audio_seconds=float(usage["audio_seconds"]),
+        )
+    elif f.metadata.modality == "tts":
+        cost = calculate_cost(
+            "tts",
+            full_model,
+            character_count=int(usage["character_count"]),
+        )
+    else:
+        raise AssertionError(
+            f"{_fixture_id(f)}: unknown modality {f.metadata.modality!r}"
+        )
+    if cost is None:
+        raise AssertionError(
+            f"{_fixture_id(f)}: pricing catalog does not know about "
+            f"{full_model!r}. Either re-record with a known model or "
+            "update the catalog. expected_cost_usd in the fixture was "
+            f"{f.expected_cost_usd}, but the live catalog returned None."
+        )
+    return cost
+
+
+def test_cost_calculation_matches_expected_cost_usd(
+    streaming_fixture: StreamingFixture,
+) -> None:
+    """calculate_cost(provider_reported_usage) == fixture.expected_cost_usd.
+
+    Both sides are quantized to 8 decimal places (the precision the
+    StreamingFixture schema and the recorder both pin). A drift here
+    means either the catalog's price changed since the fixture was
+    recorded (re-record) or the cost-calculation layer regressed
+    (debug the catalog).
+    """
+    f = streaming_fixture
+    fid = _fixture_id(f)
+
+    live_cost = _calculate_cost_from_usage(f)
+    quantized = live_cost.quantize(_COST_PRECISION)
+    expected = f.expected_cost_usd.quantize(_COST_PRECISION)
+
+    assert quantized == expected, (
+        f"{fid}: cost-layer regression. fixture.expected_cost_usd="
+        f"${expected} but calculate_cost(provider_reported_usage) now "
+        f"returns ${quantized} (raw {live_cost}). The fixture pins the "
+        "price at recording time; if the catalog's price changed, the "
+        "right fix is to re-record this fixture, not to update the "
+        "expected value."
+    )
 
 
 # ---------- repo-state guards ------------------------------------------
