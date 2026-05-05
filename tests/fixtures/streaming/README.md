@@ -1,19 +1,36 @@
 # Streaming cost-accounting fixtures
 
 This directory holds JSON fixtures captured from real provider APIs.
-`tests/test_streaming_cost_accounting.py` replays each fixture
-through VoiceGateway's `InstrumentedSTT|LLM|TTS` wrappers via HTTP
-and WebSocket mocks and asserts that:
+`tests/test_streaming_cost_accounting.py` replays each fixture and
+asserts:
 
-1. The wrapper's accumulated unit count matches the
-   `provider_reported_usage` block (catches off-by-one,
-   double-counting, and missed-markup bugs).
-2. `voicegateway.pricing.catalog.calculate_cost` produces the
-   `expected_cost_usd` value baked into the fixture (catches
-   modality dispatch and pricing-source attribution drift).
-3. The TTFB hook fires when the first content chunk arrives, not
-   at request issuance (catches modality refactors that forget to
-   wire TTFB).
+1. **Unit-count consistency.** The fixture's
+   `provider_reported_usage` agrees with the actual contents of
+   the recorded `response_stream` (LLM tokens vs the trailing
+   ChatCompletion usage; STT `audio_seconds` vs Deepgram's
+   `metadata.duration`; TTS `character_count` vs
+   `len(request.transcript)`). Catches recorder normalization
+   bugs, provider schema drift, and off-by-one errors.
+2. **Cost calculation.**
+   `voicegateway.pricing.catalog.calculate_cost`, given the
+   fixture's `provider_reported_usage`, returns the
+   `expected_cost_usd` value baked into the fixture (both
+   quantized to 8 decimal places). Catches modality-dispatch and
+   pricing-source attribution drift in the catalog facade.
+3. **TTFB hook behavior.** For stream-mode fixtures, the
+   `Instrumented*` wrapper's TTFB hook produces a `ttfb_ms <
+   total_latency_ms` when fired partway through, and falls back
+   to `ttfb_ms == total_latency_ms` when never fired. Catches
+   modality refactors that forget to wire TTFB.
+
+Note: assertion #1 was originally specified as "wrapper's
+accumulated unit count matches `provider_reported_usage`"
+(literal stream-replay through the wrapper). The v0.0.4
+`_InstrumentedBase` is a transparent proxy with no production
+stream interception, so the structural-integrity reformulation
+above replaces it. Wiring a production stream interceptor is
+filed as v0.0.5+ work in `.agents/TODO-phase3.md` Discovered
+Work.
 
 CI never calls real provider APIs. The fixtures committed here are
 the source of truth.
@@ -205,21 +222,44 @@ recording a new fixture, not refreshing the old one.
 - The script passes `stream_options={"include_usage": True}` for
   streaming so the final chunk carries token counts. Without this
   the streaming fixture would lack ground truth.
+- Default prompt is `DEFAULT_LLM_PROMPT` in the recording script
+  ("Hello, how are you? Please respond in one short sentence.")
+  with `max_tokens=100` so a one-sentence reply fits.
 
 ### Deepgram STT
 
 - The script ships with a small bundled audio sample
-  (`tests/fixtures/audio/test_sample.wav`, around 3 seconds, PCM).
-- Stream mode uses Deepgram's WebSocket transcription API; replay
-  uses an in-process WebSocket mock since `respx` covers HTTP only.
+  (`tests/fixtures/audio/test_sample.wav`, 3-second 8 kHz mono
+  16-bit PCM, ~48 KB). The recorder refuses to run if the file
+  is missing.
+- The fixture's `request` block stores a path reference
+  (`audio_path: "tests/fixtures/audio/test_sample.wav"`,
+  `audio_size_bytes`, `audio_format`) rather than inlined audio
+  bytes; replay tests load the file directly when they need
+  bytes.
+- Stream mode uses Deepgram's WebSocket transcription API at
+  `wss://api.deepgram.com/v1/listen?model=&encoding=linear16&
+  sample_rate=8000&channels=1`. Authenticates via the
+  `Authorization: Token <key>` header.
 
 ### Cartesia TTS
 
 - Requires a `CARTESIA_VOICE_ID` env var or the script's default
-  voice. Output format is fixed to PCM 16-bit, 44.1 kHz mono so
-  the fixture is reproducible.
-- Stream mode uses Cartesia's WebSocket API; same in-process
-  WebSocket mock as Deepgram for replay.
+  voice (a public Cartesia voice id). Output format is fixed at
+  PCM 16-bit, **16 kHz** mono so the fixture's
+  `audio_size_bytes` is reproducible across recordings.
+- Audio bytes are NOT inlined in the fixture; the
+  `response_stream` chunk holds metadata only
+  (`audio_size_bytes`, `encoding`, `sample_rate`). TTS billing
+  is on input characters, so audio fidelity is not what the
+  fixture is validating.
+- Default text is `DEFAULT_TTS_TEXT` in the recording script
+  ("Hello, this is the canonical voicegateway phase 3
+  fixture.", 58 characters). `character_count` =
+  `len(DEFAULT_TTS_TEXT)`.
+- Stream mode uses Cartesia's WebSocket API
+  (`wss://api.cartesia.ai/tts/websocket?cartesia_version=&api_key=`);
+  authenticates via query string, not header.
 
 ## Why these fixtures are committed
 
@@ -243,3 +283,19 @@ production dogfooding catches the high-frequency bugs (token
 counters off by one in streaming, TTFB hooks fire too late) that
 the v0.0.4 audit flagged, without requiring real production
 traffic.
+
+## Pointers
+
+- `_schema.py` here defines the `StreamingFixture` Pydantic model.
+  Every fixture in this directory must validate against it; the
+  loader in `_loader.py` enforces this on load.
+- `_loader.py` exports `load_fixture(path)`,
+  `discover_fixtures()`, `discover_fixture_paths()`, and
+  `parse_fixture_filename()`. The replay tests in
+  `tests/test_streaming_cost_accounting.py` consume these.
+- `tests/fixtures/streaming/PLACEHOLDER.md` is the runbook for
+  recording the six minimum fixtures. Delete it in the same
+  commit that lands them.
+- `scripts/record-streaming-fixtures.py` is the recorder.
+  `scripts/README.md` documents its usage and cost expectations.
+- `.env.fixtures.example` (repo root) lists the env vars.
