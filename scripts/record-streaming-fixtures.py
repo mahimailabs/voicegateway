@@ -54,8 +54,15 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures" / "streaming"
 
-DEFAULT_LLM_PROMPT = "Say 'hello world' and nothing else."
-DEFAULT_LLM_MAX_TOKENS = 20
+DEFAULT_LLM_PROMPT = "Hello, how are you? Please respond in one short sentence."
+DEFAULT_LLM_MAX_TOKENS = 100
+
+# Decimal quantization step for expected_cost_usd. 8 decimal places
+# matches the precision the StreamingFixture schema expects, fits a
+# Decimal-as-string in JSON without scientific notation, and gives
+# enough resolution for sub-cent fixture costs.
+_COST_PRECISION = Decimal("0.00000001")
+_RECORDED_BY = "scripts/record-streaming-fixtures.py"
 
 # Estimated provider cost for the canonical Phase 3 fixtures, in USD.
 # Computed from the v0.0.4 pricing catalog at the prompts and audio
@@ -87,7 +94,16 @@ def _save(path: Path, payload: dict[str, Any]) -> None:
 
 
 async def _record_openai_llm(model: str, mode: str) -> dict[str, Any]:
-    """Record an OpenAI LLM response for the canonical test prompt."""
+    """Record an OpenAI LLM response and return an intermediate fixture shape.
+
+    Returns a dict with three keys: ``request`` (the literal payload
+    sent to the API), ``response_stream`` (a list of FixtureChunk-
+    shaped dicts), and ``provider_reported_usage`` (the usage block
+    normalized to ``input_tokens`` / ``output_tokens`` /
+    ``total_tokens``). ``_run`` wraps this with metadata and the
+    computed expected_cost_usd to produce a StreamingFixture-valid
+    payload.
+    """
     try:
         import openai
     except ImportError as exc:
@@ -108,34 +124,38 @@ async def _record_openai_llm(model: str, mode: str) -> dict[str, Any]:
     }
 
     if mode == "batch":
-        resp = await client.chat.completions.create(stream=False, **base_request)
+        resp = await client.chat.completions.create(
+            stream=False, **base_request
+        )
+        if resp.usage is None:
+            raise RuntimeError(
+                "OpenAI batch response did not include a usage block; "
+                "cannot record a fixture without ground-truth usage."
+            )
         return {
             "request": {**base_request, "stream": False},
-            "response": resp.model_dump(),
-            "usage": resp.usage.model_dump() if resp.usage else None,
+            "response_stream": [
+                {
+                    "chunk_index": 0,
+                    "received_at_ms": 0,
+                    "data": resp.model_dump(),
+                }
+            ],
+            "provider_reported_usage": {
+                "input_tokens": resp.usage.prompt_tokens,
+                "output_tokens": resp.usage.completion_tokens,
+                "total_tokens": resp.usage.total_tokens,
+            },
         }
 
     if mode == "stream":
-        chunks: list[dict[str, Any]] = []
-        usage: dict[str, Any] | None = None
-        # `include_usage` is the OpenAI option that surfaces token
-        # counts on the final chunk of a streamed completion. Without
-        # it a stream fixture would lack the ground-truth usage we
-        # rely on for VG's wrapper-counts-correctly assertions.
-        async for chunk in await client.chat.completions.create(
-            stream=True,
-            stream_options={"include_usage": True},
-            **base_request,
-        ):
-            chunk_dict = chunk.model_dump()
-            chunks.append(chunk_dict)
-            if chunk.usage:
-                usage = chunk.usage.model_dump()
-        return {
-            "request": {**base_request, "stream": True},
-            "chunks": chunks,
-            "usage": usage,
-        }
+        # 3.3 #3 lands the stream-mode shape (chunk_index/received_at_ms
+        # per chunk, usage extracted from the final include_usage chunk).
+        # Until then this branch refuses to write a non-conforming fixture.
+        raise NotImplementedError(
+            "OpenAI LLM stream recording lands in 3.3 #3. "
+            "Use --mode batch for now."
+        )
 
     raise ValueError(f"Unknown mode: {mode!r}")
 
@@ -219,6 +239,98 @@ def _print_cost_estimate(
     )
 
 
+def _compute_expected_cost_usd(
+    provider: str,
+    model: str,
+    modality: str,
+    usage: dict[str, Any],
+) -> str:
+    """Calculate, quantize, and serialize ``expected_cost_usd`` for a fixture.
+
+    Imports the catalog facade lazily so the script can run without
+    the installed package on path for the gating-only branches.
+    Raises ``RuntimeError`` if the model is unknown to the catalog;
+    a fixture without a known cost cannot be replayed.
+    """
+    from voicegateway.pricing.catalog import calculate_cost
+
+    full_model = f"{provider}/{model}"
+    if modality == "llm":
+        cost = calculate_cost(
+            "llm",
+            full_model,
+            input_tokens=usage["input_tokens"],
+            output_tokens=usage["output_tokens"],
+        )
+    elif modality == "stt":
+        cost = calculate_cost(
+            "stt",
+            full_model,
+            audio_seconds=float(usage["audio_seconds"]),
+        )
+    elif modality == "tts":
+        cost = calculate_cost(
+            "tts",
+            full_model,
+            character_count=int(usage["character_count"]),
+        )
+    else:
+        raise ValueError(f"Unknown modality: {modality!r}")
+
+    if cost is None:
+        raise RuntimeError(
+            f"Pricing catalog does not know about {full_model!r} "
+            f"({modality}). Add an entry before recording so "
+            "expected_cost_usd is meaningful."
+        )
+    return str(cost.quantize(_COST_PRECISION))
+
+
+def _build_fixture_payload(
+    provider: str,
+    model: str,
+    modality: str,
+    mode: str,
+    intermediate: dict[str, Any],
+    *,
+    voicegateway_version: str,
+    recorded_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Wrap a recorder's intermediate output into a StreamingFixture payload."""
+    if recorded_at is None:
+        recorded_at = datetime.now(UTC)
+    expected_cost_usd = _compute_expected_cost_usd(
+        provider, model, modality, intermediate["provider_reported_usage"]
+    )
+    return {
+        "metadata": {
+            "provider": provider,
+            "model": model,
+            "modality": modality,
+            "mode": mode,
+            "recorded_at": recorded_at.isoformat().replace("+00:00", "Z"),
+            "recorded_by": _RECORDED_BY,
+            "voicegateway_version": voicegateway_version,
+        },
+        "request": intermediate["request"],
+        "response_stream": intermediate["response_stream"],
+        "provider_reported_usage": intermediate["provider_reported_usage"],
+        "expected_cost_usd": expected_cost_usd,
+    }
+
+
+def _validate_payload(payload: dict[str, Any]) -> None:
+    """Raise if ``payload`` does not match the StreamingFixture schema.
+
+    Lazy import so the script's gating-only branches never pull in
+    pydantic. By the time we reach validation we are about to write
+    a real fixture and the cost of the import is trivial.
+    """
+    from tests.fixtures.streaming._schema import StreamingFixture
+
+    StreamingFixture.model_validate(payload)
+
+
 async def _run(provider: str, modality: str, model: str, mode: str) -> Path:
     recorder = _RECORDERS.get((provider, modality))
     if recorder is None:
@@ -227,15 +339,22 @@ async def _run(provider: str, modality: str, model: str, mode: str) -> Path:
             f"Available: {sorted(_RECORDERS.keys())}"
         )
     print(f"Recording {provider}/{model}/{modality}/{mode}...")
-    payload = await recorder(model, mode)
-    payload["recorded_at"] = datetime.now(UTC).isoformat()
-    payload["provider"] = provider
-    payload["model"] = model
-    payload["modality"] = modality
-    payload["mode"] = mode
+    intermediate = await recorder(model, mode)
+    import voicegateway
+
+    payload = _build_fixture_payload(
+        provider,
+        model,
+        modality,
+        mode,
+        intermediate,
+        voicegateway_version=voicegateway.__version__,
+    )
+    _validate_payload(payload)
     fixture_path = _fixture_path(provider, model, modality, mode)
     _save(fixture_path, payload)
     print(f"  -> {fixture_path}")
+    print(f"     expected_cost_usd = ${payload['expected_cost_usd']}")
     return fixture_path
 
 
