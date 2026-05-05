@@ -1,6 +1,6 @@
 # What is VoiceGateway?
 
-VoiceGateway is **cost tracking and reconciliation for LiveKit voice agents**. It returns native LiveKit STT, LLM, and TTS plugin instances that drop straight into `AgentSession`, with modality-aware unit accounting (audio-minutes for STT, tokens for LLM, characters for TTS), LLM prices sourced from [`pydantic/genai-prices`](https://github.com/pydantic/genai-prices), and a `voicegw reconcile` command to verify VoiceGateway's recorded numbers against your provider invoices.
+VoiceGateway is **a thin routing layer for LiveKit voice agents with first-class cost tracking and reconciliation**. It returns native LiveKit STT, LLM, and TTS plugin instances that drop straight into `AgentSession`, layering modality-aware unit accounting (audio-minutes for STT, tokens for LLM, characters for TTS), resolver-time fallback chains, rate limiting, and per-project budget enforcement on top. LLM prices flow through [`pydantic/genai-prices`](https://github.com/pydantic/genai-prices); a `voicegw reconcile` command verifies VoiceGateway's recorded numbers against your provider invoices.
 
 ## The problem
 
