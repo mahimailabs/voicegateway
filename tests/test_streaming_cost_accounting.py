@@ -45,9 +45,11 @@ automatically; nothing in this file changes.
 
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -56,9 +58,20 @@ from tests.fixtures.streaming._loader import (
     discover_fixtures,
 )
 from tests.fixtures.streaming._schema import StreamingFixture
+from voicegateway.middleware.instrumented_provider import (
+    InstrumentedLLM,
+    InstrumentedSTT,
+    InstrumentedTTS,
+    _InstrumentedBase,
+)
 from voicegateway.pricing.catalog import calculate_cost
 
 _COST_PRECISION = Decimal("0.00000001")
+_WRAPPER_CLASSES: dict[str, type[_InstrumentedBase]] = {
+    "stt": InstrumentedSTT,
+    "llm": InstrumentedLLM,
+    "tts": InstrumentedTTS,
+}
 
 
 def _streaming_fixture_params() -> list[Any]:
@@ -337,6 +350,104 @@ def test_cost_calculation_matches_expected_cost_usd(
         "price at recording time; if the catalog's price changed, the "
         "right fix is to re-record this fixture, not to update the "
         "expected value."
+    )
+
+
+# ---------- §3.5 #4 TTFB hook assertion --------------------------------
+
+
+def _build_wrapper_for_fixture(f: StreamingFixture) -> _InstrumentedBase:
+    """Construct the modality-correct Instrumented wrapper with mocked deps."""
+    cls = _WRAPPER_CLASSES[f.metadata.modality]
+    cost_tracker = MagicMock()
+    cost_tracker.create_record = MagicMock(return_value=MagicMock())
+    cost_tracker.notify_spend = AsyncMock()
+    return cls(
+        wrapped=MagicMock(),
+        model_id=f"{f.metadata.provider}/{f.metadata.model}",
+        provider=f.metadata.provider,
+        project="default",
+        cost_tracker=cost_tracker,
+        storage=None,
+    )
+
+
+def test_ttfb_hook_fires_on_first_chunk(
+    streaming_fixture: StreamingFixture,
+) -> None:
+    """Behavior-level: TTFB metric is set after first chunk, not before.
+
+    Per design §6.4 mitigation: assert at the *behavior* level
+    (TTFB metric is set after the first chunk arrives) rather than
+    the implementation level (the internal _first_byte_time
+    attribute is None). The behavior is observable via
+    cost_tracker.create_record's ttfb_ms argument, which is what
+    downstream metrics consume.
+
+    Skips batch-mode fixtures: a single-shot batch response has no
+    meaningful "first chunk" distinct from "request issuance," so
+    TTFB is intentionally equal to total_latency_ms in that case
+    (validated by the existing
+    test_log_request_falls_back_to_total_when_hook_not_called).
+    """
+    f = streaming_fixture
+    if f.metadata.mode == "batch":
+        pytest.skip(
+            f"{_fixture_id(f)}: batch fixtures have no streaming TTFB "
+            "(by design ttfb_ms == total_latency_ms for batch)."
+        )
+
+    if not f.response_stream:
+        pytest.fail(
+            f"{_fixture_id(f)}: stream fixture has zero chunks; "
+            "cannot exercise TTFB hook."
+        )
+
+    wrapper = _build_wrapper_for_fixture(f)
+
+    # Behavior 1: before any chunk arrives, the hook has not fired.
+    # Observable via _log_request producing ttfb_ms == total_latency_ms.
+    pre_wrapper = _build_wrapper_for_fixture(f)
+    pre_cost_tracker = object.__getattribute__(pre_wrapper, "_cost_tracker")
+    asyncio.run(pre_wrapper._log_request(input_units=1.0))
+    pre_kwargs = pre_cost_tracker.create_record.call_args.kwargs
+    assert pre_kwargs["ttfb_ms"] == pre_kwargs["total_latency_ms"], (
+        f"{_fixture_id(f)}: when the TTFB hook never fires, ttfb_ms "
+        "must fall back to total_latency_ms. Diverging means the "
+        "wrapper introduced a different fallback path."
+    )
+
+    # Behavior 2: the hook fires when the first chunk arrives. Drive
+    # this with a small real-time delay before _mark_first_byte() and
+    # another delay after, so total_latency_ms is measurably larger
+    # than ttfb_ms.
+    async def _drive() -> None:
+        await asyncio.sleep(0.005)
+        wrapper._mark_first_byte()
+        # The wrapper saw the first content chunk; subsequent chunks
+        # in the recorded stream do not change TTFB (idempotent).
+        for _ in f.response_stream[1:]:
+            wrapper._mark_first_byte()
+        await asyncio.sleep(0.020)
+        await wrapper._log_request(input_units=1.0)
+
+    asyncio.run(_drive())
+
+    cost_tracker = object.__getattribute__(wrapper, "_cost_tracker")
+    create_record_kwargs = cost_tracker.create_record.call_args.kwargs
+    ttfb_ms = create_record_kwargs["ttfb_ms"]
+    total_ms = create_record_kwargs["total_latency_ms"]
+
+    assert ttfb_ms > 0, (
+        f"{_fixture_id(f)}: ttfb_ms must be positive after the hook "
+        f"fires, got {ttfb_ms}."
+    )
+    assert ttfb_ms < total_ms, (
+        f"{_fixture_id(f)}: ttfb_ms ({ttfb_ms:.2f}) must be less than "
+        f"total_latency_ms ({total_ms:.2f}) when _mark_first_byte was "
+        "called partway through. Equal values mean the hook recorded "
+        "the end time instead of the first-chunk time, OR the wrapper "
+        "is not consulting _first_byte_time in _log_request."
     )
 
 
