@@ -136,6 +136,44 @@ async def test_v1_costs_with_only_start_or_only_end(client):
     assert resp.status_code == 200
 
 
+async def test_v1_costs_period_with_window_emits_deprecation_header(client):
+    """Mixing legacy `period` with new `start`/`end` surfaces the
+    Deprecation response header so dashboards mid-migration discover
+    that period is ignored when the new params are present.
+    """
+    resp = await client.get(
+        "/v1/costs?period=week&start=2026-05-01&end=2026-05-04"
+    )
+    assert resp.status_code == 200
+    assert "deprecation" in {k.lower() for k in resp.headers}
+    msg = resp.headers["deprecation"].lower()
+    assert "period" in msg and "start/end" in msg
+
+
+async def test_v1_costs_period_without_window_no_deprecation_header(client):
+    """Legacy callers that pass only `period` see no Deprecation header."""
+    resp = await client.get("/v1/costs?period=week")
+    assert resp.status_code == 200
+    assert "deprecation" not in {k.lower() for k in resp.headers}
+
+
+async def test_v1_costs_window_without_period_no_deprecation_header(client):
+    """New-API callers that pass only `start`/`end` see no Deprecation header."""
+    resp = await client.get("/v1/costs?start=2026-05-01&end=2026-05-04")
+    assert resp.status_code == 200
+    assert "deprecation" not in {k.lower() for k in resp.headers}
+
+
+async def test_v1_costs_no_params_defaults_to_today(client):
+    """Backward compat: omitting all three falls back to period=today."""
+    resp = await client.get("/v1/costs")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["period"] == "today"
+    # No deprecation header for the no-params path.
+    assert "deprecation" not in {k.lower() for k in resp.headers}
+
+
 async def test_v1_costs_combined_query_params(client, gateway):
     """All three new params (per_modality, include_pricing_source, start/end) compose.
 
