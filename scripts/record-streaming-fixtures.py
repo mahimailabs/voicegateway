@@ -810,7 +810,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--modality", choices=["llm", "stt", "tts"])
     parser.add_argument("--model")
     parser.add_argument(
-        "--mode", choices=["batch", "stream"], default="batch"
+        "--mode",
+        choices=["batch", "stream"],
+        default=None,
+        help="batch or stream. Required with --provider/--modality/"
+        "--model. Mutually exclusive with --all (which records both "
+        "modes for every fixture). Defaults to 'batch' in the "
+        "single-fixture path when omitted.",
     )
     return parser
 
@@ -848,13 +854,27 @@ def main() -> None:
         return
 
     if args.all_fixtures:
-        # --all is mutually exclusive with the per-fixture identity
-        # flags. Reject early so a typo does not silently ignore one
-        # of them.
-        if args.provider or args.modality or args.model:
+        # --all is mutually exclusive with every narrowing flag.
+        # Reject early so a typo does not silently ignore one of them
+        # and spend money outside the apparent command intent. --mode
+        # is included here because before this fix its "batch" default
+        # let `--all --mode stream` slip past the mutex check (Codex
+        # adversarial review medium finding).
+        narrowing = {
+            "--provider": args.provider,
+            "--modality": args.modality,
+            "--model": args.model,
+            "--mode": args.mode,
+        }
+        offenders = [name for name, value in narrowing.items() if value]
+        if offenders:
             parser.error(
-                "--all is mutually exclusive with --provider, "
-                "--modality, --model. Pick one path."
+                f"--all is mutually exclusive with "
+                f"{', '.join(offenders)}. --all records all 6 fixtures "
+                "(both batch and stream for every modality), so a "
+                "narrowing flag here would be silently ignored. Pick "
+                "one path: --all (no narrowing) OR --provider "
+                "--modality --model --mode (single fixture)."
             )
         if not args.confirm:
             _print_all_cost_estimate()
@@ -870,14 +890,17 @@ def main() -> None:
             "(unless --all is used)"
         )
 
+    # In the single-fixture path, --mode defaults to batch when omitted.
+    mode = args.mode if args.mode is not None else "batch"
+
     # --record without --confirm: dry-run cost estimate, no API call.
     if not args.confirm:
         _print_cost_estimate(
-            args.provider, args.model, args.modality, args.mode
+            args.provider, args.model, args.modality, mode
         )
         return
 
-    asyncio.run(_run(args.provider, args.modality, args.model, args.mode))
+    asyncio.run(_run(args.provider, args.modality, args.model, mode))
 
 
 if __name__ == "__main__":

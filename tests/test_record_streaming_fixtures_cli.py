@@ -196,6 +196,49 @@ def test_all_flag_rejects_per_fixture_identity_flags() -> None:
     assert "mutually exclusive" in result.stderr
 
 
+def test_all_flag_rejects_mode_flag() -> None:
+    """--all and --mode are mutually exclusive (regression: see Codex review).
+
+    Before this fix, --mode defaulted to "batch" so the mutex check
+    `args.provider or args.modality or args.model` was always falsy
+    against --mode. Running `--record --all --mode stream` would
+    quietly record all six fixtures (both batch and stream) instead
+    of erroring. The argparse default is now None and --mode is
+    explicitly rejected when --all is set.
+    """
+    result = _run("--record", "--all", "--mode", "stream")
+    assert result.returncode != 0, (
+        "--all + --mode must reject; got returncode "
+        f"{result.returncode}, stderr={result.stderr!r}"
+    )
+    assert "mutually exclusive" in result.stderr
+    assert "--mode" in result.stderr
+
+
+def test_all_flag_rejects_mode_batch_too() -> None:
+    """Even an explicit --mode batch is rejected with --all (consistency)."""
+    result = _run("--record", "--all", "--mode", "batch")
+    assert result.returncode != 0
+    assert "mutually exclusive" in result.stderr
+
+
+def test_record_without_mode_falls_back_to_batch() -> None:
+    """Single-fixture path: --mode is optional and defaults to batch."""
+    result = _run(
+        "--record",
+        "--provider", "openai",
+        "--modality", "llm",
+        "--model", "gpt-4o-mini",
+        # --mode deliberately omitted
+    )
+    assert result.returncode == 0, (
+        f"single-fixture without --mode should succeed; got "
+        f"returncode {result.returncode}, stderr={result.stderr!r}"
+    )
+    # Cost estimate path runs; "llm/batch" is the documented default.
+    assert "llm/batch" in result.stdout
+
+
 async def test_run_all_dispatches_each_fixture_in_documented_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
