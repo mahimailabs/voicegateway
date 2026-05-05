@@ -45,7 +45,8 @@ import argparse
 import asyncio
 import json
 import os
-from collections.abc import Awaitable, Callable
+import time
+from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -149,15 +150,64 @@ async def _record_openai_llm(model: str, mode: str) -> dict[str, Any]:
         }
 
     if mode == "stream":
-        # 3.3 #3 lands the stream-mode shape (chunk_index/received_at_ms
-        # per chunk, usage extracted from the final include_usage chunk).
-        # Until then this branch refuses to write a non-conforming fixture.
-        raise NotImplementedError(
-            "OpenAI LLM stream recording lands in 3.3 #3. "
-            "Use --mode batch for now."
-        )
+        # `include_usage` surfaces the usage block on the final
+        # chunk so the recorded fixture has ground-truth token
+        # counts. Without it a stream fixture cannot be replayed
+        # for the unit-counting assertion.
+        chunks: list[dict[str, Any]] = []
+        usage_normalized: dict[str, int] | None = None
+        start = time.perf_counter()
+        async for index, chunk in _aenumerate(
+            await client.chat.completions.create(
+                stream=True,
+                stream_options={"include_usage": True},
+                **base_request,
+            )
+        ):
+            received_at_ms = int((time.perf_counter() - start) * 1000)
+            chunk_dump = chunk.model_dump()
+            chunks.append(
+                {
+                    "chunk_index": index,
+                    "received_at_ms": received_at_ms,
+                    "data": chunk_dump,
+                }
+            )
+            if chunk.usage is not None:
+                usage_normalized = {
+                    "input_tokens": chunk.usage.prompt_tokens,
+                    "output_tokens": chunk.usage.completion_tokens,
+                    "total_tokens": chunk.usage.total_tokens,
+                }
+
+        if usage_normalized is None:
+            raise RuntimeError(
+                "OpenAI streaming response did not carry a usage "
+                "block on any chunk. Was stream_options.include_usage "
+                "honored by the endpoint?"
+            )
+        if not chunks:
+            raise RuntimeError(
+                "OpenAI streaming response yielded zero chunks; "
+                "cannot record a stream fixture."
+            )
+        return {
+            "request": {**base_request, "stream": True},
+            "response_stream": chunks,
+            "provider_reported_usage": usage_normalized,
+        }
 
     raise ValueError(f"Unknown mode: {mode!r}")
+
+
+async def _aenumerate(
+    aiter: AsyncIterable[Any], start: int = 0
+) -> AsyncIterator[tuple[int, Any]]:
+    """Async-iterator counterpart to the builtin ``enumerate``."""
+    index = start
+    async for item in aiter:
+        yield index, item
+        index += 1
 
 
 # ---------- Deepgram -----------------------------------------------------
