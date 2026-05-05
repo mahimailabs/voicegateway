@@ -610,6 +610,80 @@ def test_reconcile_invalid_date_returns_2(temp_config, tmp_path):
     assert "YYYY-MM-DD" in result.output
 
 
+def test_reconcile_threshold_flag_propagates(temp_config, tmp_path, monkeypatch):
+    """--threshold lowers the flag bar; rows under default 5% can flip to flagged.
+
+    Drives the CLI with both the default threshold (no flag at 3% drift)
+    and an explicit --threshold 1.0 (flag at the same 3% drift). Pins
+    that the CLI flag flows through to reconcile(threshold_pct=...).
+    """
+    import asyncio
+    import datetime as _dt
+    import json as _json
+    import uuid
+
+    from voicegateway.storage.models import RequestRecord
+    from voicegateway.storage.sqlite import SQLiteStorage
+
+    db_path = str(tmp_path / "reconcile-threshold.db")
+    monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
+
+    async def _seed() -> tuple[str, str]:
+        storage = SQLiteStorage(db_path)
+        today = _dt.date.today()
+        # Seed a single VG record at $0.97; provider file says
+        # $1.00 -> ~3% drift.
+        ts = _dt.datetime.combine(
+            today - _dt.timedelta(days=1), _dt.time(12), tzinfo=_dt.UTC
+        ).timestamp()
+        await storage.log_request(RequestRecord(
+            id=str(uuid.uuid4()), timestamp=ts,
+            modality="llm", model_id="openai/gpt-4o-mini",
+            provider="openai", project="default",
+            input_units=1000, output_units=500, cost_usd=0.97,
+            pricing_source="genai-prices@0.0.57", status="ok",
+        ))
+        return (
+            (today - _dt.timedelta(days=2)).isoformat(),
+            today.isoformat(),
+        )
+
+    start, end = asyncio.run(_seed())
+
+    provider_file = tmp_path / "openai-threshold.csv"
+    provider_file.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o-mini,1000,500,1,1.00\n"
+    )
+
+    # Default threshold (5.0): 3% drift should NOT flag.
+    result_default = runner.invoke(
+        app,
+        ["reconcile", "--config", temp_config,
+         "--provider", "openai",
+         "--start", start, "--end", end,
+         "--provider-usage-file", str(provider_file),
+         "--format", "json"],
+    )
+    assert result_default.exit_code == 0, result_default.output
+    payload_default = _json.loads(result_default.output)
+    assert payload_default[0]["flagged"] is False
+
+    # Lower threshold (1.0): same 3% drift now flags.
+    result_strict = runner.invoke(
+        app,
+        ["reconcile", "--config", temp_config,
+         "--provider", "openai",
+         "--start", start, "--end", end,
+         "--provider-usage-file", str(provider_file),
+         "--format", "json",
+         "--threshold", "1.0"],
+    )
+    assert result_strict.exit_code == 0, result_strict.output
+    payload_strict = _json.loads(result_strict.output)
+    assert payload_strict[0]["flagged"] is True
+
+
 def test_reconcile_surfaces_missing_models(temp_config, tmp_path, monkeypatch):
     """Models present only in VG (or only in provider file) are still reported."""
     import asyncio

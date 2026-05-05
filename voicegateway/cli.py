@@ -530,6 +530,15 @@ def reconcile_cmd(
     fmt: str = typer.Option(
         "text", "--format", "-f", help="Output format: text (default), csv, or json."
     ),
+    threshold: float = typer.Option(
+        5.0,
+        "--threshold",
+        help=(
+            "Flag rows whose |cost diff %| exceeds this threshold "
+            "(default 5.0). The v0.0.4 disclosure expects LLM "
+            "estimates to drift up to ~5%."
+        ),
+    ),
 ):
     """Diff VG's logged costs against a provider's usage export.
 
@@ -564,7 +573,12 @@ def reconcile_cmd(
     )
 
     try:
-        lines = _reconcile.reconcile(provider, records, Path(provider_usage_file))
+        lines = _reconcile.reconcile(
+            provider,
+            records,
+            Path(provider_usage_file),
+            threshold_pct=threshold,
+        )
     except FileNotFoundError as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(2) from e
