@@ -591,7 +591,14 @@ def reconcile_cmd(
     if fmt == "csv":
         sys.stdout.write(_reconcile.format_csv(lines))
     elif fmt == "json":
-        sys.stdout.write(_reconcile.format_json(lines))
+        sys.stdout.write(
+            _reconcile.format_json(
+                lines,
+                provider=provider,
+                period_start=start,
+                period_end=end,
+            )
+        )
     else:
         # Colorize flagged rows only on a real TTY; piped output and
         # CliRunner captures stay plain text.

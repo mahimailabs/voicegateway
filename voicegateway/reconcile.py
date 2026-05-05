@@ -342,8 +342,48 @@ def format_csv(lines: list[ReconcileLine]) -> str:
     return buf.getvalue()
 
 
-def format_json(lines: list[ReconcileLine]) -> str:
-    """JSON list of per-model diff records."""
-    return json.dumps(
-        [line.__dict__ for line in lines], indent=2, default=str
-    ) + "\n"
+def format_json(
+    lines: list[ReconcileLine],
+    *,
+    provider: str | None = None,
+    period_start: str | None = None,
+    period_end: str | None = None,
+) -> str:
+    """JSON document with the design §2.2 schema.
+
+    Shape: ``{provider, period: {start, end}, rows: [...],
+    total: {vg_cost, provider_cost, diff_abs, diff_pct},
+    flagged_count}``. Total sums vg_cost / provider_cost across rows
+    where both sides matched (missing-side rows excluded so their
+    $0 placeholders do not skew the total). flagged_count counts
+    rows whose ``flagged=True``.
+
+    ``provider``/``period_start``/``period_end`` are optional so the
+    helper can be called from contexts that don't track them
+    (existing tests, REPL exploration); when omitted they render as
+    null in the output.
+    """
+    total_vg = sum(
+        ln.vg_cost for ln in lines
+        if ln.matched_in_vg and ln.matched_in_provider
+    )
+    total_provider = sum(
+        ln.provider_cost for ln in lines
+        if ln.matched_in_vg and ln.matched_in_provider
+    )
+    total_diff_abs = total_provider - total_vg
+    total_diff_pct = _pct(total_diff_abs, total_provider)
+    flagged_count = sum(1 for ln in lines if ln.flagged)
+    document = {
+        "provider": provider,
+        "period": {"start": period_start, "end": period_end},
+        "rows": [line.__dict__ for line in lines],
+        "total": {
+            "vg_cost": total_vg,
+            "provider_cost": total_provider,
+            "diff_abs": total_diff_abs,
+            "diff_pct": total_diff_pct,
+        },
+        "flagged_count": flagged_count,
+    }
+    return json.dumps(document, indent=2, default=str) + "\n"

@@ -752,7 +752,8 @@ def test_format_csv_includes_flagged_column():
     assert by_model["gpt-4o"]["flagged"] == "False"
 
 
-def test_format_json_writes_array_of_records():
+def test_format_json_writes_design_schema():
+    """JSON shape per design §2.2: provider, period, rows, total, flagged_count."""
     lines = [
         reconcile.ReconcileLine(
             model="sonic-3", vg_units=1000.0, provider_units=1000.0,
@@ -762,6 +763,87 @@ def test_format_json_writes_array_of_records():
             matched_in_vg=True, matched_in_provider=True,
         ),
     ]
-    payload = json.loads(reconcile.format_json(lines))
-    assert isinstance(payload, list)
-    assert payload[0]["model"] == "sonic-3"
+    payload = json.loads(
+        reconcile.format_json(
+            lines, provider="cartesia",
+            period_start="2026-04-01", period_end="2026-04-30",
+        )
+    )
+    assert isinstance(payload, dict)
+    assert payload["provider"] == "cartesia"
+    assert payload["period"] == {
+        "start": "2026-04-01", "end": "2026-04-30",
+    }
+    assert isinstance(payload["rows"], list)
+    assert len(payload["rows"]) == 1
+    assert payload["rows"][0]["model"] == "sonic-3"
+    # Total sums matched-both rows: 0.012 each.
+    assert payload["total"]["vg_cost"] == pytest.approx(0.012, abs=1e-6)
+    assert payload["total"]["provider_cost"] == pytest.approx(0.012, abs=1e-6)
+    assert payload["total"]["diff_abs"] == pytest.approx(0.0, abs=1e-6)
+    assert payload["total"]["diff_pct"] == pytest.approx(0.0, abs=1e-3)
+    assert payload["flagged_count"] == 0
+
+
+def test_format_json_counts_flagged_rows():
+    """flagged_count reflects the number of rows where flagged=True."""
+    lines = [
+        reconcile.ReconcileLine(
+            model="gpt-4o-mini",
+            vg_units=1000.0, provider_units=1000.0,
+            units_diff_abs=0.0, units_diff_pct=0.0,
+            vg_cost=0.94, provider_cost=1.00,
+            cost_diff_abs=0.06, cost_diff_pct=6.0,
+            matched_in_vg=True, matched_in_provider=True,
+            flagged=True,
+        ),
+        reconcile.ReconcileLine(
+            model="gpt-4o",
+            vg_units=500.0, provider_units=500.0,
+            units_diff_abs=0.0, units_diff_pct=0.0,
+            vg_cost=2.00, provider_cost=2.00,
+            cost_diff_abs=0.0, cost_diff_pct=0.0,
+            matched_in_vg=True, matched_in_provider=True,
+            flagged=False,
+        ),
+    ]
+    payload = json.loads(reconcile.format_json(lines, provider="openai"))
+    assert payload["flagged_count"] == 1
+    assert payload["total"]["vg_cost"] == pytest.approx(2.94, abs=1e-6)
+    assert payload["total"]["provider_cost"] == pytest.approx(3.00, abs=1e-6)
+
+
+def test_format_json_total_excludes_missing_side():
+    """Total must sum only matched-both rows, mirroring format_text."""
+    lines = [
+        reconcile.ReconcileLine(
+            model="gpt-4o-mini",
+            vg_units=1000.0, provider_units=1000.0,
+            units_diff_abs=0.0, units_diff_pct=0.0,
+            vg_cost=0.97, provider_cost=1.00,
+            cost_diff_abs=0.03, cost_diff_pct=3.0,
+            matched_in_vg=True, matched_in_provider=True,
+        ),
+        reconcile.ReconcileLine(
+            model="gpt-3.5-turbo",
+            vg_units=0.0, provider_units=500.0,
+            units_diff_abs=500.0, units_diff_pct=100.0,
+            vg_cost=0.0, provider_cost=5.0,
+            cost_diff_abs=5.0, cost_diff_pct=100.0,
+            matched_in_vg=False, matched_in_provider=True,
+        ),
+    ]
+    payload = json.loads(reconcile.format_json(lines, provider="openai"))
+    # Only the matched-both row contributes; provider total is 1.00,
+    # NOT 6.00.
+    assert payload["total"]["vg_cost"] == pytest.approx(0.97, abs=1e-6)
+    assert payload["total"]["provider_cost"] == pytest.approx(1.00, abs=1e-6)
+
+
+def test_format_json_provider_and_period_optional():
+    """When metadata omitted, the corresponding fields render null."""
+    payload = json.loads(reconcile.format_json([]))
+    assert payload["provider"] is None
+    assert payload["period"] == {"start": None, "end": None}
+    assert payload["rows"] == []
+    assert payload["flagged_count"] == 0

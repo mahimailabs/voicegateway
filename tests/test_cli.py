@@ -516,7 +516,7 @@ def test_reconcile_csv_format(temp_config, tmp_path, monkeypatch):
 
 
 def test_reconcile_json_format(temp_config, tmp_path, monkeypatch):
-    """JSON format returns a list of dicts with the diff schema."""
+    """JSON output uses the design §2.2 schema (provider, period, rows, total, flagged_count)."""
     import asyncio
     import json as _json
 
@@ -539,9 +539,15 @@ def test_reconcile_json_format(temp_config, tmp_path, monkeypatch):
     )
     assert result.exit_code == 0, result.output
     payload = _json.loads(result.output)
-    assert isinstance(payload, list)
-    assert len(payload) == 1
-    line = payload[0]
+    assert isinstance(payload, dict)
+    assert payload["provider"] == "deepgram"
+    assert payload["period"] == {"start": start, "end": end}
+    assert "flagged_count" in payload
+    assert "total" in payload
+    rows = payload["rows"]
+    assert isinstance(rows, list)
+    assert len(rows) == 1
+    line = rows[0]
     assert line["model"] == "nova-3"
     # Provider has 3600s, VG has 3000s; provider - vg = 600s
     assert line["units_diff_abs"] == pytest.approx(600.0, abs=0.1)
@@ -667,7 +673,8 @@ def test_reconcile_threshold_flag_propagates(temp_config, tmp_path, monkeypatch)
     )
     assert result_default.exit_code == 0, result_default.output
     payload_default = _json.loads(result_default.output)
-    assert payload_default[0]["flagged"] is False
+    assert payload_default["rows"][0]["flagged"] is False
+    assert payload_default["flagged_count"] == 0
 
     # Lower threshold (1.0): same 3% drift now flags.
     result_strict = runner.invoke(
@@ -681,7 +688,8 @@ def test_reconcile_threshold_flag_propagates(temp_config, tmp_path, monkeypatch)
     )
     assert result_strict.exit_code == 0, result_strict.output
     payload_strict = _json.loads(result_strict.output)
-    assert payload_strict[0]["flagged"] is True
+    assert payload_strict["rows"][0]["flagged"] is True
+    assert payload_strict["flagged_count"] == 1
 
 
 def test_reconcile_surfaces_missing_models(temp_config, tmp_path, monkeypatch):
@@ -710,7 +718,7 @@ def test_reconcile_surfaces_missing_models(temp_config, tmp_path, monkeypatch):
     )
     assert result.exit_code == 0, result.output
     payload = _json.loads(result.output)
-    by_model = {row["model"]: row for row in payload}
+    by_model = {row["model"]: row for row in payload["rows"]}
     assert by_model["nova-2"]["matched_in_vg"] is False
     assert by_model["nova-2"]["matched_in_provider"] is True
     assert by_model["nova-3"]["matched_in_vg"] is True
