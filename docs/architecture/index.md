@@ -187,6 +187,7 @@ dashboard/
 | [Gateway Core](./gateway-core) | `core/gateway.py` | Main orchestrator, entry point for all requests |
 | [Provider Abstraction](./provider-abstraction) | `providers/base.py` | ABC for all 11 provider implementations |
 | [Middleware](./middleware) | `middleware/` | Cost, latency, rate limiting, fallback, budget |
+| [Cost Tracking](./cost-tracking) | `pricing/`, `middleware/cost_tracker.py` | Per-request cost calculation, pricing layer, streaming validation |
 | [Storage](./storage) | `storage/sqlite.py` | SQLite schema, tables, views, indexes |
 | [Config Layers](./config-layers) | `core/config_manager.py` | YAML + SQLite + env merge strategy |
 | [Security](./security) | `core/crypto.py` | Fernet encryption, secret management, masking |
