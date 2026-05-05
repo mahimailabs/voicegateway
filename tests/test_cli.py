@@ -1,6 +1,7 @@
 """Tests for voicegateway/cli.py — all CLI subcommands."""
 
 import os
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -723,3 +724,120 @@ def test_reconcile_surfaces_missing_models(temp_config, tmp_path, monkeypatch):
     assert by_model["nova-2"]["matched_in_provider"] is True
     assert by_model["nova-3"]["matched_in_vg"] is True
     assert by_model["nova-3"]["matched_in_provider"] is False
+
+
+# --------------------------------------------------------------------
+# reconcile: end-to-end against committed sample fixtures
+# --------------------------------------------------------------------
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_USAGE_EXPORTS_DIR = _REPO_ROOT / "tests" / "fixtures" / "usage_exports"
+
+
+def test_reconcile_runs_against_committed_openai_sample(
+    temp_config, tmp_path, monkeypatch
+):
+    """End-to-end reconcile against the committed openai-sample.csv.
+
+    Pairs the canonical-schema reference fixture from 4.2 #5 with
+    the CLI to confirm the openai code path works against a real
+    file shape. _seed_reconcile_records seeds a single
+    openai/gpt-4o-mini VG record alongside Deepgram ones, so
+    gpt-4o-mini matches on both sides while gpt-4o + gpt-4-turbo
+    are provider-only.
+    """
+    import asyncio
+    import json as _json
+
+    db_path = str(tmp_path / "reconcile-openai-sample.db")
+    monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
+    start, end = asyncio.run(_seed_reconcile_records(db_path))
+
+    result = runner.invoke(
+        app,
+        ["reconcile", "--config", temp_config,
+         "--provider", "openai",
+         "--start", start, "--end", end,
+         "--provider-usage-file", str(_USAGE_EXPORTS_DIR / "openai-sample.csv"),
+         "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+    payload = _json.loads(result.output)
+    assert payload["provider"] == "openai"
+    rows = {row["model"]: row for row in payload["rows"]}
+    # Three OpenAI models in the sample fixture; all three appear.
+    assert {"gpt-4o-mini", "gpt-4o", "gpt-4-turbo"}.issubset(rows.keys())
+    # gpt-4o-mini is seeded on the VG side and present in the
+    # provider sample -> matched on both sides.
+    assert rows["gpt-4o-mini"]["matched_in_vg"] is True
+    assert rows["gpt-4o-mini"]["matched_in_provider"] is True
+    # gpt-4o and gpt-4-turbo are provider-only.
+    for m in ("gpt-4o", "gpt-4-turbo"):
+        assert rows[m]["matched_in_vg"] is False
+        assert rows[m]["matched_in_provider"] is True
+
+
+def test_reconcile_runs_against_committed_deepgram_sample(
+    temp_config, tmp_path, monkeypatch
+):
+    """End-to-end reconcile against the committed deepgram-sample.csv."""
+    import asyncio
+    import json as _json
+
+    db_path = str(tmp_path / "reconcile-deepgram-sample.db")
+    monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
+    start, end = asyncio.run(_seed_reconcile_records(db_path))
+
+    result = runner.invoke(
+        app,
+        ["reconcile", "--config", temp_config,
+         "--provider", "deepgram",
+         "--start", start, "--end", end,
+         "--provider-usage-file", str(_USAGE_EXPORTS_DIR / "deepgram-sample.csv"),
+         "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+    payload = _json.loads(result.output)
+    assert payload["provider"] == "deepgram"
+    rows = {row["model"]: row for row in payload["rows"]}
+    assert {"nova-3", "nova-2", "flux-general"}.issubset(rows.keys())
+    # Per _seed_reconcile_records, VG has nova-3 records; the
+    # provider sample also has nova-3 -> matched_in_vg AND
+    # matched_in_provider both True for nova-3.
+    assert rows["nova-3"]["matched_in_vg"] is True
+    assert rows["nova-3"]["matched_in_provider"] is True
+    # nova-2 / flux-general are provider-only.
+    assert rows["nova-2"]["matched_in_vg"] is False
+    assert rows["flux-general"]["matched_in_vg"] is False
+
+
+def test_reconcile_runs_against_committed_cartesia_sample(
+    temp_config, tmp_path, monkeypatch
+):
+    """End-to-end reconcile against the committed cartesia-sample.csv."""
+    import asyncio
+    import json as _json
+
+    db_path = str(tmp_path / "reconcile-cartesia-sample.db")
+    monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
+    start, end = asyncio.run(_seed_reconcile_records(db_path))
+
+    result = runner.invoke(
+        app,
+        ["reconcile", "--config", temp_config,
+         "--provider", "cartesia",
+         "--start", start, "--end", end,
+         "--provider-usage-file", str(_USAGE_EXPORTS_DIR / "cartesia-sample.csv"),
+         "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+    payload = _json.loads(result.output)
+    assert payload["provider"] == "cartesia"
+    rows = {row["model"]: row for row in payload["rows"]}
+    assert {"sonic-3", "sonic-turbo"}.issubset(rows.keys())
+    # No VG cartesia records seeded; both rows show provider-only.
+    assert all(
+        rows[m]["matched_in_provider"] is True
+        and rows[m]["matched_in_vg"] is False
+        for m in ("sonic-3", "sonic-turbo")
+    )
