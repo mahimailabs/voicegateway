@@ -59,6 +59,24 @@ AUDIO_SAMPLE_PATH = REPO_ROOT / "tests" / "fixtures" / "audio" / "test_sample.wa
 DEFAULT_LLM_PROMPT = "Hello, how are you? Please respond in one short sentence."
 DEFAULT_LLM_MAX_TOKENS = 100
 
+# Canonical TTS test text. Short, neutral, no special markup. The
+# fixture asserts wrapper character counts equal len(this string),
+# so changing it requires re-recording the Cartesia fixtures.
+DEFAULT_TTS_TEXT = "Hello, this is the canonical voicegateway phase 3 fixture."
+
+# Cartesia request defaults. Output format is fixed at PCM 16-bit
+# 16 kHz mono so the fixture's audio_size_bytes is reproducible
+# across recordings; voice id falls back to an env-provided value
+# so contributors can record without hard-coding their account's
+# voice library.
+_CARTESIA_VERSION = "2024-06-10"
+_CARTESIA_OUTPUT_FORMAT = {
+    "container": "raw",
+    "encoding": "pcm_s16le",
+    "sample_rate": 16000,
+}
+_CARTESIA_DEFAULT_VOICE_ID = "a0e99841-438c-4a64-b679-ae501e7d6091"
+
 # Decimal quantization step for expected_cost_usd. 8 decimal places
 # matches the precision the StreamingFixture schema expects, fits a
 # Decimal-as-string in JSON without scientific notation, and gives
@@ -392,12 +410,87 @@ def _open_deepgram_websocket(url: str, api_key: str) -> Any:
 
 
 async def _record_cartesia_tts(model: str, mode: str) -> dict[str, Any]:
-    """Record a Cartesia TTS response. Implementation pending in 3.2."""
-    raise NotImplementedError(
-        "Cartesia fixture recording: follow-up iteration. The recorder "
-        "needs the cartesia python SDK, a voice id, and an output_format "
-        "spec; see scripts/record-streaming-fixtures.py docstring."
+    """Record a Cartesia TTS response and return an intermediate fixture shape.
+
+    Cartesia bills TTS by *input* characters (text length) rather
+    than output audio. The fixture's
+    ``provider_reported_usage.character_count`` is therefore
+    ``len(transcript)`` rather than something extracted from the
+    HTTP response. The Cartesia HTTP API does not return a usage
+    block on its own.
+
+    Audio bytes are *not* stored in the fixture: the fixture's
+    purpose is to validate VG's character-count accounting, not
+    audio fidelity, and inlining ~hundreds of KB of base64 PCM
+    would inflate every JSON file. Only audio metadata
+    (size, format, sample rate) lands in the fixture.
+    """
+    try:
+        import httpx
+    except ImportError as exc:
+        raise RuntimeError(
+            "httpx package required: pip install httpx"
+        ) from exc
+
+    api_key = os.environ.get("CARTESIA_API_KEY")
+    if not api_key:
+        raise RuntimeError("CARTESIA_API_KEY env var required")
+
+    voice_id = (
+        os.environ.get("CARTESIA_VOICE_ID") or _CARTESIA_DEFAULT_VOICE_ID
     )
+    request_payload: dict[str, Any] = {
+        "model_id": model,
+        "transcript": DEFAULT_TTS_TEXT,
+        "voice": {"mode": "id", "id": voice_id},
+        "output_format": _CARTESIA_OUTPUT_FORMAT,
+    }
+
+    if mode == "batch":
+        url = "https://api.cartesia.ai/tts/bytes"
+        headers = {
+            "X-API-Key": api_key,
+            "Cartesia-Version": _CARTESIA_VERSION,
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                url, json=request_payload, headers=headers
+            )
+            resp.raise_for_status()
+            audio_bytes = resp.content
+
+        if not audio_bytes:
+            raise RuntimeError(
+                "Cartesia batch response carried zero audio bytes; "
+                "cannot record an empty fixture."
+            )
+        return {
+            "request": request_payload,
+            "response_stream": [
+                {
+                    "chunk_index": 0,
+                    "received_at_ms": 0,
+                    "data": {
+                        "audio_size_bytes": len(audio_bytes),
+                        "encoding": _CARTESIA_OUTPUT_FORMAT["encoding"],
+                        "sample_rate": _CARTESIA_OUTPUT_FORMAT["sample_rate"],
+                    },
+                }
+            ],
+            "provider_reported_usage": {
+                "character_count": len(DEFAULT_TTS_TEXT),
+            },
+        }
+
+    if mode == "stream":
+        # 3.3 #7 implements Cartesia WebSocket stream recording.
+        raise NotImplementedError(
+            "Cartesia TTS stream recording lands in 3.3 #7. "
+            "Use --mode batch for now."
+        )
+
+    raise ValueError(f"Unknown mode: {mode!r}")
 
 
 # ---------- Dispatch / CLI -----------------------------------------------
