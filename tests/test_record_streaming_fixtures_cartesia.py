@@ -9,12 +9,15 @@ truth (len(DEFAULT_TTS_TEXT)) plus a catalog-matched
 
 from __future__ import annotations
 
+import base64
 import importlib.util
 import json
 import sys
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import httpx
 import pytest
@@ -225,10 +228,192 @@ async def test_cartesia_recorder_requires_api_key(
         await mod._record_cartesia_tts("sonic-3", "batch")
 
 
-async def test_cartesia_stream_mode_raises_pending_3_3_7(
+# ---------- stream happy path ----------------------------------------------
+
+
+class _FakeCartesiaWS:
+    """In-process fake of a Cartesia TTS WebSocket.
+
+    Records every JSON request the recorder sends and yields a
+    pre-canned set of text messages on iteration. Mirrors the
+    Deepgram fake's interface intentionally; same shape, different
+    payloads.
+    """
+
+    def __init__(self, responses: list[dict[str, Any]]):
+        self.sent: list[Any] = []
+        self._responses = list(responses)
+
+    async def send(self, frame: Any) -> None:
+        self.sent.append(frame)
+
+    def __aiter__(self) -> Any:
+        return self._messages()
+
+    async def _messages(self) -> Any:
+        for msg in self._responses:
+            yield json.dumps(msg)
+
+    @property
+    def text_frames(self) -> list[dict[str, Any]]:
+        return [json.loads(f) for f in self.sent if isinstance(f, str)]
+
+
+def _patch_cartesia_ws(
     recorder: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    fake: _FakeCartesiaWS,
+) -> dict[str, Any]:
+    captured: dict[str, Any] = {}
+
+    @asynccontextmanager
+    async def _fake_cm() -> Any:
+        yield fake
+
+    def _factory(url: str) -> Any:
+        captured["url"] = url
+        return _fake_cm()
+
+    monkeypatch.setattr(recorder, "_open_cartesia_websocket", _factory)
+    return captured
+
+
+def _cartesia_chunk(audio_bytes: bytes, step_time: float = 0.0) -> dict[str, Any]:
+    return {
+        "type": "chunk",
+        "data": base64.b64encode(audio_bytes).decode("ascii"),
+        "step_time": step_time,
+        "context_id": "fixture-context",
+    }
+
+
+def _cartesia_stream_responses() -> list[dict[str, Any]]:
+    """Three audio chunks followed by a done message."""
+    return [
+        _cartesia_chunk(b"\x00\x01" * 1000, step_time=0.5),
+        _cartesia_chunk(b"\x02\x03" * 1000, step_time=1.0),
+        _cartesia_chunk(b"\x04\x05" * 1000, step_time=1.5),
+        {"type": "done", "context_id": "fixture-context"},
+    ]
+
+
+async def test_cartesia_stream_recording_writes_valid_fixture(
+    recorder: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    with pytest.raises(NotImplementedError, match="3.3 #7"):
+    fake = _FakeCartesiaWS(_cartesia_stream_responses())
+    captured = _patch_cartesia_ws(recorder, monkeypatch, fake)
+
+    fixture_path = await recorder._run(
+        "cartesia", "tts", "sonic-3", "stream"
+    )
+
+    assert captured["url"].startswith("wss://api.cartesia.ai/tts/websocket?")
+    assert "cartesia_version=2024-06-10" in captured["url"]
+    assert "api_key=fake-cartesia-key-for-tests" in captured["url"]
+
+    fixture = load_fixture(fixture_path)
+    assert fixture.metadata.provider == "cartesia"
+    assert fixture.metadata.model == "sonic-3"
+    assert fixture.metadata.modality == "tts"
+    assert fixture.metadata.mode == "stream"
+
+    # 3 chunks + 1 done message = 4 fixture chunks.
+    assert len(fixture.response_stream) == 4
+    types = [c.data["type"] for c in fixture.response_stream]
+    assert types == ["chunk", "chunk", "chunk", "done"]
+    indices = [c.chunk_index for c in fixture.response_stream]
+    assert indices == [0, 1, 2, 3]
+
+    assert fixture.provider_reported_usage == {
+        "character_count": len(recorder.DEFAULT_TTS_TEXT)
+    }
+
+
+async def test_cartesia_stream_sends_single_request_with_context_id(
+    recorder: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Recorder sends exactly one request JSON, with a fresh context_id."""
+    fake = _FakeCartesiaWS(_cartesia_stream_responses())
+    _patch_cartesia_ws(recorder, monkeypatch, fake)
+
+    await recorder._record_cartesia_tts("sonic-3", "stream")
+
+    text_msgs = fake.text_frames
+    assert len(text_msgs) == 1, (
+        f"Expected one request frame, got {len(text_msgs)}: "
+        f"{text_msgs!r}"
+    )
+    request = text_msgs[0]
+    assert request["model_id"] == "sonic-3"
+    assert request["transcript"] == recorder.DEFAULT_TTS_TEXT
+    assert request["voice"]["mode"] == "id"
+    assert request["output_format"] == recorder._CARTESIA_OUTPUT_FORMAT
+    assert request["continue"] is False
+    assert isinstance(request["context_id"], str)
+    assert len(request["context_id"]) > 0
+
+
+async def test_cartesia_stream_request_block_in_fixture_carries_context_id(
+    recorder: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fixture's request block records the literal request, including context_id."""
+    fake = _FakeCartesiaWS(_cartesia_stream_responses())
+    _patch_cartesia_ws(recorder, monkeypatch, fake)
+
+    fixture_path = await recorder._run(
+        "cartesia", "tts", "sonic-3", "stream"
+    )
+
+    fixture = load_fixture(fixture_path)
+    assert "context_id" in fixture.request
+    assert fixture.request["continue"] is False
+
+
+async def test_cartesia_stream_expected_cost_matches_catalog(
+    recorder: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from voicegateway.pricing.catalog import calculate_cost
+
+    fake = _FakeCartesiaWS(_cartesia_stream_responses())
+    _patch_cartesia_ws(recorder, monkeypatch, fake)
+
+    fixture_path = await recorder._run(
+        "cartesia", "tts", "sonic-3", "stream"
+    )
+
+    fixture = load_fixture(fixture_path)
+    expected = calculate_cost(
+        "tts",
+        "cartesia/sonic-3",
+        character_count=len(recorder.DEFAULT_TTS_TEXT),
+    )
+    assert expected is not None
+    quantized = expected.quantize(Decimal("0.00000001"))
+    assert fixture.expected_cost_usd == quantized
+
+
+async def test_cartesia_stream_refuses_when_done_never_arrives(
+    recorder: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No done message means the stream is unterminated; refuse to write."""
+    truncated = [
+        m for m in _cartesia_stream_responses() if m.get("type") != "done"
+    ]
+    fake = _FakeCartesiaWS(truncated)
+    _patch_cartesia_ws(recorder, monkeypatch, fake)
+
+    with pytest.raises(RuntimeError, match="done"):
+        await recorder._record_cartesia_tts("sonic-3", "stream")
+
+
+async def test_cartesia_stream_refuses_when_no_messages_received(
+    recorder: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Empty server stream -> RuntimeError, no fixture written."""
+    fake = _FakeCartesiaWS([])
+    _patch_cartesia_ws(recorder, monkeypatch, fake)
+
+    with pytest.raises(RuntimeError):
         await recorder._record_cartesia_tts("sonic-3", "stream")
 
 

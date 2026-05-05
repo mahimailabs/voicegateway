@@ -46,6 +46,7 @@ import asyncio
 import json
 import os
 import time
+import uuid
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -484,13 +485,87 @@ async def _record_cartesia_tts(model: str, mode: str) -> dict[str, Any]:
         }
 
     if mode == "stream":
-        # 3.3 #7 implements Cartesia WebSocket stream recording.
-        raise NotImplementedError(
-            "Cartesia TTS stream recording lands in 3.3 #7. "
-            "Use --mode batch for now."
+        # Cartesia live TTS API: WebSocket where the api key and
+        # version live in the query string (not headers, unlike
+        # Deepgram). A single JSON request is sent once at session
+        # start; the server replies with a sequence of {"type":
+        # "chunk", "data": <base64>, ...} messages and terminates
+        # with {"type": "done"}. character_count remains
+        # len(transcript) (TTS bills on input).
+        url = (
+            "wss://api.cartesia.ai/tts/websocket"
+            f"?cartesia_version={_CARTESIA_VERSION}&api_key={api_key}"
         )
+        context_id = uuid.uuid4().hex
+        ws_request = {
+            **request_payload,
+            "context_id": context_id,
+            "continue": False,
+        }
+
+        chunks: list[dict[str, Any]] = []
+        cm = _open_cartesia_websocket(url)
+        async with cm as ws:
+            await ws.send(json.dumps(ws_request))
+            start = time.perf_counter()
+            index = 0
+            done_seen = False
+            async for message in ws:
+                received_at_ms = int((time.perf_counter() - start) * 1000)
+                text = (
+                    message.decode("utf-8")
+                    if isinstance(message, bytes)
+                    else message
+                )
+                data = json.loads(text)
+                chunks.append(
+                    {
+                        "chunk_index": index,
+                        "received_at_ms": received_at_ms,
+                        "data": data,
+                    }
+                )
+                index += 1
+                if data.get("type") == "done":
+                    done_seen = True
+                    break
+
+        if not chunks:
+            raise RuntimeError(
+                "Cartesia stream yielded zero messages; cannot "
+                "record an empty stream fixture."
+            )
+        if not done_seen:
+            raise RuntimeError(
+                "Cartesia stream did not terminate with a "
+                "type=done message; cannot record an unterminated "
+                "stream fixture."
+            )
+        return {
+            "request": ws_request,
+            "response_stream": chunks,
+            "provider_reported_usage": {
+                "character_count": len(DEFAULT_TTS_TEXT),
+            },
+        }
 
     raise ValueError(f"Unknown mode: {mode!r}")
+
+
+def _open_cartesia_websocket(url: str) -> Any:
+    """Return an async context manager that opens a Cartesia WebSocket.
+
+    Tests monkey-patch this helper so the recorder never imports
+    ``websockets`` during a unit-test run. Production calls into
+    the real library lazily.
+    """
+    try:
+        from websockets.asyncio.client import connect
+    except ImportError as exc:
+        raise RuntimeError(
+            "websockets package required: pip install websockets"
+        ) from exc
+    return connect(url)
 
 
 # ---------- Dispatch / CLI -----------------------------------------------
