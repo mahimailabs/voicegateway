@@ -74,25 +74,35 @@ _WRAPPER_CLASSES: dict[str, type[_InstrumentedBase]] = {
 }
 
 
-def _streaming_fixture_params() -> list[Any]:
-    """Parametrize one case per discovered fixture, or a single skip case."""
-    fixtures = discover_fixtures(FIXTURES_DIR)
+_MISSING_FIXTURES_MESSAGE = (
+    "Phase 3 acceptance criterion #1 unmet: tests/fixtures/streaming/ "
+    "has zero committed fixture JSONs. The replay suite is intentionally "
+    "red until the six minimum fixtures land. Run "
+    "scripts/record-streaming-fixtures.py --record --all --confirm "
+    "(see tests/fixtures/streaming/PLACEHOLDER.md for the full runbook), "
+    "then commit the resulting JSONs and remove PLACEHOLDER.md. "
+    "Activates 21 parametrized cases (6 fixtures x 3 always-applicable "
+    "assertions + 3 stream fixtures x 1 TTFB assertion)."
+)
+
+
+def _streaming_fixture_params(
+    fixtures_dir: Path | None = None,
+) -> list[Any]:
+    """Build the parametrize list.
+
+    Returns one ``pytest.param`` per discovered fixture, or a single
+    sentinel param (``values == (None,)``) when the fixtures directory
+    is empty. The sentinel is consumed by ``streaming_fixture`` which
+    raises ``pytest.fail`` so CI is red until the fixtures land. The
+    optional ``fixtures_dir`` argument is for unit tests that need to
+    drive the helper against a tmp directory.
+    """
+    base = fixtures_dir if fixtures_dir is not None else FIXTURES_DIR
+    fixtures = discover_fixtures(base)
     if not fixtures:
         return [
-            pytest.param(
-                None,
-                id="no-fixtures-recorded-yet",
-                marks=pytest.mark.skip(
-                    reason=(
-                        "no fixtures committed under "
-                        "tests/fixtures/streaming/. Run "
-                        "scripts/record-streaming-fixtures.py --record "
-                        "--all --confirm to populate them. See "
-                        "tests/fixtures/streaming/PLACEHOLDER.md for "
-                        "the full runbook."
-                    )
-                ),
-            )
+            pytest.param(None, id="missing-required-phase3-fixtures-FAIL"),
         ]
     return [
         pytest.param(
@@ -106,10 +116,25 @@ def _streaming_fixture_params() -> list[Any]:
     ]
 
 
+def _ensure_fixture_or_fail(
+    f: StreamingFixture | None,
+) -> StreamingFixture:
+    """Return ``f`` or fail loudly with the missing-fixtures message.
+
+    The sentinel from ``_streaming_fixture_params`` lands here as
+    ``None``; calling ``pytest.fail`` makes the parametrized test red
+    rather than skipped, matching Phase 3 acceptance criterion #1's
+    intent that CI catch the absence of fixtures.
+    """
+    if f is None:
+        pytest.fail(_MISSING_FIXTURES_MESSAGE)
+    return f
+
+
 @pytest.fixture(params=_streaming_fixture_params())
 def streaming_fixture(request: pytest.FixtureRequest) -> StreamingFixture:
     """Yield each discovered ``StreamingFixture`` to the test using it."""
-    return request.param  # type: ignore[no-any-return]
+    return _ensure_fixture_or_fail(request.param)
 
 
 # ---------- skeleton smoke ---------------------------------------------
@@ -471,3 +496,89 @@ def test_recording_script_exists() -> None:
     assert recorder.exists(), (
         f"scripts/record-streaming-fixtures.py expected at {recorder}"
     )
+
+
+# ---------- fail-closed contract ---------------------------------------
+
+
+def test_streaming_fixture_params_returns_failing_sentinel_for_empty_dir(
+    tmp_path: Path,
+) -> None:
+    """Empty fixtures dir -> single sentinel param (not a skip-marked one).
+
+    The sentinel's ``.values`` is ``(None,)`` and the id names the
+    failure mode. Combined with ``_ensure_fixture_or_fail``, this
+    keeps CI red until fixtures are committed.
+    """
+    params = _streaming_fixture_params(tmp_path)
+    assert len(params) == 1
+    p = params[0]
+    assert p.values == (None,), (
+        "expected sentinel param (None,) for empty fixtures dir, got "
+        f"{p.values!r}"
+    )
+    assert "missing" in p.id.lower() and "fail" in p.id.lower(), (
+        f"sentinel id should name the failure mode, got {p.id!r}"
+    )
+    # No skip marker - the previous behavior silently skipped CI.
+    assert all("skip" not in str(m).lower() for m in p.marks), (
+        f"sentinel must not carry a skip marker; got marks={p.marks!r}"
+    )
+
+
+def test_ensure_fixture_or_fail_raises_when_param_is_none() -> None:
+    """The fixture body fails loudly with the actionable message."""
+    with pytest.raises(BaseException, match="acceptance criterion #1") as exc:
+        _ensure_fixture_or_fail(None)
+    # pytest.fail raises pytest.fail.Exception, a BaseException subclass
+    # carrying the failure message.
+    msg = str(exc.value)
+    assert "scripts/record-streaming-fixtures.py" in msg
+    assert "PLACEHOLDER.md" in msg
+
+
+def test_ensure_fixture_or_fail_passes_through_real_fixture() -> None:
+    """Non-None params pass straight through; only the sentinel fails."""
+    from unittest.mock import MagicMock
+
+    fake = MagicMock(spec=StreamingFixture)
+    assert _ensure_fixture_or_fail(fake) is fake
+
+
+def test_streaming_fixture_params_returns_one_per_real_fixture(
+    tmp_path: Path,
+) -> None:
+    """When fixtures are present, params has one entry per fixture."""
+    import json
+
+    payload = {
+        "metadata": {
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+            "modality": "llm",
+            "mode": "batch",
+            "recorded_at": "2026-05-04T14:32:11Z",
+            "recorded_by": "scripts/record-streaming-fixtures.py",
+            "voicegateway_version": "0.0.3",
+        },
+        "request": {"prompt": "hi", "stream": False},
+        "response_stream": [
+            {"chunk_index": 0, "received_at_ms": 0, "data": {"x": 1}}
+        ],
+        "provider_reported_usage": {
+            "input_tokens": 1,
+            "output_tokens": 1,
+            "total_tokens": 2,
+        },
+        "expected_cost_usd": "0.00000050",
+    }
+    fixture_path = (
+        tmp_path / "openai_gpt-4o-mini_llm_batch_2026-05-05.json"
+    )
+    fixture_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    params = _streaming_fixture_params(tmp_path)
+    assert len(params) == 1
+    p = params[0]
+    assert p.values != (None,)
+    assert p.id == "openai_gpt-4o-mini_llm_batch"
