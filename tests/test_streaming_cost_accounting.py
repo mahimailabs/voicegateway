@@ -428,8 +428,6 @@ def test_ttfb_hook_fires_on_first_chunk(
             "cannot exercise TTFB hook."
         )
 
-    wrapper = _build_wrapper_for_fixture(f)
-
     # Behavior 1: before any chunk arrives, the hook has not fired.
     # Observable via _log_request producing ttfb_ms == total_latency_ms.
     pre_wrapper = _build_wrapper_for_fixture(f)
@@ -446,6 +444,13 @@ def test_ttfb_hook_fires_on_first_chunk(
     # this with a small real-time delay before _mark_first_byte() and
     # another delay after, so total_latency_ms is measurably larger
     # than ttfb_ms.
+    #
+    # Construct the wrapper here (not before Behavior 1) so its
+    # _start_time captures only the intended timing window. If we
+    # built it earlier, total_latency_ms would include the time spent
+    # in Behavior 1, blurring the assertion's meaning.
+    wrapper = _build_wrapper_for_fixture(f)
+
     async def _drive() -> None:
         await asyncio.sleep(0.005)
         wrapper._mark_first_byte()

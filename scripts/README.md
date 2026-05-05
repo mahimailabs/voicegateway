@@ -98,8 +98,22 @@ later replay.
   gates make accidental invocation impossible.
 - **Stream recording uses WebSockets.** Deepgram and Cartesia
   stream recorders import `websockets`. Install with
-  `uv pip install -e ".[dev]"` plus `uv pip install websockets`
+  `uv pip install -e ".[dev]"` plus `uv pip install 'websockets>=13.0'`
   (websockets is a transitive lock entry, not a dev dep).
+- **Cartesia authenticates via URL query string.** Cartesia's
+  TTS WebSocket takes the API key as a query parameter
+  (`api_key=<key>` on `wss://api.cartesia.ai/tts/websocket?...`),
+  not a header. That means the real key can land in:
+  - HTTP/WS access logs at any proxy your traffic passes through
+  - Network tracing tools (tcpdump output, Wireshark captures)
+  - Terminal scrollback if you accidentally print the URL
+  - Screenshots, screencasts, or shared logs from the recording
+    session
+  The bundled recorder does not print or log the URL, but if you
+  add custom debug output during a recording session, scrub the
+  `api_key=` query before sharing or committing anything. The
+  fixture JSONs themselves do NOT contain the URL or the key
+  (only the request payload), so commits are safe by default.
 - **Audio sample is bundled.** STT recording uses
   `tests/fixtures/audio/test_sample.wav` (3-second 8 kHz mono PCM,
   ~48 KB). Do not delete it; the recorder refuses to run without

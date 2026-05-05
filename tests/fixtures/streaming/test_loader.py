@@ -203,19 +203,34 @@ def test_discover_fixtures_orders_results_deterministically(tmp_path: Path) -> N
     a = "alpha_gpt-4o-mini_llm_batch_2026-05-04.json"
     b = "beta_gpt-4o-mini_llm_batch_2026-05-04.json"
     c = "gamma_gpt-4o-mini_llm_batch_2026-05-04.json"
+    # Vary recorded_by per fixture so the loaded models are
+    # distinguishable; otherwise _valid_payload yields three
+    # identical StreamingFixture instances and ordering can't be
+    # observed from the returned list.
     for name in (c, a, b):
-        _write(tmp_path / name, _valid_payload(modality="llm", mode="batch"))
-    fixtures = discover_fixtures(tmp_path)
-    providers = [f.metadata.provider for f in fixtures]
-    # Files were written c, a, b but the loader sorts by filename
-    # so the result starts with the alphabetically-first stem.
-    # Both alpha and beta and gamma share metadata.provider="openai"
-    # because we set it in _valid_payload, so what we really care
-    # about is that the ordering is stable.
+        payload = _valid_payload(modality="llm", mode="batch")
+        payload["metadata"]["recorded_by"] = f"tagged-{name}"
+        _write(tmp_path / name, payload)
+
     fixture_paths = discover_fixture_paths(tmp_path)
     names = [p.name for p in fixture_paths]
-    assert names == sorted(names)
-    assert len(providers) == 3
+    assert names == sorted(names), (
+        f"discover_fixture_paths must return paths sorted by name; "
+        f"got {names!r}"
+    )
+
+    fixtures = discover_fixtures(tmp_path)
+    assert len(fixtures) == len(fixture_paths) == 3
+
+    # discover_fixtures must preserve the same order as
+    # discover_fixture_paths so pytest parametrize ids stay stable
+    # across runs. Cross-check via the recorded_by tags.
+    expected_tags = [f"tagged-{n}" for n in sorted(names)]
+    actual_tags = [f.metadata.recorded_by for f in fixtures]
+    assert actual_tags == expected_tags, (
+        f"discover_fixtures order differs from discover_fixture_paths; "
+        f"expected {expected_tags!r}, got {actual_tags!r}"
+    )
 
 
 def test_discover_fixtures_propagates_schema_failure(tmp_path: Path) -> None:
