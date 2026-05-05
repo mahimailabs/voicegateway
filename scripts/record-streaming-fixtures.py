@@ -1,47 +1,42 @@
 #!/usr/bin/env python
 """scripts/record-streaming-fixtures.py: dev-only fixture recorder.
 
-Hits real provider APIs to capture responses for fixture-based replay
-testing in `tests/test_streaming_cost_accounting.py`. The recorded
-fixtures are committed to `tests/fixtures/streaming/` so CI can
-replay them via HTTP mocking without ever calling real APIs.
+Hits real provider APIs to capture responses for fixture-based
+replay testing in ``tests/test_streaming_cost_accounting.py``. The
+recorded fixtures are committed to ``tests/fixtures/streaming/`` so
+CI can replay them via HTTP and WebSocket mocking without ever
+calling real APIs.
 
-This script is **dev-only**: it requires a `--record` flag to
-actually hit a provider, and reads API keys from environment
-variables (see `.env.fixtures.example`). CI does not run this
-script.
+This script is **dev-only**. Default-deny:
+
+- Without ``--record`` it prints a "recording disabled" notice and
+  exits 0. Accidental invocation (cron, CI, autocomplete) cannot
+  charge the user.
+- With ``--record`` but without ``--confirm`` it prints an
+  estimated dollar cost and exits 0. Forces an explicit
+  acknowledgement that real money is about to be spent.
+- With both flags it actually hits the provider API.
 
 Usage:
 
-    # List available recorders without hitting anything.
-    python scripts/record-streaming-fixtures.py
+    # Show the recording-disabled banner.
+    python scripts/record-streaming-fixtures.py --provider openai \\
+      --modality llm --model gpt-4o-mini --mode batch
 
-    # Record a single fixture.
+    # Show the cost estimate without recording.
     python scripts/record-streaming-fixtures.py --record \\
+      --provider openai --modality llm --model gpt-4o-mini --mode batch
+
+    # Actually record.
+    python scripts/record-streaming-fixtures.py --record --confirm \\
       --provider openai --modality llm --model gpt-4o-mini --mode batch
 
 Output path:
 
     tests/fixtures/streaming/<provider>_<model>_<modality>_<mode>_<YYYY-MM-DD>.json
 
-Recorded payload shape (every fixture):
-
-    {
-      "provider": "openai",
-      "model": "gpt-4o-mini",
-      "modality": "llm",
-      "mode": "stream",
-      "recorded_at": "2026-05-04T08:50:00+00:00",
-      "request": {...},
-      # batch:
-      "response": {...},
-      "usage": {"prompt_tokens": ..., "completion_tokens": ..., "total_tokens": ...},
-      # or stream:
-      "chunks": [...],
-      "usage": {...}
-    }
-
-Phase 3.1 #1 deliverable. Phase 3.2 is the actual recording runs.
+Phase 3 deliverable. Recorded payload validates against
+``tests/fixtures/streaming/_schema.py``'s ``StreamingFixture``.
 """
 
 from __future__ import annotations
@@ -52,6 +47,7 @@ import json
 import os
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +56,19 @@ FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures" / "streaming"
 
 DEFAULT_LLM_PROMPT = "Say 'hello world' and nothing else."
 DEFAULT_LLM_MAX_TOKENS = 20
+
+# Estimated provider cost for the canonical Phase 3 fixtures, in USD.
+# Computed from the v0.0.4 pricing catalog at the prompts and audio
+# lengths the recorders below use. These are estimates surfaced before
+# `--confirm`; actual cost is bounded by the provider's reply length.
+_COST_ESTIMATES_USD: dict[tuple[str, str, str, str], Decimal] = {
+    ("openai", "gpt-4o-mini", "llm", "batch"): Decimal("0.00003"),
+    ("openai", "gpt-4o-mini", "llm", "stream"): Decimal("0.00004"),
+    ("deepgram", "nova-3", "stt", "batch"): Decimal("0.00022"),
+    ("deepgram", "nova-3", "stt", "stream"): Decimal("0.00022"),
+    ("cartesia", "sonic-3", "tts", "batch"): Decimal("0.00620"),
+    ("cartesia", "sonic-3", "tts", "stream"): Decimal("0.00620"),
+}
 
 
 def _fixture_path(provider: str, model: str, modality: str, mode: str) -> Path:
@@ -174,6 +183,42 @@ def _list_recorders() -> None:
         print(f"  --provider {provider} --modality {modality}")
 
 
+def _estimate_cost_usd(
+    provider: str, model: str, modality: str, mode: str
+) -> Decimal | None:
+    """Return the recorded-fixture estimate, or None if no estimate is on file."""
+    return _COST_ESTIMATES_USD.get((provider, model, modality, mode))
+
+
+def _print_recording_disabled() -> None:
+    print(
+        "recording disabled, use --record\n"
+        "\n"
+        "This script hits real provider APIs and charges real money.\n"
+        "Pass --record to enable. Pass --confirm in addition to --record\n"
+        "to skip the cost-estimate dry-run and actually record."
+    )
+
+
+def _print_cost_estimate(
+    provider: str, model: str, modality: str, mode: str
+) -> None:
+    estimate = _estimate_cost_usd(provider, model, modality, mode)
+    print(f"Recording {provider}/{model} {modality}/{mode}")
+    if estimate is None:
+        print(
+            "  Estimated cost: unknown (no entry in _COST_ESTIMATES_USD).\n"
+            "  Add an entry before recording, or pass --confirm to proceed\n"
+            "  without an estimate."
+        )
+    else:
+        print(f"  Estimated cost: ~${estimate} USD")
+    print(
+        "\n"
+        "Pass --confirm in addition to --record to actually hit the API."
+    )
+
+
 async def _run(provider: str, modality: str, model: str, mode: str) -> Path:
     recorder = _RECORDERS.get((provider, modality))
     if recorder is None:
@@ -194,7 +239,7 @@ async def _run(provider: str, modality: str, model: str, mode: str) -> Path:
     return fixture_path
 
 
-def main() -> None:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Record streaming fixtures from real provider APIs."
     )
@@ -202,22 +247,47 @@ def main() -> None:
         "--record",
         action="store_true",
         help="Required to hit the provider API. Without this flag the "
-        "script lists available recorders and exits.",
+        "script prints a recording-disabled banner and exits.",
     )
-    parser.add_argument("--provider", choices=["openai", "deepgram", "cartesia"])
+    parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Required in addition to --record to actually hit the API. "
+        "Without --confirm the script prints a cost estimate and exits.",
+    )
+    parser.add_argument(
+        "--provider", choices=["openai", "deepgram", "cartesia"]
+    )
     parser.add_argument("--modality", choices=["llm", "stt", "tts"])
     parser.add_argument("--model")
-    parser.add_argument("--mode", choices=["batch", "stream"], default="batch")
+    parser.add_argument(
+        "--mode", choices=["batch", "stream"], default="batch"
+    )
+    return parser
+
+
+def main() -> None:
+    parser = _build_parser()
     args = parser.parse_args()
 
+    # Default-deny: without --record, never touch a provider.
     if not args.record:
-        _list_recorders()
+        _print_recording_disabled()
         return
 
+    # --record requires the per-fixture identity flags so the cost
+    # estimate and the fixture filename are unambiguous.
     if not (args.provider and args.modality and args.model):
         parser.error(
             "--provider, --modality, --model are required with --record"
         )
+
+    # --record without --confirm: dry-run cost estimate, no API call.
+    if not args.confirm:
+        _print_cost_estimate(
+            args.provider, args.model, args.modality, args.mode
+        )
+        return
 
     asyncio.run(_run(args.provider, args.modality, args.model, args.mode))
 
