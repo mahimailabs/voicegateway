@@ -232,7 +232,12 @@ def format_text(lines: list[ReconcileLine], provider: str) -> str:
         if not line.matched_in_vg:
             flags = " (vg-missing)"
         elif not line.matched_in_provider:
-            flags = " (prov-missing)"
+            # Per design §3.3 / TODO 4.3 #2: render as "no provider
+            # data" rather than just a "$0 reference" so users do
+            # not mistake the empty provider cell for a real $0
+            # charge. The cost cells still show $0.0000 but the
+            # explicit suffix names the absence.
+            flags = " (no provider data)"
         rows.append(
             f"{line.model[:35]:<35} "
             f"{line.vg_units:>14.1f} "

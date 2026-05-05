@@ -383,6 +383,28 @@ def test_reconcile_model_only_in_vg(tmp_path):
     assert lines[0].matched_in_provider is False
 
 
+def test_format_text_surfaces_no_provider_data_label(tmp_path):
+    """When VG has data but provider does not, the rendered row must
+    say 'no provider data' rather than presenting a bare $0 cell.
+    Per design §3.3 + TODO 4.3 #2.
+    """
+    path = tmp_path / "openai.csv"
+    # Empty provider file (header only).
+    path.write_text("model,input_tokens,output_tokens,n_requests,cost_usd\n")
+    records = [
+        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
+         "input_units": 100, "output_units": 50, "cost_usd": 0.0001},
+    ]
+    lines = reconcile.reconcile("openai", records, path)
+    text = reconcile.format_text(lines, "openai")
+    assert "no provider data" in text, (
+        f"missing-provider label not rendered; got:\n{text}"
+    )
+    # The misleading "(prov-missing)" stub from the previous label
+    # must be gone.
+    assert "(prov-missing)" not in text
+
+
 def test_reconcile_flags_lines_above_threshold(tmp_path):
     """Default 5% threshold flips ReconcileLine.flagged when |cost_diff_pct| > 5."""
     path = tmp_path / "openai.csv"
