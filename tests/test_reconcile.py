@@ -70,6 +70,55 @@ def test_parse_provider_file_deepgram_csv(tmp_path):
     assert parsed["nova-3"]["cost"] == pytest.approx(8.700, abs=0.001)
 
 
+def test_parse_provider_file_deepgram_csv_multiple_models(tmp_path):
+    """A real Deepgram export may list nova-3, nova-2, and flux side-by-side."""
+    path = tmp_path / "deepgram-multi.csv"
+    path.write_text(
+        "model,audio_seconds,n_requests,cost_usd\n"
+        "nova-3,180000.0,1500,8.700\n"
+        "nova-2,90000.0,800,4.350\n"
+        "flux-general,30000.0,250,1.450\n"
+    )
+    parsed = reconcile.parse_provider_file("deepgram", path)
+    assert set(parsed) == {"nova-3", "nova-2", "flux-general"}
+    assert parsed["nova-3"]["units"] == pytest.approx(180000.0, abs=0.1)
+    assert parsed["nova-2"]["units"] == pytest.approx(90000.0, abs=0.1)
+    assert parsed["flux-general"]["units"] == pytest.approx(30000.0, abs=0.1)
+    assert parsed["nova-2"]["n_requests"] == 800
+    assert parsed["flux-general"]["cost"] == pytest.approx(1.450, abs=0.001)
+
+
+def test_parse_provider_file_deepgram_csv_handles_missing_columns(tmp_path):
+    """Rows missing n_requests + cost_usd surface as zero, not KeyError."""
+    path = tmp_path / "deepgram-sparse.csv"
+    path.write_text(
+        "model,audio_seconds\n"
+        "nova-3,12000.0\n"
+    )
+    parsed = reconcile.parse_provider_file("deepgram", path)
+    assert parsed["nova-3"]["units"] == pytest.approx(12000.0, abs=0.1)
+    assert parsed["nova-3"]["cost"] == 0.0
+    assert parsed["nova-3"]["n_requests"] == 0.0
+
+
+def test_parse_provider_file_deepgram_csv_units_are_seconds_not_minutes(
+    tmp_path,
+):
+    """Canonical schema's units column is `audio_seconds`; the parser must not
+    treat it as minutes and silently scale by 60. VG-side conversion (minutes
+    -> seconds) happens in aggregate_vg_records, not here.
+    """
+    path = tmp_path / "deepgram-units.csv"
+    path.write_text(
+        "model,audio_seconds,n_requests,cost_usd\n"
+        "nova-3,3600.0,30,0.258\n"
+    )
+    parsed = reconcile.parse_provider_file("deepgram", path)
+    # 3600 seconds = 60 minutes; the parser must surface 3600,
+    # not 60 (which would happen if it confused units).
+    assert parsed["nova-3"]["units"] == pytest.approx(3600.0, abs=0.1)
+
+
 def test_parse_provider_file_cartesia_json(tmp_path):
     path = tmp_path / "cartesia.json"
     path.write_text(json.dumps([
