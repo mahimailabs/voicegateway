@@ -355,6 +355,63 @@ def test_reconcile_surfaces_divergence(tmp_path):
     assert line.cost_diff_abs == pytest.approx(0.030, abs=0.001)
 
 
+def test_reconcile_currency_precision_sub_cent(tmp_path):
+    """Sub-cent diffs round-trip through reconcile without precision loss.
+
+    LLM cost per request is often in the 1e-6 to 1e-4 USD range.
+    The diff math must preserve enough precision that small drifts
+    surface accurately — a 5% drift on $0.00001000 is $0.0000005,
+    which would round to $0 if the math used float-to-cents
+    rounding anywhere along the path.
+    """
+    path = tmp_path / "openai.csv"
+    path.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        # Provider: $0.00010500
+        "gpt-4o-mini,7000,3500,7,0.00010500\n"
+    )
+    records = [
+        # VG: $0.00010000 — a 5-microcent gap (~5%).
+        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
+         "input_units": 7000, "output_units": 3500, "cost_usd": 0.00010000},
+    ]
+    lines = reconcile.reconcile("openai", records, path)
+    assert len(lines) == 1
+    line = lines[0]
+    # The diff is $0.000005 — sub-cent precision must survive.
+    assert line.cost_diff_abs == pytest.approx(0.000005, abs=1e-9), (
+        f"sub-cent diff lost precision; got {line.cost_diff_abs!r}"
+    )
+    assert line.cost_diff_pct == pytest.approx(4.7619, abs=0.01)
+
+
+def test_reconcile_currency_precision_high_volume(tmp_path):
+    """Million-dollar volumes preserve cent-level precision.
+
+    The opposite end of the precision range: when VG and provider
+    each report ~$1M, a $1.23 drift should surface as exactly
+    $1.23, not get washed out by float rounding to "$1.0" or
+    "$1.0000".
+    """
+    path = tmp_path / "openai.csv"
+    path.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o-mini,5000000000,2500000000,1000000,1234567.89\n"
+    )
+    records = [
+        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
+         "input_units": 5000000000, "output_units": 2500000000,
+         "cost_usd": 1234566.66},
+    ]
+    lines = reconcile.reconcile("openai", records, path)
+    line = lines[0]
+    # Provider $1234567.89 - VG $1234566.66 = $1.23 drift.
+    assert line.cost_diff_abs == pytest.approx(1.23, abs=0.01)
+    # ~0.0001% drift; well within the 5% threshold.
+    assert abs(line.cost_diff_pct) < 0.001
+    assert line.flagged is False
+
+
 def test_reconcile_model_only_in_provider(tmp_path):
     """Model in provider file but absent from VG records: still a row."""
     path = tmp_path / "openai.csv"
