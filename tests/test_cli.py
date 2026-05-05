@@ -270,6 +270,84 @@ def test_export_costs_invalid_format_returns_2(temp_config):
     assert "Unknown format" in result.output
 
 
+def test_export_costs_empty_range_returns_header_only(
+    temp_config, tmp_path, monkeypatch
+):
+    """A window with no records emits only the CSV header row (exit 0)."""
+    import asyncio
+    import csv
+    import io
+
+    db_path = str(tmp_path / "export-empty.db")
+    monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
+    # Seed records so the DB exists, but request a window 30 days
+    # before the earliest seeded record so nothing matches.
+    asyncio.run(_seed_export_records(db_path))
+
+    result = runner.invoke(
+        app,
+        ["export-costs", "--config", temp_config,
+         "--start", "2025-01-01", "--end", "2025-01-02"],
+    )
+    assert result.exit_code == 0, result.output
+    rows = list(csv.DictReader(io.StringIO(result.output)))
+    assert rows == [], (
+        f"expected zero data rows for empty window; got {rows!r}"
+    )
+    # Header still emitted so consumers can detect "valid CSV, just
+    # empty" vs "process crashed."
+    assert result.output.startswith("timestamp,project,modality")
+
+
+def test_export_costs_empty_range_jsonl_returns_no_lines(
+    temp_config, tmp_path, monkeypatch
+):
+    """JSONL on an empty window emits zero lines (no array, no errors)."""
+    import asyncio
+
+    db_path = str(tmp_path / "export-empty-jsonl.db")
+    monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
+    asyncio.run(_seed_export_records(db_path))
+
+    result = runner.invoke(
+        app,
+        ["export-costs", "--config", temp_config,
+         "--start", "2025-01-01", "--end", "2025-01-02",
+         "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+    lines = [ln for ln in result.output.strip().splitlines() if ln]
+    assert lines == [], (
+        f"expected zero JSONL records for empty window; got {lines!r}"
+    )
+
+
+def test_export_costs_missing_start_returns_helpful_error(temp_config):
+    """Omitting --start surfaces typer's missing-option error (exit 2)."""
+    result = runner.invoke(
+        app,
+        ["export-costs", "--config", temp_config, "--end", "2026-05-04"],
+    )
+    assert result.exit_code == 2, result.output
+    # Typer prints "Missing option" or "required" in stderr; check
+    # that one of those clear-language tokens lands in the output.
+    out = result.output.lower()
+    assert "missing" in out or "required" in out, (
+        f"expected a clear missing-option message; got {result.output!r}"
+    )
+
+
+def test_export_costs_missing_end_returns_helpful_error(temp_config):
+    """Omitting --end surfaces typer's missing-option error (exit 2)."""
+    result = runner.invoke(
+        app,
+        ["export-costs", "--config", temp_config, "--start", "2026-05-01"],
+    )
+    assert result.exit_code == 2, result.output
+    out = result.output.lower()
+    assert "missing" in out or "required" in out
+
+
 def test_export_costs_renders_iso_timestamp_and_fixed_point_cost(
     temp_config, tmp_path, monkeypatch
 ):
