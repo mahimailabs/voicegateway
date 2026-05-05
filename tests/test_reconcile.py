@@ -24,6 +24,41 @@ def test_parse_provider_file_openai_csv(tmp_path):
     assert parsed["gpt-4o-mini"]["cost"] == pytest.approx(0.225, abs=0.001)
 
 
+def test_parse_provider_file_openai_csv_multiple_models(tmp_path):
+    """A real OpenAI export lists several models; each lands as its own key."""
+    path = tmp_path / "openai-multi.csv"
+    path.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o-mini,1000000,500000,500,0.225\n"
+        "gpt-4o,200000,100000,200,0.900\n"
+        "gpt-4-turbo,50000,25000,80,1.200\n"
+    )
+    parsed = reconcile.parse_provider_file("openai", path)
+    assert set(parsed) == {"gpt-4o-mini", "gpt-4o", "gpt-4-turbo"}
+    assert parsed["gpt-4o-mini"]["units"] == 1_500_000
+    assert parsed["gpt-4o"]["units"] == 300_000
+    assert parsed["gpt-4-turbo"]["units"] == 75_000
+    # n_requests carries through per row.
+    assert parsed["gpt-4o"]["n_requests"] == 200
+    assert parsed["gpt-4-turbo"]["cost"] == pytest.approx(1.200, abs=0.001)
+
+
+def test_parse_provider_file_openai_csv_handles_missing_columns(tmp_path):
+    """Rows missing optional columns surface as zero rather than KeyError."""
+    path = tmp_path / "openai-sparse.csv"
+    # n_requests and cost_usd intentionally absent to confirm the
+    # `row.get(..., 0) or 0` fallback works against real-world
+    # exports that may omit columns the operator did not export.
+    path.write_text(
+        "model,input_tokens,output_tokens\n"
+        "gpt-4o-mini,1000,500\n"
+    )
+    parsed = reconcile.parse_provider_file("openai", path)
+    assert parsed["gpt-4o-mini"]["units"] == 1500
+    assert parsed["gpt-4o-mini"]["cost"] == 0.0
+    assert parsed["gpt-4o-mini"]["n_requests"] == 0.0
+
+
 def test_parse_provider_file_deepgram_csv(tmp_path):
     path = tmp_path / "deepgram.csv"
     path.write_text(
