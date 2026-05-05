@@ -213,8 +213,29 @@ def reconcile(
     return lines
 
 
-def format_text(lines: list[ReconcileLine], provider: str) -> str:
-    """Pretty text table for terminal display."""
+# ANSI sequences used when format_text is asked to colorize. Yellow
+# for flagged rows (over the |Δ%| threshold). Plain ANSI rather than
+# pulling in `rich` so the script keeps zero-extra-deps; the CLI
+# sets colorize only when stdout is a TTY.
+_ANSI_YELLOW = "\033[33m"
+_ANSI_RESET = "\033[0m"
+
+
+def format_text(
+    lines: list[ReconcileLine],
+    provider: str,
+    *,
+    colorize: bool = False,
+) -> str:
+    """Pretty text table for terminal display.
+
+    Adds a Total row at the bottom summing vg_cost and provider_cost
+    across rows where both sides matched (missing-side rows would
+    skew totals with their $0 placeholder). When ``colorize`` is
+    True, flagged rows are wrapped in ANSI yellow so they stand out
+    in a TTY; plain text otherwise. The CLI sets colorize when
+    stdout.isatty().
+    """
     if not lines:
         return f"No models to reconcile for provider {provider}.\n"
     unit_label = {
@@ -227,6 +248,9 @@ def format_text(lines: list[ReconcileLine], provider: str) -> str:
         f"{'Δ%':>7} {'VG cost':>10} {'Prov cost':>10} {'Δ$':>10} {'Δ%':>7}"
     )
     rows = [header, "-" * len(header)]
+    total_vg_cost = 0.0
+    total_provider_cost = 0.0
+    flagged_count = 0
     for line in lines:
         flags = ""
         if not line.matched_in_vg:
@@ -241,7 +265,15 @@ def format_text(lines: list[ReconcileLine], provider: str) -> str:
             # charge. The cost cells still show $0.0000 but the
             # explicit suffix names the absence.
             flags = " (no provider data)"
-        rows.append(
+        else:
+            # Only sum rows where both sides have data; missing
+            # sides would skew totals.
+            total_vg_cost += line.vg_cost
+            total_provider_cost += line.provider_cost
+        if line.flagged:
+            flagged_count += 1
+            flags = flags + " *" if flags else " *"
+        row_text = (
             f"{line.model[:35]:<35} "
             f"{line.vg_units:>14.1f} "
             f"{line.provider_units:>14.1f} "
@@ -251,6 +283,27 @@ def format_text(lines: list[ReconcileLine], provider: str) -> str:
             f"${line.cost_diff_abs:>+9.4f} "
             f"{line.cost_diff_pct:>+6.2f}%{flags}"
         )
+        if colorize and line.flagged:
+            row_text = f"{_ANSI_YELLOW}{row_text}{_ANSI_RESET}"
+        rows.append(row_text)
+
+    # Total row: sums over rows where both sides matched. Pinned
+    # below a dashes separator so it does not get visually merged
+    # with per-model rows.
+    total_diff_abs = total_provider_cost - total_vg_cost
+    total_diff_pct = _pct(total_diff_abs, total_provider_cost)
+    rows.append("-" * len(header))
+    rows.append(
+        f"{'Total':<35} "
+        f"{'':>14} {'':>14} "
+        f"{'':>7} "
+        f"${total_vg_cost:>9.4f} "
+        f"${total_provider_cost:>9.4f} "
+        f"${total_diff_abs:>+9.4f} "
+        f"{total_diff_pct:>+6.2f}%"
+    )
+    if flagged_count:
+        rows.append(f"  ({flagged_count} flagged row(s) marked with *)")
     return "\n".join(rows) + "\n"
 
 

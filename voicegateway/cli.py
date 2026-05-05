@@ -593,7 +593,13 @@ def reconcile_cmd(
     elif fmt == "json":
         sys.stdout.write(_reconcile.format_json(lines))
     else:
-        sys.stdout.write(_reconcile.format_text(lines, provider))
+        # Colorize flagged rows only on a real TTY; piped output and
+        # CliRunner captures stay plain text.
+        sys.stdout.write(
+            _reconcile.format_text(
+                lines, provider, colorize=sys.stdout.isatty()
+            )
+        )
 
 
 @app.command(name="mcp")

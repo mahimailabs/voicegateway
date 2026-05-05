@@ -462,6 +462,107 @@ def test_format_text_surfaces_no_provider_data_label(tmp_path):
     assert "(prov-missing)" not in text
 
 
+def test_format_text_includes_total_row(tmp_path):
+    """A Total row sums vg_cost and provider_cost across matched-both rows."""
+    path = tmp_path / "openai.csv"
+    path.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o-mini,1000,500,1,1.00\n"
+        "gpt-4o,500,250,1,2.00\n"
+    )
+    records = [
+        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
+         "input_units": 1000, "output_units": 500, "cost_usd": 0.94},
+        {"model_id": "openai/gpt-4o", "modality": "llm",
+         "input_units": 500, "output_units": 250, "cost_usd": 1.95},
+    ]
+    lines = reconcile.reconcile("openai", records, path)
+    text = reconcile.format_text(lines, "openai")
+    assert "Total" in text
+    # Total VG: 0.94 + 1.95 = 2.89; Total provider: 1.00 + 2.00 = 3.00
+    assert "$   2.8900" in text or "$2.8900" in text
+    assert "$   3.0000" in text or "$3.0000" in text
+    # Total diff +0.11; pct = 0.11/3.00 = ~3.67%
+    assert "+0.1100" in text
+
+
+def test_format_text_total_excludes_missing_side_rows(tmp_path):
+    """Rows with only one side of data must not contribute to the Total.
+
+    Including a $0 VG cell or $0 provider cell in the Total would
+    skew it (e.g., a missing-VG row with provider $5.00 would push
+    Total VG down by $5.00 worth of unmatched volume).
+    """
+    path = tmp_path / "openai.csv"
+    # Provider has gpt-4o-mini AND a never-seen-in-VG model.
+    path.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o-mini,1000,500,1,1.00\n"
+        "gpt-3.5-turbo,500,250,1,5.00\n"
+    )
+    records = [
+        # VG only logs gpt-4o-mini.
+        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
+         "input_units": 1000, "output_units": 500, "cost_usd": 0.97},
+    ]
+    lines = reconcile.reconcile("openai", records, path)
+    text = reconcile.format_text(lines, "openai")
+    # Missing-side row appears in the body with the (no vg data) flag.
+    assert "no vg data" in text
+    # Total row sums only the matched-both row: $0.97 vs $1.00.
+    # gpt-3.5-turbo's $5.00 must NOT be added to provider total.
+    # Diff $0.03 expected, NOT $4.03.
+    assert "+0.0300" in text
+    assert "+4.0300" not in text
+
+
+def test_format_text_colorize_wraps_flagged_rows():
+    """When colorize=True, flagged rows are wrapped in ANSI yellow."""
+    line = reconcile.ReconcileLine(
+        model="gpt-4o-mini",
+        vg_units=1000.0, provider_units=1000.0,
+        units_diff_abs=0.0, units_diff_pct=0.0,
+        vg_cost=0.94, provider_cost=1.00,
+        cost_diff_abs=0.06, cost_diff_pct=6.0,
+        matched_in_vg=True, matched_in_provider=True,
+        flagged=True,
+    )
+    text = reconcile.format_text([line], "openai", colorize=True)
+    assert "\033[33m" in text  # yellow
+    assert "\033[0m" in text  # reset
+
+
+def test_format_text_no_color_default():
+    """colorize default is False; no ANSI codes appear in output."""
+    line = reconcile.ReconcileLine(
+        model="gpt-4o-mini",
+        vg_units=1000.0, provider_units=1000.0,
+        units_diff_abs=0.0, units_diff_pct=0.0,
+        vg_cost=0.94, provider_cost=1.00,
+        cost_diff_abs=0.06, cost_diff_pct=6.0,
+        matched_in_vg=True, matched_in_provider=True,
+        flagged=True,
+    )
+    text = reconcile.format_text([line], "openai")
+    assert "\033[" not in text
+
+
+def test_format_text_flagged_row_marked_with_asterisk():
+    """Flagged rows are tagged with ' *' even without colorize."""
+    line = reconcile.ReconcileLine(
+        model="gpt-4o-mini",
+        vg_units=1000.0, provider_units=1000.0,
+        units_diff_abs=0.0, units_diff_pct=0.0,
+        vg_cost=0.94, provider_cost=1.00,
+        cost_diff_abs=0.06, cost_diff_pct=6.0,
+        matched_in_vg=True, matched_in_provider=True,
+        flagged=True,
+    )
+    text = reconcile.format_text([line], "openai")
+    assert " *" in text
+    assert "1 flagged row" in text
+
+
 def test_format_text_surfaces_no_vg_data_label(tmp_path):
     """Symmetric to 4.3 #2: when provider has data but VG does not,
     the rendered row must say 'no vg data'. Per design §3.3 + TODO
