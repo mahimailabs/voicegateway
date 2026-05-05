@@ -168,7 +168,7 @@ def test_export_costs_csv_default(temp_config, tmp_path, monkeypatch):
 
 
 def test_export_costs_json(temp_config, tmp_path, monkeypatch):
-    """JSON format returns a list of dicts with the same columns."""
+    """JSON format is JSONL (one object per line; no outer array)."""
     import asyncio
     import json
 
@@ -182,10 +182,26 @@ def test_export_costs_json(temp_config, tmp_path, monkeypatch):
          "--start", start, "--end", end, "--format", "json"],
     )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
-    assert isinstance(payload, list)
-    assert len(payload) == 2
-    assert all("pricing_source" in row for row in payload)
+
+    # JSONL: parse line-by-line. The bare output should NOT be a
+    # parsable JSON array.
+    lines = [ln for ln in result.output.strip().splitlines() if ln]
+    assert len(lines) == 2, (
+        f"expected 2 JSONL records, got {len(lines)}: {lines!r}"
+    )
+    rows = [json.loads(ln) for ln in lines]
+    assert all("pricing_source" in row for row in rows)
+    # The bare output is not a valid JSON document (no outer array).
+    # Confirms we did not regress to JSON-array format.
+    import contextlib
+    with contextlib.suppress(json.JSONDecodeError):
+        parsed = json.loads(result.output)
+        # If it parses at all, it must NOT be a list (JSONL is two
+        # concatenated objects which json.loads would reject; we only
+        # reach the suppress branch on certain edge cases).
+        assert not isinstance(parsed, list), (
+            "JSON output regressed to a JSON array; expected JSONL."
+        )
 
 
 def test_export_costs_with_project_filter(temp_config, tmp_path, monkeypatch):

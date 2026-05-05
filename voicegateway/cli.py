@@ -445,6 +445,11 @@ def export_costs_cmd(
     calculated_cost_usd (fixed-point, no scientific notation),
     pricing_source, status.
 
+    Output formats:
+    - csv (default): header row + one data row per request.
+    - json: JSONL (one JSON object per line; no outer array, no
+      indent). Streamable; consumers iterate `json.loads` per line.
+
     Pair with `voicegw reconcile` (Phase 4.3) to compare against a
     provider's invoice.
     """
@@ -482,9 +487,12 @@ def export_costs_cmd(
             formatted = _format_export_row(r)
             writer.writerow([formatted[col] for col in _EXPORT_COLUMNS])
     else:
-        export_rows = [_format_export_row(r) for r in rows]
-        _json.dump(export_rows, buf, default=str, indent=2)
-        buf.write("\n")
+        # JSONL: one JSON object per line, no outer array, no indent.
+        # Per design §2.1 and TODO 4.1 #4. Streamable; downstream
+        # consumers can `for line in f: row = json.loads(line)`.
+        for r in rows:
+            _json.dump(_format_export_row(r), buf, default=str)
+            buf.write("\n")
 
     payload = buf.getvalue()
     if output == "-":
