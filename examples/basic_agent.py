@@ -7,8 +7,9 @@ Usage:
     python examples/basic_agent.py dev
 """
 
-from livekit.agents import AgentSession, Agent, JobContext, WorkerOptions, cli
+from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
 from livekit.plugins import silero
+
 from voicegateway import Gateway
 
 gw = Gateway()
