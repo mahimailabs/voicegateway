@@ -54,6 +54,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures" / "streaming"
+AUDIO_SAMPLE_PATH = REPO_ROOT / "tests" / "fixtures" / "audio" / "test_sample.wav"
 
 DEFAULT_LLM_PROMPT = "Hello, how are you? Please respond in one short sentence."
 DEFAULT_LLM_MAX_TOKENS = 100
@@ -214,13 +215,86 @@ async def _aenumerate(
 
 
 async def _record_deepgram_stt(model: str, mode: str) -> dict[str, Any]:
-    """Record a Deepgram STT response. Implementation pending in 3.2."""
-    raise NotImplementedError(
-        "Deepgram fixture recording: follow-up iteration. The recorder needs "
-        "a small audio sample (PCM/WAV) and the deepgram-sdk live or "
-        "prerecorded interface; see scripts/record-streaming-fixtures.py "
-        "docstring."
-    )
+    """Record a Deepgram STT response and return an intermediate fixture shape.
+
+    The bundled ``tests/fixtures/audio/test_sample.wav`` (3 seconds,
+    8 kHz mono 16-bit PCM, ~48 KB) is the audio source for both
+    batch and stream modes. The fixture's ``request`` block stores
+    a path reference rather than inlining the audio so the JSON
+    stays small; replay tests load the same file when they need
+    bytes.
+    """
+    try:
+        import httpx
+    except ImportError as exc:
+        raise RuntimeError(
+            "httpx package required: pip install httpx"
+        ) from exc
+
+    api_key = os.environ.get("DEEPGRAM_API_KEY")
+    if not api_key:
+        raise RuntimeError("DEEPGRAM_API_KEY env var required")
+
+    if not AUDIO_SAMPLE_PATH.exists():
+        raise RuntimeError(
+            f"Test audio sample missing at {AUDIO_SAMPLE_PATH}. "
+            "Add a small WAV file under tests/fixtures/audio/."
+        )
+
+    audio_bytes = AUDIO_SAMPLE_PATH.read_bytes()
+    request_record = {
+        "model": model,
+        "audio_path": str(AUDIO_SAMPLE_PATH.relative_to(REPO_ROOT)),
+        "audio_size_bytes": len(audio_bytes),
+        "audio_format": "wav",
+    }
+
+    if mode == "batch":
+        # Deepgram pre-recorded API: POST raw audio bytes with the
+        # model selected via query string. Response carries the
+        # transcript plus a metadata block with the audio duration
+        # in seconds, which is the ground-truth STT usage.
+        url = f"https://api.deepgram.com/v1/listen?model={model}"
+        headers = {
+            "Authorization": f"Token {api_key}",
+            "Content-Type": "audio/wav",
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                url, content=audio_bytes, headers=headers
+            )
+            resp.raise_for_status()
+            response_dict = resp.json()
+
+        duration = response_dict.get("metadata", {}).get("duration")
+        if duration is None:
+            raise RuntimeError(
+                "Deepgram batch response missing metadata.duration; "
+                "cannot record a fixture without ground-truth audio "
+                "seconds."
+            )
+        return {
+            "request": request_record,
+            "response_stream": [
+                {
+                    "chunk_index": 0,
+                    "received_at_ms": 0,
+                    "data": response_dict,
+                }
+            ],
+            "provider_reported_usage": {
+                "audio_seconds": float(duration),
+            },
+        }
+
+    if mode == "stream":
+        # 3.3 #5 implements Deepgram WebSocket stream recording.
+        raise NotImplementedError(
+            "Deepgram STT stream recording lands in 3.3 #5. "
+            "Use --mode batch for now."
+        )
+
+    raise ValueError(f"Unknown mode: {mode!r}")
 
 
 # ---------- Cartesia -----------------------------------------------------
