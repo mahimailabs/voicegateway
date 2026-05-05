@@ -816,11 +816,25 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 async def _run_all() -> list[Path]:
-    """Sequentially record every Phase 3 fixture; return the written paths."""
+    """Sequentially record every Phase 3 fixture; return the written paths.
+
+    Prints a ``[N/total]`` progress marker before each recording so
+    the human running ``--record --all --confirm`` sees real-time
+    progress over the sequence rather than one big silence punctuated
+    by six file paths.
+    """
     written: list[Path] = []
-    for provider, model, modality, mode in _ALL_FIXTURES:
+    total = len(_ALL_FIXTURES)
+    for index, (provider, model, modality, mode) in enumerate(_ALL_FIXTURES, 1):
+        print(f"[{index}/{total}] {provider}/{model} {modality}/{mode}")
         path = await _run(provider, modality, model, mode)
         written.append(path)
+    print()
+    print(f"Done. {len(written)} fixtures written under {FIXTURES_DIR}.")
+    print(
+        "Inspect with `git diff --stat tests/fixtures/streaming/` "
+        "and commit when ready."
+    )
     return written
 
 

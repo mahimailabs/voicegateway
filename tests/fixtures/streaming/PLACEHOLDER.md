@@ -53,34 +53,33 @@ Expected output (timing and exact dollar amounts will vary by a
 few cents):
 
 ```text
-About to record 6 fixtures across 3 providers.
+[1/6] openai/gpt-4o-mini llm/batch
+Recording openai/gpt-4o-mini/llm/batch...
+  -> tests/fixtures/streaming/openai_gpt-4o-mini_llm_batch_2026-05-05.json
+     expected_cost_usd = $0.00001590
+[2/6] openai/gpt-4o-mini llm/stream
+Recording openai/gpt-4o-mini/llm/stream...
+  -> tests/fixtures/streaming/openai_gpt-4o-mini_llm_stream_2026-05-05.json
+     expected_cost_usd = $0.00001590
+[3/6] deepgram/nova-3 stt/batch
+Recording deepgram/nova-3/stt/batch...
+  -> tests/fixtures/streaming/deepgram_nova-3_stt_batch_2026-05-05.json
+     expected_cost_usd = $0.00021500
+[4/6] deepgram/nova-3 stt/stream
+Recording deepgram/nova-3/stt/stream...
+  -> tests/fixtures/streaming/deepgram_nova-3_stt_stream_2026-05-05.json
+     expected_cost_usd = $0.00021500
+[5/6] cartesia/sonic-3 tts/batch
+Recording cartesia/sonic-3/tts/batch...
+  -> tests/fixtures/streaming/cartesia_sonic-3_tts_batch_2026-05-05.json
+     expected_cost_usd = $0.00377000
+[6/6] cartesia/sonic-3 tts/stream
+Recording cartesia/sonic-3/tts/stream...
+  -> tests/fixtures/streaming/cartesia_sonic-3_tts_stream_2026-05-05.json
+     expected_cost_usd = $0.00377000
 
-  openai/gpt-4o-mini  llm  batch    ~$0.00003
-  openai/gpt-4o-mini  llm  stream   ~$0.00004
-  deepgram/nova-3     stt  batch    ~$0.0002
-  deepgram/nova-3     stt  stream   ~$0.0002
-  cartesia/sonic-3    tts  batch    ~$0.006
-  cartesia/sonic-3    tts  stream   ~$0.006
-
-Estimated total: ~$0.013
-
-Confirmed via --confirm; proceeding.
-
-[1/6] openai/gpt-4o-mini llm batch ... wrote
-      tests/fixtures/streaming/openai_gpt-4o-mini_llm_batch_2026-05-05.json
-[2/6] openai/gpt-4o-mini llm stream ... wrote
-      tests/fixtures/streaming/openai_gpt-4o-mini_llm_stream_2026-05-05.json
-[3/6] deepgram/nova-3 stt batch ... wrote
-      tests/fixtures/streaming/deepgram_nova-3_stt_batch_2026-05-05.json
-[4/6] deepgram/nova-3 stt stream ... wrote
-      tests/fixtures/streaming/deepgram_nova-3_stt_stream_2026-05-05.json
-[5/6] cartesia/sonic-3 tts batch ... wrote
-      tests/fixtures/streaming/cartesia_sonic-3_tts_batch_2026-05-05.json
-[6/6] cartesia/sonic-3 tts stream ... wrote
-      tests/fixtures/streaming/cartesia_sonic-3_tts_stream_2026-05-05.json
-
-Done. 6 fixtures written. Inspect with `git diff --stat
-tests/fixtures/streaming/`.
+Done. 6 fixtures written under tests/fixtures/streaming.
+Inspect with `git diff --stat tests/fixtures/streaming/` and commit when ready.
 ```
 
 ## Record a single fixture (recovery / partial reruns)
