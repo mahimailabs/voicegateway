@@ -1,6 +1,6 @@
 # Architecture Overview
 
-VoiceGateway is a self-hosted inference gateway for voice AI. It provides unified routing for STT, LLM, and TTS requests across cloud providers and local models, with cost tracking, fallback chains, rate limiting, budget enforcement, and a web dashboard.
+VoiceGateway is cost tracking and reconciliation for LiveKit voice agents. It returns native LiveKit STT, LLM, and TTS plugin instances across cloud providers and local models, with modality-aware unit accounting (audio-minutes, tokens, characters), resolver-time fallback chains, rate limiting, budget enforcement, a `voicegw reconcile` command, and a web dashboard.
 
 ## System Architecture
 
@@ -187,6 +187,7 @@ dashboard/
 | [Gateway Core](./gateway-core) | `core/gateway.py` | Main orchestrator, entry point for all requests |
 | [Provider Abstraction](./provider-abstraction) | `providers/base.py` | ABC for all 11 provider implementations |
 | [Middleware](./middleware) | `middleware/` | Cost, latency, rate limiting, fallback, budget |
+| [Cost Tracking](./cost-tracking) | `pricing/`, `middleware/cost_tracker.py` | Per-request cost calculation, pricing layer, streaming validation |
 | [Storage](./storage) | `storage/sqlite.py` | SQLite schema, tables, views, indexes |
 | [Config Layers](./config-layers) | `core/config_manager.py` | YAML + SQLite + env merge strategy |
 | [Security](./security) | `core/crypto.py` | Fernet encryption, secret management, masking |

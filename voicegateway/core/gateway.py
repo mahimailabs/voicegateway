@@ -28,11 +28,12 @@ DEFAULT_DB_PATH = "~/.config/voicegateway/voicegw.db"
 
 
 class Gateway:
-    """Self-hosted inference gateway for voice AI agents.
+    """Cost tracking and reconciliation for LiveKit voice agents.
 
-    Routes STT, LLM, and TTS requests to cloud providers (with your API keys)
-    or local models. Provides fallback chains, project-based cost tracking,
-    and latency monitoring.
+    Returns native LiveKit STT/LLM/TTS plugin instances ready to drop into
+    `AgentSession`, with per-modality cost tracking (audio-minutes, tokens,
+    characters), resolver-time fallback chains, latency monitoring, and
+    `voicegw reconcile` for verifying recorded costs against provider invoices.
     """
 
     def __init__(self, config_path: str | None = None):

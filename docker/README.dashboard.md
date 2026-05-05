@@ -1,6 +1,6 @@
 # mahimairaja/voicegateway-dashboard
 
-Web dashboard for [VoiceGateway](https://hub.docker.com/r/mahimairaja/voicegateway) -- self-hosted inference gateway for voice AI.
+Web dashboard for [VoiceGateway](https://hub.docker.com/r/mahimairaja/voicegateway) -- cost tracking and reconciliation for LiveKit voice agents.
 
 Full documentation: **[docs.voicegateway.dev](https://docs.voicegateway.dev)**
 

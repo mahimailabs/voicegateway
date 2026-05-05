@@ -56,7 +56,7 @@ def build_app(gateway: Gateway) -> FastAPI:
     app = FastAPI(
         title="VoiceGateway API",
         version="0.1.0",
-        description="HTTP API for the VoiceGateway self-hosted inference gateway.",
+        description="HTTP API for VoiceGateway: cost tracking and reconciliation for LiveKit voice agents.",
     )
 
     # Auth is opt-in. When no keys are configured, check_request passes

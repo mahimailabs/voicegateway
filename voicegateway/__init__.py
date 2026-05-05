@@ -1,4 +1,4 @@
-"""VoiceGateway — self-hosted inference gateway for voice AI."""
+"""VoiceGateway: cost tracking and reconciliation for LiveKit voice agents."""
 
 from voicegateway.core.config import GatewayConfig
 from voicegateway.core.gateway import Gateway

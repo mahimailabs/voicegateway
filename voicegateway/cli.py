@@ -13,7 +13,7 @@ from rich.table import Table
 
 app = typer.Typer(
     name="voicegw",
-    help="VoiceGateway — self-hosted inference gateway for voice AI",
+    help="VoiceGateway: cost tracking and reconciliation for LiveKit voice agents",
     no_args_is_help=True,
 )
 console = Console()

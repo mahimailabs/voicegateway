@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   title: 'VoiceGateway',
-  description: 'Self-hosted inference gateway for voice AI. STT, LLM, TTS with agent-native MCP management.',
+  description: 'Cost tracking and reconciliation for LiveKit voice agents. Modality-aware unit accounting with prices from pydantic/genai-prices.',
 
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
@@ -134,6 +134,7 @@ export default defineConfig({
             { text: 'Gateway Core', link: '/architecture/gateway-core' },
             { text: 'Provider Abstraction', link: '/architecture/provider-abstraction' },
             { text: 'Middleware', link: '/architecture/middleware' },
+            { text: 'Cost Tracking', link: '/architecture/cost-tracking' },
             { text: 'Storage', link: '/architecture/storage' },
             { text: 'Config Layers', link: '/architecture/config-layers' },
             { text: 'Security', link: '/architecture/security' },
