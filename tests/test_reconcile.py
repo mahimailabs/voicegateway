@@ -129,6 +129,68 @@ def test_parse_provider_file_cartesia_json(tmp_path):
     assert parsed["sonic-3"]["units"] == 2_500_000
 
 
+def test_parse_provider_file_cartesia_csv(tmp_path):
+    """Cartesia parser also accepts the canonical CSV shape (not just JSON)."""
+    path = tmp_path / "cartesia.csv"
+    path.write_text(
+        "model,characters,n_requests,cost_usd\n"
+        "sonic-3,2500000,1000,30.0\n"
+    )
+    parsed = reconcile.parse_provider_file("cartesia", path)
+    assert parsed["sonic-3"]["units"] == 2_500_000
+    assert parsed["sonic-3"]["cost"] == pytest.approx(30.0, abs=0.01)
+    assert parsed["sonic-3"]["n_requests"] == 1000
+
+
+def test_parse_provider_file_cartesia_csv_multiple_models(tmp_path):
+    """Real Cartesia exports may list sonic-3 + older voice models."""
+    path = tmp_path / "cartesia-multi.csv"
+    path.write_text(
+        "model,characters,n_requests,cost_usd\n"
+        "sonic-3,2500000,1000,30.0\n"
+        "sonic-turbo,800000,400,9.6\n"
+    )
+    parsed = reconcile.parse_provider_file("cartesia", path)
+    assert set(parsed) == {"sonic-3", "sonic-turbo"}
+    assert parsed["sonic-3"]["units"] == 2_500_000
+    assert parsed["sonic-turbo"]["units"] == 800_000
+    assert parsed["sonic-turbo"]["cost"] == pytest.approx(9.6, abs=0.01)
+
+
+def test_parse_provider_file_cartesia_csv_handles_missing_columns(tmp_path):
+    """Sparse CSV (no n_requests, no cost_usd) returns zeros, not KeyError."""
+    path = tmp_path / "cartesia-sparse.csv"
+    path.write_text(
+        "model,characters\n"
+        "sonic-3,500000\n"
+    )
+    parsed = reconcile.parse_provider_file("cartesia", path)
+    assert parsed["sonic-3"]["units"] == 500_000
+    assert parsed["sonic-3"]["cost"] == 0.0
+    assert parsed["sonic-3"]["n_requests"] == 0.0
+
+
+def test_parse_provider_file_cartesia_units_are_characters(tmp_path):
+    """Cartesia bills via credits but our canonical column is characters.
+
+    A future refactor should not silently switch the units column to
+    `credits` (which Cartesia also exports). The parser must read
+    `characters` to stay aligned with VG's input_units (TTS character
+    count) per design §3.2.
+    """
+    path = tmp_path / "cartesia-units.csv"
+    # Note: characters and credits are intentionally different to
+    # confirm the parser reads the right column.
+    path.write_text(
+        "model,characters,credits,n_requests,cost_usd\n"
+        "sonic-3,2500000,250000,1000,30.0\n"
+    )
+    parsed = reconcile.parse_provider_file("cartesia", path)
+    assert parsed["sonic-3"]["units"] == 2_500_000, (
+        "Cartesia parser must read `characters`, not `credits`."
+    )
+
+
 def test_parse_provider_file_unknown_provider_raises(tmp_path):
     path = tmp_path / "x.csv"
     path.write_text("model\n")
