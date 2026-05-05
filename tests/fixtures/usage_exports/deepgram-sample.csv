@@ -1,0 +1,4 @@
+model,audio_seconds,n_requests,cost_usd
+nova-3,180000.0,1500,8.700
+nova-2,90000.0,800,4.350
+flux-general,30000.0,250,1.450

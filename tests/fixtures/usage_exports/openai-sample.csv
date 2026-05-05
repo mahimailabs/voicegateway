@@ -1,0 +1,4 @@
+model,input_tokens,output_tokens,n_requests,cost_usd
+gpt-4o-mini,2500000,1250000,8500,0.5625
+gpt-4o,500000,250000,1200,4.500
+gpt-4-turbo,150000,75000,250,2.250

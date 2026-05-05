@@ -7,6 +7,7 @@ These tests exercise the parse + aggregate + diff logic directly.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -189,6 +190,52 @@ def test_parse_provider_file_cartesia_units_are_characters(tmp_path):
     assert parsed["sonic-3"]["units"] == 2_500_000, (
         "Cartesia parser must read `characters`, not `credits`."
     )
+
+
+# Sample fixtures committed under tests/fixtures/usage_exports/
+# anchor the parser against committed reference data rather than
+# inline strings. This double-checks the canonical schema against
+# real files (matters when a future docs change drifts the schema
+# and the parser does not).
+_FIXTURES_USAGE_DIR = (
+    Path(__file__).parent / "fixtures" / "usage_exports"
+)
+
+
+def test_parse_provider_file_loads_committed_openai_sample():
+    """The committed openai-sample.csv parses cleanly to known values."""
+    parsed = reconcile.parse_provider_file(
+        "openai", _FIXTURES_USAGE_DIR / "openai-sample.csv"
+    )
+    # Three models documented in the fixture README.
+    assert set(parsed) == {"gpt-4o-mini", "gpt-4o", "gpt-4-turbo"}
+    # Pinned values; updating the fixture requires updating these.
+    assert parsed["gpt-4o-mini"]["units"] == 3_750_000  # 2.5M + 1.25M
+    assert parsed["gpt-4o-mini"]["cost"] == pytest.approx(0.5625, abs=0.0001)
+    assert parsed["gpt-4o"]["units"] == 750_000
+    assert parsed["gpt-4-turbo"]["n_requests"] == 250
+
+
+def test_parse_provider_file_loads_committed_deepgram_sample():
+    """The committed deepgram-sample.csv parses cleanly to known values."""
+    parsed = reconcile.parse_provider_file(
+        "deepgram", _FIXTURES_USAGE_DIR / "deepgram-sample.csv"
+    )
+    assert set(parsed) == {"nova-3", "nova-2", "flux-general"}
+    assert parsed["nova-3"]["units"] == pytest.approx(180_000.0, abs=0.1)
+    assert parsed["nova-2"]["units"] == pytest.approx(90_000.0, abs=0.1)
+    assert parsed["flux-general"]["cost"] == pytest.approx(1.450, abs=0.001)
+
+
+def test_parse_provider_file_loads_committed_cartesia_sample():
+    """The committed cartesia-sample.csv parses cleanly to known values."""
+    parsed = reconcile.parse_provider_file(
+        "cartesia", _FIXTURES_USAGE_DIR / "cartesia-sample.csv"
+    )
+    assert set(parsed) == {"sonic-3", "sonic-turbo"}
+    assert parsed["sonic-3"]["units"] == 2_500_000
+    assert parsed["sonic-turbo"]["units"] == 800_000
+    assert parsed["sonic-turbo"]["cost"] == pytest.approx(9.600, abs=0.001)
 
 
 def test_parse_provider_file_unknown_provider_raises(tmp_path):
