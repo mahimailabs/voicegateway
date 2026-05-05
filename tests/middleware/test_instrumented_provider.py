@@ -133,3 +133,108 @@ async def test_log_request_is_idempotent() -> None:
         "the budget enforcer would double-count and storage would have a "
         "duplicate row."
     )
+
+
+# ---------- proxy + repr + storage path coverage -----------------------
+
+
+def test_getattr_proxies_to_wrapped_instance() -> None:
+    """Attribute access falls through to the wrapped instance via __getattr__."""
+    wrapped = MagicMock()
+    wrapped.some_method = MagicMock(return_value="hello")
+    wrapped.some_value = 42
+    cost_tracker = MagicMock()
+    cost_tracker.notify_spend = AsyncMock()
+    wrapper = InstrumentedSTT(
+        wrapped=wrapped,
+        model_id="test/model",
+        provider="test",
+        project="default",
+        cost_tracker=cost_tracker,
+        storage=None,
+    )
+    assert wrapper.some_method() == "hello"
+    assert wrapper.some_value == 42
+
+
+def test_setattr_proxies_to_wrapped_instance() -> None:
+    """Attribute writes flow to the wrapped instance, not the wrapper."""
+    wrapped = MagicMock()
+    cost_tracker = MagicMock()
+    cost_tracker.notify_spend = AsyncMock()
+    wrapper = InstrumentedSTT(
+        wrapped=wrapped,
+        model_id="test/model",
+        provider="test",
+        project="default",
+        cost_tracker=cost_tracker,
+        storage=None,
+    )
+    wrapper.user_visible_attribute = "downstream"
+    assert wrapped.user_visible_attribute == "downstream"
+
+
+def test_repr_includes_wrapped_and_modality() -> None:
+    """``repr(wrapper)`` exposes both the wrapped instance and the modality."""
+
+    class _FakeSTT:
+        def __repr__(self) -> str:
+            return "FakeSTT()"
+
+    cost_tracker = MagicMock()
+    cost_tracker.notify_spend = AsyncMock()
+    wrapper = InstrumentedSTT(
+        wrapped=_FakeSTT(),
+        model_id="test/model",
+        provider="test",
+        project="default",
+        cost_tracker=cost_tracker,
+        storage=None,
+    )
+    rep = repr(wrapper)
+    assert "InstrumentedSTT" in rep
+    assert "FakeSTT()" in rep
+
+
+async def test_log_request_with_storage_writes_to_storage() -> None:
+    """Storage path: log_request is called when storage is provided."""
+    wrapper = _make_wrapper()
+    cost_tracker = object.__getattribute__(wrapper, "_cost_tracker")
+    storage = AsyncMock()
+    object.__setattr__(wrapper, "_storage", storage)
+
+    await wrapper._log_request(input_units=1.0)
+
+    assert storage.log_request.call_count == 1
+    # The record passed to storage is the same one cost_tracker
+    # produced; downstream code reads cost_usd from it.
+    storage.log_request.assert_called_once_with(
+        cost_tracker.create_record.return_value
+    )
+
+
+async def test_log_request_swallows_storage_exception() -> None:
+    """A failing storage backend must not break in-memory accounting.
+
+    A storage outage already costs the user observability of the
+    request; it must not also cause the request itself to fail.
+    The wrapper logs at warning and continues to notify the budget
+    enforcer so per-project caps still hold.
+    """
+    wrapper = _make_wrapper()
+    cost_tracker = object.__getattribute__(wrapper, "_cost_tracker")
+
+    storage = AsyncMock()
+    storage.log_request = AsyncMock(side_effect=RuntimeError("disk full"))
+    object.__setattr__(wrapper, "_storage", storage)
+
+    # Must not raise.
+    await wrapper._log_request(input_units=1.0)
+
+    # The budget enforcer's cache is still updated despite the
+    # storage failure.
+    assert cost_tracker.notify_spend.call_count == 1, (
+        "notify_spend must run even when storage.log_request raises; "
+        "otherwise per-project budget caps drift after any storage "
+        "outage."
+    )

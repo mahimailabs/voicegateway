@@ -134,6 +134,7 @@ export default defineConfig({
             { text: 'Gateway Core', link: '/architecture/gateway-core' },
             { text: 'Provider Abstraction', link: '/architecture/provider-abstraction' },
             { text: 'Middleware', link: '/architecture/middleware' },
+            { text: 'Cost Tracking', link: '/architecture/cost-tracking' },
             { text: 'Storage', link: '/architecture/storage' },
             { text: 'Config Layers', link: '/architecture/config-layers' },
             { text: 'Security', link: '/architecture/security' },
