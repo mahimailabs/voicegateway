@@ -152,16 +152,19 @@ def test_export_costs_csv_default(temp_config, tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     reader = csv.DictReader(io.StringIO(result.output))
     rows = list(reader)
+    # Column names match design §2.1: `model` (not model_id) and
+    # `calculated_cost_usd` (not cost_usd).
     assert reader.fieldnames == [
-        "timestamp", "project", "modality", "provider", "model_id",
-        "input_units", "output_units", "cost_usd", "pricing_source", "status",
+        "timestamp", "project", "modality", "provider", "model",
+        "input_units", "output_units", "calculated_cost_usd",
+        "pricing_source", "status",
     ]
     # Two in-window rows; the 99.0 record is excluded.
     assert len(rows) == 2
-    by_model = {r["model_id"]: r for r in rows}
+    by_model = {r["model"]: r for r in rows}
     assert by_model["openai/gpt-4o-mini"]["pricing_source"] == "genai-prices@0.0.57"
     assert by_model["deepgram/nova-3"]["project"] == "beta"
-    assert float(by_model["openai/gpt-4o-mini"]["cost_usd"]) == 0.10
+    assert float(by_model["openai/gpt-4o-mini"]["calculated_cost_usd"]) == 0.10
 
 
 def test_export_costs_json(temp_config, tmp_path, monkeypatch):
@@ -204,7 +207,7 @@ def test_export_costs_with_project_filter(temp_config, tmp_path, monkeypatch):
     rows = list(csv.DictReader(io.StringIO(result.output)))
     assert len(rows) == 1
     assert rows[0]["project"] == "alpha"
-    assert rows[0]["model_id"] == "openai/gpt-4o-mini"
+    assert rows[0]["model"] == "openai/gpt-4o-mini"
 
 
 def test_export_costs_writes_to_file(temp_config, tmp_path, monkeypatch):
@@ -249,6 +252,74 @@ def test_export_costs_invalid_format_returns_2(temp_config):
     )
     assert result.exit_code == 2
     assert "Unknown format" in result.output
+
+
+def test_export_costs_renders_iso_timestamp_and_fixed_point_cost(
+    temp_config, tmp_path, monkeypatch
+):
+    """Per design §2.1: timestamps are ISO-8601 UTC and costs are not
+    rendered in scientific notation. Sub-cent values like 1e-5 must
+    surface as fixed-point strings.
+    """
+    import asyncio
+    import csv
+    import datetime as _dt
+    import io
+    import uuid
+
+    from voicegateway.storage.models import RequestRecord
+    from voicegateway.storage.sqlite import SQLiteStorage
+
+    db_path = str(tmp_path / "export-precision.db")
+    monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
+
+    async def _seed() -> tuple[float, str, str]:
+        storage = SQLiteStorage(db_path)
+        # Pinned timestamp: 2026-04-15 09:30:00 UTC = 1776418200.0
+        ts = _dt.datetime(
+            2026, 4, 15, 9, 30, 0, tzinfo=_dt.UTC
+        ).timestamp()
+        # 1e-05 would render as "1.5e-05" in default float repr; the
+        # export must surface it in fixed-point.
+        await storage.log_request(RequestRecord(
+            id=str(uuid.uuid4()), timestamp=ts,
+            modality="llm", model_id="openai/gpt-4o-mini",
+            provider="openai", project="alpha",
+            input_units=1, output_units=1, cost_usd=0.000015,
+            pricing_source="genai-prices@0.0.57", status="ok",
+        ))
+        return ts, "2026-04-14", "2026-04-16"
+
+    ts, start, end = asyncio.run(_seed())
+
+    result = runner.invoke(
+        app,
+        ["export-costs", "--config", temp_config,
+         "--start", start, "--end", end],
+    )
+    assert result.exit_code == 0, result.output
+    rows = list(csv.DictReader(io.StringIO(result.output)))
+    assert len(rows) == 1
+    row = rows[0]
+    # ISO-8601 UTC: starts with the date, contains "T", ends with
+    # +00:00 (or "Z" depending on Python's strftime; isoformat() uses
+    # +00:00 for utc-aware datetimes).
+    assert row["timestamp"].startswith("2026-04-15T"), (
+        f"timestamp must be ISO-8601 starting with the UTC date; "
+        f"got {row['timestamp']!r}"
+    )
+    assert "+00:00" in row["timestamp"]
+    # Cost rendered as fixed-point. Specifically NOT in scientific
+    # notation. The exact float-to-Decimal conversion via str() can
+    # introduce a few extra digits but must remain non-scientific.
+    cost = row["calculated_cost_usd"]
+    assert "e" not in cost.lower(), (
+        f"calculated_cost_usd must not use scientific notation; "
+        f"got {cost!r}"
+    )
+    assert cost.startswith("0.0000"), (
+        f"expected sub-cent fixed-point; got {cost!r}"
+    )
 
 
 # --------------------------------------------------------------------
