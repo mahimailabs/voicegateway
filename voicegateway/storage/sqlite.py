@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS requests (
     input_units REAL DEFAULT 0,
     output_units REAL DEFAULT 0,
     cost_usd REAL DEFAULT 0,
+    pricing_source TEXT NOT NULL DEFAULT '',
     ttfb_ms REAL,
     total_latency_ms REAL,
     status TEXT DEFAULT 'success',
@@ -139,6 +140,13 @@ class SQLiteStorage:
                 await db.execute(
                     "CREATE INDEX IF NOT EXISTS idx_requests_project_timestamp "
                     "ON requests(project, timestamp)"
+                )
+            # Migration: add `pricing_source` column if missing (Phase 2.3 v0.1.0).
+            # Pre-v0.1 rows get the empty-string default; new rows carry a real
+            # value via CostTracker once Phase 2.3 #4 wires it through.
+            if "pricing_source" not in cols:
+                await db.execute(
+                    "ALTER TABLE requests ADD COLUMN pricing_source TEXT NOT NULL DEFAULT ''"
                 )
             # Audit log table
             await db.execute("""
@@ -299,10 +307,10 @@ class SQLiteStorage:
             await db.execute(
                 """INSERT INTO requests
                    (id, timestamp, project, modality, model_id, provider,
-                    input_units, output_units, cost_usd,
+                    input_units, output_units, cost_usd, pricing_source,
                     ttfb_ms, total_latency_ms, status,
                     fallback_from, error_message, metadata)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     record.id,
                     record.timestamp,
@@ -313,6 +321,7 @@ class SQLiteStorage:
                     record.input_units,
                     record.output_units,
                     record.cost_usd,
+                    record.pricing_source,
                     record.ttfb_ms,
                     record.total_latency_ms,
                     record.status,
@@ -340,16 +349,53 @@ class SQLiteStorage:
             return now - 30 * 86400
         return 0
 
+    @staticmethod
+    def _resolve_window(
+        period: str = "today",
+        start_ts: float | None = None,
+        end_ts: float | None = None,
+    ) -> tuple[float, float | None]:
+        """Resolve a query window into a `(since, until)` timestamp pair.
+
+        When either `start_ts` or `end_ts` is provided, the explicit
+        bounds win and `period` is ignored. Missing bound defaults to
+        unbounded on that side (``since=0`` / ``until=None``).
+
+        When neither is provided, falls back to the named-period semantics
+        via ``_period_since`` and returns ``until=None`` (no upper bound),
+        preserving existing call sites' behavior.
+        """
+        if start_ts is not None or end_ts is not None:
+            return (start_ts if start_ts is not None else 0.0, end_ts)
+        return (SQLiteStorage._period_since(period), None)
+
     async def get_cost_summary(
-        self, period: str = "today", project: str | None = None
+        self,
+        period: str = "today",
+        project: str | None = None,
+        include_pricing_source: bool = False,
+        start_ts: float | None = None,
+        end_ts: float | None = None,
     ) -> dict[str, Any]:
-        """Get cost summary for the given period, optionally filtered by project."""
+        """Get cost summary for the given period, optionally filtered by project.
+
+        With ``include_pricing_source=True``, each entry in ``by_model``
+        gains a ``pricing_source`` field carrying the catalog (or
+        catalogs, comma-joined) that priced that model's requests.
+
+        Pass `start_ts` and/or `end_ts` (POSIX timestamps) to override
+        the named-period window. When either is set, `period` is
+        ignored. `start_ts` is inclusive, `end_ts` is exclusive.
+        """
         db = await self._ensure_initialized()
         try:
-            since = self._period_since(period)
+            since, until = self._resolve_window(period, start_ts, end_ts)
 
             params: list[Any] = [since]
             where = "WHERE timestamp >= ?"
+            if until is not None:
+                where += " AND timestamp < ?"
+                params.append(until)
             if project:
                 where += " AND project = ?"
                 params.append(project)
@@ -374,15 +420,33 @@ class SQLiteStorage:
             }
 
             # By model
-            cursor = await db.execute(
-                f"""SELECT model_id, SUM(cost_usd) as cost, COUNT(*) as count
-                    FROM requests {where}
-                    GROUP BY model_id ORDER BY cost DESC""",
-                tuple(params),
-            )
-            by_model = {
-                row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor
-            }
+            if include_pricing_source:
+                cursor = await db.execute(
+                    f"""SELECT model_id, SUM(cost_usd) as cost, COUNT(*) as count,
+                               GROUP_CONCAT(DISTINCT pricing_source) as sources
+                        FROM requests {where}
+                        GROUP BY model_id ORDER BY cost DESC""",
+                    tuple(params),
+                )
+                by_model = {
+                    row[0]: {
+                        "cost": row[1],
+                        "requests": row[2],
+                        "pricing_source": row[3] or "",
+                    }
+                    async for row in cursor
+                }
+            else:
+                cursor = await db.execute(
+                    f"""SELECT model_id, SUM(cost_usd) as cost, COUNT(*) as count
+                        FROM requests {where}
+                        GROUP BY model_id ORDER BY cost DESC""",
+                    tuple(params),
+                )
+                by_model = {
+                    row[0]: {"cost": row[1], "requests": row[2]}
+                    async for row in cursor
+                }
 
             return {
                 "period": period,
@@ -394,16 +458,63 @@ class SQLiteStorage:
         finally:
             await db.close()
 
-    async def get_cost_by_project(self, period: str = "today") -> dict[str, Any]:
+    async def get_cost_by_project(
+        self,
+        period: str = "today",
+        start_ts: float | None = None,
+        end_ts: float | None = None,
+    ) -> dict[str, Any]:
         """Get cost summary grouped by project."""
         db = await self._ensure_initialized()
         try:
-            since = self._period_since(period)
+            since, until = self._resolve_window(period, start_ts, end_ts)
+            params: list[Any] = [since]
+            where = "WHERE timestamp >= ?"
+            if until is not None:
+                where += " AND timestamp < ?"
+                params.append(until)
             cursor = await db.execute(
-                """SELECT project, SUM(cost_usd) as cost, COUNT(*) as count
-                   FROM requests WHERE timestamp >= ?
-                   GROUP BY project ORDER BY cost DESC""",
-                (since,),
+                f"""SELECT project, SUM(cost_usd) as cost, COUNT(*) as count
+                    FROM requests {where}
+                    GROUP BY project ORDER BY cost DESC""",
+                tuple(params),
+            )
+            return {
+                row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor
+            }
+        finally:
+            await db.close()
+
+    async def get_cost_by_modality(
+        self,
+        period: str = "today",
+        project: str | None = None,
+        start_ts: float | None = None,
+        end_ts: float | None = None,
+    ) -> dict[str, Any]:
+        """Get cost summary grouped by modality (stt/llm/tts).
+
+        Returns a dict keyed by modality. Modalities with no requests in
+        the period are absent from the result; callers that want a
+        zero-filled view should overlay onto a {"stt": {...}, "llm":
+        {...}, "tts": {...}} template.
+        """
+        db = await self._ensure_initialized()
+        try:
+            since, until = self._resolve_window(period, start_ts, end_ts)
+            params: list[Any] = [since]
+            where = "WHERE timestamp >= ?"
+            if until is not None:
+                where += " AND timestamp < ?"
+                params.append(until)
+            if project:
+                where += " AND project = ?"
+                params.append(project)
+            cursor = await db.execute(
+                f"""SELECT modality, SUM(cost_usd) as cost, COUNT(*) as count
+                    FROM requests {where}
+                    GROUP BY modality ORDER BY cost DESC""",
+                tuple(params),
             )
             return {
                 row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor
@@ -540,6 +651,51 @@ class SQLiteStorage:
                 if row[1] is not None:
                     total.append(float(row[1]))
             return ttfb, total
+        finally:
+            await db.close()
+
+    async def get_requests_in_window(
+        self,
+        start_ts: float | None = None,
+        end_ts: float | None = None,
+        project: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return every request record falling in `[start_ts, end_ts)`.
+
+        Differs from `get_recent_requests` in two ways: no row limit
+        (intended for export, not display), and time window is the
+        primary filter. `start_ts` is inclusive, `end_ts` is exclusive,
+        either is optional. Project is an optional secondary filter.
+        Rows are returned ordered by timestamp ascending so a CSV
+        export reads chronologically.
+        """
+        db = await self._ensure_initialized()
+        try:
+            conditions: list[str] = []
+            params: list[Any] = []
+            if start_ts is not None:
+                conditions.append("timestamp >= ?")
+                params.append(start_ts)
+            if end_ts is not None:
+                conditions.append("timestamp < ?")
+                params.append(end_ts)
+            if project:
+                conditions.append("project = ?")
+                params.append(project)
+            where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            query = f"SELECT * FROM requests {where} ORDER BY timestamp ASC"
+            cursor = await db.execute(query, tuple(params))
+            columns = [d[0] for d in cursor.description]
+            rows = []
+            async for row in cursor:
+                record = dict(zip(columns, row, strict=False))
+                if record.get("metadata"):
+                    try:
+                        record["metadata"] = json.loads(record["metadata"])
+                    except (ValueError, TypeError):
+                        pass
+                rows.append(record)
+            return rows
         finally:
             await db.close()
 

@@ -1,94 +1,57 @@
 # Migrating from LiteLLM
 
-LiteLLM is an excellent LLM proxy that normalizes 100+ LLM providers behind an OpenAI-compatible API. If your workload is text-only (chatbots, RAG, code generation), LiteLLM may be all you need.
+[LiteLLM](https://docs.litellm.ai/) is the dominant LLM gateway in the Python ecosystem: 100+ LLM providers, an OpenAI-compatible HTTP proxy, multi-level budgets, and a mature admin UI. Since early 2026 LiteLLM also ships `/v1/audio/transcriptions` (Whisper, Deepgram, ElevenLabs Scribe) and `/v1/audio/speech` (OpenAI, Azure, Gemini, ElevenLabs). For most teams it is the right LLM gateway.
 
-VoiceGateway starts where LiteLLM stops: it routes **STT, LLM, and TTS** through a single gateway, adds per-project cost tracking across all three modalities, and exposes an MCP server so coding agents can manage the gateway conversationally.
+VoiceGateway is not a replacement for LiteLLM as a general gateway. It is a complementary tool for one specific shape of workload: a LiveKit voice agent that needs cost visibility per modality (audio-minutes, tokens, characters) and reconciliation against provider invoices.
 
-## Feature comparison
+## Where each one fits
 
-| Capability | LiteLLM | VoiceGateway |
-|---|---|---|
-| LLM routing | 100+ providers | 5 providers (OpenAI, Anthropic, Groq, Ollama, plus any OpenAI-compatible) |
-| STT routing | -- | Deepgram, OpenAI Whisper, AssemblyAI, Groq Whisper, local Whisper |
-| TTS routing | -- | Cartesia, ElevenLabs, Deepgram Aura, OpenAI TTS, Kokoro, Piper |
-| Cost tracking | Per-key, per-model | Per-project, per-modality, daily budgets with warn/block actions |
-| Budget enforcement | Soft limits | Hard block or warn per project, checked before every request |
-| Fallback chains | Model-level | Per-modality fallback chains (STT, LLM, TTS independently) |
-| Local models | Via Ollama | Ollama + native Whisper, Kokoro, Piper (no network hop) |
-| Dashboard | Admin UI | Neo-Brutalism React dashboard with cost/latency charts |
-| MCP server | -- | 17 tools for managing the gateway from Claude Code, Cursor, Codex |
-| LiveKit integration | -- | Built on `livekit-agents`, first-class plugin compatibility |
-| Config format | YAML / env vars | YAML with `${ENV_VAR}` substitution |
+| Use case | Better fit |
+|---|---|
+| Text-only LLM application (chatbot, RAG, code-gen) | LiteLLM |
+| Multi-provider LLM routing with an OpenAI-compatible HTTP proxy | LiteLLM |
+| 100+ LLM provider catalog | LiteLLM |
+| Multi-tenant, horizontally scaled gateway with PostgreSQL backend | LiteLLM |
+| Per-key / per-team / per-user / per-model / per-agent budget granularity | LiteLLM |
+| LiveKit voice agent with per-project cost tracking | VoiceGateway |
+| Modality-aware unit accounting (per-minute STT, per-character TTS) backed by `pydantic/genai-prices` | VoiceGateway |
+| Reconciliation tooling (`voicegw reconcile`) against provider invoices | VoiceGateway |
+| Agent-managed configuration via MCP (Claude Code, Cursor, Codex, Cline) | VoiceGateway |
+| Local model unification (Whisper, Kokoro, Piper, Ollama) without a network hop | VoiceGateway |
 
-## Side-by-side: LLM call
+## Using both together
 
-### LiteLLM
+The two tools are not mutually exclusive. A common composition:
 
-```python
-import litellm
+- **LiteLLM** as the LLM proxy for non-LiveKit workloads (background text processing, batch jobs, chat APIs, RAG pipelines).
+- **VoiceGateway** for the LiveKit voice agent path, returning native LiveKit plugin instances and tracking per-modality cost against the agent's project budget.
 
-response = litellm.completion(
-    model="gpt-4o-mini",
-    messages=[{"role": "user", "content": "Hello"}],
-)
-```
+Both tools can read from the same provider API keys; they do not contend for any state.
 
-### VoiceGateway
+## When to migrate
 
-```python
-from voicegateway import Gateway
+Migrate from LiteLLM to VoiceGateway only if both of these are true:
 
-gw = Gateway()  # reads voicegw.yaml
-llm = gw.llm("openai/gpt-4o-mini", project="my-app")
-# Returns a LiveKit LLM plugin instance, ready for agent pipelines
-```
+1. You are building a LiveKit voice agent (or about to be).
+2. You want cost tracking that is unit-aware per modality (STT in audio-minutes, LLM in tokens, TTS in characters) with reconciliation against your actual provider invoices.
 
-The key difference: VoiceGateway returns **LiveKit plugin instances**, not raw API responses. This makes it a drop-in for LiveKit agent pipelines.
+If only #1 is true and you are happy with current cost tracking, keep LiteLLM and add VoiceGateway alongside.
 
-## Side-by-side: adding STT and TTS
-
-### LiteLLM (manual wiring)
-
-```python
-import litellm
-from deepgram import DeepgramClient  # separate SDK
-from cartesia import Cartesia        # separate SDK
-
-# You manage three SDKs, three API keys, three cost calculations
-dg = DeepgramClient(os.environ["DEEPGRAM_API_KEY"])
-llm_response = litellm.completion(model="gpt-4o-mini", messages=msgs)
-cartesia = Cartesia(api_key=os.environ["CARTESIA_API_KEY"])
-```
-
-### VoiceGateway (unified)
-
-```python
-from voicegateway import Gateway
-
-gw = Gateway()  # one config, one cost tracker
-
-stt = gw.stt("deepgram/nova-3", project="my-app")
-llm = gw.llm("openai/gpt-4o-mini", project="my-app")
-tts = gw.tts("cartesia/sonic-3", project="my-app")
-
-# All three share the same project budget, same dashboard, same logs
-```
-
-## Migration steps
+## Migration steps (LiveKit voice agent only)
 
 ### 1. Install VoiceGateway
 
 ```bash
-pip install voicegateway[cloud,dashboard]
+pip install "voicegateway[cloud,dashboard,mcp]"
 ```
 
-### 2. Create your config
+### 2. Create a voicegw.yaml
 
 ```bash
 voicegw init
 ```
 
-Edit `voicegw.yaml` to add your existing API keys (same keys you use with LiteLLM):
+Add the same provider API keys you already use with LiteLLM:
 
 ```yaml
 providers:
@@ -98,6 +61,8 @@ providers:
     api_key: ${ANTHROPIC_API_KEY}
   deepgram:
     api_key: ${DEEPGRAM_API_KEY}
+  cartesia:
+    api_key: ${CARTESIA_API_KEY}
 
 models:
   llm:
@@ -117,28 +82,45 @@ models:
       model: sonic-3
 ```
 
-### 3. Replace LiteLLM calls
+### 3. Replace LiteLLM calls in your LiveKit agent
 
-Find every `litellm.completion()` call and replace it with `gw.llm()`. If you have STT or TTS code using separate SDKs, consolidate those too.
+Where your LiveKit agent currently uses raw provider plugins or LiteLLM-backed factories, switch to `gw.stt()`, `gw.llm()`, `gw.tts()`. They return native LiveKit plugin instances that drop straight into `AgentSession`:
 
-### 4. Add project budgets
+```python
+from voicegateway import Gateway
+from livekit.agents import AgentSession
+
+gw = Gateway()
+
+session = AgentSession(
+    stt=gw.stt("deepgram/nova-3", project="my-app"),
+    llm=gw.llm("openai/gpt-4o-mini", project="my-app"),
+    tts=gw.tts("cartesia/sonic-3", project="my-app"),
+)
+```
+
+For non-agent text workloads, keep using LiteLLM. The Gateway is not intended to replace it for that path.
+
+### 4. Add a project budget
 
 ```yaml
 projects:
   my-app:
-    name: My Application
+    name: My Voice Application
     daily_budget: 25.00
-    budget_action: warn  # or "block"
+    budget_action: warn  # warn | throttle | block
 ```
 
-### 5. Start the dashboard
+### 5. Verify costs against your provider invoice
+
+After the agent has been running for a billing period:
 
 ```bash
-voicegw dashboard
-# Open http://localhost:9090
+voicegw export-costs --start 2026-04-01 --end 2026-04-30 --format csv
+voicegw reconcile --provider openai --provider-usage-file openai-april-usage.csv
 ```
 
-You now have unified cost visibility across STT, LLM, and TTS -- something LiteLLM cannot provide.
+LLM cost is estimated from [`pydantic/genai-prices`](https://github.com/pydantic/genai-prices) and may drift up to ~5%. Reconciling against your provider invoice is the verification path; the diff table flags any per-model gaps.
 
 ### 6. (Optional) Enable the MCP server
 
@@ -146,26 +128,21 @@ You now have unified cost visibility across STT, LLM, and TTS -- something LiteL
 voicegw mcp --transport stdio
 ```
 
-Add to your Claude Code config to manage the gateway from your terminal. See the [MCP documentation](/mcp/) for setup details.
+Add to your Claude Code or Cursor config to manage the gateway from your editor. See the [MCP documentation](/mcp/) for setup details.
 
-## When to stay with LiteLLM
+## A note on the audio endpoints
 
-- You only need LLM routing (no voice workloads)
-- You need 100+ LLM provider support
-- You are using LiteLLM's OpenAI-compatible proxy endpoint for existing tooling
-- You do not use LiveKit
+LiteLLM's `/v1/audio/transcriptions` and `/v1/audio/speech` cover the same provider surface (OpenAI Whisper, Deepgram, ElevenLabs, Cartesia for some modalities) and are well suited to non-agent audio pipelines (batch transcription, async TTS rendering, server-to-server audio API calls). Where they differ from VoiceGateway:
 
-## When to switch to VoiceGateway
+- LiteLLM exposes audio as HTTP endpoints in OpenAI shape; clients call them like any other OpenAI API.
+- VoiceGateway returns LiveKit plugin instances that participate in a `livekit-agents` `AgentSession` directly, with cost tracking, per-project budgets, and modality-aware pricing wired through the wrapper.
 
-- You have STT and/or TTS workloads alongside LLM
-- You want per-project cost tracking across all modalities
-- You are building LiveKit-based voice agents
-- You want budget enforcement that can block requests before they hit the API
-- You want a single dashboard for all voice AI costs
+If your audio workload is request/response (transcribe a file, render a string), LiteLLM is the better fit. If your audio workload is a real-time LiveKit voice agent, VoiceGateway is purpose-built for it.
 
-## Related pages
+## Related
 
 - [Quick Start](/guide/quick-start)
-- [Migrating from LiveKit Inference](/migration/from-livekit-inference)
-- [Version Upgrades](/migration/version-upgrades)
-- [FAQ](/reference/faq)
+- [Decision tree](/guide/decision-tree) (short page on which tool is right for your workload)
+- [Cost reconciliation walkthrough](/guide/cost-reconciliation)
+- [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter)
+- [LiteLLM docs](https://docs.litellm.ai/)

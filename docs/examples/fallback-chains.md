@@ -1,6 +1,8 @@
 # Fallback Chains
 
-Configure automatic failover between models so your voice agent stays available even when a provider goes down.
+Resolver-time fallback between models: at agent startup, `gw.stt_with_fallback()` / `gw.llm_with_fallback()` / `gw.tts_with_fallback()` walks the configured chain and returns the first model whose provider resolves successfully. Useful when a primary provider's credentials are temporarily wrong, its plugin SDK is missing, or its initialization handshake fails.
+
+Once a model is wired into a LiveKit `AgentSession`, that resolved model is used for the entire call. VoiceGateway does not swap providers mid-call. For runtime failover when a provider degrades during an active call, compose LiveKit's `FallbackAdapter` around VG provider instances; see [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter).
 
 ## Configuration
 
@@ -25,7 +27,7 @@ models:
     openai/whisper-1:
       provider: openai
       model: whisper-1
-    whisper/large-v3:
+    local/whisper-large-v3:
       provider: whisper
       model: large-v3
   llm:
@@ -47,16 +49,15 @@ models:
       provider: elevenlabs
       model: eleven_turbo_v2_5
       default_voice: pNInz6obpgDQGcFmaJgB
-    kokoro/default:
+    local/kokoro:
       provider: kokoro
-      model: default
 
 # Fallback chains: first model is primary, rest are backups
 fallbacks:
   stt:
     - deepgram/nova-3       # Primary: fastest, best accuracy
     - openai/whisper-1       # Backup: good accuracy, higher latency
-    - whisper/large-v3       # Last resort: local, no API dependency
+    - local/whisper-large-v3       # Last resort: local, no API dependency
   llm:
     - openai/gpt-4.1-mini   # Primary: best quality
     - groq/llama-3.3-70b-versatile  # Backup: fast, good quality
@@ -64,7 +65,7 @@ fallbacks:
   tts:
     - cartesia/sonic-3       # Primary: lowest latency
     - elevenlabs/turbo-v2.5  # Backup: highest quality
-    - kokoro/default         # Last resort: local
+    - local/kokoro         # Last resort: local
 
 cost_tracking:
   enabled: true
@@ -85,24 +86,26 @@ tts = gw.tts_with_fallback(project="prod")
 
 ## How Fallback Works
 
+The diagram below covers `stt_with_fallback()` at construction (resolution time): the function walks the chain and returns the first instance that resolves cleanly. Errors during an `AgentSession` are not in this picture; they propagate to the caller.
+
 ```mermaid
 graph TD
-    A["stt_with_fallback()"] --> B["Try deepgram/nova-3"]
+    A["stt_with_fallback() [construction]"] --> B["Resolve deepgram/nova-3"]
     B -->|Success| C["Return DeepgramSTT instance"]
-    B -->|ImportError / API Error| D["Log: debug + warning"]
-    D --> E["Try openai/whisper-1"]
+    B -->|ImportError / init error| D["Log: debug + warning"]
+    D --> E["Resolve openai/whisper-1"]
     E -->|Success| F["Return OpenAI Whisper instance"]
-    E -->|Error| G["Try whisper/large-v3"]
+    E -->|Init error| G["Resolve local/whisper-large-v3"]
     G -->|Success| H["Return local Whisper instance"]
-    G -->|Error| I["Raise FallbackError"]
+    G -->|Init error| I["Raise FallbackError"]
 ```
 
-When a model fails:
+When a model fails to resolve at construction:
 
 1. The exception is caught and logged at `DEBUG` level
-2. If a backup succeeds, a `WARNING` is logged: `"Fallback triggered: deepgram/nova-3 -> openai/whisper-1 (reason: Connection timeout)"`
+2. If a backup resolves successfully, a `WARNING` is logged: `"Fallback triggered: deepgram/nova-3 -> openai/whisper-1 (reason: Connection timeout)"`
 3. The `RequestLogger.log_fallback()` callback fires
-4. If all models fail, `FallbackError` is raised with the full chain and all errors
+4. If every model in the chain fails to resolve, `FallbackError` is raised with the full chain and the per-model errors
 
 ## Handling FallbackError
 
@@ -146,7 +149,7 @@ chain = gw._fallback_chains["stt"]
 print(chain.primary)  # "deepgram/nova-3"
 
 # Full chain
-print(chain.chain)  # ["deepgram/nova-3", "openai/whisper-1", "whisper/large-v3"]
+print(chain.chain)  # ["deepgram/nova-3", "openai/whisper-1", "local/whisper-large-v3"]
 ```
 
 ## Monitoring Fallback Events
@@ -175,28 +178,28 @@ The dashboard shows fallback events in the request log view, highlighted with a 
 
 ## Cloud-to-Local Fallback Strategy
 
-A common pattern is to configure cloud models as primaries with local models as the final fallback, ensuring your agent never goes completely offline:
+A common pattern is to configure cloud models as primaries with local models as the final fallback. At agent startup this guarantees that an agent can still come up if every cloud provider is unreachable:
 
 ```yaml
 fallbacks:
   stt:
     - deepgram/nova-3       # Cloud: best accuracy
-    - whisper/large-v3       # Local: works offline
+    - local/whisper-large-v3       # Local: works offline
   llm:
     - openai/gpt-4.1-mini   # Cloud: best quality
     - ollama/qwen2.5:3b     # Local: works offline
   tts:
     - cartesia/sonic-3       # Cloud: lowest latency
-    - kokoro/default         # Local: works offline
+    - local/kokoro         # Local: works offline
 ```
 
-This guarantees that even if all cloud providers are down, your agent can still function using local models. The quality may degrade, but the service stays available.
+This handles the cold-start case: every cloud provider unreachable when the agent starts means the local model is selected and the agent comes up. It does not handle the warm-failure case: if Deepgram is healthy at startup and starts returning 500s mid-call, VG keeps the Deepgram instance for the rest of the call. For warm failover, see [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter).
 
 ## LiveKit Agent with Fallback
 
 ```python
-from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli, llm as lk_llm
-from livekit.agents.voice_assistant import VoiceAssistant
+from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
+from livekit.plugins import silero
 from voicegateway import Gateway
 from voicegateway.middleware.fallback import FallbackError
 
@@ -204,23 +207,28 @@ gw = Gateway()
 
 
 async def entrypoint(ctx: JobContext):
-    await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+    await ctx.connect()
 
     try:
         stt = gw.stt_with_fallback(project="prod")
         llm = gw.llm_with_fallback(project="prod")
         tts = gw.tts_with_fallback(project="prod")
     except FallbackError as e:
-        # All providers down -- cannot start
+        # Every model in every chain failed to resolve at startup
         print(f"Cannot start voice agent: {e}")
         return
 
-    initial_ctx = lk_llm.ChatContext()
-    initial_ctx.append(role="system", text="You are a helpful voice assistant.")
+    session = AgentSession(
+        vad=silero.VAD.load(),
+        stt=stt,
+        llm=llm,
+        tts=tts,
+    )
 
-    assistant = VoiceAssistant(stt=stt, llm=llm, tts=tts, chat_ctx=initial_ctx)
-    assistant.start(ctx.room)
-    await assistant.say("Hello! How can I help you?")
+    await session.start(
+        agent=Agent(instructions="You are a helpful voice assistant."),
+        room=ctx.room,
+    )
 
 
 if __name__ == "__main__":

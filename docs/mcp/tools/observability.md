@@ -256,7 +256,7 @@ Return latency statistics computed from the request log. Provides overall percen
       "avg_latency_ms": 142.0,
       "request_count": 310
     },
-    "whisper/large-v3": {
+    "local/whisper-large-v3": {
       "avg_ttfb_ms": 280.0,
       "avg_latency_ms": 890.0,
       "request_count": 30
@@ -295,6 +295,7 @@ A list of log record dicts, each containing:
 | `model_id` | `string` | Full model identifier. |
 | `provider` | `string` | Provider name. |
 | `cost_usd` | `float` | Cost of this request. |
+| `pricing_source` | `string \| null` | Catalog that priced this row (e.g. `"genai-prices@0.0.57"` or `"voicegateway-catalog@2026-05-04"`). Empty string when no catalog matched (unknown model). Persisted on the `requests` table; see `voicegateway/storage/sqlite.py`. |
 | `ttfb_ms` | `float` | Time to first byte in milliseconds. |
 | `total_latency_ms` | `float` | Total latency in milliseconds. |
 | `status` | `string` | `"success"`, `"error"`, or `"fallback"`. |
@@ -327,6 +328,7 @@ A list of log record dicts, each containing:
     "model_id": "deepgram/nova-3",
     "provider": "deepgram",
     "cost_usd": 0.0,
+    "pricing_source": "voicegateway-catalog@2026-05-04",
     "ttfb_ms": 0.0,
     "total_latency_ms": 5012.0,
     "status": "error",

@@ -60,6 +60,3 @@ class OllamaProvider(BaseProvider):
                 return resp.status_code == 200
         except Exception:
             return False
-
-    def get_pricing(self, model: str, modality: str) -> dict[str, float]:
-        return {"input_per_1k": 0.0, "output_per_1k": 0.0}

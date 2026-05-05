@@ -2,13 +2,14 @@
 
 # VoiceGateway
 
-**Self-hosted inference gateway for voice AI.**
-**Unified STT + LLM + TTS routing. Your API keys. Local models included. Agent-managed via MCP.**
+**Cost tracking and reconciliation for LiveKit voice agents.**
+**Modality-aware unit accounting (audio-minutes, tokens, characters). LLM prices from [`pydantic/genai-prices`](https://github.com/pydantic/genai-prices). Verify against provider invoices with `voicegw reconcile`.**
 
 [![PyPI version](https://img.shields.io/pypi/v/voicegateway)](https://pypi.org/project/voicegateway/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-200+_passing-brightgreen)](tests/)
+[![Tests](https://github.com/mahimailabs/voicegateway/actions/workflows/test-coverage.yml/badge.svg?branch=main)](https://github.com/mahimailabs/voicegateway/actions/workflows/test-coverage.yml)
+[![Coverage](https://codecov.io/gh/mahimailabs/voicegateway/branch/main/graph/badge.svg)](https://codecov.io/gh/mahimailabs/voicegateway)
 
 [**Docs**](https://docs.voicegateway.dev) · [**Quick Start**](#quick-start) · [**MCP Setup**](#manage-from-your-coding-agent-mcp) · [**Deploy**](#deploy)
 
@@ -18,22 +19,45 @@
 
 ## Why VoiceGateway
 
-Every LLM gateway routes LLMs. None routes the full voice pipeline STT, LLM, and TTS through one unified interface with local model support, project-based budgeting, and agent-native management.
+VoiceGateway is purpose-built for LiveKit voice agents. Four things make it different from general-purpose LLM gateways:
 
-VoiceGateway is that missing layer. Drop-in LiveKit compatibility, bring your own API keys, optional local-only operation, and a first-class MCP server that lets Claude Code, Cursor, or Codex configure it for you.
+### 1. Returns LiveKit plugin instances directly
 
-|                          | LiteLLM | Cloudflare AI Gateway | LiveKit Inference (Cloud) | **VoiceGateway** |
-| ------------------------ | :-----: | :-------------------: | :-----------------------: | :--------------: |
-| LLM routing              |    ✅   |           ✅          |             ✅            |        ✅        |
-| STT routing              |    ❌   |           ❌          |             ✅            |        ✅        |
-| TTS routing              |    ❌   |           ❌          |             ✅            |        ✅        |
-| Local models             | Partial |           ❌          |             ❌            |        ✅        |
-| Self-hostable            |    ✅   |           ❌          |             ❌            |        ✅        |
-| Project-based budgets    |    ✅   |           ❌          |             ❌            |        ✅        |
-| Fallback chains          | Limited |           ✅          |           Limited         |        ✅        |
-| MCP server               |    ❌   |           ❌          |             ❌            |        ✅        |
-| LiveKit plugin native    |    ❌   |           ❌          |             ✅            |        ✅        |
-| License                  |   MIT   |        Commercial     |         Commercial        |        MIT       |
+`gw.stt()` / `gw.llm()` / `gw.tts()` return native LiveKit plugin instances. They drop straight into `AgentSession(stt=, llm=, tts=)` with no proxy hop, no plugin shim, and no rewriting of your existing pipeline code.
+
+```python
+from voicegateway import Gateway
+from livekit.agents import AgentSession
+
+gw = Gateway()
+
+session = AgentSession(
+    stt=gw.stt("deepgram/nova-3", project="my-app"),
+    llm=gw.llm("openai/gpt-4o-mini", project="my-app"),
+    tts=gw.tts("cartesia/sonic-3", project="my-app"),
+)
+```
+
+### 2. Modality-aware unit accounting
+
+LLM cost is per-1k-token, STT cost is per-audio-minute, TTS cost is per-character. Each modality is billed natively against its own provider unit rather than flattened to a single token-equivalent.
+
+LLM prices come from [`pydantic/genai-prices`](https://github.com/pydantic/genai-prices): 1,100+ models, monthly releases, historic price tracking. VG does not maintain its own LLM pricing catalog. STT and TTS prices live in a local catalog with an explicit `pricing_source_date` per entry; CI fails when any entry is more than 60 days old, forcing a manual refresh per release.
+
+### 3. Reconciliation tooling
+
+```bash
+voicegw export-costs --start 2026-04-01 --end 2026-04-30 --format csv
+voicegw reconcile --provider openai --provider-usage-file openai-usage.csv
+```
+
+Per-request line items carry `pricing_source` attribution (`genai-prices@<version>` for LLM, `voicegateway-catalog@<date>` for STT/TTS). The `reconcile` command compares VG's logged costs against your provider's usage export and produces a per-model diff. LLM costs are estimated and may drift up to ~5%; reconciliation against your provider invoice is the verification path.
+
+### 4. MCP server for agent-managed configuration
+
+A first-class [Model Context Protocol](https://modelcontextprotocol.io) server exposes 17 tools (configure providers, create projects with daily budgets, query costs, tail logs, run health checks) over stdio and HTTP/SSE. Claude Code, Cursor, Codex, and Cline can all manage your gateway conversationally.
+
+**Is VoiceGateway right for you?** If you are building a text-only LLM application without a voice component, [LiteLLM](https://docs.litellm.ai/) is likely a better fit. It has a broader LLM-provider catalog and an OpenAI-compatible HTTP proxy. See the [decision tree](https://docs.voicegateway.dev/guide/decision-tree) for a longer breakdown.
 
 ---
 
@@ -67,7 +91,7 @@ voicegw dashboard         # http://localhost:9090
 
 ### Option 2: Docker (production-ready)
 
-Pull the official image from Docker Hub — no build required:
+Pull the official image from Docker Hub (no build required):
 
 ```bash
 docker run -p 8080:8080 \
@@ -105,6 +129,30 @@ open http://localhost:9090
 ```
 
 ### Your first agent
+
+The example below runs a LiveKit Agents worker. You need a LiveKit server and credentials before it will connect.
+
+**LiveKit Cloud (free tier):** sign up at [livekit.io](https://livekit.io/), create a project, and copy the URL plus API key and secret from project settings.
+
+**Self-hosted (local dev):**
+
+```bash
+docker run --rm -p 7880:7880 -p 7881:7881 -p 7882:7882/udp \
+  livekit/livekit-server --dev
+```
+
+Default keys are `devkey` / `secret`. Full self-host guide: [livekit.io self-hosting](https://docs.livekit.io/home/self-hosting/local/).
+
+Install the agents SDK and export credentials:
+
+```bash
+pip install livekit-agents
+export LIVEKIT_URL=wss://<project>.livekit.cloud   # or ws://localhost:7880
+export LIVEKIT_API_KEY=<key>                       # `devkey` for local --dev
+export LIVEKIT_API_SECRET=<secret>                 # `secret` for local --dev
+```
+
+Without these the agent fails with `ConnectionError: Failed to connect`.
 
 ```python
 from voicegateway import Gateway
@@ -234,7 +282,7 @@ voicegw logs --project restaurant-agent   # recent requests
 
 ## Fallback Chains
 
-Automatic failover across providers stay running even when a cloud provider has an outage.
+Resolver-time fallback. At agent startup, `gw.stt_with_fallback()` walks the chain and returns the first model whose provider resolves successfully. Useful when a primary provider's credentials are temporarily wrong, its SDK is not installed, or its initialization handshake fails.
 
 ```yaml
 # voicegw.yaml
@@ -252,7 +300,7 @@ session = AgentSession(
 )
 ```
 
-If Deepgram returns 500s, requests automatically route to Groq. If both fail, local Whisper kicks in. Your agent never goes offline.
+Once `AgentSession` starts, the resolved model is used for the whole call: VoiceGateway does not swap providers mid-call. For runtime failover when a provider degrades during an active call, compose [LiveKit's FallbackAdapter](https://docs.voicegateway.dev/examples/livekit-fallback-adapter) around VG provider instances.
 
 ---
 

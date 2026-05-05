@@ -21,6 +21,7 @@ export default function LogTable({ logs }: Props) {
           <th>Model</th>
           <th>Type</th>
           <th>Cost</th>
+          <th>Source</th>
           <th>Latency</th>
           <th>Status</th>
         </tr>
@@ -34,6 +35,7 @@ export default function LogTable({ logs }: Props) {
               <span className="neo-badge neo-badge--black">{(log.modality || '').toUpperCase()}</span>
             </td>
             <td className="mono">{formatCost(log.cost_usd, 6)}</td>
+            <td className="mono">{log.pricing_source || ''}</td>
             <td>
               <span className={`neo-badge ${latencyBadgeClass(log.total_latency_ms)}`}>
                 {formatMs(log.total_latency_ms)}

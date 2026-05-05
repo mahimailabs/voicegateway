@@ -13,7 +13,9 @@ export default defineConfig({
 
   cleanUrls: true,
   lastUpdated: true,
-  ignoreDeadLinks: [/localhost/],
+  ignoreDeadLinks: [
+    /localhost/,
+  ],
 
   markdown: {
     theme: {
@@ -52,10 +54,12 @@ export default defineConfig({
           text: 'Getting Started',
           items: [
             { text: 'What is VoiceGateway?', link: '/guide/what-is-voicegateway' },
+            { text: 'Decision Tree', link: '/guide/decision-tree' },
             { text: 'Quick Start', link: '/guide/quick-start' },
             { text: 'Installation', link: '/guide/installation' },
             { text: 'Your First Agent', link: '/guide/first-agent' },
             { text: 'Core Concepts', link: '/guide/core-concepts' },
+            { text: 'Cost Reconciliation', link: '/guide/cost-reconciliation' },
           ],
         },
       ],
@@ -92,6 +96,8 @@ export default defineConfig({
             { text: 'init', link: '/cli/init' },
             { text: 'status', link: '/cli/status' },
             { text: 'costs', link: '/cli/costs' },
+            { text: 'export-costs', link: '/cli/export-costs' },
+            { text: 'reconcile', link: '/cli/reconcile' },
             { text: 'projects', link: '/cli/projects' },
             { text: 'logs', link: '/cli/logs' },
             { text: 'serve', link: '/cli/serve' },
@@ -143,6 +149,7 @@ export default defineConfig({
             { text: 'Multi-Project Setup', link: '/examples/multi-project' },
             { text: 'Budget Enforcement', link: '/examples/budget-enforcement' },
             { text: 'Fallback Chains', link: '/examples/fallback-chains' },
+            { text: 'LiveKit FallbackAdapter', link: '/examples/livekit-fallback-adapter' },
             { text: 'Local-Only Stack', link: '/examples/local-only' },
             { text: 'Claude Code Integration', link: '/examples/claude-code-integration' },
             { text: 'Docker Deployment', link: '/examples/docker-deployment' },
@@ -178,6 +185,7 @@ export default defineConfig({
           items: [
             { text: 'Troubleshooting', link: '/reference/troubleshooting' },
             { text: 'FAQ', link: '/reference/faq' },
+            { text: 'Reconcile File Formats', link: '/reference/reconcile-formats' },
             { text: 'Changelog', link: '/reference/changelog' },
           ],
         },

@@ -116,7 +116,7 @@ voicegw serve
    ```bash
    pip install --upgrade cryptography
    ```
-3. If using encrypted storage, check that the `VOICEGW_ENCRYPTION_KEY` environment variable is set to the same value used when keys were stored
+3. If using encrypted storage, check that the `VOICEGW_SECRET` environment variable is set to the same value used when keys were stored. (See `voicegateway/core/crypto.py` for the canonical secret-resolution order: env var, then `~/.config/voicegateway/.secret`, then auto-generated.)
 
 ---
 
@@ -203,8 +203,9 @@ voicegw serve
    # This works in a normal script
    stt = gw.stt("deepgram/nova-3", project="my-app")
 
-   # In an async context, the Gateway handles it — but if you get
-   # loop errors, wrap your setup in a separate thread or use
+   # The Gateway usually works in async contexts too. If an event
+   # loop is already running and you see "already running event loop"
+   # errors, isolate the setup in a separate thread or apply
    # nest_asyncio (see below).
    ```
 2. If running in a script (not an async framework), use `asyncio.run()`:
@@ -296,7 +297,7 @@ pip list | grep livekit
    fallbacks:
      llm:
        - anthropic/claude-3.5-sonnet
-       - groq/llama-3.1-70b
+       - groq/llama-3.1-70b-versatile
    ```
 3. Check your provider dashboard for current usage and limits
 

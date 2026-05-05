@@ -29,16 +29,6 @@ class BaseProvider(ABC):
         """Check if the provider is reachable."""
         ...
 
-    @abstractmethod
-    def get_pricing(self, model: str, modality: str) -> dict[str, float]:
-        """Return pricing info for a model.
-
-        Returns:
-            Dict with pricing keys like "per_minute", "input_per_1k",
-            "output_per_1k", "per_character".
-        """
-        ...
-
     def _unsupported(self, modality: str) -> None:
         """Raise error for unsupported modality."""
         raise NotImplementedError(

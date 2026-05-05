@@ -57,3 +57,46 @@ def test_status(example_config_path):
     gw = Gateway(config_path=example_config_path)
     status = gw.status()
     assert isinstance(status, dict)
+
+
+def test_resolve_unknown_modality_raises_value_error(example_config_path):
+    """An unsupported modality string raises ValueError after passing config lookup."""
+    from unittest.mock import MagicMock
+
+    from voicegateway.core.router import Router
+
+    gw = Gateway(config_path=example_config_path)
+    router = Router(gw.config)
+    # Stub config + provider lookups so the test reaches the modality
+    # dispatch without depending on yaml entries or installed plugins.
+    router._config.get_model_config = MagicMock(  # type: ignore[method-assign]
+        return_value={"provider": "openai", "model": "fake"}
+    )
+    router._get_provider = MagicMock(return_value=MagicMock())  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="Unknown modality"):
+        router.resolve("openai/fake", "embedding")
+
+
+def test_get_provider_status_empty_before_resolve(example_config_path):
+    """`get_provider_status` is empty before any provider has been resolved."""
+    from voicegateway.core.router import Router
+
+    gw = Gateway(config_path=example_config_path)
+    router = Router(gw.config)
+    assert router.get_provider_status() == {}
+
+
+def test_get_provider_status_reflects_initialized_providers(example_config_path):
+    """`get_provider_status` lists providers added to the cache."""
+    from unittest.mock import MagicMock
+
+    from voicegateway.core.router import Router
+
+    gw = Gateway(config_path=example_config_path)
+    router = Router(gw.config)
+    # Manually populate the cache to simulate a prior resolve, since
+    # plugins are usually not installed in the test environment.
+    router._providers["fake-provider"] = MagicMock()
+    status = router.get_provider_status()
+    assert status == {"fake-provider": {"initialized": True}}

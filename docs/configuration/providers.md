@@ -97,7 +97,7 @@ providers:
 - **Modalities:** STT
 - **Required config:** `api_key`
 - **Recommended models:**
-  - STT: `assemblyai/best` (highest accuracy), `assemblyai/nano` (fastest)
+  - STT: `assemblyai/universal-2` (single-tier model)
 - **Pricing notes:** Per-second pricing. Offers real-time streaming and batch transcription.
 
 ```yaml
@@ -117,7 +117,7 @@ Local providers run on your own hardware with no API keys required. They are use
 - **Modalities:** STT
 - **Required config:** None (downloads model on first use)
 - **Recommended models:**
-  - STT: `whisper/large-v3` (best accuracy), `whisper/base` (fastest)
+  - STT: `local/whisper-large-v3` (best accuracy), `local/whisper-base` (fastest)
 - **Notes:** Runs OpenAI Whisper locally via faster-whisper. Requires a capable CPU or GPU.
 
 ```yaml
@@ -131,7 +131,7 @@ providers:
 - **Modalities:** LLM
 - **Required config:** `base_url` (defaults to `http://localhost:11434`)
 - **Recommended models:**
-  - LLM: `ollama/llama3`, `ollama/mistral`, `ollama/phi3`
+  - LLM: `ollama/llama3.2:3b`, `ollama/mistral:7b`, `ollama/phi3:mini`
 - **Notes:** Requires a running Ollama server. Models are pulled on first use. Use `docker compose --profile local up -d` to start Ollama alongside VoiceGateway.
 
 ```yaml
@@ -145,7 +145,7 @@ providers:
 - **Modalities:** TTS
 - **Required config:** None
 - **Recommended models:**
-  - TTS: `kokoro/default`
+  - TTS: `local/kokoro`
 - **Notes:** Lightweight local TTS. Good for development and testing.
 
 ```yaml
@@ -159,7 +159,7 @@ providers:
 - **Modalities:** TTS
 - **Required config:** None
 - **Recommended models:**
-  - TTS: `piper/en_US-lessac-medium`, `piper/en_US-amy-low`
+  - TTS: `local/piper:en_US-lessac-medium`, `local/piper:en_US-amy-low` (voice ID after `:`)
 - **Notes:** Fast offline TTS using ONNX models. Supports multiple languages and voices. Voice models are downloaded on first use.
 
 ```yaml

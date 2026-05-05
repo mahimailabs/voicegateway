@@ -45,6 +45,38 @@ def test_unknown_model_cost_zero():
     assert cost == 0.0
 
 
+def test_unknown_model_record_has_no_pricing_source():
+    """Records for models the catalog did not recognize must NOT claim
+    they were priced by it. The `pricing_source` field stays empty so
+    `/v1/costs?include_pricing_source` and `voicegw reconcile` cannot
+    misattribute the silently-zero cost to genai-prices or the local
+    catalog."""
+    tracker = CostTracker()
+    record = tracker.create_record(
+        model_id="unknown/totally-fake",
+        modality="llm",
+        provider="unknown",
+        input_units=1000,
+        output_units=500,
+    )
+    assert record.cost_usd == 0.0
+    assert record.pricing_source == ""
+
+
+def test_known_free_local_model_record_carries_pricing_source():
+    """`local/*` and `ollama/*` are intentionally free; the catalog DID
+    price them as $0 and the attribution is honest."""
+    tracker = CostTracker()
+    record = tracker.create_record(
+        model_id="local/whisper-large-v3",
+        modality="stt",
+        provider="whisper",
+        input_units=1.0,  # 1 minute
+    )
+    assert record.cost_usd == 0.0
+    assert record.pricing_source != ""
+
+
 @pytest.mark.asyncio
 async def test_log_and_query_request(tmp_path):
     db = tmp_path / "test.db"

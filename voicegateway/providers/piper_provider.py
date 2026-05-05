@@ -46,9 +46,6 @@ class PiperProvider(BaseProvider):
         except ImportError:
             return False
 
-    def get_pricing(self, model: str, modality: str) -> dict[str, float]:
-        return {"per_character": 0.0}
-
 
 class PiperTTS:
     """Local Piper TTS.

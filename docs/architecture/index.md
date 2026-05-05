@@ -122,7 +122,7 @@ sequenceDiagram
 ```
 voicegateway/
   core/
-    gateway.py          # Main Gateway class — orchestrator
+    gateway.py          # Main Gateway class (orchestrator)
     config.py           # YAML config loader with ${ENV_VAR} substitution
     config_manager.py   # Merges YAML + SQLite + env (priority: env > db > yaml)
     router.py           # Resolves "provider/model" to provider instances
@@ -131,7 +131,7 @@ voicegateway/
     schema.py           # Pydantic validation for voicegw.yaml
     crypto.py           # Fernet encryption for stored secrets
   providers/
-    base.py             # BaseProvider ABC (create_stt/llm/tts, health_check, get_pricing)
+    base.py             # BaseProvider ABC (create_stt/llm/tts, health_check)
     openai_provider.py  # OpenAI (STT + LLM + TTS)
     deepgram_provider.py
     cartesia_provider.py

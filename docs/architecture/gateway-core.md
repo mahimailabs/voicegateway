@@ -80,9 +80,9 @@ stacks:
     llm: openai/gpt-4.1-mini
     tts: cartesia/sonic-3
   local:
-    stt: whisper/large-v3
+    stt: local/whisper-large-v3
     llm: ollama/qwen2.5:3b
-    tts: kokoro/default
+    tts: local/kokoro
 ```
 
 ```python

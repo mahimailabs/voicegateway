@@ -77,6 +77,130 @@ async def test_v1_costs_with_project(client):
     assert resp.status_code == 200
 
 
+async def test_v1_costs_per_modality_excluded_by_default(client):
+    """`by_modality` is opt-in via the query param to keep the default response stable."""
+    resp = await client.get("/v1/costs")
+    assert resp.status_code == 200
+    assert "by_modality" not in resp.json()
+
+
+async def test_v1_costs_per_modality_when_requested(client):
+    """`?per_modality=true` adds the breakdown; empty dict when no traffic recorded."""
+    resp = await client.get("/v1/costs?per_modality=true")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "by_modality" in data
+    assert data["by_modality"] == {}
+
+
+async def test_v1_costs_include_pricing_source_default_off(client):
+    """Default response leaves by_model entries without per-line attribution."""
+    resp = await client.get("/v1/costs")
+    assert resp.status_code == 200
+    by_model = resp.json().get("by_model", {})
+    for entry in by_model.values():
+        assert "pricing_source" not in entry
+
+
+async def test_v1_costs_include_pricing_source_when_requested(client):
+    """`?include_pricing_source=true` is accepted; response shape stays valid."""
+    resp = await client.get("/v1/costs?include_pricing_source=true")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "by_model" in data
+    # Empty traffic means no entries to attribute. The flag's effect on
+    # populated entries is exercised in tests/storage/test_storage.py.
+
+
+async def test_v1_costs_with_iso_date_window(client):
+    """`?start=` and `?end=` ISO dates are accepted; response stays valid."""
+    resp = await client.get("/v1/costs?start=2026-05-01&end=2026-05-04")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "by_model" in data
+    assert "by_provider" in data
+
+
+async def test_v1_costs_with_invalid_iso_date_returns_400(client):
+    """Malformed `?start=` returns 400 with a helpful error message."""
+    resp = await client.get("/v1/costs?start=not-a-date")
+    assert resp.status_code == 400
+    assert "YYYY-MM-DD" in resp.json()["detail"]
+
+
+async def test_v1_costs_with_only_start_or_only_end(client):
+    """Either bound is independently optional; missing bound is open-ended."""
+    resp = await client.get("/v1/costs?start=2026-05-01")
+    assert resp.status_code == 200
+    resp = await client.get("/v1/costs?end=2026-05-04")
+    assert resp.status_code == 200
+
+
+async def test_v1_costs_combined_query_params(client, gateway):
+    """All three new params (per_modality, include_pricing_source, start/end) compose.
+
+    Pop a populated DB across three modalities and three days, then
+    hit `/v1/costs?per_modality=true&include_pricing_source=true` with
+    a window that excludes the oldest record. Asserts the response
+    surfaces `by_modality`, per-line `pricing_source`, and the
+    out-of-window record is not in the totals.
+    """
+    import datetime as _dt
+    import uuid
+
+    from voicegateway.storage.models import RequestRecord
+
+    today = _dt.date.today()
+    in_window = _dt.datetime.combine(today, _dt.time(12, 0)).timestamp()
+    out_of_window = (
+        _dt.datetime.combine(today - _dt.timedelta(days=10), _dt.time(12, 0)).timestamp()
+    )
+    await gateway.storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=in_window, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai",
+        cost_usd=0.10, pricing_source="genai-prices@0.0.57",
+    ))
+    await gateway.storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=in_window, modality="stt",
+        model_id="deepgram/nova-3", provider="deepgram",
+        cost_usd=0.05, pricing_source="local-stt@2026-05-04",
+    ))
+    await gateway.storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=in_window, modality="tts",
+        model_id="cartesia/sonic-3", provider="cartesia",
+        cost_usd=0.03, pricing_source="local-tts@2026-05-04",
+    ))
+    await gateway.storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=out_of_window, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai",
+        cost_usd=99.0, pricing_source="genai-prices@0.0.57",
+    ))
+
+    start = (today - _dt.timedelta(days=1)).isoformat()
+    end = today.isoformat()
+    resp = await client.get(
+        "/v1/costs"
+        f"?per_modality=true&include_pricing_source=true&start={start}&end={end}"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert data["total"] == pytest.approx(0.18, abs=0.001)
+    assert data["by_modality"].keys() == {"llm", "stt", "tts"}
+    assert data["by_modality"]["llm"]["cost"] == pytest.approx(0.10, abs=0.001)
+    assert (
+        data["by_model"]["openai/gpt-4o-mini"]["pricing_source"]
+        == "genai-prices@0.0.57"
+    )
+    assert (
+        data["by_model"]["deepgram/nova-3"]["pricing_source"]
+        == "local-stt@2026-05-04"
+    )
+    # The 99.0 out-of-window record must not leak into any aggregate.
+    assert data["by_modality"]["llm"]["requests"] == 1
+    assert data["by_provider"]["openai"]["requests"] == 1
+
+
 async def test_v1_latency_empty(client):
     resp = await client.get("/v1/latency")
     assert resp.status_code == 200

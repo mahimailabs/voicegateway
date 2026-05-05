@@ -18,6 +18,28 @@ app = typer.Typer(
 )
 console = Console()
 
+
+def _version_callback(value: bool) -> None:
+    """Print the package version and exit (eager option)."""
+    if value:
+        from voicegateway import __version__
+
+        console.print(__version__)
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the VoiceGateway version and exit.",
+    ),
+) -> None:
+    """Root callback hosting global options like --version."""
+
 # The example config ships next to the package. Try both the new and legacy names.
 _PACKAGE_ROOT = Path(__file__).parent.parent
 _EXAMPLE_CONFIG_CANDIDATES = [
@@ -311,6 +333,194 @@ def dashboard_cmd(
 
     dashboard_app.configure(gw)
     uvicorn.run(dashboard_app.app, host=host, port=port)
+
+
+_EXPORT_COLUMNS = (
+    "timestamp",
+    "project",
+    "modality",
+    "provider",
+    "model_id",
+    "input_units",
+    "output_units",
+    "cost_usd",
+    "pricing_source",
+    "status",
+)
+
+
+def _parse_iso_date_arg(value: str, *, end_of_day: bool) -> float:
+    """Parse YYYY-MM-DD into a UTC timestamp for CLI use.
+
+    With `end_of_day=True`, advance one day so the timestamp is the
+    exclusive upper bound for "include all of YYYY-MM-DD."
+    """
+    import datetime as _dt
+
+    try:
+        d = _dt.datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=_dt.UTC)
+    except ValueError as e:
+        console.print(
+            f"[red]Invalid date {value!r}: expected YYYY-MM-DD[/red]"
+        )
+        raise typer.Exit(2) from e
+    if end_of_day:
+        d += _dt.timedelta(days=1)
+    return d.timestamp()
+
+
+@app.command(name="export-costs")
+def export_costs_cmd(
+    config: str = typer.Option(None, "--config", "-c", help="Path to voicegw.yaml"),
+    start: str = typer.Option(
+        ..., "--start", help="Start date (YYYY-MM-DD, inclusive, UTC)."
+    ),
+    end: str = typer.Option(
+        ..., "--end", help="End date (YYYY-MM-DD, inclusive, UTC)."
+    ),
+    project: str = typer.Option(
+        None, "--project", "-p", help="Optional project filter."
+    ),
+    fmt: str = typer.Option(
+        "csv", "--format", "-f", help="Output format: csv (default) or json."
+    ),
+    output: str = typer.Option(
+        "-", "--output", "-o", help="Output path; '-' (default) writes to stdout."
+    ),
+):
+    """Export per-request cost line items for a date window.
+
+    Output columns: timestamp, project, modality, provider, model_id,
+    input_units, output_units, cost_usd, pricing_source, status.
+
+    Pair with `voicegw reconcile` (Phase 4.3) to compare against a
+    provider's invoice.
+    """
+    if fmt not in ("csv", "json"):
+        console.print(f"[red]Unknown format: {fmt}. Use 'csv' or 'json'.[/red]")
+        raise typer.Exit(2)
+
+    gw = _load_gateway(config)
+    if gw.storage is None:
+        console.print(
+            "[yellow]Cost tracking is not enabled in voicegw.yaml[/yellow]"
+        )
+        raise typer.Exit(1)
+
+    start_ts = _parse_iso_date_arg(start, end_of_day=False)
+    end_ts = _parse_iso_date_arg(end, end_of_day=True)
+
+    rows = asyncio.run(
+        gw.storage.get_requests_in_window(
+            start_ts=start_ts, end_ts=end_ts, project=project
+        )
+    )
+
+    import io
+    import json as _json
+    import sys
+
+    buf = io.StringIO()
+    if fmt == "csv":
+        import csv
+
+        writer = csv.writer(buf)
+        writer.writerow(_EXPORT_COLUMNS)
+        for r in rows:
+            writer.writerow([r.get(col, "") for col in _EXPORT_COLUMNS])
+    else:
+        export_rows = [
+            {col: r.get(col) for col in _EXPORT_COLUMNS} for r in rows
+        ]
+        _json.dump(export_rows, buf, default=str, indent=2)
+        buf.write("\n")
+
+    payload = buf.getvalue()
+    if output == "-":
+        sys.stdout.write(payload)
+    else:
+        out_path = Path(output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            out_path.write_text(payload, encoding="utf-8")
+        except OSError as e:
+            console.print(f"[red]Failed to write {output}: {e}[/red]")
+            raise typer.Exit(1) from e
+        console.print(
+            f"[green]Wrote {len(rows)} record(s) to {output}[/green]"
+        )
+
+
+@app.command(name="reconcile")
+def reconcile_cmd(
+    provider: str = typer.Option(
+        ..., "--provider", help="Provider: openai, deepgram, or cartesia."
+    ),
+    start: str = typer.Option(
+        ..., "--start", help="Start date (YYYY-MM-DD, inclusive, UTC)."
+    ),
+    end: str = typer.Option(
+        ..., "--end", help="End date (YYYY-MM-DD, inclusive, UTC)."
+    ),
+    provider_usage_file: str = typer.Option(
+        ...,
+        "--provider-usage-file",
+        help="Path to the provider's normalized usage file (CSV or JSON).",
+    ),
+    config: str = typer.Option(None, "--config", "-c", help="Path to voicegw.yaml"),
+    fmt: str = typer.Option(
+        "text", "--format", "-f", help="Output format: text (default), csv, or json."
+    ),
+):
+    """Diff VG's logged costs against a provider's usage export.
+
+    See `docs/reference/reconcile-formats.md` for the per-provider
+    file schema. Pair with `voicegw export-costs` to surface VG's
+    side of the comparison if you want to inspect the raw rows.
+    """
+    from voicegateway import reconcile as _reconcile
+
+    if provider not in _reconcile.SUPPORTED_PROVIDERS:
+        console.print(
+            f"[red]Unsupported provider: {provider!r}. "
+            f"Supported: {', '.join(_reconcile.SUPPORTED_PROVIDERS)}[/red]"
+        )
+        raise typer.Exit(2)
+    if fmt not in ("text", "csv", "json"):
+        console.print(f"[red]Unknown format: {fmt}. Use text, csv, or json.[/red]")
+        raise typer.Exit(2)
+
+    gw = _load_gateway(config)
+    if gw.storage is None:
+        console.print(
+            "[yellow]Cost tracking is not enabled in voicegw.yaml[/yellow]"
+        )
+        raise typer.Exit(1)
+
+    start_ts = _parse_iso_date_arg(start, end_of_day=False)
+    end_ts = _parse_iso_date_arg(end, end_of_day=True)
+
+    records = asyncio.run(
+        gw.storage.get_requests_in_window(start_ts=start_ts, end_ts=end_ts)
+    )
+
+    try:
+        lines = _reconcile.reconcile(provider, records, Path(provider_usage_file))
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(2) from e
+    except (ValueError, KeyError) as e:
+        console.print(f"[red]Failed to parse provider usage file: {e}[/red]")
+        raise typer.Exit(2) from e
+
+    import sys
+
+    if fmt == "csv":
+        sys.stdout.write(_reconcile.format_csv(lines))
+    elif fmt == "json":
+        sys.stdout.write(_reconcile.format_json(lines))
+    else:
+        sys.stdout.write(_reconcile.format_text(lines, provider))
 
 
 @app.command(name="mcp")

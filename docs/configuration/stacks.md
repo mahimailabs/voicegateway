@@ -15,11 +15,11 @@ stacks:
   budget:
     stt: groq/whisper-large-v3
     llm: groq/llama-3.3-70b-versatile
-    tts: piper/en_US-lessac-medium
+    tts: local/piper:en_US-lessac-medium
   local:
-    stt: whisper/large-v3
-    llm: ollama/llama3
-    tts: kokoro/default
+    stt: local/whisper-large-v3
+    llm: ollama/llama3.2:3b
+    tts: local/kokoro
 ```
 
 ## Using stacks from code
@@ -73,7 +73,7 @@ projects:
 
 - **Use stacks** when you have well-defined quality/cost tiers and want to switch all three modalities together.
 - **Use individual models** (e.g., `gw.stt("deepgram/nova-3")`) when you need fine-grained control over each modality independently.
-- **Use fallback chains** when you want automatic failover rather than a fixed model selection.
+- **Use fallback chains** when you want resolver-time fallback (try the next model if the primary fails to resolve at startup) rather than a fixed model selection.
 
 ## Validation
 

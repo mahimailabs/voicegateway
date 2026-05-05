@@ -35,10 +35,10 @@ providers:
 
 models:
   stt:
-    whisper/large-v3:
+    local/whisper-large-v3:
       provider: whisper
       model: large-v3
-    whisper/base:
+    local/whisper-base:
       provider: whisper
       model: base
   llm:
@@ -49,24 +49,23 @@ models:
       provider: ollama
       model: llama3.2:1b
   tts:
-    kokoro/default:
+    local/kokoro:
       provider: kokoro
-      model: default
 
 stacks:
   local:
-    stt: whisper/large-v3
+    stt: local/whisper-large-v3
     llm: ollama/qwen2.5:3b
-    tts: kokoro/default
+    tts: local/kokoro
   fast:
-    stt: whisper/base
+    stt: local/whisper-base
     llm: ollama/llama3.2:1b
-    tts: kokoro/default
+    tts: local/kokoro
 
 fallbacks:
   stt:
-    - whisper/large-v3
-    - whisper/base
+    - local/whisper-large-v3
+    - local/whisper-base
   llm:
     - ollama/qwen2.5:3b
     - ollama/llama3.2:1b
@@ -92,9 +91,9 @@ from voicegateway import Gateway
 gw = Gateway()
 
 # All local, no API keys needed
-stt = gw.stt("whisper/large-v3", project="local-dev")
+stt = gw.stt("local/whisper-large-v3", project="local-dev")
 llm = gw.llm("ollama/qwen2.5:3b", project="local-dev")
-tts = gw.tts("kokoro/default", project="local-dev")
+tts = gw.tts("local/kokoro", project="local-dev")
 
 # Or use a named stack
 stt, llm, tts = gw.stack("local", project="local-dev")
@@ -103,30 +102,34 @@ stt, llm, tts = gw.stack("local", project="local-dev")
 ## LiveKit Agent with Local Models
 
 ```python
-from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli, llm as lk_llm
-from livekit.agents.voice_assistant import VoiceAssistant
+from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
+from livekit.plugins import silero
 from voicegateway import Gateway
 
 gw = Gateway()
 
 
 async def entrypoint(ctx: JobContext):
-    await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+    await ctx.connect()
 
     stt, llm, tts = gw.stack("local", project="local-dev")
 
-    initial_ctx = lk_llm.ChatContext()
-    initial_ctx.append(
-        role="system",
-        text=(
-            "You are a helpful voice assistant running entirely on local hardware. "
-            "Be concise -- local models work best with shorter responses."
-        ),
+    session = AgentSession(
+        vad=silero.VAD.load(),
+        stt=stt,
+        llm=llm,
+        tts=tts,
     )
 
-    assistant = VoiceAssistant(stt=stt, llm=llm, tts=tts, chat_ctx=initial_ctx)
-    assistant.start(ctx.room)
-    await assistant.say("Hello! I'm running completely locally.")
+    await session.start(
+        agent=Agent(
+            instructions=(
+                "You are a helpful voice assistant running entirely on local hardware. "
+                "Be concise: local models work best with shorter responses."
+            ),
+        ),
+        room=ctx.room,
+    )
 
 
 if __name__ == "__main__":
@@ -215,9 +218,9 @@ providers:
 
 models:
   tts:
-    piper/en_US-lessac-medium:
+    local/piper:
       provider: piper
-      model: en_US-lessac-medium
+      default_voice: en_US-lessac-medium
 ```
 
 ```bash
@@ -238,7 +241,7 @@ Local models have different performance characteristics than cloud APIs:
 Tips for optimizing local performance:
 
 - **GPU acceleration:** ensure CUDA/Metal is available for Whisper and Ollama
-- **Smaller models:** use `whisper/base` instead of `whisper/large-v3` for faster STT
+- **Smaller models:** use `local/whisper-base` instead of `local/whisper-large-v3` for faster STT
 - **Quantized LLMs:** Ollama automatically uses quantized models (Q4_0, Q4_K_M)
 - **Keep models warm:** Ollama keeps the most recent model in memory; avoid switching frequently
 
@@ -250,13 +253,13 @@ A common pattern is to use cloud providers normally but fall back to local model
 fallbacks:
   stt:
     - deepgram/nova-3
-    - whisper/large-v3
+    - local/whisper-large-v3
   llm:
     - openai/gpt-4.1-mini
     - ollama/qwen2.5:3b
   tts:
     - cartesia/sonic-3
-    - kokoro/default
+    - local/kokoro
 
 projects:
   prod:

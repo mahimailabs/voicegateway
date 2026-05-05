@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: VoiceGateway
-  text: Voice AI Gateway for AI-Native Teams
-  tagline: Self-hosted STT, LLM, and TTS routing. Manage from your coding agent via MCP.
+  text: Cost tracking and reconciliation for LiveKit voice agents
+  tagline: Modality-aware unit accounting. LLM prices from pydantic/genai-prices. Verify against provider invoices with voicegw reconcile.
   image:
     src: /logo.svg
     alt: VoiceGateway
@@ -17,56 +17,34 @@ hero:
       link: https://github.com/mahimailabs/voicegateway
 
 features:
-  - icon: "\U0001F399"
-    title: Unified STT + LLM + TTS
-    details: Route all three modalities through one gateway. 11 providers including Deepgram, OpenAI, Anthropic, Cartesia, ElevenLabs, Groq, AssemblyAI, Ollama, Whisper, Kokoro, Piper.
-    link: /guide/core-concepts
-    linkText: Learn how it works
-
-  - icon: "\U0001F916"
-    title: First-Class MCP Server
-    details: 17 tools let Claude Code, Cursor, and Codex manage your gateway conversationally. Add providers, create projects, check costs — from your terminal.
-    link: /mcp/
-    linkText: Explore MCP
-
-  - icon: "\U0001F3E0"
-    title: Self-Hosted, Your Data
-    details: Docker Compose in five commands. API keys encrypted locally with Fernet. No cloud dependencies.
-    link: /examples/docker-deployment
-    linkText: Deploy in minutes
+  - icon: "\U0001F50C"
+    title: LiveKit-native plugin returns
+    details: "gw.stt(), gw.llm(), gw.tts() return native LiveKit plugin instances. They drop straight into AgentSession with no proxy hop, no plugin shim, and no rewrite of your existing pipeline code."
+    link: /guide/quick-start
+    linkText: See the integration
 
   - icon: "\U0001F4B0"
-    title: Budget Enforcement
-    details: Per-project daily budgets with warn, throttle, or block actions. Never get surprised by a provider bill again.
-    link: /examples/budget-enforcement
-    linkText: Configure budgets
-
-  - icon: "\U0001F500"
-    title: Automatic Fallbacks
-    details: Primary provider down? Gateway falls back automatically. Cloud outage? Switch to local. Your agent keeps running.
-    link: /examples/fallback-chains
-    linkText: Set up fallbacks
-
-  - icon: "\U0001F4CA"
-    title: Production Observability
-    details: Per-request TTFB, per-project costs, Prometheus metrics, audit logs. Built-in dashboard at localhost:9090.
+    title: Modality-aware unit accounting
+    details: "LLM cost per-1k-token, STT cost per-audio-minute, TTS cost per-character. LLM prices come from pydantic/genai-prices (1,100+ models, monthly releases). STT and TTS live in a local catalog with explicit pricing_source_date metadata."
     link: /configuration/observability
-    linkText: Monitor your stack
+    linkText: How it works
+
+  - icon: "\U0001F9FE"
+    title: Reconciliation tooling
+    details: "voicegw export-costs and voicegw reconcile compare logged costs against your provider's usage export. Per-request line items carry pricing_source attribution. LLM costs may drift up to ~5%; reconciliation is the verification path."
+    link: /guide/cost-reconciliation
+    linkText: Walk through reconcile
+
+  - icon: "\U0001F916"
+    title: MCP server for agent-managed config
+    details: "17 tools (configure providers, create projects with daily budgets, query costs, tail logs, run health checks) over stdio and HTTP/SSE. Claude Code, Cursor, Codex, and Cline can all manage the gateway conversationally."
+    link: /mcp/
+    linkText: Explore MCP
 ---
 
-## Why VoiceGateway
+## Where VoiceGateway fits
 
-Every existing LLM gateway routes LLMs. Nobody routes the full voice pipeline — STT, LLM, AND TTS — through one interface with local model support and first-class MCP. That is the gap VoiceGateway fills.
-
-|                          | LiteLLM | OpenRouter | Portkey | LiveKit Inference | VoiceGateway |
-| ------------------------ | :-----: | :--------: | :-----: | :---------------: | :----------: |
-| LLM routing              |   Yes   |    Yes     |   Yes   |       Yes         |     Yes      |
-| STT routing              |   No    |    No      |   No    |       Yes         |     Yes      |
-| TTS routing              |   No    |    No      |   No    |       Yes         |     Yes      |
-| Local models             | Partial |    No      |   No    |       No          |     Yes      |
-| Self-hostable            |   Yes   |    No      | Partial |       No          |     Yes      |
-| MCP server               |   No    |    No      |   No    |       No          |     Yes      |
-| LiveKit native           |   No    |    No      |   No    |       Yes         |     Yes      |
+VoiceGateway is purpose-built for LiveKit voice agents that want cost visibility per modality (audio-minutes for STT, tokens for LLM, characters for TTS) and reconciliation against actual provider invoices. For a longer breakdown of which tool fits which workload, see the [decision tree](/guide/decision-tree).
 
 ## Install
 

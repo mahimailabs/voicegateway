@@ -63,15 +63,17 @@ This is identical to how you would wire LiveKit Cloud Inference, except `gw.stt(
 
 With LiveKit Cloud Inference, you pay LiveKit's per-unit pricing. With VoiceGateway, you pay the underlying providers directly. Example monthly cost for a moderate workload (10,000 minutes STT, 5M LLM tokens, 2M TTS characters):
 
+> Provider pricing snapshot as of 2026-05-04. Verify against each provider's pricing page (Deepgram, OpenAI, Cartesia) and the LiveKit Cloud dashboard before basing a migration decision on these numbers; provider rates change.
+
 | Component | LiveKit Cloud (estimated) | VoiceGateway + direct keys |
 |---|---|---|
 | STT (Deepgram Nova-3) | Bundled in LiveKit pricing | $43.00 |
 | LLM (GPT-4o-mini) | Bundled in LiveKit pricing | $3.75 |
 | TTS (Cartesia Sonic-3) | Bundled in LiveKit pricing | $130.00 |
-| VoiceGateway | -- | Free (MIT license) |
+| VoiceGateway | n/a | Free (MIT license) |
 | **Total** | Varies by LiveKit plan | **$176.75** |
 
-The exact savings depend on your LiveKit plan and volume. VoiceGateway eliminates the inference markup -- you pay provider prices directly.
+The exact savings depend on your LiveKit plan and volume. VoiceGateway eliminates the inference markup: you pay provider prices directly.
 
 ## Step-by-step migration
 
@@ -163,18 +165,20 @@ tts = gw.tts("cartesia/sonic-3", project="voice-app")
 
 ### 5. Add fallback chains
 
-VoiceGateway can automatically fail over when a provider is down:
+VoiceGateway provides resolver-time fallback. At agent startup, the chain is walked and the first model whose provider resolves successfully is selected; that model is then used for the entire call. Useful for cold-start coverage when a primary's credentials, plugin SDK, or initialization handshake fails.
 
 ```yaml
 fallbacks:
   stt:
-    - openai/whisper-1        # if Deepgram is down
-    - groq/whisper-large-v3   # if OpenAI is down too
+    - openai/whisper-1        # if Deepgram fails to resolve at startup
+    - groq/whisper-large-v3   # if OpenAI fails too
   llm:
     - anthropic/claude-3.5-sonnet
   tts:
     - elevenlabs/eleven_turbo_v2_5
 ```
+
+For runtime/mid-call failover when a provider degrades during an active call, compose LiveKit's `FallbackAdapter` around VG providers. See the [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter) guide.
 
 ### 6. Start the dashboard
 
@@ -205,7 +209,6 @@ models:
   tts:
     local/kokoro:
       provider: kokoro
-      model: kokoro
 ```
 
 ### 8. Deploy with Docker
