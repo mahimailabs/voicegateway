@@ -288,13 +288,104 @@ async def _record_deepgram_stt(model: str, mode: str) -> dict[str, Any]:
         }
 
     if mode == "stream":
-        # 3.3 #5 implements Deepgram WebSocket stream recording.
-        raise NotImplementedError(
-            "Deepgram STT stream recording lands in 3.3 #5. "
-            "Use --mode batch for now."
+        # Deepgram live API: WebSocket at /v1/listen with the model
+        # and PCM parameters in the query string. Audio frames are
+        # raw PCM (the WAV 44-byte header is stripped). Server pushes
+        # SpeechStarted / Results / UtteranceEnd JSON messages and
+        # closes with a Metadata message that carries the duration
+        # we use as ground truth.
+        sample_rate = 8000  # matches AUDIO_SAMPLE_PATH (8 kHz mono)
+        channels = 1
+        url = (
+            "wss://api.deepgram.com/v1/listen"
+            f"?model={model}"
+            f"&encoding=linear16&sample_rate={sample_rate}&channels={channels}"
         )
+        # Strip the 44-byte WAV/RIFF header to get raw PCM samples.
+        pcm_bytes = audio_bytes[44:]
+        # 100 ms chunk = sample_rate * 2 (16-bit) * 0.1.
+        chunk_size = (sample_rate * 2) // 10
+
+        chunks: list[dict[str, Any]] = []
+        usage_normalized: dict[str, float] | None = None
+        cm = _open_deepgram_websocket(url, api_key)
+        async with cm as ws:
+            start = time.perf_counter()
+            for i in range(0, len(pcm_bytes), chunk_size):
+                await ws.send(pcm_bytes[i : i + chunk_size])
+            # Tell Deepgram we have no more audio. The server then
+            # flushes any remaining transcripts and closes with
+            # Metadata.
+            await ws.send(json.dumps({"type": "Finalize"}))
+
+            index = 0
+            async for message in ws:
+                received_at_ms = int((time.perf_counter() - start) * 1000)
+                if isinstance(message, bytes):
+                    text = message.decode("utf-8")
+                else:
+                    text = message
+                data = json.loads(text)
+                chunks.append(
+                    {
+                        "chunk_index": index,
+                        "received_at_ms": received_at_ms,
+                        "data": data,
+                    }
+                )
+                index += 1
+                if data.get("type") == "Metadata":
+                    duration = data.get("duration")
+                    if duration is not None:
+                        usage_normalized = {
+                            "audio_seconds": float(duration)
+                        }
+                    break
+
+            # Close the stream cleanly. Best-effort; if the server
+            # already closed the socket, ignore the resulting error.
+            try:
+                await ws.send(json.dumps({"type": "CloseStream"}))
+            except Exception:  # noqa: BLE001
+                pass
+
+        if usage_normalized is None:
+            raise RuntimeError(
+                "Deepgram stream did not deliver a Metadata message "
+                "with duration; cannot record a fixture without "
+                "ground-truth audio_seconds."
+            )
+        if not chunks:
+            raise RuntimeError(
+                "Deepgram stream yielded zero messages; cannot "
+                "record an empty stream fixture."
+            )
+        return {
+            "request": request_record,
+            "response_stream": chunks,
+            "provider_reported_usage": usage_normalized,
+        }
 
     raise ValueError(f"Unknown mode: {mode!r}")
+
+
+def _open_deepgram_websocket(url: str, api_key: str) -> Any:
+    """Return an async context manager that opens a Deepgram WebSocket.
+
+    Tests monkey-patch this helper so the recorder never imports
+    ``websockets`` during a unit-test run. Production calls into the
+    real library lazily.
+    """
+    try:
+        from websockets.asyncio.client import connect
+    except ImportError as exc:
+        raise RuntimeError(
+            "websockets package required: pip install websockets"
+        ) from exc
+    return connect(
+        url,
+        additional_headers=[("Authorization", f"Token {api_key}")],
+    )
 
 
 # ---------- Cartesia -----------------------------------------------------

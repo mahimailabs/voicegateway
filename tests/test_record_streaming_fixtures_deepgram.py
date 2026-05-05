@@ -14,10 +14,13 @@ script.
 from __future__ import annotations
 
 import importlib.util
+import json as _json
 import sys
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import httpx
 import pytest
@@ -263,9 +266,221 @@ async def test_deepgram_recorder_requires_audio_sample(
         await recorder._record_deepgram_stt("nova-3", "batch")
 
 
-async def test_deepgram_stream_mode_raises_pending_3_3_5(
+# ---------- stream happy path ----------------------------------------------
+
+
+class _FakeDeepgramWS:
+    """In-process fake of a Deepgram live WebSocket.
+
+    Records every frame the recorder sends, yields a pre-canned set
+    of JSON text messages when iterated, and lets tests drive the
+    full producer / consumer flow without any real network.
+    """
+
+    def __init__(self, responses: list[dict[str, Any]]):
+        self.sent: list[Any] = []
+        self._responses = list(responses)
+
+    async def send(self, frame: Any) -> None:
+        self.sent.append(frame)
+
+    def __aiter__(self) -> Any:
+        return self._messages()
+
+    async def _messages(self) -> Any:
+        for msg in self._responses:
+            yield _json.dumps(msg)
+
+    @property
+    def binary_frames(self) -> list[bytes]:
+        return [f for f in self.sent if isinstance(f, bytes | bytearray)]
+
+    @property
+    def text_frames(self) -> list[dict[str, Any]]:
+        return [_json.loads(f) for f in self.sent if isinstance(f, str)]
+
+
+def _patch_deepgram_ws(
     recorder: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    fake: _FakeDeepgramWS,
+) -> dict[str, Any]:
+    """Replace _open_deepgram_websocket so the recorder uses the fake.
+
+    Captures the (url, api_key) arguments for assertion.
+    """
+    captured: dict[str, Any] = {}
+
+    @asynccontextmanager
+    async def _fake_cm() -> Any:
+        yield fake
+
+    def _factory(url: str, api_key: str) -> Any:
+        captured["url"] = url
+        captured["api_key"] = api_key
+        return _fake_cm()
+
+    monkeypatch.setattr(recorder, "_open_deepgram_websocket", _factory)
+    return captured
+
+
+def _stream_responses(duration_seconds: float = 3.0) -> list[dict[str, Any]]:
+    """Build the canonical Deepgram live stream message sequence."""
+    return [
+        {
+            "type": "SpeechStarted",
+            "channel": [0],
+            "timestamp": 0.0,
+        },
+        {
+            "type": "Results",
+            "channel_index": [0, 1],
+            "duration": duration_seconds,
+            "start": 0.0,
+            "is_final": True,
+            "channel": {
+                "alternatives": [
+                    {"transcript": "", "confidence": 0.0, "words": []}
+                ]
+            },
+        },
+        {
+            "type": "UtteranceEnd",
+            "channel": [0],
+            "last_word_end": duration_seconds,
+        },
+        {
+            "type": "Metadata",
+            "request_id": "deepgram-stream-fixture",
+            "duration": duration_seconds,
+            "channels": 1,
+        },
+    ]
+
+
+async def test_deepgram_stream_recording_writes_valid_fixture(
+    recorder: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Stream-mode recording lands in 3.3 #5; 3.3 #4 only ships batch."""
-    with pytest.raises(NotImplementedError, match="3.3 #5"):
+    fake = _FakeDeepgramWS(_stream_responses(duration_seconds=3.0))
+    captured = _patch_deepgram_ws(recorder, monkeypatch, fake)
+
+    fixture_path = await recorder._run(
+        "deepgram", "stt", "nova-3", "stream"
+    )
+
+    # WebSocket URL carries model + PCM params per design.
+    assert captured["url"].startswith("wss://api.deepgram.com/v1/listen?")
+    assert "model=nova-3" in captured["url"]
+    assert "encoding=linear16" in captured["url"]
+    assert "sample_rate=8000" in captured["url"]
+    assert "channels=1" in captured["url"]
+    assert captured["api_key"] == "fake-deepgram-key-for-tests"
+
+    fixture = load_fixture(fixture_path)
+    assert fixture.metadata.provider == "deepgram"
+    assert fixture.metadata.model == "nova-3"
+    assert fixture.metadata.modality == "stt"
+    assert fixture.metadata.mode == "stream"
+
+    # 4 messages canned -> 4 chunks captured.
+    assert len(fixture.response_stream) == 4
+    indices = [c.chunk_index for c in fixture.response_stream]
+    assert indices == [0, 1, 2, 3]
+    types = [c.data["type"] for c in fixture.response_stream]
+    assert types == ["SpeechStarted", "Results", "UtteranceEnd", "Metadata"]
+
+    assert fixture.provider_reported_usage == {"audio_seconds": 3.0}
+
+
+async def test_deepgram_stream_sends_pcm_audio_in_100ms_chunks(
+    recorder: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Audio is sent as raw PCM (no 44-byte WAV header), 100ms chunks at 8 kHz."""
+    fake = _FakeDeepgramWS(_stream_responses())
+    _patch_deepgram_ws(recorder, monkeypatch, fake)
+
+    await recorder._record_deepgram_stt("nova-3", "stream")
+
+    binary = fake.binary_frames
+    # 3 seconds of 8 kHz 16-bit mono = 48000 bytes PCM.
+    # Chunk size is (8000 * 2) / 10 = 1600 bytes.
+    assert sum(len(b) for b in binary) == 48000
+    # All but the last frame should be exactly one 100ms chunk.
+    expected_chunks = 48000 // 1600
+    assert len(binary) == expected_chunks
+    assert all(len(b) == 1600 for b in binary)
+
+
+async def test_deepgram_stream_sends_finalize_then_close(
+    recorder: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Recorder must signal Finalize before reading + CloseStream after Metadata."""
+    fake = _FakeDeepgramWS(_stream_responses())
+    _patch_deepgram_ws(recorder, monkeypatch, fake)
+
+    await recorder._record_deepgram_stt("nova-3", "stream")
+
+    text_msgs = fake.text_frames
+    types_in_order = [m.get("type") for m in text_msgs]
+    assert types_in_order == ["Finalize", "CloseStream"], (
+        f"Expected Finalize then CloseStream control frames, got {types_in_order!r}"
+    )
+
+
+async def test_deepgram_stream_expected_cost_matches_catalog(
+    recorder: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from voicegateway.pricing.catalog import calculate_cost
+
+    fake = _FakeDeepgramWS(_stream_responses(duration_seconds=3.0))
+    _patch_deepgram_ws(recorder, monkeypatch, fake)
+
+    fixture_path = await recorder._run(
+        "deepgram", "stt", "nova-3", "stream"
+    )
+    fixture = load_fixture(fixture_path)
+    expected = calculate_cost(
+        "stt", "deepgram/nova-3", audio_seconds=3.0
+    )
+    assert expected is not None
+    quantized = expected.quantize(Decimal("0.00000001"))
+    assert fixture.expected_cost_usd == quantized
+
+
+# ---------- stream refusal paths -------------------------------------------
+
+
+async def test_deepgram_stream_refuses_when_metadata_never_arrives(
+    recorder: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No Metadata message -> RuntimeError, no fixture written."""
+    truncated = [r for r in _stream_responses() if r["type"] != "Metadata"]
+    fake = _FakeDeepgramWS(truncated)
+    _patch_deepgram_ws(recorder, monkeypatch, fake)
+
+    with pytest.raises(RuntimeError, match="Metadata"):
+        await recorder._record_deepgram_stt("nova-3", "stream")
+
+
+async def test_deepgram_stream_refuses_when_duration_missing(
+    recorder: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Metadata without duration -> RuntimeError."""
+    responses = _stream_responses()
+    responses[-1].pop("duration")
+    fake = _FakeDeepgramWS(responses)
+    _patch_deepgram_ws(recorder, monkeypatch, fake)
+
+    with pytest.raises(RuntimeError, match="Metadata"):
+        await recorder._record_deepgram_stt("nova-3", "stream")
+
+
+async def test_deepgram_stream_refuses_when_no_messages_received(
+    recorder: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Empty server stream -> RuntimeError."""
+    fake = _FakeDeepgramWS([])
+    _patch_deepgram_ws(recorder, monkeypatch, fake)
+
+    with pytest.raises(RuntimeError):
         await recorder._record_deepgram_stt("nova-3", "stream")
