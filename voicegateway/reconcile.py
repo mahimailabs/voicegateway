@@ -308,7 +308,14 @@ def format_text(
 
 
 def format_csv(lines: list[ReconcileLine]) -> str:
-    """CSV with one row per model."""
+    """CSV with one row per model.
+
+    Same field set as the text format minus the visual presentation:
+    one machine-readable column per ReconcileLine attribute.
+    Includes the ``flagged`` column (added in 4.3 #1) so downstream
+    spreadsheets can filter on it without re-deriving the threshold
+    comparison.
+    """
     import io
 
     buf = io.StringIO()
@@ -320,6 +327,7 @@ def format_csv(lines: list[ReconcileLine]) -> str:
         "vg_cost_usd", "provider_cost_usd",
         "cost_diff_abs", "cost_diff_pct",
         "matched_in_vg", "matched_in_provider",
+        "flagged",
     ])
     for line in lines:
         writer.writerow([
@@ -329,6 +337,7 @@ def format_csv(lines: list[ReconcileLine]) -> str:
             f"{line.vg_cost:.6f}", f"{line.provider_cost:.6f}",
             f"{line.cost_diff_abs:.6f}", f"{line.cost_diff_pct:.4f}",
             line.matched_in_vg, line.matched_in_provider,
+            line.flagged,
         ])
     return buf.getvalue()
 

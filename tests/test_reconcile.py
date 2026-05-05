@@ -717,6 +717,41 @@ def test_format_csv_writes_diff_rows():
     assert "gpt-4o-mini" in out
 
 
+def test_format_csv_includes_flagged_column():
+    """CSV exposes `flagged` so spreadsheets can filter on it without
+    re-running the threshold comparison.
+    """
+    import csv as _csv
+    import io as _io
+
+    lines = [
+        reconcile.ReconcileLine(
+            model="gpt-4o-mini", vg_units=1500.0, provider_units=1500.0,
+            units_diff_abs=0.0, units_diff_pct=0.0,
+            vg_cost=0.94, provider_cost=1.00,
+            cost_diff_abs=0.06, cost_diff_pct=6.0,
+            matched_in_vg=True, matched_in_provider=True,
+            flagged=True,
+        ),
+        reconcile.ReconcileLine(
+            model="gpt-4o", vg_units=500.0, provider_units=500.0,
+            units_diff_abs=0.0, units_diff_pct=0.0,
+            vg_cost=0.97, provider_cost=1.00,
+            cost_diff_abs=0.03, cost_diff_pct=3.0,
+            matched_in_vg=True, matched_in_provider=True,
+            flagged=False,
+        ),
+    ]
+    out = reconcile.format_csv(lines)
+    reader = _csv.DictReader(_io.StringIO(out))
+    rows = list(reader)
+    assert "flagged" in reader.fieldnames
+    by_model = {r["model"]: r for r in rows}
+    # csv writer renders Python booleans as "True" / "False".
+    assert by_model["gpt-4o-mini"]["flagged"] == "True"
+    assert by_model["gpt-4o"]["flagged"] == "False"
+
+
 def test_format_json_writes_array_of_records():
     lines = [
         reconcile.ReconcileLine(
