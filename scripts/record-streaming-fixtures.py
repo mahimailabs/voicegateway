@@ -412,7 +412,8 @@ def _open_deepgram_websocket(url: str, api_key: str) -> Any:
         from websockets.asyncio.client import connect
     except ImportError as exc:
         raise RuntimeError(
-            "websockets package required: pip install websockets"
+            "websockets>=13.0 required (uses websockets.asyncio.client). "
+            "Install with: pip install 'websockets>=13.0'"
         ) from exc
     return connect(
         url,
@@ -576,7 +577,8 @@ def _open_cartesia_websocket(url: str) -> Any:
         from websockets.asyncio.client import connect
     except ImportError as exc:
         raise RuntimeError(
-            "websockets package required: pip install websockets"
+            "websockets>=13.0 required (uses websockets.asyncio.client). "
+            "Install with: pip install 'websockets>=13.0'"
         ) from exc
     return connect(url)
 

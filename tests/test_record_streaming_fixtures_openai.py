@@ -161,7 +161,14 @@ async def test_openai_batch_expected_cost_matches_catalog(
 async def test_openai_batch_uses_canonical_test_prompt(
     recorder: ModuleType,
 ) -> None:
-    """The recorder sends the prompt the design and PLACEHOLDER document."""
+    """Recorder POSTs the canonical prompt with stream=False and the right model.
+
+    The HTTP body sent to OpenAI must contain ``model=gpt-4o-mini``,
+    ``stream=False`` (this is the batch path), and the canonical
+    DEFAULT_LLM_PROMPT text on the user message. Asserted via
+    ``route.calls.last.request.content`` after respx intercepts the
+    call.
+    """
     response_payload = _openai_batch_response(input_tokens=18, output_tokens=8)
     async with respx.mock(assert_all_called=True) as router:
         route = router.post(

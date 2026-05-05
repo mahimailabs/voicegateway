@@ -156,7 +156,8 @@ on the next CI run.
 - **Cost estimate looks wrong**: the script's estimate is from
   Phase 2 pricing data. If actual cost diverges by more than 2x,
   check that no extra prompts were issued by mistake (re-run with
-  `--dry-run` to confirm the request payloads).
+  `--record` (without `--confirm`) to print the per-fixture cost
+  estimate and the request identity without hitting the API).
 
 ## Why this is gated outside CI / the Ralph loop
 

@@ -250,6 +250,9 @@ def test_default_directory_is_this_package() -> None:
 
 
 def test_filename_dataclass_is_frozen() -> None:
+    """Mutation must raise FrozenInstanceError, not pass silently."""
+    import dataclasses
+
     decoded = FixtureFilename(
         provider="x",
         model_slug="y",
@@ -257,5 +260,7 @@ def test_filename_dataclass_is_frozen() -> None:
         mode="batch",
         recorded_date=date(2026, 1, 1),
     )
-    with pytest.raises((AttributeError, Exception)):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         decoded.provider = "mutated"  # type: ignore[misc]
+    # Field unchanged after the rejected assignment.
+    assert decoded.provider == "x"
