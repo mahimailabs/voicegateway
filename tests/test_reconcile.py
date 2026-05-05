@@ -405,6 +405,26 @@ def test_format_text_surfaces_no_provider_data_label(tmp_path):
     assert "(prov-missing)" not in text
 
 
+def test_format_text_surfaces_no_vg_data_label(tmp_path):
+    """Symmetric to 4.3 #2: when provider has data but VG does not,
+    the rendered row must say 'no vg data'. Per design §3.3 + TODO
+    4.3 #3.
+    """
+    path = tmp_path / "openai.csv"
+    path.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o-mini,1000,500,1,0.005\n"
+    )
+    # Empty VG records.
+    lines = reconcile.reconcile("openai", [], path)
+    text = reconcile.format_text(lines, "openai")
+    assert "no vg data" in text, (
+        f"missing-vg label not rendered; got:\n{text}"
+    )
+    # Prior "(vg-missing)" jargon must be gone.
+    assert "(vg-missing)" not in text
+
+
 def test_reconcile_flags_lines_above_threshold(tmp_path):
     """Default 5% threshold flips ReconcileLine.flagged when |cost_diff_pct| > 5."""
     path = tmp_path / "openai.csv"

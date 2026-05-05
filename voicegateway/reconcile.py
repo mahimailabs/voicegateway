@@ -230,7 +230,10 @@ def format_text(lines: list[ReconcileLine], provider: str) -> str:
     for line in lines:
         flags = ""
         if not line.matched_in_vg:
-            flags = " (vg-missing)"
+            # Per design §3.3 / TODO 4.3 #3: name the missing-VG
+            # case in plain language so the row's $0 VG cell is
+            # not read as a real $0 charge.
+            flags = " (no vg data)"
         elif not line.matched_in_provider:
             # Per design §3.3 / TODO 4.3 #2: render as "no provider
             # data" rather than just a "$0 reference" so users do
