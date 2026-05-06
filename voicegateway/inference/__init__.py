@@ -19,7 +19,8 @@ exactly so a one-line import swap is enough; the drop-in compat test
 in ``tests/inference/test_drop_in_compatibility.py`` is the success gate.
 """
 
+from voicegateway.inference._llm import LLM
 from voicegateway.inference._project import get_active_project, set_project
 from voicegateway.inference._stt import STT
 
-__all__ = ["STT", "get_active_project", "set_project"]
+__all__ = ["LLM", "STT", "get_active_project", "set_project"]
