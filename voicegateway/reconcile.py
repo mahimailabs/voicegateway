@@ -193,7 +193,16 @@ def reconcile(
         # Flag only when both sides have data; missing-side rows
         # produce undefined percent diffs (the cost on the missing
         # side is zero) and would otherwise always flag.
-        flagged = matched_both and abs(cost_diff_pct) > threshold_pct
+        # Special case: when both sides are matched but the provider
+        # cost is zero (free-tier, credit-covered, or rounded-to-zero
+        # invoice line) and VG recorded a non-zero cost, _pct returns
+        # 0.0 by design (div-by-zero protection). The percent gate
+        # would then silently miss a real dollar discrepancy. Flag
+        # those rows on the absolute-delta signal instead.
+        zero_base_real_diff = prov["cost"] == 0.0 and cost_diff != 0.0
+        flagged = matched_both and (
+            abs(cost_diff_pct) > threshold_pct or zero_base_real_diff
+        )
         lines.append(
             ReconcileLine(
                 model=model,

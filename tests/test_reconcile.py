@@ -636,6 +636,54 @@ def test_reconcile_threshold_is_configurable(tmp_path):
     assert lines[0].flagged is True
 
 
+def test_reconcile_flags_zero_provider_cost_with_nonzero_vg(tmp_path):
+    """Edge case: provider invoice line is $0 (free tier, credit-covered,
+    or rounded down) but VG recorded a non-zero cost. The percent diff
+    against a zero base is undefined; without an absolute-delta gate the
+    row would silently pass review even though it is exactly the kind
+    of accounting mismatch an operator wants surfaced.
+    """
+    path = tmp_path / "openai.csv"
+    path.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o-mini,1000,500,1,0.00\n"
+    )
+    records = [
+        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
+         "input_units": 1000, "output_units": 500, "cost_usd": 0.94},
+    ]
+    lines = reconcile.reconcile("openai", records, path)
+    assert len(lines) == 1
+    line = lines[0]
+    assert line.matched_in_vg is True
+    assert line.matched_in_provider is True
+    assert line.provider_cost == 0.0
+    assert line.vg_cost > 0.0
+    assert line.cost_diff_abs != 0.0
+    assert line.flagged is True
+
+
+def test_reconcile_does_not_flag_zero_zero_match(tmp_path):
+    """Symmetric case: both sides matched and both costs are zero
+    (a free-tier model with no charges on either side). cost_diff is
+    zero; flagged must stay False so the new zero-base rule does not
+    over-trigger on legitimate zero-zero matches.
+    """
+    path = tmp_path / "openai.csv"
+    path.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o-mini,1000,500,1,0.00\n"
+    )
+    records = [
+        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
+         "input_units": 1000, "output_units": 500, "cost_usd": 0.0},
+    ]
+    lines = reconcile.reconcile("openai", records, path)
+    assert lines[0].provider_cost == 0.0
+    assert lines[0].vg_cost == 0.0
+    assert lines[0].flagged is False
+
+
 def test_reconcile_does_not_flag_missing_sides(tmp_path):
     """Lines missing data on either side carry undefined percent diff;
     flagged must stay False so users do not get false positives just
