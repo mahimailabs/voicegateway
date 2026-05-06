@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import logging
 import time
@@ -340,7 +341,15 @@ class SQLiteStorage:
     # ------------------------------------------------------------------
 
     async def log_request(self, record: RequestRecord) -> None:
-        """Log a request record to the database."""
+        """Log a request record to the database.
+
+        When ``record.session_id`` is set, this also upserts the matching
+        row in the ``sessions`` table: starts the session on first
+        request, accumulates total_cost_usd and request_count on each
+        subsequent request, and adds the modality to the comma-separated
+        modalities list (without duplication). Both writes happen on the
+        same connection / commit for atomicity.
+        """
         db = await self._ensure_initialized()
         try:
             await db.execute(
@@ -370,6 +379,38 @@ class SQLiteStorage:
                     record.session_id,
                 ),
             )
+            if record.session_id:
+                started_at_iso = _dt.datetime.fromtimestamp(
+                    record.timestamp, tz=_dt.UTC
+                ).isoformat()
+                # SQL-side upsert: on conflict, accumulate cost / count
+                # and union the modality into the comma-separated list
+                # without duplicates. INSTR on bracketed keys (",stt,")
+                # avoids substring false-positives like "tt" matching
+                # in "stt".
+                await db.execute(
+                    """INSERT INTO sessions
+                       (id, project, started_at, modalities, total_cost_usd, request_count)
+                       VALUES (?, ?, ?, ?, ?, 1)
+                       ON CONFLICT(id) DO UPDATE SET
+                           total_cost_usd = total_cost_usd + excluded.total_cost_usd,
+                           request_count = request_count + 1,
+                           modalities = CASE
+                               WHEN modalities = '' THEN excluded.modalities
+                               WHEN INSTR(
+                                   ',' || modalities || ',',
+                                   ',' || excluded.modalities || ','
+                               ) > 0 THEN modalities
+                               ELSE modalities || ',' || excluded.modalities
+                           END""",
+                    (
+                        record.session_id,
+                        record.project,
+                        started_at_iso,
+                        record.modality,
+                        record.cost_usd,
+                    ),
+                )
             await db.commit()
         finally:
             await db.close()
