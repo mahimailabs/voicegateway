@@ -21,6 +21,7 @@ from voicegateway.mcp.schemas import (
     ListProvidersInput,
     TestProviderInput,
     VgAddProviderInput,
+    VgListProvidersInput,
     VgRemoveProviderInput,
 )
 from voicegateway.mcp.tools.base import ToolDef, make_tool
@@ -606,6 +607,107 @@ async def _handle_vg_remove_provider(
 
 
 # ---------------------------------------------------------------------------
+# v0.0.5 vg_list_providers — surface per-project keys
+# ---------------------------------------------------------------------------
+
+VG_LIST_PROVIDERS_DOC = """List per-project provider keys with optional project filter.
+
+The api_key field is masked (first/last 4 chars) — full keys never
+leave storage. YAML-defined providers are returned alongside DB-managed
+ones, tagged with ``source`` so callers can tell them apart.
+
+Args:
+    project: Optional project filter. When given, only rows scoped to
+        this project are returned (DB-managed rows whose project column
+        matches AND any YAML-defined entries under
+        ``projects.<project>.providers``). When None, returns the full
+        cross-project view.
+
+Returns:
+    {providers: [{project, provider, provider_id, source,
+    api_key_masked, base_url, type}]}.
+"""
+
+
+def _yaml_per_project_entries(gateway: Gateway) -> list[dict[str, Any]]:
+    """Flatten projects.<id>.providers blocks from voicegw.yaml into
+    a list of provider dicts shaped like the DB output.
+    """
+    local_names = {"ollama", "whisper", "kokoro", "piper"}
+    out: list[dict[str, Any]] = []
+    for proj_id, proj_cfg in gateway.config.projects.items():
+        for prov_name, prov_cfg in proj_cfg.providers.items():
+            if not isinstance(prov_cfg, dict):
+                continue
+            api_key = prov_cfg.get("api_key")
+            out.append(
+                {
+                    "project": proj_id,
+                    "provider": prov_name,
+                    "provider_id": f"{proj_id}:{prov_name}",
+                    "source": "yaml",
+                    "api_key_masked": _mask_api_key(api_key),
+                    "base_url": prov_cfg.get("base_url"),
+                    "type": "local" if prov_name in local_names else "cloud",
+                }
+            )
+    return out
+
+
+async def _handle_vg_list_providers(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    payload = _parse(VgListProvidersInput, arguments)
+    local_names = {"ollama", "whisper", "kokoro", "piper"}
+    rows: list[dict[str, Any]] = []
+
+    # 1. YAML-defined per-project entries.
+    rows.extend(_yaml_per_project_entries(gateway))
+
+    # 2. DB-managed rows. Skip rows that share a provider_id with the
+    # YAML output (keeps the response from showing duplicates when an
+    # operator has both YAML and DB entries for the same composite id;
+    # YAML wins per ConfigManager.load_merged precedence).
+    yaml_ids = {r["provider_id"] for r in rows}
+    if gateway.storage is not None:
+        from voicegateway.core.crypto import decrypt, mask
+
+        for row in await gateway.storage.list_managed_providers():
+            pid = row["provider_id"]
+            if pid in yaml_ids:
+                continue
+            project = row.get("project")
+            if project is None:
+                # Legacy global rows — skip when listing per-project.
+                # vg_list_providers is the per-project view; the
+                # global add_provider tool handles global listings.
+                continue
+            try:
+                plaintext = decrypt(row.get("api_key_encrypted", ""))
+            except ValueError:
+                plaintext = ""
+            provider_type = row["provider_type"]
+            rows.append(
+                {
+                    "project": project,
+                    "provider": provider_type,
+                    "provider_id": pid,
+                    "source": "db",
+                    "api_key_masked": mask(plaintext) if plaintext else None,
+                    "base_url": row.get("base_url"),
+                    "type": "local" if provider_type in local_names else "cloud",
+                }
+            )
+
+    # 3. Apply project filter.
+    if payload.project is not None:
+        rows = [r for r in rows if r["project"] == payload.project]
+
+    rows.sort(key=lambda r: (r["project"], r["provider"]))
+    return {"providers": rows}
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -635,5 +737,11 @@ PROVIDER_TOOLS: list[ToolDef] = [
         VG_REMOVE_PROVIDER_DOC,
         VgRemoveProviderInput,
         _handle_vg_remove_provider,
+    ),
+    make_tool(
+        "vg_list_providers",
+        VG_LIST_PROVIDERS_DOC,
+        VgListProvidersInput,
+        _handle_vg_list_providers,
     ),
 ]

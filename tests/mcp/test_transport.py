@@ -18,17 +18,18 @@ def gateway(temp_config, tmp_path, monkeypatch):
 
 
 async def test_list_tools_protocol(gateway):
-    """MCP client can list all 19 tools (including v0.0.5 vg_* tools)."""
+    """MCP client can list all 20 tools (including v0.0.5 vg_* tools)."""
     server = create_server(gateway)
     async with create_connected_server_and_client_session(server) as client:
         await client.initialize()
         result = await client.list_tools()
-        assert len(result.tools) == 19
+        assert len(result.tools) == 20
         names = {t.name for t in result.tools}
         assert "get_health" in names
         assert "add_provider" in names
         assert "vg_add_provider" in names
         assert "vg_remove_provider" in names
+        assert "vg_list_providers" in names
         assert "delete_project" in names
 
 

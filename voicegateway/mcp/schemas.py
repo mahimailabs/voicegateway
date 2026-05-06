@@ -79,6 +79,17 @@ class VgRemoveProviderInput(_Strict):
     provider: str
 
 
+class VgListProvidersInput(_Strict):
+    """List per-project provider keys — design.md section 3.4.
+
+    With ``project=None`` (default), returns rows across all projects
+    plus YAML-defined global providers. With ``project="tony-pizza"``,
+    returns only rows scoped to that project.
+    """
+
+    project: str | None = None
+
+
 class DeleteProviderInput(_Strict):
     provider_id: str
     confirm: bool = False
