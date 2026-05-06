@@ -90,6 +90,21 @@ class VgListProvidersInput(_Strict):
     project: str | None = None
 
 
+class VgSetProviderKeyInput(_Strict):
+    """Rotate an existing per-project provider key — design.md section 3.4.
+
+    Same arg shape as VgAddProviderInput. Differs in that the row
+    must already exist; rotating a non-existent row raises
+    PROVIDER_NOT_FOUND so callers don't silently create new rows
+    when they meant to rotate.
+    """
+
+    project: str
+    provider: str
+    api_key: str
+    base_url: str | None = None
+
+
 class DeleteProviderInput(_Strict):
     provider_id: str
     confirm: bool = False

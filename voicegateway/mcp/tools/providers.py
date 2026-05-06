@@ -23,6 +23,7 @@ from voicegateway.mcp.schemas import (
     VgAddProviderInput,
     VgListProvidersInput,
     VgRemoveProviderInput,
+    VgSetProviderKeyInput,
 )
 from voicegateway.mcp.tools.base import ToolDef, make_tool
 
@@ -708,6 +709,102 @@ async def _handle_vg_list_providers(
 
 
 # ---------------------------------------------------------------------------
+# v0.0.5 vg_set_provider_key — rotate an existing per-project key
+# ---------------------------------------------------------------------------
+
+VG_SET_PROVIDER_KEY_DOC = """Rotate the per-project key written by vg_add_provider.
+
+Differs from ``vg_add_provider`` in one way: the
+``"<project>:<provider>"`` composite row must already exist. Rotating
+a non-existent pair raises PROVIDER_NOT_FOUND so the caller does not
+silently create a new row when they meant to rotate.
+
+Args:
+    project: Project name the key is scoped to.
+    provider: Canonical provider type whose key is being rotated.
+    api_key: New api key (Fernet-encrypted at rest).
+    base_url: Optional base URL update.
+
+Returns:
+    {project, provider, provider_id, api_key_masked, base_url,
+    source: "db", rotated: True}.
+
+Raises:
+    PROVIDER_NOT_FOUND if the (project, provider) pair has no
+    matching DB row. Use vg_add_provider to create it first.
+    READ_ONLY_RESOURCE if the matching row is YAML-defined.
+"""
+
+
+async def _handle_vg_set_provider_key(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    payload = _parse(VgSetProviderKeyInput, arguments)
+
+    if payload.provider not in _PROVIDER_REGISTRY:
+        raise ValidationError(
+            f"Unknown provider '{payload.provider}'. "
+            f"Supported: {', '.join(sorted(_PROVIDER_REGISTRY))}.",
+            details={"supported": sorted(_PROVIDER_REGISTRY)},
+        )
+
+    composite_id = f"{payload.project}:{payload.provider}"
+
+    existing = gateway.config.providers.get(composite_id)
+    if existing is not None and existing.get("_source") != "db":
+        raise ReadOnlyResourceError(
+            f"Provider '{composite_id}' is defined in voicegw.yaml and "
+            "cannot be rotated via MCP. Edit voicegw.yaml instead.",
+            details={"provider_id": composite_id, "source": "yaml"},
+        )
+
+    if gateway.storage is None:
+        raise ProviderNotFoundError(
+            f"No managed provider '{composite_id}' (storage disabled).",
+            details={"provider_id": composite_id},
+        )
+
+    managed = await gateway.storage.get_managed_provider(composite_id)
+    if managed is None:
+        raise ProviderNotFoundError(
+            f"No managed provider '{composite_id}' to rotate. "
+            "Use vg_add_provider to create it first.",
+            details={
+                "provider_id": composite_id,
+                "project": payload.project,
+                "provider": payload.provider,
+            },
+        )
+
+    # Preserve the row's existing base_url unless the caller explicitly
+    # provides a new one. base_url=None on the input is "no change",
+    # not "clear the URL" — that asymmetry is what makes
+    # vg_set_provider_key a key rotation rather than a full upsert.
+    base_url = (
+        payload.base_url if payload.base_url is not None else managed.get("base_url")
+    )
+
+    await gateway.storage.upsert_managed_provider(
+        provider_id=composite_id,
+        provider_type=payload.provider,
+        api_key=payload.api_key,
+        base_url=base_url,
+        project=payload.project,
+    )
+    await gateway.refresh_config()
+
+    return {
+        "project": payload.project,
+        "provider": payload.provider,
+        "provider_id": composite_id,
+        "api_key_masked": _mask_api_key(payload.api_key),
+        "base_url": base_url,
+        "source": "db",
+        "rotated": True,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -743,5 +840,11 @@ PROVIDER_TOOLS: list[ToolDef] = [
         VG_LIST_PROVIDERS_DOC,
         VgListProvidersInput,
         _handle_vg_list_providers,
+    ),
+    make_tool(
+        "vg_set_provider_key",
+        VG_SET_PROVIDER_KEY_DOC,
+        VgSetProviderKeyInput,
+        _handle_vg_set_provider_key,
     ),
 ]
