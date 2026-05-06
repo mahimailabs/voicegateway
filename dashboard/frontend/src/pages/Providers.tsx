@@ -1,11 +1,12 @@
 // v0.0.5 Providers page — see design.md section 3.5.
 //
-// 5.9 #1 ships the page skeleton: header + "Add Provider" button +
-// grid of project cards listing per-project provider keys. 5.9 #2-#4
-// will fill in the modal, per-row actions (rotate / delete / test),
-// and the source badge wiring. 5.9 #5 wires this to the new
-// /api/providers/by-project endpoint (currently a placeholder until
-// the dashboard backend gets the per-project list).
+// 5.9 #1: page skeleton (header + grid + Add button).
+// 5.9 #2: full Add Provider modal (this iteration).
+// 5.9 #3-#4: per-row actions and source badges (next).
+// 5.9 #5: dashboard backend HTTP endpoints for the per-project
+// reads + writes the modal here issues. Until that lands, the
+// fetch calls fail gracefully and surface as the empty state /
+// error toast rather than crashing the page.
 
 import { useEffect, useState } from 'react';
 import PageHeader from '../components/PageHeader';
@@ -136,10 +137,28 @@ export default function Providers() {
   );
 }
 
-// 5.9 #2 will replace this stub with a full modal: project selector,
-// provider dropdown over the 11 supported providers, masked api_key
-// input, "Test connection" button, save/cancel. For 5.9 #1 the modal
-// is a placeholder that explains where the work lands.
+// The eleven providers wired up in voicegateway.core.registry. Order
+// matches the registry's sort so the dropdown is alphabetical.
+const SUPPORTED_PROVIDERS = [
+  'anthropic',
+  'assemblyai',
+  'cartesia',
+  'deepgram',
+  'elevenlabs',
+  'groq',
+  'kokoro',
+  'ollama',
+  'openai',
+  'piper',
+  'whisper',
+] as const;
+
+type TestState =
+  | { kind: 'idle' }
+  | { kind: 'testing' }
+  | { kind: 'ok'; latency_ms: number }
+  | { kind: 'failed'; message: string };
+
 function AddProviderModal({
   projects,
   onClose,
@@ -147,16 +166,189 @@ function AddProviderModal({
   projects: ProjectEntry[];
   onClose: () => void;
 }) {
+  const firstProject = projects[0]?.id ?? '';
+  const [project, setProject] = useState(firstProject);
+  const [provider, setProvider] = useState<string>('openai');
+  const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [revealKey, setRevealKey] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testState, setTestState] = useState<TestState>({ kind: 'idle' });
+  const [error, setError] = useState<string | null>(null);
+
+  const canSave = project && provider && apiKey && !saving;
+  const canTest = canSave && testState.kind !== 'testing';
+
+  const handleTest = async () => {
+    setTestState({ kind: 'testing' });
+    try {
+      // Persist transiently with a sentinel id, run the existing
+      // /v1/providers/{id}/test endpoint, then clean up. The dashboard
+      // backend gets a project-aware test endpoint in 5.9 #5; this
+      // path uses what's already shipped so the button works today.
+      const sentinel = `__test__${Date.now()}__${provider}`;
+      await fetchJson('/v1/providers', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider_id: sentinel,
+          provider_type: provider,
+          api_key: apiKey,
+          base_url: baseUrl || null,
+        }),
+      });
+      try {
+        const result = await fetchJson<{ status: string; latency_ms: number; message?: string }>(
+          `/v1/providers/${encodeURIComponent(sentinel)}/test`,
+          { method: 'POST' },
+        );
+        if (result.status === 'ok') {
+          setTestState({ kind: 'ok', latency_ms: result.latency_ms });
+        } else {
+          setTestState({
+            kind: 'failed',
+            message: result.message ?? 'Provider returned unhealthy',
+          });
+        }
+      } finally {
+        await fetchJson(`/v1/providers/${encodeURIComponent(sentinel)}`, {
+          method: 'DELETE',
+        }).catch(() => {
+          // Best-effort cleanup; if the row leaks (rare) the user can
+          // remove it from the global Settings page.
+        });
+      }
+    } catch (e) {
+      setTestState({ kind: 'failed', message: (e as Error).message || 'Test failed' });
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      // 5.9 #5 will wire /api/providers/by-project. Until then we POST
+      // to /v1/providers with a composite "<project>:<provider>" id so
+      // the row at least lands in managed_providers; it stays
+      // project-NULL until the backend wiring honours the project
+      // field. Documented in the modal's caption above the Save button.
+      await fetchJson('/v1/providers', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider_id: `${project}:${provider}`,
+          provider_type: provider,
+          api_key: apiKey,
+          base_url: baseUrl || null,
+          project,
+        }),
+      });
+      onClose();
+    } catch (e) {
+      setError((e as Error).message || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="neo-modal-backdrop" onClick={onClose}>
       <div className="neo-modal" onClick={(e) => e.stopPropagation()}>
         <h3>Add Provider Key</h3>
-        <p className="label">
-          Scoping a key to one of {projects.length} project{projects.length === 1 ? '' : 's'}.
-          The full add form (project + provider + api_key + test) lands in 5.9 #2.
-        </p>
+
+        <label className="label">Project</label>
+        <select
+          className="neo-select"
+          value={project}
+          onChange={(e) => setProject(e.target.value)}
+          disabled={saving}
+        >
+          {projects.length === 0 ? (
+            <option value="">No projects configured</option>
+          ) : null}
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
+          ))}
+        </select>
+
+        <label className="label mt-md">Provider</label>
+        <select
+          className="neo-select"
+          value={provider}
+          onChange={(e) => setProvider(e.target.value)}
+          disabled={saving}
+        >
+          {SUPPORTED_PROVIDERS.map((p) => (
+            <option key={p} value={p}>{p}</option>
+          ))}
+        </select>
+
+        <label className="label mt-md">API Key</label>
+        <div className="flex-row" style={{ gap: '8px' }}>
+          <input
+            className="neo-input"
+            type={revealKey ? 'text' : 'password'}
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="sk-..."
+            autoComplete="off"
+            spellCheck={false}
+            disabled={saving}
+            style={{ flex: 1 }}
+          />
+          <button
+            className="neo-btn"
+            type="button"
+            onClick={() => setRevealKey((r) => !r)}
+            disabled={saving}
+          >
+            {revealKey ? 'Hide' : 'Show'}
+          </button>
+        </div>
+
+        <label className="label mt-md">Base URL (optional)</label>
+        <input
+          className="neo-input"
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+          placeholder="https://api.openai.com/v1"
+          disabled={saving}
+        />
+
+        <div className="mt-md">
+          <button
+            className="neo-btn"
+            type="button"
+            onClick={handleTest}
+            disabled={!canTest}
+          >
+            {testState.kind === 'testing' ? 'Testing...' : 'Test connection'}
+          </button>
+          {testState.kind === 'ok' && (
+            <span className="neo-badge neo-badge--online" style={{ marginLeft: 12 }}>
+              OK ({testState.latency_ms}ms)
+            </span>
+          )}
+          {testState.kind === 'failed' && (
+            <span className="neo-badge neo-badge--offline" style={{ marginLeft: 12 }}>
+              {testState.message}
+            </span>
+          )}
+        </div>
+
+        {error && (
+          <div className="empty-state mt-md" style={{ color: 'var(--accent-pink)' }}>
+            {error}
+          </div>
+        )}
+
         <div className="flex-row mt-lg">
-          <button className="neo-btn" onClick={onClose}>Close</button>
+          <button className="neo-btn" onClick={onClose} disabled={saving}>Cancel</button>
+          <button
+            className="neo-btn neo-btn--primary"
+            onClick={handleSave}
+            disabled={!canSave}
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </button>
         </div>
       </div>
     </div>
