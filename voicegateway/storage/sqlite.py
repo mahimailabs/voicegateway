@@ -82,7 +82,8 @@ CREATE TABLE IF NOT EXISTS managed_providers (
     base_url TEXT,
     extra_config TEXT NOT NULL DEFAULT '{}',
     created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
+    updated_at REAL NOT NULL,
+    project TEXT
 );
 
 CREATE TABLE IF NOT EXISTS managed_models (
@@ -207,6 +208,23 @@ class SQLiteStorage:
             await db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_audit_entity "
                 "ON config_audit_log(entity_type, entity_id)"
+            )
+
+            # Migration: add `project` column to managed_providers if
+            # missing (v0.0.5). NULL means "global / legacy scope" so
+            # pre-v0.0.5 rows keep behaving exactly as before. New rows
+            # written by vg_add_provider can carry a non-null project
+            # name. The index lives outside the column-missing branch so
+            # both fresh and migrated installs end up with it.
+            mp_cursor = await db.execute("PRAGMA table_info(managed_providers)")
+            mp_cols = [row[1] async for row in mp_cursor]
+            if "project" not in mp_cols:
+                await db.execute(
+                    "ALTER TABLE managed_providers ADD COLUMN project TEXT"
+                )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_managed_providers_project "
+                "ON managed_providers(project)"
             )
 
             # Indexes on managed tables
@@ -928,7 +946,7 @@ class SQLiteStorage:
         try:
             cursor = await db.execute(
                 "SELECT provider_id, provider_type, api_key_encrypted, base_url, "
-                "extra_config, created_at, updated_at FROM managed_providers "
+                "extra_config, created_at, updated_at, project FROM managed_providers "
                 "ORDER BY created_at ASC"
             )
             rows = []
@@ -942,6 +960,7 @@ class SQLiteStorage:
                         "extra_config": json.loads(row[4] or "{}"),
                         "created_at": row[5],
                         "updated_at": row[6],
+                        "project": row[7],
                     }
                 )
             return rows
@@ -954,7 +973,7 @@ class SQLiteStorage:
         try:
             cursor = await db.execute(
                 "SELECT provider_id, provider_type, api_key_encrypted, base_url, "
-                "extra_config, created_at, updated_at FROM managed_providers "
+                "extra_config, created_at, updated_at, project FROM managed_providers "
                 "WHERE provider_id = ?",
                 (provider_id,),
             )
@@ -969,6 +988,7 @@ class SQLiteStorage:
                 "extra_config": json.loads(row[4] or "{}"),
                 "created_at": row[5],
                 "updated_at": row[6],
+                "project": row[7],
             }
         finally:
             await db.close()
@@ -980,6 +1000,7 @@ class SQLiteStorage:
         api_key: str,
         base_url: str | None = None,
         extra_config: dict[str, Any] | None = None,
+        project: str | None = None,
     ) -> None:
         from voicegateway.core.crypto import encrypt
 
@@ -990,14 +1011,15 @@ class SQLiteStorage:
             await db.execute(
                 """INSERT INTO managed_providers
                        (provider_id, provider_type, api_key_encrypted, base_url,
-                        extra_config, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                        extra_config, created_at, updated_at, project)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(provider_id) DO UPDATE SET
                        provider_type=excluded.provider_type,
                        api_key_encrypted=excluded.api_key_encrypted,
                        base_url=excluded.base_url,
                        extra_config=excluded.extra_config,
-                       updated_at=excluded.updated_at""",
+                       updated_at=excluded.updated_at,
+                       project=excluded.project""",
                 (
                     provider_id,
                     provider_type,
@@ -1006,6 +1028,7 @@ class SQLiteStorage:
                     json.dumps(extra_config or {}),
                     now,
                     now,
+                    project,
                 ),
             )
             await db.commit()

@@ -20,6 +20,7 @@ from voicegateway.mcp.schemas import (
     GetProviderInput,
     ListProvidersInput,
     TestProviderInput,
+    VgAddProviderInput,
 )
 from voicegateway.mcp.tools.base import ToolDef, make_tool
 
@@ -456,6 +457,88 @@ async def _handle_delete_provider(
 
 
 # ---------------------------------------------------------------------------
+# v0.0.5 vg_add_provider — per-project provider key writes
+# ---------------------------------------------------------------------------
+
+VG_ADD_PROVIDER_DOC = """Add or update a provider key scoped to a project.
+
+The api_key is encrypted with Fernet before being persisted. The
+managed_providers row's ``provider_id`` is built as ``"<project>:<provider>"``
+so two projects can each carry their own openai key without colliding.
+
+Args:
+    project: Project name to scope this key to.
+    provider: Canonical provider type (e.g. ``openai``, ``deepgram``).
+    api_key: The provider API key.
+    base_url: Optional override for the provider base URL.
+
+Returns:
+    {project, provider, provider_id, api_key_masked, source: "db", created: True}.
+
+Raises:
+    VALIDATION if provider is not in the supported set.
+    PROVIDER_ALREADY_EXISTS if a YAML-defined provider already owns
+    this provider_id (rare; the project-prefixed id usually avoids it).
+
+Note: v0.0.5 persists the row but the inference resolver does NOT yet
+consult DB-managed per-project entries (only YAML-defined
+projects.<id>.providers blocks are read at resolve time). End-to-end
+DB-driven per-project resolution lands in v0.0.6+.
+"""
+
+
+async def _handle_vg_add_provider(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    payload = _parse(VgAddProviderInput, arguments)
+
+    if payload.provider not in _PROVIDER_REGISTRY:
+        raise ValidationError(
+            f"Unknown provider '{payload.provider}'. "
+            f"Supported: {', '.join(sorted(_PROVIDER_REGISTRY))}.",
+            details={"supported": sorted(_PROVIDER_REGISTRY)},
+        )
+
+    if gateway.storage is None:
+        raise ValidationError(
+            "Managed providers require cost_tracking.enabled=true (SQLite storage).",
+            details={"hint": "enable cost_tracking in voicegw.yaml"},
+        )
+
+    composite_id = f"{payload.project}:{payload.provider}"
+
+    # Block only YAML-defined collisions. ConfigManager.load_merged tags
+    # DB-managed entries with ``_source: "db"`` so we can tell them
+    # apart — re-adding the same DB row here is a legitimate rotation
+    # (vg_set_provider_key territory in 5.8 #4) and must not error.
+    existing = gateway.config.providers.get(composite_id)
+    if existing is not None and existing.get("_source") != "db":
+        raise ProviderAlreadyExistsError(
+            f"Provider id '{composite_id}' is already defined in voicegw.yaml.",
+            details={"provider_id": composite_id, "source": "yaml"},
+        )
+
+    await gateway.storage.upsert_managed_provider(
+        provider_id=composite_id,
+        provider_type=payload.provider,
+        api_key=payload.api_key,
+        base_url=payload.base_url,
+        project=payload.project,
+    )
+    await gateway.refresh_config()
+
+    return {
+        "project": payload.project,
+        "provider": payload.provider,
+        "provider_id": composite_id,
+        "api_key_masked": _mask_api_key(payload.api_key),
+        "base_url": payload.base_url,
+        "source": "db",
+        "created": True,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -473,5 +556,11 @@ PROVIDER_TOOLS: list[ToolDef] = [
         DELETE_PROVIDER_DOC,
         DeleteProviderInput,
         _handle_delete_provider,
+    ),
+    make_tool(
+        "vg_add_provider",
+        VG_ADD_PROVIDER_DOC,
+        VgAddProviderInput,
+        _handle_vg_add_provider,
     ),
 ]

@@ -55,6 +55,23 @@ class AddProviderInput(_Strict):
     base_url: str | None = None
 
 
+class VgAddProviderInput(_Strict):
+    """v0.0.5 per-project provider key write — design.md section 3.4.
+
+    The ``project`` argument scopes the key to one project. The
+    ``provider`` argument is the canonical provider type
+    (``openai``, ``deepgram``, etc.); the row's stored ``provider_id``
+    is built as ``"<project>:<provider>"`` so multiple projects can
+    each carry their own ``openai`` key without colliding on the
+    primary key.
+    """
+
+    project: str
+    provider: str
+    api_key: str
+    base_url: str | None = None
+
+
 class DeleteProviderInput(_Strict):
     provider_id: str
     confirm: bool = False
