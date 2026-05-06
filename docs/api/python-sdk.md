@@ -1,6 +1,21 @@
 # Python SDK Reference
 
-The `Gateway` class is the main entry point for VoiceGateway. It routes STT, LLM, and TTS requests to configured providers, applying middleware (cost tracking, latency monitoring, rate limiting, budget enforcement, fallback chains) transparently.
+VoiceGateway exposes two public Python surfaces, both supported as of v0.0.5:
+
+- **`voicegateway.inference`** (v0.0.5+) — drop-in mirror of
+  `livekit.agents.inference`. Use this for new agents and for
+  one-line migrations from LiveKit Cloud Inference. See [the
+  `inference` module section below](#voicegatewayinference-module).
+- **`voicegateway.Gateway`** (v0.0.1+) — the existing
+  configuration-driven factory. Use this when you want explicit
+  `gw.stt(...)/llm()/tts()` calls with the project routed
+  positionally, fallback chains, and direct access to query helpers
+  like `costs()` and `status()`.
+
+Both surfaces produce LiveKit-plugin instances backed by the same
+cost-tracking and latency middleware. Picking one over the other is
+ergonomic, not architectural — see [Choosing between
+`inference` and `Gateway`](#choosing-between-inference-and-gateway).
 
 ## Installation
 
@@ -13,8 +28,186 @@ pip install "voicegateway[openai,deepgram,cartesia]"
 ## Import
 
 ```python
+# v0.0.5 drop-in surface
+from voicegateway import inference
+
+# Configuration-driven surface
 from voicegateway import Gateway, ModelId, GatewayConfig
 ```
+
+## `voicegateway.inference` module
+
+A drop-in mirror of `livekit.agents.inference` (LK 1.5.7). Constructor
+signatures match LK's verbatim by name, kind, and default; the
+returned object is a LiveKit plugin instance wrapped for cost and
+latency tracking, so `AgentSession(stt=..., llm=..., tts=...)` works
+unchanged.
+
+### `inference.STT`
+
+```python
+inference.STT(
+    model: NotGivenOr[STTModels | str] = NOT_GIVEN,
+    *,
+    language: NotGivenOr[str] = NOT_GIVEN,
+    base_url: NotGivenOr[str] = NOT_GIVEN,
+    encoding: NotGivenOr[STTEncoding] = NOT_GIVEN,
+    sample_rate: NotGivenOr[int] = NOT_GIVEN,
+    api_key: NotGivenOr[str] = NOT_GIVEN,
+    api_secret: NotGivenOr[str] = NOT_GIVEN,
+    http_session: aiohttp.ClientSession | None = None,
+    extra_kwargs: NotGivenOr[dict | DeepgramOptions | ...] = NOT_GIVEN,
+    fallback: NotGivenOr[list[FallbackModelType] | FallbackModelType] = NOT_GIVEN,
+    conn_options: NotGivenOr[APIConnectOptions] = NOT_GIVEN,
+)
+```
+
+```python
+from voicegateway import inference
+
+stt = inference.STT("deepgram/nova-3:en")
+# Trailing :en is parsed as the language (mirroring LK STT semantics).
+```
+
+The `model` string parses as `provider/model[:language]`. Provider
+names are validated against `voicegateway.core.registry` (eleven
+supported types). The `api_key` kwarg, when given, overrides the
+project's resolved key for this one instance — useful for testing.
+
+### `inference.LLM`
+
+```python
+inference.LLM(
+    model: LLMModels | str,
+    *,
+    provider: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    api_secret: str | None = None,
+    inference_class: InferenceClass | None = None,
+    extra_kwargs: ChatCompletionOptions | dict | None = None,
+)
+```
+
+```python
+llm = inference.LLM("openai/gpt-4o-mini")
+
+# Ollama tags are preserved — LLM does NOT strip the trailing colon
+# segment (only STT and TTS do).
+llm = inference.LLM("ollama/qwen2.5:3b")
+
+# Explicit provider= overrides any leading "<provider>/" segment in
+# the model string. Useful when the model name itself has no slash.
+llm = inference.LLM("gpt-4o-mini", provider="openai")
+```
+
+LLM uses `None` defaults instead of `NotGivenOr` to match LK's LLM
+shape. There is no `fallback`, `conn_options`, or `http_session`
+parameter — those are STT/TTS-specific.
+
+### `inference.TTS`
+
+```python
+inference.TTS(
+    model: TTSModels | str,
+    *,
+    voice: NotGivenOr[str] = NOT_GIVEN,
+    language: NotGivenOr[str] = NOT_GIVEN,
+    encoding: NotGivenOr[TTSEncoding] = NOT_GIVEN,
+    sample_rate: NotGivenOr[int] = NOT_GIVEN,
+    base_url: NotGivenOr[str] = NOT_GIVEN,
+    api_key: NotGivenOr[str] = NOT_GIVEN,
+    api_secret: NotGivenOr[str] = NOT_GIVEN,
+    http_session: aiohttp.ClientSession | None = None,
+    extra_kwargs: NotGivenOr[dict | CartesiaOptions | ...] = NOT_GIVEN,
+    fallback: NotGivenOr[list[FallbackModelType] | FallbackModelType] = NOT_GIVEN,
+    conn_options: NotGivenOr[APIConnectOptions] = NOT_GIVEN,
+)
+```
+
+```python
+tts = inference.TTS("cartesia/sonic-3:my-voice-id")
+# Trailing :my-voice-id is parsed as the voice (mirroring LK TTS).
+
+# Or explicit voice kwarg:
+tts = inference.TTS("cartesia/sonic-3", voice="my-voice-id")
+```
+
+Same shape as STT, plus a `voice` kwarg. The trailing colon-suffix in
+the model string parses as voice (NOT language) — that's the
+semantic asymmetry between STT and TTS that LiveKit defines.
+
+### `inference.set_project`
+
+```python
+inference.set_project(name: str) -> None
+```
+
+```python
+from voicegateway import inference
+
+inference.set_project("tony-pizza")
+stt = inference.STT("deepgram/nova-3")  # uses tony-pizza's key
+```
+
+Sets the active project for the current async context. The setting
+inherits across awaited coroutines but is isolated across separate
+`asyncio.Task` instances. Resolution order for the active project:
+
+1. `inference.set_project(name)` in the current context.
+2. `VOICEGW_ACTIVE_PROJECT` environment variable.
+3. `default_project` field in `voicegw.yaml`.
+4. Hard `ConfigError` if projects are configured but none picked.
+   Soft fallback to `"default"` only when no projects exist at all
+   (preserves backward compat for pre-v0.0.5 deployments).
+
+### `inference.get_active_project`
+
+```python
+inference.get_active_project() -> str
+```
+
+Returns the active project name following the resolution order above.
+Useful if you need to log or branch on the current scope.
+
+```python
+from voicegateway import inference
+
+print(f"Resolving keys for project: {inference.get_active_project()}")
+```
+
+### Session correlation
+
+VoiceGateway tags every STT, LLM, and TTS call from the same async
+context with one shared `session_id` (`"vg-<uuid4>"`). Inside
+`AgentSession` this happens automatically. The id is written to the
+`requests.session_id` column and accumulates into the `sessions`
+table, so the v0.0.6 dashboard can answer "what did the last call
+cost?" without instrumenting your code.
+
+The known gap: factories constructed in separate `asyncio.Task`
+instances created **before** the session opens get their own ids.
+Construct the factories at session entry, not at module import time.
+See the [from-livekit-inference migration
+guide](/migration/from-livekit-inference#limitations) for details.
+
+### Choosing between `inference` and `Gateway`
+
+| Use case | API |
+|---|---|
+| Migrating from `livekit.agents.inference` (one-line swap) | `voicegateway.inference` |
+| New agent code in v0.0.5+ | `voicegateway.inference` |
+| Existing v0.0.4 agents using `gw.stt/llm/tts` | `Gateway` (no migration required) |
+| You want LK-compatible signatures (NotGivenOr defaults, etc.) | `voicegateway.inference` |
+| You want explicit project routing as a positional arg | `Gateway` |
+| You need YAML-driven `gw.stack("premium")` resolution | `Gateway` |
+| You want runtime fallback chains via `gw.stt_with_fallback()` | `Gateway` |
+| You want `gw.costs()` / `gw.status()` query helpers | `Gateway` |
+
+Both APIs persist requests through the same middleware pipeline and
+storage layer, so cost tracking and reconciliation work identically
+on either side. There is **no deprecation** of `Gateway`; the two
+surfaces are coexistent and supported.
 
 ## Gateway
 
