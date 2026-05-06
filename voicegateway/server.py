@@ -438,6 +438,12 @@ def build_app(gateway: Gateway) -> FastAPI:
         ptype = body.get("provider_type", pid)
         api_key = body.get("api_key", "")
         base_url = body.get("base_url")
+        # v0.0.5: optional per-project scope. When set, the row's
+        # project column is populated so the dashboard's
+        # /api/providers/by-project endpoint surfaces it under that
+        # project. Pre-v0.0.5 callers omit this field; the column
+        # stays NULL (legacy global semantics).
+        project = body.get("project")
 
         if not pid or not isinstance(pid, str):
             raise HTTPException(400, "provider_id is required and must be a string")
@@ -453,14 +459,21 @@ def build_app(gateway: Gateway) -> FastAPI:
         if gateway.storage is None:
             raise HTTPException(400, "Storage not enabled")
 
-        await gateway.storage.upsert_managed_provider(pid, ptype, api_key, base_url)
+        await gateway.storage.upsert_managed_provider(
+            pid, ptype, api_key, base_url, project=project
+        )
         audit_body = {**body, "api_key": "<redacted>"} if "api_key" in body else body
         await gateway.storage.log_audit_event(
             "provider", pid, "create", audit_body, "api"
         )
         await gateway.refresh_config()
 
-        return {"provider_id": pid, "source": "db", "api_key_masked": mask(api_key)}
+        return {
+            "provider_id": pid,
+            "source": "db",
+            "api_key_masked": mask(api_key),
+            "project": project,
+        }
 
     @app.patch("/v1/providers/{provider_id}", dependencies=[write_dep])
     async def v1_update_provider(provider_id: str, body: dict[str, Any]) -> dict:
@@ -481,8 +494,13 @@ def build_app(gateway: Gateway) -> FastAPI:
         if ptype not in _PROVIDER_REGISTRY:
             raise HTTPException(400, f"Unknown provider_type '{ptype}'")
 
+        # Preserve the row's existing project scope on PATCH unless the
+        # caller explicitly overrides it. Rotating a per-project key
+        # MUST NOT silently demote it to global scope.
+        project = body.get("project", existing.get("project"))
+
         await gateway.storage.upsert_managed_provider(
-            provider_id, ptype, api_key, base_url
+            provider_id, ptype, api_key, base_url, project=project
         )
         audit_body = {**body, "api_key": "<redacted>"} if "api_key" in body else body
         await gateway.storage.log_audit_event(
