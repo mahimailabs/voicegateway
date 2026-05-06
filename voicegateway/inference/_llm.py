@@ -107,6 +107,7 @@ class LLM:
             gateway=gateway,
             provider_name=provider_name,
             api_key_override=api_key,
+            project=active_project,
         )
         provider_instance = create_provider(provider_name, provider_config)
 

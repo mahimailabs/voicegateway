@@ -60,15 +60,25 @@ def _resolve_provider_config(
     gateway: Any,
     provider_name: str,
     api_key_override: str | None,
+    project: str | None = None,
 ) -> dict[str, Any]:
-    """Build the provider config dict, applying the per-call api_key override.
+    """Build the provider config dict for an inference factory call.
 
-    When ``api_key_override`` is ``None``, returns the gateway's stored
-    config for the provider verbatim. When given, returns a shallow copy
-    with the override applied so the existing gateway-cached provider
-    instance is not mutated.
+    Resolution order (mirrors design.md section 3.3):
+
+    1. ``api_key_override`` (passed by the user as ``api_key=...``).
+    2. The active project's per-provider entry under
+       ``projects.<id>.providers.<provider_name>`` in voicegw.yaml.
+    3. The top-level ``providers.<provider_name>`` block (legacy
+       global config).
+
+    A shallow copy is returned so the gateway's cached provider
+    instance is never mutated.
     """
-    base_config = gateway.config.get_provider_config(provider_name) or {}
+    base_config = (
+        gateway.config.get_provider_config_for_project(provider_name, project)
+        or {}
+    )
     if api_key_override is None:
         return dict(base_config)
     return {**base_config, "api_key": api_key_override}
@@ -159,6 +169,7 @@ class STT:
             gateway=gateway,
             provider_name=provider_name,
             api_key_override=api_key if is_given(api_key) else None,
+            project=project,
         )
         provider_instance = create_provider(provider_name, provider_config)
 
