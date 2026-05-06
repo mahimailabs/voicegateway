@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS requests (
     status TEXT DEFAULT 'success',
     fallback_from TEXT,
     error_message TEXT,
-    metadata TEXT
+    metadata TEXT,
+    session_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_requests_timestamp ON requests(timestamp);
@@ -42,6 +43,9 @@ CREATE INDEX IF NOT EXISTS idx_requests_model ON requests(model_id);
 CREATE INDEX IF NOT EXISTS idx_requests_modality ON requests(modality);
 CREATE INDEX IF NOT EXISTS idx_requests_project ON requests(project);
 CREATE INDEX IF NOT EXISTS idx_requests_project_timestamp ON requests(project, timestamp);
+-- session_id index created post-migration; see _ensure_initialized.
+-- A pre-v0.0.5 file will not yet have the column when this script runs,
+-- so creating the index here would fail on the legacy schema.
 
 DROP VIEW IF EXISTS daily_costs;
 CREATE VIEW IF NOT EXISTS daily_costs AS
@@ -148,6 +152,23 @@ class SQLiteStorage:
                 await db.execute(
                     "ALTER TABLE requests ADD COLUMN pricing_source TEXT NOT NULL DEFAULT ''"
                 )
+            # Migration: add `session_id` column if missing (v0.0.5).
+            # Pre-v0.0.5 rows get NULL — correct, they predate the
+            # session-correlation feature. New rows carry a real value
+            # written by InstrumentedSTT/LLM/TTS once 5.6 #3 wires it through.
+            if "session_id" not in cols:
+                await db.execute(
+                    "ALTER TABLE requests ADD COLUMN session_id TEXT"
+                )
+            # Always create the index (idempotent CREATE INDEX IF NOT EXISTS).
+            # Lives outside the column-missing branch so a fresh install,
+            # which already has the column from _SCHEMA, still gets the
+            # index. Cannot live inside _SCHEMA itself because legacy
+            # databases without the column yet would fail the CREATE.
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_requests_session_id "
+                "ON requests(session_id)"
+            )
             # Audit log table
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS config_audit_log (
