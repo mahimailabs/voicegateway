@@ -1,0 +1,263 @@
+"""Tests for the v0.0.5 ``sessions`` table.
+
+Per design.md section 3.2 the sessions table is the second pillar of
+session correlation: one row per logical voice session, accumulating
+total_cost_usd and request_count, with started_at / ended_at framing.
+The CostTracker populates rows on the first request of a session; this
+test file pins the schema contract so plumbing changes can't quietly
+break the storage shape.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+import time
+
+from voicegateway.storage.sqlite import SQLiteStorage
+
+
+def _column_info(db_path: str, table: str) -> dict[str, dict]:
+    """Return {col_name: {type, notnull, default, pk}} for the given table."""
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.execute(f"PRAGMA table_info({table})")
+        result = {}
+        for row in cursor.fetchall():
+            # PRAGMA table_info: cid, name, type, notnull, dflt_value, pk
+            result[row[1]] = {
+                "type": row[2],
+                "notnull": bool(row[3]),
+                "default": row[4],
+                "pk": bool(row[5]),
+            }
+        return result
+    finally:
+        conn.close()
+
+
+def _index_names(db_path: str, table: str) -> list[str]:
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=?",
+            (table,),
+        )
+        return [row[0] for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+
+async def test_fresh_install_has_sessions_table(tmp_path):
+    db_path = str(tmp_path / "fresh.db")
+    storage = SQLiteStorage(db_path)
+    await storage._ensure_initialized()
+
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'"
+        )
+        row = cursor.fetchone()
+    finally:
+        conn.close()
+    assert row is not None, "sessions table missing on fresh install"
+
+
+async def test_sessions_columns_match_design(tmp_path):
+    """Columns and types match design.md section 3.2."""
+    db_path = str(tmp_path / "fresh.db")
+    storage = SQLiteStorage(db_path)
+    await storage._ensure_initialized()
+
+    cols = _column_info(db_path, "sessions")
+    assert set(cols) == {
+        "id",
+        "project",
+        "started_at",
+        "ended_at",
+        "modalities",
+        "total_cost_usd",
+        "request_count",
+    }
+
+    # Required keys (NOT NULL).
+    assert cols["id"]["pk"] is True
+    assert cols["id"]["type"] == "TEXT"
+    assert cols["project"]["notnull"] is True
+    assert cols["project"]["type"] == "TEXT"
+    assert cols["started_at"]["notnull"] is True
+    assert cols["started_at"]["type"] == "TEXT"
+
+    # Nullable end-of-session marker.
+    assert cols["ended_at"]["notnull"] is False
+    assert cols["ended_at"]["type"] == "TEXT"
+
+    # Cost / count have safe defaults so partial inserts behave.
+    assert cols["total_cost_usd"]["type"] == "REAL"
+    assert cols["request_count"]["type"] == "INTEGER"
+
+
+async def test_sessions_indexes_exist(tmp_path):
+    db_path = str(tmp_path / "fresh.db")
+    storage = SQLiteStorage(db_path)
+    await storage._ensure_initialized()
+
+    indexes = _index_names(db_path, "sessions")
+    assert "idx_sessions_project" in indexes
+    assert "idx_sessions_started_at" in indexes
+
+
+async def test_sessions_table_appears_on_legacy_db(tmp_path):
+    """Pre-v0.0.5 databases pick up the sessions table at first open.
+
+    Same pattern as the requests session_id migration: the v0.0.4 file
+    has no sessions table; opening it through SQLiteStorage runs the
+    schema executescript with CREATE TABLE IF NOT EXISTS, which adds
+    the table without touching anything else.
+    """
+    db_path = str(tmp_path / "v004.db")
+    legacy = sqlite3.connect(db_path)
+    try:
+        # Seed a v0.0.4-shaped requests table. The `project` column has
+        # to be present because the daily_costs view in _SCHEMA depends
+        # on it; SQLiteStorage's existing migration handles ALTER for
+        # *newer* fields but assumes the v0.0.4 baseline.
+        legacy.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS requests (
+                id TEXT PRIMARY KEY,
+                timestamp REAL NOT NULL,
+                project TEXT NOT NULL DEFAULT 'default',
+                modality TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                pricing_source TEXT NOT NULL DEFAULT '',
+                cost_usd REAL DEFAULT 0
+            );
+            """
+        )
+        legacy.commit()
+    finally:
+        legacy.close()
+
+    # Confirm the legacy file did NOT have the sessions table.
+    pre = sqlite3.connect(db_path)
+    try:
+        cursor = pre.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'"
+        )
+        assert cursor.fetchone() is None
+    finally:
+        pre.close()
+
+    # Open through SQLiteStorage; the schema script runs.
+    storage = SQLiteStorage(db_path)
+    await storage._ensure_initialized()
+
+    post = sqlite3.connect(db_path)
+    try:
+        cursor = post.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'"
+        )
+        assert cursor.fetchone() is not None
+    finally:
+        post.close()
+
+
+async def test_sessions_insert_round_trip(tmp_path):
+    """A direct INSERT + SELECT works against the new schema.
+
+    Higher-level CostTracker plumbing comes in 5.6 #3+; this test just
+    locks the basic write/read contract so a future schema refactor
+    can't change column names or types silently.
+    """
+    db_path = str(tmp_path / "fresh.db")
+    storage = SQLiteStorage(db_path)
+    await storage._ensure_initialized()
+
+    sid = "vg-test-session-id"
+    started = "2026-05-06T19:50:00Z"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """INSERT INTO sessions
+               (id, project, started_at, modalities, total_cost_usd, request_count)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (sid, "tony-pizza", started, "stt,llm,tts", 0.0123, 3),
+        )
+        conn.commit()
+
+        cursor = conn.execute(
+            "SELECT id, project, started_at, ended_at, modalities, "
+            "total_cost_usd, request_count FROM sessions WHERE id = ?",
+            (sid,),
+        )
+        row = cursor.fetchone()
+    finally:
+        conn.close()
+
+    assert row == (sid, "tony-pizza", started, None, "stt,llm,tts", 0.0123, 3)
+
+
+async def test_sessions_defaults_apply_on_partial_insert(tmp_path):
+    """Inserting only required columns fills numeric fields with safe defaults."""
+    db_path = str(tmp_path / "fresh.db")
+    storage = SQLiteStorage(db_path)
+    await storage._ensure_initialized()
+
+    sid = "vg-test-partial"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """INSERT INTO sessions (id, project, started_at)
+               VALUES (?, ?, ?)""",
+            (sid, "default", "2026-05-06T19:55:00Z"),
+        )
+        conn.commit()
+
+        cursor = conn.execute(
+            "SELECT modalities, total_cost_usd, request_count, ended_at "
+            "FROM sessions WHERE id = ?",
+            (sid,),
+        )
+        row = cursor.fetchone()
+    finally:
+        conn.close()
+
+    assert row == ("", 0.0, 0, None)
+
+
+async def test_sessions_table_is_idempotent_on_reinit(tmp_path):
+    """Re-opening the storage doesn't error or drop existing rows."""
+    db_path = str(tmp_path / "fresh.db")
+    s1 = SQLiteStorage(db_path)
+    await s1._ensure_initialized()
+
+    sid = "vg-test-keep"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO sessions (id, project, started_at) VALUES (?, ?, ?)",
+            (sid, "default", str(time.time())),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    s2 = SQLiteStorage(db_path)
+    await s2._ensure_initialized()
+
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.execute(
+            "SELECT id FROM sessions WHERE id = ?", (sid,)
+        )
+        row = cursor.fetchone()
+    finally:
+        conn.close()
+    assert row == (sid,)

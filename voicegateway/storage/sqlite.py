@@ -112,6 +112,24 @@ CREATE TABLE IF NOT EXISTS managed_projects (
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
+
+-- v0.0.5 sessions table per design.md section 3.2.
+-- One row per logical voice session. Populated by CostTracker on
+-- the first request of a session; total_cost_usd and request_count
+-- accumulate per request. ended_at stays NULL until the session
+-- closes (session-close hook lands later in v0.0.5+).
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    project TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    modalities TEXT NOT NULL DEFAULT '',
+    total_cost_usd REAL DEFAULT 0,
+    request_count INTEGER DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project);
+CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions(started_at);
 """
 
 
