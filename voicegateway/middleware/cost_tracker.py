@@ -105,6 +105,7 @@ class CostTracker:
         fallback_from: str | None = None,
         error_message: str | None = None,
         pricing_source: str = "",
+        session_id: str | None = None,
     ) -> RequestRecord:
         """Create a request record with cost calculated.
 
@@ -140,6 +141,7 @@ class CostTracker:
             status=status,
             fallback_from=fallback_from,
             error_message=error_message,
+            session_id=session_id,
         )
 
     async def log_request(self, record: RequestRecord) -> None:

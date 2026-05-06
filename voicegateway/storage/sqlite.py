@@ -348,8 +348,8 @@ class SQLiteStorage:
                    (id, timestamp, project, modality, model_id, provider,
                     input_units, output_units, cost_usd, pricing_source,
                     ttfb_ms, total_latency_ms, status,
-                    fallback_from, error_message, metadata)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    fallback_from, error_message, metadata, session_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     record.id,
                     record.timestamp,
@@ -367,6 +367,7 @@ class SQLiteStorage:
                     record.fallback_from,
                     record.error_message,
                     json.dumps(record.metadata) if record.metadata else None,
+                    record.session_id,
                 ),
             )
             await db.commit()

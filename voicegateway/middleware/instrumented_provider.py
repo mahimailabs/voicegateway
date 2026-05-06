@@ -82,6 +82,13 @@ class _InstrumentedBase:
         total_ms = (now - start) * 1000
         ttfb_ms = (first_byte - start) * 1000 if first_byte else total_ms
 
+        # v0.0.5 session correlation: read the per-context session id at
+        # request time so calls made inside an AgentSession share the
+        # same row-level session_id. Reading here (not at construction)
+        # keeps the wrapper compatible with cases where the session
+        # context is established AFTER the wrapper itself was built.
+        from voicegateway.inference._session_context import get_session_id
+
         record = cost_tracker.create_record(
             model_id=model_id,
             modality=self._modality,
@@ -93,6 +100,7 @@ class _InstrumentedBase:
             total_latency_ms=total_ms,
             status=status,
             error_message=error_message,
+            session_id=get_session_id(),
         )
 
         if storage is not None:

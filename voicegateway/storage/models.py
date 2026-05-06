@@ -26,3 +26,4 @@ class RequestRecord:
     fallback_from: str | None = None
     error_message: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    session_id: str | None = None  # v0.0.5: ContextVar-derived session correlation
