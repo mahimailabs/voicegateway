@@ -74,6 +74,11 @@ def build_app(gateway: Gateway) -> FastAPI:
         allow_origins=cors_origins,
         allow_methods=["*"],
         allow_headers=["*"],
+        # Custom response headers are not visible to JavaScript on
+        # cross-origin calls unless they are listed here. The dashboard
+        # detects /v1/costs?period=...&start=... mixed-call deprecation
+        # via the Deprecation response header, so it must be exposed.
+        expose_headers=["Deprecation"],
     )
 
     def require_scope(scope: str):

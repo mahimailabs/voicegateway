@@ -150,6 +150,23 @@ async def test_v1_costs_period_with_window_emits_deprecation_header(client):
     assert "period" in msg and "start/end" in msg
 
 
+async def test_v1_costs_period_with_window_exposes_deprecation_to_cors(client):
+    """The CORS preflight must list `Deprecation` in
+    Access-Control-Expose-Headers, otherwise browser JS cannot read the
+    header (the legacy `period` deprecation signal would be invisible
+    to the dashboard, which is the whole point of setting it).
+    """
+    resp = await client.get(
+        "/v1/costs?period=week&start=2026-05-01&end=2026-05-04",
+        headers={"origin": "http://localhost:3000"},
+    )
+    assert resp.status_code == 200
+    expose = resp.headers.get("access-control-expose-headers", "")
+    assert "Deprecation" in expose, (
+        f"Deprecation must be exposed via CORS; got {expose!r}"
+    )
+
+
 async def test_v1_costs_period_without_window_no_deprecation_header(client):
     """Legacy callers that pass only `period` see no Deprecation header."""
     resp = await client.get("/v1/costs?period=week")
