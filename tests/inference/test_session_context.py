@@ -12,6 +12,7 @@ from voicegateway.inference._session_context import (
     get_or_create_session_id,
     get_session_id,
     reset_session_id,
+    start_session,
 )
 
 _VG_ID = re.compile(r"^vg-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -68,6 +69,48 @@ class TestReset:
 
         old, new = contextvars.copy_context().run(_scenario)
         assert old != new
+
+
+class TestStartSession:
+    """``start_session`` rolls a fresh id for sequential conversations
+    in a single asyncio task — fixes the v0.0.5 review P1 #3 case
+    where a worker reusing tasks would merge two sessions into one.
+    """
+
+    def test_start_session_returns_new_id(self):
+        ctx = contextvars.copy_context()
+        sid = ctx.run(start_session)
+        assert _VG_ID.match(sid), f"expected vg-<uuid4>, got {sid!r}"
+
+    def test_start_session_replaces_existing(self):
+        def _scenario():
+            first = get_or_create_session_id()
+            second = start_session()
+            after = get_session_id()
+            return first, second, after
+
+        first, second, after = contextvars.copy_context().run(_scenario)
+        assert first != second
+        assert after == second
+
+    def test_simulated_worker_pattern(self):
+        """One asyncio task handles two conversations sequentially.
+        Without start_session() between them, the second conversation
+        inherits the first's id (the bug). With start_session(), each
+        conversation gets a distinct id.
+        """
+
+        def _scenario():
+            sid_a = get_or_create_session_id()
+            # Conversation B starts; the worker calls start_session
+            # to roll a fresh id explicitly.
+            sid_b = start_session()
+            return sid_a, sid_b
+
+        a, b = contextvars.copy_context().run(_scenario)
+        assert a != b
+        assert a.startswith("vg-")
+        assert b.startswith("vg-")
 
 
 class TestAsyncPropagation:

@@ -21,7 +21,15 @@ in ``tests/inference/test_drop_in_compatibility.py`` is the success gate.
 
 from voicegateway.inference._llm import LLM
 from voicegateway.inference._project import get_active_project, set_project
+from voicegateway.inference._session_context import start_session
 from voicegateway.inference._stt import STT
 from voicegateway.inference._tts import TTS
 
-__all__ = ["LLM", "STT", "TTS", "get_active_project", "set_project"]
+__all__ = [
+    "LLM",
+    "STT",
+    "TTS",
+    "get_active_project",
+    "set_project",
+    "start_session",
+]

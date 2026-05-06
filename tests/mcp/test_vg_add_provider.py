@@ -265,3 +265,101 @@ async def test_yaml_provider_id_collision_rejected(tmp_path, monkeypatch):
                 "api_key": "from-mcp",
             },
         )
+
+
+async def test_yaml_per_project_collision_rejected(tmp_path, monkeypatch):
+    """Codex P2 #1 (iter 41): a YAML projects.<id>.providers.<name>
+    entry must block vg_add_provider from writing a shadow DB row
+    for the same (project, provider) pair. The inference resolver
+    reads YAML before DB-managed rows, so the DB write would silently
+    do nothing while the caller thinks they rotated the key.
+    """
+    import yaml as _yaml
+
+    cfg = {
+        "providers": {},
+        "projects": {
+            "tony-pizza": {
+                "name": "Tony",
+                "providers": {
+                    "openai": {"api_key": "yaml-tony-openai"},
+                },
+            },
+        },
+        "models": {"stt": {}, "llm": {}, "tts": {}},
+        "stacks": {},
+        "fallbacks": {"stt": [], "llm": [], "tts": []},
+        "cost_tracking": {"enabled": True},
+        "observability": {"latency_tracking": True},
+    }
+    cfg_path = tmp_path / "voicegw.yaml"
+    cfg_path.write_text(_yaml.dump(cfg))
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "v.db"))
+    gw = Gateway(config_path=str(cfg_path))
+
+    tool = _vg_add_tool()
+    with pytest.raises(ProviderAlreadyExistsError, match="voicegw.yaml"):
+        await tool.handler(
+            gw,
+            {
+                "project": "tony-pizza",
+                "provider": "openai",
+                "api_key": "would-silently-shadow",
+            },
+        )
+
+    # No DB row was created.
+    rows = await gw.storage.list_managed_providers()
+    assert all(r["provider_id"] != "tony-pizza:openai" for r in rows)
+
+
+async def test_yaml_per_project_collision_only_blocks_matching_provider(
+    tmp_path, monkeypatch
+):
+    """The YAML projects.tony-pizza.providers.openai entry must NOT
+    block vg_add_provider for a different (project, provider) pair.
+    The guard is precise.
+    """
+    import yaml as _yaml
+
+    cfg = {
+        "providers": {},
+        "projects": {
+            "tony-pizza": {
+                "name": "Tony",
+                "providers": {"openai": {"api_key": "yaml-key"}},
+            },
+        },
+        "models": {"stt": {}, "llm": {}, "tts": {}},
+        "stacks": {},
+        "fallbacks": {"stt": [], "llm": [], "tts": []},
+        "cost_tracking": {"enabled": True},
+        "observability": {"latency_tracking": True},
+    }
+    cfg_path = tmp_path / "voicegw.yaml"
+    cfg_path.write_text(_yaml.dump(cfg))
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "v.db"))
+    gw = Gateway(config_path=str(cfg_path))
+
+    tool = _vg_add_tool()
+    # Different provider on the same project: should succeed.
+    result = await tool.handler(
+        gw,
+        {
+            "project": "tony-pizza",
+            "provider": "deepgram",
+            "api_key": "sk-tony-dg",
+        },
+    )
+    assert result["created"] is True
+
+    # Same provider on a different project: should also succeed.
+    result = await tool.handler(
+        gw,
+        {
+            "project": "mama-diner",
+            "provider": "openai",
+            "api_key": "sk-mama",
+        },
+    )
+    assert result["created"] is True

@@ -511,15 +511,45 @@ async def _handle_vg_add_provider(
 
     composite_id = f"{payload.project}:{payload.provider}"
 
-    # Block only YAML-defined collisions. ConfigManager.load_merged tags
-    # DB-managed entries with ``_source: "db"`` so we can tell them
-    # apart — re-adding the same DB row here is a legitimate rotation
-    # (vg_set_provider_key territory in 5.8 #4) and must not error.
-    existing = gateway.config.providers.get(composite_id)
-    if existing is not None and existing.get("_source") != "db":
+    # Block YAML-defined collisions. There are two YAML places the
+    # same key could already exist:
+    #   1. The top-level ``providers.<composite_id>`` block (rare —
+    #      requires a literal ``"<project>:<provider>"`` provider id in
+    #      voicegw.yaml).
+    #   2. The per-project ``projects.<project>.providers.<provider>``
+    #      block (the v0.0.5 shape; the inference resolver consults
+    #      this directly, so a DB write would silently shadow an
+    #      already-active YAML key).
+    # Both must error: writing the row anyway leaves the user thinking
+    # they rotated when the resolver still uses the YAML value.
+    # Re-adding the same DB row is a legitimate rotation (re-add ⇒
+    # upsert) and must not trigger the guard.
+    existing_top_level = gateway.config.providers.get(composite_id)
+    if (
+        existing_top_level is not None
+        and existing_top_level.get("_source") != "db"
+    ):
         raise ProviderAlreadyExistsError(
             f"Provider id '{composite_id}' is already defined in voicegw.yaml.",
             details={"provider_id": composite_id, "source": "yaml"},
+        )
+    project_cfg = gateway.config.projects.get(payload.project)
+    if (
+        project_cfg is not None
+        and payload.provider in project_cfg.providers
+    ):
+        raise ProviderAlreadyExistsError(
+            f"Project '{payload.project}' already defines '{payload.provider}' "
+            "in voicegw.yaml. Edit the YAML or remove that entry; the "
+            "inference resolver reads YAML before DB-managed rows, so a DB "
+            "write here would silently shadow nothing.",
+            details={
+                "provider_id": composite_id,
+                "project": payload.project,
+                "provider": payload.provider,
+                "source": "yaml",
+                "yaml_path": f"projects.{payload.project}.providers.{payload.provider}",
+            },
         )
 
     await gateway.storage.upsert_managed_provider(

@@ -410,39 +410,27 @@ function AddProviderModal({
   const handleTest = async () => {
     setTestState({ kind: 'testing' });
     try {
-      // Persist transiently with a sentinel id, run the existing
-      // /v1/providers/{id}/test endpoint, then clean up. The dashboard
-      // backend gets a project-aware test endpoint in 5.9 #5; this
-      // path uses what's already shipped so the button works today.
-      const sentinel = `__test__${Date.now()}__${provider}`;
-      await fetchJson('/v1/providers', {
-        method: 'POST',
-        body: JSON.stringify({
-          provider_id: sentinel,
-          provider_type: provider,
-          api_key: apiKey,
-          base_url: baseUrl || null,
-        }),
-      });
-      try {
-        const result = await fetchJson<{ status: string; latency_ms: number; message?: string }>(
-          `/v1/providers/${encodeURIComponent(sentinel)}/test`,
-          { method: 'POST' },
-        );
-        if (result.status === 'ok') {
-          setTestState({ kind: 'ok', latency_ms: result.latency_ms });
-        } else {
-          setTestState({
-            kind: 'failed',
-            message: result.message ?? 'Provider returned unhealthy',
-          });
-        }
-      } finally {
-        await fetchJson(`/v1/providers/${encodeURIComponent(sentinel)}`, {
-          method: 'DELETE',
-        }).catch(() => {
-          // Best-effort cleanup; if the row leaks (rare) the user can
-          // remove it from the global Settings page.
+      // Stateless health check: send provider_type + api_key directly,
+      // backend runs health_check without persisting. No sentinel-row
+      // round-trip means the test cannot leak managed_providers
+      // entries on transient network failures.
+      const result = await fetchJson<{ status: string; latency_ms: number; message?: string }>(
+        '/v1/providers/test',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            provider_type: provider,
+            api_key: apiKey,
+            base_url: baseUrl || null,
+          }),
+        },
+      );
+      if (result.status === 'ok') {
+        setTestState({ kind: 'ok', latency_ms: result.latency_ms });
+      } else {
+        setTestState({
+          kind: 'failed',
+          message: result.message ?? 'Provider returned unhealthy',
         });
       }
     } catch (e) {

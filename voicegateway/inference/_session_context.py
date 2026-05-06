@@ -8,11 +8,16 @@ ID, the others inherit it. The result is that one logical voice session
 sees one shared ``session_id`` across all three modalities, with no
 user-facing parameter.
 
-Limitations (documented for v0.0.5; revisited in v0.0.6+):
-- ContextVars are per-task. If a user constructs the three factories in
-  separate ``asyncio.Task`` instances spawned without copying context,
-  each factory creates its own ID. This is the "different async
-  contexts" gap called out in design.md sections 3.2 and 7.2.
+Worker patterns that handle multiple conversations sequentially in a
+single asyncio task (rather than spawning one task per call) need to
+explicitly roll a new session id between conversations — call
+``inference.start_session()`` at the top of each conversation handler.
+Without that, the second conversation reuses the first's id and the
+``sessions`` table merges costs across what should be distinct sessions.
+
+The standard livekit-agents worker spawns one task per call and so this
+case does not apply; the call is only needed for non-standard worker
+loops or scripted sequential drivers.
 
 Design source: `.agents/design.md` section 3.2.
 """
@@ -61,11 +66,31 @@ def get_session_id() -> str | None:
     return _current_session_id.get()
 
 
+def start_session() -> str:
+    """Force a new session id for the current context.
+
+    The next ``inference.STT/LLM/TTS`` factory call will see no
+    pre-existing id and create a fresh ``"vg-<uuid>"`` via
+    ``get_or_create_session_id``. This call also returns the new id so
+    callers can log it without a second lookup.
+
+    Use this in non-standard worker patterns where a single asyncio
+    task handles multiple conversations sequentially. The standard
+    livekit-agents worker spawns a fresh task per call, so the
+    ContextVar starts clean and this call is unnecessary.
+    """
+    sid = f"{_SESSION_ID_PREFIX}{uuid.uuid4()}"
+    _current_session_id.set(sid)
+    return sid
+
+
 def reset_session_id() -> None:
     """Clear the session ID in the current context.
 
     Primarily for tests that need a clean ContextVar state without
-    spinning up a new asyncio task. Production code should not call
-    this; rely on context isolation instead.
+    spinning up a new asyncio task. Production code that needs a fresh
+    session ID between conversations should call ``start_session()``
+    instead — it returns the new id and avoids a None-then-create
+    round-trip.
     """
     _current_session_id.set(None)

@@ -534,6 +534,60 @@ def build_app(gateway: Gateway) -> FastAPI:
         await gateway.refresh_config()
         return {"deleted": provider_id}
 
+    async def _resolve_test_target(
+        provider_id: str,
+    ) -> tuple[str | None, dict[str, Any] | None]:
+        """Return ``(provider_type, provider_config)`` for the test path.
+
+        Resolution order matches the v0.0.5 wedge:
+
+        1. Top-level ``providers.<id>`` (legacy global config).
+        2. DB-managed ``managed_providers`` row keyed by id (covers
+           the composite ``"<project>:<provider>"`` rows written by
+           ``vg_add_provider``). Returns the row's actual
+           ``provider_type`` and decrypted api_key.
+        3. YAML per-project ``projects.<project>.providers.<provider>``
+           when the id is in composite form. Returns the YAML entry
+           verbatim with ``provider_type`` derived from the suffix.
+
+        Returns ``(None, None)`` if no matching entry exists.
+        """
+        cfg = gateway.config
+
+        # 1. Top-level providers (also catches DB rows merged in via
+        # ConfigManager.load_merged when they have no project scope).
+        if provider_id in cfg.providers:
+            pcfg = cfg.providers[provider_id]
+            if isinstance(pcfg, dict):
+                # If the merged dict came from the DB, ConfigManager
+                # tagged it with `_source: "db"` but did not populate
+                # provider_type — fall through to the storage lookup.
+                if pcfg.get("_source") != "db":
+                    return provider_id, dict(pcfg)
+
+        # 2. Storage-side managed_providers row (the canonical place
+        # where provider_type lives for DB-managed rows, including
+        # the per-project composite ids written by vg_add_provider).
+        if gateway.storage is not None:
+            row = await gateway.storage.get_managed_provider(provider_id)
+            if row is not None:
+                from voicegateway.core.crypto import decrypt
+
+                return row["provider_type"], {
+                    "api_key": decrypt(row.get("api_key_encrypted", "")),
+                    "base_url": row.get("base_url"),
+                    **(row.get("extra_config") or {}),
+                }
+
+        # 3. YAML per-project entry: id has the form "<project>:<provider>".
+        if ":" in provider_id:
+            project, _, provider_type = provider_id.partition(":")
+            project_cfg = cfg.projects.get(project)
+            if project_cfg is not None and provider_type in project_cfg.providers:
+                return provider_type, dict(project_cfg.providers[provider_type])
+
+        return None, None
+
     @app.post("/v1/providers/{provider_id}/test", dependencies=[write_dep])
     async def v1_test_provider(provider_id: str) -> dict:
         import asyncio as _asyncio
@@ -542,14 +596,9 @@ def build_app(gateway: Gateway) -> FastAPI:
         from voicegateway.core.registry import _PROVIDER_REGISTRY, create_provider
 
         _test_log = _logging.getLogger(__name__)
-        pcfg = gateway.config.providers.get(provider_id)
+        ptype, pcfg = await _resolve_test_target(provider_id)
         if pcfg is None:
             raise HTTPException(404, f"No provider '{provider_id}'")
-        ptype = (
-            pcfg.get("provider_type", provider_id)
-            if isinstance(pcfg, dict)
-            else provider_id
-        )
         if ptype not in _PROVIDER_REGISTRY:
             return {
                 "status": "failed",
@@ -557,7 +606,7 @@ def build_app(gateway: Gateway) -> FastAPI:
                 "latency_ms": 0,
             }
         try:
-            inst = create_provider(ptype, pcfg if isinstance(pcfg, dict) else {})
+            inst = create_provider(ptype, pcfg)
             start = time.time()
             ok = await _asyncio.wait_for(inst.health_check(), timeout=10.0)
             latency_ms = int((time.time() - start) * 1000)
@@ -569,6 +618,55 @@ def build_app(gateway: Gateway) -> FastAPI:
             }
         except Exception as exc:  # noqa: BLE001
             _test_log.warning("Provider test for '%s' failed: %s", provider_id, exc)
+            return {
+                "status": "failed",
+                "message": "Provider health check failed",
+                "latency_ms": 0,
+            }
+        return {"status": "ok" if ok else "failed", "latency_ms": latency_ms}
+
+    @app.post("/v1/providers/test", dependencies=[write_dep])
+    async def v1_test_provider_stateless(body: dict[str, Any]) -> dict:
+        """Stateless health check: takes provider_type + api_key + base_url,
+        runs the provider's health_check, returns the same shape as the
+        id-based variant. Persists nothing.
+
+        Used by the dashboard's "Test Connection" button on the Add
+        Provider modal so the test does not have to round-trip a
+        sentinel managed_providers row.
+        """
+        import asyncio as _asyncio
+        import logging as _logging
+
+        from voicegateway.core.registry import _PROVIDER_REGISTRY, create_provider
+
+        _stateless_log = _logging.getLogger(__name__)
+        ptype = body.get("provider_type", "")
+        if ptype not in _PROVIDER_REGISTRY:
+            return {
+                "status": "failed",
+                "message": f"Unknown provider_type '{ptype}'",
+                "latency_ms": 0,
+            }
+        cfg: dict[str, Any] = {
+            "api_key": body.get("api_key", ""),
+            "base_url": body.get("base_url"),
+        }
+        try:
+            inst = create_provider(ptype, cfg)
+            start = time.time()
+            ok = await _asyncio.wait_for(inst.health_check(), timeout=10.0)
+            latency_ms = int((time.time() - start) * 1000)
+        except TimeoutError:
+            return {
+                "status": "failed",
+                "message": "Provider health check timed out",
+                "latency_ms": 10000,
+            }
+        except Exception as exc:  # noqa: BLE001
+            _stateless_log.warning(
+                "Stateless provider test for '%s' failed: %s", ptype, exc
+            )
             return {
                 "status": "failed",
                 "message": "Provider health check failed",
