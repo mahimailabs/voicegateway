@@ -105,6 +105,13 @@ class VgSetProviderKeyInput(_Strict):
     base_url: str | None = None
 
 
+class VgTestProviderKeyInput(_Strict):
+    """Sanity-check a per-project provider key — design.md section 3.4."""
+
+    project: str
+    provider: str
+
+
 class DeleteProviderInput(_Strict):
     provider_id: str
     confirm: bool = False

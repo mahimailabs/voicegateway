@@ -24,6 +24,7 @@ from voicegateway.mcp.schemas import (
     VgListProvidersInput,
     VgRemoveProviderInput,
     VgSetProviderKeyInput,
+    VgTestProviderKeyInput,
 )
 from voicegateway.mcp.tools.base import ToolDef, make_tool
 
@@ -805,6 +806,116 @@ async def _handle_vg_set_provider_key(
 
 
 # ---------------------------------------------------------------------------
+# v0.0.5 vg_test_provider_key — sanity-check a per-project key
+# ---------------------------------------------------------------------------
+
+VG_TEST_PROVIDER_KEY_DOC = """Verify a per-project provider key actually authenticates.
+
+Resolves the ``"<project>:<provider>"`` key from voicegw.yaml's
+``projects.<project>.providers.<provider>`` block first, then falls
+back to the DB-managed row. Constructs the matching provider plugin
+and runs its ``health_check()`` (a lightweight call like listing
+models). Returns ``{status: "ok"}`` on success or
+``{status: "failed", message: ...}`` on auth failure or transport
+error.
+
+Args:
+    project: Project the key is scoped to.
+    provider: Canonical provider type whose key is being tested.
+
+Returns:
+    {project, provider, provider_id, status, latency_ms, message}.
+
+Raises:
+    PROVIDER_NOT_FOUND if neither the YAML nor the DB layer has a
+    matching key.
+"""
+
+
+async def _handle_vg_test_provider_key(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    payload = _parse(VgTestProviderKeyInput, arguments)
+    composite_id = f"{payload.project}:{payload.provider}"
+
+    provider_cfg: dict[str, Any] | None = None
+
+    # 1. YAML projects.<project>.providers.<provider>.
+    yaml_project = gateway.config.projects.get(payload.project)
+    if yaml_project is not None and payload.provider in yaml_project.providers:
+        provider_cfg = dict(yaml_project.providers[payload.provider])
+
+    # 2. DB-managed row keyed by composite id.
+    if provider_cfg is None and gateway.storage is not None:
+        row = await gateway.storage.get_managed_provider(composite_id)
+        if row is not None:
+            from voicegateway.core.crypto import decrypt
+
+            provider_cfg = {
+                "api_key": decrypt(row.get("api_key_encrypted", "")),
+                "base_url": row.get("base_url"),
+                **(row.get("extra_config") or {}),
+            }
+
+    if provider_cfg is None:
+        raise ProviderNotFoundError(
+            f"No managed provider for project '{payload.project}' / "
+            f"provider '{payload.provider}'. Use vg_add_provider to add it.",
+            details={
+                "project": payload.project,
+                "provider": payload.provider,
+                "provider_id": composite_id,
+            },
+        )
+
+    if payload.provider not in _PROVIDER_REGISTRY:
+        return {
+            "project": payload.project,
+            "provider": payload.provider,
+            "provider_id": composite_id,
+            "status": "failed",
+            "latency_ms": 0,
+            "message": f"Unknown provider type '{payload.provider}'.",
+        }
+
+    from voicegateway.core.registry import create_provider
+
+    try:
+        provider_instance = create_provider(payload.provider, provider_cfg)
+    except ImportError as exc:
+        return {
+            "project": payload.project,
+            "provider": payload.provider,
+            "provider_id": composite_id,
+            "status": "failed",
+            "latency_ms": 0,
+            "message": str(exc),
+        }
+
+    start = time.perf_counter()
+    try:
+        ok = await provider_instance.health_check()
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "project": payload.project,
+            "provider": payload.provider,
+            "provider_id": composite_id,
+            "status": "failed",
+            "latency_ms": int((time.perf_counter() - start) * 1000),
+            "message": f"{type(exc).__name__}: {exc}",
+        }
+    latency_ms = int((time.perf_counter() - start) * 1000)
+    return {
+        "project": payload.project,
+        "provider": payload.provider,
+        "provider_id": composite_id,
+        "status": "ok" if ok else "failed",
+        "latency_ms": latency_ms,
+        "message": "reachable" if ok else "provider returned unhealthy",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -846,5 +957,11 @@ PROVIDER_TOOLS: list[ToolDef] = [
         VG_SET_PROVIDER_KEY_DOC,
         VgSetProviderKeyInput,
         _handle_vg_set_provider_key,
+    ),
+    make_tool(
+        "vg_test_provider_key",
+        VG_TEST_PROVIDER_KEY_DOC,
+        VgTestProviderKeyInput,
+        _handle_vg_test_provider_key,
     ),
 ]
