@@ -1,231 +1,185 @@
 # Migrating from LiveKit Cloud Inference
 
-LiveKit Cloud offers a hosted inference service for STT, LLM, and TTS. VoiceGateway provides the same routing capabilities but runs entirely on your infrastructure, uses your own API keys, and adds cost tracking, budget enforcement, and an MCP server.
+**The migration is one line.**
 
-## Why migrate
-
-| Concern | LiveKit Cloud Inference | VoiceGateway |
-|---|---|---|
-| Hosting | LiveKit-managed | Self-hosted (your servers, your VPC) |
-| API keys | Managed by LiveKit | Your own keys, full control |
-| Cost visibility | LiveKit billing | Per-project, per-model, per-modality dashboards |
-| Budget enforcement | -- | Daily budgets with warn or block actions |
-| Provider selection | LiveKit-supported set | 11 providers including local models |
-| Local models | -- | Whisper, Kokoro, Piper, Ollama (zero-cost inference) |
-| MCP integration | -- | 17 tools for managing the gateway from coding agents |
-| Data residency | LiveKit regions | Wherever you deploy |
-| Vendor lock-in | LiveKit platform | MIT-licensed, swap providers freely |
-
-## API comparison
-
-### LiveKit Cloud Inference
-
-```python
-from livekit.agents import llm, stt, tts
-from livekit.plugins import openai, deepgram, cartesia
-
-# Each plugin is configured independently
-my_stt = deepgram.STT(model="nova-3")
-my_llm = openai.LLM(model="gpt-4o-mini")
-my_tts = cartesia.TTS(model="sonic-3")
+```diff
+- from livekit.agents import inference
++ from voicegateway import inference
 ```
 
-### VoiceGateway
+That swap routes every `inference.STT(...)`, `inference.LLM(...)`, and `inference.TTS(...)` call through your self-hosted VoiceGateway with your own provider keys. The rest of your `AgentSession` code does not change.
 
-```python
-from voicegateway import Gateway
+This page walks through the swap end to end: configure your providers, drop in the new import, see your costs in the dashboard, and understand the small set of LK Cloud features that do not carry over.
 
-gw = Gateway()  # reads voicegw.yaml
+## Worked example
 
-# Same plugin instances, routed through the gateway
-my_stt = gw.stt("deepgram/nova-3", project="voice-app")
-my_llm = gw.llm("openai/gpt-4o-mini", project="voice-app")
-my_tts = gw.tts("cartesia/sonic-3", project="voice-app")
-```
+The same agent runs on either side. Only the import line changes.
 
-The returned objects are LiveKit plugin instances. Your `AgentSession` pipeline code does not change.
-
-### Using in an agent pipeline
+### Before — LiveKit Cloud Inference
 
 ```python
 from livekit.agents import AgentSession
+from livekit.agents import inference
 
-session = AgentSession(
-    stt=gw.stt("deepgram/nova-3", project="voice-app"),
-    llm=gw.llm("openai/gpt-4o-mini", project="voice-app"),
-    tts=gw.tts("cartesia/sonic-3", project="voice-app"),
-)
+async def entrypoint():
+    session = AgentSession(
+        stt=inference.STT("deepgram/nova-3:en"),
+        llm=inference.LLM("openai/gpt-4o-mini"),
+        tts=inference.TTS("cartesia/sonic-3:my-voice-id"),
+    )
+    await session.start()
 ```
 
-This is identical to how you would wire LiveKit Cloud Inference, except `gw.stt()` / `gw.llm()` / `gw.tts()` add cost tracking, budget checks, and fallback chains transparently.
+### After — VoiceGateway
 
-## Cost comparison
+```python
+from livekit.agents import AgentSession
+from voicegateway import inference         # only line that changed
 
-With LiveKit Cloud Inference, you pay LiveKit's per-unit pricing. With VoiceGateway, you pay the underlying providers directly. Example monthly cost for a moderate workload (10,000 minutes STT, 5M LLM tokens, 2M TTS characters):
-
-> Provider pricing snapshot as of 2026-05-04. Verify against each provider's pricing page (Deepgram, OpenAI, Cartesia) and the LiveKit Cloud dashboard before basing a migration decision on these numbers; provider rates change.
-
-| Component | LiveKit Cloud (estimated) | VoiceGateway + direct keys |
-|---|---|---|
-| STT (Deepgram Nova-3) | Bundled in LiveKit pricing | $43.00 |
-| LLM (GPT-4o-mini) | Bundled in LiveKit pricing | $3.75 |
-| TTS (Cartesia Sonic-3) | Bundled in LiveKit pricing | $130.00 |
-| VoiceGateway | n/a | Free (MIT license) |
-| **Total** | Varies by LiveKit plan | **$176.75** |
-
-The exact savings depend on your LiveKit plan and volume. VoiceGateway eliminates the inference markup: you pay provider prices directly.
-
-## Step-by-step migration
-
-### 1. Install VoiceGateway
-
-```bash
-pip install voicegateway[cloud,dashboard]
+async def entrypoint():
+    session = AgentSession(
+        stt=inference.STT("deepgram/nova-3:en"),
+        llm=inference.LLM("openai/gpt-4o-mini"),
+        tts=inference.TTS("cartesia/sonic-3:my-voice-id"),
+    )
+    await session.start()
 ```
 
-### 2. Get your own API keys
+`voicegateway.inference.STT/LLM/TTS` mirror `livekit.agents.inference.STT/LLM/TTS` parameter for parameter — name, kind, default. The drop-in compatibility test in the VG repo (`tests/inference/test_drop_in_compatibility.py`) runs on every CI build to keep that promise honest as LiveKit ships new releases.
 
-Sign up for accounts with each provider you use:
+## Configure your providers
 
-- [Deepgram](https://console.deepgram.com/) -- STT
-- [OpenAI](https://platform.openai.com/) -- LLM / STT / TTS
-- [Anthropic](https://console.anthropic.com/) -- LLM
-- [Cartesia](https://play.cartesia.ai/) -- TTS
-- [ElevenLabs](https://elevenlabs.io/) -- TTS
-
-### 3. Create your config
-
-```bash
-voicegw init
-```
-
-Map your current provider usage to `voicegw.yaml`:
+VoiceGateway uses your own provider keys. After installing `voicegateway[cloud,dashboard]`, create a `voicegw.yaml` next to your agent code:
 
 ```yaml
-providers:
-  deepgram:
-    api_key: ${DEEPGRAM_API_KEY}
-  openai:
-    api_key: ${OPENAI_API_KEY}
-  cartesia:
-    api_key: ${CARTESIA_API_KEY}
-
-models:
-  stt:
-    deepgram/nova-3:
-      provider: deepgram
-      model: nova-3
-  llm:
-    openai/gpt-4o-mini:
-      provider: openai
-      model: gpt-4o-mini
-  tts:
-    cartesia/sonic-3:
-      provider: cartesia
-      model: sonic-3
-
-fallbacks:
-  stt:
-    - openai/whisper-1
-  llm:
-    - anthropic/claude-3.5-sonnet
-  tts:
-    - elevenlabs/eleven_turbo_v2_5
-
 projects:
   voice-app:
-    name: Voice Application
+    name: My Voice App
     daily_budget: 50.00
     budget_action: warn
+    providers:
+      openai:
+        api_key: ${OPENAI_API_KEY}
+      deepgram:
+        api_key: ${DEEPGRAM_API_KEY}
+      cartesia:
+        api_key: ${CARTESIA_API_KEY}
+
+default_project: voice-app
 
 cost_tracking:
   enabled: true
 ```
 
-### 4. Update your agent code
+Each project carries its own provider keys. `default_project: voice-app` tells the inference module which project to charge against when your code does not call `inference.set_project(...)` explicitly.
 
-Replace direct plugin imports with Gateway calls:
+If you have multiple agents running under one VG install, give each its own project entry — that is how every cost row, latency sample, and session record gets tagged.
 
-```python
-# Before (LiveKit Cloud)
-from livekit.plugins import deepgram, openai, cartesia
+## Session correlation
 
-stt = deepgram.STT(model="nova-3")
-llm = openai.LLM(model="gpt-4o-mini")
-tts = cartesia.TTS(model="sonic-3")
+VoiceGateway tags every STT, LLM, and TTS request from the same `AgentSession` with one shared `session_id`. Your dashboard's **Sessions** view groups them by call so cost and latency questions ("what did the last call cost?") have answers without you wiring anything.
 
-# After (VoiceGateway)
-from voicegateway import Gateway
+The session id is derived from a Python `ContextVar`. Inside the standard `AgentSession` lifecycle it just works. The known limit: factories constructed in **separate** asyncio tasks created before the session opens may end up in different contexts and produce different ids. See [Limitations](#limitations) below.
 
-gw = Gateway()
-stt = gw.stt("deepgram/nova-3", project="voice-app")
-llm = gw.llm("openai/gpt-4o-mini", project="voice-app")
-tts = gw.tts("cartesia/sonic-3", project="voice-app")
-```
+## Cost comparison
 
-### 5. Add fallback chains
+| Component | LiveKit Cloud Inference (estimated) | VoiceGateway with direct keys |
+|---|---|---|
+| STT (Deepgram Nova-3, 10,000 min) | bundled in LK plan | $43.00 |
+| LLM (GPT-4o-mini, 5M tokens) | bundled in LK plan | $3.75 |
+| TTS (Cartesia Sonic-3, 2M chars) | bundled in LK plan | $130.00 |
+| VoiceGateway runtime | n/a | $0 (MIT license) |
+| **Total / month** | varies by LK plan | **$176.75** |
 
-VoiceGateway provides resolver-time fallback. At agent startup, the chain is walked and the first model whose provider resolves successfully is selected; that model is then used for the entire call. Useful for cold-start coverage when a primary's credentials, plugin SDK, or initialization handshake fails.
+> Pricing snapshot from each provider's pricing page as of 2026-05-04. Confirm against the live page (Deepgram, OpenAI, Cartesia) before basing a migration decision on these numbers; provider rates change.
 
-```yaml
-fallbacks:
-  stt:
-    - openai/whisper-1        # if Deepgram fails to resolve at startup
-    - groq/whisper-large-v3   # if OpenAI fails too
-  llm:
-    - anthropic/claude-3.5-sonnet
-  tts:
-    - elevenlabs/eleven_turbo_v2_5
-```
+If your LK Cloud bill last month was, say, $400 for this kind of workload, the VG-direct cost is the line item above ($177) plus the savings of skipping LK's inference markup. Run [`voicegw reconcile`](/cli/reconcile) on a real export to compare your bill.
 
-For runtime/mid-call failover when a provider degrades during an active call, compose LiveKit's `FallbackAdapter` around VG providers. See the [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter) guide.
+## Manage keys from your coding agent
 
-### 6. Start the dashboard
+VoiceGateway ships an MCP server exposing five v0.0.5 tools for per-project provider key management:
+
+- `vg_add_provider(project, provider, api_key)` — Fernet-encrypted at rest.
+- `vg_set_provider_key(project, provider, api_key)` — rotation path; errors when the key does not yet exist.
+- `vg_remove_provider(project, provider)` — drop a key.
+- `vg_list_providers(project=...)` — surface all keys with masks.
+- `vg_test_provider_key(project, provider)` — runs the underlying provider's lightweight health check.
+
+Wire them up in your Claude Code or other MCP-aware client and ask it to "add my Deepgram key for the voice-app project". See the [MCP setup guide](/mcp/setup) for the connection details.
+
+## Dashboard
 
 ```bash
 voicegw dashboard
 ```
 
-Open `http://localhost:9090` to see cost breakdowns, latency percentiles, and request logs across all modalities.
+Opens at `http://localhost:9090`. The new **Providers** page (v0.0.5) lists per-project provider keys grouped by project, with Test / Rotate / Delete actions and a green/red status dot showing the last test result. Cost dashboards, latency percentiles, and request logs continue to work exactly as before.
 
-### 7. (Optional) Add local model fallbacks
+## Limitations
 
-For zero-cost fallbacks or air-gapped deployments:
+Two real, two minor.
+
+### 1. Session correlation needs the standard async flow
+
+VoiceGateway derives the per-session id from a Python `ContextVar` set by the first `inference.STT/LLM/TTS` factory call in the active context. AgentSession constructs all three from one place, so the id propagates naturally.
+
+The gap: if your code constructs an STT or LLM in a separate `asyncio.Task` created **before** the session begins, that task captured an empty context and gets its own id. The dashboard surfaces this as orphaned-request rows. Workaround: construct the factories at session entry, not at module import time. Future v0.0.6+ work will add an explicit `session_id` escape hatch for the orchestration cases.
+
+### 2. The `api_secret` parameter is ignored
+
+LiveKit Cloud uses `api_secret` to sign access tokens against its inference gateway. VoiceGateway uses your raw provider keys directly — there is no token to sign — so passing `api_secret` produces a one-time `UserWarning` and the value is discarded. Drop the parameter from your factory calls; the rest of the signature is identical.
+
+### 3. `fallback` and `conn_options` are accepted but not yet honored
+
+The LK 1.5.7 signatures expose `fallback` and `conn_options`. VoiceGateway accepts both for drop-in compatibility (so existing user code compiles) but emits a `UserWarning` and falls back to behavior driven by your `voicegw.yaml`'s `fallbacks:` block. Resolver-time fallback chains in YAML cover the most common case; runtime mid-call failover lands in v0.0.6+.
+
+### 4. LiveKit Cloud's hosted billing dashboard is not replaced
+
+VoiceGateway replaces inference *routing*. It does not replace LiveKit Cloud's billing UI, agent deployment automation, or LiveKit-managed credentials. You still use LK rooms, tracks, and WebRTC infrastructure for media transport — VG plugs into `livekit-agents` as a provider source, not a transport layer.
+
+## Troubleshooting
+
+The three things most likely to break a first migration:
+
+### "ConfigError: No active project"
+
+You configured `projects:` in voicegw.yaml but did not set `default_project` and your code does not call `inference.set_project(...)`. Fix one of:
 
 ```yaml
-providers:
-  ollama:
-    base_url: http://localhost:11434
-
-models:
-  stt:
-    local/whisper-turbo:
-      provider: whisper
-      model: turbo
-  llm:
-    ollama/llama3.2:3b:
-      provider: ollama
-      model: llama3.2:3b
-  tts:
-    local/kokoro:
-      provider: kokoro
+default_project: voice-app
 ```
 
-### 8. Deploy with Docker
+Or in code before constructing factories:
+
+```python
+from voicegateway import inference
+inference.set_project("voice-app")
+```
+
+Or via env var (useful for per-deployment overrides):
 
 ```bash
-docker compose up -d
+export VOICEGW_ACTIVE_PROJECT=voice-app
 ```
 
-See the [installation guide](/guide/installation) for Docker details.
+### "ModelResolutionError: Unknown provider 'foo'"
+
+Your model string used a provider name VoiceGateway does not recognize. The eleven supported providers are: `openai`, `deepgram`, `anthropic`, `groq`, `cartesia`, `elevenlabs`, `assemblyai`, `ollama`, `whisper`, `kokoro`, `piper`. Match the provider name on the left side of the slash exactly.
+
+### Ollama tag stripped
+
+If you call `inference.LLM("ollama/qwen2.5:3b")` and end up with model `qwen2.5` instead of `qwen2.5:3b`, that is by design — `inference.STT` and `inference.TTS` strip a trailing `:suffix` because LK Cloud uses it for language and voice respectively. `inference.LLM` does **not** strip the suffix because LK Cloud's LLM never adopted that convention. So `inference.LLM("ollama/qwen2.5:3b")` works as you would expect; `inference.STT("ollama/...:3b")` would lose the `3b` part. STT and TTS factories that need a colon-bearing model name should pass it without the colon and use the relevant kwarg (`language=` or `voice=`).
 
 ## Keeping LiveKit for real-time transport
 
-VoiceGateway replaces LiveKit's *inference routing* layer, not LiveKit's *real-time transport*. You still use LiveKit's rooms, tracks, and WebRTC infrastructure. VoiceGateway plugs into the `livekit-agents` framework as a provider source -- the agent session, room management, and media transport remain unchanged.
+VoiceGateway replaces LiveKit's inference routing. It does **not** replace LiveKit's real-time transport — rooms, tracks, WebRTC, agent deployment. Continue to use those exactly as before; VG plugs into `livekit-agents` as a provider source. The `AgentSession` API, the WebRTC plumbing, and the room lifecycle stay unchanged.
 
 ## Related pages
 
 - [Quick Start](/guide/quick-start)
+- [Per-project providers](/configuration/projects) — the v0.0.5 yaml shape in detail
+- [Dashboard API reference](/api/dashboard-api) — endpoints the UI consumes
+- [MCP setup](/mcp/setup) — vg_add_provider and friends
 - [Migrating from LiteLLM](/migration/from-litellm)
 - [Version Upgrades](/migration/version-upgrades)
 - [Troubleshooting](/reference/troubleshooting)
