@@ -300,6 +300,35 @@ def build_app(gateway: Gateway) -> FastAPI:
             limit=limit, modality=modality, project=project
         )
 
+    @app.get("/v1/sessions")
+    async def v1_sessions(
+        limit: int = Query(100, ge=1, le=1000),
+        project: str | None = Query(None),
+    ) -> list[dict]:
+        """Return recent voice sessions, newest first.
+
+        Sessions are populated by the v0.0.5 inference module via
+        ContextVar correlation; rows accumulate cost and request count
+        over the life of one logical voice session.
+        """
+        if gateway.storage is None:
+            return []
+        return await gateway.storage.list_sessions(limit=limit, project=project)
+
+    @app.get("/v1/sessions/{session_id}")
+    async def v1_session_detail(session_id: str) -> dict:
+        """Return one session by id, or 404 if it does not exist."""
+        if gateway.storage is None:
+            raise HTTPException(
+                status_code=404, detail=f"Session '{session_id}' not found"
+            )
+        row = await gateway.storage.get_session(session_id)
+        if row is None:
+            raise HTTPException(
+                status_code=404, detail=f"Session '{session_id}' not found"
+            )
+        return row
+
     @app.get("/v1/metrics", response_class=PlainTextResponse)
     async def v1_metrics() -> str:
         """Prometheus-format metrics."""

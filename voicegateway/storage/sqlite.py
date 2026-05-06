@@ -851,6 +851,74 @@ class SQLiteStorage:
             await db.close()
 
     # ------------------------------------------------------------------
+    # Sessions (v0.0.5)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _row_to_session(row: Any) -> dict[str, Any]:
+        return {
+            "id": row[0],
+            "project": row[1],
+            "started_at": row[2],
+            "ended_at": row[3],
+            "modalities": row[4].split(",") if row[4] else [],
+            "total_cost_usd": float(row[5] or 0.0),
+            "request_count": int(row[6] or 0),
+        }
+
+    async def list_sessions(
+        self,
+        limit: int = 100,
+        project: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return recent sessions, newest first.
+
+        Args:
+            limit: Max rows to return.
+            project: Optional project filter.
+        """
+        db = await self._ensure_initialized()
+        try:
+            if project:
+                cursor = await db.execute(
+                    """SELECT id, project, started_at, ended_at, modalities,
+                              total_cost_usd, request_count
+                       FROM sessions
+                       WHERE project = ?
+                       ORDER BY started_at DESC
+                       LIMIT ?""",
+                    (project, limit),
+                )
+            else:
+                cursor = await db.execute(
+                    """SELECT id, project, started_at, ended_at, modalities,
+                              total_cost_usd, request_count
+                       FROM sessions
+                       ORDER BY started_at DESC
+                       LIMIT ?""",
+                    (limit,),
+                )
+            return [self._row_to_session(row) async for row in cursor]
+        finally:
+            await db.close()
+
+    async def get_session(self, session_id: str) -> dict[str, Any] | None:
+        """Return a single session by id, or None if not found."""
+        db = await self._ensure_initialized()
+        try:
+            cursor = await db.execute(
+                """SELECT id, project, started_at, ended_at, modalities,
+                          total_cost_usd, request_count
+                   FROM sessions
+                   WHERE id = ?""",
+                (session_id,),
+            )
+            row = await cursor.fetchone()
+            return self._row_to_session(row) if row else None
+        finally:
+            await db.close()
+
+    # ------------------------------------------------------------------
     # Managed providers / models / projects
     # ------------------------------------------------------------------
 
