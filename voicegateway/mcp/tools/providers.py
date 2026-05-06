@@ -21,6 +21,7 @@ from voicegateway.mcp.schemas import (
     ListProvidersInput,
     TestProviderInput,
     VgAddProviderInput,
+    VgRemoveProviderInput,
 )
 from voicegateway.mcp.tools.base import ToolDef, make_tool
 
@@ -539,6 +540,72 @@ async def _handle_vg_add_provider(
 
 
 # ---------------------------------------------------------------------------
+# v0.0.5 vg_remove_provider — drop a per-project provider key
+# ---------------------------------------------------------------------------
+
+VG_REMOVE_PROVIDER_DOC = """Remove the per-project provider key written by vg_add_provider.
+
+The composite ``"<project>:<provider>"`` row is deleted from the
+managed_providers table. YAML-defined providers (``_source: yaml``)
+cannot be removed via this tool — edit voicegw.yaml instead.
+
+Args:
+    project: Project name the key was scoped to.
+    provider: Canonical provider type whose key was stored.
+
+Returns:
+    {project, provider, provider_id, deleted: True}.
+
+Raises:
+    PROVIDER_NOT_FOUND if no DB-managed row matches the composite id.
+    READ_ONLY_RESOURCE if the matching row is YAML-defined.
+"""
+
+
+async def _handle_vg_remove_provider(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    payload = _parse(VgRemoveProviderInput, arguments)
+    composite_id = f"{payload.project}:{payload.provider}"
+
+    existing = gateway.config.providers.get(composite_id)
+    if existing is not None and existing.get("_source") != "db":
+        raise ReadOnlyResourceError(
+            f"Provider '{composite_id}' is defined in voicegw.yaml and "
+            "cannot be removed via MCP. Edit voicegw.yaml instead.",
+            details={"provider_id": composite_id, "source": "yaml"},
+        )
+
+    if gateway.storage is None:
+        raise ProviderNotFoundError(
+            f"No managed provider '{composite_id}' (storage disabled).",
+            details={"provider_id": composite_id},
+        )
+
+    managed = await gateway.storage.get_managed_provider(composite_id)
+    if managed is None:
+        raise ProviderNotFoundError(
+            f"No managed provider '{composite_id}' for project "
+            f"'{payload.project}' / provider '{payload.provider}'.",
+            details={
+                "provider_id": composite_id,
+                "project": payload.project,
+                "provider": payload.provider,
+            },
+        )
+
+    await gateway.storage.delete_managed_provider(composite_id)
+    await gateway.refresh_config()
+
+    return {
+        "project": payload.project,
+        "provider": payload.provider,
+        "provider_id": composite_id,
+        "deleted": True,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -562,5 +629,11 @@ PROVIDER_TOOLS: list[ToolDef] = [
         VG_ADD_PROVIDER_DOC,
         VgAddProviderInput,
         _handle_vg_add_provider,
+    ),
+    make_tool(
+        "vg_remove_provider",
+        VG_REMOVE_PROVIDER_DOC,
+        VgRemoveProviderInput,
+        _handle_vg_remove_provider,
     ),
 ]
