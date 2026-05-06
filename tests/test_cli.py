@@ -1,6 +1,7 @@
 """Tests for voicegateway/cli.py — all CLI subcommands."""
 
 import os
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -152,20 +153,23 @@ def test_export_costs_csv_default(temp_config, tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     reader = csv.DictReader(io.StringIO(result.output))
     rows = list(reader)
+    # Column names match design §2.1: `model` (not model_id) and
+    # `calculated_cost_usd` (not cost_usd).
     assert reader.fieldnames == [
-        "timestamp", "project", "modality", "provider", "model_id",
-        "input_units", "output_units", "cost_usd", "pricing_source", "status",
+        "timestamp", "project", "modality", "provider", "model",
+        "input_units", "output_units", "calculated_cost_usd",
+        "pricing_source", "status",
     ]
     # Two in-window rows; the 99.0 record is excluded.
     assert len(rows) == 2
-    by_model = {r["model_id"]: r for r in rows}
+    by_model = {r["model"]: r for r in rows}
     assert by_model["openai/gpt-4o-mini"]["pricing_source"] == "genai-prices@0.0.57"
     assert by_model["deepgram/nova-3"]["project"] == "beta"
-    assert float(by_model["openai/gpt-4o-mini"]["cost_usd"]) == 0.10
+    assert float(by_model["openai/gpt-4o-mini"]["calculated_cost_usd"]) == 0.10
 
 
 def test_export_costs_json(temp_config, tmp_path, monkeypatch):
-    """JSON format returns a list of dicts with the same columns."""
+    """JSON format is JSONL (one object per line; no outer array)."""
     import asyncio
     import json
 
@@ -179,10 +183,26 @@ def test_export_costs_json(temp_config, tmp_path, monkeypatch):
          "--start", start, "--end", end, "--format", "json"],
     )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
-    assert isinstance(payload, list)
-    assert len(payload) == 2
-    assert all("pricing_source" in row for row in payload)
+
+    # JSONL: parse line-by-line. The bare output should NOT be a
+    # parsable JSON array.
+    lines = [ln for ln in result.output.strip().splitlines() if ln]
+    assert len(lines) == 2, (
+        f"expected 2 JSONL records, got {len(lines)}: {lines!r}"
+    )
+    rows = [json.loads(ln) for ln in lines]
+    assert all("pricing_source" in row for row in rows)
+    # The bare output is not a valid JSON document (no outer array).
+    # Confirms we did not regress to JSON-array format.
+    import contextlib
+    with contextlib.suppress(json.JSONDecodeError):
+        parsed = json.loads(result.output)
+        # If it parses at all, it must NOT be a list (JSONL is two
+        # concatenated objects which json.loads would reject; we only
+        # reach the suppress branch on certain edge cases).
+        assert not isinstance(parsed, list), (
+            "JSON output regressed to a JSON array; expected JSONL."
+        )
 
 
 def test_export_costs_with_project_filter(temp_config, tmp_path, monkeypatch):
@@ -204,7 +224,7 @@ def test_export_costs_with_project_filter(temp_config, tmp_path, monkeypatch):
     rows = list(csv.DictReader(io.StringIO(result.output)))
     assert len(rows) == 1
     assert rows[0]["project"] == "alpha"
-    assert rows[0]["model_id"] == "openai/gpt-4o-mini"
+    assert rows[0]["model"] == "openai/gpt-4o-mini"
 
 
 def test_export_costs_writes_to_file(temp_config, tmp_path, monkeypatch):
@@ -249,6 +269,152 @@ def test_export_costs_invalid_format_returns_2(temp_config):
     )
     assert result.exit_code == 2
     assert "Unknown format" in result.output
+
+
+def test_export_costs_empty_range_returns_header_only(
+    temp_config, tmp_path, monkeypatch
+):
+    """A window with no records emits only the CSV header row (exit 0)."""
+    import asyncio
+    import csv
+    import io
+
+    db_path = str(tmp_path / "export-empty.db")
+    monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
+    # Seed records so the DB exists, but request a window 30 days
+    # before the earliest seeded record so nothing matches.
+    asyncio.run(_seed_export_records(db_path))
+
+    result = runner.invoke(
+        app,
+        ["export-costs", "--config", temp_config,
+         "--start", "2025-01-01", "--end", "2025-01-02"],
+    )
+    assert result.exit_code == 0, result.output
+    rows = list(csv.DictReader(io.StringIO(result.output)))
+    assert rows == [], (
+        f"expected zero data rows for empty window; got {rows!r}"
+    )
+    # Header still emitted so consumers can detect "valid CSV, just
+    # empty" vs "process crashed."
+    assert result.output.startswith("timestamp,project,modality")
+
+
+def test_export_costs_empty_range_jsonl_returns_no_lines(
+    temp_config, tmp_path, monkeypatch
+):
+    """JSONL on an empty window emits zero lines (no array, no errors)."""
+    import asyncio
+
+    db_path = str(tmp_path / "export-empty-jsonl.db")
+    monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
+    asyncio.run(_seed_export_records(db_path))
+
+    result = runner.invoke(
+        app,
+        ["export-costs", "--config", temp_config,
+         "--start", "2025-01-01", "--end", "2025-01-02",
+         "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+    lines = [ln for ln in result.output.strip().splitlines() if ln]
+    assert lines == [], (
+        f"expected zero JSONL records for empty window; got {lines!r}"
+    )
+
+
+def test_export_costs_missing_start_returns_helpful_error(temp_config):
+    """Omitting --start surfaces typer's missing-option error (exit 2)."""
+    result = runner.invoke(
+        app,
+        ["export-costs", "--config", temp_config, "--end", "2026-05-04"],
+    )
+    assert result.exit_code == 2, result.output
+    # Typer prints "Missing option" or "required" in stderr; check
+    # that one of those clear-language tokens lands in the output.
+    out = result.output.lower()
+    assert "missing" in out or "required" in out, (
+        f"expected a clear missing-option message; got {result.output!r}"
+    )
+
+
+def test_export_costs_missing_end_returns_helpful_error(temp_config):
+    """Omitting --end surfaces typer's missing-option error (exit 2)."""
+    result = runner.invoke(
+        app,
+        ["export-costs", "--config", temp_config, "--start", "2026-05-01"],
+    )
+    assert result.exit_code == 2, result.output
+    out = result.output.lower()
+    assert "missing" in out or "required" in out
+
+
+def test_export_costs_renders_iso_timestamp_and_fixed_point_cost(
+    temp_config, tmp_path, monkeypatch
+):
+    """Per design §2.1: timestamps are ISO-8601 UTC and costs are not
+    rendered in scientific notation. Sub-cent values like 1e-5 must
+    surface as fixed-point strings.
+    """
+    import asyncio
+    import csv
+    import datetime as _dt
+    import io
+    import uuid
+
+    from voicegateway.storage.models import RequestRecord
+    from voicegateway.storage.sqlite import SQLiteStorage
+
+    db_path = str(tmp_path / "export-precision.db")
+    monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
+
+    async def _seed() -> tuple[float, str, str]:
+        storage = SQLiteStorage(db_path)
+        # Pinned timestamp: 2026-04-15 09:30:00 UTC = 1776418200.0
+        ts = _dt.datetime(
+            2026, 4, 15, 9, 30, 0, tzinfo=_dt.UTC
+        ).timestamp()
+        # 1e-05 would render as "1.5e-05" in default float repr; the
+        # export must surface it in fixed-point.
+        await storage.log_request(RequestRecord(
+            id=str(uuid.uuid4()), timestamp=ts,
+            modality="llm", model_id="openai/gpt-4o-mini",
+            provider="openai", project="alpha",
+            input_units=1, output_units=1, cost_usd=0.000015,
+            pricing_source="genai-prices@0.0.57", status="ok",
+        ))
+        return ts, "2026-04-14", "2026-04-16"
+
+    ts, start, end = asyncio.run(_seed())
+
+    result = runner.invoke(
+        app,
+        ["export-costs", "--config", temp_config,
+         "--start", start, "--end", end],
+    )
+    assert result.exit_code == 0, result.output
+    rows = list(csv.DictReader(io.StringIO(result.output)))
+    assert len(rows) == 1
+    row = rows[0]
+    # ISO-8601 UTC: starts with the date, contains "T", ends with
+    # +00:00 (or "Z" depending on Python's strftime; isoformat() uses
+    # +00:00 for utc-aware datetimes).
+    assert row["timestamp"].startswith("2026-04-15T"), (
+        f"timestamp must be ISO-8601 starting with the UTC date; "
+        f"got {row['timestamp']!r}"
+    )
+    assert "+00:00" in row["timestamp"]
+    # Cost rendered as fixed-point. Specifically NOT in scientific
+    # notation. The exact float-to-Decimal conversion via str() can
+    # introduce a few extra digits but must remain non-scientific.
+    cost = row["calculated_cost_usd"]
+    assert "e" not in cost.lower(), (
+        f"calculated_cost_usd must not use scientific notation; "
+        f"got {cost!r}"
+    )
+    assert cost.startswith("0.0000"), (
+        f"expected sub-cent fixed-point; got {cost!r}"
+    )
 
 
 # --------------------------------------------------------------------
@@ -351,7 +517,7 @@ def test_reconcile_csv_format(temp_config, tmp_path, monkeypatch):
 
 
 def test_reconcile_json_format(temp_config, tmp_path, monkeypatch):
-    """JSON format returns a list of dicts with the diff schema."""
+    """JSON output uses the design §2.2 schema (provider, period, rows, total, flagged_count)."""
     import asyncio
     import json as _json
 
@@ -374,9 +540,15 @@ def test_reconcile_json_format(temp_config, tmp_path, monkeypatch):
     )
     assert result.exit_code == 0, result.output
     payload = _json.loads(result.output)
-    assert isinstance(payload, list)
-    assert len(payload) == 1
-    line = payload[0]
+    assert isinstance(payload, dict)
+    assert payload["provider"] == "deepgram"
+    assert payload["period"] == {"start": start, "end": end}
+    assert "flagged_count" in payload
+    assert "total" in payload
+    rows = payload["rows"]
+    assert isinstance(rows, list)
+    assert len(rows) == 1
+    line = rows[0]
     assert line["model"] == "nova-3"
     # Provider has 3600s, VG has 3000s; provider - vg = 600s
     assert line["units_diff_abs"] == pytest.approx(600.0, abs=0.1)
@@ -445,6 +617,82 @@ def test_reconcile_invalid_date_returns_2(temp_config, tmp_path):
     assert "YYYY-MM-DD" in result.output
 
 
+def test_reconcile_threshold_flag_propagates(temp_config, tmp_path, monkeypatch):
+    """--threshold lowers the flag bar; rows under default 5% can flip to flagged.
+
+    Drives the CLI with both the default threshold (no flag at 3% drift)
+    and an explicit --threshold 1.0 (flag at the same 3% drift). Pins
+    that the CLI flag flows through to reconcile(threshold_pct=...).
+    """
+    import asyncio
+    import datetime as _dt
+    import json as _json
+    import uuid
+
+    from voicegateway.storage.models import RequestRecord
+    from voicegateway.storage.sqlite import SQLiteStorage
+
+    db_path = str(tmp_path / "reconcile-threshold.db")
+    monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
+
+    async def _seed() -> tuple[str, str]:
+        storage = SQLiteStorage(db_path)
+        today = _dt.date.today()
+        # Seed a single VG record at $0.97; provider file says
+        # $1.00 -> ~3% drift.
+        ts = _dt.datetime.combine(
+            today - _dt.timedelta(days=1), _dt.time(12), tzinfo=_dt.UTC
+        ).timestamp()
+        await storage.log_request(RequestRecord(
+            id=str(uuid.uuid4()), timestamp=ts,
+            modality="llm", model_id="openai/gpt-4o-mini",
+            provider="openai", project="default",
+            input_units=1000, output_units=500, cost_usd=0.97,
+            pricing_source="genai-prices@0.0.57", status="ok",
+        ))
+        return (
+            (today - _dt.timedelta(days=2)).isoformat(),
+            today.isoformat(),
+        )
+
+    start, end = asyncio.run(_seed())
+
+    provider_file = tmp_path / "openai-threshold.csv"
+    provider_file.write_text(
+        "model,input_tokens,output_tokens,n_requests,cost_usd\n"
+        "gpt-4o-mini,1000,500,1,1.00\n"
+    )
+
+    # Default threshold (5.0): 3% drift should NOT flag.
+    result_default = runner.invoke(
+        app,
+        ["reconcile", "--config", temp_config,
+         "--provider", "openai",
+         "--start", start, "--end", end,
+         "--provider-usage-file", str(provider_file),
+         "--format", "json"],
+    )
+    assert result_default.exit_code == 0, result_default.output
+    payload_default = _json.loads(result_default.output)
+    assert payload_default["rows"][0]["flagged"] is False
+    assert payload_default["flagged_count"] == 0
+
+    # Lower threshold (1.0): same 3% drift now flags.
+    result_strict = runner.invoke(
+        app,
+        ["reconcile", "--config", temp_config,
+         "--provider", "openai",
+         "--start", start, "--end", end,
+         "--provider-usage-file", str(provider_file),
+         "--format", "json",
+         "--threshold", "1.0"],
+    )
+    assert result_strict.exit_code == 0, result_strict.output
+    payload_strict = _json.loads(result_strict.output)
+    assert payload_strict["rows"][0]["flagged"] is True
+    assert payload_strict["flagged_count"] == 1
+
+
 def test_reconcile_surfaces_missing_models(temp_config, tmp_path, monkeypatch):
     """Models present only in VG (or only in provider file) are still reported."""
     import asyncio
@@ -471,8 +719,125 @@ def test_reconcile_surfaces_missing_models(temp_config, tmp_path, monkeypatch):
     )
     assert result.exit_code == 0, result.output
     payload = _json.loads(result.output)
-    by_model = {row["model"]: row for row in payload}
+    by_model = {row["model"]: row for row in payload["rows"]}
     assert by_model["nova-2"]["matched_in_vg"] is False
     assert by_model["nova-2"]["matched_in_provider"] is True
     assert by_model["nova-3"]["matched_in_vg"] is True
     assert by_model["nova-3"]["matched_in_provider"] is False
+
+
+# --------------------------------------------------------------------
+# reconcile: end-to-end against committed sample fixtures
+# --------------------------------------------------------------------
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_USAGE_EXPORTS_DIR = _REPO_ROOT / "tests" / "fixtures" / "usage_exports"
+
+
+def test_reconcile_runs_against_committed_openai_sample(
+    temp_config, tmp_path, monkeypatch
+):
+    """End-to-end reconcile against the committed openai-sample.csv.
+
+    Pairs the canonical-schema reference fixture from 4.2 #5 with
+    the CLI to confirm the openai code path works against a real
+    file shape. _seed_reconcile_records seeds a single
+    openai/gpt-4o-mini VG record alongside Deepgram ones, so
+    gpt-4o-mini matches on both sides while gpt-4o + gpt-4-turbo
+    are provider-only.
+    """
+    import asyncio
+    import json as _json
+
+    db_path = str(tmp_path / "reconcile-openai-sample.db")
+    monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
+    start, end = asyncio.run(_seed_reconcile_records(db_path))
+
+    result = runner.invoke(
+        app,
+        ["reconcile", "--config", temp_config,
+         "--provider", "openai",
+         "--start", start, "--end", end,
+         "--provider-usage-file", str(_USAGE_EXPORTS_DIR / "openai-sample.csv"),
+         "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+    payload = _json.loads(result.output)
+    assert payload["provider"] == "openai"
+    rows = {row["model"]: row for row in payload["rows"]}
+    # Three OpenAI models in the sample fixture; all three appear.
+    assert {"gpt-4o-mini", "gpt-4o", "gpt-4-turbo"}.issubset(rows.keys())
+    # gpt-4o-mini is seeded on the VG side and present in the
+    # provider sample -> matched on both sides.
+    assert rows["gpt-4o-mini"]["matched_in_vg"] is True
+    assert rows["gpt-4o-mini"]["matched_in_provider"] is True
+    # gpt-4o and gpt-4-turbo are provider-only.
+    for m in ("gpt-4o", "gpt-4-turbo"):
+        assert rows[m]["matched_in_vg"] is False
+        assert rows[m]["matched_in_provider"] is True
+
+
+def test_reconcile_runs_against_committed_deepgram_sample(
+    temp_config, tmp_path, monkeypatch
+):
+    """End-to-end reconcile against the committed deepgram-sample.csv."""
+    import asyncio
+    import json as _json
+
+    db_path = str(tmp_path / "reconcile-deepgram-sample.db")
+    monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
+    start, end = asyncio.run(_seed_reconcile_records(db_path))
+
+    result = runner.invoke(
+        app,
+        ["reconcile", "--config", temp_config,
+         "--provider", "deepgram",
+         "--start", start, "--end", end,
+         "--provider-usage-file", str(_USAGE_EXPORTS_DIR / "deepgram-sample.csv"),
+         "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+    payload = _json.loads(result.output)
+    assert payload["provider"] == "deepgram"
+    rows = {row["model"]: row for row in payload["rows"]}
+    assert {"nova-3", "nova-2", "flux-general"}.issubset(rows.keys())
+    # Per _seed_reconcile_records, VG has nova-3 records; the
+    # provider sample also has nova-3 -> matched_in_vg AND
+    # matched_in_provider both True for nova-3.
+    assert rows["nova-3"]["matched_in_vg"] is True
+    assert rows["nova-3"]["matched_in_provider"] is True
+    # nova-2 / flux-general are provider-only.
+    assert rows["nova-2"]["matched_in_vg"] is False
+    assert rows["flux-general"]["matched_in_vg"] is False
+
+
+def test_reconcile_runs_against_committed_cartesia_sample(
+    temp_config, tmp_path, monkeypatch
+):
+    """End-to-end reconcile against the committed cartesia-sample.csv."""
+    import asyncio
+    import json as _json
+
+    db_path = str(tmp_path / "reconcile-cartesia-sample.db")
+    monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
+    start, end = asyncio.run(_seed_reconcile_records(db_path))
+
+    result = runner.invoke(
+        app,
+        ["reconcile", "--config", temp_config,
+         "--provider", "cartesia",
+         "--start", start, "--end", end,
+         "--provider-usage-file", str(_USAGE_EXPORTS_DIR / "cartesia-sample.csv"),
+         "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+    payload = _json.loads(result.output)
+    assert payload["provider"] == "cartesia"
+    rows = {row["model"]: row for row in payload["rows"]}
+    assert {"sonic-3", "sonic-turbo"}.issubset(rows.keys())
+    # No VG cartesia records seeded; both rows show provider-only.
+    assert all(
+        rows[m]["matched_in_provider"] is True
+        and rows[m]["matched_in_vg"] is False
+        for m in ("sonic-3", "sonic-turbo")
+    )

@@ -102,7 +102,7 @@ Model                                   VG tokens  Provider tokens     Δ%   VG 
 -------------------------------------------------------------------------------------------------------------
 gpt-4o-mini                              1500000.0       1500000.0  +0.00% $0.0225  $0.0225   $+0.0000  +0.00%
 gpt-4o                                    250000.0        260000.0  +3.85% $1.2500  $1.3000   $+0.0500  +3.85%
-gpt-4o-staging                            100000.0             0.0  +0.00% $0.0050  $0.0000   $-0.0050   +0.00% (prov-missing)
+gpt-4o-staging                            100000.0             0.0  +0.00% $0.0050  $0.0000   $-0.0050   +0.00% (no provider data)
 ```
 
 Three columns deserve a closer read:
@@ -162,14 +162,14 @@ of cost. Two common causes:
 
 ### When a model is on only one side
 
-`(prov-missing)` means VG logged requests for a model but the
+`(no provider data)` means VG logged requests for a model but the
 provider's invoice has no line for it in the period. Two causes:
 either VG is generating phantom requests (unlikely; VG only logs
 requests that returned successfully, no retries logged), or the
 provider's billing dashboard does not yet include very recent usage
 (some providers lag 24-72 hours). Wait a day and re-pull.
 
-`(vg-missing)` means the provider charged for a model VG did not
+`(no vg data)` means the provider charged for a model VG did not
 record. This is the more interesting case: usually it means a
 non-VG client is sharing the same API key. Check whether someone
 else is hitting the API with the same credentials.

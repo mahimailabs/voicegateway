@@ -136,6 +136,61 @@ async def test_v1_costs_with_only_start_or_only_end(client):
     assert resp.status_code == 200
 
 
+async def test_v1_costs_period_with_window_emits_deprecation_header(client):
+    """Mixing legacy `period` with new `start`/`end` surfaces the
+    Deprecation response header so dashboards mid-migration discover
+    that period is ignored when the new params are present.
+    """
+    resp = await client.get(
+        "/v1/costs?period=week&start=2026-05-01&end=2026-05-04"
+    )
+    assert resp.status_code == 200
+    assert "deprecation" in {k.lower() for k in resp.headers}
+    msg = resp.headers["deprecation"].lower()
+    assert "period" in msg and "start/end" in msg
+
+
+async def test_v1_costs_period_with_window_exposes_deprecation_to_cors(client):
+    """The CORS preflight must list `Deprecation` in
+    Access-Control-Expose-Headers, otherwise browser JS cannot read the
+    header (the legacy `period` deprecation signal would be invisible
+    to the dashboard, which is the whole point of setting it).
+    """
+    resp = await client.get(
+        "/v1/costs?period=week&start=2026-05-01&end=2026-05-04",
+        headers={"origin": "http://localhost:3000"},
+    )
+    assert resp.status_code == 200
+    expose = resp.headers.get("access-control-expose-headers", "")
+    assert "Deprecation" in expose, (
+        f"Deprecation must be exposed via CORS; got {expose!r}"
+    )
+
+
+async def test_v1_costs_period_without_window_no_deprecation_header(client):
+    """Legacy callers that pass only `period` see no Deprecation header."""
+    resp = await client.get("/v1/costs?period=week")
+    assert resp.status_code == 200
+    assert "deprecation" not in {k.lower() for k in resp.headers}
+
+
+async def test_v1_costs_window_without_period_no_deprecation_header(client):
+    """New-API callers that pass only `start`/`end` see no Deprecation header."""
+    resp = await client.get("/v1/costs?start=2026-05-01&end=2026-05-04")
+    assert resp.status_code == 200
+    assert "deprecation" not in {k.lower() for k in resp.headers}
+
+
+async def test_v1_costs_no_params_defaults_to_today(client):
+    """Backward compat: omitting all three falls back to period=today."""
+    resp = await client.get("/v1/costs")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["period"] == "today"
+    # No deprecation header for the no-params path.
+    assert "deprecation" not in {k.lower() for k in resp.headers}
+
+
 async def test_v1_costs_combined_query_params(client, gateway):
     """All three new params (per_modality, include_pricing_source, start/end) compose.
 
@@ -199,6 +254,54 @@ async def test_v1_costs_combined_query_params(client, gateway):
     # The 99.0 out-of-window record must not leak into any aggregate.
     assert data["by_modality"]["llm"]["requests"] == 1
     assert data["by_provider"]["openai"]["requests"] == 1
+
+
+async def test_v1_costs_window_overrides_period_at_data_layer(client, gateway):
+    """Precedence rule: when both period and start/end are passed,
+    the data returned reflects the start/end window, NOT the period.
+
+    The Deprecation header tests confirm the header surfaces, but
+    they do not pin the actual storage behavior. This test seeds a
+    record outside `period=today` but inside the explicit window,
+    then asserts the cost is in the response (proving start/end
+    won at the storage layer).
+    """
+    import datetime as _dt
+    import uuid
+
+    from voicegateway.storage.models import RequestRecord
+
+    today = _dt.date.today()
+    # Record from 5 days ago - outside `period=today` but inside the
+    # 10-day explicit window below.
+    five_days_ago = (
+        _dt.datetime.combine(
+            today - _dt.timedelta(days=5), _dt.time(12, 0)
+        ).timestamp()
+    )
+    await gateway.storage.log_request(RequestRecord(
+        id=str(uuid.uuid4()), timestamp=five_days_ago, modality="llm",
+        model_id="openai/gpt-4o-mini", provider="openai",
+        cost_usd=0.42, pricing_source="genai-prices@0.0.57",
+    ))
+
+    start = (today - _dt.timedelta(days=10)).isoformat()
+    end = today.isoformat()
+    # period=today would alone exclude the record; start/end must
+    # win and the response surfaces the cost.
+    resp = await client.get(
+        f"/v1/costs?period=today&start={start}&end={end}"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    # If period had won, total would be 0 (no records today). The
+    # 5-days-ago record's $0.42 must be in the total.
+    assert data["total"] == pytest.approx(0.42, abs=0.001)
+    # Deprecation header still set (already covered by the
+    # dedicated test, but checked here for completeness so this
+    # test fails loudly if precedence and header behaviors drift
+    # apart).
+    assert "deprecation" in {k.lower() for k in resp.headers}
 
 
 async def test_v1_latency_empty(client):

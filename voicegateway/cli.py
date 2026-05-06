@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import shutil
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -340,13 +341,62 @@ _EXPORT_COLUMNS = (
     "project",
     "modality",
     "provider",
-    "model_id",
+    "model",
     "input_units",
     "output_units",
-    "cost_usd",
+    "calculated_cost_usd",
     "pricing_source",
     "status",
 )
+
+# Map output column names to the storage row keys they project from.
+# Storage uses `model_id` and `cost_usd`; the export schema (design
+# §2.1) names them `model` and `calculated_cost_usd`. The other 8
+# column names match storage keys directly.
+_EXPORT_KEY_MAP = {
+    "model": "model_id",
+    "calculated_cost_usd": "cost_usd",
+}
+
+
+def _format_export_value(column: str, value: Any) -> Any:
+    """Format one cell of an export row.
+
+    - timestamp: storage Unix-epoch float -> ISO-8601 UTC string.
+    - calculated_cost_usd: float -> fixed-point Decimal string so
+      sub-cent costs do not render in scientific notation
+      (e.g. 1e-05 -> "0.00001"). The float -> str(Decimal(str(...)))
+      hop dodges binary-precision artifacts.
+    - everything else: pass through (csv.writer / json.dump handle
+      the rest).
+    """
+    import datetime as _dt
+    from decimal import Decimal
+
+    if value is None:
+        return ""
+    if column == "timestamp":
+        try:
+            return _dt.datetime.fromtimestamp(
+                float(value), tz=_dt.UTC
+            ).isoformat()
+        except (TypeError, ValueError, OSError):
+            return value
+    if column == "calculated_cost_usd":
+        try:
+            return format(Decimal(str(float(value))), "f")
+        except (TypeError, ValueError):
+            return value
+    return value
+
+
+def _format_export_row(record: dict[str, Any]) -> dict[str, Any]:
+    """Project a storage row into the design-spec export schema."""
+    out: dict[str, Any] = {}
+    for col in _EXPORT_COLUMNS:
+        src = _EXPORT_KEY_MAP.get(col, col)
+        out[col] = _format_export_value(col, record.get(src))
+    return out
 
 
 def _parse_iso_date_arg(value: str, *, end_of_day: bool) -> float:
@@ -390,8 +440,15 @@ def export_costs_cmd(
 ):
     """Export per-request cost line items for a date window.
 
-    Output columns: timestamp, project, modality, provider, model_id,
-    input_units, output_units, cost_usd, pricing_source, status.
+    Output columns: timestamp (ISO-8601 UTC), project, modality,
+    provider, model, input_units, output_units,
+    calculated_cost_usd (fixed-point, no scientific notation),
+    pricing_source, status.
+
+    Output formats:
+    - csv (default): header row + one data row per request.
+    - json: JSONL (one JSON object per line; no outer array, no
+      indent). Streamable; consumers iterate `json.loads` per line.
 
     Pair with `voicegw reconcile` (Phase 4.3) to compare against a
     provider's invoice.
@@ -427,13 +484,15 @@ def export_costs_cmd(
         writer = csv.writer(buf)
         writer.writerow(_EXPORT_COLUMNS)
         for r in rows:
-            writer.writerow([r.get(col, "") for col in _EXPORT_COLUMNS])
+            formatted = _format_export_row(r)
+            writer.writerow([formatted[col] for col in _EXPORT_COLUMNS])
     else:
-        export_rows = [
-            {col: r.get(col) for col in _EXPORT_COLUMNS} for r in rows
-        ]
-        _json.dump(export_rows, buf, default=str, indent=2)
-        buf.write("\n")
+        # JSONL: one JSON object per line, no outer array, no indent.
+        # Per design §2.1 and TODO 4.1 #4. Streamable; downstream
+        # consumers can `for line in f: row = json.loads(line)`.
+        for r in rows:
+            _json.dump(_format_export_row(r), buf, default=str)
+            buf.write("\n")
 
     payload = buf.getvalue()
     if output == "-":
@@ -471,6 +530,15 @@ def reconcile_cmd(
     fmt: str = typer.Option(
         "text", "--format", "-f", help="Output format: text (default), csv, or json."
     ),
+    threshold: float = typer.Option(
+        5.0,
+        "--threshold",
+        help=(
+            "Flag rows whose |cost diff %| exceeds this threshold "
+            "(default 5.0). The v0.0.4 disclosure expects LLM "
+            "estimates to drift up to ~5%."
+        ),
+    ),
 ):
     """Diff VG's logged costs against a provider's usage export.
 
@@ -505,7 +573,12 @@ def reconcile_cmd(
     )
 
     try:
-        lines = _reconcile.reconcile(provider, records, Path(provider_usage_file))
+        lines = _reconcile.reconcile(
+            provider,
+            records,
+            Path(provider_usage_file),
+            threshold_pct=threshold,
+        )
     except FileNotFoundError as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(2) from e
@@ -518,9 +591,22 @@ def reconcile_cmd(
     if fmt == "csv":
         sys.stdout.write(_reconcile.format_csv(lines))
     elif fmt == "json":
-        sys.stdout.write(_reconcile.format_json(lines))
+        sys.stdout.write(
+            _reconcile.format_json(
+                lines,
+                provider=provider,
+                period_start=start,
+                period_end=end,
+            )
+        )
     else:
-        sys.stdout.write(_reconcile.format_text(lines, provider))
+        # Colorize flagged rows only on a real TTY; piped output and
+        # CliRunner captures stay plain text.
+        sys.stdout.write(
+            _reconcile.format_text(
+                lines, provider, colorize=sys.stdout.isatty()
+            )
+        )
 
 
 @app.command(name="mcp")

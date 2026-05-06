@@ -15,6 +15,18 @@ This page is the schema reference. The walkthrough that ties it to
 the day-to-day reconciliation workflow lives at
 [Cost Reconciliation](/guide/cost-reconciliation) (added in Phase 4.4).
 
+::: tip Reference fixtures
+Working examples of each provider's canonical schema live in the
+repo at `tests/fixtures/usage_exports/`:
+
+- `openai-sample.csv` (3 LLM models, 4M tokens)
+- `deepgram-sample.csv` (3 STT models, 5 hours of audio)
+- `cartesia-sample.csv` (2 TTS models, 3.3M characters)
+
+Diff your converter output against these files to confirm
+schema parity before running reconcile against your own usage.
+:::
+
 ## OpenAI
 
 ### Canonical input shape
@@ -59,7 +71,7 @@ gpt-4o,250000,125000,200,2.500
 | `model` | yes | OpenAI model id without the `openai/` prefix. VoiceGateway prepends the prefix when matching against its own logs. |
 | `input_tokens` | yes | Aggregate prompt/context tokens across the reconcile window. Set to 0 if you only have output counts. |
 | `output_tokens` | yes | Aggregate generated tokens. Set to 0 if not applicable. |
-| `n_requests` | optional | Used for sanity checks; reconcile reports a warning if VG's request count diverges by more than 10%. Omit if your export does not include it. |
+| `n_requests` | optional | Carried through to the diff output's per-row metadata for cross-checking VG's request count against the provider's. Omit if your export does not include it. |
 | `cost_usd` | yes | Aggregate cost OpenAI charged for that model in the window. The reconcile diff is computed against this number. |
 
 Cached tokens, audio tokens, and embedding-model lines (if present in
@@ -175,7 +187,7 @@ nova-2,42000.5,300,2.100
 | --- | --- | --- |
 | `model` | yes | Deepgram model id without the `deepgram/` prefix. VoiceGateway prepends the prefix when matching against its own logs. |
 | `audio_seconds` | yes | Aggregate transcribed audio duration, in seconds, across the reconcile window. Deepgram bills per-minute, so audio-minutes from the dashboard multiplied by 60 is the value to use. Float allowed. |
-| `n_requests` | optional | Used for sanity checks; reconcile reports a warning if VG's request count diverges by more than 10%. Omit if your export does not include it. |
+| `n_requests` | optional | Carried through to the diff output's per-row metadata for cross-checking VG's request count against the provider's. Omit if your export does not include it. |
 | `cost_usd` | yes | Aggregate cost Deepgram charged for that model in the window. The reconcile diff is computed against this number. |
 
 Real-time vs pre-recorded vs streaming distinctions are not in this
@@ -290,7 +302,7 @@ sonic-2,500000,50000,200,6.000
 | `model` | yes | Cartesia model id without the `cartesia/` prefix. VoiceGateway prepends the prefix when matching against its own logs. |
 | `characters` | yes | Aggregate synthesized character count across the reconcile window. This is what VG records (the unit `livekit-plugins-cartesia` emits on its `usage_collected` event), so the reconcile diff against VG's logs uses this column. Set to 0 if your export only ships credits. |
 | `credits` | optional | Aggregate Cartesia credits consumed in the window. Cartesia's billing portal exposes credits as the primary unit; surfacing them here lets reconcile cross-check the credits-to-USD math even when characters are absent. |
-| `n_requests` | optional | Used for sanity checks; reconcile reports a warning if VG's request count diverges by more than 10%. Omit if your export does not include it. |
+| `n_requests` | optional | Carried through to the diff output's per-row metadata for cross-checking VG's request count against the provider's. Omit if your export does not include it. |
 | `cost_usd` | yes | Aggregate cost Cartesia charged for that model in the window. The reconcile diff is computed against this number. Convert credits-to-USD via your account's rate sheet (see below). |
 
 Voice-id selection (Cartesia lets you switch voices per-request) is not

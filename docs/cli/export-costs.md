@@ -29,22 +29,29 @@ Cost tracking must be enabled in `voicegw.yaml`. If storage is not configured, t
 
 ## Output columns
 
-The CSV header (and JSON keys) are:
+Both formats use the same 10-column schema (locked by design §2.1).
 
 | Column | Type | Notes |
 |---|---|---|
-| `timestamp` | float | UNIX timestamp the request was recorded. |
+| `timestamp` | string | ISO-8601 UTC (e.g., `2026-04-15T09:30:00+00:00`). |
 | `project` | string | Project ID; `default` if no project routing. |
 | `modality` | string | `stt`, `llm`, or `tts`. |
 | `provider` | string | e.g., `openai`, `deepgram`, `cartesia`. |
-| `model_id` | string | Full `provider/model` string. |
+| `model` | string | Full `provider/model` string. |
 | `input_units` | float | Modality-dependent: tokens (LLM input), minutes (STT), characters (TTS). |
 | `output_units` | float | Tokens (LLM output); 0 for STT and TTS. |
-| `cost_usd` | float | Calculated cost from VG's pricing catalog. |
+| `calculated_cost_usd` | string | Decimal-stable USD, fixed-point (no scientific notation), from VG's pricing catalog. |
 | `pricing_source` | string | The catalog that priced this record (e.g., `genai-prices@0.0.57`). |
 | `status` | string | `ok` or an error tag from the wrapper. |
 
 Rows are ordered by timestamp ascending.
+
+### JSON format (JSONL)
+
+`--format json` emits **JSONL**: one JSON object per line, no
+outer array, no indent. Streamable; downstream consumers iterate
+`for line in f: row = json.loads(line)`. The schema matches the
+CSV column set 1:1.
 
 ## Examples
 
