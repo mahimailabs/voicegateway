@@ -1,12 +1,14 @@
 // v0.0.5 Providers page — see design.md section 3.5.
 //
 // 5.9 #1: page skeleton (header + grid + Add button).
-// 5.9 #2: full Add Provider modal (this iteration).
-// 5.9 #3-#4: per-row actions and source badges (next).
+// 5.9 #2: full Add Provider modal.
+// 5.9 #3: per-row actions (test/rotate/delete) and last-test
+//         green/red indicator (this iteration).
+// 5.9 #4: SourceBadge wiring (already present from #1).
 // 5.9 #5: dashboard backend HTTP endpoints for the per-project
-// reads + writes the modal here issues. Until that lands, the
-// fetch calls fail gracefully and surface as the empty state /
-// error toast rather than crashing the page.
+//         reads/writes. Until that lands the modal save and the
+//         page fetch surface as the empty state rather than
+//         crashing.
 
 import { useEffect, useState } from 'react';
 import PageHeader from '../components/PageHeader';
@@ -32,18 +34,23 @@ interface ProjectProviderRow {
 
 type ProvidersByProject = Record<string, ProjectProviderRow[]>;
 
+type RowTestStatus =
+  | { kind: 'unknown' }
+  | { kind: 'testing' }
+  | { kind: 'ok'; latency_ms: number }
+  | { kind: 'failed'; message: string };
+
 export default function Providers() {
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
   const [byProject, setByProject] = useState<ProvidersByProject>({});
   const [showAdd, setShowAdd] = useState(false);
+  const [rotateTarget, setRotateTarget] = useState<ProjectProviderRow | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, RowTestStatus>>({});
 
   const refresh = () => {
     fetchJson<{ projects: ProjectEntry[] }>('/api/projects')
       .then((d) => setProjects(d.projects))
       .catch(() => setProjects([]));
-    // 5.9 #5 will wire in /api/providers/by-project. Until then, the
-    // grouping stays empty per project and the page renders the
-    // empty-state messaging without erroring.
     fetchJson<{ providers: ProjectProviderRow[] }>('/api/providers/by-project')
       .then((d) => {
         const grouped: ProvidersByProject = {};
@@ -57,6 +64,55 @@ export default function Providers() {
   };
 
   useEffect(() => { refresh(); }, []);
+
+  const setRowTestStatus = (id: string, status: RowTestStatus) =>
+    setTestResults((prev) => ({ ...prev, [id]: status }));
+
+  const handleTestRow = async (row: ProjectProviderRow) => {
+    setRowTestStatus(row.provider_id, { kind: 'testing' });
+    try {
+      const result = await fetchJson<{ status: string; latency_ms: number; message?: string }>(
+        `/v1/providers/${encodeURIComponent(row.provider_id)}/test`,
+        { method: 'POST' },
+      );
+      if (result.status === 'ok') {
+        setRowTestStatus(row.provider_id, { kind: 'ok', latency_ms: result.latency_ms });
+      } else {
+        setRowTestStatus(row.provider_id, {
+          kind: 'failed',
+          message: result.message ?? 'Provider returned unhealthy',
+        });
+      }
+    } catch (e) {
+      setRowTestStatus(row.provider_id, {
+        kind: 'failed',
+        message: (e as Error).message || 'Test failed',
+      });
+    }
+  };
+
+  const handleDeleteRow = async (row: ProjectProviderRow) => {
+    if (row.source !== 'db') {
+      alert('YAML-defined providers cannot be deleted via the dashboard. Edit voicegw.yaml.');
+      return;
+    }
+    const ok = window.confirm(
+      `Remove ${row.provider} key from project "${row.project}"? This cannot be undone.`,
+    );
+    if (!ok) return;
+    try {
+      await fetchJson(`/v1/providers/${encodeURIComponent(row.provider_id)}`, {
+        method: 'DELETE',
+      });
+      setTestResults((prev) => {
+        const { [row.provider_id]: _gone, ...rest } = prev;
+        return rest;
+      });
+      refresh();
+    } catch (e) {
+      alert((e as Error).message || 'Delete failed');
+    }
+  };
 
   const projectCount = projects.length;
   const totalKeys = Object.values(byProject).reduce(
@@ -102,16 +158,53 @@ export default function Providers() {
                       <th>Provider</th>
                       <th>Key</th>
                       <th>Source</th>
+                      <th>Status</th>
+                      <th style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((row) => (
-                      <tr key={row.provider_id}>
-                        <td className="mono">{row.provider}</td>
-                        <td className="mono">{row.api_key_masked ?? '—'}</td>
-                        <td><SourceBadge source={row.source} /></td>
-                      </tr>
-                    ))}
+                    {rows.map((row) => {
+                      const test = testResults[row.provider_id] ?? { kind: 'unknown' };
+                      const isDb = row.source === 'db';
+                      return (
+                        <tr key={row.provider_id}>
+                          <td className="mono">{row.provider}</td>
+                          <td className="mono">{row.api_key_masked ?? '—'}</td>
+                          <td><SourceBadge source={row.source} /></td>
+                          <td><TestDot status={test} /></td>
+                          <td style={{ textAlign: 'right' }}>
+                            <button
+                              className="neo-btn neo-btn--small"
+                              type="button"
+                              onClick={() => handleTestRow(row)}
+                              disabled={test.kind === 'testing'}
+                            >
+                              {test.kind === 'testing' ? 'Testing…' : 'Test'}
+                            </button>
+                            {' '}
+                            <button
+                              className="neo-btn neo-btn--small"
+                              type="button"
+                              onClick={() => setRotateTarget(row)}
+                              disabled={!isDb}
+                              title={isDb ? 'Rotate the api key' : 'YAML-defined keys: edit voicegw.yaml'}
+                            >
+                              Rotate
+                            </button>
+                            {' '}
+                            <button
+                              className="neo-btn neo-btn--small neo-btn--danger"
+                              type="button"
+                              onClick={() => handleDeleteRow(row)}
+                              disabled={!isDb}
+                              title={isDb ? 'Delete this key' : 'YAML-defined keys: edit voicegw.yaml'}
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -133,6 +226,141 @@ export default function Providers() {
           onClose={() => { setShowAdd(false); refresh(); }}
         />
       )}
+      {rotateTarget && (
+        <RotateProviderModal
+          row={rotateTarget}
+          onClose={() => { setRotateTarget(null); refresh(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function TestDot({ status }: { status: RowTestStatus }) {
+  let color = '#888';
+  let label = 'untested';
+  let title = 'Click Test to verify the key';
+  if (status.kind === 'testing') {
+    color = '#FFD166';
+    label = 'testing';
+    title = 'Health check in flight';
+  } else if (status.kind === 'ok') {
+    color = '#8AC926';
+    label = `ok ${status.latency_ms}ms`;
+    title = `Last test ok in ${status.latency_ms}ms`;
+  } else if (status.kind === 'failed') {
+    color = '#FF006E';
+    label = 'failed';
+    title = status.message;
+  }
+  return (
+    <span title={title} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <span
+        aria-hidden="true"
+        style={{
+          display: 'inline-block',
+          width: 10,
+          height: 10,
+          borderRadius: '50%',
+          background: color,
+          border: '1px solid var(--ink, #000)',
+        }}
+      />
+      <span className="label" style={{ fontSize: 11 }}>{label}</span>
+    </span>
+  );
+}
+
+function RotateProviderModal({
+  row,
+  onClose,
+}: {
+  row: ProjectProviderRow;
+  onClose: () => void;
+}) {
+  const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState(row.base_url ?? '');
+  const [revealKey, setRevealKey] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    if (!apiKey) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await fetchJson(`/v1/providers/${encodeURIComponent(row.provider_id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          api_key: apiKey,
+          base_url: baseUrl || null,
+        }),
+      });
+      onClose();
+    } catch (e) {
+      setError((e as Error).message || 'Rotate failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="neo-modal-backdrop" onClick={onClose}>
+      <div className="neo-modal" onClick={(e) => e.stopPropagation()}>
+        <h3>Rotate Provider Key</h3>
+        <p className="label">
+          {row.project} / <span className="mono">{row.provider}</span>
+        </p>
+
+        <label className="label mt-md">New API Key</label>
+        <div className="flex-row" style={{ gap: '8px' }}>
+          <input
+            className="neo-input"
+            type={revealKey ? 'text' : 'password'}
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="sk-..."
+            autoComplete="off"
+            spellCheck={false}
+            disabled={saving}
+            style={{ flex: 1 }}
+          />
+          <button
+            className="neo-btn"
+            type="button"
+            onClick={() => setRevealKey((r) => !r)}
+            disabled={saving}
+          >
+            {revealKey ? 'Hide' : 'Show'}
+          </button>
+        </div>
+
+        <label className="label mt-md">Base URL (optional)</label>
+        <input
+          className="neo-input"
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+          placeholder="https://api.openai.com/v1"
+          disabled={saving}
+        />
+
+        {error && (
+          <div className="empty-state mt-md" style={{ color: 'var(--accent-pink)' }}>
+            {error}
+          </div>
+        )}
+
+        <div className="flex-row mt-lg">
+          <button className="neo-btn" onClick={onClose} disabled={saving}>Cancel</button>
+          <button
+            className="neo-btn neo-btn--primary"
+            onClick={handleSave}
+            disabled={!apiKey || saving}
+          >
+            {saving ? 'Rotating...' : 'Rotate Key'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
