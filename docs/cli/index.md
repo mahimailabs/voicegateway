@@ -22,9 +22,13 @@ After installation, the `voicegw` command is available globally.
 | [`projects`](/cli/projects) | List configured projects |
 | [`project <id>`](/cli/projects#project-detail) | Show details for a single project |
 | [`logs`](/cli/logs) | Show recent request logs |
+| [`smoke-test`](/cli/smoke-test) | Verify the inference pipeline end-to-end without LiveKit |
+| [`rotate-secret`](/cli/smoke-test#rotate-secret) | Re-encrypt managed credentials under a new Fernet key |
 | [`serve`](/cli/serve) | Start the HTTP API server |
 | [`dashboard`](/cli/dashboard) | Start the web dashboard |
 | [`mcp`](/cli/mcp) | Start the MCP server for AI agents |
+| [`reconcile`](/cli/reconcile) | Diff logged costs against a provider invoice |
+| [`export-costs`](/cli/export-costs) | Export per-request cost rows to CSV / JSONL |
 
 ## Global Behavior
 

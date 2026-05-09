@@ -958,6 +958,192 @@ def test_rotate_secret_end_to_end(temp_config, tmp_path, monkeypatch):
     assert _decrypt(saved["api_key_encrypted"]) == "sk-rotate-cli"
 
 
+# ---------------------------------------------------------------------------
+# smoke-test (AC-001.1 automation harness)
+# ---------------------------------------------------------------------------
+
+
+def test_smoke_test_passes_with_keys_configured(tmp_path, monkeypatch):
+    """Default mode constructs each modality through the inference
+    factories with stubbed LK plugins, drives a request through the
+    wrapper, and confirms the sessions row aggregates correctly.
+    """
+    import yaml as _yaml
+
+    cfg_path = tmp_path / "smoke.yaml"
+    cfg_path.write_text(
+        _yaml.dump(
+            {
+                "providers": {
+                    "deepgram": {"api_key": "dg-fake"},
+                    "openai": {"api_key": "sk-fake"},
+                    "cartesia": {"api_key": "ct-fake"},
+                },
+                "models": {
+                    "stt": {
+                        "deepgram/nova-3": {
+                            "provider": "deepgram",
+                            "model": "nova-3",
+                        }
+                    },
+                    "llm": {
+                        "openai/gpt-4o-mini": {
+                            "provider": "openai",
+                            "model": "gpt-4o-mini",
+                        }
+                    },
+                    "tts": {
+                        "cartesia/sonic-3": {
+                            "provider": "cartesia",
+                            "model": "sonic-3",
+                        }
+                    },
+                },
+                "stacks": {},
+                "fallbacks": {"stt": [], "llm": [], "tts": []},
+                "projects": {
+                    "smoke-proj": {
+                        "name": "Smoke",
+                        "description": "smoke",
+                        "tags": ["test"],
+                    }
+                },
+                "default_project": "smoke-proj",
+                "cost_tracking": {"enabled": True},
+                "observability": {"latency_tracking": True},
+            }
+        )
+    )
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "smoke.db"))
+
+    result = runner.invoke(app, ["smoke-test", "--config", str(cfg_path)])
+    assert result.exit_code == 0, result.output
+    assert "PASS" in result.output
+    assert "FAIL" not in result.output
+    assert "All structural checks passed" in result.output
+    assert "examples/v005_inference_drop_in.py" in result.output
+    # The session-correlation line should name the modalities.
+    assert "llm,stt,tts" in result.output or "stt,llm,tts" in result.output
+
+
+def test_smoke_test_fails_when_provider_keys_missing(tmp_path, monkeypatch):
+    """Without configured api_keys the inference preflight raises and
+    the smoke test reports per-modality failures with non-zero exit.
+    """
+    import yaml as _yaml
+
+    cfg_path = tmp_path / "smoke.yaml"
+    cfg_path.write_text(
+        _yaml.dump(
+            {
+                "providers": {
+                    # No api_key — the inference preflight will fail.
+                    "deepgram": {},
+                    "openai": {},
+                    "cartesia": {},
+                },
+                "models": {
+                    "stt": {"deepgram/nova-3": {"provider": "deepgram", "model": "nova-3"}},
+                    "llm": {"openai/gpt-4o-mini": {"provider": "openai", "model": "gpt-4o-mini"}},
+                    "tts": {"cartesia/sonic-3": {"provider": "cartesia", "model": "sonic-3"}},
+                },
+                "stacks": {},
+                "fallbacks": {"stt": [], "llm": [], "tts": []},
+                "projects": {
+                    "smoke-proj": {
+                        "name": "Smoke",
+                        "description": "",
+                        "tags": [],
+                    }
+                },
+                "default_project": "smoke-proj",
+                "cost_tracking": {"enabled": True},
+                "observability": {"latency_tracking": True},
+            }
+        )
+    )
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "smoke.db"))
+    # Strip any conftest-set provider env vars so the preflight
+    # actually sees no keys.
+    for k in ("OPENAI_API_KEY", "DEEPGRAM_API_KEY", "CARTESIA_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+
+    result = runner.invoke(app, ["smoke-test", "--config", str(cfg_path)])
+    assert result.exit_code == 1, result.output
+    assert "FAIL" in result.output
+    assert "inference.STT" in result.output
+    assert "inference.LLM" in result.output
+    assert "inference.TTS" in result.output
+    # The fail-fast preflight message should surface in the report.
+    assert "No API key configured" in result.output
+
+
+def test_smoke_test_skips_when_storage_disabled(tmp_path, monkeypatch):
+    import yaml as _yaml
+
+    cfg_path = tmp_path / "smoke-no-store.yaml"
+    cfg_path.write_text(
+        _yaml.dump(
+            {
+                "providers": {"openai": {"api_key": "sk-fake"}},
+                "models": {"stt": {}, "llm": {}, "tts": {}},
+                "stacks": {},
+                "fallbacks": {"stt": [], "llm": [], "tts": []},
+                "cost_tracking": {"enabled": False},
+                "observability": {"latency_tracking": True},
+            }
+        )
+    )
+    monkeypatch.delenv("VOICEGW_DB_PATH", raising=False)
+
+    result = runner.invoke(app, ["smoke-test", "--config", str(cfg_path)])
+    assert result.exit_code == 1, result.output
+    assert "Cost tracking disabled" in result.output
+
+
+def test_smoke_test_explicit_project_argument(tmp_path, monkeypatch):
+    """`--project` selects which project the smoke test runs against,
+    overriding default_project. Useful for multi-project deployments
+    where the operator wants to validate a specific workload.
+    """
+    import yaml as _yaml
+
+    cfg_path = tmp_path / "smoke-multi.yaml"
+    cfg_path.write_text(
+        _yaml.dump(
+            {
+                "providers": {"openai": {"api_key": "sk-shared"}},
+                "models": {
+                    "stt": {},
+                    "llm": {
+                        "openai/gpt-4o-mini": {
+                            "provider": "openai",
+                            "model": "gpt-4o-mini",
+                        }
+                    },
+                    "tts": {},
+                },
+                "stacks": {},
+                "fallbacks": {"stt": [], "llm": [], "tts": []},
+                "projects": {
+                    "alpha": {"name": "Alpha", "tags": []},
+                    "beta": {"name": "Beta", "tags": []},
+                },
+                "default_project": "alpha",
+                "cost_tracking": {"enabled": True},
+                "observability": {"latency_tracking": True},
+            }
+        )
+    )
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "smoke-multi.db"))
+
+    result = runner.invoke(
+        app, ["smoke-test", "--config", str(cfg_path), "--project", "beta"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "beta" in result.output
+
+
 def test_rotate_secret_surfaces_failed_rows(
     temp_config, tmp_path, monkeypatch
 ):
