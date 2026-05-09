@@ -49,7 +49,7 @@ async def entrypoint():
 
 ## Configure your providers
 
-VoiceGateway uses your own provider keys. After installing `voicegateway[cloud,dashboard]`, create a `voicegw.yaml` next to your agent code:
+VoiceGateway uses your own provider keys. After installing `voicegateway[cloud,dashboard]`, create a `voicegw.yaml` next to your agent code (the gateway searches `./voicegw.yaml`, then `~/.config/voicegateway/voicegw.yaml`, then `/etc/voicegateway/voicegw.yaml`; override with the `--config` flag on every CLI command):
 
 ```yaml
 projects:
@@ -71,15 +71,36 @@ cost_tracking:
   enabled: true
 ```
 
-Each project carries its own provider keys. `default_project: voice-app` tells the inference module which project to charge against when your code does not call `inference.set_project(...)` explicitly.
+`${OPENAI_API_KEY}` is **VoiceGateway's** YAML interpolation — the gateway reads each `${VAR_NAME}` from your shell environment when it loads the config (env-var indirection, not Python f-strings, not Bash). Export the keys in your shell (or your deployment's secret manager) before starting the agent or `voicegw serve`.
 
-If you have multiple agents running under one VG install, give each its own project entry — that is how every cost row, latency sample, and session record gets tagged.
+The eleven supported providers are: `openai`, `deepgram`, `anthropic`, `groq`, `cartesia`, `elevenlabs`, `assemblyai`, `ollama`, `whisper`, `kokoro`, `piper`. Match the provider name on the left side of `provider/model` slashes exactly — e.g. `inference.STT("deepgram/nova-3")`, never `inference.STT("Deepgram/nova-3")`.
+
+`default_project: voice-app` tells the inference module which project to charge against when your code does not call `inference.set_project(...)` explicitly. If you have multiple agents running under one VG install, give each its own project entry — that is how every cost row, latency sample, and session record gets tagged.
 
 ## Session correlation
 
 VoiceGateway tags every STT, LLM, and TTS request from the same `AgentSession` with one shared `session_id`. Your dashboard's **Sessions** view groups them by call so cost and latency questions ("what did the last call cost?") have answers without you wiring anything.
 
-The session id is derived from a Python `ContextVar`. Inside the standard `AgentSession` lifecycle it just works. The known limit: factories constructed in **separate** asyncio tasks created before the session opens may end up in different contexts and produce different ids. See [Limitations](#limitations) below.
+The session id is derived from a Python `ContextVar`. Inside the standard `AgentSession` lifecycle it just works. The known limit: factories constructed in **separate** asyncio tasks created before the session opens may end up in different contexts and produce different ids. Concrete shape:
+
+```python
+# Safe — factories constructed inside the entrypoint, after the
+# AgentSession is being built. All three share one session_id.
+async def entrypoint():
+    session = AgentSession(
+        stt=inference.STT("deepgram/nova-3:en"),
+        llm=inference.LLM("openai/gpt-4o-mini"),
+        tts=inference.TTS("cartesia/sonic-3:my-voice-id"),
+    )
+    await session.start()
+
+# Unsafe — module-level factory captured an empty context. The
+# request rows from `_warm_stt` will land with a different
+# session_id (or none) than the runtime AgentSession.
+_warm_stt = inference.STT("deepgram/nova-3:en")  # don't do this
+```
+
+See [Limitations](#limitations) below for the full edge-case write-up.
 
 ## Cost comparison
 
@@ -95,9 +116,11 @@ The session id is derived from a Python `ContextVar`. Inside the standard `Agent
 
 If your LK Cloud bill last month was, say, $400 for this kind of workload, the VG-direct cost is the line item above ($177) plus the savings of skipping LK's inference markup. Run [`voicegw reconcile`](/cli/reconcile) on a real export to compare your bill.
 
-## Manage keys from your coding agent
+## Manage keys from your coding agent (optional)
 
-VoiceGateway ships an MCP server exposing five v0.0.5 tools for per-project provider key management:
+This section is **optional** — single-agent setups manage keys via `voicegw.yaml` and never need the MCP surface. Skip ahead to [Dashboard](#dashboard) if that's you.
+
+For multi-environment or agent-driven workflows, VoiceGateway ships an MCP server exposing five v0.0.5 tools for per-project provider key management:
 
 - `vg_add_provider(project, provider, api_key)` — Fernet-encrypted at rest.
 - `vg_set_provider_key(project, provider, api_key)` — rotation path; errors when the key does not yet exist.
@@ -105,7 +128,7 @@ VoiceGateway ships an MCP server exposing five v0.0.5 tools for per-project prov
 - `vg_list_providers(project=...)` — surface all keys with masks.
 - `vg_test_provider_key(project, provider)` — runs the underlying provider's lightweight health check.
 
-Wire them up in your Claude Code or other MCP-aware client and ask it to "add my Deepgram key for the voice-app project". See the [MCP setup guide](/mcp/setup) for the connection details.
+Wire them up in your Claude Code or other MCP-aware client and ask it to "add my Deepgram key for the voice-app project". See the [MCP setup guide](/mcp/setup) for the connection details (registration manifest, transports, auth).
 
 ## Dashboard
 
@@ -127,7 +150,14 @@ The gap: if your code constructs an STT or LLM in a separate `asyncio.Task` crea
 
 ### 2. The `api_secret` parameter is ignored
 
-LiveKit Cloud uses `api_secret` to sign access tokens against its inference gateway. VoiceGateway uses your raw provider keys directly — there is no token to sign — so passing `api_secret` produces a one-time `UserWarning` and the value is discarded. Drop the parameter from your factory calls; the rest of the signature is identical.
+LiveKit Cloud uses `api_secret` to sign access tokens against its inference gateway. VoiceGateway uses your raw provider keys directly — there is no token to sign — so passing `api_secret` produces a one-time `UserWarning` and the value is discarded. Drop the parameter from your factory calls; the rest of the signature is identical:
+
+```diff
+- inference.STT("deepgram/nova-3", api_key=DG_KEY, api_secret=DG_SECRET)
++ inference.STT("deepgram/nova-3", api_key=DG_KEY)
+```
+
+If you don't pass `api_secret` today (most agents don't), there's nothing to change.
 
 ### 3. `fallback` and `conn_options` are accepted but not yet honored
 
