@@ -198,16 +198,13 @@ voicegw serve
 
 **Fix:**
 
-1. Gateway model factory methods (`stt()`, `llm()`, `tts()`) are **synchronous** and handle event loop bridging internally via `_run_async()`. However, this can conflict if called inside an already-running event loop (e.g., Jupyter, web frameworks):
+1. The `voicegateway.inference.STT/LLM/TTS` factories are **synchronous** and handle event loop bridging internally on first construction (loading the merged config). This usually works fine inside a running event loop (Jupyter, FastAPI handlers, etc.):
    ```python
-   # This works in a normal script
-   stt = gw.stt("deepgram/nova-3", project="my-app")
+   from voicegateway import inference
 
-   # The Gateway usually works in async contexts too. If an event
-   # loop is already running and you see "already running event loop"
-   # errors, isolate the setup in a separate thread or apply
-   # nest_asyncio (see below).
+   stt = inference.STT("deepgram/nova-3")
    ```
+   If you see "already running event loop" errors during the first factory call (rare), isolate the setup in a separate thread or apply `nest_asyncio` (see below).
 2. If running in a script (not an async framework), use `asyncio.run()`:
    ```python
    import asyncio

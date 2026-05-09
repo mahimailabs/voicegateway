@@ -1,6 +1,6 @@
 # LiveKit FallbackAdapter Integration
 
-This page shows how to compose VoiceGateway providers with LiveKit's `FallbackAdapter` to get runtime, error-driven failover during an active call. VoiceGateway's own `FallbackChain` is resolver-time only (see [Fallback Chains](/examples/fallback-chains)); the LiveKit Agents framework supplies the runtime piece.
+This page shows how to compose VoiceGateway's `inference` factories with LiveKit's `FallbackAdapter` to get runtime, error-driven failover during an active call. VoiceGateway's own resolver-time fallback (see [Fallback Chains](/examples/fallback-chains)) handles startup selection; the LiveKit Agents framework supplies the runtime piece.
 
 ## Why LiveKit FallbackAdapter, not VG's own
 
@@ -17,9 +17,7 @@ The composition pattern below is the recommended way to deliver "primary provide
 ```python
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli, llm, stt, tts
 from livekit.plugins import silero
-from voicegateway import Gateway
-
-gw = Gateway()
+from voicegateway import inference
 
 
 async def entrypoint(ctx: JobContext):
@@ -28,19 +26,19 @@ async def entrypoint(ctx: JobContext):
     session = AgentSession(
         vad=silero.VAD.load(),
         stt=stt.FallbackAdapter([
-            gw.stt("deepgram/nova-3", project="my-app"),         # primary
-            gw.stt("groq/whisper-large-v3", project="my-app"),   # secondary cloud
-            gw.stt("local/whisper-large-v3", project="my-app"),  # local fallback
+            inference.STT("deepgram/nova-3"),         # primary
+            inference.STT("groq/whisper-large-v3"),   # secondary cloud
+            inference.STT("local/whisper-large-v3"),  # local fallback
         ]),
         llm=llm.FallbackAdapter([
-            gw.llm("openai/gpt-4.1-mini", project="my-app"),
-            gw.llm("anthropic/claude-3.5-sonnet", project="my-app"),
-            gw.llm("ollama/qwen2.5:3b", project="my-app"),
+            inference.LLM("openai/gpt-4.1-mini"),
+            inference.LLM("anthropic/claude-sonnet-4-20250514"),
+            inference.LLM("ollama/qwen2.5:3b"),
         ]),
         tts=tts.FallbackAdapter([
-            gw.tts("cartesia/sonic-3", project="my-app"),
-            gw.tts("elevenlabs/eleven_turbo_v2_5", project="my-app"),
-            gw.tts("local/kokoro", project="my-app"),
+            inference.TTS("cartesia/sonic-3"),
+            inference.TTS("elevenlabs/eleven_turbo_v2_5"),
+            inference.TTS("local/kokoro"),
         ]),
     )
 
@@ -54,7 +52,7 @@ if __name__ == "__main__":
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
 ```
 
-Each `gw.stt() / gw.llm() / gw.tts()` call returns a native LiveKit plugin instance wrapped by VoiceGateway's instrumentation. `FallbackAdapter` accepts those instances directly: no extra adapter layer, no plugin shim.
+Each `inference.STT / LLM / TTS` call returns a native LiveKit plugin instance wrapped by VoiceGateway's instrumentation. `FallbackAdapter` accepts those instances directly: no extra adapter layer, no plugin shim. The active project resolves the same way it does for any other inference call (`set_project`, env var, or `default_project` in YAML).
 
 ## What triggers fallback
 
@@ -84,7 +82,7 @@ Each attempt VoiceGateway sees is logged as a separate `RequestRecord` in SQLite
 
 You can correlate the two records by timestamp clustering and project tag. The dashboard's request log view shows the status next to each row.
 
-The `fallback_from` field on `RequestRecord` is populated by VoiceGateway's resolver-time `FallbackChain`, not by LiveKit's runtime `FallbackAdapter`: VG sees each attempt as an independent provider call. To trace runtime fallback events, filter the request log by project and look for adjacent records with `status = "error"` followed by `status = "success"`.
+The `fallback_from` field on `RequestRecord` is reserved for the v0.0.6 resolver-time fallback parameter on the inference factories, not for LiveKit's runtime `FallbackAdapter`: VG sees each attempt as an independent provider call. To trace runtime fallback events today, filter the request log by project and look for adjacent records with `status = "error"` followed by `status = "success"`.
 
 For project budget enforcement, every attempt counts against the project budget independently. A primary that fails and a secondary that succeeds will both be billed (the primary because the provider counts the failed request, the secondary because it served the actual response). This matches what your provider invoices will show.
 
@@ -105,7 +103,7 @@ If `event.error.recoverable` is `True`, the chain advanced to the next provider 
 
 ## When this is not what you need
 
-- **You only want startup-time provider selection.** Use VoiceGateway's `gw.stt_with_fallback()` / `gw.llm_with_fallback()` / `gw.tts_with_fallback()`. See [Fallback Chains](/examples/fallback-chains).
+- **You only want startup-time provider selection.** Use the manual chain walk pattern in [Fallback Chains](/examples/fallback-chains). v0.0.6 will replace it with a built-in `fallback=` parameter on the inference factories.
 - **You only have one cloud provider configured.** `FallbackAdapter` is overkill. A single-provider config plus a circuit breaker outside the agent is simpler.
 - **You are on Node.js.** `stt.FallbackAdapter` is Python-only. `llm.FallbackAdapter` and `tts.FallbackAdapter` are available on Node.js per the [LiveKit reference](https://docs.livekit.io/reference/agents/events/); for STT failover on Node.js you need a different approach.
 

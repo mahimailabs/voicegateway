@@ -11,17 +11,27 @@ projects:
   customer-support:
     name: Customer Support Bot
     description: Production customer-facing support agent
-    default_stack: premium
     daily_budget: 50.00
     budget_action: throttle
     tags: [prod, support]
+    providers:
+      deepgram:
+        api_key: ${SUPPORT_DEEPGRAM_KEY}
+      openai:
+        api_key: ${SUPPORT_OPENAI_KEY}
+      cartesia:
+        api_key: ${SUPPORT_CARTESIA_KEY}
   internal-testing:
     name: Internal Testing
     description: QA and development testing
-    default_stack: budget
     daily_budget: 10.00
     budget_action: warn
     tags: [dev, qa]
+    providers:
+      openai:
+        api_key: ${TEST_OPENAI_KEY}
+
+default_project: customer-support
 ```
 
 ## Fields
@@ -30,10 +40,11 @@ projects:
 |---|---|---|---|
 | `name` | string | required | Human-readable project name |
 | `description` | string | `""` | Description of the project's purpose |
-| `default_stack` | string | `""` | Name of the stack to use by default for this project |
 | `daily_budget` | float | `0.0` | Daily spending limit in USD. `0.0` means no limit. |
 | `budget_action` | string | `"warn"` | What to do when budget is exceeded: `warn`, `throttle`, or `block` |
 | `tags` | list of strings | `[]` | Arbitrary tags for filtering and dashboard display |
+| `providers` | mapping | `{}` | Per-project provider keys. Wins over the top-level `providers:` block when set. |
+| `default_stack` | string | `""` | Optional dashboard / display hint. Not used by the inference module. |
 
 ## Budget actions
 
@@ -51,46 +62,45 @@ projects:
     budget_action: block
 ```
 
-## Using projects in code
+## Selecting a project from code
 
-Pass the `project` argument to any gateway method to attribute requests to a project:
+The active project resolves in this order:
+
+1. `inference.set_project(name)` in the current async context.
+2. `VOICEGW_ACTIVE_PROJECT` environment variable.
+3. `default_project` field in `voicegw.yaml`.
+4. The literal `"default"` (auto-created on first run).
 
 ```python
-from voicegateway import Gateway
+from voicegateway import inference
 
-gw = Gateway()
+# Either rely on default_project: customer-support in voicegw.yaml,
+# or pick the project explicitly per call context:
+inference.set_project("customer-support")
 
-# Attribute costs to the "customer-support" project
-stt = gw.stt("deepgram/nova-3", project="customer-support")
-llm = gw.llm("anthropic/claude-sonnet-4-20250514", project="customer-support")
-tts = gw.tts("cartesia/sonic-3", project="customer-support")
-
-# Use with stacks
-stt, llm, tts = gw.stack("premium", project="customer-support")
-
-# Use with fallbacks
-stt = gw.stt_with_fallback(project="customer-support")
+stt = inference.STT("deepgram/nova-3")
+llm = inference.LLM("anthropic/claude-sonnet-4-20250514")
+tts = inference.TTS("cartesia/sonic-3")
 ```
 
-If no `project` is specified, requests are attributed to the `"default"` project.
+`inference.set_project` is scoped to the current `asyncio` context; sibling tasks each manage their own project state without leaking.
 
 ## Querying project data
-
-### From code
-
-```python
-# List all configured projects
-projects = gw.list_projects()
-
-# Get cost summary for a specific project
-costs = gw.costs(period="today", project="customer-support")
-```
 
 ### From the CLI
 
 ```bash
-voicegw projects          # list all projects
-voicegw costs --project customer-support
+voicegw projects                         # list all projects
+voicegw project customer-support         # project details
+voicegw costs --project customer-support # project costs today
+voicegw logs --project customer-support  # recent requests for the project
+```
+
+### From the HTTP API
+
+```bash
+curl http://localhost:8080/v1/projects
+curl http://localhost:8080/v1/costs?project=customer-support
 ```
 
 ### From the dashboard

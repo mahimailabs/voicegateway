@@ -1,10 +1,8 @@
 # Stacks
 
-Stacks are named bundles that map a single name to one STT model, one LLM model, and one TTS model. They let you define quality/cost tiers and switch between them with a single string.
+Stacks are named YAML bundles that map a single name to one STT model, one LLM model, and one TTS model. As of v0.0.5 they are a documentation and dashboard hint only: the `voicegateway.inference` module does not consume them. The dashboard uses `default_stack` on a project to render a recommended-stack badge; the rest of the gateway ignores the field.
 
 ## Defining stacks
-
-Stacks are defined in `voicegw.yaml` under the `stacks` section. Each stack has up to three keys: `stt`, `llm`, and `tts`. All three are optional -- you can define a stack with only the modalities you need.
 
 ```yaml
 stacks:
@@ -22,38 +20,7 @@ stacks:
     tts: local/kokoro
 ```
 
-## Using stacks from code
-
-The `Gateway.stack()` method resolves a stack name into an `(stt, llm, tts)` tuple:
-
-```python
-from voicegateway import Gateway
-
-gw = Gateway()
-
-# Resolve the "premium" stack
-stt, llm, tts = gw.stack("premium")
-
-# Use with a project for cost tracking
-stt, llm, tts = gw.stack("premium", project="customer-support")
-```
-
-If a stack does not define a particular modality, the corresponding value in the tuple is `None`:
-
-```yaml
-stacks:
-  llm-only:
-    llm: openai/gpt-4.1-mini
-```
-
-```python
-stt, llm, tts = gw.stack("llm-only")
-# stt is None, tts is None
-```
-
-## Using stacks with projects
-
-Projects can specify a `default_stack` that determines which models are used when requests are made through that project:
+A project can carry an optional `default_stack` that points at one of these names:
 
 ```yaml
 projects:
@@ -62,21 +29,26 @@ projects:
     default_stack: premium
     daily_budget: 100.00
     budget_action: throttle
-  development:
-    name: Development
-    default_stack: local
-    daily_budget: 5.00
-    budget_action: warn
 ```
 
-## When to use stacks vs. individual models
+The dashboard's project page renders the stack name next to the project. No code reads the stack to construct factories: pick the model id you want and pass it to `inference.STT/LLM/TTS` directly.
 
-- **Use stacks** when you have well-defined quality/cost tiers and want to switch all three modalities together.
-- **Use individual models** (e.g., `gw.stt("deepgram/nova-3")`) when you need fine-grained control over each modality independently.
-- **Use fallback chains** when you want resolver-time fallback (try the next model if the primary fails to resolve at startup) rather than a fixed model selection.
+## Using stacks from code
 
-## Validation
+```python
+from voicegateway import inference
 
-The Pydantic schema validates stack definitions at config load time. If you reference a stack name that does not exist, `Gateway.stack()` raises a `ValueError` listing the available stacks.
+# v0.0.5 has no Gateway.stack(...) helper. Construct each modality
+# explicitly with the model id from the stack you want.
+stt = inference.STT("deepgram/nova-3")
+llm = inference.LLM("anthropic/claude-sonnet-4-20250514")
+tts = inference.TTS("cartesia/sonic-3")
+```
+
+If you find yourself repeating the same triple across agents, define a small Python helper in your own code that returns the three calls. The gateway does not need a built-in for it.
+
+## Roadmap
+
+A future release may bring back a one-line `inference.stack("premium")` shortcut once the trade-offs (per-project key resolution, fallback chains, model-id validation) are sorted. For now stacks live in YAML for dashboard display and team-internal documentation.
 
 See: [Projects](/configuration/projects), [Models](/configuration/models), [voicegw.yaml Reference](/configuration/voicegw-yaml)

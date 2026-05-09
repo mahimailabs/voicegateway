@@ -321,15 +321,20 @@ VoiceGateway logs to stdout. Use Docker's logging driver to ship logs:
 
 ## Connecting Your Application
 
-From your voice agent application, point requests to the VoiceGateway API:
+From your voice agent application, point inference factories at the deployed VoiceGateway by sharing the same `voicegw.yaml`:
 
 ```python
-from voicegateway import Gateway
+import os
+os.environ["VOICEGW_CONFIG"] = "/path/to/voicegw.yaml"
 
-# Point to the Docker service
-gw = Gateway(config_path="/path/to/voicegw.yaml")
+from voicegateway import inference
 
-# Or use the HTTP API directly
+stt = inference.STT("deepgram/nova-3")
+```
+
+For pure observability calls (status, costs, logs), hit the HTTP API:
+
+```python
 import httpx
 resp = httpx.get("http://localhost:8080/v1/status")
 ```

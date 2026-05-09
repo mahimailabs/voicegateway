@@ -1,7 +1,8 @@
 """Basic voice agent using cloud providers via the gateway.
 
-Uses Deepgram for STT, OpenAI for LLM, and Cartesia for TTS.
-Requires API keys configured in gateway.yaml or environment variables.
+Uses Deepgram for STT, OpenAI for LLM, and Cartesia for TTS. Requires
+the matching API keys configured in voicegw.yaml or in the environment
+(VoiceGateway substitutes ``${OPENAI_API_KEY}`` etc. at load time).
 
 Usage:
     python examples/basic_agent.py dev
@@ -10,9 +11,7 @@ Usage:
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
 from livekit.plugins import silero
 
-from voicegateway import Gateway
-
-gw = Gateway()
+from voicegateway import inference
 
 
 async def entrypoint(ctx: JobContext):
@@ -20,9 +19,9 @@ async def entrypoint(ctx: JobContext):
 
     session = AgentSession(
         vad=silero.VAD.load(),
-        stt=gw.stt("deepgram/nova-3"),
-        llm=gw.llm("openai/gpt-4.1-mini"),
-        tts=gw.tts("cartesia/sonic-3:9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"),
+        stt=inference.STT("deepgram/nova-3"),
+        llm=inference.LLM("openai/gpt-4.1-mini"),
+        tts=inference.TTS("cartesia/sonic-3:9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"),
     )
 
     await session.start(

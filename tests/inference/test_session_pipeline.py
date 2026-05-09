@@ -140,9 +140,10 @@ async def test_storage_persists_session_id(tmp_path):
     assert row == ("vg-persist-test",)
 
 
-async def test_storage_persists_null_session_id_for_legacy_path(tmp_path):
-    """Callers that do not set session_id (e.g. existing gw.stt path)
-    keep landing rows with NULL — backward compat for v0.0.4 behaviour.
+async def test_storage_persists_null_session_id_for_uninstrumented_path(tmp_path):
+    """Callers that do not set session_id (e.g. direct
+    storage.log_request from server-side code, or rows logged before
+    the v0.0.5 sessions table existed) keep landing with NULL.
     """
     db_path = str(tmp_path / "store.db")
     storage = SQLiteStorage(db_path)
@@ -219,14 +220,15 @@ async def test_wrapper_writes_session_id_when_context_has_one(tmp_path):
 
 async def test_wrapper_writes_null_session_id_when_no_context(tmp_path):
     """Outside an inference factory call, get_session_id is None and
-    the wrapper records NULL — protects the legacy gw.stt path.
+    the wrapper records NULL — protects callers that drive the
+    Instrumented* wrapper directly without opening a session.
     """
     db_path = str(tmp_path / "session.db")
     storage = SQLiteStorage(db_path)
     cost_tracker = CostTracker(storage=storage)
 
-    # No get_or_create_session_id() in this flow — behaves like the
-    # pre-v0.0.5 gw.stt/llm/tts factory call.
+    # No get_or_create_session_id() in this flow — simulates direct
+    # wrapper construction outside an inference factory call.
     await _exercise_wrapper(cost_tracker, storage)
 
     rows = await storage.get_recent_requests(limit=10)

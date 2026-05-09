@@ -1,71 +1,51 @@
 # Budget Enforcement
 
-VoiceGateway supports per-project daily budgets with three enforcement modes: `warn`, `throttle`, and `block`. This example demonstrates all three.
+VoiceGateway supports per-project daily budgets with three enforcement modes: `warn`, `throttle`, and `block`. v0.0.5 enforces budgets at request-completion time inside the cost tracker; the `inference` factories themselves never raise on budget. The `BudgetThrottleSignal` and `BudgetExceededError` types still exist for callers that wire their own pre-request check (CLI / HTTP / dashboard); a first-class pre-flight raise from the inference factories is on the v0.0.6 backlog.
 
 ## Configuration
 
 ```yaml
-providers:
-  openai:
-    api_key: ${OPENAI_API_KEY}
-  deepgram:
-    api_key: ${DEEPGRAM_API_KEY}
-  cartesia:
-    api_key: ${CARTESIA_API_KEY}
-  ollama:
-    base_url: http://localhost:11434
-
-models:
-  stt:
-    deepgram/nova-3:
-      provider: deepgram
-      model: nova-3
-    local/whisper-large-v3:
-      provider: whisper
-      model: large-v3
-  llm:
-    openai/gpt-4.1-mini:
-      provider: openai
-      model: gpt-4.1-mini
-    ollama/qwen2.5:3b:
-      provider: ollama
-      model: qwen2.5:3b
-  tts:
-    cartesia/sonic-3:
-      provider: cartesia
-      model: sonic-3
-      default_voice: 794f9389-aac1-45b6-b726-9d9369183238
-    local/kokoro:
-      provider: kokoro
-
-stacks:
-  cloud:
-    stt: deepgram/nova-3
-    llm: openai/gpt-4.1-mini
-    tts: cartesia/sonic-3
-  local:
-    stt: local/whisper-large-v3
-    llm: ollama/qwen2.5:3b
-    tts: local/kokoro
-
 projects:
   warn-demo:
     name: Warn Demo
     daily_budget: 1.00
     budget_action: warn
     tags: [demo]
+    providers:
+      openai:
+        api_key: ${OPENAI_API_KEY}
+      deepgram:
+        api_key: ${DEEPGRAM_API_KEY}
+      cartesia:
+        api_key: ${CARTESIA_API_KEY}
 
   throttle-demo:
     name: Throttle Demo
     daily_budget: 1.00
     budget_action: throttle
     tags: [demo]
+    providers:
+      openai:
+        api_key: ${OPENAI_API_KEY}
+      deepgram:
+        api_key: ${DEEPGRAM_API_KEY}
 
   block-demo:
     name: Block Demo
     daily_budget: 1.00
     budget_action: block
     tags: [demo]
+    providers:
+      openai:
+        api_key: ${OPENAI_API_KEY}
+      deepgram:
+        api_key: ${DEEPGRAM_API_KEY}
+
+providers:
+  ollama:
+    base_url: http://localhost:11434
+  whisper: {}
+  kokoro: {}
 
 cost_tracking:
   enabled: true
@@ -76,15 +56,14 @@ cost_tracking:
 The `warn` mode logs a warning when the budget is exceeded but allows all requests to proceed. Use this for visibility without disrupting service.
 
 ```python
-from voicegateway import Gateway
+from voicegateway import inference
 
-gw = Gateway()
-
-# These requests proceed even after budget is exceeded.
+inference.set_project("warn-demo")
+# Requests proceed even after budget is exceeded.
 # Check your logs for: "Project 'warn-demo' exceeded daily budget: $X.XX / $1.00"
-stt = gw.stt("deepgram/nova-3", project="warn-demo")
-llm = gw.llm("openai/gpt-4.1-mini", project="warn-demo")
-tts = gw.tts("cartesia/sonic-3", project="warn-demo")
+stt = inference.STT("deepgram/nova-3")
+llm = inference.LLM("openai/gpt-4.1-mini")
+tts = inference.TTS("cartesia/sonic-3")
 ```
 
 **Log output when budget is exceeded:**
@@ -93,84 +72,50 @@ tts = gw.tts("cartesia/sonic-3", project="warn-demo")
 WARNING - Project 'warn-demo' exceeded daily budget: $1.23 / $1.00
 ```
 
-## Mode 2: Throttle
+## Mode 2: Throttle (caller-driven)
 
-The `throttle` mode raises a `BudgetThrottleSignal` exception, signaling the caller to fall back to a cheaper (typically local) model stack.
+In v0.0.5 the inference factories do not raise `BudgetThrottleSignal` themselves. Wire a pre-flight check in your worker if you want the throttle path:
 
 ```python
-from voicegateway import Gateway
+from voicegateway import inference
+from voicegateway.inference._factory import get_gateway
 from voicegateway.middleware.budget_enforcer import BudgetThrottleSignal
 
-gw = Gateway()
 
-
-def get_stt(project: str) -> object:
-    """Get STT with automatic fallback to local on budget exceed."""
+async def stt_for(project: str):
+    gw = get_gateway()
     try:
-        return gw.stt("deepgram/nova-3", project=project)
+        await gw._budget_enforcer.check_budget(project)
     except BudgetThrottleSignal:
-        # Budget exceeded -- fall back to local Whisper
-        print(f"Budget exceeded for {project}, falling back to local STT")
-        return gw.stt("local/whisper-large-v3", project=project)
-
-
-def get_llm(project: str) -> object:
-    """Get LLM with automatic fallback to local on budget exceed."""
-    try:
-        return gw.llm("openai/gpt-4.1-mini", project=project)
-    except BudgetThrottleSignal:
-        print(f"Budget exceeded for {project}, falling back to local LLM")
-        return gw.llm("ollama/qwen2.5:3b", project=project)
-
-
-def get_tts(project: str) -> object:
-    """Get TTS with automatic fallback to local on budget exceed."""
-    try:
-        return gw.tts("cartesia/sonic-3", project=project)
-    except BudgetThrottleSignal:
-        print(f"Budget exceeded for {project}, falling back to local TTS")
-        return gw.tts("local/kokoro", project=project)
-
-
-# Usage
-stt = get_stt("throttle-demo")
-llm = get_llm("throttle-demo")
-tts = get_tts("throttle-demo")
+        # Budget exceeded -- fall back to local Whisper.
+        inference.set_project(project)
+        return inference.STT("local/whisper-large-v3")
+    inference.set_project(project)
+    return inference.STT("deepgram/nova-3")
 ```
 
-### Using Stacks for Cleaner Fallback
+The `_budget_enforcer` reference is an internal handle today; v0.0.6 plans a public `inference.check_budget()` helper so callers no longer reach into a private attribute.
+
+## Mode 3: Block (caller-driven)
 
 ```python
-def get_stack(project: str):
-    """Get the full model stack, falling back to local on budget exceed."""
-    try:
-        return gw.stack("cloud", project=project)
-    except BudgetThrottleSignal:
-        print(f"Budget exceeded for {project}, switching to local stack")
-        return gw.stack("local", project=project)
-
-
-stt, llm, tts = get_stack("throttle-demo")
-```
-
-## Mode 3: Block
-
-The `block` mode raises a `BudgetExceededError` that rejects the request entirely. Use this for strict cost control.
-
-```python
-from voicegateway import Gateway
+from voicegateway import inference
+from voicegateway.inference._factory import get_gateway
 from voicegateway.middleware.budget_enforcer import BudgetExceededError
 
-gw = Gateway()
+gw = get_gateway()
 
 try:
-    stt = gw.stt("deepgram/nova-3", project="block-demo")
+    await gw._budget_enforcer.check_budget("block-demo")
 except BudgetExceededError as e:
     print(f"Request blocked: {e}")
     print(f"  Project: {e.project}")
     print(f"  Spent today: ${e.spent_usd:.2f}")
     print(f"  Daily budget: ${e.budget_usd:.2f}")
     # Handle gracefully -- show user a message, queue for later, etc.
+else:
+    inference.set_project("block-demo")
+    stt = inference.STT("deepgram/nova-3")
 ```
 
 **Output when budget is exceeded:**
@@ -221,13 +166,16 @@ enforcer = BudgetEnforcer(config, storage, cache_ttl_seconds=5.0)
 
 ## Combining with Fallback Chains
 
-For the best of both worlds, combine `throttle` mode with fallback chains:
+The throttle path can be paired with the manual chain walk pattern from [Fallback Chains](/examples/fallback-chains): on `BudgetThrottleSignal`, walk a chain that ends in a local model.
 
 ```yaml
 projects:
   prod:
     daily_budget: 50.00
     budget_action: throttle
+    providers:
+      deepgram:
+        api_key: ${DEEPGRAM_API_KEY}
 
 fallbacks:
   stt:
@@ -236,9 +184,12 @@ fallbacks:
 ```
 
 ```python
-try:
-    stt = gw.stt("deepgram/nova-3", project="prod")
-except BudgetThrottleSignal:
-    # Fallback chain handles the failover
-    stt = gw.stt_with_fallback(project="prod")
+async def stt_for(project: str):
+    gw = get_gateway()
+    try:
+        await gw._budget_enforcer.check_budget(project)
+    except BudgetThrottleSignal:
+        # Walk the chain to land on the cheaper / local backup.
+        return first_resolvable("stt", ["deepgram/nova-3", "local/whisper-large-v3"])
+    return inference.STT("deepgram/nova-3")
 ```

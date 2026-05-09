@@ -57,7 +57,7 @@ def _find_example_config() -> Path | None:
 
 
 def _load_gateway(config_path: str | None):
-    from voicegateway import Gateway
+    from voicegateway.core.gateway import Gateway
 
     try:
         return Gateway(config_path=config_path)

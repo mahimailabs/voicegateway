@@ -153,11 +153,9 @@ class RateLimiter:
 
 The limiter maintains a list of timestamps for each provider. On each `acquire()` call, it removes entries older than 60 seconds and checks whether the count exceeds the configured RPM. Uses `asyncio.Lock` for thread safety.
 
-## FallbackChain
+## Resolver-time fallback (manual walk)
 
-**File:** `voicegateway/middleware/fallback.py`
-
-Manages resolver-time fallback between models within a modality. At construction (`gw.stt_with_fallback()` / `gw.llm_with_fallback()` / `gw.tts_with_fallback()`), walks the chain and returns the first model whose provider resolves successfully. Once that model is wired into a LiveKit `AgentSession`, the call uses that model for its lifetime: VG does not swap providers mid-call. For runtime / mid-call failover, compose LiveKit's `FallbackAdapter` around VG provider instances; see the [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter) guide.
+v0.0.5 has no built-in fallback middleware. Resolver-time fallback is a startup-walk pattern: enumerate the chain and call the matching `inference.STT/LLM/TTS` factory until one succeeds, then pass the resolved instance to `AgentSession`. The chain still lives in `voicegw.yaml` (under `fallbacks:`) for documentation and for the v0.0.6 first-class `fallback=` parameter that the inference factories will honor.
 
 ```yaml
 # voicegw.yaml
@@ -171,24 +169,17 @@ fallbacks:
     - elevenlabs/turbo-v2.5
 ```
 
-```mermaid
-graph LR
-    A["resolve()"] --> B["Try deepgram/nova-3"]
-    B -->|Success| C["Return instance"]
-    B -->|Failure| D["Try openai/whisper-1"]
-    D -->|Success| C
-    D -->|Failure| E["Try local/whisper-large-v3"]
-    E -->|Success| C
-    E -->|Failure| F["Raise FallbackError"]
+```python
+def first_resolvable_stt(chain):
+    for model_id in chain:
+        try:
+            return inference.STT(model_id)
+        except Exception:
+            continue
+    raise RuntimeError("every STT model in the chain failed to resolve")
 ```
 
-When a fallback is triggered:
-
-1. The error from the previous model is logged at `DEBUG` level
-2. A `WARNING` log is emitted: `"Fallback triggered: deepgram/nova-3 -> openai/whisper-1 (reason: ...)""`
-3. The `on_fallback` callback fires (if provided), which the Gateway wires to `RequestLogger.log_fallback()`
-
-If all models in the chain fail, `FallbackError` is raised with the full chain and all accumulated errors.
+The full worked example is at [`examples/fallback_agent.py`](https://github.com/mahimailabs/voicegateway/blob/main/examples/fallback_agent.py). Once that resolved model is wired into `AgentSession`, the call uses it for its lifetime: VG does not swap providers mid-call. For runtime / mid-call failover, compose LiveKit's `FallbackAdapter` around VG `inference.*` instances directly; see the [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter) guide.
 
 ## RequestLogger
 

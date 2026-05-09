@@ -21,22 +21,22 @@
 
 VoiceGateway is purpose-built for LiveKit voice agents. Four things make it different from general-purpose LLM gateways:
 
-### 1. Returns LiveKit plugin instances directly
+### 1. One-line drop-in for `livekit.agents.inference`
 
-`gw.stt()` / `gw.llm()` / `gw.tts()` return native LiveKit plugin instances. They drop straight into `AgentSession(stt=, llm=, tts=)` with no proxy hop, no plugin shim, and no rewriting of your existing pipeline code.
+`voicegateway.inference.STT/LLM/TTS` mirror LiveKit's inference module signature for signature. Swap the import line, point your YAML at your provider keys, and the rest of your agent code works unchanged.
 
 ```python
-from voicegateway import Gateway
 from livekit.agents import AgentSession
-
-gw = Gateway()
+from voicegateway import inference          # <- the only line that changed
 
 session = AgentSession(
-    stt=gw.stt("deepgram/nova-3", project="my-app"),
-    llm=gw.llm("openai/gpt-4o-mini", project="my-app"),
-    tts=gw.tts("cartesia/sonic-3", project="my-app"),
+    stt=inference.STT("deepgram/nova-3"),
+    llm=inference.LLM("openai/gpt-4o-mini"),
+    tts=inference.TTS("cartesia/sonic-3"),
 )
 ```
+
+Per-conversation cost, latency, and session correlation are recorded transparently. Pick a project explicitly with `inference.set_project("my-app")` or set `default_project: my-app` in `voicegw.yaml`; otherwise requests fall through to the auto-created `default` project.
 
 ### 2. Modality-aware unit accounting
 
@@ -155,15 +155,13 @@ export LIVEKIT_API_SECRET=<secret>                 # `secret` for local --dev
 Without these the agent fails with `ConnectionError: Failed to connect`.
 
 ```python
-from voicegateway import Gateway
 from livekit.agents import AgentSession
-
-gw = Gateway()
+from voicegateway import inference
 
 session = AgentSession(
-    stt=gw.stt("deepgram/nova-3"),
-    llm=gw.llm("openai/gpt-4o-mini"),
-    tts=gw.tts("cartesia/sonic-3:voice_id"),
+    stt=inference.STT("deepgram/nova-3"),
+    llm=inference.LLM("openai/gpt-4o-mini"),
+    tts=inference.TTS("cartesia/sonic-3:voice_id"),
 )
 ```
 
@@ -222,7 +220,7 @@ Destructive operations (`delete_*`) require explicit `confirm=True` the agent re
 
 ## Projects
 
-Organize agents into projects for per-project budgets and cost tracking:
+Organize agents into projects for per-project provider keys, budgets, and cost tracking:
 
 ```yaml
 # voicegw.yaml
@@ -230,41 +228,37 @@ projects:
   restaurant-agent:
     name: "Restaurant Receptionist"
     description: "AI receptionist for Tony's Pizza"
-    default_stack: premium
     daily_budget: 5.00
     budget_action: warn       # warn | throttle | block
     tags: ["production", "client-ian"]
+    providers:
+      openai:
+        api_key: ${RESTAURANT_OPENAI_KEY}
+      deepgram:
+        api_key: ${RESTAURANT_DEEPGRAM_KEY}
+      cartesia:
+        api_key: ${RESTAURANT_CARTESIA_KEY}
 
   dev-testing:
     name: "Development Testing"
-    default_stack: local
     daily_budget: 0.00
     tags: ["development"]
 
-stacks:
-  premium:
-    stt: deepgram/nova-3
-    llm: openai/gpt-4o-mini
-    tts: cartesia/sonic-3
-  local:
-    stt: local/whisper-large-v3
-    llm: ollama/qwen2.5:3b
-    tts: local/kokoro
+default_project: restaurant-agent
 ```
 
 Use in code:
 
 ```python
-gw = Gateway()
+from voicegateway import inference
 
-# Tag requests with a project for cost attribution
-stt = gw.stt("deepgram/nova-3", project="restaurant-agent")
+# Either set a default_project: in voicegw.yaml, or pick the project
+# explicitly per call context:
+inference.set_project("restaurant-agent")
 
-# Or use a named stack (all three modalities at once)
-stt, llm, tts = gw.stack("premium", project="restaurant-agent")
-
-# Query project costs
-gw.costs("today", project="restaurant-agent")
+stt = inference.STT("deepgram/nova-3")
+llm = inference.LLM("openai/gpt-4o-mini")
+tts = inference.TTS("cartesia/sonic-3")
 ```
 
 CLI:
@@ -282,7 +276,7 @@ voicegw logs --project restaurant-agent   # recent requests
 
 ## Fallback Chains
 
-Resolver-time fallback. At agent startup, `gw.stt_with_fallback()` walks the chain and returns the first model whose provider resolves successfully. Useful when a primary provider's credentials are temporarily wrong, its SDK is not installed, or its initialization handshake fails.
+Resolver-time fallback at agent startup. Walk a chain manually and pass the first model whose provider plugin imports cleanly and whose key resolves into the `inference` factory; the rest are kept as backups for the next worker spawn:
 
 ```yaml
 # voicegw.yaml
@@ -292,15 +286,7 @@ fallbacks:
   tts: [cartesia/sonic-3, elevenlabs/eleven_turbo_v2_5, local/kokoro]
 ```
 
-```python
-session = AgentSession(
-    stt=gw.stt_with_fallback(),
-    llm=gw.llm_with_fallback(),
-    tts=gw.tts_with_fallback(),
-)
-```
-
-Once `AgentSession` starts, the resolved model is used for the whole call: VoiceGateway does not swap providers mid-call. For runtime failover when a provider degrades during an active call, compose [LiveKit's FallbackAdapter](https://docs.voicegateway.dev/examples/livekit-fallback-adapter) around VG provider instances.
+See [`examples/fallback_agent.py`](examples/fallback_agent.py) for the worked startup-walk pattern. Once `AgentSession` starts, the resolved model is used for the whole call: VoiceGateway does not swap providers mid-call. For runtime mid-call failover, compose [LiveKit's FallbackAdapter](https://docs.voicegateway.dev/examples/livekit-fallback-adapter) around VG `inference.*` instances. v0.0.6 adds a first-class `fallback=` parameter to the inference factories so the manual walk goes away.
 
 ---
 

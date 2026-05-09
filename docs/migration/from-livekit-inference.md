@@ -141,9 +141,9 @@ VoiceGateway replaces inference *routing*. It does not replace LiveKit Cloud's b
 
 The three things most likely to break a first migration:
 
-### "ConfigError: No active project"
+### Costs landing on the `default` project instead of yours
 
-You configured `projects:` in voicegw.yaml but did not set `default_project` and your code does not call `inference.set_project(...)`. Fix one of:
+Voicegw.yaml has `projects:` configured, but no `default_project` is set and your code never calls `inference.set_project(...)`. The gateway auto-creates a project named `"default"` on first run, so the resolver lands there instead of erroring. Per-project provider keys for your real project never get used. Fix one of:
 
 ```yaml
 default_project: voice-app
@@ -161,6 +161,8 @@ Or via env var (useful for per-deployment overrides):
 ```bash
 export VOICEGW_ACTIVE_PROJECT=voice-app
 ```
+
+Tell-tale sign: `voicegw projects` shows costs accumulating on `default` while your `voice-app` row stays at `$0.00`.
 
 ### "ModelResolutionError: Unknown provider 'foo'"
 

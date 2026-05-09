@@ -65,36 +65,22 @@ If the values print and are non-empty, you are ready for Step 1.
 Create or update your `voicegw.yaml`:
 
 ```yaml
-providers:
-  deepgram:
-    api_key: ${DEEPGRAM_API_KEY}
-  anthropic:
-    api_key: ${ANTHROPIC_API_KEY}
-  cartesia:
-    api_key: ${CARTESIA_API_KEY}
-
-stacks:
-  premium:
-    stt: deepgram/nova-3
-    llm: anthropic/claude-sonnet-4-20250514
-    tts: cartesia/sonic-3
-
-fallbacks:
-  stt:
-    - deepgram/nova-3
-    - openai/whisper-1
-  llm:
-    - anthropic/claude-sonnet-4-20250514
-    - openai/gpt-4.1-mini
-
 projects:
   my-agent:
     name: My First Agent
     description: A demo voice agent
-    default_stack: premium
     daily_budget: 5.00
     budget_action: warn
     tags: [dev]
+    providers:
+      deepgram:
+        api_key: ${DEEPGRAM_API_KEY}
+      anthropic:
+        api_key: ${ANTHROPIC_API_KEY}
+      cartesia:
+        api_key: ${CARTESIA_API_KEY}
+
+default_project: my-agent
 
 cost_tracking:
   enabled: true
@@ -120,13 +106,7 @@ Create `agent.py`:
 ```python
 from livekit.agents import AgentSession, Agent, RoomInputOptions
 from livekit.agents.llm import ChatContext
-from voicegateway import Gateway
-
-# Initialize the gateway
-gw = Gateway()
-
-# Resolve all three models from the "premium" stack
-stt, llm, tts = gw.stack("premium", project="my-agent")
+from voicegateway import inference
 
 
 class MyAgent(Agent):
@@ -139,10 +119,13 @@ class MyAgent(Agent):
 async def entrypoint(ctx):
     await ctx.connect()
 
+    # default_project: my-agent in voicegw.yaml means the inference
+    # factories pick up my-agent's per-project keys without any extra
+    # call here. Use inference.set_project("...") to override.
     session = AgentSession(
-        stt=stt,
-        llm=llm,
-        tts=tts,
+        stt=inference.STT("deepgram/nova-3"),
+        llm=inference.LLM("anthropic/claude-sonnet-4-20250514"),
+        tts=inference.TTS("cartesia/sonic-3"),
     )
 
     await session.start(
@@ -173,27 +156,23 @@ Open `http://localhost:9090` in your browser to see live cost tracking, latency 
 
 <!-- TODO: screenshot of dashboard -->
 
-## Using fallbacks instead of stacks
+## Routing to a different project
 
-If you prefer resolver-time fallback (try the next model in the chain when the primary fails to resolve at startup) over explicit model selection, use fallback methods:
-
-```python
-stt = gw.stt_with_fallback(project="my-agent")
-llm = gw.llm_with_fallback(project="my-agent")
-tts = gw.tts_with_fallback(project="my-agent")
-```
-
-VoiceGateway will try each provider in the fallback chain until one succeeds.
-
-## Using individual models
-
-You can also select models directly without stacks:
+The agent above relies on `default_project: my-agent` in YAML. When one process serves multiple agents, switch per call context with `inference.set_project`:
 
 ```python
-stt = gw.stt("deepgram/nova-3", project="my-agent")
-llm = gw.llm("anthropic/claude-sonnet-4-20250514", project="my-agent")
-tts = gw.tts("cartesia/sonic-3", project="my-agent")
+from voicegateway import inference
+
+# Inside one async task
+inference.set_project("tony-pizza")
+stt = inference.STT("deepgram/nova-3")  # uses tony-pizza's key
+
+# A separate asyncio.Task gets its own context, so no leakage.
 ```
+
+## Adding fallbacks
+
+For resolver-time fallback (try the next model in the chain when the primary fails at startup) walk a chain manually using the inference factories. See [`examples/fallback_agent.py`](https://github.com/mahimailabs/voicegateway/blob/main/examples/fallback_agent.py) for the worked pattern. v0.0.6 will add a first-class `fallback=` parameter to the `inference` factories.
 
 ## Next steps
 

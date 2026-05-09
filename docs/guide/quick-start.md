@@ -52,14 +52,13 @@ export OPENAI_API_KEY="your-openai-key"
 Create a file called `demo.py`:
 
 ```python
-from voicegateway import Gateway
+from voicegateway import inference
 
-gw = Gateway()
-
-# Create model instances
-stt = gw.stt("deepgram/nova-3")
-llm = gw.llm("openai/gpt-4.1-mini")
-tts = gw.tts("openai/tts-1")
+# Create model instances. AgentSession would consume them directly;
+# here we print them to confirm they are wired LiveKit plugins.
+stt = inference.STT("deepgram/nova-3")
+llm = inference.LLM("openai/gpt-4.1-mini")
+tts = inference.TTS("openai/tts-1")
 
 print("STT:", stt)
 print("LLM:", llm)
@@ -94,42 +93,37 @@ voicegw costs
 
 After running some requests through the gateway, this command shows your cost breakdown by provider and model.
 
-## Using stacks
+## Routing per project
 
-Instead of specifying individual models, you can define named stacks in your config:
+Once you start running multiple agents, give each its own project entry in `voicegw.yaml` so cost rows and provider keys stay separated:
 
 ```yaml
-stacks:
-  premium:
-    stt: deepgram/nova-3
-    llm: openai/gpt-4.1-mini
-    tts: openai/tts-1
+projects:
+  my-agent:
+    name: My First Agent
+    daily_budget: 5.00
+    providers:
+      deepgram:
+        api_key: ${MY_AGENT_DEEPGRAM_KEY}
+      openai:
+        api_key: ${MY_AGENT_OPENAI_KEY}
+
+default_project: my-agent
 ```
 
-Then resolve all three at once:
-
-```python
-stt, llm, tts = gw.stack("premium")
-```
+The inference factories pick the project up automatically. Override per-context with `inference.set_project("my-agent")` when you need to.
 
 ## Adding fallbacks
 
-Add a fallback chain so the gateway automatically tries the next provider if one fails:
+Manual startup-walk pattern (resolver-time fallback) with a chain in `voicegw.yaml`:
 
 ```yaml
 fallbacks:
-  stt:
-    - deepgram/nova-3
-    - openai/whisper-1
-  llm:
-    - openai/gpt-4.1-mini
-    - anthropic/claude-sonnet-4-20250514
+  stt: [deepgram/nova-3, openai/whisper-1]
+  llm: [openai/gpt-4.1-mini, anthropic/claude-sonnet-4-20250514]
 ```
 
-```python
-stt = gw.stt_with_fallback()
-llm = gw.llm_with_fallback()
-```
+See [`examples/fallback_agent.py`](https://github.com/mahimailabs/voicegateway/blob/main/examples/fallback_agent.py) for the worked code. Once `AgentSession` starts, the resolved model is used for the whole call. v0.0.6 will add a first-class `fallback=` parameter to the `inference` factories.
 
 ## Next steps
 

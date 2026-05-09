@@ -187,8 +187,10 @@ async def test_started_at_does_not_change_on_subsequent_requests(tmp_path):
 
 
 async def test_no_session_row_when_session_id_is_none(tmp_path):
-    """Backward-compat path: legacy gw.stt/llm/tts callers don't
-    populate session_id, so no sessions row should be created.
+    """Callers that do not run inside an inference factory call (no
+    ContextVar session_id) must NOT trigger a sessions row insert.
+    Direct `storage.log_request` use, e.g. from server-side
+    instrumentation outside an AgentSession, lands a NULL session_id.
     """
     db_path = str(tmp_path / "session.db")
     storage = SQLiteStorage(db_path)

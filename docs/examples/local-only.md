@@ -76,6 +76,8 @@ projects:
     daily_budget: 0  # Unlimited (local models are free)
     tags: [development, local]
 
+default_project: local-dev
+
 cost_tracking:
   enabled: true  # Still tracks requests, costs will be $0.00
 
@@ -86,17 +88,13 @@ observability:
 ## Basic Usage
 
 ```python
-from voicegateway import Gateway
+from voicegateway import inference
 
-gw = Gateway()
-
-# All local, no API keys needed
-stt = gw.stt("local/whisper-large-v3", project="local-dev")
-llm = gw.llm("ollama/qwen2.5:3b", project="local-dev")
-tts = gw.tts("local/kokoro", project="local-dev")
-
-# Or use a named stack
-stt, llm, tts = gw.stack("local", project="local-dev")
+# default_project: local-dev in voicegw.yaml means the inference
+# factories pick up local-dev automatically. All local, no API keys.
+stt = inference.STT("local/whisper-large-v3")
+llm = inference.LLM("ollama/qwen2.5:3b")
+tts = inference.TTS("local/kokoro")
 ```
 
 ## LiveKit Agent with Local Models
@@ -104,21 +102,17 @@ stt, llm, tts = gw.stack("local", project="local-dev")
 ```python
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
 from livekit.plugins import silero
-from voicegateway import Gateway
-
-gw = Gateway()
+from voicegateway import inference
 
 
 async def entrypoint(ctx: JobContext):
     await ctx.connect()
 
-    stt, llm, tts = gw.stack("local", project="local-dev")
-
     session = AgentSession(
         vad=silero.VAD.load(),
-        stt=stt,
-        llm=llm,
-        tts=tts,
+        stt=inference.STT("local/whisper-large-v3"),
+        llm=inference.LLM("ollama/qwen2.5:3b"),
+        tts=inference.TTS("local/kokoro"),
     )
 
     await session.start(
