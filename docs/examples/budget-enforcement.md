@@ -99,23 +99,29 @@ The `_budget_enforcer` reference is an internal handle today; v0.0.6 plans a pub
 ## Mode 3: Block (caller-driven)
 
 ```python
+import asyncio
+
 from voicegateway import inference
 from voicegateway.inference._factory import get_gateway
 from voicegateway.middleware.budget_enforcer import BudgetExceededError
 
-gw = get_gateway()
 
-try:
-    await gw._budget_enforcer.check_budget("block-demo")
-except BudgetExceededError as e:
-    print(f"Request blocked: {e}")
-    print(f"  Project: {e.project}")
-    print(f"  Spent today: ${e.spent_usd:.2f}")
-    print(f"  Daily budget: ${e.budget_usd:.2f}")
-    # Handle gracefully -- show user a message, queue for later, etc.
-else:
-    inference.set_project("block-demo")
-    stt = inference.STT("deepgram/nova-3")
+async def main():
+    gw = get_gateway()
+    try:
+        await gw._budget_enforcer.check_budget("block-demo")
+    except BudgetExceededError as e:
+        print(f"Request blocked: {e}")
+        print(f"  Project: {e.project}")
+        print(f"  Spent today: ${e.spent_usd:.2f}")
+        print(f"  Daily budget: ${e.budget_usd:.2f}")
+        # Handle gracefully -- show user a message, queue for later, etc.
+    else:
+        inference.set_project("block-demo")
+        stt = inference.STT("deepgram/nova-3")
+
+
+asyncio.run(main())
 ```
 
 **Output when budget is exceeded:**

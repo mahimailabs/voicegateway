@@ -19,7 +19,7 @@ hero:
 features:
   - icon: "\U0001F50C"
     title: One-line drop-in for livekit.agents.inference
-    details: "voicegateway.inference.STT, LLM, TTS mirror LiveKit's inference module signature for signature. Swap the import line; the rest of your agent code keeps working. Cost tracking, latency monitoring, and session correlation happen transparently."
+    details: "voicegateway.inference.STT, LLM, TTS mirror LiveKit's inference module signature. Swap the import line; the rest of your agent code keeps working. Cost tracking, latency monitoring, and session correlation happen transparently."
     link: /guide/quick-start
     linkText: See the integration
 

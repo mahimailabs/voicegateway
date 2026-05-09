@@ -12,7 +12,7 @@ Validate the v0.0.5 inference pipeline end-to-end without spinning up a LiveKit 
 
 If any check fails, the command exits with status 1 and the report names the failed checks. On success it exits 0 with the message:
 
-```
+```text
 All structural checks passed. For an actual end-to-end run, point a
 LiveKit dev server at examples/v005_inference_drop_in.py.
 ```
@@ -55,7 +55,7 @@ python examples/v005_inference_drop_in.py dev
 
 ## Sample output
 
-```
+```text
                             VoiceGateway smoke test
 ┏━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ Check                ┃ Status ┃ Detail                                       ┃
