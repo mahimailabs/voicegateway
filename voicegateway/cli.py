@@ -42,6 +42,7 @@ def _root(
 ) -> None:
     """Root callback hosting global options like --version."""
 
+
 # The example config ships next to the package. Try both the new and legacy names.
 _PACKAGE_ROOT = Path(__file__).parent.parent
 _EXAMPLE_CONFIG_CANDIDATES = [
@@ -456,6 +457,20 @@ def smoke_test(
         raise typer.Exit(1)
     add("config", True, str(gw.config.cost_tracking.get("db_path", "(default)")))
 
+    # Validate an explicit --project up front. Without this check a
+    # typo (--project tony-piza) sails through `project or _smoke_…`
+    # and surfaces as a confusing "no provider key" failure deeper in
+    # the pipeline.
+    if project is not None and project not in gw.config.projects:
+        known = ", ".join(sorted(gw.config.projects)) or "(none)"
+        add(
+            "active project",
+            False,
+            f"Unknown project '{project}'. Known projects: {known}.",
+        )
+        _print_smoke_report(rows)
+        raise typer.Exit(1)
+
     active = project or _smoke_active_project(gw)
     if active is None:
         add(
@@ -467,17 +482,24 @@ def smoke_test(
         raise typer.Exit(1)
     add("active project", True, active)
 
-    # 2. Per-modality construction with stubbed LiveKit plugins.
-    asyncio.run(_run_smoke_pipeline_checks(gw, active, add))
+    # try/finally so reset_gateway() always runs — including when a
+    # pipeline check raises or the typer.Exit(1) below fires. Without
+    # this the singleton cache stays mutated across a failed smoke
+    # run, which trips up the next test invocation in the same
+    # process.
+    try:
+        # 2. Per-modality construction with stubbed LiveKit plugins.
+        asyncio.run(_run_smoke_pipeline_checks(gw, active, add))
 
-    # 3. Optional live health checks.
-    if live:
-        asyncio.run(_run_smoke_health_checks(gw, active, add))
+        # 3. Optional live health checks.
+        if live:
+            asyncio.run(_run_smoke_health_checks(gw, active, add))
 
-    _print_smoke_report(rows)
-    if any(not passed for _, passed, _ in rows):
-        raise typer.Exit(1)
-    reset_gateway()
+        _print_smoke_report(rows)
+        if any(not passed for _, passed, _ in rows):
+            raise typer.Exit(1)
+    finally:
+        reset_gateway()
 
 
 def _smoke_active_project(gw: Any) -> str | None:
@@ -533,9 +555,7 @@ def _smoke_pick_models(gw: Any, project: str) -> dict[str, str]:
     return chosen
 
 
-async def _run_smoke_pipeline_checks(
-    gw: Any, project: str, add
-) -> None:
+async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
     """Construct each modality with stubbed LK plugins, drive a fake
     request through the wrapper, verify storage rows.
     """
@@ -616,8 +636,7 @@ async def _run_smoke_pipeline_checks(
                 add(
                     f"inference.{label}",
                     False,
-                    f"Expected wrapped {modality}; got "
-                    f"{type(instance).__name__}.",
+                    f"Expected wrapped {modality}; got {type(instance).__name__}.",
                 )
                 continue
             add(f"inference.{label}", True, f"wrapped {model_id}")
@@ -699,10 +718,12 @@ async def _run_smoke_health_checks(gw: Any, project: str, add) -> None:
     sources: list[tuple[str, dict]] = []
     for name, cfg in proj.providers.items():
         sources.append((name, cfg))
+        seen.add(name)
     for name, cfg in gw.config.providers.items():
-        if name not in seen:
-            sources.append((name, cfg))
-            seen.add(name)
+        if name in seen:
+            continue
+        sources.append((name, cfg))
+        seen.add(name)
 
     for name, cfg in sources:
         if name not in _PROVIDER_REGISTRY:
@@ -740,8 +761,7 @@ def _print_smoke_report(rows: list[tuple[str, bool, str]]) -> None:
     failures = [label for label, passed, _ in rows if not passed]
     if failures:
         console.print(
-            f"\n[red]{len(failures)} check(s) failed[/red]: "
-            f"{', '.join(failures)}"
+            f"\n[red]{len(failures)} check(s) failed[/red]: {', '.join(failures)}"
         )
     else:
         console.print(
@@ -846,9 +866,7 @@ def _format_export_value(column: str, value: Any) -> Any:
         return ""
     if column == "timestamp":
         try:
-            return _dt.datetime.fromtimestamp(
-                float(value), tz=_dt.UTC
-            ).isoformat()
+            return _dt.datetime.fromtimestamp(float(value), tz=_dt.UTC).isoformat()
         except (TypeError, ValueError, OSError):
             return value
     if column == "calculated_cost_usd":
@@ -879,9 +897,7 @@ def _parse_iso_date_arg(value: str, *, end_of_day: bool) -> float:
     try:
         d = _dt.datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=_dt.UTC)
     except ValueError as e:
-        console.print(
-            f"[red]Invalid date {value!r}: expected YYYY-MM-DD[/red]"
-        )
+        console.print(f"[red]Invalid date {value!r}: expected YYYY-MM-DD[/red]")
         raise typer.Exit(2) from e
     if end_of_day:
         d += _dt.timedelta(days=1)
@@ -928,9 +944,7 @@ def export_costs_cmd(
 
     gw = _load_gateway(config)
     if gw.storage is None:
-        console.print(
-            "[yellow]Cost tracking is not enabled in voicegw.yaml[/yellow]"
-        )
+        console.print("[yellow]Cost tracking is not enabled in voicegw.yaml[/yellow]")
         raise typer.Exit(1)
 
     start_ts = _parse_iso_date_arg(start, end_of_day=False)
@@ -974,9 +988,7 @@ def export_costs_cmd(
         except OSError as e:
             console.print(f"[red]Failed to write {output}: {e}[/red]")
             raise typer.Exit(1) from e
-        console.print(
-            f"[green]Wrote {len(rows)} record(s) to {output}[/green]"
-        )
+        console.print(f"[green]Wrote {len(rows)} record(s) to {output}[/green]")
 
 
 @app.command(name="reconcile")
@@ -1029,9 +1041,7 @@ def reconcile_cmd(
 
     gw = _load_gateway(config)
     if gw.storage is None:
-        console.print(
-            "[yellow]Cost tracking is not enabled in voicegw.yaml[/yellow]"
-        )
+        console.print("[yellow]Cost tracking is not enabled in voicegw.yaml[/yellow]")
         raise typer.Exit(1)
 
     start_ts = _parse_iso_date_arg(start, end_of_day=False)
@@ -1072,9 +1082,7 @@ def reconcile_cmd(
         # Colorize flagged rows only on a real TTY; piped output and
         # CliRunner captures stay plain text.
         sys.stdout.write(
-            _reconcile.format_text(
-                lines, provider, colorize=sys.stdout.isatty()
-            )
+            _reconcile.format_text(lines, provider, colorize=sys.stdout.isatty())
         )
 
 
