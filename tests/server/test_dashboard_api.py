@@ -287,6 +287,19 @@ async def test_api_projects(client):
     assert "stats" in data
 
 
+async def test_api_projects_includes_source_field(client):
+    """Item D: every project carries a ``source`` field so the
+    dashboard can render the right SourceBadge ("yaml" / "db" /
+    "auto"). Items 1 and 2 set the column on every project row;
+    list_projects forwards it.
+    """
+    resp = await client.get("/api/projects")
+    data = resp.json()
+    for p in data["projects"]:
+        assert "source" in p
+        assert p["source"] in {"yaml", "db", "auto"}
+
+
 async def test_missing_frontend_fallback(client):
     """When the Vite build doesn't exist, root returns a helpful error."""
     resp = await client.get("/")

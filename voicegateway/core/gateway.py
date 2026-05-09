@@ -159,7 +159,14 @@ class Gateway:
         return _run_async(self._storage.get_cost_summary(period, project=project))
 
     def list_projects(self) -> list[dict[str, Any]]:
-        """Return configured projects as a list of serializable dicts."""
+        """Return configured projects as a list of serializable dicts.
+
+        ``source`` is one of ``"yaml"``, ``"db"``, or ``"auto"``. The
+        last comes from the v0.0.5 auto-create-default branch in
+        ``__init__``; the dashboard renders a distinct badge for it
+        so the user can tell their custom config apart from the
+        gateway's first-run stub.
+        """
         result = []
         for pid, pcfg in self._config.projects.items():
             result.append(
@@ -171,6 +178,8 @@ class Gateway:
                     "default_stack": pcfg.default_stack,
                     "tags": list(pcfg.tags),
                     "accent": pcfg.accent,
+                    "source": pcfg.source,
+                    "budget_action": pcfg.budget_action,
                 }
             )
         return result
