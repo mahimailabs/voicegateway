@@ -5,6 +5,7 @@ import Models from './pages/Models';
 import Costs from './pages/Costs';
 import Latency from './pages/Latency';
 import Logs from './pages/Logs';
+import Sessions from './pages/Sessions';
 import Projects from './pages/Projects';
 import Providers from './pages/Providers';
 import Settings from './pages/Settings';
@@ -18,6 +19,7 @@ const PAGES = [
   { to: '/costs',    label: 'Costs',     id: 'costs'    },
   { to: '/latency',  label: 'Latency',   id: 'latency'  },
   { to: '/logs',     label: 'Logs',      id: 'logs'     },
+  { to: '/sessions', label: 'Sessions',  id: 'sessions' },
   { to: '/projects', label: 'Projects',  id: 'projects' },
   { to: '/providers', label: 'Providers', id: 'providers' },
   { to: '/settings', label: 'Settings',  id: 'settings' },
@@ -81,6 +83,7 @@ export default function App() {
             <Route path="/costs" element={<Costs />} />
             <Route path="/latency" element={<Latency />} />
             <Route path="/logs" element={<Logs />} />
+            <Route path="/sessions" element={<Sessions />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/providers" element={<Providers />} />
             <Route path="/settings" element={<Settings />} />

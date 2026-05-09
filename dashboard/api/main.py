@@ -81,10 +81,17 @@ async def get_status() -> dict:
 
     providers = {}
     for name, cfg in config.providers.items():
-        has_key = bool(cfg.get("api_key")) or name in ("ollama", "whisper", "kokoro", "piper")
+        has_key = bool(cfg.get("api_key")) or name in (
+            "ollama",
+            "whisper",
+            "kokoro",
+            "piper",
+        )
         providers[name] = {
             "configured": has_key,
-            "type": "local" if name in ("ollama", "whisper", "kokoro", "piper") else "cloud",
+            "type": "local"
+            if name in ("ollama", "whisper", "kokoro", "piper")
+            else "cloud",
         }
 
     models = {}
@@ -146,9 +153,7 @@ async def get_latency(
     if gw.storage is None:
         return {}
     pcts = gw.config.latency.get("percentiles") or [50.0, 95.0, 99.0]
-    return await gw.storage.get_latency_stats(
-        period, project=project, percentiles=pcts
-    )
+    return await gw.storage.get_latency_stats(period, project=project, percentiles=pcts)
 
 
 @app.get("/api/logs")
@@ -161,7 +166,9 @@ async def get_logs(
     gw = _get_gateway()
     if gw.storage is None:
         return []
-    return await gw.storage.get_recent_requests(limit=limit, modality=modality, project=project)
+    return await gw.storage.get_recent_requests(
+        limit=limit, modality=modality, project=project
+    )
 
 
 @app.get("/api/overview")
@@ -209,6 +216,47 @@ async def get_projects() -> dict:
         for p in projects:
             stats[p["id"]] = await gw.storage.get_project_stats(p["id"])
     return {"projects": projects, "stats": stats}
+
+
+@app.get("/api/sessions")
+async def get_sessions(
+    limit: int = Query(100, ge=1, le=1000),
+    project: str | None = Query(None),
+    order_by: str = Query(
+        "started_at_desc",
+        pattern="^(started_at_desc|started_at_asc|cost_desc|cost_asc)$",
+    ),
+) -> list[dict[str, Any]]:
+    """Return recent voice sessions, ordered per ``order_by``.
+
+    Mirror of the /v1/sessions endpoint so the dashboard frontend
+    can stay on a single origin in dev mode (the Vite proxy only
+    forwards /api). Storage method is shared.
+    """
+    gw = _get_gateway()
+    if gw.storage is None:
+        return []
+    return await gw.storage.list_sessions(
+        limit=limit, project=project, order_by=order_by
+    )
+
+
+@app.get("/api/sessions/{session_id}")
+async def get_session_detail(session_id: str) -> dict[str, Any]:
+    """Return one session by id with per-modality breakdown.
+
+    Mirror of /v1/sessions/{id}: returns the session row plus the
+    ``by_modality`` and ``providers`` fields the storage method
+    computes via a join on the requests table. 404 when no row
+    matches.
+    """
+    gw = _get_gateway()
+    if gw.storage is None:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    row = await gw.storage.get_session(session_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    return row
 
 
 @app.get("/api/providers/by-project")
@@ -310,6 +358,7 @@ if _FRONTEND_DIR.exists() and (_FRONTEND_DIR / "assets").exists():
         return FileResponse(_FRONTEND_DIR / "index.html")
 
 else:
+
     @app.get("/")
     async def missing_frontend():
         return {
