@@ -82,7 +82,10 @@ async def test_first_request_inserts_session_row(tmp_path):
     assert row["id"] == sid
     assert row["project"] == "tony-pizza"
     assert row["started_at"]  # ISO string, not empty
-    assert row["ended_at"] is None
+    # ended_at is set to the request timestamp on first insert and
+    # bumped on each subsequent request; on a single-request session
+    # the two stamps are equal so duration is 0 rather than None.
+    assert row["ended_at"] == row["started_at"]
     assert row["modalities"] == "stt"
     assert row["total_cost_usd"] == 0.0043
     assert row["request_count"] == 1

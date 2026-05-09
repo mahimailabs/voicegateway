@@ -34,13 +34,14 @@ async def client(app):
 async def _seed_session(
     storage, sid: str, *, project: str = "tony-pizza", modality: str = "stt",
     cost: float = 0.001, ts: float | None = None,
+    provider: str = "deepgram",
 ):
     rec = RequestRecord(
         id=str(uuid.uuid4()),
         timestamp=ts if ts is not None else time.time(),
         modality=modality,
-        model_id=f"deepgram/{modality}-test",
-        provider="deepgram",
+        model_id=f"{provider}/{modality}-test",
+        provider=provider,
         project=project,
         cost_usd=cost,
         session_id=sid,
@@ -144,6 +145,128 @@ async def test_session_detail_returns_session(client, gateway):
     assert abs(data["total_cost_usd"] - 0.05) < 1e-9
     assert data["request_count"] == 1
     assert isinstance(data["modalities"], list)
+    # AC-002.1: detail responses carry per-modality breakdown +
+    # providers list. A single-modality session has one entry.
+    assert "by_modality" in data
+    assert data["by_modality"]["stt"]["request_count"] == 1
+    assert abs(data["by_modality"]["stt"]["cost"] - 0.05) < 1e-9
+    assert data["providers"] == ["deepgram"]
+
+
+async def test_session_detail_per_modality_breakdown_aggregates_by_modality(
+    client, gateway
+):
+    """A session with mixed STT / LLM / TTS requests returns one
+    by_modality entry per modality, with the right cost and count.
+    """
+    await _seed_session(
+        gateway.storage, "vg-mix", modality="stt", cost=0.01, provider="deepgram"
+    )
+    await _seed_session(
+        gateway.storage, "vg-mix", modality="llm", cost=0.02, provider="openai"
+    )
+    await _seed_session(
+        gateway.storage, "vg-mix", modality="llm", cost=0.03, provider="openai"
+    )
+    await _seed_session(
+        gateway.storage, "vg-mix", modality="tts", cost=0.04, provider="cartesia"
+    )
+
+    resp = await client.get("/v1/sessions/vg-mix")
+    data = resp.json()
+
+    by_mod = data["by_modality"]
+    assert set(by_mod.keys()) == {"stt", "llm", "tts"}
+    assert abs(by_mod["stt"]["cost"] - 0.01) < 1e-9
+    assert by_mod["stt"]["request_count"] == 1
+    assert abs(by_mod["llm"]["cost"] - 0.05) < 1e-9
+    assert by_mod["llm"]["request_count"] == 2
+    assert abs(by_mod["tts"]["cost"] - 0.04) < 1e-9
+    assert by_mod["tts"]["request_count"] == 1
+
+    # Providers list deduplicates and sorts.
+    assert data["providers"] == ["cartesia", "deepgram", "openai"]
+
+
+async def test_session_detail_ended_at_advances_with_each_request(client, gateway):
+    """AC-002.3: ended_at tracks last-activity, not first-activity, so
+    duration is queryable without a session-close hook.
+    """
+    await _seed_session(gateway.storage, "vg-dur", ts=1700000000.0, cost=0.01)
+    await _seed_session(gateway.storage, "vg-dur", ts=1700000050.0, cost=0.01)
+    await _seed_session(gateway.storage, "vg-dur", ts=1700000123.0, cost=0.01)
+
+    resp = await client.get("/v1/sessions/vg-dur")
+    data = resp.json()
+    assert data["started_at"] != data["ended_at"]
+    # Both are ISO 8601 — string comparison reflects time order.
+    assert data["ended_at"] > data["started_at"]
+
+
+async def test_session_detail_out_of_order_request_does_not_drag_ended_at_back(
+    client, gateway
+):
+    """A late-arriving record with an older timestamp must NOT move
+    ended_at backwards. The CASE clause in the upsert guards this.
+    """
+    await _seed_session(gateway.storage, "vg-ooo", ts=1700000100.0)
+    expected_ended = (
+        await gateway.storage.get_session("vg-ooo")
+    )["ended_at"]
+    await _seed_session(gateway.storage, "vg-ooo", ts=1700000050.0)  # earlier!
+
+    resp = await client.get("/v1/sessions/vg-ooo")
+    data = resp.json()
+    assert data["ended_at"] == expected_ended  # unchanged
+
+
+# ---------------------------------------------------------------------------
+# /v1/sessions ordering (AC-002.3)
+# ---------------------------------------------------------------------------
+
+
+async def test_list_sessions_order_by_cost_desc(client, gateway):
+    await _seed_session(gateway.storage, "vg-cheap", cost=0.001, ts=1700000300.0)
+    await _seed_session(gateway.storage, "vg-mid", cost=0.05, ts=1700000200.0)
+    await _seed_session(gateway.storage, "vg-pricey", cost=0.50, ts=1700000100.0)
+
+    resp = await client.get("/v1/sessions?order_by=cost_desc")
+    rows = resp.json()
+    assert [r["id"] for r in rows] == ["vg-pricey", "vg-mid", "vg-cheap"]
+
+
+async def test_list_sessions_order_by_cost_asc(client, gateway):
+    await _seed_session(gateway.storage, "vg-cheap", cost=0.001, ts=1700000300.0)
+    await _seed_session(gateway.storage, "vg-mid", cost=0.05, ts=1700000200.0)
+    await _seed_session(gateway.storage, "vg-pricey", cost=0.50, ts=1700000100.0)
+
+    resp = await client.get("/v1/sessions?order_by=cost_asc")
+    rows = resp.json()
+    assert [r["id"] for r in rows] == ["vg-cheap", "vg-mid", "vg-pricey"]
+
+
+async def test_list_sessions_order_by_started_at_asc(client, gateway):
+    await _seed_session(gateway.storage, "vg-old", ts=1700000000.0)
+    await _seed_session(gateway.storage, "vg-new", ts=1750000000.0)
+
+    resp = await client.get("/v1/sessions?order_by=started_at_asc")
+    rows = resp.json()
+    assert [r["id"] for r in rows] == ["vg-old", "vg-new"]
+
+
+async def test_list_sessions_default_order_is_started_at_desc(client, gateway):
+    """Omitting order_by must keep the legacy newest-first behaviour."""
+    await _seed_session(gateway.storage, "vg-old", ts=1700000000.0, cost=10.0)
+    await _seed_session(gateway.storage, "vg-new", ts=1750000000.0, cost=0.01)
+
+    resp = await client.get("/v1/sessions")
+    rows = resp.json()
+    assert [r["id"] for r in rows] == ["vg-new", "vg-old"]
+
+
+async def test_list_sessions_invalid_order_by_returns_422(client):
+    resp = await client.get("/v1/sessions?order_by=cost_random")
+    assert resp.status_code == 422
 
 
 async def test_session_detail_returns_404_for_missing(client):

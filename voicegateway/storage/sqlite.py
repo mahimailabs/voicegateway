@@ -405,14 +405,24 @@ class SQLiteStorage:
                 # and union the modality into the comma-separated list
                 # without duplicates. INSTR on bracketed keys (",stt,")
                 # avoids substring false-positives like "tt" matching
-                # in "stt".
+                # in "stt". ended_at is set to the request's timestamp
+                # on insert and bumped on every conflict so a session
+                # row always reflects last-activity time without
+                # requiring a session-close hook. Out-of-order arrivals
+                # cannot drag ended_at backwards (CASE guards it).
                 await db.execute(
                     """INSERT INTO sessions
-                       (id, project, started_at, modalities, total_cost_usd, request_count)
-                       VALUES (?, ?, ?, ?, ?, 1)
+                       (id, project, started_at, ended_at, modalities,
+                        total_cost_usd, request_count)
+                       VALUES (?, ?, ?, ?, ?, ?, 1)
                        ON CONFLICT(id) DO UPDATE SET
                            total_cost_usd = total_cost_usd + excluded.total_cost_usd,
                            request_count = request_count + 1,
+                           ended_at = CASE
+                               WHEN ended_at IS NULL THEN excluded.ended_at
+                               WHEN ended_at < excluded.ended_at THEN excluded.ended_at
+                               ELSE ended_at
+                           END,
                            modalities = CASE
                                WHEN modalities = '' THEN excluded.modalities
                                WHEN INSTR(
@@ -424,6 +434,7 @@ class SQLiteStorage:
                     (
                         record.session_id,
                         record.project,
+                        started_at_iso,
                         started_at_iso,
                         record.modality,
                         record.cost_usd,
@@ -884,35 +895,58 @@ class SQLiteStorage:
             "request_count": int(row[6] or 0),
         }
 
+    _SESSION_ORDER_CLAUSES: dict[str, str] = {
+        "started_at_desc": "started_at DESC",
+        "started_at_asc": "started_at ASC",
+        "cost_desc": "total_cost_usd DESC, started_at DESC",
+        "cost_asc": "total_cost_usd ASC, started_at DESC",
+    }
+
     async def list_sessions(
         self,
         limit: int = 100,
         project: str | None = None,
+        order_by: str = "started_at_desc",
     ) -> list[dict[str, Any]]:
-        """Return recent sessions, newest first.
+        """Return recent sessions, ordered per ``order_by``.
 
         Args:
             limit: Max rows to return.
             project: Optional project filter.
+            order_by: One of ``"started_at_desc"`` (default),
+                ``"started_at_asc"``, ``"cost_desc"``, ``"cost_asc"``.
+                Cost orderings break ties by started_at DESC so two
+                $0 sessions still surface newest first.
+
+        Raises:
+            ValueError: When ``order_by`` is not one of the supported
+                values. The whitelist guards against SQL injection
+                via the user-supplied parameter.
         """
+        clause = self._SESSION_ORDER_CLAUSES.get(order_by)
+        if clause is None:
+            supported = ", ".join(sorted(self._SESSION_ORDER_CLAUSES))
+            raise ValueError(
+                f"Unknown order_by {order_by!r}. Supported: {supported}."
+            )
         db = await self._ensure_initialized()
         try:
             if project:
                 cursor = await db.execute(
-                    """SELECT id, project, started_at, ended_at, modalities,
+                    f"""SELECT id, project, started_at, ended_at, modalities,
                               total_cost_usd, request_count
                        FROM sessions
                        WHERE project = ?
-                       ORDER BY started_at DESC
+                       ORDER BY {clause}
                        LIMIT ?""",
                     (project, limit),
                 )
             else:
                 cursor = await db.execute(
-                    """SELECT id, project, started_at, ended_at, modalities,
+                    f"""SELECT id, project, started_at, ended_at, modalities,
                               total_cost_usd, request_count
                        FROM sessions
-                       ORDER BY started_at DESC
+                       ORDER BY {clause}
                        LIMIT ?""",
                     (limit,),
                 )
@@ -921,7 +955,13 @@ class SQLiteStorage:
             await db.close()
 
     async def get_session(self, session_id: str) -> dict[str, Any] | None:
-        """Return a single session by id, or None if not found."""
+        """Return a single session by id, or None if not found.
+
+        The returned dict carries the row's stored fields plus a
+        ``by_modality`` breakdown ({modality: {"cost", "request_count"}})
+        and a deduplicated ``providers`` list. Both are computed from
+        the ``requests`` table on read, joined on ``session_id``.
+        """
         db = await self._ensure_initialized()
         try:
             cursor = await db.execute(
@@ -932,7 +972,42 @@ class SQLiteStorage:
                 (session_id,),
             )
             row = await cursor.fetchone()
-            return self._row_to_session(row) if row else None
+            if row is None:
+                return None
+            session = self._row_to_session(row)
+
+            # Per-modality breakdown via a join on session_id. A
+            # session with no matching requests (a stub row written
+            # before the wrapper called log_request — should not
+            # happen, but guard anyway) returns an empty breakdown.
+            mod_cursor = await db.execute(
+                """SELECT modality,
+                          COALESCE(SUM(cost_usd), 0) AS cost,
+                          COUNT(*) AS request_count
+                   FROM requests
+                   WHERE session_id = ?
+                   GROUP BY modality""",
+                (session_id,),
+            )
+            session["by_modality"] = {
+                mod_row[0]: {
+                    "cost": float(mod_row[1] or 0.0),
+                    "request_count": int(mod_row[2] or 0),
+                }
+                async for mod_row in mod_cursor
+            }
+
+            # Distinct providers seen in this session, sorted for a
+            # stable response order.
+            prov_cursor = await db.execute(
+                """SELECT DISTINCT provider
+                   FROM requests
+                   WHERE session_id = ?
+                   ORDER BY provider""",
+                (session_id,),
+            )
+            session["providers"] = [prov_row[0] async for prov_row in prov_cursor]
+            return session
         finally:
             await db.close()
 

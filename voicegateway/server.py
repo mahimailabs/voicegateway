@@ -304,20 +304,38 @@ def build_app(gateway: Gateway) -> FastAPI:
     async def v1_sessions(
         limit: int = Query(100, ge=1, le=1000),
         project: str | None = Query(None),
+        order_by: str = Query(
+            "started_at_desc",
+            pattern="^(started_at_desc|started_at_asc|cost_desc|cost_asc)$",
+        ),
     ) -> list[dict]:
-        """Return recent voice sessions, newest first.
+        """Return recent voice sessions, ordered per ``order_by``.
 
         Sessions are populated by the v0.0.5 inference module via
         ContextVar correlation; rows accumulate cost and request count
-        over the life of one logical voice session.
+        over the life of one logical voice session. ``ended_at``
+        tracks last activity (the timestamp of the most recent
+        request) so duration is queryable without a session-close
+        hook. ``order_by`` defaults to newest first; pass
+        ``cost_desc`` to find the most expensive sessions.
         """
         if gateway.storage is None:
             return []
-        return await gateway.storage.list_sessions(limit=limit, project=project)
+        return await gateway.storage.list_sessions(
+            limit=limit, project=project, order_by=order_by
+        )
 
     @app.get("/v1/sessions/{session_id}")
     async def v1_session_detail(session_id: str) -> dict:
-        """Return one session by id, or 404 if it does not exist."""
+        """Return one session by id with a per-modality cost breakdown.
+
+        The response includes ``by_modality`` (a dict keyed by
+        ``"stt"`` / ``"llm"`` / ``"tts"`` with ``cost`` and
+        ``request_count``) and ``providers`` (deduplicated list of
+        provider names seen in this session). Both are computed by
+        joining the ``requests`` table on ``session_id`` at read
+        time. 404 when no session matches.
+        """
         if gateway.storage is None:
             raise HTTPException(
                 status_code=404, detail=f"Session '{session_id}' not found"
