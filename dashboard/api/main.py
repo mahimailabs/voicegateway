@@ -211,10 +211,15 @@ async def get_providers_by_project(project: str | None = Query(None)) -> dict:
     local_names = {"ollama", "whisper", "kokoro", "piper"}
     rows: list[dict[str, Any]] = []
 
-    # 1. YAML projects.<id>.providers.<name>.
+    # 1. YAML projects.<id>.providers.<name>. After Item 1 fixed the
+    # config_manager merge, ``config.projects[<id>].providers`` can
+    # contain DB-managed rows alongside YAML entries; skip the DB ones
+    # here so the loop below tags them with source="db" instead.
     for proj_id, proj_cfg in gw.config.projects.items():
         for prov_name, prov_cfg in proj_cfg.providers.items():
             if not isinstance(prov_cfg, dict):
+                continue
+            if prov_cfg.get("_source") == "db":
                 continue
             api_key = prov_cfg.get("api_key")
             rows.append(

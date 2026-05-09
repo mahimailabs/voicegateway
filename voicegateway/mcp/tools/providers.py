@@ -483,11 +483,6 @@ Raises:
     VALIDATION if provider is not in the supported set.
     PROVIDER_ALREADY_EXISTS if a YAML-defined provider already owns
     this provider_id (rare; the project-prefixed id usually avoids it).
-
-Note: v0.0.5 persists the row but the inference resolver does NOT yet
-consult DB-managed per-project entries (only YAML-defined
-projects.<id>.providers blocks are read at resolve time). End-to-end
-DB-driven per-project resolution lands in v0.0.6+.
 """
 
 
@@ -537,7 +532,12 @@ async def _handle_vg_add_provider(
     if (
         project_cfg is not None
         and payload.provider in project_cfg.providers
+        and project_cfg.providers[payload.provider].get("_source") != "db"
     ):
+        # Block YAML-defined per-project shadowing. A DB-sourced entry
+        # at the same path is the row we are about to upsert (rotation),
+        # which must succeed — the ``_source != "db"`` check carves
+        # rotation out of the guard.
         raise ProviderAlreadyExistsError(
             f"Project '{payload.project}' already defines '{payload.provider}' "
             "in voicegw.yaml. Edit the YAML or remove that entry; the "
@@ -664,12 +664,20 @@ Returns:
 def _yaml_per_project_entries(gateway: Gateway) -> list[dict[str, Any]]:
     """Flatten projects.<id>.providers blocks from voicegw.yaml into
     a list of provider dicts shaped like the DB output.
+
+    Skips entries whose ``_source`` is ``"db"`` — after Item 1 fixed the
+    config_manager merge, ``config.projects[<id>].providers`` can carry
+    DB-managed rows alongside YAML entries; the DB scan below adds
+    those, so reporting them here would double-count and label DB rows
+    as YAML.
     """
     local_names = {"ollama", "whisper", "kokoro", "piper"}
     out: list[dict[str, Any]] = []
     for proj_id, proj_cfg in gateway.config.projects.items():
         for prov_name, prov_cfg in proj_cfg.providers.items():
             if not isinstance(prov_cfg, dict):
+                continue
+            if prov_cfg.get("_source") == "db":
                 continue
             api_key = prov_cfg.get("api_key")
             out.append(

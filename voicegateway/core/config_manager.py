@@ -34,11 +34,17 @@ class ConfigManager:
         if self._storage is None:
             return merged
 
-        # Layer in managed providers
+        # Layer in managed providers.
+        # Project-scoped rows (v0.0.5+, written by ``vg_add_provider``)
+        # carry a non-null ``project`` column and merge into
+        # ``merged.projects[<name>].providers[<provider_type>]`` so the
+        # inference resolver finds them via
+        # ``GatewayConfig.get_provider_config_for_project``. Legacy
+        # global-scope rows (``project IS NULL``) keep their previous
+        # behavior: they layer into ``merged.providers[<provider_id>]``.
+        # YAML always wins on conflict, on either branch.
         for row in await self._storage.list_managed_providers():
             pid = row["provider_id"]
-            if pid in merged.providers:
-                continue  # YAML takes precedence (don't overwrite)
             try:
                 plaintext_key = decrypt(row.get("api_key_encrypted", ""))
             except ValueError:
@@ -46,12 +52,33 @@ class ConfigManager:
                     "Failed to decrypt key for provider '%s', skipping", pid
                 )
                 plaintext_key = ""
-            merged.providers[pid] = {
+            provider_cfg = {
                 "api_key": plaintext_key,
                 "base_url": row.get("base_url"),
                 "_source": "db",
                 **(row.get("extra_config") or {}),
             }
+            project_name = row.get("project")
+            if project_name:
+                provider_type = row["provider_type"]
+                # Stub a ProjectConfig for projects that exist only in
+                # the DB; the inference resolver iterates
+                # ``config.projects`` and won't see the project
+                # otherwise.
+                if project_name not in merged.projects:
+                    merged.projects[project_name] = ProjectConfig(
+                        id=project_name,
+                        name=project_name,
+                        source="db",
+                    )
+                project = merged.projects[project_name]
+                if provider_type in project.providers:
+                    continue  # YAML per-project entry wins.
+                project.providers[provider_type] = provider_cfg
+            else:
+                if pid in merged.providers:
+                    continue  # YAML top-level provider wins.
+                merged.providers[pid] = provider_cfg
 
         # Layer in managed models
         for row in await self._storage.list_managed_models():

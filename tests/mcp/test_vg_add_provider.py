@@ -6,10 +6,10 @@ managed_providers row's primary key is built as
 ``"<project>:<provider>"`` so multiple projects can each carry their
 own ``openai`` key without colliding.
 
-This test file pins the persistence and tool-surface contract. Full
-end-to-end resolver wiring (the inference factories actually consulting
-DB-managed per-project entries) is deferred to v0.0.6+ — see the
-Discovered work entry in TODO.md.
+This test file pins the persistence and tool-surface contract. The
+companion test ``tests/inference/test_factory_db_managed_keys.py``
+covers the resolver wiring end-to-end (a row written here flows into
+the next ``inference.STT/LLM/TTS`` factory call's provider config).
 """
 
 from __future__ import annotations
