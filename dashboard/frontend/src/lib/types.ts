@@ -17,8 +17,17 @@ export interface CostsResponse {
   project: string | null;
   total: number;
   by_provider: Record<string, { cost: number; requests: number }>;
-  by_model: Record<string, { cost: number; requests: number }>;
+  // by_model entries carry the pricing_source attribution string
+  // since v0.0.5 (Q7); /api/costs sets include_pricing_source=true
+  // by default.
+  by_model: Record<
+    string,
+    { cost: number; requests: number; pricing_source?: string }
+  >;
   by_project: Record<string, { cost: number; requests: number }>;
+  // Top-level catalog summary; the /v1 endpoint sets it. The
+  // dashboard mirror does not yet, so the field is optional.
+  pricing_sources?: { llm?: string; stt?: string; tts?: string };
 }
 
 export interface PercentileBucket {
