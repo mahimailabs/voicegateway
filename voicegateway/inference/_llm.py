@@ -35,7 +35,7 @@ from voicegateway.inference._factory import get_gateway
 from voicegateway.inference._project import get_active_project
 from voicegateway.inference._resolution import resolve_model
 from voicegateway.inference._session_context import get_or_create_session_id
-from voicegateway.inference._stt import _resolve_provider_config
+from voicegateway.inference._stt import _assert_key_resolved, _resolve_provider_config
 from voicegateway.middleware.instrumented_provider import wrap_provider
 
 
@@ -109,6 +109,7 @@ class LLM:
             api_key_override=api_key,
             project=active_project,
         )
+        _assert_key_resolved(provider_name, active_project, provider_config)
         provider_instance = create_provider(provider_name, provider_config)
 
         plugin = provider_instance.create_llm(model=model_name, **plugin_kwargs)

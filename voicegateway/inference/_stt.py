@@ -35,12 +35,17 @@ from livekit.agents.types import (
 )
 from livekit.agents.utils import is_given
 
+from voicegateway.core.config import ConfigError
 from voicegateway.core.registry import create_provider
 from voicegateway.inference._factory import get_gateway
 from voicegateway.inference._project import get_active_project
 from voicegateway.inference._resolution import resolve_model
 from voicegateway.inference._session_context import get_or_create_session_id
 from voicegateway.middleware.instrumented_provider import wrap_provider
+
+# Providers that run on the user's machine (no api_key needed).
+# A missing api_key for any of these is correct behaviour.
+_LOCAL_PROVIDERS = frozenset({"ollama", "whisper", "kokoro", "piper"})
 
 
 def _strip_language_suffix(model: str) -> tuple[str, str | None]:
@@ -82,6 +87,38 @@ def _resolve_provider_config(
     if api_key_override is None:
         return dict(base_config)
     return {**base_config, "api_key": api_key_override}
+
+
+def _assert_key_resolved(
+    provider_name: str,
+    project: str,
+    config: dict[str, Any],
+) -> None:
+    """Fail-fast preflight per REQ-VG-INFER-003.3.
+
+    Raises ``ConfigError`` with a plain-English message naming the
+    provider and project when a cloud provider's resolved config
+    carries no ``api_key``. Without this guard the LiveKit plugin's
+    own auth error fires later, with a less specific message that
+    omits which project the resolver was looking under.
+
+    Local providers (``ollama`` / ``whisper`` / ``kokoro`` / ``piper``)
+    never need an api_key, so the check is skipped for them.
+    """
+    if provider_name in _LOCAL_PROVIDERS:
+        return
+    api_key = config.get("api_key")
+    if api_key:
+        return
+    raise ConfigError(
+        f"No API key configured for provider '{provider_name}' in "
+        f"project '{project}'. Add it to voicegw.yaml under "
+        f"projects.{project}.providers.{provider_name}.api_key, set "
+        f"the matching environment variable referenced by your YAML "
+        f"(e.g. ${{{provider_name.upper()}_API_KEY}}), or run "
+        f"`vg_add_provider(project='{project}', provider="
+        f"'{provider_name}', api_key=...)` via MCP / the dashboard."
+    )
 
 
 class STT:
@@ -171,6 +208,7 @@ class STT:
             api_key_override=api_key if is_given(api_key) else None,
             project=project,
         )
+        _assert_key_resolved(provider_name, project, provider_config)
         provider_instance = create_provider(provider_name, provider_config)
 
         plugin = provider_instance.create_stt(model=model_name, **plugin_kwargs)
