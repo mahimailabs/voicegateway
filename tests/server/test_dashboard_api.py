@@ -45,6 +45,36 @@ async def test_api_costs_with_project(client):
     assert resp.status_code == 200
 
 
+async def test_api_costs_includes_pricing_source(client, gateway):
+    """Q7: dashboard's /api/costs always includes per-row
+    pricing_source so the staleness banner has the data without an
+    extra round-trip.
+    """
+    import time
+    import uuid
+
+    from voicegateway.storage.models import RequestRecord
+
+    await gateway.storage.log_request(
+        RequestRecord(
+            id=str(uuid.uuid4()),
+            timestamp=time.time(),
+            modality="stt",
+            model_id="deepgram/nova-3",
+            provider="deepgram",
+            project="test-project",
+            input_units=1.0,
+            cost_usd=0.0043,
+            pricing_source="voicegateway-catalog@2026-05-04",
+        )
+    )
+
+    resp = await client.get("/api/costs?period=today")
+    data = resp.json()
+    entry = data["by_model"]["deepgram/nova-3"]
+    assert entry["pricing_source"] == "voicegateway-catalog@2026-05-04"
+
+
 async def test_api_latency(client):
     resp = await client.get("/api/latency")
     assert resp.status_code == 200

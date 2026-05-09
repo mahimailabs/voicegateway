@@ -127,12 +127,37 @@ def build_app(gateway: Gateway) -> FastAPI:
                 if name in ("ollama", "whisper", "kokoro", "piper")
                 else "cloud",
             }
+        # Surface catalog freshness so the dashboard can render
+        # "estimates last verified ..." copy without joining the
+        # pricing tables itself. ``stt`` and ``tts`` carry both the
+        # source string (logged on each request as ``pricing_source``)
+        # and the oldest per-entry verification date so the UI can
+        # show a yellow banner when any rate crossed a staleness
+        # threshold. ``llm`` derives its source from the
+        # ``genai-prices`` library version; the upstream catalog is
+        # versioned, not date-stamped.
+        from voicegateway.pricing import llm as _llm_pricing
+        from voicegateway.pricing import stt as _stt_pricing
+        from voicegateway.pricing import tts as _tts_pricing
+
+        pricing = {
+            "llm": {"source": _llm_pricing.PRICING_SOURCE},
+            "stt": {
+                "source": _stt_pricing.PRICING_SOURCE,
+                "oldest_entry_date": _stt_pricing._oldest_pricing_date().isoformat(),
+            },
+            "tts": {
+                "source": _tts_pricing.PRICING_SOURCE,
+                "oldest_entry_date": _tts_pricing._oldest_pricing_date().isoformat(),
+            },
+        }
         return {
             "providers": providers,
             "model_count": sum(
                 len(v) for v in cfg.models.values() if isinstance(v, dict)
             ),
             "project_count": len(cfg.projects),
+            "pricing": pricing,
         }
 
     @app.get("/v1/models")
@@ -168,15 +193,18 @@ def build_app(gateway: Gateway) -> FastAPI:
         period: str | None = Query(None),
         project: str | None = Query(None),
         per_modality: bool = Query(False),
-        include_pricing_source: bool = Query(False),
+        include_pricing_source: bool = Query(True),
         start: str | None = Query(None),
         end: str | None = Query(None),
     ) -> dict:
         # Top-level `pricing_sources` records the catalog the running
-        # instance is currently using (per modality). When
-        # `include_pricing_source=true`, each `by_model` entry also
-        # carries the source(s) that priced its historical records,
-        # which is what reconciliation against an invoice needs.
+        # instance is currently using (per modality). With
+        # `include_pricing_source=true` (the default since v0.0.5),
+        # each `by_model` entry also carries the source(s) that priced
+        # its historical records, which is what the dashboard's
+        # cost-staleness banner and `voicegw reconcile` against an
+        # invoice both need. Pass `?include_pricing_source=false` to
+        # opt out of the per-row attribution.
         pricing_sources = {
             modality: catalog.pricing_source(modality)
             for modality in ("llm", "stt", "tts")

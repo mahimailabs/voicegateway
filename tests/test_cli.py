@@ -52,6 +52,22 @@ def test_costs(temp_config, tmp_path, monkeypatch):
     assert result.exit_code == 0
 
 
+def test_costs_prints_staleness_reminder(temp_config, tmp_path, monkeypatch):
+    """Q7: `voicegw costs` ends with a one-line reminder naming the
+    pricing sources and pointing at `voicegw reconcile`. The reminder
+    is dim-styled but still appears in plain stdout when colour is
+    stripped, which is what CliRunner captures.
+    """
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "cli-staleness.db"))
+    result = runner.invoke(app, ["costs", "--config", temp_config])
+    assert result.exit_code == 0
+    out = result.output
+    assert "Pricing sources" in out
+    assert "genai-prices@" in out
+    assert "voicegateway-catalog@" in out
+    assert "voicegw reconcile" in out
+
+
 def test_projects_list(temp_config):
     result = runner.invoke(app, ["projects", "--config", temp_config])
     assert result.exit_code == 0

@@ -109,11 +109,26 @@ async def get_costs(
     period: str = Query("today", enum=["today", "week", "month", "all"]),
     project: str | None = Query(None),
 ) -> dict:
-    """Get cost summary for a period, optionally filtered by project."""
+    """Get cost summary for a period, optionally filtered by project.
+
+    Each ``by_model`` entry carries a ``pricing_source`` string (e.g.
+    ``"genai-prices@0.0.57"`` or ``"voicegateway-catalog@2026-05-04"``)
+    so the dashboard can render the cost-staleness banner without a
+    second round-trip.
+    """
     gw = _get_gateway()
     if gw.storage is None:
-        return {"period": period, "project": project, "total": 0.0, "by_provider": {}, "by_model": {}, "by_project": {}}
-    summary = await gw.storage.get_cost_summary(period, project=project)
+        return {
+            "period": period,
+            "project": project,
+            "total": 0.0,
+            "by_provider": {},
+            "by_model": {},
+            "by_project": {},
+        }
+    summary = await gw.storage.get_cost_summary(
+        period, project=project, include_pricing_source=True
+    )
     if project is None:
         summary["by_project"] = await gw.storage.get_cost_by_project(period)
     else:

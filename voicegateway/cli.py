@@ -267,6 +267,28 @@ def costs(
     if not summary["by_provider"]:
         console.print("[dim]No requests recorded yet.[/dim]")
 
+    # Cost-staleness reminder (Q7). Print as a single dim-styled line
+    # so terminals without color support still get the message. Naming
+    # the catalogs surfaces the modality-aware unit accounting story
+    # without forcing the reader to remember which prices come from
+    # genai-prices and which from VG's local catalog.
+    from voicegateway.pricing import llm as _llm_pricing
+    from voicegateway.pricing import stt as _stt_pricing
+    from voicegateway.pricing import tts as _tts_pricing
+
+    sources = (
+        f"LLM: {_llm_pricing.PRICING_SOURCE} | "
+        f"STT: {_stt_pricing.PRICING_SOURCE} | "
+        f"TTS: {_tts_pricing.PRICING_SOURCE}"
+    )
+    console.print(f"\n[dim]Pricing sources: {sources}[/dim]")
+    console.print(
+        "[dim]Costs are estimates. Run "
+        "`voicegw reconcile --provider <name> "
+        "--provider-usage-file <file>` to verify against your "
+        "provider invoice.[/dim]"
+    )
+
 
 @app.command(name="projects")
 def projects_cmd(
