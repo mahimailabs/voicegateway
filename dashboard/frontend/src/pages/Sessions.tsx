@@ -5,7 +5,7 @@
 // breakdown and provider list, both computed by the backend via a
 // JOIN on requests at read time.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import StalenessBanner from '../components/StalenessBanner';
 import { fetchJson } from '../lib/api';
@@ -41,29 +41,52 @@ export default function Sessions() {
   const [orderBy, setOrderBy] = useState<SessionOrderBy>('started_at_desc');
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const detailAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    fetchJson<{ projects: ProjectEntry[] }>('/api/projects')
+    const controller = new AbortController();
+    fetchJson<{ projects: ProjectEntry[] }>('/api/projects', {
+      signal: controller.signal,
+    })
       .then((d) => setProjects(d.projects))
-      .catch(() => setProjects([]));
+      .catch((err) => {
+        if (err?.name !== 'AbortError') setProjects([]);
+      });
+    return () => controller.abort();
   }, []);
 
+  // Abort the in-flight list fetch on filter/sort changes so a slow
+  // earlier response can't overwrite the current view's data.
   useEffect(() => {
     setLoading(true);
+    const controller = new AbortController();
     const params = new URLSearchParams({ order_by: orderBy, limit: '100' });
     if (project) params.set('project', project);
-    fetchJson<SessionRow[]>(`/api/sessions?${params.toString()}`)
+    fetchJson<SessionRow[]>(`/api/sessions?${params.toString()}`, {
+      signal: controller.signal,
+    })
       .then((data) => setRows(data))
-      .catch(() => setRows([]))
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (err?.name !== 'AbortError') setRows([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, [project, orderBy]);
 
   const handleRowClick = (id: string) => {
+    detailAbortRef.current?.abort();
+    const controller = new AbortController();
+    detailAbortRef.current = controller;
     fetchJson<SessionDetail>(
       `/api/sessions/${encodeURIComponent(id)}`,
+      { signal: controller.signal },
     )
       .then(setDetail)
-      .catch(() => setDetail(null));
+      .catch((err) => {
+        if (err?.name !== 'AbortError') setDetail(null);
+      });
   };
 
   return (
@@ -124,6 +147,15 @@ export default function Sessions() {
               <tr
                 key={row.id}
                 onClick={() => handleRowClick(row.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleRowClick(row.id);
+                  }
+                }}
+                tabIndex={0}
+                role="button"
+                aria-label={`Open session ${row.id}`}
                 style={{ cursor: 'pointer' }}
               >
                 <td className="mono">{formatRelative(row.started_at)}</td>
@@ -189,10 +221,28 @@ function SessionDetailModal({
     void navigator.clipboard.writeText(session.id);
   };
 
+  // Escape-to-close. Full focus-trap is intentionally not wired in
+  // here — the modal is a single-column form with no off-screen
+  // pitfalls, and the role="dialog" + aria-modal hint already gives
+  // assistive tech the right semantics. Trap can be a follow-up.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
     <div className="neo-modal-backdrop" onClick={onClose}>
-      <div className="neo-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Session detail</h3>
+      <div
+        className="neo-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="session-detail-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 id="session-detail-title">Session detail</h3>
         <div className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
           <span className="mono" style={{ fontSize: 13 }}>{session.id}</span>
           <button

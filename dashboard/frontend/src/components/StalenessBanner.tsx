@@ -60,7 +60,14 @@ export default function StalenessBanner() {
       <span>
         {stale.label} estimates last verified <strong>{stale.date}</strong>
         {' '}({stale.daysOld} days old). Refresh per{' '}
-        <span className="mono">docs/contributing/refreshing-pricing.md</span>{' '}
+        <a
+          href="https://github.com/mahimailabs/voicegateway/blob/main/docs/contributing/refreshing-pricing.md"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mono"
+        >
+          docs/contributing/refreshing-pricing.md
+        </a>{' '}
         to keep the costs view honest; CI fails when an entry crosses 60
         days.
       </span>

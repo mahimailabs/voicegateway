@@ -18,6 +18,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Local providers don't need an api_key to be considered "configured" —
+# they run against a local model server (ollama) or bundled binaries
+# (whisper / kokoro / piper). Used by /api/status and
+# /api/providers/by-project to decide between cloud and local typing.
+_LOCAL_PROVIDER_NAMES = frozenset({"ollama", "whisper", "kokoro", "piper"})
+
 app = FastAPI(
     title="VoiceGateway Dashboard",
     version="0.1.0",
@@ -86,17 +92,10 @@ async def get_status() -> dict:
 
     providers = {}
     for name, cfg in config.providers.items():
-        has_key = bool(cfg.get("api_key")) or name in (
-            "ollama",
-            "whisper",
-            "kokoro",
-            "piper",
-        )
+        is_local = name in _LOCAL_PROVIDER_NAMES
         providers[name] = {
-            "configured": has_key,
-            "type": "local"
-            if name in ("ollama", "whisper", "kokoro", "piper")
-            else "cloud",
+            "configured": bool(cfg.get("api_key")) or is_local,
+            "type": "local" if is_local else "cloud",
         }
 
     models = {}
@@ -293,7 +292,6 @@ async def get_providers_by_project(project: str | None = Query(None)) -> dict:
     from voicegateway.core.crypto import decrypt, mask
 
     gw = _get_gateway()
-    local_names = {"ollama", "whisper", "kokoro", "piper"}
     rows: list[dict[str, Any]] = []
 
     # 1. YAML projects.<id>.providers.<name>. After Item 1 fixed the
@@ -315,7 +313,7 @@ async def get_providers_by_project(project: str | None = Query(None)) -> dict:
                     "source": "yaml",
                     "api_key_masked": mask(api_key) if api_key else None,
                     "base_url": prov_cfg.get("base_url"),
-                    "type": "local" if prov_name in local_names else "cloud",
+                    "type": "local" if prov_name in _LOCAL_PROVIDER_NAMES else "cloud",
                 }
             )
 
@@ -345,7 +343,7 @@ async def get_providers_by_project(project: str | None = Query(None)) -> dict:
                     "source": "db",
                     "api_key_masked": mask(plaintext) if plaintext else None,
                     "base_url": db_row.get("base_url"),
-                    "type": "local" if ptype in local_names else "cloud",
+                    "type": "local" if ptype in _LOCAL_PROVIDER_NAMES else "cloud",
                 }
             )
 
