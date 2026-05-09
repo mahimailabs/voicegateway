@@ -74,6 +74,7 @@ Look for issues labeled [`good first issue`](https://github.com/mahimailabs/voic
 
 - [Development Setup](/contributing/development-setup)
 - [Adding a Provider](/contributing/adding-a-provider)
+- [Refreshing the Pricing Catalogs](/contributing/refreshing-pricing)
 - [Code Style](/contributing/code-style)
 - [Testing](/contributing/testing)
 - [Troubleshooting](/reference/troubleshooting)
