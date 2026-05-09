@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import CostChart from '../components/CostChart';
+import StalenessBanner from '../components/StalenessBanner';
 import { fetchJson } from '../lib/api';
 import { formatCost } from '../lib/ui';
 import type { CostsResponse } from '../lib/types';
@@ -18,6 +19,7 @@ export default function Costs() {
 
   return (
     <div>
+      <StalenessBanner />
       <PageHeader title="Costs" subtitle={`Period: ${data.period}`} accent="green" />
 
       <div className="neo-card neo-card--strip-green mb-lg">

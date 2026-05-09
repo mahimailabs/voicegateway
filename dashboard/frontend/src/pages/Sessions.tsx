@@ -7,6 +7,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import PageHeader from '../components/PageHeader';
+import StalenessBanner from '../components/StalenessBanner';
 import { fetchJson } from '../lib/api';
 import { formatCost } from '../lib/ui';
 import type {
@@ -67,6 +68,7 @@ export default function Sessions() {
 
   return (
     <div>
+      <StalenessBanner />
       <PageHeader
         title="Sessions"
         subtitle={`${rows.length} voice conversation${rows.length === 1 ? '' : 's'}`}

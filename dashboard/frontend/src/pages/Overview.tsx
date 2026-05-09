@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import StatusCard from '../components/StatusCard';
+import StalenessBanner from '../components/StalenessBanner';
 import { fetchJson } from '../lib/api';
 import { formatCost } from '../lib/ui';
 import type { OverviewResponse } from '../lib/types';
@@ -16,6 +17,7 @@ export default function Overview() {
 
   return (
     <div>
+      <StalenessBanner />
       <PageHeader
         title="Overview"
         subtitle="Live voice AI gateway stats"

@@ -75,7 +75,12 @@ async def get_auth_status() -> dict:
 
 @app.get("/api/status")
 async def get_status() -> dict:
-    """Get status of all configured providers and models."""
+    """Get status of all configured providers and models.
+
+    Mirrors the pricing-freshness subtree from /v1/status (Q7) so
+    the dashboard StalenessBanner can render without hitting a
+    second origin.
+    """
     gw = _get_gateway()
     config = gw.config
 
@@ -104,10 +109,27 @@ async def get_status() -> dict:
                         "provider": model_cfg.get("provider", ""),
                     }
 
+    from voicegateway.pricing import llm as _llm_pricing
+    from voicegateway.pricing import stt as _stt_pricing
+    from voicegateway.pricing import tts as _tts_pricing
+
+    pricing = {
+        "llm": {"source": _llm_pricing.PRICING_SOURCE},
+        "stt": {
+            "source": _stt_pricing.PRICING_SOURCE,
+            "oldest_entry_date": _stt_pricing._oldest_pricing_date().isoformat(),
+        },
+        "tts": {
+            "source": _tts_pricing.PRICING_SOURCE,
+            "oldest_entry_date": _tts_pricing._oldest_pricing_date().isoformat(),
+        },
+    }
+
     return {
         "providers": providers,
         "models": models,
         "fallbacks": config.fallbacks,
+        "pricing": pricing,
     }
 
 

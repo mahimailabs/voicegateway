@@ -32,6 +32,22 @@ async def test_api_status(client):
     assert "fallbacks" in data
 
 
+async def test_api_status_includes_pricing_freshness(client):
+    """Item C: dashboard /api/status mirrors the /v1/status pricing
+    subtree so the frontend StalenessBanner can render without
+    hitting two origins.
+    """
+    resp = await client.get("/api/status")
+    data = resp.json()
+    assert "pricing" in data
+    assert data["pricing"]["llm"]["source"].startswith("genai-prices@")
+    for modality in ("stt", "tts"):
+        entry = data["pricing"][modality]
+        assert entry["source"].startswith("voicegateway-catalog@")
+        # ISO YYYY-MM-DD shape
+        assert len(entry["oldest_entry_date"].split("-")) == 3
+
+
 async def test_api_costs(client):
     resp = await client.get("/api/costs")
     assert resp.status_code == 200
