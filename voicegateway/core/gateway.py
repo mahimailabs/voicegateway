@@ -7,7 +7,7 @@ import os
 from collections.abc import Coroutine
 from typing import Any, TypeVar
 
-from voicegateway.core.config import GatewayConfig
+from voicegateway.core.config import GatewayConfig, ProjectConfig
 from voicegateway.core.config_manager import ConfigManager
 from voicegateway.core.router import (
     Router,
@@ -65,6 +65,32 @@ class Gateway:
         # Merge managed resources from SQLite at startup
         self._config = _run_async(self._config_manager.load_merged())
         self._router = Router(self._config)
+
+        # v0.0.5: ensure a "default" project always exists so the
+        # inference resolver has something to charge against on a
+        # fresh install. When YAML or the DB already configures one,
+        # that takes precedence. With storage enabled we persist the
+        # row so the dashboard, MCP tools, and HTTP API surface it
+        # consistently with user-defined projects.
+        if DEFAULT_PROJECT not in self._config.projects:
+            if self._storage is not None:
+                _run_async(
+                    self._storage.upsert_managed_project(
+                        project_id=DEFAULT_PROJECT,
+                        name="Default",
+                        description="Auto-created on first run.",
+                        daily_budget=0.0,
+                        budget_action="warn",
+                    )
+                )
+                self._config = _run_async(self._config_manager.refresh())
+                self._router = Router(self._config)
+            else:
+                self._config.projects[DEFAULT_PROJECT] = ProjectConfig(
+                    id=DEFAULT_PROJECT,
+                    name="Default",
+                    source="auto",
+                )
 
         self._cost_tracker = CostTracker(self._storage)
         self._latency_monitor = LatencyMonitor(

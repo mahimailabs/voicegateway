@@ -1,13 +1,13 @@
 """Tests for the v0.0.5 active-project resolution order.
 
-Resolution order per design.md section 3.3:
+Resolution order:
 
 1. inference.set_project(name) in the current async context
 2. VOICEGW_ACTIVE_PROJECT environment variable
 3. default_project field in voicegw.yaml
-4. Hard error when voicegw.yaml has projects but none was picked.
-   Soft fallback to "default" only when voicegw.yaml has zero
-   projects (preserves backward compat for pre-v0.0.5 configs).
+4. The literal "default" (Gateway.__init__ auto-creates that project
+   on every fresh install, so the fallback is always backed by a
+   real row).
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ import contextvars
 import pytest
 import yaml
 
-from voicegateway.core.config import ConfigError
 from voicegateway.inference import _factory, _project
 from voicegateway.inference._project import (
     get_active_project,
@@ -63,7 +62,8 @@ def empty_projects_gw(tmp_path, monkeypatch):
 def projects_no_default_gw(tmp_path, monkeypatch):
     """A gateway with projects but no default_project configured.
 
-    Hard-error case (design step 4).
+    Falls through to the auto-created ``"default"`` project per
+    Item 2 (was a hard error in pre-v0.0.5 design.md drafts).
     """
     gw = _build_gateway(
         tmp_path,
@@ -148,21 +148,24 @@ def test_yaml_default_project_used_when_no_override(projects_with_default_gw):
 
 
 # ---------------------------------------------------------------------------
-# Step 4: hard error vs legacy soft fallback
+# Step 4: fallback to the auto-created "default" project
 # ---------------------------------------------------------------------------
 
 
-def test_hard_error_when_projects_configured_without_default(
+def test_fallback_when_projects_configured_without_default(
     projects_no_default_gw,
 ):
-    with pytest.raises(ConfigError, match="No active project"):
-        get_active_project()
+    """A user who configures ``projects:`` without ``default_project``
+    and never calls ``set_project`` lands on the auto-created
+    ``"default"`` project. Their per-project keys are not used until
+    they explicitly select one.
+    """
+    assert get_active_project() == "default"
 
 
-def test_soft_fallback_when_no_projects_configured(empty_projects_gw):
-    """Backward compat: pre-v0.0.5 configs with no projects: block at
-    all should silently get "default" so existing deployments don't
-    require a yaml change to keep working.
+def test_fallback_when_no_projects_configured(empty_projects_gw):
+    """Fresh install with no projects: block. Gateway init creates
+    ``"default"`` and the resolver returns it.
     """
     assert get_active_project() == "default"
 
