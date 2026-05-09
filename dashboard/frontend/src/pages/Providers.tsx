@@ -101,9 +101,14 @@ export default function Providers() {
     );
     if (!ok) return;
     try {
-      await fetchJson(`/v1/providers/${encodeURIComponent(row.provider_id)}`, {
-        method: 'DELETE',
-      });
+      // ?confirm=true is required by /v1/providers/{id} DELETE — without
+      // it the backend returns {would_delete: ...} as a dry-run without
+      // touching the row. The window.confirm() above is the user-facing
+      // gate; the query string just unlocks the backend operation.
+      await fetchJson(
+        `/v1/providers/${encodeURIComponent(row.provider_id)}?confirm=true`,
+        { method: 'DELETE' },
+      );
       setTestResults((prev) => {
         const { [row.provider_id]: _gone, ...rest } = prev;
         return rest;

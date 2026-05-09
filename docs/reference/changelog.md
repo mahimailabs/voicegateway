@@ -38,6 +38,7 @@ All notable changes to VoiceGateway are documented here. This project follows [S
 - **Dashboard backend DRY.** `dashboard/api/main.py` extracts `_LOCAL_PROVIDER_NAMES` so the local-vs-cloud type derivation has a single source of truth across `/api/status` and `/api/providers/by-project`.
 - **Doc lints.** Two MD040 unlabeled fences in `docs/cli/smoke-test.md` are tagged `text`; the Mode 3 (Block) example in `docs/examples/budget-enforcement.md` wraps its `await` in `async def main()` + `asyncio.run(main())` so the snippet is copy-paste runnable; the "signature for signature" typo in the homepage feature blurb is fixed.
 - **Cartesia `health_check` sends the `Cartesia-Version` header.** The bypass path in `voicegateway/providers/cartesia_provider.py` previously omitted the header, so every `vg_test_provider_key("cartesia")` call and every dashboard "Test" click for Cartesia returned a 400. TTS calls were not affected (livekit-plugins-cartesia adds the header internally); only the direct health-check probe. Pinned to `2025-04-16`, the same value the installed LK plugin uses.
+- **Dashboard Providers Delete actually deletes.** The `handleDeleteRow` path in `dashboard/frontend/src/pages/Providers.tsx` issued `DELETE /v1/providers/<id>` without the `?confirm=true` query string the backend requires; the server returned `{would_delete: …}` as a dry-run and the frontend treated that as success, so rows survived the click. The user-facing `window.confirm()` is now followed by a DELETE that includes the flag, so the row really goes away.
 
 ### Limitations
 
