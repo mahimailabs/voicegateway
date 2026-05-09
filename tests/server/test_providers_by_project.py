@@ -243,6 +243,90 @@ async def test_v1_patch_preserves_project_when_omitted(v1_client, gw_for_v1):
     assert saved["project"] == "tony-pizza"
 
 
+async def test_v1_post_rejects_project_scoped_when_yaml_pins_slot(
+    tmp_path, monkeypatch
+):
+    """If voicegw.yaml already defines projects.<id>.providers.<type>,
+    the DB row would silently never be used (ConfigManager keeps the
+    YAML entry). The handler must reject the create with 409 instead
+    of writing a credential that nobody will read.
+    """
+    cfg = {
+        "providers": {"openai": {"api_key": "global"}},
+        "projects": {
+            "tony-pizza": {
+                "name": "Tony",
+                "providers": {"openai": {"api_key": "yaml-tony-openai"}},
+            },
+        },
+        "models": {"stt": {}, "llm": {}, "tts": {}},
+        "stacks": {},
+        "fallbacks": {"stt": [], "llm": [], "tts": []},
+        "cost_tracking": {"enabled": True},
+        "observability": {"latency_tracking": True},
+    }
+    cfg_path = tmp_path / "voicegw.yaml"
+    cfg_path.write_text(yaml.dump(cfg))
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "shadow.db"))
+    gw = Gateway(config_path=str(cfg_path))
+    transport = ASGITransport(app=build_app(gw))
+
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        resp = await c.post(
+            "/v1/providers",
+            json={
+                "provider_id": "tony-pizza:openai",
+                "provider_type": "openai",
+                "api_key": "sk-shadowed",
+                "project": "tony-pizza",
+            },
+        )
+
+    assert resp.status_code == 409
+    assert "tony-pizza" in resp.json()["detail"]
+    assert "openai" in resp.json()["detail"]
+
+
+async def test_v1_post_allows_project_scoped_when_yaml_slot_empty(
+    tmp_path, monkeypatch
+):
+    """Conversely, when the YAML has the project but not the specific
+    provider type, the create must succeed.
+    """
+    cfg = {
+        "providers": {"openai": {"api_key": "global"}},
+        "projects": {
+            "tony-pizza": {
+                "name": "Tony",
+                "providers": {"deepgram": {"api_key": "yaml-tony-dg"}},
+            },
+        },
+        "models": {"stt": {}, "llm": {}, "tts": {}},
+        "stacks": {},
+        "fallbacks": {"stt": [], "llm": [], "tts": []},
+        "cost_tracking": {"enabled": True},
+        "observability": {"latency_tracking": True},
+    }
+    cfg_path = tmp_path / "voicegw.yaml"
+    cfg_path.write_text(yaml.dump(cfg))
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "no-shadow.db"))
+    gw = Gateway(config_path=str(cfg_path))
+    transport = ASGITransport(app=build_app(gw))
+
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        resp = await c.post(
+            "/v1/providers",
+            json={
+                "provider_id": "tony-pizza:openai",
+                "provider_type": "openai",
+                "api_key": "sk-tony",
+                "project": "tony-pizza",
+            },
+        )
+
+    assert resp.status_code == 200, resp.text
+
+
 async def test_v1_patch_explicit_project_override_honored(v1_client, gw_for_v1):
     """Explicit project field on PATCH overrides the existing scope —
     rare, but useful for promoting/demoting a row.

@@ -258,8 +258,10 @@ def build_app(gateway: Gateway) -> FastAPI:
             summary["by_project"] = {}
         if per_modality:
             summary["by_modality"] = await gateway.storage.get_cost_by_modality(
-                effective_period, project=project,
-                start_ts=start_ts, end_ts=end_ts,
+                effective_period,
+                project=project,
+                start_ts=start_ts,
+                end_ts=end_ts,
             )
         summary["pricing_sources"] = pricing_sources
         return summary
@@ -416,9 +418,7 @@ def build_app(gateway: Gateway) -> FastAPI:
             # Per-model latency summaries. Prometheus ``summary`` convention:
             # one series per quantile label, values in seconds.
             pcts = gateway.config.latency.get("percentiles") or [50.0, 95.0, 99.0]
-            latency = await gateway.storage.get_latency_stats(
-                "today", percentiles=pcts
-            )
+            latency = await gateway.storage.get_latency_stats("today", percentiles=pcts)
             if latency:
                 lines += [
                     "# HELP voicegw_request_ttfb_seconds "
@@ -435,14 +435,14 @@ def build_app(gateway: Gateway) -> FastAPI:
                         ttfb_v = s.get("ttfb_percentiles", {}).get(key)
                         if ttfb_v is not None:
                             lines.append(
-                                f'voicegw_request_ttfb_seconds'
+                                f"voicegw_request_ttfb_seconds"
                                 f'{{model="{model}",quantile="{q}"}} '
                                 f"{ttfb_v / 1000:.6f}"
                             )
                         lat_v = s.get("latency_percentiles", {}).get(key)
                         if lat_v is not None:
                             lines.append(
-                                f'voicegw_request_total_latency_seconds'
+                                f"voicegw_request_total_latency_seconds"
                                 f'{{model="{model}",quantile="{q}"}} '
                                 f"{lat_v / 1000:.6f}"
                             )
@@ -502,6 +502,27 @@ def build_app(gateway: Gateway) -> FastAPI:
             )
             if not is_managed:
                 raise HTTPException(409, f"Provider '{pid}' already exists in YAML")
+        # When the caller scopes the row to a project, also reject if the
+        # YAML already pins that project's slot for this provider type.
+        # Without this check the DB row writes successfully but
+        # ConfigManager.load_merged keeps the YAML entry, so the rotated
+        # credential silently never gets used.
+        if project:
+            existing_project = gateway.config.projects.get(project)
+            if existing_project is not None and ptype in existing_project.providers:
+                yaml_entry = existing_project.providers[ptype]
+                yaml_pinned = (
+                    not isinstance(yaml_entry, dict)
+                    or yaml_entry.get("_source") != "db"
+                )
+                if yaml_pinned:
+                    raise HTTPException(
+                        409,
+                        f"Provider '{ptype}' is already pinned in YAML at "
+                        f"projects.{project}.providers.{ptype}; "
+                        "remove it from voicegw.yaml before creating a "
+                        "managed override.",
+                    )
         if gateway.storage is None:
             raise HTTPException(400, "Storage not enabled")
 

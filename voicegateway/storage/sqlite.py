@@ -177,9 +177,7 @@ class SQLiteStorage:
             # session-correlation feature. New rows carry a real value
             # written by InstrumentedSTT/LLM/TTS once 5.6 #3 wires it through.
             if "session_id" not in cols:
-                await db.execute(
-                    "ALTER TABLE requests ADD COLUMN session_id TEXT"
-                )
+                await db.execute("ALTER TABLE requests ADD COLUMN session_id TEXT")
             # Always create the index (idempotent CREATE INDEX IF NOT EXISTS).
             # Lives outside the column-missing branch so a fresh install,
             # which already has the column from _SCHEMA, still gets the
@@ -410,6 +408,11 @@ class SQLiteStorage:
                 # row always reflects last-activity time without
                 # requiring a session-close hook. Out-of-order arrivals
                 # cannot drag ended_at backwards (CASE guards it).
+                # started_at is symmetrically guarded: requests are
+                # logged on completion, so an STT call that started
+                # earlier may finish after a faster LLM call. The MIN
+                # CASE keeps started_at at the earliest request_started
+                # timestamp regardless of completion order.
                 await db.execute(
                     """INSERT INTO sessions
                        (id, project, started_at, ended_at, modalities,
@@ -418,6 +421,11 @@ class SQLiteStorage:
                        ON CONFLICT(id) DO UPDATE SET
                            total_cost_usd = total_cost_usd + excluded.total_cost_usd,
                            request_count = request_count + 1,
+                           started_at = CASE
+                               WHEN started_at IS NULL THEN excluded.started_at
+                               WHEN started_at > excluded.started_at THEN excluded.started_at
+                               ELSE started_at
+                           END,
                            ended_at = CASE
                                WHEN ended_at IS NULL THEN excluded.ended_at
                                WHEN ended_at < excluded.ended_at THEN excluded.ended_at
@@ -554,8 +562,7 @@ class SQLiteStorage:
                     tuple(params),
                 )
                 by_model = {
-                    row[0]: {"cost": row[1], "requests": row[2]}
-                    async for row in cursor
+                    row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor
                 }
 
             return {
@@ -926,9 +933,7 @@ class SQLiteStorage:
         clause = self._SESSION_ORDER_CLAUSES.get(order_by)
         if clause is None:
             supported = ", ".join(sorted(self._SESSION_ORDER_CLAUSES))
-            raise ValueError(
-                f"Unknown order_by {order_by!r}. Supported: {supported}."
-            )
+            raise ValueError(f"Unknown order_by {order_by!r}. Supported: {supported}.")
         db = await self._ensure_initialized()
         try:
             if project:

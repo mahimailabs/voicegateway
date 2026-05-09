@@ -213,12 +213,16 @@ async def test_two_sessions_are_independent(tmp_path):
     db_path = str(tmp_path / "session.db")
     storage = SQLiteStorage(db_path)
 
-    await storage.log_request(_make_record(
-        session_id="vg-sess-a", project="tony-pizza", modality="stt", cost=0.01
-    ))
-    await storage.log_request(_make_record(
-        session_id="vg-sess-b", project="mama-diner", modality="llm", cost=0.05
-    ))
+    await storage.log_request(
+        _make_record(
+            session_id="vg-sess-a", project="tony-pizza", modality="stt", cost=0.01
+        )
+    )
+    await storage.log_request(
+        _make_record(
+            session_id="vg-sess-b", project="mama-diner", modality="llm", cost=0.05
+        )
+    )
 
     a = _read_session(db_path, "vg-sess-a")
     b = _read_session(db_path, "vg-sess-b")
@@ -229,6 +233,30 @@ async def test_two_sessions_are_independent(tmp_path):
     assert b["modalities"] == "llm"
     assert a["request_count"] == 1
     assert b["request_count"] == 1
+
+
+async def test_started_at_takes_minimum_when_requests_arrive_out_of_order(tmp_path):
+    """Requests are logged on completion, so a slow STT call started at
+    T=0 may finish after a fast LLM call started at T=1. The session's
+    started_at must reflect the earliest START, not the earliest
+    COMPLETION. The MIN CASE in the UPSERT guarantees this.
+    """
+    db_path = str(tmp_path / "session.db")
+    storage = SQLiteStorage(db_path)
+
+    sid = "vg-out-of-order"
+    # First write: ts = 1700000060 (the LLM that finished first)
+    await storage.log_request(_make_record(session_id=sid, ts=1700000060.0))
+    # Second write: ts = 1700000000 (the slow STT that actually started
+    # 60 seconds earlier but only just finished)
+    await storage.log_request(_make_record(session_id=sid, ts=1700000000.0))
+
+    row = _read_session(db_path, sid)
+    assert row is not None
+    # started_at should now be the EARLIER timestamp.
+    assert "2023-11-14T22:13:20" in row["started_at"], (
+        f"started_at did not retreat to the minimum, got {row['started_at']!r}"
+    )
 
 
 async def test_zero_cost_request_still_bumps_count_and_modalities(tmp_path):
