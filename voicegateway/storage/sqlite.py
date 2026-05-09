@@ -1121,6 +1121,72 @@ class SQLiteStorage:
         finally:
             await db.close()
 
+    async def rotate_managed_credentials(
+        self, *, time_now: float | None = None
+    ) -> dict[str, Any]:
+        """Re-encrypt every managed_providers row under the current
+        primary Fernet key.
+
+        Used by ``voicegw rotate-secret`` after the operator sets a
+        new ``VOICEGW_SECRET`` and the previous value as
+        ``VOICEGW_SECRET_FALLBACK``. Each row's ``api_key_encrypted``
+        is decrypted via MultiFernet (which tries primary then any
+        fallbacks) and re-encrypted via the primary, then written
+        back. The ``updated_at`` column is bumped so the dashboard
+        and audit views show the rotation as a recent change.
+
+        Empty ``api_key_encrypted`` columns (from rows that the user
+        added without a key) are skipped — there is nothing to
+        rotate. Rows whose ciphertext does not decrypt under any
+        configured key are recorded in the returned ``failed`` list
+        so the CLI can surface them to the operator without aborting
+        the rotation halfway through.
+
+        Returns:
+            ``{"rotated": <int>, "skipped_empty": <int>,
+              "failed": [<provider_id>, ...]}``
+        """
+        from voicegateway.core.crypto import rotate_token
+
+        now = time_now if time_now is not None else time.time()
+        rotated = 0
+        skipped_empty = 0
+        failed: list[str] = []
+
+        db = await self._ensure_initialized()
+        try:
+            cursor = await db.execute(
+                "SELECT provider_id, api_key_encrypted FROM managed_providers"
+            )
+            rows = await cursor.fetchall()
+            for provider_id, ciphertext in rows:
+                if not ciphertext:
+                    skipped_empty += 1
+                    continue
+                try:
+                    new_ciphertext = rotate_token(ciphertext)
+                except ValueError:
+                    failed.append(provider_id)
+                    continue
+                if new_ciphertext == ciphertext:
+                    # MultiFernet.rotate is non-deterministic (Fernet
+                    # uses a random IV), so this branch is effectively
+                    # unreachable. Guard anyway: if it fires, we still
+                    # bump updated_at so the dashboard reflects the
+                    # rotation attempt.
+                    pass
+                await db.execute(
+                    "UPDATE managed_providers SET api_key_encrypted = ?, "
+                    "updated_at = ? WHERE provider_id = ?",
+                    (new_ciphertext, now, provider_id),
+                )
+                rotated += 1
+            await db.commit()
+        finally:
+            await db.close()
+
+        return {"rotated": rotated, "skipped_empty": skipped_empty, "failed": failed}
+
     # Managed models
 
     async def list_managed_models(self) -> list[dict[str, Any]]:

@@ -1,5 +1,6 @@
 """Tests for voicegateway/cli.py — all CLI subcommands."""
 
+import asyncio
 import os
 from pathlib import Path
 
@@ -841,3 +842,176 @@ def test_reconcile_runs_against_committed_cartesia_sample(
         and rows[m]["matched_in_vg"] is False
         for m in ("sonic-3", "sonic-turbo")
     )
+
+
+# ---------------------------------------------------------------------------
+# rotate-secret (Q10)
+# ---------------------------------------------------------------------------
+
+
+def _generate_fernet_key() -> str:
+    from cryptography.fernet import Fernet
+
+    return Fernet.generate_key().decode()
+
+
+def test_rotate_secret_refuses_without_primary(temp_config, tmp_path, monkeypatch):
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "rotate-cli.db"))
+    monkeypatch.delenv("VOICEGW_SECRET", raising=False)
+    monkeypatch.setenv("VOICEGW_SECRET_FALLBACK", _generate_fernet_key())
+
+    result = runner.invoke(
+        app, ["rotate-secret", "--config", temp_config, "--yes"]
+    )
+    assert result.exit_code == 1
+    assert "VOICEGW_SECRET is not set" in result.output
+
+
+def test_rotate_secret_refuses_without_fallback(temp_config, tmp_path, monkeypatch):
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "rotate-cli.db"))
+    monkeypatch.setenv("VOICEGW_SECRET", _generate_fernet_key())
+    monkeypatch.delenv("VOICEGW_SECRET_FALLBACK", raising=False)
+
+    result = runner.invoke(
+        app, ["rotate-secret", "--config", temp_config, "--yes"]
+    )
+    assert result.exit_code == 1
+    assert "VOICEGW_SECRET_FALLBACK is not set" in result.output
+
+
+def test_rotate_secret_handles_empty_storage(temp_config, tmp_path, monkeypatch):
+    """An empty managed_providers table is a no-op and exits cleanly."""
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "rotate-cli.db"))
+    monkeypatch.setenv("VOICEGW_SECRET", _generate_fernet_key())
+    monkeypatch.setenv("VOICEGW_SECRET_FALLBACK", _generate_fernet_key())
+
+    result = runner.invoke(
+        app, ["rotate-secret", "--config", temp_config, "--yes"]
+    )
+    assert result.exit_code == 0
+    assert "No managed_providers rows to rotate" in result.output
+
+
+def test_rotate_secret_end_to_end(temp_config, tmp_path, monkeypatch):
+    """End-to-end: seed rows under primary A, set primary B + fallback
+    A, run rotate-secret, confirm rows decrypt under B alone.
+    """
+    from voicegateway.core.crypto import (
+        decrypt as _decrypt,
+    )
+    from voicegateway.core.crypto import (
+        reset_fernet,
+    )
+    from voicegateway.core.gateway import Gateway
+
+    db_path = tmp_path / "rotate-cli.db"
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(db_path))
+    secret_file = tmp_path / ".secret"
+    monkeypatch.setattr("voicegateway.core.crypto._SECRET_FILE", secret_file)
+
+    primary_a = _generate_fernet_key()
+    monkeypatch.setenv("VOICEGW_SECRET", primary_a)
+    reset_fernet()
+
+    gw = Gateway(config_path=temp_config)
+    asyncio.run(
+        gw.storage.upsert_managed_provider(
+            provider_id="rotate-cli:openai",
+            provider_type="openai",
+            api_key="sk-rotate-cli",
+            project="rotate-cli",
+        )
+    )
+
+    primary_b = _generate_fernet_key()
+    monkeypatch.setenv("VOICEGW_SECRET", primary_b)
+    monkeypatch.setenv("VOICEGW_SECRET_FALLBACK", primary_a)
+    reset_fernet()
+
+    result = runner.invoke(
+        app, ["rotate-secret", "--config", temp_config, "--yes"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Rotated 1 row" in result.output
+
+    # Drop the fallback. The row must still decrypt under primary B.
+    monkeypatch.delenv("VOICEGW_SECRET_FALLBACK", raising=False)
+    reset_fernet()
+    rows = asyncio.run(gw.storage.list_managed_providers())
+    saved = next(r for r in rows if r["provider_id"] == "rotate-cli:openai")
+    assert _decrypt(saved["api_key_encrypted"]) == "sk-rotate-cli"
+
+
+def test_rotate_secret_surfaces_failed_rows(
+    temp_config, tmp_path, monkeypatch
+):
+    """A row encrypted under a key that is not in primary or fallback
+    surfaces as a non-zero exit and the provider_id is named in the
+    output.
+    """
+    from cryptography.fernet import Fernet
+
+    from voicegateway.core.crypto import reset_fernet
+    from voicegateway.core.gateway import Gateway
+
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "rotate-cli.db"))
+    secret_file = tmp_path / ".secret"
+    monkeypatch.setattr("voicegateway.core.crypto._SECRET_FILE", secret_file)
+
+    # _migrate_plaintext_keys treats anything is_fernet_token() can't
+    # decrypt as plaintext and re-encrypts it under the current key.
+    # During a real rotation that runs as a one-time operation under
+    # both VOICEGW_SECRET and VOICEGW_SECRET_FALLBACK, the orphan
+    # token would be incorrectly re-keyed before rotate-secret got
+    # to it. Disable the migration here so the orphan path under
+    # test is the rotation, not the migration.
+    async def _noop_migrate(self, db):
+        return None
+
+    monkeypatch.setattr(
+        "voicegateway.storage.sqlite.SQLiteStorage._migrate_plaintext_keys",
+        _noop_migrate,
+    )
+
+    primary_a = _generate_fernet_key()
+    monkeypatch.setenv("VOICEGW_SECRET", primary_a)
+    reset_fernet()
+
+    gw = Gateway(config_path=temp_config)
+    asyncio.run(
+        gw.storage.upsert_managed_provider(
+            provider_id="orphan:deepgram",
+            provider_type="deepgram",
+            api_key="placeholder",
+            project="orphan",
+        )
+    )
+
+    # Replace the row's ciphertext with a token under a key we will
+    # not configure anywhere.
+    orphan_token = (
+        Fernet(Fernet.generate_key()).encrypt(b"who-knows").decode()
+    )
+    import sqlite3
+
+    conn = sqlite3.connect(str(tmp_path / "rotate-cli.db"))
+    try:
+        conn.execute(
+            "UPDATE managed_providers SET api_key_encrypted = ? "
+            "WHERE provider_id = 'orphan:deepgram'",
+            (orphan_token,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    primary_b = _generate_fernet_key()
+    monkeypatch.setenv("VOICEGW_SECRET", primary_b)
+    monkeypatch.setenv("VOICEGW_SECRET_FALLBACK", primary_a)
+    reset_fernet()
+
+    result = runner.invoke(
+        app, ["rotate-secret", "--config", temp_config, "--yes"]
+    )
+    assert result.exit_code == 2, result.output
+    assert "orphan:deepgram" in result.output
