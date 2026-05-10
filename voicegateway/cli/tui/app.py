@@ -33,6 +33,7 @@ from voicegateway.cli.tui.screens import (
     ProvidersScreen,
     SessionsScreen,
 )
+from voicegateway.cli.tui.widgets.footer import CounterFooter
 
 #: Tab ids in display order. ``ContentSwitcher`` mounts one
 #: placeholder per id; ``initial=`` selects the first tab. The vim
@@ -114,6 +115,9 @@ class TUIApp(App[None]):
             yield CostsScreen(id=_TAB_IDS[1])
             yield LogsScreen(id=_TAB_IDS[2])
             yield ProvidersScreen(id=_TAB_IDS[3])
+        # Phase-9 live counter row -- polls list_costs on the
+        # client's poll_seconds cadence and updates in place.
+        yield CounterFooter(id="counter-footer")
         yield Footer()
 
     # -- Actions -----------------------------------------------------
