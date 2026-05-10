@@ -237,3 +237,65 @@ def test_migrate_help_renders():
     result = runner.invoke(app, ["migrate", "--help"])
     assert result.exit_code == 0
     assert "Migrate a v0.0.5 install" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Rollback contract (AC-VG-ONBOARD-007): the read-only design IS the
+# rollback path. v0.1.0 migrate writes nothing, so there is nothing
+# to roll back; the footer surfaces this guarantee for the operator.
+# Partial-failure tolerance is verified via the atomic-write helper's
+# own contract tests in tests/cli/test_migrate_atomic_write.py.
+# ---------------------------------------------------------------------------
+
+
+def test_migrate_output_states_read_only_guarantee(tmp_path):
+    """Every migrate run, regardless of detection outcome, prints
+    the read-only footer so the operator knows nothing was written.
+    """
+    home = tmp_path / "voicegw"
+    _make_v005_yaml(home)
+    _make_v005_db(home)
+
+    result = runner.invoke(app, ["migrate", "--config-home", str(home)])
+    assert result.exit_code == 0, result.output
+    # Rich may fold the phrase across lines so assert distinctive
+    # substrings rather than the full sentence.
+    assert "read-only" in result.output
+    assert "no files were written" in result.output
+    assert "unchanged" in result.output
+
+
+def test_migrate_preserves_yaml_byte_for_byte(tmp_path):
+    """Run migrate against a v0.0.5 fixture; assert the yaml on disk
+    is byte-identical before and after. Pins the read-only contract.
+    """
+    home = tmp_path / "voicegw"
+    cfg = _make_v005_yaml(home)
+    _make_v005_db(home)
+
+    pre_bytes = cfg.read_bytes()
+    pre_mtime = cfg.stat().st_mtime
+
+    result = runner.invoke(app, ["migrate", "--config-home", str(home)])
+    assert result.exit_code == 0, result.output
+
+    # Bytes match.
+    assert cfg.read_bytes() == pre_bytes
+    # mtime unchanged (no touch).
+    assert cfg.stat().st_mtime == pre_mtime
+
+
+def test_migrate_preserves_db_byte_for_byte(tmp_path):
+    """Same contract for the SQLite db: no mtime change, identical bytes."""
+    home = tmp_path / "voicegw"
+    _make_v005_yaml(home)
+    db = _make_v005_db(home, with_managed_providers=[("default:openai", "encrypted")])
+
+    pre_bytes = db.read_bytes()
+    pre_mtime = db.stat().st_mtime
+
+    result = runner.invoke(app, ["migrate", "--config-home", str(home)])
+    assert result.exit_code == 0, result.output
+
+    assert db.read_bytes() == pre_bytes
+    assert db.stat().st_mtime == pre_mtime

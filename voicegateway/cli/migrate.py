@@ -332,6 +332,16 @@ def _render(report: MigrationReport) -> None:
             "[cyan]voicegw status[/cyan] to verify it's running."
         )
 
+    # AC-VG-ONBOARD-007 rollback contract. v0.1.0's migrate is
+    # read-only by design (decision 2 keeps the v0.0.5 path), so the
+    # rollback path is "we never wrote anything." Surfacing this
+    # to the operator removes the worry that re-running would
+    # mutate a working install.
+    console.print(
+        "\n[dim]This command is read-only: no files were written; "
+        "your v0.0.5 install is unchanged.[/dim]"
+    )
+
 
 @app.command()
 def migrate(
