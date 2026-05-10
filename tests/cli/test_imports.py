@@ -121,6 +121,9 @@ _V005_COMMAND_NAMES: frozenset[str] = frozenset(
 _V010_COMMAND_NAMES: frozenset[str] = frozenset(
     {
         "onboard",
+        "start",
+        "stop",
+        "restart",
     }
 )
 

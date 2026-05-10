@@ -37,6 +37,7 @@ from voicegateway.cli import costs as _costs  # noqa: F401, E402
 from voicegateway.cli import dashboard as _dashboard  # noqa: F401, E402
 from voicegateway.cli import export_costs as _export_costs  # noqa: F401, E402
 from voicegateway.cli import init as _init  # noqa: F401, E402
+from voicegateway.cli import lifecycle as _lifecycle  # noqa: F401, E402
 from voicegateway.cli import logs as _logs  # noqa: F401, E402
 from voicegateway.cli import mcp as _mcp  # noqa: F401, E402
 from voicegateway.cli import onboard as _onboard  # noqa: F401, E402
