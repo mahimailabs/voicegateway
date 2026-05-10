@@ -2,7 +2,40 @@
 
 All notable changes to VoiceGateway are documented here. This project follows [Semantic Versioning](https://semver.org/) and [Conventional Commits](https://www.conventionalcommits.org/).
 
-> **Version numbering note.** The `v0.0.x` series tracks the LiveKit-parity wedge sequence (v0.0.5: parity, v0.0.6: voice-conversation metrics, v0.0.7: replay, etc.) — separate from `v0.1.0`'s cost-tracking foundation rebuild. The two series will reconcile into a single linear sequence at v1.0; until then, both are tagged from the same trunk.
+## v0.1.0 -- 2026-05-10
+
+**Daemon-first onboarding.** v0.1.0 is the operational substrate that makes v0.0.5's parity claim deliverable to anyone who isn't mahimairaja. From a fresh machine to first inference call: one curl command, a five-question wizard, an OS-native daemon, and a dashboard row inside 60 seconds (excluding the time it takes to fetch your provider API key). Adds the daemon machinery (LaunchAgent / systemd `--user` / Scheduled Task), the `voicegw onboard` wizard, lifecycle commands, a ten-check `voicegw doctor`, and a read-only `voicegw migrate` for upgrade verification. v0.0.5's public API and storage layout are preserved verbatim per design decision 2: the canonical config home stays at `~/.config/voicegateway/`.
+
+### Added
+
+- **One-line installer** (`install.sh`). Curl-bash one-liner that detects OS (macOS / Linux / WSL), refuses cleanly if Python 3.11+ is missing (does not auto-install Python; package-manager pointers instead), bootstraps `pipx` via the OS package manager when running as root or via `pip --user` otherwise, and runs `pipx install voicegateway[cloud,dashboard]`. Detects an existing v0.0.5 install and offers `pipx upgrade` plus auto-runs `voicegw migrate` for verification. Container test (`tests/cli/test_install_script.sh`) runs against Ubuntu 24.04, Debian 12, and Fedora 40 in CI via `.github/workflows/install-script.yml`. Implements REQ-VG-ONBOARD-001.
+- **`voicegw onboard` wizard.** Five questions: project name (default `default`), provider (default `openai`), API key (no default, hidden input), port (default `8080`), install daemon (default yes). Real-time provider key validation against the upstream API with a 5-second timeout (fail-soft on timeout per REQ-VG-ONBOARD-002.2). Clean Ctrl+C cancellation with byte-for-byte rollback of any pre-existing config. End-of-wizard summary shows project / provider / port / daemon status / dashboard URL. Optionally runs `voicegw smoke-test` as the first-call moment (REQ-VG-ONBOARD-005). Implements REQ-VG-ONBOARD-002.
+- **Daemon facade and three OS backends.** `voicegateway/cli/daemon/__init__.py` defines a `DaemonBackend` Protocol (install / uninstall / start / stop / restart / status / logs); `DaemonManager` picks the backend by `sys.platform`. Backends: `macos.py` (LaunchAgent at `~/Library/LaunchAgents/ai.openrtc.voicegateway.plist`, wraps `launchctl bootstrap/bootout/print/kickstart`), `linux.py` (systemd `--user` unit at `~/.config/systemd/user/voicegateway.service`, wraps `systemctl --user` + `journalctl --user-unit`), `windows.py` (Scheduled Task via `schtasks.exe` with a Start Menu Startup-folder `.lnk` fallback for locked-down boxes). Templates at `voicegateway/cli/daemon/templates/launchagent.plist` and `systemd.service` rendered via `string.Template`. Plist + unit files written with mode 0644. Implements REQ-VG-ONBOARD-003.
+- **Lifecycle commands.** `voicegw start`, `voicegw stop`, `voicegw restart`, `voicegw uninstall-daemon`. Each delegates to the platform backend; uninstall-daemon explicitly states what was preserved (config file, call DB, encrypted managed_providers rows) and the documented manual cleanup command (`rm -rf ~/.config/voicegateway/`) per design decision 5. AC-VG-ONBOARD-004.2 timing assertion caps the cli surface at 1.0s with a mocked manager. Implements REQ-VG-ONBOARD-004.
+- **`voicegw doctor`** with ten checks rendered as a numbered Rich punch list: Python version, pipx installed, daemon registered, daemon running, port conflict, provider configured, provider key valid, recent error count, dashboard reachable, MCP responsive. Three-status model (ok / fail / skip): skip is the documented non-blocking status for "this check doesn't apply right now" (e.g., daemon-running when not registered, MCP probe under stdio). Every fail row carries a specific fix action (AC-VG-ONBOARD-006.2): no stack traces, no bare "see docs" pointers. Implements REQ-VG-ONBOARD-006.
+- **`voicegw migrate`** read-only detection. Verifies a v0.0.5 install at the canonical config home (yaml parseable, SQLite db readable, managed_providers keys decrypt under the current `VOICEGW_SECRET`, daemon registration status). No copy step because v0.1.0 keeps the v0.0.5 path (design decision 2). The output ends with an explicit "this command is read-only; no files were written; your v0.0.5 install is unchanged" footer. Atomic-write seam (`_atomic_write_text`) ships ready for the first schema bump that introduces a write. Implements REQ-VG-ONBOARD-007.
+- **`/get-started` landing page** (`docs/get-started.md`). 60-second above-fold install + wizard + three-step preview; below-fold troubleshooting box covering Python missing, pipx missing, provider key invalid. Implements REQ-VG-ONBOARD-008.
+- **`docs/migration/from-v0.0.5.md`.** One-page migration guide covering the `voicegw status` reorder, the new daemon, doctor, migrate, and the unchanged v0.0.5 surface (every existing import path keeps working).
+
+### Changed
+
+- **`voicegw status`** now renders the daemon section FIRST, then the provider section (design decision 4). Two sections are independent: a missing daemon backend prints a yellow "Daemon status unavailable" line and the provider section still renders.
+- **`voicegateway/cli`** is now a package, not a single file. The original `voicegateway/cli.py` (1165 LOC) is split into focused submodules per command (`init.py`, `serve.py`, `projects.py`, `smoke_test.py`, etc.) plus `_app.py` (Typer app + Rich console + `--version` callback) and `_helpers.py` (`_load_gateway`, `_parse_iso_date_arg`). The `from voicegateway.cli import app` contract is preserved verbatim; the `voicegw = "voicegateway.cli:app"` console-script entry point is unchanged.
+- **`pyproject.toml` cloud extras** add `psutil>=5.9` (port + process inspection in `voicegw doctor`) and `platformdirs>=4.0` (OS-canonical config home resolution for the daemon backends). Both deps were pre-approved in the v0.1.0 spec.
+- **`README.md`** Quick Start section leads with the curl-bash one-liner; manual `pipx install` and `pip install` flows ship as the second and third snippets under Option 1 for users who prefer them.
+- **Public command surface** grew from 13 commands (v0.0.5) to 19 (v0.1.0): adds `onboard`, `start`, `stop`, `restart`, `uninstall-daemon`, `doctor`, `migrate`. The v0.0.5 set is unchanged; the back-compat assertion test (`tests/cli/test_imports.py`) tracks the v0.0.5 + v0.1.0 sets independently so a future regression that drops a v0.0.5 command trips immediately.
+
+### Migration
+
+See [docs/migration/from-v0.0.5.md](../migration/from-v0.0.5.md). Short version: every v0.0.5 import keeps working unchanged. Run `voicegw migrate` to verify the existing install carries over, then `voicegw onboard --install-daemon` to register the per-user daemon. The canonical config home (`~/.config/voicegateway/`) is preserved verbatim; nothing in your existing yaml or SQLite database needs to move.
+
+### Out of scope (deferred)
+
+- The metrics-dashboard view (originally v0.0.6) is paused until v0.1.0 adoption proves the operational hypothesis. Will return as v0.2.0.
+- Terminal UI is the v0.1.1 fast-follow.
+- Single-binary distribution, auto-update, anonymous telemetry, native Windows installer beyond the Scheduled Task best-effort all stay deferred.
+
+---
 
 ## v0.0.5 -- 2026-05-07
 
@@ -46,9 +79,10 @@ All notable changes to VoiceGateway are documented here. This project follows [S
 - **Session correlation requires the standard async flow.** Factories constructed in separate `asyncio.Task` instances created BEFORE the session opens get their own session ids. Construct factories at session entry, not at module import time. Documented in the migration guide. v0.0.6+ work will surface orphaned requests in the dashboard and may add an explicit `session_id` escape hatch.
 - **`api_secret`, `fallback`, and `conn_options`** on the inference factories are accepted for drop-in compat but currently warn-and-ignore (`api_secret` semantically does not apply; the others fall back to `voicegw.yaml`-driven behavior). `voicegateway.inference` users should either drop these parameters or use voicegw.yaml's `fallbacks:` block.
 
-## v0.1.0 -- 2026-05-04
+## v0.0.4 -- 2026-05-04
 
-**Cost-tracking foundation rebuild.** v0.1.0 ships the `pydantic/genai-prices` integration, modality-aware pricing, fixture-based streaming validation, and reconciliation tooling. The framing throughout README and docs is rewritten from "self-hosted inference gateway" to "modality-aware cost estimation + reconciliation for LiveKit voice agents," matching what the code actually does.
+**Cost-tracking foundation rebuild.** (Originally drafted as a parallel `v0.1.0` line during the dual-trunk era; reconciled into the v0.0.x linear sequence as v0.0.4 when the daemon-first v0.1.0 became the canonical 0.1.0 release on 2026-05-10.)
+ v0.1.0 ships the `pydantic/genai-prices` integration, modality-aware pricing, fixture-based streaming validation, and reconciliation tooling. The framing throughout README and docs is rewritten from "self-hosted inference gateway" to "modality-aware cost estimation + reconciliation for LiveKit voice agents," matching what the code actually does.
 
 ### Added
 
