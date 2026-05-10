@@ -19,6 +19,7 @@ Two entry points live side-by-side:
 
 from __future__ import annotations
 
+import httpx
 import typer
 
 # Alias the Typer instance to ``cli_app`` because ``voicegateway.cli.
@@ -143,10 +144,20 @@ def tui_cmd(
     ),
 ) -> None:
     """Launch the four-tab terminal UI (Sessions / Costs / Logs / Providers)."""
+    resolved_url = url if url is not None else _resolve_default_url(config)
+    if not local and not _preflight_daemon_reachable(resolved_url, token):
+        console.print(
+            f"[red]Daemon at {resolved_url} is not reachable.[/red]\n"
+            "Start it with `voicegw start` (after `voicegw onboard "
+            "--install-daemon` if you have not yet), or run "
+            "`voicegw tui --local` for read-only postmortem "
+            "inspection of the SQLite call DB."
+        )
+        raise typer.Exit(1)
     try:
         run(
             local=local,
-            url=url,
+            url=resolved_url,
             token=token,
             poll=poll,
             history_limit=history_limit,
@@ -155,12 +166,37 @@ def tui_cmd(
         )
     except Exception as exc:  # noqa: BLE001
         # Any launch-time failure surfaces as a clean exit-1 with a
-        # useful pointer rather than a Python traceback. Phase 2's
-        # "daemon-down" message-on-no-route bullet refines this in
-        # the next iteration with a more specific hint when the user
-        # is in Gateway mode and the daemon is unreachable.
+        # useful pointer rather than a Python traceback. The
+        # daemon-reachable preflight above catches the most common
+        # cause; this fallback covers the rest (corrupt SQLite in
+        # Local mode, textual import failure, etc.).
         console.print(f"[red]Failed to launch TUI:[/red] {exc}")
         raise typer.Exit(1) from exc
+
+
+def _preflight_daemon_reachable(
+    url: str, token: str | None, timeout: float = 2.0
+) -> bool:
+    """Return ``True`` when the daemon at ``url`` answers ``/health``.
+
+    Synchronous probe so the daemon-down message can render before
+    Textual takes over the terminal. ``timeout`` defaults to 2 s --
+    long enough for a localhost daemon to respond, short enough that
+    a typo in ``--url`` does not stall the launch.
+    """
+
+    headers: dict[str, str] = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        response = httpx.get(
+            f"{url.rstrip('/')}/health",
+            timeout=timeout,
+            headers=headers,
+        )
+    except Exception:  # noqa: BLE001
+        return False
+    return response.status_code == 200
 
 
 __all__ = ["TUIApp", "run", "tui_cmd"]
