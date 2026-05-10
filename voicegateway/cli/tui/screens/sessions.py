@@ -51,6 +51,7 @@ class SessionsScreen(Container):
     # assignment is the canonical Textual pattern (see app.py too).
     BINDINGS = [
         Binding("s", "toggle_sort", "Sort"),
+        Binding("enter", "open_detail", "Detail"),
     ]
 
     DEFAULT_CSS = """
@@ -115,6 +116,28 @@ class SessionsScreen(Container):
         # exclusive=True so a fast double-press cancels the in-flight
         # worker rather than racing two refreshes against each other.
         self.run_worker(self.refresh_data(), exclusive=True)
+
+    def action_open_detail(self) -> None:
+        """Push the per-turn detail modal for the focused row.
+
+        Reads ``self.app.focused`` rather than looking up the row in
+        the list because focus is the user's intent: ``Enter`` only
+        makes sense when a row is the active widget. Falls through
+        silently when the focused widget is not a SessionRow (the
+        binding does nothing harmful).
+        """
+        # Lazy import: SessionDetailScreen imports the cli.tui.screens
+        # package back through its __init__.py during module init,
+        # which would close a loop here. Importing inside the action
+        # body sidesteps that without making the call any more
+        # expensive than a typical attribute resolution.
+        from voicegateway.cli.tui.screens.session_detail import (
+            SessionDetailScreen,
+        )
+
+        focused = self.app.focused
+        if isinstance(focused, SessionRow):
+            self.app.push_screen(SessionDetailScreen(focused.session_id))
 
     # -- Helpers -----------------------------------------------------
 
