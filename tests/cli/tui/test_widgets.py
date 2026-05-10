@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from voicegateway.cli.tui.widgets.cost_card import CostCard, stale_marker
 from voicegateway.cli.tui.widgets.log_tail import (
+    LogTail,
     format_entry,
     format_timestamp,
 )
@@ -373,3 +374,122 @@ def test_format_entry_handles_garbled_latency() -> None:
     entry["total_latency_ms"] = "not-a-number"
     rendered = format_entry(entry)
     assert "0ms" in rendered  # falls back rather than crashing
+
+
+# ---------------------------------------------------------------------------
+# LogTail filter behaviour (REQ-VG-TUI-004 ``/`` filter)
+# ---------------------------------------------------------------------------
+
+
+
+def _entries_fixture() -> list[dict[str, object]]:
+    return [
+        {
+            "id": "r1",
+            "timestamp": 1715356800.0,
+            "modality": "llm",
+            "provider": "openai",
+            "model_id": "gpt-4o-mini",
+            "cost_usd": 0.001,
+            "status": "success",
+            "total_latency_ms": 100,
+        },
+        {
+            "id": "r2",
+            "timestamp": 1715356860.0,
+            "modality": "stt",
+            "provider": "deepgram",
+            "model_id": "nova-3",
+            "cost_usd": 0.0005,
+            "status": "success",
+            "total_latency_ms": 80,
+        },
+        {
+            "id": "r3",
+            "timestamp": 1715356920.0,
+            "modality": "tts",
+            "provider": "cartesia",
+            "model_id": "sonic-2",
+            "cost_usd": 0.0008,
+            "status": "success",
+            "total_latency_ms": 90,
+        },
+    ]
+
+
+def test_log_tail_retains_all_entries_via_append() -> None:
+    """``_all_entries`` accumulates every appended row so set_filter
+    can re-render without re-fetching from the daemon.
+    """
+    tail = LogTail()
+    tail.append_entries(_entries_fixture())
+    assert len(tail._all_entries) == 3
+    assert {e["id"] for e in tail._all_entries} == {"r1", "r2", "r3"}
+
+
+def test_log_tail_dedups_by_id_across_appends() -> None:
+    tail = LogTail()
+    tail.append_entries(_entries_fixture())
+    # Re-append the same batch -- de-dup should drop them.
+    tail.append_entries(_entries_fixture())
+    assert len(tail._all_entries) == 3
+
+
+def test_log_tail_set_filter_substring_match() -> None:
+    tail = LogTail()
+    tail.append_entries(_entries_fixture())
+    tail.set_filter("deepgram")
+    assert tail._filter == "deepgram"
+    # All-entries unchanged; only the rendered buffer was mutated.
+    assert len(tail._all_entries) == 3
+
+
+def test_log_tail_set_filter_case_insensitive() -> None:
+    tail = LogTail()
+    tail.append_entries(_entries_fixture())
+    tail.set_filter("OpenAI")
+    assert tail._filter == "OpenAI"
+    # ``_matches_filter`` lowercases both sides, so this still
+    # matches the openai row.
+    assert tail._matches_filter(_entries_fixture()[0]) is True
+
+
+def test_log_tail_set_filter_empty_string_clears() -> None:
+    tail = LogTail()
+    tail.append_entries(_entries_fixture())
+    tail.set_filter("openai")
+    tail.set_filter("")
+    assert tail._filter is None
+
+
+def test_log_tail_set_filter_none_clears() -> None:
+    tail = LogTail()
+    tail.append_entries(_entries_fixture())
+    tail.set_filter("openai")
+    tail.set_filter(None)
+    assert tail._filter is None
+
+
+def test_log_tail_reset_clears_state() -> None:
+    tail = LogTail()
+    tail.append_entries(_entries_fixture())
+    tail.set_filter("openai")
+    tail.reset()
+    assert tail._filter is None
+    assert tail._all_entries == []
+    assert tail._seen_ids == set()
+
+
+def test_log_tail_append_skips_non_matching_under_active_filter() -> None:
+    """Real-time append while a filter is set: matching rows go to
+    the rendered buffer; non-matches still land in _all_entries so
+    a later filter clear restores them.
+    """
+    tail = LogTail()
+    tail.set_filter("openai")
+    tail.append_entries(_entries_fixture())
+    # All three rows retained; only one matches.
+    assert len(tail._all_entries) == 3
+    matches = [e for e in tail._all_entries if tail._matches_filter(e)]
+    assert len(matches) == 1
+    assert matches[0]["provider"] == "openai"

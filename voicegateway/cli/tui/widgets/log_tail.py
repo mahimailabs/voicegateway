@@ -54,6 +54,13 @@ class LogTail(RichLog):
         # set grow with the buffer because Textual already caps the
         # rendered line count via ``max_lines`` on RichLog.
         self._seen_ids: set[str] = set()
+        # Retain every appended entry so set_filter can re-render the
+        # buffer without re-fetching from the daemon. Same growth
+        # caveat as ``_seen_ids``; Phase-9 polish addresses both.
+        self._all_entries: list[dict[str, Any]] = []
+        # ``None`` means "no filter active"; a string filters lines
+        # that contain it (case-insensitive substring match).
+        self._filter: str | None = None
 
     def append_entries(self, entries: list[dict[str, Any]]) -> None:
         """Append every entry whose id has not been seen yet.
@@ -69,6 +76,11 @@ class LogTail(RichLog):
         de-dup set never grows for them, which mirrors the
         screen's "stream every line we see" expectation when the
         upstream cannot identify rows.
+
+        With a filter active, only matching entries are written to
+        the visible buffer; non-matches still land in
+        ``_all_entries`` so :meth:`set_filter` can re-include them
+        when the filter is cleared.
         """
         for entry in entries:
             entry_id = str(entry.get("id", ""))
@@ -76,12 +88,36 @@ class LogTail(RichLog):
                 if entry_id in self._seen_ids:
                     continue
                 self._seen_ids.add(entry_id)
-            self.write(format_entry(entry))
+            self._all_entries.append(entry)
+            if self._matches_filter(entry):
+                self.write(format_entry(entry))
+
+    def set_filter(self, substring: str | None) -> None:
+        """Apply (or clear) a case-insensitive substring filter.
+
+        Re-renders the visible buffer with only matching entries;
+        non-matching rows stay in ``_all_entries`` so a later call
+        with ``substring=None`` restores the full view. Empty
+        string is treated as ``None`` (no filter) so submitting an
+        empty input clears the filter cleanly.
+        """
+        self._filter = substring or None
+        self.clear()
+        for entry in self._all_entries:
+            if self._matches_filter(entry):
+                self.write(format_entry(entry))
 
     def reset(self) -> None:
-        """Clear the visible buffer + the de-dup set."""
+        """Clear the visible buffer + the de-dup set + filter state."""
         self.clear()
         self._seen_ids.clear()
+        self._all_entries.clear()
+        self._filter = None
+
+    def _matches_filter(self, entry: dict[str, Any]) -> bool:
+        if self._filter is None:
+            return True
+        return self._filter.lower() in format_entry(entry).lower()
 
 
 def format_entry(entry: dict[str, Any]) -> str:

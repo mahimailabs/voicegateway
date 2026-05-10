@@ -170,9 +170,18 @@ class TUIApp(App[None]):
         new_active = switcher.query_one(f"#{switcher.current}")
         # walk_children's annotation is DOMNode; the runtime values
         # are Widget instances so the isinstance guard satisfies mypy
-        # without a runtime cost.
+        # without a runtime cost. ``descendant.display`` filters
+        # out widgets the screen has hidden (e.g. LogsScreen's
+        # filter Input is mounted but display=False until ``/``
+        # reveals it); without this guard the hidden Input gets
+        # focused and number keys land in its buffer instead of
+        # triggering the App's tab-switch action.
         for descendant in new_active.walk_children():
-            if isinstance(descendant, Widget) and descendant.can_focus:
+            if (
+                isinstance(descendant, Widget)
+                and descendant.can_focus
+                and descendant.display
+            ):
                 descendant.focus()
                 return
         if new_active.can_focus:

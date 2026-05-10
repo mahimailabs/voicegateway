@@ -18,8 +18,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Container
-from textual.widgets import Label
+from textual.widgets import Input, Label
 
 from voicegateway.cli.tui.widgets.log_tail import LogTail
 
@@ -28,15 +29,20 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 class LogsScreen(Container):
-    """Tail-style request-log viewer."""
+    """Tail-style request-log viewer with vim-style ``/`` filter."""
 
     # ``can_focus = True`` for the same reason as CostsScreen: the
-    # screen-level BINDINGS (added in the next Phase-5 bullets) only
-    # resolve when something in the screen's DOM subtree holds focus,
-    # and LogTail is RichLog which is focusable -- but until the
-    # initial fetch completes the LogTail may be empty + un-focused,
-    # so the screen Container is the safe focus target.
+    # screen-level BINDINGS (the / filter below; Phase-7 will add
+    # j/k/G) only resolve when something in the screen's DOM subtree
+    # holds focus. RichLog itself is focusable, but until the initial
+    # fetch completes the LogTail may be empty + un-focused, so the
+    # screen Container is the safe focus target.
     can_focus = True
+
+    BINDINGS = [
+        Binding("slash", "open_filter", "Filter"),
+        Binding("escape", "clear_filter", "Clear filter", show=False),
+    ]
 
     DEFAULT_CSS = """
     LogsScreen {
@@ -48,17 +54,30 @@ class LogsScreen(Container):
         padding: 0 1;
         background: $boost;
     }
+    LogsScreen #logs-filter {
+        height: 1;
+        margin: 0;
+    }
     LogsScreen #logs-tail {
         height: 1fr;
     }
     """
 
     def compose(self) -> ComposeResult:
-        yield Label("Logs  |  [ tailing ]", id="logs-header")
+        yield Label(self._header_text(), id="logs-header")
+        yield Input(
+            placeholder="Filter (type substring, Enter to apply, Esc to clear)",
+            id="logs-filter",
+        )
         yield LogTail(id="logs-tail")
 
-    async def on_mount(self) -> None:
-        await self.refresh_data()
+    def on_mount(self) -> None:
+        # Filter input is hidden by default; ``/`` reveals it.
+        self.query_one("#logs-filter", Input).display = False
+        # Spawn the initial fetch as a worker so on_mount stays sync;
+        # the Phase-9 polling loop replaces this with a recurring
+        # timer, but for now a one-shot worker is enough.
+        self.run_worker(self.refresh_data(), exclusive=True)
 
     async def refresh_data(self) -> None:
         """Fetch recent rows and append the unseen ones to LogTail.
@@ -71,3 +90,63 @@ class LogsScreen(Container):
         limit = int(getattr(app, "_history_limit", 100))
         entries = await app.client.list_logs(limit=limit)
         self.query_one("#logs-tail", LogTail).append_entries(entries)
+
+    # -- Actions -----------------------------------------------------
+
+    def action_open_filter(self) -> None:
+        """Reveal + focus the filter input.
+
+        Bound to ``/`` to match vim's search-prompt convention. The
+        user types a substring and presses Enter to apply; Escape
+        (handled by ``action_clear_filter``) clears + hides.
+        """
+        filter_input = self.query_one("#logs-filter", Input)
+        filter_input.display = True
+        filter_input.focus()
+
+    def action_clear_filter(self) -> None:
+        """Clear any active filter + hide the input.
+
+        Triggered by Escape regardless of whether the input has
+        focus (the screen-level binding wins when no Input handler
+        consumes the key).
+        """
+        filter_input = self.query_one("#logs-filter", Input)
+        filter_input.value = ""
+        filter_input.display = False
+        tail = self.query_one("#logs-tail", LogTail)
+        tail.set_filter(None)
+        self._update_header()
+        # Restore focus to the screen so subsequent keys (e.g. tab
+        # cycle) are not swallowed by the now-hidden Input.
+        self.focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Apply the substring filter on Enter inside the filter input."""
+        if event.input.id != "logs-filter":
+            return
+        substring = (event.value or "").strip()
+        tail = self.query_one("#logs-tail", LogTail)
+        tail.set_filter(substring or None)
+        # Hide the input and shift focus back to the screen so the
+        # screen-level keybindings (and the upcoming Phase-7
+        # j/k/G set) resolve cleanly without an extra step.
+        event.input.display = False
+        self._update_header()
+        self.focus()
+
+    # -- Helpers -----------------------------------------------------
+
+    def _update_header(self) -> None:
+        self.query_one("#logs-header", Label).update(self._header_text())
+
+    def _header_text(self) -> str:
+        try:
+            tail = self.query_one("#logs-tail", LogTail)
+        except Exception:  # noqa: BLE001
+            # ``compose()`` calls this before LogTail mounts; render
+            # the default until on_mount finishes.
+            return "Logs  |  [ tailing ]"
+        if tail._filter:
+            return f"Logs  |  [ filter: {tail._filter} ]   (Esc to clear)"
+        return "Logs  |  [ tailing ]"
