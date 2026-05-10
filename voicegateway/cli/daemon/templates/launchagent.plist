@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    VoiceGateway LaunchAgent template.
+
+    Rendered by voicegateway/cli/daemon/macos.py with Python's
+    ``string.Template``. Substitution variables:
+
+      ${service_name}       Label for launchctl. The macOS backend
+                            uses "ai.openrtc.voicegateway" by default.
+      ${executable_path}    Absolute path to the ``voicegw`` binary
+                            installed by pipx (typically
+                            ~/.local/bin/voicegw or the homebrew
+                            equivalent).
+      ${stdout_log_path}    Absolute path the daemon's stdout pipes
+                            to. Lives under
+                            ~/Library/Logs/voicegateway/serve.log
+                            by convention.
+      ${stderr_log_path}    Absolute path for stderr. Same dir as
+                            stdout, ``serve.err.log``.
+      ${working_directory}  Process working directory. The backend
+                            sets this to the user's home so any
+                            relative path resolves predictably.
+
+    Behaviour locked by this template (do NOT make these template
+    variables; they are intentional defaults for v0.1.0):
+
+      RunAtLoad=true        Daemon starts at user login (and at
+                            bootstrap from launchctl).
+      KeepAlive=true        launchd auto-restarts the daemon if it
+                            exits (covers the design.md \xa76 reboot
+                            survival and process-kill survival
+                            tests: a kill -9 brings the gateway
+                            back within seconds).
+      ProcessType=Interactive  Hint to launchd that this is a
+                            user-facing service so the OOM killer
+                            and CPU throttling stay light-handed.
+
+    The PATH inside EnvironmentVariables explicitly includes
+    ~/.local/bin so a pipx-installed voicegw can invoke its own
+    Python without relying on the launchd shell PATH (which is
+    usually ``/usr/bin:/bin:/usr/sbin:/sbin``).
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${service_name}</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>${executable_path}</string>
+        <string>serve</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>StandardOutPath</key>
+    <string>${stdout_log_path}</string>
+
+    <key>StandardErrorPath</key>
+    <string>${stderr_log_path}</string>
+
+    <key>WorkingDirectory</key>
+    <string>${working_directory}</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>${working_directory}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>

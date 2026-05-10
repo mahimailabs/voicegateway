@@ -87,6 +87,20 @@ class DashboardConfig(BaseModel):
     port: int = 9090
 
 
+class ServeConfig(BaseModel):
+    """HTTP API serve config (the daemon-first ``voicegw serve`` target).
+
+    The v0.1.0 onboarding wizard persists the user-selected port here so
+    that the platform service unit (which runs bare ``voicegw serve``)
+    binds to the same port the user typed during install.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    host: str = "0.0.0.0"
+    port: int = 8080
+
+
 class ApiKeyEntry(_StrictBase):
     """One entry under auth.api_keys."""
 
@@ -122,6 +136,7 @@ _VALID_TOP_LEVEL_KEYS = {
     "latency",
     "rate_limits",
     "dashboard",
+    "serve",
     "auth",
 }
 
@@ -142,6 +157,7 @@ class VoiceGatewayConfig(BaseModel):
     latency: LatencyConfig = Field(default_factory=LatencyConfig)
     rate_limits: dict[str, RateLimitEntry] = Field(default_factory=dict)
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
+    serve: ServeConfig = Field(default_factory=ServeConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
 
     @model_validator(mode="before")

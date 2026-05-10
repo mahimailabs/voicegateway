@@ -107,6 +107,7 @@ class GatewayConfig:
     latency: dict[str, Any] = field(default_factory=dict)
     rate_limits: dict[str, dict[str, Any]] = field(default_factory=dict)
     dashboard: dict[str, Any] = field(default_factory=dict)
+    serve: dict[str, Any] = field(default_factory=dict)
     projects: dict[str, ProjectConfig] = field(default_factory=dict)
     default_project: str | None = None  # v0.0.5: see design.md section 3.3
     stacks: dict[str, dict[str, str]] = field(default_factory=dict)
@@ -240,15 +241,11 @@ class GatewayConfig:
                 for entry in (auth_raw.get("api_keys") or [])
                 if isinstance(entry, dict)
             ],
-            cors_origins=[
-                str(o) for o in (auth_raw.get("cors_origins") or []) if o
-            ],
+            cors_origins=[str(o) for o in (auth_raw.get("cors_origins") or []) if o],
         )
 
         default_project_raw = raw.get("default_project")
-        default_project = (
-            str(default_project_raw) if default_project_raw else None
-        )
+        default_project = str(default_project_raw) if default_project_raw else None
 
         return cls(
             providers=raw.get("providers", {}) or {},
@@ -258,6 +255,7 @@ class GatewayConfig:
             latency=raw.get("latency", {}) or {},
             rate_limits=raw.get("rate_limits", {}) or {},
             dashboard=raw.get("dashboard", {}) or {},
+            serve=raw.get("serve", {}) or {},
             projects=projects,
             default_project=default_project,
             stacks=raw.get("stacks", {}) or {},
