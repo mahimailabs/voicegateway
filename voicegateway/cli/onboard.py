@@ -122,15 +122,22 @@ def onboard(
             api_key=api_key,
             port=port,
         )
-        console.print(f"\n[green]Wrote {config_path}[/green]")
+        # ``soft_wrap=True`` keeps the path on a single line even when
+        # the tmp/test paths are longer than the default console width;
+        # otherwise Rich folds long paths mid-segment and the resulting
+        # output is unreadable in CI logs.
+        console.print(f"\n[green]Wrote {config_path}[/green]", soft_wrap=True)
 
         if install_daemon:
             _install_daemon()
 
-        console.print("\n[bold]Onboarding complete.[/bold]")
-        console.print("  Dashboard: http://127.0.0.1:9090")
-        console.print("  Health check: voicegw doctor")
-        console.print("  Status: voicegw status")
+        _print_summary(
+            config_path=config_path,
+            project_name=project_name,
+            provider=provider,
+            port=port,
+            daemon_installed=bool(install_daemon),
+        )
 
     except KeyboardInterrupt:
         _rollback_partial(config_path, pre_existing_bytes)
@@ -218,6 +225,60 @@ def _install_daemon() -> None:
     console.print("\nInstalling background daemon...")
     DaemonManager().install()
     console.print("[green]Daemon installed and started.[/green]")
+
+
+# Default dashboard port matches v0.0.5's ``voicegw dashboard`` flag
+# default. Surfaced in the summary so the user can paste the URL
+# straight into their browser without a second cli invocation.
+_DEFAULT_DASHBOARD_PORT = 9090
+
+
+def _print_summary(
+    *,
+    config_path: Path,
+    project_name: str,
+    provider: str,
+    port: int,
+    daemon_installed: bool,
+) -> None:
+    """Render the documented end-of-wizard summary.
+
+    Implements AC-VG-ONBOARD-002.3: the user sees, byte-for-byte,
+    exactly what the wizard configured plus the URL they should
+    open and the next-step commands. Printed via a Rich table so
+    the rendering is consistent with ``voicegw status`` and
+    ``voicegw doctor``.
+    """
+    from rich.table import Table
+
+    table = Table(title="Onboarding complete", show_header=False, box=None)
+    table.add_column(style="dim")
+    table.add_column()
+
+    table.add_row("Project", project_name)
+    table.add_row("Provider", provider)
+    table.add_row("Serve port", str(port))
+    table.add_row(
+        "Daemon",
+        "[green]installed and started[/green]"
+        if daemon_installed
+        else "[yellow]not installed (run `voicegw onboard --install-daemon` to add)[/yellow]",
+    )
+
+    console.print()
+    console.print(table)
+    # Config-file path lives below the table so Rich's default
+    # column truncation cannot fold a long tmp/CI path mid-segment.
+    # ``soft_wrap=True`` keeps the path on one line.
+    console.print(f"\n[dim]Config:[/dim] {config_path}", soft_wrap=True)
+
+    dashboard_url = f"http://127.0.0.1:{_DEFAULT_DASHBOARD_PORT}"
+    console.print(f"\n[bold]Dashboard:[/bold] {dashboard_url}")
+    console.print(
+        "Open that URL after a request lands; "
+        "use [cyan]voicegw status[/cyan] / "
+        "[cyan]voicegw doctor[/cyan] for diagnostics."
+    )
 
 
 def _rollback_partial(config_path: Path, pre_existing_bytes: bytes | None) -> None:

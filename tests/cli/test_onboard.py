@@ -451,6 +451,70 @@ def test_ctrl_c_restores_pre_existing_config_byte_for_byte(tmp_path, monkeypatch
     )
 
 
+# ---------------------------------------------------------------------------
+# Wizard final summary - AC-VG-ONBOARD-002.3
+# ---------------------------------------------------------------------------
+
+
+def test_summary_shows_every_configured_field(tmp_path):
+    """The summary names project, provider, port, daemon status,
+    config path, and the dashboard URL.
+    """
+    cfg = tmp_path / "voicegw.yaml"
+    inp = "tony-pizza\ndeepgram\nsk-test\n9001\nn\n"
+    result = runner.invoke(
+        app, ["onboard", "--no-install-daemon", "--config", str(cfg)], input=inp
+    )
+    assert result.exit_code == 0, result.output
+
+    out = result.output
+    # Each configured field surfaces verbatim.
+    assert "Onboarding complete" in out
+    assert "tony-pizza" in out
+    assert "deepgram" in out
+    assert "9001" in out
+    assert str(cfg) in out
+    # Dashboard URL is the v0.0.5 default port (9090) on localhost.
+    assert "http://127.0.0.1:9090" in out
+    # Diagnostic next-steps appear.
+    assert "voicegw status" in out
+    assert "voicegw doctor" in out
+
+
+def test_summary_marks_daemon_as_installed_when_flag_passed(tmp_path, monkeypatch):
+    """With --install-daemon the summary reports the daemon as
+    installed; the explicit phrase exists so a future regression
+    that flips the boolean is caught.
+    """
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr("voicegateway.cli.daemon.DaemonManager", MagicMock())
+    cfg = tmp_path / "voicegw.yaml"
+    result = runner.invoke(
+        app,
+        ["onboard", "--install-daemon", "--config", str(cfg)],
+        input="\n\nsk-test\n\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "installed and started" in result.output
+    assert "not installed" not in result.output
+
+
+def test_summary_marks_daemon_as_not_installed_with_pointer_when_skipped(tmp_path):
+    """When the daemon is declined, the summary tells the user
+    exactly how to enable it later.
+    """
+    cfg = tmp_path / "voicegw.yaml"
+    result = runner.invoke(
+        app,
+        ["onboard", "--no-install-daemon", "--config", str(cfg)],
+        input="\n\nsk-test\n\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "not installed" in result.output
+    assert "voicegw onboard --install-daemon" in result.output
+
+
 async def test_validate_skipped_when_plugin_not_installed(monkeypatch):
     from voicegateway.cli.onboard import _validate_provider_key
 
