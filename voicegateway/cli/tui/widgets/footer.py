@@ -77,11 +77,33 @@ class CounterFooter(Horizontal):
                 period="today", include_pricing_source=True
             )
         except Exception:  # noqa: BLE001
+            # The reconnection-indicator path: HttpClient marks
+            # ``is_connected = False`` before re-raising; the next
+            # tick re-renders with the "Reconnecting..." text so
+            # the user sees the failure state without a stack trace.
+            self._redraw()
             return
-        self.query_one("#counter-text", Static).update(_format(costs))
+        self._costs = costs
+        self._redraw()
+
+    def _redraw(self) -> None:
+        """Update the counter line, accounting for the connection state.
+
+        Named ``_redraw`` rather than ``_render`` because Textual's
+        Widget base class uses ``_render`` internally for the
+        rendering pipeline; overriding it with a None-return method
+        breaks the pipeline at runtime.
+        """
+        app = cast("TUIApp", self.app)
+        is_connected = bool(getattr(app.client, "is_connected", True))
+        text_widget = self.query_one("#counter-text", Static)
+        if not is_connected:
+            text_widget.update("Reconnecting to daemon...")
+            return
+        text_widget.update(_format(getattr(self, "_costs", None)))
 
 
-def _format(costs: dict[str, Any]) -> str:
+def _format(costs: Any) -> str:
     """Pure formatter so the counter line is unit-testable.
 
     Renders ``Today: $<total>   Requests: <N>``. ``N`` is the sum
@@ -89,6 +111,10 @@ def _format(costs: dict[str, Any]) -> str:
     ``by_modality`` (the daemon and LocalClient both populate it
     with ``per_modality=true``); falls back to ``request_count`` on
     a flat shape; falls back to ``--`` when the value is missing.
+
+    Accepts ``None`` (pre-first-fetch state) and any non-dict input
+    by returning a ``Today: ...`` placeholder so the row never
+    renders ``Today: $None`` or raises.
     """
     if not isinstance(costs, dict):
         return "Today: ..."

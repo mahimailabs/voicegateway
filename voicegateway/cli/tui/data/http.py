@@ -59,6 +59,14 @@ class HttpClient:
         self._token = token or None
         self.poll_seconds = poll_seconds
         self.connect_timeout = connect_timeout
+        # Connection-health flag the CounterFooter reads to render
+        # the ``Reconnecting...`` indicator. Default True (optimistic);
+        # the first failed request flips it to False, the next
+        # successful round-trip flips it back. 4xx/5xx responses are
+        # NOT connection errors -- the daemon is up, the request was
+        # rejected -- so they leave the flag alone.
+        self.is_connected: bool = True
+        self._last_error: str | None = None
 
         if http_client is not None:
             self._client = http_client
@@ -76,6 +84,28 @@ class HttpClient:
                 headers=self._auth_headers(),
             )
             self._owns_client = True
+
+    # -- Connection-health tracking ---------------------------------
+
+    # Errors that signal "the daemon is unreachable" (vs. "the
+    # daemon answered with a bad status code"). The first set
+    # flips ``is_connected`` to False; HTTPStatusError + JSON
+    # decode errors propagate without touching the flag.
+    _CONNECTION_ERRORS: tuple[type[Exception], ...] = (
+        httpx.ConnectError,
+        httpx.ConnectTimeout,
+        httpx.ReadTimeout,
+        httpx.RemoteProtocolError,
+        httpx.NetworkError,
+    )
+
+    def _mark_connected(self) -> None:
+        self.is_connected = True
+        self._last_error = None
+
+    def _mark_disconnected(self, exc: Exception) -> None:
+        self.is_connected = False
+        self._last_error = str(exc) or type(exc).__name__
 
     # -- lifecycle ---------------------------------------------------
 
@@ -100,6 +130,27 @@ class HttpClient:
     ) -> None:
         await self.aclose()
 
+    # -- Internal request helper ------------------------------------
+
+    async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        """Issue an HTTP request and track connection state.
+
+        Connection-class errors (``ConnectError`` / ``ReadTimeout`` /
+        ``RemoteProtocolError`` / ``NetworkError``) flip
+        ``is_connected`` to False before re-raising; the next
+        successful round-trip flips it back. ``HTTPStatusError`` and
+        JSON-decode failures propagate without touching the flag --
+        they mean "the daemon is up, the request was rejected", not
+        a connection problem.
+        """
+        try:
+            response = await self._client.request(method, path, **kwargs)
+        except self._CONNECTION_ERRORS as exc:
+            self._mark_disconnected(exc)
+            raise
+        self._mark_connected()
+        return response
+
     # -- MetricsClient methods --------------------------------------
 
     async def list_sessions(
@@ -113,14 +164,14 @@ class HttpClient:
         params: dict[str, Any] = {"limit": limit, "order_by": order_by}
         if project is not None:
             params["project"] = project
-        response = await self._client.get("/v1/sessions", params=params)
+        response = await self._request("GET", "/v1/sessions", params=params)
         response.raise_for_status()
         body = response.json()
         return body if isinstance(body, list) else []
 
     async def get_session_detail(self, session_id: str) -> dict[str, Any] | None:
         """``GET /v1/sessions/{id}`` -- one session, or ``None`` on 404."""
-        response = await self._client.get(f"/v1/sessions/{session_id}")
+        response = await self._request("GET", f"/v1/sessions/{session_id}")
         if response.status_code == 404:
             return None
         response.raise_for_status()
@@ -146,7 +197,7 @@ class HttpClient:
         }
         if project is not None:
             params["project"] = project
-        response = await self._client.get("/v1/costs", params=params)
+        response = await self._request("GET", "/v1/costs", params=params)
         response.raise_for_status()
         body = response.json()
         return body if isinstance(body, dict) else {}
@@ -164,7 +215,7 @@ class HttpClient:
             params["project"] = project
         if modality is not None:
             params["modality"] = modality
-        response = await self._client.get("/v1/logs", params=params)
+        response = await self._request("GET", "/v1/logs", params=params)
         response.raise_for_status()
         body = response.json()
         # ``/v1/logs`` historically returns a list; tolerate the
@@ -186,7 +237,7 @@ class HttpClient:
         params: dict[str, Any] = {}
         if project is not None:
             params["project"] = project
-        response = await self._client.get("/v1/providers", params=params)
+        response = await self._request("GET", "/v1/providers", params=params)
         response.raise_for_status()
         body = response.json()
         if isinstance(body, list):
@@ -204,7 +255,7 @@ class HttpClient:
         ``httpx.HTTPStatusError`` so the Providers screen can render
         a clear ``token required`` message.
         """
-        response = await self._client.post(f"/v1/providers/{provider_id}/test")
+        response = await self._request("POST", f"/v1/providers/{provider_id}/test")
         response.raise_for_status()
         body = response.json()
         return body if isinstance(body, dict) else {}
