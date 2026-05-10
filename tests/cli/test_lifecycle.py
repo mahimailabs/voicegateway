@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
 from typer.testing import CliRunner
 
 from voicegateway.cli import app
@@ -188,3 +189,55 @@ def test_uninstall_daemon_help_renders():
     result = runner.invoke(app, ["uninstall-daemon", "--help"])
     assert result.exit_code == 0
     assert "Remove the daemon registration only" in result.output
+
+
+# ---------------------------------------------------------------------------
+# AC-VG-ONBOARD-004.2: every lifecycle command completes within 10s.
+#
+# The wall-clock budget in the spec covers a real subprocess round-trip
+# against the OS service manager. Unit-test budget is much tighter: with
+# DaemonManager mocked the only cost is Python+Typer dispatch + a couple
+# of console.prints. 1.0s gives plenty of headroom on slow CI runners
+# while still catching a regression that adds a sleep, blocking init,
+# or accidental network call to the cli surface.
+# ---------------------------------------------------------------------------
+
+
+_CLI_OVERHEAD_BUDGET_S = 1.0
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["start"],
+        ["stop"],
+        ["restart"],
+        ["uninstall-daemon"],
+    ],
+)
+def test_lifecycle_command_completes_within_budget(command, monkeypatch, tmp_path):
+    """Every lifecycle command must complete within ``_CLI_OVERHEAD_BUDGET_S``
+    seconds when DaemonManager is mocked. A regression that adds a
+    slow init, a sleep, or an accidental network call trips this gate.
+
+    The 10-second budget from AC-VG-ONBOARD-004.2 covers the real
+    subprocess round-trip; this test keeps the CLI surface itself
+    well under that threshold so the OS time is the only variable
+    in production runs.
+    """
+    import time
+
+    fake = MagicMock()
+    _patch_manager(monkeypatch, fake)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    start_t = time.perf_counter()
+    result = runner.invoke(app, command)
+    elapsed = time.perf_counter() - start_t
+
+    assert result.exit_code == 0, result.output
+    assert elapsed < _CLI_OVERHEAD_BUDGET_S, (
+        f"`voicegw {' '.join(command)}` took {elapsed:.2f}s with a mocked "
+        f"DaemonManager (budget {_CLI_OVERHEAD_BUDGET_S}s). "
+        "Look for a slow import, sleep, or blocking init."
+    )
