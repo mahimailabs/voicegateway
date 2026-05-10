@@ -22,6 +22,11 @@ at import time).
 
 from __future__ import annotations
 
+# Side-effect imports: each submodule registers its commands on the
+# shared ``app`` via ``@app.command(...)`` decorators that run at
+# import time. Order does not matter; commands carry their own names.
+from voicegateway.cli import init as _init  # noqa: F401, E402
+
 # Single source of truth for both ``app`` (the Typer instance every
 # command registers on) and ``console`` (the Rich Console used for
 # uniform terminal output across commands and submodules added later).

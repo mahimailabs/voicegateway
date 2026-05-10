@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -43,21 +42,6 @@ def _root(
     """Root callback hosting global options like --version."""
 
 
-# The example config ships next to the package. Try both the new and legacy names.
-_PACKAGE_ROOT = Path(__file__).parent.parent
-_EXAMPLE_CONFIG_CANDIDATES = [
-    _PACKAGE_ROOT / "voicegw.example.yaml",
-    _PACKAGE_ROOT / "gateway.example.yaml",
-]
-
-
-def _find_example_config() -> Path | None:
-    for p in _EXAMPLE_CONFIG_CANDIDATES:
-        if p.exists():
-            return p
-    return None
-
-
 def _load_gateway(config_path: str | None):
     from voicegateway.core.gateway import Gateway
 
@@ -66,34 +50,6 @@ def _load_gateway(config_path: str | None):
     except Exception as e:
         console.print(f"[red]Error loading config: {e}[/red]")
         raise typer.Exit(1) from e
-
-
-@app.command()
-def init(
-    output: str = typer.Option(
-        "./voicegw.yaml", "--output", "-o", help="Output path for config file"
-    ),
-):
-    """Create a voicegw.yaml configuration file."""
-    dest = Path(output)
-    if dest.exists():
-        overwrite = typer.confirm(f"{dest} already exists. Overwrite?")
-        if not overwrite:
-            raise typer.Abort()
-
-    example = _find_example_config()
-    if example is not None:
-        shutil.copy(example, dest)
-    else:
-        dest.write_text(
-            "# VoiceGateway Configuration\n"
-            "# See: https://github.com/mahimailabs/voicegateway\n\n"
-            "providers: {}\nmodels:\n  stt: {}\n  llm: {}\n  tts: {}\n"
-            "projects: {}\n"
-        )
-
-    console.print(f"[green]Created {dest}[/green]")
-    console.print("Edit it with your API keys, models, and projects.")
 
 
 @app.command(name="rotate-secret")
