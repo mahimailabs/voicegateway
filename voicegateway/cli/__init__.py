@@ -30,6 +30,7 @@ from voicegateway.cli import init as _init  # noqa: F401, E402
 from voicegateway.cli import logs as _logs  # noqa: F401, E402
 from voicegateway.cli import projects as _projects  # noqa: F401, E402
 from voicegateway.cli import rotate_secret as _rotate_secret  # noqa: F401, E402
+from voicegateway.cli import serve as _serve  # noqa: F401, E402
 from voicegateway.cli import smoke_test as _smoke_test  # noqa: F401, E402
 from voicegateway.cli import status as _status  # noqa: F401, E402
 

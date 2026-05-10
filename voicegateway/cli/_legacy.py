@@ -49,32 +49,6 @@ def _load_gateway(config_path: str | None):
         raise typer.Exit(1) from e
 
 
-@app.command(name="serve")
-def serve_cmd(
-    config: str = typer.Option(None, "--config", "-c", help="Path to voicegw.yaml"),
-    host: str = typer.Option("0.0.0.0", "--host", help="Bind host"),
-    port: int = typer.Option(8080, "--port", help="Bind port"),
-):
-    """Start the VoiceGateway HTTP API server."""
-    try:
-        import uvicorn
-    except ImportError as e:
-        console.print(
-            "[red]Dashboard dependencies not installed. "
-            "Run: pip install 'voicegateway[dashboard]'[/red]"
-        )
-        raise typer.Exit(1) from e
-
-    gw = _load_gateway(config)
-    from voicegateway.core.auth import describe_auth, load_api_keys
-    from voicegateway.server import build_app
-
-    api_app = build_app(gw)
-    console.print(f"[green]VoiceGateway API starting at http://{host}:{port}[/green]")
-    console.print(f"[cyan]{describe_auth(load_api_keys(gw.config.auth))}[/cyan]")
-    uvicorn.run(api_app, host=host, port=port)
-
-
 @app.command(name="dashboard")
 def dashboard_cmd(
     config: str = typer.Option(None, "--config", "-c", help="Path to voicegw.yaml"),
