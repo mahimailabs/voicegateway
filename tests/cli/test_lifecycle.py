@@ -122,3 +122,69 @@ def test_restart_help_renders():
     result = runner.invoke(app, ["restart", "--help"])
     assert result.exit_code == 0
     assert "Restart the background daemon" in result.output
+
+
+# ---------------------------------------------------------------------------
+# uninstall-daemon - preserved-state contract per design decision 5
+# ---------------------------------------------------------------------------
+
+
+def test_uninstall_daemon_invokes_manager_uninstall(monkeypatch):
+    fake = MagicMock()
+    _patch_manager(monkeypatch, fake)
+
+    result = runner.invoke(app, ["uninstall-daemon"])
+    assert result.exit_code == 0, result.output
+    fake.uninstall.assert_called_once_with()
+
+
+def test_uninstall_daemon_lists_preserved_state(monkeypatch, tmp_path):
+    """Output names every preserved artefact (config, call DB,
+    managed provider keys) so the user knows nothing else was
+    touched. Decision 5 requirement.
+    """
+    fake = MagicMock()
+    _patch_manager(monkeypatch, fake)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    result = runner.invoke(app, ["uninstall-daemon"])
+    assert result.exit_code == 0, result.output
+    out = result.output
+
+    assert "registration removed" in out.lower()
+    assert "Preserved" in out
+    assert "voicegw.yaml" in out
+    assert "voicegw.db" in out
+    assert "managed_providers" in out
+
+
+def test_uninstall_daemon_documents_manual_purge_command(monkeypatch, tmp_path):
+    """Output includes the documented `rm -rf <config_path>` so the
+    user has a one-line cleanup. `voicegw purge-data` is mentioned
+    as deferred.
+    """
+    fake = MagicMock()
+    _patch_manager(monkeypatch, fake)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    result = runner.invoke(app, ["uninstall-daemon"])
+    out = result.output
+    expected_path = str(tmp_path / ".config" / "voicegateway")
+    assert f"rm -rf {expected_path}" in out
+    assert "voicegw purge-data" in out
+
+
+def test_uninstall_daemon_reports_runtime_error_with_exit_1(monkeypatch):
+    fake = MagicMock()
+    fake.uninstall.side_effect = RuntimeError("launchctl bootout: 5")
+    _patch_manager(monkeypatch, fake)
+
+    result = runner.invoke(app, ["uninstall-daemon"])
+    assert result.exit_code == 1
+    assert "Failed to uninstall" in result.output
+
+
+def test_uninstall_daemon_help_renders():
+    result = runner.invoke(app, ["uninstall-daemon", "--help"])
+    assert result.exit_code == 0
+    assert "Remove the daemon registration only" in result.output
