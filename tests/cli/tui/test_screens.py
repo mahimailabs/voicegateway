@@ -39,6 +39,7 @@ from voicegateway.cli.tui import TUIApp
 from voicegateway.cli.tui.data.local import LocalClient
 from voicegateway.cli.tui.screens.costs import CostsScreen
 from voicegateway.cli.tui.screens.logs import LogsScreen
+from voicegateway.cli.tui.screens.providers import ProvidersScreen
 from voicegateway.cli.tui.screens.session_detail import (
     SessionDetailScreen,
     _format_detail,
@@ -46,6 +47,7 @@ from voicegateway.cli.tui.screens.session_detail import (
 from voicegateway.cli.tui.screens.sessions import SessionsScreen
 from voicegateway.cli.tui.widgets.cost_card import CostCard
 from voicegateway.cli.tui.widgets.log_tail import LogTail
+from voicegateway.cli.tui.widgets.provider_row import ProviderRow
 from voicegateway.cli.tui.widgets.session_row import SessionRow
 from voicegateway.middleware.cost_tracker import RequestRecord
 from voicegateway.storage.sqlite import SQLiteStorage
@@ -670,3 +672,195 @@ async def test_logs_polling_picks_up_new_entries(
             await pilot.pause(0.05)
         assert len(tail._all_entries) == before + 1
         assert any(e.get("id") == "r-new" for e in tail._all_entries)
+
+
+# ---------------------------------------------------------------------------
+# Providers screen (REQ-VG-TUI-005)
+# ---------------------------------------------------------------------------
+
+
+class _ProvidersStubClient:
+    """Stub :class:`MetricsClient` for the Providers tests.
+
+    ``providers`` is a mutable list so the test can assert
+    rendering against a fixed shape; ``test_provider`` records
+    every call and returns whatever ``test_response`` carries.
+    Setting ``test_response`` to ``None`` makes the call raise
+    :class:`LocalModeUnsupportedError`, which models the LocalClient
+    behaviour without spinning up a SQLite fixture.
+    """
+
+    def __init__(self) -> None:
+        self.providers: list[dict[str, Any]] = []
+        self.test_calls: list[str] = []
+        self.test_response: dict[str, Any] | None = {"status": "ok"}
+        self.poll_seconds = 1.0
+
+    async def list_providers(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return list(self.providers)
+
+    async def test_provider(self, provider_id: str) -> dict[str, Any]:
+        self.test_calls.append(provider_id)
+        if self.test_response is None:
+            from voicegateway.cli.tui.data.exceptions import (
+                LocalModeUnsupportedError,
+            )
+
+            raise LocalModeUnsupportedError(feature="test_provider")
+        return self.test_response
+
+    # Other Protocol methods are no-ops.
+    async def list_sessions(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return []
+
+    async def get_session_detail(self, session_id: str) -> dict[str, Any] | None:
+        return None
+
+    async def list_costs(self, **kwargs: Any) -> dict[str, Any]:
+        return {}
+
+    async def list_logs(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return []
+
+
+def _three_provider_fixture() -> list[dict[str, Any]]:
+    return [
+        {
+            "provider_id": "openai-prod",
+            "provider_type": "openai",
+            "project": "default",
+            "status": "ok",
+        },
+        {
+            "provider_id": "deepgram-broken",
+            "provider_type": "deepgram",
+            "project": "default",
+            "status": "fail",
+        },
+        {
+            "provider_id": "cartesia-fresh",
+            "provider_type": "cartesia",
+            "project": None,
+            "status": "untested",
+        },
+    ]
+
+
+@pytest.fixture
+def providers_app() -> tuple[TUIApp, _ProvidersStubClient]:
+    client = _ProvidersStubClient()
+    client.providers.extend(_three_provider_fixture())
+    return TUIApp(client=client, is_local=False), client
+
+
+async def test_providers_renders_three_indicator_states(
+    providers_app: tuple[TUIApp, _ProvidersStubClient],
+) -> None:
+    """Three rows; one each of ok / fail / untested. Each row's
+    .status property normalises through to the documented set so
+    the indicator + CSS class match.
+    """
+    app, _ = providers_app
+    async with app.run_test() as pilot:
+        await pilot.press("4")
+        await _settle(pilot)
+        rows = list(app.query(ProviderRow))
+        assert len(rows) == 3
+        statuses = {r.provider_id: r.status for r in rows}
+        assert statuses == {
+            "openai-prod": "ok",
+            "deepgram-broken": "fail",
+            "cartesia-fresh": "untested",
+        }
+
+
+async def test_providers_empty_state_renders_static() -> None:
+    """An empty client mounts cleanly; the empty-state Static
+    appears in place of any rows.
+    """
+    client = _ProvidersStubClient()  # providers list left empty
+    app = TUIApp(client=client, is_local=False)
+    async with app.run_test() as pilot:
+        await pilot.press("4")
+        await _settle(pilot)
+        screen = app.query_one(ProvidersScreen)
+        rows = list(screen.query(ProviderRow))
+        assert rows == []
+        empties = [
+            s
+            for s in screen.query(Static)
+            if "No providers configured" in str(s.renderable)
+        ]
+        assert empties
+
+
+async def test_providers_test_shortcut_updates_indicator_in_gateway_mode(
+    providers_app: tuple[TUIApp, _ProvidersStubClient],
+) -> None:
+    """``t`` on a focused row drives ``test_provider`` and the
+    indicator flips to the response's ``status`` (untested -> ok
+    in this fixture).
+    """
+    app, client = providers_app
+    async with app.run_test() as pilot:
+        await pilot.press("4")
+        await _settle(pilot)
+        rows = list(app.query(ProviderRow))
+        target = next(r for r in rows if r.provider_id == "cartesia-fresh")
+        assert target.status == "untested"
+        target.focus()
+        await pilot.pause()
+        await pilot.press("t")
+        # Worker dispatch + notification path takes a few ticks.
+        for _ in range(15):
+            await pilot.pause()
+        assert client.test_calls == ["cartesia-fresh"]
+        assert target.status == "ok"
+
+
+async def test_providers_test_shortcut_shows_daemon_message_in_local_mode() -> None:
+    """In Local mode the stub raises ``LocalModeUnsupportedError``;
+    the row's status stays unchanged and no test_provider calls
+    are recorded against the response side because the exception
+    fires before a real call dispatches. The notification
+    surfaces via Textual's notify subsystem (visible to the user
+    in the running TUI; the assertion here is the contract that
+    the action did not silently mutate state).
+    """
+    client = _ProvidersStubClient()
+    client.providers.extend(_three_provider_fixture())
+    client.test_response = None  # Trigger LocalModeUnsupportedError.
+    app = TUIApp(client=client, is_local=True)
+    async with app.run_test() as pilot:
+        await pilot.press("4")
+        await _settle(pilot)
+        rows = list(app.query(ProviderRow))
+        target = next(r for r in rows if r.provider_id == "cartesia-fresh")
+        assert target.status == "untested"
+        target.focus()
+        await pilot.pause()
+        await pilot.press("t")
+        for _ in range(15):
+            await pilot.pause()
+        # The stub's test_provider was called (so test_calls grew),
+        # but it raised LocalModeUnsupportedError so the row's
+        # status stays at the documented unchanged value.
+        assert client.test_calls == ["cartesia-fresh"]
+        assert target.status == "untested"
+
+
+async def test_providers_test_shortcut_with_no_focus_is_noop(
+    providers_app: tuple[TUIApp, _ProvidersStubClient],
+) -> None:
+    """Action falls through silently when the focused widget is
+    not a ProviderRow (e.g. focus is on the screen Container or
+    a header link). No test_provider calls.
+    """
+    app, client = providers_app
+    async with app.run_test() as pilot:
+        await pilot.press("4")
+        await _settle(pilot)
+        # Don't focus a row; press t at the screen level.
+        await pilot.press("t")
+        await _settle(pilot)
+        assert client.test_calls == []
