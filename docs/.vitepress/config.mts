@@ -102,6 +102,7 @@ export default defineConfig({
             { text: 'logs', link: '/cli/logs' },
             { text: 'serve', link: '/cli/serve' },
             { text: 'dashboard', link: '/cli/dashboard' },
+            { text: 'tui', link: '/cli/tui' },
             { text: 'mcp', link: '/cli/mcp' },
           ],
         },

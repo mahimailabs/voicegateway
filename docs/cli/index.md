@@ -26,6 +26,7 @@ After installation, the `voicegw` command is available globally.
 | [`rotate-secret`](/cli/smoke-test#rotate-secret) | Re-encrypt managed credentials under a new Fernet key |
 | [`serve`](/cli/serve) | Start the HTTP API server |
 | [`dashboard`](/cli/dashboard) | Start the web dashboard |
+| [`tui`](/cli/tui) | Launch the four-tab terminal UI |
 | [`mcp`](/cli/mcp) | Start the MCP server for AI agents |
 | [`reconcile`](/cli/reconcile) | Diff logged costs against a provider invoice |
 | [`export-costs`](/cli/export-costs) | Export per-request cost rows to CSV / JSONL |
