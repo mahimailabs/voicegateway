@@ -27,6 +27,8 @@ Subsequent v0.1.0 commits layer on:
 from __future__ import annotations
 
 import asyncio
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -138,6 +140,12 @@ def onboard(
             port=port,
             daemon_installed=bool(install_daemon),
         )
+
+        # Optional smoke-test offering. REQ-VG-ONBOARD-005.
+        # Default yes so a single Enter completes the first-call
+        # moment; declining is the explicit `n` keypress.
+        if typer.confirm("\nRun a smoke test now?", default=True):
+            _run_smoke_test(config_path)
 
     except KeyboardInterrupt:
         _rollback_partial(config_path, pre_existing_bytes)
@@ -279,6 +287,67 @@ def _print_summary(
         "use [cyan]voicegw status[/cyan] / "
         "[cyan]voicegw doctor[/cyan] for diagnostics."
     )
+
+
+# 10-second cap on the wizard's smoke-test invocation. The
+# subprocess is the same ``voicegw smoke-test`` users run by hand;
+# the cap prevents a slow provider from blocking the wizard's
+# 60-second clock.
+_SMOKE_TEST_TIMEOUT_S = 10.0
+
+
+def _run_smoke_test(config_path: Path) -> None:
+    """Spawn ``voicegw smoke-test --config <path>`` and report.
+
+    Implements REQ-VG-ONBOARD-005: at the end of the wizard, offer
+    to run a smoke test as the first-call moment. The subprocess is
+    capped at 10 seconds; success is exit code 0, anything else
+    (non-zero, timeout) prints a yellow warning with the manual-run
+    command so the user can debug.
+    """
+
+    voicegw = shutil.which("voicegw")
+    if voicegw is None:
+        console.print(
+            "[yellow]Could not find 'voicegw' on PATH; skipping smoke test. "
+            "Run `voicegw smoke-test` once your shell sees the binary.[/yellow]"
+        )
+        return
+
+    console.print(
+        f"\n[bold]Running smoke test...[/bold] (cap: {int(_SMOKE_TEST_TIMEOUT_S)}s)"
+    )
+
+    try:
+        result = subprocess.run(
+            [voicegw, "smoke-test", "--config", str(config_path)],
+            capture_output=True,
+            text=True,
+            timeout=_SMOKE_TEST_TIMEOUT_S,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        console.print(
+            f"[yellow]Smoke test timed out after {int(_SMOKE_TEST_TIMEOUT_S)}s. "
+            f"Run `voicegw smoke-test --config {config_path}` manually to "
+            "see how far it got.[/yellow]"
+        )
+        return
+
+    if result.returncode == 0:
+        console.print("[green]Smoke test passed.[/green] First call landed in storage.")
+        return
+
+    console.print(
+        f"[yellow]Smoke test failed (exit {result.returncode}). "
+        f"Run `voicegw smoke-test --config {config_path}` to see the "
+        "full report.[/yellow]"
+    )
+    # Last few lines of stderr are usually the actionable bit.
+    if result.stderr:
+        tail = "\n".join(result.stderr.strip().splitlines()[-5:])
+        if tail:
+            console.print(f"[dim]{tail}[/dim]")
 
 
 def _rollback_partial(config_path: Path, pre_existing_bytes: bytes | None) -> None:

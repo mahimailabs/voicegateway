@@ -47,7 +47,10 @@ def _stub_provider_validation(request, monkeypatch):
 #   5. install daemon       - explicit "n" (no, so we don't touch
 #                             real launchctl/systemctl/schtasks
 #                             during the test)
-_HAPPY_PATH_INPUT = "\n\nsk-test-fake\n\nn\n"
+#   6. smoke test           - explicit "n" (skip; tests that drive
+#                             the smoke-test path stub subprocess
+#                             explicitly)
+_HAPPY_PATH_INPUT = "\n\nsk-test-fake\n\nn\nn\n"
 
 
 def test_onboard_happy_path_writes_config(tmp_path):
@@ -73,7 +76,8 @@ def test_onboard_custom_project_and_port(tmp_path):
     """Non-default project name and a non-default port flow into yaml."""
     cfg = tmp_path / "voicegw.yaml"
     # tony-pizza, deepgram, sk-test, 9000, n
-    inp = "tony-pizza\ndeepgram\nsk-test\n9000\nn\n"
+    # Trailing "n" declines the wizard's smoke-test offering.
+    inp = "tony-pizza\ndeepgram\nsk-test\n9000\nn\nn\n"
     result = runner.invoke(
         app, ["onboard", "--no-install-daemon", "--config", str(cfg)], input=inp
     )
@@ -121,7 +125,8 @@ def test_onboard_unknown_provider_warns_but_continues(tmp_path):
     wizard; a yellow warning suggests checking the YAML schema.
     """
     cfg = tmp_path / "voicegw.yaml"
-    inp = "default\nfooprovider\nsk-test\n8080\nn\n"
+    # Trailing "n" declines the smoke-test offering.
+    inp = "default\nfooprovider\nsk-test\n8080\nn\nn\n"
     result = runner.invoke(
         app, ["onboard", "--no-install-daemon", "--config", str(cfg)], input=inp
     )
@@ -146,8 +151,9 @@ def test_onboard_install_daemon_path_invokes_manager(tmp_path, monkeypatch):
     )
 
     cfg = tmp_path / "voicegw.yaml"
-    # Five prompt responses, no install-daemon prompt because flag is explicit.
-    inp = "\n\nsk-test\n\n"
+    # Four prompt responses (no daemon prompt since flag is explicit)
+    # plus "n" to decline the smoke-test offering.
+    inp = "\n\nsk-test\n\nn\n"
     result = runner.invoke(
         app,
         ["onboard", "--install-daemon", "--config", str(cfg)],
@@ -182,10 +188,11 @@ def _run_wizard_with_validation(monkeypatch, tmp_path, status, message=None):
     monkeypatch.setattr("voicegateway.cli.onboard._validate_provider_key", _stub)
 
     cfg = tmp_path / "voicegw.yaml"
+    # Trailing "n" declines the smoke-test offering.
     return runner.invoke(
         app,
         ["onboard", "--no-install-daemon", "--config", str(cfg)],
-        input="\n\nsk-test\n\nn\n",
+        input="\n\nsk-test\n\nn\nn\n",
     )
 
 
@@ -461,7 +468,8 @@ def test_summary_shows_every_configured_field(tmp_path):
     config path, and the dashboard URL.
     """
     cfg = tmp_path / "voicegw.yaml"
-    inp = "tony-pizza\ndeepgram\nsk-test\n9001\nn\n"
+    # Trailing "n" declines the smoke-test offering.
+    inp = "tony-pizza\ndeepgram\nsk-test\n9001\nn\nn\n"
     result = runner.invoke(
         app, ["onboard", "--no-install-daemon", "--config", str(cfg)], input=inp
     )
@@ -490,10 +498,11 @@ def test_summary_marks_daemon_as_installed_when_flag_passed(tmp_path, monkeypatc
 
     monkeypatch.setattr("voicegateway.cli.daemon.DaemonManager", MagicMock())
     cfg = tmp_path / "voicegw.yaml"
+    # Trailing "n" declines the smoke-test offering.
     result = runner.invoke(
         app,
         ["onboard", "--install-daemon", "--config", str(cfg)],
-        input="\n\nsk-test\n\n",
+        input="\n\nsk-test\n\nn\n",
     )
     assert result.exit_code == 0, result.output
     assert "installed and started" in result.output
@@ -505,14 +514,165 @@ def test_summary_marks_daemon_as_not_installed_with_pointer_when_skipped(tmp_pat
     exactly how to enable it later.
     """
     cfg = tmp_path / "voicegw.yaml"
+    # Trailing "n" declines the smoke-test offering.
     result = runner.invoke(
         app,
         ["onboard", "--no-install-daemon", "--config", str(cfg)],
-        input="\n\nsk-test\n\n",
+        input="\n\nsk-test\n\nn\n",
     )
     assert result.exit_code == 0, result.output
     assert "not installed" in result.output
     assert "voicegw onboard --install-daemon" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Smoke-test offering - REQ-VG-ONBOARD-005
+# ---------------------------------------------------------------------------
+
+
+def test_smoke_test_runs_when_user_accepts(tmp_path, monkeypatch):
+    """User accepts (Y by default) -> voicegw smoke-test subprocess
+    runs with --config pointing at the wizard's path. Exit 0
+    surfaces as a green pass.
+    """
+    import subprocess as _sp
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(
+        "voicegateway.cli.onboard.shutil.which",
+        lambda _: "/fake/bin/voicegw",
+    )
+    fake_run = MagicMock(
+        return_value=_sp.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    )
+    monkeypatch.setattr("voicegateway.cli.onboard.subprocess.run", fake_run)
+
+    cfg = tmp_path / "voicegw.yaml"
+    # Trailing "y" accepts the smoke-test offer.
+    result = runner.invoke(
+        app,
+        ["onboard", "--no-install-daemon", "--config", str(cfg)],
+        # 5 prompts (project, provider, api, port, smoke-test);
+        # daemon prompt skipped due to --no-install-daemon flag.
+        input="\n\nsk-test\n\ny\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "Smoke test passed" in result.output
+    fake_run.assert_called_once()
+    args = fake_run.call_args.args[0]
+    assert args[0] == "/fake/bin/voicegw"
+    assert "smoke-test" in args
+    assert "--config" in args
+    assert str(cfg) in args
+
+
+def test_smoke_test_skipped_when_user_declines(tmp_path, monkeypatch):
+    """User declines (n) -> no subprocess.run for smoke-test."""
+    from unittest.mock import MagicMock
+
+    fake_run = MagicMock()
+    monkeypatch.setattr("voicegateway.cli.onboard.subprocess.run", fake_run)
+
+    cfg = tmp_path / "voicegw.yaml"
+    result = runner.invoke(
+        app,
+        ["onboard", "--no-install-daemon", "--config", str(cfg)],
+        input=_HAPPY_PATH_INPUT,
+    )
+    assert result.exit_code == 0, result.output
+    fake_run.assert_not_called()
+    assert "Smoke test passed" not in result.output
+
+
+def test_smoke_test_failure_prints_pointer(tmp_path, monkeypatch):
+    """Non-zero smoke-test exit prints a yellow warning with the
+    manual-run command so the user can debug.
+    """
+    import subprocess as _sp
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(
+        "voicegateway.cli.onboard.shutil.which",
+        lambda _: "/fake/bin/voicegw",
+    )
+    fake_run = MagicMock(
+        return_value=_sp.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="config\nfailed: details here\n",
+        )
+    )
+    monkeypatch.setattr("voicegateway.cli.onboard.subprocess.run", fake_run)
+
+    cfg = tmp_path / "voicegw.yaml"
+    result = runner.invoke(
+        app,
+        ["onboard", "--no-install-daemon", "--config", str(cfg)],
+        # 5 prompts (project, provider, api, port, smoke-test);
+        # daemon prompt skipped due to --no-install-daemon flag.
+        input="\n\nsk-test\n\ny\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "Smoke test failed" in result.output
+    # Includes the user-runnable manual command.
+    assert "voicegw smoke-test" in result.output
+
+
+def test_smoke_test_timeout_prints_pointer(tmp_path, monkeypatch):
+    """A 10-second timeout fires soft: print a manual-run pointer
+    and continue (do NOT fail the wizard).
+    """
+    import subprocess as _sp
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(
+        "voicegateway.cli.onboard.shutil.which",
+        lambda _: "/fake/bin/voicegw",
+    )
+
+    def _raise_timeout(*args, **kwargs):
+        raise _sp.TimeoutExpired(cmd=args[0] if args else [], timeout=10.0)
+
+    monkeypatch.setattr(
+        "voicegateway.cli.onboard.subprocess.run",
+        MagicMock(side_effect=_raise_timeout),
+    )
+
+    cfg = tmp_path / "voicegw.yaml"
+    result = runner.invoke(
+        app,
+        ["onboard", "--no-install-daemon", "--config", str(cfg)],
+        # 5 prompts (project, provider, api, port, smoke-test);
+        # daemon prompt skipped due to --no-install-daemon flag.
+        input="\n\nsk-test\n\ny\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "timed out" in result.output
+    assert "voicegw smoke-test" in result.output
+
+
+def test_smoke_test_skipped_when_voicegw_not_on_path(tmp_path, monkeypatch):
+    """If shutil.which returns None for voicegw, skip the smoke
+    test with a soft warning rather than crashing the wizard.
+    """
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr("voicegateway.cli.onboard.shutil.which", lambda _: None)
+    fake_run = MagicMock()
+    monkeypatch.setattr("voicegateway.cli.onboard.subprocess.run", fake_run)
+
+    cfg = tmp_path / "voicegw.yaml"
+    result = runner.invoke(
+        app,
+        ["onboard", "--no-install-daemon", "--config", str(cfg)],
+        # 5 prompts (project, provider, api, port, smoke-test);
+        # daemon prompt skipped due to --no-install-daemon flag.
+        input="\n\nsk-test\n\ny\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "Could not find 'voicegw' on PATH" in result.output
+    fake_run.assert_not_called()
 
 
 async def test_validate_skipped_when_plugin_not_installed(monkeypatch):
