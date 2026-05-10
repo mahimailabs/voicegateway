@@ -418,3 +418,30 @@ def test_mcp_responsive_skips_with_documented_rationale():
     result = _check_mcp_responsive(_Context(config_path=None))
     assert result.status == "skip"
     assert "deferred" in result.detail.lower() or "stdio" in result.detail.lower()
+
+
+def test_dashboard_reachable_skips_when_no_listener(monkeypatch):
+    """A daemon-first install runs only ``voicegw serve``; the dashboard
+    is a separate optional process. ``voicegw doctor`` must therefore
+    SKIP (not FAIL) the dashboard check on a normal connect-failure --
+    otherwise every healthy install reports a red row and exits 1.
+
+    Pins Codex P1.3.
+    """
+    import httpx
+
+    from voicegateway.cli.doctor import _check_dashboard_reachable, _Context
+
+    def _raise_connect_error(*args, **kwargs):
+        raise httpx.ConnectError("Connection refused")
+
+    monkeypatch.setattr("httpx.get", _raise_connect_error)
+
+    fake_gw = MagicMock()
+    fake_gw.config.dashboard = {"port": 9090}
+    ctx = _Context(config_path=None, gateway=fake_gw)
+    result = _check_dashboard_reachable(ctx)
+
+    assert result.status == "skip", result.detail
+    assert "voicegw dashboard" in result.detail
+    assert "127.0.0.1:9090" in result.detail

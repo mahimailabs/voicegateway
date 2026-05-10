@@ -129,6 +129,34 @@ def test_onboard_custom_project_and_port(tmp_path):
     assert parsed["serve"]["port"] == 9000
 
 
+def test_wizard_produced_yaml_loads_under_schema(tmp_path):
+    """The wizard's voicegw.yaml has to load through ``GatewayConfig.load``
+    without tripping the strict (``extra='forbid'``) top-level schema, and
+    the ``serve.port`` the user typed has to survive the round-trip.
+
+    This pins the contract that exposed Codex's P1.1 review finding: an
+    earlier iteration persisted ``serve: {port: ...}`` while the schema
+    only knew about ``providers``, ``projects``, ``cost_tracking`` etc.,
+    so a fresh ``voicegw onboard`` produced a config that every gateway-
+    backed command (status, serve, daemon startup) refused to load.
+    """
+    from voicegateway.core.config import GatewayConfig
+
+    cfg = tmp_path / "voicegw.yaml"
+    # Custom port so the round-trip is visible (and matches finding 2's
+    # daemon-binding contract once serve_cmd reads gw.config.serve.port).
+    inp = "tony-pizza\ndeepgram\nsk-test\n9123\nn\nn\n"
+    result = runner.invoke(
+        app, ["onboard", "--no-install-daemon", "--config", str(cfg)], input=inp
+    )
+    assert result.exit_code == 0, result.output
+
+    loaded = GatewayConfig.load(cfg)
+    assert loaded.serve.get("port") == 9123
+    assert loaded.default_project == "tony-pizza"
+    assert loaded.providers.get("deepgram", {}).get("api_key") == "sk-test"
+
+
 def test_onboard_preserves_existing_yaml(tmp_path):
     """Re-running the wizard merges into existing config rather than
     overwriting it. Idempotency requirement (AC-VG-ONBOARD-002.5).

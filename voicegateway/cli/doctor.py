@@ -290,11 +290,18 @@ def _check_dashboard_reachable(ctx: _Context) -> CheckResult:
 
         response = httpx.get(url, timeout=2.0)
     except httpx.ConnectError:
+        # The v0.1.0 daemon (LaunchAgent / systemd / Scheduled Task)
+        # only auto-runs ``voicegw serve``; ``voicegw dashboard`` is a
+        # separate, optional process. A connect-failure therefore is
+        # not a deployment problem on a daemon-first install -- it is
+        # the documented default state. Skip with a hint to start the
+        # dashboard manually if the user wants it.
         return CheckResult(
             "Dashboard reachable",
-            "fail",
-            f"Could not connect to {url}. Run `voicegw dashboard` "
-            "or check that the daemon's dashboard process is running.",
+            "skip",
+            f"(no listener on {url}; the daemon does not auto-start "
+            "`voicegw dashboard`. Run `voicegw dashboard` in a "
+            "separate process if you want the web UI.)",
         )
     except Exception as exc:  # noqa: BLE001
         return CheckResult(
