@@ -54,15 +54,14 @@ class LogsScreen(Container):
         Binding("l", "scroll_down", "Down", show=False),
     ]
 
+    # Layout-only rules; cross-screen treatment for the header bar
+    # lives in main.tcss as the ``.tab-header`` utility class. The
+    # filter input + LogTail layout rules stay local because they're
+    # specific to this screen's vertical-stretch arrangement.
     DEFAULT_CSS = """
     LogsScreen {
         layout: vertical;
         padding: 1;
-    }
-    LogsScreen #logs-header {
-        height: 1;
-        padding: 0 1;
-        background: $boost;
     }
     LogsScreen #logs-filter {
         height: 1;
@@ -74,7 +73,7 @@ class LogsScreen(Container):
     """
 
     def compose(self) -> ComposeResult:
-        yield Label(self._header_text(), id="logs-header")
+        yield Label(self._header_text(), id="logs-header", classes="tab-header")
         yield Input(
             placeholder="Filter (type substring, Enter to apply, Esc to clear)",
             id="logs-filter",

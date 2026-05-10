@@ -50,3 +50,38 @@ Header {
 ModalScreen > Container {
     background: $panel;
 }
+
+/* Cross-screen utility classes. Hoisted from per-screen
+ * DEFAULT_CSS so the four tab panels share one source of truth
+ * for the header bar, list surface, and empty-state body. Adding
+ * a class to a Label / VerticalScroll / Static in any screen's
+ * compose() picks the rule up automatically. */
+
+/* The single-row header bar at the top of each tab. Boost
+ * background reads as a subtle separator from the body content;
+ * the brand-orange focus outline (above) layers cleanly on top
+ * when keyboard focus lands on something inside the header. */
+.tab-header {
+    height: 1;
+    padding: 0 1;
+    background: $boost;
+}
+
+/* Standard list-scroll surface used by Sessions / Providers /
+ * any future row-list screen. Surface tone for the scrollbar
+ * track keeps it readable without competing with the brand-
+ * orange thumb Textual paints by default. */
+.tui-list {
+    scrollbar-background: $surface;
+}
+
+/* Empty-state body. The muted text colour signals "nothing here
+ * yet" without flagging an error; centred so the message reads
+ * as the deliberate placeholder it is. Used by Sessions and
+ * Providers; the Logs / Costs panels render their own empty
+ * shapes inline. */
+.empty-state {
+    height: 100%;
+    content-align: center middle;
+    color: $text-muted;
+}

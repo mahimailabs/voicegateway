@@ -56,29 +56,19 @@ class ProvidersScreen(FocusRowsMixin, Container):
             self.query_one("#providers-list", VerticalScroll).query(ProviderRow)
         )
 
+    # Layout-only rules; cross-screen treatment (header bar, list
+    # scrollbar, empty-state body) lives in main.tcss as
+    # ``.tab-header`` / ``.tui-list`` / ``.empty-state`` utilities.
     DEFAULT_CSS = """
     ProvidersScreen {
         layout: vertical;
         padding: 1;
     }
-    ProvidersScreen #providers-header {
-        height: 1;
-        padding: 0 1;
-        background: $boost;
-    }
-    ProvidersScreen #providers-list {
-        scrollbar-background: $surface;
-    }
-    ProvidersScreen .empty {
-        height: 100%;
-        content-align: center middle;
-        color: $text-muted;
-    }
     """
 
     def compose(self) -> ComposeResult:
-        yield Label("Providers", id="providers-header")
-        yield VerticalScroll(id="providers-list")
+        yield Label("Providers", id="providers-header", classes="tab-header")
+        yield VerticalScroll(id="providers-list", classes="tui-list")
 
     async def on_mount(self) -> None:
         await self.refresh_data()
@@ -169,7 +159,9 @@ class ProvidersScreen(FocusRowsMixin, Container):
         list_view = self.query_one("#providers-list", VerticalScroll)
         await list_view.remove_children()
         if not providers:
-            await list_view.mount(Static("No providers configured.", classes="empty"))
+            await list_view.mount(
+                Static("No providers configured.", classes="empty-state")
+            )
             return
         for provider in providers:
             await list_view.mount(ProviderRow(provider))

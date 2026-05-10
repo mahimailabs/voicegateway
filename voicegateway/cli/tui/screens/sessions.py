@@ -67,22 +67,13 @@ class SessionsScreen(FocusRowsMixin, Container):
     def _focusable_rows(self) -> list[SessionRow]:
         return list(self.query_one("#sessions-list", VerticalScroll).query(SessionRow))
 
+    # Layout-only rules; cross-screen treatment (header bar, list
+    # scrollbar, empty-state body) lives in main.tcss as
+    # ``.tab-header`` / ``.tui-list`` / ``.empty-state`` utilities.
     DEFAULT_CSS = """
     SessionsScreen {
         layout: vertical;
-    }
-    SessionsScreen #sessions-header {
-        height: 1;
-        padding: 0 1;
-        background: $boost;
-    }
-    SessionsScreen #sessions-list {
-        scrollbar-background: $surface;
-    }
-    SessionsScreen .empty {
-        height: 100%;
-        content-align: center middle;
-        color: $text-muted;
+        padding: 1;
     }
     """
 
@@ -92,8 +83,8 @@ class SessionsScreen(FocusRowsMixin, Container):
     _sort: str = _SORT_TIME
 
     def compose(self) -> ComposeResult:
-        yield Label(self._header_text(), id="sessions-header")
-        yield VerticalScroll(id="sessions-list")
+        yield Label(self._header_text(), id="sessions-header", classes="tab-header")
+        yield VerticalScroll(id="sessions-list", classes="tui-list")
 
     async def on_mount(self) -> None:
         await self.refresh_data()
@@ -114,7 +105,7 @@ class SessionsScreen(FocusRowsMixin, Container):
         list_view = self.query_one("#sessions-list", VerticalScroll)
         await list_view.remove_children()
         if not sessions:
-            await list_view.mount(Static("No sessions yet.", classes="empty"))
+            await list_view.mount(Static("No sessions yet.", classes="empty-state"))
             return
         for session in sessions:
             await list_view.mount(SessionRow(session))

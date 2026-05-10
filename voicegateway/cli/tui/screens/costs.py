@@ -54,15 +54,12 @@ class CostsScreen(Container):
         Binding("r", "cycle_range", "Range"),
     ]
 
+    # Layout-only rules; cross-screen treatment for the header bar
+    # lives in main.tcss as the ``.tab-header`` utility class.
     DEFAULT_CSS = """
     CostsScreen {
         layout: vertical;
         padding: 1;
-    }
-    CostsScreen #costs-header {
-        height: 1;
-        padding: 0 1;
-        background: $boost;
     }
     """
 
@@ -71,7 +68,7 @@ class CostsScreen(Container):
     _range: str = _RANGES[0]
 
     def compose(self) -> ComposeResult:
-        yield Label(self._header_text(), id="costs-header")
+        yield Label(self._header_text(), id="costs-header", classes="tab-header")
         yield CostCard(id="cost-card")
 
     async def on_mount(self) -> None:
