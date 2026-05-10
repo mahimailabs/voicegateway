@@ -20,6 +20,8 @@ from voicegateway.cli._helpers import _load_gateway
 
 _DEFAULT_HOST = "0.0.0.0"
 _DEFAULT_PORT = 8080
+_MIN_PORT = 1
+_MAX_PORT = 65535
 
 
 def _resolve_bind(
@@ -30,6 +32,13 @@ def _resolve_bind(
     Accepts ``serve_cfg`` as either a dict (the runtime ``GatewayConfig``
     dataclass keeps it raw) or a model-like object exposing ``.host`` /
     ``.port`` attributes. Tests construct both shapes.
+
+    Out-of-range ports (outside 1..65535) and unparseable values both
+    fall back to ``_DEFAULT_PORT`` with a yellow console warning. We
+    catch the range issue here rather than in ``uvicorn.run`` because
+    uvicorn accepts garbage at ``Config`` time and only fails later
+    with an opaque socket error; better to surface the substitution
+    early so the operator sees what is happening.
     """
 
     def _from_serve(key: str) -> object | None:
@@ -56,6 +65,13 @@ def _resolve_bind(
             except ValueError:
                 port = _DEFAULT_PORT
 
+    if not _MIN_PORT <= port <= _MAX_PORT:
+        console.print(
+            f"[yellow]Serve port {port} is outside {_MIN_PORT}..{_MAX_PORT}; "
+            f"falling back to {_DEFAULT_PORT}.[/yellow]"
+        )
+        port = _DEFAULT_PORT
+
     return host, port
 
 
@@ -69,7 +85,20 @@ def serve_cmd(
         None, "--port", help="Bind port (defaults to serve.port or 8080)"
     ),
 ) -> None:
-    """Start the VoiceGateway HTTP API server."""
+    """Start the VoiceGateway HTTP API server under uvicorn.
+
+    Loads the configured gateway, resolves the bind address (CLI
+    flags > ``serve.host`` / ``serve.port`` in voicegw.yaml > the
+    v0.0.5 defaults of ``0.0.0.0:8080``), then hands the resulting
+    FastAPI app to ``uvicorn.run``. Long-running: blocks the
+    process until uvicorn exits or a signal terminates it.
+
+    Per-flag docs live on the Typer ``help=`` strings above so they
+    surface in ``voicegw serve --help`` without docstring drift.
+    Returns ``None``; raises ``typer.Exit(1)`` when the optional
+    dashboard extras are not installed and ``ConfigError`` when no
+    voicegw.yaml resolves.
+    """
     try:
         import uvicorn
     except ImportError as e:

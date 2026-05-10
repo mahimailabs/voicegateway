@@ -62,3 +62,31 @@ def test_resolve_bind_tolerates_garbled_port_value():
     host, port = _resolve_bind({"port": "not-a-number"}, host=None, port=None)
     assert host == "0.0.0.0"
     assert port == 8080
+
+
+def test_resolve_bind_clamps_out_of_range_port_to_default(capsys):
+    """Out-of-range ports (negative, zero, > 65535) fall back to the
+    v0.0.5 default rather than reaching ``uvicorn.run``. uvicorn accepts
+    garbage at ``Config`` time and only fails later with an opaque
+    socket error, so the helper substitutes early and prints a yellow
+    warning so the operator sees what happened.
+    """
+    for bad in (0, -1, 70000, 65536):
+        host, port = _resolve_bind({"port": bad}, host=None, port=None)
+        assert host == "0.0.0.0"
+        assert port == 8080, f"port={bad} did not clamp to default"
+
+    # Boundary values are accepted as-is.
+    _, port = _resolve_bind({"port": 1}, host=None, port=None)
+    assert port == 1
+    _, port = _resolve_bind({"port": 65535}, host=None, port=None)
+    assert port == 65535
+
+
+def test_resolve_bind_clamps_out_of_range_explicit_flag():
+    """An explicit ``--port 70000`` reaches ``_resolve_bind`` as the
+    ``port`` argument; the same clamp applies so a typed CLI value
+    cannot bypass the range guard either.
+    """
+    _, port = _resolve_bind({}, host=None, port=70000)
+    assert port == 8080
