@@ -82,12 +82,17 @@ voicegw start
 voicegw stop
 voicegw restart
 voicegw status              # daemon-first per the section above
+voicegw daemon-logs --tail 50   # tail the OS-native daemon log stream
 voicegw uninstall-daemon    # remove registration; preserves config + DB
 ```
 
 Each delegates to a per-OS backend (LaunchAgent on macOS,
 `systemd --user` on Linux, Scheduled Task on Windows; WSL uses
-the Linux backend transparently). `uninstall-daemon` removes the
+the Linux backend transparently). `daemon-logs` routes to the
+right OS surface (`log show` on macOS, `journalctl --user-unit
+voicegateway` on Linux, the per-user log file under
+`%LOCALAPPDATA%` on Windows) so you don't need to remember which
+tool each platform uses. `uninstall-daemon` removes the
 OS-level registration only and prints exactly what was preserved
 (config file, call DB, encrypted managed_providers rows) plus the
 documented manual cleanup command (`rm -rf ~/.config/voicegateway/`).

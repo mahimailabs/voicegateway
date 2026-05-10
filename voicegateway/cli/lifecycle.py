@@ -1,15 +1,23 @@
-"""``voicegw start`` / ``stop`` / ``restart`` / ``uninstall-daemon`` commands.
+"""``voicegw start`` / ``stop`` / ``restart`` / ``daemon-logs`` /
+``uninstall-daemon`` commands.
 
 Implements the lifecycle slice of REQ-VG-ONBOARD-004. Each command
 delegates to ``DaemonManager`` (the platform-agnostic facade in
 ``voicegateway/cli/daemon/``) and surfaces a plain-language result.
 
-The original TODO bullet listed six commands. ``status`` lives in
-``voicegateway/cli/status.py`` (the daemon-first reorder happens
-there because it has to merge with the v0.0.5 provider view); the
-``logs`` command stays as v0.0.5's request-logs surface and the
-daemon-log surface is reachable through the OS native viewer
-(decision tracked in Discovered work).
+The v0.0.5 ``voicegw logs`` command stays as the request-row surface
+(reads from the SQLite ``requests`` table). The new daemon-log
+surface ships as ``voicegw daemon-logs`` with a hyphenated name that
+matches the existing v0.1.0 vocabulary (``uninstall-daemon``,
+``smoke-test``). A ``voicegw daemon`` typer-group restructure was
+considered but rejected for v0.1.0: it would require deprecating the
+top-level ``start/stop/restart`` commands, which is too invasive for
+this release. Group restructure may return as a v0.1.1 Terminal UI
+iteration where the tabs benefit from a sub-namespace.
+
+``status`` is the one lifecycle surface that lives elsewhere
+(``voicegateway/cli/status.py``) because it has to merge with the
+v0.0.5 provider-status view.
 """
 
 from __future__ import annotations
@@ -85,6 +93,44 @@ def restart() -> None:
 # in tests gets picked up.
 def _config_home() -> Path:
     return Path.home() / ".config" / "voicegateway"
+
+
+@app.command(name="daemon-logs")
+def daemon_logs(
+    tail: int = typer.Option(
+        100,
+        "--tail",
+        "-n",
+        help="Number of recent log lines to print.",
+    ),
+) -> None:
+    """Tail the OS-native daemon log stream.
+
+    Routes through ``DaemonManager.logs(tail=...)`` so each platform
+    backend pulls from the right surface: ``log show`` on macOS
+    (Console.app), ``journalctl --user-unit voicegateway`` on Linux,
+    the per-user log file under ``%LOCALAPPDATA%`` on Windows.
+
+    Soft-fails on backend RuntimeError. Empty output prints a
+    "no daemon logs yet" hint rather than a blank screen.
+    """
+    from voicegateway.cli.daemon import DaemonManager
+
+    try:
+        output = DaemonManager().logs(tail=tail)
+    except RuntimeError as exc:
+        console.print(f"[red]Failed to read daemon logs:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    if not output.strip():
+        console.print(
+            "[dim]No daemon logs yet. Try `voicegw start` first, then re-run.[/dim]"
+        )
+        return
+
+    # ``soft_wrap=True`` keeps long log lines on a single line in CI
+    # logs and tmp paths; Rich's default folds mid-segment.
+    console.print(output, soft_wrap=True)
 
 
 @app.command(name="uninstall-daemon")

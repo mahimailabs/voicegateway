@@ -192,6 +192,77 @@ def test_uninstall_daemon_help_renders():
 
 
 # ---------------------------------------------------------------------------
+# daemon-logs - REQ-004 daemon-log surface
+# ---------------------------------------------------------------------------
+
+
+def test_daemon_logs_calls_manager_logs_with_default_tail(monkeypatch):
+    fake = MagicMock()
+    fake.logs.return_value = "line1\nline2\nline3\n"
+    _patch_manager(monkeypatch, fake)
+
+    result = runner.invoke(app, ["daemon-logs"])
+    assert result.exit_code == 0, result.output
+    fake.logs.assert_called_once_with(tail=100)
+    assert "line1" in result.output
+    assert "line3" in result.output
+
+
+def test_daemon_logs_respects_tail_option(monkeypatch):
+    fake = MagicMock()
+    fake.logs.return_value = "single\n"
+    _patch_manager(monkeypatch, fake)
+
+    result = runner.invoke(app, ["daemon-logs", "--tail", "42"])
+    assert result.exit_code == 0, result.output
+    fake.logs.assert_called_once_with(tail=42)
+
+
+def test_daemon_logs_short_flag_works(monkeypatch):
+    """`-n` is the standard tail short flag (matches v0.0.5's logs)."""
+    fake = MagicMock()
+    fake.logs.return_value = "ok\n"
+    _patch_manager(monkeypatch, fake)
+
+    result = runner.invoke(app, ["daemon-logs", "-n", "5"])
+    assert result.exit_code == 0
+    fake.logs.assert_called_once_with(tail=5)
+
+
+def test_daemon_logs_empty_output_prints_hint(monkeypatch):
+    """Empty output is the common case on a fresh install before
+    the daemon has emitted anything; print a hint rather than a
+    blank screen.
+    """
+    fake = MagicMock()
+    fake.logs.return_value = ""
+    _patch_manager(monkeypatch, fake)
+
+    result = runner.invoke(app, ["daemon-logs"])
+    assert result.exit_code == 0, result.output
+    assert "No daemon logs yet" in result.output
+    assert "voicegw start" in result.output
+
+
+def test_daemon_logs_runtime_error_exits_1(monkeypatch):
+    fake = MagicMock()
+    fake.logs.side_effect = RuntimeError("journalctl: no journal access")
+    _patch_manager(monkeypatch, fake)
+
+    result = runner.invoke(app, ["daemon-logs"])
+    assert result.exit_code == 1
+    assert "Failed to read daemon logs" in result.output
+    assert "journalctl: no journal access" in result.output
+
+
+def test_daemon_logs_help_renders():
+    result = runner.invoke(app, ["daemon-logs", "--help"])
+    assert result.exit_code == 0
+    assert "Tail the OS-native daemon log stream" in result.output
+    assert "--tail" in result.output
+
+
+# ---------------------------------------------------------------------------
 # AC-VG-ONBOARD-004.2: every lifecycle command completes within 10s.
 #
 # The wall-clock budget in the spec covers a real subprocess round-trip

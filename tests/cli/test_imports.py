@@ -124,6 +124,7 @@ _V010_COMMAND_NAMES: frozenset[str] = frozenset(
         "start",
         "stop",
         "restart",
+        "daemon-logs",
         "uninstall-daemon",
         "doctor",
         "migrate",
