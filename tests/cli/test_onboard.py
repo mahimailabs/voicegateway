@@ -352,6 +352,105 @@ async def test_validate_skipped_for_unknown_provider(monkeypatch):
     assert "notathing" in (message or "")
 
 
+# ---------------------------------------------------------------------------
+# Ctrl+C cancellation - REQ-VG-ONBOARD-002.4
+# ---------------------------------------------------------------------------
+
+
+def _typer_prompt_kbi_at(target_call: int):
+    """Return a typer.prompt replacement that raises KeyboardInterrupt
+    on the Nth call (1-indexed). Earlier calls return their default.
+    """
+    state = {"calls": 0}
+
+    def _fn(*args, **kwargs):
+        state["calls"] += 1
+        if state["calls"] == target_call:
+            raise KeyboardInterrupt()
+        return kwargs.get("default", "")
+
+    return _fn
+
+
+def test_ctrl_c_during_first_prompt_no_partial_config(tmp_path, monkeypatch):
+    """Ctrl+C at the very first prompt: no config file should exist."""
+    cfg = tmp_path / "voicegw.yaml"
+    monkeypatch.setattr(
+        "voicegateway.cli.onboard.typer.prompt",
+        _typer_prompt_kbi_at(1),
+    )
+    result = runner.invoke(
+        app, ["onboard", "--no-install-daemon", "--config", str(cfg)]
+    )
+    assert result.exit_code == 130
+    assert "cancelled" in result.output.lower()
+    assert not cfg.exists(), "no partial config should land on Ctrl+C"
+
+
+def test_ctrl_c_after_config_write_removes_partial_when_new(tmp_path, monkeypatch):
+    """Ctrl+C right before daemon install: the partial config the
+    wizard wrote (file did not exist before) is removed.
+    """
+    cfg = tmp_path / "voicegw.yaml"
+    # Confirm prompts run fine (1..4) but typer.confirm (call 5) Ctrl+Cs.
+    # ...except the wizard does the write BEFORE the daemon prompt
+    # only if --install-daemon flag was passed; otherwise the daemon
+    # confirm is between prompt 4 and the write. Use --install-daemon
+    # so the write happens before the daemon install, then Ctrl+C the
+    # _install_daemon call itself by patching DaemonManager to raise.
+    from unittest.mock import MagicMock
+
+    fake_manager = MagicMock()
+    fake_manager.install.side_effect = KeyboardInterrupt()
+    monkeypatch.setattr(
+        "voicegateway.cli.daemon.DaemonManager",
+        MagicMock(return_value=fake_manager),
+    )
+
+    result = runner.invoke(
+        app,
+        ["onboard", "--install-daemon", "--config", str(cfg)],
+        # Five prompts answered with defaults; daemon install KBIs.
+        input="\n\nsk-test\n\n",
+    )
+    assert result.exit_code == 130, result.output
+    assert "cancelled" in result.output.lower()
+    # The partial config that the wizard wrote got rolled back.
+    assert not cfg.exists(), (
+        f"config file {cfg} should have been removed because it didn't "
+        "exist before the wizard ran"
+    )
+
+
+def test_ctrl_c_restores_pre_existing_config_byte_for_byte(tmp_path, monkeypatch):
+    """When a config existed before the wizard, Ctrl+C restores it
+    exactly. The wizard's partial merge does NOT persist.
+    """
+    cfg = tmp_path / "voicegw.yaml"
+    pre_existing = b"providers:\n  hand_edited:\n    api_key: PRESERVE_ME\n"
+    cfg.write_bytes(pre_existing)
+
+    from unittest.mock import MagicMock
+
+    fake_manager = MagicMock()
+    fake_manager.install.side_effect = KeyboardInterrupt()
+    monkeypatch.setattr(
+        "voicegateway.cli.daemon.DaemonManager",
+        MagicMock(return_value=fake_manager),
+    )
+
+    result = runner.invoke(
+        app,
+        ["onboard", "--install-daemon", "--config", str(cfg)],
+        input="\n\nsk-test\n\n",
+    )
+    assert result.exit_code == 130, result.output
+    # Original bytes are back on disk - the wizard's partial merge is gone.
+    assert cfg.read_bytes() == pre_existing, (
+        "pre-existing config was not restored byte-for-byte"
+    )
+
+
 async def test_validate_skipped_when_plugin_not_installed(monkeypatch):
     from voicegateway.cli.onboard import _validate_provider_key
 

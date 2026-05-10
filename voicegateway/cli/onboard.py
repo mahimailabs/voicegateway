@@ -73,52 +73,75 @@ def onboard(
     """Five-question wizard: project, provider, API key, port, daemon."""
     config_path = _resolve_config_path(config)
 
-    console.print("[bold]VoiceGateway onboarding[/bold]")
-    console.print("Five questions. Press Ctrl+C any time to cancel.\n")
-
-    # 1. Project name (default: default).
-    project_name = typer.prompt("Project name", default="default")
-
-    # 2. Provider (default: openai).
-    provider = typer.prompt(
-        f"Provider (one of: {', '.join(_KNOWN_PROVIDERS)})",
-        default="openai",
+    # Snapshot the existing config (if any) so a Ctrl+C mid-wizard
+    # restores the pre-wizard state byte-for-byte. The "remove any
+    # partial config files" half of REQ-VG-ONBOARD-002.4: if no file
+    # existed before, ``pre_existing_bytes`` is None and the cleanup
+    # path deletes the partial write outright.
+    pre_existing_bytes: bytes | None = (
+        config_path.read_bytes() if config_path.exists() else None
     )
-    if provider not in _KNOWN_PROVIDERS:
-        console.print(
-            f"[yellow]Unknown provider '{provider}'. Continuing; the YAML "
-            "validator will catch typos at gateway construction time.[/yellow]"
+
+    try:
+        console.print("[bold]VoiceGateway onboarding[/bold]")
+        console.print("Five questions. Press Ctrl+C any time to cancel.\n")
+
+        # 1. Project name (default: default).
+        project_name = typer.prompt("Project name", default="default")
+
+        # 2. Provider (default: openai).
+        provider = typer.prompt(
+            f"Provider (one of: {', '.join(_KNOWN_PROVIDERS)})",
+            default="openai",
         )
+        if provider not in _KNOWN_PROVIDERS:
+            console.print(
+                f"[yellow]Unknown provider '{provider}'. Continuing; the YAML "
+                "validator will catch typos at gateway construction time.[/yellow]"
+            )
 
-    # 3. API key (no default, hidden input). Validate with a
-    # 5-second timeout per REQ-VG-ONBOARD-002.2; fail soft on
-    # timeout so a slow network does not block onboarding.
-    api_key = typer.prompt(f"{provider} API key", hide_input=True)
-    _report_validation(provider, api_key)
+        # 3. API key (no default, hidden input). Validate with a
+        # 5-second timeout per REQ-VG-ONBOARD-002.2; fail soft on
+        # timeout so a slow network does not block onboarding.
+        api_key = typer.prompt(f"{provider} API key", hide_input=True)
+        _report_validation(provider, api_key)
 
-    # 4. Port (default: 8080).
-    port = typer.prompt("Port for voicegw serve", default=8080, type=int)
+        # 4. Port (default: 8080).
+        port = typer.prompt("Port for voicegw serve", default=8080, type=int)
 
-    # 5. Install daemon (default: yes if the flag was omitted).
-    if install_daemon is None:
-        install_daemon = typer.confirm("Install the background daemon?", default=True)
+        # 5. Install daemon (default: yes if the flag was omitted).
+        if install_daemon is None:
+            install_daemon = typer.confirm(
+                "Install the background daemon?", default=True
+            )
 
-    _write_config(
-        config_path,
-        project_name=project_name,
-        provider=provider,
-        api_key=api_key,
-        port=port,
-    )
-    console.print(f"\n[green]Wrote {config_path}[/green]")
+        _write_config(
+            config_path,
+            project_name=project_name,
+            provider=provider,
+            api_key=api_key,
+            port=port,
+        )
+        console.print(f"\n[green]Wrote {config_path}[/green]")
 
-    if install_daemon:
-        _install_daemon()
+        if install_daemon:
+            _install_daemon()
 
-    console.print("\n[bold]Onboarding complete.[/bold]")
-    console.print("  Dashboard: http://127.0.0.1:9090")
-    console.print("  Health check: voicegw doctor")
-    console.print("  Status: voicegw status")
+        console.print("\n[bold]Onboarding complete.[/bold]")
+        console.print("  Dashboard: http://127.0.0.1:9090")
+        console.print("  Health check: voicegw doctor")
+        console.print("  Status: voicegw status")
+
+    except KeyboardInterrupt:
+        _rollback_partial(config_path, pre_existing_bytes)
+        console.print(
+            "\n[yellow]Onboarding cancelled. Re-run `voicegw onboard` "
+            "when ready.[/yellow]"
+        )
+        # 130 = 128 + SIGINT(2). Standard convention for shells; what
+        # interactive tools should return so chained tooling can
+        # detect "the user said no" vs. a hard failure.
+        raise typer.Exit(130) from None
 
 
 def _resolve_config_path(explicit: str | None) -> Path:
@@ -195,6 +218,34 @@ def _install_daemon() -> None:
     console.print("\nInstalling background daemon...")
     DaemonManager().install()
     console.print("[green]Daemon installed and started.[/green]")
+
+
+def _rollback_partial(config_path: Path, pre_existing_bytes: bytes | None) -> None:
+    """Restore the pre-wizard config state.
+
+    Three cases:
+      1. config didn't exist before AND nothing was written: nothing
+         to do.
+      2. config didn't exist before AND a partial write happened:
+         remove the partial file.
+      3. config existed before: restore the snapshot (byte-for-byte
+         atomic).
+
+    OSError is swallowed because the rollback is best-effort: a
+    failure here loses some idempotency but should not raise from
+    inside an except block (would mask the original KeyboardInterrupt).
+    """
+    if not config_path.exists():
+        return
+    try:
+        if pre_existing_bytes is not None:
+            config_path.write_bytes(pre_existing_bytes)
+        else:
+            config_path.unlink()
+    except OSError as exc:
+        console.print(
+            f"[dim]Could not roll back {config_path}: {exc}. Inspect manually.[/dim]"
+        )
 
 
 # Five-second cap on the live health probe. Slow networks return a
