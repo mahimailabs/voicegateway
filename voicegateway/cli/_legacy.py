@@ -8,7 +8,6 @@ from typing import Any
 
 import typer
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
 
 app = typer.Typer(
@@ -49,36 +48,6 @@ def _load_gateway(config_path: str | None):
     except Exception as e:
         console.print(f"[red]Error loading config: {e}[/red]")
         raise typer.Exit(1) from e
-
-
-@app.command(name="project")
-def project_cmd(
-    project_id: str = typer.Argument(..., help="Project ID to show"),
-    config: str = typer.Option(None, "--config", "-c", help="Path to voicegw.yaml"),
-):
-    """Show details for a single project."""
-    gw = _load_gateway(config)
-    pcfg = gw.config.get_project(project_id)
-
-    if pcfg is None:
-        console.print(f"[red]Project not found: {project_id}[/red]")
-        raise typer.Exit(1)
-
-    body = (
-        f"[bold]{pcfg.name}[/bold]\n"
-        f"{pcfg.description or '(no description)'}\n\n"
-        f"Tags: {', '.join(pcfg.tags) or '-'}\n"
-        f"Default Stack: {pcfg.default_stack or '-'}\n"
-        f"Daily Budget: ${pcfg.daily_budget:.2f}"
-    )
-    console.print(Panel(body, title=f"Project: {project_id}", border_style="cyan"))
-
-    if gw.storage is not None:
-        today = asyncio.run(gw.storage.get_cost_summary("today", project=project_id))
-        console.print(
-            f"\n[bold]Today[/bold]: ${today['total']:.4f} "
-            f"({sum(v['requests'] for v in today['by_provider'].values())} requests)"
-        )
 
 
 @app.command(name="logs")
