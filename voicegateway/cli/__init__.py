@@ -35,6 +35,7 @@ from __future__ import annotations
 # import time. Order does not matter; commands carry their own names.
 from voicegateway.cli import costs as _costs  # noqa: F401, E402
 from voicegateway.cli import dashboard as _dashboard  # noqa: F401, E402
+from voicegateway.cli import doctor as _doctor  # noqa: F401, E402
 from voicegateway.cli import export_costs as _export_costs  # noqa: F401, E402
 from voicegateway.cli import init as _init  # noqa: F401, E402
 from voicegateway.cli import lifecycle as _lifecycle  # noqa: F401, E402
