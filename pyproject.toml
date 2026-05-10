@@ -107,7 +107,7 @@ omit = [
 [tool.coverage.report]
 show_missing = true
 skip_empty = true
-fail_under = 75
+fail_under = 80
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
