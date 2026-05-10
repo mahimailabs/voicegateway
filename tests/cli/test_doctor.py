@@ -144,3 +144,277 @@ def test_doctor_renders_skip_status_distinct_from_pass_and_fail(
     assert "SKIP" in out  # at least the MCP check + something else
     # FAIL: daemon registered fails because the manager raised.
     assert "FAIL" in out
+
+
+# ---------------------------------------------------------------------------
+# AC-VG-ONBOARD-006.2: every failed check has a specific fix action.
+# ---------------------------------------------------------------------------
+
+
+_FIX_ACTION_VERBS = (
+    "Install",
+    "Run",
+    "Stop",
+    "Re-check",
+    "Re-run",
+    "Edit",
+    "Open",
+    "Check",
+    "Remove",
+    "Set",
+)
+
+
+def _check_modules_with_fail_paths():
+    """Return every (check_function, mock_context_factory) pair that
+    deterministically triggers the check's fail path.
+
+    Each entry yields a ``(name, check_fn, ctx_factory)`` tuple so a
+    parametrized test can pin AC-006.2 contract per check.
+    """
+    from voicegateway.cli import doctor as d
+
+    def _bare_ctx(**kwargs):
+        return d._Context(config_path=None, **kwargs)
+
+    yield (
+        "python_version_fail",
+        d._check_python_version,
+        _bare_ctx,
+        lambda monkeypatch: _force_python_version(monkeypatch, (3, 9, 0)),
+    )
+
+    yield (
+        "pipx_missing",
+        d._check_pipx,
+        _bare_ctx,
+        lambda monkeypatch: monkeypatch.setattr(
+            "voicegateway.cli.doctor.shutil.which", lambda _: None
+        ),
+    )
+
+    yield (
+        "daemon_unregistered",
+        d._check_daemon_registered,
+        lambda: _bare_ctx(daemon_status={"registered": False}),
+        None,
+    )
+
+    yield (
+        "daemon_not_running",
+        d._check_daemon_running,
+        lambda: _bare_ctx(
+            daemon_status={"registered": True, "running": False, "pid": None}
+        ),
+        None,
+    )
+
+    yield (
+        "port_in_use",
+        d._check_port_conflict,
+        _build_port_conflict_ctx,
+        _patch_psutil_port_in_use,
+    )
+
+    yield (
+        "no_provider_configured",
+        d._check_provider_configured,
+        _build_no_providers_ctx,
+        None,
+    )
+
+    yield (
+        "provider_key_missing",
+        d._check_provider_key_valid,
+        _build_empty_key_ctx,
+        None,
+    )
+
+
+def _force_python_version(monkeypatch, version):
+    import sys
+
+    fake = type("FakeVersionInfo", (tuple,), {})(version)
+    fake.major, fake.minor, fake.micro = version
+    monkeypatch.setattr(sys, "version_info", fake)
+
+
+def _build_port_conflict_ctx():
+    from voicegateway.cli import doctor as d
+
+    fake_gw = MagicMock()
+    fake_gw.config.serve = {"port": 8080}
+    return d._Context(
+        config_path=None,
+        gateway=fake_gw,
+        daemon_status={"pid": 99999},
+    )
+
+
+def _patch_psutil_port_in_use(monkeypatch):
+    import psutil
+
+    fake_conn = MagicMock()
+    fake_conn.status = psutil.CONN_LISTEN
+    fake_conn.laddr = MagicMock(port=8080)
+    fake_conn.pid = 12345  # NOT the daemon's pid (99999)
+    monkeypatch.setattr("psutil.net_connections", lambda kind="inet": [fake_conn])
+
+
+def _build_no_providers_ctx():
+    from voicegateway.cli import doctor as d
+
+    fake_gw = MagicMock()
+    fake_gw.config.providers = {}
+    return d._Context(config_path=None, gateway=fake_gw)
+
+
+def _build_empty_key_ctx():
+    from voicegateway.cli import doctor as d
+
+    fake_gw = MagicMock()
+    fake_gw.config.providers = {"openai": {"api_key": ""}}
+    return d._Context(config_path=None, gateway=fake_gw)
+
+
+@pytest.mark.parametrize(
+    ("name", "check_fn", "ctx_factory", "patch_fn"),
+    list(_check_modules_with_fail_paths()),
+)
+def test_each_check_fail_path_carries_specific_fix_action(
+    name, check_fn, ctx_factory, patch_fn, monkeypatch
+):
+    """AC-VG-ONBOARD-006.2: every fail row contains a specific
+    actionable instruction.
+
+    The contract: the detail string starts with (or contains) at
+    least one verb from _FIX_ACTION_VERBS, and either references a
+    `voicegw <command>` or names a concrete file/value to change.
+    No bare 'see docs' pointers.
+    """
+    if patch_fn is not None:
+        patch_fn(monkeypatch)
+    ctx = ctx_factory() if callable(ctx_factory) else ctx_factory
+
+    result = check_fn(ctx)
+    assert result.status == "fail", (
+        f"{name}: expected fail status, got {result.status!r} "
+        f"(detail: {result.detail!r})"
+    )
+    assert result.detail.strip(), f"{name}: empty detail string"
+
+    has_verb = any(verb in result.detail for verb in _FIX_ACTION_VERBS)
+    has_command_ref = "voicegw " in result.detail
+    assert has_verb or has_command_ref, (
+        f"{name}: detail string lacks actionable instruction. Detail: {result.detail!r}"
+    )
+
+    # Anti-pattern: bare 'see docs' is forbidden by AC-006.2.
+    assert "see docs" not in result.detail.lower(), (
+        f"{name}: detail uses bare 'see docs' pointer. Detail: {result.detail!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Per-check ok-path tests: each check returns 'ok' under documented
+# happy conditions.
+# ---------------------------------------------------------------------------
+
+
+def test_python_version_check_passes_on_modern_python():
+    from voicegateway.cli.doctor import _check_python_version, _Context
+
+    result = _check_python_version(_Context(config_path=None))
+    assert result.status == "ok"
+    assert "3." in result.detail  # version-string format
+
+
+def test_pipx_check_passes_when_on_path(monkeypatch):
+    from voicegateway.cli.doctor import _check_pipx, _Context
+
+    monkeypatch.setattr(
+        "voicegateway.cli.doctor.shutil.which", lambda _: "/usr/local/bin/pipx"
+    )
+    result = _check_pipx(_Context(config_path=None))
+    assert result.status == "ok"
+
+
+def test_daemon_registered_check_passes_when_status_says_yes():
+    from voicegateway.cli.doctor import _check_daemon_registered, _Context
+
+    ctx = _Context(
+        config_path=None,
+        daemon_status={"registered": True, "plist_path": "/tmp/test.plist"},
+    )
+    result = _check_daemon_registered(ctx)
+    assert result.status == "ok"
+
+
+def test_daemon_running_check_skips_when_not_registered():
+    """The skip path is documented: don't repeat the noise of the
+    previous check.
+    """
+    from voicegateway.cli.doctor import _check_daemon_running, _Context
+
+    ctx = _Context(
+        config_path=None,
+        daemon_status={"registered": False, "running": False},
+    )
+    result = _check_daemon_running(ctx)
+    assert result.status == "skip"
+
+
+def test_port_conflict_check_passes_when_port_held_by_our_daemon(monkeypatch):
+    """If the listener on the configured port IS the voicegw daemon,
+    that's expected and the check passes.
+    """
+    import psutil
+
+    fake_gw = MagicMock()
+    fake_gw.config.serve = {"port": 8080}
+
+    from voicegateway.cli.doctor import _check_port_conflict, _Context
+
+    ctx = _Context(
+        config_path=None,
+        gateway=fake_gw,
+        daemon_status={"pid": 99999},  # our daemon's pid
+    )
+
+    fake_conn = MagicMock()
+    fake_conn.status = psutil.CONN_LISTEN
+    fake_conn.laddr = MagicMock(port=8080)
+    fake_conn.pid = 99999  # SAME as daemon's pid
+    monkeypatch.setattr("psutil.net_connections", lambda kind="inet": [fake_conn])
+
+    result = _check_port_conflict(ctx)
+    assert result.status == "ok"
+    assert "voicegw daemon" in result.detail
+
+
+def test_recent_error_check_passes_when_no_recent_failures(monkeypatch):
+    """Storage-side check returns ok when the recent rows are clean."""
+
+    fake_gw = MagicMock()
+
+    async def _no_errors(*args, **kwargs):
+        return [{"status": "ok"}, {"status": "ok"}]
+
+    fake_gw.storage.get_recent_requests = _no_errors
+
+    from voicegateway.cli.doctor import _check_recent_error_count, _Context
+
+    ctx = _Context(config_path=None, gateway=fake_gw)
+    # asyncio.run is fine inside the check, but we have to hand pytest
+    # a non-loop context. Fixture runs sync, so call directly.
+    result = _check_recent_error_count(ctx)
+    assert result.status == "ok"
+
+
+def test_mcp_responsive_skips_with_documented_rationale():
+    """MCP check is intentionally a skip in v0.1.0; deferred for follow-up."""
+    from voicegateway.cli.doctor import _check_mcp_responsive, _Context
+
+    result = _check_mcp_responsive(_Context(config_path=None))
+    assert result.status == "skip"
+    assert "deferred" in result.detail.lower() or "stdio" in result.detail.lower()
