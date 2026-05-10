@@ -1,5 +1,18 @@
 name: Continuous Integration
 
+# design.md §6 AC2 requires the test suite to pass on Python 3.11,
+# 3.12, and 3.13. The matrix runs all three in parallel. fail-fast is
+# off so a single-version regression does not mask the other two; the
+# CI checks UI lists each as `test / py3.11`, `test / py3.12`, etc.
+#
+# The single-version Codecov upload lives in test-coverage.yml: matrix-
+# multiplying coverage adds no signal (Codecov dedupes identical
+# reports) and would triple the upload cost.
+#
+# Matrix values are funneled through env so run blocks never
+# interpolate ${{ ... }} directly into the shell, matching the
+# install-script.yml pattern.
+
 on:
   pull_request:
     paths:
@@ -11,16 +24,25 @@ on:
 
 jobs:
   test:
+    name: test / py${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
     steps:
       - uses: actions/checkout@v4
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
       - name: Setup Python
-        run: uv python install 3.12
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        run: uv python install "$PYTHON_VERSION"
       - name: Create venv and install
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
         run: |
-          uv venv --seed
+          uv venv --seed --python "$PYTHON_VERSION"
           uv pip install -e ".[dev,dashboard,mcp]" ruff mypy types-PyYAML
       - name: Ruff
         run: uv run ruff check voicegateway dashboard tests
