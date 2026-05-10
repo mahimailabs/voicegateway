@@ -299,3 +299,50 @@ def test_migrate_preserves_db_byte_for_byte(tmp_path):
 
     assert db.read_bytes() == pre_bytes
     assert db.stat().st_mtime == pre_mtime
+
+
+# ---------------------------------------------------------------------------
+# Partial-failure tolerance at the command level
+# ---------------------------------------------------------------------------
+
+
+def test_migrate_handles_corrupt_db_with_clear_note(tmp_path):
+    """A corrupt voicegw.db (e.g., interrupted write at v0.0.5 time)
+    surfaces as a note pointing at `voicegw doctor` rather than
+    crashing the command. Exit code stays 0 because migrate is
+    read-only and informational; the doctor command is the deeper
+    diagnostic surface.
+    """
+    home = tmp_path / "voicegw"
+    home.mkdir(parents=True)
+    _make_v005_yaml(home)
+
+    db_path = home / "voicegw.db"
+    db_path.write_bytes(b"\x00\x01\x02 not a sqlite db at all")
+
+    result = runner.invoke(app, ["migrate", "--config-home", str(home)])
+    assert result.exit_code == 0, result.output
+
+    assert "did not open" in result.output or "missing expected tables" in result.output
+    assert db_path.read_bytes() == b"\x00\x01\x02 not a sqlite db at all"
+    assert "unchanged" in result.output
+
+
+def test_migrate_handles_daemon_status_failure_gracefully(tmp_path, monkeypatch):
+    """If DaemonManager construction or status() raises, migrate
+    falls back to registered=False and prints the install-daemon
+    next-step pointer rather than crashing.
+    """
+    home = tmp_path / "voicegw"
+    _make_v005_yaml(home)
+    _make_v005_db(home)
+
+    monkeypatch.setattr(
+        "voicegateway.cli.daemon.DaemonManager",
+        MagicMock(side_effect=RuntimeError("backend exploded")),
+    )
+
+    result = runner.invoke(app, ["migrate", "--config-home", str(home)])
+    assert result.exit_code == 0, result.output
+    assert "voicegw onboard --install-daemon" in result.output
+    assert "unchanged" in result.output
