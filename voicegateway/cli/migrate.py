@@ -86,6 +86,55 @@ def _config_home() -> Path:
     return Path.home() / ".config" / "voicegateway"
 
 
+# ---------------------------------------------------------------------------
+# Staging-and-atomic-rename helper.
+#
+# v0.1.0's migrate command is read-only because the v0.0.5 path is
+# preserved verbatim (decision 2). When a future schema bump
+# introduces mutations, this helper is the seam every write goes
+# through: write to ``<target>.tmp`` first, fsync the file, then
+# ``Path.replace()`` onto the target. ``replace()`` is the POSIX
+# atomic-rename so a partial write or interrupt cannot leave a
+# half-written file at the target path.
+#
+# The helper is tested separately from migrate's flow so the safety
+# guarantees are pinned regardless of which migrate iteration first
+# invokes it.
+# ---------------------------------------------------------------------------
+
+
+def _atomic_write_text(target: Path, content: str) -> None:
+    """Stage to ``target.with_suffix('.tmp')``, fsync, then atomic-rename.
+
+    The rename is atomic on every POSIX filesystem and on NTFS
+    (Path.replace dispatches to MoveFileEx with REPLACE_EXISTING +
+    WRITE_THROUGH on Windows). On failure the staging file is
+    unlinked and the existing target stays untouched, satisfying
+    AC-VG-ONBOARD-007's "failure leaves v0.0.5 files untouched."
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staging = target.with_name(target.name + ".tmp")
+
+    try:
+        with open(staging, "w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            import os as _os
+
+            _os.fsync(f.fileno())
+        staging.replace(target)
+    except Exception:
+        # On any failure: drop the staging file so the parent dir
+        # is left in the same state as before the call. The original
+        # ``target`` is never touched since replace() is the only
+        # write to that path.
+        try:
+            staging.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
 def _build_report(home: Path | None = None) -> MigrationReport:
     """Inspect the canonical config home and return a structured report."""
     home = home if home is not None else _config_home()
