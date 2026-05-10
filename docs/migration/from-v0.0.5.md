@@ -23,8 +23,21 @@ preserves the v0.0.5 install if anything fails partway through.
 
 ## What changed in `voicegw status` {#status}
 
-v0.0.5's `voicegw status` printed a single Provider Status table.
-v0.1.0 prints the daemon view FIRST, then the provider view:
+v0.0.5 printed a single Provider Status table. v0.1.0 prints the
+daemon view FIRST, then the provider view (design decision 4: the
+most common reason `voicegw status` is consulted is "is my gateway
+running?", and that is now the first row).
+
+**Before (v0.0.5):**
+
+```text
+       Provider Status
+ ┃ Provider ┃ Configured ┃ Models ┃
+ ┃ openai   ┃ Yes        ┃ 4      ┃
+ ┃ deepgram ┃ Yes        ┃ 1      ┃
+```
+
+**After (v0.1.0):**
 
 ```text
                 Daemon
@@ -37,10 +50,6 @@ v0.1.0 prints the daemon view FIRST, then the provider view:
  ┃ openai   ┃ Yes        ┃ 4      ┃
  ┃ deepgram ┃ Yes        ┃ 1      ┃
 ```
-
-This is design.md decision 4 for the v0.1.0 release: the most
-common reason `voicegw status` is consulted in v0.1.0 is "is my
-gateway running?", and that is now the first row.
 
 If the daemon backend fails to load (e.g., when running inside a
 sandbox without the matching OS service tools), the daemon section
@@ -72,30 +81,64 @@ dashboard row.
 voicegw start
 voicegw stop
 voicegw restart
-voicegw status        # daemon-first per the section above
+voicegw status              # daemon-first per the section above
+voicegw uninstall-daemon    # remove registration; preserves config + DB
 ```
 
 Each delegates to a per-OS backend (LaunchAgent on macOS,
 `systemd --user` on Linux, Scheduled Task on Windows; WSL uses
-the Linux backend transparently).
+the Linux backend transparently). `uninstall-daemon` removes the
+OS-level registration only and prints exactly what was preserved
+(config file, call DB, encrypted managed_providers rows) plus the
+documented manual cleanup command (`rm -rf ~/.config/voicegateway/`).
 
 ### `voicegw doctor` {#doctor}
 
-Ten checks, plain-language fix steps, no stack traces. Run it
+Ten checks rendered as a numbered Rich punch list. Every failed
+check carries a specific fix action: no stack traces, no bare
+"see docs" pointers.
+
+1. Python version (3.11+)
+2. pipx installed
+3. Daemon registered with the OS service manager
+4. Daemon running
+5. Port conflict on the configured serve port
+6. Provider configured in voicegw.yaml
+7. Provider key validates against the upstream API (5-second cap, fail-soft)
+8. Recent error count low (storage scan)
+9. Dashboard reachable on its bind port
+10. MCP responsive (best-effort; stdio MCP has no probe surface)
+
+Three statuses appear: `PASS` (green), `FAIL` (red, drives exit
+code 1), and `SKIP` (yellow, the documented non-blocking status
+for "this check doesn't apply right now"). Run `voicegw doctor`
 whenever something is off; the output explicitly tells you what
 to do for each failed check.
 
 ### `voicegw migrate` {#migrate}
 
 Detects a v0.0.5 install (config + SQLite at
-`~/.config/voicegateway/`), copies into the v0.1.0 layout
-(same path; v0.0.5's config home is preserved per design
-decision 2), and re-encrypts any managed provider keys with the
-current Fernet key.
+`~/.config/voicegateway/`) and verifies the integrity of the
+existing files. Per design decision 2 the v0.1.0 path matches
+v0.0.5, so there is no copy step; the command is read-only.
 
-The migration writes everything to a staging path and
-atomic-renames at the end. Failure leaves the v0.0.5 install
-untouched.
+What `voicegw migrate` checks:
+
+- `voicegw.yaml` parses cleanly under the v0.1.0 schema.
+- `voicegw.db` opens and has the expected tables.
+- Managed provider keys decrypt under the current
+  `VOICEGW_SECRET` (if any are missing or under-encrypted, the
+  command points at `voicegw rotate-secret`).
+- Daemon registration status (so the next-step pointer surfaces
+  `voicegw onboard --install-daemon` when needed).
+
+The output ends with an explicit "this command is read-only;
+no files were written; your v0.0.5 install is unchanged"
+footer. Idempotent on re-run (byte-identical output across
+back-to-back invocations). The atomic-write seam
+(`_atomic_write_text`) ships ready for the first schema bump
+that introduces a write; today there is nothing to roll back
+from.
 
 ## What did NOT change
 
