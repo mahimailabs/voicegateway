@@ -74,9 +74,29 @@ class LogsScreen(Container):
     def on_mount(self) -> None:
         # Filter input is hidden by default; ``/`` reveals it.
         self.query_one("#logs-filter", Input).display = False
-        # Spawn the initial fetch as a worker so on_mount stays sync;
-        # the Phase-9 polling loop replaces this with a recurring
-        # timer, but for now a one-shot worker is enough.
+        # Initial fetch as a worker so on_mount stays sync.
+        self.run_worker(self.refresh_data(), exclusive=True)
+        # Live-append polling: re-fetch on the client's ``poll_seconds``
+        # cadence (1.0 s in Gateway mode, 5.0 s in Local mode by
+        # default; ``--poll`` on the Typer command overrides). LogTail
+        # de-dups by id so the overlapping fetch windows produce a
+        # forward-only visible tail. set_interval keeps firing even
+        # while another tab is current (ContentSwitcher hides but does
+        # not unmount), which is what we want -- new rows show up in
+        # the Logs tab the moment the user switches back.
+        app = cast("TUIApp", self.app)
+        poll_seconds = float(getattr(app.client, "poll_seconds", 1.0))
+        self.set_interval(poll_seconds, self._poll_tick)
+
+    def _poll_tick(self) -> None:
+        """Recurring poll callback. Dispatches ``refresh_data``.
+
+        Sync wrapper around the async fetch because Textual's
+        ``set_interval`` accepts only sync callbacks. The worker is
+        ``exclusive=True`` so a slow daemon never piles up parallel
+        refreshes; a delayed response is dropped in favour of the
+        next poll's fresh request.
+        """
         self.run_worker(self.refresh_data(), exclusive=True)
 
     async def refresh_data(self) -> None:
@@ -84,7 +104,9 @@ class LogsScreen(Container):
 
         The LogTail's de-dup set drops rows whose ``id`` we have
         already rendered, so this method is safe to call repeatedly
-        from the polling loop the Phase-9 iteration adds.
+        from the polling loop. With a filter active, non-matching
+        rows still land in ``LogTail._all_entries`` so a later
+        clear restores the full view.
         """
         app = cast("TUIApp", self.app)
         limit = int(getattr(app, "_history_limit", 100))
