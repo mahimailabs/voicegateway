@@ -37,6 +37,7 @@ direct-call tests for ``_validate_provider_key`` (each branch).
 
 from __future__ import annotations
 
+import click
 import pytest
 import yaml
 from typer.testing import CliRunner
@@ -44,6 +45,18 @@ from typer.testing import CliRunner
 from voicegateway.cli import app
 
 runner = CliRunner()
+
+
+def _plain(output: str) -> str:
+    """Strip ANSI escape codes from CliRunner output.
+
+    GitHub Actions exports ``FORCE_COLOR=1`` so Typer's Rich help
+    renderer splits option flags across bold spans
+    (``\\x1b[1m-\\x1b[0m\\x1b[1m-install-daemon\\x1b[0m``), which
+    breaks substring matches against ``--install-daemon`` etc.
+    ``click.unstyle`` is the canonical way to normalise the output.
+    """
+    return click.unstyle(output)
 
 
 @pytest.fixture(autouse=True)
@@ -194,8 +207,9 @@ def test_onboard_help_renders():
     """``--help`` shows the documented option surface."""
     result = runner.invoke(app, ["onboard", "--help"])
     assert result.exit_code == 0
-    assert "--install-daemon" in result.output
-    assert "--config" in result.output
+    plain = _plain(result.output)
+    assert "--install-daemon" in plain
+    assert "--config" in plain
 
 
 def test_onboard_wizard_mocked_end_to_end_under_one_second(tmp_path):

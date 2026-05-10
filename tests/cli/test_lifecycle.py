@@ -10,12 +10,25 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import click
 import pytest
 from typer.testing import CliRunner
 
 from voicegateway.cli import app
 
 runner = CliRunner()
+
+
+def _plain(output: str) -> str:
+    """Strip ANSI escape codes from CliRunner output.
+
+    Typer's Rich help renderer splits option flags across separate
+    bold spans (``\\x1b[1m-\\x1b[0m\\x1b[1m-tail\\x1b[0m``) when
+    GitHub Actions sets ``FORCE_COLOR=1``, breaking literal substring
+    matches against ``--tail`` etc. ``click.unstyle`` is the canonical
+    way to normalise output before substring assertions.
+    """
+    return click.unstyle(output)
 
 
 def _patch_manager(monkeypatch, fake):
@@ -258,8 +271,9 @@ def test_daemon_logs_runtime_error_exits_1(monkeypatch):
 def test_daemon_logs_help_renders():
     result = runner.invoke(app, ["daemon-logs", "--help"])
     assert result.exit_code == 0
-    assert "Tail the OS-native daemon log stream" in result.output
-    assert "--tail" in result.output
+    plain = _plain(result.output)
+    assert "Tail the OS-native daemon log stream" in plain
+    assert "--tail" in plain
 
 
 # ---------------------------------------------------------------------------

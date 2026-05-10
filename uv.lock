@@ -3093,6 +3093,8 @@ deepgram = [
     { name = "livekit-plugins-deepgram" },
 ]
 dev = [
+    { name = "platformdirs" },
+    { name = "psutil" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -3169,8 +3171,10 @@ requires-dist = [
     { name = "piper-tts", marker = "extra == 'piper'", specifier = ">=1.2.0" },
     { name = "platformdirs", marker = "extra == 'all'", specifier = ">=4.0" },
     { name = "platformdirs", marker = "extra == 'cloud'", specifier = ">=4.0" },
+    { name = "platformdirs", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "psutil", marker = "extra == 'all'", specifier = ">=5.9" },
     { name = "psutil", marker = "extra == 'cloud'", specifier = ">=5.9" },
+    { name = "psutil", marker = "extra == 'dev'", specifier = ">=5.9" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
