@@ -1,0 +1,55 @@
+# VoiceGateway systemd user unit template.
+#
+# Rendered by voicegateway/cli/daemon/linux.py with Python's
+# string.Template. Substitution variables:
+#
+#   ${executable_path}    Absolute path to the voicegw binary
+#                         installed by pipx (typically
+#                         ~/.local/bin/voicegw).
+#   ${working_directory}  Process working directory. The backend
+#                         sets this to the user's home so any
+#                         relative path resolves predictably and
+#                         so the PATH below picks up
+#                         <home>/.local/bin.
+#
+# Behaviour locked by this template (do NOT make these template
+# variables; they are intentional defaults for v0.1.0):
+#
+#   Type=exec             Modern systemd: ExecStart calls exec(2).
+#                         Faster + more accurate process accounting
+#                         than Type=simple.
+#   Restart=on-failure    Auto-restart only on non-zero exit. Covers
+#                         the design.md section-6 kill -9 survival
+#                         test: systemd respawns the daemon within
+#                         RestartSec=5.
+#   RestartSec=5          Five-second backoff matches the macOS
+#                         LaunchAgent's effective restart cadence
+#                         under KeepAlive.
+#   After/Wants=network-online.target
+#                         Defer start until DNS + interfaces are up
+#                         so HTTP bindings on first boot don't fail.
+#   WantedBy=default.target
+#                         Systemd's user-session top-level target.
+#                         Enabling the unit auto-starts it at login.
+#
+# Logging: stdout + stderr go to journald automatically. The Linux
+# backend reads them via 'journalctl --user-unit voicegateway' so
+# the unit file does NOT redirect StandardOutput/StandardError to
+# files (no file-log paths in the variable list, intentionally).
+
+[Unit]
+Description=VoiceGateway daemon (cost tracking for LiveKit voice agents)
+Documentation=https://vg.openrtc.tech
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=${executable_path} serve
+Restart=on-failure
+RestartSec=5
+WorkingDirectory=${working_directory}
+Environment="PATH=${working_directory}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+
+[Install]
+WantedBy=default.target
