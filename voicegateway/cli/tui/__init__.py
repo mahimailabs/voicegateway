@@ -15,11 +15,21 @@ Two entry points live side-by-side:
   with ``@cli_app.command(name="tui")`` so the existing
   ``voicegateway.cli`` package gains the command via a side-effect
   import in ``voicegateway/cli/__init__.py``.
+
+Important: this module imports ONLY ``typer``, ``httpx``, and the
+CLI's internal Typer instance at module top. The ``TUIApp``
+re-export (used by tests and external Python callers) is wired via
+a PEP 562 module-level ``__getattr__`` so importing this package
+does not pull in :mod:`textual`. ``textual`` is in the optional
+``[tui]`` extra; a regression here would break every ``voicegw``
+command on installs that did not opt into the extra, because
+``voicegateway.cli.__init__`` side-effect-imports this module to
+register the Typer command.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import typer
@@ -32,9 +42,9 @@ import typer
 # unambiguous and survives any formatter-driven import reordering.
 from voicegateway.cli._app import app as cli_app
 from voicegateway.cli._app import console
-from voicegateway.cli.tui.app import TUIApp
 
 if TYPE_CHECKING:  # pragma: no cover
+    from voicegateway.cli.tui.app import TUIApp
     from voicegateway.core.config import GatewayConfig
 
 
@@ -63,6 +73,10 @@ def run(
     can read them without reaching back into the Typer parser; the
     apply-side wiring lands in those phases.
     """
+    # Lazy imports: ``voicegateway.cli.tui.app`` pulls in ``textual``,
+    # which is optional (the ``[tui]`` extra). Touching it inside
+    # ``run`` keeps the package import light for the rest of the CLI.
+    from voicegateway.cli.tui.app import TUIApp
     from voicegateway.cli.tui.data.factory import make_client
 
     cfg = _try_load_config(config)
@@ -254,6 +268,23 @@ def _preflight_daemon_reachable(
     except Exception:  # noqa: BLE001
         return False
     return response.status_code == 200
+
+
+def __getattr__(name: str) -> Any:
+    """Lazy module-level re-export of :class:`TUIApp` (PEP 562).
+
+    ``from voicegateway.cli.tui import TUIApp`` triggers this handler
+    and only then imports :mod:`voicegateway.cli.tui.app`, which in
+    turn imports :mod:`textual`. Plain ``import voicegateway.cli.tui``
+    (the side-effect import from ``voicegateway.cli.__init__``) does
+    not touch ``textual`` at all, so installs without the ``[tui]``
+    extra keep working for every non-TUI ``voicegw`` command.
+    """
+    if name == "TUIApp":
+        from voicegateway.cli.tui.app import TUIApp as _TUIApp
+
+        return _TUIApp
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = ["TUIApp", "run", "tui_cmd"]
