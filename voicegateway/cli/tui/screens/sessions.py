@@ -88,27 +88,56 @@ class SessionsScreen(FocusRowsMixin, Container):
 
     async def on_mount(self) -> None:
         await self.refresh_data()
+        # Live-append polling: re-fetch on the client's poll_seconds
+        # cadence so a new conversation surfaces at the top within
+        # the REQ-VG-TUI-007 5 s budget. set_interval keeps firing
+        # while another tab is current (ContentSwitcher hides but
+        # does not unmount), so the user finds fresh rows the moment
+        # they switch back to Sessions.
+        app = cast("TUIApp", self.app)
+        poll_seconds = float(getattr(app.client, "poll_seconds", 1.0))
+        self.set_interval(poll_seconds, self._poll_tick)
+
+    def _poll_tick(self) -> None:
+        """Sync wrapper around refresh_data; matches LogsScreen."""
+        self.run_worker(self.refresh_data(), exclusive=True)
 
     async def refresh_data(self) -> None:
         """Re-fetch the current sort + re-render the list.
 
-        Called from on_mount and whenever the sort toggles. Replaces
-        the entire list of children rather than diffing because v0.1.1's
-        sort flip is a user-driven action, not a hot-path: simpler is
-        better than clever. The Phase-9 polling iteration will
-        revisit if focus loss becomes a real complaint.
+        Replaces the list of children rather than diffing because
+        v0.1.1's payload is small (typically <100 sessions) and the
+        full-rebuild keeps the code simple. Focus is preserved
+        across the rebuild by remembering the focused row's
+        ``session_id`` and re-focusing the matching row after the
+        new children mount; the active session falls back to losing
+        focus only when it disappears from the response (which is
+        rare and self-explanatory under started_at_desc).
         """
         app = cast("TUIApp", self.app)
         limit = int(getattr(app, "_history_limit", 100))
         sessions = await app.client.list_sessions(limit=limit, order_by=self._sort)
 
         list_view = self.query_one("#sessions-list", VerticalScroll)
+        focused_id = self._focused_session_id()
         await list_view.remove_children()
         if not sessions:
             await list_view.mount(Static("No sessions yet.", classes="empty-state"))
             return
         for session in sessions:
             await list_view.mount(SessionRow(session))
+        if focused_id:
+            for row in list_view.query(SessionRow):
+                if row.session_id == focused_id:
+                    row.focus()
+                    break
+
+    def _focused_session_id(self) -> str | None:
+        """Storage-canonical id of the currently-focused row, if any."""
+        focused = self.app.focused
+        if isinstance(focused, SessionRow):
+            return focused.session_id
+        return None
 
     # -- Actions -----------------------------------------------------
 
