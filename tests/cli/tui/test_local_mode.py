@@ -172,6 +172,68 @@ async def test_local_client_test_provider_raises_unsupported_error() -> None:
     assert "test_provider" in str(exc_info.value)
 
 
+async def test_providers_t_shortcut_surfaces_visible_notification_in_local_mode(
+    seeded_local_app: TUIApp,
+) -> None:
+    """End-to-end visible-surfacing contract for Phase-10 write paths.
+
+    Drives the full stack the user touches in Local mode: TUIApp wired
+    to a real LocalClient over a seeded SQLite file, switches to the
+    Providers tab, focuses a row, presses ``t``. Expectations:
+
+    - The LocalClient raises :class:`LocalModeUnsupportedError`
+      with the documented ``feature='test_provider'`` payload
+      (verified above at the data layer).
+    - ProvidersScreen catches the exception and routes it through
+      :meth:`App.notify` with the warning severity + the
+      ``Action requires the daemon`` title.
+    - The notification message names ``test_provider`` so the user
+      sees the unsupported feature name verbatim -- the locked
+      decision-4 contract that write paths surface honestly.
+    - The row's ``status`` stays at the pre-press value: no silent
+      mutation, no half-committed state.
+
+    Locked decisions covered: 4 (Local mode raises with feature) +
+    5 (Local mode write actions are visible, not silent). Plus
+    REQ-VG-TUI-008's bottom contract: Local mode is a read-only
+    surface and write attempts say so out loud.
+    """
+    async with seeded_local_app.run_test() as pilot:
+        await _settle(pilot)
+        await pilot.press("4")
+        await _settle(pilot)
+
+        screen = seeded_local_app.query_one(ProvidersScreen)
+        rows = list(screen.query(ProviderRow))
+        assert rows, "Providers tab must mount the seeded rows"
+        target = rows[0]
+        status_before = target.status
+        target.focus()
+        await pilot.pause()
+        await pilot.press("t")
+
+        # Worker dispatch + notification routing takes a few ticks.
+        for _ in range(20):
+            await pilot.pause()
+
+        # No silent mutation: the row stays put.
+        assert target.status == status_before
+
+        # Visible surfacing: a warning notification is in flight.
+        notifications = list(seeded_local_app._notifications)
+        warnings = [
+            n
+            for n in notifications
+            if n.severity == "warning"
+            and "daemon" in n.title.lower()
+            and "test_provider" in n.message
+        ]
+        assert warnings, (
+            "Local-mode `t` must surface a visible warning naming the "
+            "unsupported feature, not silently fail."
+        )
+
+
 # ---------------------------------------------------------------------------
 # CounterFooter staleness suffix
 # ---------------------------------------------------------------------------
