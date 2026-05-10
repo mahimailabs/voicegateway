@@ -126,6 +126,7 @@ _V010_COMMAND_NAMES: frozenset[str] = frozenset(
         "restart",
         "uninstall-daemon",
         "doctor",
+        "migrate",
     }
 )
 
