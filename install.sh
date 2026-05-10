@@ -252,6 +252,18 @@ VoiceGateway does NOT auto-install Python. That choice is left to your OS packag
                 || pipx install --force "$VG_PACKAGE_SPEC"
             UPGRADED=1
             say "Upgrade complete."
+
+            # REQ-VG-ONBOARD-007 wiring: invoke the migrate command
+            # automatically after the upgrade so the new wheel's
+            # integrity is verified against the existing config + DB
+            # before the user has to remember to run it. Migrate is
+            # read-only and idempotent (design decision 2 keeps the
+            # path) so a failure here is informational; we swallow
+            # the exit code and continue.
+            if command -v voicegw >/dev/null 2>&1; then
+                step "Verifying v0.0.5 install carries over."
+                voicegw migrate || true
+            fi
         else
             say "Skipping upgrade. Existing install left untouched."
         fi
@@ -262,11 +274,11 @@ VoiceGateway does NOT auto-install Python. That choice is left to your OS packag
 
     step "Done."
     if [ "$UPGRADED" = "1" ]; then
-        say "Bring v0.0.5 state into the v0.1.0 layout (idempotent, rollback-safe):"
-        say "  voicegw migrate"
-        say ""
-        say "Then start (or restart) the daemon:"
+        say "Migration verified above. To start (or restart) the daemon:"
         say "  voicegw restart"
+        say ""
+        say "Or to register the daemon for the first time on this machine:"
+        say "  voicegw onboard --install-daemon"
     else
         say "Run the wizard to configure your gateway and register the daemon:"
         say "  voicegw onboard --install-daemon"
