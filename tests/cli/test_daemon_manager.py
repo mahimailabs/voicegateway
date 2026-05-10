@@ -134,25 +134,34 @@ def test_logs_defaults_to_tail_100() -> None:
 #
 # As OS backends land (macos.py first, then linux.py, then windows.py),
 # this test points at whichever backend is still pending so the
-# selector's platform routing stays gated. The macOS backend exists
-# now; the linux backend is the next v0.1.0 commit. When that lands,
-# this test re-targets "win32" / windows. When the Windows backend
-# lands, the test is removed (the positive-construction assertions
-# in each backend's own test file cover the routing).
+# selector's platform routing stays gated. macOS and Linux backends
+# exist now; the Windows backend is the next v0.1.0 commit. Once
+# windows.py lands, this regression test is removed in favour of
+# the per-backend positive-construction assertions below.
 # ---------------------------------------------------------------------------
 
 
 def test_default_construction_attempts_platform_specific_import(monkeypatch) -> None:
     """Without a backend arg, ``DaemonManager()`` tries to import the
-    selected backend module. The pending backend (currently linux)
-    surfaces as ImportError; the error message must name the
-    correct platform-specific module so platform-routing regressions
-    are visible.
+    selected backend module. The pending backend (currently
+    windows) surfaces as ImportError; the error message must name
+    the correct platform-specific module so platform-routing
+    regressions are visible.
     """
-    monkeypatch.setattr("sys.platform", "linux")
+    monkeypatch.setattr("sys.platform", "win32")
     with pytest.raises(ImportError) as excinfo:
         DaemonManager()
-    assert "voicegateway.cli.daemon.linux" in str(excinfo.value)
+    assert "voicegateway.cli.daemon.windows" in str(excinfo.value)
+
+
+def test_default_construction_loads_linux_backend_on_linux(monkeypatch) -> None:
+    """Positive assertion: on linux the facade picks LinuxBackend."""
+    monkeypatch.setattr("sys.platform", "linux")
+
+    from voicegateway.cli.daemon.linux import LinuxBackend
+
+    mgr = DaemonManager()
+    assert isinstance(mgr._backend, LinuxBackend)
 
 
 def test_default_construction_loads_macos_backend_on_darwin(monkeypatch) -> None:
