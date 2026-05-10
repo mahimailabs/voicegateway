@@ -8,6 +8,14 @@ name: install.sh container matrix
 # Runs only when install.sh or the test runner changes, plus on pushes
 # to feat/daemon-first-onboarding so we get signal during v0.1.0
 # development. Manual dispatch is wired up for ad-hoc verification.
+#
+# Nightly schedule (06:00 UTC) catches base-image drift: Ubuntu 24.04,
+# Debian 12, and Fedora 40 ship security and packaging updates that
+# can break pipx availability or the Python 3.11+ floor without our
+# code changing. The nightly run trips a regression before users hit
+# it on a fresh install. Required by design.md §6 AC4
+# ("install.sh runs successfully in fresh Docker containers ... CI
+# nightly matrix").
 
 on:
   pull_request:
@@ -24,6 +32,8 @@ on:
       - 'tests/cli/_pipx_stub.sh'
       - 'tests/cli/test_install_script.sh'
       - '.github/workflows/install-script.yml'
+  schedule:
+    - cron: '0 6 * * *'
   workflow_dispatch:
 
 jobs:
