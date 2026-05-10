@@ -24,7 +24,7 @@ from __future__ import annotations
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widget import Widget
-from textual.widgets import ContentSwitcher, Footer, Header
+from textual.widgets import ContentSwitcher, Footer
 
 from voicegateway.cli.tui.data import MetricsClient
 from voicegateway.cli.tui.screens import (
@@ -34,6 +34,7 @@ from voicegateway.cli.tui.screens import (
     SessionsScreen,
 )
 from voicegateway.cli.tui.widgets.footer import CounterFooter
+from voicegateway.cli.tui.widgets.header import HeaderBar
 
 #: Tab ids in display order. ``ContentSwitcher`` mounts one
 #: placeholder per id; ``initial=`` selects the first tab. The vim
@@ -109,7 +110,7 @@ class TUIApp(App[None]):
         ``1``-``4`` shortcuts and the tab-cycle action target them
         directly.
         """
-        yield Header()
+        yield HeaderBar(is_local=self.is_local, id="header-bar")
         with ContentSwitcher(initial=_TAB_IDS[0], id="content"):
             yield SessionsScreen(id=_TAB_IDS[0])
             yield CostsScreen(id=_TAB_IDS[1])
