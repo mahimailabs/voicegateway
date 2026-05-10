@@ -1,6 +1,6 @@
-"""Pilot tests for the Phase-3 Sessions screen + detail modal.
+"""Pilot tests for the Phase-3 Sessions + Phase-4 Costs screens.
 
-Covers REQ-VG-TUI-002:
+REQ-VG-TUI-002 (Sessions):
 
 - List renders with fixture data and the empty state.
 - ``s`` toggles between started_at_desc and cost_desc; the bracket
@@ -11,12 +11,23 @@ Covers REQ-VG-TUI-002:
   :class:`SessionDetailScreen`; ``escape`` / ``q`` dismisses it
   and focus returns to the originating row.
 - Enter with nothing focused is a documented no-op.
+
+REQ-VG-TUI-003 (Costs):
+
+- Total + per-modality breakdown render from canned client data.
+- ``r`` cycles ``today`` / ``this_week`` / ``this_month`` and
+  drives a refresh against the active range with wrap-around.
+- ``include_pricing_source=True`` reaches the client on every
+  refresh so the freshness suffix can render.
+- Stale-stamp modalities surface the ``(as of YYYY-MM-DD)`` marker;
+  fresh and version-token modalities stay un-marked.
 """
 
 from __future__ import annotations
 
 import time
 import uuid
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -26,11 +37,13 @@ from textual.widgets import Label, Static
 
 from voicegateway.cli.tui import TUIApp
 from voicegateway.cli.tui.data.local import LocalClient
+from voicegateway.cli.tui.screens.costs import CostsScreen
 from voicegateway.cli.tui.screens.session_detail import (
     SessionDetailScreen,
     _format_detail,
 )
 from voicegateway.cli.tui.screens.sessions import SessionsScreen
+from voicegateway.cli.tui.widgets.cost_card import CostCard
 from voicegateway.cli.tui.widgets.session_row import SessionRow
 from voicegateway.middleware.cost_tracker import RequestRecord
 from voicegateway.storage.sqlite import SQLiteStorage
@@ -300,3 +313,181 @@ def test_format_detail_handles_empty_lists() -> None:
     # No crash; the Modalities / Providers slots collapse to empty.
     assert "Modalities:" in text
     assert "Providers:" in text
+
+
+# ---------------------------------------------------------------------------
+# Costs screen (REQ-VG-TUI-003)
+# ---------------------------------------------------------------------------
+
+
+
+
+class _StubMetricsClient:
+    """Stub :class:`MetricsClient` with canned per-period responses.
+
+    Lets the Costs tests inject ``pricing_sources`` shapes the local
+    SQLite path would not produce on its own (specifically a stamp
+    older than 24 h for the freshness assertion). Records every
+    ``list_costs`` call so tests can verify the active period and
+    the ``include_pricing_source`` flag both flow through the
+    refresh path.
+    """
+
+    def __init__(self, responses: dict[str, dict[str, Any]]) -> None:
+        self.responses = responses
+        self.calls: list[dict[str, Any]] = []
+        self.poll_seconds = 5.0
+
+    async def list_sessions(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return []
+
+    async def get_session_detail(self, session_id: str) -> dict[str, Any] | None:
+        return None
+
+    async def list_costs(
+        self,
+        *,
+        period: str = "today",
+        project: str | None = None,
+        include_pricing_source: bool = False,
+    ) -> dict[str, Any]:
+        self.calls.append(
+            {
+                "period": period,
+                "include_pricing_source": include_pricing_source,
+                "project": project,
+            }
+        )
+        return self.responses.get(period, {})
+
+    async def list_logs(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return []
+
+    async def list_providers(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return []
+
+    async def test_provider(self, provider_id: str) -> dict[str, Any]:
+        return {}
+
+
+@pytest.fixture
+def costs_app() -> TUIApp:
+    """TUIApp wired to a deterministic :class:`_StubMetricsClient`.
+
+    ``today``: total $0.05, STT stamp old (2025-01-01 -> stale),
+    LLM stamp is a SemVer (no age inferable), TTS stamp today.
+    ``this_week``: total $0.20, breakdown only.
+    ``this_month``: total $1.25, no breakdown (covers fresh-install).
+    """
+    today = date.today().isoformat()
+    responses = {
+        "today": {
+            "period": "today",
+            "total": 0.05,
+            "by_modality": {
+                "stt": {"cost": 0.01, "request_count": 4},
+                "llm": {"cost": 0.04, "request_count": 7},
+            },
+            "pricing_sources": {
+                "stt": "voicegateway-catalog@2025-01-01",
+                "llm": "genai-prices@0.0.57",
+                "tts": f"voicegateway-catalog@{today}",
+            },
+        },
+        "this_week": {
+            "period": "this_week",
+            "total": 0.20,
+            "by_modality": {
+                "stt": {"cost": 0.05, "request_count": 12},
+            },
+        },
+        "this_month": {
+            "period": "this_month",
+            "total": 1.25,
+            "by_modality": {},
+        },
+    }
+    client = _StubMetricsClient(responses)
+    return TUIApp(client=client, is_local=True)
+
+
+async def test_costs_total_renders_from_client(costs_app: TUIApp) -> None:
+    async with costs_app.run_test() as pilot:
+        await pilot.press("2")
+        await _settle(pilot)
+        screen = costs_app.query_one(CostsScreen)
+        card = screen.query_one(CostCard)
+        assert card._costs.get("total") == 0.05
+        assert card._costs.get("period") == "today"
+
+
+async def test_costs_default_header_carries_today_marker(
+    costs_app: TUIApp,
+) -> None:
+    async with costs_app.run_test() as pilot:
+        await pilot.press("2")
+        await _settle(pilot)
+        header = costs_app.query_one(CostsScreen).query_one("#costs-header", Label)
+        assert "[today]" in str(header.renderable)
+
+
+async def test_costs_range_cycle_drives_refresh(costs_app: TUIApp) -> None:
+    async with costs_app.run_test() as pilot:
+        await pilot.press("2")
+        await _settle(pilot)
+        client = costs_app.client  # type: ignore[attr-defined]
+
+        # Initial fetch hit `today`.
+        assert any(c["period"] == "today" for c in client.calls)
+
+        # Cycle to this_week.
+        await pilot.press("r")
+        await _settle(pilot)
+        assert any(c["period"] == "this_week" for c in client.calls)
+        screen = costs_app.query_one(CostsScreen)
+        card = screen.query_one(CostCard)
+        assert card._costs.get("total") == 0.20
+
+        # Cycle to this_month.
+        await pilot.press("r")
+        await _settle(pilot)
+        assert any(c["period"] == "this_month" for c in client.calls)
+        assert card._costs.get("total") == 1.25
+
+        # Wrap back to today.
+        await pilot.press("r")
+        await _settle(pilot)
+        assert card._costs.get("total") == 0.05
+
+
+async def test_costs_passes_include_pricing_source_true(
+    costs_app: TUIApp,
+) -> None:
+    """Every refresh requests the per-modality stamps so the
+    freshness suffix can render.
+    """
+    async with costs_app.run_test() as pilot:
+        await pilot.press("2")
+        await _settle(pilot)
+        client = costs_app.client  # type: ignore[attr-defined]
+        assert client.calls, "client.list_costs not called"
+        assert all(c["include_pricing_source"] for c in client.calls)
+
+
+async def test_costs_freshness_marker_renders_on_stale_modality(
+    costs_app: TUIApp,
+) -> None:
+    """The Phase-4 freshness indicator surfaces ``(as of YYYY-MM-DD)``
+    on a stale STT stamp; LLM (SemVer token) and TTS (today) stay
+    un-marked. Pins REQ-VG-TUI-003's freshness contract end-to-end.
+    """
+    async with costs_app.run_test() as pilot:
+        await pilot.press("2")
+        await _settle(pilot)
+        screen = costs_app.query_one(CostsScreen)
+        stt = screen.query_one("#cost-modality-stt", Static)
+        llm = screen.query_one("#cost-modality-llm", Static)
+        tts = screen.query_one("#cost-modality-tts", Static)
+        assert "as of 2025-01-01" in str(stt.renderable)
+        assert "as of" not in str(llm.renderable)
+        assert "as of" not in str(tts.renderable)
