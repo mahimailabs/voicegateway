@@ -72,7 +72,11 @@ class TUIApp(App[None]):
             read it to suppress write-path actions cleanly.
     """
 
-    CSS = ""  # populated in Phase 8 (TCSS styling pass)
+    # CSS_PATH points at the TCSS brand foundation; Textual resolves
+    # the path relative to this module file. Per-widget DEFAULT_CSS
+    # owns component layout; main.tcss owns the cross-screen brand
+    # chrome (focus rings, accent colour, active-tab indicator).
+    CSS_PATH = "styles/main.tcss"
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),

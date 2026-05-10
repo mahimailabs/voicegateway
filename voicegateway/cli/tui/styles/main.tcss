@@ -1,0 +1,52 @@
+/* voicegateway/cli/tui/styles/main.tcss
+ *
+ * v0.1.1 brand foundation. The orange #D85A30 matches the
+ * marketing-site accent; mahimairaja can swap to the canonical
+ * brand value at release time without touching Python.
+ *
+ * Per-widget DEFAULT_CSS owns component-level layout (heights,
+ * paddings, internal grids). This file owns the cross-screen
+ * brand chrome: focus rings, the active-tab indicator, and the
+ * Header / Footer accent.
+ *
+ * Refinery rule "no decorative borders unless they carry
+ * information": every border in this file flags a state
+ * (focus / active tab / modal panel) the user needs to read.
+ */
+
+/* Header keeps the boost background Textual ships and adds a
+ * brand-orange tinted bold to the version label so the chip is
+ * unambiguous on both 24-bit and 256-color terminals. */
+Header {
+    color: #D85A30;
+    text-style: bold;
+}
+
+/* Focus ring: brand orange on every focusable widget so the user
+ * always knows where the keyboard is. ``outline`` is overlay, not
+ * layout, so it does not push content around when a row gains
+ * focus. */
+*:focus {
+    outline: tall #D85A30;
+}
+
+/* Active-tab indicator. ContentSwitcher hides the inactive
+ * children and shows the current one; we add a left-edge
+ * orange bar to reinforce "this tab is live" beyond just
+ * "this tab is the only thing on screen". The hidden tabs
+ * still carry the dim variant so a future split-screen
+ * layout (v0.2.0+) inherits the right base. */
+#content > * {
+    border-left: thick #2A2A2A;
+}
+#content > Container.-content-switcher-current {
+    border-left: thick #D85A30;
+}
+
+/* Modal screens (SessionDetailScreen, HelpOverlay) inherit the
+ * brand accent on their thick border via $accent already, so we
+ * only need to ensure the background stays readable on terminals
+ * that downgrade $panel to a near-black. */
+ModalScreen > Container {
+    background: $panel;
+}
