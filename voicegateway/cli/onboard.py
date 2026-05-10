@@ -4,24 +4,29 @@ Five Typer prompts that produce a working voicegw.yaml plus an
 optionally-registered daemon. Implements REQ-VG-ONBOARD-002 from
 the v0.1.0 Refinery.
 
-Iteration scope:
+Iteration scope (current):
   - Prompts (project name / provider / API key / port / daemon).
+  - Real-time provider key validation with a 5-second timeout.
+    Reuses the v0.0.5 ``vg_test_provider_key`` health-check
+    code path: instantiate the provider via ``create_provider``,
+    call ``await health_check()`` under
+    ``asyncio.wait_for(..., timeout=5.0)``. Fail-soft on timeout
+    so a slow network does not block onboarding.
   - Config file write that merges into an existing voicegw.yaml.
   - Daemon registration via DaemonManager.
 
 Subsequent v0.1.0 commits layer on:
-  - Real-time provider key validation with a 5-second timeout
-    (REQ-VG-ONBOARD-002.2).
   - Clean Ctrl+C cancellation with partial-state cleanup
     (REQ-VG-ONBOARD-002.4).
   - Final summary showing exactly what was configured
     (AC-VG-ONBOARD-002.3).
   - Smoke-test offering at the end (REQ-VG-ONBOARD-005).
-  - The full test suite (each scenario above).
+  - Additional tests for each scenario above.
 """
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -85,8 +90,11 @@ def onboard(
             "validator will catch typos at gateway construction time.[/yellow]"
         )
 
-    # 3. API key (no default, hidden input).
+    # 3. API key (no default, hidden input). Validate with a
+    # 5-second timeout per REQ-VG-ONBOARD-002.2; fail soft on
+    # timeout so a slow network does not block onboarding.
     api_key = typer.prompt(f"{provider} API key", hide_input=True)
+    _report_validation(provider, api_key)
 
     # 4. Port (default: 8080).
     port = typer.prompt("Port for voicegw serve", default=8080, type=int)
@@ -187,3 +195,87 @@ def _install_daemon() -> None:
     console.print("\nInstalling background daemon...")
     DaemonManager().install()
     console.print("[green]Daemon installed and started.[/green]")
+
+
+# Five-second cap on the live health probe. Slow networks return a
+# soft warning rather than blocking the wizard; this matches design.md
+# section-8 risk mitigation for the 60-second clock.
+_VALIDATION_TIMEOUT_S = 5.0
+
+
+def _report_validation(provider: str, api_key: str) -> None:
+    """Run the provider key validation and surface the result.
+
+    Three paths the user sees:
+
+      - ok: a green "validated" line, then the prompt continues.
+      - timeout: a yellow soft-warn ("validation timed out: your
+        key may still be correct; continuing"). REQ-VG-ONBOARD-002.2.
+      - auth/network failure: a yellow warning with the underlying
+        error and a pointer to ``voicegw doctor`` for a deeper
+        check. The wizard continues so a typo gets caught at
+        first call rather than mid-wizard, where the user has
+        less leverage to fix it.
+
+    Unknown providers (anything outside ``_PROVIDER_REGISTRY``) and
+    missing plugin extras short-circuit to "skipped"; the YAML
+    schema validator catches typos at gateway construction time.
+    """
+    status, message = asyncio.run(_validate_provider_key(provider, api_key))
+    if status == "ok":
+        console.print("[green]Provider key validated.[/green]")
+    elif status == "skipped":
+        console.print(f"[dim]Skipping live validation: {message}[/dim]")
+    elif status == "timeout":
+        console.print(
+            "[yellow]Provider validation timed out: your key may still "
+            "be correct; continuing.[/yellow]"
+        )
+    else:  # "failed"
+        console.print(
+            f"[yellow]Provider validation failed ({message}). "
+            "Continuing; run `voicegw doctor` to inspect.[/yellow]"
+        )
+
+
+async def _validate_provider_key(provider: str, api_key: str) -> tuple[str, str | None]:
+    """Drive the v0.0.5 provider health_check path under a 5-second
+    timeout.
+
+    Returns one of:
+      ("ok", None)                  - health_check returned True
+      ("failed", "<error msg>")     - health_check returned False or raised
+      ("timeout", None)             - hit the 5-second cap
+      ("skipped", "<reason>")       - unknown provider name or
+                                      plugin not installed; the YAML
+                                      validator + voicegw doctor cover
+                                      the rest.
+
+    Reuses the same ``create_provider`` + ``health_check`` plumbing
+    that ``vg_test_provider_key`` (MCP) uses, so a regression in
+    the underlying provider plugins lights up both surfaces.
+    """
+    from voicegateway.core.registry import _PROVIDER_REGISTRY, create_provider
+
+    if provider not in _PROVIDER_REGISTRY:
+        return "skipped", f"unknown provider name '{provider}'"
+
+    try:
+        instance = create_provider(provider, {"api_key": api_key})
+    except ImportError as exc:
+        return "skipped", f"plugin not installed ({exc})"
+    except Exception as exc:  # noqa: BLE001
+        return "failed", f"{type(exc).__name__}: {exc}"
+
+    try:
+        ok = await asyncio.wait_for(
+            instance.health_check(), timeout=_VALIDATION_TIMEOUT_S
+        )
+    except TimeoutError:
+        return "timeout", None
+    except Exception as exc:  # noqa: BLE001
+        return "failed", f"{type(exc).__name__}: {exc}"
+
+    if ok:
+        return "ok", None
+    return "failed", "authentication declined"
