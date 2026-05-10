@@ -13,6 +13,10 @@ from voicegateway.cli.tui.widgets.log_tail import (
     format_entry,
     format_timestamp,
 )
+from voicegateway.cli.tui.widgets.provider_row import (
+    ProviderRow,
+    format_status,
+)
 from voicegateway.cli.tui.widgets.session_row import (
     SessionRow,
     format_duration,
@@ -381,7 +385,6 @@ def test_format_entry_handles_garbled_latency() -> None:
 # ---------------------------------------------------------------------------
 
 
-
 def _entries_fixture() -> list[dict[str, object]]:
     return [
         {
@@ -493,3 +496,106 @@ def test_log_tail_append_skips_non_matching_under_active_filter() -> None:
     matches = [e for e in tail._all_entries if tail._matches_filter(e)]
     assert len(matches) == 1
     assert matches[0]["provider"] == "openai"
+
+
+# ---------------------------------------------------------------------------
+# ProviderRow + format_status (REQ-VG-TUI-005)
+# ---------------------------------------------------------------------------
+
+
+def _provider_fixture(
+    *,
+    provider_id: str = "openai",
+    project: str | None = "default",
+    status: str | None = "ok",
+) -> dict[str, object]:
+    return {
+        "provider_id": provider_id,
+        "provider_type": "openai",
+        "project": project,
+        "status": status,
+    }
+
+
+def test_format_status_renders_ok_marker() -> None:
+    assert "[ok]" in format_status("ok")
+
+
+def test_format_status_renders_fail_marker() -> None:
+    assert "[fail]" in format_status("fail")
+
+
+def test_format_status_renders_untested_for_explicit_value() -> None:
+    assert "[?]" in format_status("untested")
+
+
+def test_format_status_handles_none_and_unknown() -> None:
+    """None and unknown statuses fall through to the untested form
+    so a malformed daemon response never breaks row alignment.
+    """
+    assert "[?]" in format_status(None)
+    assert "[?]" in format_status("")
+    assert "[?]" in format_status("mystery")
+    assert "[?]" in format_status(123)
+
+
+def test_provider_row_renders_every_field() -> None:
+    row = ProviderRow(_provider_fixture(provider_id="openai-prod"))
+    rendered = str(row.renderable)
+    assert "[ok]" in rendered
+    assert "openai-prod" in rendered
+    assert "openai" in rendered  # provider_type
+    assert "default" in rendered  # project
+
+
+def test_provider_row_renders_global_label_when_project_missing() -> None:
+    """A NULL ``project`` (the v0.0.5 pre-per-project rows) renders
+    as ``(global)`` so the column is never blank.
+    """
+    row = ProviderRow(_provider_fixture(project=None))
+    assert "(global)" in str(row.renderable)
+
+
+def test_provider_row_exposes_provider_id() -> None:
+    row = ProviderRow(_provider_fixture(provider_id="my-key"))
+    assert row.provider_id == "my-key"
+
+
+def test_provider_row_exposes_normalised_status() -> None:
+    """``.status`` returns the normalised value ``ok`` / ``fail`` /
+    ``untested`` regardless of what the underlying dict stores.
+    """
+    assert ProviderRow(_provider_fixture(status="ok")).status == "ok"
+    assert ProviderRow(_provider_fixture(status="fail")).status == "fail"
+    assert ProviderRow(_provider_fixture(status=None)).status == "untested"
+    assert ProviderRow(_provider_fixture(status="mystery")).status == "untested"
+
+
+def test_provider_row_carries_status_css_class() -> None:
+    """Phase 8's TCSS pass styles ``status-ok`` etc. green / red /
+    gray; the widget assigns the right class so the colour follows
+    the indicator without touching Python.
+    """
+    assert "status-ok" in ProviderRow(_provider_fixture(status="ok")).classes
+    assert "status-fail" in ProviderRow(_provider_fixture(status="fail")).classes
+    assert "status-untested" in ProviderRow(_provider_fixture(status=None)).classes
+
+
+def test_provider_row_update_provider_swaps_status_class() -> None:
+    """``update_provider`` re-renders the row + swaps the CSS class so
+    a successful test flips the indicator + colour without re-mount.
+    """
+    row = ProviderRow(_provider_fixture(status="untested"))
+    assert "status-untested" in row.classes
+    row.update_provider(_provider_fixture(status="ok"))
+    assert "status-ok" in row.classes
+    assert "status-untested" not in row.classes
+    assert "[ok]" in str(row.renderable)
+
+
+def test_provider_row_is_focusable() -> None:
+    """Phase 6 bullet 3 binds ``t`` -> test_provider on the focused
+    row, mirroring the SessionRow Enter contract; ``can_focus`` has
+    to be True for the keyboard event to reach the widget.
+    """
+    assert ProviderRow(_provider_fixture()).can_focus is True
