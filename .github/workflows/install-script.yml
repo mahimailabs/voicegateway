@@ -1,0 +1,60 @@
+name: install.sh container matrix
+
+# Verifies install.sh runs cleanly inside fresh Ubuntu LTS, Debian, and
+# Fedora containers (REQ-VG-ONBOARD-001 + the install.sh half of
+# REQ-VG-ONBOARD-007). Each distro runs as a parallel matrix job so a
+# regression in one image does not mask passes elsewhere.
+#
+# Runs only when install.sh or the test runner changes, plus on pushes
+# to feat/daemon-first-onboarding so we get signal during v0.1.0
+# development. Manual dispatch is wired up for ad-hoc verification.
+
+on:
+  pull_request:
+    paths:
+      - 'install.sh'
+      - 'tests/cli/_pipx_stub.sh'
+      - 'tests/cli/test_install_script.sh'
+      - '.github/workflows/install-script.yml'
+  push:
+    branches:
+      - feat/daemon-first-onboarding
+    paths:
+      - 'install.sh'
+      - 'tests/cli/_pipx_stub.sh'
+      - 'tests/cli/test_install_script.sh'
+      - '.github/workflows/install-script.yml'
+  workflow_dispatch:
+
+jobs:
+  install-script:
+    name: install.sh / ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - ubuntu:24.04
+          - debian:12
+          - fedora:40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify Docker is available
+        run: |
+          docker --version
+          docker info >/dev/null
+
+      - name: Pre-pull base image
+        # Pulling out-of-band gives clearer failure attribution if the
+        # registry is flaking and avoids the test timing out on a slow
+        # cold pull. Matrix value is funneled through env so the run
+        # block never interpolates ${{ ... }} directly into the shell.
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: docker pull "$IMAGE"
+
+      - name: Run install.sh inside container
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: bash tests/cli/test_install_script.sh --image "$IMAGE"
