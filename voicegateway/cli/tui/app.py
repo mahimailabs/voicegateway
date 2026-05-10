@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.widget import Widget
 from textual.widgets import ContentSwitcher, Footer, Header
 
 from voicegateway.cli.tui.data import MetricsClient
@@ -125,6 +126,7 @@ class TUIApp(App[None]):
         """
         switcher = self.query_one("#content", ContentSwitcher)
         switcher.current = tab_id
+        self._focus_active_tab()
 
     def action_cycle_tab(self, delta: int) -> None:
         """Cycle through ``_TAB_IDS`` by ``delta`` (wrap-around).
@@ -145,6 +147,36 @@ class TUIApp(App[None]):
             idx = 0
         new_idx = (idx + delta) % len(_TAB_IDS)
         switcher.current = _TAB_IDS[new_idx]
+        self._focus_active_tab()
+
+    def _focus_active_tab(self) -> None:
+        """Move keyboard focus into the active tab.
+
+        Each tab declares its own per-tab vim BINDINGS (``s`` on
+        SessionsScreen, ``r`` on CostsScreen, ``/`` on LogsScreen,
+        ``t`` on ProvidersScreen). Textual's binding resolution
+        starts from the focused widget and walks up the DOM tree,
+        so a screen's bindings only fire when something in its
+        subtree holds focus. ContentSwitcher does not transfer
+        focus on ``current=`` change, so this method does it
+        explicitly: prefer the new tab's first focusable
+        descendant, fall back to the screen Container itself when
+        none of its children are focusable (e.g. CostsScreen,
+        whose Label + Static rows are passive).
+        """
+        switcher = self.query_one("#content", ContentSwitcher)
+        if switcher.current is None:
+            return
+        new_active = switcher.query_one(f"#{switcher.current}")
+        # walk_children's annotation is DOMNode; the runtime values
+        # are Widget instances so the isinstance guard satisfies mypy
+        # without a runtime cost.
+        for descendant in new_active.walk_children():
+            if isinstance(descendant, Widget) and descendant.can_focus:
+                descendant.focus()
+                return
+        if new_active.can_focus:
+            new_active.focus()
 
     def action_help(self) -> None:
         """Help-overlay placeholder.
