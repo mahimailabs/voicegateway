@@ -4,14 +4,16 @@ genai-prices is LLM-focused and does not cover TTS, so VG keeps TTS
 pricing in this small local catalog. Each entry carries:
 
 - `per_character`: USD per character (Decimal for exact arithmetic).
-- `pricing_source_date`: the date the rate was last verified against
-  the provider's pricing page.
+- `pricing_source_date`: the date the maintainer last verified the
+  rate against the provider's pricing page. Per-entry so a refresh of
+  one provider does not lie about the other entries' freshness.
 - `pricing_source_url`: that pricing page.
 
-Phase 2.6 enforces a 60-day staleness gate in CI: any entry whose
-`pricing_source_date` is more than 60 days old fails the build,
-forcing a manual refresh per release. This trades ongoing
-maintenance for an honest, verifiable catalog.
+`tests/pricing/test_staleness.py` enforces a 60-day staleness gate in
+CI: any entry whose ``pricing_source_date`` is more than 60 days
+older than ``date.today()`` fails the build, forcing per-entry
+refreshes. See `docs/contributing/refreshing-pricing.md` for the
+maintenance flow.
 
 A note on credit-based providers (Cartesia, in particular):
 Cartesia bills by audio-seconds via a credit system rather than by
@@ -19,8 +21,8 @@ input characters. The per-character rate stored here is an estimate
 that depends on the user's plan tier and the audio characteristics
 of their workload (characters-per-second varies). Estimates can
 drift by tens of percent. Reconcile against your provider invoice
-via `voicegw reconcile` (Phase 4) to verify; the per-request
-attribution string makes this auditable.
+via `voicegw reconcile` to verify; the per-request attribution
+string makes this auditable.
 """
 
 from __future__ import annotations
@@ -37,9 +39,6 @@ class TTSEntry:
     pricing_source_url: str
 
 
-# Refresh date for the v0.1.0 baseline.
-_REFRESHED = date(2026, 5, 4)
-
 CATALOG: dict[str, TTSEntry] = {
     "cartesia/sonic-3": TTSEntry(
         # ESTIMATE. Cartesia bills by audio-seconds via credits,
@@ -48,32 +47,32 @@ CATALOG: dict[str, TTSEntry] = {
         # tens of percent depending on plan tier and audio cps.
         # Reconcile against your invoice for accurate FinOps.
         per_character=Decimal("0.000065"),
-        pricing_source_date=_REFRESHED,
+        pricing_source_date=date(2026, 5, 4),
         pricing_source_url="https://cartesia.ai/pricing",
     ),
     "elevenlabs/eleven_turbo_v2_5": TTSEntry(
         per_character=Decimal("0.00018"),
-        pricing_source_date=_REFRESHED,
+        pricing_source_date=date(2026, 5, 4),
         pricing_source_url="https://elevenlabs.io/pricing",
     ),
     "deepgram/aura-2": TTSEntry(
         per_character=Decimal("0.000065"),
-        pricing_source_date=_REFRESHED,
+        pricing_source_date=date(2026, 5, 4),
         pricing_source_url="https://deepgram.com/pricing",
     ),
     "openai/tts-1": TTSEntry(
         per_character=Decimal("0.000015"),
-        pricing_source_date=_REFRESHED,
+        pricing_source_date=date(2026, 5, 4),
         pricing_source_url="https://openai.com/api/pricing/",
     ),
     "local/kokoro": TTSEntry(
         per_character=Decimal("0"),
-        pricing_source_date=_REFRESHED,
+        pricing_source_date=date(2026, 5, 4),
         pricing_source_url="https://github.com/hexgrad/kokoro",
     ),
     "local/piper": TTSEntry(
         per_character=Decimal("0"),
-        pricing_source_date=_REFRESHED,
+        pricing_source_date=date(2026, 5, 4),
         pricing_source_url="https://github.com/rhasspy/piper",
     ),
 }

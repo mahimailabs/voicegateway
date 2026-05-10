@@ -84,22 +84,22 @@ models:
 
 ### 3. Replace LiteLLM calls in your LiveKit agent
 
-Where your LiveKit agent currently uses raw provider plugins or LiteLLM-backed factories, switch to `gw.stt()`, `gw.llm()`, `gw.tts()`. They return native LiveKit plugin instances that drop straight into `AgentSession`:
+Where your LiveKit agent currently uses raw provider plugins or LiteLLM-backed factories, switch to `voicegateway.inference`. The factories return native LiveKit plugin instances that drop straight into `AgentSession`:
 
 ```python
-from voicegateway import Gateway
+from voicegateway import inference
 from livekit.agents import AgentSession
 
-gw = Gateway()
-
+# Either set default_project: my-app in voicegw.yaml or call
+# inference.set_project("my-app") here.
 session = AgentSession(
-    stt=gw.stt("deepgram/nova-3", project="my-app"),
-    llm=gw.llm("openai/gpt-4o-mini", project="my-app"),
-    tts=gw.tts("cartesia/sonic-3", project="my-app"),
+    stt=inference.STT("deepgram/nova-3"),
+    llm=inference.LLM("openai/gpt-4o-mini"),
+    tts=inference.TTS("cartesia/sonic-3"),
 )
 ```
 
-For non-agent text workloads, keep using LiteLLM. The Gateway is not intended to replace it for that path.
+For non-agent text workloads, keep using LiteLLM. VoiceGateway is not intended to replace it for that path.
 
 ### 4. Add a project budget
 

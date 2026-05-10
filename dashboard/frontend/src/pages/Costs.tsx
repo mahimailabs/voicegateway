@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import CostChart from '../components/CostChart';
+import StalenessBanner from '../components/StalenessBanner';
 import { fetchJson } from '../lib/api';
 import { formatCost } from '../lib/ui';
 import type { CostsResponse } from '../lib/types';
@@ -18,6 +19,7 @@ export default function Costs() {
 
   return (
     <div>
+      <StalenessBanner />
       <PageHeader title="Costs" subtitle={`Period: ${data.period}`} accent="green" />
 
       <div className="neo-card neo-card--strip-green mb-lg">
@@ -38,6 +40,7 @@ export default function Costs() {
                 <th>Model</th>
                 <th>Requests</th>
                 <th>Cost</th>
+                <th>Pricing source</th>
               </tr>
             </thead>
             <tbody>
@@ -48,10 +51,23 @@ export default function Costs() {
                     <span className="neo-badge neo-badge--black">{info.requests}</span>
                   </td>
                   <td className="mono">{formatCost(info.cost, 6)}</td>
+                  <td className="mono" style={{ fontSize: 11 }}>
+                    {info.pricing_source ?? '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <div
+            className="label mt-md"
+            style={{ fontStyle: 'italic', opacity: 0.8 }}
+          >
+            Costs are estimates from the pricing sources above. Run{' '}
+            <span className="mono">
+              voicegw reconcile --provider &lt;name&gt; --provider-usage-file &lt;file&gt;
+            </span>{' '}
+            to verify against your provider invoice.
+          </div>
         </div>
       )}
     </div>

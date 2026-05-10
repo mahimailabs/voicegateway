@@ -12,6 +12,10 @@ interface ProjectEntry {
   tags: string[];
   default_stack: string;
   accent: string;
+  // v0.0.5: "yaml" (defined in voicegw.yaml), "db" (created via the
+  // dashboard or MCP), or "auto" (the first-run default the gateway
+  // populates when no projects: block exists yet).
+  source?: string;
 }
 
 interface ProjectStats {
@@ -58,7 +62,7 @@ export default function Projects() {
             <div key={p.id} className="neo-card neo-card--strip-orange">
               <div className="flex-row" style={{ justifyContent: 'space-between' }}>
                 <strong>{p.name}</strong>
-                <SourceBadge source={'source' in p ? String((p as {source?: string}).source) : 'yaml'} />
+                <SourceBadge source={p.source ?? 'yaml'} />
               </div>
               <div className="label mt-sm">{p.description || p.id}</div>
 

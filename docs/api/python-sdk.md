@@ -1,6 +1,8 @@
 # Python SDK Reference
 
-The `Gateway` class is the main entry point for VoiceGateway. It routes STT, LLM, and TTS requests to configured providers, applying middleware (cost tracking, latency monitoring, rate limiting, budget enforcement, fallback chains) transparently.
+VoiceGateway exposes a single public Python surface as of v0.0.5: the `voicegateway.inference` module, a drop-in mirror of `livekit.agents.inference`. New agent code uses it; existing LiveKit Cloud Inference code migrates with one import-line change.
+
+Cost queries, project management, latency stats, and request logs live outside the Python SDK. Use the [CLI](/cli/), the [HTTP API](/api/http-api), the [dashboard](/), or the [MCP tools](/mcp/) for those.
 
 ## Installation
 
@@ -13,382 +15,171 @@ pip install "voicegateway[openai,deepgram,cartesia]"
 ## Import
 
 ```python
-from voicegateway import Gateway, ModelId, GatewayConfig
+from voicegateway import inference
 ```
 
-## Gateway
+The `inference` submodule is the only documented public entry point. The internal `voicegateway.core.gateway.Gateway` class still exists for the CLI, HTTP server, and MCP runtime, but it is not part of the supported Python SDK and may change without notice.
 
-### Constructor
+## `inference.STT`
 
 ```python
-Gateway(config_path: str | None = None)
+inference.STT(
+    model: NotGivenOr[STTModels | str] = NOT_GIVEN,
+    *,
+    language: NotGivenOr[str] = NOT_GIVEN,
+    base_url: NotGivenOr[str] = NOT_GIVEN,
+    encoding: NotGivenOr[STTEncoding] = NOT_GIVEN,
+    sample_rate: NotGivenOr[int] = NOT_GIVEN,
+    api_key: NotGivenOr[str] = NOT_GIVEN,
+    api_secret: NotGivenOr[str] = NOT_GIVEN,
+    http_session: aiohttp.ClientSession | None = None,
+    extra_kwargs: NotGivenOr[dict | DeepgramOptions | ...] = NOT_GIVEN,
+    fallback: NotGivenOr[list[FallbackModelType] | FallbackModelType] = NOT_GIVEN,
+    conn_options: NotGivenOr[APIConnectOptions] = NOT_GIVEN,
+)
 ```
-
-**Arguments:**
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `config_path` | `str \| None` | `None` | Path to `voicegw.yaml`. If `None`, searches in order: `./voicegw.yaml`, `./gateway.yaml` (legacy), `~/.config/voicegateway/voicegw.yaml`, `/etc/voicegateway/voicegw.yaml`. |
-
-**Example:**
 
 ```python
-from voicegateway import Gateway
+from voicegateway import inference
 
-# Auto-discover config
-gw = Gateway()
-
-# Explicit path
-gw = Gateway(config_path="/etc/voicegateway/voicegw.yaml")
+stt = inference.STT("deepgram/nova-3:en")
+# Trailing :en parses as the language (mirrors LK STT).
 ```
 
-### Properties
+The `model` string parses as `provider/model[:language]`. Provider names are validated against the eleven supported types (`openai`, `deepgram`, `cartesia`, `anthropic`, `groq`, `elevenlabs`, `assemblyai`, `ollama`, `whisper`, `kokoro`, `piper`). The `api_key` kwarg, when given, overrides the project's resolved key for this one instance — useful for testing.
 
-#### `config`
+`api_secret`, `fallback`, and `conn_options` are accepted for drop-in compatibility but emit a `UserWarning`; v0.0.6+ will honor `fallback`.
+
+## `inference.LLM`
 
 ```python
-@property
-def config(self) -> GatewayConfig
+inference.LLM(
+    model: LLMModels | str,
+    *,
+    provider: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    api_secret: str | None = None,
+    inference_class: InferenceClass | None = None,
+    extra_kwargs: ChatCompletionOptions | dict | None = None,
+)
 ```
-
-Returns the current gateway configuration object. Read-only.
-
-#### `storage`
 
 ```python
-@property
-def storage(self) -> SQLiteStorage | None
+llm = inference.LLM("openai/gpt-4o-mini")
+
+# Ollama tags are preserved: LLM does NOT strip the trailing colon
+# segment (only STT and TTS do).
+llm = inference.LLM("ollama/qwen2.5:3b")
+
+# Explicit provider= overrides any leading "<provider>/" segment in
+# the model string. Useful when the model name itself has no slash.
+llm = inference.LLM("gpt-4o-mini", provider="openai")
 ```
 
-Returns the SQLite storage backend if cost tracking is enabled, otherwise `None`.
+LLM uses `None` defaults instead of `NotGivenOr` to match LK's LLM shape. There is no `fallback`, `conn_options`, or `http_session` parameter; those are STT/TTS-specific.
 
-#### `cost_tracker`
+## `inference.TTS`
 
 ```python
-@property
-def cost_tracker(self) -> CostTracker
+inference.TTS(
+    model: TTSModels | str,
+    *,
+    voice: NotGivenOr[str] = NOT_GIVEN,
+    language: NotGivenOr[str] = NOT_GIVEN,
+    encoding: NotGivenOr[TTSEncoding] = NOT_GIVEN,
+    sample_rate: NotGivenOr[int] = NOT_GIVEN,
+    base_url: NotGivenOr[str] = NOT_GIVEN,
+    api_key: NotGivenOr[str] = NOT_GIVEN,
+    api_secret: NotGivenOr[str] = NOT_GIVEN,
+    http_session: aiohttp.ClientSession | None = None,
+    extra_kwargs: NotGivenOr[dict | CartesiaOptions | ...] = NOT_GIVEN,
+    fallback: NotGivenOr[list[FallbackModelType] | FallbackModelType] = NOT_GIVEN,
+    conn_options: NotGivenOr[APIConnectOptions] = NOT_GIVEN,
+)
 ```
-
-Returns the cost tracker middleware instance.
-
----
-
-## Model Resolution Methods
-
-### `stt()`
 
 ```python
-def stt(
-    model_id: str,
-    project: str | None = None,
-    **kwargs: Any
-) -> Any
+tts = inference.TTS("cartesia/sonic-3:my-voice-id")
+# Trailing :my-voice-id parses as the voice (mirrors LK TTS).
+
+# Or explicit voice kwarg:
+tts = inference.TTS("cartesia/sonic-3", voice="my-voice-id")
 ```
 
-Create an STT (speech-to-text) provider instance for the given model ID.
+Same shape as STT, plus a `voice` kwarg. The trailing colon-suffix in the model string parses as voice (NOT language) — that is the semantic asymmetry between STT and TTS that LiveKit defines.
 
-**Arguments:**
+## Project routing
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `model_id` | `str` | required | Model identifier in `"provider/model"` format (e.g., `"deepgram/nova-3"`). |
-| `project` | `str \| None` | `None` | Project ID to tag requests with for cost tracking. Falls back to `"default"`. |
-| `**kwargs` | `Any` | | Additional provider-specific options passed to the resolver. |
-
-**Returns:** A provider instance wrapped with instrumentation middleware (cost tracking, latency monitoring).
-
-**Raises:**
-- `ValueError` if the model ID cannot be resolved.
-- `BudgetExceededError` if the project's daily budget has been exceeded and `budget_action` is `"block"`.
-
-**Example:**
+### `inference.set_project`
 
 ```python
-gw = Gateway()
-
-# Basic usage
-stt = gw.stt("deepgram/nova-3")
-
-# With project tracking
-stt = gw.stt("deepgram/nova-3", project="tonys-pizza")
+inference.set_project(name: str) -> None
 ```
-
-### `llm()`
 
 ```python
-def llm(
-    model_id: str,
-    project: str | None = None,
-    **kwargs: Any
-) -> Any
+from voicegateway import inference
+
+inference.set_project("tony-pizza")
+stt = inference.STT("deepgram/nova-3")  # uses tony-pizza's key
 ```
 
-Create an LLM (large language model) provider instance.
+Sets the active project for the current async context. The setting inherits across awaited coroutines but is isolated across separate `asyncio.Task` instances.
 
-**Arguments:**
+Resolution order for the active project:
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `model_id` | `str` | required | Model identifier in `"provider/model"` format. |
-| `project` | `str \| None` | `None` | Project ID for cost tracking. |
-| `**kwargs` | `Any` | | Additional provider-specific options. |
+1. `inference.set_project(name)` in the current context.
+2. `VOICEGW_ACTIVE_PROJECT` environment variable.
+3. `default_project` field in `voicegw.yaml`.
+4. The literal `"default"`. The gateway auto-creates a project of this id on first run, so the fallback is always backed by a real row.
 
-**Returns:** A provider instance wrapped with instrumentation middleware.
-
-**Example:**
+### `inference.get_active_project`
 
 ```python
-llm = gw.llm("openai/gpt-4o-mini", project="my-app")
-llm = gw.llm("anthropic/claude-sonnet-4-20250514")
-llm = gw.llm("groq/llama-3.3-70b-versatile")
+inference.get_active_project() -> str
 ```
 
-### `tts()`
+Returns the active project name following the resolution order above.
 
 ```python
-def tts(
-    model_id: str,
-    project: str | None = None,
-    **kwargs: Any
-) -> Any
+from voicegateway import inference
+
+print(f"Resolving keys for project: {inference.get_active_project()}")
 ```
 
-Create a TTS (text-to-speech) provider instance.
+## Session correlation
 
-**Arguments:**
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `model_id` | `str` | required | Model identifier in `"provider/model"` format. For local TTS, use `"local/model:voice"` to select a voice variant. |
-| `project` | `str \| None` | `None` | Project ID for cost tracking. |
-| `**kwargs` | `Any` | | Additional provider-specific options. |
-
-**Returns:** A provider instance wrapped with instrumentation middleware.
-
-**Example:**
+### `inference.start_session`
 
 ```python
-tts = gw.tts("cartesia/sonic-3", project="my-app")
-tts = gw.tts("local/kokoro:af_heart")  # local model with voice variant
+inference.start_session() -> str
 ```
 
-### `stack()`
+VoiceGateway tags every STT, LLM, and TTS call from the same async context with one shared `session_id` (`"vg-<uuid4>"`). Inside `AgentSession` this happens automatically: the first factory constructed in a context creates the id, the others inherit it. The id is written to `requests.session_id` and accumulates into the `sessions` table.
+
+The standard `livekit-agents` worker spawns a fresh task per call, so the ContextVar starts clean and `start_session` is unnecessary. Worker patterns that handle multiple conversations sequentially in a single asyncio task need to call `start_session()` at the top of each conversation handler; otherwise the second conversation reuses the first's id.
 
 ```python
-def stack(
-    name: str,
-    project: str | None = None,
-    **kwargs: Any
-) -> tuple[Any, Any, Any]
+from voicegateway import inference
+
+async def handle_conversation():
+    session_id = inference.start_session()  # rolls a fresh id
+    stt = inference.STT("deepgram/nova-3")
+    llm = inference.LLM("openai/gpt-4o-mini")
+    tts = inference.TTS("cartesia/sonic-3")
+    # ... session_id is shared across all three modalities ...
 ```
 
-Resolve a named stack into an `(stt, llm, tts)` tuple. Stacks are defined in `voicegw.yaml` under the `stacks:` section.
-
-**Arguments:**
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `name` | `str` | required | Stack name (e.g., `"premium"`, `"budget"`, `"local"`). |
-| `project` | `str \| None` | `None` | Project ID for cost tracking. |
-| `**kwargs` | `Any` | | Additional provider-specific options. |
-
-**Returns:** A tuple of `(stt_instance, llm_instance, tts_instance)`. Any component not defined in the stack will be `None`.
-
-**Raises:** `ValueError` if the stack name is not defined in the config.
-
-**Example:**
-
-```python
-# voicegw.yaml:
-# stacks:
-#   premium:
-#     stt: deepgram/nova-3
-#     llm: openai/gpt-4o-mini
-#     tts: cartesia/sonic-3
-
-stt, llm, tts = gw.stack("premium", project="my-app")
-```
-
----
-
-## Fallback Methods
-
-### `stt_with_fallback()`
-
-```python
-def stt_with_fallback(
-    project: str | None = None,
-    **kwargs: Any
-) -> Any
-```
-
-Create an STT instance using the configured fallback chain. If the primary provider fails, the gateway automatically tries the next provider in the chain.
-
-**Arguments:**
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `project` | `str \| None` | `None` | Project ID for cost tracking. |
-| `**kwargs` | `Any` | | Additional provider-specific options. |
-
-**Returns:** A provider instance with automatic fallback behavior.
-
-**Raises:** `ValueError` if no STT fallback chain is configured.
-
-**Example:**
-
-```python
-# voicegw.yaml:
-# fallbacks:
-#   stt: [deepgram/nova-3, assemblyai/universal, local/whisper-large-v3]
-
-stt = gw.stt_with_fallback(project="production")
-```
-
-### `llm_with_fallback()`
-
-```python
-def llm_with_fallback(
-    project: str | None = None,
-    **kwargs: Any
-) -> Any
-```
-
-Create an LLM instance using the configured fallback chain.
-
-**Arguments:** Same as `stt_with_fallback()`.
-
-**Raises:** `ValueError` if no LLM fallback chain is configured.
-
-### `tts_with_fallback()`
-
-```python
-def tts_with_fallback(
-    project: str | None = None,
-    **kwargs: Any
-) -> Any
-```
-
-Create a TTS instance using the configured fallback chain.
-
-**Arguments:** Same as `stt_with_fallback()`.
-
-**Raises:** `ValueError` if no TTS fallback chain is configured.
-
----
-
-## Query Methods
-
-### `status()`
-
-```python
-def status(project: str | None = None) -> dict
-```
-
-Return the status of all configured providers.
-
-**Arguments:**
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `project` | `str \| None` | `None` | Currently unused (kept for API parity with `costs()`). |
-
-**Returns:** A dict with provider status information including whether each provider is configured and its type (cloud/local).
-
-**Example:**
-
-```python
-status = gw.status()
-for provider, info in status.items():
-    print(f"{provider}: configured={info['configured']}")
-```
-
-### `costs()`
-
-```python
-def costs(
-    period: str = "today",
-    project: str | None = None
-) -> dict
-```
-
-Return cost summary for the given period.
-
-**Arguments:**
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `period` | `str` | `"today"` | Time period: `"today"`, `"week"`, `"month"`, or `"all"`. |
-| `project` | `str \| None` | `None` | Filter by project ID. If `None`, returns costs for all projects. |
-
-**Returns:** A dict with keys `total` (float), `by_provider` (dict), `by_model` (dict). Returns zeros if cost tracking is disabled.
-
-**Example:**
-
-```python
-costs = gw.costs("week", project="tonys-pizza")
-print(f"Weekly spend: ${costs['total']:.4f}")
-for provider, data in costs["by_provider"].items():
-    print(f"  {provider}: ${data['cost']:.4f} ({data['requests']} requests)")
-```
-
-### `list_projects()`
-
-```python
-def list_projects() -> list[dict[str, Any]]
-```
-
-Return all configured projects as a list of serializable dicts.
-
-**Returns:** A list of dicts, each containing: `id`, `name`, `description`, `daily_budget`, `default_stack`, `tags`, `accent`.
-
-**Example:**
-
-```python
-for project in gw.list_projects():
-    print(f"{project['id']}: {project['name']} (budget: ${project['daily_budget']}/day)")
-```
-
-### `refresh_config()`
-
-```python
-async def refresh_config() -> None
-```
-
-Reload the configuration from YAML and SQLite. Called automatically after any managed resource write (provider/model/project creation or deletion). You can call this manually if you edit `voicegw.yaml` while the gateway is running.
-
-**Example:**
-
-```python
-import asyncio
-asyncio.run(gw.refresh_config())
-```
-
----
-
-## Helper Classes
-
-### `ModelId`
-
-```python
-from voicegateway import ModelId
-
-parsed = ModelId.parse("deepgram/nova-3:en")
-print(parsed.provider)   # "deepgram"
-print(parsed.model)      # "nova-3"
-```
-
-Parses `provider/model` and `provider/model:variant` format strings.
-
-### `GatewayConfig`
-
-```python
-from voicegateway import GatewayConfig
-
-config = GatewayConfig.load("voicegw.yaml")
-print(config.providers)
-print(config.models)
-print(config.projects)
-```
-
-The YAML configuration parser with `${ENV_VAR}` substitution support.
+The known gap: factories constructed in separate `asyncio.Task` instances created **before** the session opens get their own ids. Construct factories at session entry, not at module import time. See the [from-livekit-inference migration guide](/migration/from-livekit-inference#limitations) for details.
+
+## Operations: where to go
+
+| You want to | Use this |
+|---|---|
+| List projects | `voicegw projects` (CLI), `GET /v1/projects` (HTTP), `list_projects` (MCP) |
+| See costs | `voicegw costs` (CLI), `GET /v1/costs` (HTTP), `get_costs` (MCP), the dashboard |
+| Tail recent requests | `voicegw logs` (CLI), `GET /v1/logs` (HTTP), `get_logs` (MCP) |
+| Add or rotate a provider key | `vg_add_provider` / `vg_set_provider_key` (MCP), the dashboard Providers page |
+| Reconcile against an invoice | `voicegw reconcile --provider <name> --provider-usage-file <path>` |
+
+The Python SDK does not include these helpers; they live in the surfaces above.

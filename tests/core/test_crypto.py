@@ -14,6 +14,7 @@ from voicegateway.core.crypto import (
     is_fernet_token,
     mask,
     reset_fernet,
+    rotate_token,
 )
 
 
@@ -24,6 +25,7 @@ def _reset_crypto(monkeypatch, tmp_path):
     secret_file = tmp_path / ".secret"
     monkeypatch.setattr("voicegateway.core.crypto._SECRET_FILE", secret_file)
     monkeypatch.delenv("VOICEGW_SECRET", raising=False)
+    monkeypatch.delenv("VOICEGW_SECRET_FALLBACK", raising=False)
     yield
     reset_fernet()
 
@@ -103,3 +105,149 @@ def test_is_fernet_token():
     assert is_fernet_token(ct) is True
     assert is_fernet_token("not-a-token") is False
     assert is_fernet_token("") is False
+
+
+# ---------------------------------------------------------------------------
+# MultiFernet rotation (Q10)
+# ---------------------------------------------------------------------------
+
+
+def _generate_key() -> str:
+    from cryptography.fernet import Fernet
+
+    return Fernet.generate_key().decode()
+
+
+def test_fallback_decrypts_old_token(monkeypatch):
+    """A token encrypted under key A is still decryptable when A is
+    moved to VOICEGW_SECRET_FALLBACK and a new key B becomes the
+    primary VOICEGW_SECRET. Critical for the rotation window between
+    rolling out the new key and running ``voicegw rotate-secret``.
+    """
+    old_key = _generate_key()
+    monkeypatch.setenv("VOICEGW_SECRET", old_key)
+    reset_fernet()
+    ciphertext = encrypt("sk-original")
+
+    # Operator stages a rotation: new primary, old key as fallback.
+    new_key = _generate_key()
+    monkeypatch.setenv("VOICEGW_SECRET", new_key)
+    monkeypatch.setenv("VOICEGW_SECRET_FALLBACK", old_key)
+    reset_fernet()
+
+    assert decrypt(ciphertext) == "sk-original"
+
+
+def test_decrypt_fails_when_neither_primary_nor_fallback_match(monkeypatch):
+    monkeypatch.setenv("VOICEGW_SECRET", _generate_key())
+    reset_fernet()
+    ciphertext = encrypt("secret")
+
+    monkeypatch.setenv("VOICEGW_SECRET", _generate_key())
+    monkeypatch.setenv("VOICEGW_SECRET_FALLBACK", _generate_key())
+    reset_fernet()
+
+    with pytest.raises(ValueError, match="rotate-secret"):
+        decrypt(ciphertext)
+
+
+def test_multiple_fallback_keys_separated_by_commas(monkeypatch):
+    """VOICEGW_SECRET_FALLBACK accepts a comma-separated list so an
+    operator can stage two consecutive rotations without losing
+    access to the oldest tokens.
+    """
+    oldest = _generate_key()
+    middle = _generate_key()
+    newest = _generate_key()
+
+    monkeypatch.setenv("VOICEGW_SECRET", oldest)
+    reset_fernet()
+    oldest_ct = encrypt("oldest-data")
+
+    monkeypatch.setenv("VOICEGW_SECRET", middle)
+    monkeypatch.setenv("VOICEGW_SECRET_FALLBACK", oldest)
+    reset_fernet()
+    middle_ct = encrypt("middle-data")
+
+    monkeypatch.setenv("VOICEGW_SECRET", newest)
+    monkeypatch.setenv("VOICEGW_SECRET_FALLBACK", f"{middle},{oldest}")
+    reset_fernet()
+
+    assert decrypt(oldest_ct) == "oldest-data"
+    assert decrypt(middle_ct) == "middle-data"
+    new_ct = encrypt("newest-data")
+    assert decrypt(new_ct) == "newest-data"
+
+
+def test_fallback_env_with_trailing_comma_is_tolerated(monkeypatch):
+    old_key = _generate_key()
+    monkeypatch.setenv("VOICEGW_SECRET", old_key)
+    reset_fernet()
+    ciphertext = encrypt("payload")
+
+    monkeypatch.setenv("VOICEGW_SECRET", _generate_key())
+    monkeypatch.setenv("VOICEGW_SECRET_FALLBACK", f"{old_key},")  # trailing comma
+    reset_fernet()
+
+    assert decrypt(ciphertext) == "payload"
+
+
+def test_rotate_token_re_encrypts_under_primary(monkeypatch):
+    """rotate_token() decrypts via any configured key and re-encrypts
+    via the primary, returning a token the new primary alone can
+    read. After rotation, removing the fallback no longer breaks
+    decrypt.
+    """
+    old_key = _generate_key()
+    monkeypatch.setenv("VOICEGW_SECRET", old_key)
+    reset_fernet()
+    old_ct = encrypt("rotate-me")
+
+    new_key = _generate_key()
+    monkeypatch.setenv("VOICEGW_SECRET", new_key)
+    monkeypatch.setenv("VOICEGW_SECRET_FALLBACK", old_key)
+    reset_fernet()
+
+    new_ct = rotate_token(old_ct)
+    assert new_ct != old_ct
+    assert decrypt(new_ct) == "rotate-me"
+
+    # Operator now removes the fallback. The rotated ciphertext
+    # still decrypts under the new primary alone.
+    monkeypatch.delenv("VOICEGW_SECRET_FALLBACK", raising=False)
+    reset_fernet()
+    assert decrypt(new_ct) == "rotate-me"
+
+
+def test_rotate_token_passthrough_on_empty():
+    assert rotate_token("") == ""
+
+
+def test_rotate_token_raises_when_no_key_decrypts(monkeypatch):
+    monkeypatch.setenv("VOICEGW_SECRET", _generate_key())
+    reset_fernet()
+    ciphertext = encrypt("x")
+
+    # Cycle to an unrelated primary, no fallback at all.
+    monkeypatch.setenv("VOICEGW_SECRET", _generate_key())
+    reset_fernet()
+
+    with pytest.raises(ValueError, match="VOICEGW_SECRET_FALLBACK"):
+        rotate_token(ciphertext)
+
+
+def test_encrypt_uses_primary_when_fallback_set(monkeypatch):
+    """A token freshly encrypted with both primary and fallback set
+    must decrypt under the primary alone afterwards. Guards against
+    accidentally encrypting under the fallback.
+    """
+    old_key = _generate_key()
+    new_key = _generate_key()
+    monkeypatch.setenv("VOICEGW_SECRET", new_key)
+    monkeypatch.setenv("VOICEGW_SECRET_FALLBACK", old_key)
+    reset_fernet()
+    ciphertext = encrypt("fresh")
+
+    monkeypatch.delenv("VOICEGW_SECRET_FALLBACK", raising=False)
+    reset_fernet()
+    assert decrypt(ciphertext) == "fresh"

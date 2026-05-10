@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: "en-US"
+early_access: false
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_instructions:
+    - path: "**/*.py"
+      instructions: |
+        Review Python with awareness of the LiveKit Agents + FastAPI + SQLite stack. Ensure:
+          - Each public function and class has a docstring covering purpose, parameters, return.
+          - Avoid generic exception handling (e.g., `except Exception`) unless re-raised or logged with context.
+          - Prefer typing.Protocol over abstract base classes for plugin/middleware interfaces.
+          - Async path is async all the way down — flag any blocking I/O on the async path.
+    - path: "voicegateway/inference/**/*.py"
+      instructions: |
+        This module is the drop-in replacement for `livekit.agents.inference`. Additionally:
+          - Constructor signatures must mirror upstream LiveKit exactly. Flag any added or removed parameters.
+          - Use `NotGivenOr` and `NOT_GIVEN` from `livekit.agents` for parameter defaults, not `None`.
+          - Session correlation goes through the `_session_context.ContextVar`, never a thread-local or a global.
+    - path: "voicegateway/middleware/**/*.py"
+      instructions: |
+        Middleware wraps provider plugin calls. Additionally:
+          - Cost tracking writes must include the current `session_id` from the ContextVar.
+          - Latency measurements must use `time.monotonic`, not `time.time`.
+          - Failures in middleware must never crash the underlying request. Log and continue.
+    - path: "voicegateway/storage/**/*.py"
+      instructions: |
+        SQLite storage layer. Additionally:
+          - All migrations must be idempotent (`CREATE TABLE IF NOT EXISTS`, guarded `ALTER TABLE`).
+          - Existing rows must be preserved or migrated, never dropped silently.
+          - Indexed any new foreign-key column.
+    - path: "voicegateway/pricing/**/*.py"
+      instructions: |
+        Pricing catalog. Additionally:
+          - Every catalog entry must carry its own `pricing_source_date` and `pricing_source_url`. Reject shared `_REFRESHED` constants.
+          - Catalog entries past the 60-day staleness gate need a refresh, not silent acceptance.
+          - Prices use `Decimal`, never `float`.
+    - path: "voicegateway/mcp/**/*.py"
+      instructions: |
+        MCP tools. Additionally:
+          - Every tool must respect bearer-token auth via `mcp/auth.py`.
+          - Destructive operations (write, delete, rotate) must require a `confirm` argument.
+          - Any sensitive value at rest goes through `voicegateway/core/crypto.py` Fernet. No plaintext keys in DB or logs.
+          - Responses are structured JSON, never prose.
+    - path: "voicegateway/providers/**/*.py"
+      instructions: |
+        Provider plugins. Additionally:
+          - Each provider extends `BaseProvider` from `providers/base.py`.
+          - Provider-specific kwargs go through `extra_kwargs`, not new top-level parameters.
+    - path: "tests/**/*.py"
+      instructions: |
+        Tests. Additionally:
+          - Avoid broad `except Exception` in tests. Each assertion failure should surface naturally.
+          - Use the in-memory MCP fixture for MCP tests, never a live server.
+          - Migration tests must use frozen fixtures from `tests/fixtures/sqlite/`. Never regenerate fixtures in-place.
+          - Integration tests are gated by the `integration` marker. CI runs them nightly with secrets, not on every PR.
+    - path: "dashboard/api/**/*.py"
+      instructions: |
+        Dashboard backend. Additionally:
+          - Route handlers use proper response models and HTTP status codes.
+          - Pydantic models for request/response, never raw `dict`.
+          - All routes go through the existing dashboard auth, never bypass.
+    - path: "dashboard/frontend/**/*.{ts,tsx}"
+      instructions: |
+        Dashboard frontend. Additionally:
+          - State management stays inside React components or hooks. No global mutable state.
+          - Recharts is the chart library. Do not introduce additional chart libs.
+          - All API calls go through the typed client in `dashboard/frontend/src/lib/api.ts`.
+chat:
+  auto_reply: true

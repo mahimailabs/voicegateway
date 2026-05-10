@@ -16,19 +16,17 @@ As your project grows, so do the operational headaches:
 
 ## The solution
 
-VoiceGateway solves these problems with a thin routing layer that normalizes provider interfaces behind a consistent API. You describe your providers, models, and policies in a single YAML file (`voicegw.yaml`), then call `gw.stt()`, `gw.llm()`, and `gw.tts()` from your Python code. VoiceGateway handles the rest: provider instantiation, middleware execution (cost tracking, latency monitoring, rate limiting), fallback chains, and budget enforcement.
+VoiceGateway solves these problems with a thin routing layer that drops in for `livekit.agents.inference`. You describe your providers, models, and policies in a single YAML file (`voicegw.yaml`), then construct `inference.STT/LLM/TTS` from your Python code exactly the way you would on LiveKit Cloud. VoiceGateway handles the rest: provider instantiation, middleware execution (cost tracking, latency monitoring, rate limiting), and budget enforcement.
 
 ```python
-from voicegateway import Gateway
+from voicegateway import inference
 
-gw = Gateway()
-
-stt = gw.stt("deepgram/nova-3")
-llm = gw.llm("anthropic/claude-sonnet-4-20250514")
-tts = gw.tts("cartesia/sonic-3")
+stt = inference.STT("deepgram/nova-3")
+llm = inference.LLM("anthropic/claude-sonnet-4-20250514")
+tts = inference.TTS("cartesia/sonic-3")
 ```
 
-Switching providers is a one-line config change. Adding fallback chains is a few lines of YAML. Per-project budgets are built in.
+Switching providers is a one-line config change. Per-project budgets are built in. Cost data flows to the dashboard, the CLI, and the MCP tools without any extra plumbing in your agent code.
 
 ## Who is it for?
 
@@ -47,7 +45,7 @@ Switching providers is a one-line config change. Adding fallback chains is a few
 | Per-project cost tracking | Yes | No | No |
 | Budget enforcement (warn/throttle/block) | Yes | No | No |
 | Local model support | Yes (Whisper, Kokoro, Piper, Ollama) | N/A | Ollama only |
-| Named stacks (premium/budget/local) | Yes | No | No |
+| Drop-in for `livekit.agents.inference` | Yes | No | No |
 | Web dashboard | Yes | No | No |
 | MCP server integration | Yes | No | No |
 | LiveKit Agents compatible | Yes | Yes | Partial |
@@ -83,14 +81,13 @@ The request flow through VoiceGateway follows a clean pipeline:
 
 ```
 Your code
-  --> Gateway.stt() / llm() / tts()
-    --> Router (resolves "provider/model" string)
-      --> Provider instance
+  --> voicegateway.inference.STT() / LLM() / TTS()
+    --> Resolve "provider/model" + per-project key
+      --> Wrap a livekit.plugins.<provider>.* instance
         --> Middleware pipeline
             - Cost tracking
             - Latency monitoring
-            - Rate limiting
-            - Fallback chains
+            - Session correlation
             - Budget enforcement
         --> SQLite storage
           --> Dashboard (reads stored data)

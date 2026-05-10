@@ -2,7 +2,7 @@
 
 ## Model ID format
 
-Every model in VoiceGateway is identified by a string in `provider/model` format. The `ModelId` class parses these strings.
+Every model in VoiceGateway is identified by a string in `provider/model` format.
 
 ```
 deepgram/nova-3
@@ -26,27 +26,30 @@ cartesia/sonic-3:narrator-male
 openai/tts-1:nova
 ```
 
+LLM model IDs preserve trailing colons verbatim, so Ollama tags survive:
+
+```
+ollama/qwen2.5:3b
+ollama/llama3.2:3b
+```
+
+This asymmetry mirrors `livekit.agents.inference`: STT and TTS strip the last colon segment, LLM does not.
+
 ### Using model IDs in code
 
 ```python
-from voicegateway import Gateway, ModelId
+from voicegateway import inference
 
-gw = Gateway()
-
-# Pass model ID strings directly to gateway methods
-stt = gw.stt("deepgram/nova-3")
-llm = gw.llm("openai/gpt-4.1-mini")
-tts = gw.tts("cartesia/sonic-3")
-
-# Parse a model ID programmatically
-mid = ModelId.parse("deepgram/nova-3")
-print(mid.provider)  # "deepgram"
-print(mid.model)     # "nova-3"
+# Pass model ID strings directly to inference factories.
+stt = inference.STT("deepgram/nova-3:en")          # :en parsed as language
+llm = inference.LLM("openai/gpt-4.1-mini")
+tts = inference.TTS("cartesia/sonic-3:narrator-male")  # :voice-id parsed as voice
+llm_local = inference.LLM("ollama/qwen2.5:3b")     # :3b kept as part of model name
 ```
 
 ## Registering custom models
 
-You can register model aliases in `voicegw.yaml` under the `models` section. Aliases are organized by modality (stt, llm, tts).
+You can register model aliases in `voicegw.yaml` under the `models` section. The aliases surface in the dashboard and CLI for display purposes; the v0.0.5 `inference` module parses `provider/model` strings directly from the factory call, so an alias does not change runtime behaviour. Aliases are organized by modality (stt, llm, tts).
 
 ### Via YAML
 

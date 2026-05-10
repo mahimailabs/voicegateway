@@ -1,17 +1,18 @@
 # Gateway Core
 
-The core layer is the brain of VoiceGateway. It parses configuration, resolves model identifiers to provider instances, and orchestrates the middleware pipeline.
+The core layer wires configuration, storage, and middleware together so the `voicegateway.inference` factories and the operations endpoints (CLI, HTTP, MCP, dashboard) all share one source of truth.
 
 ## Gateway Class
 
 **File:** `voicegateway/core/gateway.py`
 
-The `Gateway` class is the single entry point for all inference requests. It wires together configuration, routing, middleware, and storage.
+`Gateway` is an internal container; it is not part of the public Python SDK. The inference module holds a process-wide singleton via `voicegateway.inference._factory.get_gateway()`. The CLI, HTTP server, and MCP runtime each instantiate it directly because they own their own process lifecycle.
 
 ### Initialization
 
 ```python
-from voicegateway import Gateway
+# Internal use only — not on the public SDK surface.
+from voicegateway.core.gateway import Gateway
 
 # Auto-discovers voicegw.yaml from standard locations
 gw = Gateway()
@@ -34,70 +35,28 @@ graph TD
     A["Gateway.__init__(config_path)"] --> B["GatewayConfig.load(config_path)"]
     B --> C["Read YAML + substitute ${ENV_VAR}"]
     C --> D["Validate via Pydantic schema"]
-    D --> E["Router(config)"]
-    E --> F["SQLiteStorage(db_path)"]
+    D --> F["SQLiteStorage(db_path)"]
     F --> G["ConfigManager.load_merged()"]
     G --> H["Merge YAML + SQLite managed_* rows"]
-    H --> I["Rebuild Router with merged config"]
+    H --> I["Auto-create the 'default' project if missing"]
     I --> J["Init CostTracker, LatencyMonitor, RateLimiter"]
-    J --> K["Init BudgetEnforcer"]
-    K --> L["Build FallbackChains from config"]
+    J --> K["Init BudgetEnforcer, wire into CostTracker"]
 ```
 
 The database path is resolved as: `VOICEGW_DB_PATH` env > `cost_tracking.db_path` in YAML > default `~/.config/voicegateway/voicegw.db`.
 
-### Model Factory Methods
+### What `Gateway` exposes
 
-The Gateway exposes three primary factory methods that return LiveKit-compatible instances:
+| Surface | Purpose |
+|---|---|
+| `gw.config` | The merged `GatewayConfig` object (read-only). |
+| `gw.storage` | `SQLiteStorage` or `None` when cost tracking is disabled. |
+| `gw.cost_tracker` | The `CostTracker` middleware used by the inference wrappers. |
+| `gw.costs(period, project=...)` | Cost summary helper used by the CLI and HTTP API. |
+| `gw.list_projects()` | Project list for the CLI / dashboard / MCP. |
+| `await gw.refresh_config()` | Re-merges YAML and SQLite after a managed_* write. |
 
-```python
-# Speech-to-Text
-stt = gw.stt("deepgram/nova-3", project="my-project")
-
-# Language Model
-llm = gw.llm("openai/gpt-4.1-mini", project="my-project")
-
-# Text-to-Speech
-tts = gw.tts("cartesia/sonic-3", project="my-project")
-```
-
-Each method follows the same internal sequence:
-
-1. Resolve `project` (defaults to `"default"`)
-2. Run `BudgetEnforcer.check_budget(project)` -- may raise `BudgetExceededError` or `BudgetThrottleSignal`
-3. Call `Router.resolve(model_id, modality, project=project)` to get the raw provider instance
-4. Wrap the instance with `InstrumentedSTT/LLM/TTS` for automatic metrics recording
-
-### Stacks
-
-Stacks are named bundles of STT + LLM + TTS models:
-
-```yaml
-# voicegw.yaml
-stacks:
-  premium:
-    stt: deepgram/nova-3
-    llm: openai/gpt-4.1-mini
-    tts: cartesia/sonic-3
-  local:
-    stt: local/whisper-large-v3
-    llm: ollama/qwen2.5:3b
-    tts: local/kokoro
-```
-
-```python
-stt, llm, tts = gw.stack("premium", project="prod")
-```
-
-### Fallback Methods
-
-When fallback chains are configured, the Gateway provides `*_with_fallback()` methods that try each model in sequence:
-
-```python
-stt = gw.stt_with_fallback(project="prod")
-llm = gw.llm_with_fallback(project="prod")
-tts = gw.tts_with_fallback(project="prod")
-```
+The legacy `gw.stt/llm/tts/stack/*_with_fallback` factories were removed in v0.0.5. The replacement is `voicegateway.inference.STT/LLM/TTS`, which constructs the Gateway singleton internally and reads the same merged config.
 
 ### Config Refresh
 
@@ -107,36 +66,34 @@ After the dashboard or MCP server writes to managed tables, the Gateway reloads 
 await gw.refresh_config()
 ```
 
-This rebuilds the `Router`, `BudgetEnforcer`, and all `FallbackChain` instances with the updated config.
+This re-runs `ConfigManager.load_merged()` and rebuilds the `BudgetEnforcer` so it sees newly-added projects.
 
-## Router
+## ConfigManager
 
-**File:** `voicegateway/core/router.py`
+**File:** `voicegateway/core/config_manager.py`
 
-The Router resolves a model ID string (like `"deepgram/nova-3"`) into a concrete provider instance.
+`ConfigManager.load_merged()` deep-copies the YAML config and layers in `managed_providers`, `managed_models`, and `managed_projects` rows from SQLite. Per-project provider rows (those with a non-null `project` column) merge into `merged.projects[<id>].providers[<provider_type>]` so the inference resolver finds them via `GatewayConfig.get_provider_config_for_project`. YAML always wins on conflict.
 
-```mermaid
-graph LR
-    A["resolve('deepgram/nova-3', 'stt')"] --> B["ModelId.parse()"]
-    B --> C["config.get_model_config('stt', 'deepgram/nova-3')"]
-    C --> D["_get_provider('deepgram')"]
-    D --> E["create_provider() from Registry"]
-    E --> F["provider.create_stt(model='nova-3')"]
-    F --> G["Return LiveKit STT instance"]
+## inference resolution
+
+**File:** `voicegateway/inference/_resolution.py`
+
+The inference factories parse `"provider/model"` strings inline and validate the provider against the registry. The variant suffix (language for STT, voice for TTS) is parsed in the modality-specific factory file (`_stt.py`, `_tts.py`) before resolution; LLM strings keep their trailing colon segments verbatim so Ollama tags survive.
+
+```python
+from voicegateway.inference._resolution import resolve_model
+
+resolve_model("deepgram/nova-3")      # ("deepgram", "nova-3")
+resolve_model("ollama/qwen2.5:3b")    # ("ollama", "qwen2.5:3b")
 ```
 
-Key behaviors:
-
-- **Lazy instantiation:** providers are created on first use and cached in `_providers`.
-- **Config-driven model names:** the actual model name passed to the provider can differ from the ID. The `model` key in model config overrides the parsed model name.
-- **Voice/variant extraction:** for TTS, the `variant` from the model ID (or `default_voice` from config) is passed as the `voice` parameter.
-
-### Error Types
+Errors:
 
 | Exception | When |
-|-----------|------|
-| `ModelNotFoundError` | Model ID not found in the `models.<modality>` config section |
-| `ProviderNotConfiguredError` | Provider package not installed or credentials missing |
+|---|---|
+| `ModelResolutionError` | Empty string, missing slash, empty halves, or unknown provider name. |
+
+The factories then call `voicegateway.core.registry.create_provider(provider_name, config)` to instantiate the matching `livekit.plugins.<provider>` wrapper.
 
 ## Registry
 
@@ -166,37 +123,3 @@ _PROVIDER_REGISTRY = {
 Could not import provider 'deepgram': No module named 'deepgram'.
 Install with: pip install voicegateway[deepgram]
 ```
-
-## ModelId
-
-**File:** `voicegateway/core/model_id.py`
-
-A frozen dataclass that parses `"provider/model[:variant]"` strings:
-
-```python
-from voicegateway.core.model_id import ModelId
-
-# Standard model
-mid = ModelId.parse("deepgram/nova-3")
-# ModelId(provider="deepgram", model="nova-3", variant=None)
-
-# TTS with voice variant
-mid = ModelId.parse("local/kokoro:af_heart")
-# ModelId(provider="local", model="kokoro", variant="af_heart")
-
-# Ollama models keep the colon in the model name
-mid = ModelId.parse("ollama/qwen2.5:3b")
-# ModelId(provider="ollama", model="qwen2.5:3b", variant=None)
-```
-
-### Properties
-
-| Property | Description |
-|----------|-------------|
-| `full_id` | Canonical string with variant: `"local/kokoro:af_heart"` |
-| `config_key` | Lookup key without variant: `"local/kokoro"` |
-| `provider` | Provider name: `"deepgram"` |
-| `model` | Model name: `"nova-3"` |
-| `variant` | Optional voice/variant: `"af_heart"` or `None` |
-
-The variant is only extracted for the `"local"` provider (where colons separate model from voice). For all other providers, the full string after `"/"` is treated as the model name, preserving Ollama's `model:tag` format.

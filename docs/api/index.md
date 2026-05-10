@@ -4,18 +4,20 @@ VoiceGateway exposes three distinct API surfaces, each designed for a different 
 
 ## Python SDK
 
-The **Gateway class** is the primary programmatic interface. Import it directly into your Python application to route STT, LLM, and TTS requests through the gateway with full middleware support (cost tracking, latency monitoring, fallback chains, budget enforcement).
+The **`voicegateway.inference` module** is the public Python surface. It is a drop-in mirror of `livekit.agents.inference`: change the import line in an existing LiveKit Cloud Inference agent and the rest of the code keeps working. Cost tracking, latency monitoring, and session correlation happen transparently in the middleware.
 
 ```python
-from voicegateway import Gateway
+from livekit.agents import AgentSession
+from voicegateway import inference
 
-gw = Gateway()
-stt = gw.stt("deepgram/nova-3", project="my-app")
-llm = gw.llm("openai/gpt-4o-mini", project="my-app")
-tts = gw.tts("cartesia/sonic-3", project="my-app")
+session = AgentSession(
+    stt=inference.STT("deepgram/nova-3"),
+    llm=inference.LLM("openai/gpt-4o-mini"),
+    tts=inference.TTS("cartesia/sonic-3"),
+)
 ```
 
-Best for: application code, scripts, Jupyter notebooks, custom integrations.
+Best for: application code, scripts, custom integrations.
 
 [Full Python SDK reference](/api/python-sdk)
 

@@ -61,6 +61,11 @@ class ProjectConfig:
     budget_action: str = "warn"
     tags: list[str] = field(default_factory=list)
     source: str = "yaml"
+    # v0.0.5: per-project provider keys. When a project entry sets
+    # ``providers:`` in voicegw.yaml, those keys win over the top-level
+    # ``providers:`` block for inference factory calls inside this
+    # project's context. See design.md section 3.3.
+    providers: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
     def accent(self) -> str:
@@ -103,6 +108,7 @@ class GatewayConfig:
     rate_limits: dict[str, dict[str, Any]] = field(default_factory=dict)
     dashboard: dict[str, Any] = field(default_factory=dict)
     projects: dict[str, ProjectConfig] = field(default_factory=dict)
+    default_project: str | None = None  # v0.0.5: see design.md section 3.3
     stacks: dict[str, dict[str, str]] = field(default_factory=dict)
     auth: AuthConfig = field(default_factory=AuthConfig)
     observability: dict[str, Any] = field(
@@ -210,6 +216,12 @@ class GatewayConfig:
             for pid, pcfg in projects_raw.items():
                 if not isinstance(pcfg, dict):
                     continue
+                project_providers_raw = pcfg.get("providers") or {}
+                project_providers: dict[str, dict[str, Any]] = {}
+                if isinstance(project_providers_raw, dict):
+                    for prov_name, prov_cfg in project_providers_raw.items():
+                        if isinstance(prov_cfg, dict):
+                            project_providers[prov_name] = dict(prov_cfg)
                 projects[pid] = ProjectConfig(
                     id=pid,
                     name=str(pcfg.get("name") or pid),
@@ -218,6 +230,7 @@ class GatewayConfig:
                     daily_budget=float(pcfg.get("daily_budget", 0.0) or 0.0),
                     budget_action=str(pcfg.get("budget_action") or "warn"),
                     tags=list(pcfg.get("tags") or []),
+                    providers=project_providers,
                 )
 
         auth_raw = raw.get("auth", {}) or {}
@@ -232,6 +245,11 @@ class GatewayConfig:
             ],
         )
 
+        default_project_raw = raw.get("default_project")
+        default_project = (
+            str(default_project_raw) if default_project_raw else None
+        )
+
         return cls(
             providers=raw.get("providers", {}) or {},
             models=raw.get("models", {}) or {},
@@ -241,6 +259,7 @@ class GatewayConfig:
             rate_limits=raw.get("rate_limits", {}) or {},
             dashboard=raw.get("dashboard", {}) or {},
             projects=projects,
+            default_project=default_project,
             stacks=raw.get("stacks", {}) or {},
             auth=auth,
             observability=raw.get(
@@ -254,7 +273,27 @@ class GatewayConfig:
         )
 
     def get_provider_config(self, provider_name: str) -> dict[str, Any]:
-        """Get configuration for a specific provider."""
+        """Get the top-level (global) configuration for a provider.
+
+        For project-aware lookups (the v0.0.5 inference path), use
+        ``get_provider_config_for_project`` instead.
+        """
+        return self.providers.get(provider_name, {})
+
+    def get_provider_config_for_project(
+        self, provider_name: str, project_id: str | None
+    ) -> dict[str, Any]:
+        """Resolve provider config with project-level precedence.
+
+        Returns the project's own provider entry if set; otherwise
+        falls back to the top-level ``providers`` block (backward
+        compat for pre-v0.0.5 configs that don't carry per-project
+        keys). When neither exists, returns an empty dict.
+        """
+        if project_id and project_id in self.projects:
+            project = self.projects[project_id]
+            if provider_name in project.providers:
+                return dict(project.providers[provider_name])
         return self.providers.get(provider_name, {})
 
     def get_model_config(self, modality: str, model_key: str) -> dict[str, Any] | None:

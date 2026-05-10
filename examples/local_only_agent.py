@@ -1,7 +1,7 @@
-"""100% offline voice agent — zero API keys, zero internet.
+"""100% offline voice agent: zero API keys, zero internet.
 
-Uses local Whisper for STT, Ollama for LLM, and Kokoro for TTS.
-All models run on your machine.
+Uses local Whisper for STT, Ollama for LLM, and Kokoro for TTS. All
+models run on this machine.
 
 Prerequisites:
     - Ollama running locally with qwen2.5:3b pulled
@@ -14,9 +14,7 @@ Usage:
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
 from livekit.plugins import silero
 
-from voicegateway import Gateway
-
-gw = Gateway()
+from voicegateway import inference
 
 
 async def entrypoint(ctx: JobContext):
@@ -24,15 +22,18 @@ async def entrypoint(ctx: JobContext):
 
     session = AgentSession(
         vad=silero.VAD.load(),
-        stt=gw.stt("local/whisper-large-v3"),
-        llm=gw.llm("ollama/qwen2.5:3b"),
-        tts=gw.tts("local/kokoro:af_heart"),
+        stt=inference.STT("local/whisper-large-v3"),
+        llm=inference.LLM("ollama/qwen2.5:3b"),
+        tts=inference.TTS("local/kokoro:af_heart"),
     )
 
     await session.start(
         agent=Agent(
-            instructions="You are a helpful voice assistant running entirely locally. "
-            "All processing happens on this machine — no data leaves the device."
+            instructions=(
+                "You are a helpful voice assistant running entirely "
+                "locally. All processing happens on this machine, no "
+                "data leaves the device."
+            )
         ),
         room=ctx.room,
     )

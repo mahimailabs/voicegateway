@@ -47,6 +47,9 @@ class ProjectConfig(_StrictBase):
     daily_budget: float = Field(default=0.0, ge=0)
     budget_action: str = Field(default="warn", pattern=r"^(warn|throttle|block)$")
     tags: list[str] = Field(default_factory=list)
+    # v0.0.5: per-project provider keys override the top-level
+    # `providers:` block when set. See design.md section 3.3.
+    providers: dict[str, ProviderConfig] = Field(default_factory=dict)
 
 
 class ObservabilityConfig(_StrictBase):
@@ -112,6 +115,7 @@ _VALID_TOP_LEVEL_KEYS = {
     "models",
     "stacks",
     "projects",
+    "default_project",
     "fallbacks",
     "observability",
     "cost_tracking",
@@ -131,6 +135,7 @@ class VoiceGatewayConfig(BaseModel):
     models: dict[str, dict[str, ModelEntryConfig]] = Field(default_factory=dict)
     stacks: dict[str, StackConfig] = Field(default_factory=dict)
     projects: dict[str, ProjectConfig] = Field(default_factory=dict)
+    default_project: str | None = None
     fallbacks: FallbackConfig = Field(default_factory=FallbackConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     cost_tracking: CostTrackingConfig = Field(default_factory=CostTrackingConfig)

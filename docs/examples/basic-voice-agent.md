@@ -14,28 +14,20 @@ pip install livekit-agents livekit-plugins-deepgram livekit-plugins-openai livek
 Create `voicegw.yaml` in your project root:
 
 ```yaml
-providers:
-  openai:
-    api_key: ${OPENAI_API_KEY}
-  deepgram:
-    api_key: ${DEEPGRAM_API_KEY}
-  cartesia:
-    api_key: ${CARTESIA_API_KEY}
+projects:
+  voice-agent:
+    name: Voice Agent
+    daily_budget: 5.00
+    budget_action: warn
+    providers:
+      openai:
+        api_key: ${OPENAI_API_KEY}
+      deepgram:
+        api_key: ${DEEPGRAM_API_KEY}
+      cartesia:
+        api_key: ${CARTESIA_API_KEY}
 
-models:
-  stt:
-    deepgram/nova-3:
-      provider: deepgram
-      model: nova-3
-  llm:
-    openai/gpt-4.1-mini:
-      provider: openai
-      model: gpt-4.1-mini
-  tts:
-    cartesia/sonic-3:
-      provider: cartesia
-      model: sonic-3
-      default_voice: 794f9389-aac1-45b6-b726-9d9369183238
+default_project: voice-agent
 
 cost_tracking:
   enabled: true
@@ -47,18 +39,14 @@ observability:
 ## Basic Usage
 
 ```python
-from voicegateway import Gateway
+from voicegateway import inference
 
-# Initialize the gateway (auto-discovers voicegw.yaml)
-gw = Gateway()
-
-# Create provider instances -- these are LiveKit-compatible
-stt = gw.stt("deepgram/nova-3")
-llm = gw.llm("openai/gpt-4.1-mini")
-tts = gw.tts("cartesia/sonic-3")
-
-# These instances work exactly like direct LiveKit plugin instances
-# but with automatic cost tracking, latency monitoring, and logging
+# Each factory returns a wrapped LiveKit plugin instance, ready to drop
+# into AgentSession. Cost, latency, and session correlation happen
+# transparently in the middleware.
+stt = inference.STT("deepgram/nova-3")
+llm = inference.LLM("openai/gpt-4.1-mini")
+tts = inference.TTS("cartesia/sonic-3")
 ```
 
 ## LiveKit Agent Integration
@@ -66,24 +54,17 @@ tts = gw.tts("cartesia/sonic-3")
 ```python
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
 from livekit.plugins import silero
-from voicegateway import Gateway
-
-gw = Gateway()
+from voicegateway import inference
 
 
 async def entrypoint(ctx: JobContext):
     await ctx.connect()
 
-    # Create the voice pipeline through VoiceGateway
-    stt = gw.stt("deepgram/nova-3", project="voice-agent")
-    llm = gw.llm("openai/gpt-4.1-mini", project="voice-agent")
-    tts = gw.tts("cartesia/sonic-3", project="voice-agent")
-
     session = AgentSession(
         vad=silero.VAD.load(),
-        stt=stt,
-        llm=llm,
-        tts=tts,
+        stt=inference.STT("deepgram/nova-3"),
+        llm=inference.LLM("openai/gpt-4.1-mini"),
+        tts=inference.TTS("cartesia/sonic-3"),
     )
 
     await session.start(
@@ -98,48 +79,38 @@ if __name__ == "__main__":
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
 ```
 
-## Using Stacks
+## Multiple agents in one process
 
-Instead of specifying each model separately, define named stacks:
-
-```yaml
-stacks:
-  premium:
-    stt: deepgram/nova-3
-    llm: openai/gpt-4.1-mini
-    tts: cartesia/sonic-3
-  budget:
-    stt: deepgram/nova-3
-    llm: groq/llama-3.3-70b-versatile
-    tts: elevenlabs/turbo-v2.5
-```
+When one process serves multiple agents (e.g., one worker handling several entrypoints), set the active project per call context:
 
 ```python
-gw = Gateway()
+from voicegateway import inference
 
-# Resolve a complete stack in one call
-stt, llm, tts = gw.stack("premium", project="voice-agent")
+async def restaurant_entrypoint(ctx):
+    inference.set_project("restaurant-agent")
+    # all inference factories below charge the restaurant-agent project
+    ...
+
+async def support_entrypoint(ctx):
+    inference.set_project("support-agent")
+    # sibling tasks each have their own ContextVar; no leakage
+    ...
 ```
 
 ## Checking Costs
 
-After running your agent, query costs from Python or the CLI:
+```bash
+voicegw costs --project voice-agent
+voicegw logs --project voice-agent
 
-```python
-# From Python
-costs = gw.costs(period="today", project="voice-agent")
-print(f"Today's cost: ${costs['total']:.4f}")
-print(f"By provider: {costs['by_provider']}")
-print(f"By model: {costs['by_model']}")
+# Or start the dashboard:
+voicegw dashboard
+# Open http://localhost:9090
 ```
 
 ```bash
-# From the CLI
-voicegw status
-
-# Or start the dashboard
-voicegw dashboard
-# Open http://localhost:9090
+# From the HTTP API:
+curl 'http://localhost:8080/v1/costs?period=today&project=voice-agent'
 ```
 
 ## Monitoring Latency
@@ -150,17 +121,18 @@ VoiceGateway automatically records TTFB and total latency for every request. Vie
 curl http://localhost:8080/v1/metrics?period=today
 ```
 
-The `latency.ttfb_warning_ms` config value (default 500ms) triggers a log warning when TTFB exceeds the threshold -- useful for catching provider degradation early.
+The `latency.ttfb_warning_ms` config value (default 500ms) triggers a log warning when TTFB exceeds the threshold, useful for catching provider degradation early.
 
 ## What Happens Under the Hood
 
-When you call `gw.stt("deepgram/nova-3", project="voice-agent")`:
+When you call `inference.STT("deepgram/nova-3")`:
 
-1. The Gateway checks the project's budget (if configured)
-2. The Router parses `"deepgram/nova-3"` into `ModelId(provider="deepgram", model="nova-3")`
-3. The Registry lazily imports and instantiates `DeepgramProvider`
-4. The provider creates a LiveKit-compatible `deepgram.STT` instance
-5. The Gateway wraps it in `InstrumentedSTT` to track latency and cost
-6. You get back an object that behaves exactly like a `deepgram.STT` instance
+1. The factory parses `"deepgram/nova-3"` into provider `"deepgram"` and model `"nova-3"`.
+2. The active project is resolved (set_project / env / yaml default / `"default"`).
+3. The provider's API key is looked up: per-project entry first, then top-level `providers:`.
+4. The Registry lazily imports and instantiates `DeepgramProvider`.
+5. The provider creates a `livekit.plugins.deepgram.STT` instance.
+6. The instance is wrapped in `InstrumentedSTT` to track cost, latency, and the session id.
+7. You get back an object that behaves exactly like the underlying LK plugin instance.
 
-All of this is transparent -- your LiveKit Agent code sees the same API surface whether it uses VoiceGateway or direct plugin imports.
+All of this is transparent: your LiveKit Agent code sees the same API surface whether it uses `voicegateway.inference` or direct plugin imports.

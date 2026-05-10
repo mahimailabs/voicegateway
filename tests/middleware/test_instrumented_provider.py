@@ -15,15 +15,39 @@ Layer-B coverage (the per-provider streaming code paths actually
 calling the hook at the right moment) lands when streaming fixtures
 arrive and the wrapper-replay tests are wired up; see
 `tests/test_streaming_cost_accounting.py`.
+
+Post-AC-2-fix: ``InstrumentedSTT`` subclasses ``livekit.agents.stt.STT``
+so isinstance gates inside ``agent_activity.py`` succeed. The wrapped
+fake therefore needs ``capabilities`` + ``on(event, callback)`` so the
+wrapper's ``super().__init__`` and event-bridge construction work.
 """
 
 from __future__ import annotations
 
 import asyncio
 import time
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+from livekit.agents.stt import STTCapabilities
+
 from voicegateway.middleware.instrumented_provider import InstrumentedSTT
+
+
+def _make_lk_shaped_mock() -> MagicMock:
+    """Build a MagicMock pre-loaded with the LK STT-shaped attributes
+    the new wrapper consumes during construction.
+
+    Without this, ``super().__init__(capabilities=wrapped.capabilities)``
+    would store an auto-generated MagicMock attribute instead of an
+    actual ``STTCapabilities``, and any test that ends up reading
+    ``self.capabilities.streaming`` from the wrapper would get
+    nonsense. The MagicMock's ``on(...)`` is auto-callable and acts as
+    a no-op.
+    """
+    wrapped = MagicMock()
+    wrapped.capabilities = STTCapabilities(streaming=False, interim_results=False)
+    return wrapped
 
 
 def _make_wrapper() -> InstrumentedSTT:
@@ -32,7 +56,7 @@ def _make_wrapper() -> InstrumentedSTT:
     cost_tracker.create_record = MagicMock(return_value=MagicMock())
     cost_tracker.notify_spend = AsyncMock()
     return InstrumentedSTT(
-        wrapped=MagicMock(),
+        wrapped=_make_lk_shaped_mock(),
         model_id="test/model",
         provider="test",
         project="default",
@@ -138,11 +162,18 @@ async def test_log_request_is_idempotent() -> None:
 # ---------- proxy + repr + storage path coverage -----------------------
 
 
-def test_getattr_proxies_to_wrapped_instance() -> None:
-    """Attribute access falls through to the wrapped instance via __getattr__."""
-    wrapped = MagicMock()
-    wrapped.some_method = MagicMock(return_value="hello")
-    wrapped.some_value = 42
+def test_getattr_proxies_to_wrapped_for_unknown_attrs() -> None:
+    """Provider-specific attributes (not on lk_stt.STT) still proxy through.
+
+    Post-AC-2-fix the wrapper IS-A ``lk_stt.STT`` so methods declared
+    on the LK base class no longer travel via ``__getattr__``. Anything
+    *not* defined on the wrapper or the LK hierarchy still falls
+    through to the wrapped plugin — that's the contract for
+    provider-specific helpers like Cartesia's ``set_voice``.
+    """
+    wrapped = _make_lk_shaped_mock()
+    wrapped.cartesia_specific_helper = MagicMock(return_value="hello")
+    wrapped.unique_attribute = 42
     cost_tracker = MagicMock()
     cost_tracker.notify_spend = AsyncMock()
     wrapper = InstrumentedSTT(
@@ -153,31 +184,20 @@ def test_getattr_proxies_to_wrapped_instance() -> None:
         cost_tracker=cost_tracker,
         storage=None,
     )
-    assert wrapper.some_method() == "hello"
-    assert wrapper.some_value == 42
-
-
-def test_setattr_proxies_to_wrapped_instance() -> None:
-    """Attribute writes flow to the wrapped instance, not the wrapper."""
-    wrapped = MagicMock()
-    cost_tracker = MagicMock()
-    cost_tracker.notify_spend = AsyncMock()
-    wrapper = InstrumentedSTT(
-        wrapped=wrapped,
-        model_id="test/model",
-        provider="test",
-        project="default",
-        cost_tracker=cost_tracker,
-        storage=None,
-    )
-    wrapper.user_visible_attribute = "downstream"
-    assert wrapped.user_visible_attribute == "downstream"
+    assert wrapper.cartesia_specific_helper() == "hello"
+    assert wrapper.unique_attribute == 42
 
 
 def test_repr_includes_wrapped_and_modality() -> None:
     """``repr(wrapper)`` exposes both the wrapped instance and the modality."""
 
     class _FakeSTT:
+        def __init__(self) -> None:
+            self.capabilities = STTCapabilities(streaming=False, interim_results=False)
+
+        def on(self, event: str, callback: Any) -> None:
+            pass
+
         def __repr__(self) -> str:
             return "FakeSTT()"
 
@@ -196,6 +216,29 @@ def test_repr_includes_wrapped_and_modality() -> None:
     assert "FakeSTT()" in rep
 
 
+def test_wrapper_is_isinstance_of_lk_stt() -> None:
+    """Headline AC-2 contract: ``isinstance(wrapper, lk_stt.STT)`` is True.
+
+    The pre-fix proxy failed every isinstance gate inside
+    ``livekit.agents.voice.agent_activity`` (16+ checks), causing the
+    ``metrics_collected`` listener to never attach and SpeechHandle's
+    5s INTERRUPTION_TIMEOUT to fire on every TTS speech under real
+    audio. This is the regression test that catches a future refactor
+    reverting that wiring.
+    """
+    from livekit.agents import stt as lk_stt
+
+    wrapper = _make_wrapper()
+    assert isinstance(wrapper, lk_stt.STT), (
+        "InstrumentedSTT must subclass livekit.agents.stt.STT so LK's "
+        "session bookkeeping (agent_activity._start_session lines 666-678) "
+        "registers metrics_collected and error listeners on it. Without "
+        "the subclass, every TTS speech fires the 5-second "
+        "INTERRUPTION_TIMEOUT in SpeechHandle._cancel and no audio "
+        "round-trips."
+    )
+
+
 async def test_log_request_with_storage_writes_to_storage() -> None:
     """Storage path: log_request is called when storage is provided."""
     wrapper = _make_wrapper()
@@ -208,9 +251,7 @@ async def test_log_request_with_storage_writes_to_storage() -> None:
     assert storage.log_request.call_count == 1
     # The record passed to storage is the same one cost_tracker
     # produced; downstream code reads cost_usd from it.
-    storage.log_request.assert_called_once_with(
-        cost_tracker.create_record.return_value
-    )
+    storage.log_request.assert_called_once_with(cost_tracker.create_record.return_value)
 
 
 async def test_log_request_swallows_storage_exception() -> None:

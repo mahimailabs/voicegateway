@@ -20,6 +20,11 @@ from voicegateway.mcp.schemas import (
     GetProviderInput,
     ListProvidersInput,
     TestProviderInput,
+    VgAddProviderInput,
+    VgListProvidersInput,
+    VgRemoveProviderInput,
+    VgSetProviderKeyInput,
+    VgTestProviderKeyInput,
 )
 from voicegateway.mcp.tools.base import ToolDef, make_tool
 
@@ -456,6 +461,499 @@ async def _handle_delete_provider(
 
 
 # ---------------------------------------------------------------------------
+# v0.0.5 vg_add_provider — per-project provider key writes
+# ---------------------------------------------------------------------------
+
+VG_ADD_PROVIDER_DOC = """Add or update a provider key scoped to a project.
+
+The api_key is encrypted with Fernet before being persisted. The
+managed_providers row's ``provider_id`` is built as ``"<project>:<provider>"``
+so two projects can each carry their own openai key without colliding.
+
+Args:
+    project: Project name to scope this key to.
+    provider: Canonical provider type (e.g. ``openai``, ``deepgram``).
+    api_key: The provider API key.
+    base_url: Optional override for the provider base URL.
+
+Returns:
+    {project, provider, provider_id, api_key_masked, source: "db", created: True}.
+
+Raises:
+    VALIDATION if provider is not in the supported set.
+    PROVIDER_ALREADY_EXISTS if a YAML-defined provider already owns
+    this provider_id (rare; the project-prefixed id usually avoids it).
+"""
+
+
+async def _handle_vg_add_provider(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    payload = _parse(VgAddProviderInput, arguments)
+
+    if payload.provider not in _PROVIDER_REGISTRY:
+        raise ValidationError(
+            f"Unknown provider '{payload.provider}'. "
+            f"Supported: {', '.join(sorted(_PROVIDER_REGISTRY))}.",
+            details={"supported": sorted(_PROVIDER_REGISTRY)},
+        )
+
+    if gateway.storage is None:
+        raise ValidationError(
+            "Managed providers require cost_tracking.enabled=true (SQLite storage).",
+            details={"hint": "enable cost_tracking in voicegw.yaml"},
+        )
+
+    composite_id = f"{payload.project}:{payload.provider}"
+
+    # Block YAML-defined collisions. There are two YAML places the
+    # same key could already exist:
+    #   1. The top-level ``providers.<composite_id>`` block (rare —
+    #      requires a literal ``"<project>:<provider>"`` provider id in
+    #      voicegw.yaml).
+    #   2. The per-project ``projects.<project>.providers.<provider>``
+    #      block (the v0.0.5 shape; the inference resolver consults
+    #      this directly, so a DB write would silently shadow an
+    #      already-active YAML key).
+    # Both must error: writing the row anyway leaves the user thinking
+    # they rotated when the resolver still uses the YAML value.
+    # Re-adding the same DB row is a legitimate rotation (re-add ⇒
+    # upsert) and must not trigger the guard.
+    existing_top_level = gateway.config.providers.get(composite_id)
+    if (
+        existing_top_level is not None
+        and existing_top_level.get("_source") != "db"
+    ):
+        raise ProviderAlreadyExistsError(
+            f"Provider id '{composite_id}' is already defined in voicegw.yaml.",
+            details={"provider_id": composite_id, "source": "yaml"},
+        )
+    project_cfg = gateway.config.projects.get(payload.project)
+    if (
+        project_cfg is not None
+        and payload.provider in project_cfg.providers
+        and project_cfg.providers[payload.provider].get("_source") != "db"
+    ):
+        # Block YAML-defined per-project shadowing. A DB-sourced entry
+        # at the same path is the row we are about to upsert (rotation),
+        # which must succeed — the ``_source != "db"`` check carves
+        # rotation out of the guard.
+        raise ProviderAlreadyExistsError(
+            f"Project '{payload.project}' already defines '{payload.provider}' "
+            "in voicegw.yaml. Edit the YAML or remove that entry; the "
+            "inference resolver reads YAML before DB-managed rows, so a DB "
+            "write here would silently shadow nothing.",
+            details={
+                "provider_id": composite_id,
+                "project": payload.project,
+                "provider": payload.provider,
+                "source": "yaml",
+                "yaml_path": f"projects.{payload.project}.providers.{payload.provider}",
+            },
+        )
+
+    await gateway.storage.upsert_managed_provider(
+        provider_id=composite_id,
+        provider_type=payload.provider,
+        api_key=payload.api_key,
+        base_url=payload.base_url,
+        project=payload.project,
+    )
+    await gateway.refresh_config()
+
+    return {
+        "project": payload.project,
+        "provider": payload.provider,
+        "provider_id": composite_id,
+        "api_key_masked": _mask_api_key(payload.api_key),
+        "base_url": payload.base_url,
+        "source": "db",
+        "created": True,
+    }
+
+
+# ---------------------------------------------------------------------------
+# v0.0.5 vg_remove_provider — drop a per-project provider key
+# ---------------------------------------------------------------------------
+
+VG_REMOVE_PROVIDER_DOC = """Remove the per-project provider key written by vg_add_provider.
+
+The composite ``"<project>:<provider>"`` row is deleted from the
+managed_providers table. YAML-defined providers (``_source: yaml``)
+cannot be removed via this tool — edit voicegw.yaml instead.
+
+Args:
+    project: Project name the key was scoped to.
+    provider: Canonical provider type whose key was stored.
+
+Returns:
+    {project, provider, provider_id, deleted: True}.
+
+Raises:
+    PROVIDER_NOT_FOUND if no DB-managed row matches the composite id.
+    READ_ONLY_RESOURCE if the matching row is YAML-defined.
+"""
+
+
+async def _handle_vg_remove_provider(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    payload = _parse(VgRemoveProviderInput, arguments)
+    composite_id = f"{payload.project}:{payload.provider}"
+
+    existing = gateway.config.providers.get(composite_id)
+    if existing is not None and existing.get("_source") != "db":
+        raise ReadOnlyResourceError(
+            f"Provider '{composite_id}' is defined in voicegw.yaml and "
+            "cannot be removed via MCP. Edit voicegw.yaml instead.",
+            details={"provider_id": composite_id, "source": "yaml"},
+        )
+
+    if gateway.storage is None:
+        raise ProviderNotFoundError(
+            f"No managed provider '{composite_id}' (storage disabled).",
+            details={"provider_id": composite_id},
+        )
+
+    managed = await gateway.storage.get_managed_provider(composite_id)
+    if managed is None:
+        raise ProviderNotFoundError(
+            f"No managed provider '{composite_id}' for project "
+            f"'{payload.project}' / provider '{payload.provider}'.",
+            details={
+                "provider_id": composite_id,
+                "project": payload.project,
+                "provider": payload.provider,
+            },
+        )
+
+    await gateway.storage.delete_managed_provider(composite_id)
+    await gateway.refresh_config()
+
+    return {
+        "project": payload.project,
+        "provider": payload.provider,
+        "provider_id": composite_id,
+        "deleted": True,
+    }
+
+
+# ---------------------------------------------------------------------------
+# v0.0.5 vg_list_providers — surface per-project keys
+# ---------------------------------------------------------------------------
+
+VG_LIST_PROVIDERS_DOC = """List per-project provider keys with optional project filter.
+
+The api_key field is masked (first/last 4 chars) — full keys never
+leave storage. YAML-defined providers are returned alongside DB-managed
+ones, tagged with ``source`` so callers can tell them apart.
+
+Args:
+    project: Optional project filter. When given, only rows scoped to
+        this project are returned (DB-managed rows whose project column
+        matches AND any YAML-defined entries under
+        ``projects.<project>.providers``). When None, returns the full
+        cross-project view.
+
+Returns:
+    {providers: [{project, provider, provider_id, source,
+    api_key_masked, base_url, type}]}.
+"""
+
+
+def _yaml_per_project_entries(gateway: Gateway) -> list[dict[str, Any]]:
+    """Flatten projects.<id>.providers blocks from voicegw.yaml into
+    a list of provider dicts shaped like the DB output.
+
+    Skips entries whose ``_source`` is ``"db"`` — after Item 1 fixed the
+    config_manager merge, ``config.projects[<id>].providers`` can carry
+    DB-managed rows alongside YAML entries; the DB scan below adds
+    those, so reporting them here would double-count and label DB rows
+    as YAML.
+    """
+    local_names = {"ollama", "whisper", "kokoro", "piper"}
+    out: list[dict[str, Any]] = []
+    for proj_id, proj_cfg in gateway.config.projects.items():
+        for prov_name, prov_cfg in proj_cfg.providers.items():
+            if not isinstance(prov_cfg, dict):
+                continue
+            if prov_cfg.get("_source") == "db":
+                continue
+            api_key = prov_cfg.get("api_key")
+            out.append(
+                {
+                    "project": proj_id,
+                    "provider": prov_name,
+                    "provider_id": f"{proj_id}:{prov_name}",
+                    "source": "yaml",
+                    "api_key_masked": _mask_api_key(api_key),
+                    "base_url": prov_cfg.get("base_url"),
+                    "type": "local" if prov_name in local_names else "cloud",
+                }
+            )
+    return out
+
+
+async def _handle_vg_list_providers(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    payload = _parse(VgListProvidersInput, arguments)
+    local_names = {"ollama", "whisper", "kokoro", "piper"}
+    rows: list[dict[str, Any]] = []
+
+    # 1. YAML-defined per-project entries.
+    rows.extend(_yaml_per_project_entries(gateway))
+
+    # 2. DB-managed rows. Skip rows that share a provider_id with the
+    # YAML output (keeps the response from showing duplicates when an
+    # operator has both YAML and DB entries for the same composite id;
+    # YAML wins per ConfigManager.load_merged precedence).
+    yaml_ids = {r["provider_id"] for r in rows}
+    if gateway.storage is not None:
+        from voicegateway.core.crypto import decrypt, mask
+
+        for row in await gateway.storage.list_managed_providers():
+            pid = row["provider_id"]
+            if pid in yaml_ids:
+                continue
+            project = row.get("project")
+            if project is None:
+                # Legacy global rows — skip when listing per-project.
+                # vg_list_providers is the per-project view; the
+                # global add_provider tool handles global listings.
+                continue
+            try:
+                plaintext = decrypt(row.get("api_key_encrypted", ""))
+            except ValueError:
+                plaintext = ""
+            provider_type = row["provider_type"]
+            rows.append(
+                {
+                    "project": project,
+                    "provider": provider_type,
+                    "provider_id": pid,
+                    "source": "db",
+                    "api_key_masked": mask(plaintext) if plaintext else None,
+                    "base_url": row.get("base_url"),
+                    "type": "local" if provider_type in local_names else "cloud",
+                }
+            )
+
+    # 3. Apply project filter.
+    if payload.project is not None:
+        rows = [r for r in rows if r["project"] == payload.project]
+
+    rows.sort(key=lambda r: (r["project"], r["provider"]))
+    return {"providers": rows}
+
+
+# ---------------------------------------------------------------------------
+# v0.0.5 vg_set_provider_key — rotate an existing per-project key
+# ---------------------------------------------------------------------------
+
+VG_SET_PROVIDER_KEY_DOC = """Rotate the per-project key written by vg_add_provider.
+
+Differs from ``vg_add_provider`` in one way: the
+``"<project>:<provider>"`` composite row must already exist. Rotating
+a non-existent pair raises PROVIDER_NOT_FOUND so the caller does not
+silently create a new row when they meant to rotate.
+
+Args:
+    project: Project name the key is scoped to.
+    provider: Canonical provider type whose key is being rotated.
+    api_key: New api key (Fernet-encrypted at rest).
+    base_url: Optional base URL update.
+
+Returns:
+    {project, provider, provider_id, api_key_masked, base_url,
+    source: "db", rotated: True}.
+
+Raises:
+    PROVIDER_NOT_FOUND if the (project, provider) pair has no
+    matching DB row. Use vg_add_provider to create it first.
+    READ_ONLY_RESOURCE if the matching row is YAML-defined.
+"""
+
+
+async def _handle_vg_set_provider_key(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    payload = _parse(VgSetProviderKeyInput, arguments)
+
+    if payload.provider not in _PROVIDER_REGISTRY:
+        raise ValidationError(
+            f"Unknown provider '{payload.provider}'. "
+            f"Supported: {', '.join(sorted(_PROVIDER_REGISTRY))}.",
+            details={"supported": sorted(_PROVIDER_REGISTRY)},
+        )
+
+    composite_id = f"{payload.project}:{payload.provider}"
+
+    existing = gateway.config.providers.get(composite_id)
+    if existing is not None and existing.get("_source") != "db":
+        raise ReadOnlyResourceError(
+            f"Provider '{composite_id}' is defined in voicegw.yaml and "
+            "cannot be rotated via MCP. Edit voicegw.yaml instead.",
+            details={"provider_id": composite_id, "source": "yaml"},
+        )
+
+    if gateway.storage is None:
+        raise ProviderNotFoundError(
+            f"No managed provider '{composite_id}' (storage disabled).",
+            details={"provider_id": composite_id},
+        )
+
+    managed = await gateway.storage.get_managed_provider(composite_id)
+    if managed is None:
+        raise ProviderNotFoundError(
+            f"No managed provider '{composite_id}' to rotate. "
+            "Use vg_add_provider to create it first.",
+            details={
+                "provider_id": composite_id,
+                "project": payload.project,
+                "provider": payload.provider,
+            },
+        )
+
+    # Preserve the row's existing base_url unless the caller explicitly
+    # provides a new one. base_url=None on the input is "no change",
+    # not "clear the URL" — that asymmetry is what makes
+    # vg_set_provider_key a key rotation rather than a full upsert.
+    base_url = (
+        payload.base_url if payload.base_url is not None else managed.get("base_url")
+    )
+
+    await gateway.storage.upsert_managed_provider(
+        provider_id=composite_id,
+        provider_type=payload.provider,
+        api_key=payload.api_key,
+        base_url=base_url,
+        project=payload.project,
+    )
+    await gateway.refresh_config()
+
+    return {
+        "project": payload.project,
+        "provider": payload.provider,
+        "provider_id": composite_id,
+        "api_key_masked": _mask_api_key(payload.api_key),
+        "base_url": base_url,
+        "source": "db",
+        "rotated": True,
+    }
+
+
+# ---------------------------------------------------------------------------
+# v0.0.5 vg_test_provider_key — sanity-check a per-project key
+# ---------------------------------------------------------------------------
+
+VG_TEST_PROVIDER_KEY_DOC = """Verify a per-project provider key actually authenticates.
+
+Resolves the ``"<project>:<provider>"`` key from voicegw.yaml's
+``projects.<project>.providers.<provider>`` block first, then falls
+back to the DB-managed row. Constructs the matching provider plugin
+and runs its ``health_check()`` (a lightweight call like listing
+models). Returns ``{status: "ok"}`` on success or
+``{status: "failed", message: ...}`` on auth failure or transport
+error.
+
+Args:
+    project: Project the key is scoped to.
+    provider: Canonical provider type whose key is being tested.
+
+Returns:
+    {project, provider, provider_id, status, latency_ms, message}.
+
+Raises:
+    PROVIDER_NOT_FOUND if neither the YAML nor the DB layer has a
+    matching key.
+"""
+
+
+async def _handle_vg_test_provider_key(
+    gateway: Gateway, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    payload = _parse(VgTestProviderKeyInput, arguments)
+    composite_id = f"{payload.project}:{payload.provider}"
+
+    provider_cfg: dict[str, Any] | None = None
+
+    # 1. YAML projects.<project>.providers.<provider>.
+    yaml_project = gateway.config.projects.get(payload.project)
+    if yaml_project is not None and payload.provider in yaml_project.providers:
+        provider_cfg = dict(yaml_project.providers[payload.provider])
+
+    # 2. DB-managed row keyed by composite id.
+    if provider_cfg is None and gateway.storage is not None:
+        row = await gateway.storage.get_managed_provider(composite_id)
+        if row is not None:
+            from voicegateway.core.crypto import decrypt
+
+            provider_cfg = {
+                "api_key": decrypt(row.get("api_key_encrypted", "")),
+                "base_url": row.get("base_url"),
+                **(row.get("extra_config") or {}),
+            }
+
+    if provider_cfg is None:
+        raise ProviderNotFoundError(
+            f"No managed provider for project '{payload.project}' / "
+            f"provider '{payload.provider}'. Use vg_add_provider to add it.",
+            details={
+                "project": payload.project,
+                "provider": payload.provider,
+                "provider_id": composite_id,
+            },
+        )
+
+    if payload.provider not in _PROVIDER_REGISTRY:
+        return {
+            "project": payload.project,
+            "provider": payload.provider,
+            "provider_id": composite_id,
+            "status": "failed",
+            "latency_ms": 0,
+            "message": f"Unknown provider type '{payload.provider}'.",
+        }
+
+    from voicegateway.core.registry import create_provider
+
+    try:
+        provider_instance = create_provider(payload.provider, provider_cfg)
+    except ImportError as exc:
+        return {
+            "project": payload.project,
+            "provider": payload.provider,
+            "provider_id": composite_id,
+            "status": "failed",
+            "latency_ms": 0,
+            "message": str(exc),
+        }
+
+    start = time.perf_counter()
+    try:
+        ok = await provider_instance.health_check()
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "project": payload.project,
+            "provider": payload.provider,
+            "provider_id": composite_id,
+            "status": "failed",
+            "latency_ms": int((time.perf_counter() - start) * 1000),
+            "message": f"{type(exc).__name__}: {exc}",
+        }
+    latency_ms = int((time.perf_counter() - start) * 1000)
+    return {
+        "project": payload.project,
+        "provider": payload.provider,
+        "provider_id": composite_id,
+        "status": "ok" if ok else "failed",
+        "latency_ms": latency_ms,
+        "message": "reachable" if ok else "provider returned unhealthy",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -473,5 +971,35 @@ PROVIDER_TOOLS: list[ToolDef] = [
         DELETE_PROVIDER_DOC,
         DeleteProviderInput,
         _handle_delete_provider,
+    ),
+    make_tool(
+        "vg_add_provider",
+        VG_ADD_PROVIDER_DOC,
+        VgAddProviderInput,
+        _handle_vg_add_provider,
+    ),
+    make_tool(
+        "vg_remove_provider",
+        VG_REMOVE_PROVIDER_DOC,
+        VgRemoveProviderInput,
+        _handle_vg_remove_provider,
+    ),
+    make_tool(
+        "vg_list_providers",
+        VG_LIST_PROVIDERS_DOC,
+        VgListProvidersInput,
+        _handle_vg_list_providers,
+    ),
+    make_tool(
+        "vg_set_provider_key",
+        VG_SET_PROVIDER_KEY_DOC,
+        VgSetProviderKeyInput,
+        _handle_vg_set_provider_key,
+    ),
+    make_tool(
+        "vg_test_provider_key",
+        VG_TEST_PROVIDER_KEY_DOC,
+        VgTestProviderKeyInput,
+        _handle_vg_test_provider_key,
     ),
 ]

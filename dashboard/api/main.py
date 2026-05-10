@@ -18,6 +18,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Local providers don't need an api_key to be considered "configured" —
+# they run against a local model server (ollama) or bundled binaries
+# (whisper / kokoro / piper). Used by /api/status and
+# /api/providers/by-project to decide between cloud and local typing.
+_LOCAL_PROVIDER_NAMES = frozenset({"ollama", "whisper", "kokoro", "piper"})
+
 app = FastAPI(
     title="VoiceGateway Dashboard",
     version="0.1.0",
@@ -75,16 +81,21 @@ async def get_auth_status() -> dict:
 
 @app.get("/api/status")
 async def get_status() -> dict:
-    """Get status of all configured providers and models."""
+    """Get status of all configured providers and models.
+
+    Mirrors the pricing-freshness subtree from /v1/status (Q7) so
+    the dashboard StalenessBanner can render without hitting a
+    second origin.
+    """
     gw = _get_gateway()
     config = gw.config
 
     providers = {}
     for name, cfg in config.providers.items():
-        has_key = bool(cfg.get("api_key")) or name in ("ollama", "whisper", "kokoro", "piper")
+        is_local = name in _LOCAL_PROVIDER_NAMES
         providers[name] = {
-            "configured": has_key,
-            "type": "local" if name in ("ollama", "whisper", "kokoro", "piper") else "cloud",
+            "configured": bool(cfg.get("api_key")) or is_local,
+            "type": "local" if is_local else "cloud",
         }
 
     models = {}
@@ -97,10 +108,27 @@ async def get_status() -> dict:
                         "provider": model_cfg.get("provider", ""),
                     }
 
+    from voicegateway.pricing import llm as _llm_pricing
+    from voicegateway.pricing import stt as _stt_pricing
+    from voicegateway.pricing import tts as _tts_pricing
+
+    pricing = {
+        "llm": {"source": _llm_pricing.PRICING_SOURCE},
+        "stt": {
+            "source": _stt_pricing.PRICING_SOURCE,
+            "oldest_entry_date": _stt_pricing._oldest_pricing_date().isoformat(),
+        },
+        "tts": {
+            "source": _tts_pricing.PRICING_SOURCE,
+            "oldest_entry_date": _tts_pricing._oldest_pricing_date().isoformat(),
+        },
+    }
+
     return {
         "providers": providers,
         "models": models,
         "fallbacks": config.fallbacks,
+        "pricing": pricing,
     }
 
 
@@ -109,11 +137,26 @@ async def get_costs(
     period: str = Query("today", enum=["today", "week", "month", "all"]),
     project: str | None = Query(None),
 ) -> dict:
-    """Get cost summary for a period, optionally filtered by project."""
+    """Get cost summary for a period, optionally filtered by project.
+
+    Each ``by_model`` entry carries a ``pricing_source`` string (e.g.
+    ``"genai-prices@0.0.57"`` or ``"voicegateway-catalog@2026-05-04"``)
+    so the dashboard can render the cost-staleness banner without a
+    second round-trip.
+    """
     gw = _get_gateway()
     if gw.storage is None:
-        return {"period": period, "project": project, "total": 0.0, "by_provider": {}, "by_model": {}, "by_project": {}}
-    summary = await gw.storage.get_cost_summary(period, project=project)
+        return {
+            "period": period,
+            "project": project,
+            "total": 0.0,
+            "by_provider": {},
+            "by_model": {},
+            "by_project": {},
+        }
+    summary = await gw.storage.get_cost_summary(
+        period, project=project, include_pricing_source=True
+    )
     if project is None:
         summary["by_project"] = await gw.storage.get_cost_by_project(period)
     else:
@@ -131,9 +174,7 @@ async def get_latency(
     if gw.storage is None:
         return {}
     pcts = gw.config.latency.get("percentiles") or [50.0, 95.0, 99.0]
-    return await gw.storage.get_latency_stats(
-        period, project=project, percentiles=pcts
-    )
+    return await gw.storage.get_latency_stats(period, project=project, percentiles=pcts)
 
 
 @app.get("/api/logs")
@@ -146,7 +187,9 @@ async def get_logs(
     gw = _get_gateway()
     if gw.storage is None:
         return []
-    return await gw.storage.get_recent_requests(limit=limit, modality=modality, project=project)
+    return await gw.storage.get_recent_requests(
+        limit=limit, modality=modality, project=project
+    )
 
 
 @app.get("/api/overview")
@@ -196,6 +239,121 @@ async def get_projects() -> dict:
     return {"projects": projects, "stats": stats}
 
 
+@app.get("/api/sessions")
+async def get_sessions(
+    limit: int = Query(100, ge=1, le=1000),
+    project: str | None = Query(None),
+    order_by: str = Query(
+        "started_at_desc",
+        pattern="^(started_at_desc|started_at_asc|cost_desc|cost_asc)$",
+    ),
+) -> list[dict[str, Any]]:
+    """Return recent voice sessions, ordered per ``order_by``.
+
+    Mirror of the /v1/sessions endpoint so the dashboard frontend
+    can stay on a single origin in dev mode (the Vite proxy only
+    forwards /api). Storage method is shared.
+    """
+    gw = _get_gateway()
+    if gw.storage is None:
+        return []
+    return await gw.storage.list_sessions(
+        limit=limit, project=project, order_by=order_by
+    )
+
+
+@app.get("/api/sessions/{session_id}")
+async def get_session_detail(session_id: str) -> dict[str, Any]:
+    """Return one session by id with per-modality breakdown.
+
+    Mirror of /v1/sessions/{id}: returns the session row plus the
+    ``by_modality`` and ``providers`` fields the storage method
+    computes via a join on the requests table. 404 when no row
+    matches.
+    """
+    gw = _get_gateway()
+    if gw.storage is None:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    row = await gw.storage.get_session(session_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    return row
+
+
+@app.get("/api/providers/by-project")
+async def get_providers_by_project(project: str | None = Query(None)) -> dict:
+    """Return per-project provider keys (v0.0.5).
+
+    Surfaces both YAML-defined ``projects.<id>.providers.<name>`` blocks
+    and DB-managed managed_providers rows scoped to a project. The
+    api_key is masked. When ``project=...`` is supplied, only rows
+    scoped to that project are returned.
+    """
+    from voicegateway.core.crypto import decrypt, mask
+
+    gw = _get_gateway()
+    rows: list[dict[str, Any]] = []
+
+    # 1. YAML projects.<id>.providers.<name>. After Item 1 fixed the
+    # config_manager merge, ``config.projects[<id>].providers`` can
+    # contain DB-managed rows alongside YAML entries; skip the DB ones
+    # here so the loop below tags them with source="db" instead.
+    for proj_id, proj_cfg in gw.config.projects.items():
+        for prov_name, prov_cfg in proj_cfg.providers.items():
+            if not isinstance(prov_cfg, dict):
+                continue
+            if prov_cfg.get("_source") == "db":
+                continue
+            api_key = prov_cfg.get("api_key")
+            rows.append(
+                {
+                    "project": proj_id,
+                    "provider": prov_name,
+                    "provider_id": f"{proj_id}:{prov_name}",
+                    "source": "yaml",
+                    "api_key_masked": mask(api_key) if api_key else None,
+                    "base_url": prov_cfg.get("base_url"),
+                    "type": "local" if prov_name in _LOCAL_PROVIDER_NAMES else "cloud",
+                }
+            )
+
+    # 2. DB-managed rows whose project column is non-null. Skip rows
+    # whose composite id is already covered by YAML (YAML wins per
+    # ConfigManager.load_merged precedence).
+    yaml_ids = {r["provider_id"] for r in rows}
+    if gw.storage is not None:
+        for db_row in await gw.storage.list_managed_providers():
+            db_project = db_row.get("project")
+            if db_project is None:
+                # Legacy global row — belongs to /v1/providers, not here.
+                continue
+            pid = db_row["provider_id"]
+            if pid in yaml_ids:
+                continue
+            try:
+                plaintext = decrypt(db_row.get("api_key_encrypted", ""))
+            except ValueError:
+                plaintext = ""
+            ptype = db_row["provider_type"]
+            rows.append(
+                {
+                    "project": db_project,
+                    "provider": ptype,
+                    "provider_id": pid,
+                    "source": "db",
+                    "api_key_masked": mask(plaintext) if plaintext else None,
+                    "base_url": db_row.get("base_url"),
+                    "type": "local" if ptype in _LOCAL_PROVIDER_NAMES else "cloud",
+                }
+            )
+
+    if project is not None:
+        rows = [r for r in rows if r["project"] == project]
+
+    rows.sort(key=lambda r: (r["project"], r["provider"]))
+    return {"providers": rows}
+
+
 # ---------------------------------------------------------------------------
 # Serve the Vite-built frontend (if it exists)
 # ---------------------------------------------------------------------------
@@ -220,6 +378,7 @@ if _FRONTEND_DIR.exists() and (_FRONTEND_DIR / "assets").exists():
         return FileResponse(_FRONTEND_DIR / "index.html")
 
 else:
+
     @app.get("/")
     async def missing_frontend():
         return {

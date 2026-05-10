@@ -122,14 +122,19 @@ sequenceDiagram
 ```
 voicegateway/
   core/
-    gateway.py          # Main Gateway class (orchestrator)
+    gateway.py          # Internal Gateway container (config + storage + middleware)
     config.py           # YAML config loader with ${ENV_VAR} substitution
-    config_manager.py   # Merges YAML + SQLite + env (priority: env > db > yaml)
-    router.py           # Resolves "provider/model" to provider instances
+    config_manager.py   # Merges YAML + SQLite (per-project DB rows land in projects[<id>])
     registry.py         # Lazy provider factory (imports on first use)
-    model_id.py         # Parses "provider/model[:variant]" format
     schema.py           # Pydantic validation for voicegw.yaml
     crypto.py           # Fernet encryption for stored secrets
+  inference/            # Public Python SDK surface (drop-in for livekit.agents.inference)
+    __init__.py         # Re-exports STT, LLM, TTS, set_project, start_session
+    _factory.py         # Process-wide Gateway singleton
+    _project.py         # ContextVar-based active-project resolution
+    _session_context.py # ContextVar-based session_id correlation
+    _resolution.py      # "provider/model" string parser
+    _stt.py / _llm.py / _tts.py
   providers/
     base.py             # BaseProvider ABC (create_stt/llm/tts, health_check)
     openai_provider.py  # OpenAI (STT + LLM + TTS)
@@ -147,7 +152,6 @@ voicegateway/
     cost_tracker.py         # Per-request cost calculation and storage
     latency_monitor.py      # TTFB + total latency tracking
     rate_limiter.py         # Token bucket rate limiter per provider
-    fallback.py             # Automatic model failover chains
     logger.py               # Structured request/response logging
     budget_enforcer.py      # Project budget enforcement (warn/throttle/block)
     instrumented_provider.py # Transparent proxy wrappers for metrics

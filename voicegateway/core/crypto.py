@@ -1,8 +1,17 @@
 """Symmetric encryption for secrets stored in the managed_* tables.
 
-Uses Fernet (AES-128-CBC with HMAC-SHA256 authentication). The key is
-read from VOICEGW_SECRET env var or auto-generated and persisted to
-``~/.config/voicegateway/.secret`` with chmod 600 on first run.
+Uses Fernet (AES-128-CBC with HMAC-SHA256 authentication). The
+primary key is read from ``VOICEGW_SECRET`` env var or auto-generated
+and persisted to ``~/.config/voicegateway/.secret`` with chmod 600 on
+first run.
+
+Rotation: ``VOICEGW_SECRET_FALLBACK`` accepts one or more
+comma-separated previous keys. Decrypt tries them in order so
+ciphertext written under any of the listed keys is still readable
+during a rotation window. Encrypt always uses the primary key. Run
+``voicegw rotate-secret`` after setting the new primary plus the old
+key as fallback to re-encrypt every managed_providers row, then
+remove ``VOICEGW_SECRET_FALLBACK`` from the environment.
 """
 
 from __future__ import annotations
@@ -11,15 +20,16 @@ import os
 import stat
 from pathlib import Path
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
 _SECRET_FILE = Path.home() / ".config" / "voicegateway" / ".secret"
+_FALLBACK_ENV = "VOICEGW_SECRET_FALLBACK"
 
-_fernet: Fernet | None = None
+_fernet: MultiFernet | None = None
 
 
 def get_secret() -> bytes:
-    """Return the Fernet key, from env or secret file.
+    """Return the primary Fernet key, from env or secret file.
 
     Priority: VOICEGW_SECRET env > ~/.config/voicegateway/.secret file.
     If neither exists, generate and persist a new key with chmod 600.
@@ -48,10 +58,38 @@ def get_secret() -> bytes:
     return key
 
 
-def _get_fernet() -> Fernet:
+def _get_fallback_secrets() -> list[bytes]:
+    """Return the parsed VOICEGW_SECRET_FALLBACK keys, or [] when unset.
+
+    Comma-separated values let an operator stage two rotations
+    without losing access to the oldest tokens; entries are stripped
+    of whitespace and skipped when empty (so a trailing comma is
+    not an error).
+    """
+    raw = os.environ.get(_FALLBACK_ENV)
+    if not raw:
+        return []
+    return [chunk.strip().encode() for chunk in raw.split(",") if chunk.strip()]
+
+
+def _build_fernet() -> MultiFernet:
+    """Construct the MultiFernet from primary + fallback keys.
+
+    MultiFernet uses the first instance for encrypt and tries each
+    in order on decrypt. Building primary-first is what makes
+    rotation work: ``encrypt`` writes new tokens with the new key
+    while ``decrypt`` still reads tokens written under the old.
+    """
+    keys = [Fernet(get_secret())]
+    for fallback in _get_fallback_secrets():
+        keys.append(Fernet(fallback))
+    return MultiFernet(keys)
+
+
+def _get_fernet() -> MultiFernet:
     global _fernet  # noqa: PLW0603
     if _fernet is None:
-        _fernet = Fernet(get_secret())
+        _fernet = _build_fernet()
     return _fernet
 
 
@@ -71,8 +109,13 @@ def encrypt(plaintext: str) -> str:
 def decrypt(ciphertext: str) -> str:
     """Decrypt a string. Empty input returns empty string.
 
-    Raises ValueError if the ciphertext is invalid (typically means the
-    secret key changed since encryption).
+    Tries the primary key first, then any keys listed in
+    ``VOICEGW_SECRET_FALLBACK`` in order.
+
+    Raises:
+        ValueError: If no configured key successfully decrypts the
+            ciphertext. Typically means the secret rotated without
+            running ``voicegw rotate-secret``.
     """
     if not ciphertext:
         return ""
@@ -82,7 +125,35 @@ def decrypt(ciphertext: str) -> str:
         raise ValueError(
             "Failed to decrypt managed credential. "
             "This typically means VOICEGW_SECRET changed since the value was stored. "
-            "Re-add the affected providers via the dashboard or MCP."
+            "Set VOICEGW_SECRET_FALLBACK to the previous key and run "
+            "`voicegw rotate-secret` to re-encrypt under the new primary."
+        ) from e
+
+
+def rotate_token(ciphertext: str) -> str:
+    """Re-encrypt ``ciphertext`` under the current primary key.
+
+    Used by ``voicegw rotate-secret`` to migrate ``managed_providers``
+    rows after a key rotation. ``MultiFernet.rotate`` decrypts via
+    any configured key (primary or fallback) and re-encrypts via
+    primary, returning the new ciphertext. An empty input returns
+    an empty string so callers can pass legacy NULL / empty rows
+    through unchanged.
+
+    Raises:
+        ValueError: When neither the primary nor any fallback key
+            decrypts the input. The caller should surface this to
+            the user with the affected row id.
+    """
+    if not ciphertext:
+        return ""
+    try:
+        return _get_fernet().rotate(ciphertext.encode()).decode()
+    except InvalidToken as e:
+        raise ValueError(
+            "Cannot rotate token: no configured key decrypts it. "
+            "The original encryption secret is missing from both "
+            "VOICEGW_SECRET and VOICEGW_SECRET_FALLBACK."
         ) from e
 
 

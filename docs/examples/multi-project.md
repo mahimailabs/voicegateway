@@ -5,82 +5,49 @@ Configure multiple projects with different model stacks, budgets, and tracking. 
 ## Configuration
 
 ```yaml
-providers:
-  openai:
-    api_key: ${OPENAI_API_KEY}
-  deepgram:
-    api_key: ${DEEPGRAM_API_KEY}
-  cartesia:
-    api_key: ${CARTESIA_API_KEY}
-  groq:
-    api_key: ${GROQ_API_KEY}
-  ollama:
-    base_url: http://localhost:11434
-
-models:
-  stt:
-    deepgram/nova-3:
-      provider: deepgram
-      model: nova-3
-    local/whisper-large-v3:
-      provider: whisper
-      model: large-v3
-  llm:
-    openai/gpt-4.1-mini:
-      provider: openai
-      model: gpt-4.1-mini
-    groq/llama-3.3-70b-versatile:
-      provider: groq
-      model: llama-3.3-70b-versatile
-    ollama/qwen2.5:3b:
-      provider: ollama
-      model: qwen2.5:3b
-  tts:
-    cartesia/sonic-3:
-      provider: cartesia
-      model: sonic-3
-      default_voice: 794f9389-aac1-45b6-b726-9d9369183238
-    local/kokoro:
-      provider: kokoro
-
-stacks:
-  premium:
-    stt: deepgram/nova-3
-    llm: openai/gpt-4.1-mini
-    tts: cartesia/sonic-3
-  budget:
-    stt: deepgram/nova-3
-    llm: groq/llama-3.3-70b-versatile
-    tts: cartesia/sonic-3
-  local:
-    stt: local/whisper-large-v3
-    llm: ollama/qwen2.5:3b
-    tts: local/kokoro
-
 projects:
   prod:
     name: Production
     description: Customer-facing voice agents
     daily_budget: 50.00
     budget_action: throttle
-    default_stack: premium
     tags: [production, customer-facing]
+    providers:
+      openai:
+        api_key: ${PROD_OPENAI_KEY}
+      deepgram:
+        api_key: ${PROD_DEEPGRAM_KEY}
+      cartesia:
+        api_key: ${PROD_CARTESIA_KEY}
 
   staging:
     name: Staging
     description: Pre-release testing environment
     daily_budget: 10.00
     budget_action: warn
-    default_stack: budget
     tags: [staging, testing]
+    providers:
+      openai:
+        api_key: ${STAGING_OPENAI_KEY}
+      deepgram:
+        api_key: ${STAGING_DEEPGRAM_KEY}
+      cartesia:
+        api_key: ${STAGING_CARTESIA_KEY}
 
   dev:
     name: Development
     description: Developer sandbox
     daily_budget: 5.00
     budget_action: block
-    default_stack: local
     tags: [development]
+    # dev uses local providers — no api_key needed; ollama and friends
+    # read from the top-level providers: block.
+
+providers:
+  ollama:
+    base_url: http://localhost:11434
+  whisper: {}
+  kokoro: {}
 
 cost_tracking:
   enabled: true
@@ -89,49 +56,47 @@ cost_tracking:
 ## Using Projects in Code
 
 ```python
-from voicegateway import Gateway
+from voicegateway import inference
 
-gw = Gateway()
-
-# Production: uses premium stack, throttles to local on budget exceed
-stt, llm, tts = gw.stack("premium", project="prod")
-
-# Staging: uses budget stack, warns on budget exceed
-stt, llm, tts = gw.stack("budget", project="staging")
-
-# Development: uses local stack, blocks on budget exceed
-stt, llm, tts = gw.stack("local", project="dev")
+# Production: pass the project explicitly per call context.
+inference.set_project("prod")
+stt = inference.STT("deepgram/nova-3")
+llm = inference.LLM("openai/gpt-4.1-mini")
+tts = inference.TTS("cartesia/sonic-3")
 ```
 
-### Per-Request Project Tagging
-
-You can also tag individual requests with a project ID:
+The active project is scoped to the current async context, so different
+asyncio tasks within the same process can each pick a different
+project without interfering:
 
 ```python
-# These requests are tracked under the "prod" project
-stt = gw.stt("deepgram/nova-3", project="prod")
-llm = gw.llm("openai/gpt-4.1-mini", project="prod")
-tts = gw.tts("cartesia/sonic-3", project="prod")
+async def production_handler(ctx):
+    inference.set_project("prod")
+    # all inference factories below charge prod
+    ...
 
-# These are tracked under "staging"
-stt = gw.stt("deepgram/nova-3", project="staging")
-llm = gw.llm("groq/llama-3.3-70b-versatile", project="staging")
+async def staging_handler(ctx):
+    inference.set_project("staging")
+    # sibling task — no leakage
+    ...
+
+async def dev_handler(ctx):
+    inference.set_project("dev")
+    stt = inference.STT("local/whisper-large-v3")
+    llm = inference.LLM("ollama/qwen2.5:3b")
+    tts = inference.TTS("local/kokoro")
 ```
+
+For workers that always serve one project, set `default_project: prod` (or whichever) in `voicegw.yaml` and skip the `set_project` call entirely.
 
 ## Querying Per-Project Costs
 
-```python
-# Get costs for a specific project
-prod_costs = gw.costs(period="today", project="prod")
-print(f"Production today: ${prod_costs['total']:.2f}")
+### Via the CLI
 
-staging_costs = gw.costs(period="today", project="staging")
-print(f"Staging today: ${staging_costs['total']:.2f}")
-
-# Get all projects and their status
-projects = gw.list_projects()
-for p in projects:
-    print(f"  {p['id']}: {p['name']} (budget: ${p['daily_budget']:.2f}/day)")
+```bash
+voicegw costs --project prod
+voicegw costs --project staging
+voicegw projects   # shows budget + recent spend per project
 ```
 
 ### Via the HTTP API

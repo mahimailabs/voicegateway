@@ -44,6 +44,27 @@ async def test_v1_status(client):
     assert "project_count" in data
 
 
+async def test_v1_status_includes_pricing_freshness(client):
+    """Q7: /v1/status carries the catalog freshness subtree so the
+    dashboard can render an "estimates last verified ..." banner
+    without scraping the pricing modules itself.
+    """
+    resp = await client.get("/v1/status")
+    data = resp.json()
+    assert "pricing" in data
+    assert "llm" in data["pricing"]
+    assert "stt" in data["pricing"]
+    assert "tts" in data["pricing"]
+    # LLM source comes from genai-prices' library version.
+    assert data["pricing"]["llm"]["source"].startswith("genai-prices@")
+    # STT and TTS sources name the local catalog and carry the
+    # oldest per-entry verification date as ISO YYYY-MM-DD.
+    for modality in ("stt", "tts"):
+        entry = data["pricing"][modality]
+        assert entry["source"].startswith("voicegateway-catalog@")
+        assert len(entry["oldest_entry_date"].split("-")) == 3
+
+
 async def test_v1_models(client):
     resp = await client.get("/v1/models")
     assert resp.status_code == 200
@@ -93,23 +114,88 @@ async def test_v1_costs_per_modality_when_requested(client):
     assert data["by_modality"] == {}
 
 
-async def test_v1_costs_include_pricing_source_default_off(client):
-    """Default response leaves by_model entries without per-line attribution."""
+async def test_v1_costs_includes_pricing_source_by_default(client, gateway):
+    """Q7: include_pricing_source defaults to True since v0.0.5 so the
+    dashboard's cost view always carries the attribution string per
+    by_model entry without an opt-in flag.
+    """
+    import time
+    import uuid
+
+    from voicegateway.storage.models import RequestRecord
+
+    await gateway.storage.log_request(
+        RequestRecord(
+            id=str(uuid.uuid4()),
+            timestamp=time.time(),
+            modality="llm",
+            model_id="openai/gpt-4o-mini",
+            provider="openai",
+            project="test-project",
+            input_units=100,
+            output_units=50,
+            cost_usd=0.01,
+            pricing_source="genai-prices@0.0.57",
+        )
+    )
+
+    resp = await client.get("/v1/costs?period=today")
+    assert resp.status_code == 200
+    data = resp.json()
+    by_model = data["by_model"]
+    assert "openai/gpt-4o-mini" in by_model
+    # The attribution string is present without us having to ask
+    # for it explicitly.
+    assert by_model["openai/gpt-4o-mini"]["pricing_source"] == "genai-prices@0.0.57"
+
+
+async def test_v1_costs_pricing_source_opt_out(client, gateway):
+    """Pass ?include_pricing_source=false to drop the per-row
+    attribution. Useful when the caller doesn't need it (e.g. raw
+    metric scrapes that key off cost only).
+    """
+    import time
+    import uuid
+
+    from voicegateway.storage.models import RequestRecord
+
+    await gateway.storage.log_request(
+        RequestRecord(
+            id=str(uuid.uuid4()),
+            timestamp=time.time(),
+            modality="llm",
+            model_id="openai/gpt-4o-mini",
+            provider="openai",
+            project="test-project",
+            cost_usd=0.01,
+            pricing_source="genai-prices@0.0.57",
+        )
+    )
+
+    resp = await client.get("/v1/costs?period=today&include_pricing_source=false")
+    data = resp.json()
+    by_model = data["by_model"]
+    assert "pricing_source" not in by_model.get("openai/gpt-4o-mini", {})
+
+
+async def test_v1_costs_include_pricing_source_default_on(client):
+    """Q7: include_pricing_source defaults to True since v0.0.5. With
+    no traffic recorded the response is shape-valid and by_model is
+    empty; the flag's effect on populated entries is exercised by
+    test_v1_costs_includes_pricing_source_by_default below.
+    """
     resp = await client.get("/v1/costs")
     assert resp.status_code == 200
-    by_model = resp.json().get("by_model", {})
-    for entry in by_model.values():
-        assert "pricing_source" not in entry
+    data = resp.json()
+    assert "by_model" in data
 
 
-async def test_v1_costs_include_pricing_source_when_requested(client):
-    """`?include_pricing_source=true` is accepted; response shape stays valid."""
+async def test_v1_costs_include_pricing_source_explicit_true(client):
+    """`?include_pricing_source=true` is accepted (matches the new default)."""
     resp = await client.get("/v1/costs?include_pricing_source=true")
     assert resp.status_code == 200
     data = resp.json()
     assert "by_model" in data
-    # Empty traffic means no entries to attribute. The flag's effect on
-    # populated entries is exercised in tests/storage/test_storage.py.
 
 
 async def test_v1_costs_with_iso_date_window(client):

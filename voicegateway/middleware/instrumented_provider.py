@@ -1,8 +1,23 @@
-"""Transparent instrumentation wrappers for provider instances.
+"""Subclass-based instrumentation wrappers for LiveKit plugin instances.
 
-Wraps STT, LLM, and TTS instances returned by providers to automatically
-record latency and cost metrics. All attribute access is proxied to the
-underlying instance so user code sees no API changes.
+Pre-v0.0.5 audit-fix this module used a ``__getattr__``-style proxy. That
+broke LK 1.5.x runtime: ``livekit.agents.voice.agent_activity`` runs
+many ``isinstance(self.tts, tts.TTS)`` (and STT/LLM equivalents) checks
+before attaching its ``metrics_collected`` and ``error`` listeners. When
+the proxy failed those checks the listeners never fired, ``SpeechHandle``
+never observed completion, and the framework's 5-second
+``INTERRUPTION_TIMEOUT`` cancelled every speech under real audio.
+
+The wrappers here subclass the matching LK base class and forward the
+abstract method calls to the wrapped real plugin instance. They also
+re-emit ``metrics_collected`` and ``error`` events from the wrapped
+plugin onto themselves so listeners attached to the wrapper (the only
+identity LK sees through its ``isinstance`` gate) receive everything
+the wrapped plugin emits.
+
+The instrumentation surface (``_mark_first_byte`` / ``_log_request``
+plus the timing/cost-tracking state) is preserved verbatim so the
+smoke-test direct-call path in ``voicegateway/cli.py`` stays green.
 """
 
 from __future__ import annotations
@@ -10,6 +25,11 @@ from __future__ import annotations
 import logging
 import time
 from typing import TYPE_CHECKING, Any
+
+from livekit.agents import llm as lk_llm
+from livekit.agents import stt as lk_stt
+from livekit.agents import tts as lk_tts
+from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, NOT_GIVEN
 
 if TYPE_CHECKING:
     from voicegateway.middleware.cost_tracker import CostTracker
@@ -19,44 +39,64 @@ logger = logging.getLogger(__name__)
 
 
 class _InstrumentedBase:
-    """Base wrapper that proxies attribute access and logs a request record."""
+    """Mixin holding the cost/latency state shared across STT/LLM/TTS wrappers.
+
+    Concrete subclasses combine this with the appropriate LK plugin base
+    class (``lk_stt.STT`` / ``lk_llm.LLM`` / ``lk_tts.TTS``) so
+    ``isinstance(...)`` checks inside LiveKit's session bookkeeping
+    succeed and metrics listeners attach to the wrapper as expected.
+    """
 
     _modality: str = ""
+    # Set by ``_init_instrumentation`` on every concrete subclass.
+    _wrapped: Any
+    _model_id: str
+    _provider: str
+    _project: str
+    _cost_tracker: CostTracker
+    _storage: SQLiteStorage | None
+    _start_time: float
+    _first_byte_time: float | None
+    _logged: bool
 
-    def __init__(
+    def _init_instrumentation(
         self,
+        *,
         wrapped: Any,
         model_id: str,
         provider: str,
         project: str,
         cost_tracker: CostTracker,
         storage: SQLiteStorage | None,
-    ):
-        # Use object.__setattr__ to avoid triggering __setattr__ proxy
-        object.__setattr__(self, "_wrapped", wrapped)
-        object.__setattr__(self, "_model_id", model_id)
-        object.__setattr__(self, "_provider", provider)
-        object.__setattr__(self, "_project", project)
-        object.__setattr__(self, "_cost_tracker", cost_tracker)
-        object.__setattr__(self, "_storage", storage)
-        object.__setattr__(self, "_start_time", time.perf_counter())
-        object.__setattr__(self, "_first_byte_time", None)
-        object.__setattr__(self, "_logged", False)
+    ) -> None:
+        self._wrapped = wrapped
+        self._model_id = model_id
+        self._provider = provider
+        self._project = project
+        self._cost_tracker = cost_tracker
+        self._storage = storage
+        self._start_time = time.perf_counter()
+        self._first_byte_time = None
+        self._logged = False
+        # Bridge events: re-emit on self so LK's listeners (registered
+        # on the wrapper because of isinstance gating in
+        # agent_activity._start_session) receive everything the wrapped
+        # plugin emits. This is the single fix that unblocks AC-2 — the
+        # rest of the rewrite is plumbing to make this bridge possible.
+        wrapped.on("metrics_collected", self._forward_metrics)
+        wrapped.on("error", self._forward_error)
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(object.__getattribute__(self, "_wrapped"), name)
+    def _forward_metrics(self, *args: Any, **kwargs: Any) -> None:
+        # ``emit`` lives on the LK base class via rtc.EventEmitter.
+        self.emit("metrics_collected", *args, **kwargs)  # type: ignore[attr-defined]
 
-    def __setattr__(self, name: str, value: Any) -> None:
-        setattr(object.__getattribute__(self, "_wrapped"), name, value)
-
-    def __repr__(self) -> str:
-        wrapped = object.__getattribute__(self, "_wrapped")
-        return f"<Instrumented{self._modality.upper()} wrapping {wrapped!r}>"
+    def _forward_error(self, *args: Any, **kwargs: Any) -> None:
+        self.emit("error", *args, **kwargs)  # type: ignore[attr-defined]
 
     def _mark_first_byte(self) -> None:
-        """Record the time of the first byte/token/result."""
-        if object.__getattribute__(self, "_first_byte_time") is None:
-            object.__setattr__(self, "_first_byte_time", time.perf_counter())
+        """Record the time of the first byte/token/audio frame."""
+        if self._first_byte_time is None:
+            self._first_byte_time = time.perf_counter()
 
     async def _log_request(
         self,
@@ -65,64 +105,269 @@ class _InstrumentedBase:
         status: str = "success",
         error_message: str | None = None,
     ) -> None:
-        """Log the request to storage."""
-        if object.__getattribute__(self, "_logged"):
+        """Log the request to storage. Idempotent: subsequent calls no-op."""
+        if self._logged:
             return
-        object.__setattr__(self, "_logged", True)
-
-        start = object.__getattribute__(self, "_start_time")
-        first_byte = object.__getattribute__(self, "_first_byte_time")
-        model_id = object.__getattribute__(self, "_model_id")
-        provider = object.__getattribute__(self, "_provider")
-        project = object.__getattribute__(self, "_project")
-        cost_tracker = object.__getattribute__(self, "_cost_tracker")
-        storage = object.__getattribute__(self, "_storage")
+        self._logged = True
 
         now = time.perf_counter()
-        total_ms = (now - start) * 1000
-        ttfb_ms = (first_byte - start) * 1000 if first_byte else total_ms
+        total_ms = (now - self._start_time) * 1000
+        ttfb_ms = (
+            (self._first_byte_time - self._start_time) * 1000
+            if self._first_byte_time is not None
+            else total_ms
+        )
 
-        record = cost_tracker.create_record(
-            model_id=model_id,
+        # Read the per-context session id at request time so calls made
+        # inside an AgentSession share the same row-level session_id.
+        from voicegateway.inference._session_context import get_session_id
+
+        record = self._cost_tracker.create_record(
+            model_id=self._model_id,
             modality=self._modality,
-            provider=provider,
-            project=project,
+            provider=self._provider,
+            project=self._project,
             input_units=input_units,
             output_units=output_units,
             ttfb_ms=ttfb_ms,
             total_latency_ms=total_ms,
             status=status,
             error_message=error_message,
+            session_id=get_session_id(),
         )
 
-        if storage is not None:
+        if self._storage is not None:
             try:
-                await storage.log_request(record)
+                await self._storage.log_request(record)
             except Exception:
                 logger.warning("Failed to log request record", exc_info=True)
 
         # Update the budget enforcer's spend cache so the next check within
-        # the TTL window sees this request's cost. Done regardless of
-        # whether storage is enabled — the enforcer's cache is in-memory.
-        await cost_tracker.notify_spend(record)
+        # the TTL window sees this request's cost — runs even when storage
+        # raises, otherwise per-project budget caps drift after any
+        # storage outage.
+        await self._cost_tracker.notify_spend(record)
+
+    def __getattr__(self, name: str) -> Any:
+        # Only fires when normal attribute lookup fails. Provider-specific
+        # helpers that aren't on the LK base class (e.g., a Cartesia-only
+        # ``set_voice``) still flow through to the wrapped instance.
+        wrapped = object.__getattribute__(self, "_wrapped")
+        return getattr(wrapped, name)
 
 
-class InstrumentedSTT(_InstrumentedBase):
-    """Wrapper for STT instances that records latency and cost."""
+class InstrumentedSTT(lk_stt.STT, _InstrumentedBase):
+    """STT wrapper that records latency/cost via LK's metrics events."""
 
     _modality = "stt"
 
+    def __init__(
+        self,
+        *,
+        wrapped: lk_stt.STT,
+        model_id: str,
+        provider: str,
+        project: str,
+        cost_tracker: CostTracker,
+        storage: SQLiteStorage | None,
+    ) -> None:
+        super().__init__(capabilities=wrapped.capabilities)
+        self._init_instrumentation(
+            wrapped=wrapped,
+            model_id=model_id,
+            provider=provider,
+            project=project,
+            cost_tracker=cost_tracker,
+            storage=storage,
+        )
 
-class InstrumentedLLM(_InstrumentedBase):
-    """Wrapper for LLM instances that records latency and cost."""
+    @property
+    def label(self) -> str:
+        # ``self._wrapped`` is typed as ``Any`` so its attribute access
+        # returns ``Any``; the LK base classes guarantee the underlying
+        # value is a string, but we coerce for mypy and to be defensive
+        # against an exotic plugin returning a non-string label.
+        return str(self._wrapped.label)
+
+    @property
+    def model(self) -> str:
+        return str(self._wrapped.model)
+
+    @property
+    def provider(self) -> str:
+        return str(self._wrapped.provider)
+
+    async def _recognize_impl(
+        self,
+        buffer: Any,
+        *,
+        language: Any = NOT_GIVEN,
+        conn_options: Any = DEFAULT_API_CONNECT_OPTIONS,
+    ) -> Any:
+        return await self._wrapped._recognize_impl(
+            buffer, language=language, conn_options=conn_options
+        )
+
+    async def recognize(
+        self,
+        buffer: Any,
+        *,
+        language: Any = NOT_GIVEN,
+        conn_options: Any = DEFAULT_API_CONNECT_OPTIONS,
+    ) -> Any:
+        return await self._wrapped.recognize(
+            buffer, language=language, conn_options=conn_options
+        )
+
+    def stream(
+        self,
+        *,
+        language: Any = NOT_GIVEN,
+        conn_options: Any = DEFAULT_API_CONNECT_OPTIONS,
+    ) -> Any:
+        return self._wrapped.stream(language=language, conn_options=conn_options)
+
+    def prewarm(self) -> None:
+        self._wrapped.prewarm()
+
+    async def aclose(self) -> None:
+        await self._wrapped.aclose()
+
+    def __repr__(self) -> str:
+        return f"<InstrumentedSTT wrapping {self._wrapped!r}>"
+
+
+class InstrumentedLLM(lk_llm.LLM, _InstrumentedBase):
+    """LLM wrapper that records latency/cost via LK's metrics events."""
 
     _modality = "llm"
 
+    def __init__(
+        self,
+        *,
+        wrapped: lk_llm.LLM,
+        model_id: str,
+        provider: str,
+        project: str,
+        cost_tracker: CostTracker,
+        storage: SQLiteStorage | None,
+    ) -> None:
+        super().__init__()
+        self._init_instrumentation(
+            wrapped=wrapped,
+            model_id=model_id,
+            provider=provider,
+            project=project,
+            cost_tracker=cost_tracker,
+            storage=storage,
+        )
 
-class InstrumentedTTS(_InstrumentedBase):
-    """Wrapper for TTS instances that records latency and cost."""
+    @property
+    def label(self) -> str:
+        # ``self._wrapped`` is typed as ``Any`` so its attribute access
+        # returns ``Any``; the LK base classes guarantee the underlying
+        # value is a string, but we coerce for mypy and to be defensive
+        # against an exotic plugin returning a non-string label.
+        return str(self._wrapped.label)
+
+    @property
+    def model(self) -> str:
+        return str(self._wrapped.model)
+
+    @property
+    def provider(self) -> str:
+        return str(self._wrapped.provider)
+
+    def chat(
+        self,
+        *,
+        chat_ctx: Any,
+        tools: Any = None,
+        conn_options: Any = DEFAULT_API_CONNECT_OPTIONS,
+        parallel_tool_calls: Any = NOT_GIVEN,
+        tool_choice: Any = NOT_GIVEN,
+        extra_kwargs: Any = NOT_GIVEN,
+    ) -> Any:
+        return self._wrapped.chat(
+            chat_ctx=chat_ctx,
+            tools=tools,
+            conn_options=conn_options,
+            parallel_tool_calls=parallel_tool_calls,
+            tool_choice=tool_choice,
+            extra_kwargs=extra_kwargs,
+        )
+
+    def prewarm(self) -> None:
+        self._wrapped.prewarm()
+
+    async def aclose(self) -> None:
+        await self._wrapped.aclose()
+
+    def __repr__(self) -> str:
+        return f"<InstrumentedLLM wrapping {self._wrapped!r}>"
+
+
+class InstrumentedTTS(lk_tts.TTS, _InstrumentedBase):
+    """TTS wrapper that records latency/cost via LK's metrics events."""
 
     _modality = "tts"
+
+    def __init__(
+        self,
+        *,
+        wrapped: lk_tts.TTS,
+        model_id: str,
+        provider: str,
+        project: str,
+        cost_tracker: CostTracker,
+        storage: SQLiteStorage | None,
+    ) -> None:
+        super().__init__(
+            capabilities=wrapped.capabilities,
+            sample_rate=wrapped.sample_rate,
+            num_channels=wrapped.num_channels,
+        )
+        self._init_instrumentation(
+            wrapped=wrapped,
+            model_id=model_id,
+            provider=provider,
+            project=project,
+            cost_tracker=cost_tracker,
+            storage=storage,
+        )
+
+    @property
+    def label(self) -> str:
+        # ``self._wrapped`` is typed as ``Any`` so its attribute access
+        # returns ``Any``; the LK base classes guarantee the underlying
+        # value is a string, but we coerce for mypy and to be defensive
+        # against an exotic plugin returning a non-string label.
+        return str(self._wrapped.label)
+
+    @property
+    def model(self) -> str:
+        return str(self._wrapped.model)
+
+    @property
+    def provider(self) -> str:
+        return str(self._wrapped.provider)
+
+    def synthesize(
+        self, text: str, *, conn_options: Any = DEFAULT_API_CONNECT_OPTIONS
+    ) -> Any:
+        return self._wrapped.synthesize(text, conn_options=conn_options)
+
+    def stream(self, *, conn_options: Any = DEFAULT_API_CONNECT_OPTIONS) -> Any:
+        return self._wrapped.stream(conn_options=conn_options)
+
+    def prewarm(self) -> None:
+        self._wrapped.prewarm()
+
+    async def aclose(self) -> None:
+        await self._wrapped.aclose()
+
+    def __repr__(self) -> str:
+        return f"<InstrumentedTTS wrapping {self._wrapped!r}>"
 
 
 def wrap_provider(
@@ -136,17 +381,12 @@ def wrap_provider(
 ) -> Any:
     """Wrap a provider instance with instrumentation.
 
-    Args:
-        instance: The raw provider instance (STT, LLM, or TTS).
-        modality: One of "stt", "llm", "tts".
-        model_id: Full model ID string (e.g., "deepgram/nova-3").
-        provider: Provider name (e.g., "deepgram").
-        project: Project ID for cost tracking.
-        cost_tracker: CostTracker instance for cost calculation.
-        storage: SQLiteStorage instance (or None if disabled).
-
-    Returns:
-        Instrumented wrapper that proxies all access to the original instance.
+    Public signature is byte-identical to the pre-fix version so the
+    four call sites in ``voicegateway/inference/_{stt,llm,tts}.py`` and
+    the smoke-test stub path in ``voicegateway/cli.py`` keep working.
+    Behind it the wrapper is now a proper LK base-class subclass so
+    ``AgentSession``'s ``isinstance`` gates succeed and the
+    ``metrics_collected`` / ``error`` listeners attach.
     """
     wrapper_cls = {
         "stt": InstrumentedSTT,

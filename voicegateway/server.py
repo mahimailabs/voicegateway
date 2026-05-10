@@ -127,12 +127,37 @@ def build_app(gateway: Gateway) -> FastAPI:
                 if name in ("ollama", "whisper", "kokoro", "piper")
                 else "cloud",
             }
+        # Surface catalog freshness so the dashboard can render
+        # "estimates last verified ..." copy without joining the
+        # pricing tables itself. ``stt`` and ``tts`` carry both the
+        # source string (logged on each request as ``pricing_source``)
+        # and the oldest per-entry verification date so the UI can
+        # show a yellow banner when any rate crossed a staleness
+        # threshold. ``llm`` derives its source from the
+        # ``genai-prices`` library version; the upstream catalog is
+        # versioned, not date-stamped.
+        from voicegateway.pricing import llm as _llm_pricing
+        from voicegateway.pricing import stt as _stt_pricing
+        from voicegateway.pricing import tts as _tts_pricing
+
+        pricing = {
+            "llm": {"source": _llm_pricing.PRICING_SOURCE},
+            "stt": {
+                "source": _stt_pricing.PRICING_SOURCE,
+                "oldest_entry_date": _stt_pricing._oldest_pricing_date().isoformat(),
+            },
+            "tts": {
+                "source": _tts_pricing.PRICING_SOURCE,
+                "oldest_entry_date": _tts_pricing._oldest_pricing_date().isoformat(),
+            },
+        }
         return {
             "providers": providers,
             "model_count": sum(
                 len(v) for v in cfg.models.values() if isinstance(v, dict)
             ),
             "project_count": len(cfg.projects),
+            "pricing": pricing,
         }
 
     @app.get("/v1/models")
@@ -168,15 +193,18 @@ def build_app(gateway: Gateway) -> FastAPI:
         period: str | None = Query(None),
         project: str | None = Query(None),
         per_modality: bool = Query(False),
-        include_pricing_source: bool = Query(False),
+        include_pricing_source: bool = Query(True),
         start: str | None = Query(None),
         end: str | None = Query(None),
     ) -> dict:
         # Top-level `pricing_sources` records the catalog the running
-        # instance is currently using (per modality). When
-        # `include_pricing_source=true`, each `by_model` entry also
-        # carries the source(s) that priced its historical records,
-        # which is what reconciliation against an invoice needs.
+        # instance is currently using (per modality). With
+        # `include_pricing_source=true` (the default since v0.0.5),
+        # each `by_model` entry also carries the source(s) that priced
+        # its historical records, which is what the dashboard's
+        # cost-staleness banner and `voicegw reconcile` against an
+        # invoice both need. Pass `?include_pricing_source=false` to
+        # opt out of the per-row attribution.
         pricing_sources = {
             modality: catalog.pricing_source(modality)
             for modality in ("llm", "stt", "tts")
@@ -230,8 +258,10 @@ def build_app(gateway: Gateway) -> FastAPI:
             summary["by_project"] = {}
         if per_modality:
             summary["by_modality"] = await gateway.storage.get_cost_by_modality(
-                effective_period, project=project,
-                start_ts=start_ts, end_ts=end_ts,
+                effective_period,
+                project=project,
+                start_ts=start_ts,
+                end_ts=end_ts,
             )
         summary["pricing_sources"] = pricing_sources
         return summary
@@ -300,6 +330,53 @@ def build_app(gateway: Gateway) -> FastAPI:
             limit=limit, modality=modality, project=project
         )
 
+    @app.get("/v1/sessions")
+    async def v1_sessions(
+        limit: int = Query(100, ge=1, le=1000),
+        project: str | None = Query(None),
+        order_by: str = Query(
+            "started_at_desc",
+            pattern="^(started_at_desc|started_at_asc|cost_desc|cost_asc)$",
+        ),
+    ) -> list[dict]:
+        """Return recent voice sessions, ordered per ``order_by``.
+
+        Sessions are populated by the v0.0.5 inference module via
+        ContextVar correlation; rows accumulate cost and request count
+        over the life of one logical voice session. ``ended_at``
+        tracks last activity (the timestamp of the most recent
+        request) so duration is queryable without a session-close
+        hook. ``order_by`` defaults to newest first; pass
+        ``cost_desc`` to find the most expensive sessions.
+        """
+        if gateway.storage is None:
+            return []
+        return await gateway.storage.list_sessions(
+            limit=limit, project=project, order_by=order_by
+        )
+
+    @app.get("/v1/sessions/{session_id}")
+    async def v1_session_detail(session_id: str) -> dict:
+        """Return one session by id with a per-modality cost breakdown.
+
+        The response includes ``by_modality`` (a dict keyed by
+        ``"stt"`` / ``"llm"`` / ``"tts"`` with ``cost`` and
+        ``request_count``) and ``providers`` (deduplicated list of
+        provider names seen in this session). Both are computed by
+        joining the ``requests`` table on ``session_id`` at read
+        time. 404 when no session matches.
+        """
+        if gateway.storage is None:
+            raise HTTPException(
+                status_code=404, detail=f"Session '{session_id}' not found"
+            )
+        row = await gateway.storage.get_session(session_id)
+        if row is None:
+            raise HTTPException(
+                status_code=404, detail=f"Session '{session_id}' not found"
+            )
+        return row
+
     @app.get("/v1/metrics", response_class=PlainTextResponse)
     async def v1_metrics() -> str:
         """Prometheus-format metrics."""
@@ -341,9 +418,7 @@ def build_app(gateway: Gateway) -> FastAPI:
             # Per-model latency summaries. Prometheus ``summary`` convention:
             # one series per quantile label, values in seconds.
             pcts = gateway.config.latency.get("percentiles") or [50.0, 95.0, 99.0]
-            latency = await gateway.storage.get_latency_stats(
-                "today", percentiles=pcts
-            )
+            latency = await gateway.storage.get_latency_stats("today", percentiles=pcts)
             if latency:
                 lines += [
                     "# HELP voicegw_request_ttfb_seconds "
@@ -360,14 +435,14 @@ def build_app(gateway: Gateway) -> FastAPI:
                         ttfb_v = s.get("ttfb_percentiles", {}).get(key)
                         if ttfb_v is not None:
                             lines.append(
-                                f'voicegw_request_ttfb_seconds'
+                                f"voicegw_request_ttfb_seconds"
                                 f'{{model="{model}",quantile="{q}"}} '
                                 f"{ttfb_v / 1000:.6f}"
                             )
                         lat_v = s.get("latency_percentiles", {}).get(key)
                         if lat_v is not None:
                             lines.append(
-                                f'voicegw_request_total_latency_seconds'
+                                f"voicegw_request_total_latency_seconds"
                                 f'{{model="{model}",quantile="{q}"}} '
                                 f"{lat_v / 1000:.6f}"
                             )
@@ -409,6 +484,12 @@ def build_app(gateway: Gateway) -> FastAPI:
         ptype = body.get("provider_type", pid)
         api_key = body.get("api_key", "")
         base_url = body.get("base_url")
+        # v0.0.5: optional per-project scope. When set, the row's
+        # project column is populated so the dashboard's
+        # /api/providers/by-project endpoint surfaces it under that
+        # project. Pre-v0.0.5 callers omit this field; the column
+        # stays NULL (legacy global semantics).
+        project = body.get("project")
 
         if not pid or not isinstance(pid, str):
             raise HTTPException(400, "provider_id is required and must be a string")
@@ -421,17 +502,45 @@ def build_app(gateway: Gateway) -> FastAPI:
             )
             if not is_managed:
                 raise HTTPException(409, f"Provider '{pid}' already exists in YAML")
+        # When the caller scopes the row to a project, also reject if the
+        # YAML already pins that project's slot for this provider type.
+        # Without this check the DB row writes successfully but
+        # ConfigManager.load_merged keeps the YAML entry, so the rotated
+        # credential silently never gets used.
+        if project:
+            existing_project = gateway.config.projects.get(project)
+            if existing_project is not None and ptype in existing_project.providers:
+                yaml_entry = existing_project.providers[ptype]
+                yaml_pinned = (
+                    not isinstance(yaml_entry, dict)
+                    or yaml_entry.get("_source") != "db"
+                )
+                if yaml_pinned:
+                    raise HTTPException(
+                        409,
+                        f"Provider '{ptype}' is already pinned in YAML at "
+                        f"projects.{project}.providers.{ptype}; "
+                        "remove it from voicegw.yaml before creating a "
+                        "managed override.",
+                    )
         if gateway.storage is None:
             raise HTTPException(400, "Storage not enabled")
 
-        await gateway.storage.upsert_managed_provider(pid, ptype, api_key, base_url)
+        await gateway.storage.upsert_managed_provider(
+            pid, ptype, api_key, base_url, project=project
+        )
         audit_body = {**body, "api_key": "<redacted>"} if "api_key" in body else body
         await gateway.storage.log_audit_event(
             "provider", pid, "create", audit_body, "api"
         )
         await gateway.refresh_config()
 
-        return {"provider_id": pid, "source": "db", "api_key_masked": mask(api_key)}
+        return {
+            "provider_id": pid,
+            "source": "db",
+            "api_key_masked": mask(api_key),
+            "project": project,
+        }
 
     @app.patch("/v1/providers/{provider_id}", dependencies=[write_dep])
     async def v1_update_provider(provider_id: str, body: dict[str, Any]) -> dict:
@@ -452,8 +561,13 @@ def build_app(gateway: Gateway) -> FastAPI:
         if ptype not in _PROVIDER_REGISTRY:
             raise HTTPException(400, f"Unknown provider_type '{ptype}'")
 
+        # Preserve the row's existing project scope on PATCH unless the
+        # caller explicitly overrides it. Rotating a per-project key
+        # MUST NOT silently demote it to global scope.
+        project = body.get("project", existing.get("project"))
+
         await gateway.storage.upsert_managed_provider(
-            provider_id, ptype, api_key, base_url
+            provider_id, ptype, api_key, base_url, project=project
         )
         audit_body = {**body, "api_key": "<redacted>"} if "api_key" in body else body
         await gateway.storage.log_audit_event(
@@ -487,6 +601,60 @@ def build_app(gateway: Gateway) -> FastAPI:
         await gateway.refresh_config()
         return {"deleted": provider_id}
 
+    async def _resolve_test_target(
+        provider_id: str,
+    ) -> tuple[str | None, dict[str, Any] | None]:
+        """Return ``(provider_type, provider_config)`` for the test path.
+
+        Resolution order matches the v0.0.5 wedge:
+
+        1. Top-level ``providers.<id>`` (legacy global config).
+        2. DB-managed ``managed_providers`` row keyed by id (covers
+           the composite ``"<project>:<provider>"`` rows written by
+           ``vg_add_provider``). Returns the row's actual
+           ``provider_type`` and decrypted api_key.
+        3. YAML per-project ``projects.<project>.providers.<provider>``
+           when the id is in composite form. Returns the YAML entry
+           verbatim with ``provider_type`` derived from the suffix.
+
+        Returns ``(None, None)`` if no matching entry exists.
+        """
+        cfg = gateway.config
+
+        # 1. Top-level providers (also catches DB rows merged in via
+        # ConfigManager.load_merged when they have no project scope).
+        if provider_id in cfg.providers:
+            pcfg = cfg.providers[provider_id]
+            if isinstance(pcfg, dict):
+                # If the merged dict came from the DB, ConfigManager
+                # tagged it with `_source: "db"` but did not populate
+                # provider_type — fall through to the storage lookup.
+                if pcfg.get("_source") != "db":
+                    return provider_id, dict(pcfg)
+
+        # 2. Storage-side managed_providers row (the canonical place
+        # where provider_type lives for DB-managed rows, including
+        # the per-project composite ids written by vg_add_provider).
+        if gateway.storage is not None:
+            row = await gateway.storage.get_managed_provider(provider_id)
+            if row is not None:
+                from voicegateway.core.crypto import decrypt
+
+                return row["provider_type"], {
+                    "api_key": decrypt(row.get("api_key_encrypted", "")),
+                    "base_url": row.get("base_url"),
+                    **(row.get("extra_config") or {}),
+                }
+
+        # 3. YAML per-project entry: id has the form "<project>:<provider>".
+        if ":" in provider_id:
+            project, _, provider_type = provider_id.partition(":")
+            project_cfg = cfg.projects.get(project)
+            if project_cfg is not None and provider_type in project_cfg.providers:
+                return provider_type, dict(project_cfg.providers[provider_type])
+
+        return None, None
+
     @app.post("/v1/providers/{provider_id}/test", dependencies=[write_dep])
     async def v1_test_provider(provider_id: str) -> dict:
         import asyncio as _asyncio
@@ -495,14 +663,9 @@ def build_app(gateway: Gateway) -> FastAPI:
         from voicegateway.core.registry import _PROVIDER_REGISTRY, create_provider
 
         _test_log = _logging.getLogger(__name__)
-        pcfg = gateway.config.providers.get(provider_id)
+        ptype, pcfg = await _resolve_test_target(provider_id)
         if pcfg is None:
             raise HTTPException(404, f"No provider '{provider_id}'")
-        ptype = (
-            pcfg.get("provider_type", provider_id)
-            if isinstance(pcfg, dict)
-            else provider_id
-        )
         if ptype not in _PROVIDER_REGISTRY:
             return {
                 "status": "failed",
@@ -510,7 +673,7 @@ def build_app(gateway: Gateway) -> FastAPI:
                 "latency_ms": 0,
             }
         try:
-            inst = create_provider(ptype, pcfg if isinstance(pcfg, dict) else {})
+            inst = create_provider(ptype, pcfg)
             start = time.time()
             ok = await _asyncio.wait_for(inst.health_check(), timeout=10.0)
             latency_ms = int((time.time() - start) * 1000)
@@ -522,6 +685,55 @@ def build_app(gateway: Gateway) -> FastAPI:
             }
         except Exception as exc:  # noqa: BLE001
             _test_log.warning("Provider test for '%s' failed: %s", provider_id, exc)
+            return {
+                "status": "failed",
+                "message": "Provider health check failed",
+                "latency_ms": 0,
+            }
+        return {"status": "ok" if ok else "failed", "latency_ms": latency_ms}
+
+    @app.post("/v1/providers/test", dependencies=[write_dep])
+    async def v1_test_provider_stateless(body: dict[str, Any]) -> dict:
+        """Stateless health check: takes provider_type + api_key + base_url,
+        runs the provider's health_check, returns the same shape as the
+        id-based variant. Persists nothing.
+
+        Used by the dashboard's "Test Connection" button on the Add
+        Provider modal so the test does not have to round-trip a
+        sentinel managed_providers row.
+        """
+        import asyncio as _asyncio
+        import logging as _logging
+
+        from voicegateway.core.registry import _PROVIDER_REGISTRY, create_provider
+
+        _stateless_log = _logging.getLogger(__name__)
+        ptype = body.get("provider_type", "")
+        if ptype not in _PROVIDER_REGISTRY:
+            return {
+                "status": "failed",
+                "message": f"Unknown provider_type '{ptype}'",
+                "latency_ms": 0,
+            }
+        cfg: dict[str, Any] = {
+            "api_key": body.get("api_key", ""),
+            "base_url": body.get("base_url"),
+        }
+        try:
+            inst = create_provider(ptype, cfg)
+            start = time.time()
+            ok = await _asyncio.wait_for(inst.health_check(), timeout=10.0)
+            latency_ms = int((time.time() - start) * 1000)
+        except TimeoutError:
+            return {
+                "status": "failed",
+                "message": "Provider health check timed out",
+                "latency_ms": 10000,
+            }
+        except Exception as exc:  # noqa: BLE001
+            _stateless_log.warning(
+                "Stateless provider test for '%s' failed: %s", ptype, exc
+            )
             return {
                 "status": "failed",
                 "message": "Provider health check failed",

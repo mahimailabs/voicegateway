@@ -1,4 +1,13 @@
-"""Main Gateway class — entry point for VoiceGateway."""
+"""Gateway: shared state container for the inference module, server, CLI, and MCP.
+
+Pre-v0.0.5 the ``Gateway`` class also exposed ``stt`` / ``llm`` / ``tts``
+factories. Those landed unmerged on ``feat/livekit-parity`` and never
+shipped to PyPI; v0.0.5 makes ``voicegateway.inference`` the single
+public surface and reduces this class to its internal role: own the
+config, storage, cost tracker, latency monitor, rate limiter, logger,
+and budget enforcer that the inference factories and operations
+endpoints (CLI / HTTP / MCP / dashboard) share.
+"""
 
 from __future__ import annotations
 
@@ -7,15 +16,10 @@ import os
 from collections.abc import Coroutine
 from typing import Any, TypeVar
 
-from voicegateway.core.config import GatewayConfig
+from voicegateway.core.config import GatewayConfig, ProjectConfig
 from voicegateway.core.config_manager import ConfigManager
-from voicegateway.core.router import (
-    Router,
-)
 from voicegateway.middleware.budget_enforcer import BudgetEnforcer
 from voicegateway.middleware.cost_tracker import CostTracker
-from voicegateway.middleware.fallback import FallbackChain
-from voicegateway.middleware.instrumented_provider import wrap_provider
 from voicegateway.middleware.latency_monitor import LatencyMonitor
 from voicegateway.middleware.logger import RequestLogger
 from voicegateway.middleware.rate_limiter import RateLimiter
@@ -28,12 +32,15 @@ DEFAULT_DB_PATH = "~/.config/voicegateway/voicegw.db"
 
 
 class Gateway:
-    """Cost tracking and reconciliation for LiveKit voice agents.
+    """Shared internal container for the v0.0.5+ inference module.
 
-    Returns native LiveKit STT/LLM/TTS plugin instances ready to drop into
-    `AgentSession`, with per-modality cost tracking (audio-minutes, tokens,
-    characters), resolver-time fallback chains, latency monitoring, and
-    `voicegw reconcile` for verifying recorded costs against provider invoices.
+    Not a public Python SDK. Library users construct providers via
+    ``voicegateway.inference.STT/LLM/TTS``; the inference factory
+    holds a process-wide singleton of this class and threads its
+    cost tracker, storage, and budget enforcer into each wrapped
+    plugin instance. Server processes (the FastAPI app, the MCP
+    server, the CLI) instantiate it directly to read config or
+    surface costs.
     """
 
     def __init__(self, config_path: str | None = None):
@@ -46,7 +53,6 @@ class Gateway:
                 3. /etc/voicegateway/voicegw.yaml
         """
         self._config = GatewayConfig.load(config_path)
-        self._router = Router(self._config)
 
         # Resolve DB path: env var > config > default
         cost_cfg = self._config.cost_tracking
@@ -59,12 +65,34 @@ class Gateway:
         else:
             self._storage = None
 
-        # ConfigManager for merging YAML + SQLite managed resources
+        # ConfigManager merges YAML + SQLite managed_* tables.
         self._config_manager = ConfigManager(self._config, self._storage)
-
-        # Merge managed resources from SQLite at startup
         self._config = _run_async(self._config_manager.load_merged())
-        self._router = Router(self._config)
+
+        # v0.0.5: ensure a "default" project always exists so the
+        # inference resolver has something to charge against on a
+        # fresh install. When YAML or the DB already configures one,
+        # that takes precedence. With storage enabled we persist the
+        # row so the dashboard, MCP tools, and HTTP API surface it
+        # consistently with user-defined projects.
+        if DEFAULT_PROJECT not in self._config.projects:
+            if self._storage is not None:
+                _run_async(
+                    self._storage.upsert_managed_project(
+                        project_id=DEFAULT_PROJECT,
+                        name="Default",
+                        description="Auto-created on first run.",
+                        daily_budget=0.0,
+                        budget_action="warn",
+                    )
+                )
+                self._config = _run_async(self._config_manager.refresh())
+            else:
+                self._config.projects[DEFAULT_PROJECT] = ProjectConfig(
+                    id=DEFAULT_PROJECT,
+                    name="Default",
+                    source="auto",
+                )
 
         self._cost_tracker = CostTracker(self._storage)
         self._latency_monitor = LatencyMonitor(
@@ -73,26 +101,17 @@ class Gateway:
         self._rate_limiter = RateLimiter(self._config.rate_limits)
         self._logger = RequestLogger()
 
-        # Observability config
+        # Observability config — read once so the inference wrappers
+        # can decide whether to skip the instrumentation hop.
         obs = self._config.observability
         self._latency_tracking = obs.get("latency_tracking", True)
 
-        # Budget enforcement — wired into the cost tracker so newly logged
-        # requests update the enforcer's in-memory spend cache, closing the
-        # TTL blind spot where a burst of requests can race past the check.
+        # Budget enforcement. Wired into the cost tracker so newly
+        # logged requests update the enforcer's in-memory spend cache,
+        # closing the TTL blind spot where a burst of requests can
+        # race past the check.
         self._budget_enforcer = BudgetEnforcer(self._config, self._storage)
         self._cost_tracker.set_budget_enforcer(self._budget_enforcer)
-
-        # Build fallback chains
-        self._fallback_chains: dict[str, FallbackChain] = {}
-        for modality, chain in self._config.fallbacks.items():
-            if chain:
-                self._fallback_chains[modality] = FallbackChain(
-                    chain=chain,
-                    resolver=self._router.resolve,
-                    modality=modality,
-                    on_fallback=self._logger.log_fallback,
-                )
 
     @property
     def config(self) -> GatewayConfig:
@@ -112,154 +131,12 @@ class Gateway:
     async def refresh_config(self) -> None:
         """Reload config from YAML + SQLite. Called after any managed_* write."""
         self._config = await self._config_manager.refresh()
-        self._router = Router(self._config)
         self._budget_enforcer = BudgetEnforcer(self._config, self._storage)
         self._cost_tracker.set_budget_enforcer(self._budget_enforcer)
-        # Rebuild fallback chains so they capture the new router.resolve
-        for modality, chain_list in self._config.fallbacks.items():
-            if chain_list:
-                self._fallback_chains[modality] = FallbackChain(
-                    chain=chain_list,
-                    resolver=self._router.resolve,
-                    modality=modality,
-                    on_fallback=self._logger.log_fallback,
-                )
 
     # ------------------------------------------------------------------
-    # Model factories
+    # Query helpers (used by CLI / dashboard / MCP / HTTP API).
     # ------------------------------------------------------------------
-
-    def _wrap(self, instance: Any, model_id: str, modality: str, project: str) -> Any:
-        """Wrap a provider instance with instrumentation if enabled."""
-        if not self._latency_tracking:
-            return instance
-        from voicegateway.core.model_id import ModelId
-
-        parsed = ModelId.parse(model_id)
-        return wrap_provider(
-            instance=instance,
-            modality=modality,
-            model_id=model_id,
-            provider=parsed.provider,
-            project=project,
-            cost_tracker=self._cost_tracker,
-            storage=self._storage,
-        )
-
-    def _check_budget(self, project: str) -> None:
-        """Check project budget before resolving a model."""
-        if project == DEFAULT_PROJECT:
-            return
-        _run_async(self._budget_enforcer.check_budget(project))
-
-    def stt(self, model_id: str, project: str | None = None, **kwargs: Any) -> Any:
-        """Create an STT instance for the given model ID.
-
-        Args:
-            model_id: "provider/model[:language]" format.
-            project: Optional project ID to tag requests with.
-            **kwargs: Additional provider-specific options.
-        """
-        proj = self._resolve_project(project)
-        self._check_budget(proj)
-        instance = self._router.resolve(model_id, "stt", project=proj, **kwargs)
-        return self._wrap(instance, model_id, "stt", proj)
-
-    def llm(self, model_id: str, project: str | None = None, **kwargs: Any) -> Any:
-        """Create an LLM instance for the given model ID.
-
-        Args:
-            model_id: "provider/model" format.
-            project: Optional project ID to tag requests with.
-            **kwargs: Additional provider-specific options.
-        """
-        proj = self._resolve_project(project)
-        self._check_budget(proj)
-        instance = self._router.resolve(model_id, "llm", project=proj, **kwargs)
-        return self._wrap(instance, model_id, "llm", proj)
-
-    def tts(self, model_id: str, project: str | None = None, **kwargs: Any) -> Any:
-        """Create a TTS instance for the given model ID.
-
-        Args:
-            model_id: "provider/model[:voice_id]" format.
-            project: Optional project ID to tag requests with.
-            **kwargs: Additional provider-specific options.
-        """
-        proj = self._resolve_project(project)
-        self._check_budget(proj)
-        instance = self._router.resolve(model_id, "tts", project=proj, **kwargs)
-        return self._wrap(instance, model_id, "tts", proj)
-
-    def stack(
-        self, name: str, project: str | None = None, **kwargs: Any
-    ) -> tuple[Any, Any, Any]:
-        """Resolve a named stack (e.g. 'premium', 'budget', 'local') into (stt, llm, tts).
-
-        Stacks are defined in voicegw.yaml under the `stacks:` section, e.g.::
-
-            stacks:
-              premium:
-                stt: deepgram/nova-3
-                llm: openai/gpt-4.1-mini
-                tts: cartesia/sonic-3
-        """
-        stacks = self._config.stacks
-        if name not in stacks:
-            raise ValueError(
-                f"Stack '{name}' not defined. Available: {', '.join(sorted(stacks))}"
-            )
-        stack = stacks[name]
-        proj = self._resolve_project(project)
-        stt = (
-            self._router.resolve(stack["stt"], "stt", project=proj, **kwargs)
-            if "stt" in stack
-            else None
-        )
-        llm = (
-            self._router.resolve(stack["llm"], "llm", project=proj, **kwargs)
-            if "llm" in stack
-            else None
-        )
-        tts = (
-            self._router.resolve(stack["tts"], "tts", project=proj, **kwargs)
-            if "tts" in stack
-            else None
-        )
-        return stt, llm, tts
-
-    def stt_with_fallback(self, project: str | None = None, **kwargs: Any) -> Any:
-        """Create an STT instance using the configured fallback chain."""
-        chain = self._fallback_chains.get("stt")
-        if not chain:
-            raise ValueError("No STT fallback chain configured")
-        return chain.resolve(project=self._resolve_project(project), **kwargs)
-
-    def llm_with_fallback(self, project: str | None = None, **kwargs: Any) -> Any:
-        """Create an LLM instance using the configured fallback chain."""
-        chain = self._fallback_chains.get("llm")
-        if not chain:
-            raise ValueError("No LLM fallback chain configured")
-        return chain.resolve(project=self._resolve_project(project), **kwargs)
-
-    def tts_with_fallback(self, project: str | None = None, **kwargs: Any) -> Any:
-        """Create a TTS instance using the configured fallback chain."""
-        chain = self._fallback_chains.get("tts")
-        if not chain:
-            raise ValueError("No TTS fallback chain configured")
-        return chain.resolve(project=self._resolve_project(project), **kwargs)
-
-    # ------------------------------------------------------------------
-    # Query helpers
-    # ------------------------------------------------------------------
-
-    def status(self, project: str | None = None) -> dict:
-        """Return status of all configured providers.
-
-        Args:
-            project: Currently unused (kept for API parity with costs()).
-        """
-        return self._router.get_provider_status()
 
     def costs(self, period: str = "today", project: str | None = None) -> dict:
         """Return cost summary for the given period, optionally filtered by project.
@@ -282,7 +159,14 @@ class Gateway:
         return _run_async(self._storage.get_cost_summary(period, project=project))
 
     def list_projects(self) -> list[dict[str, Any]]:
-        """Return configured projects as a list of serializable dicts."""
+        """Return configured projects as a list of serializable dicts.
+
+        ``source`` is one of ``"yaml"``, ``"db"``, or ``"auto"``. The
+        last comes from the v0.0.5 auto-create-default branch in
+        ``__init__``; the dashboard renders a distinct badge for it
+        so the user can tell their custom config apart from the
+        gateway's first-run stub.
+        """
         result = []
         for pid, pcfg in self._config.projects.items():
             result.append(
@@ -294,23 +178,11 @@ class Gateway:
                     "default_stack": pcfg.default_stack,
                     "tags": list(pcfg.tags),
                     "accent": pcfg.accent,
+                    "source": pcfg.source,
+                    "budget_action": pcfg.budget_action,
                 }
             )
         return result
-
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
-
-    def _resolve_project(self, project: str | None) -> str:
-        """Return the effective project id (validates against config if provided)."""
-        if project is None:
-            return DEFAULT_PROJECT
-        if self._config.projects and project not in self._config.projects:
-            # Allow unknown projects for flexibility, but only the configured ones
-            # get CLI/dashboard treatment.
-            pass
-        return project
 
 
 def _run_async(coro: Coroutine[Any, Any, T]) -> T:

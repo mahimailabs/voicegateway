@@ -215,9 +215,13 @@ observability:
   request_logging: true     # Log each request to the console
 
 # ============================================================
-# Stacks — named shortcuts for common STT+LLM+TTS combinations
+# Stacks — named shortcuts surfaced in the dashboard / docs only.
 # ============================================================
-# Use via gw.stack("premium"), gw.stack("budget"), gw.stack("local").
+# v0.0.5 has no `gw.stack(...)` helper; the inference module
+# constructs each modality explicitly. Stacks live here for the
+# dashboard's project-page recommended-stack badge and as a
+# documented bundle so teams agree on a "premium" config without
+# repeating the model ids in every agent.
 
 stacks:
   premium:

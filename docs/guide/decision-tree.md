@@ -19,9 +19,9 @@ If your case is not in the matrix, the longer-form notes below cover the remaini
 
 ### You are building a LiveKit voice agent
 
-VoiceGateway is purpose-built for this. `gw.stt() / gw.llm() / gw.tts()` return native LiveKit plugin instances that drop straight into `AgentSession(stt=, llm=, tts=)` with no proxy hop or plugin shim. Cost tracking happens transparently per modality (audio-minutes for STT, tokens for LLM, characters for TTS) against the project tag you pass in. `voicegw reconcile` verifies the calculated cost against your actual provider invoice during the first month.
+VoiceGateway is purpose-built for this. `voicegateway.inference.STT/LLM/TTS` mirror `livekit.agents.inference` signature for signature, so swapping one import line in an existing LiveKit Cloud Inference agent is enough. The factories return wrapped LiveKit plugin instances that drop straight into `AgentSession(stt=, llm=, tts=)` with no proxy hop or plugin shim. Cost tracking happens transparently per modality (audio-minutes for STT, tokens for LLM, characters for TTS) against the active project. `voicegw reconcile` verifies the calculated cost against your actual provider invoice during the first month.
 
-If you use LiveKit Cloud's hosted Inference instead, you do not need VoiceGateway. LiveKit Inference handles routing inside their managed product; pick it if you are happy paying LiveKit's bundled inference pricing and want zero infrastructure.
+If you use LiveKit Cloud's hosted Inference and are happy with the bundled inference pricing, you do not need VoiceGateway. Pick VG when you want your own provider keys, full per-call cost visibility, and control over the model catalog without leaving the LiveKit Agents code shape.
 
 ### You are building a text-only LLM app
 
@@ -39,15 +39,15 @@ LiteLLM also ships `/v1/audio/transcriptions` and `/v1/audio/speech` for non-rea
 
 ### You are self-hosting voice with local and cloud models
 
-VoiceGateway's local model support (Whisper via `faster-whisper`, Kokoro for TTS, Piper for TTS, Ollama for LLM) lives in the same `Gateway` factory as the cloud providers. Switching `gw.stt("deepgram/nova-3")` for `gw.stt("local/whisper-large-v3")` is a single string change. Cost tracking knows local models are zero-cost. No separate orchestrator, no second tool. This is the configuration where VoiceGateway is most distinctive: no other gateway in the matrix unifies cloud and local providers under one factory with cost-aware routing.
+VoiceGateway's local model support (Whisper via `faster-whisper`, Kokoro for TTS, Piper for TTS, Ollama for LLM) lives in the same `inference` factory as the cloud providers. Switching `inference.STT("deepgram/nova-3")` for `inference.STT("local/whisper-large-v3")` is a single string change. Cost tracking knows local models are zero-cost. No separate orchestrator, no second tool. This is the configuration where VoiceGateway is most distinctive: no other gateway in the matrix unifies cloud and local providers under one factory with cost-aware routing.
 
 ## What VoiceGateway is not
 
 A few cases where VoiceGateway is the wrong tool, called out so you do not discover them after integrating:
 
-- **Not an OpenAI-compatible HTTP proxy.** There is no `/v1/chat/completions` endpoint, no `/v1/audio/transcriptions` endpoint, no HTTP shim of any kind for inference. The Python `Gateway` class is the integration surface. If your callers expect to make OpenAI-shaped HTTP requests, use LiteLLM.
+- **Not an OpenAI-compatible HTTP proxy.** There is no `/v1/chat/completions` endpoint, no `/v1/audio/transcriptions` endpoint, no HTTP shim of any kind for inference. The `voicegateway.inference` Python module is the integration surface. If your callers expect to make OpenAI-shaped HTTP requests, use LiteLLM.
 - **Not a horizontally scaled multi-tenant gateway.** SQLite is the storage layer; the supported topology is single-instance. Multiple instances pointing at the same SQLite file each have an independent in-memory budget cache, so per-project budgets are not strictly enforced across replicas. This is fine for self-hosted single-team deployments and a poor fit for SaaS infrastructure that needs Postgres + horizontal scale.
-- **Not a real-time fallback engine.** VoiceGateway's `FallbackChain` resolves a backup model at startup, not during a call. For runtime / error-driven failover during an active call (the "Cloud outage? Switch to local" pattern), compose LiveKit's `FallbackAdapter` around VG provider instances. See [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter).
+- **Not a real-time fallback engine.** VoiceGateway's resolver-time fallback walks a chain at startup, not during a call. For runtime / error-driven failover during an active call (the "Cloud outage? Switch to local" pattern), compose LiveKit's `FallbackAdapter` around VG `inference.*` instances. v0.0.6 will add a first-class `fallback=` parameter to the inference factories.
 - **Not a key-rotation system.** API keys can be re-entered if the encryption secret changes, but there is no built-in rotation tooling, MultiFernet versioning, or KMS integration. Treat the encryption secret as a long-lived credential.
 
 ## Still unsure?

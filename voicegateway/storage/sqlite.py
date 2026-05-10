@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import logging
 import time
@@ -34,7 +35,8 @@ CREATE TABLE IF NOT EXISTS requests (
     status TEXT DEFAULT 'success',
     fallback_from TEXT,
     error_message TEXT,
-    metadata TEXT
+    metadata TEXT,
+    session_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_requests_timestamp ON requests(timestamp);
@@ -42,6 +44,9 @@ CREATE INDEX IF NOT EXISTS idx_requests_model ON requests(model_id);
 CREATE INDEX IF NOT EXISTS idx_requests_modality ON requests(modality);
 CREATE INDEX IF NOT EXISTS idx_requests_project ON requests(project);
 CREATE INDEX IF NOT EXISTS idx_requests_project_timestamp ON requests(project, timestamp);
+-- session_id index created post-migration; see _ensure_initialized.
+-- A pre-v0.0.5 file will not yet have the column when this script runs,
+-- so creating the index here would fail on the legacy schema.
 
 DROP VIEW IF EXISTS daily_costs;
 CREATE VIEW IF NOT EXISTS daily_costs AS
@@ -77,7 +82,8 @@ CREATE TABLE IF NOT EXISTS managed_providers (
     base_url TEXT,
     extra_config TEXT NOT NULL DEFAULT '{}',
     created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
+    updated_at REAL NOT NULL,
+    project TEXT
 );
 
 CREATE TABLE IF NOT EXISTS managed_models (
@@ -108,6 +114,24 @@ CREATE TABLE IF NOT EXISTS managed_projects (
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
+
+-- v0.0.5 sessions table per design.md section 3.2.
+-- One row per logical voice session. Populated by CostTracker on
+-- the first request of a session; total_cost_usd and request_count
+-- accumulate per request. ended_at stays NULL until the session
+-- closes (session-close hook lands later in v0.0.5+).
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    project TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    modalities TEXT NOT NULL DEFAULT '',
+    total_cost_usd REAL DEFAULT 0,
+    request_count INTEGER DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project);
+CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions(started_at);
 """
 
 
@@ -148,6 +172,21 @@ class SQLiteStorage:
                 await db.execute(
                     "ALTER TABLE requests ADD COLUMN pricing_source TEXT NOT NULL DEFAULT ''"
                 )
+            # Migration: add `session_id` column if missing (v0.0.5).
+            # Pre-v0.0.5 rows get NULL — correct, they predate the
+            # session-correlation feature. New rows carry a real value
+            # written by InstrumentedSTT/LLM/TTS once 5.6 #3 wires it through.
+            if "session_id" not in cols:
+                await db.execute("ALTER TABLE requests ADD COLUMN session_id TEXT")
+            # Always create the index (idempotent CREATE INDEX IF NOT EXISTS).
+            # Lives outside the column-missing branch so a fresh install,
+            # which already has the column from _SCHEMA, still gets the
+            # index. Cannot live inside _SCHEMA itself because legacy
+            # databases without the column yet would fail the CREATE.
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_requests_session_id "
+                "ON requests(session_id)"
+            )
             # Audit log table
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS config_audit_log (
@@ -167,6 +206,23 @@ class SQLiteStorage:
             await db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_audit_entity "
                 "ON config_audit_log(entity_type, entity_id)"
+            )
+
+            # Migration: add `project` column to managed_providers if
+            # missing (v0.0.5). NULL means "global / legacy scope" so
+            # pre-v0.0.5 rows keep behaving exactly as before. New rows
+            # written by vg_add_provider can carry a non-null project
+            # name. The index lives outside the column-missing branch so
+            # both fresh and migrated installs end up with it.
+            mp_cursor = await db.execute("PRAGMA table_info(managed_providers)")
+            mp_cols = [row[1] async for row in mp_cursor]
+            if "project" not in mp_cols:
+                await db.execute(
+                    "ALTER TABLE managed_providers ADD COLUMN project TEXT"
+                )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_managed_providers_project "
+                "ON managed_providers(project)"
             )
 
             # Indexes on managed tables
@@ -301,7 +357,15 @@ class SQLiteStorage:
     # ------------------------------------------------------------------
 
     async def log_request(self, record: RequestRecord) -> None:
-        """Log a request record to the database."""
+        """Log a request record to the database.
+
+        When ``record.session_id`` is set, this also upserts the matching
+        row in the ``sessions`` table: starts the session on first
+        request, accumulates total_cost_usd and request_count on each
+        subsequent request, and adds the modality to the comma-separated
+        modalities list (without duplication). Both writes happen on the
+        same connection / commit for atomicity.
+        """
         db = await self._ensure_initialized()
         try:
             await db.execute(
@@ -309,8 +373,8 @@ class SQLiteStorage:
                    (id, timestamp, project, modality, model_id, provider,
                     input_units, output_units, cost_usd, pricing_source,
                     ttfb_ms, total_latency_ms, status,
-                    fallback_from, error_message, metadata)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    fallback_from, error_message, metadata, session_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     record.id,
                     record.timestamp,
@@ -328,8 +392,62 @@ class SQLiteStorage:
                     record.fallback_from,
                     record.error_message,
                     json.dumps(record.metadata) if record.metadata else None,
+                    record.session_id,
                 ),
             )
+            if record.session_id:
+                started_at_iso = _dt.datetime.fromtimestamp(
+                    record.timestamp, tz=_dt.UTC
+                ).isoformat()
+                # SQL-side upsert: on conflict, accumulate cost / count
+                # and union the modality into the comma-separated list
+                # without duplicates. INSTR on bracketed keys (",stt,")
+                # avoids substring false-positives like "tt" matching
+                # in "stt". ended_at is set to the request's timestamp
+                # on insert and bumped on every conflict so a session
+                # row always reflects last-activity time without
+                # requiring a session-close hook. Out-of-order arrivals
+                # cannot drag ended_at backwards (CASE guards it).
+                # started_at is symmetrically guarded: requests are
+                # logged on completion, so an STT call that started
+                # earlier may finish after a faster LLM call. The MIN
+                # CASE keeps started_at at the earliest request_started
+                # timestamp regardless of completion order.
+                await db.execute(
+                    """INSERT INTO sessions
+                       (id, project, started_at, ended_at, modalities,
+                        total_cost_usd, request_count)
+                       VALUES (?, ?, ?, ?, ?, ?, 1)
+                       ON CONFLICT(id) DO UPDATE SET
+                           total_cost_usd = total_cost_usd + excluded.total_cost_usd,
+                           request_count = request_count + 1,
+                           started_at = CASE
+                               WHEN started_at IS NULL THEN excluded.started_at
+                               WHEN started_at > excluded.started_at THEN excluded.started_at
+                               ELSE started_at
+                           END,
+                           ended_at = CASE
+                               WHEN ended_at IS NULL THEN excluded.ended_at
+                               WHEN ended_at < excluded.ended_at THEN excluded.ended_at
+                               ELSE ended_at
+                           END,
+                           modalities = CASE
+                               WHEN modalities = '' THEN excluded.modalities
+                               WHEN INSTR(
+                                   ',' || modalities || ',',
+                                   ',' || excluded.modalities || ','
+                               ) > 0 THEN modalities
+                               ELSE modalities || ',' || excluded.modalities
+                           END""",
+                    (
+                        record.session_id,
+                        record.project,
+                        started_at_iso,
+                        started_at_iso,
+                        record.modality,
+                        record.cost_usd,
+                    ),
+                )
             await db.commit()
         finally:
             await db.close()
@@ -444,8 +562,7 @@ class SQLiteStorage:
                     tuple(params),
                 )
                 by_model = {
-                    row[0]: {"cost": row[1], "requests": row[2]}
-                    async for row in cursor
+                    row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor
                 }
 
             return {
@@ -770,6 +887,136 @@ class SQLiteStorage:
             await db.close()
 
     # ------------------------------------------------------------------
+    # Sessions (v0.0.5)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _row_to_session(row: Any) -> dict[str, Any]:
+        return {
+            "id": row[0],
+            "project": row[1],
+            "started_at": row[2],
+            "ended_at": row[3],
+            "modalities": row[4].split(",") if row[4] else [],
+            "total_cost_usd": float(row[5] or 0.0),
+            "request_count": int(row[6] or 0),
+        }
+
+    _SESSION_ORDER_CLAUSES: dict[str, str] = {
+        "started_at_desc": "started_at DESC",
+        "started_at_asc": "started_at ASC",
+        "cost_desc": "total_cost_usd DESC, started_at DESC",
+        "cost_asc": "total_cost_usd ASC, started_at DESC",
+    }
+
+    async def list_sessions(
+        self,
+        limit: int = 100,
+        project: str | None = None,
+        order_by: str = "started_at_desc",
+    ) -> list[dict[str, Any]]:
+        """Return recent sessions, ordered per ``order_by``.
+
+        Args:
+            limit: Max rows to return.
+            project: Optional project filter.
+            order_by: One of ``"started_at_desc"`` (default),
+                ``"started_at_asc"``, ``"cost_desc"``, ``"cost_asc"``.
+                Cost orderings break ties by started_at DESC so two
+                $0 sessions still surface newest first.
+
+        Raises:
+            ValueError: When ``order_by`` is not one of the supported
+                values. The whitelist guards against SQL injection
+                via the user-supplied parameter.
+        """
+        clause = self._SESSION_ORDER_CLAUSES.get(order_by)
+        if clause is None:
+            supported = ", ".join(sorted(self._SESSION_ORDER_CLAUSES))
+            raise ValueError(f"Unknown order_by {order_by!r}. Supported: {supported}.")
+        db = await self._ensure_initialized()
+        try:
+            if project:
+                cursor = await db.execute(
+                    f"""SELECT id, project, started_at, ended_at, modalities,
+                              total_cost_usd, request_count
+                       FROM sessions
+                       WHERE project = ?
+                       ORDER BY {clause}
+                       LIMIT ?""",
+                    (project, limit),
+                )
+            else:
+                cursor = await db.execute(
+                    f"""SELECT id, project, started_at, ended_at, modalities,
+                              total_cost_usd, request_count
+                       FROM sessions
+                       ORDER BY {clause}
+                       LIMIT ?""",
+                    (limit,),
+                )
+            return [self._row_to_session(row) async for row in cursor]
+        finally:
+            await db.close()
+
+    async def get_session(self, session_id: str) -> dict[str, Any] | None:
+        """Return a single session by id, or None if not found.
+
+        The returned dict carries the row's stored fields plus a
+        ``by_modality`` breakdown ({modality: {"cost", "request_count"}})
+        and a deduplicated ``providers`` list. Both are computed from
+        the ``requests`` table on read, joined on ``session_id``.
+        """
+        db = await self._ensure_initialized()
+        try:
+            cursor = await db.execute(
+                """SELECT id, project, started_at, ended_at, modalities,
+                          total_cost_usd, request_count
+                   FROM sessions
+                   WHERE id = ?""",
+                (session_id,),
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                return None
+            session = self._row_to_session(row)
+
+            # Per-modality breakdown via a join on session_id. A
+            # session with no matching requests (a stub row written
+            # before the wrapper called log_request — should not
+            # happen, but guard anyway) returns an empty breakdown.
+            mod_cursor = await db.execute(
+                """SELECT modality,
+                          COALESCE(SUM(cost_usd), 0) AS cost,
+                          COUNT(*) AS request_count
+                   FROM requests
+                   WHERE session_id = ?
+                   GROUP BY modality""",
+                (session_id,),
+            )
+            session["by_modality"] = {
+                mod_row[0]: {
+                    "cost": float(mod_row[1] or 0.0),
+                    "request_count": int(mod_row[2] or 0),
+                }
+                async for mod_row in mod_cursor
+            }
+
+            # Distinct providers seen in this session, sorted for a
+            # stable response order.
+            prov_cursor = await db.execute(
+                """SELECT DISTINCT provider
+                   FROM requests
+                   WHERE session_id = ?
+                   ORDER BY provider""",
+                (session_id,),
+            )
+            session["providers"] = [prov_row[0] async for prov_row in prov_cursor]
+            return session
+        finally:
+            await db.close()
+
+    # ------------------------------------------------------------------
     # Managed providers / models / projects
     # ------------------------------------------------------------------
 
@@ -779,7 +1026,7 @@ class SQLiteStorage:
         try:
             cursor = await db.execute(
                 "SELECT provider_id, provider_type, api_key_encrypted, base_url, "
-                "extra_config, created_at, updated_at FROM managed_providers "
+                "extra_config, created_at, updated_at, project FROM managed_providers "
                 "ORDER BY created_at ASC"
             )
             rows = []
@@ -793,6 +1040,7 @@ class SQLiteStorage:
                         "extra_config": json.loads(row[4] or "{}"),
                         "created_at": row[5],
                         "updated_at": row[6],
+                        "project": row[7],
                     }
                 )
             return rows
@@ -805,7 +1053,7 @@ class SQLiteStorage:
         try:
             cursor = await db.execute(
                 "SELECT provider_id, provider_type, api_key_encrypted, base_url, "
-                "extra_config, created_at, updated_at FROM managed_providers "
+                "extra_config, created_at, updated_at, project FROM managed_providers "
                 "WHERE provider_id = ?",
                 (provider_id,),
             )
@@ -820,6 +1068,7 @@ class SQLiteStorage:
                 "extra_config": json.loads(row[4] or "{}"),
                 "created_at": row[5],
                 "updated_at": row[6],
+                "project": row[7],
             }
         finally:
             await db.close()
@@ -831,6 +1080,7 @@ class SQLiteStorage:
         api_key: str,
         base_url: str | None = None,
         extra_config: dict[str, Any] | None = None,
+        project: str | None = None,
     ) -> None:
         from voicegateway.core.crypto import encrypt
 
@@ -841,14 +1091,15 @@ class SQLiteStorage:
             await db.execute(
                 """INSERT INTO managed_providers
                        (provider_id, provider_type, api_key_encrypted, base_url,
-                        extra_config, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                        extra_config, created_at, updated_at, project)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(provider_id) DO UPDATE SET
                        provider_type=excluded.provider_type,
                        api_key_encrypted=excluded.api_key_encrypted,
                        base_url=excluded.base_url,
                        extra_config=excluded.extra_config,
-                       updated_at=excluded.updated_at""",
+                       updated_at=excluded.updated_at,
+                       project=excluded.project""",
                 (
                     provider_id,
                     provider_type,
@@ -857,6 +1108,7 @@ class SQLiteStorage:
                     json.dumps(extra_config or {}),
                     now,
                     now,
+                    project,
                 ),
             )
             await db.commit()
@@ -873,6 +1125,72 @@ class SQLiteStorage:
             return (cursor.rowcount or 0) > 0
         finally:
             await db.close()
+
+    async def rotate_managed_credentials(
+        self, *, time_now: float | None = None
+    ) -> dict[str, Any]:
+        """Re-encrypt every managed_providers row under the current
+        primary Fernet key.
+
+        Used by ``voicegw rotate-secret`` after the operator sets a
+        new ``VOICEGW_SECRET`` and the previous value as
+        ``VOICEGW_SECRET_FALLBACK``. Each row's ``api_key_encrypted``
+        is decrypted via MultiFernet (which tries primary then any
+        fallbacks) and re-encrypted via the primary, then written
+        back. The ``updated_at`` column is bumped so the dashboard
+        and audit views show the rotation as a recent change.
+
+        Empty ``api_key_encrypted`` columns (from rows that the user
+        added without a key) are skipped — there is nothing to
+        rotate. Rows whose ciphertext does not decrypt under any
+        configured key are recorded in the returned ``failed`` list
+        so the CLI can surface them to the operator without aborting
+        the rotation halfway through.
+
+        Returns:
+            ``{"rotated": <int>, "skipped_empty": <int>,
+              "failed": [<provider_id>, ...]}``
+        """
+        from voicegateway.core.crypto import rotate_token
+
+        now = time_now if time_now is not None else time.time()
+        rotated = 0
+        skipped_empty = 0
+        failed: list[str] = []
+
+        db = await self._ensure_initialized()
+        try:
+            cursor = await db.execute(
+                "SELECT provider_id, api_key_encrypted FROM managed_providers"
+            )
+            rows = await cursor.fetchall()
+            for provider_id, ciphertext in rows:
+                if not ciphertext:
+                    skipped_empty += 1
+                    continue
+                try:
+                    new_ciphertext = rotate_token(ciphertext)
+                except ValueError:
+                    failed.append(provider_id)
+                    continue
+                if new_ciphertext == ciphertext:
+                    # MultiFernet.rotate is non-deterministic (Fernet
+                    # uses a random IV), so this branch is effectively
+                    # unreachable. Guard anyway: if it fires, we still
+                    # bump updated_at so the dashboard reflects the
+                    # rotation attempt.
+                    pass
+                await db.execute(
+                    "UPDATE managed_providers SET api_key_encrypted = ?, "
+                    "updated_at = ? WHERE provider_id = ?",
+                    (new_ciphertext, now, provider_id),
+                )
+                rotated += 1
+            await db.commit()
+        finally:
+            await db.close()
+
+        return {"rotated": rotated, "skipped_empty": skipped_empty, "failed": failed}
 
     # Managed models
 

@@ -1,7 +1,23 @@
+export interface PricingFreshness {
+  source: string;
+  // Only present for STT and TTS — LLM gets its freshness from
+  // genai-prices' library version, encoded in the source string
+  // itself.
+  oldest_entry_date?: string;
+}
+
 export interface StatusResponse {
   providers: Record<string, { configured: boolean; type: string }>;
   models: Record<string, { modality: string; provider: string }>;
   fallbacks: Record<string, string[]>;
+  // Optional so an older dashboard server (pre-Item C) does not
+  // break the type. The frontend treats "missing" as "fresh" and
+  // skips the banner.
+  pricing?: {
+    llm?: PricingFreshness;
+    stt?: PricingFreshness;
+    tts?: PricingFreshness;
+  };
 }
 
 export interface OverviewResponse {
@@ -17,8 +33,17 @@ export interface CostsResponse {
   project: string | null;
   total: number;
   by_provider: Record<string, { cost: number; requests: number }>;
-  by_model: Record<string, { cost: number; requests: number }>;
+  // by_model entries carry the pricing_source attribution string
+  // since v0.0.5 (Q7); /api/costs sets include_pricing_source=true
+  // by default.
+  by_model: Record<
+    string,
+    { cost: number; requests: number; pricing_source?: string }
+  >;
   by_project: Record<string, { cost: number; requests: number }>;
+  // Top-level catalog summary; the /v1 endpoint sets it. The
+  // dashboard mirror does not yet, so the field is optional.
+  pricing_sources?: { llm?: string; stt?: string; tts?: string };
 }
 
 export interface PercentileBucket {
@@ -55,3 +80,28 @@ export interface LogRecord {
   total_latency_ms: number | null;
   status: string;
 }
+
+// v0.0.5 sessions API. The list endpoint returns SessionRow[]; the
+// detail endpoint extends each row with the per-modality breakdown
+// and the deduplicated providers list, joined from the requests
+// table at read time.
+export interface SessionRow {
+  id: string;
+  project: string;
+  started_at: string;       // ISO 8601 UTC
+  ended_at: string | null;  // ISO 8601 UTC; null when no requests yet
+  modalities: string[];
+  total_cost_usd: number;
+  request_count: number;
+}
+
+export interface SessionDetail extends SessionRow {
+  by_modality: Record<string, { cost: number; request_count: number }>;
+  providers: string[];
+}
+
+export type SessionOrderBy =
+  | 'started_at_desc'
+  | 'started_at_asc'
+  | 'cost_desc'
+  | 'cost_asc';
