@@ -2,6 +2,44 @@
 
 All notable changes to VoiceGateway are documented here. This project follows [Semantic Versioning](https://semver.org/) and [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.1.1 -- 2026-05-10
+
+**Terminal UI fast-follow.** v0.1.1 is the four-tab Textual-based terminal interface the v0.1.0 launch trailer promised: launch with `voicegw tui` for live monitoring of sessions, costs, logs, and providers without leaving the shell. Dual mode -- Gateway (1 s daemon polling) or Local (5 s direct SQLite read, daemon-down friendly) -- plus full vim navigation, a `?` help overlay, brand-orange focus rings, and a reconnection indicator that flips on connection loss and back when the daemon returns. v0.1.0's public API, command surface, and storage layout are preserved verbatim; v0.1.1 is purely additive.
+
+### Added
+
+- **`voicegw tui` command.** Single-command launcher (REQ-VG-TUI-001) opening a four-tab Textual interface. Flags: `--local` (read SQLite directly; bypass daemon regardless of state per locked decision 5), `--url` (daemon URL, defaults to `serve.host`/`serve.port` from `voicegw.yaml` with `0.0.0.0` rewritten to `127.0.0.1`), `--token` (bearer for daemon write paths), `--history-limit` (initial row count for Sessions/Logs, default 100), `--theme` (default `brand`), `--poll` (cadence override; defaults 1.0 s Gateway / 5.0 s Local), `--config` / `-c`. A 2-second `/health` preflight runs before Textual takes over the terminal so an unreachable daemon prints a one-line pointer + exits 1 instead of stalling in the alternate-screen buffer.
+- **Sessions tab** (REQ-VG-TUI-002, key `1`). Recent voice conversations with start time, duration, total cost, and providers used per row. `s` toggles the sort column between cost and start time; the active sort is visually indicated. `Enter` on a focused row opens a per-turn drill-in `ModalScreen`. Live append: new conversations appear at the top within 5 s in Gateway mode (polling-based; SSE deferred per locked decision 1).
+- **Costs tab** (REQ-VG-TUI-003, key `2`). Today's total as a single dollar number with a per-modality breakdown (STT, LLM, TTS) beneath. `r` cycles the active range between today, this week, and this month. A `(as of X)` freshness suffix appears when the pricing data is from `genai-prices` with a timestamp older than 24 h, matching the web dashboard's behavior.
+- **Logs tab** (REQ-VG-TUI-004, key `3`). `RichLog`-based scrolling tail with auto-scroll to bottom (RichLog's default `auto_scroll=True`). `/` opens a substring filter input; `Escape` clears it. Vim scroll motions (`j`/`k`, `g`/`G`) are bound at the screen level so filter-focus does not eat them.
+- **Providers tab** (REQ-VG-TUI-005, key `4`). Configured providers with the indicator + colour treatment from the Refinery: `[ok]` (green `$success`), `[fail]` (red `$error`), `[?]` (muted text). Owning project appears next to each provider; global providers show `(global)`. `t` on a focused row runs `test_provider` against the upstream API in a Textual worker (`exclusive=True` so a double-press cancels the in-flight call rather than racing two probes); the indicator flips in place within 3 s.
+- **Vim keybindings + `?` help overlay** (REQ-VG-TUI-006). Global: `q` (quit), `?` (help), `1`/`2`/`3`/`4` (jump to tab), `Tab`/`Shift+Tab` (cycle). Row-based screens: `j`/`k` (down/up), `g`/`G` (first/last), `h`/`l` as hidden aliases for muscle memory. Logs: `j`/`k` scroll one line, `g`/`G` top/bottom. The `?` overlay derives the cheatsheet directly from each screen's `BINDINGS` -- no parallel `KEYBINDINGS` constant -- so dropping or adding a binding surfaces in the overlay automatically. `show=False` entries (`h`/`l` aliases) are filtered out so the documented contract stays clean.
+- **Live updates + reconnection** (REQ-VG-TUI-007). A live-counter row sits between the `ContentSwitcher` and the Textual `Footer`; polls `list_costs(period='today')` at the active client's cadence and renders `Today: $X.XXXX   Requests: N`. `HttpClient` flips `is_connected=False` on `ConnectError` / `Timeout` / network failure; the counter row then renders `Reconnecting to daemon...` until the next successful round-trip. Exponential backoff is deferred (the polling cadence is the natural retry interval).
+- **Local mode** (REQ-VG-TUI-008). `--local` bypasses the daemon regardless of state; `LocalClient` wraps `SQLiteStorage` for read paths and raises `LocalModeUnsupportedError(feature='test_provider')` on write attempts. A persistent `[Local mode]` chip renders in the header on `$warning` background (deliberately different from the active-tab `$accent` so the modes are unmistakable). The counter row appends `(as of N s/min/h/d ago)` from the SQLite file's mtime so the user sees snapshot freshness at a glance. Write attempts surface as warning notifications via Textual's `app.notify` with the daemon-required title -- no silent failures, ever.
+- **Brand styling** (`voicegateway/cli/tui/styles/main.tcss`). Brand-orange `#D85A30` focus ring on every focusable widget, an active-tab indicator using a `border-left thick`, modal panels with `border: thick $accent`, plus cross-screen utilities `.tab-header` / `.tui-list` / `.empty-state`. Textual's `Color.downgrade()` handles graceful colour downgrades on 256-colour and 16-colour terminals automatically; no separate downgrade table needed. Refinery's "no decorative borders" rule audited: every surviving border carries state (focus ring, active tab, modal boundary, card identity).
+- **`docs/cli/tui.md`** reference page. Sections: launch, the four tabs, full vim keybindings reference, mode comparison table (Gateway vs Local), troubleshooting (terminal too small, 256-colour terminals, Local mode write attempts, daemon unreachable, reconnection), exit codes, related commands.
+
+### Changed
+
+- **Public command surface** grew from 21 commands (v0.1.0) to 22 with the addition of `tui`. The v0.1.0 set is unchanged; the back-compat assertion test continues to pin every prior command, so a future regression that drops a v0.0.5 or v0.1.0 command trips immediately.
+- **`pyproject.toml` `tui` extra** (`textual>=0.85,<0.90`). Tight upper bound matches design.md section 8.1 risk mitigation; revisit at v0.1.2. `httpx>=0.27` was already a base dependency from v0.0.5 and is reused by the TUI's `HttpClient`. The `[tui]` extra is also added to the dev extras so Pilot-based screen tests are part of the default development install.
+- **`README.md`** Quick Start section adds a `voicegw tui` line to the ad-hoc-operations code block plus a one-paragraph description framing the TUI as live monitoring without leaving the shell. The Installation section gains a per-extra row for `[tui]` and the "Everything" pip-install example now includes it by default.
+
+### Limitations
+
+- **Polling-based live updates.** Server-Sent Events are deferred per locked decision 1; the live-counter and Sessions live-append both poll the daemon at the configured cadence (1 s Gateway, 5 s Local). The cadence is overridable via `--poll`.
+- **Exponential backoff on reconnection is deferred.** The polling interval is the natural retry cadence; a future milestone may add a true exponential schedule if it proves valuable in long disconnect windows.
+- **`gg` (vim "go to top") ships as single `g`.** The two-key form would require state tracking that is overkill for v0.1.1; `g` jumps to first, `G` jumps to last across every list screen.
+- **Manual screenshot pass + multi-terminal smoke** is an operator gate (see the v0.1.0 release pattern). Pilot tests cover the structural rendering; visual polish on a real terminal is mahimairaja's manual check.
+
+### Out of scope (deferred)
+
+- Server-Sent Events for live updates -- deferred per locked decision 1.
+- Single-binary distribution and auto-update -- still deferred from v0.1.0.
+- v0.2.0 metrics dashboard view -- still paused pending v0.1.0/v0.1.1 adoption signal.
+
+---
+
 ## v0.1.0 -- 2026-05-10
 
 **Daemon-first onboarding.** v0.1.0 is the operational substrate that makes v0.0.5's parity claim deliverable to anyone who isn't mahimairaja. From a fresh machine to first inference call: one curl command, a five-question wizard, an OS-native daemon, and a dashboard row inside 60 seconds (excluding the time it takes to fetch your provider API key). Adds the daemon machinery (LaunchAgent / systemd `--user` / Scheduled Task), the `voicegw onboard` wizard, lifecycle commands, a ten-check `voicegw doctor`, and a read-only `voicegw migrate` for upgrade verification. v0.0.5's public API and storage layout are preserved verbatim per design decision 2: the canonical config home stays at `~/.config/voicegateway/`.

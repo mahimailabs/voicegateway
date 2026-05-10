@@ -15,6 +15,8 @@ the import contract, this file fails immediately.
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from importlib.metadata import entry_points
 
 import typer
@@ -24,6 +26,41 @@ import typer
 # voicegateway.cli import app`` cannot reach, the test module
 # fails to load and pytest reports it.
 from voicegateway.cli import app, console
+
+
+def test_voicegateway_cli_import_does_not_load_textual() -> None:
+    """``from voicegateway.cli import app`` must not pull in ``textual``.
+
+    ``textual`` is an optional dependency that only ships with the
+    ``[tui]`` extra. A regression where the TUI sub-package's
+    side-effect import drags ``textual`` into the main CLI startup
+    breaks every ``voicegw`` command on installs that did not opt
+    into ``[tui]`` (``pip install voicegateway``,
+    ``voicegateway[cloud]``, etc.) -- the import would fail before
+    Typer could route to any non-TUI command.
+
+    Runs in a fresh interpreter so the test process's own ``sys.modules``
+    (which has ``textual`` loaded for the Pilot suite) does not mask
+    the regression.
+    """
+    probe = (
+        "import sys, voicegateway.cli;\n"
+        "leaked = sorted(m for m in sys.modules if m == 'textual' "
+        "or m.startswith('textual.'));\n"
+        "assert not leaked, f'textual leaked into the CLI import "
+        "chain: {leaked!r}'\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"voicegateway.cli import pulled in textual.\n"
+        f"stdout: {result.stdout}\n"
+        f"stderr: {result.stderr}"
+    )
+
 
 # ---------------------------------------------------------------------------
 # Direct import paths.
@@ -131,6 +168,12 @@ _V010_COMMAND_NAMES: frozenset[str] = frozenset(
     }
 )
 
+# Commands the v0.1.1 release adds on top of v0.1.0. Same gating
+# pattern: a deliberate touch-point for "the public command surface
+# grew." When v0.1.1 ships, the union of the three frozensets is the
+# documented end-state surface.
+_V011_COMMAND_NAMES: frozenset[str] = frozenset({"tui"})
+
 
 def _registered_command_names() -> set[str]:
     """Names every Typer command registered on ``app`` answers to."""
@@ -186,7 +229,7 @@ def test_command_count_matches_documented_surface() -> None:
     this gate, which is exactly the deliberate touch-point we want
     for "the public command surface grew."
     """
-    expected = _V005_COMMAND_NAMES | _V010_COMMAND_NAMES
+    expected = _V005_COMMAND_NAMES | _V010_COMMAND_NAMES | _V011_COMMAND_NAMES
     registered = _registered_command_names()
     assert registered == expected, (
         f"Registered commands diverge from documented surface. "

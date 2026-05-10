@@ -95,7 +95,10 @@ voicegw status            # daemon + provider status
 voicegw doctor            # ten-check punch list with fix steps
 voicegw start / stop / restart
 voicegw uninstall-daemon  # remove registration; preserves config + DB
+voicegw tui               # four-tab terminal UI (Sessions / Costs / Logs / Providers)
 ```
+
+`voicegw tui` opens a Textual-based terminal UI with vim navigation: live monitoring of sessions, costs, logs, and providers without leaving the shell. Polls the daemon at 1 s in Gateway mode (default), or pass `--local` for read-only inspection of the SQLite call DB when the daemon is down. Install the extra with `pipx inject voicegateway "voicegateway[tui]"` after the one-line install, or include it directly in any manual `pip install` (`pip install "voicegateway[tui]"`). [Full reference →](https://docs.voicegateway.dev/cli/tui)
 
 If you prefer to skip the curl-bash one-liner, run the same `pipx` step manually:
 
@@ -445,8 +448,11 @@ pip install "voicegateway[local]"
 # With MCP server for agent management
 pip install "voicegateway[mcp]"
 
+# With the four-tab terminal UI (voicegw tui)
+pip install "voicegateway[tui]"
+
 # Everything
-pip install "voicegateway[all,dashboard,mcp]"
+pip install "voicegateway[all,dashboard,mcp,tui]"
 ```
 
 Python 3.11+. MCP extra pulls in `mcp>=1.2.0`. Local extras pull larger ML runtimes.

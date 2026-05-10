@@ -32,7 +32,7 @@ async def test_health(client):
     data = resp.json()
     assert data["status"] == "ok"
     assert "uptime_seconds" in data
-    assert data["version"] == "0.1.0"
+    assert data["version"] == "0.1.1"
 
 
 async def test_v1_status(client):
