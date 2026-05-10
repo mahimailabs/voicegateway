@@ -198,6 +198,40 @@ def test_onboard_help_renders():
     assert "--config" in result.output
 
 
+def test_onboard_wizard_mocked_end_to_end_under_one_second(tmp_path):
+    """Mocked end-to-end wizard run completes well under 1s.
+
+    The 60-second budget in design.md §6 acceptance #5 is the
+    stranger-test wall clock from curl through first call. With
+    DaemonManager mocked + provider validation stubbed (the real
+    network call is the only second-scale cost), the cli itself
+    must finish in negligible time so the 60-second budget hinges
+    only on the network-bound bits.
+
+    A regression that adds a slow import, a sleep, or an
+    accidental network call to the wizard surface trips this gate
+    immediately, without depending on the stranger-test.
+    """
+    import time
+
+    cfg = tmp_path / "voicegw.yaml"
+    start = time.perf_counter()
+    result = runner.invoke(
+        app,
+        ["onboard", "--no-install-daemon", "--config", str(cfg)],
+        input=_HAPPY_PATH_INPUT,
+    )
+    elapsed = time.perf_counter() - start
+
+    assert result.exit_code == 0, result.output
+    assert elapsed < 1.0, (
+        f"Mocked wizard took {elapsed:.2f}s. The 60-second wall-clock "
+        "budget for the stranger-test hinges on the cli surface itself "
+        "being fast; a regression here means a slow import, sleep, or "
+        "accidental network call landed in the wizard path."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Provider key validation (5-second timeout) — REQ-VG-ONBOARD-002.2
 # ---------------------------------------------------------------------------
