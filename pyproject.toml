@@ -43,8 +43,15 @@ whisper = ["faster-whisper>=1.0.0"]
 kokoro = ["kokoro-onnx>=0.5.0", "onnxruntime>=1.19.0"]
 piper = ["piper-tts>=1.2.0"]
 
-# All cloud providers
-cloud = ["voicegateway[deepgram,openai,anthropic,groq,cartesia,elevenlabs,assemblyai]"]
+# All cloud providers, plus the daemon-control deps the v0.1.0
+# lifecycle commands rely on (psutil for port + process inspection
+# in voicegw doctor, platformdirs for the OS-canonical config home
+# resolved by the LaunchAgent / systemd / Scheduled Task backends).
+cloud = [
+    "voicegateway[deepgram,openai,anthropic,groq,cartesia,elevenlabs,assemblyai]",
+    "psutil>=5.9",
+    "platformdirs>=4.0",
+]
 
 # All local models
 local = ["voicegateway[whisper,kokoro,piper]"]
