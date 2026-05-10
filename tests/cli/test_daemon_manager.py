@@ -132,26 +132,12 @@ def test_logs_defaults_to_tail_100() -> None:
 # ---------------------------------------------------------------------------
 # Real-backend lazy import path.
 #
-# As OS backends land (macos.py first, then linux.py, then windows.py),
-# this test points at whichever backend is still pending so the
-# selector's platform routing stays gated. macOS and Linux backends
-# exist now; the Windows backend is the next v0.1.0 commit. Once
-# windows.py lands, this regression test is removed in favour of
-# the per-backend positive-construction assertions below.
+# All three OS backends now exist (macOS / Linux / Windows). The
+# regression test that used to point at the still-pending backend is
+# gone; the three positive construction assertions below cover what
+# matters: ``DaemonManager()`` on each platform picks the right
+# backend type.
 # ---------------------------------------------------------------------------
-
-
-def test_default_construction_attempts_platform_specific_import(monkeypatch) -> None:
-    """Without a backend arg, ``DaemonManager()`` tries to import the
-    selected backend module. The pending backend (currently
-    windows) surfaces as ImportError; the error message must name
-    the correct platform-specific module so platform-routing
-    regressions are visible.
-    """
-    monkeypatch.setattr("sys.platform", "win32")
-    with pytest.raises(ImportError) as excinfo:
-        DaemonManager()
-    assert "voicegateway.cli.daemon.windows" in str(excinfo.value)
 
 
 def test_default_construction_loads_linux_backend_on_linux(monkeypatch) -> None:
@@ -175,3 +161,13 @@ def test_default_construction_loads_macos_backend_on_darwin(monkeypatch) -> None
 
     mgr = DaemonManager()
     assert isinstance(mgr._backend, MacOSBackend)
+
+
+def test_default_construction_loads_windows_backend_on_win32(monkeypatch) -> None:
+    """Positive assertion: on win32 the facade picks WindowsBackend."""
+    monkeypatch.setattr("sys.platform", "win32")
+
+    from voicegateway.cli.daemon.windows import WindowsBackend
+
+    mgr = DaemonManager()
+    assert isinstance(mgr._backend, WindowsBackend)
