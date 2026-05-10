@@ -1,14 +1,14 @@
 """``voicegw status`` command.
 
 Carved out of voicegateway/cli/_legacy.py during the v0.1.0 section-2
-refactor. Shows provider status (configured/missing keys, model
-counts) for the active gateway config.
+refactor and extended in section 5 to show DAEMON status first, then
+provider status (per design.md decision 4: "voicegw status order:
+Daemon status first, then provider status").
 
-Note: in v0.1.0 (per design.md decision 4) ``voicegw status`` will
-eventually show daemon status FIRST then provider status. That
-re-ordering lands as a separate task in section 5 once the
-DaemonManager facade exists; this carve-out preserves v0.0.5
-semantics verbatim so the move is purely structural.
+The two sections are independent: a missing daemon backend (e.g.
+construction error inside a hardened sandbox) does NOT block the
+provider table from rendering. ``voicegw doctor`` is the deeper
+diagnostic when the daemon side reports something concerning here.
 """
 
 from __future__ import annotations
@@ -25,7 +25,51 @@ def status(
     config: str = typer.Option(None, "--config", "-c", help="Path to voicegw.yaml"),
     project: str = typer.Option(None, "--project", "-p", help="Filter by project ID"),
 ) -> None:
-    """Show provider status."""
+    """Show daemon status, then provider status."""
+    _print_daemon_status()
+    console.print()  # one blank line between the two sections
+    _print_provider_status(config=config, project=project)
+
+
+def _print_daemon_status() -> None:
+    """Render the daemon-status section.
+
+    Calls ``DaemonManager().status()`` and reports the three
+    Protocol-required fields (registered / running / pid). On any
+    error (e.g., backend module fails to load), prints a yellow
+    soft-warn line and returns; the provider section still renders.
+    """
+    try:
+        from voicegateway.cli.daemon import DaemonManager
+
+        info = DaemonManager().status()
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[yellow]Daemon status unavailable: {exc}[/yellow]")
+        return
+
+    registered = bool(info.get("registered"))
+    running = bool(info.get("running"))
+    pid = info.get("pid")
+
+    table = Table(title="Daemon", show_header=False, box=None)
+    table.add_column(style="dim")
+    table.add_column()
+    table.add_row(
+        "Registered",
+        "[green]yes[/green]"
+        if registered
+        else "[yellow]no (run `voicegw onboard --install-daemon`)[/yellow]",
+    )
+    table.add_row(
+        "Running",
+        "[green]yes[/green]" if running else "[yellow]no[/yellow]",
+    )
+    table.add_row("PID", str(pid) if pid else "[dim]-[/dim]")
+    console.print(table)
+
+
+def _print_provider_status(*, config: str | None, project: str | None) -> None:
+    """Render the provider-status table (v0.0.5 behaviour)."""
     gw = _load_gateway(config)
     cfg = gw.config
 
