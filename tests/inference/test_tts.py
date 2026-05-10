@@ -19,14 +19,29 @@ from voicegateway.inference._session_context import get_session_id
 
 
 class _FakeTTS:
-    """Pretends to be a livekit.plugins.<provider>.TTS instance."""
+    """Pretends to be a livekit.plugins.<provider>.TTS instance.
 
-    def __init__(
-        self, model: str, voice: str | None = None, **kwargs: Any
-    ) -> None:
+    InstrumentedTTS subclasses lk_tts.TTS and forwards
+    ``capabilities``, ``sample_rate``, and ``num_channels`` from the
+    wrapped instance into ``super().__init__``. It also registers a
+    listener via ``wrapped.on("metrics_collected", ...)``. This fake
+    exposes the full surface the wrapper needs.
+    """
+
+    def __init__(self, model: str, voice: str | None = None, **kwargs: Any) -> None:
+        from livekit.agents.tts import TTSCapabilities
+
+        self.capabilities = TTSCapabilities(streaming=False)
+        self.sample_rate = 24000
+        self.num_channels = 1
         self.model = model
         self.voice = voice
         self.kwargs = kwargs
+
+    def on(self, event: str, callback: Any) -> None:
+        # No-op for tests; the bridge in InstrumentedTTS registers a
+        # listener but the fake never fires events.
+        pass
 
     async def aclose(self) -> None:
         pass
@@ -139,9 +154,7 @@ class TestVoiceSuffixParsing:
         assert fake_provider.last_create_tts["model"] == "sonic-3"
         assert fake_provider.last_create_tts["voice"] == "my-voice-id"
 
-    def test_explicit_voice_wins_over_suffix(
-        self, configured_gateway, fake_provider
-    ):
+    def test_explicit_voice_wins_over_suffix(self, configured_gateway, fake_provider):
         _tts.TTS("cartesia/sonic-3:from-suffix", voice="explicit-voice")
         assert fake_provider.last_create_tts["voice"] == "explicit-voice"
 
@@ -149,9 +162,7 @@ class TestVoiceSuffixParsing:
         _tts.TTS("cartesia/sonic-3")
         assert fake_provider.last_create_tts["voice"] is None
 
-    def test_suffix_does_not_affect_language(
-        self, configured_gateway, fake_provider
-    ):
+    def test_suffix_does_not_affect_language(self, configured_gateway, fake_provider):
         # Critical asymmetry vs STT: `:my-voice-id` must NOT land as
         # `language="my-voice-id"`. Language stays None.
         _tts.TTS("cartesia/sonic-3:my-voice-id")
@@ -173,9 +184,7 @@ class TestModelResolution:
 
 
 class TestKwargForwarding:
-    def test_extra_kwargs_spread_to_create_tts(
-        self, configured_gateway, fake_provider
-    ):
+    def test_extra_kwargs_spread_to_create_tts(self, configured_gateway, fake_provider):
         _tts.TTS(
             "cartesia/sonic-3",
             extra_kwargs={"speed": 1.2, "stability": 0.5},
@@ -186,23 +195,17 @@ class TestKwargForwarding:
     def test_language_and_sample_rate_forwarded(
         self, configured_gateway, fake_provider
     ):
-        _tts.TTS(
-            "cartesia/sonic-3", language="en", sample_rate=22050
-        )
+        _tts.TTS("cartesia/sonic-3", language="en", sample_rate=22050)
         assert fake_provider.last_create_tts["language"] == "en"
         assert fake_provider.last_create_tts["sample_rate"] == 22050
 
-    def test_omitted_params_not_forwarded(
-        self, configured_gateway, fake_provider
-    ):
+    def test_omitted_params_not_forwarded(self, configured_gateway, fake_provider):
         _tts.TTS("cartesia/sonic-3")
         # Only `model` and `voice` (None) should appear; NOT_GIVEN
         # sentinels must NOT leak as explicit kwargs.
         assert set(fake_provider.last_create_tts) == {"model", "voice"}
 
-    def test_voice_forwarded_when_given(
-        self, configured_gateway, fake_provider
-    ):
+    def test_voice_forwarded_when_given(self, configured_gateway, fake_provider):
         _tts.TTS("cartesia/sonic-3", voice="alice")
         assert fake_provider.last_create_tts["voice"] == "alice"
 
@@ -218,9 +221,7 @@ class TestApiKeyOverride:
 
 
 class TestSessionCorrelation:
-    def test_construction_creates_session_id(
-        self, configured_gateway, fake_provider
-    ):
+    def test_construction_creates_session_id(self, configured_gateway, fake_provider):
         def _scenario():
             assert get_session_id() is None
             _tts.TTS("cartesia/sonic-3")

@@ -20,11 +20,26 @@ from voicegateway.inference._session_context import get_session_id
 
 
 class _FakeSTT:
-    """Pretends to be a livekit.plugins.<provider>.STT instance."""
+    """Pretends to be a livekit.plugins.<provider>.STT instance.
+
+    InstrumentedSTT subclasses lk_stt.STT and calls
+    ``super().__init__(capabilities=wrapped.capabilities)`` plus
+    ``wrapped.on("metrics_collected", ...)`` for event bridging, so this
+    fake exposes both. ``capabilities`` returns a real
+    ``STTCapabilities`` so the LK base accepts it.
+    """
 
     def __init__(self, model: str, **kwargs: Any) -> None:
+        from livekit.agents.stt import STTCapabilities
+
+        self.capabilities = STTCapabilities(streaming=False, interim_results=False)
         self.model = model
         self.kwargs = kwargs
+
+    def on(self, event: str, callback: Any) -> None:
+        # No-op for tests; the bridge in InstrumentedSTT registers a
+        # listener but the fake never fires events.
+        pass
 
     def aclose(self) -> None:
         pass
@@ -156,9 +171,7 @@ class TestModelResolution:
 
 
 class TestKwargForwarding:
-    def test_extra_kwargs_spread_to_create_stt(
-        self, configured_gateway, fake_provider
-    ):
+    def test_extra_kwargs_spread_to_create_stt(self, configured_gateway, fake_provider):
         _stt.STT(
             "deepgram/nova-3",
             extra_kwargs={"keyterm": ["livekit", "agent"], "smart_format": True},
@@ -169,15 +182,11 @@ class TestKwargForwarding:
     def test_encoding_and_sample_rate_forwarded(
         self, configured_gateway, fake_provider
     ):
-        _stt.STT(
-            "deepgram/nova-3", encoding="pcm_s16le", sample_rate=24000
-        )
+        _stt.STT("deepgram/nova-3", encoding="pcm_s16le", sample_rate=24000)
         assert fake_provider.last_create_stt["encoding"] == "pcm_s16le"
         assert fake_provider.last_create_stt["sample_rate"] == 24000
 
-    def test_omitted_params_not_forwarded(
-        self, configured_gateway, fake_provider
-    ):
+    def test_omitted_params_not_forwarded(self, configured_gateway, fake_provider):
         _stt.STT("deepgram/nova-3")
         # Only `model` should appear; nothing else should be passed through
         # implicitly (NOT_GIVEN sentinels must NOT appear as kwargs).
@@ -197,9 +206,7 @@ class TestApiKeyOverride:
 
 
 class TestSessionCorrelation:
-    def test_construction_creates_session_id(
-        self, configured_gateway, fake_provider
-    ):
+    def test_construction_creates_session_id(self, configured_gateway, fake_provider):
         # Run inside a copied context so the autouse reset_session_id
         # in the conftest doesn't fight the assertion.
         def _scenario():

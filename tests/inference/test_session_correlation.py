@@ -40,11 +40,46 @@ from voicegateway.inference._session_context import get_session_id
 
 
 class _FakeInstance:
-    """Generic stand-in for livekit.plugins.<provider>.STT/LLM/TTS."""
+    """Generic stand-in for livekit.plugins.<provider>.STT/LLM/TTS.
+
+    Carries the LK-side surface the wrappers need to subclass cleanly:
+    ``capabilities``, ``sample_rate`` / ``num_channels`` (for TTS), and
+    a no-op ``on(event, callback)`` so the metrics-event bridge can
+    register without firing.
+    """
 
     def __init__(self, *, model: str = "test", **kwargs: Any) -> None:
+        from livekit.agents.stt import STTCapabilities
+        from livekit.agents.tts import TTSCapabilities
+
+        # Both STT and TTS capabilities — the wrapper picks whichever
+        # the LK base class for that modality reads.
+        self.capabilities: Any = STTCapabilities(streaming=False, interim_results=False)
+        self._tts_capabilities: Any = TTSCapabilities(streaming=False)
+        self.sample_rate = 24000
+        self.num_channels = 1
         self.model = model
         self.kwargs = kwargs
+
+    def on(self, event: str, callback: Any) -> None:
+        # No-op; the wrapper bridges events but the fake never fires.
+        pass
+
+
+class _FakeSTTInstance(_FakeInstance):
+    pass
+
+
+class _FakeLLMInstance(_FakeInstance):
+    pass
+
+
+class _FakeTTSInstance(_FakeInstance):
+    def __init__(self, *, model: str = "test", **kwargs: Any) -> None:
+        super().__init__(model=model, **kwargs)
+        # TTS-specific: the wrapper reads .capabilities expecting a
+        # TTSCapabilities, so swap it in for this modality.
+        self.capabilities = self._tts_capabilities
 
 
 class _FakeProvider:
@@ -54,15 +89,15 @@ class _FakeProvider:
         self._config = config
 
     def create_stt(self, model: str, **kwargs: Any) -> _FakeInstance:
-        return _FakeInstance(model=model, **kwargs)
+        return _FakeSTTInstance(model=model, **kwargs)
 
     def create_llm(self, model: str, **kwargs: Any) -> _FakeInstance:
-        return _FakeInstance(model=model, **kwargs)
+        return _FakeLLMInstance(model=model, **kwargs)
 
     def create_tts(
         self, model: str, voice: str | None = None, **kwargs: Any
     ) -> _FakeInstance:
-        return _FakeInstance(model=model, voice=voice, **kwargs)
+        return _FakeTTSInstance(model=model, voice=voice, **kwargs)
 
     async def health_check(self) -> bool:
         return True
@@ -175,9 +210,7 @@ async def test_three_modalities_share_one_session_and_one_sessions_row(
     # ---- 2. sessions table: one row, request_count=3, all 3 modalities.
     conn = sqlite3.connect(db_path)
     try:
-        cursor = conn.execute(
-            "SELECT id, modalities, request_count FROM sessions"
-        )
+        cursor = conn.execute("SELECT id, modalities, request_count FROM sessions")
         rows = cursor.fetchall()
     finally:
         conn.close()

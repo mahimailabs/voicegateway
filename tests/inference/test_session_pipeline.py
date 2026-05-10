@@ -32,10 +32,21 @@ from voicegateway.storage.sqlite import SQLiteStorage
 
 
 class _FakeWrapped:
-    """A bare provider-side instance the wrapper can proxy to."""
+    """A bare provider-side instance the wrapper can proxy to.
+
+    Carries the LK-side surface InstrumentedSTT needs at construction:
+    ``capabilities`` (passed into super().__init__) and a no-op
+    ``on(event, callback)`` for the metrics-event bridge.
+    """
 
     def __init__(self, model: str = "test-model") -> None:
+        from livekit.agents.stt import STTCapabilities
+
+        self.capabilities = STTCapabilities(streaming=False, interim_results=False)
         self.model = model
+
+    def on(self, event: str, callback: Any) -> None:
+        pass
 
     def aclose(self) -> None:  # pragma: no cover (proxy target)
         pass
@@ -70,8 +81,11 @@ def cost_tracker(storage):
 
 def test_request_record_has_session_id_field():
     rec = RequestRecord(
-        id="r1", timestamp=time.time(), modality="stt",
-        model_id="deepgram/nova-3", provider="deepgram",
+        id="r1",
+        timestamp=time.time(),
+        modality="stt",
+        model_id="deepgram/nova-3",
+        provider="deepgram",
     )
     # Default is None — pre-v0.0.5 callers don't have to update.
     assert rec.session_id is None
@@ -79,8 +93,11 @@ def test_request_record_has_session_id_field():
 
 def test_request_record_accepts_session_id():
     rec = RequestRecord(
-        id="r1", timestamp=time.time(), modality="stt",
-        model_id="deepgram/nova-3", provider="deepgram",
+        id="r1",
+        timestamp=time.time(),
+        modality="stt",
+        model_id="deepgram/nova-3",
+        provider="deepgram",
         session_id="vg-test",
     )
     assert rec.session_id == "vg-test"
@@ -131,9 +148,7 @@ async def test_storage_persists_session_id(tmp_path):
 
     conn = sqlite3.connect(db_path)
     try:
-        cursor = conn.execute(
-            "SELECT session_id FROM requests WHERE id = ?", (rec.id,)
-        )
+        cursor = conn.execute("SELECT session_id FROM requests WHERE id = ?", (rec.id,))
         row = cursor.fetchone()
     finally:
         conn.close()
@@ -159,9 +174,7 @@ async def test_storage_persists_null_session_id_for_uninstrumented_path(tmp_path
 
     conn = sqlite3.connect(db_path)
     try:
-        cursor = conn.execute(
-            "SELECT session_id FROM requests WHERE id = ?", (rec.id,)
-        )
+        cursor = conn.execute("SELECT session_id FROM requests WHERE id = ?", (rec.id,))
         row = cursor.fetchone()
     finally:
         conn.close()

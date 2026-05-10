@@ -45,9 +45,28 @@ class _FakeProvider:
 
 
 class _Stub:
+    """Provider-side stub the wrapper subclasses receive at construction.
+
+    Carries the LK-side surface (capabilities, sample_rate, num_channels,
+    on) so InstrumentedSTT/LLM/TTS can call ``super().__init__`` and
+    register the metrics-event bridge without raising.
+    """
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        from livekit.agents.stt import STTCapabilities
+        from livekit.agents.tts import TTSCapabilities
+
+        self.capabilities: Any = STTCapabilities(streaming=False, interim_results=False)
+        self._tts_capabilities: Any = TTSCapabilities(streaming=False)
+        self.sample_rate = 24000
+        self.num_channels = 1
         self.args = args
         self.kwargs = kwargs
+
+    def on(self, _event: str, _cb: Any) -> None:
+        # No-op; the wrapper registers an event bridge but the stub
+        # never emits.
+        pass
 
 
 @pytest.fixture(autouse=True)
@@ -147,8 +166,7 @@ async def test_db_managed_key_creates_stub_project(
     assert "mama" in gw.config.projects
     assert gw.config.projects["mama"].source == "db"
     assert (
-        gw.config.projects["mama"].providers["deepgram"]["api_key"]
-        == "sk-mama-dg-db"
+        gw.config.projects["mama"].providers["deepgram"]["api_key"] == "sk-mama-dg-db"
     )
 
     _project.set_project("mama")
@@ -156,9 +174,7 @@ async def test_db_managed_key_creates_stub_project(
     assert fake_providers.last_config["api_key"] == "sk-mama-dg-db"
 
 
-async def test_db_managed_key_does_not_leak_to_global_providers(
-    tmp_path, monkeypatch
-):
+async def test_db_managed_key_does_not_leak_to_global_providers(tmp_path, monkeypatch):
     """The fix moves project-scoped DB rows OUT of merged.providers and
     INTO merged.projects[<name>].providers[<provider>]. Pin both sides:
     the composite key is absent from top-level providers, the
@@ -183,9 +199,7 @@ async def test_db_managed_key_does_not_leak_to_global_providers(
 # ---------------------------------------------------------------------------
 
 
-async def test_per_call_api_key_kwarg_beats_db(
-    tmp_path, monkeypatch, fake_providers
-):
+async def test_per_call_api_key_kwarg_beats_db(tmp_path, monkeypatch, fake_providers):
     gw = _build_gateway(tmp_path, monkeypatch)
 
     await gw.storage.upsert_managed_provider(
@@ -206,9 +220,7 @@ async def test_per_call_api_key_kwarg_beats_db(
 # ---------------------------------------------------------------------------
 
 
-async def test_yaml_per_project_entry_beats_db(
-    tmp_path, monkeypatch, fake_providers
-):
+async def test_yaml_per_project_entry_beats_db(tmp_path, monkeypatch, fake_providers):
     """When voicegw.yaml has projects.tony.providers.openai, that
     entry must win over a DB-managed row for the same (project,
     provider) pair. Mirrors the precedence enforced by the

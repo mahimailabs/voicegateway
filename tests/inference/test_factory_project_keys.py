@@ -42,9 +42,31 @@ class _FakeProvider:
 
 
 class _Stub:
+    """Provider-side stub the wrapper subclasses receive at construction.
+
+    Carries the LK-side surface (capabilities, sample_rate, num_channels,
+    on) so InstrumentedSTT/LLM/TTS can call ``super().__init__`` and
+    register the metrics-event bridge without raising.
+    """
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        from livekit.agents.stt import STTCapabilities
+        from livekit.agents.tts import TTSCapabilities
+
+        # Carry both — the wrapper for the modality picks the one its
+        # super().__init__ reads. STTCapabilities has the wider field
+        # set, so default to it; TTS-flavoured _Stubs swap in the TTS
+        # one via the test's create_tts path if needed.
+        self.capabilities: Any = STTCapabilities(streaming=False, interim_results=False)
+        self._tts_capabilities: Any = TTSCapabilities(streaming=False)
+        self.sample_rate = 24000
+        self.num_channels = 1
         self.args = args
         self.kwargs = kwargs
+
+    def on(self, _event: str, _cb: Any) -> None:
+        # No-op; the wrapper bridges events but the stub never emits.
+        pass
 
 
 @pytest.fixture(autouse=True)
@@ -115,9 +137,7 @@ def gateway_with_per_project_keys(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_stt_uses_default_project_keys(
-    gateway_with_per_project_keys, fake_providers
-):
+def test_stt_uses_default_project_keys(gateway_with_per_project_keys, fake_providers):
     """default_project=mama-diner. mama overrides openai but not
     deepgram. STT(deepgram/...) should pick up the global deepgram key.
     """
@@ -135,9 +155,7 @@ def test_llm_uses_default_project_overridden_key(
     assert fake_providers.last_config["api_key"] == "mama-openai-key"
 
 
-def test_tts_uses_default_project_keys(
-    gateway_with_per_project_keys, fake_providers
-):
+def test_tts_uses_default_project_keys(gateway_with_per_project_keys, fake_providers):
     _tts.TTS("cartesia/sonic-3")
     # mama-diner does not override cartesia → falls back to global.
     assert fake_providers.last_config["api_key"] == "global-cartesia-key"

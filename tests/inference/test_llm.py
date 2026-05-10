@@ -19,11 +19,22 @@ from voicegateway.inference._session_context import get_session_id
 
 
 class _FakeLLM:
-    """Pretends to be a livekit.plugins.<provider>.LLM instance."""
+    """Pretends to be a livekit.plugins.<provider>.LLM instance.
+
+    InstrumentedLLM subclasses lk_llm.LLM (whose ``__init__`` takes no
+    args), so this fake doesn't need ``capabilities``. The wrapper
+    still bridges events via ``wrapped.on(...)``, so a no-op ``on`` is
+    required.
+    """
 
     def __init__(self, model: str, **kwargs: Any) -> None:
         self.model = model
         self.kwargs = kwargs
+
+    def on(self, event: str, callback: Any) -> None:
+        # No-op for tests; the bridge in InstrumentedLLM registers a
+        # listener but the fake never fires events.
+        pass
 
     async def aclose(self) -> None:
         pass
@@ -163,9 +174,7 @@ class TestModelResolution:
 
 
 class TestKwargForwarding:
-    def test_extra_kwargs_spread_to_create_llm(
-        self, configured_gateway, fake_provider
-    ):
+    def test_extra_kwargs_spread_to_create_llm(self, configured_gateway, fake_provider):
         _llm.LLM(
             "openai/gpt-4o-mini",
             extra_kwargs={"temperature": 0.2, "max_tokens": 1024},
@@ -177,9 +186,7 @@ class TestKwargForwarding:
         _llm.LLM("openai/gpt-4o-mini", base_url="https://my-proxy.test")
         assert fake_provider.last_create_llm["base_url"] == "https://my-proxy.test"
 
-    def test_omitted_params_not_forwarded(
-        self, configured_gateway, fake_provider
-    ):
+    def test_omitted_params_not_forwarded(self, configured_gateway, fake_provider):
         _llm.LLM("openai/gpt-4o-mini")
         # Only `model` should appear; None defaults must NOT leak as
         # explicit kwargs.
@@ -197,9 +204,7 @@ class TestApiKeyOverride:
 
 
 class TestSessionCorrelation:
-    def test_construction_creates_session_id(
-        self, configured_gateway, fake_provider
-    ):
+    def test_construction_creates_session_id(self, configured_gateway, fake_provider):
         def _scenario():
             assert get_session_id() is None
             _llm.LLM("openai/gpt-4o-mini")

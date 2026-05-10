@@ -50,9 +50,7 @@ def test_empty_yaml_storage_disabled_inserts_in_memory(tmp_path):
     assert project.source == "auto"
 
 
-async def test_empty_yaml_storage_enabled_persists_managed_row(
-    tmp_path, monkeypatch
-):
+async def test_empty_yaml_storage_enabled_persists_managed_row(tmp_path, monkeypatch):
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "vg.db"))
     cfg_path = _write_config(tmp_path, cost_tracking={"enabled": True})
     gw = Gateway(config_path=cfg_path)
@@ -96,9 +94,7 @@ def test_yaml_projects_without_default_project_still_get_default(tmp_path):
     assert gw.config.projects["default"].source == "auto"
 
 
-def test_inference_falls_through_to_default_with_named_projects(
-    tmp_path, monkeypatch
-):
+def test_inference_falls_through_to_default_with_named_projects(tmp_path, monkeypatch):
     """End-to-end check: with ``projects: {tony}`` and no override,
     ``inference.STT(...)`` resolves to ``"default"`` and uses the
     top-level provider key, not Tony's per-project one.
@@ -120,18 +116,38 @@ def test_inference_falls_through_to_default_with_named_projects(
 
     captured: dict = {}
 
+    # InstrumentedSTT/LLM/TTS subclass the LK base classes and forward
+    # ``capabilities`` (plus sample_rate/num_channels for TTS) through
+    # ``super().__init__``. The stub returned here therefore needs the
+    # LK-side surface so the wrapper can be constructed without
+    # raising AttributeError.
+    from livekit.agents.stt import STTCapabilities
+    from livekit.agents.tts import TTSCapabilities
+
+    class _LkStub:
+        def __init__(self) -> None:
+            self.capabilities = STTCapabilities(streaming=False, interim_results=False)
+            self._tts_capabilities = TTSCapabilities(streaming=False)
+            self.sample_rate = 24000
+            self.num_channels = 1
+
+        def on(self, _event, _cb):
+            pass
+
     class _FakeProvider:
         def __init__(self, config):
             captured.update(config)
 
         def create_stt(self, model, **kwargs):
-            return object()
+            return _LkStub()
 
         def create_llm(self, model, **kwargs):
-            return object()
+            return _LkStub()
 
         def create_tts(self, model, voice=None, **kwargs):
-            return object()
+            stub = _LkStub()
+            stub.capabilities = stub._tts_capabilities
+            return stub
 
         async def health_check(self):
             return True

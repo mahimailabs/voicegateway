@@ -564,21 +564,46 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
 
     models = _smoke_pick_models(gw, project)
 
-    class _StubInstance:
-        pass
+    # Smoke-test stubs: each stub instance must carry the LK-side
+    # surface InstrumentedSTT/LLM/TTS reads at construction —
+    # ``capabilities`` (passed to the LK base class via super().__init__),
+    # ``sample_rate`` / ``num_channels`` for TTS, and a no-op
+    # ``on(event, callback)`` for the metrics-event bridge. Without these
+    # the wrapper rewrite (AC-2 fix) raises AttributeError on every
+    # modality and the smoke test exits 1.
+    from livekit.agents.stt import STTCapabilities
+    from livekit.agents.tts import TTSCapabilities
+
+    class _StubSTT:
+        capabilities = STTCapabilities(streaming=False, interim_results=False)
+
+        def on(self, _event: str, _cb: Any) -> None:
+            pass
+
+    class _StubLLM:
+        def on(self, _event: str, _cb: Any) -> None:
+            pass
+
+    class _StubTTS:
+        capabilities = TTSCapabilities(streaming=False)
+        sample_rate = 24000
+        num_channels = 1
+
+        def on(self, _event: str, _cb: Any) -> None:
+            pass
 
     class _StubProvider:
         def __init__(self, _config: dict) -> None:
             pass
 
         def create_stt(self, model: str, **_kw: Any) -> Any:
-            return _StubInstance()
+            return _StubSTT()
 
         def create_llm(self, model: str, **_kw: Any) -> Any:
-            return _StubInstance()
+            return _StubLLM()
 
         def create_tts(self, model: str, **_kw: Any) -> Any:
-            return _StubInstance()
+            return _StubTTS()
 
         async def health_check(self) -> bool:
             return True

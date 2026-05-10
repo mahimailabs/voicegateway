@@ -18,6 +18,27 @@ from voicegateway.core.config import ConfigError
 from voicegateway.inference import _factory, _llm, _project, _stt, _tts
 
 
+class _LkShapedStub:
+    """Provider-side stub carrying the LK surface the wrappers consume.
+
+    Returned by ``_FakeProvider.create_*`` so InstrumentedSTT/LLM/TTS
+    can call ``super().__init__(capabilities=...)`` and register the
+    metrics-event bridge without raising.
+    """
+
+    def __init__(self) -> None:
+        from livekit.agents.stt import STTCapabilities
+        from livekit.agents.tts import TTSCapabilities
+
+        self.capabilities: Any = STTCapabilities(streaming=False, interim_results=False)
+        self._tts_capabilities: Any = TTSCapabilities(streaming=False)
+        self.sample_rate = 24000
+        self.num_channels = 1
+
+    def on(self, _event: str, _cb: Any) -> None:
+        pass
+
+
 class _FakeProvider:
     last_config: dict[str, Any] | None = None
 
@@ -25,13 +46,13 @@ class _FakeProvider:
         _FakeProvider.last_config = dict(config)
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:
-        return object()
+        return _LkShapedStub()
 
     def create_llm(self, model: str, **kwargs: Any) -> Any:
-        return object()
+        return _LkShapedStub()
 
     def create_tts(self, model: str, voice: str | None = None, **kwargs: Any) -> Any:
-        return object()
+        return _LkShapedStub()
 
     async def health_check(self) -> bool:
         return True
@@ -236,9 +257,7 @@ def test_other_project_in_yaml_does_not_satisfy_preflight(
 # ---------------------------------------------------------------------------
 
 
-def test_empty_api_key_treated_as_missing(
-    tmp_path, monkeypatch, fake_create_provider
-):
+def test_empty_api_key_treated_as_missing(tmp_path, monkeypatch, fake_create_provider):
     """A YAML entry with ``api_key: ''`` (e.g. an unset env var that
     expanded to the empty string) must trip the preflight rather
     than silently constructing a broken plugin instance.
