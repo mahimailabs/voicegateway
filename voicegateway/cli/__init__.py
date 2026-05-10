@@ -27,6 +27,7 @@ from __future__ import annotations
 # import time. Order does not matter; commands carry their own names.
 from voicegateway.cli import init as _init  # noqa: F401, E402
 from voicegateway.cli import rotate_secret as _rotate_secret  # noqa: F401, E402
+from voicegateway.cli import status as _status  # noqa: F401, E402
 
 # Single source of truth for both ``app`` (the Typer instance every
 # command registers on) and ``console`` (the Rich Console used for
