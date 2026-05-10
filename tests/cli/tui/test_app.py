@@ -110,16 +110,12 @@ async def test_tuiapp_mounts_four_screens(local_client: LocalClient) -> None:
         assert isinstance(app.query_one("#costs"), CostsScreen)
         assert isinstance(app.query_one("#logs"), LogsScreen)
         assert isinstance(app.query_one("#providers"), ProvidersScreen)
-        # The placeholder-id check applies to tabs whose body has
-        # not yet been replaced by the real implementation. Phases
-        # 3, 4, and 5 filled in Sessions, Costs, and Logs; only
-        # providers remains a placeholder until Phase 6.
-        for tab_id in ("providers",):
-            assert app.query_one(f"#{tab_id}-placeholder") is not None
-        # Sessions, Costs, and Logs now expose their real headers.
+        # Phases 3-6 filled in every tab body; no placeholders
+        # remain. Each tab now exposes its real header label.
         assert app.query_one("#sessions-header") is not None
         assert app.query_one("#costs-header") is not None
         assert app.query_one("#logs-header") is not None
+        assert app.query_one("#providers-header") is not None
 
 
 # ---------------------------------------------------------------------------
