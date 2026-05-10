@@ -1,12 +1,38 @@
 """Tests for the ``voicegw onboard`` wizard.
 
-Covers the prompt-and-write happy paths plus the
-five-second-timeout-bound provider key validation. Subsequent
-v0.1.0 commits add tests for:
+REQ-VG-ONBOARD-002 coverage map (spec asks for):
 
-  - Ctrl+C cancellation with partial-state cleanup.
-  - Smoke-test offering at the end of the wizard.
-  - Wizard summary content (AC-VG-ONBOARD-002.3).
+  - Happy path:
+      test_onboard_happy_path_writes_config
+      test_onboard_custom_project_and_port
+      test_onboard_preserves_existing_yaml
+      test_onboard_unknown_provider_warns_but_continues
+
+  - Each cancellation point (REQ-VG-ONBOARD-002.4):
+      test_ctrl_c_at_each_prompt_no_partial_config (parametrized
+        across prompts 1..4: project / provider / api / port)
+      test_ctrl_c_at_daemon_confirm_no_partial_config
+      test_ctrl_c_at_smoke_test_confirm_rolls_back_config
+      test_ctrl_c_during_first_prompt_no_partial_config (legacy)
+      test_ctrl_c_after_config_write_removes_partial_when_new
+        (KBI during _install_daemon)
+      test_ctrl_c_restores_pre_existing_config_byte_for_byte
+        (KBI during _install_daemon, with pre-existing yaml)
+
+  - Key-validation timeout (REQ-VG-ONBOARD-002.2):
+      test_onboard_validation_timeout_fails_soft
+      test_validate_returns_timeout_when_health_check_hangs
+
+  - Smoke-test success (REQ-VG-ONBOARD-005):
+      test_smoke_test_runs_when_user_accepts
+
+  - Smoke-test failure (REQ-VG-ONBOARD-005):
+      test_smoke_test_failure_prints_pointer
+      test_smoke_test_timeout_prints_pointer
+      test_smoke_test_skipped_when_voicegw_not_on_path
+
+Plus the v0.0.5-style help/registration/summary checks and the
+direct-call tests for ``_validate_provider_key`` (each branch).
 """
 
 from __future__ import annotations
@@ -377,6 +403,97 @@ def _typer_prompt_kbi_at(target_call: int):
         return kwargs.get("default", "")
 
     return _fn
+
+
+def _typer_confirm_kbi_at(target_call: int):
+    """Return a typer.confirm replacement that raises KeyboardInterrupt
+    on the Nth call (1-indexed). Earlier calls return the default.
+    """
+    state = {"calls": 0}
+
+    def _fn(*args, **kwargs):
+        state["calls"] += 1
+        if state["calls"] == target_call:
+            raise KeyboardInterrupt()
+        return kwargs.get("default", False)
+
+    return _fn
+
+
+@pytest.mark.parametrize(
+    ("position", "label"),
+    [
+        (1, "project name"),
+        (2, "provider"),
+        (3, "API key"),
+        (4, "port"),
+    ],
+)
+def test_ctrl_c_at_each_prompt_no_partial_config(
+    tmp_path, monkeypatch, position, label
+):
+    """Cancellation at every prompt position 1..4 leaves no partial
+    config on disk. Spec calls for 'each cancellation point'.
+    """
+    cfg = tmp_path / "voicegw.yaml"
+    monkeypatch.setattr(
+        "voicegateway.cli.onboard.typer.prompt",
+        _typer_prompt_kbi_at(position),
+    )
+    result = runner.invoke(
+        app, ["onboard", "--no-install-daemon", "--config", str(cfg)]
+    )
+    assert result.exit_code == 130, (
+        f"KBI at prompt {position} ({label}) did not exit 130"
+    )
+    assert not cfg.exists(), (
+        f"KBI at prompt {position} ({label}) left a partial config at {cfg}"
+    )
+
+
+def test_ctrl_c_at_daemon_confirm_no_partial_config(tmp_path, monkeypatch):
+    """Cancellation at the daemon-install confirm prompt (typer.confirm,
+    not typer.prompt) leaves no partial config: the write happens AFTER
+    this confirm.
+    """
+    cfg = tmp_path / "voicegw.yaml"
+    monkeypatch.setattr(
+        "voicegateway.cli.onboard.typer.confirm",
+        _typer_confirm_kbi_at(1),
+    )
+    # Run without --install-daemon / --no-install-daemon so the
+    # daemon confirm prompt fires (it's the first typer.confirm call).
+    result = runner.invoke(
+        app,
+        ["onboard", "--config", str(cfg)],
+        input="\n\nsk-test\n\n",
+    )
+    assert result.exit_code == 130, result.output
+    assert not cfg.exists()
+
+
+def test_ctrl_c_at_smoke_test_confirm_rolls_back_config(tmp_path, monkeypatch):
+    """The smoke-test confirm fires AFTER the config write. Cancelling
+    here triggers the rollback path: a brand-new config gets unlinked,
+    a pre-existing config gets restored byte-for-byte. Verifies the
+    new-file branch.
+    """
+    cfg = tmp_path / "voicegw.yaml"
+    # Run with --no-install-daemon so the only typer.confirm in the
+    # wizard body is the smoke-test offer.
+    monkeypatch.setattr(
+        "voicegateway.cli.onboard.typer.confirm",
+        _typer_confirm_kbi_at(1),
+    )
+    result = runner.invoke(
+        app,
+        ["onboard", "--no-install-daemon", "--config", str(cfg)],
+        input="\n\nsk-test\n\n",
+    )
+    assert result.exit_code == 130, result.output
+    # Config was written, then the smoke-test KBI fired, then rollback
+    # unlinked the new file.
+    assert not cfg.exists()
 
 
 def test_ctrl_c_during_first_prompt_no_partial_config(tmp_path, monkeypatch):
