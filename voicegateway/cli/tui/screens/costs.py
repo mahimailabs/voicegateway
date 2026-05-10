@@ -83,9 +83,16 @@ class CostsScreen(Container):
         ``(as of X)`` indicator when a stamp is older than 24 h.
         """
         app = cast("TUIApp", self.app)
-        costs = await app.client.list_costs(
-            period=self._range, include_pricing_source=True
-        )
+        try:
+            costs = await app.client.list_costs(
+                period=self._range, include_pricing_source=True
+            )
+        except Exception:  # noqa: BLE001
+            # Daemon unreachable: keep the last-known card visible.
+            # The CounterFooter reconnection indicator surfaces the
+            # outage; clearing the card would discard the user's
+            # last good view of cost state.
+            return
         self.query_one("#cost-card", CostCard).update_costs(costs)
 
     # -- Actions -----------------------------------------------------

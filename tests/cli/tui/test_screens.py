@@ -952,3 +952,95 @@ async def test_vim_navigation_on_logs_tab_dispatches_scroll_actions(
         for key in ("g", "j", "k", "G", "h", "l"):
             await pilot.press(key)
             await pilot.pause()
+
+
+# ---------------------------------------------------------------------------
+# Sessions live append (REQ-VG-TUI-007)
+# ---------------------------------------------------------------------------
+
+
+class _SessionsStubClient:
+    """Stub MetricsClient with a mutable sessions list so tests can
+    simulate live append by appending to ``self.sessions`` between
+    Pilot pauses. ``poll_seconds`` is short so the assertion runs
+    in well under a wall-clock second.
+    """
+
+    def __init__(self) -> None:
+        self.sessions: list[dict[str, Any]] = []
+        self.poll_seconds = 0.05
+
+    async def list_sessions(
+        self,
+        *,
+        limit: int = 100,
+        project: str | None = None,
+        order_by: str = "started_at_desc",
+    ) -> list[dict[str, Any]]:
+        return list(self.sessions[:limit])
+
+    async def get_session_detail(self, session_id: str) -> dict[str, Any] | None:
+        for session in self.sessions:
+            if session.get("id") == session_id:
+                return session
+        return None
+
+    async def list_costs(self, **kwargs: Any) -> dict[str, Any]:
+        return {}
+
+    async def list_logs(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return []
+
+    async def list_providers(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return []
+
+    async def test_provider(self, provider_id: str) -> dict[str, Any]:
+        return {}
+
+
+async def test_sessions_live_append_picks_up_new_session() -> None:
+    """A new session added to the stub mid-Pilot surfaces in the
+    rendered list within the documented 5 s budget. Pins the
+    second half of REQ-VG-TUI-007's "synthetic new session
+    appears" contract end-to-end through the TUIApp's polling
+    loop and SessionsScreen's focus-preserving rebuild.
+    """
+    client = _SessionsStubClient()
+    client.sessions.append(
+        {
+            "id": "vg-old",
+            "project": "default",
+            "started_at": "2026-05-10T16:00:00+00:00",
+            "ended_at": "2026-05-10T16:00:30+00:00",
+            "total_cost_usd": 0.001,
+            "providers": ["openai"],
+            "modalities": ["llm"],
+            "request_count": 1,
+        }
+    )
+    app = TUIApp(client=client, is_local=False)
+    async with app.run_test() as pilot:
+        await _settle(pilot)
+        rows_before = list(app.query(SessionRow))
+        assert len(rows_before) == 1
+
+        # Add a new session; the polling loop should pick it up.
+        client.sessions.insert(
+            0,
+            {
+                "id": "vg-new",
+                "project": "default",
+                "started_at": "2026-05-10T17:00:00+00:00",
+                "ended_at": "2026-05-10T17:00:10+00:00",
+                "total_cost_usd": 0.002,
+                "providers": ["openai"],
+                "modalities": ["llm"],
+                "request_count": 1,
+            },
+        )
+        # 0.05 s * 30 = 1.5 s wall-clock, well under the 5 s budget.
+        for _ in range(30):
+            await pilot.pause(0.05)
+        rows_after = list(app.query(SessionRow))
+        ids = {r.session_id for r in rows_after}
+        assert ids == {"vg-old", "vg-new"}

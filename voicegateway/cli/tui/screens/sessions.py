@@ -116,7 +116,15 @@ class SessionsScreen(FocusRowsMixin, Container):
         """
         app = cast("TUIApp", self.app)
         limit = int(getattr(app, "_history_limit", 100))
-        sessions = await app.client.list_sessions(limit=limit, order_by=self._sort)
+        try:
+            sessions = await app.client.list_sessions(limit=limit, order_by=self._sort)
+        except Exception:  # noqa: BLE001
+            # Daemon unreachable / parse failure: keep the existing
+            # rows on screen rather than blanking them. The
+            # CounterFooter's reconnection indicator surfaces the
+            # state separately; clearing the list here would discard
+            # the user's read context for no gain.
+            return
 
         list_view = self.query_one("#sessions-list", VerticalScroll)
         focused_id = self._focused_session_id()

@@ -415,3 +415,101 @@ def test_factory_db_path_expands_user(monkeypatch):
     # ``~`` must be expanded so SQLiteStorage doesn't try to mkdir the
     # literal ``~`` directory under cwd.
     assert "~" not in str(path)
+
+
+# ---------------------------------------------------------------------------
+# HttpClient connection-state tracking (REQ-VG-TUI-007 reconnection)
+# ---------------------------------------------------------------------------
+
+
+async def test_http_client_starts_connected() -> None:
+    """``is_connected`` defaults True so the indicator does not flash
+    on launch before the first poll resolves.
+    """
+    c = HttpClient(url="http://x")
+    assert c.is_connected is True
+    await c.aclose()
+
+
+async def test_http_client_marks_disconnected_on_connect_error() -> None:
+    """A ConnectError flips ``is_connected`` to False before
+    re-raising; ``_last_error`` carries the message string.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("Connection refused")
+
+    inner = httpx.AsyncClient(
+        base_url="http://daemon.test",
+        transport=httpx.MockTransport(handler),
+    )
+    client = HttpClient(url="http://daemon.test", http_client=inner)
+    with pytest.raises(httpx.ConnectError):
+        await client.list_sessions()
+    assert client.is_connected is False
+    assert client._last_error is not None
+    assert "Connection refused" in client._last_error
+
+
+async def test_http_client_marks_connected_on_recovery() -> None:
+    """After a failure, the next successful round-trip flips
+    ``is_connected`` back to True and clears ``_last_error``.
+    """
+    state = {"fail": True}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if state["fail"]:
+            raise httpx.ConnectError("boom")
+        return httpx.Response(200, json=[])
+
+    inner = httpx.AsyncClient(
+        base_url="http://daemon.test",
+        transport=httpx.MockTransport(handler),
+    )
+    client = HttpClient(url="http://daemon.test", http_client=inner)
+    with pytest.raises(httpx.ConnectError):
+        await client.list_sessions()
+    assert client.is_connected is False
+
+    state["fail"] = False
+    rows = await client.list_sessions()
+    assert rows == []
+    assert client.is_connected is True
+    assert client._last_error is None
+
+
+async def test_http_client_status_error_does_not_flip_connected() -> None:
+    """A 4xx/5xx response means the daemon answered but rejected the
+    request; ``is_connected`` stays True. The user does NOT see the
+    reconnection indicator on a permission denial or a missing route.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"detail": "unauthorized"})
+
+    inner = httpx.AsyncClient(
+        base_url="http://daemon.test",
+        transport=httpx.MockTransport(handler),
+    )
+    client = HttpClient(url="http://daemon.test", http_client=inner)
+    with pytest.raises(httpx.HTTPStatusError):
+        await client.test_provider("openai")
+    # Daemon responded; connection is fine.
+    assert client.is_connected is True
+    assert client._last_error is None
+
+
+async def test_http_client_marks_disconnected_on_timeout() -> None:
+    """ReadTimeout is in the connection-error tuple; same contract."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("read timeout")
+
+    inner = httpx.AsyncClient(
+        base_url="http://daemon.test",
+        transport=httpx.MockTransport(handler),
+    )
+    client = HttpClient(url="http://daemon.test", http_client=inner)
+    with pytest.raises(httpx.ReadTimeout):
+        await client.list_logs()
+    assert client.is_connected is False

@@ -155,7 +155,13 @@ class ProvidersScreen(FocusRowsMixin, Container):
         a real complaint.
         """
         app = cast("TUIApp", self.app)
-        providers = await app.client.list_providers()
+        try:
+            providers = await app.client.list_providers()
+        except Exception:  # noqa: BLE001
+            # Daemon unreachable: keep the last-known rows visible.
+            # The CounterFooter reconnection indicator surfaces the
+            # state separately.
+            return
         list_view = self.query_one("#providers-list", VerticalScroll)
         await list_view.remove_children()
         if not providers:

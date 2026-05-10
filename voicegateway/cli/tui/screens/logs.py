@@ -119,7 +119,15 @@ class LogsScreen(Container):
         """
         app = cast("TUIApp", self.app)
         limit = int(getattr(app, "_history_limit", 100))
-        entries = await app.client.list_logs(limit=limit)
+        try:
+            entries = await app.client.list_logs(limit=limit)
+        except Exception:  # noqa: BLE001
+            # Daemon unreachable: keep the existing tail visible.
+            # The CounterFooter reconnection indicator surfaces the
+            # outage; clearing the tail or appending nothing both
+            # work. We choose append-nothing so the user does not
+            # see flicker.
+            return
         self.query_one("#logs-tail", LogTail).append_entries(entries)
 
     # -- Actions -----------------------------------------------------
