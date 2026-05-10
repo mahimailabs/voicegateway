@@ -137,22 +137,27 @@ async def test_q_exits_cleanly(local_client: LocalClient) -> None:
     assert app.return_code == 0
 
 
-async def test_question_mark_invokes_help_action(
-    local_client: LocalClient, monkeypatch: pytest.MonkeyPatch
+async def test_question_mark_pushes_help_overlay(
+    local_client: LocalClient,
 ) -> None:
-    """Pressing ``?`` dispatches ``action_help``.
-
-    The Phase-2 placeholder body is :meth:`TUIApp.bell`; Phase 7
-    swaps in the modal cheatsheet. We pin the binding -> action
-    wiring here so the cheatsheet swap inherits a passing test.
+    """Pressing ``?`` dispatches ``action_help`` which pushes the
+    Phase-7 :class:`HelpOverlay` modal onto the screen stack. The
+    overlay reads ``BINDINGS`` from the active tab + the App so the
+    cheatsheet stays in lockstep with the registered set.
     """
+    from voicegateway.cli.tui.screens.help import HelpOverlay
+
     app = TUIApp(client=local_client, is_local=False)
-    bell = MagicMock()
-    monkeypatch.setattr(TUIApp, "bell", bell)
     async with app.run_test() as pilot:
         await pilot.press("question_mark")
-        await pilot.pause()
-        assert bell.called
+        for _ in range(8):
+            await pilot.pause()
+        assert any(isinstance(screen, HelpOverlay) for screen in app.screen_stack)
+        # Pressing ``?`` again dismisses the modal.
+        await pilot.press("question_mark")
+        for _ in range(5):
+            await pilot.pause()
+        assert not any(isinstance(screen, HelpOverlay) for screen in app.screen_stack)
 
 
 async def test_number_keys_jump_to_each_tab(

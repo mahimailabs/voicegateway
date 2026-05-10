@@ -188,15 +188,22 @@ class TUIApp(App[None]):
             new_active.focus()
 
     def action_help(self) -> None:
-        """Help-overlay placeholder.
+        """Push the keybinding cheatsheet modal.
 
-        Phase 7 (vim keybinding pass) replaces this with a modal
-        cheatsheet that reads each screen's ``KEYBINDINGS`` class
-        attribute. Until then we ring the bell so a manual press of
-        ``?`` produces a visible signal that the binding wired
-        through correctly.
+        Reads the active tab's BINDINGS plus the App's own to build
+        a two-section cheatsheet at modal-mount time, so adding a
+        new binding to any screen surfaces in the overlay
+        automatically without a parallel docs list to maintain.
         """
-        self.bell()
+        # Lazy import: the help screen lives under
+        # voicegateway.cli.tui.screens, which the package's
+        # __init__.py also re-exports SessionsScreen / CostsScreen
+        # / etc. from. Importing at module scope here would create
+        # a circular load between cli.tui.app and the screens
+        # package.
+        from voicegateway.cli.tui.screens.help import HelpOverlay
+
+        self.push_screen(HelpOverlay())
 
 
 __all__ = ["TUIApp"]
