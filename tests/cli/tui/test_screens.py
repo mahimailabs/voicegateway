@@ -38,12 +38,14 @@ from textual.widgets import Label, Static
 from voicegateway.cli.tui import TUIApp
 from voicegateway.cli.tui.data.local import LocalClient
 from voicegateway.cli.tui.screens.costs import CostsScreen
+from voicegateway.cli.tui.screens.logs import LogsScreen
 from voicegateway.cli.tui.screens.session_detail import (
     SessionDetailScreen,
     _format_detail,
 )
 from voicegateway.cli.tui.screens.sessions import SessionsScreen
 from voicegateway.cli.tui.widgets.cost_card import CostCard
+from voicegateway.cli.tui.widgets.log_tail import LogTail
 from voicegateway.cli.tui.widgets.session_row import SessionRow
 from voicegateway.middleware.cost_tracker import RequestRecord
 from voicegateway.storage.sqlite import SQLiteStorage
@@ -320,8 +322,6 @@ def test_format_detail_handles_empty_lists() -> None:
 # ---------------------------------------------------------------------------
 
 
-
-
 class _StubMetricsClient:
     """Stub :class:`MetricsClient` with canned per-period responses.
 
@@ -491,3 +491,182 @@ async def test_costs_freshness_marker_renders_on_stale_modality(
         assert "as of 2025-01-01" in str(stt.renderable)
         assert "as of" not in str(llm.renderable)
         assert "as of" not in str(tts.renderable)
+
+
+# ---------------------------------------------------------------------------
+# Logs screen (REQ-VG-TUI-004)
+# ---------------------------------------------------------------------------
+
+
+class _LogsStubClient:
+    """Stub :class:`MetricsClient` driving ``list_logs`` from a
+    mutable list so tests can simulate live append by appending to
+    ``self.entries`` between Pilot pauses. ``poll_seconds`` is short
+    so the live-append assertion runs in well under a wall-clock
+    second.
+    """
+
+    def __init__(self) -> None:
+        self.entries: list[dict[str, Any]] = []
+        self.poll_seconds = 0.05
+        self.calls: list[dict[str, Any]] = []
+
+    async def list_logs(
+        self,
+        *,
+        limit: int = 100,
+        project: str | None = None,
+        modality: str | None = None,
+    ) -> list[dict[str, Any]]:
+        self.calls.append({"limit": limit, "project": project, "modality": modality})
+        # Snapshot so a concurrent append does not mutate the
+        # response mid-iteration on the screen side.
+        return list(self.entries)
+
+    # Other Protocol methods are no-ops.
+    async def list_sessions(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return []
+
+    async def get_session_detail(self, session_id: str) -> dict[str, Any] | None:
+        return None
+
+    async def list_costs(self, **kwargs: Any) -> dict[str, Any]:
+        return {}
+
+    async def list_providers(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return []
+
+    async def test_provider(self, provider_id: str) -> dict[str, Any]:
+        return {}
+
+
+def _log_entry(
+    entry_id: str,
+    *,
+    provider: str = "openai",
+    modality: str = "llm",
+) -> dict[str, Any]:
+    return {
+        "id": entry_id,
+        "timestamp": time.time(),
+        "modality": modality,
+        "provider": provider,
+        "model_id": f"{provider}/m",
+        "project": "default",
+        "cost_usd": 0.001,
+        "status": "success",
+        "total_latency_ms": 100,
+    }
+
+
+@pytest.fixture
+def logs_app() -> tuple[TUIApp, _LogsStubClient]:
+    client = _LogsStubClient()
+    client.entries.extend(
+        [
+            _log_entry("r1", provider="openai"),
+            _log_entry("r2", provider="deepgram", modality="stt"),
+            _log_entry("r3", provider="cartesia", modality="tts"),
+        ]
+    )
+    return TUIApp(client=client, is_local=True), client
+
+
+async def test_logs_renders_seeded_entries(
+    logs_app: tuple[TUIApp, _LogsStubClient],
+) -> None:
+    app, _ = logs_app
+    async with app.run_test() as pilot:
+        await pilot.press("3")
+        await _settle(pilot)
+        screen = app.query_one(LogsScreen)
+        tail = screen.query_one("#logs-tail", LogTail)
+        assert len(tail._all_entries) == 3
+        assert {e["id"] for e in tail._all_entries} == {"r1", "r2", "r3"}
+
+
+async def test_logs_empty_state_does_not_crash() -> None:
+    """An empty client mounts cleanly; no rows in LogTail."""
+    client = _LogsStubClient()  # entries left empty
+    app = TUIApp(client=client, is_local=True)
+    async with app.run_test() as pilot:
+        await pilot.press("3")
+        await _settle(pilot)
+        screen = app.query_one(LogsScreen)
+        tail = screen.query_one("#logs-tail", LogTail)
+        assert tail._all_entries == []
+
+
+async def test_logs_filter_narrows_visible_via_slash(
+    logs_app: tuple[TUIApp, _LogsStubClient],
+) -> None:
+    app, _ = logs_app
+    async with app.run_test() as pilot:
+        await pilot.press("3")
+        await _settle(pilot)
+        screen = app.query_one(LogsScreen)
+        tail = screen.query_one("#logs-tail", LogTail)
+        await pilot.press("slash")
+        await _settle(pilot)
+        for ch in "deepgram":
+            await pilot.press(ch)
+        await pilot.press("enter")
+        await _settle(pilot)
+        assert tail._filter == "deepgram"
+        # All three entries still retained; only display narrowed.
+        assert len(tail._all_entries) == 3
+        # Filter input hidden after submit.
+        from textual.widgets import Input as _Input
+
+        filter_input = screen.query_one("#logs-filter", _Input)
+        assert filter_input.display is False
+        # Header reflects filter mode.
+        header = screen.query_one("#logs-header", Label)
+        assert "filter: deepgram" in str(header.renderable)
+
+
+async def test_logs_filter_clears_on_escape(
+    logs_app: tuple[TUIApp, _LogsStubClient],
+) -> None:
+    app, _ = logs_app
+    async with app.run_test() as pilot:
+        await pilot.press("3")
+        await _settle(pilot)
+        screen = app.query_one(LogsScreen)
+        tail = screen.query_one("#logs-tail", LogTail)
+        await pilot.press("slash")
+        await _settle(pilot)
+        for ch in "openai":
+            await pilot.press(ch)
+        await pilot.press("enter")
+        await _settle(pilot)
+        assert tail._filter == "openai"
+        await pilot.press("escape")
+        await _settle(pilot)
+        assert tail._filter is None
+        header = screen.query_one("#logs-header", Label)
+        assert "tailing" in str(header.renderable)
+
+
+async def test_logs_polling_picks_up_new_entries(
+    logs_app: tuple[TUIApp, _LogsStubClient],
+) -> None:
+    """A new entry added after mount surfaces in LogTail within a
+    handful of poll ticks (poll_seconds=0.05 in the stub).
+    Synthetic-data-change-within-5s contract from REQ-VG-TUI-007's
+    Phase-5 half.
+    """
+    app, client = logs_app
+    async with app.run_test() as pilot:
+        await pilot.press("3")
+        await _settle(pilot)
+        screen = app.query_one(LogsScreen)
+        tail = screen.query_one("#logs-tail", LogTail)
+        before = len(tail._all_entries)
+        client.entries.append(_log_entry("r-new", provider="anthropic"))
+        # Wait several poll intervals; 0.05s * 40 = 2s, well under
+        # the 5s contract budget.
+        for _ in range(40):
+            await pilot.pause(0.05)
+        assert len(tail._all_entries) == before + 1
+        assert any(e.get("id") == "r-new" for e in tail._all_entries)
