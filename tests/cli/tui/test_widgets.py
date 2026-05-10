@@ -8,6 +8,10 @@ is covered when the consuming screen lands its own test file.
 from __future__ import annotations
 
 from voicegateway.cli.tui.widgets.cost_card import CostCard, stale_marker
+from voicegateway.cli.tui.widgets.log_tail import (
+    format_entry,
+    format_timestamp,
+)
 from voicegateway.cli.tui.widgets.session_row import (
     SessionRow,
     format_duration,
@@ -222,8 +226,6 @@ def test_cost_card_update_costs_replaces_dict_state() -> None:
 # ---------------------------------------------------------------------------
 
 
-
-
 def test_stale_marker_flags_old_iso_date() -> None:
     """A pricing stamp older than 24 h surfaces the (as of X) marker."""
     marker = stale_marker("voicegateway-catalog@2025-01-01")
@@ -292,3 +294,82 @@ def test_cost_card_modality_no_marker_when_fresh() -> None:
     }
     card = CostCard(costs)
     assert "(as of" not in card._format_modality("stt")
+
+
+# ---------------------------------------------------------------------------
+# LogTail formatters (REQ-VG-TUI-004)
+# ---------------------------------------------------------------------------
+
+
+def _log_entry_fixture() -> dict[str, object]:
+    return {
+        "id": "r1",
+        "timestamp": 1715356800.0,  # 2024-05-10T17:20:00 UTC
+        "modality": "llm",
+        "provider": "openai",
+        "model_id": "gpt-4o-mini",
+        "project": "default",
+        "cost_usd": 0.0123,
+        "status": "success",
+        "total_latency_ms": 145.7,
+    }
+
+
+def test_format_timestamp_epoch_renders_hh_mm_ss() -> None:
+    """A real epoch float renders as HH:MM:SS in local time."""
+    rendered = format_timestamp(1715356800.0)
+    assert ":" in rendered
+    assert len(rendered) == 8  # HH:MM:SS
+
+
+def test_format_timestamp_int_works() -> None:
+    rendered = format_timestamp(1715356800)
+    assert ":" in rendered
+
+
+def test_format_timestamp_iso_string() -> None:
+    """Some daemon shapes return ISO strings."""
+    rendered = format_timestamp("2026-05-10T16:23:05+00:00")
+    assert rendered == "16:23:05"
+
+
+def test_format_timestamp_none_returns_dashes() -> None:
+    assert format_timestamp(None) == "--:--:--"
+
+
+def test_format_timestamp_garbage_returns_dashes() -> None:
+    assert format_timestamp("not-a-timestamp") == "--:--:--"
+    assert format_timestamp(["unexpected", "type"]) == "--:--:--"
+
+
+def test_format_entry_renders_every_field() -> None:
+    rendered = format_entry(_log_entry_fixture())
+    assert "LLM" in rendered
+    assert "openai" in rendered
+    assert "gpt-4o-mini" in rendered
+    assert "$0.0123" in rendered
+    assert "145ms" in rendered  # int-cast of 145.7
+    assert "success" in rendered
+
+
+def test_format_entry_falls_back_to_ttfb_when_total_missing() -> None:
+    entry = _log_entry_fixture()
+    entry.pop("total_latency_ms")
+    entry["ttfb_ms"] = 88.0
+    rendered = format_entry(entry)
+    assert "88ms" in rendered
+
+
+def test_format_entry_handles_missing_fields() -> None:
+    """A nearly-empty entry still renders without crashing."""
+    rendered = format_entry({"id": "x"})
+    assert "?" in rendered
+    assert "$0.0000" in rendered
+    assert "0ms" in rendered
+
+
+def test_format_entry_handles_garbled_latency() -> None:
+    entry = _log_entry_fixture()
+    entry["total_latency_ms"] = "not-a-number"
+    rendered = format_entry(entry)
+    assert "0ms" in rendered  # falls back rather than crashing
