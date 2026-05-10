@@ -21,6 +21,8 @@ substrate Phase 10 plugs into.
 
 from __future__ import annotations
 
+import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from textual.app import ComposeResult
@@ -93,6 +95,10 @@ class CounterFooter(Horizontal):
         Widget base class uses ``_render`` internally for the
         rendering pipeline; overriding it with a None-return method
         breaks the pipeline at runtime.
+
+        In Local mode the row appends ``(as of X ago)`` so the user
+        sees how stale the SQLite snapshot is; the suffix is
+        omitted in Gateway mode where the daemon serves live data.
         """
         app = cast("TUIApp", self.app)
         is_connected = bool(getattr(app.client, "is_connected", True))
@@ -100,10 +106,27 @@ class CounterFooter(Horizontal):
         if not is_connected:
             text_widget.update("Reconnecting to daemon...")
             return
-        text_widget.update(_format(getattr(self, "_costs", None)))
+        is_local = bool(getattr(app, "is_local", False))
+        db_path: Path | None = None
+        if is_local:
+            raw = getattr(app.client, "_db_path", None)
+            if raw is not None:
+                db_path = Path(raw)
+        text_widget.update(
+            _format(
+                getattr(self, "_costs", None),
+                is_local=is_local,
+                db_path=db_path,
+            )
+        )
 
 
-def _format(costs: Any) -> str:
+def _format(
+    costs: Any,
+    *,
+    is_local: bool = False,
+    db_path: Path | None = None,
+) -> str:
     """Pure formatter so the counter line is unit-testable.
 
     Renders ``Today: $<total>   Requests: <N>``. ``N`` is the sum
@@ -115,12 +138,51 @@ def _format(costs: Any) -> str:
     Accepts ``None`` (pre-first-fetch state) and any non-dict input
     by returning a ``Today: ...`` placeholder so the row never
     renders ``Today: $None`` or raises.
+
+    Local-mode suffix: when ``is_local=True`` and ``db_path`` resolves
+    to an existing file, append ``(as of X ago)`` computed from the
+    file's mtime. Helps the user see at a glance how stale the
+    snapshot is when the daemon is not feeding fresh writes.
     """
     if not isinstance(costs, dict):
         return "Today: ..."
     total = float(costs.get("total") or 0.0)
     requests = _aggregate_request_count(costs)
-    return f"Today: ${total:.4f}   Requests: {requests}"
+    base = f"Today: ${total:.4f}   Requests: {requests}"
+    if is_local and db_path is not None:
+        age = _format_age(db_path)
+        if age:
+            base = f"{base}   ({age})"
+    return base
+
+
+def _format_age(db_path: Path) -> str | None:
+    """Render ``"as of <Ns / Nmin / Nh / Nd> ago"`` from the file's
+    mtime; returns ``None`` when the file does not exist (the
+    Pilot smoke can pass a fake path -- no raise).
+
+    Granularity steps are deliberately coarse: ``s`` for under a
+    minute, ``min`` for under an hour, ``h`` for under a day,
+    ``d`` after that. Coarser-than-precise -- the indicator answers
+    "is this snapshot recent?" not "exactly how recent is this
+    snapshot?", and the screen updates frequently enough that the
+    user sees the last bucket flip.
+    """
+    try:
+        mtime = db_path.stat().st_mtime
+    except OSError:
+        return None
+    seconds = max(0, int(time.time() - mtime))
+    if seconds < 60:
+        return f"as of {seconds}s ago"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"as of {minutes} min ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"as of {hours}h ago"
+    days = hours // 24
+    return f"as of {days}d ago"
 
 
 def _aggregate_request_count(costs: dict[str, Any]) -> str:
