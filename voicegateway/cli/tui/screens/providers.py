@@ -23,13 +23,14 @@ from textual.containers import Container, VerticalScroll
 from textual.widgets import Label, Static
 
 from voicegateway.cli.tui.data.exceptions import LocalModeUnsupportedError
+from voicegateway.cli.tui.screens._focus import FocusRowsMixin
 from voicegateway.cli.tui.widgets.provider_row import ProviderRow
 
 if TYPE_CHECKING:  # pragma: no cover
     from voicegateway.cli.tui.app import TUIApp
 
 
-class ProvidersScreen(Container):
+class ProvidersScreen(FocusRowsMixin, Container):
     """List of configured providers + last-test indicator + ``t`` shortcut."""
 
     # ``can_focus = True`` so the screen-level BINDINGS resolve when
@@ -40,7 +41,20 @@ class ProvidersScreen(Container):
 
     BINDINGS = [
         Binding("t", "test_provider", "Test"),
+        Binding("j", "focus_next_row", "Down"),
+        Binding("k", "focus_prev_row", "Up"),
+        Binding("g", "focus_first_row", "First"),
+        Binding("G", "focus_last_row", "Last"),
+        # h/l alias k/j for vim muscle memory; hidden from the
+        # footer hint so the documented contract stays j/k/g/G.
+        Binding("h", "focus_prev_row", "Up", show=False),
+        Binding("l", "focus_next_row", "Down", show=False),
     ]
+
+    def _focusable_rows(self) -> list[ProviderRow]:
+        return list(
+            self.query_one("#providers-list", VerticalScroll).query(ProviderRow)
+        )
 
     DEFAULT_CSS = """
     ProvidersScreen {

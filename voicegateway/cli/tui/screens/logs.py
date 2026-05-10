@@ -42,6 +42,16 @@ class LogsScreen(Container):
     BINDINGS = [
         Binding("slash", "open_filter", "Filter"),
         Binding("escape", "clear_filter", "Clear filter", show=False),
+        # Vim navigation. LogTail (RichLog) has no row widgets to
+        # focus; movement maps to scroll-up / scroll-down /
+        # scroll-home / scroll-end on the underlying ScrollView. h/l
+        # alias k/j for muscle-memory parity with the list screens.
+        Binding("j", "scroll_down", "Down"),
+        Binding("k", "scroll_up", "Up"),
+        Binding("g", "scroll_top", "Top"),
+        Binding("G", "scroll_bottom", "Bottom"),
+        Binding("h", "scroll_up", "Up", show=False),
+        Binding("l", "scroll_down", "Down", show=False),
     ]
 
     DEFAULT_CSS = """
@@ -142,6 +152,20 @@ class LogsScreen(Container):
         # Restore focus to the screen so subsequent keys (e.g. tab
         # cycle) are not swallowed by the now-hidden Input.
         self.focus()
+
+    # -- Vim scroll actions (REQ-VG-TUI-006) -----------------------
+
+    def action_scroll_down(self) -> None:
+        self.query_one("#logs-tail", LogTail).scroll_down(animate=False)
+
+    def action_scroll_up(self) -> None:
+        self.query_one("#logs-tail", LogTail).scroll_up(animate=False)
+
+    def action_scroll_top(self) -> None:
+        self.query_one("#logs-tail", LogTail).scroll_home(animate=False)
+
+    def action_scroll_bottom(self) -> None:
+        self.query_one("#logs-tail", LogTail).scroll_end(animate=False)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Apply the substring filter on Enter inside the filter input."""

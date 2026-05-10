@@ -23,6 +23,7 @@ from textual.binding import Binding
 from textual.containers import Container, VerticalScroll
 from textual.widgets import Label, Static
 
+from voicegateway.cli.tui.screens._focus import FocusRowsMixin
 from voicegateway.cli.tui.widgets.session_row import SessionRow
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -38,7 +39,7 @@ _SORT_TIME = "started_at_desc"
 _SORT_COST = "cost_desc"
 
 
-class SessionsScreen(Container):
+class SessionsScreen(FocusRowsMixin, Container):
     """List of recent sessions with vim-style sort toggle.
 
     Empty state is the literal string "No sessions yet." per the
@@ -52,7 +53,19 @@ class SessionsScreen(Container):
     BINDINGS = [
         Binding("s", "toggle_sort", "Sort"),
         Binding("enter", "open_detail", "Detail"),
+        Binding("j", "focus_next_row", "Down"),
+        Binding("k", "focus_prev_row", "Up"),
+        Binding("g", "focus_first_row", "First"),
+        Binding("G", "focus_last_row", "Last"),
+        # Vim users sometimes alias h/l to k/j for vertical lists; we
+        # honour the muscle memory but hide the rows from the footer
+        # hint so new users see j/k as the documented contract.
+        Binding("h", "focus_prev_row", "Up", show=False),
+        Binding("l", "focus_next_row", "Down", show=False),
     ]
+
+    def _focusable_rows(self) -> list[SessionRow]:
+        return list(self.query_one("#sessions-list", VerticalScroll).query(SessionRow))
 
     DEFAULT_CSS = """
     SessionsScreen {
