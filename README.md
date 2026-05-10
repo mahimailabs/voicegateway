@@ -19,7 +19,7 @@
 
 ## Why VoiceGateway
 
-VoiceGateway is purpose-built for LiveKit voice agents. Four things make it different from general-purpose LLM gateways:
+VoiceGateway is purpose-built for LiveKit voice agents. Four things make it different from general-purpose LLM gateways. v0.1.0 (current) ships a daemon-first onboarding flow: one curl command, a five-question wizard, your first provider call lands in the dashboard inside 60 seconds.
 
 ### 1. One-line drop-in for `livekit.agents.inference`
 
@@ -79,11 +79,35 @@ You get a `*.fly.dev` URL, an MCP endpoint your coding agent can connect to, and
 
 ## Quick Start
 
-### Option 1: pip install (recommended for development)
+### Option 1: One-line install (recommended)
+
+```bash
+curl -fsSL https://voicegateway.mahimai.ca/install.sh | bash
+voicegw onboard --install-daemon
+```
+
+The installer detects your OS (macOS / Linux / WSL), refuses cleanly if Python 3.11+ is missing, ensures `pipx` is on PATH, then `pipx install voicegateway[cloud,dashboard]`. The wizard collects project / provider / API key / port / install-daemon, validates the key against the upstream API, registers a per-user daemon (LaunchAgent / systemd `--user` / Scheduled Task), and offers an end-to-end smoke test.
+
+For ad-hoc operations once the daemon is running:
+
+```bash
+voicegw status            # daemon + provider status
+voicegw doctor            # ten-check punch list with fix steps
+voicegw start / stop / restart
+voicegw uninstall-daemon  # remove registration; preserves config + DB
+```
+
+If you prefer to skip the curl-bash one-liner, run the same `pipx` step manually:
+
+```bash
+pipx install "voicegateway[cloud,dashboard,mcp]"
+voicegw onboard --install-daemon
+```
+
+For pip-based installs (e.g. inside an existing virtualenv):
 
 ```bash
 pip install "voicegateway[cloud,dashboard,mcp]"
-
 voicegw init              # creates voicegw.yaml
 voicegw status            # verify providers
 voicegw dashboard         # http://localhost:9090
