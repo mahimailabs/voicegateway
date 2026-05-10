@@ -23,9 +23,15 @@ from __future__ import annotations
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.widgets import ContentSwitcher, Footer, Header, Static
+from textual.widgets import ContentSwitcher, Footer, Header
 
 from voicegateway.cli.tui.data import MetricsClient
+from voicegateway.cli.tui.screens import (
+    CostsScreen,
+    LogsScreen,
+    ProvidersScreen,
+    SessionsScreen,
+)
 
 #: Tab ids in display order. ``ContentSwitcher`` mounts one
 #: placeholder per id; ``initial=`` selects the first tab. The vim
@@ -89,17 +95,20 @@ class TUIApp(App[None]):
     def compose(self) -> ComposeResult:
         """Mount the header / four-tab switcher / footer spine.
 
-        Each :class:`Static` is a placeholder that Phases 3-6
-        replace with the real Screen subclass. The id-strings are
-        the binding targets for the ``1-4`` vim shortcuts, so they
-        are stable from this iteration onward.
+        Each ``*Screen`` body lives in its own module under
+        ``voicegateway.cli.tui.screens``; Phases 3-6 each replace one
+        placeholder body without renaming the class or changing the
+        import path, so the mounting code below never has to move.
+        The id-strings stay stable from iteration 10 onward; the vim
+        ``1``-``4`` shortcuts and the tab-cycle action target them
+        directly.
         """
         yield Header()
         with ContentSwitcher(initial=_TAB_IDS[0], id="content"):
-            yield Static("Sessions placeholder", id=_TAB_IDS[0])
-            yield Static("Costs placeholder", id=_TAB_IDS[1])
-            yield Static("Logs placeholder", id=_TAB_IDS[2])
-            yield Static("Providers placeholder", id=_TAB_IDS[3])
+            yield SessionsScreen(id=_TAB_IDS[0])
+            yield CostsScreen(id=_TAB_IDS[1])
+            yield LogsScreen(id=_TAB_IDS[2])
+            yield ProvidersScreen(id=_TAB_IDS[3])
         yield Footer()
 
     # -- Actions -----------------------------------------------------
