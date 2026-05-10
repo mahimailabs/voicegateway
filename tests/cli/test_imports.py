@@ -114,6 +114,16 @@ _V005_COMMAND_NAMES: frozenset[str] = frozenset(
     }
 )
 
+# Commands the v0.1.0 release adds on top of the v0.0.5 surface.
+# Each new command lands its own deliberate update here, gating the
+# command-count assertion below. When v0.1.0 ships, the union of
+# these two frozensets is the documented end-state surface.
+_V010_COMMAND_NAMES: frozenset[str] = frozenset(
+    {
+        "onboard",
+    }
+)
+
 
 def _registered_command_names() -> set[str]:
     """Names every Typer command registered on ``app`` answers to."""
@@ -159,13 +169,20 @@ def test_no_command_name_collisions() -> None:
     )
 
 
-def test_command_count_matches_v005() -> None:
-    """Exactly the v0.0.5 command count, nothing dropped or extra.
+def test_command_count_matches_documented_surface() -> None:
+    """Exactly the documented (v0.0.5 + v0.1.0-additions) count.
 
-    v0.1.0 will add commands (``onboard``, ``doctor``, the lifecycle
-    group, etc.) in later sections. When that happens this test
-    intentionally fails so the maintainer updates _V005_COMMAND_NAMES
-    plus this count, which is the right deliberate touch-point for
-    documenting that the public command surface grew.
+    Each new v0.1.0 command (``onboard`` lands first; ``doctor``,
+    ``migrate``, the lifecycle group follow) bumps
+    ``_V010_COMMAND_NAMES`` above. A surprise command — one that
+    registers on app without showing up in either frozenset — trips
+    this gate, which is exactly the deliberate touch-point we want
+    for "the public command surface grew."
     """
-    assert len(app.registered_commands) == len(_V005_COMMAND_NAMES)
+    expected = _V005_COMMAND_NAMES | _V010_COMMAND_NAMES
+    registered = _registered_command_names()
+    assert registered == expected, (
+        f"Registered commands diverge from documented surface. "
+        f"Extra: {sorted(registered - expected)}. "
+        f"Missing: {sorted(expected - registered)}."
+    )
