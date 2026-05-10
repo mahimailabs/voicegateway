@@ -132,24 +132,37 @@ def test_logs_defaults_to_tail_100() -> None:
 # ---------------------------------------------------------------------------
 # Real-backend lazy import path.
 #
-# We don't have any real backend yet (macos/linux/windows arrive in
-# subsequent v0.1.0 commits). What we CAN verify today is that the
-# fallback construction path (``DaemonManager()`` with no backend)
-# correctly attempts to import the platform-appropriate module. The
-# attempt fails with ImportError until the backend exists; we assert
-# the right module name appears in that error so a regression where
-# DaemonManager picks the wrong one trips before backends land.
+# As OS backends land (macos.py first, then linux.py, then windows.py),
+# this test points at whichever backend is still pending so the
+# selector's platform routing stays gated. The macOS backend exists
+# now; the linux backend is the next v0.1.0 commit. When that lands,
+# this test re-targets "win32" / windows. When the Windows backend
+# lands, the test is removed (the positive-construction assertions
+# in each backend's own test file cover the routing).
 # ---------------------------------------------------------------------------
 
 
 def test_default_construction_attempts_platform_specific_import(monkeypatch) -> None:
     """Without a backend arg, ``DaemonManager()`` tries to import the
-    selected backend module. Until the real backends exist, this
+    selected backend module. The pending backend (currently linux)
     surfaces as ImportError; the error message must name the
     correct platform-specific module so platform-routing regressions
     are visible.
     """
-    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("sys.platform", "linux")
     with pytest.raises(ImportError) as excinfo:
         DaemonManager()
-    assert "voicegateway.cli.daemon.macos" in str(excinfo.value)
+    assert "voicegateway.cli.daemon.linux" in str(excinfo.value)
+
+
+def test_default_construction_loads_macos_backend_on_darwin(monkeypatch) -> None:
+    """Positive assertion: on darwin the facade picks MacOSBackend."""
+    monkeypatch.setattr("sys.platform", "darwin")
+    # The MacOSBackend constructor calls os.getuid; patch so this
+    # test does not depend on the runner's actual uid.
+    monkeypatch.setattr("voicegateway.cli.daemon.macos.os.getuid", lambda: 501)
+
+    from voicegateway.cli.daemon.macos import MacOSBackend
+
+    mgr = DaemonManager()
+    assert isinstance(mgr._backend, MacOSBackend)
