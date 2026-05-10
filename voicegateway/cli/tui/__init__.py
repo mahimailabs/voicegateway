@@ -1,50 +1,38 @@
 """VoiceGateway terminal UI package (v0.1.1).
 
-Stub package init so downstream code can ``from voicegateway.cli.tui
-import TUIApp, run`` immediately, before Phase 2 lands the real
-implementations in ``voicegateway.cli.tui.app``. The real ``TUIApp``
-subclasses ``textual.app.App`` and the real ``run()`` is the
-entry point the Typer ``tui`` command in ``voicegateway/cli/tui.py``
-hands the resolved ``MetricsClient``.
+Re-exports the Phase-2 :class:`TUIApp` from
+``voicegateway.cli.tui.app`` so downstream code can
+``from voicegateway.cli.tui import TUIApp`` without reaching into
+the implementation module.
 
-The stubs raise ``NotImplementedError`` rather than silently no-op so
-an accidental dispatch during the build phase fails loudly. Phase 2
-replaces both symbols with re-exports from ``app.py``.
+``run()`` stays a stub until the Phase-2 Typer-command bullet
+(``voicegateway/cli/tui.py``) lands; the real entry point
+instantiates ``TUIApp`` with the resolved
+:class:`MetricsClient` returned by
+``voicegateway.cli.tui.data.factory.make_client`` and calls
+``app.run()`` to enter the Textual event loop.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-
-class TUIApp:
-    """Placeholder for the real ``TUIApp``; replaced in Phase 2.
-
-    The Phase-2 implementation will subclass ``textual.app.App``,
-    take ``client: MetricsClient`` and ``is_local: bool`` in its
-    constructor, mount the header / footer / four-tab
-    ``ContentSwitcher``, and own the global vim ``BINDINGS``.
-    """
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        raise NotImplementedError(
-            "TUIApp is a stub during the v0.1.1 build. Phase 2 swaps "
-            "this for the textual.app.App subclass in "
-            "voicegateway/cli/tui/app.py."
-        )
+from voicegateway.cli.tui.app import TUIApp
 
 
 def run(*args: Any, **kwargs: Any) -> None:
-    """Placeholder for the real ``run()``; replaced in Phase 2.
+    """Placeholder for the real ``run()``; replaced when the Typer
+    command lands.
 
-    The Phase-2 implementation will instantiate ``TUIApp`` with the
-    resolved ``MetricsClient`` and ``is_local`` flag, then call
-    ``app.run()`` to enter the Textual event loop.
+    The real entry point is a thin shim that resolves the launch
+    flags via ``factory.make_client`` and hands the result to
+    :class:`TUIApp`. Until that bullet lands, calling this stub
+    raises so a partial-build dispatch fails loudly instead of
+    silently no-op-ing.
     """
     raise NotImplementedError(
-        "run() is a stub during the v0.1.1 build. Phase 2 swaps "
-        "this for the real entry point that wires the Typer "
-        "command (`voicegw tui`) to TUIApp."
+        "run() is a stub until the Phase-2 Typer command (`voicegw "
+        "tui`) lands. Instantiate TUIApp directly for now."
     )
 
 
