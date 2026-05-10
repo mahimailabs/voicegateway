@@ -495,6 +495,44 @@ async def test_costs_freshness_marker_renders_on_stale_modality(
         assert "as of" not in str(tts.renderable)
 
 
+async def test_costs_screen_polls_for_live_refresh() -> None:
+    """``CostsScreen.on_mount`` registers an interval so the card
+    refreshes on the client's cadence, not just at first mount.
+
+    Without the interval the totals would freeze after the first
+    fetch (``ContentSwitcher`` keeps the screen mounted while other
+    tabs are active, so re-entering Costs does not retrigger
+    on_mount). The interval keeps the Costs tab in lockstep with
+    the Sessions / Logs / Footer polling.
+    """
+    responses = {"today": {"period": "today", "total": 0.05}}
+    client = _StubMetricsClient(responses)
+    client.poll_seconds = 0.05  # tight for the test budget
+    app = TUIApp(client=client, is_local=True)
+    async with app.run_test() as pilot:
+        await pilot.press("2")
+        await _settle(pilot)
+
+        card = app.query_one(CostsScreen).query_one(CostCard)
+        assert card._costs.get("total") == 0.05
+        initial_calls = len(client.calls)
+
+        # Simulate a fresh request landing in storage between polls.
+        responses["today"]["total"] = 0.42
+
+        # Pump the event loop until the next poll tick fires.
+        for _ in range(40):
+            await pilot.pause()
+            if card._costs.get("total") == 0.42:
+                break
+
+        assert card._costs.get("total") == 0.42, (
+            "Costs card did not pick up the synthetic change; "
+            "CostsScreen.on_mount must register a polling interval."
+        )
+        assert len(client.calls) > initial_calls
+
+
 # ---------------------------------------------------------------------------
 # Logs screen (REQ-VG-TUI-004)
 # ---------------------------------------------------------------------------

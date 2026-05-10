@@ -73,6 +73,23 @@ class CostsScreen(Container):
 
     async def on_mount(self) -> None:
         await self.refresh_data()
+        # Live refresh on the client's poll cadence so the totals
+        # do not freeze after the first fetch (ContentSwitcher keeps
+        # this screen mounted while other tabs are active; without
+        # the interval the card would never re-poll for the rest of
+        # the TUI's lifetime). Matches the SessionsScreen / LogsScreen
+        # / CounterFooter pattern.
+        app = cast("TUIApp", self.app)
+        poll_seconds = float(getattr(app.client, "poll_seconds", 1.0))
+        self.set_interval(poll_seconds, self._poll_tick)
+
+    def _poll_tick(self) -> None:
+        """Sync wrapper around the async refresh; ``set_interval``
+        accepts only sync callbacks. ``exclusive=True`` so a poll
+        tick that lands while ``action_cycle_range`` is mid-fetch
+        cancels the older worker rather than racing two refreshes.
+        """
+        self.run_worker(self.refresh_data(), exclusive=True)
 
     async def refresh_data(self) -> None:
         """Fetch the active range + push the result into CostCard.
