@@ -864,3 +864,91 @@ async def test_providers_test_shortcut_with_no_focus_is_noop(
         await pilot.press("t")
         await _settle(pilot)
         assert client.test_calls == []
+
+
+# ---------------------------------------------------------------------------
+# Vim navigation (REQ-VG-TUI-006 movement contract)
+# ---------------------------------------------------------------------------
+
+
+async def test_vim_navigation_works_on_sessions_tab(
+    populated_app: TUIApp,
+) -> None:
+    """``g`` jumps to first row, ``j`` advances, ``G`` jumps to last,
+    ``k`` retreats. Wrap-around behaviour is part of the contract;
+    smoke-tested in iteration 32.
+    """
+    async with populated_app.run_test() as pilot:
+        await _settle(pilot)
+        rows = list(populated_app.query(SessionRow))
+        assert len(rows) == 2
+        await pilot.press("g")
+        await pilot.pause()
+        assert populated_app.focused == rows[0]
+        await pilot.press("j")
+        await pilot.pause()
+        assert populated_app.focused == rows[1]
+        await pilot.press("k")
+        await pilot.pause()
+        assert populated_app.focused == rows[0]
+        await pilot.press("G")
+        await pilot.pause()
+        assert populated_app.focused == rows[-1]
+
+
+async def test_vim_navigation_works_on_providers_tab(
+    providers_app: tuple[TUIApp, _ProvidersStubClient],
+) -> None:
+    app, _ = providers_app
+    async with app.run_test() as pilot:
+        await pilot.press("4")
+        await _settle(pilot)
+        rows = list(app.query(ProviderRow))
+        assert len(rows) == 3
+        await pilot.press("g")
+        await pilot.pause()
+        assert app.focused == rows[0]
+        await pilot.press("j")
+        await pilot.pause()
+        assert app.focused == rows[1]
+        await pilot.press("G")
+        await pilot.pause()
+        assert app.focused == rows[2]
+
+
+async def test_vim_navigation_h_l_aliases_on_list_screens(
+    populated_app: TUIApp,
+) -> None:
+    """``h`` aliases ``k`` (up) and ``l`` aliases ``j`` (down) on
+    list screens for vim muscle memory; ``show=False`` keeps them
+    out of the footer hint.
+    """
+    async with populated_app.run_test() as pilot:
+        await _settle(pilot)
+        rows = list(populated_app.query(SessionRow))
+        await pilot.press("g")
+        await pilot.pause()
+        await pilot.press("l")  # alias of j
+        await pilot.pause()
+        assert populated_app.focused == rows[1]
+        await pilot.press("h")  # alias of k
+        await pilot.pause()
+        assert populated_app.focused == rows[0]
+
+
+async def test_vim_navigation_on_logs_tab_dispatches_scroll_actions(
+    logs_app: tuple[TUIApp, _LogsStubClient],
+) -> None:
+    """LogsScreen has no row widgets; ``j``/``k``/``g``/``G`` map to
+    LogTail's ScrollView methods. The contract is "no exception on
+    dispatch" -- the visible scroll position depends on RichLog's
+    internal state which Pilot does not assert against directly.
+    """
+    app, _ = logs_app
+    async with app.run_test() as pilot:
+        await pilot.press("3")
+        await _settle(pilot)
+        # Each press should dispatch cleanly without raising.
+        for key in ("g", "j", "k", "G", "h", "l"):
+            await pilot.press(key)
+            await pilot.pause()
