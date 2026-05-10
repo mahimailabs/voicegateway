@@ -82,9 +82,6 @@ Documentation = "https://github.com/mahimailabs/voicegateway#readme"
 Repository = "https://github.com/mahimailabs/voicegateway"
 Issues = "https://github.com/mahimailabs/voicegateway/issues"
 
-[tool.setuptools.packages.find]
-include = ["voicegateway*", "dashboard*"]
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
