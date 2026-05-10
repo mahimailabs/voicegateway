@@ -183,15 +183,19 @@ class InstrumentedSTT(lk_stt.STT, _InstrumentedBase):
 
     @property
     def label(self) -> str:
-        return self._wrapped.label
+        # ``self._wrapped`` is typed as ``Any`` so its attribute access
+        # returns ``Any``; the LK base classes guarantee the underlying
+        # value is a string, but we coerce for mypy and to be defensive
+        # against an exotic plugin returning a non-string label.
+        return str(self._wrapped.label)
 
     @property
     def model(self) -> str:
-        return self._wrapped.model
+        return str(self._wrapped.model)
 
     @property
     def provider(self) -> str:
-        return self._wrapped.provider
+        return str(self._wrapped.provider)
 
     async def _recognize_impl(
         self,
@@ -260,15 +264,19 @@ class InstrumentedLLM(lk_llm.LLM, _InstrumentedBase):
 
     @property
     def label(self) -> str:
-        return self._wrapped.label
+        # ``self._wrapped`` is typed as ``Any`` so its attribute access
+        # returns ``Any``; the LK base classes guarantee the underlying
+        # value is a string, but we coerce for mypy and to be defensive
+        # against an exotic plugin returning a non-string label.
+        return str(self._wrapped.label)
 
     @property
     def model(self) -> str:
-        return self._wrapped.model
+        return str(self._wrapped.model)
 
     @property
     def provider(self) -> str:
-        return self._wrapped.provider
+        return str(self._wrapped.provider)
 
     def chat(
         self,
@@ -330,15 +338,19 @@ class InstrumentedTTS(lk_tts.TTS, _InstrumentedBase):
 
     @property
     def label(self) -> str:
-        return self._wrapped.label
+        # ``self._wrapped`` is typed as ``Any`` so its attribute access
+        # returns ``Any``; the LK base classes guarantee the underlying
+        # value is a string, but we coerce for mypy and to be defensive
+        # against an exotic plugin returning a non-string label.
+        return str(self._wrapped.label)
 
     @property
     def model(self) -> str:
-        return self._wrapped.model
+        return str(self._wrapped.model)
 
     @property
     def provider(self) -> str:
-        return self._wrapped.provider
+        return str(self._wrapped.provider)
 
     def synthesize(
         self, text: str, *, conn_options: Any = DEFAULT_API_CONNECT_OPTIONS
