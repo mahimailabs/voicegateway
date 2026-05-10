@@ -51,34 +51,6 @@ def _load_gateway(config_path: str | None):
         raise typer.Exit(1) from e
 
 
-@app.command(name="projects")
-def projects_cmd(
-    config: str = typer.Option(None, "--config", "-c", help="Path to voicegw.yaml"),
-):
-    """List all configured projects."""
-    gw = _load_gateway(config)
-
-    if not gw.config.projects:
-        console.print(
-            "[yellow]No projects configured. Add a 'projects:' section to voicegw.yaml.[/yellow]"
-        )
-        raise typer.Exit(0)
-
-    table = Table(title="Projects")
-    table.add_column("ID", style="cyan")
-    table.add_column("Name")
-    table.add_column("Tags")
-    table.add_column("Budget/day", style="green", justify="right")
-    table.add_column("Default Stack")
-
-    for pid, pcfg in sorted(gw.config.projects.items()):
-        tags = " ".join(f"[bold]{t}[/bold]" for t in pcfg.tags)
-        budget = f"${pcfg.daily_budget:.2f}" if pcfg.daily_budget else "-"
-        table.add_row(pid, pcfg.name, tags, budget, pcfg.default_stack or "-")
-
-    console.print(table)
-
-
 @app.command(name="project")
 def project_cmd(
     project_id: str = typer.Argument(..., help="Project ID to show"),
