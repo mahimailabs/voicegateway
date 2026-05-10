@@ -131,6 +131,12 @@ _V010_COMMAND_NAMES: frozenset[str] = frozenset(
     }
 )
 
+# Commands the v0.1.1 release adds on top of v0.1.0. Same gating
+# pattern: a deliberate touch-point for "the public command surface
+# grew." When v0.1.1 ships, the union of the three frozensets is the
+# documented end-state surface.
+_V011_COMMAND_NAMES: frozenset[str] = frozenset({"tui"})
+
 
 def _registered_command_names() -> set[str]:
     """Names every Typer command registered on ``app`` answers to."""
@@ -186,7 +192,7 @@ def test_command_count_matches_documented_surface() -> None:
     this gate, which is exactly the deliberate touch-point we want
     for "the public command surface grew."
     """
-    expected = _V005_COMMAND_NAMES | _V010_COMMAND_NAMES
+    expected = _V005_COMMAND_NAMES | _V010_COMMAND_NAMES | _V011_COMMAND_NAMES
     registered = _registered_command_names()
     assert registered == expected, (
         f"Registered commands diverge from documented surface. "
