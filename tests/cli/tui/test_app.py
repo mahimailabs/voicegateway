@@ -98,17 +98,27 @@ def test_tuiapp_constructs_with_local_client(
 # ---------------------------------------------------------------------------
 
 
-async def test_tuiapp_mounts_four_placeholder_screens(
-    local_client: LocalClient,
-) -> None:
+async def test_tuiapp_mounts_four_screens(local_client: LocalClient) -> None:
+    """Each tab id resolves to its dedicated screen class, regardless of
+    whether the body is still a Phase-3-onward placeholder or the
+    real implementation. Bodies that have not yet been filled keep
+    rendering a ``<tab>-placeholder`` Static.
+    """
     app = TUIApp(client=local_client, is_local=True)
     async with app.run_test() as _pilot:
         assert isinstance(app.query_one("#sessions"), SessionsScreen)
         assert isinstance(app.query_one("#costs"), CostsScreen)
         assert isinstance(app.query_one("#logs"), LogsScreen)
         assert isinstance(app.query_one("#providers"), ProvidersScreen)
-        for tab_id in _TAB_IDS:
+        # The placeholder-id check applies to tabs whose body has
+        # not yet been replaced by the real implementation. Phase 3
+        # filled in the Sessions body (so #sessions-placeholder is
+        # gone); the other three remain placeholders until their
+        # respective phases land.
+        for tab_id in ("costs", "logs", "providers"):
             assert app.query_one(f"#{tab_id}-placeholder") is not None
+        # Sessions now exposes a real header label instead.
+        assert app.query_one("#sessions-header") is not None
 
 
 # ---------------------------------------------------------------------------
