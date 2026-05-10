@@ -10,10 +10,8 @@ from __future__ import annotations
 
 import typer
 
-# See voicegateway/cli/init.py for the rationale on importing
-# ``app`` and ``console`` from ``_legacy`` rather than from the
-# package during the v0.1.0 migration period.
-from voicegateway.cli._legacy import _load_gateway, app, console
+from voicegateway.cli._app import app, console
+from voicegateway.cli._helpers import _load_gateway
 
 
 @app.command(name="dashboard")

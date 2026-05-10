@@ -20,11 +20,8 @@ from typing import Any
 
 import typer
 
-# See voicegateway/cli/init.py for the rationale on importing
-# ``app`` and ``console`` from ``_legacy`` rather than from the
-# package during the v0.1.0 migration period. ``_parse_iso_date_arg``
-# is the one cross-command helper that has not been carved yet.
-from voicegateway.cli._legacy import _load_gateway, _parse_iso_date_arg, app, console
+from voicegateway.cli._app import app, console
+from voicegateway.cli._helpers import _load_gateway, _parse_iso_date_arg
 
 _EXPORT_COLUMNS = (
     "timestamp",

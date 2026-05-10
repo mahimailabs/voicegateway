@@ -16,16 +16,7 @@ from pathlib import Path
 
 import typer
 
-# During the v0.1.0 migration ``app`` and ``console`` live in
-# ``_legacy.py`` (they sit alongside the still-unmoved commands).
-# Importing directly from the legacy module keeps ``__init__.py``'s
-# import order safe under isort: the package can do
-# ``from voicegateway.cli import init as _init`` before
-# ``from voicegateway.cli._legacy import app, console`` and this
-# submodule still resolves cleanly. When ``_legacy.py`` is finally
-# emptied, ``app`` and ``console`` move to ``__init__.py`` and every
-# submodule's import line flips to ``from voicegateway.cli import``.
-from voicegateway.cli._legacy import app, console
+from voicegateway.cli._app import app, console
 
 # Resolve the repo root from this submodule's location:
 #   voicegateway/cli/init.py -> voicegateway/cli -> voicegateway -> <root>

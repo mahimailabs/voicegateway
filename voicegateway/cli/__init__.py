@@ -5,19 +5,27 @@ Replaces the v0.0.5 single-file ``voicegateway/cli.py``. The contract
 scripts, the ``voicegw = "voicegateway.cli:app"`` console-script entry
 point in pyproject.toml, and external imports keep working.
 
-During the v0.1.0 refactor the original module body lives in
-``_legacy.py``. Subsequent v0.1.0 commits carve individual commands
-(``init``, ``serve``, ``onboard``, ``doctor``, ``migrate``, the
-lifecycle group, etc.) out of ``_legacy.py`` into focused submodules.
-When ``_legacy.py`` no longer holds any commands it is deleted and
-this docstring is rewritten to describe the final layout.
+Layout:
 
-Importing this module triggers ``_legacy.py`` once, which registers
-every Typer command on the shared ``app`` instance. The carve-out
-commits each move one ``@app.command(...)`` block out of ``_legacy.py``
-into a new submodule and update ``__init__.py`` to import that
-submodule for its side effect (the ``@app.command`` decorator runs
-at import time).
+- ``_app.py`` — the shared Typer ``app`` instance, the Rich
+  ``console``, and the global ``--version`` callback.
+- ``_helpers.py`` — cross-command helpers (``_load_gateway``,
+  ``_parse_iso_date_arg``).
+- one submodule per command: ``init``, ``rotate_secret``, ``status``,
+  ``costs``, ``projects`` (owns both the ``projects`` listing and
+  the ``project`` detail), ``logs``, ``smoke_test``, ``serve``,
+  ``dashboard``, ``export_costs``, ``reconcile``, ``mcp``.
+
+Importing this package side-effect-imports each command submodule.
+Each submodule's ``@app.command(...)`` decorator runs at import time
+and registers the command on the shared ``app``. Order is alphabetical
+because isort imposes it; commands carry their own names so order
+does not matter.
+
+v0.1.0 sections 3-6 add more submodules (the daemon backends, the
+``onboard`` wizard, the ``lifecycle`` group, the ``doctor`` command,
+the ``migrate`` command). They follow the same shape: one submodule,
+side-effect import added here.
 """
 
 from __future__ import annotations
@@ -43,6 +51,6 @@ from voicegateway.cli import status as _status  # noqa: F401, E402
 # uniform terminal output across commands and submodules added later).
 # Re-exported via ``__all__`` so ``from voicegateway.cli import *``
 # only sees the documented public surface.
-from voicegateway.cli._legacy import app, console
+from voicegateway.cli._app import app, console
 
 __all__ = ["app", "console"]
