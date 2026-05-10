@@ -7,7 +7,7 @@ is covered when the consuming screen lands its own test file.
 
 from __future__ import annotations
 
-from voicegateway.cli.tui.widgets.cost_card import CostCard
+from voicegateway.cli.tui.widgets.cost_card import CostCard, stale_marker
 from voicegateway.cli.tui.widgets.session_row import (
     SessionRow,
     format_duration,
@@ -139,8 +139,6 @@ def test_session_row_is_focusable() -> None:
 # ---------------------------------------------------------------------------
 
 
-
-
 def _costs_fixture() -> dict[str, object]:
     return {
         "period": "today",
@@ -217,3 +215,80 @@ def test_cost_card_update_costs_replaces_dict_state() -> None:
     # The in-place re-render is gated on the widget being mounted; on
     # a bare instance the dict mutation alone is enough, no exception.
     assert card._costs["total"] == 9.99
+
+
+# ---------------------------------------------------------------------------
+# stale_marker (REQ-VG-TUI-003 freshness indicator)
+# ---------------------------------------------------------------------------
+
+
+
+
+def test_stale_marker_flags_old_iso_date() -> None:
+    """A pricing stamp older than 24 h surfaces the (as of X) marker."""
+    marker = stale_marker("voicegateway-catalog@2025-01-01")
+    assert marker == "  (as of 2025-01-01)"
+
+
+def test_stale_marker_silent_on_recent_date() -> None:
+    """Today's date is not stale; no marker."""
+    from datetime import date as _date
+
+    today = _date.today().isoformat()
+    assert stale_marker(f"voicegateway-catalog@{today}") == ""
+
+
+def test_stale_marker_silent_on_version_token() -> None:
+    """genai-prices stamps the LLM source as ``genai-prices@0.0.57``;
+    the token is a SemVer version, not a date, so we do not infer
+    age from it. No marker.
+    """
+    assert stale_marker("genai-prices@0.0.57") == ""
+
+
+def test_stale_marker_silent_on_bare_or_missing() -> None:
+    assert stale_marker(None) == ""
+    assert stale_marker("") == ""
+    assert stale_marker("no-at-symbol") == ""
+
+
+def test_stale_marker_silent_on_non_string() -> None:
+    """Some catalog versions returned a dict; tolerate it as 'unknown'."""
+    assert stale_marker({"date": "2025-01-01"}) == ""
+    assert stale_marker(123) == ""
+
+
+def test_cost_card_modality_carries_stale_marker() -> None:
+    """``_format_modality`` appends the (as of X) suffix when the
+    response's ``pricing_sources[modality]`` carries an old date.
+    """
+    costs = {
+        "total": 0.05,
+        "by_modality": {
+            "stt": {"cost": 0.01, "request_count": 4},
+            "llm": {"cost": 0.03, "request_count": 7},
+        },
+        "pricing_sources": {
+            "stt": "voicegateway-catalog@2025-01-01",  # stale
+            "llm": "genai-prices@0.0.57",  # version, no age
+        },
+    }
+    card = CostCard(costs)
+    stt_line = card._format_modality("stt")
+    assert "(as of 2025-01-01)" in stt_line
+    llm_line = card._format_modality("llm")
+    assert "(as of" not in llm_line
+
+
+def test_cost_card_modality_no_marker_when_fresh() -> None:
+    from datetime import date as _date
+
+    today = _date.today().isoformat()
+    costs = {
+        "by_modality": {"stt": {"cost": 0.01, "request_count": 1}},
+        "pricing_sources": {
+            "stt": f"voicegateway-catalog@{today}",
+        },
+    }
+    card = CostCard(costs)
+    assert "(as of" not in card._format_modality("stt")

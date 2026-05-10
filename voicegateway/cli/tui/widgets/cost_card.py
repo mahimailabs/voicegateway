@@ -25,6 +25,7 @@ true`` response and LocalClient's normalised local-mode shape):
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from textual.app import ComposeResult
@@ -36,6 +37,11 @@ from textual.widgets import Static
 #: Refinery names it as the conversation entry-point cost (mic ->
 #: transcript) -- the same order the web dashboard uses.
 _MODALITIES: tuple[str, ...] = ("stt", "llm", "tts")
+
+#: Threshold past which we consider a pricing-source stamp stale
+#: enough to surface inline. Matches the web dashboard's 24-hour
+#: window so the two surfaces stay consistent.
+_STALENESS_HOURS = 24.0
 
 
 class CostCard(Container):
@@ -109,7 +115,44 @@ class CostCard(Container):
             return f"  {modality.upper()}:  --"
         cost = float(info.get("cost") or 0.0)
         count = info.get("request_count") or 0
-        return f"  {modality.upper()}:  ${cost:.4f}  ({count} requests)"
+        base = f"  {modality.upper()}:  ${cost:.4f}  ({count} requests)"
+        sources = self._costs.get("pricing_sources") or {}
+        marker = stale_marker(
+            sources.get(modality) if isinstance(sources, dict) else None
+        )
+        return base + marker
 
 
-__all__ = ["CostCard"]
+def stale_marker(source: Any, threshold_hours: float = _STALENESS_HOURS) -> str:
+    """Return ``  (as of YYYY-MM-DD)`` when ``source`` carries a date
+    older than ``threshold_hours``; empty string otherwise.
+
+    The pricing catalog stamps source strings as ``"<source>@<token>"``
+    (verified at runtime against
+    :func:`voicegateway.pricing.catalog.pricing_source`):
+
+    - STT / TTS use the local catalog, e.g. ``"voicegateway-catalog@2026-05-04"``
+      where the token is an ISO date.
+    - LLM uses ``genai-prices``, e.g. ``"genai-prices@0.0.57"`` where the
+      token is a SemVer version. We only flag staleness for tokens
+      that parse as ISO dates; version strings stay un-marked because
+      we do not infer their age from the version number.
+
+    The double-space prefix lines up with the modality row's column
+    spacing so the marker reads as a trailing annotation, not a new
+    column. Matches the web dashboard's "as of X" treatment.
+    """
+    if not source or not isinstance(source, str) or "@" not in source:
+        return ""
+    _, token = source.rsplit("@", 1)
+    try:
+        stamp = date.fromisoformat(token)
+    except (TypeError, ValueError):
+        return ""
+    age_hours = (date.today() - stamp).days * 24
+    if age_hours > threshold_hours:
+        return f"  (as of {token})"
+    return ""
+
+
+__all__ = ["CostCard", "stale_marker"]

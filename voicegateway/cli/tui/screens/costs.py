@@ -78,13 +78,16 @@ class CostsScreen(Container):
         await self.refresh_data()
 
     async def refresh_data(self) -> None:
-        """Fetch the active range + push the result into CostCard."""
+        """Fetch the active range + push the result into CostCard.
+
+        ``include_pricing_source=True`` so the response carries the
+        per-modality source stamps (``pricing_sources`` key) the
+        :func:`stale_marker` helper reads to render the inline
+        ``(as of X)`` indicator when a stamp is older than 24 h.
+        """
         app = cast("TUIApp", self.app)
-        # ``include_pricing_source=False`` for now; the freshness
-        # indicator bullet (next Phase-4 iteration) flips this to
-        # True so the ``as of X`` indicator can render.
         costs = await app.client.list_costs(
-            period=self._range, include_pricing_source=False
+            period=self._range, include_pricing_source=True
         )
         self.query_one("#cost-card", CostCard).update_costs(costs)
 
