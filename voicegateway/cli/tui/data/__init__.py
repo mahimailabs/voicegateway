@@ -51,8 +51,11 @@ class MetricsClient(Protocol):
         """Return recent voice sessions for the Sessions tab.
 
         ``order_by`` accepts ``started_at_desc`` (newest first;
-        default) and ``total_cost_usd_desc`` (most expensive first)
-        so the screen's ``s`` toggle can flip between the two.
+        default), ``started_at_asc``, ``cost_desc`` (most expensive
+        first) and ``cost_asc`` so the screen's ``s`` toggle can
+        flip between time-sort and cost-sort. The Gateway-mode
+        daemon endpoint (``GET /v1/sessions``) validates the value
+        against this set; LocalClient mirrors the same.
         ``limit`` caps the row count; ``project`` filters to one
         project when given.
         """
