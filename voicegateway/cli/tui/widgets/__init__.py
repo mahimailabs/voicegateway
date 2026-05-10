@@ -9,6 +9,7 @@ swap the Textual built-ins.
 
 from __future__ import annotations
 
+from voicegateway.cli.tui.widgets.cost_card import CostCard
 from voicegateway.cli.tui.widgets.session_row import SessionRow
 
-__all__ = ["SessionRow"]
+__all__ = ["CostCard", "SessionRow"]
