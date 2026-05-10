@@ -403,6 +403,19 @@ def test_factory_db_path_env_var_resolution(tmp_path, monkeypatch):
     assert str(c._db_path) == str(path)
 
 
+def test_factory_db_path_env_overrides_explicit(tmp_path, monkeypatch):
+    """``$VOICEGW_DB_PATH`` is the top-priority debugging escape hatch
+    and wins over an explicit ``db_path`` argument (which :func:`run`
+    sources from ``voicegw.yaml``'s ``cost_tracking.db_path``). Matches
+    :class:`voicegateway.core.gateway.Gateway`'s precedence exactly.
+    """
+    env_path = tmp_path / "from-env.db"
+    yaml_path = tmp_path / "from-yaml.db"
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(env_path))
+    c = make_client(local=True, url="", db_path=yaml_path)
+    assert str(c._db_path) == str(env_path)
+
+
 def test_factory_db_path_default(monkeypatch):
     monkeypatch.delenv("VOICEGW_DB_PATH", raising=False)
     path = _resolve_db_path(None)

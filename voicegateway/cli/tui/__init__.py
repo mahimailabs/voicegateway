@@ -19,6 +19,8 @@ Two entry points live side-by-side:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import httpx
 import typer
 
@@ -31,6 +33,9 @@ import typer
 from voicegateway.cli._app import app as cli_app
 from voicegateway.cli._app import console
 from voicegateway.cli.tui.app import TUIApp
+
+if TYPE_CHECKING:  # pragma: no cover
+    from voicegateway.core.config import GatewayConfig
 
 
 def run(
@@ -45,9 +50,12 @@ def run(
 ) -> None:
     """Launch the TUI programmatically.
 
-    Resolves the daemon URL from voicegw.yaml when ``url`` is not
-    supplied, instantiates the right :class:`MetricsClient` via
-    :func:`voicegateway.cli.tui.data.factory.make_client`, then runs
+    Loads ``voicegw.yaml`` once (when reachable) and threads its
+    values to the factory: ``serve.host`` / ``serve.port`` resolves
+    the daemon URL fallback, and ``cost_tracking.db_path`` becomes
+    the Local-mode SQLite path when set. Then instantiates the
+    right :class:`MetricsClient` via
+    :func:`voicegateway.cli.tui.data.factory.make_client` and runs
     :class:`TUIApp` to enter the Textual event loop.
 
     ``history_limit`` and ``theme`` are accepted today and stored
@@ -57,8 +65,22 @@ def run(
     """
     from voicegateway.cli.tui.data.factory import make_client
 
-    resolved_url = url if url is not None else _resolve_default_url(config)
-    client = make_client(local=local, url=resolved_url, token=token, poll=poll)
+    cfg = _try_load_config(config)
+    resolved_url = url if url is not None else _url_from_config(cfg)
+    # In Local mode, prefer the yaml-configured ``cost_tracking.db_path``
+    # so a user who pointed their daemon at a non-default SQLite file
+    # sees the same history when launching ``voicegw tui --local``.
+    # Factory's precedence (env > explicit > default) means
+    # ``VOICEGW_DB_PATH`` still wins for debugging even when this
+    # threading is active.
+    resolved_db_path = _db_path_from_config(cfg) if local else None
+    client = make_client(
+        local=local,
+        url=resolved_url,
+        token=token,
+        poll=poll,
+        db_path=resolved_db_path,
+    )
     app_instance = TUIApp(client=client, is_local=local)
     # Stash the cosmetic flags on the app so screens can read them
     # without re-resolving from Typer state. Phase 3-6 swaps Static
@@ -68,26 +90,61 @@ def run(
     app_instance.run()
 
 
-def _resolve_default_url(config_path: str | None) -> str:
-    """Default ``--url`` resolution.
+def _try_load_config(config_path: str | None) -> GatewayConfig | None:
+    """Best-effort load of ``voicegw.yaml``.
 
-    Pulls ``serve.host`` / ``serve.port`` from voicegw.yaml; falls
-    back to ``http://127.0.0.1:8080`` when the config does not
-    load. ``0.0.0.0`` (the default bind, "all interfaces") is
-    rewritten to ``127.0.0.1`` because a TUI client cannot connect
-    to ``0.0.0.0``.
+    Returns the :class:`GatewayConfig` instance when the file resolves
+    cleanly, ``None`` otherwise. Swallowing the error here keeps
+    ``voicegw tui --local`` working when no config is configured at
+    all (the canonical-path defaults in the factory take over).
     """
     try:
         from voicegateway.core.config import GatewayConfig
 
-        cfg = GatewayConfig.load(config_path)
-        serve = cfg.serve or {}
-        host = serve.get("host", "0.0.0.0")
-        port = serve.get("port", 8080)
-    except Exception:
+        return GatewayConfig.load(config_path)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _url_from_config(cfg: GatewayConfig | None) -> str:
+    """Daemon URL fallback derived from ``serve.host`` / ``serve.port``.
+
+    ``0.0.0.0`` (the default bind, "all interfaces") is rewritten to
+    ``127.0.0.1`` because a TUI client cannot connect to
+    ``0.0.0.0``. Returns ``http://127.0.0.1:8080`` when ``cfg`` is
+    ``None``.
+    """
+    if cfg is None:
         return "http://127.0.0.1:8080"
+    serve = cfg.serve or {}
+    host = serve.get("host", "0.0.0.0")
+    port = serve.get("port", 8080)
     client_host = "127.0.0.1" if host == "0.0.0.0" else host
     return f"http://{client_host}:{port}"
+
+
+def _db_path_from_config(cfg: GatewayConfig | None) -> str | None:
+    """``cost_tracking.db_path`` from voicegw.yaml, or ``None``.
+
+    ``None`` signals "no yaml override" so the factory's resolver
+    can fall through to ``$VOICEGW_DB_PATH`` and the canonical path
+    (matches ``voicegateway.core.gateway.Gateway.__init__``'s
+    precedence).
+    """
+    if cfg is None:
+        return None
+    value = cfg.cost_tracking.get("db_path")
+    return str(value) if value else None
+
+
+def _resolve_default_url(config_path: str | None) -> str:
+    """Back-compat shim: load the config and derive the URL fallback.
+
+    Used by :func:`tui_cmd` which runs the preflight before delegating
+    to :func:`run`. Kept as a thin wrapper around the new helpers so
+    the call-site reads naturally without re-resolving the config.
+    """
+    return _url_from_config(_try_load_config(config_path))
 
 
 @cli_app.command(name="tui")

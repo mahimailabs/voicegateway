@@ -78,15 +78,22 @@ def make_client(
 def _resolve_db_path(explicit: str | Path | None) -> Path:
     """Resolve the SQLite path used in Local mode.
 
-    Order of precedence (matches ``voicegateway.core.gateway``):
-    explicit argument, then ``$VOICEGW_DB_PATH``, then the v0.0.5
+    Order of precedence (matches :class:`voicegateway.core.gateway.Gateway`'s
+    ``__init__`` exactly): ``$VOICEGW_DB_PATH``, then the explicit
+    argument (which :func:`run` sources from
+    ``voicegw.yaml``'s ``cost_tracking.db_path``), then the v0.0.5
     canonical path ``~/.config/voicegateway/voicegw.db``.
+
+    The env var sits at the top so it stays a usable debugging escape
+    hatch even when a yaml config pins a different path. Without this
+    ordering, a user could not point the TUI at a one-off DB without
+    editing their config.
     """
-    if explicit is not None:
-        return Path(explicit).expanduser()
     env_value = os.environ.get("VOICEGW_DB_PATH")
     if env_value:
         return Path(env_value).expanduser()
+    if explicit is not None:
+        return Path(explicit).expanduser()
     return (Path.home() / ".config" / "voicegateway" / "voicegw.db").expanduser()
 
 

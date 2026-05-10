@@ -280,3 +280,41 @@ def test_voicegw_tui_passes_when_health_ok(
     result = runner.invoke(cli_app, ["tui", "--url", "http://daemon.test"])
     assert result.exit_code == 0, result.output
     assert fake_run.called
+
+
+def test_voicegw_tui_local_threads_yaml_db_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``voicegw tui --local`` honours ``cost_tracking.db_path`` from
+    voicegw.yaml: without this threading the LocalClient would silently
+    read ``~/.config/voicegateway/voicegw.db`` (or
+    ``$VOICEGW_DB_PATH``) instead of whatever path the daemon writes
+    to, and the TUI would show an empty history.
+    """
+    monkeypatch.delenv("VOICEGW_DB_PATH", raising=False)
+
+    yaml_db = tmp_path / "custom-history.db"
+    yaml_db.write_text("seed")  # exists so SQLiteStorage init is clean
+    yaml_path = tmp_path / "voicegw.yaml"
+    yaml_path.write_text(
+        f"cost_tracking:\n  enabled: true\n  db_path: {yaml_db}\nproviders: {{}}\n"
+    )
+
+    captured: dict[str, Any] = {}
+
+    def fake_make_client(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return MagicMock(poll_seconds=5.0, _db_path=kwargs.get("db_path"))
+
+    monkeypatch.setattr(
+        "voicegateway.cli.tui.data.factory.make_client", fake_make_client
+    )
+    monkeypatch.setattr(TUIApp, "run", MagicMock())
+
+    result = runner.invoke(cli_app, ["tui", "--local", "--config", str(yaml_path)])
+    assert result.exit_code == 0, result.output
+    assert captured["local"] is True
+    assert str(captured["db_path"]) == str(yaml_db), (
+        f"Local mode must thread cost_tracking.db_path from yaml; "
+        f"got {captured.get('db_path')!r}, expected {yaml_db!r}"
+    )
