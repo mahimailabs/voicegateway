@@ -60,6 +60,7 @@ export default defineConfig({
             { text: 'Your First Agent', link: '/guide/first-agent' },
             { text: 'Core Concepts', link: '/guide/core-concepts' },
             { text: 'Cost Reconciliation', link: '/guide/cost-reconciliation' },
+            { text: 'Multi-Tenant Quickstart', link: '/guide/multi-tenant-quickstart' },
           ],
         },
       ],
