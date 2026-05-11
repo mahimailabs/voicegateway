@@ -50,6 +50,7 @@ from voicegateway.cli import rotate_secret as _rotate_secret  # noqa: F401, E402
 from voicegateway.cli import serve as _serve  # noqa: F401, E402
 from voicegateway.cli import smoke_test as _smoke_test  # noqa: F401, E402
 from voicegateway.cli import status as _status  # noqa: F401, E402
+from voicegateway.cli import tenant as _tenant  # noqa: F401, E402
 from voicegateway.cli import tui as _tui  # noqa: F401, E402
 
 # Single source of truth for both ``app`` (the Typer instance every
