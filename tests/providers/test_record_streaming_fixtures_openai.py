@@ -28,7 +28,7 @@ import respx
 
 from tests.fixtures.streaming._loader import load_fixture
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 RECORDER_PATH = REPO_ROOT / "scripts" / "record-streaming-fixtures.py"
 
 
@@ -94,16 +94,12 @@ async def test_openai_batch_recording_writes_valid_fixture(
     recorder: ModuleType, tmp_path: Path
 ) -> None:
     """Happy path: respx mocks the chat completion, fixture lands valid."""
-    response_payload = _openai_batch_response(
-        input_tokens=18, output_tokens=8
-    )
+    response_payload = _openai_batch_response(input_tokens=18, output_tokens=8)
     async with respx.mock(assert_all_called=True) as router:
         router.post("https://api.openai.com/v1/chat/completions").mock(
             return_value=httpx.Response(200, json=response_payload)
         )
-        fixture_path = await recorder._run(
-            "openai", "llm", "gpt-4o-mini", "batch"
-        )
+        fixture_path = await recorder._run("openai", "llm", "gpt-4o-mini", "batch")
 
     # Filename matches the convention.
     assert fixture_path.parent == tmp_path
@@ -138,16 +134,12 @@ async def test_openai_batch_expected_cost_matches_catalog(
     """expected_cost_usd is computed via the pricing catalog at recording time."""
     from voicegateway.pricing.catalog import calculate_cost
 
-    response_payload = _openai_batch_response(
-        input_tokens=18, output_tokens=8
-    )
+    response_payload = _openai_batch_response(input_tokens=18, output_tokens=8)
     async with respx.mock(assert_all_called=True) as router:
         router.post("https://api.openai.com/v1/chat/completions").mock(
             return_value=httpx.Response(200, json=response_payload)
         )
-        fixture_path = await recorder._run(
-            "openai", "llm", "gpt-4o-mini", "batch"
-        )
+        fixture_path = await recorder._run("openai", "llm", "gpt-4o-mini", "batch")
 
     fixture = load_fixture(fixture_path)
     expected = calculate_cost(
@@ -171,9 +163,9 @@ async def test_openai_batch_uses_canonical_test_prompt(
     """
     response_payload = _openai_batch_response(input_tokens=18, output_tokens=8)
     async with respx.mock(assert_all_called=True) as router:
-        route = router.post(
-            "https://api.openai.com/v1/chat/completions"
-        ).mock(return_value=httpx.Response(200, json=response_payload))
+        route = router.post("https://api.openai.com/v1/chat/completions").mock(
+            return_value=httpx.Response(200, json=response_payload)
+        )
         await recorder._run("openai", "llm", "gpt-4o-mini", "batch")
 
     sent = json.loads(route.calls.last.request.content)
@@ -309,9 +301,7 @@ async def test_openai_stream_recording_writes_valid_fixture(
                 headers={"content-type": "text/event-stream"},
             )
         )
-        fixture_path = await recorder._run(
-            "openai", "llm", "gpt-4o-mini", "stream"
-        )
+        fixture_path = await recorder._run("openai", "llm", "gpt-4o-mini", "stream")
 
     fixture = load_fixture(fixture_path)
     assert fixture.metadata.mode == "stream"
@@ -334,13 +324,9 @@ async def test_openai_stream_request_carries_include_usage(
     recorder: ModuleType,
 ) -> None:
     """Recorder must pass stream_options.include_usage so usage is on the wire."""
-    body = _openai_stream_sse(
-        content_chunks=["x"], input_tokens=1, output_tokens=1
-    )
+    body = _openai_stream_sse(content_chunks=["x"], input_tokens=1, output_tokens=1)
     async with respx.mock(assert_all_called=True) as router:
-        route = router.post(
-            "https://api.openai.com/v1/chat/completions"
-        ).mock(
+        route = router.post("https://api.openai.com/v1/chat/completions").mock(
             return_value=httpx.Response(
                 200,
                 content=body,
@@ -366,9 +352,29 @@ async def test_openai_stream_refuses_when_usage_chunk_missing(
         "model": "gpt-4o-mini",
     }
     events = [
-        {**base, "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": None}], "usage": None},
-        {**base, "choices": [{"index": 0, "delta": {"content": "hi"}, "finish_reason": None}], "usage": None},
-        {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": None},
+        {
+            **base,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": ""},
+                    "finish_reason": None,
+                }
+            ],
+            "usage": None,
+        },
+        {
+            **base,
+            "choices": [
+                {"index": 0, "delta": {"content": "hi"}, "finish_reason": None}
+            ],
+            "usage": None,
+        },
+        {
+            **base,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            "usage": None,
+        },
     ]
     body = b""
     for ev in events:
@@ -434,9 +440,7 @@ def test_build_fixture_payload_recorded_at_uses_zulu_suffix(
     """recorded_at uses Z suffix per design §3.1 example, not +00:00."""
     intermediate = {
         "request": {"messages": [{"role": "user", "content": "hi"}]},
-        "response_stream": [
-            {"chunk_index": 0, "received_at_ms": 0, "data": {"x": 1}}
-        ],
+        "response_stream": [{"chunk_index": 0, "received_at_ms": 0, "data": {"x": 1}}],
         "provider_reported_usage": {
             "input_tokens": 1,
             "output_tokens": 1,

@@ -307,8 +307,7 @@ def test_unit_counts_are_consistent_with_response_stream(
             f"{ground['total_tokens']}."
         )
         assert (
-            usage["input_tokens"] + usage["output_tokens"]
-            == usage["total_tokens"]
+            usage["input_tokens"] + usage["output_tokens"] == usage["total_tokens"]
         ), (
             f"{fid}: input_tokens + output_tokens != total_tokens "
             f"({usage['input_tokens']} + {usage['output_tokens']} != "
@@ -539,7 +538,7 @@ def test_fixtures_directory_and_readme_exist() -> None:
 
 def test_recording_script_exists() -> None:
     """Phase 3.3 deliverable: the recording script is at the documented path."""
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = Path(__file__).resolve().parent.parent.parent
     recorder = repo_root / "scripts" / "record-streaming-fixtures.py"
     assert recorder.exists(), (
         f"scripts/record-streaming-fixtures.py expected at {recorder}"
@@ -659,9 +658,7 @@ def test_streaming_fixture_params_returns_one_per_real_fixture(
             "voicegateway_version": "0.0.3",
         },
         "request": {"prompt": "hi", "stream": False},
-        "response_stream": [
-            {"chunk_index": 0, "received_at_ms": 0, "data": {"x": 1}}
-        ],
+        "response_stream": [{"chunk_index": 0, "received_at_ms": 0, "data": {"x": 1}}],
         "provider_reported_usage": {
             "input_tokens": 1,
             "output_tokens": 1,
@@ -669,9 +666,7 @@ def test_streaming_fixture_params_returns_one_per_real_fixture(
         },
         "expected_cost_usd": "0.00000050",
     }
-    fixture_path = (
-        tmp_path / "openai_gpt-4o-mini_llm_batch_2026-05-05.json"
-    )
+    fixture_path = tmp_path / "openai_gpt-4o-mini_llm_batch_2026-05-05.json"
     fixture_path.write_text(json.dumps(payload), encoding="utf-8")
 
     params = _streaming_fixture_params(tmp_path)

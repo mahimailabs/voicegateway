@@ -956,7 +956,7 @@ def test_reconcile_surfaces_missing_models(temp_config, tmp_path, monkeypatch):
 # reconcile: end-to-end against committed sample fixtures
 # --------------------------------------------------------------------
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _USAGE_EXPORTS_DIR = _REPO_ROOT / "tests" / "fixtures" / "usage_exports"
 
 
