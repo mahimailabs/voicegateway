@@ -55,7 +55,7 @@ def build_app(gateway: Gateway) -> FastAPI:
     """Build a FastAPI app bound to the given Gateway instance."""
     app = FastAPI(
         title="VoiceGateway API",
-        version="0.1.2",
+        version="0.2.0",
         description="HTTP API for VoiceGateway: cost tracking and reconciliation for LiveKit voice agents.",
     )
 
@@ -107,7 +107,7 @@ def build_app(gateway: Gateway) -> FastAPI:
         return {
             "status": "ok",
             "uptime_seconds": round(time.time() - started_at, 1),
-            "version": "0.1.2",
+            "version": "0.2.0",
         }
 
     @app.get("/v1/status")

@@ -2,6 +2,43 @@
 
 All notable changes to VoiceGateway are documented here. This project follows [Semantic Versioning](https://semver.org/) and [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.2.0 -- 2026-05-11
+
+**Voice-conversation cost and quality metrics.** The four-number screenshot the wedge promises: per-minute-of-conversation cost (talk time as denominator, not wall clock), agent response speed p50/p95 (caller stops → agent first audible byte), talk-over rate (frame-level overlap of agent and caller speech), and dead-air event count (silences past a configurable threshold). All four metrics live together on one screen in the new dashboard **Metrics** page with shared filtering (project + 7-day default window). Pre-v0.2.0 sessions render as "not measured" rather than zero. The retention magnet for v0.0.5's adoption gate.
+
+### Added
+
+- **`voicegateway.middleware.turn_tracker.TurnTracker`** (REQ-VG-METRICS-002, REQ-VG-METRICS-003). Records caller and agent speech intervals per session via plugin-level VAD and audio-frame events. Computes `response_speed_ms` per turn at turn boundary. Buffers turns in memory keyed by `session_id`; flushes to `turns_repo` on session close or every `flush_size` turns (default 25, configurable). Handles edge cases explicitly: missed `user_stopped` events infer caller_end from agent_first_frame and null the response speed; agent-never-speaks turns flush a tail row with NULL agent fields on `close_session`.
+- **`voicegateway.middleware.dead_air_detector.DeadAirDetector`** (REQ-VG-METRICS-004). One asyncio task per active session polls an injected activity probe at 1-second cadence, emits a `DeadAirEvent` when silence crosses the threshold (default 3.0 seconds, per-project overridable). One event per discrete silence period; flag resets on activity. Repository- and tracker-agnostic via injectable callable + event callback.
+- **`voicegateway.storage.turns_repo`** and **`voicegateway.storage.dead_air_repo`** (REQ-VG-METRICS-002, -003, -004). Flat async function modules: `create_turn`/`create_turns_bulk`, `list_turns_by_session`, `aggregate_response_speed` (p50/p95/p99 via `statistics.quantiles`), `count_overlap_turns` (SQL self-join detecting caller_speak_start before previous agent_speak_end). Dead-air analog: `create_event`, `list_events_by_session`, `count_events_by_filter` with session and half-open time-range filters.
+- **Migration 0003 (`voicegateway/storage/migrations/0003_turns_and_deadair.py`)**. New `turns` and `dead_air_events` tables with three indexes plus five nullable aggregate columns on the existing `sessions` table (`talk_time_seconds`, `per_minute_cost_usd`, `response_speed_p50/p95_ms`, `talk_over_rate`). Idempotent via `PRAGMA table_info` guard. v0.1.x sessions preserved with NULL on new columns; no backfill.
+- **`SQLiteStorage.finalize_session_metrics(session_id)`** (REQ-VG-METRICS-001, -006). Composes the repo aggregations into a single UPDATE that writes the five aggregate columns. NULL when underlying turn data is absent; per-minute cost NULL when talk_time is zero.
+- **`voicegateway.inference.attach_session(agent_session)`** (Foundry escape hatch). Opt-in helper that subscribes to `AgentSession` events (`user_started_speaking`, `user_stopped_speaking`, `agent_started_speaking`, `agent_stopped_speaking`, `close`) and wires them into the TurnTracker, DeadAirDetector, and CostTracker via a process-level component registry. Use when custom AgentSession subclasses or in-process harnesses make the standard plugin hooks miss events. Component registry populated by `register_components` (Gateway startup path) or explicit kwargs (test path).
+- **Three dashboard endpoints** in `dashboard/api/main.py`: `GET /api/metrics?project=&days=` (aggregated metrics over the filter window), `GET /api/sessions/{id}/turns`, `GET /api/sessions/{id}/dead_air`. Reuse existing dashboard auth and CORS configuration.
+- **`MetricsConfig` per-project YAML knobs**: `metrics.dead_air_threshold_seconds` (default 3.0), `metrics.talk_over_min_overlap_ms` (default 100), `metrics.turn_buffer_flush_size` (default 25). Added to both the Pydantic schema (`voicegateway/core/schema.py`) and the runtime dataclass (`voicegateway/core/config.py`).
+- **Dashboard `Metrics` page** (`dashboard/frontend/src/pages/Metrics.tsx`) with four cards in a 2×2 grid: `PerMinuteCostCard` (green), `ResponseSpeedChart` (blue), `TalkOverChart` (orange), `DeadAirList` (red). Shared filter row (project + 1/7/30/90 days) updates all four metrics simultaneously. "Not measured" badge replaces zero when aggregates are NULL (REQ-VG-METRICS-006). Navigation entry between Sessions and Projects in the sidebar.
+- **Typed fetchers** `fetchMetricsSummary`, `fetchSessionTurns`, `fetchSessionDeadAir` in `dashboard/frontend/src/lib/api.ts`. Three new TS types (`MetricsAggregate`, `TurnRow`, `DeadAirEvent`) in `lib/types.ts`.
+- **45 new tests** across `tests/middleware/`, `tests/storage/`, `tests/server/`, and `tests/inference/`. Five new test files plus integration coverage for the `attach_session` pipeline. Total suite: 1356 → 1401 (+45). Coverage: 89% (Foundry 80% gate cleared).
+
+### Changed
+
+- **Dashboard `StalenessBanner` documented placement** expanded from Costs + Overview + Sessions to also include Metrics. Per-page mounting (the existing pattern) means adding the Metrics page is an import + render at the top of `Metrics.tsx`.
+- **CHANGELOG mirror behaviour** introduced in v0.1.2's T20 remains: root `CHANGELOG.md` is canonical; the docs site's `docs/reference/changelog.md` is regenerated by `docs/package.json`'s `prebuild`/`predev` hooks. The v0.2.0 entry propagates to the docs site at the next docs build.
+- **Migration framework introduced.** `voicegateway/storage/migrations/` is a new subpackage with versioned migration files exporting an async `apply(db)` coroutine. v0.1.x's inline ALTER TABLEs in `_ensure_initialized` stay; future schema work uses the migrations layout.
+
+### Decisions locked (Foundry Open Questions)
+
+- **OQ1 (plugin-level VAD/audio-frame hooks reliable on stock AgentSession?)** — escape hatch `attach_session` is in place; full stock-SDK validation is a release-PR-time manual smoke step (not in the unit-test pipeline because livekit-agents adds a network and audio-codec dependency).
+- **OQ2 (talk-over minimum overlap threshold)** — locked at 100ms; per-project overridable.
+- **OQ3 (dead-air threshold default)** — locked at 3.0s per Refinery; per-project overridable.
+- **OQ4 (precompute vs on-demand session_metrics)** — precompute on session close via `CostTracker.close_session(sid)` calling `SQLiteStorage.finalize_session_metrics(sid)`.
+- **OQ5 (`/api/metrics` default time window)** — 7 days, matching the Costs page.
+
+### Migration
+
+- v0.1.x callers do not need any code change. Migration 0003 runs automatically on first `SQLiteStorage.start()`; v0.1.x sessions row entries are preserved with NULL on the new aggregate columns and surface as "not measured" in the Metrics view.
+- The `voicegateway/combined_server.py` re-export shim flagged for v0.2.0 removal in the v0.1.2 release notes stays in place — schedule slipped to v0.3.0 to avoid bundling a deprecation removal with the metrics-feature release.
+
 ## v0.1.2 -- 2026-05-11
 
 **Project polish.** Housekeeping pass before v0.2.0 metrics work begins. No buyer-facing behavior changes, no new features, no breaking imports. The repo tree resets to a clean baseline: tests live where you expect them, Dockerfiles consolidated under `docker/`, scripts use underscore convention, three top-level modules folded into subpackages with re-export shims, standard root metadata in place, public-API contract via `__all__` declared on every subpackage, code-style conventions documented with linter audits.

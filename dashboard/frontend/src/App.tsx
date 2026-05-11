@@ -130,7 +130,7 @@ function Sidebar({
           <span className="neo-status-dot neo-status-dot--online" />
           {providerCount} Providers · {modelCount} Models
         </div>
-        <span className="version-pill">v0.1.0</span>
+        <span className="version-pill">v0.2.0</span>
         {hasToken && (
           <button
             type="button"
