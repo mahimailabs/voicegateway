@@ -315,6 +315,7 @@ async def get_session_detail(session_id: str) -> dict[str, Any]:
 async def get_metrics_summary(
     project: str | None = Query(None),
     days: int = Query(7, ge=1, le=365),
+    tenant: str | None = Query(None),
 ) -> dict[str, Any]:
     """Aggregated voice-conversation metrics for the filter window.
 
@@ -349,6 +350,12 @@ async def get_metrics_summary(
         if project:
             where_clauses.append("project = ?")
             params.append(project)
+        if tenant is not None:
+            if tenant == "":
+                where_clauses.append("tenant_id IS NULL")
+            else:
+                where_clauses.append("tenant_id = ?")
+                params.append(tenant)
         where = " AND ".join(where_clauses)
         cursor = await db.execute(
             f"""SELECT id,
@@ -397,7 +404,7 @@ async def get_metrics_summary(
                 "since": since_iso,
                 "until": until_iso,
             },
-            "filter": {"project": project},
+            "filter": {"project": project, "tenant": tenant},
             "session_count": session_count,
             "measured_session_count": measured_count,
             "per_minute_cost_usd_avg": per_minute_cost_avg,

@@ -93,6 +93,10 @@ export interface SessionRow {
   modalities: string[];
   total_cost_usd: number;
   request_count: number;
+  // v0.4.0 (REQ-VG-TENANT-001). NULL renders as the muted
+  // "unattributed" pill. Older session rows written before v0.4.0
+  // simply omit the field; the JSON response leaves it absent.
+  tenant_id?: string | null;
 }
 
 export interface SessionDetail extends SessionRow {

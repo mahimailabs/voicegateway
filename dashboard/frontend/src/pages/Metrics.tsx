@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import DeadAirList from '../components/DeadAirList';
+import FilterBar, { useTenantFilter } from '../components/FilterBar';
 import PageHeader from '../components/PageHeader';
 import PerMinuteCostCard from '../components/PerMinuteCostCard';
 import ResponseSpeedChart from '../components/ResponseSpeedChart';
@@ -40,17 +41,19 @@ export default function Metrics() {
   const [days, setDays] = useState<number>(7);
   const [data, setData] = useState<MetricsAggregate | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const tenant = useTenantFilter();
 
   useEffect(() => {
     const params = new URLSearchParams();
     if (project) params.set('project', project);
     params.set('days', String(days));
+    if (tenant !== null) params.set('tenant', tenant);
     setLoading(true);
     fetchJson<MetricsAggregate>(`/api/metrics?${params.toString()}`)
       .then((d) => setData(d))
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [project, days]);
+  }, [project, days, tenant]);
 
   return (
     <div>
@@ -60,6 +63,8 @@ export default function Metrics() {
         subtitle="Voice-conversation cost and quality"
         accent="orange"
       />
+
+      <FilterBar />
 
       <div className="neo-card mb-lg">
         <div className="flex flex-row gap-md items-end">

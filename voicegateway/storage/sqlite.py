@@ -979,7 +979,7 @@ class SQLiteStorage:
 
     @staticmethod
     def _row_to_session(row: Any) -> dict[str, Any]:
-        return {
+        out = {
             "id": row[0],
             "project": row[1],
             "started_at": row[2],
@@ -988,6 +988,16 @@ class SQLiteStorage:
             "total_cost_usd": float(row[5] or 0.0),
             "request_count": int(row[6] or 0),
         }
+        # v0.4.0: include tenant_id when the SELECT picked it up.
+        # list_sessions and get_session both include the column on
+        # post-migration databases; the Any-typed Row may not raise on
+        # out-of-bounds, so we guard defensively.
+        try:
+            tenant_id = row[7]
+            out["tenant_id"] = None if tenant_id is None else str(tenant_id)
+        except (IndexError, KeyError):
+            pass
+        return out
 
     _SESSION_ORDER_CLAUSES: dict[str, str] = {
         "started_at_desc": "started_at DESC",
@@ -1042,7 +1052,7 @@ class SQLiteStorage:
             params.append(limit)
             cursor = await db.execute(
                 f"""SELECT id, project, started_at, ended_at, modalities,
-                          total_cost_usd, request_count
+                          total_cost_usd, request_count, tenant_id
                    FROM sessions
                    {where}ORDER BY {clause}
                    LIMIT ?""",
@@ -1064,7 +1074,7 @@ class SQLiteStorage:
         try:
             cursor = await db.execute(
                 """SELECT id, project, started_at, ended_at, modalities,
-                          total_cost_usd, request_count
+                          total_cost_usd, request_count, tenant_id
                    FROM sessions
                    WHERE id = ?""",
                 (session_id,),
