@@ -31,7 +31,7 @@ def _valid_payload(modality: str = "llm", mode: str = "stream") -> dict[str, Any
             "modality": modality,
             "mode": mode,
             "recorded_at": "2026-05-04T14:32:11Z",
-            "recorded_by": "scripts/record-streaming-fixtures.py",
+            "recorded_by": "scripts/record_streaming_fixtures.py",
             "voicegateway_version": "0.0.3",
         },
         "request": {"prompt": "Hi", "stream": True},

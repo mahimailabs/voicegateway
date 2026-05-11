@@ -77,7 +77,7 @@ Streaming is where the real-world cost-tracking bugs hide: tokens that double at
 
 ### The substitute strategy
 
-Rather than dogfood the gateway in production and reconcile against provider invoices, VG records real provider streaming responses **once** via `scripts/record-streaming-fixtures.py` and replays them in CI forever. Each fixture is a JSON file with three load-bearing sections:
+Rather than dogfood the gateway in production and reconcile against provider invoices, VG records real provider streaming responses **once** via `scripts/record_streaming_fixtures.py` and replays them in CI forever. Each fixture is a JSON file with three load-bearing sections:
 
 - `request`: the literal payload VG sent.
 - `response_stream`: the chunks the provider returned, with `received_at_ms` timestamps.
@@ -118,7 +118,7 @@ The CHANGELOG disclosure for v0.0.4 is honest about this: "Cost tracking is vali
   - `_loader.py`: `discover_fixtures`, `load_fixture`, filename-decode helper.
   - `README.md`: the fixture format and refresh policy.
   - `PLACEHOLDER.md`: runbook for recording the six minimum fixtures.
-- `scripts/record-streaming-fixtures.py`: the dev-only recorder, gated behind `--record` and `--confirm`.
+- `scripts/record_streaming_fixtures.py`: the dev-only recorder, gated behind `--record` and `--confirm`.
 - `scripts/README.md`: cost expectations and operational warnings.
 - `tests/test_streaming_cost_accounting.py`: the three-assertion replay suite.
 - `tests/test_ttfb_hook_coverage.py`: per-modality TTFB hardening.

@@ -8,8 +8,9 @@ the StreamingFixture schema, and carries a `expected_cost_usd`
 that matches what `voicegateway.pricing.catalog.calculate_cost`
 would compute for the same usage.
 
-The script lives at scripts/record-streaming-fixtures.py (hyphenated
-filename) so importlib.util is used to load it as a module.
+The script lives at scripts/record_streaming_fixtures.py and is
+not in an importable package, so importlib.util loads it from its
+absolute file path.
 """
 
 from __future__ import annotations
@@ -29,11 +30,11 @@ import respx
 from tests.fixtures.streaming._loader import load_fixture
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-RECORDER_PATH = REPO_ROOT / "scripts" / "record-streaming-fixtures.py"
+RECORDER_PATH = REPO_ROOT / "scripts" / "record_streaming_fixtures.py"
 
 
 def _import_recorder() -> ModuleType:
-    """Load scripts/record-streaming-fixtures.py as an importable module."""
+    """Load scripts/record_streaming_fixtures.py as an importable module."""
     spec = importlib.util.spec_from_file_location(
         "_phase3_recorder_under_test", RECORDER_PATH
     )
@@ -113,7 +114,7 @@ async def test_openai_batch_recording_writes_valid_fixture(
     assert fixture.metadata.model == "gpt-4o-mini"
     assert fixture.metadata.modality == "llm"
     assert fixture.metadata.mode == "batch"
-    assert fixture.metadata.recorded_by == "scripts/record-streaming-fixtures.py"
+    assert fixture.metadata.recorded_by == "scripts/record_streaming_fixtures.py"
 
     # Recorded usage carries the normalized field names.
     usage = fixture.provider_reported_usage

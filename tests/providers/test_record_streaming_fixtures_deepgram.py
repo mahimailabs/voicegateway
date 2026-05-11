@@ -29,7 +29,7 @@ import respx
 from tests.fixtures.streaming._loader import load_fixture
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-RECORDER_PATH = REPO_ROOT / "scripts" / "record-streaming-fixtures.py"
+RECORDER_PATH = REPO_ROOT / "scripts" / "record_streaming_fixtures.py"
 AUDIO_SAMPLE = REPO_ROOT / "tests" / "fixtures" / "audio" / "test_sample.wav"
 
 
