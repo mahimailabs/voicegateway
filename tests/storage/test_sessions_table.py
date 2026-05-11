@@ -89,6 +89,8 @@ async def test_sessions_columns_match_design(tmp_path):
         "response_speed_p50_ms",
         "response_speed_p95_ms",
         "talk_over_rate",
+        # v0.3.0 replay storage column (added by migration 0004).
+        "replay_size_bytes",
     }
 
     # Required keys (NOT NULL).
