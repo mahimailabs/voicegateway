@@ -1,25 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchJson } from '../lib/api';
-
-interface TenantRow {
-  tenant_id: string;
-  session_count: number;
-  total_cost_usd: number;
-  first_seen: string | null;
-  last_seen: string | null;
-}
-
-interface UnattributedAggregates {
-  session_count: number;
-  total_cost_usd: number;
-  first_seen: string | null;
-  last_seen: string | null;
-}
-
-interface TenantsResponse {
-  tenants: TenantRow[];
-  unattributed: UnattributedAggregates;
-}
+import { fetchTenants } from '../lib/api';
+import type { TenantsResponse } from '../lib/types';
 
 interface Props {
   /** Current tenant filter: ``null`` (no filter), ``""`` (unattributed bucket), or a tenant id. */
@@ -47,9 +28,7 @@ export default function TenantFilter({ value, onChange }: Props) {
 
   useEffect(() => {
     const handle = setTimeout(() => {
-      const params = new URLSearchParams({ limit: '50' });
-      if (query.trim()) params.set('q', query.trim());
-      fetchJson<TenantsResponse>(`/api/tenants?${params}`)
+      fetchTenants({ limit: 50, q: query.trim() || undefined })
         .then(setData)
         .catch(() => setData(null));
     }, 200);

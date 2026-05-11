@@ -184,3 +184,57 @@ export interface RetentionWindow {
   project_id: string;
   retention_days: number;
 }
+
+// ----------------------------------------------------------------------
+// v0.4.0 multi-tenant attribution (REQ-VG-TENANT-001..004).
+// ----------------------------------------------------------------------
+
+/** One row from the dashboard's tenant typeahead feed. */
+export interface TenantRow {
+  tenant_id: string;
+  session_count: number;
+  total_cost_usd: number;
+  first_seen: string | null;
+  last_seen: string | null;
+}
+
+/** Aggregates for the implicit `tenant_id IS NULL` bucket. */
+export interface UnattributedAggregates {
+  session_count: number;
+  total_cost_usd: number;
+  first_seen: string | null;
+  last_seen: string | null;
+}
+
+/** `/api/tenants` response shape. */
+export interface TenantsResponse {
+  tenants: TenantRow[];
+  unattributed: UnattributedAggregates;
+}
+
+/**
+ * Tenant filter URL convention:
+ *   - `null`: no filter (everything)
+ *   - `""`: scope to the unattributed bucket (sessions with NULL tenant_id)
+ *   - any other string: that exact tenant
+ */
+export type TenantFilter = string | null;
+
+/** One row in the Virtual Keys table; the bcrypt hash never appears. */
+export interface VirtualKey {
+  id: number;
+  key_prefix: string;
+  name: string;
+  tenant_id: string | null;
+  issued_by: string | null;
+  issued_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+/** `POST /api/virtual_keys` response: the only place plaintext appears. */
+export interface CreatedVirtualKey {
+  id: number;
+  plaintext: string;
+  row: VirtualKey;
+}

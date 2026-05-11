@@ -1,23 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import PageHeader from '../components/PageHeader';
-import { fetchJson } from '../lib/api';
-
-interface VirtualKey {
-  id: number;
-  key_prefix: string;
-  name: string;
-  tenant_id: string | null;
-  issued_by: string | null;
-  issued_at: string;
-  last_used_at: string | null;
-  revoked_at: string | null;
-}
-
-interface CreateResponse {
-  id: number;
-  plaintext: string;
-  row: VirtualKey;
-}
+import {
+  createVirtualKey,
+  fetchVirtualKeys,
+  revokeVirtualKey,
+} from '../lib/api';
+import type { CreatedVirtualKey, VirtualKey } from '../lib/types';
 
 const STALE_DAYS_DEFAULT = 90;
 
@@ -47,12 +35,10 @@ export default function VirtualKeys() {
   const [keys, setKeys] = useState<VirtualKey[]>([]);
   const [includeRevoked, setIncludeRevoked] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [showKey, setShowKey] = useState<CreateResponse | null>(null);
+  const [showKey, setShowKey] = useState<CreatedVirtualKey | null>(null);
 
   const refresh = () => {
-    fetchJson<{ keys: VirtualKey[] }>(
-      `/api/virtual_keys?include_revoked=${includeRevoked}`,
-    )
+    fetchVirtualKeys({ includeRevoked })
       .then((d) => setKeys(d.keys))
       .catch(() => setKeys([]));
   };
@@ -196,7 +182,7 @@ function RevokeButton({ id, onDone }: { id: number; onDone: () => void }) {
     if (!confirm('Revoke this key? It cannot be undone.')) return;
     setBusy(true);
     try {
-      await fetchJson(`/api/virtual_keys/${id}/revoke`, { method: 'POST' });
+      await revokeVirtualKey(id);
       onDone();
     } catch (e) {
       alert((e as Error).message || 'Failed to revoke key');
@@ -217,7 +203,7 @@ function IssueKeyModal({
   onIssued,
 }: {
   onCancel: () => void;
-  onIssued: (resp: CreateResponse) => void;
+  onIssued: (resp: CreatedVirtualKey) => void;
 }) {
   const [name, setName] = useState('');
   const [tenantId, setTenantId] = useState('');
@@ -227,13 +213,10 @@ function IssueKeyModal({
   const save = async () => {
     setSaving(true);
     try {
-      const resp = await fetchJson<CreateResponse>('/api/virtual_keys', {
-        method: 'POST',
-        body: JSON.stringify({
-          name,
-          tenant_id: tenantId.trim() || null,
-          issued_by: issuedBy.trim() || null,
-        }),
+      const resp = await createVirtualKey({
+        name,
+        tenant_id: tenantId.trim() || null,
+        issued_by: issuedBy.trim() || null,
       });
       onIssued(resp);
     } catch (e) {
@@ -292,7 +275,7 @@ function ShowKeyOnceModal({
   response,
   onClose,
 }: {
-  response: CreateResponse;
+  response: CreatedVirtualKey;
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
