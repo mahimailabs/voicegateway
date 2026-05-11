@@ -12,6 +12,7 @@ from typing import Any
 
 import aiosqlite
 
+from voicegateway.inference._session_context import current_tenant
 from voicegateway.storage import replay_repo, turns_repo
 from voicegateway.storage._percentiles import compute_percentiles
 from voicegateway.storage.models import RequestRecord
@@ -442,14 +443,25 @@ class SQLiteStorage:
                 # earlier may finish after a faster LLM call. The MIN
                 # CASE keeps started_at at the earliest request_started
                 # timestamp regardless of completion order.
+                # ``current_tenant()`` reads the v0.4.0 tenant_id_ctx
+                # ContextVar (REQ-VG-TENANT-001). On INSERT the value
+                # stamps the session row; on CONFLICT we COALESCE so
+                # an already-set tenant_id never gets overwritten by a
+                # later request that arrived without a tenant in
+                # scope. This is the "session has one tenant for its
+                # lifetime" rule from the Refinery: the first
+                # tenant-bearing request wins, subsequent
+                # unattributed-bucket requests don't clear it.
+                session_tenant_id = current_tenant()
                 await db.execute(
                     """INSERT INTO sessions
                        (id, project, started_at, ended_at, modalities,
-                        total_cost_usd, request_count)
-                       VALUES (?, ?, ?, ?, ?, ?, 1)
+                        total_cost_usd, request_count, tenant_id)
+                       VALUES (?, ?, ?, ?, ?, ?, 1, ?)
                        ON CONFLICT(id) DO UPDATE SET
                            total_cost_usd = total_cost_usd + excluded.total_cost_usd,
                            request_count = request_count + 1,
+                           tenant_id = COALESCE(tenant_id, excluded.tenant_id),
                            started_at = CASE
                                WHEN started_at IS NULL THEN excluded.started_at
                                WHEN started_at > excluded.started_at THEN excluded.started_at
@@ -475,6 +487,7 @@ class SQLiteStorage:
                         started_at_iso,
                         record.modality,
                         record.cost_usd,
+                        session_tenant_id,
                     ),
                 )
             await db.commit()

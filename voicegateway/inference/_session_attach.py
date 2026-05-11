@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 
 from voicegateway.inference._session_context import (
     get_or_create_session_id,
+    set_tenant,
 )
 
 if TYPE_CHECKING:
@@ -162,6 +163,7 @@ def attach_session(
     agent_session: Any,
     *,
     session_id: str | None = None,
+    tenant_id: str | None = None,
     turn_tracker: TurnTracker | None = None,
     dead_air_detector: DeadAirDetector | None = None,
     cost_tracker: CostTracker | None = None,
@@ -179,6 +181,15 @@ def attach_session(
     ``voicegateway.inference`` ContextVar carries (creating a fresh
     ``vg-<uuid>`` if there is none). Pass an explicit id when the caller
     has its own correlation key.
+
+    ``tenant_id`` (REQ-VG-TENANT-001) attributes every cost, metric,
+    and replay row stamped for this session to a tenant. When provided
+    here, the value is pushed onto ``tenant_id_ctx`` immediately so the
+    first ``log_request`` for the session picks it up. When omitted, the
+    ContextVar is left untouched: a scoped virtual key set earlier by
+    the auth middleware (T04) still wins, and an explicit
+    ``set_tenant(...)`` from the agent code also wins. Pass an empty
+    string or ``None`` to opt into the "unattributed" bucket.
 
     Returns the bound ``session_id`` so callers can echo it into their
     own logs.
@@ -206,6 +217,8 @@ def attach_session(
     ct = cost_tracker if cost_tracker is not None else _active_cost_tracker
 
     sid = session_id if session_id is not None else get_or_create_session_id()
+    if tenant_id is not None:
+        set_tenant(tenant_id)
 
     if tracker is None:
         logger.warning(
