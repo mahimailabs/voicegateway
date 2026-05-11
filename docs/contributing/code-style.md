@@ -182,10 +182,113 @@ and adds conftest fixtures for MCP testing.
 
 ## File organization
 
-- One class per file for providers (`openai_provider.py`, not `providers.py`)
-- Group related functions in a module (`middleware/cost_tracker.py`)
-- Keep `__init__.py` files minimal -- only re-exports
-- Use `from __future__ import annotations` in every module
+- One class per file for providers (`openai_provider.py`, not `providers.py`).
+- Group related functions in a module (`middleware/cost_tracker.py`).
+- Keep `__init__.py` files minimal -- a docstring, re-exports of the
+  subpackage's public API, and an `__all__` declaration. Nothing else.
+- Use `from __future__ import annotations` in every module.
+
+### Internal modules
+
+Files whose names start with a leading underscore are internal
+implementation details and not part of the public import surface:
+
+- `voicegateway/_version.py` -- hatch-vcs generated, do not edit.
+- `tests/fixtures/streaming/_loader.py` -- private test helper.
+- `voicegateway/inference/_llm.py`, `_stt.py`, `_tts.py` -- private
+  factories; the public surface is `voicegateway.inference.{LLM,STT,TTS}`.
+
+A future ruff rule could enforce that nothing under
+`voicegateway/` imports a leading-underscore module from a different
+subpackage; for now the convention is documentation-only.
+
+## Public API contract
+
+Every package and subpackage `__init__.py` declares an explicit
+`__all__` list. This is the v0.1.x public surface:
+
+```python
+# voicegateway/server/__init__.py
+from voicegateway.server.main import build_app
+
+__all__ = ["build_app"]
+```
+
+When `__all__` is the empty list (`__all__: list[str] = []`), the
+subpackage exposes nothing at its top level and callers reach into
+submodules directly:
+
+```python
+# Use this:
+from voicegateway.core.gateway import Gateway
+
+# Not this (would fail because voicegateway.core has __all__ = []):
+from voicegateway.core import Gateway
+```
+
+Names not in `__all__`, and any leading-underscore module, are
+internal. They may be renamed or removed in any minor release without
+a deprecation cycle.
+
+## Module-level patterns
+
+The codebase converged on a small set of patterns. New code should
+follow them unless there is a concrete reason not to.
+
+### `typing.Protocol` vs ABC
+
+Prefer ``typing.Protocol`` for structural typing where multiple
+implementations need to satisfy an interface without sharing helper
+code (see ``voicegateway/cli/tui/data`` for a real example -- the
+``DataClient`` Protocol is satisfied by both ``HttpClient`` and
+``LocalClient`` without inheritance). Use an abstract base class only
+when the base genuinely supplies shared behaviour
+(``voicegateway/providers/base.py``'s ``BaseProvider`` is the
+canonical example: every concrete provider inherits real helper
+methods).
+
+### Pydantic for config
+
+Anything parsed from YAML or environment variables is a Pydantic
+model. See ``voicegateway/core/config.py`` and
+``voicegateway/core/schema.py`` for the project-wide config shape;
+the validators there are the single source of truth for what
+``voicegw.yaml`` accepts.
+
+### Async throughout
+
+Every I/O path uses ``async`` / ``await``. Storage reads, provider
+calls, HTTP handlers, MCP tools, the dashboard backend -- all async.
+Synchronous helpers exist only for pure data transformation (parsing,
+formatting). When in doubt, make it async; mixing sync and async
+boundaries is the most common source of subtle bugs in this codebase.
+
+### Exception handling
+
+Catch specific exception types where possible. ``except Exception`` is
+acceptable at top-level boundaries (provider call sites, MCP tool
+dispatch, middleware fallback) where the catch is paired with structured
+logging and a controlled fallback. Avoid broad excepts in narrow code
+paths -- they hide real bugs and bypass the type system.
+
+## Test patterns
+
+See [Testing](/contributing/testing) for the full guide. Quick
+reference:
+
+- Tests live under ``tests/`` mirroring the package layout
+  (``tests/middleware/`` for ``voicegateway/middleware/`` tests, etc.).
+- ``pytest`` + ``pytest-asyncio`` with ``asyncio_mode = "auto"``
+  (configured in ``pyproject.toml``). No ``@pytest.mark.asyncio`` is
+  needed; async tests are detected automatically.
+- Shared fixtures live in ``tests/conftest.py``. Per-subpackage
+  fixtures live in that subpackage's ``conftest.py``.
+- File-name pattern: ``test_<thing-under-test>.py``. Function-name
+  pattern: ``test_<behaviour>``.
+- Subprocess CLI tests use the patterns in
+  ``tests/cli/test_record_streaming_fixtures_cli.py``.
+- Coverage stays at or above the project gate (see
+  ``[tool.coverage.run]`` in ``pyproject.toml``).
 
 ## Naming conventions
 
