@@ -115,7 +115,7 @@ first_time_deploy() {
   # Switch to build-from-source if requested
   if [[ "$FROM_SOURCE" == "true" ]]; then
     sed -i.bak 's|^  image = .*|  # image = "mahimairaja/voicegateway:latest"|' "$SCRIPT_DIR/fly.toml"
-    sed -i.bak 's|^  # dockerfile = .*|  dockerfile = "../../Dockerfile"|' "$SCRIPT_DIR/fly.toml"
+    sed -i.bak 's|^  # dockerfile = .*|  dockerfile = "../../docker/voicegateway.Dockerfile"|' "$SCRIPT_DIR/fly.toml"
     rm -f "$SCRIPT_DIR/fly.toml.bak"
     log_info "Switched fly.toml to build from source"
   fi
@@ -150,7 +150,7 @@ redeploy() {
   # Switch to build-from-source if requested
   if [[ "$FROM_SOURCE" == "true" ]]; then
     sed -i.bak 's|^  image = .*|  # image = "mahimairaja/voicegateway:latest"|' "$SCRIPT_DIR/fly.toml"
-    sed -i.bak 's|^  # dockerfile = .*|  dockerfile = "../../Dockerfile"|' "$SCRIPT_DIR/fly.toml"
+    sed -i.bak 's|^  # dockerfile = .*|  dockerfile = "../../docker/voicegateway.Dockerfile"|' "$SCRIPT_DIR/fly.toml"
     rm -f "$SCRIPT_DIR/fly.toml.bak"
     log_info "Switched fly.toml to build from source"
   fi

@@ -1,4 +1,4 @@
-# Dockerfile (core gateway)
+# docker/voicegateway.Dockerfile (core gateway)
 # Multi-stage build: builder installs deps, runtime has only what's needed.
 
 # -------- Stage 1: Frontend builder --------

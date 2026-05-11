@@ -1,4 +1,4 @@
-# dashboard/Dockerfile
+# docker/dashboard.Dockerfile
 # Multi-stage build: Node builds frontend, Python serves the dashboard API.
 
 # -------- Stage 1: Frontend builder --------
