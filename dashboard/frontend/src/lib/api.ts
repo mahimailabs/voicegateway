@@ -77,3 +77,40 @@ async function extractErrorDetail(res: Response): Promise<string | null> {
     return null;
   }
 }
+
+// ----------------------------------------------------------------------
+// v0.2.0 voice-conversation metrics typed fetchers (REQ-VG-METRICS-001..006).
+// Thin wrappers around fetchJson<T>() that pin the response type and the
+// path string. Callers should prefer these over raw `fetchJson` calls so
+// path / type drift is caught at compile time.
+// ----------------------------------------------------------------------
+
+import type {
+  DeadAirEvent,
+  MetricsAggregate,
+  TurnRow,
+} from './types';
+
+export function fetchMetricsSummary(
+  options: { project?: string; days?: number } = {},
+): Promise<MetricsAggregate> {
+  const params = new URLSearchParams();
+  if (options.project) params.set('project', options.project);
+  if (options.days !== undefined) params.set('days', String(options.days));
+  const query = params.toString();
+  return fetchJson<MetricsAggregate>(
+    query ? `/api/metrics?${query}` : '/api/metrics',
+  );
+}
+
+export function fetchSessionTurns(
+  sessionId: string,
+): Promise<{ session_id: string; turns: TurnRow[] }> {
+  return fetchJson(`/api/sessions/${encodeURIComponent(sessionId)}/turns`);
+}
+
+export function fetchSessionDeadAir(
+  sessionId: string,
+): Promise<{ session_id: string; events: DeadAirEvent[] }> {
+  return fetchJson(`/api/sessions/${encodeURIComponent(sessionId)}/dead_air`);
+}
