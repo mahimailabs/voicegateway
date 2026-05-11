@@ -66,6 +66,23 @@ class MetricsConfig:
 
 
 @dataclass
+class ReplayConfig:
+    """v0.3.0 conversation-replay capture + retention knobs.
+
+    Defaults match the Foundry-locked values. Per-project overridable
+    via the ``replay:`` block in ``voicegw.yaml``. ``enabled = False``
+    is the OQ1 fallback: if T18's storage-cost smoke fails the
+    100 KB/min target, individual projects (or all projects via the
+    top-level default) can disable capture without redeploying.
+    """
+
+    enabled: bool = True
+    retention_days: int = 90
+    buffer_size_events: int = 5000
+    flush_size_events: int = 500
+
+
+@dataclass
 class ProjectConfig:
     """Configuration for a single project."""
 
@@ -84,6 +101,8 @@ class ProjectConfig:
     providers: dict[str, dict[str, Any]] = field(default_factory=dict)
     # v0.2.0: per-project metric capture knobs (REQ-VG-METRICS-001..006).
     metrics: MetricsConfig = field(default_factory=MetricsConfig)
+    # v0.3.0: per-project replay capture knobs (REQ-VG-REPLAY-001..006).
+    replay: ReplayConfig = field(default_factory=ReplayConfig)
 
     @property
     def accent(self) -> str:
@@ -253,6 +272,13 @@ class GatewayConfig:
                         metrics_raw.get("turn_buffer_flush_size", 25)
                     ),
                 )
+                replay_raw = pcfg.get("replay") or {}
+                replay_cfg = ReplayConfig(
+                    enabled=bool(replay_raw.get("enabled", True)),
+                    retention_days=int(replay_raw.get("retention_days", 90)),
+                    buffer_size_events=int(replay_raw.get("buffer_size_events", 5000)),
+                    flush_size_events=int(replay_raw.get("flush_size_events", 500)),
+                )
                 projects[pid] = ProjectConfig(
                     id=pid,
                     name=str(pcfg.get("name") or pid),
@@ -263,6 +289,7 @@ class GatewayConfig:
                     tags=list(pcfg.get("tags") or []),
                     providers=project_providers,
                     metrics=metrics_cfg,
+                    replay=replay_cfg,
                 )
 
         auth_raw = raw.get("auth", {}) or {}
