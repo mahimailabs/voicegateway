@@ -54,6 +54,21 @@ class MetricsConfig(_StrictBase):
     turn_buffer_flush_size: int = Field(default=25, gt=0)
 
 
+class ReplayConfig(_StrictBase):
+    """v0.3.0 conversation-replay knobs (REQ-VG-REPLAY-001..006).
+
+    All fields are per-project overridable via the ``replay:`` block
+    under each project entry in ``voicegw.yaml``. Defaults match the
+    Foundry's stated values; OQ1's storage-cost target is enforced by
+    T18's smoke test, not at config time.
+    """
+
+    enabled: bool = True
+    retention_days: int = Field(default=90, ge=1)
+    buffer_size_events: int = Field(default=5000, ge=1)
+    flush_size_events: int = Field(default=500, ge=1)
+
+
 class ProjectConfig(_StrictBase):
     name: str
     description: str = ""
@@ -68,6 +83,8 @@ class ProjectConfig(_StrictBase):
     # MetricsConfig's own defaults so projects that do not set
     # ``metrics:`` get the canonical Foundry values.
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
+    # v0.3.0: per-project replay capture + retention knobs.
+    replay: ReplayConfig = Field(default_factory=ReplayConfig)
 
 
 class ObservabilityConfig(_StrictBase):

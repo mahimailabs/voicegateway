@@ -8,13 +8,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from voicegateway.core.auth import load_api_keys, resolve_cors_origins
-from voicegateway.storage import dead_air_repo, turns_repo
+from voicegateway.storage import dead_air_repo, replay_repo, turns_repo
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -29,7 +29,7 @@ _LOCAL_PROVIDER_NAMES = frozenset({"ollama", "whisper", "kokoro", "piper"})
 
 app = FastAPI(
     title="VoiceGateway Dashboard",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 # Set by the CLI / combined server when starting the dashboard.
@@ -439,6 +439,140 @@ async def get_session_dead_air(session_id: str) -> dict[str, Any]:
         }
     finally:
         await db.close()
+
+
+# ----------------------------------------------------------------------
+# v0.3.0 conversation replay (REQ-VG-REPLAY-001..006).
+#
+# Four handlers backing the dashboard Replay page (T11) and the
+# storage-usage view. Same `/api/*` prefix as the v0.2.0 metrics
+# endpoints, deviating from the Foundry's literal `/v1/*` prefix per
+# the dashboard convention; the main server may publish `/v1/*` mirrors
+# later if SDK consumers need them.
+# ----------------------------------------------------------------------
+
+
+@app.get("/api/sessions/{session_id}/replay")
+async def get_session_replay(session_id: str) -> dict[str, Any]:
+    """Return the full time-ordered replay for one session.
+
+    Used by the Replay page (T11) to pre-fetch the full timeline on
+    page load (OQ3 resolution: pre-fetch over streaming). Each event
+    carries its modality so the consumer routes to the right pane.
+
+    Empty list when the session has no captured replay events
+    (pre-v0.3.0 sessions or projects with ``replay.enabled: false``);
+    the FE renders a PreV030Banner in that case (REQ-VG-REPLAY-001
+    AC-3).
+    """
+    gw = _get_gateway()
+    if gw.storage is None:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    db = await gw.storage._ensure_initialized()
+    try:
+        events = await replay_repo.read_full_replay(db, session_id)
+        return {
+            "session_id": session_id,
+            "events": [dataclasses.asdict(e) for e in events],
+        }
+    finally:
+        await db.close()
+
+
+@app.delete("/api/sessions/{session_id}/replay")
+async def delete_session_replay(session_id: str) -> dict[str, Any]:
+    """Delete every replay row tied to a session (REQ-VG-REPLAY-006 AC-3).
+
+    Cascade across all four ``replay_*`` tables in one transaction.
+    Returns the total row count deleted (across modalities) so the
+    caller can confirm the cleanup landed.
+    """
+    gw = _get_gateway()
+    if gw.storage is None:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    db = await gw.storage._ensure_initialized()
+    try:
+        deleted = await replay_repo.delete_replay(db, session_id)
+        return {"session_id": session_id, "deleted_rows": deleted}
+    finally:
+        await db.close()
+
+
+@app.get("/api/replay/storage")
+async def get_replay_storage() -> dict[str, Any]:
+    """Return per-project replay storage breakdown.
+
+    Sums ``sessions.replay_size_bytes`` per project (the column is
+    populated by T08's ``finalize_session_replay``). Sessions without
+    captured replay (NULL replay_size_bytes) contribute 0 to the sum.
+    The Refinery requires the dashboard surface this so "the cost is
+    not invisible" to the developer.
+    """
+    gw = _get_gateway()
+    if gw.storage is None:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    db = await gw.storage._ensure_initialized()
+    try:
+        cursor = await db.execute(
+            "SELECT project, COALESCE(SUM(replay_size_bytes), 0) "
+            "FROM sessions "
+            "WHERE replay_size_bytes IS NOT NULL "
+            "GROUP BY project "
+            "ORDER BY project ASC"
+        )
+        per_project = []
+        total = 0
+        async for row in cursor:
+            project, size = row
+            size_int = int(size or 0)
+            per_project.append(
+                {
+                    "project": project,
+                    "replay_size_bytes": size_int,
+                }
+            )
+            total += size_int
+        return {
+            "total_replay_size_bytes": total,
+            "by_project": per_project,
+        }
+    finally:
+        await db.close()
+
+
+@app.post("/api/projects/{project_id}/replay/retention")
+async def update_replay_retention(
+    project_id: str,
+    body: dict[str, Any] = Body(...),
+) -> dict[str, Any]:
+    """Update the retention window for one project.
+
+    Body shape: ``{"retention_days": N}`` (1..365 inclusive). The
+    update is applied in-memory to ``gw.config.projects[project_id]
+    .replay.retention_days`` so the retention worker (T06) picks it
+    up on its next tick.
+
+    v0.3.0 limitation: the update is not persisted to ``voicegw.yaml``
+    on disk. Restart re-reads the original value. Persistence is a
+    follow-up that needs config-file-write infrastructure; the in-
+    memory mutation matches the runtime contract the retention worker
+    reads from.
+    """
+    gw = _get_gateway()
+    new_days_raw = body.get("retention_days")
+    if not isinstance(new_days_raw, int) or new_days_raw < 1 or new_days_raw > 365:
+        raise HTTPException(
+            status_code=422,
+            detail="retention_days must be an int in [1, 365]",
+        )
+    project = gw.config.projects.get(project_id) if gw.config else None
+    if project is None:
+        raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found")
+    project.replay.retention_days = new_days_raw
+    return {
+        "project_id": project_id,
+        "retention_days": new_days_raw,
+    }
 
 
 @app.get("/api/providers/by-project")

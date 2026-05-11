@@ -178,40 +178,68 @@ class CostTracker:
             logger.warning("Failed to update budget cache", exc_info=True)
 
     async def close_session(self, session_id: str) -> None:
-        """Finalize session-aggregate metrics on session close.
+        """Finalize session-aggregate metrics + replay on session close.
 
-        Delegates to :meth:`SQLiteStorage.finalize_session_metrics` so
-        the v0.2.0 aggregate columns (``talk_time_seconds``,
-        ``per_minute_cost_usd``, ``response_speed_p50/p95_ms``,
-        ``talk_over_rate``) reflect the captured turn data by the time
-        the ``/v1/metrics`` endpoint reads the sessions row.
+        Composes two storage hooks:
 
-        The actual TurnTracker flush and DeadAirDetector cancellation
-        are owned by :func:`voicegateway.inference.attach_session` (T09);
-        this method is the cost-tracking side of the close hook
-        (Foundry item #7).
+        - :meth:`SQLiteStorage.finalize_session_metrics` (v0.2.0): the
+          aggregate columns (``talk_time_seconds``, ``per_minute_cost_usd``,
+          ``response_speed_p50/p95_ms``, ``talk_over_rate``) land on the
+          sessions row by the time ``/api/metrics`` reads it.
+        - :meth:`SQLiteStorage.finalize_session_replay` (v0.3.0): the
+          per-session ``replay_size_bytes`` aggregate lands on the
+          sessions row so the dashboard's storage-usage view is
+          accurate.
 
-        No-ops when storage is missing (tests sometimes pass
-        ``storage=None``) or the storage does not implement the
-        ``finalize_session_metrics`` contract (older versions before
-        T07's modification). Errors during finalization are logged but
-        do not propagate: dropping an aggregate row should not crash
-        the session-close path.
+        The actual TurnTracker flush, DeadAirDetector cancellation, and
+        ReplayCapture flush are owned by
+        :func:`voicegateway.inference.attach_session` (T09 of v0.2.0,
+        extended in T09 of v0.3.0); this method is the cost-tracking
+        side of the close hook.
+
+        Each finalize call is independently guarded:
+
+        - No-ops when storage is missing (tests sometimes pass
+          ``storage=None``) or the storage doesn't implement the
+          method (older storage versions). Older storages without
+          ``finalize_session_replay`` skip the replay aggregate
+          silently; metrics still finalize.
+        - Errors are logged at warning level but never propagate.
+          Dropping an aggregate row is observability loss, not a
+          correctness issue, and must not crash the session-close
+          path.
         """
         if self._storage is None:
             return
-        finalize = getattr(self._storage, "finalize_session_metrics", None)
-        if finalize is None:
+        # v0.2.0 metrics finalize.
+        metrics_finalize = getattr(self._storage, "finalize_session_metrics", None)
+        if metrics_finalize is None:
             logger.debug(
                 "CostTracker.close_session: storage has no "
                 "finalize_session_metrics; skipping",
             )
+        else:
+            try:
+                await metrics_finalize(session_id)
+            except Exception:
+                logger.warning(
+                    "Failed to finalize metrics for session %s",
+                    session_id,
+                    exc_info=True,
+                )
+        # v0.3.0 replay finalize.
+        replay_finalize = getattr(self._storage, "finalize_session_replay", None)
+        if replay_finalize is None:
+            logger.debug(
+                "CostTracker.close_session: storage has no "
+                "finalize_session_replay; skipping",
+            )
             return
         try:
-            await finalize(session_id)
+            await replay_finalize(session_id)
         except Exception:
             logger.warning(
-                "Failed to finalize metrics for session %s",
+                "Failed to finalize replay for session %s",
                 session_id,
                 exc_info=True,
             )

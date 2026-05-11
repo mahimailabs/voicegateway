@@ -6,6 +6,7 @@ import Costs from './pages/Costs';
 import Latency from './pages/Latency';
 import Logs from './pages/Logs';
 import Metrics from './pages/Metrics';
+import Replay from './pages/Replay';
 import Sessions from './pages/Sessions';
 import Projects from './pages/Projects';
 import Providers from './pages/Providers';
@@ -86,6 +87,7 @@ export default function App() {
             <Route path="/latency" element={<Latency />} />
             <Route path="/logs" element={<Logs />} />
             <Route path="/sessions" element={<Sessions />} />
+            <Route path="/sessions/:sessionId/replay" element={<Replay />} />
             <Route path="/metrics" element={<Metrics />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/providers" element={<Providers />} />
@@ -130,7 +132,7 @@ function Sidebar({
           <span className="neo-status-dot neo-status-dot--online" />
           {providerCount} Providers · {modelCount} Models
         </div>
-        <span className="version-pill">v0.2.0</span>
+        <span className="version-pill">v0.3.0</span>
         {hasToken && (
           <button
             type="button"

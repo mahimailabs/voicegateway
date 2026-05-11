@@ -12,21 +12,21 @@ from typing import Any
 
 import aiosqlite
 
-from voicegateway.storage import turns_repo
+from voicegateway.storage import replay_repo, turns_repo
 from voicegateway.storage._percentiles import compute_percentiles
 from voicegateway.storage.models import RequestRecord
 
 _DEFAULT_PERCENTILES: list[float] = [50.0, 95.0, 99.0]
 
-# Migration 0003's module name starts with a digit ("0003_..."), which is
-# the standard versioned-migration naming convention but not a valid
-# Python identifier — `from voicegateway.storage.migrations.0003_...`
-# parses as `0003` (numeric literal) and SyntaxErrors. `importlib.import_module`
-# accepts arbitrary dotted strings, so we load the module once at startup
+# Migration modules start with a digit prefix (the standard versioned-
+# migration naming convention) which is not a valid Python identifier
+# for `from ... import` syntax. `importlib.import_module` accepts
+# arbitrary dotted strings, so we load each migration once at startup
 # and call its `apply(db)` coroutine from `_ensure_initialized` below.
 _migration_0003 = import_module(
     "voicegateway.storage.migrations.0003_turns_and_deadair"
 )
+_migration_0004 = import_module("voicegateway.storage.migrations.0004_replay_tables")
 
 _logger = logging.getLogger(__name__)
 
@@ -257,6 +257,10 @@ class SQLiteStorage:
             # v0.2.0 migration 0003: turns + dead_air_events tables,
             # session-aggregate columns. Idempotent.
             await _migration_0003.apply(db)
+
+            # v0.3.0 migration 0004: replay event tables + sessions.replay_size_bytes.
+            # Idempotent.
+            await _migration_0004.apply(db)
 
             await db.commit()
             self._initialized = True
@@ -1112,6 +1116,38 @@ class SQLiteStorage:
                     talk_over_rate,
                     session_id,
                 ),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
+    async def finalize_session_replay(self, session_id: str) -> None:
+        """Compute ``replay_size_bytes`` for a session and upsert the row.
+
+        Called by the cost_tracker session-close hook (T09) after the
+        replay-capture buffer has flushed (T02's ReplayCapture flushes
+        in its own session-close path). Reads the per-modality
+        ``replay_*`` tables via
+        :func:`voicegateway.storage.replay_repo.aggregate_storage_per_session`
+        and writes the byte-length sum to the sessions row's
+        ``replay_size_bytes`` column.
+
+        NULL is preserved when the session captured no replay events
+        (pre-v0.3.0 sessions per REQ-VG-REPLAY-006, or projects with
+        ``replay.enabled = False`` per T07). The column is also NULL
+        when the session row is missing entirely.
+        """
+        db = await self._ensure_initialized()
+        try:
+            size_bytes = await replay_repo.aggregate_storage_per_session(db, session_id)
+            # Leave NULL for sessions that captured nothing — the
+            # dashboard reads NULL as "not measured" the same way it
+            # does for v0.2.0 aggregate columns.
+            if size_bytes <= 0:
+                return
+            await db.execute(
+                "UPDATE sessions SET replay_size_bytes = ? WHERE id = ?",
+                (size_bytes, session_id),
             )
             await db.commit()
         finally:

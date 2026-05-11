@@ -211,6 +211,49 @@ The helper subscribes to five `AgentSession` events: `user_started_speaking`, `u
 
 Components default to the process-level registry the Gateway populates on startup; pass explicit kwargs to override (the unit-test path).
 
+## Conversation replay capture (v0.3.0)
+
+VoiceGateway captures a per-event timeline for every voice conversation: each STT chunk, each LLM token, each TTS frame, plus periodic conversation-state snapshots. The dashboard's [Replay page](/) then scrubs through any past call moment-by-moment with cost accruing live. This happens automatically; users do not call any function to opt in.
+
+The capture path runs alongside the v0.2.0 metrics pipeline. The same `attach_session` helper covered above wires replay events into the [`ReplayCapture`](https://github.com/mahimailabs/voicegateway/blob/main/voicegateway/middleware/replay_capture.py) buffer on the standard worker pattern. Custom AgentSession subclasses use the same opt-in escape hatch.
+
+### Defaults and per-project knobs
+
+Replay capture defaults live under each project's `replay:` block in `voicegw.yaml`:
+
+```yaml
+projects:
+  acme:
+    name: Acme Corp
+    replay:
+      enabled: true             # capture for every session in this project
+      retention_days: 90        # age replay rows out after this window
+      buffer_size_events: 5000  # per-session in-memory cap before dropping oldest
+      flush_size_events: 500    # batched writes to storage every N events
+```
+
+All four fields are optional; omitting `replay:` accepts the Foundry-locked defaults shown above. The `enabled` toggle disables capture for the project (cost and metrics aggregates continue as before); the other three tune the storage/memory trade-off documented in [docs/storage/replay-storage-costs.md](/storage/replay-storage-costs).
+
+### Disabling capture
+
+For projects that should not record replay (sensitive content, regulatory constraint, storage cost concerns), set `enabled: false`:
+
+```yaml
+projects:
+  high-pii-project:
+    name: Sensitive Workflow
+    replay:
+      enabled: false
+```
+
+No replay events are captured for sessions in that project; the dashboard's Replay page renders the [pre-v0.3.0 banner](https://github.com/mahimailabs/voicegateway/blob/main/dashboard/frontend/src/components/replay/PreV030Banner.tsx) ("recorded before replay capture existed") with a link out to the per-modality session detail. Cost tracking, latency, and the v0.2.0 metrics view continue uninterrupted.
+
+### Retention worker
+
+The [`RetentionWorker`](https://github.com/mahimailabs/voicegateway/blob/main/voicegateway/storage/retention_worker.py) runs once an hour as a background asyncio task; it reads each project's `retention_days` and deletes replay rows tied to sessions whose `ended_at` is older than the window. Single-process for v0.3.0; multi-replica coordination is out of scope.
+
+The dashboard's `POST /api/projects/{id}/replay/retention` endpoint updates `retention_days` in memory for the current process. The change applies on the next worker tick. Persistence to `voicegw.yaml` on disk is a v0.3.x follow-up; restarting the gateway reverts to the file-defined value.
+
 ## Operations: where to go
 
 | You want to | Use this |

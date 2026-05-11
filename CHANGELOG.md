@@ -2,6 +2,44 @@
 
 All notable changes to VoiceGateway are documented here. This project follows [Semantic Versioning](https://semver.org/) and [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.3.0 -- 2026-05-11
+
+**Conversation replay and debugging.** The universal "this saved me hours" feature for voice-agent developers. Open any past conversation in the dashboard, scrub through it like a video timeline, and see every STT chunk, every LLM token, every TTS frame, plus the agent's conversation state at every moment — with cost accruing live as you scrub. Replay is captured by default for every session, full fidelity, with per-project `retention_days` (default 90) ageing rows out automatically.
+
+### Added
+
+- **`voicegateway.middleware.replay_capture.ReplayCapture`** (REQ-VG-REPLAY-003). Per-session asyncio buffer that captures STT chunks, LLM tokens, TTS frames, and conversation-state snapshots keyed by `session_id`. Bounded backpressure: at `buffer_size_events` (default 5000), the oldest event is dropped and a `dropped_count` increments — the dashboard surfaces this as "events dropped here" rather than silently misleading. Auto-flushes at `flush_size_events` (default 500) or on session close.
+- **`voicegateway.middleware.state_snapshotter.StateSnapshotter`** (REQ-VG-REPLAY-005). Pydantic `StateSnapshot` model serialized at LLM message-add, tool-call-invoke, and tool-call-resolve boundaries. Per-session rate cap of one snapshot per second guards against storage explosion on chatty agents; tool-resolve snapshots bypass the cap because the in-flight → done transition is structurally important.
+- **Migration 0004** introduces four replay tables (`replay_stt_events`, `replay_llm_tokens`, `replay_tts_frames`, `replay_state_snapshots`) sharing an `(id, session_id, t_ms, payload, provider, cost_usd, created_at)` shape with `(session_id, t_ms)` composite indexes, plus a `replay_size_bytes` nullable column on the existing `sessions` table. Idempotent. v0.2.0 sessions preserved with NULL on `replay_size_bytes` (REQ-VG-REPLAY-006 graceful-handling).
+- **`voicegateway.storage.replay_repo`** (REQ-VG-REPLAY-001, -006). Flat async function module: `bulk_write_events` partitions by modality and runs `executemany` per partition; `read_full_replay` UNION ALL's the four tables ordered by `t_ms`; `delete_replay` cascades a single transaction across all four tables; `aggregate_storage_per_session` sums `length(payload)` for the dashboard storage-usage view.
+- **`voicegateway.storage.retention_worker.RetentionWorker`** (REQ-VG-REPLAY-006). Hourly asyncio task; reads each project's `replay.retention_days` and deletes replay rows tied to sessions whose `ended_at` is older than the window. In-flight sessions (`ended_at IS NULL`) are explicitly excluded. Single-process for v0.3.0; multi-replica coordination is deferred.
+- **`SQLiteStorage.finalize_session_replay(session_id)`**. Composes `replay_repo.aggregate_storage_per_session` into a single UPDATE to write `replay_size_bytes` to the sessions row. Called by `CostTracker.close_session` alongside the existing v0.2.0 `finalize_session_metrics`; each call is independently guarded so a failure in one does not prevent the other.
+- **Four dashboard endpoints** in `dashboard/api/main.py`: `GET /api/sessions/{id}/replay` (full time-ordered event stream — OQ3 pre-fetch resolution), `DELETE /api/sessions/{id}/replay` (cascade), `GET /api/replay/storage` (per-project byte breakdown), `POST /api/projects/{id}/replay/retention` (in-memory retention update with body-validated `int [1, 365]`).
+- **`ReplayConfig` per-project YAML knobs**: `replay.enabled` (default true), `replay.retention_days` (default 90, `ge=1`), `replay.buffer_size_events` (default 5000), `replay.flush_size_events` (default 500). Mirrored across the Pydantic schema and the runtime dataclass.
+- **Dashboard `Replay` page** (`dashboard/frontend/src/pages/Replay.tsx`) reading `:sessionId` from the URL, pre-fetching the full replay on mount, and rendering a Scrubber + 2×2 pane grid + RunningCostCounter. Seven subcomponents: `Scrubber` (range input + ArrowLeft/Right step to prev/next event + Shift+Arrow for 1s jump + Home/End for call boundaries), `TranscriptPane` (STT with partial-revision opacity), `ModelOutputPane` (LLM with tool-invoke badges), `SynthesisPane` (TTS with red underrun frames), `ConversationStatePane` (system prompt + message history + tool-in-flight), `RunningCostCounter` (per-modality breakdown + top-3 costliest tooltip), `PreV030Banner` (pre-v0.3.0 session fallback with link to session detail).
+- **Sidebar nav route** at `/sessions/:sessionId/replay`. The Sessions page table now carries an "Open replay" column with a `<Link>` per row; clicking propagates straight to the Replay page without opening the session-detail modal.
+- **Typed fetchers** in `dashboard/frontend/src/lib/api.ts`: `fetchSessionReplay`, `deleteSessionReplay`, `fetchReplayStorage`, `updateReplayRetention`. Four new TS types in `lib/types.ts`: `ReplayEvent`, `ReplayResponse`, `StateSnapshot`, `RetentionWindow`.
+- **`voicegw replay <session-id>`** Typer command. Signpost-only for v0.3.0: prints the dashboard URL for the Replay page. Future scope can embed a Textual mini-replay using the v0.1.1 TUI primitives.
+- **41 new tests** across `tests/middleware/`, `tests/storage/`, `tests/server/`, and `tests/storage/test_replay_storage_smoke.py`. The smoke is the **Foundry Open Question 1 gate**: a synthetic 60-second conversation (40 STT chunks + 400 LLM tokens + 1200 TTS frames + 60 state snapshots) is captured end-to-end and the on-disk payload sum is asserted < 600 KB. Suite total: 1401 → 1442 (+41). Coverage: 88% (above the 80% Foundry gate).
+- **`docs/storage/replay-storage-costs.md`** with per-modality byte tables, the 130-580 KB/min realistic range, worked solo-dev (~$0.21/month S3 at 90-day retention) and agency (~$70/month) examples, and the three per-project tuning knobs.
+
+### Changed
+
+- **`docs/api/python-sdk.md`** grew a new top-level "Conversation replay capture (v0.3.0)" section between "Session correlation" and "Operations: where to go". Covers the defaults, the per-project YAML knobs, how to disable capture for sensitive projects, and the retention worker mechanism.
+
+### Decisions locked (Foundry Open Questions)
+
+- **OQ1 (storage cost target: 30-100 KB/min)** — RESOLVED AFFIRMATIVE. The OQ1 smoke test in `tests/storage/test_replay_storage_smoke.py` confirms the synthetic 60-second conversation lands well below 600 KB. Fallback path remains in place: `replay.enabled: false` per project disables capture without redeploying.
+- **OQ2 (state snapshot delta granularity)** — message-add boundary; max one per second. Tool-resolve bypasses the rate cap.
+- **OQ3 (dashboard pre-fetch vs streaming)** — pre-fetch full replay on page mount. Bounded by retention + per-minute capture, so the fetch is tractable.
+- **OQ4 (short-call capture)** — capture by default; storage cost trivial.
+- **OQ5 (TTS per-frame cost)** — distribute per-character cost across frames in time-weighted slices.
+
+### Migration
+
+- v0.2.0 callers need no code change. Migration 0004 runs automatically; v0.2.0 sessions are preserved with NULL on `replay_size_bytes` and surface as "recorded before replay capture existed" in the Replay page (linked back to the session detail page).
+- The `voicegateway/combined_server.py` re-export shim that was originally flagged for v0.2.0 removal **stays in place again**; the replay feature release should not bundle a back-compat break. Schedule remains tentatively v0.4.0.
+
 ## v0.2.0 -- 2026-05-11
 
 **Voice-conversation cost and quality metrics.** The four-number screenshot the wedge promises: per-minute-of-conversation cost (talk time as denominator, not wall clock), agent response speed p50/p95 (caller stops → agent first audible byte), talk-over rate (frame-level overlap of agent and caller speech), and dead-air event count (silences past a configurable threshold). All four metrics live together on one screen in the new dashboard **Metrics** page with shared filtering (project + 7-day default window). Pre-v0.2.0 sessions render as "not measured" rather than zero. The retention magnet for v0.0.5's adoption gate.
