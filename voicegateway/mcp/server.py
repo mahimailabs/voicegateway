@@ -54,7 +54,7 @@ def create_server(gateway: Gateway) -> Any:
 
     tool_registry: dict[str, Any] = {t.name: t for t in ALL_TOOLS}
 
-    @server.list_tools()  # type: ignore[misc,no-untyped-call]
+    @server.list_tools()
     async def list_tools() -> list[Tool]:
         return [
             Tool(
@@ -65,7 +65,7 @@ def create_server(gateway: Gateway) -> Any:
             for t in ALL_TOOLS
         ]
 
-    @server.call_tool()  # type: ignore[misc,no-untyped-call]
+    @server.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         tool_def = tool_registry.get(name)
         if tool_def is None:

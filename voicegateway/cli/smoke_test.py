@@ -318,9 +318,9 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
                 "request row written via wrapper",
             )
     finally:
-        _stt.create_provider = real_stt_create  # type: ignore[assignment]
-        _llm.create_provider = real_llm_create  # type: ignore[assignment]
-        _tts.create_provider = real_tts_create  # type: ignore[assignment]
+        _stt.create_provider = real_stt_create
+        _llm.create_provider = real_llm_create
+        _tts.create_provider = real_tts_create
 
     # Verify session row aggregation. The wrapper reads the
     # ContextVar at request time; in a sync CLI run all three

@@ -88,10 +88,10 @@ class _InstrumentedBase:
 
     def _forward_metrics(self, *args: Any, **kwargs: Any) -> None:
         # ``emit`` lives on the LK base class via rtc.EventEmitter.
-        self.emit("metrics_collected", *args, **kwargs)  # type: ignore[attr-defined]
+        self.emit("metrics_collected", *args, **kwargs)
 
     def _forward_error(self, *args: Any, **kwargs: Any) -> None:
-        self.emit("error", *args, **kwargs)  # type: ignore[attr-defined]
+        self.emit("error", *args, **kwargs)
 
     def _mark_first_byte(self) -> None:
         """Record the time of the first byte/token/audio frame."""
