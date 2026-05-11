@@ -1,8 +1,21 @@
 import { useEffect, useState } from 'react';
+import DeadAirList from '../components/DeadAirList';
 import PageHeader from '../components/PageHeader';
+import PerMinuteCostCard from '../components/PerMinuteCostCard';
+import ResponseSpeedChart from '../components/ResponseSpeedChart';
 import StalenessBanner from '../components/StalenessBanner';
+import TalkOverChart from '../components/TalkOverChart';
 import { fetchJson } from '../lib/api';
 import type { MetricsAggregate } from '../lib/types';
+
+// Defaults sourced from MetricsConfig (REQ-VG-METRICS in voicegw.yaml).
+// The Metrics page does not yet fetch per-project config so the tooltips
+// on TalkOverChart and DeadAirList read against the Foundry-locked
+// defaults. T17 may wire a /api/config/metrics endpoint if per-project
+// values need to surface; for v0.2.0 the locked defaults match what the
+// runtime captures.
+const DEFAULT_TALK_OVER_OVERLAP_MS = 100;
+const DEFAULT_DEAD_AIR_THRESHOLD_SECONDS = 3.0;
 
 // v0.2.0 voice-conversation metrics page (REQ-VG-METRICS-005).
 //
@@ -92,43 +105,22 @@ export default function Metrics() {
 
       {data && (
         <div className="grid grid-cols-2 gap-lg">
-          {/* T14 ships the four metric components into these slots. */}
-          <div className="neo-card neo-card--strip-green">
-            <div className="label">Per-minute cost</div>
-            <div className="stat-value stat-value--xl mt-md">
-              {data.per_minute_cost_usd_avg !== null
-                ? `$${data.per_minute_cost_usd_avg.toFixed(4)}`
-                : <span className="empty-state-inline">not measured</span>}
-            </div>
-          </div>
-          <div className="neo-card neo-card--strip-blue">
-            <div className="label">Response speed (p50 / p95)</div>
-            <div className="stat-value stat-value--xl mt-md">
-              {data.response_speed_ms.p50 !== null
-                ? `${Math.round(data.response_speed_ms.p50)}ms`
-                : <span className="empty-state-inline">not measured</span>}
-              <span className="mono ml-sm" style={{ fontSize: 14 }}>
-                /{' '}
-                {data.response_speed_ms.p95 !== null
-                  ? `${Math.round(data.response_speed_ms.p95)}ms`
-                  : '—'}
-              </span>
-            </div>
-          </div>
-          <div className="neo-card neo-card--strip-orange">
-            <div className="label">Talk-over rate</div>
-            <div className="stat-value stat-value--xl mt-md">
-              {data.talk_over_rate !== null
-                ? `${(data.talk_over_rate * 100).toFixed(1)}%`
-                : <span className="empty-state-inline">not measured</span>}
-            </div>
-          </div>
-          <div className="neo-card neo-card--strip-red">
-            <div className="label">Dead-air events</div>
-            <div className="stat-value stat-value--xl mt-md">
-              {data.dead_air_event_count}
-            </div>
-          </div>
+          <PerMinuteCostCard
+            value={data.per_minute_cost_usd_avg}
+            measuredSessionCount={data.measured_session_count}
+          />
+          <ResponseSpeedChart
+            p50={data.response_speed_ms.p50}
+            p95={data.response_speed_ms.p95}
+          />
+          <TalkOverChart
+            rate={data.talk_over_rate}
+            thresholdMs={DEFAULT_TALK_OVER_OVERLAP_MS}
+          />
+          <DeadAirList
+            count={data.dead_air_event_count}
+            thresholdSeconds={DEFAULT_DEAD_AIR_THRESHOLD_SECONDS}
+          />
         </div>
       )}
     </div>
