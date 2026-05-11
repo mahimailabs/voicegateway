@@ -176,3 +176,42 @@ class CostTracker:
             )
         except Exception:
             logger.warning("Failed to update budget cache", exc_info=True)
+
+    async def close_session(self, session_id: str) -> None:
+        """Finalize session-aggregate metrics on session close.
+
+        Delegates to :meth:`SQLiteStorage.finalize_session_metrics` so
+        the v0.2.0 aggregate columns (``talk_time_seconds``,
+        ``per_minute_cost_usd``, ``response_speed_p50/p95_ms``,
+        ``talk_over_rate``) reflect the captured turn data by the time
+        the ``/v1/metrics`` endpoint reads the sessions row.
+
+        The actual TurnTracker flush and DeadAirDetector cancellation
+        are owned by :func:`voicegateway.inference.attach_session` (T09);
+        this method is the cost-tracking side of the close hook
+        (Foundry item #7).
+
+        No-ops when storage is missing (tests sometimes pass
+        ``storage=None``) or the storage does not implement the
+        ``finalize_session_metrics`` contract (older versions before
+        T07's modification). Errors during finalization are logged but
+        do not propagate: dropping an aggregate row should not crash
+        the session-close path.
+        """
+        if self._storage is None:
+            return
+        finalize = getattr(self._storage, "finalize_session_metrics", None)
+        if finalize is None:
+            logger.debug(
+                "CostTracker.close_session: storage has no "
+                "finalize_session_metrics; skipping",
+            )
+            return
+        try:
+            await finalize(session_id)
+        except Exception:
+            logger.warning(
+                "Failed to finalize metrics for session %s",
+                session_id,
+                exc_info=True,
+            )
