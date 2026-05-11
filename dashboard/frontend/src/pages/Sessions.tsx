@@ -6,6 +6,7 @@
 // JOIN on requests at read time.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import StalenessBanner from '../components/StalenessBanner';
 import { fetchJson } from '../lib/api';
@@ -140,6 +141,7 @@ export default function Sessions() {
               <th>Modalities</th>
               <th>Requests</th>
               <th style={{ textAlign: 'right' }}>Cost</th>
+              <th style={{ width: 110 }}>Replay</th>
             </tr>
           </thead>
           <tbody>
@@ -173,6 +175,15 @@ export default function Sessions() {
                 </td>
                 <td className="mono" style={{ textAlign: 'right' }}>
                   {formatCost(row.total_cost_usd, 6)}
+                </td>
+                <td onClick={(e) => e.stopPropagation()}>
+                  <Link
+                    to={`/sessions/${encodeURIComponent(row.id)}/replay`}
+                    className="neo-btn neo-btn--small"
+                    aria-label={`Open replay for session ${row.id}`}
+                  >
+                    Open replay
+                  </Link>
                 </td>
               </tr>
             ))}
