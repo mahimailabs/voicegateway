@@ -1,11 +1,16 @@
 // Q7 visual: warns when STT or TTS catalog dates have crossed a
-// 30-day staleness threshold. Surfaces on Costs, Overview, and
-// Sessions pages — the three views where the user reads dollars.
-// Hidden elsewhere to keep ambient noise low.
+// 30-day staleness threshold. Surfaces on Costs, Overview, Sessions,
+// and (v0.2.0) Metrics pages — every view where the user reads
+// dollars or cost-derived numbers. Hidden elsewhere to keep ambient
+// noise low.
 //
 // The 60-day fail line is enforced by tests/pricing/test_staleness.py
 // in CI; this banner gives operators a 30-day heads-up before that
 // gate fires.
+//
+// Placement is per-page: each page imports and renders the banner
+// near the top of its layout. The banner itself returns null when no
+// catalog is stale, so adding a new page is just an import + render.
 
 import { useEffect, useState } from 'react';
 import { fetchJson } from '../lib/api';
