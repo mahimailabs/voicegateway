@@ -397,14 +397,16 @@ class SQLiteStorage:
         same connection / commit for atomicity.
         """
         db = await self._ensure_initialized()
+        request_tenant_id = current_tenant()
         try:
             await db.execute(
                 """INSERT INTO requests
                    (id, timestamp, project, modality, model_id, provider,
                     input_units, output_units, cost_usd, pricing_source,
                     ttfb_ms, total_latency_ms, status,
-                    fallback_from, error_message, metadata, session_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    fallback_from, error_message, metadata, session_id,
+                    tenant_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     record.id,
                     record.timestamp,
@@ -423,6 +425,7 @@ class SQLiteStorage:
                     record.error_message,
                     json.dumps(record.metadata) if record.metadata else None,
                     record.session_id,
+                    request_tenant_id,
                 ),
             )
             if record.session_id:
@@ -443,16 +446,17 @@ class SQLiteStorage:
                 # earlier may finish after a faster LLM call. The MIN
                 # CASE keeps started_at at the earliest request_started
                 # timestamp regardless of completion order.
-                # ``current_tenant()`` reads the v0.4.0 tenant_id_ctx
-                # ContextVar (REQ-VG-TENANT-001). On INSERT the value
-                # stamps the session row; on CONFLICT we COALESCE so
-                # an already-set tenant_id never gets overwritten by a
-                # later request that arrived without a tenant in
-                # scope. This is the "session has one tenant for its
-                # lifetime" rule from the Refinery: the first
-                # tenant-bearing request wins, subsequent
-                # unattributed-bucket requests don't clear it.
-                session_tenant_id = current_tenant()
+                # ``request_tenant_id`` (read once at the top from the
+                # v0.4.0 tenant_id_ctx ContextVar, REQ-VG-TENANT-001) is
+                # reused for both the requests row and the sessions
+                # UPSERT. On INSERT it stamps the session row; on
+                # CONFLICT we COALESCE so an already-set tenant_id
+                # never gets overwritten by a later request that
+                # arrived without a tenant in scope. This is the
+                # "session has one tenant for its lifetime" rule from
+                # the Refinery: the first tenant-bearing request wins,
+                # subsequent unattributed-bucket requests don't clear
+                # it.
                 await db.execute(
                     """INSERT INTO sessions
                        (id, project, started_at, ended_at, modalities,
@@ -487,7 +491,7 @@ class SQLiteStorage:
                         started_at_iso,
                         record.modality,
                         record.cost_usd,
-                        session_tenant_id,
+                        request_tenant_id,
                     ),
                 )
             await db.commit()
