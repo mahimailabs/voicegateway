@@ -88,6 +88,8 @@ async function extractErrorDetail(res: Response): Promise<string | null> {
 import type {
   DeadAirEvent,
   MetricsAggregate,
+  ReplayResponse,
+  RetentionWindow,
   TurnRow,
 } from './types';
 
@@ -113,4 +115,47 @@ export function fetchSessionDeadAir(
   sessionId: string,
 ): Promise<{ session_id: string; events: DeadAirEvent[] }> {
   return fetchJson(`/api/sessions/${encodeURIComponent(sessionId)}/dead_air`);
+}
+
+// ----------------------------------------------------------------------
+// v0.3.0 conversation-replay typed fetchers (REQ-VG-REPLAY-001..006).
+// Same wrap-fetchJson pattern as the v0.2.0 metrics fetchers above.
+// ----------------------------------------------------------------------
+
+export function fetchSessionReplay(
+  sessionId: string,
+): Promise<ReplayResponse> {
+  return fetchJson<ReplayResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/replay`,
+  );
+}
+
+export function deleteSessionReplay(
+  sessionId: string,
+): Promise<{ session_id: string; deleted_rows: number }> {
+  return fetchJson(
+    `/api/sessions/${encodeURIComponent(sessionId)}/replay`,
+    { method: 'DELETE' },
+  );
+}
+
+export function fetchReplayStorage(): Promise<{
+  total_replay_size_bytes: number;
+  by_project: Array<{ project: string; replay_size_bytes: number }>;
+}> {
+  return fetchJson('/api/replay/storage');
+}
+
+export function updateReplayRetention(
+  projectId: string,
+  retentionDays: number,
+): Promise<RetentionWindow> {
+  return fetchJson<RetentionWindow>(
+    `/api/projects/${encodeURIComponent(projectId)}/replay/retention`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ retention_days: retentionDays }),
+    },
+  );
 }
