@@ -20,7 +20,13 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import aiosqlite
+
     from voicegateway.core.config import AuthConfig
+    from voicegateway.storage.virtual_keys_repo import VerifiedKey
+
+
+_VIRTUAL_KEY_PREFIX = "vk_"
 
 logger = logging.getLogger(__name__)
 
@@ -89,9 +95,7 @@ def load_api_keys(auth_config: AuthConfig | None) -> list[ApiKey]:
     if not keys:
         env_token = os.environ.get(_ENV_KEY, "").strip()
         if env_token:
-            keys.append(
-                ApiKey(token=env_token, name="env", scopes=(_WILDCARD_SCOPE,))
-            )
+            keys.append(ApiKey(token=env_token, name="env", scopes=(_WILDCARD_SCOPE,)))
 
     return keys
 
@@ -181,12 +185,91 @@ def describe_auth(keys: list[ApiKey]) -> str:
     return f"auth: enabled ({len(keys)} key(s) configured)"
 
 
+def is_virtual_key_token(authorization: str | None) -> bool:
+    """Return True if the bearer token uses the ``vk_`` prefix (REQ-VG-TENANT-004).
+
+    Detection is by prefix only; the actual hash check happens in
+    :func:`verify_virtual_key`. This helper exists so the auth middleware
+    can short-circuit the static-key path without paying the bcrypt
+    cost when a static token is presented.
+    """
+    token = _extract_bearer(authorization)
+    return token is not None and token.startswith(_VIRTUAL_KEY_PREFIX)
+
+
+async def verify_virtual_key(
+    authorization: str | None, db: aiosqlite.Connection
+) -> VerifiedKey:
+    """Validate a ``Bearer vk_…`` header against ``virtual_keys``.
+
+    Returns the :class:`VerifiedKey` on success. Raises
+    :class:`AuthError` with status 401 on any failure (missing header,
+    wrong scheme, missing/wrong prefix, revoked, hash miss). Revocation
+    is filtered inside ``virtual_keys_repo.verify`` per OQ5, so this
+    helper does not need a separate check.
+
+    The caller is responsible for bumping ``last_used_at`` via
+    :func:`voicegateway.storage.virtual_keys_repo.mark_used` once it has
+    decided the request is otherwise acceptable; this function stays
+    side-effect-free so middleware can rate-limit failures without
+    accidentally bumping the timestamp.
+    """
+    from voicegateway.storage import virtual_keys_repo
+
+    token = _extract_bearer(authorization)
+    if token is None:
+        raise AuthError("Missing bearer token", status_code=401)
+    if not token.startswith(_VIRTUAL_KEY_PREFIX):
+        # Caller should have routed to ``check_request`` for static keys.
+        raise AuthError("Invalid virtual key", status_code=401)
+    verified = await virtual_keys_repo.verify(db, token)
+    if verified is None:
+        raise AuthError("Invalid virtual key", status_code=401)
+    return verified
+
+
+def check_tenant_body_conflict(
+    *, key_tenant_id: str | None, body_tenant_id: str | None
+) -> None:
+    """Reject when the body's tenant_id contradicts the key's scope.
+
+    Rules (REQ-VG-TENANT-004 AC):
+
+    - Key has no scope (``key_tenant_id is None``): any body
+      tenant_id is allowed. Used for unscoped virtual keys and for
+      static keys.
+    - Key scoped + body absent: allow (the key sets the tenant).
+    - Key scoped + body present + matches: allow (redundant but
+      legal).
+    - Key scoped + body present + differs: 403 with a structured
+      reason.
+
+    Raises :class:`AuthError(403)` on conflict; returns ``None`` on
+    pass.
+    """
+    if key_tenant_id is None or body_tenant_id is None:
+        return
+    if key_tenant_id == body_tenant_id:
+        return
+    raise AuthError(
+        (
+            "Virtual key is scoped to tenant "
+            f"{key_tenant_id!r} but request body declared tenant "
+            f"{body_tenant_id!r}"
+        ),
+        status_code=403,
+    )
+
+
 # Re-export so callers don't need to import __all__ separately.
 __all__ = [
     "ApiKey",
     "AuthError",
     "check_request",
+    "check_tenant_body_conflict",
     "describe_auth",
+    "is_virtual_key_token",
     "load_api_keys",
     "resolve_cors_origins",
+    "verify_virtual_key",
 ]
