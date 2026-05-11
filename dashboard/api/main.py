@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -12,6 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from voicegateway.core.auth import load_api_keys, resolve_cors_origins
+from voicegateway.storage import dead_air_repo, turns_repo
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -26,7 +29,7 @@ _LOCAL_PROVIDER_NAMES = frozenset({"ollama", "whisper", "kokoro", "piper"})
 
 app = FastAPI(
     title="VoiceGateway Dashboard",
-    version="0.1.2",
+    version="0.2.0",
 )
 
 # Set by the CLI / combined server when starting the dashboard.
@@ -278,6 +281,164 @@ async def get_session_detail(session_id: str) -> dict[str, Any]:
     if row is None:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
     return row
+
+
+# ----------------------------------------------------------------------
+# v0.2.0 voice-conversation metrics (REQ-VG-METRICS-001..006)
+#
+# Three handlers. The Foundry spelled the paths as `/v1/metrics` etc., but
+# the dashboard's convention is `/api/*` (see `/api/sessions/{id}` above,
+# which docs itself as the dashboard mirror of the main server's
+# `/v1/sessions/{id}`). Keeping the metrics paths under `/api/*` matches
+# the FE expectation; the main server may publish a parallel `/v1/metrics`
+# in a later iteration if SDK consumers need it.
+# ----------------------------------------------------------------------
+
+
+@app.get("/api/metrics")
+async def get_metrics_summary(
+    project: str | None = Query(None),
+    days: int = Query(7, ge=1, le=365),
+) -> dict[str, Any]:
+    """Aggregated voice-conversation metrics for the filter window.
+
+    Filter:
+
+    - ``project``: optional project name.
+    - ``days``: trailing window from now (default 7, matches the Costs
+      page default and Foundry Open Question 5's locked value).
+
+    Aggregation is over the ``sessions`` rows in the window that carry
+    measured v0.2.0 columns (REQ-VG-METRICS-006 graceful handling):
+    pre-v0.2.0 sessions with NULL aggregates are counted in
+    ``session_count`` but excluded from each metric average.
+
+    The dead-air event count is filtered by session id (the events
+    table's ``started_at_ms`` is monotonic-clock and cannot be
+    correlated to wall-clock windows without a join through sessions).
+    """
+    gw = _get_gateway()
+    if gw.storage is None:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+
+    until = datetime.now(UTC)
+    since = until - timedelta(days=days)
+    since_iso = since.isoformat()
+    until_iso = until.isoformat()
+
+    db = await gw.storage._ensure_initialized()
+    try:
+        where_clauses = ["started_at >= ?", "started_at < ?"]
+        params: list[Any] = [since_iso, until_iso]
+        if project:
+            where_clauses.append("project = ?")
+            params.append(project)
+        where = " AND ".join(where_clauses)
+        cursor = await db.execute(
+            f"""SELECT id,
+                       talk_time_seconds,
+                       per_minute_cost_usd,
+                       response_speed_p50_ms,
+                       response_speed_p95_ms,
+                       talk_over_rate
+                  FROM sessions
+                 WHERE {where}""",
+            tuple(params),
+        )
+        rows = await cursor.fetchall()
+
+        session_count = len(rows)
+        measured_count = sum(1 for r in rows if r[2] is not None)
+
+        def _avg_col(idx: int) -> float | None:
+            vals = [r[idx] for r in rows if r[idx] is not None]
+            if not vals:
+                return None
+            return sum(vals) / len(vals)
+
+        per_minute_cost_avg = _avg_col(2)
+        response_speed_p50_avg = _avg_col(3)
+        response_speed_p95_avg = _avg_col(4)
+        talk_over_rate_avg = _avg_col(5)
+
+        # Dead-air count joined through session_id.
+        session_ids = [r[0] for r in rows]
+        if session_ids:
+            placeholders = ",".join("?" for _ in session_ids)
+            da_cursor = await db.execute(
+                f"SELECT COUNT(*) FROM dead_air_events "
+                f"WHERE session_id IN ({placeholders})",
+                tuple(session_ids),
+            )
+            da_row = await da_cursor.fetchone()
+            dead_air_count = int(da_row[0]) if da_row else 0
+        else:
+            dead_air_count = 0
+
+        return {
+            "window": {
+                "days": days,
+                "since": since_iso,
+                "until": until_iso,
+            },
+            "filter": {"project": project},
+            "session_count": session_count,
+            "measured_session_count": measured_count,
+            "per_minute_cost_usd_avg": per_minute_cost_avg,
+            "response_speed_ms": {
+                "p50": response_speed_p50_avg,
+                "p95": response_speed_p95_avg,
+            },
+            "talk_over_rate": talk_over_rate_avg,
+            "dead_air_event_count": dead_air_count,
+        }
+    finally:
+        await db.close()
+
+
+@app.get("/api/sessions/{session_id}/turns")
+async def get_session_turns(session_id: str) -> dict[str, Any]:
+    """Return ordered per-turn rows for a session (REQ-VG-METRICS-002).
+
+    Used by the Metrics page's session-drill-down (T13). The shape
+    mirrors the ``TurnRow`` dataclass; ``agent_speak_*`` and
+    ``response_speed_ms`` are null when the agent never spoke for that
+    turn (T02 contract).
+    """
+    gw = _get_gateway()
+    if gw.storage is None:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    db = await gw.storage._ensure_initialized()
+    try:
+        turns = await turns_repo.list_turns_by_session(db, session_id)
+        return {
+            "session_id": session_id,
+            "turns": [dataclasses.asdict(t) for t in turns],
+        }
+    finally:
+        await db.close()
+
+
+@app.get("/api/sessions/{session_id}/dead_air")
+async def get_session_dead_air(session_id: str) -> dict[str, Any]:
+    """Return dead-air events for a session (REQ-VG-METRICS-004).
+
+    Used by the Metrics page's DeadAirList drill-down (T14). Events
+    are ordered by ``started_at_ms`` ASC, matching the chronological
+    rendering the FE expects.
+    """
+    gw = _get_gateway()
+    if gw.storage is None:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    db = await gw.storage._ensure_initialized()
+    try:
+        events = await dead_air_repo.list_events_by_session(db, session_id)
+        return {
+            "session_id": session_id,
+            "events": [dataclasses.asdict(e) for e in events],
+        }
+    finally:
+        await db.close()
 
 
 @app.get("/api/providers/by-project")

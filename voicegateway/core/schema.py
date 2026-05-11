@@ -40,6 +40,20 @@ class StackConfig(_StrictBase):
     tts: str | None = None
 
 
+class MetricsConfig(_StrictBase):
+    """v0.2.0 voice-conversation metrics knobs (REQ-VG-METRICS-001..006).
+
+    All fields are per-project overridable via the ``metrics:`` block
+    under each project entry in ``voicegw.yaml``. Defaults match the
+    Foundry's stated values (Open Questions 2 and 3 locked at the v0.2.0
+    BUILD/T01 step).
+    """
+
+    dead_air_threshold_seconds: float = Field(default=3.0, gt=0)
+    talk_over_min_overlap_ms: int = Field(default=100, gt=0)
+    turn_buffer_flush_size: int = Field(default=25, gt=0)
+
+
 class ProjectConfig(_StrictBase):
     name: str
     description: str = ""
@@ -50,6 +64,10 @@ class ProjectConfig(_StrictBase):
     # v0.0.5: per-project provider keys override the top-level
     # `providers:` block when set. See design.md section 3.3.
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
+    # v0.2.0: per-project metrics knobs. The defaults match
+    # MetricsConfig's own defaults so projects that do not set
+    # ``metrics:`` get the canonical Foundry values.
+    metrics: MetricsConfig = Field(default_factory=MetricsConfig)
 
 
 class ObservabilityConfig(_StrictBase):

@@ -50,6 +50,22 @@ def _substitute_env_vars(value: Any) -> Any:
 
 
 @dataclass
+class MetricsConfig:
+    """v0.2.0 voice-conversation metrics knobs.
+
+    Defaults match the Foundry-locked values (Open Questions 2 and 3).
+    Per-project overridable via the ``metrics:`` block in
+    ``voicegw.yaml``. ``MetricsConfig()`` with no args produces the
+    canonical configuration that REQ-VG-METRICS-002, -003, -004 wire
+    against.
+    """
+
+    dead_air_threshold_seconds: float = 3.0
+    talk_over_min_overlap_ms: int = 100
+    turn_buffer_flush_size: int = 25
+
+
+@dataclass
 class ProjectConfig:
     """Configuration for a single project."""
 
@@ -66,6 +82,8 @@ class ProjectConfig:
     # ``providers:`` block for inference factory calls inside this
     # project's context. See design.md section 3.3.
     providers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # v0.2.0: per-project metric capture knobs (REQ-VG-METRICS-001..006).
+    metrics: MetricsConfig = field(default_factory=MetricsConfig)
 
     @property
     def accent(self) -> str:
@@ -223,6 +241,18 @@ class GatewayConfig:
                     for prov_name, prov_cfg in project_providers_raw.items():
                         if isinstance(prov_cfg, dict):
                             project_providers[prov_name] = dict(prov_cfg)
+                metrics_raw = pcfg.get("metrics") or {}
+                metrics_cfg = MetricsConfig(
+                    dead_air_threshold_seconds=float(
+                        metrics_raw.get("dead_air_threshold_seconds", 3.0)
+                    ),
+                    talk_over_min_overlap_ms=int(
+                        metrics_raw.get("talk_over_min_overlap_ms", 100)
+                    ),
+                    turn_buffer_flush_size=int(
+                        metrics_raw.get("turn_buffer_flush_size", 25)
+                    ),
+                )
                 projects[pid] = ProjectConfig(
                     id=pid,
                     name=str(pcfg.get("name") or pid),
@@ -232,6 +262,7 @@ class GatewayConfig:
                     budget_action=str(pcfg.get("budget_action") or "warn"),
                     tags=list(pcfg.get("tags") or []),
                     providers=project_providers,
+                    metrics=metrics_cfg,
                 )
 
         auth_raw = raw.get("auth", {}) or {}

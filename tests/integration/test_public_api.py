@@ -46,14 +46,15 @@ def _walk_subpackages() -> list[ModuleType]:
 _SUBPACKAGES = _walk_subpackages()
 
 
-# Sanity floor: the audit in T13 found 18 ``__init__.py`` files under
-# ``voicegateway/``. The walker should find the same set (root + 17
-# subpackages). If this count drifts unexpectedly, that is a hint a new
-# subpackage landed without being thought through.
+# Sanity floor: the audit in v0.1.2's T13 found 18 ``__init__.py`` files
+# under ``voicegateway/``. v0.2.0's T04 added one
+# (``voicegateway/storage/migrations/``), so the post-v0.2.0-T04 count is
+# 19 (root + 18 nested). If this count drifts unexpectedly, that is a
+# hint a new subpackage landed without being thought through.
 def test_walker_finds_expected_number_of_subpackages() -> None:
-    """Subpackage count is stable across the v0.1.2 layout."""
-    assert len(_SUBPACKAGES) == 18, (
-        f"Expected 18 subpackages (root + 17 nested), got "
+    """Subpackage count is stable post-v0.2.0-T04."""
+    assert len(_SUBPACKAGES) == 19, (
+        f"Expected 19 subpackages (root + 18 nested), got "
         f"{len(_SUBPACKAGES)}: "
         f"{sorted(p.__name__ for p in _SUBPACKAGES)}"
     )

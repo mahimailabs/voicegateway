@@ -6,15 +6,27 @@ import datetime as _dt
 import json
 import logging
 import time
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
 import aiosqlite
 
+from voicegateway.storage import turns_repo
 from voicegateway.storage._percentiles import compute_percentiles
 from voicegateway.storage.models import RequestRecord
 
 _DEFAULT_PERCENTILES: list[float] = [50.0, 95.0, 99.0]
+
+# Migration 0003's module name starts with a digit ("0003_..."), which is
+# the standard versioned-migration naming convention but not a valid
+# Python identifier — `from voicegateway.storage.migrations.0003_...`
+# parses as `0003` (numeric literal) and SyntaxErrors. `importlib.import_module`
+# accepts arbitrary dotted strings, so we load the module once at startup
+# and call its `apply(db)` coroutine from `_ensure_initialized` below.
+_migration_0003 = import_module(
+    "voicegateway.storage.migrations.0003_turns_and_deadair"
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -241,6 +253,10 @@ class SQLiteStorage:
 
             # Migrate plaintext API keys to encrypted
             await self._migrate_plaintext_keys(db)
+
+            # v0.2.0 migration 0003: turns + dead_air_events tables,
+            # session-aggregate columns. Idempotent.
+            await _migration_0003.apply(db)
 
             await db.commit()
             self._initialized = True
@@ -1013,6 +1029,91 @@ class SQLiteStorage:
             )
             session["providers"] = [prov_row[0] async for prov_row in prov_cursor]
             return session
+        finally:
+            await db.close()
+
+    async def finalize_session_metrics(self, session_id: str) -> None:
+        """Recompute and upsert the v0.2.0 aggregate columns on a session row.
+
+        Called by the cost_tracker session-close hook (T08) once the
+        TurnTracker and DeadAirDetector have flushed their captures.
+        Reads from the ``turns`` and ``dead_air_events`` tables and
+        writes five aggregate columns to the ``sessions`` row:
+
+        - ``talk_time_seconds`` -- sum of caller and agent speech
+          durations across all turns, in seconds.
+        - ``per_minute_cost_usd`` -- ``total_cost_usd /
+          (talk_time_seconds / 60)``. NULL when talk_time is zero.
+        - ``response_speed_p50_ms``, ``response_speed_p95_ms`` -- from
+          :func:`voicegateway.storage.turns_repo.aggregate_response_speed`.
+          (p99 is computed but not stored on the sessions row per Foundry.)
+        - ``talk_over_rate`` -- ``overlap_count / total_turns``. NULL
+          when total_turns is zero.
+
+        Pre-v0.2.0 sessions that recorded no turns keep NULL on every
+        new column (REQ-VG-METRICS-006). A session that recorded turns
+        but ended with zero cost still gets ``per_minute_cost_usd =
+        0.0``, not NULL — the metric is defined when talk_time > 0.
+
+        Implements REQ-VG-METRICS-001 (per-minute cost) and feeds
+        REQ-VG-METRICS-002, -003, -004, -006 via the same row.
+        """
+        db = await self._ensure_initialized()
+        try:
+            turns = await turns_repo.list_turns_by_session(db, session_id)
+            if not turns:
+                # No turn data → leave aggregates NULL (REQ-006 contract).
+                return
+
+            talk_time_ms = 0
+            for t in turns:
+                talk_time_ms += t.caller_speak_end_ms - t.caller_speak_start_ms
+                if (
+                    t.agent_speak_start_ms is not None
+                    and t.agent_speak_end_ms is not None
+                ):
+                    talk_time_ms += t.agent_speak_end_ms - t.agent_speak_start_ms
+            talk_time_seconds = talk_time_ms / 1000.0
+
+            cost_cursor = await db.execute(
+                "SELECT total_cost_usd FROM sessions WHERE id = ?",
+                (session_id,),
+            )
+            cost_row = await cost_cursor.fetchone()
+            total_cost = (
+                float(cost_row[0])
+                if cost_row is not None and cost_row[0] is not None
+                else 0.0
+            )
+            per_minute_cost = (
+                total_cost / (talk_time_seconds / 60.0)
+                if talk_time_seconds > 0
+                else None
+            )
+
+            pcts = await turns_repo.aggregate_response_speed(db, session_id)
+            overlap_count = await turns_repo.count_overlap_turns(db, session_id)
+            total_turns = len(turns)
+            talk_over_rate = overlap_count / total_turns if total_turns > 0 else None
+
+            await db.execute(
+                """UPDATE sessions
+                      SET talk_time_seconds = ?,
+                          per_minute_cost_usd = ?,
+                          response_speed_p50_ms = ?,
+                          response_speed_p95_ms = ?,
+                          talk_over_rate = ?
+                    WHERE id = ?""",
+                (
+                    talk_time_seconds,
+                    per_minute_cost,
+                    pcts["p50_ms"],
+                    pcts["p95_ms"],
+                    talk_over_rate,
+                    session_id,
+                ),
+            )
+            await db.commit()
         finally:
             await db.close()
 

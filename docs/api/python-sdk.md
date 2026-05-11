@@ -172,6 +172,45 @@ async def handle_conversation():
 
 The known gap: factories constructed in separate `asyncio.Task` instances created **before** the session opens get their own ids. Construct factories at session entry, not at module import time. See the [from-livekit-inference migration guide](/migration/from-livekit-inference#limitations) for details.
 
+### `inference.attach_session` (v0.2.0, opt-in)
+
+```python
+inference.attach_session(
+    agent_session,
+    *,
+    session_id: str | None = None,
+    turn_tracker: TurnTracker | None = None,
+    dead_air_detector: DeadAirDetector | None = None,
+    cost_tracker: CostTracker | None = None,
+) -> str
+```
+
+Opt-in escape hatch that wires a LiveKit `AgentSession` into the v0.2.0 voice-conversation metrics pipeline: per-turn response speed (REQ-VG-METRICS-002), talk-over rate (REQ-VG-METRICS-003), and dead-air detection (REQ-VG-METRICS-004).
+
+In the standard `livekit-agents` worker pattern, the metric capture happens automatically through plugin-level hooks on `InstrumentedSTT`/`InstrumentedTTS`. `attach_session` exists for the cases where those hooks miss events: custom AgentSession subclasses, in-process agent harnesses, or test rigs. When in doubt, you don't need to call it.
+
+Returns the bound `session_id` so the caller can echo it into its own logs.
+
+```python
+from livekit.agents import AgentSession
+from voicegateway import inference
+
+async def handle_call():
+    agent_session = AgentSession(...)  # your usual construction
+
+    # Opt into explicit metric wiring.
+    sid = inference.attach_session(agent_session)
+
+    await agent_session.start(...)
+    # Per-turn captures flow into the TurnTracker; the AgentSession's
+    # `close` event flushes them, stops the dead-air watcher, and
+    # calls cost-tracker's session-finalization hook.
+```
+
+The helper subscribes to five `AgentSession` events: `user_started_speaking`, `user_stopped_speaking`, `agent_started_speaking`, `agent_stopped_speaking`, `close`. The first four feed the `TurnTracker`; `close` flushes the tracker, stops the `DeadAirDetector`, and calls `CostTracker.close_session(sid)` so the v0.2.0 aggregate columns (`talk_time_seconds`, `per_minute_cost_usd`, `response_speed_p50/p95_ms`, `talk_over_rate`) land on the `sessions` row by the time the dashboard's `/api/metrics` endpoint reads it.
+
+Components default to the process-level registry the Gateway populates on startup; pass explicit kwargs to override (the unit-test path).
+
 ## Operations: where to go
 
 | You want to | Use this |

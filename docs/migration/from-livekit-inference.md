@@ -138,6 +138,42 @@ voicegw dashboard
 
 Opens at `http://localhost:9090`. The new **Providers** page (v0.0.5) lists per-project provider keys grouped by project, with Test / Rotate / Delete actions and a green/red status dot showing the last test result. Cost dashboards, latency percentiles, and request logs continue to work exactly as before.
 
+## Reading the metrics view (v0.2.0)
+
+After v0.2.0, the dashboard adds a **Metrics** page (sidebar entry between Sessions and Projects) with four cards on one screen:
+
+- **Per-minute cost** -- dollars per minute of real talk time, averaged across sessions in the filter window. Different from per-call cost: a two-minute call with a one-minute thinking pause has a different per-minute cost than a busy two-minute call, because talk time is the denominator.
+- **Response speed** -- p50 and p95 milliseconds from caller-stops-speaking to agent-first-audible-byte, measured per turn. This is end-to-end perceived latency, not LLM-only latency.
+- **Talk-over rate** -- percentage of agent speech that overlaps caller speech. Lower is better; spikes here usually mean a prompt or turn-detection regression.
+- **Dead-air events** -- count of silences longer than the configured threshold (default 3.0s, per-project overridable) that the caller did not initiate. Count rising means agents are getting stuck mid-conversation.
+
+The filter row at the top of the page is shared across all four cards: project + trailing days window (default 7, matching the Costs page). Pre-v0.2.0 sessions display as "not measured" rather than zero, and the `{measured} / {total}` callout tells you how many sessions actually contribute to each aggregate.
+
+Per-session drill-down: clicking a session id (Sessions page) opens its detail view; the v0.2.0 endpoints `/api/sessions/{id}/turns` and `/api/sessions/{id}/dead_air` back the per-turn timeline and the per-event list respectively.
+
+### When the metrics view shows "not measured"
+
+A session displays "not measured" when its v0.2.0 aggregate columns are NULL. The two real causes:
+
+1. **Pre-v0.2.0 session.** v0.0.5/v0.1.x sessions predate the metric-capture pipeline. Migration 0003 preserves them with NULL on the new columns; no backfill (the data simply doesn't exist).
+2. **Plugin hooks missed events.** If you run a custom AgentSession subclass or an in-process harness, the standard plugin-level hooks may not fire. Call `voicegateway.inference.attach_session(agent_session)` explicitly at the top of your conversation handler. See the [Python SDK reference](/api/python-sdk#inferenceattach_session-v020-opt-in).
+
+### Tuning the thresholds
+
+The dead-air threshold and talk-over overlap threshold are per-project knobs in `voicegw.yaml`:
+
+```yaml
+projects:
+  acme:
+    name: Acme Corp
+    metrics:
+      dead_air_threshold_seconds: 3.0      # default; raise to 5.0 for slow conversational UX
+      talk_over_min_overlap_ms: 100         # default; lower to catch quieter overlaps
+      turn_buffer_flush_size: 25            # default; rarely needs tuning
+```
+
+The defaults match the Foundry-locked values; bumping them affects only the project they're set on. Existing rows are not recomputed.
+
 ## Limitations
 
 Two real, two minor.
