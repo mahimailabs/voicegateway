@@ -45,6 +45,7 @@ from voicegateway.cli import migrate as _migrate  # noqa: F401, E402
 from voicegateway.cli import onboard as _onboard  # noqa: F401, E402
 from voicegateway.cli import projects as _projects  # noqa: F401, E402
 from voicegateway.cli import reconcile as _reconcile  # noqa: F401, E402
+from voicegateway.cli import replay as _replay  # noqa: F401, E402
 from voicegateway.cli import rotate_secret as _rotate_secret  # noqa: F401, E402
 from voicegateway.cli import serve as _serve  # noqa: F401, E402
 from voicegateway.cli import smoke_test as _smoke_test  # noqa: F401, E402
