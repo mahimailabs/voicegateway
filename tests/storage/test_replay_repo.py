@@ -1,0 +1,137 @@
+"""Contract tests for voicegateway.storage.replay_repo (T05 of v0.3.0)."""
+
+from __future__ import annotations
+
+import aiosqlite
+
+from voicegateway.middleware.replay_capture import ReplayEvent
+from voicegateway.storage import replay_repo
+from voicegateway.storage.sqlite import SQLiteStorage
+
+
+def _stt(session_id: str, t_ms: int, text: str) -> ReplayEvent:
+    return ReplayEvent(
+        session_id=session_id,
+        modality="stt",
+        t_ms=t_ms,
+        payload={"text": text, "is_final": True, "alternatives": []},
+        provider="deepgram",
+        cost_usd=0.0001,
+    )
+
+
+def _llm(session_id: str, t_ms: int, token: str) -> ReplayEvent:
+    return ReplayEvent(
+        session_id=session_id,
+        modality="llm",
+        t_ms=t_ms,
+        payload={
+            "token_text": token,
+            "role": "assistant",
+            "is_tool_invoke": False,
+            "tool_args_partial": None,
+        },
+        provider="openai",
+        cost_usd=0.00002,
+    )
+
+
+def _state(session_id: str, t_ms: int) -> ReplayEvent:
+    return ReplayEvent(
+        session_id=session_id,
+        modality="state",
+        t_ms=t_ms,
+        payload={
+            "system_prompt": "be helpful",
+            "message_history": [],
+            "tool_call_in_flight": None,
+            "structured_output_collected": None,
+        },
+        provider="",
+        cost_usd=None,
+    )
+
+
+async def _fresh_db(tmp_path) -> str:
+    db_path = str(tmp_path / "replay.db")
+    storage = SQLiteStorage(db_path)
+    await storage._ensure_initialized()
+    return db_path
+
+
+async def test_bulk_write_round_trip(tmp_path) -> None:
+    db_path = await _fresh_db(tmp_path)
+    async with aiosqlite.connect(db_path) as db:
+        events = [
+            _stt("s1", 100, "hello"),
+            _llm("s1", 500, "hi"),
+            _state("s1", 510),
+        ]
+        n = await replay_repo.bulk_write_events(db, events)
+        assert n == 3
+
+        listed = await replay_repo.read_full_replay(db, "s1")
+        assert len(listed) == 3
+        assert [e.t_ms for e in listed] == [100, 500, 510]
+        # Modality discriminator preserved.
+        assert listed[0].modality == "stt"
+        assert listed[1].modality == "llm"
+        assert listed[2].modality == "state"
+
+
+async def test_bulk_write_empty_is_noop(tmp_path) -> None:
+    db_path = await _fresh_db(tmp_path)
+    async with aiosqlite.connect(db_path) as db:
+        n = await replay_repo.bulk_write_events(db, [])
+        assert n == 0
+
+
+async def test_read_full_replay_unknown_session_empty(tmp_path) -> None:
+    db_path = await _fresh_db(tmp_path)
+    async with aiosqlite.connect(db_path) as db:
+        assert await replay_repo.read_full_replay(db, "ghost") == []
+
+
+async def test_delete_replay_cascades_all_four_tables(tmp_path) -> None:
+    db_path = await _fresh_db(tmp_path)
+    async with aiosqlite.connect(db_path) as db:
+        events = [
+            _stt("s1", 0, "a"),
+            _llm("s1", 100, "b"),
+            _state("s1", 200),
+        ]
+        await replay_repo.bulk_write_events(db, events)
+        # Also a TTS event so all four tables have content.
+        await replay_repo.bulk_write_events(
+            db,
+            [
+                ReplayEvent(
+                    session_id="s1",
+                    modality="tts",
+                    t_ms=150,
+                    payload={
+                        "frame_duration_ms": 20,
+                        "underrun": False,
+                        "voice_id": "v1",
+                    },
+                    provider="cartesia",
+                    cost_usd=0.00001,
+                )
+            ],
+        )
+
+        deleted = await replay_repo.delete_replay(db, "s1")
+        assert deleted == 4
+
+        remaining = await replay_repo.read_full_replay(db, "s1")
+        assert remaining == []
+
+
+async def test_aggregate_storage_per_session(tmp_path) -> None:
+    db_path = await _fresh_db(tmp_path)
+    async with aiosqlite.connect(db_path) as db:
+        await replay_repo.bulk_write_events(db, [_stt("s1", 0, "hello world")])
+        size = await replay_repo.aggregate_storage_per_session(db, "s1")
+        # Payload contains JSON with text+is_final+alternatives;
+        # length should be at least 30 chars and at most a few hundred.
+        assert 30 <= size <= 500
