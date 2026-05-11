@@ -1,4 +1,4 @@
-"""Smoke tests for `voicegateway/reconcile.py` diff math.
+"""Smoke tests for `voicegateway/reconcile/core.py` diff math.
 
 Comprehensive CLI-side tests (CliRunner) belong to Phase 4.3 #5.
 These tests exercise the parse + aggregate + diff logic directly.
