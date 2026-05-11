@@ -504,7 +504,18 @@ pytest
 
 **Add a provider** (10-step guide): [docs.voicegateway.dev/contributing/adding-a-provider](https://docs.voicegateway.dev/contributing/adding-a-provider)
 
-Before submitting a PR, please read [CONTRIBUTING.md](https://docs.voicegateway.dev/contributing/) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+Before submitting a PR, please read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Found a security issue? Do not open a public issue: follow the disclosure flow in [SECURITY.md](SECURITY.md).
+
+---
+
+## Project metadata
+
+- [CHANGELOG.md](CHANGELOG.md) -- canonical changelog (mirrored into the docs site at build time).
+- [CONTRIBUTING.md](CONTRIBUTING.md) -- one-page contribution flow; deeper guides under [`docs/contributing/`](docs/contributing/).
+- [SECURITY.md](SECURITY.md) -- vulnerability disclosure policy and supported-versions matrix.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) -- Contributor Covenant.
+- [LICENSE](LICENSE) -- MIT.
+- [`docker/`](docker/) -- both Dockerfiles live here as of v0.1.2 (`voicegateway.Dockerfile`, `dashboard.Dockerfile`); `docker-compose.yml` at repo root references these paths.
 
 ---
 

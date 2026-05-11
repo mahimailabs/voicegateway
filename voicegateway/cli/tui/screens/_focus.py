@@ -65,5 +65,5 @@ class FocusRowsMixin:
         app: App = self.app  # type: ignore[attr-defined]
         focused = app.focused
         if focused in rows:
-            return rows.index(focused)  # type: ignore[arg-type]
+            return rows.index(focused)
         return None

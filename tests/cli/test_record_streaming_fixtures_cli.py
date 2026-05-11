@@ -1,4 +1,4 @@
-"""CLI gating tests for scripts/record-streaming-fixtures.py.
+"""CLI gating tests for scripts/record_streaming_fixtures.py.
 
 These tests cover the default-deny gating: --record gates real API
 calls; --confirm gates past the cost-estimate dry-run. The actual
@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-RECORDER = REPO_ROOT / "scripts" / "record-streaming-fixtures.py"
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+RECORDER = REPO_ROOT / "scripts" / "record_streaming_fixtures.py"
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
@@ -47,18 +47,21 @@ def test_no_record_flag_prints_disabled_banner() -> None:
         f"{result.returncode}; stderr={result.stderr!r}"
     )
     assert "recording disabled, use --record" in result.stdout, (
-        f"Disabled banner missing from stdout. "
-        f"stdout={result.stdout!r}"
+        f"Disabled banner missing from stdout. stdout={result.stdout!r}"
     )
 
 
 def test_no_record_flag_with_full_identity_still_disabled() -> None:
     """--provider/--modality/--model alone do not bypass the --record gate."""
     result = _run(
-        "--provider", "openai",
-        "--modality", "llm",
-        "--model", "gpt-4o-mini",
-        "--mode", "batch",
+        "--provider",
+        "openai",
+        "--modality",
+        "llm",
+        "--model",
+        "gpt-4o-mini",
+        "--mode",
+        "batch",
     )
     assert result.returncode == 0
     assert "recording disabled" in result.stdout
@@ -68,10 +71,14 @@ def test_record_without_confirm_prints_cost_estimate() -> None:
     """--record without --confirm prints a cost estimate and exits 0."""
     result = _run(
         "--record",
-        "--provider", "openai",
-        "--modality", "llm",
-        "--model", "gpt-4o-mini",
-        "--mode", "batch",
+        "--provider",
+        "openai",
+        "--modality",
+        "llm",
+        "--model",
+        "gpt-4o-mini",
+        "--mode",
+        "batch",
     )
     assert result.returncode == 0, (
         f"Expected exit 0 for the dry-run path, got "
@@ -96,9 +103,12 @@ def test_record_with_unknown_provider_errors() -> None:
     """argparse must reject providers outside the supported set."""
     result = _run(
         "--record",
-        "--provider", "definitely-not-a-real-provider",
-        "--modality", "llm",
-        "--model", "x",
+        "--provider",
+        "definitely-not-a-real-provider",
+        "--modality",
+        "llm",
+        "--model",
+        "x",
     )
     assert result.returncode != 0
     assert "invalid choice" in result.stderr
@@ -108,9 +118,12 @@ def test_record_with_unknown_modality_errors() -> None:
     """argparse must reject modalities outside (stt, llm, tts)."""
     result = _run(
         "--record",
-        "--provider", "openai",
-        "--modality", "embedding",
-        "--model", "x",
+        "--provider",
+        "openai",
+        "--modality",
+        "embedding",
+        "--model",
+        "x",
     )
     assert result.returncode != 0
     assert "invalid choice" in result.stderr
@@ -120,10 +133,14 @@ def test_record_with_unknown_mode_errors() -> None:
     """argparse must reject modes outside (batch, stream)."""
     result = _run(
         "--record",
-        "--provider", "openai",
-        "--modality", "llm",
-        "--model", "x",
-        "--mode", "websocket",
+        "--provider",
+        "openai",
+        "--modality",
+        "llm",
+        "--model",
+        "x",
+        "--mode",
+        "websocket",
     )
     assert result.returncode != 0
     assert "invalid choice" in result.stderr
@@ -142,10 +159,14 @@ def test_record_dry_run_for_each_phase3_fixture() -> None:
     for provider, model, modality, mode in fixtures:
         result = _run(
             "--record",
-            "--provider", provider,
-            "--modality", modality,
-            "--model", model,
-            "--mode", mode,
+            "--provider",
+            provider,
+            "--modality",
+            modality,
+            "--model",
+            model,
+            "--mode",
+            mode,
         )
         assert result.returncode == 0, (
             f"{provider}/{model}/{modality}/{mode}: exit "
@@ -187,10 +208,14 @@ def test_all_flag_cost_estimate_lists_six_fixtures() -> None:
 def test_all_flag_rejects_per_fixture_identity_flags() -> None:
     """--all and --provider/--modality/--model are mutually exclusive."""
     result = _run(
-        "--record", "--all",
-        "--provider", "openai",
-        "--modality", "llm",
-        "--model", "gpt-4o-mini",
+        "--record",
+        "--all",
+        "--provider",
+        "openai",
+        "--modality",
+        "llm",
+        "--model",
+        "gpt-4o-mini",
     )
     assert result.returncode != 0
     assert "mutually exclusive" in result.stderr
@@ -226,9 +251,12 @@ def test_record_without_mode_falls_back_to_batch() -> None:
     """Single-fixture path: --mode is optional and defaults to batch."""
     result = _run(
         "--record",
-        "--provider", "openai",
-        "--modality", "llm",
-        "--model", "gpt-4o-mini",
+        "--provider",
+        "openai",
+        "--modality",
+        "llm",
+        "--model",
+        "gpt-4o-mini",
         # --mode deliberately omitted
     )
     assert result.returncode == 0, (
@@ -255,9 +283,7 @@ async def test_run_all_dispatches_each_fixture_in_documented_order(
 
     calls: list[tuple[str, str, str, str]] = []
 
-    async def _fake_run(
-        provider: str, modality: str, model: str, mode: str
-    ) -> Path:
+    async def _fake_run(provider: str, modality: str, model: str, mode: str) -> Path:
         calls.append((provider, model, modality, mode))
         return REPO_ROOT / f"fake-{len(calls)}.json"
 

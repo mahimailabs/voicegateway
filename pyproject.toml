@@ -135,31 +135,75 @@ version-file = "voicegateway/_version.py"
 [tool.pyright]
 typeCheckingMode = "off"
 
+# Ruff is the single linter + formatter (replaces flake8, isort, Black).
+# Settings here must agree with .editorconfig at repo root: 4-space
+# indent, LF line endings, utf-8, trim trailing whitespace. The format
+# section below is explicit so the two tools are visibly in sync.
+
 [tool.ruff]
-target-version = "py311"
-line-length = 88
+target-version = "py311"  # project's minimum Python (pyupgrade targets this)
+line-length = 88          # Black's default; mirrored in .editorconfig as max_line_length
+
+[tool.ruff.format]
+# Ruff defaults are correct here; declared explicitly so the agreement
+# with .editorconfig (LF, spaces, utf-8) is visible at a glance.
+indent-style = "space"
+line-ending = "lf"
+quote-style = "double"          # Black-compatible
+docstring-code-format = false   # leave fenced code in docstrings alone
 
 [tool.ruff.lint]
+# Selector set is the Foundry-mandated minimum (E, W, F, I, B, C4, UP)
+# plus nothing else. We deliberately do NOT enable D (pydocstyle), N
+# (pep8-naming), or ANN (flake8-annotations) until the codebase has a
+# pass to bring them green; flipping them on now would generate hundreds
+# of advisory failures with no signal.
 select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "B",   # flake8-bugbear
-    "C4",  # flake8-comprehensions
-    "UP",  # pyupgrade
+    "E",   # pycodestyle errors          (real-bug catchers: indentation, syntax-ish)
+    "W",   # pycodestyle warnings        (style nags: trailing whitespace, blank lines)
+    "F",   # pyflakes                    (undefined names, unused imports, F841 unused vars)
+    "I",   # isort                       (import ordering, replaces standalone isort)
+    "B",   # flake8-bugbear              (likely-bug heuristics: mutable defaults, etc.)
+    "C4",  # flake8-comprehensions       (cleaner list/dict/set comprehensions)
+    "UP",  # pyupgrade                   (modernize syntax to target-version)
 ]
 ignore = [
-    "E501",  # line too long, handled by black
-    "B008",  # do not perform function calls in argument defaults
-    "C901",  # too complex
-    "W191",  # indentation contains tabs
+    # Line length is enforced by `ruff format`, not by the linter. Anything
+    # still long after formatting (long URLs, error messages) is intentional
+    # and should not nag.
+    "E501",
+    # FastAPI dependency injection idiom is `def f(x: T = Depends(get_x))`,
+    # where the default-value function call is the whole point. Disabling
+    # B008 globally avoids per-function noqa noise.
+    "B008",
+    # McCabe complexity is too coarse a metric: lean code may exceed the
+    # threshold without being bad. We rely on review, not C901.
+    "C901",
+    # We use spaces, enforced by `ruff format`. W191 fires on legitimate
+    # tab-indented files (e.g. Makefile fragments embedded in tests),
+    # producing false positives.
+    "W191",
 ]
 
+# Mypy is type-checking-only (not a formatter). The mode for v0.1.x is
+# "basic everywhere": run mypy across the whole `voicegateway/` package
+# with a small set of useful warnings, but do NOT enable `strict = true`
+# yet. The codebase passes basic-mode cleanly (110 source files, zero
+# errors); flipping `strict` on would surface ~hundreds of advisory
+# nags (`disallow_untyped_defs`, `disallow_any_generics`,
+# `disallow_untyped_decorators`, etc.) that need a dedicated cleanup
+# pass.
+#
+# Open Question 5 resolution (Foundry v0.1.2): basic everywhere for
+# v0.1.2. A per-module strict pass (inference, server, cli first)
+# is planned for v0.2.0 or v0.3.0, gated behind a Discovered Work
+# entry that runs mypy --strict on one subpackage at a time and
+# fixes the surfaced types.
 [tool.mypy]
-# --- UPDATE THIS LINE ---
-python_version = "3.11" #  project's minimum Python version
-# ------------------------
-warn_return_any = true
-warn_unused_configs = true
-ignore_missing_imports = true # Can be helpful initially
+python_version = "3.11"           # project's minimum Python version
+warn_return_any = true            # flag functions returning Any when the annotation said something else
+warn_unused_configs = true        # flag dead config keys in [[tool.mypy.overrides]] sections
+warn_redundant_casts = true       # flag `cast(int, x)` where x is already int (signal of stale types)
+warn_unused_ignores = true        # flag `# type: ignore` comments that no longer suppress anything
+no_implicit_optional = true       # require `int | None` instead of bare `int` for default=None args
+ignore_missing_imports = true     # third-party SDKs (livekit, deepgram, etc.) often ship without stubs

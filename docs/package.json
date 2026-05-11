@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prebuild": "cp ../CHANGELOG.md reference/changelog.md",
+    "predev": "cp ../CHANGELOG.md reference/changelog.md",
     "dev": "vitepress dev .",
     "build": "vitepress build .",
     "preview": "vitepress preview ."

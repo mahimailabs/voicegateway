@@ -18,7 +18,7 @@ environment.
 
 Run from the repository root:
 
-    python scripts/smoke-v005-inference.py
+    python scripts/smoke_v005_inference.py
 """
 
 from __future__ import annotations

@@ -9,7 +9,7 @@ primary_region = "ord"
 [build]
   image = "mahimairaja/voicegateway:latest"
   # To build from source instead, comment out 'image' and uncomment:
-  # dockerfile = "../../Dockerfile"
+  # dockerfile = "../../docker/voicegateway.Dockerfile"
 
 [env]
   VOICEGW_CONFIG = "/data/voicegw.yaml"

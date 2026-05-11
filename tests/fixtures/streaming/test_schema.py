@@ -30,7 +30,7 @@ def _llm_fixture() -> dict[str, Any]:
             "modality": "llm",
             "mode": "stream",
             "recorded_at": "2026-05-04T14:32:11Z",
-            "recorded_by": "scripts/record-streaming-fixtures.py",
+            "recorded_by": "scripts/record_streaming_fixtures.py",
             "voicegateway_version": "0.0.3",
         },
         "request": {

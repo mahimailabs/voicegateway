@@ -25,8 +25,8 @@ import respx
 
 from tests.fixtures.streaming._loader import load_fixture
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-RECORDER_PATH = REPO_ROOT / "scripts" / "record-streaming-fixtures.py"
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+RECORDER_PATH = REPO_ROOT / "scripts" / "record_streaming_fixtures.py"
 
 
 def _import_recorder() -> ModuleType:
@@ -69,9 +69,7 @@ async def test_cartesia_batch_recording_writes_valid_fixture(
                 headers={"content-type": "audio/raw"},
             )
         )
-        fixture_path = await recorder._run(
-            "cartesia", "tts", "sonic-3", "batch"
-        )
+        fixture_path = await recorder._run("cartesia", "tts", "sonic-3", "batch")
 
     assert fixture_path.parent == tmp_path
     assert fixture_path.name.startswith("cartesia_sonic-3_tts_batch_")
@@ -84,9 +82,7 @@ async def test_cartesia_batch_recording_writes_valid_fixture(
     assert fixture.metadata.mode == "batch"
 
     expected_chars = len(recorder.DEFAULT_TTS_TEXT)
-    assert fixture.provider_reported_usage == {
-        "character_count": expected_chars
-    }
+    assert fixture.provider_reported_usage == {"character_count": expected_chars}
 
     assert len(fixture.response_stream) == 1
     chunk = fixture.response_stream[0]
@@ -106,9 +102,7 @@ async def test_cartesia_batch_expected_cost_matches_catalog(
         router.post("https://api.cartesia.ai/tts/bytes").mock(
             return_value=httpx.Response(200, content=audio)
         )
-        fixture_path = await recorder._run(
-            "cartesia", "tts", "sonic-3", "batch"
-        )
+        fixture_path = await recorder._run("cartesia", "tts", "sonic-3", "batch")
 
     fixture = load_fixture(fixture_path)
     expected = calculate_cost(
@@ -181,9 +175,7 @@ async def test_cartesia_batch_records_request_block_in_fixture(
         router.post("https://api.cartesia.ai/tts/bytes").mock(
             return_value=httpx.Response(200, content=_fake_audio_bytes())
         )
-        fixture_path = await recorder._run(
-            "cartesia", "tts", "sonic-3", "batch"
-        )
+        fixture_path = await recorder._run("cartesia", "tts", "sonic-3", "batch")
 
     fixture = load_fixture(fixture_path)
     assert fixture.request["model_id"] == "sonic-3"
@@ -303,9 +295,7 @@ async def test_cartesia_stream_recording_writes_valid_fixture(
     fake = _FakeCartesiaWS(_cartesia_stream_responses())
     captured = _patch_cartesia_ws(recorder, monkeypatch, fake)
 
-    fixture_path = await recorder._run(
-        "cartesia", "tts", "sonic-3", "stream"
-    )
+    fixture_path = await recorder._run("cartesia", "tts", "sonic-3", "stream")
 
     assert captured["url"].startswith("wss://api.cartesia.ai/tts/websocket?")
     assert "cartesia_version=2024-06-10" in captured["url"]
@@ -340,8 +330,7 @@ async def test_cartesia_stream_sends_single_request_with_context_id(
 
     text_msgs = fake.text_frames
     assert len(text_msgs) == 1, (
-        f"Expected one request frame, got {len(text_msgs)}: "
-        f"{text_msgs!r}"
+        f"Expected one request frame, got {len(text_msgs)}: {text_msgs!r}"
     )
     request = text_msgs[0]
     assert request["model_id"] == "sonic-3"
@@ -360,9 +349,7 @@ async def test_cartesia_stream_request_block_in_fixture_carries_context_id(
     fake = _FakeCartesiaWS(_cartesia_stream_responses())
     _patch_cartesia_ws(recorder, monkeypatch, fake)
 
-    fixture_path = await recorder._run(
-        "cartesia", "tts", "sonic-3", "stream"
-    )
+    fixture_path = await recorder._run("cartesia", "tts", "sonic-3", "stream")
 
     fixture = load_fixture(fixture_path)
     assert "context_id" in fixture.request
@@ -377,9 +364,7 @@ async def test_cartesia_stream_expected_cost_matches_catalog(
     fake = _FakeCartesiaWS(_cartesia_stream_responses())
     _patch_cartesia_ws(recorder, monkeypatch, fake)
 
-    fixture_path = await recorder._run(
-        "cartesia", "tts", "sonic-3", "stream"
-    )
+    fixture_path = await recorder._run("cartesia", "tts", "sonic-3", "stream")
 
     fixture = load_fixture(fixture_path)
     expected = calculate_cost(
@@ -396,9 +381,7 @@ async def test_cartesia_stream_refuses_when_done_never_arrives(
     recorder: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """No done message means the stream is unterminated; refuse to write."""
-    truncated = [
-        m for m in _cartesia_stream_responses() if m.get("type") != "done"
-    ]
+    truncated = [m for m in _cartesia_stream_responses() if m.get("type") != "done"]
     fake = _FakeCartesiaWS(truncated)
     _patch_cartesia_ws(recorder, monkeypatch, fake)
 

@@ -28,8 +28,8 @@ import respx
 
 from tests.fixtures.streaming._loader import load_fixture
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-RECORDER_PATH = REPO_ROOT / "scripts" / "record-streaming-fixtures.py"
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+RECORDER_PATH = REPO_ROOT / "scripts" / "record_streaming_fixtures.py"
 AUDIO_SAMPLE = REPO_ROOT / "tests" / "fixtures" / "audio" / "test_sample.wav"
 
 
@@ -117,9 +117,7 @@ async def test_deepgram_batch_recording_writes_valid_fixture(
         router.post("https://api.deepgram.com/v1/listen").mock(
             return_value=httpx.Response(200, json=response_payload)
         )
-        fixture_path = await recorder._run(
-            "deepgram", "stt", "nova-3", "batch"
-        )
+        fixture_path = await recorder._run("deepgram", "stt", "nova-3", "batch")
 
     assert fixture_path.parent == tmp_path
     assert fixture_path.name.startswith("deepgram_nova-3_stt_batch_")
@@ -151,14 +149,10 @@ async def test_deepgram_batch_expected_cost_matches_catalog(
         router.post("https://api.deepgram.com/v1/listen").mock(
             return_value=httpx.Response(200, json=response_payload)
         )
-        fixture_path = await recorder._run(
-            "deepgram", "stt", "nova-3", "batch"
-        )
+        fixture_path = await recorder._run("deepgram", "stt", "nova-3", "batch")
 
     fixture = load_fixture(fixture_path)
-    expected = calculate_cost(
-        "stt", "deepgram/nova-3", audio_seconds=3.0
-    )
+    expected = calculate_cost("stt", "deepgram/nova-3", audio_seconds=3.0)
     assert expected is not None
     quantized = expected.quantize(Decimal("0.00000001"))
     assert fixture.expected_cost_usd == quantized
@@ -206,9 +200,7 @@ async def test_deepgram_batch_records_audio_path_in_request_block(
         router.post("https://api.deepgram.com/v1/listen").mock(
             return_value=httpx.Response(200, json=response_payload)
         )
-        fixture_path = await recorder._run(
-            "deepgram", "stt", "nova-3", "batch"
-        )
+        fixture_path = await recorder._run("deepgram", "stt", "nova-3", "batch")
 
     fixture = load_fixture(fixture_path)
     assert fixture.request["model"] == "nova-3"
@@ -259,9 +251,7 @@ async def test_deepgram_recorder_requires_audio_sample(
     recorder: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """If the bundled WAV is missing, the recorder refuses to run."""
-    monkeypatch.setattr(
-        recorder, "AUDIO_SAMPLE_PATH", tmp_path / "missing.wav"
-    )
+    monkeypatch.setattr(recorder, "AUDIO_SAMPLE_PATH", tmp_path / "missing.wav")
     with pytest.raises(RuntimeError, match="missing"):
         await recorder._record_deepgram_stt("nova-3", "batch")
 
@@ -339,9 +329,7 @@ def _stream_responses(duration_seconds: float = 3.0) -> list[dict[str, Any]]:
             "start": 0.0,
             "is_final": True,
             "channel": {
-                "alternatives": [
-                    {"transcript": "", "confidence": 0.0, "words": []}
-                ]
+                "alternatives": [{"transcript": "", "confidence": 0.0, "words": []}]
             },
         },
         {
@@ -364,9 +352,7 @@ async def test_deepgram_stream_recording_writes_valid_fixture(
     fake = _FakeDeepgramWS(_stream_responses(duration_seconds=3.0))
     captured = _patch_deepgram_ws(recorder, monkeypatch, fake)
 
-    fixture_path = await recorder._run(
-        "deepgram", "stt", "nova-3", "stream"
-    )
+    fixture_path = await recorder._run("deepgram", "stt", "nova-3", "stream")
 
     # WebSocket URL carries model + PCM params per design.
     assert captured["url"].startswith("wss://api.deepgram.com/v1/listen?")
@@ -435,13 +421,9 @@ async def test_deepgram_stream_expected_cost_matches_catalog(
     fake = _FakeDeepgramWS(_stream_responses(duration_seconds=3.0))
     _patch_deepgram_ws(recorder, monkeypatch, fake)
 
-    fixture_path = await recorder._run(
-        "deepgram", "stt", "nova-3", "stream"
-    )
+    fixture_path = await recorder._run("deepgram", "stt", "nova-3", "stream")
     fixture = load_fixture(fixture_path)
-    expected = calculate_cost(
-        "stt", "deepgram/nova-3", audio_seconds=3.0
-    )
+    expected = calculate_cost("stt", "deepgram/nova-3", audio_seconds=3.0)
     assert expected is not None
     quantized = expected.quantize(Decimal("0.00000001"))
     assert fixture.expected_cost_usd == quantized

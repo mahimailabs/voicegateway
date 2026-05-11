@@ -2,7 +2,7 @@
 
 Dev-only helper scripts. None of these run in CI.
 
-## `record-streaming-fixtures.py`
+## `record_streaming_fixtures.py`
 
 Records the six Phase 3 streaming fixtures used by
 `tests/test_streaming_cost_accounting.py`. Hits real provider APIs
@@ -11,13 +11,13 @@ gating means you must pass two flags before any network call lands:
 
 ```bash
 # Recording disabled banner. No API call.
-python scripts/record-streaming-fixtures.py
+python scripts/record_streaming_fixtures.py
 
 # Cost estimate dry run. No API call.
-python scripts/record-streaming-fixtures.py --record --all
+python scripts/record_streaming_fixtures.py --record --all
 
 # Actual recording. APIs hit, fixtures written, money spent.
-python scripts/record-streaming-fixtures.py --record --all --confirm
+python scripts/record_streaming_fixtures.py --record --all --confirm
 ```
 
 ### Cost expectations
@@ -55,7 +55,7 @@ set -a; source .env.fixtures; set +a
 ### One-shot recording (recommended)
 
 ```bash
-python scripts/record-streaming-fixtures.py --record --all --confirm
+python scripts/record_streaming_fixtures.py --record --all --confirm
 ```
 
 Records all six fixtures sequentially with a single `--confirm`.
@@ -67,7 +67,7 @@ landed; re-run individual missing identities afterwards.
 ### Per-fixture recording (recovery)
 
 ```bash
-python scripts/record-streaming-fixtures.py --record --confirm \
+python scripts/record_streaming_fixtures.py --record --confirm \
   --provider openai --modality llm --model gpt-4o-mini --mode batch
 ```
 
@@ -134,7 +134,7 @@ no longer replays cleanly:
 
 ```bash
 git rm tests/fixtures/streaming/<old-fixture>.json
-python scripts/record-streaming-fixtures.py --record --confirm \
+python scripts/record_streaming_fixtures.py --record --confirm \
   --provider <p> --modality <m> --model <m> --mode <mode>
 git add tests/fixtures/streaming/<new-fixture>.json
 git commit -m "test(fixtures): refresh <provider>/<model> <modality>/<mode>"

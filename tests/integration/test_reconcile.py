@@ -1,4 +1,4 @@
-"""Smoke tests for `voicegateway/reconcile.py` diff math.
+"""Smoke tests for `voicegateway/reconcile/core.py` diff math.
 
 Comprehensive CLI-side tests (CliRunner) belong to Phase 4.3 #5.
 These tests exercise the parse + aggregate + diff logic directly.
@@ -50,10 +50,7 @@ def test_parse_provider_file_openai_csv_handles_missing_columns(tmp_path):
     # n_requests and cost_usd intentionally absent to confirm the
     # `row.get(..., 0) or 0` fallback works against real-world
     # exports that may omit columns the operator did not export.
-    path.write_text(
-        "model,input_tokens,output_tokens\n"
-        "gpt-4o-mini,1000,500\n"
-    )
+    path.write_text("model,input_tokens,output_tokens\ngpt-4o-mini,1000,500\n")
     parsed = reconcile.parse_provider_file("openai", path)
     assert parsed["gpt-4o-mini"]["units"] == 1500
     assert parsed["gpt-4o-mini"]["cost"] == 0.0
@@ -63,8 +60,7 @@ def test_parse_provider_file_openai_csv_handles_missing_columns(tmp_path):
 def test_parse_provider_file_deepgram_csv(tmp_path):
     path = tmp_path / "deepgram.csv"
     path.write_text(
-        "model,audio_seconds,n_requests,cost_usd\n"
-        "nova-3,180000.0,1500,8.700\n"
+        "model,audio_seconds,n_requests,cost_usd\nnova-3,180000.0,1500,8.700\n"
     )
     parsed = reconcile.parse_provider_file("deepgram", path)
     assert parsed["nova-3"]["units"] == pytest.approx(180000.0, abs=0.1)
@@ -92,10 +88,7 @@ def test_parse_provider_file_deepgram_csv_multiple_models(tmp_path):
 def test_parse_provider_file_deepgram_csv_handles_missing_columns(tmp_path):
     """Rows missing n_requests + cost_usd surface as zero, not KeyError."""
     path = tmp_path / "deepgram-sparse.csv"
-    path.write_text(
-        "model,audio_seconds\n"
-        "nova-3,12000.0\n"
-    )
+    path.write_text("model,audio_seconds\nnova-3,12000.0\n")
     parsed = reconcile.parse_provider_file("deepgram", path)
     assert parsed["nova-3"]["units"] == pytest.approx(12000.0, abs=0.1)
     assert parsed["nova-3"]["cost"] == 0.0
@@ -110,10 +103,7 @@ def test_parse_provider_file_deepgram_csv_units_are_seconds_not_minutes(
     -> seconds) happens in aggregate_vg_records, not here.
     """
     path = tmp_path / "deepgram-units.csv"
-    path.write_text(
-        "model,audio_seconds,n_requests,cost_usd\n"
-        "nova-3,3600.0,30,0.258\n"
-    )
+    path.write_text("model,audio_seconds,n_requests,cost_usd\nnova-3,3600.0,30,0.258\n")
     parsed = reconcile.parse_provider_file("deepgram", path)
     # 3600 seconds = 60 minutes; the parser must surface 3600,
     # not 60 (which would happen if it confused units).
@@ -122,10 +112,19 @@ def test_parse_provider_file_deepgram_csv_units_are_seconds_not_minutes(
 
 def test_parse_provider_file_cartesia_json(tmp_path):
     path = tmp_path / "cartesia.json"
-    path.write_text(json.dumps([
-        {"model": "sonic-3", "characters": 2_500_000, "credits": 250_000,
-         "n_requests": 1000, "cost_usd": 30.0},
-    ]))
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "model": "sonic-3",
+                    "characters": 2_500_000,
+                    "credits": 250_000,
+                    "n_requests": 1000,
+                    "cost_usd": 30.0,
+                },
+            ]
+        )
+    )
     parsed = reconcile.parse_provider_file("cartesia", path)
     assert parsed["sonic-3"]["units"] == 2_500_000
 
@@ -133,10 +132,7 @@ def test_parse_provider_file_cartesia_json(tmp_path):
 def test_parse_provider_file_cartesia_csv(tmp_path):
     """Cartesia parser also accepts the canonical CSV shape (not just JSON)."""
     path = tmp_path / "cartesia.csv"
-    path.write_text(
-        "model,characters,n_requests,cost_usd\n"
-        "sonic-3,2500000,1000,30.0\n"
-    )
+    path.write_text("model,characters,n_requests,cost_usd\nsonic-3,2500000,1000,30.0\n")
     parsed = reconcile.parse_provider_file("cartesia", path)
     assert parsed["sonic-3"]["units"] == 2_500_000
     assert parsed["sonic-3"]["cost"] == pytest.approx(30.0, abs=0.01)
@@ -161,10 +157,7 @@ def test_parse_provider_file_cartesia_csv_multiple_models(tmp_path):
 def test_parse_provider_file_cartesia_csv_handles_missing_columns(tmp_path):
     """Sparse CSV (no n_requests, no cost_usd) returns zeros, not KeyError."""
     path = tmp_path / "cartesia-sparse.csv"
-    path.write_text(
-        "model,characters\n"
-        "sonic-3,500000\n"
-    )
+    path.write_text("model,characters\nsonic-3,500000\n")
     parsed = reconcile.parse_provider_file("cartesia", path)
     assert parsed["sonic-3"]["units"] == 500_000
     assert parsed["sonic-3"]["cost"] == 0.0
@@ -197,9 +190,7 @@ def test_parse_provider_file_cartesia_units_are_characters(tmp_path):
 # inline strings. This double-checks the canonical schema against
 # real files (matters when a future docs change drifts the schema
 # and the parser does not).
-_FIXTURES_USAGE_DIR = (
-    Path(__file__).parent / "fixtures" / "usage_exports"
-)
+_FIXTURES_USAGE_DIR = Path(__file__).parent.parent / "fixtures" / "usage_exports"
 
 
 def test_parse_provider_file_loads_committed_openai_sample():
@@ -260,10 +251,18 @@ def test_parse_provider_file_missing_raises(tmp_path):
 def test_aggregate_vg_records_deepgram_minutes_to_seconds():
     """STT records carry minutes in input_units; reconcile compares against seconds."""
     records = [
-        {"model_id": "deepgram/nova-3", "modality": "stt",
-         "input_units": 1.0, "cost_usd": 0.005},
-        {"model_id": "deepgram/nova-3", "modality": "stt",
-         "input_units": 2.5, "cost_usd": 0.0125},
+        {
+            "model_id": "deepgram/nova-3",
+            "modality": "stt",
+            "input_units": 1.0,
+            "cost_usd": 0.005,
+        },
+        {
+            "model_id": "deepgram/nova-3",
+            "modality": "stt",
+            "input_units": 2.5,
+            "cost_usd": 0.0125,
+        },
     ]
     agg = reconcile.aggregate_vg_records("deepgram", records)
     assert agg["nova-3"]["units"] == pytest.approx(3.5 * 60, abs=0.1)
@@ -273,10 +272,18 @@ def test_aggregate_vg_records_deepgram_minutes_to_seconds():
 def test_aggregate_vg_records_filters_other_providers():
     """Records from other providers are skipped."""
     records = [
-        {"model_id": "deepgram/nova-3", "modality": "stt",
-         "input_units": 1.0, "cost_usd": 0.005},
-        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
-         "input_units": 100, "cost_usd": 0.001},
+        {
+            "model_id": "deepgram/nova-3",
+            "modality": "stt",
+            "input_units": 1.0,
+            "cost_usd": 0.005,
+        },
+        {
+            "model_id": "openai/gpt-4o-mini",
+            "modality": "llm",
+            "input_units": 100,
+            "cost_usd": 0.001,
+        },
     ]
     agg = reconcile.aggregate_vg_records("deepgram", records)
     assert "gpt-4o-mini" not in agg
@@ -291,12 +298,25 @@ def test_aggregate_vg_records_filters_other_modalities():
     show up as bogus token counts).
     """
     records = [
-        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
-         "input_units": 1000, "output_units": 500, "cost_usd": 0.001},
-        {"model_id": "openai/whisper-1", "modality": "stt",
-         "input_units": 5.0, "cost_usd": 0.030},
-        {"model_id": "openai/tts-1", "modality": "tts",
-         "input_units": 200, "cost_usd": 0.003},
+        {
+            "model_id": "openai/gpt-4o-mini",
+            "modality": "llm",
+            "input_units": 1000,
+            "output_units": 500,
+            "cost_usd": 0.001,
+        },
+        {
+            "model_id": "openai/whisper-1",
+            "modality": "stt",
+            "input_units": 5.0,
+            "cost_usd": 0.030,
+        },
+        {
+            "model_id": "openai/tts-1",
+            "modality": "tts",
+            "input_units": 200,
+            "cost_usd": 0.003,
+        },
     ]
     agg = reconcile.aggregate_vg_records("openai", records)
     assert set(agg.keys()) == {"gpt-4o-mini"}
@@ -307,8 +327,13 @@ def test_aggregate_vg_records_filters_other_modalities():
 def test_aggregate_vg_records_openai_sums_input_and_output():
     """OpenAI: VG units = input_tokens + output_tokens, matching the canonical file."""
     records = [
-        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
-         "input_units": 1000, "output_units": 500, "cost_usd": 0.001},
+        {
+            "model_id": "openai/gpt-4o-mini",
+            "modality": "llm",
+            "input_units": 1000,
+            "output_units": 500,
+            "cost_usd": 0.001,
+        },
     ]
     agg = reconcile.aggregate_vg_records("openai", records)
     assert agg["gpt-4o-mini"]["units"] == 1500.0
@@ -321,8 +346,13 @@ def test_reconcile_perfect_match(tmp_path):
         "gpt-4o-mini,1000,500,1,0.001\n"
     )
     records = [
-        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
-         "input_units": 1000, "output_units": 500, "cost_usd": 0.001},
+        {
+            "model_id": "openai/gpt-4o-mini",
+            "modality": "llm",
+            "input_units": 1000,
+            "output_units": 500,
+            "cost_usd": 0.001,
+        },
     ]
     lines = reconcile.reconcile("openai", records, path)
     assert len(lines) == 1
@@ -342,8 +372,12 @@ def test_reconcile_surfaces_divergence(tmp_path):
     )
     records = [
         # VG: 50 minutes (= 3000 seconds), $0.150
-        {"model_id": "deepgram/nova-3", "modality": "stt",
-         "input_units": 50.0, "cost_usd": 0.150},
+        {
+            "model_id": "deepgram/nova-3",
+            "modality": "stt",
+            "input_units": 50.0,
+            "cost_usd": 0.150,
+        },
     ]
     lines = reconcile.reconcile("deepgram", records, path)
     assert len(lines) == 1
@@ -372,8 +406,13 @@ def test_reconcile_currency_precision_sub_cent(tmp_path):
     )
     records = [
         # VG: $0.00010000 — a 5-microcent gap (~5%).
-        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
-         "input_units": 7000, "output_units": 3500, "cost_usd": 0.00010000},
+        {
+            "model_id": "openai/gpt-4o-mini",
+            "modality": "llm",
+            "input_units": 7000,
+            "output_units": 3500,
+            "cost_usd": 0.00010000,
+        },
     ]
     lines = reconcile.reconcile("openai", records, path)
     assert len(lines) == 1
@@ -399,9 +438,13 @@ def test_reconcile_currency_precision_high_volume(tmp_path):
         "gpt-4o-mini,5000000000,2500000000,1000000,1234567.89\n"
     )
     records = [
-        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
-         "input_units": 5000000000, "output_units": 2500000000,
-         "cost_usd": 1234566.66},
+        {
+            "model_id": "openai/gpt-4o-mini",
+            "modality": "llm",
+            "input_units": 5000000000,
+            "output_units": 2500000000,
+            "cost_usd": 1234566.66,
+        },
     ]
     lines = reconcile.reconcile("openai", records, path)
     line = lines[0]
@@ -431,8 +474,13 @@ def test_reconcile_model_only_in_vg(tmp_path):
     path = tmp_path / "openai.csv"
     path.write_text("model,input_tokens,output_tokens,n_requests,cost_usd\n")
     records = [
-        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
-         "input_units": 100, "output_units": 50, "cost_usd": 0.0001},
+        {
+            "model_id": "openai/gpt-4o-mini",
+            "modality": "llm",
+            "input_units": 100,
+            "output_units": 50,
+            "cost_usd": 0.0001,
+        },
     ]
     lines = reconcile.reconcile("openai", records, path)
     assert len(lines) == 1
@@ -449,8 +497,13 @@ def test_format_text_surfaces_no_provider_data_label(tmp_path):
     # Empty provider file (header only).
     path.write_text("model,input_tokens,output_tokens,n_requests,cost_usd\n")
     records = [
-        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
-         "input_units": 100, "output_units": 50, "cost_usd": 0.0001},
+        {
+            "model_id": "openai/gpt-4o-mini",
+            "modality": "llm",
+            "input_units": 100,
+            "output_units": 50,
+            "cost_usd": 0.0001,
+        },
     ]
     lines = reconcile.reconcile("openai", records, path)
     text = reconcile.format_text(lines, "openai")
@@ -471,10 +524,20 @@ def test_format_text_includes_total_row(tmp_path):
         "gpt-4o,500,250,1,2.00\n"
     )
     records = [
-        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
-         "input_units": 1000, "output_units": 500, "cost_usd": 0.94},
-        {"model_id": "openai/gpt-4o", "modality": "llm",
-         "input_units": 500, "output_units": 250, "cost_usd": 1.95},
+        {
+            "model_id": "openai/gpt-4o-mini",
+            "modality": "llm",
+            "input_units": 1000,
+            "output_units": 500,
+            "cost_usd": 0.94,
+        },
+        {
+            "model_id": "openai/gpt-4o",
+            "modality": "llm",
+            "input_units": 500,
+            "output_units": 250,
+            "cost_usd": 1.95,
+        },
     ]
     lines = reconcile.reconcile("openai", records, path)
     text = reconcile.format_text(lines, "openai")
@@ -502,8 +565,13 @@ def test_format_text_total_excludes_missing_side_rows(tmp_path):
     )
     records = [
         # VG only logs gpt-4o-mini.
-        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
-         "input_units": 1000, "output_units": 500, "cost_usd": 0.97},
+        {
+            "model_id": "openai/gpt-4o-mini",
+            "modality": "llm",
+            "input_units": 1000,
+            "output_units": 500,
+            "cost_usd": 0.97,
+        },
     ]
     lines = reconcile.reconcile("openai", records, path)
     text = reconcile.format_text(lines, "openai")
@@ -520,11 +588,16 @@ def test_format_text_colorize_wraps_flagged_rows():
     """When colorize=True, flagged rows are wrapped in ANSI yellow."""
     line = reconcile.ReconcileLine(
         model="gpt-4o-mini",
-        vg_units=1000.0, provider_units=1000.0,
-        units_diff_abs=0.0, units_diff_pct=0.0,
-        vg_cost=0.94, provider_cost=1.00,
-        cost_diff_abs=0.06, cost_diff_pct=6.0,
-        matched_in_vg=True, matched_in_provider=True,
+        vg_units=1000.0,
+        provider_units=1000.0,
+        units_diff_abs=0.0,
+        units_diff_pct=0.0,
+        vg_cost=0.94,
+        provider_cost=1.00,
+        cost_diff_abs=0.06,
+        cost_diff_pct=6.0,
+        matched_in_vg=True,
+        matched_in_provider=True,
         flagged=True,
     )
     text = reconcile.format_text([line], "openai", colorize=True)
@@ -536,11 +609,16 @@ def test_format_text_no_color_default():
     """colorize default is False; no ANSI codes appear in output."""
     line = reconcile.ReconcileLine(
         model="gpt-4o-mini",
-        vg_units=1000.0, provider_units=1000.0,
-        units_diff_abs=0.0, units_diff_pct=0.0,
-        vg_cost=0.94, provider_cost=1.00,
-        cost_diff_abs=0.06, cost_diff_pct=6.0,
-        matched_in_vg=True, matched_in_provider=True,
+        vg_units=1000.0,
+        provider_units=1000.0,
+        units_diff_abs=0.0,
+        units_diff_pct=0.0,
+        vg_cost=0.94,
+        provider_cost=1.00,
+        cost_diff_abs=0.06,
+        cost_diff_pct=6.0,
+        matched_in_vg=True,
+        matched_in_provider=True,
         flagged=True,
     )
     text = reconcile.format_text([line], "openai")
@@ -551,11 +629,16 @@ def test_format_text_flagged_row_marked_with_asterisk():
     """Flagged rows are tagged with ' *' even without colorize."""
     line = reconcile.ReconcileLine(
         model="gpt-4o-mini",
-        vg_units=1000.0, provider_units=1000.0,
-        units_diff_abs=0.0, units_diff_pct=0.0,
-        vg_cost=0.94, provider_cost=1.00,
-        cost_diff_abs=0.06, cost_diff_pct=6.0,
-        matched_in_vg=True, matched_in_provider=True,
+        vg_units=1000.0,
+        provider_units=1000.0,
+        units_diff_abs=0.0,
+        units_diff_pct=0.0,
+        vg_cost=0.94,
+        provider_cost=1.00,
+        cost_diff_abs=0.06,
+        cost_diff_pct=6.0,
+        matched_in_vg=True,
+        matched_in_provider=True,
         flagged=True,
     )
     text = reconcile.format_text([line], "openai")
@@ -576,9 +659,7 @@ def test_format_text_surfaces_no_vg_data_label(tmp_path):
     # Empty VG records.
     lines = reconcile.reconcile("openai", [], path)
     text = reconcile.format_text(lines, "openai")
-    assert "no vg data" in text, (
-        f"missing-vg label not rendered; got:\n{text}"
-    )
+    assert "no vg data" in text, f"missing-vg label not rendered; got:\n{text}"
     # Prior "(vg-missing)" jargon must be gone.
     assert "(vg-missing)" not in text
 
@@ -592,8 +673,13 @@ def test_reconcile_flags_lines_above_threshold(tmp_path):
         "gpt-4o-mini,1000,500,1,1.00\n"
     )
     records = [
-        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
-         "input_units": 1000, "output_units": 500, "cost_usd": 0.94},
+        {
+            "model_id": "openai/gpt-4o-mini",
+            "modality": "llm",
+            "input_units": 1000,
+            "output_units": 500,
+            "cost_usd": 0.94,
+        },
     ]
     lines = reconcile.reconcile("openai", records, path)
     assert len(lines) == 1
@@ -611,8 +697,13 @@ def test_reconcile_does_not_flag_within_threshold(tmp_path):
     )
     # VG cost 0.97 vs provider 1.00 -> +3% drift, under threshold.
     records = [
-        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
-         "input_units": 1000, "output_units": 500, "cost_usd": 0.97},
+        {
+            "model_id": "openai/gpt-4o-mini",
+            "modality": "llm",
+            "input_units": 1000,
+            "output_units": 500,
+            "cost_usd": 0.97,
+        },
     ]
     lines = reconcile.reconcile("openai", records, path)
     assert lines[0].flagged is False
@@ -627,12 +718,15 @@ def test_reconcile_threshold_is_configurable(tmp_path):
         "gpt-4o-mini,1000,500,1,1.00\n"
     )
     records = [
-        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
-         "input_units": 1000, "output_units": 500, "cost_usd": 0.97},
+        {
+            "model_id": "openai/gpt-4o-mini",
+            "modality": "llm",
+            "input_units": 1000,
+            "output_units": 500,
+            "cost_usd": 0.97,
+        },
     ]
-    lines = reconcile.reconcile(
-        "openai", records, path, threshold_pct=1.0
-    )
+    lines = reconcile.reconcile("openai", records, path, threshold_pct=1.0)
     assert lines[0].flagged is True
 
 
@@ -649,8 +743,13 @@ def test_reconcile_flags_zero_provider_cost_with_nonzero_vg(tmp_path):
         "gpt-4o-mini,1000,500,1,0.00\n"
     )
     records = [
-        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
-         "input_units": 1000, "output_units": 500, "cost_usd": 0.94},
+        {
+            "model_id": "openai/gpt-4o-mini",
+            "modality": "llm",
+            "input_units": 1000,
+            "output_units": 500,
+            "cost_usd": 0.94,
+        },
     ]
     lines = reconcile.reconcile("openai", records, path)
     assert len(lines) == 1
@@ -675,8 +774,13 @@ def test_reconcile_does_not_flag_zero_zero_match(tmp_path):
         "gpt-4o-mini,1000,500,1,0.00\n"
     )
     records = [
-        {"model_id": "openai/gpt-4o-mini", "modality": "llm",
-         "input_units": 1000, "output_units": 500, "cost_usd": 0.0},
+        {
+            "model_id": "openai/gpt-4o-mini",
+            "modality": "llm",
+            "input_units": 1000,
+            "output_units": 500,
+            "cost_usd": 0.0,
+        },
     ]
     lines = reconcile.reconcile("openai", records, path)
     assert lines[0].provider_cost == 0.0
@@ -697,8 +801,13 @@ def test_reconcile_does_not_flag_missing_sides(tmp_path):
     )
     # VG has a different model only.
     records = [
-        {"model_id": "openai/gpt-4-turbo", "modality": "llm",
-         "input_units": 100, "output_units": 50, "cost_usd": 0.50},
+        {
+            "model_id": "openai/gpt-4-turbo",
+            "modality": "llm",
+            "input_units": 100,
+            "output_units": 50,
+            "cost_usd": 0.50,
+        },
     ]
     lines = reconcile.reconcile("openai", records, path)
     by_model = {ln.model: ln for ln in lines}
@@ -711,11 +820,17 @@ def test_reconcile_does_not_flag_missing_sides(tmp_path):
 def test_format_text_includes_header_and_columns():
     lines = [
         reconcile.ReconcileLine(
-            model="nova-3", vg_units=3000.0, provider_units=3600.0,
-            units_diff_abs=600.0, units_diff_pct=16.667,
-            vg_cost=0.150, provider_cost=0.180,
-            cost_diff_abs=0.030, cost_diff_pct=16.667,
-            matched_in_vg=True, matched_in_provider=True,
+            model="nova-3",
+            vg_units=3000.0,
+            provider_units=3600.0,
+            units_diff_abs=600.0,
+            units_diff_pct=16.667,
+            vg_cost=0.150,
+            provider_cost=0.180,
+            cost_diff_abs=0.030,
+            cost_diff_pct=16.667,
+            matched_in_vg=True,
+            matched_in_provider=True,
         ),
     ]
     out = reconcile.format_text(lines, "deepgram")
@@ -728,11 +843,17 @@ def test_format_text_unknown_provider_falls_back_to_units_label():
     """An unsupported provider gets a generic `units` header rather than KeyError."""
     lines = [
         reconcile.ReconcileLine(
-            model="some-model", vg_units=0.0, provider_units=0.0,
-            units_diff_abs=0.0, units_diff_pct=0.0,
-            vg_cost=0.0, provider_cost=0.0,
-            cost_diff_abs=0.0, cost_diff_pct=0.0,
-            matched_in_vg=True, matched_in_provider=True,
+            model="some-model",
+            vg_units=0.0,
+            provider_units=0.0,
+            units_diff_abs=0.0,
+            units_diff_pct=0.0,
+            vg_cost=0.0,
+            provider_cost=0.0,
+            cost_diff_abs=0.0,
+            cost_diff_pct=0.0,
+            matched_in_vg=True,
+            matched_in_provider=True,
         ),
     ]
     out = reconcile.format_text(lines, "anthropic")
@@ -753,11 +874,17 @@ def test_parse_provider_file_handles_empty_cost_string(tmp_path):
 def test_format_csv_writes_diff_rows():
     lines = [
         reconcile.ReconcileLine(
-            model="gpt-4o-mini", vg_units=1500.0, provider_units=1500.0,
-            units_diff_abs=0.0, units_diff_pct=0.0,
-            vg_cost=0.001, provider_cost=0.001,
-            cost_diff_abs=0.0, cost_diff_pct=0.0,
-            matched_in_vg=True, matched_in_provider=True,
+            model="gpt-4o-mini",
+            vg_units=1500.0,
+            provider_units=1500.0,
+            units_diff_abs=0.0,
+            units_diff_pct=0.0,
+            vg_cost=0.001,
+            provider_cost=0.001,
+            cost_diff_abs=0.0,
+            cost_diff_pct=0.0,
+            matched_in_vg=True,
+            matched_in_provider=True,
         ),
     ]
     out = reconcile.format_csv(lines)
@@ -774,19 +901,31 @@ def test_format_csv_includes_flagged_column():
 
     lines = [
         reconcile.ReconcileLine(
-            model="gpt-4o-mini", vg_units=1500.0, provider_units=1500.0,
-            units_diff_abs=0.0, units_diff_pct=0.0,
-            vg_cost=0.94, provider_cost=1.00,
-            cost_diff_abs=0.06, cost_diff_pct=6.0,
-            matched_in_vg=True, matched_in_provider=True,
+            model="gpt-4o-mini",
+            vg_units=1500.0,
+            provider_units=1500.0,
+            units_diff_abs=0.0,
+            units_diff_pct=0.0,
+            vg_cost=0.94,
+            provider_cost=1.00,
+            cost_diff_abs=0.06,
+            cost_diff_pct=6.0,
+            matched_in_vg=True,
+            matched_in_provider=True,
             flagged=True,
         ),
         reconcile.ReconcileLine(
-            model="gpt-4o", vg_units=500.0, provider_units=500.0,
-            units_diff_abs=0.0, units_diff_pct=0.0,
-            vg_cost=0.97, provider_cost=1.00,
-            cost_diff_abs=0.03, cost_diff_pct=3.0,
-            matched_in_vg=True, matched_in_provider=True,
+            model="gpt-4o",
+            vg_units=500.0,
+            provider_units=500.0,
+            units_diff_abs=0.0,
+            units_diff_pct=0.0,
+            vg_cost=0.97,
+            provider_cost=1.00,
+            cost_diff_abs=0.03,
+            cost_diff_pct=3.0,
+            matched_in_vg=True,
+            matched_in_provider=True,
             flagged=False,
         ),
     ]
@@ -804,23 +943,32 @@ def test_format_json_writes_design_schema():
     """JSON shape per design §2.2: provider, period, rows, total, flagged_count."""
     lines = [
         reconcile.ReconcileLine(
-            model="sonic-3", vg_units=1000.0, provider_units=1000.0,
-            units_diff_abs=0.0, units_diff_pct=0.0,
-            vg_cost=0.012, provider_cost=0.012,
-            cost_diff_abs=0.0, cost_diff_pct=0.0,
-            matched_in_vg=True, matched_in_provider=True,
+            model="sonic-3",
+            vg_units=1000.0,
+            provider_units=1000.0,
+            units_diff_abs=0.0,
+            units_diff_pct=0.0,
+            vg_cost=0.012,
+            provider_cost=0.012,
+            cost_diff_abs=0.0,
+            cost_diff_pct=0.0,
+            matched_in_vg=True,
+            matched_in_provider=True,
         ),
     ]
     payload = json.loads(
         reconcile.format_json(
-            lines, provider="cartesia",
-            period_start="2026-04-01", period_end="2026-04-30",
+            lines,
+            provider="cartesia",
+            period_start="2026-04-01",
+            period_end="2026-04-30",
         )
     )
     assert isinstance(payload, dict)
     assert payload["provider"] == "cartesia"
     assert payload["period"] == {
-        "start": "2026-04-01", "end": "2026-04-30",
+        "start": "2026-04-01",
+        "end": "2026-04-30",
     }
     assert isinstance(payload["rows"], list)
     assert len(payload["rows"]) == 1
@@ -838,20 +986,30 @@ def test_format_json_counts_flagged_rows():
     lines = [
         reconcile.ReconcileLine(
             model="gpt-4o-mini",
-            vg_units=1000.0, provider_units=1000.0,
-            units_diff_abs=0.0, units_diff_pct=0.0,
-            vg_cost=0.94, provider_cost=1.00,
-            cost_diff_abs=0.06, cost_diff_pct=6.0,
-            matched_in_vg=True, matched_in_provider=True,
+            vg_units=1000.0,
+            provider_units=1000.0,
+            units_diff_abs=0.0,
+            units_diff_pct=0.0,
+            vg_cost=0.94,
+            provider_cost=1.00,
+            cost_diff_abs=0.06,
+            cost_diff_pct=6.0,
+            matched_in_vg=True,
+            matched_in_provider=True,
             flagged=True,
         ),
         reconcile.ReconcileLine(
             model="gpt-4o",
-            vg_units=500.0, provider_units=500.0,
-            units_diff_abs=0.0, units_diff_pct=0.0,
-            vg_cost=2.00, provider_cost=2.00,
-            cost_diff_abs=0.0, cost_diff_pct=0.0,
-            matched_in_vg=True, matched_in_provider=True,
+            vg_units=500.0,
+            provider_units=500.0,
+            units_diff_abs=0.0,
+            units_diff_pct=0.0,
+            vg_cost=2.00,
+            provider_cost=2.00,
+            cost_diff_abs=0.0,
+            cost_diff_pct=0.0,
+            matched_in_vg=True,
+            matched_in_provider=True,
             flagged=False,
         ),
     ]
@@ -866,19 +1024,29 @@ def test_format_json_total_excludes_missing_side():
     lines = [
         reconcile.ReconcileLine(
             model="gpt-4o-mini",
-            vg_units=1000.0, provider_units=1000.0,
-            units_diff_abs=0.0, units_diff_pct=0.0,
-            vg_cost=0.97, provider_cost=1.00,
-            cost_diff_abs=0.03, cost_diff_pct=3.0,
-            matched_in_vg=True, matched_in_provider=True,
+            vg_units=1000.0,
+            provider_units=1000.0,
+            units_diff_abs=0.0,
+            units_diff_pct=0.0,
+            vg_cost=0.97,
+            provider_cost=1.00,
+            cost_diff_abs=0.03,
+            cost_diff_pct=3.0,
+            matched_in_vg=True,
+            matched_in_provider=True,
         ),
         reconcile.ReconcileLine(
             model="gpt-3.5-turbo",
-            vg_units=0.0, provider_units=500.0,
-            units_diff_abs=500.0, units_diff_pct=100.0,
-            vg_cost=0.0, provider_cost=5.0,
-            cost_diff_abs=5.0, cost_diff_pct=100.0,
-            matched_in_vg=False, matched_in_provider=True,
+            vg_units=0.0,
+            provider_units=500.0,
+            units_diff_abs=500.0,
+            units_diff_pct=100.0,
+            vg_cost=0.0,
+            provider_cost=5.0,
+            cost_diff_abs=5.0,
+            cost_diff_pct=100.0,
+            matched_in_vg=False,
+            matched_in_provider=True,
         ),
     ]
     payload = json.loads(reconcile.format_json(lines, provider="openai"))

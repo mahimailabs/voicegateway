@@ -1,4 +1,4 @@
-# Dockerfile (core gateway)
+# docker/voicegateway.Dockerfile (core gateway)
 # Multi-stage build: builder installs deps, runtime has only what's needed.
 
 # -------- Stage 1: Frontend builder --------
@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml README.md ./
 COPY voicegateway/ ./voicegateway/
 
-ARG VERSION=0.1.1
+ARG VERSION=0.1.2
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 
 RUN pip install --prefix=/install ".[cloud,mcp,dashboard,tui]"
@@ -36,7 +36,7 @@ RUN pip install --prefix=/install ".[cloud,mcp,dashboard,tui]"
 # -------- Stage 3: Runtime --------
 FROM python:3.12-slim AS runtime
 
-ARG VERSION=0.1.1
+ARG VERSION=0.1.2
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

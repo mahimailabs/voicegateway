@@ -38,7 +38,7 @@ Three test functions live in this file (per §3.5 #2-#4):
 When no fixtures are committed, the parametrize emits a single
 skipped case with a clear "fixtures not recorded yet" reason so
 the suite stays green pre-recording. As soon as
-``scripts/record-streaming-fixtures.py --record --all --confirm``
+``scripts/record_streaming_fixtures.py --record --all --confirm``
 lands six fixtures in the directory, those skipped cases activate
 automatically; nothing in this file changes.
 """
@@ -81,7 +81,7 @@ _FIXTURES_PENDING_MESSAGE = (
     "tests/fixtures/streaming/PLACEHOLDER.md is present, marking the "
     "documented 'fixtures pending' state. Skipping the replay-driven "
     "assertions for now. Run "
-    "scripts/record-streaming-fixtures.py --record --all --confirm to "
+    "scripts/record_streaming_fixtures.py --record --all --confirm to "
     "record the six minimum fixtures, then delete PLACEHOLDER.md in "
     "the same commit (see PLACEHOLDER.md for the runbook). The replay "
     "tests activate automatically on the next CI run."
@@ -307,8 +307,7 @@ def test_unit_counts_are_consistent_with_response_stream(
             f"{ground['total_tokens']}."
         )
         assert (
-            usage["input_tokens"] + usage["output_tokens"]
-            == usage["total_tokens"]
+            usage["input_tokens"] + usage["output_tokens"] == usage["total_tokens"]
         ), (
             f"{fid}: input_tokens + output_tokens != total_tokens "
             f"({usage['input_tokens']} + {usage['output_tokens']} != "
@@ -539,10 +538,10 @@ def test_fixtures_directory_and_readme_exist() -> None:
 
 def test_recording_script_exists() -> None:
     """Phase 3.3 deliverable: the recording script is at the documented path."""
-    repo_root = Path(__file__).resolve().parent.parent
-    recorder = repo_root / "scripts" / "record-streaming-fixtures.py"
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    recorder = repo_root / "scripts" / "record_streaming_fixtures.py"
     assert recorder.exists(), (
-        f"scripts/record-streaming-fixtures.py expected at {recorder}"
+        f"scripts/record_streaming_fixtures.py expected at {recorder}"
     )
 
 
@@ -655,13 +654,11 @@ def test_streaming_fixture_params_returns_one_per_real_fixture(
             "modality": "llm",
             "mode": "batch",
             "recorded_at": "2026-05-04T14:32:11Z",
-            "recorded_by": "scripts/record-streaming-fixtures.py",
+            "recorded_by": "scripts/record_streaming_fixtures.py",
             "voicegateway_version": "0.0.3",
         },
         "request": {"prompt": "hi", "stream": False},
-        "response_stream": [
-            {"chunk_index": 0, "received_at_ms": 0, "data": {"x": 1}}
-        ],
+        "response_stream": [{"chunk_index": 0, "received_at_ms": 0, "data": {"x": 1}}],
         "provider_reported_usage": {
             "input_tokens": 1,
             "output_tokens": 1,
@@ -669,9 +666,7 @@ def test_streaming_fixture_params_returns_one_per_real_fixture(
         },
         "expected_cost_usd": "0.00000050",
     }
-    fixture_path = (
-        tmp_path / "openai_gpt-4o-mini_llm_batch_2026-05-05.json"
-    )
+    fixture_path = tmp_path / "openai_gpt-4o-mini_llm_batch_2026-05-05.json"
     fixture_path.write_text(json.dumps(payload), encoding="utf-8")
 
     params = _streaming_fixture_params(tmp_path)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""scripts/record-streaming-fixtures.py: dev-only fixture recorder.
+"""scripts/record_streaming_fixtures.py: dev-only fixture recorder.
 
 Hits real provider APIs to capture responses for fixture-based
 replay testing in ``tests/test_streaming_cost_accounting.py``. The
@@ -20,15 +20,15 @@ This script is **dev-only**. Default-deny:
 Usage:
 
     # Show the recording-disabled banner.
-    python scripts/record-streaming-fixtures.py --provider openai \\
+    python scripts/record_streaming_fixtures.py --provider openai \\
       --modality llm --model gpt-4o-mini --mode batch
 
     # Show the cost estimate without recording.
-    python scripts/record-streaming-fixtures.py --record \\
+    python scripts/record_streaming_fixtures.py --record \\
       --provider openai --modality llm --model gpt-4o-mini --mode batch
 
     # Actually record.
-    python scripts/record-streaming-fixtures.py --record --confirm \\
+    python scripts/record_streaming_fixtures.py --record --confirm \\
       --provider openai --modality llm --model gpt-4o-mini --mode batch
 
 Output path:
@@ -83,7 +83,7 @@ _CARTESIA_DEFAULT_VOICE_ID = "a0e99841-438c-4a64-b679-ae501e7d6091"
 # Decimal-as-string in JSON without scientific notation, and gives
 # enough resolution for sub-cent fixture costs.
 _COST_PRECISION = Decimal("0.00000001")
-_RECORDED_BY = "scripts/record-streaming-fixtures.py"
+_RECORDED_BY = "scripts/record_streaming_fixtures.py"
 
 # Estimated provider cost for the canonical Phase 3 fixtures, in USD.
 # Computed from the v0.0.4 pricing catalog at the prompts and audio
