@@ -2,6 +2,36 @@
 
 All notable changes to VoiceGateway are documented here. This project follows [Semantic Versioning](https://semver.org/) and [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.1.2 -- 2026-05-11
+
+**Project polish.** Housekeeping pass before v0.2.0 metrics work begins. No buyer-facing behavior changes, no new features, no breaking imports. The repo tree resets to a clean baseline: tests live where you expect them, Dockerfiles consolidated under `docker/`, scripts use underscore convention, three top-level modules folded into subpackages with re-export shims, standard root metadata in place, public-API contract via `__all__` declared on every subpackage, code-style conventions documented with linter audits.
+
+### Changed
+
+- **Tests relocated into subdirs** (REQ-VG-POLISH-001). 9 loose root tests moved into the canonical `tests/{cli,integration,providers,middleware}/` subdirs. `tests/integration/` is the new home for cross-cutting tests (`test_integration.py`, `test_reconcile.py`). 7 `Path(__file__).resolve().parent.parent` sites patched to compensate for the deeper file paths.
+- **Dockerfiles consolidated under `docker/`** (REQ-VG-POLISH-002). `/Dockerfile` -> `docker/voicegateway.Dockerfile`; `/dashboard/Dockerfile` -> `docker/dashboard.Dockerfile`. `docker-compose.yml`, the docker-publish GitHub Actions workflow, `deploy/fly/{deploy.sh,fly.toml}`, and the documented compose examples updated to reference the new paths.
+- **Scripts use underscore convention** (REQ-VG-POLISH-003). `scripts/record-streaming-fixtures.py` -> `scripts/record_streaming_fixtures.py`; `scripts/smoke-v005-inference.py` -> `scripts/smoke_v005_inference.py`. 15 reference sites updated across scripts, tests, and docs.
+- **Top-level Python files folded into subpackages** (REQ-VG-POLISH-004). `voicegateway/server.py` -> `voicegateway/server/main.py` (re-export shim at the subpackage `__init__`). `voicegateway/combined_server.py` -> `voicegateway/server/combined.py` (with a temporary back-compat shim at the original path, flagged for removal in v0.2.0). `voicegateway/reconcile.py` -> `voicegateway/reconcile/core.py` (re-export shim at the subpackage `__init__`). Every v0.1.x import path keeps working; a new contract test enforces this on every PR.
+- **Code-style documentation expanded** (REQ-VG-POLISH-007). `docs/contributing/code-style.md` now names every existing convention: `typing.Protocol` over ABC for structural typing, Pydantic for config, async throughout, exception-handling-at-boundaries (rather than a blanket "no broad except" rule that the codebase does not actually follow), leading-underscore internal modules, public-API contract via `__all__`, test patterns.
+- **Ruff config rationale documented** (REQ-VG-POLISH-007). Each selector and ignore now carries an inline comment explaining its choice. Explicit `[tool.ruff.format]` block declares the format settings that agree with `.editorconfig` defaults.
+- **Mypy config tightened** (REQ-VG-POLISH-007). Added `warn_redundant_casts`, `warn_unused_ignores`, `no_implicit_optional`. `warn_unused_ignores` surfaced and removed 8 dead `# type: ignore` comments across `voicegateway/cli/tui/screens/_focus.py`, `voicegateway/middleware/instrumented_provider.py`, `voicegateway/mcp/server.py`, and `voicegateway/cli/smoke_test.py`. Mode remains basic for v0.1.x; per-module strict deferred to v0.2.0+.
+- **README references project metadata.** New "Project metadata" section links to CHANGELOG, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT, LICENSE, and the `docker/` directory.
+
+### Added
+
+- **Root metadata files** (REQ-VG-POLISH-005). `CHANGELOG.md` is now canonical at repo root; the docs site mirrors it at build time via `docs/package.json`'s `prebuild`/`predev` hooks. `CONTRIBUTING.md` is a one-page contribution flow pointing to `docs/contributing/` for deeper guides. `SECURITY.md` documents the disclosure policy: GitHub Security Advisory preferred, `mahimairaja3@gmail.com` email fallback with `[voicegateway-security]` subject prefix, best-effort 7-day acknowledgment / 14-day triage / 30-day patch for high-severity, latest-minor-only support window while on v0.x. `.editorconfig` sets editor-side defaults (utf-8, LF, 4-space Python, 2-space everything-else, `trim_trailing_whitespace = false` on Markdown to preserve the two-trailing-spaces line-break convention) and agrees with `ruff format`.
+- **`__all__` on every subpackage** (REQ-VG-POLISH-006). All 18 `voicegateway/**/__init__.py` files now declare `__all__` -- the v0.1.x public surface is explicit. Subpackages with no top-level re-exports declare `__all__: list[str] = []` so callers know to reach into submodules directly.
+- **Contract tests for the public surface.** `tests/integration/test_v0_1_x_imports.py` (12 tests) asserts every v0.1.x import path resolves through the new re-export shims (REQ-VG-POLISH-004 AC-2). `tests/integration/test_public_api.py` (73 parametrized tests across 18 subpackages) walks every subpackage and asserts `__all__` exists, is a list of str, contains no underscore-prefixed names, and every name resolves on the package (REQ-VG-POLISH-006 AC-1).
+
+### Removed
+
+- **`docs/reference/changelog.md` is no longer tracked.** Foundry Open Question 2 resolved (recommended path): root `CHANGELOG.md` is the single source of truth; the docs-site mirror is a derived artifact regenerated by the prebuild hook on every docs build. Existing internal docs links (`/reference/changelog` from `docs/migration/version-upgrades.md`, `docs/reference/troubleshooting.md`, `docs/reference/faq.md`) keep working because the prebuild script runs before VitePress.
+
+### Migration
+
+- The `voicegateway/combined_server.py` re-export shim is temporary scaffolding flagged for removal in v0.2.0. Downstream callers using `from voicegateway.combined_server import build_combined_app` should plan to migrate to `from voicegateway.server.combined import build_combined_app` before v0.2.0.
+- No other v0.1.x import paths break. The new contract tests enforce this on every PR.
+
 ## v0.1.1 -- 2026-05-10
 
 **Terminal UI fast-follow.** v0.1.1 is the four-tab Textual-based terminal interface the v0.1.0 launch trailer promised: launch with `voicegw tui` for live monitoring of sessions, costs, logs, and providers without leaving the shell. Dual mode -- Gateway (1 s daemon polling) or Local (5 s direct SQLite read, daemon-down friendly) -- plus full vim navigation, a `?` help overlay, brand-orange focus rings, and a reconnection indicator that flips on connection loss and back when the daemon returns. v0.1.0's public API, command surface, and storage layout are preserved verbatim; v0.1.1 is purely additive.

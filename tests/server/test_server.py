@@ -1,6 +1,5 @@
 """Tests for voicegateway/server.py — HTTP API endpoints."""
 
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -32,7 +31,7 @@ async def test_health(client):
     data = resp.json()
     assert data["status"] == "ok"
     assert "uptime_seconds" in data
-    assert data["version"] == "0.1.1"
+    assert data["version"] == "0.1.2"
 
 
 async def test_v1_status(client):
@@ -227,9 +226,7 @@ async def test_v1_costs_period_with_window_emits_deprecation_header(client):
     Deprecation response header so dashboards mid-migration discover
     that period is ignored when the new params are present.
     """
-    resp = await client.get(
-        "/v1/costs?period=week&start=2026-05-01&end=2026-05-04"
-    )
+    resp = await client.get("/v1/costs?period=week&start=2026-05-01&end=2026-05-04")
     assert resp.status_code == 200
     assert "deprecation" in {k.lower() for k in resp.headers}
     msg = resp.headers["deprecation"].lower()
@@ -293,29 +290,53 @@ async def test_v1_costs_combined_query_params(client, gateway):
 
     today = _dt.date.today()
     in_window = _dt.datetime.combine(today, _dt.time(12, 0)).timestamp()
-    out_of_window = (
-        _dt.datetime.combine(today - _dt.timedelta(days=10), _dt.time(12, 0)).timestamp()
+    out_of_window = _dt.datetime.combine(
+        today - _dt.timedelta(days=10), _dt.time(12, 0)
+    ).timestamp()
+    await gateway.storage.log_request(
+        RequestRecord(
+            id=str(uuid.uuid4()),
+            timestamp=in_window,
+            modality="llm",
+            model_id="openai/gpt-4o-mini",
+            provider="openai",
+            cost_usd=0.10,
+            pricing_source="genai-prices@0.0.57",
+        )
     )
-    await gateway.storage.log_request(RequestRecord(
-        id=str(uuid.uuid4()), timestamp=in_window, modality="llm",
-        model_id="openai/gpt-4o-mini", provider="openai",
-        cost_usd=0.10, pricing_source="genai-prices@0.0.57",
-    ))
-    await gateway.storage.log_request(RequestRecord(
-        id=str(uuid.uuid4()), timestamp=in_window, modality="stt",
-        model_id="deepgram/nova-3", provider="deepgram",
-        cost_usd=0.05, pricing_source="local-stt@2026-05-04",
-    ))
-    await gateway.storage.log_request(RequestRecord(
-        id=str(uuid.uuid4()), timestamp=in_window, modality="tts",
-        model_id="cartesia/sonic-3", provider="cartesia",
-        cost_usd=0.03, pricing_source="local-tts@2026-05-04",
-    ))
-    await gateway.storage.log_request(RequestRecord(
-        id=str(uuid.uuid4()), timestamp=out_of_window, modality="llm",
-        model_id="openai/gpt-4o-mini", provider="openai",
-        cost_usd=99.0, pricing_source="genai-prices@0.0.57",
-    ))
+    await gateway.storage.log_request(
+        RequestRecord(
+            id=str(uuid.uuid4()),
+            timestamp=in_window,
+            modality="stt",
+            model_id="deepgram/nova-3",
+            provider="deepgram",
+            cost_usd=0.05,
+            pricing_source="local-stt@2026-05-04",
+        )
+    )
+    await gateway.storage.log_request(
+        RequestRecord(
+            id=str(uuid.uuid4()),
+            timestamp=in_window,
+            modality="tts",
+            model_id="cartesia/sonic-3",
+            provider="cartesia",
+            cost_usd=0.03,
+            pricing_source="local-tts@2026-05-04",
+        )
+    )
+    await gateway.storage.log_request(
+        RequestRecord(
+            id=str(uuid.uuid4()),
+            timestamp=out_of_window,
+            modality="llm",
+            model_id="openai/gpt-4o-mini",
+            provider="openai",
+            cost_usd=99.0,
+            pricing_source="genai-prices@0.0.57",
+        )
+    )
 
     start = (today - _dt.timedelta(days=1)).isoformat()
     end = today.isoformat()
@@ -334,8 +355,7 @@ async def test_v1_costs_combined_query_params(client, gateway):
         == "genai-prices@0.0.57"
     )
     assert (
-        data["by_model"]["deepgram/nova-3"]["pricing_source"]
-        == "local-stt@2026-05-04"
+        data["by_model"]["deepgram/nova-3"]["pricing_source"] == "local-stt@2026-05-04"
     )
     # The 99.0 out-of-window record must not leak into any aggregate.
     assert data["by_modality"]["llm"]["requests"] == 1
@@ -360,24 +380,26 @@ async def test_v1_costs_window_overrides_period_at_data_layer(client, gateway):
     today = _dt.date.today()
     # Record from 5 days ago - outside `period=today` but inside the
     # 10-day explicit window below.
-    five_days_ago = (
-        _dt.datetime.combine(
-            today - _dt.timedelta(days=5), _dt.time(12, 0)
-        ).timestamp()
+    five_days_ago = _dt.datetime.combine(
+        today - _dt.timedelta(days=5), _dt.time(12, 0)
+    ).timestamp()
+    await gateway.storage.log_request(
+        RequestRecord(
+            id=str(uuid.uuid4()),
+            timestamp=five_days_ago,
+            modality="llm",
+            model_id="openai/gpt-4o-mini",
+            provider="openai",
+            cost_usd=0.42,
+            pricing_source="genai-prices@0.0.57",
+        )
     )
-    await gateway.storage.log_request(RequestRecord(
-        id=str(uuid.uuid4()), timestamp=five_days_ago, modality="llm",
-        model_id="openai/gpt-4o-mini", provider="openai",
-        cost_usd=0.42, pricing_source="genai-prices@0.0.57",
-    ))
 
     start = (today - _dt.timedelta(days=10)).isoformat()
     end = today.isoformat()
     # period=today would alone exclude the record; start/end must
     # win and the response surfaces the cost.
-    resp = await client.get(
-        f"/v1/costs?period=today&start={start}&end={end}"
-    )
+    resp = await client.get(f"/v1/costs?period=today&start={start}&end={end}")
     assert resp.status_code == 200
     data = resp.json()
     # If period had won, total would be 0 (no records today). The
@@ -443,9 +465,7 @@ async def test_v1_metrics(client):
 def _midday_today() -> float:
     import datetime as _dt
 
-    return _dt.datetime.combine(
-        _dt.date.today(), _dt.time(12, 0)
-    ).timestamp()
+    return _dt.datetime.combine(_dt.date.today(), _dt.time(12, 0)).timestamp()
 
 
 async def test_v1_latency_includes_percentiles(client, gateway):
@@ -456,13 +476,17 @@ async def test_v1_latency_includes_percentiles(client, gateway):
 
     now = _midday_today()
     for i in range(1, 21):
-        await gateway.storage.log_request(RequestRecord(
-            id=str(uuid.uuid4()), timestamp=now - i,
-            modality="stt", model_id="deepgram/nova-3",
-            provider="deepgram",
-            ttfb_ms=float(i * 10),
-            total_latency_ms=float(i * 20),
-        ))
+        await gateway.storage.log_request(
+            RequestRecord(
+                id=str(uuid.uuid4()),
+                timestamp=now - i,
+                modality="stt",
+                model_id="deepgram/nova-3",
+                provider="deepgram",
+                ttfb_ms=float(i * 10),
+                total_latency_ms=float(i * 20),
+            )
+        )
     resp = await client.get("/v1/latency")
     data = resp.json()
     assert "deepgram/nova-3" in data
@@ -478,13 +502,17 @@ async def test_v1_metrics_emits_latency_summary(client, gateway):
 
     now = _midday_today()
     for i in range(1, 11):
-        await gateway.storage.log_request(RequestRecord(
-            id=str(uuid.uuid4()), timestamp=now - i,
-            modality="llm", model_id="openai/gpt-4o-mini",
-            provider="openai",
-            ttfb_ms=float(i * 50),
-            total_latency_ms=float(i * 100),
-        ))
+        await gateway.storage.log_request(
+            RequestRecord(
+                id=str(uuid.uuid4()),
+                timestamp=now - i,
+                modality="llm",
+                model_id="openai/gpt-4o-mini",
+                provider="openai",
+                ttfb_ms=float(i * 50),
+                total_latency_ms=float(i * 100),
+            )
+        )
     resp = await client.get("/v1/metrics")
     text = resp.text
     assert "voicegw_request_ttfb_seconds" in text
@@ -507,46 +535,65 @@ async def test_list_providers(client):
 
 
 async def test_create_provider(client):
-    resp = await client.post("/v1/providers", json={
-        "provider_id": "ollama-test",
-        "provider_type": "ollama",
-        "api_key": "",
-    })
+    resp = await client.post(
+        "/v1/providers",
+        json={
+            "provider_id": "ollama-test",
+            "provider_type": "ollama",
+            "api_key": "",
+        },
+    )
     assert resp.status_code == 200
     assert resp.json()["source"] == "db"
 
 
 async def test_create_provider_yaml_conflict(client):
-    resp = await client.post("/v1/providers", json={
-        "provider_id": "openai",
-        "provider_type": "openai",
-        "api_key": "sk-test",
-    })
+    resp = await client.post(
+        "/v1/providers",
+        json={
+            "provider_id": "openai",
+            "provider_type": "openai",
+            "api_key": "sk-test",
+        },
+    )
     assert resp.status_code == 409
 
 
 async def test_create_provider_bad_type(client):
-    resp = await client.post("/v1/providers", json={
-        "provider_id": "bad",
-        "provider_type": "nonexistent",
-        "api_key": "",
-    })
+    resp = await client.post(
+        "/v1/providers",
+        json={
+            "provider_id": "bad",
+            "provider_type": "nonexistent",
+            "api_key": "",
+        },
+    )
     assert resp.status_code == 400
 
 
 async def test_delete_provider_preview(client):
-    await client.post("/v1/providers", json={
-        "provider_id": "del-me", "provider_type": "ollama", "api_key": "",
-    })
+    await client.post(
+        "/v1/providers",
+        json={
+            "provider_id": "del-me",
+            "provider_type": "ollama",
+            "api_key": "",
+        },
+    )
     resp = await client.delete("/v1/providers/del-me")
     assert resp.status_code == 200
     assert "would_delete" in resp.json()
 
 
 async def test_delete_provider_confirm(client):
-    await client.post("/v1/providers", json={
-        "provider_id": "del-me2", "provider_type": "ollama", "api_key": "",
-    })
+    await client.post(
+        "/v1/providers",
+        json={
+            "provider_id": "del-me2",
+            "provider_type": "ollama",
+            "api_key": "",
+        },
+    )
     resp = await client.delete("/v1/providers/del-me2?confirm=true")
     assert resp.status_code == 200
     assert resp.json()["deleted"] == "del-me2"
@@ -558,10 +605,17 @@ async def test_delete_provider_yaml_forbidden(client):
 
 
 async def test_patch_provider(client):
-    await client.post("/v1/providers", json={
-        "provider_id": "patch-me", "provider_type": "ollama", "api_key": "",
-    })
-    resp = await client.patch("/v1/providers/patch-me", json={"base_url": "http://new:11434"})
+    await client.post(
+        "/v1/providers",
+        json={
+            "provider_id": "patch-me",
+            "provider_type": "ollama",
+            "api_key": "",
+        },
+    )
+    resp = await client.patch(
+        "/v1/providers/patch-me", json={"base_url": "http://new:11434"}
+    )
     assert resp.status_code == 200
     assert resp.json()["updated"] is True
 
@@ -577,21 +631,27 @@ async def test_test_provider_not_found(client):
 
 
 async def test_create_model(client):
-    resp = await client.post("/v1/models", json={
-        "modality": "llm",
-        "provider_id": "openai",
-        "model_name": "gpt-5-test",
-    })
+    resp = await client.post(
+        "/v1/models",
+        json={
+            "modality": "llm",
+            "provider_id": "openai",
+            "model_name": "gpt-5-test",
+        },
+    )
     assert resp.status_code == 200
     assert resp.json()["model_id"] == "openai/gpt-5-test"
 
 
 async def test_create_model_yaml_conflict(client):
-    resp = await client.post("/v1/models", json={
-        "modality": "llm",
-        "provider_id": "openai",
-        "model_name": "gpt-4o-mini",
-    })
+    resp = await client.post(
+        "/v1/models",
+        json={
+            "modality": "llm",
+            "provider_id": "openai",
+            "model_name": "gpt-4o-mini",
+        },
+    )
     assert resp.status_code == 409
 
 
@@ -601,11 +661,14 @@ async def test_delete_model_yaml_forbidden(client):
 
 
 async def test_delete_model_confirm(client):
-    await client.post("/v1/models", json={
-        "modality": "llm",
-        "provider_id": "openai",
-        "model_name": "to-delete",
-    })
+    await client.post(
+        "/v1/models",
+        json={
+            "modality": "llm",
+            "provider_id": "openai",
+            "model_name": "to-delete",
+        },
+    )
     resp = await client.delete("/v1/models/openai/to-delete?confirm=true")
     assert resp.status_code == 200
     assert resp.json()["deleted"] == "openai/to-delete"
@@ -617,26 +680,36 @@ async def test_delete_model_confirm(client):
 
 
 async def test_create_project(client):
-    resp = await client.post("/v1/projects", json={
-        "project_id": "http-proj",
-        "name": "HTTP Project",
-    })
+    resp = await client.post(
+        "/v1/projects",
+        json={
+            "project_id": "http-proj",
+            "name": "HTTP Project",
+        },
+    )
     assert resp.status_code == 200
     assert resp.json()["source"] == "db"
 
 
 async def test_create_project_conflict(client):
-    resp = await client.post("/v1/projects", json={
-        "project_id": "test-project",
-        "name": "dup",
-    })
+    resp = await client.post(
+        "/v1/projects",
+        json={
+            "project_id": "test-project",
+            "name": "dup",
+        },
+    )
     assert resp.status_code == 409
 
 
 async def test_patch_project(client):
-    await client.post("/v1/projects", json={
-        "project_id": "update-me", "name": "Original",
-    })
+    await client.post(
+        "/v1/projects",
+        json={
+            "project_id": "update-me",
+            "name": "Original",
+        },
+    )
     resp = await client.patch("/v1/projects/update-me", json={"name": "Updated"})
     assert resp.status_code == 200
     assert resp.json()["updated"] is True
@@ -648,9 +721,13 @@ async def test_delete_project_yaml_forbidden(client):
 
 
 async def test_delete_project_confirm(client):
-    await client.post("/v1/projects", json={
-        "project_id": "kill-me", "name": "K",
-    })
+    await client.post(
+        "/v1/projects",
+        json={
+            "project_id": "kill-me",
+            "name": "K",
+        },
+    )
     resp = await client.delete("/v1/projects/kill-me?confirm=true")
     assert resp.status_code == 200
     assert resp.json()["deleted"] == "kill-me"
@@ -662,9 +739,14 @@ async def test_delete_project_confirm(client):
 
 
 async def test_audit_log_records_crud(client):
-    await client.post("/v1/providers", json={
-        "provider_id": "audit-test", "provider_type": "ollama", "api_key": "",
-    })
+    await client.post(
+        "/v1/providers",
+        json={
+            "provider_id": "audit-test",
+            "provider_type": "ollama",
+            "api_key": "",
+        },
+    )
     resp = await client.get("/v1/audit-log?entity_type=provider")
     assert resp.status_code == 200
     entries = resp.json()
