@@ -69,6 +69,20 @@ class ReplayConfig(_StrictBase):
     flush_size_events: int = Field(default=500, ge=1)
 
 
+class TenantConfig(_StrictBase):
+    """v0.4.0 multi-tenant attribution knobs (REQ-VG-TENANT-001..004).
+
+    Per-project overridable via the ``tenant:`` block under each
+    project entry in ``voicegw.yaml``. ``virtual_key_stale_days``
+    drives the dashboard's stale-key surface (a key whose last_used_at
+    or issued_at is older than this threshold is flagged in the
+    Virtual Keys page); the default matches the Foundry's 90-day
+    lock.
+    """
+
+    virtual_key_stale_days: int = Field(default=90, ge=1)
+
+
 class ProjectConfig(_StrictBase):
     name: str
     description: str = ""
@@ -85,6 +99,8 @@ class ProjectConfig(_StrictBase):
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     # v0.3.0: per-project replay capture + retention knobs.
     replay: ReplayConfig = Field(default_factory=ReplayConfig)
+    # v0.4.0: per-project multi-tenant knobs.
+    tenant: TenantConfig = Field(default_factory=TenantConfig)
 
 
 class ObservabilityConfig(_StrictBase):

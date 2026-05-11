@@ -83,6 +83,20 @@ class ReplayConfig:
 
 
 @dataclass
+class TenantConfig:
+    """v0.4.0 multi-tenant attribution knobs.
+
+    Per-project overridable via the ``tenant:`` block in ``voicegw.yaml``.
+    ``virtual_key_stale_days`` drives the dashboard's stale-key surface
+    (REQ-VG-TENANT-003): keys whose last_used_at (or issued_at, for
+    never-used keys) is older than this threshold are flagged in the
+    Virtual Keys page. The default matches the Foundry's "90 days" lock.
+    """
+
+    virtual_key_stale_days: int = 90
+
+
+@dataclass
 class ProjectConfig:
     """Configuration for a single project."""
 
@@ -103,6 +117,8 @@ class ProjectConfig:
     metrics: MetricsConfig = field(default_factory=MetricsConfig)
     # v0.3.0: per-project replay capture knobs (REQ-VG-REPLAY-001..006).
     replay: ReplayConfig = field(default_factory=ReplayConfig)
+    # v0.4.0: per-project multi-tenant knobs (REQ-VG-TENANT-003).
+    tenant: TenantConfig = field(default_factory=TenantConfig)
 
     @property
     def accent(self) -> str:
@@ -279,6 +295,12 @@ class GatewayConfig:
                     buffer_size_events=int(replay_raw.get("buffer_size_events", 5000)),
                     flush_size_events=int(replay_raw.get("flush_size_events", 500)),
                 )
+                tenant_raw = pcfg.get("tenant") or {}
+                tenant_cfg = TenantConfig(
+                    virtual_key_stale_days=int(
+                        tenant_raw.get("virtual_key_stale_days", 90)
+                    ),
+                )
                 projects[pid] = ProjectConfig(
                     id=pid,
                     name=str(pcfg.get("name") or pid),
@@ -290,6 +312,7 @@ class GatewayConfig:
                     providers=project_providers,
                     metrics=metrics_cfg,
                     replay=replay_cfg,
+                    tenant=tenant_cfg,
                 )
 
         auth_raw = raw.get("auth", {}) or {}
