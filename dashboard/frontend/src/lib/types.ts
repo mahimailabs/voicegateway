@@ -105,3 +105,46 @@ export type SessionOrderBy =
   | 'started_at_asc'
   | 'cost_desc'
   | 'cost_asc';
+
+// v0.2.0 voice-conversation metrics types. The /api/metrics handler
+// returns `MetricsAggregate`; per-session drilldowns return TurnRow
+// and DeadAirEvent lists. T17 extends api.ts with typed fetchers for
+// these endpoints; T13 ships the minimal type the Metrics.tsx page
+// needs to compile.
+
+export interface MetricsAggregate {
+  window: {
+    days: number;
+    since: string;
+    until: string;
+  };
+  filter: {
+    project: string | null;
+  };
+  session_count: number;
+  measured_session_count: number;
+  per_minute_cost_usd_avg: number | null;
+  response_speed_ms: {
+    p50: number | null;
+    p95: number | null;
+  };
+  talk_over_rate: number | null;
+  dead_air_event_count: number;
+}
+
+export interface TurnRow {
+  session_id: string;
+  turn_index: number;
+  caller_speak_start_ms: number;
+  caller_speak_end_ms: number;
+  agent_speak_start_ms: number | null;
+  agent_speak_end_ms: number | null;
+  response_speed_ms: number | null;
+}
+
+export interface DeadAirEvent {
+  session_id: string;
+  started_at_ms: number;
+  duration_ms: number;
+  threshold_used_ms: number;
+}
