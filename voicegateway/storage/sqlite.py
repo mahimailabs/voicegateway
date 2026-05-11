@@ -27,6 +27,9 @@ _migration_0003 = import_module(
     "voicegateway.storage.migrations.0003_turns_and_deadair"
 )
 _migration_0004 = import_module("voicegateway.storage.migrations.0004_replay_tables")
+_migration_0005 = import_module(
+    "voicegateway.storage.migrations.0005_tenant_attribution"
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -261,6 +264,12 @@ class SQLiteStorage:
             # v0.3.0 migration 0004: replay event tables + sessions.replay_size_bytes.
             # Idempotent.
             await _migration_0004.apply(db)
+
+            # v0.4.0 migration 0005: virtual_keys table + tenant_id columns
+            # on sessions/requests (unconditionally) and on the v0.2.0/v0.3.0
+            # derived tables (conditionally via sqlite_master presence check
+            # per OQ4). Idempotent.
+            await _migration_0005.apply(db)
 
             await db.commit()
             self._initialized = True

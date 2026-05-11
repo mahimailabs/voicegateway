@@ -91,6 +91,8 @@ async def test_sessions_columns_match_design(tmp_path):
         "talk_over_rate",
         # v0.3.0 replay storage column (added by migration 0004).
         "replay_size_bytes",
+        # v0.4.0 tenant attribution column (added by migration 0005).
+        "tenant_id",
     }
 
     # Required keys (NOT NULL).
