@@ -83,6 +83,12 @@ async def test_sessions_columns_match_design(tmp_path):
         "modalities",
         "total_cost_usd",
         "request_count",
+        # v0.2.0 aggregate columns (added by migration 0003).
+        "talk_time_seconds",
+        "per_minute_cost_usd",
+        "response_speed_p50_ms",
+        "response_speed_p95_ms",
+        "talk_over_rate",
     }
 
     # Required keys (NOT NULL).
@@ -254,9 +260,7 @@ async def test_sessions_table_is_idempotent_on_reinit(tmp_path):
 
     conn = sqlite3.connect(db_path)
     try:
-        cursor = conn.execute(
-            "SELECT id FROM sessions WHERE id = ?", (sid,)
-        )
+        cursor = conn.execute("SELECT id FROM sessions WHERE id = ?", (sid,))
         row = cursor.fetchone()
     finally:
         conn.close()
