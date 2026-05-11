@@ -148,3 +148,35 @@ export interface DeadAirEvent {
   duration_ms: number;
   threshold_used_ms: number;
 }
+
+// v0.3.0 conversation-replay types. The /api/sessions/{id}/replay
+// endpoint returns a time-ordered list of `ReplayEvent` rows
+// covering all four modalities (stt/llm/tts/state). T14 extends
+// api.ts with the typed fetcher; T11 ships the minimal type the
+// Replay.tsx page needs to compile.
+
+export interface ReplayEvent {
+  session_id: string;
+  modality: 'stt' | 'llm' | 'tts' | 'state';
+  t_ms: number;
+  payload: Record<string, unknown>;
+  provider: string;
+  cost_usd: number | null;
+}
+
+export interface ReplayResponse {
+  session_id: string;
+  events: ReplayEvent[];
+}
+
+export interface StateSnapshot {
+  system_prompt: string;
+  message_history: Array<Record<string, unknown>>;
+  tool_call_in_flight: Record<string, unknown> | null;
+  structured_output_collected: Record<string, unknown> | null;
+}
+
+export interface RetentionWindow {
+  project_id: string;
+  retention_days: number;
+}
