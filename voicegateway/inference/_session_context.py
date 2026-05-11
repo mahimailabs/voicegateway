@@ -29,9 +29,7 @@ from contextvars import ContextVar
 
 _SESSION_ID_PREFIX = "vg-"
 
-_current_session_id: ContextVar[str | None] = ContextVar(
-    "vg_session_id", default=None
-)
+_current_session_id: ContextVar[str | None] = ContextVar("vg_session_id", default=None)
 
 
 def get_or_create_session_id() -> str:
@@ -94,3 +92,62 @@ def reset_session_id() -> None:
     round-trip.
     """
     _current_session_id.set(None)
+
+
+# ----------------------------------------------------------------------
+# v0.4.0 tenant-id ContextVar (REQ-VG-TENANT-001).
+#
+# Parallel to the session_id ContextVar above. The auth middleware
+# sets this when a tenant-scoped virtual key authenticates a request;
+# the session-create path sets it when the caller passes an explicit
+# tenant identifier. Storage repos read ``current_tenant()`` at write
+# time and stamp the row's ``tenant_id`` column. NULL is treated as
+# "unattributed" at the dashboard layer (OQ3: no backfill).
+# ----------------------------------------------------------------------
+
+_TENANT_ID_MAX_LEN = 128  # OQ2 lock: 128-char UTF-8 cap.
+
+_current_tenant_id: ContextVar[str | None] = ContextVar("vg_tenant_id", default=None)
+
+
+def set_tenant(tenant_id: str | None) -> None:
+    """Set the current tenant identifier in the active context.
+
+    ``None`` clears the value (back to the implicit "unattributed"
+    bucket). Non-string and over-length identifiers raise ``ValueError``
+    to surface misuse at the call site rather than at storage write
+    time (OQ2: 128-char UTF-8 cap, otherwise no constraints).
+    """
+    if tenant_id is None:
+        _current_tenant_id.set(None)
+        return
+    if not isinstance(tenant_id, str):
+        raise ValueError(
+            f"tenant_id must be a str or None, got {type(tenant_id).__name__}"
+        )
+    if len(tenant_id) > _TENANT_ID_MAX_LEN:
+        raise ValueError(
+            f"tenant_id length {len(tenant_id)} exceeds {_TENANT_ID_MAX_LEN} "
+            f"char cap (OQ2 lock)"
+        )
+    _current_tenant_id.set(tenant_id)
+
+
+def current_tenant() -> str | None:
+    """Return the current tenant identifier, or ``None`` when unset.
+
+    Storage repos call this at write time. NULL on the row signals
+    "unattributed" to the dashboard's tenant filter (REQ-VG-TENANT-001
+    AC-3).
+    """
+    return _current_tenant_id.get()
+
+
+def reset_tenant_id() -> None:
+    """Clear the tenant identifier in the current context.
+
+    Test-only helper; production resets happen via the
+    contextvars.Token returned by ``set_tenant`` or by spawning a
+    fresh asyncio task. Mirrors the ``reset_session_id`` shape.
+    """
+    _current_tenant_id.set(None)
