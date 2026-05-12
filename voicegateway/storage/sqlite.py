@@ -1569,16 +1569,77 @@ class SQLiteStorage:
 
     # Managed projects
 
+    @staticmethod
+    def _validate_branding(branding: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Validate the v0.5.0 branding payload before write.
+
+        OQ4 + dashboard contract:
+        - ``logo_url`` (optional): string up to 2048 chars.
+        - ``accent_color`` (optional): hex string ``#RRGGBB`` or
+          ``#RGB``.
+        - ``product_name`` (optional): string up to 64 chars.
+
+        Returns the validated dict (or ``None`` when input is None /
+        empty). Raises ``ValueError`` on shape or constraint violations.
+        """
+        import re
+
+        if branding is None:
+            return None
+        if not isinstance(branding, dict):
+            raise ValueError(
+                f"branding must be a dict or None, got {type(branding).__name__}"
+            )
+        if not branding:
+            return None
+        out: dict[str, Any] = {}
+        allowed = {"logo_url", "accent_color", "product_name"}
+        for key in branding:
+            if key not in allowed:
+                raise ValueError(
+                    f"branding has unknown key {key!r}; allowed: {sorted(allowed)}"
+                )
+        logo_url = branding.get("logo_url")
+        if logo_url is not None:
+            if not isinstance(logo_url, str) or len(logo_url) > 2048:
+                raise ValueError("branding.logo_url must be a string up to 2048 chars")
+            out["logo_url"] = logo_url
+        accent_color = branding.get("accent_color")
+        if accent_color is not None:
+            if not isinstance(accent_color, str) or not re.fullmatch(
+                r"#[0-9A-Fa-f]{3}([0-9A-Fa-f]{3})?", accent_color
+            ):
+                raise ValueError(
+                    "branding.accent_color must be a hex string (#RGB or #RRGGBB)"
+                )
+            out["accent_color"] = accent_color
+        product_name = branding.get("product_name")
+        if product_name is not None:
+            if not isinstance(product_name, str) or len(product_name) > 64:
+                raise ValueError(
+                    "branding.product_name must be a string up to 64 chars"
+                )
+            out["product_name"] = product_name
+        return out or None
+
     async def list_managed_projects(self) -> list[dict[str, Any]]:
         db = await self._ensure_initialized()
         try:
             cursor = await db.execute(
                 "SELECT project_id, name, description, daily_budget, budget_action, "
                 "default_stack, stt_model, llm_model, tts_model, tags, "
-                "created_at, updated_at FROM managed_projects ORDER BY created_at ASC"
+                "created_at, updated_at, branding_json "
+                "FROM managed_projects ORDER BY created_at ASC"
             )
             rows = []
             async for row in cursor:
+                branding_raw = row[12] if len(row) > 12 else None
+                branding = None
+                if branding_raw:
+                    try:
+                        branding = json.loads(branding_raw)
+                    except (ValueError, TypeError):
+                        branding = None
                 rows.append(
                     {
                         "project_id": row[0],
@@ -1593,6 +1654,7 @@ class SQLiteStorage:
                         "tags": json.loads(row[9] or "[]"),
                         "created_at": row[10],
                         "updated_at": row[11],
+                        "branding": branding,
                     }
                 )
             return rows
@@ -1617,7 +1679,10 @@ class SQLiteStorage:
         llm_model: str | None = None,
         tts_model: str | None = None,
         tags: list[str] | None = None,
+        branding: dict[str, Any] | None = None,
     ) -> None:
+        validated_branding = self._validate_branding(branding)
+        branding_json = json.dumps(validated_branding) if validated_branding else None
         db = await self._ensure_initialized()
         try:
             now = time.time()
@@ -1625,8 +1690,8 @@ class SQLiteStorage:
                 """INSERT INTO managed_projects
                        (project_id, name, description, daily_budget, budget_action,
                         default_stack, stt_model, llm_model, tts_model, tags,
-                        created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        created_at, updated_at, branding_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(project_id) DO UPDATE SET
                        name=excluded.name,
                        description=excluded.description,
@@ -1637,6 +1702,7 @@ class SQLiteStorage:
                        llm_model=excluded.llm_model,
                        tts_model=excluded.tts_model,
                        tags=excluded.tags,
+                       branding_json=COALESCE(excluded.branding_json, branding_json),
                        updated_at=excluded.updated_at""",
                 (
                     project_id,
@@ -1651,6 +1717,7 @@ class SQLiteStorage:
                     json.dumps(tags or []),
                     now,
                     now,
+                    branding_json,
                 ),
             )
             await db.commit()
