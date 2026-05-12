@@ -2,6 +2,52 @@
 
 All notable changes to VoiceGateway are documented here. This project follows [Semantic Versioning](https://semver.org/) and [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.4.0 -- 2026-05-11
+
+**Multi-tenant cost attribution.** VoiceGateway now tags every voice session with an optional `tenant_id` so a single deployment can serve many customers and account for each one separately. Three independent surfaces set the tenant: an `attach_session(tenant_id=...)` kwarg for owner-of-AgentSession code, an `inference.set_tenant("…")` ContextVar API, and scoped virtual API keys that auto-attribute at the auth layer. Every cost row, metric row, and replay event for an attributed session lands tagged with the tenant; pre-v0.4.0 rows stay in the "unattributed" bucket (NULL `tenant_id`). The dashboard's existing Costs, Sessions, Metrics, and Replay pages all rescope when a tenant is selected from the new shared `FilterBar`; a new `Virtual Keys` page issues, lists, and revokes keys with a one-time plaintext modal.
+
+### Added
+
+- **Migration 0005** (REQ-VG-TENANT-001 + REQ-VG-TENANT-003): creates the `virtual_keys` table with bcrypt-hashed key storage + visible-prefix index + tenant scope, and adds `tenant_id TEXT` to `sessions`, `requests`, `turns`, `dead_air_events`, and the four `replay_*` tables. Idempotent. The derived-table ALTERs are guarded by a `sqlite_master` presence check (Foundry OQ4) so a v0.0.5-only baseline runs the migration cleanly without erroring on absent v0.2.0 / v0.3.0 tables.
+- **`voicegateway.inference._session_context`** gains `set_tenant`, `current_tenant`, and `reset_tenant_id` (REQ-VG-TENANT-001 AC-4). The `tenant_id_ctx` ContextVar propagates the active scope through every gateway call within a session without re-passing. 128-char UTF-8 cap (OQ2 lock) enforced at `set_tenant` time.
+- **`voicegateway.storage.virtual_keys_repo`** (REQ-VG-TENANT-003). Flat async function module: `create_virtual_key` (returns plaintext exactly once), `verify` (prefix-scan + bcrypt; revoked keys filtered inside), `revoke` (soft per OQ5), `mark_used`, `list_keys`, `list_stale`, `get_by_id`. Key shape: `vk_` + 32 base32 random chars (35 total); visible 8-char prefix indexed for O(1) candidate lookup; full key bcrypt-hashed at cost 12. Added `bcrypt>=4.0` to `[project] dependencies`.
+- **`voicegateway.storage.tenants_repo`** (REQ-VG-TENANT-002). Read-side derived view over `DISTINCT sessions.tenant_id`: `list_tenants` (substring typeahead with `%`/`_` escaped to literal characters), `get_tenant`, `count_tenants`, `get_unattributed_aggregates`. No separate tenants table; aggregates roll up live from the sessions UPSERT.
+- **Auth middleware in `voicegateway/server/main.py::build_app`** detects `vk_`-prefixed bearer tokens, resolves them via `virtual_keys_repo.verify`, bumps `last_used_at`, sets the tenant ContextVar if scoped, and stashes `virtual_key_id` + `virtual_key_tenant_id` on `request.state` for downstream conflict checks. Static keys are unchanged. New `voicegateway.core.auth` helpers: `is_virtual_key_token`, `verify_virtual_key`, `check_tenant_body_conflict` (403 on scoped-key + body-tenant mismatch).
+- **`attach_session(..., tenant_id="…")`** kwarg threads the tenant through the v0.2.0 session-attach helper. Setting it pushes onto `tenant_id_ctx` so the first `log_request` for the session picks it up. Omitting it leaves the ContextVar alone (a virtual-key-set scope still wins).
+- **`log_request` writes `tenant_id`** to both the `requests` and the `sessions` rows from `current_tenant()`. The sessions UPSERT uses `COALESCE(tenant_id, excluded.tenant_id)` so the first tenant-bearing request stamps the row for its lifetime; later unattributed requests cannot blank it. `turns_repo`, `dead_air_repo`, and `replay_repo` write functions accept an optional `tenant_id` kwarg defaulting to `current_tenant()` for per-batch propagation.
+- **`TenantConfig` per-project YAML knob**: `tenant.virtual_key_stale_days` (default 90, `ge=1`). Mirrored across the Pydantic schema and the runtime dataclass.
+- **Five new dashboard endpoints**: `GET /api/tenants` (list + unattributed aggregates), `GET /api/tenants/{id}` (single-tenant aggregates, 404 when unseen), `GET /api/virtual_keys` (list, plaintext never appears), `POST /api/virtual_keys` (issue, plaintext ONCE), `POST /api/virtual_keys/{id}/revoke` (soft). Existing handlers `/api/costs`, `/api/latency`, `/api/logs`, `/api/sessions`, `/api/metrics` accept a `tenant` query param (`null` = no filter, `""` = unattributed, value = that tenant).
+- **Storage methods extended**: `get_cost_summary`, `get_cost_by_project`, `get_recent_requests`, `list_sessions`, `get_latency_stats` accept a `tenant: str | None = None` kwarg with the same three-state convention. `list_sessions` / `get_session` SELECT `tenant_id` and `_row_to_session` surfaces it on the returned dict.
+- **`dashboard/frontend/src/pages/VirtualKeys.tsx`**. Issue / list / revoke flow with the show-key-once modal that puts the plaintext in a yellow card with copy-to-clipboard (REQ-VG-TENANT-003 AC-2). Active / stale / revoked status badges; 90-day default stale threshold.
+- **`dashboard/frontend/src/components/{TenantFilter,TenantPill,FilterBar}.tsx`**. `TenantFilter` is a 200ms-debounced typeahead with All-tenants / Unattributed / per-tenant sections. `TenantPill` renders attributed vs muted-unattributed in three modes. `FilterBar` is a shared filter strip with URL sync via `useSearchParams`, plus a `useTenantFilter()` hook.
+- **Costs, Sessions, Metrics pages** now consume `FilterBar` and forward the tenant param to their data fetches. Sessions gains a Tenant column with `TenantPill asLink` (one-click rescope) and a TenantPill in the SessionDetail modal header.
+- **App nav** registers `/virtual-keys` route and a Virtual Keys sidebar entry between Providers and Settings.
+- **Typed fetchers + types** in `dashboard/frontend/src/lib/{api,types}.ts`: `TenantRow`, `UnattributedAggregates`, `TenantsResponse`, `TenantFilter` union, `VirtualKey`, `CreatedVirtualKey`; `fetchTenants`, `fetchTenant`, `fetchVirtualKeys`, `createVirtualKey`, `revokeVirtualKey`, `appendTenantParam` helper, and a `tenant` kwarg on `fetchMetricsSummary`.
+- **`voicegw tenant` command group** with `list` and `show <id>` subcommands. Read-only (issuing keys stays a dashboard-only flow per REQ-VG-TENANT-003 AC-2). `--json` flag on both for CI scripts.
+- **67 new tests** across `tests/storage/` (migration 0005, virtual_keys_repo, tenants_repo), `tests/server/` (virtual key auth, session-create tenant, tenant filter), `tests/inference/` (three-tenant aggregation). Full suite: 1442 → 1509 (+67). Coverage: 87.58% (above the 80% Foundry gate).
+- **`docs/api/python-sdk.md`** grew a "Tenant attribution (v0.4.0)" section after `attach_session`.
+- **`docs/guide/multi-tenant-quickstart.md`** is the operator-facing walkthrough: tag at session-create, issue a virtual key, view per-tenant data, export.
+
+### Changed
+
+- **Embedded version strings** bumped from `0.3.0` to `0.4.0` in `voicegateway/server/main.py` (FastAPI ctor + `/health.version`), `dashboard/api/main.py` (FastAPI ctor), `tests/server/test_server.py` (version assertion), `docker/voicegateway.Dockerfile` (`ARG VERSION`), and the dashboard sidebar pill in `dashboard/frontend/src/App.tsx`.
+
+### Decisions locked (Foundry Open Questions)
+
+- **OQ1 virtual key shape** — `vk_` + 32 base32 random chars (35 total). 8-char visible prefix (`vk_` + 5 random) stored to bound the bcrypt candidate set; full key hashed at cost 12.
+- **OQ2 tenant identifier** — 128-char UTF-8 max. Spaces and unicode allowed; the tenants_repo typeahead disambiguates confusable names.
+- **OQ3 backfill** — NO. Migration 0005 adds `tenant_id` nullable with no DEFAULT; pre-v0.4.0 rows stay NULL forever and the FE renders them as the muted "unattributed" pill.
+- **OQ4 conditional ALTER** — `sqlite_master` presence check before each derived-table ALTER. v0.0.5-only deployments run migration 0005 cleanly without erroring on absent `turns` / `dead_air_events` / `replay_*` tables.
+- **OQ5 revocation** — Soft. `UPDATE virtual_keys SET revoked_at = CURRENT_TIMESTAMP`. The row persists for audit + stale-key detection; hard delete is out of scope.
+
+### Notes
+
+- **No automatic backfill** of pre-v0.4.0 sessions. They stay `tenant_id = NULL` (the unattributed bucket).
+- **No CLI issuance of virtual keys** per REQ-VG-TENANT-003 AC-2.
+- **No `voicegw costs --tenant` flag yet** — the dashboard's `/api/costs?tenant=…` is the canonical per-tenant cost source for v0.4.0.
+- **No re-tag affordance for already-attributed sessions.** The COALESCE rule fills NULL slots only; a re-tag flow for unattributed sessions is on the v0.4.x roadmap.
+- **Virtual keys do not carry RBAC scopes** in v0.4.0 — a verified vk satisfies every scope. RBAC layering follows in a future release.
+
 ## v0.3.0 -- 2026-05-11
 
 **Conversation replay and debugging.** The universal "this saved me hours" feature for voice-agent developers. Open any past conversation in the dashboard, scrub through it like a video timeline, and see every STT chunk, every LLM token, every TTS frame, plus the agent's conversation state at every moment — with cost accruing live as you scrub. Replay is captured by default for every session, full fidelity, with per-project `retention_days` (default 90) ageing rows out automatically.
