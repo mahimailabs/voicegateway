@@ -6,6 +6,7 @@ on:
     paths:
       - 'docs/**'
       - 'CHANGELOG.md'
+      - 'install.sh'
       - '.github/workflows/docs.yml'
 
 jobs:
