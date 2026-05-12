@@ -3,8 +3,8 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from voicegateway.combined_server import build_combined_app
 from voicegateway.core.gateway import Gateway
+from voicegateway.server.combined import build_combined_app
 
 
 @pytest.fixture
