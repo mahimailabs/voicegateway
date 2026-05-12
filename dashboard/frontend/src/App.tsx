@@ -10,17 +10,30 @@ import Replay from './pages/Replay';
 import Sessions from './pages/Sessions';
 import Projects from './pages/Projects';
 import Providers from './pages/Providers';
+import Routing from './pages/Routing';
 import Settings from './pages/Settings';
 import VirtualKeys from './pages/VirtualKeys';
 import Login from './pages/Login';
 import type { StatusResponse } from './lib/types';
 import { AUTH_REQUIRED_EVENT, clearToken, fetchJson, getToken } from './lib/api';
+import { applyBrandingForProject } from './lib/branding';
+
+interface ActiveBranding {
+  logo_url?: string | null;
+  accent_color?: string | null;
+  product_name?: string | null;
+}
 
 // Foundry v0.4.0 nav order: Costs, Logs, Sessions, Metrics, Replay
 // (conditional, lives under /sessions/:id/replay so it is not a top-
 // level entry), Projects, Providers, Virtual Keys. Overview, Models,
 // Latency, and Settings predate that spec and are kept above /
 // below the v0.4.0 block so existing users find them where they were.
+// Foundry v0.5.0 nav order: Costs, Logs, Sessions, Metrics, Replay
+// (conditional, lives under /sessions/:id/replay so it is not a top-
+// level entry), Routing, Projects, Providers, Virtual Keys, Settings.
+// Overview, Models, and Latency predate that spec and are kept above
+// the v0.5.0 block so existing users find them where they were.
 const PAGES = [
   { to: '/',             label: 'Overview',     id: 'overview' },
   { to: '/models',       label: 'Models',       id: 'models'   },
@@ -29,6 +42,7 @@ const PAGES = [
   { to: '/logs',         label: 'Logs',         id: 'logs'     },
   { to: '/sessions',     label: 'Sessions',     id: 'sessions' },
   { to: '/metrics',      label: 'Metrics',      id: 'metrics'  },
+  { to: '/routing',      label: 'Routing',      id: 'routing'  },
   { to: '/projects',     label: 'Projects',     id: 'projects' },
   { to: '/providers',    label: 'Providers',    id: 'providers' },
   { to: '/virtual-keys', label: 'Virtual Keys', id: 'virtual-keys' },
@@ -77,6 +91,18 @@ export default function App() {
     fetchJson<StatusResponse>('/api/status').then(setStatus).catch(() => setStatus(null));
   }, [authState]);
 
+  // v0.5.0: apply per-project white-label branding once on layout
+  // mount (REQ-VG-ROUTE-004). Read-once-per-mount per OQ5. Reads the
+  // ?project=<id> URL param; a downstream operator who wants the
+  // branded chrome on every page sets the param at link time.
+  const [branding, setBranding] = useState<ActiveBranding | null>(null);
+  useEffect(() => {
+    if (authState !== 'ready') return;
+    const params = new URLSearchParams(window.location.search);
+    const projectId = params.get('project');
+    applyBrandingForProject(projectId).then(setBranding).catch(() => setBranding(null));
+  }, [authState]);
+
   if (authState === 'checking') return null;
   if (authState === 'needs-login') {
     return <Login onAuthed={() => setAuthState('ready')} />;
@@ -85,7 +111,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="app-shell">
-        <Sidebar status={status} onSignOut={signOut} />
+        <Sidebar status={status} onSignOut={signOut} branding={branding} />
         <main className="main">
           <Routes>
             <Route path="/" element={<Overview />} />
@@ -98,6 +124,7 @@ export default function App() {
             <Route path="/metrics" element={<Metrics />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/providers" element={<Providers />} />
+            <Route path="/routing" element={<Routing />} />
             <Route path="/virtual-keys" element={<VirtualKeys />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/settings/audit-log" element={<Settings tab="audit" />} />
@@ -111,19 +138,30 @@ export default function App() {
 function Sidebar({
   status,
   onSignOut,
+  branding,
 }: {
   status: StatusResponse | null;
   onSignOut: () => void;
+  branding: ActiveBranding | null;
 }) {
   const providerCount = status ? Object.keys(status.providers).length : 0;
   const modelCount = status ? Object.keys(status.models).length : 0;
   const hasToken = !!getToken();
+  const productName = branding?.product_name || 'VoiceGateway';
+  const logoUrl = branding?.logo_url || null;
 
   return (
     <aside className="sidebar">
       <div className="sidebar__logo">
-        VoiceGateway
-        <small>SELF-HOSTED VOICE AI</small>
+        {logoUrl && (
+          <img
+            src={logoUrl}
+            alt={`${productName} logo`}
+            style={{ maxHeight: '32px', maxWidth: '160px', display: 'block', marginBottom: '0.25rem' }}
+          />
+        )}
+        {productName}
+        <small>{branding?.product_name ? 'WHITE-LABEL' : 'SELF-HOSTED VOICE AI'}</small>
       </div>
       <nav className="sidebar__nav">
         {PAGES.map((p) => (
@@ -140,7 +178,7 @@ function Sidebar({
           <span className="neo-status-dot neo-status-dot--online" />
           {providerCount} Providers · {modelCount} Models
         </div>
-        <span className="version-pill">v0.4.0</span>
+        <span className="version-pill">v0.5.0</span>
         {hasToken && (
           <button
             type="button"

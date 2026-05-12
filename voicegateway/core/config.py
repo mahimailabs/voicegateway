@@ -83,6 +83,43 @@ class ReplayConfig:
 
 
 @dataclass
+class RoutingConfig:
+    """v0.5.0 cross-modality routing knobs (REQ-VG-ROUTE-001..002).
+
+    Per-project overridable via the ``routing:`` block in
+    ``voicegw.yaml``. ``budget_ms`` defaults to the Foundry-locked
+    1500 ms (OQ1) suitable for a typical conversational voice agent.
+    ``rosters`` is a dict ``{modality: [provider_id, ...]}`` ordered
+    by operator preference; the router picks within the roster and
+    never outside it. ``fallback_to_fastest`` controls the AC-2 path:
+    when ``True`` (default) and nothing fits the budget, the router
+    picks the fastest available triple and stamps
+    ``budget_overrun=True`` on the session row; when ``False`` the
+    router raises ``BudgetExceeded`` and the session fails.
+    """
+
+    budget_ms: int = 1500
+    rosters: dict[str, list[str]] = field(default_factory=dict)
+    fallback_to_fastest: bool = True
+
+
+@dataclass
+class BrandingConfig:
+    """v0.5.0 white-label branding knobs (REQ-VG-ROUTE-004).
+
+    Per-project overridable. All fields nullable: a project with no
+    branding set falls back to the default VoiceGateway brand
+    (AC-3). The dashboard's ``lib/branding.ts`` reads this at layout
+    mount and applies values as CSS variables; emails, exports, and
+    the CLI keep the default brand (out of scope per the Refinery).
+    """
+
+    logo_url: str | None = None
+    accent_color: str | None = None
+    product_name: str | None = None
+
+
+@dataclass
 class TenantConfig:
     """v0.4.0 multi-tenant attribution knobs.
 
@@ -119,6 +156,10 @@ class ProjectConfig:
     replay: ReplayConfig = field(default_factory=ReplayConfig)
     # v0.4.0: per-project multi-tenant knobs (REQ-VG-TENANT-003).
     tenant: TenantConfig = field(default_factory=TenantConfig)
+    # v0.5.0: per-project routing knobs (REQ-VG-ROUTE-001..002).
+    routing: RoutingConfig = field(default_factory=RoutingConfig)
+    # v0.5.0: per-project white-label branding (REQ-VG-ROUTE-004).
+    branding: BrandingConfig = field(default_factory=BrandingConfig)
 
     @property
     def accent(self) -> str:
@@ -301,6 +342,38 @@ class GatewayConfig:
                         tenant_raw.get("virtual_key_stale_days", 90)
                     ),
                 )
+                routing_raw = pcfg.get("routing") or {}
+                rosters_raw = routing_raw.get("rosters") or {}
+                rosters: dict[str, list[str]] = {}
+                if isinstance(rosters_raw, dict):
+                    for modality, providers in rosters_raw.items():
+                        if isinstance(providers, list):
+                            rosters[str(modality)] = [str(p) for p in providers]
+                routing_cfg = RoutingConfig(
+                    budget_ms=int(routing_raw.get("budget_ms", 1500)),
+                    rosters=rosters,
+                    fallback_to_fastest=bool(
+                        routing_raw.get("fallback_to_fastest", True)
+                    ),
+                )
+                branding_raw = pcfg.get("branding") or {}
+                branding_cfg = BrandingConfig(
+                    logo_url=(
+                        str(branding_raw["logo_url"])
+                        if branding_raw.get("logo_url")
+                        else None
+                    ),
+                    accent_color=(
+                        str(branding_raw["accent_color"])
+                        if branding_raw.get("accent_color")
+                        else None
+                    ),
+                    product_name=(
+                        str(branding_raw["product_name"])
+                        if branding_raw.get("product_name")
+                        else None
+                    ),
+                )
                 projects[pid] = ProjectConfig(
                     id=pid,
                     name=str(pcfg.get("name") or pid),
@@ -313,6 +386,8 @@ class GatewayConfig:
                     metrics=metrics_cfg,
                     replay=replay_cfg,
                     tenant=tenant_cfg,
+                    routing=routing_cfg,
+                    branding=branding_cfg,
                 )
 
         auth_raw = raw.get("auth", {}) or {}

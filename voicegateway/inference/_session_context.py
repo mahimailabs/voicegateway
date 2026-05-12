@@ -151,3 +151,68 @@ def reset_tenant_id() -> None:
     fresh asyncio task. Mirrors the ``reset_session_id`` shape.
     """
     _current_tenant_id.set(None)
+
+
+# ----------------------------------------------------------------------
+# v0.5.0 routing-decision ContextVar (REQ-VG-ROUTE-001..002).
+#
+# Parallel to tenant_id_ctx above. The session-create path runs the
+# router once (voicegateway.middleware.router.route_session), sets the
+# resulting RoutedTriple via ``set_routing_decision``, and then the
+# next ``log_request`` reads it on the sessions UPSERT to stamp
+# routed_llm / routed_tts / budget_ms / budget_overrun. Pre-v0.5.0
+# sessions and sessions where the router never ran keep NULL on the
+# four columns and the dashboard renders "-" / "ok" accordingly.
+#
+# ``RoutedTriple`` is a 4-tuple (stt, llm, tts, budget_ms,
+# budget_overrun); flattening to a Tuple avoids a circular import
+# between this module and middleware/router.py. The caller passes
+# the tuple shape directly.
+# ----------------------------------------------------------------------
+
+# Tuple layout: (stt, llm, tts, budget_ms, budget_overrun).
+RoutingDecisionTuple = tuple[str, str, str, int, bool]
+
+_current_routing_decision: ContextVar[RoutingDecisionTuple | None] = ContextVar(
+    "vg_routing_decision", default=None
+)
+
+
+def set_routing_decision(decision: RoutingDecisionTuple | None) -> None:
+    """Set the current session's routing decision in the active context.
+
+    ``decision`` is ``(stt, llm, tts, budget_ms, budget_overrun)``.
+    Pass ``None`` to clear. Storage's ``log_request`` reads
+    :func:`current_routing_decision` at the sessions UPSERT and stamps
+    the four routing columns from this tuple. The router writes once
+    per session; per AC-5 the triple is immutable for the session’s
+    lifetime.
+    """
+    if decision is None:
+        _current_routing_decision.set(None)
+        return
+    if not isinstance(decision, tuple) or len(decision) != 5:
+        raise ValueError(
+            "routing decision must be a 5-tuple "
+            "(stt, llm, tts, budget_ms, budget_overrun) or None"
+        )
+    stt, llm, tts, budget_ms, overrun = decision
+    if not (
+        isinstance(stt, str)
+        and isinstance(llm, str)
+        and isinstance(tts, str)
+        and isinstance(budget_ms, int)
+        and isinstance(overrun, bool)
+    ):
+        raise ValueError("routing decision tuple has wrong field types")
+    _current_routing_decision.set((stt, llm, tts, budget_ms, overrun))
+
+
+def current_routing_decision() -> RoutingDecisionTuple | None:
+    """Return the current routing decision, or ``None`` when unset."""
+    return _current_routing_decision.get()
+
+
+def reset_routing_decision() -> None:
+    """Clear the routing decision (test-only helper)."""
+    _current_routing_decision.set(None)

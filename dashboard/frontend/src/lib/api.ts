@@ -88,9 +88,13 @@ async function extractErrorDetail(res: Response): Promise<string | null> {
 import type {
   CreatedVirtualKey,
   DeadAirEvent,
+  LogoUploadResponse,
   MetricsAggregate,
+  ProjectBranding,
+  ProjectBrandingResponse,
   ReplayResponse,
   RetentionWindow,
+  RoutingObservationsResponse,
   TenantFilter,
   TenantRow,
   TenantsResponse,
@@ -229,4 +233,82 @@ export function revokeVirtualKey(
   keyId: number,
 ): Promise<{ id: number; revoked: true; row: VirtualKey }> {
   return fetchJson(`/api/virtual_keys/${keyId}/revoke`, { method: 'POST' });
+}
+
+// ----------------------------------------------------------------------
+// v0.5.0 cross-modality routing + white-label branding typed fetchers
+// (REQ-VG-ROUTE-001..004).
+// ----------------------------------------------------------------------
+
+export function fetchRoutingObservations(
+  options: { project?: string } = {},
+): Promise<RoutingObservationsResponse> {
+  const params = new URLSearchParams();
+  if (options.project) params.set('project', options.project);
+  const qs = params.toString();
+  return fetchJson<RoutingObservationsResponse>(
+    qs ? `/api/routing/observations?${qs}` : '/api/routing/observations',
+  );
+}
+
+export function fetchProjectBranding(
+  projectId: string,
+): Promise<ProjectBrandingResponse> {
+  return fetchJson<ProjectBrandingResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/branding`,
+  );
+}
+
+export function updateProjectBranding(
+  projectId: string,
+  branding: ProjectBranding,
+): Promise<ProjectBrandingResponse> {
+  return fetchJson<ProjectBrandingResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/branding`,
+    {
+      method: 'POST',
+      body: JSON.stringify(branding),
+    },
+  );
+}
+
+/**
+ * Multipart logo upload. Uses raw ``fetch`` because ``fetchJson``
+ * always sets ``Content-Type: application/json`` when a body is
+ * provided; multipart needs the browser to set the boundary.
+ *
+ * Returns the served URL the operator can plug into
+ * ``ProjectBranding.logo_url`` on the next branding POST.
+ */
+export async function uploadBrandingLogo(
+  projectId: string,
+  file: File,
+): Promise<LogoUploadResponse> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/branding/logo`,
+    { method: 'POST', body: fd, headers },
+  );
+  if (res.status === 401 || res.status === 403) {
+    clearToken();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT));
+    }
+    throw new Error(`HTTP ${res.status}`);
+  }
+  if (!res.ok) {
+    let detail: string | null = null;
+    try {
+      const body = await res.json();
+      if (typeof body?.detail === 'string') detail = body.detail;
+    } catch {
+      // fall through
+    }
+    throw new Error(detail ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as LogoUploadResponse;
 }

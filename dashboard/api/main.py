@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from fastapi import Body, FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -35,7 +35,7 @@ _LOCAL_PROVIDER_NAMES = frozenset({"ollama", "whisper", "kokoro", "piper"})
 
 app = FastAPI(
     title="VoiceGateway Dashboard",
-    version="0.4.0",
+    version="0.5.0",
 )
 
 # Set by the CLI / combined server when starting the dashboard.
@@ -801,6 +801,232 @@ async def revoke_virtual_key_endpoint(key_id: int) -> dict[str, Any]:
         # Should never happen: revoke() just returned True. Defensive.
         raise HTTPException(status_code=404, detail=f"Virtual key {key_id} vanished")
     return {"id": key_id, "revoked": True, "row": dataclasses.asdict(row)}
+
+
+# ---------------------------------------------------------------------------
+# v0.5.0 cross-modality routing + white-label branding endpoints.
+# REQ-VG-ROUTE-003 (Routing observations view) + REQ-VG-ROUTE-004
+# (per-project branding upload).
+# ---------------------------------------------------------------------------
+
+_BRANDING_DIR = Path(__file__).parent / "static" / "branding"
+_BRANDING_DIR.mkdir(parents=True, exist_ok=True)
+_MAX_LOGO_BYTES = 256 * 1024  # OQ4 lock: 256 KB.
+_MAX_LOGO_DIMENSION = 512  # OQ4 lock: 512x512 px.
+_ALLOWED_LOGO_FORMATS = ("PNG", "SVG")  # OQ4 lock: PNG or SVG.
+
+# Mount the branding directory at /static/branding so uploaded logos
+# resolve at https://<dashboard>/static/branding/<project_id>.<ext>.
+app.mount(
+    "/static/branding",
+    StaticFiles(directory=_BRANDING_DIR),
+    name="branding",
+)
+
+
+@app.get("/api/routing/observations")
+async def get_routing_observations(
+    project: str | None = Query(None),
+) -> dict[str, Any]:
+    """Per-project provider-latency snapshot powering the Routing dashboard view.
+
+    Implements REQ-VG-ROUTE-003 AC-3 (per-project observed-latency,
+    refreshed at least hourly — the worker rolls up every 15 minutes
+    per OQ2). Each entry carries the provider id, modality, p50/p95,
+    sample_count, and the rolling window's start/end timestamps.
+
+    Pass ``project`` to scope to one project; omit for every
+    project's observations.
+    """
+    from voicegateway.storage import latency_observations_repo
+
+    gw = _get_gateway()
+    if gw.storage is None:
+        return {"observations": [], "filter": {"project": project}}
+    db = await gw.storage._ensure_initialized()
+    rows = (
+        await latency_observations_repo.get_for_project(db, project)
+        if project
+        else await latency_observations_repo.read_all(db)
+    )
+    return {
+        "observations": [dataclasses.asdict(r) for r in rows],
+        "filter": {"project": project},
+    }
+
+
+@app.get("/api/projects/{project_id}/branding")
+async def get_project_branding(project_id: str) -> dict[str, Any]:
+    """Return the active white-label branding for a project.
+
+    Returns ``{"project_id": ..., "branding": null}`` when no
+    branding is set so the FE can render the default brand
+    (AC-3).
+    """
+    gw = _get_gateway()
+    if gw.storage is None:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    project = await gw.storage.get_managed_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail=f"Project {project_id!r} not found")
+    return {"project_id": project_id, "branding": project.get("branding")}
+
+
+@app.post("/api/projects/{project_id}/branding")
+async def update_project_branding(
+    project_id: str, body: dict[str, Any] = Body(...)
+) -> dict[str, Any]:
+    """Update the project's branding (logo_url / accent_color / product_name).
+
+    Body is the branding dict; storage's ``_validate_branding``
+    enforces shape (hex regex, 64-char product_name cap, no unknown
+    keys). Returns the validated branding plus the project_id so the
+    FE can re-apply the CSS variables on the next layout mount.
+    """
+    gw = _get_gateway()
+    if gw.storage is None:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    existing = await gw.storage.get_managed_project(project_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"Project {project_id!r} not found")
+    try:
+        await gw.storage.upsert_managed_project(
+            project_id=project_id,
+            name=existing.get("name", project_id),
+            description=existing.get("description", ""),
+            daily_budget=existing.get("daily_budget", 0.0),
+            budget_action=existing.get("budget_action", "warn"),
+            default_stack=existing.get("default_stack"),
+            stt_model=existing.get("stt_model"),
+            llm_model=existing.get("llm_model"),
+            tts_model=existing.get("tts_model"),
+            tags=existing.get("tags"),
+            branding=body,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    refreshed = await gw.storage.get_managed_project(project_id)
+    return {
+        "project_id": project_id,
+        "branding": (refreshed or {}).get("branding"),
+    }
+
+
+@app.post("/api/projects/{project_id}/branding/logo")
+async def upload_project_logo(
+    project_id: str, file: UploadFile = File(...)
+) -> dict[str, Any]:
+    """Upload a project's logo image.
+
+    OQ4 constraints (validated by Pillow when the format is PNG):
+    - Max 256 KB on the wire.
+    - PNG or SVG only.
+    - Max 512x512 pixels (PNG only; SVG is vector so dimension
+      check is skipped).
+
+    Persists the file under
+    ``dashboard/api/static/branding/{project_id}.{ext}`` and stamps
+    the returned URL onto the project's ``branding.logo_url``. The
+    endpoint does NOT update other branding fields; call POST
+    /api/projects/{id}/branding for that.
+    """
+    gw = _get_gateway()
+    if gw.storage is None:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    existing = await gw.storage.get_managed_project(project_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"Project {project_id!r} not found")
+
+    content = await file.read()
+    if len(content) > _MAX_LOGO_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"logo exceeds {_MAX_LOGO_BYTES // 1024} KB cap "
+                f"(got {len(content)} bytes)"
+            ),
+        )
+
+    content_type = (file.content_type or "").lower()
+    suffix: str
+    if content_type == "image/png" or (file.filename or "").lower().endswith(".png"):
+        suffix = "png"
+        try:
+            from io import BytesIO
+
+            from PIL import Image, UnidentifiedImageError
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Pillow not installed; install voicegateway[dashboard]",
+            ) from exc
+        try:
+            img = Image.open(BytesIO(content))
+            img.verify()
+            # Re-open after verify (PIL invalidates the handle).
+            img = Image.open(BytesIO(content))
+        except (UnidentifiedImageError, OSError) as exc:
+            raise HTTPException(status_code=400, detail=f"invalid PNG: {exc}") from exc
+        if img.format != "PNG":
+            raise HTTPException(
+                status_code=400,
+                detail=f"expected PNG, got {img.format}",
+            )
+        if img.width > _MAX_LOGO_DIMENSION or img.height > _MAX_LOGO_DIMENSION:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"logo dimensions {img.width}x{img.height} exceed "
+                    f"{_MAX_LOGO_DIMENSION}x{_MAX_LOGO_DIMENSION} cap"
+                ),
+            )
+    elif content_type == "image/svg+xml" or (file.filename or "").lower().endswith(
+        ".svg"
+    ):
+        suffix = "svg"
+        # SVG is text/XML; reject obvious binary garbage. Full XML
+        # validation is out of scope for v0.5.0 — operator should
+        # control which agency staff can upload.
+        if b"<svg" not in content[:512].lower():
+            raise HTTPException(status_code=400, detail="file does not look like SVG")
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported logo format: must be PNG or SVG (got "
+            f"content_type={content_type!r})",
+        )
+
+    target = _BRANDING_DIR / f"{project_id}.{suffix}"
+    target.write_bytes(content)
+    logo_url = f"/static/branding/{project_id}.{suffix}"
+
+    # Merge with existing branding so we don't clobber accent_color
+    # or product_name.
+    current_branding = (existing or {}).get("branding") or {}
+    new_branding = {**current_branding, "logo_url": logo_url}
+    try:
+        await gw.storage.upsert_managed_project(
+            project_id=project_id,
+            name=existing.get("name", project_id),
+            description=existing.get("description", ""),
+            daily_budget=existing.get("daily_budget", 0.0),
+            budget_action=existing.get("budget_action", "warn"),
+            default_stack=existing.get("default_stack"),
+            stt_model=existing.get("stt_model"),
+            llm_model=existing.get("llm_model"),
+            tts_model=existing.get("tts_model"),
+            tags=existing.get("tags"),
+            branding=new_branding,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "project_id": project_id,
+        "logo_url": logo_url,
+        "bytes": len(content),
+        "format": suffix.upper(),
+    }
 
 
 # ---------------------------------------------------------------------------

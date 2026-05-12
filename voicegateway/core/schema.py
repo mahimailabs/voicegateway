@@ -69,6 +69,36 @@ class ReplayConfig(_StrictBase):
     flush_size_events: int = Field(default=500, ge=1)
 
 
+class RoutingConfig(_StrictBase):
+    """v0.5.0 cross-modality routing knobs (REQ-VG-ROUTE-001..002).
+
+    ``budget_ms`` is the latency budget in milliseconds; the OQ1 lock
+    is 1500 ms. ``rosters`` maps modality ('stt'/'llm'/'tts') to an
+    ordered list of provider ids the router may pick from. Empty
+    rosters force callers to provide overrides; otherwise the router
+    raises ``ValueError`` at session-create time.
+    """
+
+    budget_ms: int = Field(default=1500, ge=1)
+    rosters: dict[str, list[str]] = Field(default_factory=dict)
+    fallback_to_fastest: bool = True
+
+
+class BrandingConfig(_StrictBase):
+    """v0.5.0 white-label branding knobs (REQ-VG-ROUTE-004).
+
+    All fields nullable; a project with no branding falls back to
+    the default VoiceGateway brand on next dashboard layout mount.
+    ``accent_color`` is expected to be a hex string when set; the
+    dashboard validates the format on upload but the schema is
+    permissive here.
+    """
+
+    logo_url: str | None = None
+    accent_color: str | None = None
+    product_name: str | None = None
+
+
 class TenantConfig(_StrictBase):
     """v0.4.0 multi-tenant attribution knobs (REQ-VG-TENANT-001..004).
 
@@ -101,6 +131,10 @@ class ProjectConfig(_StrictBase):
     replay: ReplayConfig = Field(default_factory=ReplayConfig)
     # v0.4.0: per-project multi-tenant knobs.
     tenant: TenantConfig = Field(default_factory=TenantConfig)
+    # v0.5.0: per-project routing knobs.
+    routing: RoutingConfig = Field(default_factory=RoutingConfig)
+    # v0.5.0: per-project branding knobs.
+    branding: BrandingConfig = Field(default_factory=BrandingConfig)
 
 
 class ObservabilityConfig(_StrictBase):

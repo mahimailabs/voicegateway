@@ -61,6 +61,7 @@ export default defineConfig({
             { text: 'Core Concepts', link: '/guide/core-concepts' },
             { text: 'Cost Reconciliation', link: '/guide/cost-reconciliation' },
             { text: 'Multi-Tenant Quickstart', link: '/guide/multi-tenant-quickstart' },
+            { text: 'Agency Quickstart', link: '/guide/agency-quickstart' },
           ],
         },
       ],

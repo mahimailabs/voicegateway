@@ -97,6 +97,13 @@ export interface SessionRow {
   // "unattributed" pill. Older session rows written before v0.4.0
   // simply omit the field; the JSON response leaves it absent.
   tenant_id?: string | null;
+  // v0.5.0 (REQ-VG-ROUTE-003). NULL on pre-v0.5.0 sessions or
+  // when the router never ran. The dashboard renders NULL as
+  // '-' in the routing strip.
+  routed_llm?: string | null;
+  routed_tts?: string | null;
+  budget_ms?: number | null;
+  budget_overrun?: boolean | null;
 }
 
 export interface SessionDetail extends SessionRow {
@@ -237,4 +244,62 @@ export interface CreatedVirtualKey {
   id: number;
   plaintext: string;
   row: VirtualKey;
+}
+
+// ----------------------------------------------------------------------
+// v0.5.0 cross-modality routing + white-label branding (REQ-VG-ROUTE-001..004).
+// ----------------------------------------------------------------------
+
+/**
+ * The router's pick for a session. Returned by ``route_session`` and
+ * persisted to the ``sessions`` row's ``routed_llm`` / ``routed_tts``
+ * / ``budget_ms`` / ``budget_overrun`` columns. STT comes from the
+ * session's existing provider field.
+ */
+export interface RoutedTriple {
+  stt: string;
+  llm: string;
+  tts: string;
+  predicted_ms: number;
+  budget_overrun: boolean;
+}
+
+/** One row from the ``latency_observations`` rollup. */
+export interface LatencyObservation {
+  project_id: string;
+  provider: string;
+  modality: 'stt' | 'llm' | 'tts';
+  p50_ms: number | null;
+  p95_ms: number | null;
+  sample_count: number;
+  window_start: string;
+  window_end: string;
+  refreshed_at: string;
+}
+
+/** ``GET /api/routing/observations`` response. */
+export interface RoutingObservationsResponse {
+  observations: LatencyObservation[];
+  filter: { project: string | null };
+}
+
+/** White-label branding payload (REQ-VG-ROUTE-004). All fields optional. */
+export interface ProjectBranding {
+  logo_url?: string | null;
+  accent_color?: string | null;
+  product_name?: string | null;
+}
+
+/** ``GET /api/projects/{id}/branding`` response. */
+export interface ProjectBrandingResponse {
+  project_id: string;
+  branding: ProjectBranding | null;
+}
+
+/** ``POST /api/projects/{id}/branding/logo`` response. */
+export interface LogoUploadResponse {
+  project_id: string;
+  logo_url: string;
+  bytes: number;
+  format: 'PNG' | 'SVG';
 }

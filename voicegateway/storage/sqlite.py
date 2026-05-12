@@ -12,7 +12,10 @@ from typing import Any
 
 import aiosqlite
 
-from voicegateway.inference._session_context import current_tenant
+from voicegateway.inference._session_context import (
+    current_routing_decision,
+    current_tenant,
+)
 from voicegateway.storage import replay_repo, turns_repo
 from voicegateway.storage._percentiles import compute_percentiles
 from voicegateway.storage.models import RequestRecord
@@ -30,6 +33,9 @@ _migration_0003 = import_module(
 _migration_0004 = import_module("voicegateway.storage.migrations.0004_replay_tables")
 _migration_0005 = import_module(
     "voicegateway.storage.migrations.0005_tenant_attribution"
+)
+_migration_0006 = import_module(
+    "voicegateway.storage.migrations.0006_routing_and_branding"
 )
 
 _logger = logging.getLogger(__name__)
@@ -272,6 +278,12 @@ class SQLiteStorage:
             # per OQ4). Idempotent.
             await _migration_0005.apply(db)
 
+            # v0.5.0 migration 0006: routing columns on sessions
+            # (budget_ms / budget_ms_used / budget_overrun / routed_llm /
+            # routed_tts), branding_json on managed_projects (conditional),
+            # and the new latency_observations table. Idempotent.
+            await _migration_0006.apply(db)
+
             await db.commit()
             self._initialized = True
         return db
@@ -457,15 +469,40 @@ class SQLiteStorage:
                 # the Refinery: the first tenant-bearing request wins,
                 # subsequent unattributed-bucket requests don't clear
                 # it.
+                # v0.5.0: stamp the router's pick on the session row.
+                # AC-5 guarantees the triple is immutable for the
+                # session's lifetime, so COALESCE on conflict keeps the
+                # first-set values and ignores later sessions writes
+                # that arrive without a routing decision in scope.
+                routing = current_routing_decision()
+                r_llm: str | None
+                r_tts: str | None
+                r_budget: int | None
+                r_overrun: int | None
+                if routing is not None:
+                    r_llm = routing[1]
+                    r_tts = routing[2]
+                    r_budget = routing[3]
+                    r_overrun = 1 if routing[4] else 0
+                else:
+                    r_llm = None
+                    r_tts = None
+                    r_budget = None
+                    r_overrun = None
                 await db.execute(
                     """INSERT INTO sessions
                        (id, project, started_at, ended_at, modalities,
-                        total_cost_usd, request_count, tenant_id)
-                       VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                        total_cost_usd, request_count, tenant_id,
+                        routed_llm, routed_tts, budget_ms, budget_overrun)
+                       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
                        ON CONFLICT(id) DO UPDATE SET
                            total_cost_usd = total_cost_usd + excluded.total_cost_usd,
                            request_count = request_count + 1,
                            tenant_id = COALESCE(tenant_id, excluded.tenant_id),
+                           routed_llm = COALESCE(routed_llm, excluded.routed_llm),
+                           routed_tts = COALESCE(routed_tts, excluded.routed_tts),
+                           budget_ms = COALESCE(budget_ms, excluded.budget_ms),
+                           budget_overrun = COALESCE(budget_overrun, excluded.budget_overrun),
                            started_at = CASE
                                WHEN started_at IS NULL THEN excluded.started_at
                                WHEN started_at > excluded.started_at THEN excluded.started_at
@@ -492,6 +529,10 @@ class SQLiteStorage:
                         record.modality,
                         record.cost_usd,
                         request_tenant_id,
+                        r_llm,
+                        r_tts,
+                        r_budget,
+                        r_overrun,
                     ),
                 )
             await db.commit()
@@ -989,12 +1030,27 @@ class SQLiteStorage:
             "request_count": int(row[6] or 0),
         }
         # v0.4.0: include tenant_id when the SELECT picked it up.
-        # list_sessions and get_session both include the column on
-        # post-migration databases; the Any-typed Row may not raise on
-        # out-of-bounds, so we guard defensively.
+        # v0.5.0: include the four routing columns the same way.
+        # The Any-typed Row may not raise on out-of-bounds; guard
+        # defensively so a SELECT that omits the columns (e.g. an
+        # external caller reading the legacy seven-column shape)
+        # still works.
         try:
             tenant_id = row[7]
             out["tenant_id"] = None if tenant_id is None else str(tenant_id)
+        except (IndexError, KeyError):
+            pass
+        try:
+            routed_llm = row[8]
+            routed_tts = row[9]
+            budget_ms = row[10]
+            budget_overrun = row[11]
+            out["routed_llm"] = None if routed_llm is None else str(routed_llm)
+            out["routed_tts"] = None if routed_tts is None else str(routed_tts)
+            out["budget_ms"] = None if budget_ms is None else int(budget_ms)
+            out["budget_overrun"] = (
+                None if budget_overrun is None else bool(budget_overrun)
+            )
         except (IndexError, KeyError):
             pass
         return out
@@ -1052,7 +1108,8 @@ class SQLiteStorage:
             params.append(limit)
             cursor = await db.execute(
                 f"""SELECT id, project, started_at, ended_at, modalities,
-                          total_cost_usd, request_count, tenant_id
+                          total_cost_usd, request_count, tenant_id,
+                          routed_llm, routed_tts, budget_ms, budget_overrun
                    FROM sessions
                    {where}ORDER BY {clause}
                    LIMIT ?""",
@@ -1074,7 +1131,8 @@ class SQLiteStorage:
         try:
             cursor = await db.execute(
                 """SELECT id, project, started_at, ended_at, modalities,
-                          total_cost_usd, request_count, tenant_id
+                          total_cost_usd, request_count, tenant_id,
+                          routed_llm, routed_tts, budget_ms, budget_overrun
                    FROM sessions
                    WHERE id = ?""",
                 (session_id,),
@@ -1511,16 +1569,77 @@ class SQLiteStorage:
 
     # Managed projects
 
+    @staticmethod
+    def _validate_branding(branding: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Validate the v0.5.0 branding payload before write.
+
+        OQ4 + dashboard contract:
+        - ``logo_url`` (optional): string up to 2048 chars.
+        - ``accent_color`` (optional): hex string ``#RRGGBB`` or
+          ``#RGB``.
+        - ``product_name`` (optional): string up to 64 chars.
+
+        Returns the validated dict (or ``None`` when input is None /
+        empty). Raises ``ValueError`` on shape or constraint violations.
+        """
+        import re
+
+        if branding is None:
+            return None
+        if not isinstance(branding, dict):
+            raise ValueError(
+                f"branding must be a dict or None, got {type(branding).__name__}"
+            )
+        if not branding:
+            return None
+        out: dict[str, Any] = {}
+        allowed = {"logo_url", "accent_color", "product_name"}
+        for key in branding:
+            if key not in allowed:
+                raise ValueError(
+                    f"branding has unknown key {key!r}; allowed: {sorted(allowed)}"
+                )
+        logo_url = branding.get("logo_url")
+        if logo_url is not None:
+            if not isinstance(logo_url, str) or len(logo_url) > 2048:
+                raise ValueError("branding.logo_url must be a string up to 2048 chars")
+            out["logo_url"] = logo_url
+        accent_color = branding.get("accent_color")
+        if accent_color is not None:
+            if not isinstance(accent_color, str) or not re.fullmatch(
+                r"#[0-9A-Fa-f]{3}([0-9A-Fa-f]{3})?", accent_color
+            ):
+                raise ValueError(
+                    "branding.accent_color must be a hex string (#RGB or #RRGGBB)"
+                )
+            out["accent_color"] = accent_color
+        product_name = branding.get("product_name")
+        if product_name is not None:
+            if not isinstance(product_name, str) or len(product_name) > 64:
+                raise ValueError(
+                    "branding.product_name must be a string up to 64 chars"
+                )
+            out["product_name"] = product_name
+        return out or None
+
     async def list_managed_projects(self) -> list[dict[str, Any]]:
         db = await self._ensure_initialized()
         try:
             cursor = await db.execute(
                 "SELECT project_id, name, description, daily_budget, budget_action, "
                 "default_stack, stt_model, llm_model, tts_model, tags, "
-                "created_at, updated_at FROM managed_projects ORDER BY created_at ASC"
+                "created_at, updated_at, branding_json "
+                "FROM managed_projects ORDER BY created_at ASC"
             )
             rows = []
             async for row in cursor:
+                branding_raw = row[12] if len(row) > 12 else None
+                branding = None
+                if branding_raw:
+                    try:
+                        branding = json.loads(branding_raw)
+                    except (ValueError, TypeError):
+                        branding = None
                 rows.append(
                     {
                         "project_id": row[0],
@@ -1535,6 +1654,7 @@ class SQLiteStorage:
                         "tags": json.loads(row[9] or "[]"),
                         "created_at": row[10],
                         "updated_at": row[11],
+                        "branding": branding,
                     }
                 )
             return rows
@@ -1559,7 +1679,10 @@ class SQLiteStorage:
         llm_model: str | None = None,
         tts_model: str | None = None,
         tags: list[str] | None = None,
+        branding: dict[str, Any] | None = None,
     ) -> None:
+        validated_branding = self._validate_branding(branding)
+        branding_json = json.dumps(validated_branding) if validated_branding else None
         db = await self._ensure_initialized()
         try:
             now = time.time()
@@ -1567,8 +1690,8 @@ class SQLiteStorage:
                 """INSERT INTO managed_projects
                        (project_id, name, description, daily_budget, budget_action,
                         default_stack, stt_model, llm_model, tts_model, tags,
-                        created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        created_at, updated_at, branding_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(project_id) DO UPDATE SET
                        name=excluded.name,
                        description=excluded.description,
@@ -1579,6 +1702,7 @@ class SQLiteStorage:
                        llm_model=excluded.llm_model,
                        tts_model=excluded.tts_model,
                        tags=excluded.tags,
+                       branding_json=COALESCE(excluded.branding_json, branding_json),
                        updated_at=excluded.updated_at""",
                 (
                     project_id,
@@ -1593,6 +1717,7 @@ class SQLiteStorage:
                     json.dumps(tags or []),
                     now,
                     now,
+                    branding_json,
                 ),
             )
             await db.commit()
