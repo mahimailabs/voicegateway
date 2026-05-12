@@ -1,0 +1,76 @@
+{
+  "_comment": "v0.5.0 published-median latency baselines per (provider, modality). Used by voicegateway/middleware/router.py as the AC-4 fallback when latency_observations has no observed p50 for a candidate. Each entry pairs a provider id + modality with a published median in milliseconds and a source_url citing the provider's stated benchmark. verified_at follows the pricing catalog convention (YYYY-MM-DD) so a future staleness audit can flag entries past a 90-day threshold. The router treats a missing entry as 'cannot predict, skip this candidate'.",
+  "_format_version": 1,
+  "baselines": [
+    {
+      "provider": "deepgram",
+      "modality": "stt",
+      "median_ms": 250,
+      "source_url": "https://deepgram.com/learn/streaming-speech-to-text-api",
+      "verified_at": "2026-05-11"
+    },
+    {
+      "provider": "assemblyai",
+      "modality": "stt",
+      "median_ms": 400,
+      "source_url": "https://www.assemblyai.com/docs/speech-to-text/streaming",
+      "verified_at": "2026-05-11"
+    },
+    {
+      "provider": "openai",
+      "modality": "stt",
+      "median_ms": 500,
+      "source_url": "https://platform.openai.com/docs/guides/speech-to-text",
+      "verified_at": "2026-05-11"
+    },
+    {
+      "provider": "groq",
+      "modality": "stt",
+      "median_ms": 200,
+      "source_url": "https://console.groq.com/docs/speech-text",
+      "verified_at": "2026-05-11"
+    },
+    {
+      "provider": "openai",
+      "modality": "llm",
+      "median_ms": 300,
+      "source_url": "https://platform.openai.com/docs/guides/latency-optimization",
+      "verified_at": "2026-05-11"
+    },
+    {
+      "provider": "anthropic",
+      "modality": "llm",
+      "median_ms": 350,
+      "source_url": "https://docs.anthropic.com/en/api/messages-streaming",
+      "verified_at": "2026-05-11"
+    },
+    {
+      "provider": "groq",
+      "modality": "llm",
+      "median_ms": 80,
+      "source_url": "https://groq.com/inference",
+      "verified_at": "2026-05-11"
+    },
+    {
+      "provider": "cartesia",
+      "modality": "tts",
+      "median_ms": 150,
+      "source_url": "https://docs.cartesia.ai/api-reference/tts",
+      "verified_at": "2026-05-11"
+    },
+    {
+      "provider": "elevenlabs",
+      "modality": "tts",
+      "median_ms": 400,
+      "source_url": "https://elevenlabs.io/docs/api-reference/text-to-speech",
+      "verified_at": "2026-05-11"
+    },
+    {
+      "provider": "openai",
+      "modality": "tts",
+      "median_ms": 600,
+      "source_url": "https://platform.openai.com/docs/guides/text-to-speech",
+      "verified_at": "2026-05-11"
+    }
+  ]
+}
