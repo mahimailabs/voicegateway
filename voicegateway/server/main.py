@@ -9,6 +9,7 @@ This is what the dashboard consumes and what external monitoring tools
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import time
 from datetime import UTC, datetime, timedelta
@@ -17,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
+from pydantic import ValidationError
 
 from voicegateway.core.auth import (
     AuthError,
@@ -26,9 +28,15 @@ from voicegateway.core.auth import (
     resolve_cors_origins,
     verify_virtual_key,
 )
+from voicegateway.core.guardrail_policy import (
+    ACTIVE_GUARDRAIL_ACTIONS,
+    GUARDRAIL_CATEGORIES,
+    GUARDRAIL_CATEGORY_DESCRIPTIONS,
+    GuardrailPolicy,
+)
 from voicegateway.inference._session_context import set_tenant
 from voicegateway.pricing import catalog
-from voicegateway.storage import virtual_keys_repo
+from voicegateway.storage import guardrail_events_repo, virtual_keys_repo
 from voicegateway.storage._percentiles import quantile_label
 
 if TYPE_CHECKING:
@@ -59,7 +67,7 @@ def build_app(gateway: Gateway) -> FastAPI:
     """Build a FastAPI app bound to the given Gateway instance."""
     app = FastAPI(
         title="VoiceGateway API",
-        version="0.5.0",
+        version="0.6.0",
         description="HTTP API for VoiceGateway: cost tracking and reconciliation for LiveKit voice agents.",
     )
 
@@ -138,6 +146,12 @@ def build_app(gateway: Gateway) -> FastAPI:
                 ) from None
 
         return _dep
+
+    def _guardrail_since(days: int) -> str:
+        days = max(1, min(days, 365))
+        return (datetime.now(tz=UTC) - timedelta(days=days)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
 
     write_dep = Depends(require_scope("write"))
 
@@ -359,6 +373,60 @@ def build_app(gateway: Gateway) -> FastAPI:
             data["budget_status"] = enforcer.get_budget_status(project_id, today_spend)
         return data
 
+    @app.get("/v1/projects/{project_id}/guardrails")
+    async def v1_project_guardrails(project_id: str) -> dict[str, Any]:
+        pcfg = gateway.config.get_project(project_id)
+        if pcfg is None:
+            raise HTTPException(404, f"project not found: {project_id}")
+        return {
+            "project_id": project_id,
+            "policy": pcfg.guardrails.to_storage_dict(),
+            "categories": [
+                {
+                    "id": category,
+                    "description": GUARDRAIL_CATEGORY_DESCRIPTIONS[category],
+                }
+                for category in GUARDRAIL_CATEGORY_DESCRIPTIONS
+            ],
+        }
+
+    @app.post("/v1/projects/{project_id}/guardrails", dependencies=[write_dep])
+    async def v1_update_project_guardrails(
+        project_id: str, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        if gateway.storage is None:
+            raise HTTPException(400, "Storage not enabled")
+        pcfg = gateway.config.get_project(project_id)
+        if pcfg is None:
+            raise HTTPException(404, f"project not found: {project_id}")
+        try:
+            policy = GuardrailPolicy.from_raw(body)
+        except (ValidationError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        await gateway.storage.set_managed_project_guardrails(
+            project_id=project_id,
+            policy=policy.to_storage_dict(),
+            name=pcfg.name,
+            description=pcfg.description,
+            daily_budget=pcfg.daily_budget,
+            budget_action=pcfg.budget_action,
+            default_stack=pcfg.default_stack,
+            tags=list(pcfg.tags),
+        )
+        await gateway.storage.log_audit_event(
+            "project", project_id, "guardrails_update", policy.to_storage_dict(), "api"
+        )
+        await gateway.refresh_config()
+        refreshed = gateway.config.get_project(project_id)
+        return {
+            "project_id": project_id,
+            "policy": (
+                refreshed.guardrails.to_storage_dict()
+                if refreshed is not None
+                else policy.to_storage_dict()
+            ),
+        }
+
     @app.get("/v1/logs")
     async def v1_logs(
         limit: int = Query(100, ge=1, le=1000),
@@ -417,6 +485,101 @@ def build_app(gateway: Gateway) -> FastAPI:
                 status_code=404, detail=f"Session '{session_id}' not found"
             )
         return row
+
+    @app.get("/v1/guardrails/events")
+    async def v1_guardrail_events(
+        days: int = Query(7, ge=1, le=365),
+        project: str | None = Query(None),
+        tenant: str | None = Query(None),
+        category: str | None = Query(None),
+        action: str | None = Query(None),
+        event_type: str | None = Query(None, pattern="^(fired|bypassed)$"),
+        limit: int = Query(100, ge=1, le=1000),
+    ) -> dict[str, Any]:
+        if gateway.storage is None:
+            return {"events": [], "filter": {"project": project, "tenant": tenant}}
+        _validate_guardrail_event_filter(category=category, action=action)
+        db = await gateway.storage._ensure_initialized()
+        try:
+            rows = await guardrail_events_repo.list_events(
+                db,
+                since=_guardrail_since(days),
+                project=project,
+                tenant=tenant,
+                category=category,
+                action=action,
+                event_type=event_type,
+                limit=limit,
+            )
+        finally:
+            await db.close()
+        return {
+            "events": [dataclasses.asdict(row) for row in rows],
+            "filter": {
+                "days": days,
+                "project": project,
+                "tenant": tenant,
+                "category": category,
+                "action": action,
+                "event_type": event_type,
+            },
+        }
+
+    @app.get("/v1/guardrails/aggregate")
+    async def v1_guardrail_aggregate(
+        days: int = Query(7, ge=1, le=365),
+        project: str | None = Query(None),
+        tenant: str | None = Query(None),
+        category: str | None = Query(None),
+    ) -> dict[str, Any]:
+        if gateway.storage is None:
+            return {"counts": [], "top_sessions": []}
+        _validate_guardrail_event_filter(category=category, action=None)
+        db = await gateway.storage._ensure_initialized()
+        try:
+            since = _guardrail_since(days)
+            counts = await guardrail_events_repo.aggregate_counts(
+                db, since=since, project=project, tenant=tenant
+            )
+            top_sessions = (
+                await guardrail_events_repo.top_sessions_by_category(
+                    db,
+                    category=category,
+                    since=since,
+                    project=project,
+                    tenant=tenant,
+                )
+                if category
+                else []
+            )
+        finally:
+            await db.close()
+        return {
+            "counts": [dataclasses.asdict(row) for row in counts],
+            "top_sessions": [dataclasses.asdict(row) for row in top_sessions],
+            "filter": {
+                "days": days,
+                "project": project,
+                "tenant": tenant,
+                "category": category,
+            },
+        }
+
+    def _validate_guardrail_event_filter(
+        *, category: str | None, action: str | None
+    ) -> None:
+        if category is not None and category not in GUARDRAIL_CATEGORIES:
+            allowed = ", ".join(GUARDRAIL_CATEGORIES)
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown guardrail category: {category}; allowed: {allowed}",
+            )
+        if action is not None and action not in ACTIVE_GUARDRAIL_ACTIONS:
+            allowed = ", ".join(ACTIVE_GUARDRAIL_ACTIONS)
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown guardrail action: {action}; allowed: {allowed}",
+            )
 
     @app.get("/v1/metrics", response_class=PlainTextResponse)
     async def v1_metrics() -> str:

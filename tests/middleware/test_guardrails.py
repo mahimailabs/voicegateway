@@ -1,0 +1,202 @@
+"""Tests for v0.6.0 guardrail prompt/tool injection."""
+
+from __future__ import annotations
+
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+import pytest
+from livekit.agents import llm as lk_llm
+
+from voicegateway.core.guardrail_policy import (
+    REPORT_GUARDRAIL_TOOL_NAME,
+    GuardrailPolicy,
+)
+from voicegateway.inference import _factory
+from voicegateway.inference._session_context import reset_session_id, start_session
+from voicegateway.middleware.guardrails import (
+    compose_guardrail_block,
+    create_report_guardrail_action_tool,
+    inject_guardrail_block,
+    load_guardrail_prompt,
+    tools_contain_reserved_report_tool,
+)
+from voicegateway.middleware.instrumented_provider import InstrumentedLLM
+from voicegateway.storage import guardrail_events_repo
+from voicegateway.storage.sqlite import SQLiteStorage
+
+
+@pytest.fixture(autouse=True)
+def _isolate_session_context():
+    reset_session_id()
+    yield
+    reset_session_id()
+
+
+class _WrappedLLM:
+    label = "fake"
+    model = "fake-model"
+    provider = "fake-provider"
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def on(self, event: str, callback) -> None:
+        pass
+
+    def chat(self, **kwargs):
+        self.calls.append(kwargs)
+        return "chat-stream"
+
+
+def _active_policy(**categories: str) -> GuardrailPolicy:
+    return GuardrailPolicy.from_raw({"enabled": True, "categories": categories})
+
+
+def _wrapper(policy: GuardrailPolicy, monkeypatch, storage=None) -> InstrumentedLLM:
+    gw = SimpleNamespace(
+        config=SimpleNamespace(projects={"default": SimpleNamespace(guardrails=policy)})
+    )
+    monkeypatch.setattr(_factory, "_gateway", gw)
+    return InstrumentedLLM(
+        wrapped=_WrappedLLM(),
+        model_id="openai/gpt-test",
+        provider="openai",
+        project="default",
+        cost_tracker=MagicMock(),
+        storage=storage,
+    )
+
+
+def test_prompt_assets_and_composer_include_versioned_tool_contract() -> None:
+    assert "identifiers" in load_guardrail_prompt("pii").lower()
+
+    block = compose_guardrail_block(_active_policy(pii="redact"))
+
+    assert '<voicegateway_guardrails version="v0.6.0">' in block
+    assert "## pii" in block
+    assert "Action: redact" in block
+    assert REPORT_GUARDRAIL_TOOL_NAME in block
+
+
+def test_composer_returns_empty_for_inactive_policy() -> None:
+    assert compose_guardrail_block(GuardrailPolicy.disabled()) == ""
+
+
+def test_inject_guardrail_block_appends_after_system_and_developer() -> None:
+    ctx = lk_llm.ChatContext(
+        [
+            lk_llm.ChatMessage(role="system", content=["system one"]),
+            lk_llm.ChatMessage(role="developer", content=["developer one"]),
+            lk_llm.ChatMessage(role="user", content=["hello"]),
+        ]
+    )
+
+    injected = inject_guardrail_block(
+        ctx, "<voicegateway_guardrails>rules</voicegateway_guardrails>"
+    )
+
+    assert injected is not ctx
+    assert [item.role for item in injected.items] == [
+        "system",
+        "developer",
+        "system",
+        "user",
+    ]
+    assert "rules" in injected.items[2].text_content
+    assert (
+        len(
+            inject_guardrail_block(
+                injected, "<voicegateway_guardrails>rules</voicegateway_guardrails>"
+            ).items
+        )
+        == 4
+    )
+
+
+def test_reserved_tool_detection_accepts_livekit_and_dict_shapes() -> None:
+    tool = create_report_guardrail_action_tool(
+        storage=None,
+        session_id="vg-test",
+        tenant_id=None,
+    )
+
+    assert tools_contain_reserved_report_tool([tool]) is True
+    assert tools_contain_reserved_report_tool([{"name": REPORT_GUARDRAIL_TOOL_NAME}])
+    assert tools_contain_reserved_report_tool([{"id": REPORT_GUARDRAIL_TOOL_NAME}])
+    assert tools_contain_reserved_report_tool([{"name": "other"}]) is False
+
+
+def test_instrumented_llm_injects_prompt_and_report_tool(monkeypatch) -> None:
+    reset_session_id()
+    wrapper = _wrapper(_active_policy(pii="redact"), monkeypatch)
+    chat_ctx = lk_llm.ChatContext(
+        [lk_llm.ChatMessage(role="user", content=["my ssn is 123"])]
+    )
+
+    result = wrapper.chat(chat_ctx=chat_ctx, tools=[])
+
+    assert result == "chat-stream"
+    call = wrapper._wrapped.calls[0]
+    assert call["chat_ctx"] is not chat_ctx
+    assert REPORT_GUARDRAIL_TOOL_NAME in call["chat_ctx"].items[0].text_content
+    assert [getattr(tool, "id", None) for tool in call["tools"]] == [
+        REPORT_GUARDRAIL_TOOL_NAME
+    ]
+
+
+def test_instrumented_llm_freezes_policy_for_session(monkeypatch) -> None:
+    reset_session_id()
+    initial = _active_policy(pii="redact")
+    wrapper = _wrapper(initial, monkeypatch)
+
+    wrapper.chat(chat_ctx=lk_llm.ChatContext(), tools=[])
+    wrapper._wrapped.calls.clear()
+    _factory._gateway.config.projects["default"].guardrails = _active_policy(
+        financial="block"
+    )
+
+    wrapper.chat(chat_ctx=lk_llm.ChatContext(), tools=[])
+    block = wrapper._wrapped.calls[0]["chat_ctx"].items[0].text_content
+
+    assert "## pii" in block
+    assert "## financial" not in block
+
+
+def test_instrumented_llm_rejects_reserved_user_tool(monkeypatch) -> None:
+    reset_session_id()
+    wrapper = _wrapper(_active_policy(prompt_injection="block"), monkeypatch)
+
+    try:
+        wrapper.chat(
+            chat_ctx=lk_llm.ChatContext(),
+            tools=[{"name": REPORT_GUARDRAIL_TOOL_NAME}],
+        )
+    except ValueError as exc:
+        assert "reserved by VoiceGateway" in str(exc)
+    else:  # pragma: no cover - assertion guard
+        raise AssertionError("reserved tool name was accepted")
+
+
+async def test_bypass_skips_injection_and_records_audit(tmp_path, monkeypatch) -> None:
+    storage = SQLiteStorage(str(tmp_path / "guardrail-bypass.db"))
+    sid = start_session(bypass_guardrails=True)
+    wrapper = _wrapper(_active_policy(medical="alert"), monkeypatch, storage=storage)
+
+    wrapper.chat(chat_ctx=lk_llm.ChatContext(), tools=None)
+
+    call = wrapper._wrapped.calls[0]
+    assert call["tools"] is None
+    assert call["chat_ctx"].items == []
+
+    await asyncio.sleep(0.05)
+    db = await storage._ensure_initialized()
+    try:
+        events = await guardrail_events_repo.list_events_by_session(db, sid)
+    finally:
+        await db.close()
+    assert len(events) == 1
+    assert events[0].event_type == "bypassed"
+    assert events[0].category is None
+    assert events[0].action is None

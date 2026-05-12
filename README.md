@@ -19,7 +19,7 @@
 
 ## Why VoiceGateway
 
-VoiceGateway is purpose-built for LiveKit voice agents. Four things make it different from general-purpose LLM gateways. v0.1.0 (current) ships a daemon-first onboarding flow: one curl command, a five-question wizard, your first provider call lands in the dashboard inside 60 seconds.
+VoiceGateway is purpose-built for LiveKit voice agents. Five things make it different from general-purpose LLM gateways. v0.1.0 (current) ships a daemon-first onboarding flow: one curl command, a five-question wizard, your first provider call lands in the dashboard inside 60 seconds.
 
 ### 1. One-line drop-in for `livekit.agents.inference`
 
@@ -56,6 +56,22 @@ Per-request line items carry `pricing_source` attribution (`genai-prices@<versio
 ### 4. MCP server for agent-managed configuration
 
 A first-class [Model Context Protocol](https://modelcontextprotocol.io) server exposes 17 tools (configure providers, create projects with daily budgets, query costs, tail logs, run health checks) over stdio and HTTP/SSE. Claude Code, Cursor, Codex, and Cline can all manage your gateway conversationally.
+
+### 5. Voice-specific guardrails
+
+Project policies can add LLM-side guardrails for `pii`, `financial`, `medical`, `prompt_injection`, and `off_topic` categories. Guardrails stay in the LiveKit drop-in path: `voicegateway.inference.LLM.chat(...)` appends a versioned prompt block, registers the reserved `report_guardrail_action` tool, and writes audit events without changing how you construct `AgentSession`.
+
+```yaml
+projects:
+  support:
+    guardrails:
+      enabled: true
+      categories:
+        pii: redact
+        prompt_injection: block
+```
+
+Use `voicegw guardrails show|set|clear|dry-run --project <id>` to manage policies from the CLI, or use the Dashboard Guardrails page for counts and session drilldown.
 
 **Is VoiceGateway right for you?** If you are building a text-only LLM application without a voice component, [LiteLLM](https://docs.litellm.ai/) is likely a better fit. It has a broader LLM-provider catalog and an OpenAI-compatible HTTP proxy. See the [decision tree](https://docs.voicegateway.dev/guide/decision-tree) for a longer breakdown.
 

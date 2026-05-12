@@ -11,6 +11,7 @@ import Sessions from './pages/Sessions';
 import Projects from './pages/Projects';
 import Providers from './pages/Providers';
 import Routing from './pages/Routing';
+import Guardrails from './pages/Guardrails';
 import Settings from './pages/Settings';
 import VirtualKeys from './pages/VirtualKeys';
 import Login from './pages/Login';
@@ -43,6 +44,7 @@ const PAGES = [
   { to: '/sessions',     label: 'Sessions',     id: 'sessions' },
   { to: '/metrics',      label: 'Metrics',      id: 'metrics'  },
   { to: '/routing',      label: 'Routing',      id: 'routing'  },
+  { to: '/guardrails',   label: 'Guardrails',   id: 'guardrails' },
   { to: '/projects',     label: 'Projects',     id: 'projects' },
   { to: '/providers',    label: 'Providers',    id: 'providers' },
   { to: '/virtual-keys', label: 'Virtual Keys', id: 'virtual-keys' },
@@ -125,6 +127,7 @@ export default function App() {
             <Route path="/projects" element={<Projects />} />
             <Route path="/providers" element={<Providers />} />
             <Route path="/routing" element={<Routing />} />
+            <Route path="/guardrails" element={<Guardrails />} />
             <Route path="/virtual-keys" element={<VirtualKeys />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/settings/audit-log" element={<Settings tab="audit" />} />

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as _dt
 import json
 import logging
@@ -12,11 +13,15 @@ from typing import Any
 
 import aiosqlite
 
+from voicegateway.core.guardrail_policy import GuardrailPolicy
 from voicegateway.inference._session_context import (
+    current_guardrail_policy_snapshot,
+    current_guardrails_bypassed,
     current_routing_decision,
     current_tenant,
 )
-from voicegateway.storage import replay_repo, turns_repo
+from voicegateway.middleware.guardrails import guardrail_policy_json
+from voicegateway.storage import guardrail_events_repo, replay_repo, turns_repo
 from voicegateway.storage._percentiles import compute_percentiles
 from voicegateway.storage.models import RequestRecord
 
@@ -37,6 +42,7 @@ _migration_0005 = import_module(
 _migration_0006 = import_module(
     "voicegateway.storage.migrations.0006_routing_and_branding"
 )
+_migration_0007 = import_module("voicegateway.storage.migrations.0007_guardrails")
 
 _logger = logging.getLogger(__name__)
 
@@ -284,6 +290,10 @@ class SQLiteStorage:
             # and the new latency_observations table. Idempotent.
             await _migration_0006.apply(db)
 
+            # v0.6.0 migration 0007: guardrail policy snapshots and
+            # audit events. Idempotent.
+            await _migration_0007.apply(db)
+
             await db.commit()
             self._initialized = True
         return db
@@ -489,12 +499,29 @@ class SQLiteStorage:
                     r_tts = None
                     r_budget = None
                     r_overrun = None
+                guardrail_snapshot = current_guardrail_policy_snapshot()
+                if guardrail_snapshot is not None:
+                    guardrail_policy = GuardrailPolicy.from_raw(guardrail_snapshot)
+                    guardrails_active = 1 if guardrail_policy.is_active else 0
+                    guardrails_bypassed = (
+                        1
+                        if guardrail_policy.is_active
+                        and current_guardrails_bypassed()
+                        else 0
+                    )
+                    guardrail_snapshot_json = guardrail_policy_json(guardrail_policy)
+                else:
+                    guardrails_active = None
+                    guardrails_bypassed = None
+                    guardrail_snapshot_json = None
                 await db.execute(
                     """INSERT INTO sessions
                        (id, project, started_at, ended_at, modalities,
                         total_cost_usd, request_count, tenant_id,
-                        routed_llm, routed_tts, budget_ms, budget_overrun)
-                       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+                        routed_llm, routed_tts, budget_ms, budget_overrun,
+                        guardrails_active, guardrails_bypassed,
+                        guardrail_policy_snapshot_json)
+                       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
                        ON CONFLICT(id) DO UPDATE SET
                            total_cost_usd = total_cost_usd + excluded.total_cost_usd,
                            request_count = request_count + 1,
@@ -503,6 +530,9 @@ class SQLiteStorage:
                            routed_tts = COALESCE(routed_tts, excluded.routed_tts),
                            budget_ms = COALESCE(budget_ms, excluded.budget_ms),
                            budget_overrun = COALESCE(budget_overrun, excluded.budget_overrun),
+                           guardrails_active = COALESCE(guardrails_active, excluded.guardrails_active),
+                           guardrails_bypassed = COALESCE(guardrails_bypassed, excluded.guardrails_bypassed),
+                           guardrail_policy_snapshot_json = COALESCE(guardrail_policy_snapshot_json, excluded.guardrail_policy_snapshot_json),
                            started_at = CASE
                                WHEN started_at IS NULL THEN excluded.started_at
                                WHEN started_at > excluded.started_at THEN excluded.started_at
@@ -533,6 +563,9 @@ class SQLiteStorage:
                         r_tts,
                         r_budget,
                         r_overrun,
+                        guardrails_active,
+                        guardrails_bypassed,
+                        guardrail_snapshot_json,
                     ),
                 )
             await db.commit()
@@ -1031,6 +1064,7 @@ class SQLiteStorage:
         }
         # v0.4.0: include tenant_id when the SELECT picked it up.
         # v0.5.0: include the four routing columns the same way.
+        # v0.6.0: include guardrail session flags/policy snapshot.
         # The Any-typed Row may not raise on out-of-bounds; guard
         # defensively so a SELECT that omits the columns (e.g. an
         # external caller reading the legacy seven-column shape)
@@ -1052,6 +1086,21 @@ class SQLiteStorage:
                 None if budget_overrun is None else bool(budget_overrun)
             )
         except (IndexError, KeyError):
+            pass
+        try:
+            guardrails_active = row[12]
+            guardrails_bypassed = row[13]
+            policy_snapshot = row[14]
+            out["guardrails_active"] = (
+                None if guardrails_active is None else bool(guardrails_active)
+            )
+            out["guardrails_bypassed"] = (
+                None if guardrails_bypassed is None else bool(guardrails_bypassed)
+            )
+            out["guardrail_policy_snapshot"] = (
+                json.loads(policy_snapshot) if policy_snapshot else None
+            )
+        except (IndexError, KeyError, TypeError, ValueError):
             pass
         return out
 
@@ -1109,7 +1158,9 @@ class SQLiteStorage:
             cursor = await db.execute(
                 f"""SELECT id, project, started_at, ended_at, modalities,
                           total_cost_usd, request_count, tenant_id,
-                          routed_llm, routed_tts, budget_ms, budget_overrun
+                          routed_llm, routed_tts, budget_ms, budget_overrun,
+                          guardrails_active, guardrails_bypassed,
+                          guardrail_policy_snapshot_json
                    FROM sessions
                    {where}ORDER BY {clause}
                    LIMIT ?""",
@@ -1132,7 +1183,9 @@ class SQLiteStorage:
             cursor = await db.execute(
                 """SELECT id, project, started_at, ended_at, modalities,
                           total_cost_usd, request_count, tenant_id,
-                          routed_llm, routed_tts, budget_ms, budget_overrun
+                          routed_llm, routed_tts, budget_ms, budget_overrun,
+                          guardrails_active, guardrails_bypassed,
+                          guardrail_policy_snapshot_json
                    FROM sessions
                    WHERE id = ?""",
                 (session_id,),
@@ -1173,6 +1226,10 @@ class SQLiteStorage:
                 (session_id,),
             )
             session["providers"] = [prov_row[0] async for prov_row in prov_cursor]
+            events = await guardrail_events_repo.list_events_by_session(db, session_id)
+            session["guardrail_events"] = [
+                dataclasses.asdict(event) for event in events
+            ]
             return session
         finally:
             await db.close()
@@ -1628,18 +1685,25 @@ class SQLiteStorage:
             cursor = await db.execute(
                 "SELECT project_id, name, description, daily_budget, budget_action, "
                 "default_stack, stt_model, llm_model, tts_model, tags, "
-                "created_at, updated_at, branding_json "
+                "created_at, updated_at, branding_json, guardrail_policy_json "
                 "FROM managed_projects ORDER BY created_at ASC"
             )
             rows = []
             async for row in cursor:
                 branding_raw = row[12] if len(row) > 12 else None
+                guardrail_raw = row[13] if len(row) > 13 else None
                 branding = None
                 if branding_raw:
                     try:
                         branding = json.loads(branding_raw)
                     except (ValueError, TypeError):
                         branding = None
+                guardrail_policy = None
+                if guardrail_raw:
+                    try:
+                        guardrail_policy = json.loads(guardrail_raw)
+                    except (ValueError, TypeError):
+                        guardrail_policy = None
                 rows.append(
                     {
                         "project_id": row[0],
@@ -1655,6 +1719,7 @@ class SQLiteStorage:
                         "created_at": row[10],
                         "updated_at": row[11],
                         "branding": branding,
+                        "guardrail_policy": guardrail_policy,
                     }
                 )
             return rows
@@ -1680,9 +1745,20 @@ class SQLiteStorage:
         tts_model: str | None = None,
         tags: list[str] | None = None,
         branding: dict[str, Any] | None = None,
+        guardrail_policy: dict[str, Any] | None = None,
     ) -> None:
         validated_branding = self._validate_branding(branding)
         branding_json = json.dumps(validated_branding) if validated_branding else None
+        validated_guardrails = (
+            GuardrailPolicy.from_raw(guardrail_policy).to_storage_dict()
+            if guardrail_policy is not None
+            else None
+        )
+        guardrail_json = (
+            json.dumps(validated_guardrails, sort_keys=True)
+            if validated_guardrails is not None
+            else None
+        )
         db = await self._ensure_initialized()
         try:
             now = time.time()
@@ -1690,8 +1766,8 @@ class SQLiteStorage:
                 """INSERT INTO managed_projects
                        (project_id, name, description, daily_budget, budget_action,
                         default_stack, stt_model, llm_model, tts_model, tags,
-                        created_at, updated_at, branding_json)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        created_at, updated_at, branding_json, guardrail_policy_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(project_id) DO UPDATE SET
                        name=excluded.name,
                        description=excluded.description,
@@ -1703,6 +1779,7 @@ class SQLiteStorage:
                        tts_model=excluded.tts_model,
                        tags=excluded.tags,
                        branding_json=COALESCE(excluded.branding_json, branding_json),
+                       guardrail_policy_json=COALESCE(excluded.guardrail_policy_json, guardrail_policy_json),
                        updated_at=excluded.updated_at""",
                 (
                     project_id,
@@ -1718,6 +1795,59 @@ class SQLiteStorage:
                     now,
                     now,
                     branding_json,
+                    guardrail_json,
+                ),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
+    async def set_managed_project_guardrails(
+        self,
+        *,
+        project_id: str,
+        policy: dict[str, Any] | None,
+        name: str,
+        description: str = "",
+        daily_budget: float = 0.0,
+        budget_action: str = "warn",
+        default_stack: str | None = None,
+        stt_model: str | None = None,
+        llm_model: str | None = None,
+        tts_model: str | None = None,
+        tags: list[str] | None = None,
+    ) -> None:
+        """Set or clear a project's guardrail policy overlay."""
+        guardrail_json = None
+        if policy is not None:
+            validated = GuardrailPolicy.from_raw(policy).to_storage_dict()
+            guardrail_json = json.dumps(validated, sort_keys=True)
+        db = await self._ensure_initialized()
+        try:
+            now = time.time()
+            await db.execute(
+                """INSERT INTO managed_projects
+                       (project_id, name, description, daily_budget, budget_action,
+                        default_stack, stt_model, llm_model, tts_model, tags,
+                        created_at, updated_at, guardrail_policy_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(project_id) DO UPDATE SET
+                       guardrail_policy_json=excluded.guardrail_policy_json,
+                       updated_at=excluded.updated_at""",
+                (
+                    project_id,
+                    name,
+                    description,
+                    daily_budget,
+                    budget_action,
+                    default_stack,
+                    stt_model,
+                    llm_model,
+                    tts_model,
+                    json.dumps(tags or []),
+                    now,
+                    now,
+                    guardrail_json,
                 ),
             )
             await db.commit()

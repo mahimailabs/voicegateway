@@ -11,6 +11,8 @@ from typing import Any
 
 import yaml
 
+from voicegateway.core.guardrail_policy import GuardrailPolicy
+
 _ENV_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
 # Preferred (new) search paths — voicegw.yaml first.
@@ -160,6 +162,8 @@ class ProjectConfig:
     routing: RoutingConfig = field(default_factory=RoutingConfig)
     # v0.5.0: per-project white-label branding (REQ-VG-ROUTE-004).
     branding: BrandingConfig = field(default_factory=BrandingConfig)
+    # v0.6.0: per-project LLM-side voice guardrails.
+    guardrails: GuardrailPolicy = field(default_factory=GuardrailPolicy.disabled)
 
     @property
     def accent(self) -> str:
@@ -374,6 +378,7 @@ class GatewayConfig:
                         else None
                     ),
                 )
+                guardrails_cfg = GuardrailPolicy.from_raw(pcfg.get("guardrails"))
                 projects[pid] = ProjectConfig(
                     id=pid,
                     name=str(pcfg.get("name") or pid),
@@ -388,6 +393,7 @@ class GatewayConfig:
                     tenant=tenant_cfg,
                     routing=routing_cfg,
                     branding=branding_cfg,
+                    guardrails=guardrails_cfg,
                 )
 
         auth_raw = raw.get("auth", {}) or {}
