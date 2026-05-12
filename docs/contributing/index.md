@@ -42,7 +42,7 @@ We welcome PRs for bug fixes, new providers, documentation improvements, and new
 
 ### Improve documentation
 
-Documentation lives in `docs/` and uses VitePress. See [development setup](/contributing/development-setup#documentation-site) for running the docs site locally. Even small fixes (typos, broken links, clearer examples) are valuable.
+Documentation source lives in `docs/` and is rendered by `mahimailabs/voicegateway-web` at <https://voicegateway.mahimai.ca/docs>. See [development setup](/contributing/development-setup#documentation-site) for the current preview and rebuild flow. Even small fixes (typos, broken links, clearer examples) are valuable.
 
 ## PR checklist
 

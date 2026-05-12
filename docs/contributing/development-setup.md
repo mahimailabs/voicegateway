@@ -127,43 +127,14 @@ The frontend uses:
 
 ## Documentation site {#documentation-site}
 
-The docs site uses VitePress and lives in `docs/`.
+VoiceGateway owns the Markdown source under `docs/`. The rendered docs site
+lives in `mahimailabs/voicegateway-web` and is published at
+<https://voicegateway.mahimai.ca/docs>.
 
-```bash
-cd docs
-
-# Install dependencies
-npm install
-
-# Start dev server (hot reload)
-npm run dev
-
-# Build for production
-npm run build
-```
-
-The dev server runs on `http://localhost:5173` (or the next available port).
-
-### Deploying docs to Cloudflare Pages
-
-The docs are deployed to Cloudflare Pages. To set up deployment:
-
-1. **Connect your repository** in the [Cloudflare Dashboard](https://dash.cloudflare.com/) under Workers & Pages
-2. **Configure the build:**
-   - Build command: `cd docs && npm install && npm run build`
-   - Build output directory: `docs/.vitepress/dist`
-   - Root directory: `/` (repository root)
-   - Environment variable: `NODE_VERSION` = `18`
-3. **Set up custom domain** (optional) in the Cloudflare Pages project settings
-4. **Preview deployments** are created automatically for every PR
-
-Alternatively, deploy manually:
-
-```bash
-cd docs
-npm run build
-npx wrangler pages deploy .vitepress/dist --project-name=voicegateway-docs
-```
+For local preview, run the voicegateway-web app and let its docs sync script
+copy this repo's Markdown into the web workspace. When docs changes reach
+`main`, `.github/workflows/docs.yml` triggers a voicegateway-web rebuild through
+the configured `VOICEGATEWAY_WEB_DEPLOY_HOOK` secret.
 
 ## Project structure
 
@@ -202,7 +173,7 @@ voicegateway/
   tests/
     conftest.py          # Shared fixtures
     test_*.py            # Test files
-  docs/                  # VitePress documentation
+  docs/                  # Markdown docs source
   pyproject.toml         # Project metadata, dependencies, tool config
   voicegw.example.yaml   # Example configuration
 ```
