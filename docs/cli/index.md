@@ -27,6 +27,7 @@ After installation, the `voicegw` command is available globally.
 | [`serve`](/cli/serve) | Start the HTTP API server |
 | [`dashboard`](/cli/dashboard) | Start the web dashboard |
 | [`tui`](/cli/tui) | Launch the four-tab terminal UI |
+| [`replay`](/cli/replay) | Print the dashboard replay URL for a session |
 | [`mcp`](/cli/mcp) | Start the MCP server for AI agents |
 | [`reconcile`](/cli/reconcile) | Diff logged costs against a provider invoice |
 | [`export-costs`](/cli/export-costs) | Export per-request cost rows to CSV / JSONL |

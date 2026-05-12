@@ -105,6 +105,7 @@ export default defineConfig({
             { text: 'serve', link: '/cli/serve' },
             { text: 'dashboard', link: '/cli/dashboard' },
             { text: 'tui', link: '/cli/tui' },
+            { text: 'replay', link: '/cli/replay' },
             { text: 'mcp', link: '/cli/mcp' },
           ],
         },
