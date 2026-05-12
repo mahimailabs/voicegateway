@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from voicegateway.inference._session_context import current_tenant
 from voicegateway.middleware.replay_capture import ReplayEvent
 
 if TYPE_CHECKING:
@@ -39,23 +40,23 @@ _TABLE_BY_MODALITY: dict[str, str] = {
 _INSERT_BY_MODALITY: dict[str, str] = {
     "stt": (
         "INSERT INTO replay_stt_events "
-        "(session_id, t_ms, payload, provider, cost_usd) "
-        "VALUES (?, ?, ?, ?, ?)"
+        "(session_id, t_ms, payload, provider, cost_usd, tenant_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)"
     ),
     "llm": (
         "INSERT INTO replay_llm_tokens "
-        "(session_id, t_ms, payload, provider, cost_usd) "
-        "VALUES (?, ?, ?, ?, ?)"
+        "(session_id, t_ms, payload, provider, cost_usd, tenant_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)"
     ),
     "tts": (
         "INSERT INTO replay_tts_frames "
-        "(session_id, t_ms, payload, provider, cost_usd) "
-        "VALUES (?, ?, ?, ?, ?)"
+        "(session_id, t_ms, payload, provider, cost_usd, tenant_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)"
     ),
     "state": (
         "INSERT INTO replay_state_snapshots "
-        "(session_id, t_ms, payload) "
-        "VALUES (?, ?, ?)"
+        "(session_id, t_ms, payload, tenant_id) "
+        "VALUES (?, ?, ?, ?)"
     ),
 }
 
@@ -65,17 +66,29 @@ def _payload_to_text(payload: dict[str, Any]) -> str:
     return json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
 
 
-async def bulk_write_events(db: aiosqlite.Connection, events: list[ReplayEvent]) -> int:
+async def bulk_write_events(
+    db: aiosqlite.Connection,
+    events: list[ReplayEvent],
+    *,
+    tenant_id: str | None = None,
+) -> int:
     """Bulk-insert events into their per-modality tables.
 
     Partitions by ``event.modality`` and runs one ``executemany`` per
     partition. Empty input is a no-op (returns 0). Commits the
     connection on success.
 
+    ``tenant_id`` defaults to ``current_tenant()`` (the v0.4.0
+    ContextVar) and is applied uniformly across every row of the
+    batch. Replay flushes are session-scoped (one session per
+    ReplayCapture buffer), so the contextvar carries the session's
+    tenant without per-event wiring.
+
     Returns the total number of events inserted across the four tables.
     """
     if not events:
         return 0
+    resolved = tenant_id if tenant_id is not None else current_tenant()
 
     by_modality: dict[str, list[tuple[Any, ...]]] = {
         "stt": [],
@@ -91,7 +104,7 @@ async def bulk_write_events(db: aiosqlite.Connection, events: list[ReplayEvent])
             )
         if ev.modality == "state":
             by_modality["state"].append(
-                (ev.session_id, ev.t_ms, _payload_to_text(ev.payload))
+                (ev.session_id, ev.t_ms, _payload_to_text(ev.payload), resolved)
             )
         else:
             by_modality[ev.modality].append(
@@ -101,6 +114,7 @@ async def bulk_write_events(db: aiosqlite.Connection, events: list[ReplayEvent])
                     _payload_to_text(ev.payload),
                     ev.provider,
                     ev.cost_usd,
+                    resolved,
                 )
             )
 

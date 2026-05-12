@@ -11,21 +11,28 @@ import Sessions from './pages/Sessions';
 import Projects from './pages/Projects';
 import Providers from './pages/Providers';
 import Settings from './pages/Settings';
+import VirtualKeys from './pages/VirtualKeys';
 import Login from './pages/Login';
 import type { StatusResponse } from './lib/types';
 import { AUTH_REQUIRED_EVENT, clearToken, fetchJson, getToken } from './lib/api';
 
+// Foundry v0.4.0 nav order: Costs, Logs, Sessions, Metrics, Replay
+// (conditional, lives under /sessions/:id/replay so it is not a top-
+// level entry), Projects, Providers, Virtual Keys. Overview, Models,
+// Latency, and Settings predate that spec and are kept above /
+// below the v0.4.0 block so existing users find them where they were.
 const PAGES = [
-  { to: '/',         label: 'Overview',  id: 'overview' },
-  { to: '/models',   label: 'Models',    id: 'models'   },
-  { to: '/costs',    label: 'Costs',     id: 'costs'    },
-  { to: '/latency',  label: 'Latency',   id: 'latency'  },
-  { to: '/logs',     label: 'Logs',      id: 'logs'     },
-  { to: '/sessions', label: 'Sessions',  id: 'sessions' },
-  { to: '/metrics',  label: 'Metrics',   id: 'metrics'  },
-  { to: '/projects', label: 'Projects',  id: 'projects' },
-  { to: '/providers', label: 'Providers', id: 'providers' },
-  { to: '/settings', label: 'Settings',  id: 'settings' },
+  { to: '/',             label: 'Overview',     id: 'overview' },
+  { to: '/models',       label: 'Models',       id: 'models'   },
+  { to: '/costs',        label: 'Costs',        id: 'costs'    },
+  { to: '/latency',      label: 'Latency',      id: 'latency'  },
+  { to: '/logs',         label: 'Logs',         id: 'logs'     },
+  { to: '/sessions',     label: 'Sessions',     id: 'sessions' },
+  { to: '/metrics',      label: 'Metrics',      id: 'metrics'  },
+  { to: '/projects',     label: 'Projects',     id: 'projects' },
+  { to: '/providers',    label: 'Providers',    id: 'providers' },
+  { to: '/virtual-keys', label: 'Virtual Keys', id: 'virtual-keys' },
+  { to: '/settings',     label: 'Settings',     id: 'settings' },
 ] as const;
 
 type AuthState = 'checking' | 'needs-login' | 'ready';
@@ -91,6 +98,7 @@ export default function App() {
             <Route path="/metrics" element={<Metrics />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/providers" element={<Providers />} />
+            <Route path="/virtual-keys" element={<VirtualKeys />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/settings/audit-log" element={<Settings tab="audit" />} />
           </Routes>
@@ -132,7 +140,7 @@ function Sidebar({
           <span className="neo-status-dot neo-status-dot--online" />
           {providerCount} Providers · {modelCount} Models
         </div>
-        <span className="version-pill">v0.3.0</span>
+        <span className="version-pill">v0.4.0</span>
         {hasToken && (
           <button
             type="button"

@@ -12,6 +12,7 @@ from typing import Any
 
 import aiosqlite
 
+from voicegateway.inference._session_context import current_tenant
 from voicegateway.storage import replay_repo, turns_repo
 from voicegateway.storage._percentiles import compute_percentiles
 from voicegateway.storage.models import RequestRecord
@@ -27,6 +28,9 @@ _migration_0003 = import_module(
     "voicegateway.storage.migrations.0003_turns_and_deadair"
 )
 _migration_0004 = import_module("voicegateway.storage.migrations.0004_replay_tables")
+_migration_0005 = import_module(
+    "voicegateway.storage.migrations.0005_tenant_attribution"
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -262,6 +266,12 @@ class SQLiteStorage:
             # Idempotent.
             await _migration_0004.apply(db)
 
+            # v0.4.0 migration 0005: virtual_keys table + tenant_id columns
+            # on sessions/requests (unconditionally) and on the v0.2.0/v0.3.0
+            # derived tables (conditionally via sqlite_master presence check
+            # per OQ4). Idempotent.
+            await _migration_0005.apply(db)
+
             await db.commit()
             self._initialized = True
         return db
@@ -387,14 +397,16 @@ class SQLiteStorage:
         same connection / commit for atomicity.
         """
         db = await self._ensure_initialized()
+        request_tenant_id = current_tenant()
         try:
             await db.execute(
                 """INSERT INTO requests
                    (id, timestamp, project, modality, model_id, provider,
                     input_units, output_units, cost_usd, pricing_source,
                     ttfb_ms, total_latency_ms, status,
-                    fallback_from, error_message, metadata, session_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    fallback_from, error_message, metadata, session_id,
+                    tenant_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     record.id,
                     record.timestamp,
@@ -413,6 +425,7 @@ class SQLiteStorage:
                     record.error_message,
                     json.dumps(record.metadata) if record.metadata else None,
                     record.session_id,
+                    request_tenant_id,
                 ),
             )
             if record.session_id:
@@ -433,14 +446,26 @@ class SQLiteStorage:
                 # earlier may finish after a faster LLM call. The MIN
                 # CASE keeps started_at at the earliest request_started
                 # timestamp regardless of completion order.
+                # ``request_tenant_id`` (read once at the top from the
+                # v0.4.0 tenant_id_ctx ContextVar, REQ-VG-TENANT-001) is
+                # reused for both the requests row and the sessions
+                # UPSERT. On INSERT it stamps the session row; on
+                # CONFLICT we COALESCE so an already-set tenant_id
+                # never gets overwritten by a later request that
+                # arrived without a tenant in scope. This is the
+                # "session has one tenant for its lifetime" rule from
+                # the Refinery: the first tenant-bearing request wins,
+                # subsequent unattributed-bucket requests don't clear
+                # it.
                 await db.execute(
                     """INSERT INTO sessions
                        (id, project, started_at, ended_at, modalities,
-                        total_cost_usd, request_count)
-                       VALUES (?, ?, ?, ?, ?, ?, 1)
+                        total_cost_usd, request_count, tenant_id)
+                       VALUES (?, ?, ?, ?, ?, ?, 1, ?)
                        ON CONFLICT(id) DO UPDATE SET
                            total_cost_usd = total_cost_usd + excluded.total_cost_usd,
                            request_count = request_count + 1,
+                           tenant_id = COALESCE(tenant_id, excluded.tenant_id),
                            started_at = CASE
                                WHEN started_at IS NULL THEN excluded.started_at
                                WHEN started_at > excluded.started_at THEN excluded.started_at
@@ -466,6 +491,7 @@ class SQLiteStorage:
                         started_at_iso,
                         record.modality,
                         record.cost_usd,
+                        request_tenant_id,
                     ),
                 )
             await db.commit()
@@ -514,8 +540,9 @@ class SQLiteStorage:
         include_pricing_source: bool = False,
         start_ts: float | None = None,
         end_ts: float | None = None,
+        tenant: str | None = None,
     ) -> dict[str, Any]:
-        """Get cost summary for the given period, optionally filtered by project.
+        """Get cost summary for the given period, optionally filtered by project and tenant.
 
         With ``include_pricing_source=True``, each entry in ``by_model``
         gains a ``pricing_source`` field carrying the catalog (or
@@ -524,6 +551,11 @@ class SQLiteStorage:
         Pass `start_ts` and/or `end_ts` (POSIX timestamps) to override
         the named-period window. When either is set, `period` is
         ignored. `start_ts` is inclusive, `end_ts` is exclusive.
+
+        ``tenant`` (v0.4.0) scopes the aggregate to a single tenant.
+        Pass an empty string ``""`` to target the unattributed bucket
+        (sessions with NULL tenant_id). Pass ``None`` to include every
+        tenant (default).
         """
         db = await self._ensure_initialized()
         try:
@@ -537,6 +569,12 @@ class SQLiteStorage:
             if project:
                 where += " AND project = ?"
                 params.append(project)
+            if tenant is not None:
+                if tenant == "":
+                    where += " AND tenant_id IS NULL"
+                else:
+                    where += " AND tenant_id = ?"
+                    params.append(tenant)
 
             # Total cost
             cursor = await db.execute(
@@ -600,8 +638,13 @@ class SQLiteStorage:
         period: str = "today",
         start_ts: float | None = None,
         end_ts: float | None = None,
+        tenant: str | None = None,
     ) -> dict[str, Any]:
-        """Get cost summary grouped by project."""
+        """Get cost summary grouped by project.
+
+        ``tenant`` (v0.4.0) scopes the result to one tenant; ``""``
+        targets the unattributed bucket; ``None`` includes everything.
+        """
         db = await self._ensure_initialized()
         try:
             since, until = self._resolve_window(period, start_ts, end_ts)
@@ -610,6 +653,12 @@ class SQLiteStorage:
             if until is not None:
                 where += " AND timestamp < ?"
                 params.append(until)
+            if tenant is not None:
+                if tenant == "":
+                    where += " AND tenant_id IS NULL"
+                else:
+                    where += " AND tenant_id = ?"
+                    params.append(tenant)
             cursor = await db.execute(
                 f"""SELECT project, SUM(cost_usd) as cost, COUNT(*) as count
                     FROM requests {where}
@@ -664,6 +713,7 @@ class SQLiteStorage:
         period: str = "today",
         project: str | None = None,
         percentiles: list[float] | None = None,
+        tenant: str | None = None,
     ) -> dict[str, Any]:
         """Get per-model latency stats for ``period``.
 
@@ -694,6 +744,12 @@ class SQLiteStorage:
             if project:
                 where += " AND project = ?"
                 params.append(project)
+            if tenant is not None:
+                if tenant == "":
+                    where += " AND tenant_id IS NULL"
+                else:
+                    where += " AND tenant_id = ?"
+                    params.append(tenant)
 
             cursor = await db.execute(
                 f"""SELECT model_id,
@@ -841,8 +897,13 @@ class SQLiteStorage:
         limit: int = 100,
         modality: str | None = None,
         project: str | None = None,
+        tenant: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Get recent request records, optionally filtered by modality and/or project."""
+        """Get recent request records, optionally filtered by modality, project, tenant.
+
+        ``tenant`` (v0.4.0) accepts a tenant id; ``""`` targets the
+        unattributed bucket; ``None`` includes everything.
+        """
         db = await self._ensure_initialized()
         try:
             conditions: list[str] = []
@@ -853,6 +914,12 @@ class SQLiteStorage:
             if project:
                 conditions.append("project = ?")
                 params.append(project)
+            if tenant is not None:
+                if tenant == "":
+                    conditions.append("tenant_id IS NULL")
+                else:
+                    conditions.append("tenant_id = ?")
+                    params.append(tenant)
             where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
             query = f"SELECT * FROM requests {where} ORDER BY timestamp DESC LIMIT ?"
             params.append(limit)
@@ -912,7 +979,7 @@ class SQLiteStorage:
 
     @staticmethod
     def _row_to_session(row: Any) -> dict[str, Any]:
-        return {
+        out = {
             "id": row[0],
             "project": row[1],
             "started_at": row[2],
@@ -921,6 +988,16 @@ class SQLiteStorage:
             "total_cost_usd": float(row[5] or 0.0),
             "request_count": int(row[6] or 0),
         }
+        # v0.4.0: include tenant_id when the SELECT picked it up.
+        # list_sessions and get_session both include the column on
+        # post-migration databases; the Any-typed Row may not raise on
+        # out-of-bounds, so we guard defensively.
+        try:
+            tenant_id = row[7]
+            out["tenant_id"] = None if tenant_id is None else str(tenant_id)
+        except (IndexError, KeyError):
+            pass
+        return out
 
     _SESSION_ORDER_CLAUSES: dict[str, str] = {
         "started_at_desc": "started_at DESC",
@@ -934,6 +1011,7 @@ class SQLiteStorage:
         limit: int = 100,
         project: str | None = None,
         order_by: str = "started_at_desc",
+        tenant: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return recent sessions, ordered per ``order_by``.
 
@@ -944,6 +1022,9 @@ class SQLiteStorage:
                 ``"started_at_asc"``, ``"cost_desc"``, ``"cost_asc"``.
                 Cost orderings break ties by started_at DESC so two
                 $0 sessions still surface newest first.
+            tenant: v0.4.0 tenant filter. Pass an empty string to
+                target the unattributed bucket; ``None`` lists every
+                tenant.
 
         Raises:
             ValueError: When ``order_by`` is not one of the supported
@@ -956,25 +1037,27 @@ class SQLiteStorage:
             raise ValueError(f"Unknown order_by {order_by!r}. Supported: {supported}.")
         db = await self._ensure_initialized()
         try:
+            conditions: list[str] = []
+            params: list[Any] = []
             if project:
-                cursor = await db.execute(
-                    f"""SELECT id, project, started_at, ended_at, modalities,
-                              total_cost_usd, request_count
-                       FROM sessions
-                       WHERE project = ?
-                       ORDER BY {clause}
-                       LIMIT ?""",
-                    (project, limit),
-                )
-            else:
-                cursor = await db.execute(
-                    f"""SELECT id, project, started_at, ended_at, modalities,
-                              total_cost_usd, request_count
-                       FROM sessions
-                       ORDER BY {clause}
-                       LIMIT ?""",
-                    (limit,),
-                )
+                conditions.append("project = ?")
+                params.append(project)
+            if tenant is not None:
+                if tenant == "":
+                    conditions.append("tenant_id IS NULL")
+                else:
+                    conditions.append("tenant_id = ?")
+                    params.append(tenant)
+            where = f"WHERE {' AND '.join(conditions)} " if conditions else ""
+            params.append(limit)
+            cursor = await db.execute(
+                f"""SELECT id, project, started_at, ended_at, modalities,
+                          total_cost_usd, request_count, tenant_id
+                   FROM sessions
+                   {where}ORDER BY {clause}
+                   LIMIT ?""",
+                tuple(params),
+            )
             return [self._row_to_session(row) async for row in cursor]
         finally:
             await db.close()
@@ -991,7 +1074,7 @@ class SQLiteStorage:
         try:
             cursor = await db.execute(
                 """SELECT id, project, started_at, ended_at, modalities,
-                          total_cost_usd, request_count
+                          total_cost_usd, request_count, tenant_id
                    FROM sessions
                    WHERE id = ?""",
                 (session_id,),

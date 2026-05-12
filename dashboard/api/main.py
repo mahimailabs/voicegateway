@@ -14,7 +14,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from voicegateway.core.auth import load_api_keys, resolve_cors_origins
-from voicegateway.storage import dead_air_repo, replay_repo, turns_repo
+from voicegateway.storage import (
+    dead_air_repo,
+    replay_repo,
+    tenants_repo,
+    turns_repo,
+    virtual_keys_repo,
+)
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -29,7 +35,7 @@ _LOCAL_PROVIDER_NAMES = frozenset({"ollama", "whisper", "kokoro", "piper"})
 
 app = FastAPI(
     title="VoiceGateway Dashboard",
-    version="0.3.0",
+    version="0.4.0",
 )
 
 # Set by the CLI / combined server when starting the dashboard.
@@ -139,13 +145,15 @@ async def get_status() -> dict:
 async def get_costs(
     period: str = Query("today", enum=["today", "week", "month", "all"]),
     project: str | None = Query(None),
+    tenant: str | None = Query(None),
 ) -> dict:
-    """Get cost summary for a period, optionally filtered by project.
+    """Get cost summary for a period, optionally filtered by project and tenant.
 
     Each ``by_model`` entry carries a ``pricing_source`` string (e.g.
     ``"genai-prices@0.0.57"`` or ``"voicegateway-catalog@2026-05-04"``)
     so the dashboard can render the cost-staleness banner without a
-    second round-trip.
+    second round-trip. ``tenant`` accepts a tenant id; pass the empty
+    string to scope to the unattributed bucket (REQ-VG-TENANT-002).
     """
     gw = _get_gateway()
     if gw.storage is None:
@@ -158,10 +166,12 @@ async def get_costs(
             "by_project": {},
         }
     summary = await gw.storage.get_cost_summary(
-        period, project=project, include_pricing_source=True
+        period, project=project, include_pricing_source=True, tenant=tenant
     )
     if project is None:
-        summary["by_project"] = await gw.storage.get_cost_by_project(period)
+        summary["by_project"] = await gw.storage.get_cost_by_project(
+            period, tenant=tenant
+        )
     else:
         summary["by_project"] = {}
     return summary
@@ -171,13 +181,16 @@ async def get_costs(
 async def get_latency(
     period: str = Query("today", enum=["today", "week"]),
     project: str | None = Query(None),
+    tenant: str | None = Query(None),
 ) -> dict:
-    """Get latency statistics, optionally filtered by project."""
+    """Get latency statistics, optionally filtered by project and tenant."""
     gw = _get_gateway()
     if gw.storage is None:
         return {}
     pcts = gw.config.latency.get("percentiles") or [50.0, 95.0, 99.0]
-    return await gw.storage.get_latency_stats(period, project=project, percentiles=pcts)
+    return await gw.storage.get_latency_stats(
+        period, project=project, percentiles=pcts, tenant=tenant
+    )
 
 
 @app.get("/api/logs")
@@ -185,13 +198,14 @@ async def get_logs(
     limit: int = Query(100, ge=1, le=1000),
     modality: str | None = Query(None, enum=["stt", "llm", "tts"]),
     project: str | None = Query(None),
+    tenant: str | None = Query(None),
 ) -> list[dict]:
-    """Get recent request logs, optionally filtered by modality and/or project."""
+    """Get recent request logs, optionally filtered by modality, project, and tenant."""
     gw = _get_gateway()
     if gw.storage is None:
         return []
     return await gw.storage.get_recent_requests(
-        limit=limit, modality=modality, project=project
+        limit=limit, modality=modality, project=project, tenant=tenant
     )
 
 
@@ -246,6 +260,7 @@ async def get_projects() -> dict:
 async def get_sessions(
     limit: int = Query(100, ge=1, le=1000),
     project: str | None = Query(None),
+    tenant: str | None = Query(None),
     order_by: str = Query(
         "started_at_desc",
         pattern="^(started_at_desc|started_at_asc|cost_desc|cost_asc)$",
@@ -255,13 +270,14 @@ async def get_sessions(
 
     Mirror of the /v1/sessions endpoint so the dashboard frontend
     can stay on a single origin in dev mode (the Vite proxy only
-    forwards /api). Storage method is shared.
+    forwards /api). Storage method is shared. ``tenant`` (v0.4.0)
+    scopes the result; empty string targets the unattributed bucket.
     """
     gw = _get_gateway()
     if gw.storage is None:
         return []
     return await gw.storage.list_sessions(
-        limit=limit, project=project, order_by=order_by
+        limit=limit, project=project, order_by=order_by, tenant=tenant
     )
 
 
@@ -299,6 +315,7 @@ async def get_session_detail(session_id: str) -> dict[str, Any]:
 async def get_metrics_summary(
     project: str | None = Query(None),
     days: int = Query(7, ge=1, le=365),
+    tenant: str | None = Query(None),
 ) -> dict[str, Any]:
     """Aggregated voice-conversation metrics for the filter window.
 
@@ -333,6 +350,12 @@ async def get_metrics_summary(
         if project:
             where_clauses.append("project = ?")
             params.append(project)
+        if tenant is not None:
+            if tenant == "":
+                where_clauses.append("tenant_id IS NULL")
+            else:
+                where_clauses.append("tenant_id = ?")
+                params.append(tenant)
         where = " AND ".join(where_clauses)
         cursor = await db.execute(
             f"""SELECT id,
@@ -381,7 +404,7 @@ async def get_metrics_summary(
                 "since": since_iso,
                 "until": until_iso,
             },
-            "filter": {"project": project},
+            "filter": {"project": project, "tenant": tenant},
             "session_count": session_count,
             "measured_session_count": measured_count,
             "per_minute_cost_usd_avg": per_minute_cost_avg,
@@ -647,6 +670,137 @@ async def get_providers_by_project(project: str | None = Query(None)) -> dict:
 
     rows.sort(key=lambda r: (r["project"], r["provider"]))
     return {"providers": rows}
+
+
+# ---------------------------------------------------------------------------
+# v0.4.0 multi-tenant API surface (REQ-VG-TENANT-002 + REQ-VG-TENANT-003).
+#
+# Tenants are derived from DISTINCT sessions.tenant_id; the dashboard's
+# filter feed and per-tenant overview are read-only here. Virtual keys
+# expose plaintext exactly once at creation (the "show key once" modal
+# on the FE owns persistence to the operator's clipboard) and support
+# soft revocation per OQ5.
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/tenants")
+async def list_tenants_endpoint(
+    limit: int = Query(50, ge=1, le=1000),
+    q: str | None = Query(None, max_length=128),
+) -> dict[str, Any]:
+    """Return the tenant index for the dashboard filter typeahead.
+
+    ``q`` is a substring match against tenant_id (``%`` and ``_``
+    escaped to literal characters). The implicit unattributed bucket
+    (NULL tenant_id) is included as a separate ``unattributed`` field
+    so the FE can render it as a muted pill below the tenant list.
+    """
+    gw = _get_gateway()
+    if gw.storage is None:
+        return {
+            "tenants": [],
+            "unattributed": {
+                "session_count": 0,
+                "total_cost_usd": 0.0,
+                "first_seen": None,
+                "last_seen": None,
+            },
+        }
+    db = await gw.storage._ensure_initialized()
+    rows = await tenants_repo.list_tenants(db, limit=limit, query=q)
+    u = await tenants_repo.get_unattributed_aggregates(db)
+    return {
+        "tenants": [dataclasses.asdict(r) for r in rows],
+        "unattributed": dataclasses.asdict(u),
+    }
+
+
+@app.get("/api/tenants/{tenant_id}")
+async def get_tenant_endpoint(tenant_id: str) -> dict[str, Any]:
+    """Return aggregates for a single tenant. 404 when unseen."""
+    gw = _get_gateway()
+    if gw.storage is None:
+        raise HTTPException(status_code=404, detail=f"Tenant {tenant_id!r} not found")
+    db = await gw.storage._ensure_initialized()
+    row = await tenants_repo.get_tenant(db, tenant_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Tenant {tenant_id!r} not found")
+    return dataclasses.asdict(row)
+
+
+@app.get("/api/virtual_keys")
+async def list_virtual_keys_endpoint(
+    include_revoked: bool = Query(True),
+) -> dict[str, Any]:
+    """Return all virtual keys. The plaintext key never appears here.
+
+    Each row carries ``key_prefix`` (the 8-char visible prefix) but
+    not the bcrypt hash. ``include_revoked=False`` filters out soft-
+    revoked entries.
+    """
+    gw = _get_gateway()
+    if gw.storage is None:
+        return {"keys": []}
+    db = await gw.storage._ensure_initialized()
+    rows = await virtual_keys_repo.list_keys(db, include_revoked=include_revoked)
+    return {"keys": [dataclasses.asdict(r) for r in rows]}
+
+
+@app.post("/api/virtual_keys")
+async def create_virtual_key_endpoint(
+    body: dict[str, Any] = Body(...),
+) -> dict[str, Any]:
+    """Issue a new virtual key. Returns the plaintext EXACTLY ONCE.
+
+    Body fields:
+    - ``name`` (required): human-readable label shown in the dashboard.
+    - ``tenant_id`` (optional): if set, requests bearing this key
+      auto-tag the session with this tenant (REQ-VG-TENANT-004).
+    - ``issued_by`` (optional): free-form audit string.
+
+    The returned ``plaintext`` is the only place the full key appears.
+    The FE shows the "save this key" modal and discards it; subsequent
+    list responses expose only ``key_prefix``.
+    """
+    name = str(body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="`name` is required")
+    tenant_id_raw = body.get("tenant_id")
+    tenant_id = str(tenant_id_raw).strip() if tenant_id_raw not in (None, "") else None
+    issued_by_raw = body.get("issued_by")
+    issued_by = str(issued_by_raw).strip() if issued_by_raw not in (None, "") else None
+    gw = _get_gateway()
+    if gw.storage is None:
+        raise HTTPException(status_code=503, detail="Storage backend not configured")
+    db = await gw.storage._ensure_initialized()
+    created = await virtual_keys_repo.create_virtual_key(
+        db, name=name, tenant_id=tenant_id, issued_by=issued_by
+    )
+    return {
+        "id": created.id,
+        "plaintext": created.plaintext,
+        "row": dataclasses.asdict(created.row),
+    }
+
+
+@app.post("/api/virtual_keys/{key_id}/revoke")
+async def revoke_virtual_key_endpoint(key_id: int) -> dict[str, Any]:
+    """Soft-revoke a virtual key (OQ5: keeps the row for audit)."""
+    gw = _get_gateway()
+    if gw.storage is None:
+        raise HTTPException(status_code=503, detail="Storage backend not configured")
+    db = await gw.storage._ensure_initialized()
+    ok = await virtual_keys_repo.revoke(db, key_id)
+    if not ok:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Virtual key {key_id} not found or already revoked",
+        )
+    row = await virtual_keys_repo.get_by_id(db, key_id)
+    if row is None:
+        # Should never happen: revoke() just returned True. Defensive.
+        raise HTTPException(status_code=404, detail=f"Virtual key {key_id} vanished")
+    return {"id": key_id, "revoked": True, "row": dataclasses.asdict(row)}
 
 
 # ---------------------------------------------------------------------------

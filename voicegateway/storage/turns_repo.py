@@ -19,6 +19,7 @@ from __future__ import annotations
 import statistics
 from typing import TYPE_CHECKING
 
+from voicegateway.inference._session_context import current_tenant
 from voicegateway.middleware.turn_tracker import TurnRow
 
 if TYPE_CHECKING:
@@ -30,12 +31,12 @@ _INSERT_TURN = (
     "session_id, turn_index, "
     "caller_speak_start_ms, caller_speak_end_ms, "
     "agent_speak_start_ms, agent_speak_end_ms, "
-    "response_speed_ms"
-    ") VALUES (?, ?, ?, ?, ?, ?, ?)"
+    "response_speed_ms, tenant_id"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 
-def _turn_to_params(turn: TurnRow) -> tuple[object, ...]:
+def _turn_to_params(turn: TurnRow, tenant_id: str | None) -> tuple[object, ...]:
     return (
         turn.session_id,
         turn.turn_index,
@@ -44,27 +45,47 @@ def _turn_to_params(turn: TurnRow) -> tuple[object, ...]:
         turn.agent_speak_start_ms,
         turn.agent_speak_end_ms,
         turn.response_speed_ms,
+        tenant_id,
     )
 
 
-async def create_turn(db: aiosqlite.Connection, turn: TurnRow) -> None:
-    """Insert one ``TurnRow``. Commits the connection."""
-    await db.execute(_INSERT_TURN, _turn_to_params(turn))
+async def create_turn(
+    db: aiosqlite.Connection,
+    turn: TurnRow,
+    *,
+    tenant_id: str | None = None,
+) -> None:
+    """Insert one ``TurnRow``. Commits the connection.
+
+    ``tenant_id`` defaults to ``current_tenant()`` (the v0.4.0
+    ContextVar). Pass it explicitly to override (e.g. backfill jobs
+    that rebuild rows for a known historical tenant).
+    """
+    resolved = tenant_id if tenant_id is not None else current_tenant()
+    await db.execute(_INSERT_TURN, _turn_to_params(turn, resolved))
     await db.commit()
 
 
-async def create_turns_bulk(db: aiosqlite.Connection, turns: list[TurnRow]) -> int:
+async def create_turns_bulk(
+    db: aiosqlite.Connection,
+    turns: list[TurnRow],
+    *,
+    tenant_id: str | None = None,
+) -> int:
     """Bulk-insert turns. Returns the number inserted.
 
     Intended target of :class:`voicegateway.middleware.turn_tracker.TurnTracker`'s
     ``flush_callback``. Empty input is a no-op (returns 0). Commits the
-    connection on success.
+    connection on success. ``tenant_id`` defaults to ``current_tenant()``
+    captured at call time and applied to every row in the batch (turns
+    are session-scoped so they share the session's tenant).
     """
     if not turns:
         return 0
+    resolved = tenant_id if tenant_id is not None else current_tenant()
     await db.executemany(
         _INSERT_TURN,
-        [_turn_to_params(t) for t in turns],
+        [_turn_to_params(t, resolved) for t in turns],
     )
     await db.commit()
     return len(turns)

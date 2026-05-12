@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from voicegateway.inference._session_context import current_tenant
 from voicegateway.middleware.dead_air_detector import DeadAirEvent
 
 if TYPE_CHECKING:
@@ -25,27 +26,39 @@ if TYPE_CHECKING:
 
 _INSERT_EVENT = (
     "INSERT INTO dead_air_events ("
-    "session_id, started_at_ms, duration_ms, threshold_used_ms"
-    ") VALUES (?, ?, ?, ?)"
+    "session_id, started_at_ms, duration_ms, threshold_used_ms, tenant_id"
+    ") VALUES (?, ?, ?, ?, ?)"
 )
 
 
-def _event_to_params(event: DeadAirEvent) -> tuple[object, ...]:
+def _event_to_params(event: DeadAirEvent, tenant_id: str | None) -> tuple[object, ...]:
     return (
         event.session_id,
         event.started_at_ms,
         event.duration_ms,
         event.threshold_used_ms,
+        tenant_id,
     )
 
 
-async def create_event(db: aiosqlite.Connection, event: DeadAirEvent) -> None:
+async def create_event(
+    db: aiosqlite.Connection,
+    event: DeadAirEvent,
+    *,
+    tenant_id: str | None = None,
+) -> None:
     """Insert one ``DeadAirEvent``. Commits the connection.
 
+    ``tenant_id`` defaults to ``current_tenant()`` (the v0.4.0
+    ContextVar). The dead-air watcher runs inside the session's
+    asyncio context, so the ContextVar carries the session's tenant
+    without any explicit wiring.
+
     Signature matches :data:`voicegateway.middleware.dead_air_detector.EventCallback`
-    so a partial application is the natural wiring (T08).
+    via a partial application that drops the tenant kwarg.
     """
-    await db.execute(_INSERT_EVENT, _event_to_params(event))
+    resolved = tenant_id if tenant_id is not None else current_tenant()
+    await db.execute(_INSERT_EVENT, _event_to_params(event, resolved))
     await db.commit()
 
 

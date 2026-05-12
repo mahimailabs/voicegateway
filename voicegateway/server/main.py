@@ -21,10 +21,14 @@ from fastapi.responses import PlainTextResponse
 from voicegateway.core.auth import (
     AuthError,
     check_request,
+    is_virtual_key_token,
     load_api_keys,
     resolve_cors_origins,
+    verify_virtual_key,
 )
+from voicegateway.inference._session_context import set_tenant
 from voicegateway.pricing import catalog
+from voicegateway.storage import virtual_keys_repo
 from voicegateway.storage._percentiles import quantile_label
 
 if TYPE_CHECKING:
@@ -55,7 +59,7 @@ def build_app(gateway: Gateway) -> FastAPI:
     """Build a FastAPI app bound to the given Gateway instance."""
     app = FastAPI(
         title="VoiceGateway API",
-        version="0.3.0",
+        version="0.4.0",
         description="HTTP API for VoiceGateway: cost tracking and reconciliation for LiveKit voice agents.",
     )
 
@@ -82,12 +86,49 @@ def build_app(gateway: Gateway) -> FastAPI:
     )
 
     def require_scope(scope: str):
-        """Return a FastAPI dependency enforcing ``scope`` on a request."""
+        """Return a FastAPI dependency enforcing ``scope`` on a request.
+
+        Two auth paths are supported (REQ-VG-TENANT-004):
+
+        - **Virtual keys** — bearer tokens starting with ``vk_`` are
+          resolved via :func:`virtual_keys_repo.verify`. On success the
+          row's ``tenant_id`` (if any) is stashed on
+          ``request.state.virtual_key_tenant_id`` for downstream
+          per-handler conflict checks (T05/T10), and the same value is
+          pushed onto the ``tenant_id_ctx`` ContextVar so any session
+          created inside the handler inherits the scope. ``last_used_at``
+          is bumped via :func:`virtual_keys_repo.mark_used`.
+        - **Static keys** — anything else falls through to the existing
+          :func:`check_request` path. Static keys are not associated
+          with a tenant and never set the ContextVar.
+
+        Scope enforcement for virtual keys is intentionally permissive
+        for v0.4.0: a verified virtual key satisfies every scope. The
+        scope dimension on virtual keys is out of scope for this
+        version (the Foundry's "scope" mention refers to tenant
+        scoping, not RBAC scopes).
+        """
 
         async def _dep(request: Request) -> None:
+            authorization = request.headers.get("Authorization")
+            if is_virtual_key_token(authorization) and gateway.storage is not None:
+                try:
+                    db = await gateway.storage._ensure_initialized()
+                    verified = await verify_virtual_key(authorization, db)
+                except AuthError as exc:
+                    raise HTTPException(
+                        status_code=exc.status_code, detail=exc.message
+                    ) from None
+                await virtual_keys_repo.mark_used(db, verified.id)
+                request.state.virtual_key_id = verified.id
+                request.state.virtual_key_tenant_id = verified.tenant_id
+                if verified.tenant_id is not None:
+                    set_tenant(verified.tenant_id)
+                return
+
             try:
                 check_request(
-                    request.headers.get("Authorization"),
+                    authorization,
                     scope,
                     api_keys,
                 )
@@ -107,7 +148,7 @@ def build_app(gateway: Gateway) -> FastAPI:
         return {
             "status": "ok",
             "uptime_seconds": round(time.time() - started_at, 1),
-            "version": "0.3.0",
+            "version": "0.4.0",
         }
 
     @app.get("/v1/status")

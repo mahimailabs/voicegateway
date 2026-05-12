@@ -86,19 +86,40 @@ async function extractErrorDetail(res: Response): Promise<string | null> {
 // ----------------------------------------------------------------------
 
 import type {
+  CreatedVirtualKey,
   DeadAirEvent,
   MetricsAggregate,
   ReplayResponse,
   RetentionWindow,
+  TenantFilter,
+  TenantRow,
+  TenantsResponse,
   TurnRow,
+  VirtualKey,
 } from './types';
 
+/**
+ * Append the tenant filter to a URLSearchParams instance per the v0.4.0
+ * convention. ``null`` is "no filter" (param not set); ``""`` is the
+ * unattributed bucket (param set to empty string); any other value is
+ * that exact tenant. Matches the backend's ``tenant`` query parsing on
+ * /api/costs, /api/latency, /api/logs, /api/sessions, and /api/metrics.
+ */
+export function appendTenantParam(
+  params: URLSearchParams,
+  tenant: TenantFilter | undefined,
+): void {
+  if (tenant === null || tenant === undefined) return;
+  params.set('tenant', tenant);
+}
+
 export function fetchMetricsSummary(
-  options: { project?: string; days?: number } = {},
+  options: { project?: string; days?: number; tenant?: TenantFilter } = {},
 ): Promise<MetricsAggregate> {
   const params = new URLSearchParams();
   if (options.project) params.set('project', options.project);
   if (options.days !== undefined) params.set('days', String(options.days));
+  appendTenantParam(params, options.tenant);
   const query = params.toString();
   return fetchJson<MetricsAggregate>(
     query ? `/api/metrics?${query}` : '/api/metrics',
@@ -158,4 +179,54 @@ export function updateReplayRetention(
       body: JSON.stringify({ retention_days: retentionDays }),
     },
   );
+}
+
+// ----------------------------------------------------------------------
+// v0.4.0 multi-tenant typed fetchers (REQ-VG-TENANT-002 + -003).
+// ----------------------------------------------------------------------
+
+export function fetchTenants(
+  options: { limit?: number; q?: string } = {},
+): Promise<TenantsResponse> {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.q !== undefined && options.q.length > 0) params.set('q', options.q);
+  const query = params.toString();
+  return fetchJson<TenantsResponse>(
+    query ? `/api/tenants?${query}` : '/api/tenants',
+  );
+}
+
+export function fetchTenant(tenantId: string): Promise<TenantRow> {
+  return fetchJson<TenantRow>(`/api/tenants/${encodeURIComponent(tenantId)}`);
+}
+
+export function fetchVirtualKeys(
+  options: { includeRevoked?: boolean } = {},
+): Promise<{ keys: VirtualKey[] }> {
+  const params = new URLSearchParams();
+  if (options.includeRevoked !== undefined) {
+    params.set('include_revoked', options.includeRevoked ? 'true' : 'false');
+  }
+  const query = params.toString();
+  return fetchJson<{ keys: VirtualKey[] }>(
+    query ? `/api/virtual_keys?${query}` : '/api/virtual_keys',
+  );
+}
+
+export function createVirtualKey(body: {
+  name: string;
+  tenant_id?: string | null;
+  issued_by?: string | null;
+}): Promise<CreatedVirtualKey> {
+  return fetchJson<CreatedVirtualKey>('/api/virtual_keys', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function revokeVirtualKey(
+  keyId: number,
+): Promise<{ id: number; revoked: true; row: VirtualKey }> {
+  return fetchJson(`/api/virtual_keys/${keyId}/revoke`, { method: 'POST' });
 }

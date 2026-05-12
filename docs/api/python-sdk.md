@@ -179,6 +179,7 @@ inference.attach_session(
     agent_session,
     *,
     session_id: str | None = None,
+    tenant_id: str | None = None,   # v0.4.0
     turn_tracker: TurnTracker | None = None,
     dead_air_detector: DeadAirDetector | None = None,
     cost_tracker: CostTracker | None = None,
@@ -210,6 +211,53 @@ async def handle_call():
 The helper subscribes to five `AgentSession` events: `user_started_speaking`, `user_stopped_speaking`, `agent_started_speaking`, `agent_stopped_speaking`, `close`. The first four feed the `TurnTracker`; `close` flushes the tracker, stops the `DeadAirDetector`, and calls `CostTracker.close_session(sid)` so the v0.2.0 aggregate columns (`talk_time_seconds`, `per_minute_cost_usd`, `response_speed_p50/p95_ms`, `talk_over_rate`) land on the `sessions` row by the time the dashboard's `/api/metrics` endpoint reads it.
 
 Components default to the process-level registry the Gateway populates on startup; pass explicit kwargs to override (the unit-test path).
+
+## Tenant attribution (v0.4.0)
+
+VoiceGateway tags each session with an optional `tenant_id` so multi-tenant operators can slice costs, metrics, and replay by customer. The tenant flows through three independent surfaces; pick the one that matches your deployment.
+
+### 1. `attach_session(..., tenant_id="…")`
+
+The opt-in path. Pass `tenant_id` at the same time you wire the LiveKit `AgentSession`, and every cost row, metric row, and replay event from that session lands tagged.
+
+```python
+from voicegateway import inference
+
+async def handle_call(tenant_id: str):
+    agent_session = AgentSession(...)
+    inference.attach_session(agent_session, tenant_id=tenant_id)
+    await agent_session.start(...)
+```
+
+When `tenant_id` is omitted (default `None`) the ContextVar is left alone, so a virtual key resolved earlier in the request (see surface 3 below) or an explicit `set_tenant(...)` call still wins. Calling with `tenant_id=None` does not clear a previously-set scope.
+
+### 2. `inference.set_tenant(tenant_id)`
+
+The escape hatch for code that does not own the `AgentSession` construction. Sets the `tenant_id_ctx` ContextVar for the rest of the async context; the next `log_request` call picks it up and stamps the session row. 128-char UTF-8 cap (locked at v0.4.0 OQ2).
+
+```python
+from voicegateway import inference
+
+inference.set_tenant("acme")
+stt = inference.STT("deepgram/nova-3")
+# ... subsequent factories inherit the tenant via the ContextVar.
+```
+
+`inference.current_tenant()` reads the current scope without modifying it. `inference.reset_tenant_id()` clears the ContextVar for a new session boundary inside the same task.
+
+### 3. Virtual API keys (no code change required)
+
+When a request authenticates with a `vk_`-prefixed virtual key whose `tenant_id` is set, the HTTP API's auth middleware (in `voicegateway/server/main.py::build_app`) auto-tags the session with the key's scope. Agent code does not need to know the tenant: the dashboard's Virtual Keys page (`/virtual-keys`) issues a scoped key, the operator ships it as `Authorization: Bearer vk_…`, and every request inherits the scope.
+
+Body-level `tenant_id` is rejected with `403` when it conflicts with a scoped virtual key. Unscoped virtual keys (issued without a tenant) allow the body to declare any tenant, matching the static-key behavior.
+
+### The "unattributed" bucket
+
+Sessions where none of the three surfaces set a tenant get `tenant_id = NULL` in storage. The dashboard renders these as a muted "unattributed" pill rather than a literal tenant string. No backfill happens at migration time (OQ3 locked at v0.4.0/T01): pre-v0.4.0 rows stay NULL and the FE handles them gracefully.
+
+The first tenant-bearing request "wins" for the session's lifetime. A later unattributed request on the same `session_id` does not clear the tenant_id (the `sessions` UPSERT uses `COALESCE(tenant_id, excluded.tenant_id)`).
+
+For the operator-facing workflow (issuing keys, viewing per-tenant costs, exporting), see the [multi-tenant quickstart](/guide/multi-tenant-quickstart).
 
 ## Conversation replay capture (v0.3.0)
 

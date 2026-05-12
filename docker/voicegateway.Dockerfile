@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml README.md ./
 COPY voicegateway/ ./voicegateway/
 
-ARG VERSION=0.3.0
+ARG VERSION=0.4.0
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 
 RUN pip install --prefix=/install ".[cloud,mcp,dashboard,tui]"
@@ -36,7 +36,7 @@ RUN pip install --prefix=/install ".[cloud,mcp,dashboard,tui]"
 # -------- Stage 3: Runtime --------
 FROM python:3.12-slim AS runtime
 
-ARG VERSION=0.3.0
+ARG VERSION=0.4.0
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

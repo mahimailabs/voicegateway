@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import PageHeader from '../components/PageHeader';
 import CostChart from '../components/CostChart';
+import FilterBar, { useTenantFilter } from '../components/FilterBar';
+import PageHeader from '../components/PageHeader';
 import StalenessBanner from '../components/StalenessBanner';
 import { fetchJson } from '../lib/api';
 import { formatCost } from '../lib/ui';
@@ -8,10 +9,15 @@ import type { CostsResponse } from '../lib/types';
 
 export default function Costs() {
   const [data, setData] = useState<CostsResponse | null>(null);
+  const tenant = useTenantFilter();
 
   useEffect(() => {
-    fetchJson<CostsResponse>('/api/costs').then(setData).catch(() => setData(null));
-  }, []);
+    const params = new URLSearchParams();
+    if (tenant !== null) params.set('tenant', tenant);
+    const qs = params.toString();
+    const url = qs ? `/api/costs?${qs}` : '/api/costs';
+    fetchJson<CostsResponse>(url).then(setData).catch(() => setData(null));
+  }, [tenant]);
 
   if (!data) return <div className="empty-state">Loading costs...</div>;
 
@@ -21,6 +27,7 @@ export default function Costs() {
     <div>
       <StalenessBanner />
       <PageHeader title="Costs" subtitle={`Period: ${data.period}`} accent="green" />
+      <FilterBar />
 
       <div className="neo-card neo-card--strip-green mb-lg">
         <div className="label">Total Spend</div>
