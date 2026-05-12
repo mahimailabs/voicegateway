@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from importlib import resources
 from typing import TYPE_CHECKING, Any
 
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
 
 _PROMPT_PACKAGE = "voicegateway.middleware.guardrail_prompts"
 _MARKER = "<voicegateway_guardrails"
+logger = logging.getLogger(__name__)
 
 
 def load_guardrail_prompt(category: str) -> str:
@@ -185,18 +187,26 @@ def schedule_bypass_event(
     async def _record() -> None:
         from voicegateway.storage import guardrail_events_repo
 
-        db = await storage._ensure_initialized()
         try:
-            await guardrail_events_repo.create_event(
-                db,
-                session_id=session_id,
-                tenant_id=tenant_id,
-                event_type="bypassed",
-                context_excerpt="guardrail injection bypassed for this session",
+            db = await storage._ensure_initialized()
+            try:
+                await guardrail_events_repo.create_event(
+                    db,
+                    session_id=session_id,
+                    tenant_id=tenant_id,
+                    event_type="bypassed",
+                    context_excerpt="guardrail injection bypassed for this session",
+                )
+                await db.commit()
+            finally:
+                await db.close()
+        except Exception:
+            logger.warning(
+                "failed to record guardrail bypass event session_id=%s tenant_id=%s",
+                session_id,
+                tenant_id,
+                exc_info=True,
             )
-            await db.commit()
-        finally:
-            await db.close()
 
     try:
         loop = asyncio.get_running_loop()

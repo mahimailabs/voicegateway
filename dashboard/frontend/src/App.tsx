@@ -35,6 +35,7 @@ interface ActiveBranding {
 // level entry), Routing, Projects, Providers, Virtual Keys, Settings.
 // Overview, Models, and Latency predate that spec and are kept above
 // the v0.5.0 block so existing users find them where they were.
+// Foundry v0.6.0 inserts Guardrails between Routing and Projects.
 const PAGES = [
   { to: '/',             label: 'Overview',     id: 'overview' },
   { to: '/models',       label: 'Models',       id: 'models'   },

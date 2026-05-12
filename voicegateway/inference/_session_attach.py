@@ -168,7 +168,7 @@ def attach_session(
     session_id: str | None = None,
     tenant_id: str | None = None,
     routed_triple: RoutingDecisionTuple | None = None,
-    bypass_guardrails: bool = False,
+    bypass_guardrails: bool | None = None,
     turn_tracker: TurnTracker | None = None,
     dead_air_detector: DeadAirDetector | None = None,
     cost_tracker: CostTracker | None = None,
@@ -195,6 +195,10 @@ def attach_session(
     the auth middleware (T04) still wins, and an explicit
     ``set_tenant(...)`` from the agent code also wins. Pass an empty
     string or ``None`` to opt into the "unattributed" bucket.
+
+    ``bypass_guardrails`` overrides the active session's guardrail bypass
+    flag only when explicitly provided. Omit it to preserve a bypass set by
+    ``start_session(bypass_guardrails=True)`` earlier in the same context.
 
     Returns the bound ``session_id`` so callers can echo it into their
     own logs.
@@ -226,7 +230,8 @@ def attach_session(
         set_tenant(tenant_id)
     if routed_triple is not None:
         set_routing_decision(routed_triple)
-    set_guardrails_bypassed(bypass_guardrails)
+    if bypass_guardrails is not None:
+        set_guardrails_bypassed(bypass_guardrails)
 
     if tracker is None:
         logger.warning(

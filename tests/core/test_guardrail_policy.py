@@ -47,8 +47,15 @@ def test_policy_rejects_unknown_category() -> None:
 
 
 def test_policy_rejects_unknown_action() -> None:
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="unknown guardrail action"):
         GuardrailPolicy.from_raw({"enabled": True, "categories": {"pii": "rewrite"}})
+
+
+def test_policy_rejects_category_mapping_without_action() -> None:
+    with pytest.raises(
+        ValidationError, match=r"guardrails\.categories\['pii'\] missing 'action'"
+    ):
+        GuardrailPolicy.from_raw({"enabled": True, "categories": {"pii": {}}})
 
 
 def test_gateway_config_loads_project_guardrails(tmp_path) -> None:
