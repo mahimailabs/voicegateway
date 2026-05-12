@@ -10,6 +10,7 @@ import Replay from './pages/Replay';
 import Sessions from './pages/Sessions';
 import Projects from './pages/Projects';
 import Providers from './pages/Providers';
+import Routing from './pages/Routing';
 import Settings from './pages/Settings';
 import VirtualKeys from './pages/VirtualKeys';
 import Login from './pages/Login';
@@ -28,6 +29,11 @@ interface ActiveBranding {
 // level entry), Projects, Providers, Virtual Keys. Overview, Models,
 // Latency, and Settings predate that spec and are kept above /
 // below the v0.4.0 block so existing users find them where they were.
+// Foundry v0.5.0 nav order: Costs, Logs, Sessions, Metrics, Replay
+// (conditional, lives under /sessions/:id/replay so it is not a top-
+// level entry), Routing, Projects, Providers, Virtual Keys, Settings.
+// Overview, Models, and Latency predate that spec and are kept above
+// the v0.5.0 block so existing users find them where they were.
 const PAGES = [
   { to: '/',             label: 'Overview',     id: 'overview' },
   { to: '/models',       label: 'Models',       id: 'models'   },
@@ -36,6 +42,7 @@ const PAGES = [
   { to: '/logs',         label: 'Logs',         id: 'logs'     },
   { to: '/sessions',     label: 'Sessions',     id: 'sessions' },
   { to: '/metrics',      label: 'Metrics',      id: 'metrics'  },
+  { to: '/routing',      label: 'Routing',      id: 'routing'  },
   { to: '/projects',     label: 'Projects',     id: 'projects' },
   { to: '/providers',    label: 'Providers',    id: 'providers' },
   { to: '/virtual-keys', label: 'Virtual Keys', id: 'virtual-keys' },
@@ -117,6 +124,7 @@ export default function App() {
             <Route path="/metrics" element={<Metrics />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/providers" element={<Providers />} />
+            <Route path="/routing" element={<Routing />} />
             <Route path="/virtual-keys" element={<VirtualKeys />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/settings/audit-log" element={<Settings tab="audit" />} />
