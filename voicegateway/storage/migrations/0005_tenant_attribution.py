@@ -23,6 +23,7 @@ AC-3). No backfill to a literal string per OQ3.
 
 from __future__ import annotations
 
+import sqlite3
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -84,7 +85,11 @@ async def _add_tenant_id_column(db: aiosqlite.Connection, table: str) -> None:
     existing = {row[1] async for row in cursor}
     if "tenant_id" in existing:
         return
-    await db.execute(f"ALTER TABLE {table} ADD COLUMN tenant_id TEXT")
+    try:
+        await db.execute(f"ALTER TABLE {table} ADD COLUMN tenant_id TEXT")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column name" not in str(exc).lower():
+            raise
 
 
 async def apply(db: aiosqlite.Connection) -> None:

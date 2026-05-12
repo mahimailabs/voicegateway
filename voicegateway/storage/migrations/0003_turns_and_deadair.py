@@ -25,6 +25,7 @@ with NULL on new columns, idempotent re-run.
 
 from __future__ import annotations
 
+import sqlite3
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -94,7 +95,11 @@ async def apply(db: aiosqlite.Connection) -> None:
     existing = {row[1] async for row in cursor}
     for column, type_ in _SESSIONS_AGGREGATE_COLUMNS:
         if column not in existing:
-            await db.execute(f"ALTER TABLE sessions ADD COLUMN {column} {type_}")
+            try:
+                await db.execute(f"ALTER TABLE sessions ADD COLUMN {column} {type_}")
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
 
 
 __all__ = ["apply"]

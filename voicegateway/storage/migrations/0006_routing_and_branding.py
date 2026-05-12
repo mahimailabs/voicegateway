@@ -34,6 +34,7 @@ dashboard renders NULL budget_overrun as "ok" and NULL routed_* as
 
 from __future__ import annotations
 
+import sqlite3
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -90,7 +91,11 @@ async def _add_column_if_missing(
     existing = {row[1] async for row in cursor}
     if column in existing:
         return
-    await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
+    try:
+        await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column name" not in str(exc).lower():
+            raise
 
 
 async def apply(db: aiosqlite.Connection) -> None:
