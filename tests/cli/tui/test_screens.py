@@ -25,6 +25,7 @@ REQ-VG-TUI-003 (Costs):
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from datetime import date
@@ -105,6 +106,19 @@ async def _settle(pilot: Any, ticks: int = 8) -> None:
     """Drain the event loop so async on_mount / refresh_data finish."""
     for _ in range(ticks):
         await pilot.pause()
+
+
+async def _wait_for_session_ids(app: TUIApp, pilot: Any, expected: set[str]) -> None:
+    """Wait until the sessions list has mounted the expected row ids."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 5.0
+    while loop.time() < deadline:
+        ids = {row.session_id for row in app.query(SessionRow)}
+        if ids == expected:
+            return
+        await pilot.pause(0.05)
+    ids = {row.session_id for row in app.query(SessionRow)}
+    assert ids == expected
 
 
 # ---------------------------------------------------------------------------
@@ -1058,9 +1072,7 @@ async def test_sessions_live_append_picks_up_new_session() -> None:
     )
     app = TUIApp(client=client, is_local=False)
     async with app.run_test() as pilot:
-        await _settle(pilot)
-        rows_before = list(app.query(SessionRow))
-        assert len(rows_before) == 1
+        await _wait_for_session_ids(app, pilot, {"vg-old"})
 
         # Add a new session; the polling loop should pick it up.
         client.sessions.insert(
@@ -1076,9 +1088,4 @@ async def test_sessions_live_append_picks_up_new_session() -> None:
                 "request_count": 1,
             },
         )
-        # 0.05 s * 30 = 1.5 s wall-clock, well under the 5 s budget.
-        for _ in range(30):
-            await pilot.pause(0.05)
-        rows_after = list(app.query(SessionRow))
-        ids = {r.session_id for r in rows_after}
-        assert ids == {"vg-old", "vg-new"}
+        await _wait_for_session_ids(app, pilot, {"vg-old", "vg-new"})
