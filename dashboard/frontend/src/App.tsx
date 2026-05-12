@@ -15,6 +15,13 @@ import VirtualKeys from './pages/VirtualKeys';
 import Login from './pages/Login';
 import type { StatusResponse } from './lib/types';
 import { AUTH_REQUIRED_EVENT, clearToken, fetchJson, getToken } from './lib/api';
+import { applyBrandingForProject } from './lib/branding';
+
+interface ActiveBranding {
+  logo_url?: string | null;
+  accent_color?: string | null;
+  product_name?: string | null;
+}
 
 // Foundry v0.4.0 nav order: Costs, Logs, Sessions, Metrics, Replay
 // (conditional, lives under /sessions/:id/replay so it is not a top-
@@ -77,6 +84,18 @@ export default function App() {
     fetchJson<StatusResponse>('/api/status').then(setStatus).catch(() => setStatus(null));
   }, [authState]);
 
+  // v0.5.0: apply per-project white-label branding once on layout
+  // mount (REQ-VG-ROUTE-004). Read-once-per-mount per OQ5. Reads the
+  // ?project=<id> URL param; a downstream operator who wants the
+  // branded chrome on every page sets the param at link time.
+  const [branding, setBranding] = useState<ActiveBranding | null>(null);
+  useEffect(() => {
+    if (authState !== 'ready') return;
+    const params = new URLSearchParams(window.location.search);
+    const projectId = params.get('project');
+    applyBrandingForProject(projectId).then(setBranding).catch(() => setBranding(null));
+  }, [authState]);
+
   if (authState === 'checking') return null;
   if (authState === 'needs-login') {
     return <Login onAuthed={() => setAuthState('ready')} />;
@@ -85,7 +104,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="app-shell">
-        <Sidebar status={status} onSignOut={signOut} />
+        <Sidebar status={status} onSignOut={signOut} branding={branding} />
         <main className="main">
           <Routes>
             <Route path="/" element={<Overview />} />
@@ -111,19 +130,30 @@ export default function App() {
 function Sidebar({
   status,
   onSignOut,
+  branding,
 }: {
   status: StatusResponse | null;
   onSignOut: () => void;
+  branding: ActiveBranding | null;
 }) {
   const providerCount = status ? Object.keys(status.providers).length : 0;
   const modelCount = status ? Object.keys(status.models).length : 0;
   const hasToken = !!getToken();
+  const productName = branding?.product_name || 'VoiceGateway';
+  const logoUrl = branding?.logo_url || null;
 
   return (
     <aside className="sidebar">
       <div className="sidebar__logo">
-        VoiceGateway
-        <small>SELF-HOSTED VOICE AI</small>
+        {logoUrl && (
+          <img
+            src={logoUrl}
+            alt={`${productName} logo`}
+            style={{ maxHeight: '32px', maxWidth: '160px', display: 'block', marginBottom: '0.25rem' }}
+          />
+        )}
+        {productName}
+        <small>{branding?.product_name ? 'WHITE-LABEL' : 'SELF-HOSTED VOICE AI'}</small>
       </div>
       <nav className="sidebar__nav">
         {PAGES.map((p) => (
