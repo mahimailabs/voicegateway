@@ -1,8 +1,10 @@
 """Shared pytest fixtures."""
 
+import asyncio
 import os
 import time
 import uuid
+from typing import Any
 
 import pytest
 import yaml
@@ -24,6 +26,44 @@ def _test_env(monkeypatch):
     ]:
         monkeypatch.setenv(key, "test-key-value")
     yield
+
+
+@pytest.fixture(autouse=True)
+def _close_aiosqlite_connections(monkeypatch):
+    """Close raw SQLite handles returned by tests through _ensure_initialized.
+
+    SQLiteStorage opens a fresh aiosqlite connection for each call. Most
+    production paths close those handles in finally blocks, but a number of
+    tests call the internal initializer only to apply migrations, then discard
+    the returned connection. Unclosed aiosqlite worker threads can finish after
+    pytest closes the event loop and emit PytestUnhandledThreadExceptionWarning.
+    """
+    from voicegateway.storage.sqlite import SQLiteStorage
+
+    opened: list[Any] = []
+    original_ensure_initialized = SQLiteStorage._ensure_initialized
+
+    async def _tracked_ensure_initialized(self):
+        db = await original_ensure_initialized(self)
+        opened.append(db)
+        return db
+
+    monkeypatch.setattr(
+        SQLiteStorage, "_ensure_initialized", _tracked_ensure_initialized
+    )
+    yield
+
+    if not opened:
+        return
+
+    async def _close_all() -> None:
+        for db in reversed(opened):
+            try:
+                await db.close()
+            except Exception:
+                pass
+
+    asyncio.run(_close_all())
 
 
 @pytest.fixture

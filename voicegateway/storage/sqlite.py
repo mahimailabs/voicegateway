@@ -174,9 +174,11 @@ class SQLiteStorage:
         self._db_path = Path(db_path).expanduser()
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._initialized = False
+        self._open_connections: set[aiosqlite.Connection] = set()
 
     async def _ensure_initialized(self) -> aiosqlite.Connection:
         db = await aiosqlite.connect(str(self._db_path))
+        self._track_connection(db)
         if not self._initialized:
             await db.executescript(_SCHEMA)
             # Migration: add `project` column if missing (from older schemas)
@@ -297,6 +299,27 @@ class SQLiteStorage:
             await db.commit()
             self._initialized = True
         return db
+
+    def _track_connection(self, db: aiosqlite.Connection) -> None:
+        """Track raw handles so owner lifecycles can clean up stragglers."""
+        self._open_connections.add(db)
+        original_close = db.close
+
+        async def _tracked_close() -> None:
+            try:
+                await original_close()
+            finally:
+                self._open_connections.discard(db)
+
+        db.close = _tracked_close  # type: ignore[method-assign]
+
+    async def aclose(self) -> None:
+        """Close any raw connections still owned by this storage instance."""
+        for db in list(self._open_connections):
+            try:
+                await db.close()
+            except Exception:
+                self._open_connections.discard(db)
 
     async def _migrate_plaintext_keys(self, db: aiosqlite.Connection) -> None:
         """Encrypt any plaintext API keys left over from before encryption was added."""

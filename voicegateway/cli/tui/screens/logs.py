@@ -15,7 +15,7 @@ resolve when the screen is the active tab.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -84,7 +84,7 @@ class LogsScreen(Container):
         # Filter input is hidden by default; ``/`` reveals it.
         self.query_one("#logs-filter", Input).display = False
         # Initial fetch as a worker so on_mount stays sync.
-        self.run_worker(self.refresh_data(), exclusive=True)
+        self.run_worker(cast(Any, self.refresh_data), exclusive=True)
         # Live-append polling: re-fetch on the client's ``poll_seconds``
         # cadence (1.0 s in Gateway mode, 5.0 s in Local mode by
         # default; ``--poll`` on the Typer command overrides). LogTail
@@ -106,7 +106,7 @@ class LogsScreen(Container):
         refreshes; a delayed response is dropped in favour of the
         next poll's fresh request.
         """
-        self.run_worker(self.refresh_data(), exclusive=True)
+        self.run_worker(cast(Any, self.refresh_data), exclusive=True)
 
     async def refresh_data(self) -> None:
         """Fetch recent rows and append the unseen ones to LogTail.

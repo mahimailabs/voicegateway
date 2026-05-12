@@ -121,6 +121,14 @@ class TUIApp(App[None]):
         yield CounterFooter(id="counter-footer")
         yield Footer()
 
+    async def on_unmount(self) -> None:
+        """Cancel background refresh workers and close the active client."""
+        self.workers.cancel_all()
+        await self.workers.wait_for_complete()
+        close = getattr(self.client, "aclose", None)
+        if close is not None:
+            await close()
+
     # -- Actions -----------------------------------------------------
     #
     # Textual resolves a binding's ``action`` string to ``action_<name>``

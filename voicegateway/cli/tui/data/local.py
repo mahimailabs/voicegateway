@@ -61,13 +61,13 @@ class LocalClient:
     # -- lifecycle ---------------------------------------------------
 
     async def aclose(self) -> None:
-        """No-op (SQLiteStorage opens connections per-call).
+        """Close any raw SQLite handles still open from in-flight polls.
 
         Provided for symmetry with :class:`HttpClient.aclose` so the
         TUIApp's on_unmount can release both backends through a single
         dispatch path.
         """
-        return None
+        await self._storage.aclose()
 
     async def __aenter__(self) -> LocalClient:
         return self
