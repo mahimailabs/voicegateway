@@ -46,11 +46,11 @@ docker compose --profile local up -d     # + Ollama
 
 **Providers (`voicegateway/providers/`):** Each extends `BaseProvider` from `base.py`. 11 implementations covering cloud and local models.
 
-**Middleware (`voicegateway/middleware/`):** Cost tracking, latency monitoring, rate limiting, request logging, fallback chains. All wrap provider calls.
+**Middleware (`voicegateway/middleware/`):** Cost tracking, latency monitoring, rate limiting, request logging, fallback chains. All wrap provider calls. v0.6.0 guardrails are LLM-side only: `InstrumentedLLM._apply_guardrails` uses `middleware/guardrails.py` and `middleware/guardrail_prompts/` to inject the guardrail prompt/tool, reject reserved tool-name collisions, and write fired/bypassed audit rows.
 
-**Storage (`voicegateway/storage/`):** SQLite backend with `RequestRecord` dataclass. Includes SQL views for daily costs and per-project aggregation.
+**Storage (`voicegateway/storage/`):** SQLite backend with `RequestRecord` dataclass plus guardrail policy snapshots and `guardrail_events` audit rows. Includes SQL views for daily costs and per-project aggregation.
 
-**HTTP API (`voicegateway/server.py`):** FastAPI with endpoints at `/health`, `/v1/status`, `/v1/models`, `/v1/costs`, `/v1/projects`, `/v1/logs`, `/v1/metrics`.
+**Dashboard API (`dashboard/api/main.py`):** FastAPI with endpoints at `/api/status`, `/api/models`, `/api/costs`, `/api/projects`, `/api/logs`, `/api/metrics`, `/api/projects/{project_id}/guardrails`, `/api/guardrails/events`, and `/api/guardrails/aggregate`. Guardrail endpoints persist project policy overlays and query audit aggregates through the storage repos.
 
 **Dashboard (`dashboard/`):** FastAPI backend (`api/`) + React/TypeScript/Vite frontend (`frontend/`). Uses Recharts for visualization. Neo-Brutalism design aesthetic.
 

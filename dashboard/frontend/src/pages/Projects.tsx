@@ -385,18 +385,26 @@ function GuardrailsModal({
 }) {
   const [policy, setPolicy] = useState<GuardrailPolicy | null>(null);
   const [descriptions, setDescriptions] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setLoading(true);
+    setPolicy(null);
+    setError(null);
     fetchProjectGuardrails(projectId)
       .then((payload) => {
         setPolicy(payload.policy);
         setDescriptions(
           Object.fromEntries(payload.categories.map((c) => [c.id, c.description])),
         );
+        setLoading(false);
       })
-      .catch((e) => setError((e as Error).message || 'Failed to load guardrails'));
+      .catch((e) => {
+        setError((e as Error).message || 'Failed to load guardrails');
+        setLoading(false);
+      });
   }, [projectId]);
 
   const setCategoryAction = (category: GuardrailCategory, action: GuardrailAction) => {
@@ -440,8 +448,10 @@ function GuardrailsModal({
     <div className="neo-modal-backdrop" onClick={onClose}>
       <div className="neo-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '42rem' }}>
         <h3>Guardrails · {projectId}</h3>
-        {!policy ? (
+        {loading ? (
           <div className="empty-state mt-md">Loading guardrail policy...</div>
+        ) : !policy ? (
+          <div className="empty-state mt-md">Guardrail policy unavailable.</div>
         ) : (
           <>
             <label className="flex-row mt-md" style={{ gap: '0.5rem' }}>

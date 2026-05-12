@@ -124,6 +124,13 @@ class TestStartSession:
 
         assert contextvars.copy_context().run(_scenario) is True
 
+    def test_start_session_defaults_guardrails_bypassed_false(self):
+        def _scenario():
+            start_session()
+            return current_guardrails_bypassed()
+
+        assert contextvars.copy_context().run(_scenario) is False
+
     def test_policy_snapshot_freezes_until_next_session(self):
         def _scenario():
             start_session()

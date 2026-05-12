@@ -55,10 +55,21 @@ class GuardrailPolicy(BaseModel):
         out: dict[str, Any] = {}
         for raw_category, raw_action in value.items():
             category = str(raw_category)
-            action = (
-                raw_action.get("action") if isinstance(raw_action, dict) else raw_action
-            )
-            out[category] = str(action)
+            if isinstance(raw_action, dict):
+                if "action" not in raw_action:
+                    raise ValueError(
+                        f"guardrails.categories[{category!r}] missing 'action'"
+                    )
+                action = raw_action["action"]
+            else:
+                action = raw_action
+            action_str = str(action)
+            if action_str not in GUARDRAIL_ACTIONS:
+                allowed = ", ".join(GUARDRAIL_ACTIONS)
+                raise ValueError(
+                    f"unknown guardrail action: {action_str}; allowed: {allowed}"
+                )
+            out[category] = action_str
         return out
 
     @model_validator(mode="after")
@@ -115,6 +126,12 @@ class GuardrailPolicy(BaseModel):
 
     @classmethod
     def disabled(cls) -> GuardrailPolicy:
+        """Return a disabled policy with every category set to ``"off"``.
+
+        Returns:
+            A ``GuardrailPolicy`` with ``enabled=False`` and all known
+            categories explicitly disabled.
+        """
         return cls(
             enabled=False,
             categories=dict.fromkeys(GUARDRAIL_CATEGORIES, "off"),
@@ -122,6 +139,16 @@ class GuardrailPolicy(BaseModel):
 
     @classmethod
     def from_raw(cls, raw: Any) -> GuardrailPolicy:
+        """Normalize raw guardrail policy input into a ``GuardrailPolicy``.
+
+        Args:
+            raw: ``None``, an empty string, an existing ``GuardrailPolicy``,
+                or a raw mapping accepted by Pydantic validation.
+
+        Returns:
+            ``cls.disabled()`` for ``None`` or ``""``, ``raw`` unchanged when
+            it is already a policy instance, otherwise ``cls.model_validate``.
+        """
         if raw in (None, ""):
             return cls.disabled()
         if isinstance(raw, cls):

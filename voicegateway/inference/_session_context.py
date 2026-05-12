@@ -86,6 +86,15 @@ def start_session(*, bypass_guardrails: bool = False) -> str:
     task handles multiple conversations sequentially. The standard
     livekit-agents worker spawns a fresh task per call, so the
     ContextVar starts clean and this call is unnecessary.
+
+    Args:
+        bypass_guardrails: When ``True``, guardrail prompt/tool injection is
+            skipped for the new session and a bypass audit row is recorded if
+            a policy would otherwise be active. The default ``False`` leaves
+            guardrails enabled for active project policies.
+
+    Returns:
+        The new session id string.
     """
     sid = f"{_SESSION_ID_PREFIX}{uuid.uuid4()}"
     _current_session_id.set(sid)

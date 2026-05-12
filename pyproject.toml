@@ -103,6 +103,9 @@ Issues = "https://github.com/mahimailabs/voicegateway/issues"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: marks tests that run only in the integration CI job",
+]
 
 [tool.coverage.run]
 source = ["voicegateway", "dashboard"]

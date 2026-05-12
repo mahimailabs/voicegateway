@@ -26,6 +26,8 @@ import pytest
 
 import voicegateway
 
+pytestmark = pytest.mark.integration
+
 
 def _walk_subpackages() -> list[ModuleType]:
     """Yield every subpackage of ``voicegateway`` (including the root).
