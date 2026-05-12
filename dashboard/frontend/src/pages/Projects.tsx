@@ -3,6 +3,12 @@ import PageHeader from '../components/PageHeader';
 import SourceBadge from '../components/SourceBadge';
 import { fetchJson } from '../lib/api';
 
+interface ProjectBranding {
+  logo_url?: string | null;
+  accent_color?: string | null;
+  product_name?: string | null;
+}
+
 interface ProjectEntry {
   id: string;
   name: string;
@@ -27,6 +33,7 @@ export default function Projects() {
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
   const [stats, setStats] = useState<Record<string, ProjectStats>>({});
   const [showCreate, setShowCreate] = useState(false);
+  const [brandingFor, setBrandingFor] = useState<string | null>(null);
 
   const refresh = () => {
     fetchJson<{ projects: ProjectEntry[]; stats: Record<string, ProjectStats> }>('/api/projects')
@@ -85,6 +92,15 @@ export default function Projects() {
                 <span className="label">{s?.requests_today ?? 0} requests today</span>
                 <span className="label">{p.budget_action}</span>
               </div>
+              <div className="mt-sm">
+                <button
+                  type="button"
+                  className="neo-btn neo-btn--small"
+                  onClick={() => setBrandingFor(p.id)}
+                >
+                  Brand
+                </button>
+              </div>
             </div>
           );
         })}
@@ -94,6 +110,12 @@ export default function Projects() {
       </div>
 
       {showCreate && <CreateProjectModal onClose={() => { setShowCreate(false); refresh(); }} />}
+      {brandingFor && (
+        <BrandingModal
+          projectId={brandingFor}
+          onClose={() => setBrandingFor(null)}
+        />
+      )}
     </div>
   );
 }
@@ -152,6 +174,169 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
           <button className="neo-btn neo-btn--primary" onClick={save} disabled={saving || !name}>
             {saving ? 'Creating...' : 'Create Project'}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BrandingModal({
+  projectId,
+  onClose,
+}: {
+  projectId: string;
+  onClose: () => void;
+}) {
+  const [logoUrl, setLogoUrl] = useState('');
+  const [accentColor, setAccentColor] = useState('#333333');
+  const [productName, setProductName] = useState('');
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchJson<{ project_id: string; branding: ProjectBranding | null }>(
+      `/api/projects/${encodeURIComponent(projectId)}/branding`,
+    )
+      .then((d) => {
+        if (d.branding) {
+          setLogoUrl(d.branding.logo_url ?? '');
+          setAccentColor(d.branding.accent_color ?? '#333333');
+          setProductName(d.branding.product_name ?? '');
+        }
+      })
+      .catch(() => {
+        // Project may have no branding yet; keep the input defaults.
+      });
+  }, [projectId]);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      if (logoFile) {
+        const fd = new FormData();
+        fd.append('file', logoFile);
+        const resp = await fetch(
+          `/api/projects/${encodeURIComponent(projectId)}/branding/logo`,
+          { method: 'POST', body: fd },
+        );
+        if (!resp.ok) {
+          const body = await resp.json().catch(() => ({}));
+          throw new Error(body.detail || `HTTP ${resp.status}`);
+        }
+        const data = (await resp.json()) as { logo_url: string };
+        setLogoUrl(data.logo_url);
+      }
+      await fetchJson(`/api/projects/${encodeURIComponent(projectId)}/branding`, {
+        method: 'POST',
+        body: JSON.stringify({
+          logo_url: logoFile ? null : logoUrl || null,
+          accent_color: accentColor || null,
+          product_name: productName.trim() || null,
+        }),
+      });
+      onClose();
+    } catch (e) {
+      setError((e as Error).message || 'Failed to save branding');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const reset = async () => {
+    if (!confirm('Reset branding to defaults for this project?')) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await fetchJson(`/api/projects/${encodeURIComponent(projectId)}/branding`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      onClose();
+    } catch (e) {
+      setError((e as Error).message || 'Failed to reset branding');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="neo-modal-backdrop" onClick={onClose}>
+      <div className="neo-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '32rem' }}>
+        <h3>Branding · {projectId}</h3>
+        <p className="label mt-sm">
+          Per-project white-label. Logo, accent color, and product name
+          override the default VoiceGateway brand for users scoped to
+          this project (REQ-VG-ROUTE-004).
+        </p>
+
+        <label className="label mt-md">Product name</label>
+        <input
+          className="neo-input"
+          value={productName}
+          onChange={(e) => setProductName(e.target.value)}
+          placeholder="(default: VoiceGateway)"
+          maxLength={64}
+        />
+
+        <label className="label mt-md">Accent color</label>
+        <div className="flex-row" style={{ gap: '0.5rem', alignItems: 'center' }}>
+          <input
+            type="color"
+            value={accentColor}
+            onChange={(e) => setAccentColor(e.target.value)}
+            style={{ width: 48, height: 36, border: '2px solid black', cursor: 'pointer' }}
+          />
+          <input
+            className="neo-input"
+            value={accentColor}
+            onChange={(e) => setAccentColor(e.target.value)}
+            style={{ width: '8rem', fontFamily: 'monospace' }}
+          />
+        </div>
+
+        <label className="label mt-md">Logo</label>
+        {(logoFile || logoUrl) && (
+          <div className="mt-sm" style={{ background: '#FFF9C2', padding: '0.5rem', border: '2px solid black' }}>
+            <img
+              src={logoFile ? URL.createObjectURL(logoFile) : logoUrl}
+              alt="Logo preview"
+              style={{ maxHeight: '48px', maxWidth: '200px', display: 'block' }}
+            />
+            <code style={{ fontSize: '0.75rem', wordBreak: 'break-all' }}>
+              {logoFile ? logoFile.name : logoUrl}
+            </code>
+          </div>
+        )}
+        <input
+          type="file"
+          accept="image/png,image/svg+xml"
+          className="neo-input mt-sm"
+          onChange={(e) => setLogoFile(e.target.files?.[0] ?? null)}
+        />
+        <div className="label" style={{ fontSize: '0.7rem', opacity: 0.7 }}>
+          PNG or SVG, max 256 KB, max 512x512 px.
+        </div>
+
+        {error && (
+          <div className="mt-md" style={{ color: 'var(--accent-pink, #FF3D71)' }}>
+            {error}
+          </div>
+        )}
+
+        <div className="flex-row mt-lg" style={{ justifyContent: 'space-between' }}>
+          <button className="neo-btn" onClick={reset} disabled={saving}>
+            Reset
+          </button>
+          <div className="flex-row">
+            <button className="neo-btn" onClick={onClose} disabled={saving}>
+              Cancel
+            </button>
+            <button className="neo-btn neo-btn--primary" onClick={save} disabled={saving}>
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
