@@ -3,6 +3,7 @@ prompt.md
 voicegateway/_version.py
 .venv
 .agents
+.codex
 .playwright-mcp
 
 # Fly.io deploy
