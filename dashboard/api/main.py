@@ -12,10 +12,18 @@ from fastapi import Body, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
 
 from voicegateway.core.auth import load_api_keys, resolve_cors_origins
+from voicegateway.core.guardrail_policy import (
+    ACTIVE_GUARDRAIL_ACTIONS,
+    GUARDRAIL_CATEGORIES,
+    GUARDRAIL_CATEGORY_DESCRIPTIONS,
+    GuardrailPolicy,
+)
 from voicegateway.storage import (
     dead_air_repo,
+    guardrail_events_repo,
     replay_repo,
     tenants_repo,
     turns_repo,
@@ -35,7 +43,7 @@ _LOCAL_PROVIDER_NAMES = frozenset({"ollama", "whisper", "kokoro", "piper"})
 
 app = FastAPI(
     title="VoiceGateway Dashboard",
-    version="0.5.0",
+    version="0.6.0",
 )
 
 # Set by the CLI / combined server when starting the dashboard.
@@ -48,6 +56,28 @@ def _get_gateway() -> Gateway:
     if _gateway is None:
         raise RuntimeError("Gateway not initialized. Start via: voicegw dashboard")
     return _gateway  # type: ignore[no-any-return]
+
+
+def _guardrail_since(days: int) -> str:
+    days = max(1, min(days, 365))
+    return (datetime.now(tz=UTC) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _validate_guardrail_event_filter(
+    *, category: str | None, action: str | None
+) -> None:
+    if category is not None and category not in GUARDRAIL_CATEGORIES:
+        allowed = ", ".join(GUARDRAIL_CATEGORIES)
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown guardrail category: {category}; allowed: {allowed}",
+        )
+    if action is not None and action not in ACTIVE_GUARDRAIL_ACTIONS:
+        allowed = ", ".join(ACTIVE_GUARDRAIL_ACTIONS)
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown guardrail action: {action}; allowed: {allowed}",
+        )
 
 
 def configure(gateway: Gateway) -> None:
@@ -256,6 +286,63 @@ async def get_projects() -> dict:
     return {"projects": projects, "stats": stats}
 
 
+@app.get("/api/projects/{project_id}/guardrails")
+async def get_project_guardrails(project_id: str) -> dict[str, Any]:
+    """Return the current guardrail policy for a project."""
+    gw = _get_gateway()
+    pcfg = gw.config.get_project(project_id)
+    if pcfg is None:
+        raise HTTPException(status_code=404, detail=f"Project {project_id!r} not found")
+    return {
+        "project_id": project_id,
+        "policy": pcfg.guardrails.to_storage_dict(),
+        "categories": [
+            {"id": category, "description": description}
+            for category, description in GUARDRAIL_CATEGORY_DESCRIPTIONS.items()
+        ],
+    }
+
+
+@app.post("/api/projects/{project_id}/guardrails")
+async def update_project_guardrails(
+    project_id: str, body: dict[str, Any] = Body(...)
+) -> dict[str, Any]:
+    """Persist a project's v0.6.0 guardrail policy overlay."""
+    gw = _get_gateway()
+    if gw.storage is None:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    pcfg = gw.config.get_project(project_id)
+    if pcfg is None:
+        raise HTTPException(status_code=404, detail=f"Project {project_id!r} not found")
+    try:
+        policy = GuardrailPolicy.from_raw(body)
+    except (ValidationError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await gw.storage.set_managed_project_guardrails(
+        project_id=project_id,
+        policy=policy.to_storage_dict(),
+        name=pcfg.name,
+        description=pcfg.description,
+        daily_budget=pcfg.daily_budget,
+        budget_action=pcfg.budget_action,
+        default_stack=pcfg.default_stack,
+        tags=list(pcfg.tags),
+    )
+    await gw.storage.log_audit_event(
+        "project", project_id, "guardrails_update", policy.to_storage_dict(), "api"
+    )
+    await gw.refresh_config()
+    refreshed = gw.config.get_project(project_id)
+    return {
+        "project_id": project_id,
+        "policy": (
+            refreshed.guardrails.to_storage_dict()
+            if refreshed is not None
+            else policy.to_storage_dict()
+        ),
+    }
+
+
 @app.get("/api/sessions")
 async def get_sessions(
     limit: int = Query(100, ge=1, le=1000),
@@ -297,6 +384,91 @@ async def get_session_detail(session_id: str) -> dict[str, Any]:
     if row is None:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
     return row
+
+
+@app.get("/api/guardrails/events")
+async def get_guardrail_events(
+    days: int = Query(7, ge=1, le=365),
+    project: str | None = Query(None),
+    tenant: str | None = Query(None),
+    category: str | None = Query(None),
+    action: str | None = Query(None),
+    event_type: str | None = Query(None, pattern="^(fired|bypassed)$"),
+    limit: int = Query(100, ge=1, le=1000),
+) -> dict[str, Any]:
+    """Return filtered guardrail audit events for the dashboard."""
+    gw = _get_gateway()
+    if gw.storage is None:
+        return {"events": [], "filter": {"project": project, "tenant": tenant}}
+    _validate_guardrail_event_filter(category=category, action=action)
+    db = await gw.storage._ensure_initialized()
+    try:
+        rows = await guardrail_events_repo.list_events(
+            db,
+            since=_guardrail_since(days),
+            project=project,
+            tenant=tenant,
+            category=category,
+            action=action,
+            event_type=event_type,
+            limit=limit,
+        )
+    finally:
+        await db.close()
+    return {
+        "events": [dataclasses.asdict(row) for row in rows],
+        "filter": {
+            "days": days,
+            "project": project,
+            "tenant": tenant,
+            "category": category,
+            "action": action,
+            "event_type": event_type,
+        },
+    }
+
+
+@app.get("/api/guardrails/aggregate")
+async def get_guardrail_aggregate(
+    days: int = Query(7, ge=1, le=365),
+    project: str | None = Query(None),
+    tenant: str | None = Query(None),
+    category: str | None = Query(None),
+) -> dict[str, Any]:
+    """Return guardrail counts plus optional category drilldown."""
+    gw = _get_gateway()
+    if gw.storage is None:
+        return {"counts": [], "top_sessions": []}
+    _validate_guardrail_event_filter(category=category, action=None)
+    db = await gw.storage._ensure_initialized()
+    try:
+        since = _guardrail_since(days)
+        counts = await guardrail_events_repo.aggregate_counts(
+            db, since=since, project=project, tenant=tenant
+        )
+        top_sessions = (
+            await guardrail_events_repo.top_sessions_by_category(
+                db,
+                category=category,
+                since=since,
+                project=project,
+                tenant=tenant,
+            )
+            if category
+            else []
+        )
+    finally:
+        await db.close()
+    return {
+        "counts": [dataclasses.asdict(row) for row in counts],
+        "top_sessions": [dataclasses.asdict(row) for row in top_sessions],
+        "filter": {
+            "days": days,
+            "project": project,
+            "tenant": tenant,
+            "category": category,
+        },
+    }
 
 
 # ----------------------------------------------------------------------

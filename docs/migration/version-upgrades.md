@@ -32,6 +32,50 @@ docker compose up -d
 
 ## Version history
 
+### v0.6.0 -- Voice-specific guardrails
+
+**Release date:** TBD
+
+This release adds project-scoped, LLM-side guardrails for LiveKit voice agents. Existing configs continue to load; guardrails default to disabled.
+
+**Features:**
+
+- **Project guardrail policies** -- categories `pii`, `financial`, `medical`, `prompt_injection`, and `off_topic`; actions `redact`, `block`, `alert`, and `off`
+- **Prompt/tool injection** -- `voicegateway.inference.LLM.chat(...)` appends a versioned guardrail prompt block and registers the reserved LiveKit tool `report_guardrail_action`
+- **Policy persistence** -- SQLite overlay column `managed_projects.guardrail_policy_json`, including projects originally defined in YAML
+- **Session audit state** -- sessions store `guardrails_active`, `guardrails_bypassed`, and `guardrail_policy_snapshot_json`
+- **Audit events** -- new `guardrail_events` table records `fired` and `bypassed` rows
+- **APIs and dashboard** -- `/v1/guardrails/events`, `/v1/guardrails/aggregate`, project policy endpoints, a Guardrails dashboard page, and policy editing on Projects
+- **CLI** -- `voicegw guardrails show|set|clear|dry-run --project ...`
+
+**Migration notes:**
+
+- No config change is required unless you want guardrails active.
+- The migration adds nullable columns and preserves existing session/project rows.
+- Active sessions keep the policy snapshot frozen on their first guarded LLM chat. Policy edits apply to later sessions.
+- User-defined LiveKit tools named `report_guardrail_action` are rejected when guardrails are active because the name is reserved by VoiceGateway.
+- `inference.start_session(bypass_guardrails=True)` and `inference.attach_session(..., bypass_guardrails=True)` skip injection and write a bypass audit row when the policy would otherwise be active.
+
+**Config example:**
+
+```yaml
+projects:
+  support:
+    name: Support Bot
+    guardrails:
+      enabled: true
+      categories:
+        pii: redact
+        financial: block
+        medical: alert
+        prompt_injection: block
+        off_topic: off
+```
+
+See the [guardrails guide](/guide/guardrails) and [guardrail prompt reference](/reference/guardrail-prompts).
+
+---
+
 ### v0.1.0 -- Initial release
 
 **Release date:** 2026-04-17

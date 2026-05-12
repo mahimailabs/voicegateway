@@ -45,6 +45,7 @@ default_project: customer-support
 | `tags` | list of strings | `[]` | Arbitrary tags for filtering and dashboard display |
 | `providers` | mapping | `{}` | Per-project provider keys. Wins over the top-level `providers:` block when set. |
 | `default_stack` | string | `""` | Optional dashboard / display hint. Not used by the inference module. |
+| `guardrails` | mapping | all categories `off` | Optional v0.6.0 LLM-side guardrail policy. |
 
 ## Budget actions
 
@@ -84,6 +85,26 @@ tts = inference.TTS("cartesia/sonic-3")
 ```
 
 `inference.set_project` is scoped to the current `asyncio` context; sibling tasks each manage their own project state without leaking.
+
+## Guardrails
+
+Guardrails are optional per-project policies injected into `voicegateway.inference.LLM.chat(...)`.
+
+```yaml
+projects:
+  customer-support:
+    name: Customer Support Bot
+    guardrails:
+      enabled: true
+      categories:
+        pii: redact
+        financial: block
+        medical: alert
+        prompt_injection: block
+        off_topic: off
+```
+
+Supported categories are `pii`, `financial`, `medical`, `prompt_injection`, and `off_topic`. Supported actions are `redact`, `block`, `alert`, and `off`. See [Voice-specific guardrails](/guide/guardrails) for runtime behavior, bypass, and audit events.
 
 ## Querying project data
 

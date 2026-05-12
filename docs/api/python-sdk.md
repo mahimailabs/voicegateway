@@ -318,6 +318,39 @@ For ops debugging, `voicegw route show <project>` prints the current observation
 
 For the agency-facing operator workflow (tuning budgets, uploading branding, exporting per-project data), see the [agency quickstart](/guide/agency-quickstart).
 
+## Voice-specific guardrails (v0.6.0)
+
+Guardrails are project-scoped and injected through the existing drop-in `voicegateway.inference.LLM(...)` path. No separate session-create service is required.
+
+```yaml
+projects:
+  support:
+    name: Support Bot
+    guardrails:
+      enabled: true
+      categories:
+        pii: redact
+        financial: block
+        medical: alert
+        prompt_injection: block
+        off_topic: off
+```
+
+On the first guarded LLM chat in a session, VoiceGateway freezes the active policy, appends a versioned guardrail system block after existing system/developer instructions, and registers the reserved LiveKit tool `report_guardrail_action(category, action, context_excerpt)`. User-defined tools with that name are rejected when guardrails are active.
+
+Bypass is explicit and audited:
+
+```python
+from voicegateway import inference
+
+inference.start_session(bypass_guardrails=True)
+
+# Or when binding a custom LiveKit AgentSession:
+inference.attach_session(agent_session, bypass_guardrails=True)
+```
+
+Bypass skips prompt/tool injection for that session and writes a `bypassed` audit row when a policy would otherwise be active. See the [guardrails guide](/guide/guardrails) and [prompt reference](/reference/guardrail-prompts).
+
 ## Conversation replay capture (v0.3.0)
 
 VoiceGateway captures a per-event timeline for every voice conversation: each STT chunk, each LLM token, each TTS frame, plus periodic conversation-state snapshots. The dashboard's [Replay page](/) then scrubs through any past call moment-by-moment with cost accruing live. This happens automatically; users do not call any function to opt in.

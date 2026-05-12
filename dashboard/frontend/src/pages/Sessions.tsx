@@ -14,6 +14,7 @@ import TenantPill from '../components/TenantPill';
 import { fetchJson } from '../lib/api';
 import { formatCost } from '../lib/ui';
 import type {
+  GuardrailEvent,
   SessionDetail,
   SessionOrderBy,
   SessionRow,
@@ -307,6 +308,7 @@ function SessionDetailModal({
           </div>
         </div>
 
+        <GuardrailsStrip session={session} />
         <RoutingStrip session={session} />
 
         <div className="mt-lg">
@@ -449,5 +451,53 @@ function RoutingStrip({ session }: { session: SessionDetail }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function GuardrailsStrip({ session }: { session: SessionDetail }) {
+  if (session.guardrails_active == null && !session.guardrail_events?.length) {
+    return null;
+  }
+  const events = session.guardrail_events ?? [];
+  const bypassed = !!session.guardrails_bypassed;
+
+  return (
+    <div className="neo-card neo-card--strip-pink mt-lg" style={{ padding: '0.75rem 1rem' }}>
+      <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+        <div>
+          <div className="label">Guardrails</div>
+          <div className="flex-row flex-wrap mt-sm" style={{ gap: 6 }}>
+            {bypassed ? (
+              <span className="neo-badge neo-badge--black">bypassed</span>
+            ) : events.length === 0 ? (
+              <span className="neo-badge neo-badge--blue">zero events</span>
+            ) : (
+              events.map((event) => (
+                <GuardrailBadge key={event.id} event={event} />
+              ))
+            )}
+          </div>
+        </div>
+        <div className="label" style={{ maxWidth: 260 }}>
+          LLM-side audit; missed model detections do not appear here.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GuardrailBadge({ event }: { event: GuardrailEvent }) {
+  const actionClass: Record<string, string> = {
+    redact: 'neo-badge--pink',
+    block: 'neo-badge--black',
+    alert: 'neo-badge--blue',
+  };
+  const label = event.category
+    ? `${event.category.replace(/_/g, ' ')} · ${event.action ?? event.event_type}`
+    : event.event_type;
+  return (
+    <span className={`neo-badge ${event.action ? actionClass[event.action] : 'neo-badge--black'}`}>
+      {label}
+    </span>
   );
 }

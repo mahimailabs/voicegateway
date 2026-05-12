@@ -288,6 +288,7 @@ class InstrumentedLLM(lk_llm.LLM, _InstrumentedBase):
         tool_choice: Any = NOT_GIVEN,
         extra_kwargs: Any = NOT_GIVEN,
     ) -> Any:
+        chat_ctx, tools = self._apply_guardrails(chat_ctx=chat_ctx, tools=tools)
         return self._wrapped.chat(
             chat_ctx=chat_ctx,
             tools=tools,
@@ -296,6 +297,76 @@ class InstrumentedLLM(lk_llm.LLM, _InstrumentedBase):
             tool_choice=tool_choice,
             extra_kwargs=extra_kwargs,
         )
+
+    def _apply_guardrails(self, *, chat_ctx: Any, tools: Any) -> tuple[Any, Any]:
+        """Inject the v0.6.0 guardrail prompt/tool when the project is active."""
+        from voicegateway.core.guardrail_policy import (
+            REPORT_GUARDRAIL_TOOL_NAME,
+            GuardrailPolicy,
+        )
+        from voicegateway.inference._factory import get_gateway
+        from voicegateway.inference._session_context import (
+            current_guardrails_bypassed,
+            current_tenant,
+            get_or_create_session_id,
+            get_or_freeze_guardrail_policy_snapshot,
+            guardrail_bypass_already_logged,
+            mark_guardrail_bypass_logged,
+        )
+        from voicegateway.middleware.guardrails import (
+            compose_guardrail_block,
+            create_report_guardrail_action_tool,
+            inject_guardrail_block,
+            schedule_bypass_event,
+            tools_contain_reserved_report_tool,
+        )
+
+        try:
+            gateway = get_gateway()
+            project_cfg = gateway.config.projects.get(self._project)
+        except Exception:
+            project_cfg = None
+
+        configured_policy = (
+            project_cfg.guardrails
+            if project_cfg is not None
+            else GuardrailPolicy.disabled()
+        )
+        snapshot = get_or_freeze_guardrail_policy_snapshot(
+            configured_policy.to_storage_dict()
+        )
+        policy = GuardrailPolicy.from_raw(snapshot)
+        if not policy.is_active:
+            return chat_ctx, tools
+
+        sid = get_or_create_session_id()
+        tenant_id = current_tenant()
+
+        if current_guardrails_bypassed():
+            if not guardrail_bypass_already_logged():
+                schedule_bypass_event(
+                    storage=self._storage,
+                    session_id=sid,
+                    tenant_id=tenant_id,
+                )
+                mark_guardrail_bypass_logged()
+            return chat_ctx, tools
+
+        tool_list = [] if tools is None or tools is NOT_GIVEN else list(tools)
+        if tools_contain_reserved_report_tool(tool_list):
+            raise ValueError(
+                f"{REPORT_GUARDRAIL_TOOL_NAME!r} is reserved by VoiceGateway "
+                "when project guardrails are active"
+            )
+
+        block = compose_guardrail_block(policy)
+        guarded_ctx = inject_guardrail_block(chat_ctx, block)
+        report_tool = create_report_guardrail_action_tool(
+            storage=self._storage,
+            session_id=sid,
+            tenant_id=tenant_id,
+        )
+        return guarded_ctx, [*tool_list, report_tool]
 
     def prewarm(self) -> None:
         self._wrapped.prewarm()

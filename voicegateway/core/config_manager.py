@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from voicegateway.core.config import GatewayConfig, ProjectConfig
 from voicegateway.core.crypto import decrypt
+from voicegateway.core.guardrail_policy import GuardrailPolicy
 
 if TYPE_CHECKING:
     from voicegateway.storage.sqlite import SQLiteStorage
@@ -42,6 +43,10 @@ class ConfigManager:
         for row in await self._storage.list_managed_projects():
             pid = row["project_id"]
             if pid in merged.projects:
+                if row.get("guardrail_policy") is not None:
+                    merged.projects[pid].guardrails = GuardrailPolicy.from_raw(
+                        row["guardrail_policy"]
+                    )
                 continue
             tags_raw = row.get("tags")
             if isinstance(tags_raw, str):
@@ -62,6 +67,7 @@ class ConfigManager:
                 default_stack=str(row.get("default_stack") or ""),
                 tags=tags,
                 source="db",
+                guardrails=GuardrailPolicy.from_raw(row.get("guardrail_policy")),
             )
 
         # Layer in managed providers.

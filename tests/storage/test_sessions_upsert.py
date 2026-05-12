@@ -14,6 +14,11 @@ import sqlite3
 import time
 import uuid
 
+from voicegateway.inference._session_context import (
+    get_or_freeze_guardrail_policy_snapshot,
+    reset_session_id,
+    start_session,
+)
 from voicegateway.storage.models import RequestRecord
 from voicegateway.storage.sqlite import SQLiteStorage
 
@@ -207,6 +212,46 @@ async def test_no_session_row_when_session_id_is_none(tmp_path):
     finally:
         conn.close()
     assert count == 0
+
+
+async def test_guardrail_snapshot_flags_persist_with_zero_events(tmp_path):
+    db_path = str(tmp_path / "session.db")
+    storage = SQLiteStorage(db_path)
+
+    sid = start_session()
+    try:
+        get_or_freeze_guardrail_policy_snapshot(
+            {"enabled": True, "categories": {"pii": "redact"}}
+        )
+        await storage.log_request(_make_record(session_id=sid, modality="llm"))
+
+        session = await storage.get_session(sid)
+        assert session is not None
+        assert session["guardrails_active"] is True
+        assert session["guardrails_bypassed"] is False
+        assert session["guardrail_policy_snapshot"]["categories"]["pii"] == "redact"
+        assert session["guardrail_events"] == []
+    finally:
+        reset_session_id()
+
+
+async def test_guardrail_bypass_flag_persists(tmp_path):
+    db_path = str(tmp_path / "session.db")
+    storage = SQLiteStorage(db_path)
+
+    sid = start_session(bypass_guardrails=True)
+    try:
+        get_or_freeze_guardrail_policy_snapshot(
+            {"enabled": True, "categories": {"medical": "alert"}}
+        )
+        await storage.log_request(_make_record(session_id=sid, modality="llm"))
+
+        session = await storage.get_session(sid)
+        assert session is not None
+        assert session["guardrails_active"] is True
+        assert session["guardrails_bypassed"] is True
+    finally:
+        reset_session_id()
 
 
 async def test_two_sessions_are_independent(tmp_path):

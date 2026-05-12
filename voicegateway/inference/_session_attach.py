@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any
 from voicegateway.inference._session_context import (
     RoutingDecisionTuple,
     get_or_create_session_id,
+    set_guardrails_bypassed,
     set_routing_decision,
     set_tenant,
 )
@@ -167,6 +168,7 @@ def attach_session(
     session_id: str | None = None,
     tenant_id: str | None = None,
     routed_triple: RoutingDecisionTuple | None = None,
+    bypass_guardrails: bool = False,
     turn_tracker: TurnTracker | None = None,
     dead_air_detector: DeadAirDetector | None = None,
     cost_tracker: CostTracker | None = None,
@@ -224,6 +226,7 @@ def attach_session(
         set_tenant(tenant_id)
     if routed_triple is not None:
         set_routing_decision(routed_triple)
+    set_guardrails_bypassed(bypass_guardrails)
 
     if tracker is None:
         logger.warning(
