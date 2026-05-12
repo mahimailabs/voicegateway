@@ -33,6 +33,7 @@ from __future__ import annotations
 # Side-effect imports: each submodule registers its commands on the
 # shared ``app`` via ``@app.command(...)`` decorators that run at
 # import time. Order does not matter; commands carry their own names.
+from voicegateway.cli import brand as _brand  # noqa: F401, E402
 from voicegateway.cli import costs as _costs  # noqa: F401, E402
 from voicegateway.cli import dashboard as _dashboard  # noqa: F401, E402
 from voicegateway.cli import doctor as _doctor  # noqa: F401, E402
