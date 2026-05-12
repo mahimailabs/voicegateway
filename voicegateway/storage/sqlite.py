@@ -1030,12 +1030,27 @@ class SQLiteStorage:
             "request_count": int(row[6] or 0),
         }
         # v0.4.0: include tenant_id when the SELECT picked it up.
-        # list_sessions and get_session both include the column on
-        # post-migration databases; the Any-typed Row may not raise on
-        # out-of-bounds, so we guard defensively.
+        # v0.5.0: include the four routing columns the same way.
+        # The Any-typed Row may not raise on out-of-bounds; guard
+        # defensively so a SELECT that omits the columns (e.g. an
+        # external caller reading the legacy seven-column shape)
+        # still works.
         try:
             tenant_id = row[7]
             out["tenant_id"] = None if tenant_id is None else str(tenant_id)
+        except (IndexError, KeyError):
+            pass
+        try:
+            routed_llm = row[8]
+            routed_tts = row[9]
+            budget_ms = row[10]
+            budget_overrun = row[11]
+            out["routed_llm"] = None if routed_llm is None else str(routed_llm)
+            out["routed_tts"] = None if routed_tts is None else str(routed_tts)
+            out["budget_ms"] = None if budget_ms is None else int(budget_ms)
+            out["budget_overrun"] = (
+                None if budget_overrun is None else bool(budget_overrun)
+            )
         except (IndexError, KeyError):
             pass
         return out
@@ -1093,7 +1108,8 @@ class SQLiteStorage:
             params.append(limit)
             cursor = await db.execute(
                 f"""SELECT id, project, started_at, ended_at, modalities,
-                          total_cost_usd, request_count, tenant_id
+                          total_cost_usd, request_count, tenant_id,
+                          routed_llm, routed_tts, budget_ms, budget_overrun
                    FROM sessions
                    {where}ORDER BY {clause}
                    LIMIT ?""",
@@ -1115,7 +1131,8 @@ class SQLiteStorage:
         try:
             cursor = await db.execute(
                 """SELECT id, project, started_at, ended_at, modalities,
-                          total_cost_usd, request_count, tenant_id
+                          total_cost_usd, request_count, tenant_id,
+                          routed_llm, routed_tts, budget_ms, budget_overrun
                    FROM sessions
                    WHERE id = ?""",
                 (session_id,),
