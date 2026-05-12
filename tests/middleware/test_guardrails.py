@@ -69,6 +69,22 @@ def _wrapper(policy: GuardrailPolicy, monkeypatch, storage=None) -> Instrumented
     )
 
 
+async def _wait_for_guardrail_events(storage: SQLiteStorage, sid: str):
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 1.0
+    events = []
+    while loop.time() < deadline:
+        db = await storage._ensure_initialized()
+        try:
+            events = await guardrail_events_repo.list_events_by_session(db, sid)
+        finally:
+            await db.close()
+        if events:
+            return events
+        await asyncio.sleep(0.01)
+    return events
+
+
 def test_prompt_assets_and_composer_include_versioned_tool_contract() -> None:
     assert "identifiers" in load_guardrail_prompt("pii").lower()
 
@@ -190,12 +206,7 @@ async def test_bypass_skips_injection_and_records_audit(tmp_path, monkeypatch) -
     assert call["tools"] is None
     assert call["chat_ctx"].items == []
 
-    await asyncio.sleep(0.05)
-    db = await storage._ensure_initialized()
-    try:
-        events = await guardrail_events_repo.list_events_by_session(db, sid)
-    finally:
-        await db.close()
+    events = await _wait_for_guardrail_events(storage, sid)
     assert len(events) == 1
     assert events[0].event_type == "bypassed"
     assert events[0].category is None
