@@ -2,6 +2,57 @@
 
 All notable changes to VoiceGateway are documented here. This project follows [Semantic Versioning](https://semver.org/) and [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.5.0 -- 2026-05-12
+
+**Cross-modality routing and white-label branding.** Two capabilities ship together because they target the same agency rung of the buyer ladder. The router runs once per session at session-create time, reads the project's latency budget plus recent observed per-provider latency, and picks the (STT, LLM, TTS) combination from the project's rosters that minimises predicted total latency under budget. White-label branding lets agencies upload a per-project logo, accent color, and product name; the dashboard chrome reflects the brand for users scoped to that project. The picked triple persists on the session row so the dashboard can show what ran and how close the call landed.
+
+### Added
+
+- **Migration 0006** (REQ-VG-ROUTE-001..004) adds five nullable routing columns to `sessions` (`budget_ms`, `budget_ms_used`, `budget_overrun`, `routed_llm`, `routed_tts`), `branding_json` nullable on `managed_projects`, and a new `latency_observations` table with `idx_latency_obs_project_provider` composite index. Idempotent; pre-v0.5.0 rows preserved with NULL.
+- **`voicegateway.middleware.router`** (REQ-VG-ROUTE-002): `route_session` picks the lowest-predicted-total triple under budget from the project's rosters. Observed p50 from `latency_observations` wins; missing observations fall back to `voicegateway/core/provider_baselines.json` (10 curated entries with `source_url` + `verified_at`). Caller overrides win for named modalities. Fallback to fastest + `budget_overrun=True` when nothing fits and `fallback_to_fastest=True`; otherwise raises `BudgetExceeded`.
+- **`voicegateway.storage.latency_observations_repo`** (REQ-VG-ROUTE-002 AC-4 + REQ-VG-ROUTE-003): `roll_up` aggregates per (project, provider, modality) p50/p95 over a trailing window (default 24h, OQ2 lock); DELETE + INSERT atomic snapshot replaces the prior rollup. `read_all` / `get_for_project` / `get_one` read-side helpers.
+- **`voicegateway.middleware.latency_observations_worker`**: asyncio loop mirroring v0.3.0's retention_worker. Wakes every 15 minutes (OQ2 lock), triggers `roll_up`. start/stop/tick_now lifecycle.
+- **`set_routing_decision` / `current_routing_decision` ContextVar** in `voicegateway/inference/_session_context.py` plus `attach_session(routed_triple=...)` kwarg threading the triple. `log_request` reads the ContextVar at the sessions UPSERT and stamps `routed_llm / routed_tts / budget_ms / budget_overrun` with COALESCE on conflict (AC-5 immutability).
+- **`RoutingConfig`** per-project YAML knob: `routing.budget_ms` (default 1500ms, OQ1 lock), `routing.rosters` (dict: stt/llm/tts -> ordered provider list), `routing.fallback_to_fastest` (default True). Plus **`BrandingConfig`**: `branding.logo_url`, `branding.accent_color`, `branding.product_name` (all nullable). Mirrored across Pydantic schema and runtime dataclass.
+- **`SQLiteStorage._validate_branding`** enforces logo_url ≤2048 chars, hex regex `#RGB`/`#RRGGBB`, product_name ≤64 chars, no unknown keys. `upsert_managed_project` accepts a `branding` kwarg; `list_managed_projects` SELECT extended with `branding_json`. COALESCE-protected upsert preserves prior branding on partial updates.
+- **Four new dashboard endpoints**: `GET /api/routing/observations[?project=…]`, `GET /api/projects/{id}/branding`, `POST /api/projects/{id}/branding`, `POST /api/projects/{id}/branding/logo` (multipart, Pillow-validated PNG: 256 KB cap + 512×512 + format check; SVG header validated). Static branding mount at `/static/branding/`.
+- **`dashboard/frontend/src/pages/Routing.tsx`** with sortable columns (Modality / Provider / p50 / p95 / Samples), hourly auto-refresh, NULL p50 → "no observations yet" (AC-4), optional `?project=…` URL scoping.
+- **`dashboard/frontend/src/lib/branding.ts`** applies branding via CSS variables on `document.documentElement` (`--brand-accent`, `--brand-product-name`, `--brand-logo-url`) + favicon + document.title. Read-once-per-mount (OQ5).
+- **App.tsx Sidebar** reads the active project's branding once on mount and renders the branded logo image + product name (falling back to "VoiceGateway").
+- **SessionDetailModal RoutingStrip** shows the picked triple + budget_ms + budget_overrun chip. Hidden entirely on pre-v0.5.0 sessions.
+- **Projects page Brand button** opens a per-project `BrandingModal` with product name input, accent color picker (native `<input type=color>` + hex sync), PNG/SVG upload with yellow-bg preview, Save/Reset/Cancel.
+- **App.tsx Routing route + sidebar nav** at `/routing`, positioned between Metrics and Projects per Foundry order.
+- **Typed fetchers + types** in `lib/api.ts` and `lib/types.ts`: `RoutedTriple`, `LatencyObservation`, `RoutingObservationsResponse`, `ProjectBranding`, `ProjectBrandingResponse`, `LogoUploadResponse`. `fetchRoutingObservations`, `fetchProjectBranding`, `updateProjectBranding`, `uploadBrandingLogo` (multipart-aware raw fetch preserving the AUTH_REQUIRED contract).
+- **`voicegw route show / simulate`** read-only CLI for routing diagnostics. `show` prints rosters + current observations; `simulate` dry-runs the picker with optional per-modality overrides.
+- **`voicegw brand set / show / clear`** CLI for scripted provisioning. Hits the same dashboard endpoints as the FE so agencies can roll new brands from scripts. Uses httpx; reads `VOICEGW_API_KEY` for Bearer auth.
+- **46 new tests** across `tests/storage/`, `tests/middleware/`, `tests/server/`, `tests/inference/`. Full suite: 1509 → 1555 (+46). Coverage: 86.11% (above 80% Foundry gate).
+- **`docs/api/python-sdk.md`** grew a "Cross-modality routing (v0.5.0)" section between v0.4.0 tenant and v0.3.0 replay sections.
+- **`docs/guide/agency-quickstart.md`** is the operator walkthrough: configure rosters, verify via CLI, upload branding, share a branded link, watch the Routing view, inspect per-session decisions.
+- **`pillow>=10.0`** added to `[project] dependencies` for the logo upload PNG validation path.
+
+### Changed
+
+- **Embedded version strings** bumped from `0.4.0` to `0.5.0` in `voicegateway/server/main.py` (FastAPI ctor + `/health.version`), `dashboard/api/main.py` (FastAPI ctor), `tests/server/test_server.py` (version assertion), `docker/voicegateway.Dockerfile` (`ARG VERSION` in both stages), and the dashboard sidebar pill in `dashboard/frontend/src/App.tsx`.
+
+### Decisions locked (Foundry Open Questions)
+
+- **OQ1 default budget_ms** — 1500 ms. Typical conversational voice-agent target.
+- **OQ2 roll-up window + cadence** — 24h rolling window, 15-minute refresh.
+- **OQ3 no-observations fallback** — curated `voicegateway/core/provider_baselines.json` with `source_url` per entry.
+- **OQ4 logo upload constraints** — 256 KB max, PNG or SVG only, 512×512 px max. Pillow-validates PNG on upload.
+- **OQ5 branding cache strategy** — read-once-per-mount. Operators see brand changes on next page load.
+
+### Notes
+
+- **No mid-call routing.** The triple stays fixed for the session's lifetime (AC-5).
+- **No adaptive learning.** Static aggregation; no ML on in-call telemetry.
+- **No custom-domain dashboard hosting.** White-label sits at the gateway's own host.
+- **No per-tenant branding inside one project.** Agencies running multiple downstream tenants in one project share one brand.
+- **No email or exported-report branding.** Dashboard chrome only.
+- **No cost-aware routing.** v0.5.0 picks on latency.
+- **No multi-region routing.**
+- **No in-flight budget enforcement.** Budget is a router input at start, not a runtime kill switch.
+
 ## v0.4.0 -- 2026-05-11
 
 **Multi-tenant cost attribution.** VoiceGateway now tags every voice session with an optional `tenant_id` so a single deployment can serve many customers and account for each one separately. Three independent surfaces set the tenant: an `attach_session(tenant_id=...)` kwarg for owner-of-AgentSession code, an `inference.set_tenant("…")` ContextVar API, and scoped virtual API keys that auto-attribute at the auth layer. Every cost row, metric row, and replay event for an attributed session lands tagged with the tenant; pre-v0.4.0 rows stay in the "unattributed" bucket (NULL `tenant_id`). The dashboard's existing Costs, Sessions, Metrics, and Replay pages all rescope when a tenant is selected from the new shared `FilterBar`; a new `Virtual Keys` page issues, lists, and revokes keys with a one-time plaintext modal.

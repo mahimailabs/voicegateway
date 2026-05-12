@@ -35,7 +35,7 @@ _LOCAL_PROVIDER_NAMES = frozenset({"ollama", "whisper", "kokoro", "piper"})
 
 app = FastAPI(
     title="VoiceGateway Dashboard",
-    version="0.4.0",
+    version="0.5.0",
 )
 
 # Set by the CLI / combined server when starting the dashboard.
