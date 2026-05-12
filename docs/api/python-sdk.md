@@ -259,6 +259,65 @@ The first tenant-bearing request "wins" for the session's lifetime. A later unat
 
 For the operator-facing workflow (issuing keys, viewing per-tenant costs, exporting), see the [multi-tenant quickstart](/guide/multi-tenant-quickstart).
 
+## Cross-modality routing (v0.5.0)
+
+Each project carries a latency budget and a per-modality provider roster. When a session starts, VoiceGateway picks the (STT, LLM, TTS) combination from the roster that minimises predicted total latency under the budget. The pick is recorded on the session row so the dashboard can show what ran and how close the call landed to the budget.
+
+```yaml
+projects:
+  acme:
+    name: Acme
+    routing:
+      budget_ms: 1500            # OQ1 lock: typical conversational target.
+      fallback_to_fastest: true  # When no triple fits, pick the fastest and flag budget_overrun.
+      rosters:
+        stt: [deepgram, assemblyai]    # Ordered by operator preference.
+        llm: [groq, openai, anthropic]
+        tts: [cartesia, elevenlabs]
+```
+
+### How the router picks
+
+At session start, the router reads three inputs and produces a `RoutedTriple` plus a `budget_overrun` boolean.
+
+1. **Observed p50 per (provider, modality)**: rolled up by the 15-minute worker from the requests table, written to `latency_observations`. The router prefers observed data when present.
+2. **Curated published-median baselines** in `voicegateway/core/provider_baselines.json` (REQ-VG-ROUTE-002 AC-4 fallback). Used when no observation exists for a candidate. Operators can edit the JSON to update a published median or add a missing provider.
+3. **Caller overrides**: explicit `{modality: provider}` map passed from the agent code. The router respects overrides for the named modalities and only picks for the unset ones (AC-3).
+
+Candidate triples are the cartesian product of the rosters minus the overridden modalities. The router computes a predicted total (sum of per-modality predictions), picks the lowest one whose total fits the budget. If nothing fits and `fallback_to_fastest=true`, it picks the fastest available and flags `budget_overrun=true`. If `fallback_to_fastest=false`, it raises `BudgetExceeded`.
+
+### Explicit overrides from agent code
+
+Pass the caller-override dict through whatever surface attaches the session. The v0.5.0 reference path is `route_session(...)` returning a `RoutedTriple`, with the caller then handing the triple to `attach_session(routed_triple=...)`:
+
+```python
+from voicegateway import inference
+from voicegateway.middleware import router
+
+async def handle_call(project_id: str, caller_overrides: dict[str, str] | None = None):
+    db = await gateway.storage._ensure_initialized()
+    triple = await router.route_session(
+        db,
+        project_id=project_id,
+        project_config=gateway.config.projects[project_id],
+        caller_overrides=caller_overrides,
+    )
+    agent_session = AgentSession(...)
+    inference.attach_session(
+        agent_session,
+        routed_triple=(triple.stt, triple.llm, triple.tts, triple.predicted_ms, triple.budget_overrun),
+    )
+    await agent_session.start(...)
+```
+
+The router runs once per session; the picked triple is immutable for the session's lifetime (AC-5).
+
+### Inspecting what the router would pick
+
+For ops debugging, `voicegw route show <project>` prints the current observations and rosters, and `voicegw route simulate <project> [--stt X] [--llm Y]` dry-runs the picker without writing a session row. Both accept `--json` for scripting.
+
+For the agency-facing operator workflow (tuning budgets, uploading branding, exporting per-project data), see the [agency quickstart](/guide/agency-quickstart).
+
 ## Conversation replay capture (v0.3.0)
 
 VoiceGateway captures a per-event timeline for every voice conversation: each STT chunk, each LLM token, each TTS frame, plus periodic conversation-state snapshots. The dashboard's [Replay page](/) then scrubs through any past call moment-by-moment with cost accruing live. This happens automatically; users do not call any function to opt in.
