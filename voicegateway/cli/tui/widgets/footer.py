@@ -50,14 +50,14 @@ class CounterFooter(Horizontal):
     def on_mount(self) -> None:
         # Kick a refresh as a worker so on_mount stays sync; the
         # screen-level pattern matches LogsScreen's (iteration 26).
-        self.run_worker(self._refresh(), exclusive=True)
+        self.run_worker(cast(Any, self._refresh), exclusive=True)
         app = cast("TUIApp", self.app)
         poll_seconds = float(getattr(app.client, "poll_seconds", 1.0))
         self.set_interval(poll_seconds, self._poll_tick)
 
     def _poll_tick(self) -> None:
         """Sync wrapper around the async refresh; matches LogsScreen."""
-        self.run_worker(self._refresh(), exclusive=True)
+        self.run_worker(cast(Any, self._refresh), exclusive=True)
 
     async def _refresh(self) -> None:
         """Fetch today's cost summary + render the counter line.

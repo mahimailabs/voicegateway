@@ -16,7 +16,7 @@ will use :meth:`App.push_screen` for the per-turn modal where the
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -100,7 +100,7 @@ class SessionsScreen(FocusRowsMixin, Container):
 
     def _poll_tick(self) -> None:
         """Sync wrapper around refresh_data; matches LogsScreen."""
-        self.run_worker(self.refresh_data(), exclusive=True)
+        self.run_worker(cast(Any, self.refresh_data), exclusive=True)
 
     async def refresh_data(self) -> None:
         """Re-fetch the current sort + re-render the list.
@@ -156,7 +156,7 @@ class SessionsScreen(FocusRowsMixin, Container):
         header.update(self._header_text())
         # exclusive=True so a fast double-press cancels the in-flight
         # worker rather than racing two refreshes against each other.
-        self.run_worker(self.refresh_data(), exclusive=True)
+        self.run_worker(cast(Any, self.refresh_data), exclusive=True)
 
     def action_open_detail(self) -> None:
         """Push the per-turn detail modal for the focused row.
