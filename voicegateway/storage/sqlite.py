@@ -31,6 +31,9 @@ _migration_0004 = import_module("voicegateway.storage.migrations.0004_replay_tab
 _migration_0005 = import_module(
     "voicegateway.storage.migrations.0005_tenant_attribution"
 )
+_migration_0006 = import_module(
+    "voicegateway.storage.migrations.0006_routing_and_branding"
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -271,6 +274,12 @@ class SQLiteStorage:
             # derived tables (conditionally via sqlite_master presence check
             # per OQ4). Idempotent.
             await _migration_0005.apply(db)
+
+            # v0.5.0 migration 0006: routing columns on sessions
+            # (budget_ms / budget_ms_used / budget_overrun / routed_llm /
+            # routed_tts), branding_json on managed_projects (conditional),
+            # and the new latency_observations table. Idempotent.
+            await _migration_0006.apply(db)
 
             await db.commit()
             self._initialized = True
