@@ -2,8 +2,8 @@
 
 Thank you for your interest in contributing. This file is the one-page
 quick reference. Detailed guides live under
-[`docs/contributing/`](docs/contributing/) and are rendered on the docs
-site at <https://github.com/mahimailabs/voicegateway#readme>.
+[`docs/contributing/`](docs/contributing/) and are rendered by
+`mahimailabs/voicegateway-web` at <https://voicegateway.mahimai.ca/docs>.
 
 ## Code of Conduct
 
@@ -47,6 +47,14 @@ Before opening your PR, verify locally:
 | Adding a new provider | [docs/contributing/adding-a-provider.md](docs/contributing/adding-a-provider.md) |
 | Refreshing STT and TTS pricing catalogs | [docs/contributing/refreshing-pricing.md](docs/contributing/refreshing-pricing.md) |
 
+## Documentation
+
+VoiceGateway owns the Markdown source content under `docs/`. The rendered docs
+site is maintained in `mahimailabs/voicegateway-web` and is published at
+<https://voicegateway.mahimai.ca/docs>. When docs changes reach `main`, the
+`.github/workflows/docs.yml` deploy-hook workflow triggers a
+voicegateway-web rebuild automatically. No manual GitHub Pages deploy is needed.
+
 ## Project layout (quick orientation)
 
 ```
@@ -63,7 +71,7 @@ voicegateway/      # Python package (subpackages only at top level)
 
 tests/             # pytest suite mirroring voicegateway/
 docker/            # Dockerfiles (voicegateway.Dockerfile, dashboard.Dockerfile)
-docs/              # VitePress documentation site (deployed to GitHub Pages)
+docs/              # Markdown docs source rendered by voicegateway-web
 scripts/           # dev-only tooling (fixture recording, smoke tests)
 ```
 
