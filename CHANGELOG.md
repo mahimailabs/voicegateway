@@ -2,6 +2,23 @@
 
 All notable changes to VoiceGateway are documented here. This project follows [Semantic Versioning](https://semver.org/) and [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.6.0 -- unreleased
+
+**Final v0.1.x re-export shim retirement.** The `voicegateway.combined_server` module was a re-export shim introduced in v0.1.2 to preserve the pre-refactor import path. It was flagged for removal in v0.2.0 but persisted through v0.5.0; v0.6.0 retires it. Callers must use the canonical `voicegateway.server.combined` path.
+
+### Removed
+
+- **`voicegateway/combined_server.py`** re-export shim. The three contract tests that exercised the shim path in `tests/integration/test_v0_1_x_imports.py` were dropped; the canonical-path test was kept and re-headed. `tests/server/test_combined_server.py` and `docker/voicegateway.Dockerfile` (container CMD) were updated to the canonical import.
+
+### Migration
+
+If your code imports from the old shim path, update it:
+
+- `from voicegateway.combined_server import build_combined_app, main`
+  → `from voicegateway.server.combined import build_combined_app, main`
+- `python -m voicegateway.combined_server`
+  → `python -m voicegateway.server.combined`
+
 ## v0.5.0 -- 2026-05-12
 
 **Cross-modality routing and white-label branding.** Two capabilities ship together because they target the same agency rung of the buyer ladder. The router runs once per session at session-create time, reads the project's latency budget plus recent observed per-provider latency, and picks the (STT, LLM, TTS) combination from the project's rosters that minimises predicted total latency under budget. White-label branding lets agencies upload a per-project logo, accent color, and product name; the dashboard chrome reflects the brand for users scoped to that project. The picked triple persists on the session row so the dashboard can show what ran and how close the call landed.

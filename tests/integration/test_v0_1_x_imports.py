@@ -1,37 +1,33 @@
-"""Contract test: every v0.1.x public import path resolves post-refactor.
+"""Contract test: every supported public import path resolves post-refactor.
 
-The v0.1.2 project-polish refactor (REQ-VG-POLISH-004) split three
-top-level modules into subpackages:
+The v0.1.2 project-polish refactor (REQ-VG-POLISH-004) split two
+top-level modules into subpackages, plus a now-retired third:
 
 - ``voicegateway/server.py`` -> ``voicegateway/server/{__init__,main}.py``
-- ``voicegateway/combined_server.py`` -> ``voicegateway/server/combined.py``
-  with a re-export shim at the original path.
 - ``voicegateway/reconcile.py`` -> ``voicegateway/reconcile/{__init__,core}.py``
+- ``voicegateway/combined_server.py`` was a re-export shim through v0.5.0;
+  v0.6.0 retires the shim. Callers must use
+  ``from voicegateway.server.combined import build_combined_app, main``.
 
-REQ-VG-POLISH-004 AC-2 mandates that every v0.1.x import path that
-worked before v0.1.2 keeps working. This file is the canary for that
-contract: if any of these imports breaks, downstream users running
-v0.1.x code against v0.1.2 will hit ImportError. Failing here on PR/CI
-catches that before release.
+REQ-VG-POLISH-004 AC-2 mandates that every supported import path keeps
+working. This file is the canary for that contract: if any of these
+imports breaks, downstream code will hit ImportError. Failing here on
+PR/CI catches that before release.
 
-Scope: the imports v0.1.x callers actually use. Internal-only imports
-under leading-underscore modules are NOT in scope (those are part of
-the private surface and may change without a deprecation cycle).
+Scope: the imports callers actually use. Internal-only imports under
+leading-underscore modules are NOT in scope (those are part of the
+private surface and may change without a deprecation cycle).
 """
 
 from __future__ import annotations
-
-import importlib.util
 
 # ---------- voicegateway.server (T06: __init__ is the shim) ----------
 
 
 def test_voicegateway_server_build_app_resolves() -> None:
     """``from voicegateway.server import build_app`` survives the
-    v0.1.2 split. The 8 v0.1.x call sites
-    (``voicegateway.cli.serve``, the 5 server tests,
-    ``voicegateway.combined_server``, and the shim self-reference)
-    all rely on this path."""
+    v0.1.2 split. ``voicegateway.cli.serve``, the server tests, and
+    ``voicegateway.server.combined`` all rely on this path."""
     from voicegateway.server import build_app
 
     assert callable(build_app)
@@ -46,38 +42,13 @@ def test_voicegateway_server_all_lists_build_app() -> None:
     assert "build_app" in server_pkg.__all__
 
 
-# ---------- voicegateway.combined_server (T07: shim at old path) ----------
+# ---------- voicegateway.server.combined (canonical; shim retired in v0.6.0) ----------
 
 
-def test_voicegateway_combined_server_build_combined_app_resolves() -> None:
-    """The combined_server shim re-exports build_combined_app for the
-    one v0.1.x test that imports it
-    (``tests/server/test_combined_server.py``)."""
-    from voicegateway.combined_server import build_combined_app
-
-    assert callable(build_combined_app)
-
-
-def test_voicegateway_combined_server_main_resolves() -> None:
-    """The shim also exports ``main()`` so the entry path
-    ``python -m voicegateway.combined_server`` keeps working."""
-    from voicegateway.combined_server import main
-
-    assert callable(main)
-
-
-def test_voicegateway_combined_server_module_is_runnable() -> None:
-    """Verify the shim path is a real module spec, not just a name."""
-    spec = importlib.util.find_spec("voicegateway.combined_server")
-
-    assert spec is not None, "voicegateway.combined_server must be importable"
-    assert spec.origin is not None, "shim must have a concrete .py file"
-    assert spec.origin.endswith("combined_server.py"), spec.origin
-
-
-def test_voicegateway_combined_server_canonical_path_also_resolves() -> None:
-    """The new canonical path also resolves; the shim is a parallel
-    name, not a replacement."""
+def test_voicegateway_server_combined_resolves() -> None:
+    """The canonical combined-server path resolves. The
+    ``voicegateway.combined_server`` re-export shim was retired in
+    v0.6.0; callers must import from ``voicegateway.server.combined``."""
     from voicegateway.server.combined import build_combined_app, main
 
     assert callable(build_combined_app)
