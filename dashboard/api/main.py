@@ -540,13 +540,13 @@ async def get_metrics_summary(
                  WHERE {where}""",
             tuple(params),
         )
-        rows = await cursor.fetchall()
+        rows = list(await cursor.fetchall())
 
         session_count = len(rows)
         measured_count = sum(1 for r in rows if r[2] is not None)
 
         def _avg_col(idx: int) -> float | None:
-            vals = [r[idx] for r in rows if r[idx] is not None]
+            vals = [float(r[idx]) for r in rows if r[idx] is not None]
             if not vals:
                 return None
             return sum(vals) / len(vals)
