@@ -12,7 +12,10 @@ from typing import Any
 
 import aiosqlite
 
-from voicegateway.inference._session_context import current_tenant
+from voicegateway.inference._session_context import (
+    current_routing_decision,
+    current_tenant,
+)
 from voicegateway.storage import replay_repo, turns_repo
 from voicegateway.storage._percentiles import compute_percentiles
 from voicegateway.storage.models import RequestRecord
@@ -466,15 +469,40 @@ class SQLiteStorage:
                 # the Refinery: the first tenant-bearing request wins,
                 # subsequent unattributed-bucket requests don't clear
                 # it.
+                # v0.5.0: stamp the router's pick on the session row.
+                # AC-5 guarantees the triple is immutable for the
+                # session's lifetime, so COALESCE on conflict keeps the
+                # first-set values and ignores later sessions writes
+                # that arrive without a routing decision in scope.
+                routing = current_routing_decision()
+                r_llm: str | None
+                r_tts: str | None
+                r_budget: int | None
+                r_overrun: int | None
+                if routing is not None:
+                    r_llm = routing[1]
+                    r_tts = routing[2]
+                    r_budget = routing[3]
+                    r_overrun = 1 if routing[4] else 0
+                else:
+                    r_llm = None
+                    r_tts = None
+                    r_budget = None
+                    r_overrun = None
                 await db.execute(
                     """INSERT INTO sessions
                        (id, project, started_at, ended_at, modalities,
-                        total_cost_usd, request_count, tenant_id)
-                       VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                        total_cost_usd, request_count, tenant_id,
+                        routed_llm, routed_tts, budget_ms, budget_overrun)
+                       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
                        ON CONFLICT(id) DO UPDATE SET
                            total_cost_usd = total_cost_usd + excluded.total_cost_usd,
                            request_count = request_count + 1,
                            tenant_id = COALESCE(tenant_id, excluded.tenant_id),
+                           routed_llm = COALESCE(routed_llm, excluded.routed_llm),
+                           routed_tts = COALESCE(routed_tts, excluded.routed_tts),
+                           budget_ms = COALESCE(budget_ms, excluded.budget_ms),
+                           budget_overrun = COALESCE(budget_overrun, excluded.budget_overrun),
                            started_at = CASE
                                WHEN started_at IS NULL THEN excluded.started_at
                                WHEN started_at > excluded.started_at THEN excluded.started_at
@@ -501,6 +529,10 @@ class SQLiteStorage:
                         record.modality,
                         record.cost_usd,
                         request_tenant_id,
+                        r_llm,
+                        r_tts,
+                        r_budget,
+                        r_overrun,
                     ),
                 )
             await db.commit()
