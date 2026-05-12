@@ -11,6 +11,10 @@ status command. The 60-second clock starts when you paste the
 install command and stops when your first call shows up in the
 dashboard, excluding the time spent fetching your provider API key.
 
+## Feel it first
+
+<DemoWidget placement="docs" />
+
 ## 1. Install
 
 ```bash
