@@ -97,6 +97,13 @@ export interface SessionRow {
   // "unattributed" pill. Older session rows written before v0.4.0
   // simply omit the field; the JSON response leaves it absent.
   tenant_id?: string | null;
+  // v0.5.0 (REQ-VG-ROUTE-003). NULL on pre-v0.5.0 sessions or
+  // when the router never ran. The dashboard renders NULL as
+  // '-' in the routing strip.
+  routed_llm?: string | null;
+  routed_tts?: string | null;
+  budget_ms?: number | null;
+  budget_overrun?: boolean | null;
 }
 
 export interface SessionDetail extends SessionRow {

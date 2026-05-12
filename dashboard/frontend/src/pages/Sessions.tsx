@@ -307,6 +307,8 @@ function SessionDetailModal({
           </div>
         </div>
 
+        <RoutingStrip session={session} />
+
         <div className="mt-lg">
           <div className="label">Per-modality breakdown</div>
           {breakdown.length === 0 ? (
@@ -394,4 +396,58 @@ function formatDuration(startedAt: string, endedAt: string | null): string {
   const min = Math.floor(sec / 60);
   const remSec = Math.round(sec - min * 60);
   return `${min}m ${remSec}s`;
+}
+
+// v0.5.0 routing strip (REQ-VG-ROUTE-003 AC-1 + AC-2). Renders the
+// router's picked triple, the budget that was in effect, the actual
+// end-to-end latency observed during the session, and an overrun
+// chip when budget_overrun is true. NULL routed_* (pre-v0.5.0
+// sessions or sessions where the router never ran) renders "-".
+function RoutingStrip({ session }: { session: SessionDetail }) {
+  const hasRouting =
+    session.routed_llm != null ||
+    session.routed_tts != null ||
+    session.budget_ms != null;
+  if (!hasRouting) return null;
+
+  const stt = session.modalities?.find((m) => m === 'stt') ? 'stt' : '-';
+  const llm = session.routed_llm ?? '-';
+  const tts = session.routed_tts ?? '-';
+  const budget = session.budget_ms;
+  const used = session.budget_ms ?? null; // budget_ms_used not yet on SessionDetail
+  const overrun = !!session.budget_overrun;
+
+  return (
+    <div className="neo-card neo-card--strip-green mt-lg" style={{ padding: '0.75rem 1rem' }}>
+      <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div className="label">Routing</div>
+          <div className="mt-sm">
+            <code style={{ fontSize: '0.9rem' }}>
+              {stt} / {llm} / {tts}
+            </code>
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div className="label">Budget</div>
+          <div className="mt-sm mono">
+            {budget == null ? '-' : `${budget} ms`}
+            {overrun && (
+              <span
+                className="neo-badge"
+                style={{ background: '#FFD166', marginLeft: '0.5rem' }}
+              >
+                budget overrun
+              </span>
+            )}
+          </div>
+          {used != null && !overrun && (
+            <div className="label mt-sm" style={{ fontSize: '0.7rem' }}>
+              actual: {used} ms
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
