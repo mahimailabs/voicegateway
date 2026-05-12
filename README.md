@@ -11,7 +11,7 @@
 [![Tests](https://github.com/mahimailabs/voicegateway/actions/workflows/test-coverage.yml/badge.svg?branch=main)](https://github.com/mahimailabs/voicegateway/actions/workflows/test-coverage.yml)
 [![Coverage](https://codecov.io/gh/mahimailabs/voicegateway/branch/main/graph/badge.svg)](https://codecov.io/gh/mahimailabs/voicegateway)
 
-[**Docs**](https://docs.voicegateway.dev) · [**Quick Start**](#quick-start) · [**MCP Setup**](#manage-from-your-coding-agent-mcp) · [**Deploy**](#deploy)
+[**Docs**](https://voicegateway.mahimai.ca/docs) · [**Quick Start**](#quick-start) · [**MCP Setup**](#manage-from-your-coding-agent-mcp) · [**Deploy**](#deploy)
 
 </div>
 
@@ -73,7 +73,7 @@ projects:
 
 Use `voicegw guardrails show|set|clear|dry-run --project <id>` to manage policies from the CLI, or use the Dashboard Guardrails page for counts and session drilldown.
 
-**Is VoiceGateway right for you?** If you are building a text-only LLM application without a voice component, [LiteLLM](https://docs.litellm.ai/) is likely a better fit. It has a broader LLM-provider catalog and an OpenAI-compatible HTTP proxy. See the [decision tree](https://docs.voicegateway.dev/guide/decision-tree) for a longer breakdown.
+**Is VoiceGateway right for you?** If you are building a text-only LLM application without a voice component, [LiteLLM](https://docs.litellm.ai/) is likely a better fit. It has a broader LLM-provider catalog and an OpenAI-compatible HTTP proxy. See the [decision tree](https://voicegateway.mahimai.ca/docs/guide/decision-tree) for a longer breakdown.
 
 ---
 
@@ -89,7 +89,7 @@ cd voicegateway/deploy/fly
 
 You get a `*.fly.dev` URL, an MCP endpoint your coding agent can connect to, and encrypted API key storage. Fly uses pay-as-you-go pricing (~$1-3/month for light use; volumes billed even when suspended). [Deployment guide →](deploy/fly/README.md)
 
-**Other options**: Docker Compose locally, Hetzner/Oracle for cheap self-host, or any Docker host. See [docs.voicegateway.dev/guide/installation](https://docs.voicegateway.dev/guide/installation).
+**Other options**: Docker Compose locally, Hetzner/Oracle for cheap self-host, or any Docker host. See [voicegateway.mahimai.ca/docs/guide/installation](https://voicegateway.mahimai.ca/docs/guide/installation).
 
 ---
 
@@ -114,7 +114,7 @@ voicegw uninstall-daemon  # remove registration; preserves config + DB
 voicegw tui               # four-tab terminal UI (Sessions / Costs / Logs / Providers)
 ```
 
-`voicegw tui` opens a Textual-based terminal UI with vim navigation: live monitoring of sessions, costs, logs, and providers without leaving the shell. Polls the daemon at 1 s in Gateway mode (default), or pass `--local` for read-only inspection of the SQLite call DB when the daemon is down. Install the extra with `pipx inject voicegateway "voicegateway[tui]"` after the one-line install, or include it directly in any manual `pip install` (`pip install "voicegateway[tui]"`). [Full reference →](https://docs.voicegateway.dev/cli/tui)
+`voicegw tui` opens a Textual-based terminal UI with vim navigation: live monitoring of sessions, costs, logs, and providers without leaving the shell. Polls the daemon at 1 s in Gateway mode (default), or pass `--local` for read-only inspection of the SQLite call DB when the daemon is down. Install the extra with `pipx inject voicegateway "voicegateway[tui]"` after the one-line install, or include it directly in any manual `pip install` (`pip install "voicegateway[tui]"`). [Full reference →](https://voicegateway.mahimai.ca/docs/cli/tui)
 
 If you prefer to skip the curl-bash one-liner, run the same `pipx` step manually:
 
@@ -208,7 +208,7 @@ session = AgentSession(
 )
 ```
 
-Full tutorial: [docs.voicegateway.dev/guide/first-agent](https://docs.voicegateway.dev/guide/first-agent)
+Full tutorial: [voicegateway.mahimai.ca/docs/guide/first-agent](https://voicegateway.mahimai.ca/docs/guide/first-agent)
 
 ---
 
@@ -257,7 +257,7 @@ claude mcp add voicegateway \
 | **Models** | `list_models`, `register_model`, `delete_model` |
 | **Projects** | `list_projects`, `get_project`, `create_project`, `delete_project` |
 
-Destructive operations (`delete_*`) require explicit `confirm=True` the agent receives a preview with impact details first and only deletes after you confirm. [Full tool reference →](https://docs.voicegateway.dev/mcp/)
+Destructive operations (`delete_*`) require explicit `confirm=True` the agent receives a preview with impact details first and only deletes after you confirm. [Full tool reference →](https://voicegateway.mahimai.ca/docs/mcp/)
 
 ---
 
@@ -313,7 +313,7 @@ voicegw costs --project restaurant-agent  # project costs today
 voicegw logs --project restaurant-agent   # recent requests
 ```
 
-[Projects guide →](https://docs.voicegateway.dev/configuration/projects)
+[Projects guide →](https://voicegateway.mahimai.ca/docs/configuration/projects)
 
 ---
 
@@ -329,7 +329,7 @@ fallbacks:
   tts: [cartesia/sonic-3, elevenlabs/eleven_turbo_v2_5, local/kokoro]
 ```
 
-See [`examples/fallback_agent.py`](examples/fallback_agent.py) for the worked startup-walk pattern. Once `AgentSession` starts, the resolved model is used for the whole call: VoiceGateway does not swap providers mid-call. For runtime mid-call failover, compose [LiveKit's FallbackAdapter](https://docs.voicegateway.dev/examples/livekit-fallback-adapter) around VG `inference.*` instances. v0.0.6 adds a first-class `fallback=` parameter to the inference factories so the manual walk goes away.
+See [`examples/fallback_agent.py`](examples/fallback_agent.py) for the worked startup-walk pattern. Once `AgentSession` starts, the resolved model is used for the whole call: VoiceGateway does not swap providers mid-call. For runtime mid-call failover, compose [LiveKit's FallbackAdapter](https://voicegateway.mahimai.ca/docs/examples/livekit-fallback-adapter) around VG `inference.*` instances. v0.0.6 adds a first-class `fallback=` parameter to the inference factories so the manual walk goes away.
 
 ---
 
@@ -377,7 +377,7 @@ See [`examples/fallback_agent.py`](examples/fallback_agent.py) for the worked st
 | `local/kokoro` | Kokoro ONNX | **local** |
 | `local/piper` | Piper | **local** |
 
-Full reference: [docs.voicegateway.dev/configuration/providers](https://docs.voicegateway.dev/configuration/providers)
+Full reference: [voicegateway.mahimai.ca/docs/configuration/providers](https://voicegateway.mahimai.ca/docs/configuration/providers)
 
 ---
 
@@ -402,7 +402,7 @@ flowchart TB
     I --> J[Claude Code · Cursor · Codex]
 ```
 
-[Architecture deep dive →](https://docs.voicegateway.dev/architecture/)
+[Architecture deep dive →](https://voicegateway.mahimai.ca/docs/architecture/)
 
 ---
 
@@ -442,7 +442,7 @@ voicegw serve --port 8080
 | `GET /v1/audit-log` | Config change history |
 | `GET /v1/metrics` | Prometheus-format metrics |
 
-Full reference: [docs.voicegateway.dev/api/http-api](https://docs.voicegateway.dev/api/http-api)
+Full reference: [voicegateway.mahimai.ca/docs/api/http-api](https://voicegateway.mahimai.ca/docs/api/http-api)
 
 ---
 
@@ -518,7 +518,7 @@ pip install -e ".[all,dashboard,mcp,dev]"
 pytest
 ```
 
-**Add a provider** (10-step guide): [docs.voicegateway.dev/contributing/adding-a-provider](https://docs.voicegateway.dev/contributing/adding-a-provider)
+**Add a provider** (10-step guide): [voicegateway.mahimai.ca/docs/contributing/adding-a-provider](https://voicegateway.mahimai.ca/docs/contributing/adding-a-provider)
 
 Before submitting a PR, please read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Found a security issue? Do not open a public issue: follow the disclosure flow in [SECURITY.md](SECURITY.md).
 
@@ -526,7 +526,7 @@ Before submitting a PR, please read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE
 
 ## Project metadata
 
-- [CHANGELOG.md](CHANGELOG.md) -- canonical changelog (mirrored into the docs site at build time).
+- [CHANGELOG.md](CHANGELOG.md) -- canonical changelog; voicegateway-web syncs it into the rendered docs at build time.
 - [CONTRIBUTING.md](CONTRIBUTING.md) -- one-page contribution flow; deeper guides under [`docs/contributing/`](docs/contributing/).
 - [SECURITY.md](SECURITY.md) -- vulnerability disclosure policy and supported-versions matrix.
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) -- Contributor Covenant.
