@@ -1,33 +1,4 @@
-"""Async repo for the ``virtual_keys`` table.
-
-Implements REQ-VG-TENANT-003 (issue virtual API keys with optional
-tenant scope, support revocation and stale-key detection).
-
-The plaintext key is returned ONCE at issuance; only a bcrypt hash and
-an 8-char visible prefix persist (OQ1 lock). Verification scans by
-prefix to keep bcrypt comparisons O(1) per request rather than O(n);
-the prefix collision space (~33M values from 5 base32 chars after
-``vk_``) is large enough to avoid practical collision but small enough
-to expose nothing about the secret.
-
-Key format (locked at v0.4.0/T01 from Foundry OQ1):
-
-* Total key handed to the user: ``vk_`` + 32 base32 random chars
-  (``vk_AABBCCDDEEFFGGHHIIJJKKLLMMNNOOPP``) = 35 chars.
-* Visible prefix stored in ``key_prefix``: first 8 chars
-  (``vk_AABBC``) = ``vk_`` + 5 random.
-* The full key is bcrypt-hashed (cost 12) and stored in ``key_hash``.
-
-Revocation is soft (OQ5 lock): ``revoke(id)`` writes
-``revoked_at = CURRENT_TIMESTAMP`` and keeps the row for audit + the
-stale-key detector. Hard delete is out of scope for v0.4.0.
-
-Mirrors the flat-function-module pattern of ``turns_repo.py`` and
-``replay_repo.py``: each function takes an ``aiosqlite.Connection`` and
-the caller owns the connection lifecycle.
-
-Schema reference: ``voicegateway/storage/migrations/0005_tenant_attribution.py``.
-"""
+"""Async repo for the ``virtual_keys`` table."""
 
 from __future__ import annotations
 
@@ -51,12 +22,7 @@ _BASE32_ALPHABET: Final[str] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 
 @dataclass(frozen=True)
 class VirtualKeyRow:
-    """One row from the ``virtual_keys`` table (without ``key_hash``).
-
-    ``key_hash`` is omitted because callers never need it; the hash is
-    consulted only inside :func:`verify`. Exposing the plaintext key is
-    impossible: it is only ever returned from :func:`create_virtual_key`.
-    """
+    """One row from the ``virtual_keys`` table (without ``key_hash``)."""
 
     id: int
     key_prefix: str
@@ -70,13 +36,7 @@ class VirtualKeyRow:
 
 @dataclass(frozen=True)
 class CreatedVirtualKey:
-    """Return value of :func:`create_virtual_key`.
-
-    The ``plaintext`` field is the one and only time the full key is
-    visible. Callers are expected to surface it to the dashboard's
-    "show key once" modal (REQ-VG-TENANT-003 AC-2) and never persist it
-    server-side beyond the bcrypt hash.
-    """
+    """Return value of :func:`create_virtual_key`."""
 
     id: int
     plaintext: str
@@ -119,18 +79,7 @@ async def create_virtual_key(
     tenant_id: str | None = None,
     issued_by: str | None = None,
 ) -> CreatedVirtualKey:
-    """Create a virtual key and return the plaintext once.
-
-    ``name`` is the human-readable label shown in the dashboard.
-    ``tenant_id`` scopes the key (REQ-VG-TENANT-004): when the auth
-    middleware presents a scoped key, it auto-tags the session with
-    this tenant. ``None`` leaves the key unscoped so the body's
-    ``tenant_id`` (if any) wins.
-    ``issued_by`` is a free-form audit string (the dashboard sets it to
-    the operator's identity).
-
-    Commits the connection.
-    """
+    """Create a virtual key and return the plaintext once."""
     if not name:
         raise ValueError("name must be non-empty")
     plaintext = _generate_plaintext_key()
@@ -181,12 +130,7 @@ async def list_keys(
     *,
     include_revoked: bool = True,
 ) -> list[VirtualKeyRow]:
-    """Return all virtual keys, newest first.
-
-    ``include_revoked=False`` filters out keys with a non-NULL
-    ``revoked_at`` (used by the issuance flow to avoid showing
-    tombstones unless the operator opts in).
-    """
+    """Return all virtual keys, newest first."""
     where = "" if include_revoked else "WHERE revoked_at IS NULL "
     cursor = await db.execute(
         f"SELECT {_SELECT_ROW_FIELDS} FROM virtual_keys "
@@ -205,17 +149,7 @@ class VerifiedKey:
 
 
 async def verify(db: aiosqlite.Connection, plaintext: str) -> VerifiedKey | None:
-    """Validate ``plaintext`` against the stored hashes.
-
-    Returns the row's ``id`` + ``tenant_id`` + ``name`` on a match,
-    ``None`` on any failure (bad prefix, no row, hash mismatch, revoked).
-    Revoked keys are rejected here so callers don't need a second check.
-
-    The caller is responsible for invoking :func:`mark_used` on success
-    if a ``last_used_at`` bump is desired; ``verify`` keeps the read
-    side pure to make it safe to call from middleware that may rate-limit
-    repeat failures.
-    """
+    """Validate ``plaintext`` against the stored hashes."""
     if not plaintext.startswith(_VK_PREFIX):
         return None
     prefix = _visible_prefix(plaintext)
@@ -258,12 +192,7 @@ async def mark_used(db: aiosqlite.Connection, key_id: int) -> None:
 
 
 async def revoke(db: aiosqlite.Connection, key_id: int) -> bool:
-    """Soft-revoke the key (OQ5 lock).
-
-    Sets ``revoked_at = CURRENT_TIMESTAMP``. Returns ``True`` if a row
-    was updated, ``False`` if the row did not exist or was already
-    revoked. Commits the connection.
-    """
+    """Soft-revoke the key (OQ5 lock)."""
     cursor = await db.execute(
         "UPDATE virtual_keys "
         "SET revoked_at = CURRENT_TIMESTAMP "
@@ -277,14 +206,7 @@ async def revoke(db: aiosqlite.Connection, key_id: int) -> bool:
 async def list_stale(
     db: aiosqlite.Connection, *, stale_after_days: int
 ) -> list[VirtualKeyRow]:
-    """Return non-revoked keys whose ``last_used_at`` is older than the threshold.
-
-    Keys that have never been used (``last_used_at IS NULL``) are
-    considered stale if ``issued_at`` is older than the threshold:
-    issued-but-never-used keys past the cutoff are exactly what the
-    stale-key surface is for. The threshold is the project config's
-    ``virtual_key_stale_days`` (T09).
-    """
+    """Return non-revoked keys whose ``last_used_at`` is older than the threshold."""
     if stale_after_days < 0:
         raise ValueError(f"stale_after_days must be >= 0, got {stale_after_days}")
     cursor = await db.execute(

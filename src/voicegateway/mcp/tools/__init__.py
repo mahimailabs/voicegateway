@@ -1,8 +1,4 @@
-"""MCP tool aggregation.
-
-Each tool file exports a list of ``ToolDef`` definitions, which this module
-concatenates into ``ALL_TOOLS`` for registration with the MCP server.
-"""
+"""MCP tool aggregation."""
 
 from voicegateway.mcp.tools.base import ToolDef
 from voicegateway.mcp.tools.models import MODEL_TOOLS

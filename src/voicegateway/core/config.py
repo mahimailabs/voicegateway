@@ -62,14 +62,7 @@ class MetricsConfig:
 
 @dataclass
 class ReplayConfig:
-    """v0.3.0 conversation-replay capture + retention knobs.
-
-    Defaults match the Foundry-locked values. Per-project overridable
-    via the ``replay:`` block in ``voicegw.yaml``. ``enabled = False``
-    is the OQ1 fallback: if T18's storage-cost smoke fails the
-    100 KB/min target, individual projects (or all projects via the
-    top-level default) can disable capture without redeploying.
-    """
+    """v0.3.0 conversation-replay capture + retention knobs."""
 
     enabled: bool = True
     retention_days: int = 90
@@ -79,19 +72,7 @@ class ReplayConfig:
 
 @dataclass
 class RoutingConfig:
-    """v0.5.0 cross-modality routing knobs (REQ-VG-ROUTE-001..002).
-
-    Per-project overridable via the ``routing:`` block in
-    ``voicegw.yaml``. ``budget_ms`` defaults to the Foundry-locked
-    1500 ms (OQ1) suitable for a typical conversational voice agent.
-    ``rosters`` is a dict ``{modality: [provider_id, ...]}`` ordered
-    by operator preference; the router picks within the roster and
-    never outside it. ``fallback_to_fastest`` controls the AC-2 path:
-    when ``True`` (default) and nothing fits the budget, the router
-    picks the fastest available triple and stamps
-    ``budget_overrun=True`` on the session row; when ``False`` the
-    router raises ``BudgetExceeded`` and the session fails.
-    """
+    """v0.5.0 cross-modality routing knobs (REQ-VG-ROUTE-001..002)."""
 
     budget_ms: int = 1500
     rosters: dict[str, list[str]] = field(default_factory=dict)
@@ -100,14 +81,7 @@ class RoutingConfig:
 
 @dataclass
 class BrandingConfig:
-    """v0.5.0 white-label branding knobs (REQ-VG-ROUTE-004).
-
-    Per-project overridable. All fields nullable: a project with no
-    branding set falls back to the default VoiceGateway brand
-    (AC-3). The dashboard's ``lib/branding.ts`` reads this at layout
-    mount and applies values as CSS variables; emails, exports, and
-    the CLI keep the default brand (out of scope per the Refinery).
-    """
+    """v0.5.0 white-label branding knobs (REQ-VG-ROUTE-004)."""
 
     logo_url: str | None = None
     accent_color: str | None = None
@@ -116,14 +90,7 @@ class BrandingConfig:
 
 @dataclass
 class TenantConfig:
-    """v0.4.0 multi-tenant attribution knobs.
-
-    Per-project overridable via the ``tenant:`` block in ``voicegw.yaml``.
-    ``virtual_key_stale_days`` drives the dashboard's stale-key surface
-    (REQ-VG-TENANT-003): keys whose last_used_at (or issued_at, for
-    never-used keys) is older than this threshold are flagged in the
-    Virtual Keys page. The default matches the Foundry's "90 days" lock.
-    """
+    """v0.4.0 multi-tenant attribution knobs."""
 
     virtual_key_stale_days: int = 90
 
@@ -143,7 +110,6 @@ class ProjectConfig:
     # v0.0.5: per-project provider keys. When a project entry sets
     # ``providers:`` in voicegw.yaml, those keys win over the top-level
     # ``providers:`` block for inference factory calls inside this
-    # project's context. See design.md section 3.3.
     providers: dict[str, dict[str, Any]] = field(default_factory=dict)
     # v0.2.0: per-project metric capture knobs (REQ-VG-METRICS-001..006).
     metrics: MetricsConfig = field(default_factory=MetricsConfig)
@@ -175,13 +141,7 @@ class ProjectConfig:
 
 @dataclass
 class AuthConfig:
-    """HTTP API authentication settings.
-
-    ``api_keys`` is kept as a list of raw dicts (parsed but unresolved)
-    — ``voicegateway.core.auth.load_api_keys`` turns them into concrete
-    ``ApiKey`` instances, skipping entries with empty tokens (e.g. when
-    ``${VOICEGW_API_KEY}`` isn't set).
-    """
+    """HTTP API authentication settings."""
 
     api_keys: list[dict[str, Any]] = field(default_factory=list)
     cors_origins: list[str] = field(default_factory=list)
@@ -213,18 +173,7 @@ class GatewayConfig:
 
     @classmethod
     def load(cls, config_path: str | Path | None = None) -> GatewayConfig:
-        """Load configuration from a YAML file.
-
-        Args:
-            config_path: Explicit path to config file. If None, searches
-                default locations (voicegw.yaml first, then legacy gateway.yaml).
-
-        Returns:
-            Parsed GatewayConfig.
-
-        Raises:
-            ConfigError: If no config file found or config is invalid.
-        """
+        """Load configuration from a YAML file."""
         # Allow VOICEGW_CONFIG env var to override if no explicit path given
         if config_path is None:
             config_path = os.environ.get("VOICEGW_CONFIG") or os.environ.get(
@@ -426,23 +375,13 @@ class GatewayConfig:
         )
 
     def get_provider_config(self, provider_name: str) -> dict[str, Any]:
-        """Get the top-level (global) configuration for a provider.
-
-        For project-aware lookups (the v0.0.5 inference path), use
-        ``get_provider_config_for_project`` instead.
-        """
+        """Get the top-level (global) configuration for a provider."""
         return self.providers.get(provider_name, {})
 
     def get_provider_config_for_project(
         self, provider_name: str, project_id: str | None
     ) -> dict[str, Any]:
-        """Resolve provider config with project-level precedence.
-
-        Returns the project's own provider entry if set; otherwise
-        falls back to the top-level ``providers`` block (backward
-        compat for pre-v0.0.5 configs that don't carry per-project
-        keys). When neither exists, returns an empty dict.
-        """
+        """Resolve provider config with project-level precedence."""
         if project_id and project_id in self.projects:
             project = self.projects[project_id]
             if provider_name in project.providers:
@@ -450,15 +389,7 @@ class GatewayConfig:
         return self.providers.get(provider_name, {})
 
     def get_model_config(self, modality: str, model_key: str) -> dict[str, Any] | None:
-        """Get configuration for a specific model.
-
-        Args:
-            modality: "stt", "llm", or "tts"
-            model_key: Model key like "deepgram/nova-3"
-
-        Returns:
-            Model config dict or None if not found.
-        """
+        """Get configuration for a specific model."""
         modality_models = self.models.get(modality, {})
         return modality_models.get(model_key)
 

@@ -1,13 +1,4 @@
-"""Gateway: shared state container for the inference module, server, CLI, and MCP.
-
-Pre-v0.0.5 the ``Gateway`` class also exposed ``stt`` / ``llm`` / ``tts``
-factories. Those landed unmerged on ``feat/livekit-parity`` and never
-shipped to PyPI; v0.0.5 makes ``voicegateway.inference`` the single
-public surface and reduces this class to its internal role: own the
-config, storage, cost tracker, latency monitor, rate limiter, logger,
-and budget enforcer that the inference factories and operations
-endpoints (CLI / HTTP / MCP / dashboard) share.
-"""
+"""Gateway: shared state container for the inference module, server, CLI, and MCP."""
 
 from __future__ import annotations
 
@@ -32,26 +23,10 @@ DEFAULT_DB_PATH = "~/.config/voicegateway/voicegw.db"
 
 
 class Gateway:
-    """Shared internal container for the v0.0.5+ inference module.
-
-    Not a public Python SDK. Library users construct providers via
-    ``voicegateway.inference.STT/LLM/TTS``; the inference factory
-    holds a process-wide singleton of this class and threads its
-    cost tracker, storage, and budget enforcer into each wrapped
-    plugin instance. Server processes (the FastAPI app, the MCP
-    server, the CLI) instantiate it directly to read config or
-    surface costs.
-    """
+    """Shared internal container for the v0.0.5+ inference module."""
 
     def __init__(self, config_path: str | None = None):
-        """Initialize the gateway.
-
-        Args:
-            config_path: Path to voicegw.yaml. If None, searches:
-                1. ./voicegw.yaml (and legacy ./gateway.yaml)
-                2. ~/.config/voicegateway/voicegw.yaml
-                3. /etc/voicegateway/voicegw.yaml
-        """
+        """Initialize the gateway."""
         self._config = GatewayConfig.load(config_path)
 
         # Resolve DB path: env var > config > default
@@ -69,12 +44,6 @@ class Gateway:
         self._config_manager = ConfigManager(self._config, self._storage)
         self._config = _run_async(self._config_manager.load_merged())
 
-        # v0.0.5: ensure a "default" project always exists so the
-        # inference resolver has something to charge against on a
-        # fresh install. When YAML or the DB already configures one,
-        # that takes precedence. With storage enabled we persist the
-        # row so the dashboard, MCP tools, and HTTP API surface it
-        # consistently with user-defined projects.
         if DEFAULT_PROJECT not in self._config.projects:
             if self._storage is not None:
                 _run_async(
@@ -101,15 +70,9 @@ class Gateway:
         self._rate_limiter = RateLimiter(self._config.rate_limits)
         self._logger = RequestLogger()
 
-        # Observability config — read once so the inference wrappers
-        # can decide whether to skip the instrumentation hop.
         obs = self._config.observability
         self._latency_tracking = obs.get("latency_tracking", True)
 
-        # Budget enforcement. Wired into the cost tracker so newly
-        # logged requests update the enforcer's in-memory spend cache,
-        # closing the TTL blind spot where a burst of requests can
-        # race past the check.
         self._budget_enforcer = BudgetEnforcer(self._config, self._storage)
         self._cost_tracker.set_budget_enforcer(self._budget_enforcer)
 
@@ -134,20 +97,8 @@ class Gateway:
         self._budget_enforcer = BudgetEnforcer(self._config, self._storage)
         self._cost_tracker.set_budget_enforcer(self._budget_enforcer)
 
-    # ------------------------------------------------------------------
-    # Query helpers (used by CLI / dashboard / MCP / HTTP API).
-    # ------------------------------------------------------------------
-
     def costs(self, period: str = "today", project: str | None = None) -> dict:
-        """Return cost summary for the given period, optionally filtered by project.
-
-        Args:
-            period: "today", "week", "month", or "all".
-            project: Optional project ID to filter by.
-
-        Returns:
-            Dict with total cost, per-provider breakdown, per-model breakdown.
-        """
+        """Return cost summary for the given period, optionally filtered by project."""
         if self._storage is None:
             return {
                 "period": period,
@@ -159,14 +110,7 @@ class Gateway:
         return _run_async(self._storage.get_cost_summary(period, project=project))
 
     def list_projects(self) -> list[dict[str, Any]]:
-        """Return configured projects as a list of serializable dicts.
-
-        ``source`` is one of ``"yaml"``, ``"db"``, or ``"auto"``. The
-        last comes from the v0.0.5 auto-create-default branch in
-        ``__init__``; the dashboard renders a distinct badge for it
-        so the user can tell their custom config apart from the
-        gateway's first-run stub.
-        """
+        """Return configured projects as a list of serializable dicts."""
         result = []
         for pid, pcfg in self._config.projects.items():
             result.append(

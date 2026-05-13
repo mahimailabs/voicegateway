@@ -1,18 +1,4 @@
-"""Custom ``HeaderBar`` for the v0.1.1 TUI (REQ-VG-TUI-008 chip).
-
-Replaces Textual's built-in :class:`Header` so we can render the
-persistent ``[Local mode]`` chip on the right when the App was
-launched with ``--local``. Locked decision 5: the chip is the
-visible signal that ``--local`` won regardless of whether the
-daemon happens to be reachable; without it a stale shell alias
-could re-route the user through Local mode silently.
-
-Layout: title on the left (full width), chip on the right (1
-character of padding either side). The chip's background is
-``$warning`` rather than the active-state ``$accent`` so the user
-can never confuse "this is the live tab" with "you are in
-Local mode" -- they're different tones in the same column.
-"""
+"""Custom ``HeaderBar`` for the TUI."""
 
 from __future__ import annotations
 
@@ -50,9 +36,6 @@ class HeaderBar(Horizontal):
         super().__init__(**kwargs)
         self._is_local = is_local
         if is_local:
-            # Class assignment in __init__ lands before mount so the
-            # chip's styled background is applied on first paint
-            # rather than flashing the unstyled state.
             self.add_class("-local-mode")
 
     def compose(self) -> ComposeResult:

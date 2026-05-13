@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+import httpx
+
 from voicegateway.providers.base import BaseProvider
 
 
@@ -54,8 +56,6 @@ class OpenAIProvider(BaseProvider):
         return openai.TTS(**opts)
 
     async def health_check(self) -> bool:
-        import httpx
-
         try:
             async with httpx.AsyncClient() as client:
                 url = self.base_url or "https://api.openai.com"

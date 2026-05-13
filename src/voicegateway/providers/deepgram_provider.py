@@ -34,7 +34,6 @@ class DeepgramProvider(BaseProvider):
 
     def create_tts(self, model: str, voice: str | None = None, **kwargs: Any) -> Any:
         deepgram = self._ensure_plugin()
-        # Deepgram encodes voice in the model name: "aura-2-{voice}-en"
         if voice and voice not in model:
             model = f"{model}-{voice}-en"
         opts = {"model": model, **kwargs}

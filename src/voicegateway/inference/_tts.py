@@ -1,22 +1,4 @@
-"""Drop-in mirror of `livekit.agents.inference.TTS` backed by VoiceGateway.
-
-Constructing this class returns a wrapped LiveKit-plugin TTS instance
-that AgentSession can consume identically to LK Cloud's inference TTS,
-but routed through the user's own provider keys with VG cost tracking
-and session correlation in the middle.
-
-The constructor signature mirrors `livekit.agents.inference.TTS` from
-livekit-agents 1.5.7 exactly: same shape as STT (NotGivenOr defaults)
-plus a leading-required ``model`` and a ``voice`` parameter, with the
-trailing colon-suffix interpreted as the voice (not language).
-
-Example::
-
-    from voicegateway import inference
-
-    tts = inference.TTS("cartesia/sonic-3:my-voice-id")
-    # equivalent to: from livekit.agents import inference; inference.TTS(...)
-"""
+"""Drop-in mirror of `livekit.agents.inference.TTS` backed by VoiceGateway."""
 
 from __future__ import annotations
 
@@ -46,12 +28,7 @@ from voicegateway.middleware.instrumented_provider import wrap_provider
 
 
 def _strip_voice_suffix(model: str) -> tuple[str, str | None]:
-    """Strip a trailing ``:voice`` suffix from a model string.
-
-    Mirrors `livekit.agents.inference.tts._parse_model_string` exactly:
-    uses ``rfind`` so the LAST colon delimits the suffix. Returns
-    ``(cleaned_model, None)`` when no colon is present.
-    """
+    """Strip a trailing ``:voice`` suffix from a model string."""
     idx = model.rfind(":")
     if idx == -1:
         return model, None
@@ -59,18 +36,7 @@ def _strip_voice_suffix(model: str) -> tuple[str, str | None]:
 
 
 class TTS:
-    """LiveKit-plugin TTS factory backed by VoiceGateway.
-
-    Constructing ``TTS(model="cartesia/sonic-3", voice="...")`` resolves
-    the provider, looks up its API key from the active project (or uses
-    the ``api_key`` override), constructs the corresponding
-    ``livekit.plugins.<provider>.TTS`` instance, and wraps it for cost,
-    latency, and session-id tracking.
-
-    The trailing ``:suffix`` of the model string is interpreted as the
-    voice (mirroring LK's TTS semantics — distinct from STT, where
-    ``:suffix`` is the language).
-    """
+    """LiveKit-plugin TTS factory backed by VoiceGateway."""
 
     def __new__(
         cls,
@@ -149,8 +115,6 @@ class TTS:
         _assert_key_resolved(provider_name, active_project, provider_config)
         provider_instance = create_provider(provider_name, provider_config)
 
-        # BaseProvider.create_tts uses positional `voice`; only forward
-        # when explicitly given (avoid leaking the NOT_GIVEN sentinel).
         if is_given(effective_voice):
             plugin = provider_instance.create_tts(
                 model=model_name, voice=effective_voice, **plugin_kwargs

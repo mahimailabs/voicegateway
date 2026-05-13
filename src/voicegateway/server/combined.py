@@ -1,13 +1,4 @@
-"""Combined server — runs API, Dashboard, and MCP SSE on a single port.
-
-Used for single-process deployments where multiple ports are not
-practical. Mounts:
-  /          → Dashboard (Vite-built frontend)
-  /health    → Health check
-  /v1/*      → HTTP API
-  /mcp/sse   → MCP SSE endpoint
-  /mcp/messages/* → MCP message endpoint
-"""
+"""Combined server — runs API, Dashboard, and MCP SSE on a single port."""
 
 from __future__ import annotations
 
@@ -25,7 +16,6 @@ def build_combined_app(gateway: Gateway) -> Any:
     """Build a FastAPI app that serves API + Dashboard + MCP SSE."""
     app = build_app(gateway)
 
-    # Mount MCP SSE endpoints if mcp package is installed
     try:
         from mcp.server.sse import SseServerTransport
     except ImportError:
@@ -87,7 +77,6 @@ def build_combined_app(gateway: Gateway) -> Any:
                 return
             await sse.handle_post_message(scope, receive, send)
 
-        # Mount MCP routes onto the FastAPI app
         app.routes.insert(0, Route("/mcp/sse", endpoint=handle_mcp_sse))
         app.routes.insert(1, Mount("/mcp/messages/", app=mcp_messages_app))
 
@@ -96,13 +85,11 @@ def build_combined_app(gateway: Gateway) -> Any:
     except ImportError:
         logger.info("MCP module not installed, skipping SSE mount")
 
-    # Also mount the dashboard if it exists
     try:
         import dashboard.api.main as dash_mod
 
         dash_mod._gateway = gateway
 
-        # Mount dashboard API routes
         for route in dash_mod.app.routes:
             app.routes.append(route)
 

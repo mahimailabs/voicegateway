@@ -52,10 +52,7 @@ class WhisperProvider(BaseProvider):
 
 
 class WhisperSTT:
-    """Local Whisper STT using faster-whisper with StreamAdapter pattern.
-
-    Inherits from livekit.agents.stt.STT to be compatible with LiveKit agents.
-    """
+    """Local Whisper STT using faster-whisper with StreamAdapter pattern."""
 
     def __init__(
         self,

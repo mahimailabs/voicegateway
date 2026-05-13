@@ -1,11 +1,4 @@
-"""VoiceGateway HTTP API server.
-
-A thin FastAPI layer over the Gateway, exposing /health, /v1/status,
-/v1/models, /v1/costs, /v1/projects, /v1/logs, and /v1/metrics.
-
-This is what the dashboard consumes and what external monitoring tools
-(Prometheus, load balancers) scrape.
-"""
+"""VoiceGateway HTTP API server."""
 
 from __future__ import annotations
 
@@ -46,11 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 def _parse_iso_date(value: str, *, end_of_day: bool) -> float:
-    """Parse a YYYY-MM-DD string into a UTC POSIX timestamp.
-
-    With `end_of_day=True`, advance one day so the timestamp is the
-    exclusive upper bound for "include all of YYYY-MM-DD."
-    """
+    """Parse a YYYY-MM-DD string into a UTC POSIX timestamp."""
     try:
         d = datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=UTC)
     except ValueError as e:
@@ -71,8 +60,6 @@ def build_app(gateway: Gateway) -> FastAPI:
         description="HTTP API for VoiceGateway: cost tracking and reconciliation for LiveKit voice agents.",
     )
 
-    # Auth is opt-in. When no keys are configured, check_request passes
-    # every request and require_scope becomes a no-op dependency.
     api_keys = load_api_keys(gateway.config.auth)
     cors_origins = resolve_cors_origins(gateway.config.auth)
     if cors_origins == ["*"]:
@@ -86,36 +73,11 @@ def build_app(gateway: Gateway) -> FastAPI:
         allow_origins=cors_origins,
         allow_methods=["*"],
         allow_headers=["*"],
-        # Custom response headers are not visible to JavaScript on
-        # cross-origin calls unless they are listed here. The dashboard
-        # detects /v1/costs?period=...&start=... mixed-call deprecation
-        # via the Deprecation response header, so it must be exposed.
         expose_headers=["Deprecation"],
     )
 
     def require_scope(scope: str):
-        """Return a FastAPI dependency enforcing ``scope`` on a request.
-
-        Two auth paths are supported (REQ-VG-TENANT-004):
-
-        - **Virtual keys** — bearer tokens starting with ``vk_`` are
-          resolved via :func:`virtual_keys_repo.verify`. On success the
-          row's ``tenant_id`` (if any) is stashed on
-          ``request.state.virtual_key_tenant_id`` for downstream
-          per-handler conflict checks (T05/T10), and the same value is
-          pushed onto the ``tenant_id_ctx`` ContextVar so any session
-          created inside the handler inherits the scope. ``last_used_at``
-          is bumped via :func:`virtual_keys_repo.mark_used`.
-        - **Static keys** — anything else falls through to the existing
-          :func:`check_request` path. Static keys are not associated
-          with a tenant and never set the ContextVar.
-
-        Scope enforcement for virtual keys is intentionally permissive
-        for v0.4.0: a verified virtual key satisfies every scope. The
-        scope dimension on virtual keys is out of scope for this
-        version (the Foundry's "scope" mention refers to tenant
-        scoping, not RBAC scopes).
-        """
+        """Return a FastAPI dependency enforcing ``scope`` on a request."""
 
         async def _dep(request: Request) -> None:
             authorization = request.headers.get("Authorization")
@@ -182,15 +144,7 @@ def build_app(gateway: Gateway) -> FastAPI:
                 if name in ("ollama", "whisper", "kokoro", "piper")
                 else "cloud",
             }
-        # Surface catalog freshness so the dashboard can render
-        # "estimates last verified ..." copy without joining the
-        # pricing tables itself. ``stt`` and ``tts`` carry both the
-        # source string (logged on each request as ``pricing_source``)
-        # and the oldest per-entry verification date so the UI can
-        # show a yellow banner when any rate crossed a staleness
-        # threshold. ``llm`` derives its source from the
-        # ``genai-prices`` library version; the upstream catalog is
-        # versioned, not date-stamped.
+
         from voicegateway.pricing import llm as _llm_pricing
         from voicegateway.pricing import stt as _stt_pricing
         from voicegateway.pricing import tts as _tts_pricing
@@ -252,36 +206,21 @@ def build_app(gateway: Gateway) -> FastAPI:
         start: str | None = Query(None),
         end: str | None = Query(None),
     ) -> dict:
-        # Top-level `pricing_sources` records the catalog the running
-        # instance is currently using (per modality). With
-        # `include_pricing_source=true` (the default since v0.0.5),
-        # each `by_model` entry also carries the source(s) that priced
-        # its historical records, which is what the dashboard's
-        # cost-staleness banner and `voicegw reconcile` against an
-        # invoice both need. Pass `?include_pricing_source=false` to
-        # opt out of the per-row attribution.
+
         pricing_sources = {
             modality: catalog.pricing_source(modality)
             for modality in ("llm", "stt", "tts")
         }
-        # Backward-compat: when neither period nor a window is given,
-        # fall back to "today" (the legacy default). Existing dashboard
-        # callers that omit all three see no behavior change.
+
         period_explicit = period is not None
         effective_period = period if period is not None else "today"
-        # Deprecation header: when the caller mixes the legacy `period`
-        # with new-API `start`/`end`, the new params win at the
-        # storage layer. Surface a Deprecation header so dashboards
-        # mid-migration discover the redundancy.
+
         if period_explicit and (start or end):
             response.headers["Deprecation"] = (
                 "period parameter is ignored when start/end are "
                 "provided. Drop period from new-API calls."
             )
-        # Explicit start/end ISO dates (YYYY-MM-DD) override `period`.
-        # Both bounds are interpreted at UTC midnight; `end` is the
-        # inclusive day, so internally we advance one day for the
-        # exclusive upper bound. Either bound is independently optional.
+
         start_ts = _parse_iso_date(start, end_of_day=False) if start else None
         end_ts = _parse_iso_date(end, end_of_day=True) if end else None
         if gateway.storage is None:
@@ -304,7 +243,6 @@ def build_app(gateway: Gateway) -> FastAPI:
             start_ts=start_ts,
             end_ts=end_ts,
         )
-        # Always include a by_project breakdown for the "All Projects" view
         if project is None:
             summary["by_project"] = await gateway.storage.get_cost_by_project(
                 effective_period, start_ts=start_ts, end_ts=end_ts
@@ -448,16 +386,7 @@ def build_app(gateway: Gateway) -> FastAPI:
             pattern="^(started_at_desc|started_at_asc|cost_desc|cost_asc)$",
         ),
     ) -> list[dict]:
-        """Return recent voice sessions, ordered per ``order_by``.
-
-        Sessions are populated by the v0.0.5 inference module via
-        ContextVar correlation; rows accumulate cost and request count
-        over the life of one logical voice session. ``ended_at``
-        tracks last activity (the timestamp of the most recent
-        request) so duration is queryable without a session-close
-        hook. ``order_by`` defaults to newest first; pass
-        ``cost_desc`` to find the most expensive sessions.
-        """
+        """Return recent voice sessions, ordered per ``order_by``."""
         if gateway.storage is None:
             return []
         return await gateway.storage.list_sessions(
@@ -466,15 +395,7 @@ def build_app(gateway: Gateway) -> FastAPI:
 
     @app.get("/v1/sessions/{session_id}")
     async def v1_session_detail(session_id: str) -> dict:
-        """Return one session by id with a per-modality cost breakdown.
-
-        The response includes ``by_modality`` (a dict keyed by
-        ``"stt"`` / ``"llm"`` / ``"tts"`` with ``cost`` and
-        ``request_count``) and ``providers`` (deduplicated list of
-        provider names seen in this session). Both are computed by
-        joining the ``requests`` table on ``session_id`` at read
-        time. 404 when no session matches.
-        """
+        """Return one session by id with a per-modality cost breakdown."""
         if gateway.storage is None:
             raise HTTPException(
                 status_code=404, detail=f"Session '{session_id}' not found"
@@ -619,8 +540,6 @@ def build_app(gateway: Gateway) -> FastAPI:
                     f'voicegw_cost_usd_total{{project="{pid}"}} {data["cost"]:.6f}'
                 )
 
-            # Per-model latency summaries. Prometheus ``summary`` convention:
-            # one series per quantile label, values in seconds.
             pcts = gateway.config.latency.get("percentiles") or [50.0, 95.0, 99.0]
             latency = await gateway.storage.get_latency_stats("today", percentiles=pcts)
             if latency:
@@ -688,11 +607,6 @@ def build_app(gateway: Gateway) -> FastAPI:
         ptype = body.get("provider_type", pid)
         api_key = body.get("api_key", "")
         base_url = body.get("base_url")
-        # v0.0.5: optional per-project scope. When set, the row's
-        # project column is populated so the dashboard's
-        # /api/providers/by-project endpoint surfaces it under that
-        # project. Pre-v0.0.5 callers omit this field; the column
-        # stays NULL (legacy global semantics).
         project = body.get("project")
 
         if not pid or not isinstance(pid, str):
@@ -706,11 +620,7 @@ def build_app(gateway: Gateway) -> FastAPI:
             )
             if not is_managed:
                 raise HTTPException(409, f"Provider '{pid}' already exists in YAML")
-        # When the caller scopes the row to a project, also reject if the
-        # YAML already pins that project's slot for this provider type.
-        # Without this check the DB row writes successfully but
-        # ConfigManager.load_merged keeps the YAML entry, so the rotated
-        # credential silently never gets used.
+
         if project:
             existing_project = gateway.config.projects.get(project)
             if existing_project is not None and ptype in existing_project.providers:
@@ -765,9 +675,6 @@ def build_app(gateway: Gateway) -> FastAPI:
         if ptype not in _PROVIDER_REGISTRY:
             raise HTTPException(400, f"Unknown provider_type '{ptype}'")
 
-        # Preserve the row's existing project scope on PATCH unless the
-        # caller explicitly overrides it. Rotating a per-project key
-        # MUST NOT silently demote it to global scope.
         project = body.get("project", existing.get("project"))
 
         await gateway.storage.upsert_managed_provider(
@@ -808,37 +715,15 @@ def build_app(gateway: Gateway) -> FastAPI:
     async def _resolve_test_target(
         provider_id: str,
     ) -> tuple[str | None, dict[str, Any] | None]:
-        """Return ``(provider_type, provider_config)`` for the test path.
-
-        Resolution order matches the v0.0.5 wedge:
-
-        1. Top-level ``providers.<id>`` (legacy global config).
-        2. DB-managed ``managed_providers`` row keyed by id (covers
-           the composite ``"<project>:<provider>"`` rows written by
-           ``vg_add_provider``). Returns the row's actual
-           ``provider_type`` and decrypted api_key.
-        3. YAML per-project ``projects.<project>.providers.<provider>``
-           when the id is in composite form. Returns the YAML entry
-           verbatim with ``provider_type`` derived from the suffix.
-
-        Returns ``(None, None)`` if no matching entry exists.
-        """
+        """Return ``(provider_type, provider_config)`` for the test path."""
         cfg = gateway.config
 
-        # 1. Top-level providers (also catches DB rows merged in via
-        # ConfigManager.load_merged when they have no project scope).
         if provider_id in cfg.providers:
             pcfg = cfg.providers[provider_id]
             if isinstance(pcfg, dict):
-                # If the merged dict came from the DB, ConfigManager
-                # tagged it with `_source: "db"` but did not populate
-                # provider_type — fall through to the storage lookup.
                 if pcfg.get("_source") != "db":
                     return provider_id, dict(pcfg)
 
-        # 2. Storage-side managed_providers row (the canonical place
-        # where provider_type lives for DB-managed rows, including
-        # the per-project composite ids written by vg_add_provider).
         if gateway.storage is not None:
             row = await gateway.storage.get_managed_provider(provider_id)
             if row is not None:
@@ -850,7 +735,6 @@ def build_app(gateway: Gateway) -> FastAPI:
                     **(row.get("extra_config") or {}),
                 }
 
-        # 3. YAML per-project entry: id has the form "<project>:<provider>".
         if ":" in provider_id:
             project, _, provider_type = provider_id.partition(":")
             project_cfg = cfg.projects.get(project)
@@ -901,10 +785,6 @@ def build_app(gateway: Gateway) -> FastAPI:
         """Stateless health check: takes provider_type + api_key + base_url,
         runs the provider's health_check, returns the same shape as the
         id-based variant. Persists nothing.
-
-        Used by the dashboard's "Test Connection" button on the Add
-        Provider modal so the test does not have to round-trip a
-        sentinel managed_providers row.
         """
         import asyncio as _asyncio
         import logging as _logging

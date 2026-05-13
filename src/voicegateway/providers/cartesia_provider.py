@@ -7,13 +7,6 @@ from typing import Any
 
 from voicegateway.providers.base import BaseProvider
 
-# Cartesia API requires a Cartesia-Version header on every request and
-# 400s without it. livekit-plugins-cartesia sets this internally on
-# the TTS path, so live agents work, but the bypass health_check below
-# uses httpx directly and must send the header itself. Pin to the same
-# value the installed LK plugin uses (livekit.plugins.cartesia.constants.API_VERSION)
-# so a Cartesia version bump only requires updating one constant alongside
-# the LK pin.
 _CARTESIA_API_VERSION = "2025-04-16"
 
 

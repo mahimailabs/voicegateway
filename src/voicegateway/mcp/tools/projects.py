@@ -39,10 +39,6 @@ async def _model_exists(gateway: Gateway, model_id: str) -> bool:
     return False
 
 
-# ---------------------------------------------------------------------------
-# list_projects
-# ---------------------------------------------------------------------------
-
 LIST_PROJECTS_DOC = """List every project on the gateway with today's stats.
 
 Use this to answer "What projects are configured?" or as the first step
@@ -97,10 +93,6 @@ async def _handle_list_projects(
 
     return {"projects": projects, "count": len(projects)}
 
-
-# ---------------------------------------------------------------------------
-# get_project
-# ---------------------------------------------------------------------------
 
 GET_PROJECT_DOC = """Return full details for one project including cost trends.
 
@@ -174,10 +166,6 @@ async def _handle_get_project(
         "source": "db" if managed_row is not None else "yaml",
     }
 
-
-# ---------------------------------------------------------------------------
-# create_project
-# ---------------------------------------------------------------------------
 
 CREATE_PROJECT_DOC = """Create a new project for cost tracking and routing.
 
@@ -289,10 +277,6 @@ async def _handle_create_project(
     }
 
 
-# ---------------------------------------------------------------------------
-# delete_project
-# ---------------------------------------------------------------------------
-
 DELETE_PROJECT_DOC = """Delete a GUI-created project. Requires confirm=True.
 
 DESTRUCTIVE. Returns a preview with total spend, request count, and last
@@ -376,10 +360,6 @@ async def _handle_delete_project(
         "total_requests": total_requests,
     }
 
-
-# ---------------------------------------------------------------------------
-# Registration
-# ---------------------------------------------------------------------------
 
 PROJECT_TOOLS: list[ToolDef] = [
     make_tool(

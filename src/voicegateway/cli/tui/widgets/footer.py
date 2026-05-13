@@ -1,23 +1,4 @@
-"""``CounterFooter`` widget -- live counter row for the v0.1.1 TUI.
-
-Mounted between the App's :class:`ContentSwitcher` and Textual's
-built-in :class:`Footer`. Polls
-:meth:`MetricsClient.list_costs(period='today')` on the active
-client's ``poll_seconds`` cadence and renders today's total plus
-the aggregate request count so the user always sees recent activity
-without leaving whichever tab they're on.
-
-The widget is its own small island: it does not depend on (or
-duplicate) the Costs screen's :class:`CostCard`. The counter row is
-a sentence, the card is a panel; they happen to read the same
-endpoint but the layout costs of mounting a CostCard at the screen
-foot are higher than mounting a single Static.
-
-Phase 10 (Local-mode polish) extends this widget with the
-``as of X minutes ago`` indicator computed from the SQLite file's
-last-write timestamp; the polling timer registered here is the
-substrate Phase 10 plugs into.
-"""
+"""``CounterFooter`` widget -- live counter row for the TUI."""
 
 from __future__ import annotations
 
@@ -60,46 +41,20 @@ class CounterFooter(Horizontal):
         self.run_worker(cast(Any, self._refresh), exclusive=True)
 
     async def _refresh(self) -> None:
-        """Fetch today's cost summary + render the counter line.
-
-        Errors are swallowed for v0.1.1; the Phase-9 reconnection
-        bullet adds the ``Reconnecting...`` indicator on top of the
-        same poll loop. Until then a flaky daemon just leaves the
-        last-known values on screen instead of pushing a stale
-        zero.
-        """
+        """Fetch today's cost summary + render the counter line."""
         app = cast("TUIApp", self.app)
         try:
-            # ``include_pricing_source=True`` mirrors what CostsScreen
-            # asks for so the daemon serves a single shape (any cache
-            # warms once); CounterFooter does not read the
-            # ``pricing_sources`` field but the extra payload is
-            # negligible and the consistent contract is worth more.
             costs = await app.client.list_costs(
                 period="today", include_pricing_source=True
             )
         except Exception:  # noqa: BLE001
-            # The reconnection-indicator path: HttpClient marks
-            # ``is_connected = False`` before re-raising; the next
-            # tick re-renders with the "Reconnecting..." text so
-            # the user sees the failure state without a stack trace.
             self._redraw()
             return
         self._costs = costs
         self._redraw()
 
     def _redraw(self) -> None:
-        """Update the counter line, accounting for the connection state.
-
-        Named ``_redraw`` rather than ``_render`` because Textual's
-        Widget base class uses ``_render`` internally for the
-        rendering pipeline; overriding it with a None-return method
-        breaks the pipeline at runtime.
-
-        In Local mode the row appends ``(as of X ago)`` so the user
-        sees how stale the SQLite snapshot is; the suffix is
-        omitted in Gateway mode where the daemon serves live data.
-        """
+        """Update the counter line, accounting for the connection state."""
         app = cast("TUIApp", self.app)
         is_connected = bool(getattr(app.client, "is_connected", True))
         text_widget = self.query_one("#counter-text", Static)
@@ -127,23 +82,7 @@ def _format(
     is_local: bool = False,
     db_path: Path | None = None,
 ) -> str:
-    """Pure formatter so the counter line is unit-testable.
-
-    Renders ``Today: $<total>   Requests: <N>``. ``N`` is the sum
-    of per-modality request counts when the response carries
-    ``by_modality`` (the daemon and LocalClient both populate it
-    with ``per_modality=true``); falls back to ``request_count`` on
-    a flat shape; falls back to ``--`` when the value is missing.
-
-    Accepts ``None`` (pre-first-fetch state) and any non-dict input
-    by returning a ``Today: ...`` placeholder so the row never
-    renders ``Today: $None`` or raises.
-
-    Local-mode suffix: when ``is_local=True`` and ``db_path`` resolves
-    to an existing file, append ``(as of X ago)`` computed from the
-    file's mtime. Helps the user see at a glance how stale the
-    snapshot is when the daemon is not feeding fresh writes.
-    """
+    """Pure formatter so the counter line is unit-testable."""
     if not isinstance(costs, dict):
         return "Today: ..."
     total = float(costs.get("total") or 0.0)
@@ -160,13 +99,6 @@ def _format_age(db_path: Path) -> str | None:
     """Render ``"as of <Ns / Nmin / Nh / Nd> ago"`` from the file's
     mtime; returns ``None`` when the file does not exist (the
     Pilot smoke can pass a fake path -- no raise).
-
-    Granularity steps are deliberately coarse: ``s`` for under a
-    minute, ``min`` for under an hour, ``h`` for under a day,
-    ``d`` after that. Coarser-than-precise -- the indicator answers
-    "is this snapshot recent?" not "exactly how recent is this
-    snapshot?", and the screen updates frequently enough that the
-    user sees the last bucket flip.
     """
     try:
         mtime = db_path.stat().st_mtime

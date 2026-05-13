@@ -1,37 +1,4 @@
-"""Cross-modality provider routing for v0.5.0.
-
-Implements REQ-VG-ROUTE-002. Single entry point ``route_session``
-runs once per session at session-create time and picks the
-(stt, llm, tts) triple from the project's rosters that minimises
-predicted total response latency under the configured budget.
-
-Inputs:
-
-* ``project_config.routing.budget_ms`` — the latency budget (OQ1
-  default 1500 ms).
-* ``project_config.routing.rosters`` — ordered allow-list of
-  provider ids per modality.
-* ``project_config.routing.fallback_to_fastest`` — when ``True``,
-  no-fit triggers the fastest-available + ``budget_overrun=True``
-  path (AC-2); when ``False``, raises ``BudgetExceeded``.
-* ``latency_observations_repo.get_for_project`` — recent observed
-  p50 per (provider, modality). Roll-up worker (T06) refreshes
-  every 15 minutes (OQ2).
-* Caller overrides — explicit ``{modality: provider}`` map; the
-  router respects them and only picks for the unset modalities
-  (AC-3).
-* ``provider_baselines.json`` — curated published-median latencies
-  per (provider, modality). Loaded from
-  ``voicegateway.core.provider_baselines`` (T07). When neither an
-  observation nor a baseline exists for a candidate, the candidate
-  is skipped (AC-4 fallback).
-
-Output: :class:`RoutedTriple` with the picked stt/llm/tts ids,
-the summed predicted latency, and a ``budget_overrun`` boolean.
-
-The triple stays fixed for the session (AC-5): the router has no
-mid-call surface.
-"""
+"""Cross-modality provider routing for v0.5.0."""
 
 from __future__ import annotations
 
@@ -60,18 +27,7 @@ class BudgetExceeded(Exception):
 
 @dataclass(frozen=True)
 class RoutedTriple:
-    """Result of :func:`route_session`.
-
-    ``predicted_ms`` is the sum of the per-modality predictions used
-    to pick this triple (observed p50 when available, baseline
-    median otherwise). It is the router's best guess; the session's
-    actual end-to-end latency is recorded as ``sessions.budget_ms_used``
-    after the call closes.
-
-    ``budget_overrun`` is True when the picked triple's predicted
-    total exceeds the project's ``budget_ms`` (the fallback path),
-    False when the triple fits.
-    """
+    """Result of :func:`route_session`."""
 
     stt: str
     llm: str
@@ -84,12 +40,7 @@ _baselines_cache: dict[tuple[str, str], int] | None = None
 
 
 def _load_baselines() -> dict[tuple[str, str], int]:
-    """Load provider_baselines.json from voicegateway.core.
-
-    Returns an empty dict when the file is absent so the router stays
-    importable before T07 ships the canonical baselines. Result is
-    cached at module level on first call.
-    """
+    """Load provider_baselines.json from voicegateway.core."""
     global _baselines_cache  # noqa: PLW0603
     if _baselines_cache is not None:
         return _baselines_cache
@@ -139,16 +90,7 @@ async def route_session(
     project_config: ProjectConfig,
     caller_overrides: dict[str, str] | None = None,
 ) -> RoutedTriple:
-    """Pick the (stt, llm, tts) triple for a new session.
-
-    Implements REQ-VG-ROUTE-002. Caller-overrides win over roster
-    picks (AC-3). When at least one candidate triple has a
-    prediction <= budget_ms, the lowest-predicted-total triple is
-    returned with ``budget_overrun=False``. When nothing fits, the
-    fastest available triple is returned with
-    ``budget_overrun=True`` (AC-2) provided ``fallback_to_fastest``
-    is enabled; otherwise :class:`BudgetExceeded` is raised.
-    """
+    """Pick the (stt, llm, tts) triple for a new session."""
     overrides = dict(caller_overrides or {})
     for modality in overrides:
         if modality not in _MODALITIES:
@@ -174,7 +116,6 @@ async def route_session(
             f"project {project_id!r} has empty roster(s) for {missing}; cannot route"
         )
 
-    # Observed p50 per (provider, modality).
     obs_rows = await latency_observations_repo.get_for_project(db, project_id)
     observed: dict[tuple[str, str], int] = {
         (r.provider, r.modality): r.p50_ms for r in obs_rows if r.p50_ms is not None

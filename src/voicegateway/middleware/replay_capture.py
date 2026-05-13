@@ -1,26 +1,4 @@
-"""Per-session replay-event capture for the v0.3.0 conversation timeline.
-
-Implements REQ-VG-REPLAY-003 (every captured event along the way): each
-STT chunk, each LLM token, and each TTS frame the Instrumented* wrappers
-emit becomes a typed ``ReplayEvent`` keyed by ``session_id`` and indexed
-by start-relative milliseconds. The events accumulate in a bounded
-per-session asyncio buffer; when the buffer fills, the oldest event is
-dropped and a per-session ``dropped_count`` increments so the dashboard
-can surface "events dropped here" rather than silently misleading the
-developer.
-
-Flush triggers:
-
-- ``flush_size_events`` reached -> async flush to the injected
-  ``flush_callback``.
-- ``close_session(session_id)`` -> final flush + state drop.
-
-The class is repository-agnostic. Callers inject a ``FlushCallback``
-(async callable taking ``list[ReplayEvent]``). A default no-op callback
-keeps the capture usable before ``replay_repo`` lands (T05). The
-``ProjectConfig.replay`` knobs from T07 set ``buffer_size_events``
-(default 5000) and ``flush_size_events`` (default 500).
-"""
+"""Per-session replay-event capture for the v0.3.0 conversation timeline."""
 
 from __future__ import annotations
 
@@ -43,18 +21,7 @@ _DEFAULT_FLUSH_SIZE: Final[int] = 500
 
 @dataclass
 class ReplayEvent:
-    """One captured replay event.
-
-    Maps 1-to-1 to one of the four ``replay_*`` table rows created by
-    storage migration 0004 (T04). ``modality`` selects which table the
-    event lands in (``stt``, ``llm``, ``tts``); ``payload`` is the
-    JSON-serializable per-modality body. ``cost_usd`` is nullable
-    (provider-specific) and surfaces in the RunningCostCounter (T12).
-
-    State snapshots (REQ-VG-REPLAY-005) use the same shape with
-    ``modality="state"`` so the replay timeline can interleave snapshots
-    with the three streaming modalities under a single buffer.
-    """
+    """One captured replay event."""
 
     session_id: str
     modality: str  # "stt" | "llm" | "tts" | "state"
@@ -86,28 +53,7 @@ class _SessionState:
 
 
 class ReplayCapture:
-    """Captures replay events for v0.3.0's conversation timeline.
-
-    Multiple concurrent sessions are supported; per-session state is
-    keyed by ``session_id`` (resolved from the explicit kwarg or the
-    v0.0.5 ``voicegateway.inference`` ContextVar). All mutating
-    operations go through an internal asyncio lock so concurrent
-    callbacks from the STT/LLM/TTS wrappers cannot interleave a
-    partial buffer.
-
-    Backpressure: ``buffer_size_events`` caps the per-session deque.
-    When the cap is reached, ``append`` drops the oldest event and
-    increments ``dropped_count``. This matches the Refinery's "dropped
-    count is recorded and surfaced as 'events dropped here'" contract.
-
-    Example::
-
-        capture = ReplayCapture(flush_callback=replay_repo.bulk_write_events)
-        await capture.record_stt_chunk(text="hello", is_final=True,
-                                       provider="deepgram", cost_usd=0.0001)
-        # ... session runs ...
-        await capture.close_session(session_id)
-    """
+    """Captures replay events for v0.3.0's conversation timeline."""
 
     def __init__(
         self,
@@ -131,8 +77,6 @@ class ReplayCapture:
         self._buffer_size = buffer_size_events
         self._sessions: dict[str, _SessionState] = {}
         self._lock = asyncio.Lock()
-
-    # ---- public capture API -----------------------------------------------
 
     async def record_stt_chunk(
         self,
@@ -218,13 +162,7 @@ class ReplayCapture:
         session_id: str | None = None,
         at_ms: int | None = None,
     ) -> None:
-        """Record one conversation-state snapshot.
-
-        ``snapshot`` carries the system prompt, message history,
-        in-flight tool call, and structured outputs collected. Owned
-        by the state_snapshotter (T03); ReplayCapture is the
-        shared buffer.
-        """
+        """Record one conversation-state snapshot."""
         await self._append(
             modality="state",
             payload=snapshot,
@@ -234,13 +172,8 @@ class ReplayCapture:
             at_ms=at_ms,
         )
 
-    # ---- lifecycle helpers -------------------------------------------------
-
     async def flush_session(self, session_id: str) -> int:
-        """Flush buffered events for one session. Session stays alive.
-
-        Returns the number of events flushed.
-        """
+        """Flush buffered events for one session. Session stays alive."""
         async with self._lock:
             state = self._sessions.get(session_id)
             if state is None or not state.buffer:
@@ -273,8 +206,6 @@ class ReplayCapture:
     def active_sessions(self) -> list[str]:
         """List session ids with in-flight or buffered state."""
         return list(self._sessions.keys())
-
-    # ---- internals ---------------------------------------------------------
 
     async def _append(
         self,
@@ -309,11 +240,8 @@ class ReplayCapture:
                 cost_usd=cost_usd,
             )
             if len(state.buffer) >= self._buffer_size:
-                # Buffer full: drop oldest and record the drop.
                 state.buffer.popleft()
                 state.dropped_count += 1
-                # No-op log at warning level so a persistent overflow
-                # is visible in production.
                 if state.dropped_count % 100 == 1:
                     logger.warning(
                         "ReplayCapture buffer overflow on session %s "

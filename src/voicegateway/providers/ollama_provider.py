@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
+from openai import AsyncOpenAI
+
 from voicegateway.providers.base import BaseProvider
 
 
 class OllamaProvider(BaseProvider):
-    # Default timeout is generous because local models can take 10–30s
-    # to load into memory on the first request after a cold start.
     DEFAULT_TIMEOUT_SECONDS = 120.0
 
     def __init__(self, config: dict[str, Any]):
@@ -32,10 +33,6 @@ class OllamaProvider(BaseProvider):
 
     def create_llm(self, model: str, **kwargs: Any) -> Any:
         openai = self._ensure_plugin()
-        # Build a long-timeout httpx client so cold-start model loading
-        # doesn't trip the OpenAI plugin's default 5s timeout.
-        import httpx
-        from openai import AsyncOpenAI
 
         client = AsyncOpenAI(
             base_url=f"{self.base_url}/v1",
@@ -52,7 +49,6 @@ class OllamaProvider(BaseProvider):
         self._unsupported("tts")
 
     async def health_check(self) -> bool:
-        import httpx
 
         try:
             async with httpx.AsyncClient() as client:

@@ -1,31 +1,4 @@
-"""macOS LaunchAgent backend for the v0.1.0 daemon.
-
-Wraps ``launchctl`` (modern API: ``bootstrap``, ``bootout``,
-``print``, ``kickstart``) against a per-user plist at
-``~/Library/LaunchAgents/ai.openrtc.voicegateway.plist``. The plist
-itself is rendered from ``templates/launchagent.plist`` via Python's
-``string.Template`` per design.md §9.
-
-The backend implements the seven methods of the
-``DaemonBackend`` Protocol exported from
-``voicegateway.cli.daemon``. Implementation rules:
-
-- Idempotent install / uninstall: re-running on a machine that's
-  already in the desired state is a no-op (acceptance criterion 8.3).
-- launchctl returns 17 for "service is already loaded"; treated as
-  success on bootstrap.
-- ``status()`` is the read path; never errors, even when the service
-  is missing or unregistered. ``running`` and ``registered`` flags
-  let the caller (``voicegw status``, ``voicegw doctor``) report
-  precisely what is wrong.
-- Failures on the write path (install / start / stop / restart /
-  uninstall) raise ``RuntimeError`` with the launchctl stderr
-  appended so the cli surface can print a useful pointer.
-
-The plist's RunAtLoad+KeepAlive defaults handle reboot survival and
-the kill -9 case (design.md §6 acceptance tests 6 and 7); the
-backend's job is the install / lifecycle wrapper, not the keepalive.
-"""
+"""macOS LaunchAgent backend for the v0.1.0 daemon."""
 
 from __future__ import annotations
 
@@ -42,40 +15,26 @@ SERVICE_NAME = "ai.openrtc.voicegateway"
 _PLIST_FILENAME = f"{SERVICE_NAME}.plist"
 _TEMPLATE_PATH = Path(__file__).parent / "templates" / "launchagent.plist"
 
-# launchctl's "service is already loaded" exit code. Documented in
-# `man launchctl` (1) under bootstrap; treated as success because
-# re-bootstrap on an already-loaded service is exactly the
-# idempotency we want.
+
 _LAUNCHCTL_ALREADY_LOADED_RC = 17
 
 
 class MacOSBackend:
-    """LaunchAgent-based daemon backend.
-
-    Constructor takes an optional ``service_name`` for tests; the
-    default ``ai.openrtc.voicegateway`` is what production installs
-    use, matches the ``Label`` in the plist template, and is what
-    every doctor / lifecycle command keys off.
-    """
+    """LaunchAgent-based daemon backend."""
 
     def __init__(self, *, service_name: str = SERVICE_NAME) -> None:
         self._service_name = service_name
 
-        # Per-user paths. ``Path.home()`` reads $HOME so monkeypatch
-        # via ``setenv("HOME", ...)`` makes every path tmp_path-rooted
-        # in tests.
         home = Path.home()
         self._home = home
         self._launch_agents_dir = home / "Library" / "LaunchAgents"
         self._plist_path = self._launch_agents_dir / _PLIST_FILENAME
 
-        # platformdirs picks the macOS convention: ~/Library/Logs/<app>.
         log_dir = Path(user_log_dir("voicegateway"))
         self._log_dir = log_dir
         self._stdout_log = log_dir / "serve.log"
         self._stderr_log = log_dir / "serve.err.log"
 
-        # gui/<uid> is the launchctl domain for user agents.
         self._uid = os.getuid()
         self._domain_target = f"gui/{self._uid}"
         self._service_target = f"{self._domain_target}/{self._service_name}"
@@ -92,10 +51,6 @@ class MacOSBackend:
                 "(open a new shell after `pipx ensurepath`)."
             )
 
-        # Make sure the directories the plist references exist before
-        # launchctl tries to bring the service up; otherwise launchd
-        # logs "no such file or directory" against the StandardOutPath
-        # and silently disables the agent.
         self._launch_agents_dir.mkdir(parents=True, exist_ok=True)
         self._log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -116,8 +71,6 @@ class MacOSBackend:
         """bootout + delete plist. Per design.md decision 5, config
         and the SQLite DB are preserved; only the registration goes.
         """
-        # bootout exits non-zero when the service isn't bootstrapped.
-        # Swallow that branch; uninstall is meant to be idempotent.
         self._run_launchctl("bootout", self._service_target)
         self._plist_path.unlink(missing_ok=True)
 

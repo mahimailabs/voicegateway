@@ -1,29 +1,4 @@
-"""TTS pricing via a local source-date-tagged catalog.
-
-genai-prices is LLM-focused and does not cover TTS, so VG keeps TTS
-pricing in this small local catalog. Each entry carries:
-
-- `per_character`: USD per character (Decimal for exact arithmetic).
-- `pricing_source_date`: the date the maintainer last verified the
-  rate against the provider's pricing page. Per-entry so a refresh of
-  one provider does not lie about the other entries' freshness.
-- `pricing_source_url`: that pricing page.
-
-`tests/pricing/test_staleness.py` enforces a 60-day staleness gate in
-CI: any entry whose ``pricing_source_date`` is more than 60 days
-older than ``date.today()`` fails the build, forcing per-entry
-refreshes. See `docs/contributing/refreshing-pricing.md` for the
-maintenance flow.
-
-A note on credit-based providers (Cartesia, in particular):
-Cartesia bills by audio-seconds via a credit system rather than by
-input characters. The per-character rate stored here is an estimate
-that depends on the user's plan tier and the audio characteristics
-of their workload (characters-per-second varies). Estimates can
-drift by tens of percent. Reconcile against your provider invoice
-via `voicegw reconcile` to verify; the per-request attribution
-string makes this auditable.
-"""
+"""TTS pricing via a local source-date-tagged catalog."""
 
 from __future__ import annotations
 
@@ -41,11 +16,6 @@ class TTSEntry:
 
 CATALOG: dict[str, TTSEntry] = {
     "cartesia/sonic-3": TTSEntry(
-        # ESTIMATE. Cartesia bills by audio-seconds via credits,
-        # not per-character. This per-character rate is the v0.0.x
-        # catalog estimate held over for v0.1.0; expect drift of
-        # tens of percent depending on plan tier and audio cps.
-        # Reconcile against your invoice for accurate FinOps.
         per_character=Decimal("0.000065"),
         pricing_source_date=date(2026, 5, 4),
         pricing_source_url="https://cartesia.ai/pricing",
@@ -79,11 +49,7 @@ CATALOG: dict[str, TTSEntry] = {
 
 
 def _oldest_pricing_date() -> date:
-    """Return the oldest `pricing_source_date` in the catalog.
-
-    Surfaced via PRICING_SOURCE so the per-request attribution string
-    is honest about worst-case freshness.
-    """
+    """Return the oldest `pricing_source_date` in the catalog."""
     return min(entry.pricing_source_date for entry in CATALOG.values())
 
 
@@ -91,27 +57,9 @@ PRICING_SOURCE = f"voicegateway-catalog@{_oldest_pricing_date().isoformat()}"
 
 
 def calculate_tts_cost(model: str, character_count: int) -> Decimal | None:
-    """Return total TTS cost in USD, or None if the model is unknown.
-
-    Args:
-        model: VoiceGateway TTS model ID, e.g. "cartesia/sonic-3" or
-            "local/kokoro".
-        character_count: Number of characters synthesized.
-
-    Returns:
-        Decimal total price in USD when the model is in the catalog,
-        otherwise None. Never returns Decimal("0") for an unknown
-        model; matches the LLM and STT modules' no-silent-zero
-        contract so callers can distinguish "free" from "unknown".
-
-    Note: estimates for credit-based providers (e.g. Cartesia) may
-    drift by tens of percent. Reconcile via `voicegw reconcile`
-    (Phase 4) for FinOps-grade accuracy.
-    """
+    """Return total TTS cost in USD, or None if the model is unknown."""
     if character_count < 0:
-        raise ValueError(
-            f"character_count must be non-negative, got {character_count}"
-        )
+        raise ValueError(f"character_count must be non-negative, got {character_count}")
     entry = CATALOG.get(model)
     if entry is None:
         return None

@@ -41,16 +41,7 @@ class BudgetThrottleSignal(Exception):
 
 
 class BudgetEnforcer:
-    """Checks project spending against daily budgets.
-
-    Supports three actions:
-    - warn: log a warning, allow the request
-    - throttle: log a warning, raise BudgetThrottleSignal (caller falls back to local)
-    - block: raise BudgetExceededError, reject the request
-
-    Budget checks are cached in memory for `cache_ttl_seconds` to avoid
-    hitting the database on every single request.
-    """
+    """Checks project spending against daily budgets."""
 
     def __init__(
         self,
@@ -61,13 +52,8 @@ class BudgetEnforcer:
         self._config = config
         self._storage = storage
         self._ttl = cache_ttl_seconds
-        # Cache: project -> (timestamp, spend_usd)
         self._cache: dict[str, tuple[float, float]] = {}
-        # Per-project locks coalesce concurrent DB queries and serialize
-        # cache read-modify-write. A single global lock would be simpler but
-        # would serialize unrelated projects against each other.
         self._locks: dict[str, asyncio.Lock] = {}
-        # Protects _locks itself (the map, not the locks it holds).
         self._locks_guard = asyncio.Lock()
 
     def _get_project_config(self, project: str) -> ProjectConfig | None:
@@ -82,12 +68,7 @@ class BudgetEnforcer:
             return lock
 
     async def _get_today_spend(self, project: str) -> float:
-        """Get today's spend for a project, using cache if fresh.
-
-        Concurrent callers for the same project coalesce onto one storage
-        query; the cache read and write happen under the same lock so they
-        cannot be torn by another task.
-        """
+        """Get today's spend for a project, using cache if fresh."""
         lock = await self._lock_for(project)
         async with lock:
             now = time.monotonic()
@@ -98,9 +79,6 @@ class BudgetEnforcer:
                     return spend
 
             if self._storage is None:
-                # Don't cache a zero answer when we have no storage — if
-                # storage is attached later the cache would mask real spend
-                # until the TTL expires.
                 return 0.0
 
             summary = await self._storage.get_cost_summary("today", project=project)
@@ -114,23 +92,7 @@ class BudgetEnforcer:
         cost_usd: float,
         logged_at: float | None = None,
     ) -> None:
-        """Optimistically update the cached spend after a request is logged.
-
-        Without this, the TTL window is a blind spot: spend logged to
-        storage during the window is invisible to ``check_budget`` until
-        the cache expires. Updating the cached value keeps in-memory
-        accounting close to reality between refreshes.
-
-        ``logged_at`` is ``time.monotonic()`` captured by the caller
-        immediately after ``storage.log_request`` returned. When the
-        cached entry's timestamp is >= ``logged_at`` the cache was
-        refreshed *after* our row hit storage, so the refresh already
-        includes this cost — skip the increment to avoid double-count.
-
-        This only mutates an existing cache entry. If there is no entry
-        yet, the next ``check_budget`` will read authoritative spend
-        from storage anyway.
-        """
+        """Optimistically update the cached spend after a request is logged."""
         if cost_usd <= 0:
             return
         if logged_at is None:
@@ -142,8 +104,6 @@ class BudgetEnforcer:
                 return
             ts, spend = cached
             if ts >= logged_at:
-                # Cache refreshed from storage after this row was written;
-                # it already reflects the cost. Leave it alone.
                 return
             self._cache[project] = (ts, spend + cost_usd)
 
@@ -160,15 +120,7 @@ class BudgetEnforcer:
                 self._cache.pop(p, None)
 
     async def check_budget(self, project: str) -> None:
-        """Check project budget, take action if exceeded.
-
-        Args:
-            project: Project ID to check.
-
-        Raises:
-            BudgetExceededError: If action is 'block' and budget is exceeded.
-            BudgetThrottleSignal: If action is 'throttle' and budget is exceeded.
-        """
+        """Check project budget, take action if exceeded."""
         pcfg = self._get_project_config(project)
         if pcfg is None:
             return

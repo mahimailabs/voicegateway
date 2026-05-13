@@ -1,31 +1,4 @@
-"""``attach_session`` helper: opt-in escape hatch for non-standard worker patterns.
-
-When the standard livekit-agents worker pattern is in use, the plugin-level
-hooks on ``InstrumentedSTT`` and ``InstrumentedTTS`` are expected to capture
-the VAD and audio-frame events the TurnTracker and DeadAirDetector need.
-Foundry Open Question 1 flags this as the only architectural risk for v0.2.0
-and points at the integration test in T17 as the validation gate.
-
-For users on custom AgentSession subclasses, in-process agent harnesses, or
-test rigs where the plugin hooks miss events, this module provides a manual
-binding:
-
-    from voicegateway import inference
-
-    agent_session = AgentSession(...)
-    inference.attach_session(agent_session)
-
-The helper subscribes to the standard livekit-agents AgentSession events
-(``user_started_speaking``, ``user_stopped_speaking``, ``agent_started_speaking``,
-``agent_stopped_speaking``, ``close``) and forwards them into the process-level
-TurnTracker, DeadAirDetector, and CostTracker via a small registry.
-
-The component registry uses module-level globals because the v0.2.0 wiring
-(T11 ProjectConfig knobs, the eventual Gateway-owned instance) is still
-in flight. Callers can also pass components explicitly via the kwargs
-overrides on ``attach_session`` for testability; T20 unit tests drive that
-path with synthetic doubles.
-"""
+"""``attach_session`` helper: opt-in escape hatch for non-standard worker patterns."""
 
 from __future__ import annotations
 
@@ -48,9 +21,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Process-level component registry. The Gateway (or any other owner of the
-# storage stack) calls ``register_components`` once on startup; subsequent
-# ``attach_session`` calls read from here.
 _active_turn_tracker: TurnTracker | None = None
 _active_dead_air_detector: DeadAirDetector | None = None
 _active_cost_tracker: CostTracker | None = None
@@ -62,16 +32,7 @@ def register_components(
     dead_air_detector: DeadAirDetector | None = None,
     cost_tracker: CostTracker | None = None,
 ) -> None:
-    """Register the process-level metric-capture components.
-
-    The Gateway sets these on startup. Multiple Gateways in the same
-    process is not a supported configuration (matches the existing
-    storage-layer contract).
-
-    All three kwargs are optional and only update the registry slots
-    that are explicitly passed. ``register_components()`` with no args
-    is a no-op.
-    """
+    """Register the process-level metric-capture components."""
     global _active_turn_tracker
     global _active_dead_air_detector
     global _active_cost_tracker
@@ -173,50 +134,7 @@ def attach_session(
     dead_air_detector: DeadAirDetector | None = None,
     cost_tracker: CostTracker | None = None,
 ) -> str:
-    """Bind a LiveKit ``AgentSession`` to the v0.2.0 metric-capture pipeline.
-
-    Subscribes to the AgentSession's standard event surface
-    (``user_started_speaking``, ``user_stopped_speaking``,
-    ``agent_started_speaking``, ``agent_stopped_speaking``, ``close``) and
-    forwards each event into the process-level TurnTracker plus, on
-    close, the DeadAirDetector and CostTracker. Starts the
-    DeadAirDetector watcher task for the session id.
-
-    The ``session_id`` defaults to whatever the
-    ``voicegateway.inference`` ContextVar carries (creating a fresh
-    ``vg-<uuid>`` if there is none). Pass an explicit id when the caller
-    has its own correlation key.
-
-    ``tenant_id`` (REQ-VG-TENANT-001) attributes every cost, metric,
-    and replay row stamped for this session to a tenant. When provided
-    here, the value is pushed onto ``tenant_id_ctx`` immediately so the
-    first ``log_request`` for the session picks it up. When omitted, the
-    ContextVar is left untouched: a scoped virtual key set earlier by
-    the auth middleware (T04) still wins, and an explicit
-    ``set_tenant(...)`` from the agent code also wins. Pass an empty
-    string or ``None`` to opt into the "unattributed" bucket.
-
-    ``bypass_guardrails`` overrides the active session's guardrail bypass
-    flag only when explicitly provided. Omit it to preserve a bypass set by
-    ``start_session(bypass_guardrails=True)`` earlier in the same context.
-
-    Returns the bound ``session_id`` so callers can echo it into their
-    own logs.
-
-    Component lookup order:
-
-    1. Explicit kwargs (``turn_tracker``, ``dead_air_detector``,
-       ``cost_tracker``). Used by T20 tests with synthetic doubles.
-    2. Process-level registry populated by :func:`register_components`.
-    3. If no TurnTracker is available, the call is a no-op (logs at
-       warning level so the misconfiguration is visible).
-
-    The AgentSession object is duck-typed: it must expose an
-    ``on(event_name, handler)`` API. ``handler`` is registered for the
-    five event names listed above; livekit-agents 1.x's
-    ``AgentSession.on`` follows the standard ``EventEmitter`` contract
-    so this works without an import on the SDK.
-    """
+    """Bind a LiveKit ``AgentSession`` to the metric-capture pipeline."""
     tracker = turn_tracker if turn_tracker is not None else _active_turn_tracker
     detector = (
         dead_air_detector

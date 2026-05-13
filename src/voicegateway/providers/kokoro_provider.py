@@ -48,10 +48,7 @@ class KokoroProvider(BaseProvider):
 
 
 class KokoroTTS:
-    """Local Kokoro TTS using kokoro-onnx.
-
-    Lazily loads the model on first use and keeps it in memory.
-    """
+    """Local Kokoro TTS using kokoro-onnx."""
 
     def __init__(self, voice: str = "af_heart"):
         self._voice = voice

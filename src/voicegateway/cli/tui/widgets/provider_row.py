@@ -1,31 +1,4 @@
-"""``ProviderRow`` widget for the Providers tab (REQ-VG-TUI-005).
-
-One row per configured provider. Renders a status indicator, the
-provider id, the provider type, and the owning project so the
-Providers tab list reads like:
-
-    [ok]    openai             openai      tony-pizza
-    [fail]  deepgram-broken    deepgram    default
-    [?]     cartesia           cartesia    (global)
-
-Status indicators are plain ASCII (``[ok]`` / ``[fail]`` / ``[?]``)
-so the row remains unambiguous on terminals that drop styling. A
-CSS class (``status-ok`` / ``status-fail`` / ``status-untested``)
-is set on the widget so Phase 8's TCSS pass can drop the brand
-green / red colors without touching the Python.
-
-Expected provider dict shape (matches the daemon's
-``GET /v1/providers`` response and LocalClient's
-``list_managed_providers`` mirror):
-
-    {
-        "provider_id": str,
-        "provider_type": str,         # e.g. "openai"
-        "project": str | None,         # None for global / pre-v0.0.5 rows
-        "status": "ok" | "fail" | "untested" | None,
-        "last_tested_at": str | None,  # ISO 8601, optional
-    }
-"""
+"""``ProviderRow`` widget for the Providers tab (REQ-VG-TUI-005)."""
 
 from __future__ import annotations
 
@@ -33,9 +6,6 @@ from typing import Any
 
 from textual.widgets import Static
 
-#: Status -> ``(indicator, css_class)``. Anything outside this
-#: mapping (None, empty string, "untested", an unknown value) renders
-#: as the untested form so the column alignment stays predictable.
 _STATUS_DISPLAY: dict[str, tuple[str, str]] = {
     "ok": ("[ok]  ", "status-ok"),
     "fail": ("[fail]", "status-fail"),
@@ -73,12 +43,7 @@ class ProviderRow(Static):
         self.add_class(self._status_class())
 
     def update_provider(self, provider: dict[str, Any]) -> None:
-        """Replace the underlying dict and re-render the row.
-
-        The Providers screen calls this after a successful test or
-        on poll-driven status update so the indicator + colour flip
-        without re-mounting the row (focus + scroll state survive).
-        """
+        """Replace the underlying dict and re-render the row."""
         old_class = self._status_class()
         self.provider = provider
         self.update(self._format())
@@ -114,12 +79,7 @@ class ProviderRow(Static):
 
 
 def format_status(status: Any) -> str:
-    """Return the plain-ASCII indicator for ``status``.
-
-    Accepts the documented ``ok`` / ``fail`` / ``untested`` strings
-    plus ``None`` and anything else; falls back to the untested
-    form so a malformed daemon response never breaks row alignment.
-    """
+    """Return the plain-ASCII indicator for ``status``."""
     return _STATUS_DISPLAY[_normalise_status(status)][0]
 
 

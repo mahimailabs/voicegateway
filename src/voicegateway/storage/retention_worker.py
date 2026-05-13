@@ -1,23 +1,4 @@
-"""Hourly retention worker for v0.3.0 replay rows.
-
-Implements REQ-VG-REPLAY-006 (privacy and retention controls): each
-project carries a ``replay.retention_days`` config knob (default 90)
-that this worker honors by deleting replay rows tied to sessions
-whose ``ended_at`` is older than ``now - retention_days``.
-
-Single-process for v0.3.0. The Foundry's "fronted by an idempotent
-claim-token mechanism if the gateway is ever run multi-replica" is
-deferred to a later milestone; running two workers concurrently
-against the same SQLite database is currently undefined behavior
-(SQLite's locking would serialize the deletes, but the duplicate
-work is wasted).
-
-The worker is decoupled from the ProjectConfig source via an
-injected ``retention_provider`` callable that returns the
-list of ``(project_id, retention_days)`` tuples. T07's wiring
-passes a closure over the live config; T18 tests inject a
-deterministic synthetic provider.
-"""
+"""Hourly retention worker for v0.3.0 replay rows."""
 
 from __future__ import annotations
 
@@ -39,9 +20,6 @@ _DEFAULT_RETENTION_DAYS: Final[int] = 90
 _DEFAULT_POLL_INTERVAL_SECONDS: Final[float] = 3600.0  # one hour
 
 
-# (project_id, retention_days) provider. Async to allow the wiring side
-# to read from any source (in-memory config, file watcher, future
-# database table).
 RetentionProvider = Callable[[], Awaitable[list[tuple[str, int]]]]
 
 
@@ -52,28 +30,7 @@ async def _default_provider() -> list[tuple[str, int]]:
 
 
 class RetentionWorker:
-    """Background worker that ages out old replay rows per project.
-
-    Lifecycle: :meth:`start` spawns one asyncio task that loops
-    forever, sleeping ``poll_interval_seconds`` between deletion passes.
-    :meth:`stop` cancels the task. :meth:`tick_now` runs one deletion
-    pass synchronously and returns the per-project deletion counts,
-    primarily for test rigs.
-
-    Each pass:
-
-    1. Calls ``retention_provider()`` for the live (project_id,
-       retention_days) tuples.
-    2. For each project, computes ``cutoff_iso = now - retention_days``
-       in UTC.
-    3. Finds sessions where ``project = ?`` AND
-       ``ended_at < cutoff_iso``.
-    4. Calls ``replay_repo.delete_replay(db, session_id)`` for each.
-    5. Logs the per-project delete count.
-
-    Idempotent: re-running with the same cutoff yields zero deletes
-    on the second pass (the rows are already gone).
-    """
+    """Background worker that ages out old replay rows per project."""
 
     def __init__(
         self,

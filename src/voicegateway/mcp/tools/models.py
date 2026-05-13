@@ -78,15 +78,11 @@ def _provider_exists(
 ) -> bool:
     if provider_id in gateway.config.providers:
         return True
-    # managed is the list cached from gateway.storage.list_managed_providers()
+
     if managed is not None:
         return any(p["provider_id"] == provider_id for p in managed)
     return False
 
-
-# ---------------------------------------------------------------------------
-# list_models
-# ---------------------------------------------------------------------------
 
 LIST_MODELS_DOC = """List every registered model on the gateway.
 
@@ -121,10 +117,6 @@ async def _handle_list_models(
 
     return {"models": models, "count": len(models)}
 
-
-# ---------------------------------------------------------------------------
-# register_model
-# ---------------------------------------------------------------------------
 
 REGISTER_MODEL_DOC = """Register a new model (e.g. deepgram/nova-3).
 
@@ -215,10 +207,6 @@ async def _handle_register_model(
     }
 
 
-# ---------------------------------------------------------------------------
-# delete_model
-# ---------------------------------------------------------------------------
-
 DELETE_MODEL_DOC = """Delete a GUI-registered model. Requires confirm=True.
 
 DESTRUCTIVE. Returns a preview showing which projects reference the model
@@ -245,13 +233,11 @@ async def _handle_delete_model(
 ) -> dict[str, Any]:
     payload = _parse(DeleteModelInput, arguments)
 
-    # YAML check: find the model in any modality.
     in_yaml = False
     for modality_models in gateway.config.models.values():
         if not isinstance(modality_models, dict):
             continue
         if payload.model_id in modality_models:
-            # If the model is also in managed table, prefer the managed delete.
             if gateway.storage is not None:
                 managed = await gateway.storage.get_managed_model(payload.model_id)
                 if managed is None:
@@ -281,7 +267,6 @@ async def _handle_delete_model(
             details={"model_id": payload.model_id},
         )
 
-    # Find projects that reference this model.
     projects_affected: list[str] = []
     for pid, pcfg in gateway.config.projects.items():
         if pcfg.default_stack and pcfg.default_stack in gateway.config.stacks:
@@ -308,10 +293,6 @@ async def _handle_delete_model(
         "projects_affected": projects_affected,
     }
 
-
-# ---------------------------------------------------------------------------
-# Registration
-# ---------------------------------------------------------------------------
 
 MODEL_TOOLS: list[ToolDef] = [
     make_tool("list_models", LIST_MODELS_DOC, ListModelsInput, _handle_list_models),

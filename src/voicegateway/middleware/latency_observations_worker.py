@@ -1,18 +1,4 @@
-"""15-minute roll-up worker for v0.5.0 latency_observations.
-
-Implements REQ-VG-ROUTE-002 AC-4 + REQ-VG-ROUTE-003 (Routing
-dashboard view freshness). Wakes every 15 minutes, calls
-``latency_observations_repo.roll_up`` to recompute the per-
-(project, provider, modality) p50/p95 snapshot over the trailing
-24-hour window. Single-process for v0.5.0.
-
-Mirrors the v0.3.0 ``RetentionWorker`` pattern (start/stop/tick_now
-lifecycle, structured logging on each cycle, asyncio task with
-exception-resilient loop). The worker is decoupled from the
-ProjectConfig source via the injected ``window_provider`` callable
-that returns the trailing-window length in minutes; the wiring
-side reads from the live config or hands a static value.
-"""
+"""15-minute roll-up worker for v0.5.0 latency_observations."""
 
 from __future__ import annotations
 
@@ -29,14 +15,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-_DEFAULT_WINDOW_MINUTES: Final[int] = 24 * 60  # OQ2 lock: 24-hour rolling.
-_DEFAULT_POLL_INTERVAL_SECONDS: Final[float] = 15 * 60.0  # OQ2 lock: 15-minute refresh.
+_DEFAULT_WINDOW_MINUTES: Final[int] = 24 * 60
+_DEFAULT_POLL_INTERVAL_SECONDS: Final[float] = 15 * 60.0
 
 
-# Window provider returns the rollup window length in minutes. Async
-# to let callers source the value from any backing store (live
-# config, future config-watch surface). When omitted, the default
-# 24-hour window is used.
 WindowProvider = Callable[[], Awaitable[int]]
 
 
@@ -45,22 +27,7 @@ async def _default_window_provider() -> int:
 
 
 class LatencyObservationsWorker:
-    """Background worker that refreshes ``latency_observations``.
-
-    Lifecycle: :meth:`start` spawns one asyncio task that loops
-    forever, sleeping ``poll_interval_seconds`` between roll-up
-    passes. :meth:`stop` cancels the task. :meth:`tick_now` runs
-    one pass synchronously and returns the number of inserted
-    rollup rows, primarily for test rigs.
-
-    Each pass calls ``latency_observations_repo.roll_up`` with the
-    window the provider returns. The repo DELETEs the prior
-    snapshot and re-inserts atomically, so the FE never sees a
-    half-rolled state.
-
-    Idempotent: re-running with the same data yields the same
-    snapshot.
-    """
+    """Background worker that refreshes ``latency_observations``."""
 
     def __init__(
         self,
@@ -100,8 +67,6 @@ class LatencyObservationsWorker:
     async def tick_now(self) -> int:
         """Run one roll-up pass synchronously. Returns the inserted row count."""
         return await self._tick()
-
-    # ---- internals -------------------------------------------------------
 
     async def _loop(self) -> None:
         try:

@@ -1,23 +1,4 @@
-"""Drop-in mirror of `livekit.agents.inference.LLM` backed by VoiceGateway.
-
-Constructing this class returns a wrapped LiveKit-plugin LLM instance
-that AgentSession can consume identically to LK Cloud's inference LLM,
-but routed through the user's own provider keys with VG cost tracking
-and session correlation in the middle.
-
-The constructor signature mirrors `livekit.agents.inference.LLM` from
-livekit-agents 1.5.7 exactly. Note that LK's LLM signature is
-**different** from STT/TTS: it uses ``str | None`` defaults instead of
-``NotGivenOr``, has no ``fallback`` / ``conn_options`` / ``http_session``,
-and adds ``provider`` and ``inference_class`` parameters.
-
-Example::
-
-    from voicegateway import inference
-
-    llm = inference.LLM("openai/gpt-4o-mini")
-    # equivalent to: from livekit.agents import inference; inference.LLM(...)
-"""
+"""Drop-in mirror of `livekit.agents.inference.LLM` backed by VoiceGateway."""
 
 from __future__ import annotations
 
@@ -40,18 +21,7 @@ from voicegateway.middleware.instrumented_provider import wrap_provider
 
 
 class LLM:
-    """LiveKit-plugin LLM factory backed by VoiceGateway.
-
-    Constructing ``LLM(model="openai/gpt-4o-mini", ...)`` resolves the
-    provider, looks up its API key from the active project (or uses the
-    ``api_key`` override), constructs the corresponding
-    ``livekit.plugins.<provider>.LLM`` instance, and wraps it for cost,
-    latency, and session-id tracking.
-
-    Unlike STT and TTS, LLM model strings do NOT carry a colon-suffix
-    convention in the LK inference module: ``"ollama/qwen2.5:3b"`` keeps
-    the ``":3b"`` as part of the model name verbatim.
-    """
+    """LiveKit-plugin LLM factory backed by VoiceGateway."""
 
     def __new__(
         cls,
@@ -69,8 +39,6 @@ class LLM:
                 "voicegateway.inference.LLM requires a non-empty model string"
             )
 
-        # Provider precedence: explicit `provider` kwarg wins; otherwise
-        # parse the leading "provider/" segment of the model string.
         if provider is not None:
             provider_name = provider
             model_name = model.split("/", 1)[1] if "/" in model else model
@@ -83,9 +51,6 @@ class LLM:
         if base_url is not None:
             plugin_kwargs["base_url"] = base_url
         if extra_kwargs is not None:
-            # ChatCompletionOptions is a TypedDict at runtime, behaves
-            # like a dict — spread into individual plugin kwargs so e.g.
-            # `extra_kwargs={"temperature": 0.2}` becomes LLM(temperature=0.2).
             plugin_kwargs.update(dict(extra_kwargs))
 
         if api_secret is not None:

@@ -1,33 +1,4 @@
-"""Async repo for the ``latency_observations`` table.
-
-Implements REQ-VG-ROUTE-002 AC-4 (fallback estimate path) and the
-read side of REQ-VG-ROUTE-003 (per-project provider-latency
-snapshot the dashboard Routing view displays).
-
-The table is a denormalized rollup: one row per
-(project_id, provider, modality) holding the latest p50/p95 over a
-configurable trailing window. The
-``latency_observations_worker`` (T06) calls ``roll_up`` every
-fifteen minutes; the router (T05) and the dashboard's
-``/api/routing/observations`` endpoint (T12) both call
-``read_all`` / ``get_for_project`` to consume the snapshot.
-
-Aggregation source: the v0.0.5 ``requests`` table. Each request row
-carries ``project``, ``provider``, ``modality``, ``total_latency_ms``,
-``timestamp``. Aggregating per (project, provider, modality) over a
-trailing window gives the router the predicted per-modality latency
-it needs.
-
-The Foundry's "use ``turns`` when v0.2.0 shipped" design was
-revisited: the ``turns`` table records full turn-cycle latency
-without per-modality breakdown, so it cannot answer the router's
-"how fast is provider X at modality Y" question. ``requests`` carries
-the per-modality timing directly and works uniformly on v0.0.5,
-v0.2.0+, and v0.4.0+ baselines.
-
-Schema reference:
-``voicegateway/storage/migrations/0006_routing_and_branding.py``.
-"""
+"""Async repo for the ``latency_observations`` table."""
 
 from __future__ import annotations
 
@@ -82,19 +53,7 @@ _SELECT_FIELDS = (
 async def roll_up(
     db: aiosqlite.Connection, *, window_minutes: int = _DEFAULT_WINDOW_MINUTES
 ) -> int:
-    """Recompute the rollup over the trailing window.
-
-    Deletes the previous rollup snapshot atomically and re-inserts
-    one row per (project, provider, modality) with new p50/p95 over
-    the requests table window. Returns the number of inserted rows.
-
-    The "delete + insert" pattern keeps the table size bounded
-    (one row per group) and ensures the FE never sees a half-rolled
-    state: a single transaction commits the new snapshot.
-
-    ``window_minutes`` defaults to the OQ2-locked 1440 minutes
-    (24 hours). Past requests outside the window are ignored.
-    """
+    """Recompute the rollup over the trailing window."""
     import datetime as _dt
 
     now = _dt.datetime.now(tz=_dt.UTC)

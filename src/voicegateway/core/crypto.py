@@ -1,18 +1,4 @@
-"""Symmetric encryption for secrets stored in the managed_* tables.
-
-Uses Fernet (AES-128-CBC with HMAC-SHA256 authentication). The
-primary key is read from ``VOICEGW_SECRET`` env var or auto-generated
-and persisted to ``~/.config/voicegateway/.secret`` with chmod 600 on
-first run.
-
-Rotation: ``VOICEGW_SECRET_FALLBACK`` accepts one or more
-comma-separated previous keys. Decrypt tries them in order so
-ciphertext written under any of the listed keys is still readable
-during a rotation window. Encrypt always uses the primary key. Run
-``voicegw rotate-secret`` after setting the new primary plus the old
-key as fallback to re-encrypt every managed_providers row, then
-remove ``VOICEGW_SECRET_FALLBACK`` from the environment.
-"""
+"""Symmetric encryption for secrets stored in the managed_* tables."""
 
 from __future__ import annotations
 
@@ -29,11 +15,7 @@ _fernet: MultiFernet | None = None
 
 
 def get_secret() -> bytes:
-    """Return the primary Fernet key, from env or secret file.
-
-    Priority: VOICEGW_SECRET env > ~/.config/voicegateway/.secret file.
-    If neither exists, generate and persist a new key with chmod 600.
-    """
+    """Return the primary Fernet key, from env or secret file."""
     env_secret = os.environ.get("VOICEGW_SECRET")
     if env_secret:
         return env_secret.encode()
@@ -42,7 +24,6 @@ def get_secret() -> bytes:
         _SECRET_FILE.chmod(stat.S_IRUSR | stat.S_IWUSR)  # enforce 0600
         return _SECRET_FILE.read_bytes().strip()
 
-    # First run — generate and persist atomically
     key = Fernet.generate_key()
     _SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(
@@ -59,13 +40,7 @@ def get_secret() -> bytes:
 
 
 def _get_fallback_secrets() -> list[bytes]:
-    """Return the parsed VOICEGW_SECRET_FALLBACK keys, or [] when unset.
-
-    Comma-separated values let an operator stage two rotations
-    without losing access to the oldest tokens; entries are stripped
-    of whitespace and skipped when empty (so a trailing comma is
-    not an error).
-    """
+    """Return the parsed VOICEGW_SECRET_FALLBACK keys, or [] when unset."""
     raw = os.environ.get(_FALLBACK_ENV)
     if not raw:
         return []
@@ -73,13 +48,7 @@ def _get_fallback_secrets() -> list[bytes]:
 
 
 def _build_fernet() -> MultiFernet:
-    """Construct the MultiFernet from primary + fallback keys.
-
-    MultiFernet uses the first instance for encrypt and tries each
-    in order on decrypt. Building primary-first is what makes
-    rotation work: ``encrypt`` writes new tokens with the new key
-    while ``decrypt`` still reads tokens written under the old.
-    """
+    """Construct the MultiFernet from primary + fallback keys."""
     keys = [Fernet(get_secret())]
     for fallback in _get_fallback_secrets():
         keys.append(Fernet(fallback))
@@ -107,16 +76,7 @@ def encrypt(plaintext: str) -> str:
 
 
 def decrypt(ciphertext: str) -> str:
-    """Decrypt a string. Empty input returns empty string.
-
-    Tries the primary key first, then any keys listed in
-    ``VOICEGW_SECRET_FALLBACK`` in order.
-
-    Raises:
-        ValueError: If no configured key successfully decrypts the
-            ciphertext. Typically means the secret rotated without
-            running ``voicegw rotate-secret``.
-    """
+    """Decrypt a string. Empty input returns empty string."""
     if not ciphertext:
         return ""
     try:
@@ -131,20 +91,7 @@ def decrypt(ciphertext: str) -> str:
 
 
 def rotate_token(ciphertext: str) -> str:
-    """Re-encrypt ``ciphertext`` under the current primary key.
-
-    Used by ``voicegw rotate-secret`` to migrate ``managed_providers``
-    rows after a key rotation. ``MultiFernet.rotate`` decrypts via
-    any configured key (primary or fallback) and re-encrypts via
-    primary, returning the new ciphertext. An empty input returns
-    an empty string so callers can pass legacy NULL / empty rows
-    through unchanged.
-
-    Raises:
-        ValueError: When neither the primary nor any fallback key
-            decrypts the input. The caller should surface this to
-            the user with the affected row id.
-    """
+    """Re-encrypt ``ciphertext`` under the current primary key."""
     if not ciphertext:
         return ""
     try:

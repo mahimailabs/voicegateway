@@ -1,7 +1,4 @@
-"""Merges configuration from YAML, SQLite managed tables, and env vars.
-
-Priority: ENV > SQLite (managed) > YAML (base).
-"""
+"""Merges configuration from YAML, SQLite managed tables, and env vars."""
 
 from __future__ import annotations
 
@@ -29,17 +26,11 @@ class ConfigManager:
 
     async def load_merged(self) -> GatewayConfig:
         """Return a GatewayConfig with managed_* rows merged in."""
-        # Deep copy the YAML config so we don't mutate the original
         merged = copy.deepcopy(self._yaml)
 
         if self._storage is None:
             return merged
 
-        # Layer in managed projects FIRST. Provider-scoped rows below
-        # may reference a project that exists only in the DB; running
-        # this loop first means the providers loop can attach to a
-        # fully-populated ProjectConfig (name / description / budget /
-        # tags) instead of a stub that swallows the real metadata.
         for row in await self._storage.list_managed_projects():
             pid = row["project_id"]
             if pid in merged.projects:
@@ -70,15 +61,6 @@ class ConfigManager:
                 guardrails=GuardrailPolicy.from_raw(row.get("guardrail_policy")),
             )
 
-        # Layer in managed providers.
-        # Project-scoped rows (v0.0.5+, written by ``vg_add_provider``)
-        # carry a non-null ``project`` column and merge into
-        # ``merged.projects[<name>].providers[<provider_type>]`` so the
-        # inference resolver finds them via
-        # ``GatewayConfig.get_provider_config_for_project``. Legacy
-        # global-scope rows (``project IS NULL``) keep their previous
-        # behavior: they layer into ``merged.providers[<provider_id>]``.
-        # YAML always wins on conflict, on either branch.
         for row in await self._storage.list_managed_providers():
             pid = row["provider_id"]
             try:
@@ -88,11 +70,7 @@ class ConfigManager:
                     "Failed to decrypt key for provider '%s', skipping", pid
                 )
                 plaintext_key = ""
-            # Reserved keys (api_key / base_url / _source) MUST come
-            # from the dedicated row columns, not from extra_config.
-            # Spreading extra_config first and then overwriting prevents
-            # a malformed extra_config from masking the encrypted key
-            # path or the "db" source tag.
+
             provider_cfg: dict[str, Any] = dict(row.get("extra_config") or {})
             provider_cfg["api_key"] = plaintext_key
             provider_cfg["base_url"] = row.get("base_url")
@@ -100,11 +78,7 @@ class ConfigManager:
             project_name = row.get("project")
             if project_name:
                 provider_type = row["provider_type"]
-                # Stub a ProjectConfig only when the project doesn't
-                # exist in YAML or in managed_projects; the
-                # managed_projects loop above ran first, so a stub here
-                # genuinely means "DB has providers for this project
-                # but no metadata row for it yet."
+
                 if project_name not in merged.projects:
                     merged.projects[project_name] = ProjectConfig(
                         id=project_name,
@@ -120,7 +94,6 @@ class ConfigManager:
                     continue  # YAML top-level provider wins.
                 merged.providers[pid] = provider_cfg
 
-        # Layer in managed models
         for row in await self._storage.list_managed_models():
             mid = row["model_id"]
             modality = row["modality"]

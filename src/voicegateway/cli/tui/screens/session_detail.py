@@ -1,18 +1,4 @@
-"""Per-session drill-in modal (REQ-VG-TUI-002 detail view).
-
-Pushed onto the App's screen stack when ``Enter`` fires on a focused
-:class:`SessionRow`. This is the call site where Textual's
-:class:`textual.screen.Screen` API actually applies (modal/replace
-navigation, screen-stack lifecycle hooks): the four tab panels stay
-``Container`` subclasses inside the App's ``ContentSwitcher`` because
-they mount peer-of-widgets, but the detail view is genuinely a
-top-level screen pushed over the tab content.
-
-Loads the full session detail via
-:meth:`MetricsClient.get_session_detail` on mount; renders the
-return value as a fixed-width key/value block plus a per-modality
-cost breakdown when present. Dismisses on ``escape`` or ``q``.
-"""
+"""Per-session drill-in modal (REQ-VG-TUI-002 detail view)."""
 
 from __future__ import annotations
 
@@ -29,15 +15,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 class SessionDetailScreen(ModalScreen[None]):
-    """Modal screen rendering the per-turn detail of one session.
-
-    Uses :class:`ModalScreen` rather than the plain :class:`Screen`
-    so the underlying Sessions tab stays visible behind the modal
-    (Textual dims it but does not unmount it). Dismissal restores
-    focus to whatever was focused before the push -- for our use
-    case, that is the originating :class:`SessionRow`, so the user
-    can immediately Enter into another row without tab-shuffling.
-    """
+    """Modal screen rendering the per-turn detail of one session."""
 
     BINDINGS = [
         Binding("escape", "dismiss", "Close"),
@@ -87,11 +65,7 @@ class SessionDetailScreen(ModalScreen[None]):
 
 
 def _format_detail(detail: dict[str, Any]) -> str:
-    """Pure formatter so it can be unit-tested without Textual.
-
-    Renders a key/value block plus the per-modality breakdown when
-    the storage / daemon response carries one.
-    """
+    """Pure formatter so it can be unit-tested without Textual."""
     project = detail.get("project") or "?"
     started = detail.get("started_at") or "?"
     ended = detail.get("ended_at") or "?"
