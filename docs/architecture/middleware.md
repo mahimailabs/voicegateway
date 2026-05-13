@@ -179,7 +179,7 @@ def first_resolvable_stt(chain):
     raise RuntimeError("every STT model in the chain failed to resolve")
 ```
 
-The full worked example is at [`examples/fallback_agent.py`](https://github.com/mahimailabs/voicegateway/blob/main/examples/fallback_agent.py). Once that resolved model is wired into `AgentSession`, the call uses it for its lifetime: VG does not swap providers mid-call. For runtime / mid-call failover, compose LiveKit's `FallbackAdapter` around VG `inference.*` instances directly; see the [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter) guide.
+Once that resolved model is wired into `AgentSession`, the call uses it for its lifetime: VG does not swap providers mid-call. For runtime / mid-call failover, compose LiveKit's `FallbackAdapter` around VG `inference.*` instances directly; see the [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter) guide.
 
 ## RequestLogger
 

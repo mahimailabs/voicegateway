@@ -63,9 +63,9 @@ def smoke_test(
     runs over MCP) so the report covers credential validity too.
 
     What this does NOT replace: a real audio interaction against a
-    running LiveKit server. For that, run
-    ``python examples/v005_inference_drop_in.py dev`` against a
-    LiveKit dev server with real provider keys.
+    running LiveKit server. For that, wire ``voicegateway.inference``
+    into a LiveKit ``AgentSession`` and connect to a dev server with
+    real provider keys (see the README Quick Start).
 
     Exit code is 0 when every check passes, 1 otherwise.
     """
@@ -423,6 +423,6 @@ def _print_smoke_report(rows: list[tuple[str, bool, str]]) -> None:
     else:
         console.print(
             "\n[green]All structural checks passed.[/green] For an "
-            "actual end-to-end run, point a LiveKit dev server at "
-            "[bold]examples/v005_inference_drop_in.py[/bold]."
+            "actual end-to-end run, wire [bold]voicegateway.inference[/bold] "
+            "into a LiveKit AgentSession and connect to a dev server."
         )

@@ -1251,7 +1251,7 @@ def test_smoke_test_passes_with_keys_configured(tmp_path, monkeypatch):
     assert "PASS" in result.output
     assert "FAIL" not in result.output
     assert "All structural checks passed" in result.output
-    assert "examples/v005_inference_drop_in.py" in result.output
+    assert "voicegateway.inference" in result.output
     # The session-correlation line should name the modalities.
     assert "llm,stt,tts" in result.output or "stt,llm,tts" in result.output
 

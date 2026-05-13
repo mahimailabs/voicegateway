@@ -123,7 +123,7 @@ fallbacks:
   llm: [openai/gpt-4.1-mini, anthropic/claude-sonnet-4-20250514]
 ```
 
-See [`examples/fallback_agent.py`](https://github.com/mahimailabs/voicegateway/blob/main/examples/fallback_agent.py) for the worked code. Once `AgentSession` starts, the resolved model is used for the whole call. v0.0.6 will add a first-class `fallback=` parameter to the `inference` factories.
+Walk the chain manually at startup: try each model in `voicegw.yaml`'s `fallbacks.<modality>` list with `inference.STT/LLM/TTS(model_id)` and use the first one whose provider plugin imports cleanly. Once `AgentSession` starts, the resolved model is used for the whole call. v0.0.6 will add a first-class `fallback=` parameter to the `inference` factories.
 
 ## Next steps
 
