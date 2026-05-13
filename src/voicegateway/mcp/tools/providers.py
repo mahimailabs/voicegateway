@@ -100,10 +100,6 @@ async def _gather_providers(gateway: Gateway) -> list[dict[str, Any]]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# list_providers
-# ---------------------------------------------------------------------------
-
 LIST_PROVIDERS_DOC = """List every provider configured on this gateway.
 
 Use this to answer "What providers do I have?" or as the first step when
@@ -127,10 +123,6 @@ async def _handle_list_providers(
     providers = await _gather_providers(gateway)
     return {"providers": providers, "count": len(providers)}
 
-
-# ---------------------------------------------------------------------------
-# get_provider
-# ---------------------------------------------------------------------------
 
 GET_PROVIDER_DOC = """Return full details for one provider, with the API key masked.
 
@@ -178,10 +170,6 @@ async def _handle_get_provider(
     )
 
 
-# ---------------------------------------------------------------------------
-# test_provider
-# ---------------------------------------------------------------------------
-
 TEST_PROVIDER_DOC = """Test connectivity to a provider.
 
 Use this after ``add_provider`` or when troubleshooting to verify the gateway
@@ -206,7 +194,6 @@ async def _handle_test_provider(
 ) -> dict[str, Any]:
     payload = _parse(TestProviderInput, arguments)
 
-    # Look up provider config from YAML first, then managed table.
     cfg = gateway.config
     provider_cfg: dict[str, Any] | None = None
     provider_type = payload.provider_id
@@ -261,10 +248,6 @@ async def _handle_test_provider(
     }
 
 
-# ---------------------------------------------------------------------------
-# add_provider
-# ---------------------------------------------------------------------------
-
 ADD_PROVIDER_DOC = """Register a new voice AI provider or replace an existing GUI-added one.
 
 Use this to add Deepgram, OpenAI, Cartesia, etc. so the gateway can route
@@ -301,7 +284,6 @@ async def _handle_add_provider(
             details={"supported": sorted(_PROVIDER_REGISTRY)},
         )
 
-    # Do not allow overriding a YAML-defined provider.
     if payload.provider_id in gateway.config.providers:
         raise ProviderAlreadyExistsError(
             f"Provider '{payload.provider_id}' is defined in voicegw.yaml and "
@@ -315,7 +297,6 @@ async def _handle_add_provider(
             details={"hint": "enable cost_tracking in voicegw.yaml"},
         )
 
-    # Test the credentials before saving.
     test_cfg = {"api_key": payload.api_key, "base_url": payload.base_url}
     local = payload.provider_type in {"ollama", "whisper", "kokoro", "piper"}
     if not local:
@@ -361,10 +342,6 @@ async def _handle_add_provider(
     }
 
 
-# ---------------------------------------------------------------------------
-# delete_provider
-# ---------------------------------------------------------------------------
-
 DELETE_PROVIDER_DOC = """Delete a GUI-added provider. Requires confirm=True.
 
 DESTRUCTIVE. By default this returns a preview with the models and projects
@@ -392,7 +369,6 @@ async def _handle_delete_provider(
 ) -> dict[str, Any]:
     payload = _parse(DeleteProviderInput, arguments)
 
-    # Check if this is a YAML-only provider (not in managed table)
     is_in_config = payload.provider_id in gateway.config.providers
     is_managed = False
     if gateway.storage is not None:
@@ -419,7 +395,6 @@ async def _handle_delete_provider(
             details={"provider_id": payload.provider_id},
         )
 
-    # Compute impact.
     models_affected: list[str] = []
     for modality_models in gateway.config.models.values():
         if not isinstance(modality_models, dict):
@@ -459,10 +434,6 @@ async def _handle_delete_provider(
         "projects_affected": projects_affected,
     }
 
-
-# ---------------------------------------------------------------------------
-# v0.0.5 vg_add_provider — per-project provider key writes
-# ---------------------------------------------------------------------------
 
 VG_ADD_PROVIDER_DOC = """Add or update a provider key scoped to a project.
 
@@ -506,24 +477,8 @@ async def _handle_vg_add_provider(
 
     composite_id = f"{payload.project}:{payload.provider}"
 
-    # Block YAML-defined collisions. There are two YAML places the
-    # same key could already exist:
-    #   1. The top-level ``providers.<composite_id>`` block (rare —
-    #      requires a literal ``"<project>:<provider>"`` provider id in
-    #      voicegw.yaml).
-    #   2. The per-project ``projects.<project>.providers.<provider>``
-    #      block (the v0.0.5 shape; the inference resolver consults
-    #      this directly, so a DB write would silently shadow an
-    #      already-active YAML key).
-    # Both must error: writing the row anyway leaves the user thinking
-    # they rotated when the resolver still uses the YAML value.
-    # Re-adding the same DB row is a legitimate rotation (re-add ⇒
-    # upsert) and must not trigger the guard.
     existing_top_level = gateway.config.providers.get(composite_id)
-    if (
-        existing_top_level is not None
-        and existing_top_level.get("_source") != "db"
-    ):
+    if existing_top_level is not None and existing_top_level.get("_source") != "db":
         raise ProviderAlreadyExistsError(
             f"Provider id '{composite_id}' is already defined in voicegw.yaml.",
             details={"provider_id": composite_id, "source": "yaml"},
@@ -534,10 +489,6 @@ async def _handle_vg_add_provider(
         and payload.provider in project_cfg.providers
         and project_cfg.providers[payload.provider].get("_source") != "db"
     ):
-        # Block YAML-defined per-project shadowing. A DB-sourced entry
-        # at the same path is the row we are about to upsert (rotation),
-        # which must succeed — the ``_source != "db"`` check carves
-        # rotation out of the guard.
         raise ProviderAlreadyExistsError(
             f"Project '{payload.project}' already defines '{payload.provider}' "
             "in voicegw.yaml. Edit the YAML or remove that entry; the "
@@ -571,10 +522,6 @@ async def _handle_vg_add_provider(
         "created": True,
     }
 
-
-# ---------------------------------------------------------------------------
-# v0.0.5 vg_remove_provider — drop a per-project provider key
-# ---------------------------------------------------------------------------
 
 VG_REMOVE_PROVIDER_DOC = """Remove the per-project provider key written by vg_add_provider.
 
@@ -638,10 +585,6 @@ async def _handle_vg_remove_provider(
     }
 
 
-# ---------------------------------------------------------------------------
-# v0.0.5 vg_list_providers — surface per-project keys
-# ---------------------------------------------------------------------------
-
 VG_LIST_PROVIDERS_DOC = """List per-project provider keys with optional project filter.
 
 The api_key field is masked (first/last 4 chars) — full keys never
@@ -664,12 +607,6 @@ Returns:
 def _yaml_per_project_entries(gateway: Gateway) -> list[dict[str, Any]]:
     """Flatten projects.<id>.providers blocks from voicegw.yaml into
     a list of provider dicts shaped like the DB output.
-
-    Skips entries whose ``_source`` is ``"db"`` — after Item 1 fixed the
-    config_manager merge, ``config.projects[<id>].providers`` can carry
-    DB-managed rows alongside YAML entries; the DB scan below adds
-    those, so reporting them here would double-count and label DB rows
-    as YAML.
     """
     local_names = {"ollama", "whisper", "kokoro", "piper"}
     out: list[dict[str, Any]] = []
@@ -701,13 +638,8 @@ async def _handle_vg_list_providers(
     local_names = {"ollama", "whisper", "kokoro", "piper"}
     rows: list[dict[str, Any]] = []
 
-    # 1. YAML-defined per-project entries.
     rows.extend(_yaml_per_project_entries(gateway))
 
-    # 2. DB-managed rows. Skip rows that share a provider_id with the
-    # YAML output (keeps the response from showing duplicates when an
-    # operator has both YAML and DB entries for the same composite id;
-    # YAML wins per ConfigManager.load_merged precedence).
     yaml_ids = {r["provider_id"] for r in rows}
     if gateway.storage is not None:
         from voicegateway.core.crypto import decrypt, mask
@@ -718,9 +650,6 @@ async def _handle_vg_list_providers(
                 continue
             project = row.get("project")
             if project is None:
-                # Legacy global rows — skip when listing per-project.
-                # vg_list_providers is the per-project view; the
-                # global add_provider tool handles global listings.
                 continue
             try:
                 plaintext = decrypt(row.get("api_key_encrypted", ""))
@@ -739,17 +668,12 @@ async def _handle_vg_list_providers(
                 }
             )
 
-    # 3. Apply project filter.
     if payload.project is not None:
         rows = [r for r in rows if r["project"] == payload.project]
 
     rows.sort(key=lambda r: (r["project"], r["provider"]))
     return {"providers": rows}
 
-
-# ---------------------------------------------------------------------------
-# v0.0.5 vg_set_provider_key — rotate an existing per-project key
-# ---------------------------------------------------------------------------
 
 VG_SET_PROVIDER_KEY_DOC = """Rotate the per-project key written by vg_add_provider.
 
@@ -815,10 +739,6 @@ async def _handle_vg_set_provider_key(
             },
         )
 
-    # Preserve the row's existing base_url unless the caller explicitly
-    # provides a new one. base_url=None on the input is "no change",
-    # not "clear the URL" — that asymmetry is what makes
-    # vg_set_provider_key a key rotation rather than a full upsert.
     base_url = (
         payload.base_url if payload.base_url is not None else managed.get("base_url")
     )
@@ -842,10 +762,6 @@ async def _handle_vg_set_provider_key(
         "rotated": True,
     }
 
-
-# ---------------------------------------------------------------------------
-# v0.0.5 vg_test_provider_key — sanity-check a per-project key
-# ---------------------------------------------------------------------------
 
 VG_TEST_PROVIDER_KEY_DOC = """Verify a per-project provider key actually authenticates.
 
@@ -878,12 +794,10 @@ async def _handle_vg_test_provider_key(
 
     provider_cfg: dict[str, Any] | None = None
 
-    # 1. YAML projects.<project>.providers.<provider>.
     yaml_project = gateway.config.projects.get(payload.project)
     if yaml_project is not None and payload.provider in yaml_project.providers:
         provider_cfg = dict(yaml_project.providers[payload.provider])
 
-    # 2. DB-managed row keyed by composite id.
     if provider_cfg is None and gateway.storage is not None:
         row = await gateway.storage.get_managed_provider(composite_id)
         if row is not None:
@@ -952,10 +866,6 @@ async def _handle_vg_test_provider_key(
         "message": "reachable" if ok else "provider returned unhealthy",
     }
 
-
-# ---------------------------------------------------------------------------
-# Registration
-# ---------------------------------------------------------------------------
 
 PROVIDER_TOOLS: list[ToolDef] = [
     make_tool(

@@ -1,30 +1,4 @@
-"""``SessionRow`` widget for the Sessions tab (REQ-VG-TUI-002).
-
-One row per recent voice session. Renders four fields side-by-side
-so the Sessions tab list reads like a terminal-native dashboard:
-
-    HH:MM:SS   <duration>   $<cost>   <provider, ...>
-
-The widget is a thin :class:`textual.widgets.Static` subclass that
-formats the dict returned by :meth:`MetricsClient.list_sessions`
-into a single fixed-width line. The Sessions screen mounts one row
-per session inside a scrolling container; sort toggles re-render
-the list rather than mutating individual rows.
-
-The dict shape both clients return (see iteration 7's smoke test):
-
-    {
-        "id": "vg-...",
-        "project": "default",
-        "started_at": ISO 8601 str,
-        "ended_at": ISO 8601 str,
-        "modalities": ["llm", ...],
-        "total_cost_usd": float,
-        "request_count": int,
-        "by_modality": {...},
-        "providers": ["openai", ...],
-    }
-"""
+"""``SessionRow`` widget for the Sessions tab (REQ-VG-TUI-002)."""
 
 from __future__ import annotations
 
@@ -33,9 +7,6 @@ from typing import Any
 
 from textual.widgets import Static
 
-#: Formatted-row width budgets. Keep in sync with the Sessions
-#: screen's column header (Phase 3 bullet 3) so the heading and the
-#: rows align.
 _TIME_WIDTH = 8  # HH:MM:SS
 _DURATION_WIDTH = 8
 _COST_WIDTH = 9  # "$0.00012" plus a couple of pad chars

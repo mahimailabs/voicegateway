@@ -1,17 +1,4 @@
-"""Async repo for the four ``replay_*`` tables.
-
-Implements REQ-VG-REPLAY-001 (open any past conversation as a replay)
-and REQ-VG-REPLAY-006 (privacy + retention) data access. Mirrors the
-flat-function-module pattern from v0.2.0's ``turns_repo`` and
-``dead_air_repo``: each function takes an ``aiosqlite.Connection`` and
-the caller owns the connection lifecycle.
-
-The natural caller is ``ReplayCapture.flush_callback`` from T02 with a
-``functools.partial(replay_repo.bulk_write_events, db)`` wiring landed
-in T09's session-close path.
-
-Schema reference: ``voicegateway/storage/migrations/0004_replay_tables.py``.
-"""
+"""Async repo for the four ``replay_*`` tables."""
 
 from __future__ import annotations
 
@@ -25,10 +12,6 @@ if TYPE_CHECKING:
     import aiosqlite
 
 
-# Modality -> (table_name, has_provider_cost) tuples. The four replay
-# tables share identical column shapes but ``state_snapshots`` semantically
-# does not carry provider/cost; both default to '' / NULL when the
-# inserter omits them, matching migration 0004.
 _TABLE_BY_MODALITY: dict[str, str] = {
     "stt": "replay_stt_events",
     "llm": "replay_llm_tokens",
@@ -72,20 +55,7 @@ async def bulk_write_events(
     *,
     tenant_id: str | None = None,
 ) -> int:
-    """Bulk-insert events into their per-modality tables.
-
-    Partitions by ``event.modality`` and runs one ``executemany`` per
-    partition. Empty input is a no-op (returns 0). Commits the
-    connection on success.
-
-    ``tenant_id`` defaults to ``current_tenant()`` (the v0.4.0
-    ContextVar) and is applied uniformly across every row of the
-    batch. Replay flushes are session-scoped (one session per
-    ReplayCapture buffer), so the contextvar carries the session's
-    tenant without per-event wiring.
-
-    Returns the total number of events inserted across the four tables.
-    """
+    """Bulk-insert events into their per-modality tables."""
     if not events:
         return 0
     resolved = tenant_id if tenant_id is not None else current_tenant()
@@ -137,9 +107,7 @@ async def read_full_replay(
     modality so the consumer (the dashboard's Replay page, T11) can
     route to the right pane.
     """
-    # Each subquery selects the seven canonical columns (session_id,
-    # modality literal, t_ms, payload, provider, cost_usd, created_at)
-    # so the outer ORDER BY t_ms is stable across modalities.
+
     sql = (
         "SELECT session_id, 'stt' AS modality, t_ms, payload, "
         "       provider, cost_usd FROM replay_stt_events "
@@ -181,13 +149,7 @@ async def read_full_replay(
 
 
 async def delete_replay(db: aiosqlite.Connection, session_id: str) -> int:
-    """Delete every replay row for one session across all four tables.
-
-    Implements REQ-VG-REPLAY-006 AC-3 ("when the developer deletes a
-    session from the dashboard, all replay events tied to that session
-    are deleted in the same operation"). Single transaction across the
-    four tables. Returns the total number of rows deleted.
-    """
+    """Delete every replay row for one session across all four tables."""
     total = 0
     for table in _TABLE_BY_MODALITY.values():
         cursor = await db.execute(
@@ -203,18 +165,7 @@ async def delete_replay(db: aiosqlite.Connection, session_id: str) -> int:
 async def aggregate_storage_per_session(
     db: aiosqlite.Connection, session_id: str
 ) -> int:
-    """Sum the JSON-payload byte length across all four tables.
-
-    Approximates the on-disk footprint for one session's replay rows.
-    The actual on-disk size includes row overhead, indexes, and JSON
-    encoding artifacts, but the payload sum is the dominant term
-    (90%+) and tracks the developer-facing storage trade-off.
-
-    Implements REQ-VG-REPLAY-006's "the dashboard surfaces current
-    storage usage so the cost is not invisible" requirement; the
-    sessions row's ``replay_size_bytes`` column is upserted from this
-    sum at session close (T08's ``finalize_session_replay``).
-    """
+    """Sum the JSON-payload byte length across all four tables."""
     total = 0
     for table in _TABLE_BY_MODALITY.values():
         cursor = await db.execute(

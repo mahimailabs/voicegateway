@@ -27,11 +27,7 @@ from voicegateway.storage.models import RequestRecord
 
 _DEFAULT_PERCENTILES: list[float] = [50.0, 95.0, 99.0]
 
-# Migration modules start with a digit prefix (the standard versioned-
-# migration naming convention) which is not a valid Python identifier
-# for `from ... import` syntax. `importlib.import_module` accepts
-# arbitrary dotted strings, so we load each migration once at startup
-# and call its `apply(db)` coroutine from `_ensure_initialized` below.
+
 _migration_0003 = import_module(
     "voicegateway.storage.migrations.0003_turns_and_deadair"
 )
@@ -528,8 +524,7 @@ class SQLiteStorage:
                     guardrails_active = 1 if guardrail_policy.is_active else 0
                     guardrails_bypassed = (
                         1
-                        if guardrail_policy.is_active
-                        and current_guardrails_bypassed()
+                        if guardrail_policy.is_active and current_guardrails_bypassed()
                         else 0
                     )
                     guardrail_snapshot_json = guardrail_policy_json(guardrail_policy)

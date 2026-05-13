@@ -1,24 +1,4 @@
-"""Subclass-based instrumentation wrappers for LiveKit plugin instances.
-
-Pre-v0.0.5 audit-fix this module used a ``__getattr__``-style proxy. That
-broke LK 1.5.x runtime: ``livekit.agents.voice.agent_activity`` runs
-many ``isinstance(self.tts, tts.TTS)`` (and STT/LLM equivalents) checks
-before attaching its ``metrics_collected`` and ``error`` listeners. When
-the proxy failed those checks the listeners never fired, ``SpeechHandle``
-never observed completion, and the framework's 5-second
-``INTERRUPTION_TIMEOUT`` cancelled every speech under real audio.
-
-The wrappers here subclass the matching LK base class and forward the
-abstract method calls to the wrapped real plugin instance. They also
-re-emit ``metrics_collected`` and ``error`` events from the wrapped
-plugin onto themselves so listeners attached to the wrapper (the only
-identity LK sees through its ``isinstance`` gate) receive everything
-the wrapped plugin emits.
-
-The instrumentation surface (``_mark_first_byte`` / ``_log_request``
-plus the timing/cost-tracking state) is preserved verbatim so the
-smoke-test direct-call path in ``voicegateway/cli.py`` stays green.
-"""
+"""Subclass-based instrumentation wrappers for LiveKit plugin instances."""
 
 from __future__ import annotations
 
@@ -39,16 +19,9 @@ logger = logging.getLogger(__name__)
 
 
 class _InstrumentedBase:
-    """Mixin holding the cost/latency state shared across STT/LLM/TTS wrappers.
-
-    Concrete subclasses combine this with the appropriate LK plugin base
-    class (``lk_stt.STT`` / ``lk_llm.LLM`` / ``lk_tts.TTS``) so
-    ``isinstance(...)`` checks inside LiveKit's session bookkeeping
-    succeed and metrics listeners attach to the wrapper as expected.
-    """
+    """Mixin holding the cost/latency state shared across STT/LLM/TTS wrappers."""
 
     _modality: str = ""
-    # Set by ``_init_instrumentation`` on every concrete subclass.
     _wrapped: Any
     _model_id: str
     _provider: str
@@ -78,16 +51,11 @@ class _InstrumentedBase:
         self._start_time = time.perf_counter()
         self._first_byte_time = None
         self._logged = False
-        # Bridge events: re-emit on self so LK's listeners (registered
-        # on the wrapper because of isinstance gating in
-        # agent_activity._start_session) receive everything the wrapped
-        # plugin emits. This is the single fix that unblocks AC-2 — the
-        # rest of the rewrite is plumbing to make this bridge possible.
+
         wrapped.on("metrics_collected", self._forward_metrics)
         wrapped.on("error", self._forward_error)
 
     def _forward_metrics(self, *args: Any, **kwargs: Any) -> None:
-        # ``emit`` lives on the LK base class via rtc.EventEmitter.
         self.emit("metrics_collected", *args, **kwargs)
 
     def _forward_error(self, *args: Any, **kwargs: Any) -> None:
@@ -118,8 +86,6 @@ class _InstrumentedBase:
             else total_ms
         )
 
-        # Read the per-context session id at request time so calls made
-        # inside an AgentSession share the same row-level session_id.
         from voicegateway.inference._session_context import get_session_id
 
         record = self._cost_tracker.create_record(
@@ -142,10 +108,6 @@ class _InstrumentedBase:
             except Exception:
                 logger.warning("Failed to log request record", exc_info=True)
 
-        # Update the budget enforcer's spend cache so the next check within
-        # the TTL window sees this request's cost — runs even when storage
-        # raises, otherwise per-project budget caps drift after any
-        # storage outage.
         await self._cost_tracker.notify_spend(record)
 
     def __getattr__(self, name: str) -> Any:

@@ -20,10 +20,6 @@ if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
 
 
-# ---------------------------------------------------------------------------
-# Module-level state so get_health can report uptime.
-# ---------------------------------------------------------------------------
-
 _STARTED_AT = time.time()
 
 
@@ -33,10 +29,6 @@ def _parse(model_cls: type, arguments: dict[str, Any]) -> Any:
     except Exception as exc:  # pydantic.ValidationError
         raise ValidationError(str(exc)) from exc
 
-
-# ---------------------------------------------------------------------------
-# get_health
-# ---------------------------------------------------------------------------
 
 GET_HEALTH_DOC = """Return the overall health and identity of the VoiceGateway instance.
 
@@ -73,10 +65,6 @@ async def _handle_get_health(
         },
     }
 
-
-# ---------------------------------------------------------------------------
-# get_provider_status
-# ---------------------------------------------------------------------------
 
 GET_PROVIDER_STATUS_DOC = """Return the configured status of providers.
 
@@ -135,10 +123,6 @@ async def _handle_get_provider_status(
     }
 
 
-# ---------------------------------------------------------------------------
-# get_costs
-# ---------------------------------------------------------------------------
-
 GET_COSTS_DOC = """Return cost data for a period, optionally filtered by project.
 
 Use this to answer "How much did we spend today?" or "What's tonys-pizza
@@ -185,10 +169,6 @@ async def _handle_get_costs(
         result["by_project"] = {}
     return result
 
-
-# ---------------------------------------------------------------------------
-# get_latency_stats
-# ---------------------------------------------------------------------------
 
 GET_LATENCY_STATS_DOC = """Return latency statistics for the gateway's request log.
 
@@ -257,9 +237,6 @@ async def _handle_get_latency_stats(
             if model_id in modality_map
         }
 
-    # Real overall percentiles from the raw samples (not per-model averages).
-    # Pass the same modality filter used on by_model so overall matches the
-    # visible set rather than leaking across modalities.
     ttfb_samples, total_samples = await gateway.storage.get_latency_samples(
         payload.period,
         project=payload.project,
@@ -267,9 +244,7 @@ async def _handle_get_latency_stats(
     )
     request_count = len(ttfb_samples)
     avg_ttfb = sum(ttfb_samples) / request_count if request_count else 0.0
-    avg_total = (
-        sum(total_samples) / len(total_samples) if total_samples else 0.0
-    )
+    avg_total = sum(total_samples) / len(total_samples) if total_samples else 0.0
 
     return {
         "period": payload.period,
@@ -285,10 +260,6 @@ async def _handle_get_latency_stats(
         "by_model": by_model,
     }
 
-
-# ---------------------------------------------------------------------------
-# get_logs (placed here because it is read-only observability)
-# ---------------------------------------------------------------------------
 
 GET_LOGS_DOC = """Return recent request logs with optional filters.
 
@@ -322,7 +293,6 @@ async def _handle_get_logs(
         project=payload.project,
     )
 
-    # Apply additional filters in Python (storage layer only has modality/project).
     if payload.model_id:
         rows = [r for r in rows if r.get("model_id") == payload.model_id]
     if payload.status:
@@ -330,10 +300,6 @@ async def _handle_get_logs(
 
     return rows
 
-
-# ---------------------------------------------------------------------------
-# Registration
-# ---------------------------------------------------------------------------
 
 OBSERVABILITY_TOOLS: list[ToolDef] = [
     make_tool("get_health", GET_HEALTH_DOC, GetHealthInput, _handle_get_health),

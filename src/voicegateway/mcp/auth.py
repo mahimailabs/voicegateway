@@ -1,8 +1,4 @@
-"""Optional bearer token authentication for the MCP HTTP/SSE transport.
-
-Enabled only when the ``VOICEGW_MCP_TOKEN`` environment variable is set.
-stdio transport never checks auth.
-"""
+"""Optional bearer token authentication for the MCP HTTP/SSE transport."""
 
 from __future__ import annotations
 
@@ -25,11 +21,7 @@ def get_expected_token() -> str | None:
 
 
 def check_authorization_header(authorization: str | None) -> None:
-    """Validate a raw ``Authorization`` header value.
-
-    Raises AuthError if auth is enabled and the header is missing or invalid.
-    Passes silently when auth is disabled.
-    """
+    """Validate a raw ``Authorization`` header value."""
     expected_token = get_expected_token()
     if not expected_token:
         return

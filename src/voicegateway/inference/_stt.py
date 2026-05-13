@@ -1,21 +1,4 @@
-"""Drop-in mirror of `livekit.agents.inference.STT` backed by VoiceGateway.
-
-Constructing this class returns a wrapped LiveKit-plugin STT instance
-that AgentSession can consume identically to LK Cloud's inference STT,
-but routed through the user's own provider keys with VG cost tracking
-and session correlation in the middle.
-
-The constructor signature mirrors `livekit.agents.inference.STT` from
-livekit-agents 1.5.7 exactly, so dropping the import is a one-line
-change for the user.
-
-Example::
-
-    from voicegateway import inference
-
-    stt = inference.STT("deepgram/nova-3:en")
-    # equivalent to: from livekit.agents import inference; inference.STT(...)
-"""
+"""Drop-in mirror of `livekit.agents.inference.STT` backed by VoiceGateway."""
 
 from __future__ import annotations
 
@@ -43,18 +26,11 @@ from voicegateway.inference._resolution import resolve_model
 from voicegateway.inference._session_context import get_or_create_session_id
 from voicegateway.middleware.instrumented_provider import wrap_provider
 
-# Providers that run on the user's machine (no api_key needed).
-# A missing api_key for any of these is correct behaviour.
 _LOCAL_PROVIDERS = frozenset({"ollama", "whisper", "kokoro", "piper"})
 
 
 def _strip_language_suffix(model: str) -> tuple[str, str | None]:
-    """Strip a trailing ``:language`` suffix from a model string.
-
-    Mirrors `livekit.agents.inference.stt._parse_model_string`: uses
-    ``rfind`` so the LAST colon delimits the suffix. Returns
-    ``(cleaned_model, None)`` when no colon is present.
-    """
+    """Strip a trailing ``:language`` suffix from a model string."""
     idx = model.rfind(":")
     if idx == -1:
         return model, None
@@ -67,22 +43,9 @@ def _resolve_provider_config(
     api_key_override: str | None,
     project: str | None = None,
 ) -> dict[str, Any]:
-    """Build the provider config dict for an inference factory call.
-
-    Resolution order (mirrors design.md section 3.3):
-
-    1. ``api_key_override`` (passed by the user as ``api_key=...``).
-    2. The active project's per-provider entry under
-       ``projects.<id>.providers.<provider_name>`` in voicegw.yaml.
-    3. The top-level ``providers.<provider_name>`` block (legacy
-       global config).
-
-    A shallow copy is returned so the gateway's cached provider
-    instance is never mutated.
-    """
+    """Build the provider config dict for an inference factory call."""
     base_config = (
-        gateway.config.get_provider_config_for_project(provider_name, project)
-        or {}
+        gateway.config.get_provider_config_for_project(provider_name, project) or {}
     )
     if api_key_override is None:
         return dict(base_config)
@@ -94,17 +57,7 @@ def _assert_key_resolved(
     project: str,
     config: dict[str, Any],
 ) -> None:
-    """Fail-fast preflight per REQ-VG-INFER-003.3.
-
-    Raises ``ConfigError`` with a plain-English message naming the
-    provider and project when a cloud provider's resolved config
-    carries no ``api_key``. Without this guard the LiveKit plugin's
-    own auth error fires later, with a less specific message that
-    omits which project the resolver was looking under.
-
-    Local providers (``ollama`` / ``whisper`` / ``kokoro`` / ``piper``)
-    never need an api_key, so the check is skipped for them.
-    """
+    """Fail-fast preflight per REQ-VG-INFER-003.3."""
     if provider_name in _LOCAL_PROVIDERS:
         return
     api_key = config.get("api_key")
@@ -122,15 +75,7 @@ def _assert_key_resolved(
 
 
 class STT:
-    """LiveKit-plugin STT factory backed by VoiceGateway.
-
-    Constructing ``STT(model="deepgram/nova-3", ...)`` resolves the
-    provider, looks up its API key from the active project (or uses the
-    ``api_key`` override), constructs the corresponding
-    ``livekit.plugins.<provider>.STT`` instance, and wraps it for cost,
-    latency, and session-id tracking. The returned object behaves
-    identically to a plain LK plugin STT.
-    """
+    """LiveKit-plugin STT factory backed by VoiceGateway."""
 
     def __new__(
         cls,
@@ -175,9 +120,6 @@ class STT:
         if http_session is not None:
             plugin_kwargs["http_session"] = http_session
         if is_given(extra_kwargs):
-            # The Options classes are TypedDicts at runtime; spread them
-            # into individual plugin kwargs so e.g. DeepgramOptions(keyterm=...)
-            # ends up as STT(keyterm=...) on the LK plugin call.
             plugin_kwargs.update(dict(extra_kwargs))
 
         if is_given(api_secret):

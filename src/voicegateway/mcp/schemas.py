@@ -11,9 +11,6 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-# --- Observability ---
-
-
 class GetHealthInput(_Strict):
     pass
 
@@ -56,15 +53,7 @@ class AddProviderInput(_Strict):
 
 
 class VgAddProviderInput(_Strict):
-    """v0.0.5 per-project provider key write — design.md section 3.4.
-
-    The ``project`` argument scopes the key to one project. The
-    ``provider`` argument is the canonical provider type
-    (``openai``, ``deepgram``, etc.); the row's stored ``provider_id``
-    is built as ``"<project>:<provider>"`` so multiple projects can
-    each carry their own ``openai`` key without colliding on the
-    primary key.
-    """
+    """per-project provider key write"""
 
     project: str
     provider: str
@@ -73,31 +62,20 @@ class VgAddProviderInput(_Strict):
 
 
 class VgRemoveProviderInput(_Strict):
-    """Remove a per-project provider key — design.md section 3.4."""
+    """Remove a per-project provider key"""
 
     project: str
     provider: str
 
 
 class VgListProvidersInput(_Strict):
-    """List per-project provider keys — design.md section 3.4.
-
-    With ``project=None`` (default), returns rows across all projects
-    plus YAML-defined global providers. With ``project="tony-pizza"``,
-    returns only rows scoped to that project.
-    """
+    """List per-project provider keys"""
 
     project: str | None = None
 
 
 class VgSetProviderKeyInput(_Strict):
-    """Rotate an existing per-project provider key — design.md section 3.4.
-
-    Same arg shape as VgAddProviderInput. Differs in that the row
-    must already exist; rotating a non-existent row raises
-    PROVIDER_NOT_FOUND so callers don't silently create new rows
-    when they meant to rotate.
-    """
+    """Rotate an existing per-project provider key"""
 
     project: str
     provider: str
@@ -106,7 +84,7 @@ class VgSetProviderKeyInput(_Strict):
 
 
 class VgTestProviderKeyInput(_Strict):
-    """Sanity-check a per-project provider key — design.md section 3.4."""
+    """Sanity-check a per-project provider key"""
 
     project: str
     provider: str

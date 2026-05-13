@@ -8,7 +8,6 @@ if TYPE_CHECKING:
     from voicegateway.providers.base import BaseProvider
 
 
-# Maps provider name → (module_path, class_name)
 _PROVIDER_REGISTRY: dict[str, tuple[str, str]] = {
     "openai": ("voicegateway.providers.openai_provider", "OpenAIProvider"),
     "deepgram": ("voicegateway.providers.deepgram_provider", "DeepgramProvider"),
@@ -25,18 +24,7 @@ _PROVIDER_REGISTRY: dict[str, tuple[str, str]] = {
 
 
 def create_provider(provider_name: str, config: dict[str, Any]) -> BaseProvider:
-    """Create a provider instance by name.
-
-    Args:
-        provider_name: Name of the provider (e.g., "openai", "deepgram").
-        config: Provider configuration dict from voicegateway.yaml.
-
-    Returns:
-        Initialized provider instance.
-
-    Raises:
-        ValueError: If provider name is unknown.
-    """
+    """Create a provider instance by name."""
     if provider_name not in _PROVIDER_REGISTRY:
         raise ValueError(
             f"Unknown provider '{provider_name}'. "

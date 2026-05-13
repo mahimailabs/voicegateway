@@ -1,8 +1,4 @@
-"""MCP-specific error types mapped from gateway errors.
-
-These errors carry structured payloads (code, message, details) that get
-serialised into MCP tool responses so agents can reason about failures.
-"""
+"""MCP-specific error types mapped from gateway errors."""
 
 from __future__ import annotations
 

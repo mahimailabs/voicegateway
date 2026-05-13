@@ -126,12 +126,7 @@ class GuardrailPolicy(BaseModel):
 
     @classmethod
     def disabled(cls) -> GuardrailPolicy:
-        """Return a disabled policy with every category set to ``"off"``.
-
-        Returns:
-            A ``GuardrailPolicy`` with ``enabled=False`` and all known
-            categories explicitly disabled.
-        """
+        """Return a disabled policy with every category set to ``"off"``."""
         return cls(
             enabled=False,
             categories=dict.fromkeys(GUARDRAIL_CATEGORIES, "off"),
@@ -139,16 +134,7 @@ class GuardrailPolicy(BaseModel):
 
     @classmethod
     def from_raw(cls, raw: Any) -> GuardrailPolicy:
-        """Normalize raw guardrail policy input into a ``GuardrailPolicy``.
-
-        Args:
-            raw: ``None``, an empty string, an existing ``GuardrailPolicy``,
-                or a raw mapping accepted by Pydantic validation.
-
-        Returns:
-            ``cls.disabled()`` for ``None`` or ``""``, ``raw`` unchanged when
-            it is already a policy instance, otherwise ``cls.model_validate``.
-        """
+        """Normalize raw guardrail policy input into a ``GuardrailPolicy``."""
         if raw in (None, ""):
             return cls.disabled()
         if isinstance(raw, cls):

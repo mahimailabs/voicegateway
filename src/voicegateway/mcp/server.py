@@ -35,11 +35,7 @@ def _format_tool_result(result: Any) -> str:
 
 
 def create_server(gateway: Gateway) -> Any:
-    """Create an MCP server wired to the given gateway instance.
-
-    Returns a low-level ``mcp.server.Server`` with all 17 tools registered.
-    Requires the ``mcp`` extra to be installed.
-    """
+    """Create an MCP server wired to the given gateway instance."""
     try:
         from mcp.server import Server
         from mcp.types import TextContent, Tool
@@ -154,7 +150,6 @@ async def serve_http(
         return Response()
 
     async def messages_app(scope: Any, receive: Any, send: Any) -> None:
-        # Auth check by building a request-like view over headers.
         headers = dict(scope.get("headers") or [])
         auth_header_bytes = headers.get(b"authorization")
         auth_header = auth_header_bytes.decode() if auth_header_bytes else None

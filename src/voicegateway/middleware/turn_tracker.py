@@ -1,37 +1,4 @@
-"""Per-turn timing capture for voice-conversation metrics.
-
-Implements REQ-VG-METRICS-002 (agent response speed per turn) and contributes
-the raw caller/agent speech intervals that REQ-VG-METRICS-003 (talk-over rate)
-computes by post-hoc interval overlap in ``turns_repo`` (T05).
-
-The :class:`TurnTracker` is repository-agnostic: callers inject a
-``flush_callback`` (async callable taking ``list[TurnRow]``). A no-op default
-keeps the tracker usable before the turns_repo lands; T08 wires the cost-tracker
-side and T09 ships the explicit ``attach_session`` helper for non-standard
-worker patterns (Foundry Open Question 1's escape hatch).
-
-Event lifecycle, per session:
-
-1. ``on_user_started_speaking`` records the caller-speech start.
-2. ``on_user_stopped_speaking`` records the caller-speech end.
-3. ``on_agent_audio_first_frame`` closes the turn: a ``TurnRow`` is appended
-   to the per-session buffer with ``response_speed_ms`` computed as
-   ``agent_speak_start_ms - caller_speak_end_ms``. If the caller-stop
-   event was never observed, ``caller_speak_end_ms`` is inferred as the
-   agent's first-frame timestamp and ``response_speed_ms`` is set to None
-   to mark the inference. Auto-flushes when the buffer hits ``flush_size``.
-4. ``on_agent_audio_last_frame`` sets ``agent_speak_end_ms`` on the
-   most-recent buffered turn.
-5. ``close_session`` flushes any remaining buffered turns and, if a caller
-   pair was pending without an agent response, emits a final
-   agent-never-speaks turn (per the Foundry test strategy:
-   "agent-never-speaks case yields NULL response_speed_ms").
-
-All event handlers are coroutines so they integrate with the async middleware
-pipeline (cost_tracker, instrumented_provider). They are idempotent against
-duplicate start events; the second ``on_user_started_speaking`` for a turn
-in flight is silently dropped.
-"""
+"""Per-turn timing capture for voice-conversation metrics."""
 
 from __future__ import annotations
 
@@ -52,13 +19,7 @@ _DEFAULT_FLUSH_SIZE: Final[int] = 25
 
 @dataclass
 class TurnRow:
-    """One caller-agent turn captured by :class:`TurnTracker`.
-
-    Maps 1-to-1 to the ``turns`` table created by storage migration 0003
-    (T04). Timestamps are integer milliseconds on a monotonic-ish clock; the
-    table stores them as INTEGER. ``agent_speak_*`` and ``response_speed_ms``
-    are nullable for the agent-never-speaks case.
-    """
+    """One caller-agent turn captured by :class:`TurnTracker`."""
 
     session_id: str
     turn_index: int
@@ -73,11 +34,7 @@ FlushCallback = Callable[[list[TurnRow]], Awaitable[None]]
 
 
 async def _noop_flush(rows: list[TurnRow]) -> None:
-    """Default callback used when no repository is wired yet.
-
-    Logs at debug level so the no-wiring case is observable in tests but
-    does not noise production logs.
-    """
+    """Default callback used when no repository is wired yet."""
     if rows:
         logger.debug(
             "TurnTracker no-op flush: %d turns dropped (no repository wired)",
@@ -96,22 +53,7 @@ class _SessionState:
 
 
 class TurnTracker:
-    """Records per-turn caller/agent speech intervals keyed by session id.
-
-    Multiple concurrent sessions are supported; per-session state is keyed by
-    ``session_id`` (resolved from the explicit kwarg or the v0.0.5
-    ``voicegateway.inference`` ContextVar). All mutating operations go
-    through an internal asyncio lock so concurrent event callbacks from the
-    STT and TTS plugins cannot interleave a partial turn.
-
-    Example::
-
-        from voicegateway.middleware.turn_tracker import TurnTracker
-
-        tracker = TurnTracker(flush_callback=turns_repo.create_turns_bulk)
-        # ... InstrumentedSTT and InstrumentedTTS plugins call tracker.on_*
-        await tracker.close_session(session_id)
-    """
+    """Records per-turn caller/agent speech intervals keyed by session id."""
 
     def __init__(
         self,
@@ -125,19 +67,12 @@ class TurnTracker:
         self._sessions: dict[str, _SessionState] = {}
         self._lock = asyncio.Lock()
 
-    # ---- public event handlers --------------------------------------------
-
     async def on_user_started_speaking(
         self,
         session_id: str | None = None,
         at_ms: int | None = None,
     ) -> None:
-        """Record the caller-speech start for the current turn.
-
-        Idempotent: a second start before an agent reply is silently
-        dropped (the InstrumentedSTT plugin may emit duplicate VAD events
-        during a single caller utterance).
-        """
+        """Record the caller-speech start for the current turn."""
         sid = self._resolve_session_id(session_id)
         if sid is None:
             logger.debug("on_user_started_speaking with no session_id; ignoring")
@@ -153,10 +88,7 @@ class TurnTracker:
         session_id: str | None = None,
         at_ms: int | None = None,
     ) -> None:
-        """Record the caller-speech end for the in-flight turn.
-
-        No-op if no caller-start was previously observed for this session.
-        """
+        """Record the caller-speech end for the in-flight turn."""
         sid = self._resolve_session_id(session_id)
         if sid is None:
             return
@@ -172,14 +104,7 @@ class TurnTracker:
         session_id: str | None = None,
         at_ms: int | None = None,
     ) -> None:
-        """Close the turn boundary: append a ``TurnRow`` to the buffer.
-
-        Computes ``response_speed_ms`` as ``at_ms - caller_speak_end_ms``
-        when the caller-stop event was observed; sets it to None and
-        infers caller_speak_end_ms as ``at_ms`` otherwise.
-
-        Auto-flushes when the buffer reaches ``flush_size``.
-        """
+        """Close the turn boundary: append a ``TurnRow`` to the buffer."""
         sid = self._resolve_session_id(session_id)
         if sid is None:
             return
@@ -188,15 +113,10 @@ class TurnTracker:
         async with self._lock:
             state = self._sessions.get(sid)
             if state is None or state.pending_caller_start_ms is None:
-                # No caller activity preceded the agent speech (e.g. the
-                # initial agent greeting). Not a turn in the REQ-002 sense.
                 return
             caller_start = state.pending_caller_start_ms
             caller_end = state.pending_caller_end_ms
             if caller_end is None:
-                # Caller-stop event was missed. Infer caller_end as the
-                # agent's first-frame timestamp and null the response
-                # speed so the row signals "we did not measure this".
                 caller_end = agent_start
                 response_speed = None
             else:
@@ -235,14 +155,8 @@ class TurnTracker:
             if last.agent_speak_end_ms is None:
                 last.agent_speak_end_ms = agent_end
 
-    # ---- lifecycle helpers -------------------------------------------------
-
     async def flush_session(self, session_id: str) -> int:
-        """Flush buffered turns for one session via the registered callback.
-
-        Returns the number of turns flushed. The session state stays alive
-        so subsequent events keep accruing.
-        """
+        """Flush buffered turns for one session via the registered callback."""
         async with self._lock:
             state = self._sessions.get(session_id)
             if state is None or not state.buffered_turns:
@@ -256,21 +170,12 @@ class TurnTracker:
                 "TurnTracker flush_callback raised; dropping %d turns",
                 len(to_flush),
             )
-            # Re-raise so the caller (cost_tracker session-close path) sees
-            # the failure rather than silently losing data.
+
             raise
         return len(to_flush)
 
     async def close_session(self, session_id: str) -> int:
-        """Finalize a session: flush remaining turns and drop the state.
-
-        If a caller pair was pending without any agent reply, emits a final
-        ``TurnRow`` with ``agent_speak_*`` and ``response_speed_ms`` set to
-        None so the agent-never-speaks case is observable.
-
-        Returns the total number of turns flushed (including the optional
-        agent-never-speaks tail).
-        """
+        """Finalize a session: flush remaining turns and drop the state."""
         async with self._lock:
             state = self._sessions.get(session_id)
             if state is None:
@@ -299,13 +204,8 @@ class TurnTracker:
         return flushed
 
     def active_sessions(self) -> list[str]:
-        """Return the list of session ids with in-flight or buffered state.
-
-        Read-only; primarily for diagnostics and test introspection.
-        """
+        """Return the list of session ids with in-flight or buffered state."""
         return list(self._sessions.keys())
-
-    # ---- internals ---------------------------------------------------------
 
     @staticmethod
     def _now_ms() -> int:

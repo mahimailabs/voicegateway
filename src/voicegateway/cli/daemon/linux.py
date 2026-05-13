@@ -1,20 +1,4 @@
-"""Linux systemd user-unit backend for the v0.1.0 daemon.
-
-Wraps ``systemctl --user`` against a per-user unit file at
-``~/.config/systemd/user/voicegateway.service``. The unit file is
-rendered from ``templates/systemd.service`` via Python's
-``string.Template`` per design.md hard rule.
-
-Logs flow through journald; ``logs()`` calls ``journalctl --user-unit
-voicegateway`` rather than tailing files. This matches the
-design.md decision (and avoids the file-rotation question that the
-LaunchAgent backend has to live with).
-
-WSL transparently uses this backend: ``sys.platform`` is ``linux``
-inside WSL, the DaemonManager selector routes there, and modern WSL
-distributions ship a working ``systemctl --user``. Bare-Windows
-support is the Scheduled Task backend (``windows.py``).
-"""
+"""Linux systemd user-unit backend for the v0.1.0 daemon."""
 
 from __future__ import annotations
 
@@ -30,12 +14,7 @@ _TEMPLATE_PATH = Path(__file__).parent / "templates" / "systemd.service"
 
 
 class LinuxBackend:
-    """systemd user-unit daemon backend.
-
-    Constructor takes an optional ``service_name`` for tests; the
-    default ``voicegateway`` matches the unit filename and is what
-    every doctor and lifecycle command keys off.
-    """
+    """systemd user-unit daemon backend."""
 
     def __init__(self, *, service_name: str = SERVICE_NAME) -> None:
         self._service_name = service_name
@@ -48,12 +27,7 @@ class LinuxBackend:
     # ---- DaemonBackend Protocol -------------------------------------------
 
     def install(self) -> None:
-        """Render unit, write it, daemon-reload, enable, start.
-
-        Idempotent: re-running on an already-installed machine
-        refreshes the unit file (catches voicegw upgrades that move
-        the binary path) and ensures the unit is enabled and active.
-        """
+        """Render unit, write it, daemon-reload, enable, start."""
         executable = shutil.which("voicegw")
         if executable is None:
             raise RuntimeError(
@@ -73,16 +47,7 @@ class LinuxBackend:
         self._systemctl("enable", "--now", self._unit_name(), check=True)
 
     def uninstall(self) -> None:
-        """Stop, disable, remove unit, daemon-reload.
-
-        Per design.md decision 5, only the registration goes; config
-        and the SQLite DB are preserved. Idempotent: ``systemctl stop``
-        and ``disable`` exit non-zero on missing units, which we
-        swallow.
-        """
-        # Best-effort stop + disable. Either may exit non-zero if the
-        # unit was never enabled or the systemd state is already in
-        # the target shape; ignore and continue.
+        """Stop, disable, remove unit, daemon-reload."""
         self._systemctl("disable", "--now", self._unit_name())
         self._unit_path.unlink(missing_ok=True)
         self._systemctl("daemon-reload")
@@ -153,9 +118,6 @@ class LinuxBackend:
             check=False,
         )
         if result.returncode != 0:
-            # journalctl exits non-zero when the journal is unreadable
-            # or no entries match. Return empty rather than raising;
-            # a missing journal is "no logs yet", not a backend error.
             return ""
         return result.stdout
 

@@ -1,23 +1,4 @@
-"""``?`` help-overlay modal (REQ-VG-TUI-006 cheatsheet).
-
-Pushed onto the App's screen stack when the App-level ``?`` binding
-fires. Reads the active tab's ``BINDINGS`` class attribute and the
-TUIApp's own ``BINDINGS``, then renders a two-section cheatsheet so
-the user sees exactly the keys that work right now.
-
-Cheatsheet generation reads ``BINDINGS`` directly rather than a
-parallel ``KEYBINDINGS`` attribute (the TODO bullet allowed for
-either) because the single-source pattern keeps the cheatsheet
-honest -- a future iteration that adds a binding without
-documenting it surfaces in the overlay automatically; a binding
-that drops without a docs update is impossible because the same
-list drives both. ``show=False`` entries (the ``h``/``l`` aliases
-on list screens) are filtered out so the documented contract stays
-``j/k/g/G``.
-
-Dismissal: ``?``, ``escape``, or ``q`` all pop the modal. Same
-convention as :class:`SessionDetailScreen`.
-"""
+"""help-overlay modal"""
 
 from __future__ import annotations
 
@@ -79,13 +60,6 @@ class HelpOverlay(ModalScreen[None]):
     def _active_tab_widget(self) -> Any:
         """Walk the screen stack to find the non-modal screen + the
         active tab widget inside it.
-
-        ``self.app.query_one`` from inside a ModalScreen scopes to
-        the modal's own DOM, which means a direct ``#content`` query
-        misses the ContentSwitcher mounted on the underlying screen.
-        Iterate the screen stack instead and skip the modal entries
-        (HelpOverlay itself + any nested modals); the first non-modal
-        is the screen TUIApp composed.
         """
         for screen in self.app.screen_stack:
             if isinstance(screen, ModalScreen):
@@ -104,13 +78,7 @@ class HelpOverlay(ModalScreen[None]):
 
 
 def _bindings_for(obj: Any) -> list[tuple[str, str]]:
-    """Extract ``(key, description)`` pairs from ``obj.BINDINGS``.
-
-    Skips entries with ``show=False`` so the documented contract
-    stays the user-visible set; entries without a description fall
-    back to the action name so an undocumented binding still
-    surfaces somewhere in the cheatsheet.
-    """
+    """Extract ``(key, description)`` pairs from ``obj.BINDINGS``."""
     raw = getattr(obj, "BINDINGS", None) or []
     pairs: list[tuple[str, str]] = []
     for entry in raw:
@@ -126,8 +94,6 @@ def _entry_fields(entry: Any) -> tuple[str, str, bool]:
     if isinstance(entry, Binding):
         return entry.key, entry.description or entry.action, entry.show
     if isinstance(entry, tuple):
-        # Textual accepts ``(key, action[, description])`` tuples on
-        # BINDINGS; show defaults to True for tuples.
         key = str(entry[0]) if entry else ""
         desc = ""
         if len(entry) >= 3:

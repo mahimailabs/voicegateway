@@ -17,12 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class CostTracker:
-    """Tracks per-request costs based on provider pricing.
-
-    For STT: cost = audio_duration_minutes * price_per_minute
-    For LLM: cost = (input_tokens * input_price + output_tokens * output_price) / 1000
-    For TTS: cost = characters * price_per_character
-    """
+    """Tracks per-request costs based on provider pricing."""
 
     def __init__(self, storage: Any = None):
         self._storage = storage
@@ -39,29 +34,8 @@ class CostTracker:
         input_units: float = 0.0,
         output_units: float = 0.0,
     ) -> float:
-        """Calculate cost for a request.
-
-        Dispatches through `voicegateway.pricing.catalog.calculate_cost`.
-        For LLM, that wraps `pydantic/genai-prices`; for STT and TTS,
-        the local source-date-tagged catalogs.
-
-        Args:
-            model_id: Full model ID (e.g., "deepgram/nova-3").
-            modality: "stt", "llm", or "tts".
-            input_units: Minutes (STT), input tokens (LLM), characters (TTS).
-            output_units: Output tokens (LLM only).
-
-        Returns:
-            Cost in USD as float. The catalog returns Decimal | None;
-            this method coerces Decimal to float and translates None
-            into 0.0 with a warning log (except for known free
-            providers like local/* and ollama/* where 0.0 is the
-            correct answer and no warning fires).
-        """
+        """Calculate cost for a request."""
         if modality == "stt":
-            # The legacy CostTracker contract for STT is `input_units`
-            # in MINUTES. The new STT module uses audio_seconds. Convert
-            # at the boundary to keep the legacy callers' semantics.
             cost = catalog.calculate_cost(
                 "stt", model_id, audio_seconds=input_units * 60
             )
@@ -80,8 +54,6 @@ class CostTracker:
             return 0.0
 
         if cost is None:
-            # local/* and ollama/* are intentionally free; no catalog
-            # entry is expected and no warning is appropriate.
             if not model_id.startswith(("local/", "ollama/")):
                 logger.warning(
                     "No pricing data for %s model %r; cost recorded as $0.",
@@ -107,21 +79,9 @@ class CostTracker:
         pricing_source: str = "",
         session_id: str | None = None,
     ) -> RequestRecord:
-        """Create a request record with cost calculated.
-
-        ``pricing_source`` defaults to the catalog facade's per-modality
-        attribution string when not explicitly provided, so every record
-        produced through the InstrumentedSTT/LLM/TTS wrappers carries
-        the source automatically.
-        """
+        """Create a request record with cost calculated."""
         cost = self.calculate_cost(model_id, modality, input_units, output_units)
         if not pricing_source:
-            # Only attribute to the catalog when it actually priced the
-            # request. Unknown models that fell through to $0 must not
-            # claim a catalog produced their number; that would mislead
-            # /v1/costs?include_pricing_source and `voicegw reconcile`.
-            # `local/*` and `ollama/*` are intentionally free, so the
-            # catalog *did* price them as $0 and the source is honest.
             is_known_free = model_id.startswith(("local/", "ollama/"))
             if cost > 0.0 or is_known_free:
                 pricing_source = catalog.pricing_source(modality)
@@ -145,20 +105,11 @@ class CostTracker:
         )
 
     async def log_request(self, record: RequestRecord) -> None:
-        """Log a request record to storage and update the budget cache.
-
-        The budget cache update runs in a ``finally`` so a transient
-        storage failure doesn't leave the enforcer out of sync with the
-        cost we just incurred — the request happened, the cost is real,
-        and skipping the notify would silently undercount.
-        """
+        """Log a request record to storage and update the budget cache."""
         try:
             if self._storage:
                 await self._storage.log_request(record)
         finally:
-            # ``logged_at`` is captured after the write attempt so the
-            # enforcer can skip its optimistic increment when a concurrent
-            # cache refresh has already observed this row.
             logged_at = time.monotonic()
             await self.notify_spend(record, logged_at=logged_at)
 
@@ -178,37 +129,7 @@ class CostTracker:
             logger.warning("Failed to update budget cache", exc_info=True)
 
     async def close_session(self, session_id: str) -> None:
-        """Finalize session-aggregate metrics + replay on session close.
-
-        Composes two storage hooks:
-
-        - :meth:`SQLiteStorage.finalize_session_metrics` (v0.2.0): the
-          aggregate columns (``talk_time_seconds``, ``per_minute_cost_usd``,
-          ``response_speed_p50/p95_ms``, ``talk_over_rate``) land on the
-          sessions row by the time ``/api/metrics`` reads it.
-        - :meth:`SQLiteStorage.finalize_session_replay` (v0.3.0): the
-          per-session ``replay_size_bytes`` aggregate lands on the
-          sessions row so the dashboard's storage-usage view is
-          accurate.
-
-        The actual TurnTracker flush, DeadAirDetector cancellation, and
-        ReplayCapture flush are owned by
-        :func:`voicegateway.inference.attach_session` (T09 of v0.2.0,
-        extended in T09 of v0.3.0); this method is the cost-tracking
-        side of the close hook.
-
-        Each finalize call is independently guarded:
-
-        - No-ops when storage is missing (tests sometimes pass
-          ``storage=None``) or the storage doesn't implement the
-          method (older storage versions). Older storages without
-          ``finalize_session_replay`` skip the replay aggregate
-          silently; metrics still finalize.
-        - Errors are logged at warning level but never propagate.
-          Dropping an aggregate row is observability loss, not a
-          correctness issue, and must not crash the session-close
-          path.
-        """
+        """Finalize session-aggregate metrics + replay on session close."""
         if self._storage is None:
             return
         # v0.2.0 metrics finalize.
@@ -227,7 +148,7 @@ class CostTracker:
                     session_id,
                     exc_info=True,
                 )
-        # v0.3.0 replay finalize.
+
         replay_finalize = getattr(self._storage, "finalize_session_replay", None)
         if replay_finalize is None:
             logger.debug(

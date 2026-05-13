@@ -43,13 +43,7 @@ class StackConfig(_StrictBase):
 
 
 class MetricsConfig(_StrictBase):
-    """v0.2.0 voice-conversation metrics knobs (REQ-VG-METRICS-001..006).
-
-    All fields are per-project overridable via the ``metrics:`` block
-    under each project entry in ``voicegw.yaml``. Defaults match the
-    Foundry's stated values (Open Questions 2 and 3 locked at the v0.2.0
-    BUILD/T01 step).
-    """
+    """v0.2.0 voice-conversation metrics knobs (REQ-VG-METRICS-001..006)."""
 
     dead_air_threshold_seconds: float = Field(default=3.0, gt=0)
     talk_over_min_overlap_ms: int = Field(default=100, gt=0)
@@ -57,13 +51,7 @@ class MetricsConfig(_StrictBase):
 
 
 class ReplayConfig(_StrictBase):
-    """v0.3.0 conversation-replay knobs (REQ-VG-REPLAY-001..006).
-
-    All fields are per-project overridable via the ``replay:`` block
-    under each project entry in ``voicegw.yaml``. Defaults match the
-    Foundry's stated values; OQ1's storage-cost target is enforced by
-    T18's smoke test, not at config time.
-    """
+    """v0.3.0 conversation-replay knobs (REQ-VG-REPLAY-001..006)."""
 
     enabled: bool = True
     retention_days: int = Field(default=90, ge=1)
@@ -72,14 +60,7 @@ class ReplayConfig(_StrictBase):
 
 
 class RoutingConfig(_StrictBase):
-    """v0.5.0 cross-modality routing knobs (REQ-VG-ROUTE-001..002).
-
-    ``budget_ms`` is the latency budget in milliseconds; the OQ1 lock
-    is 1500 ms. ``rosters`` maps modality ('stt'/'llm'/'tts') to an
-    ordered list of provider ids the router may pick from. Empty
-    rosters force callers to provide overrides; otherwise the router
-    raises ``ValueError`` at session-create time.
-    """
+    """v0.5.0 cross-modality routing knobs (REQ-VG-ROUTE-001..002)."""
 
     budget_ms: int = Field(default=1500, ge=1)
     rosters: dict[str, list[str]] = Field(default_factory=dict)
@@ -87,14 +68,7 @@ class RoutingConfig(_StrictBase):
 
 
 class BrandingConfig(_StrictBase):
-    """v0.5.0 white-label branding knobs (REQ-VG-ROUTE-004).
-
-    All fields nullable; a project with no branding falls back to
-    the default VoiceGateway brand on next dashboard layout mount.
-    ``accent_color`` is expected to be a hex string when set; the
-    dashboard validates the format on upload but the schema is
-    permissive here.
-    """
+    """v0.5.0 white-label branding knobs (REQ-VG-ROUTE-004)."""
 
     logo_url: str | None = None
     accent_color: str | None = None
@@ -114,15 +88,7 @@ class GuardrailsConfig(_StrictBase):
 
 
 class TenantConfig(_StrictBase):
-    """v0.4.0 multi-tenant attribution knobs (REQ-VG-TENANT-001..004).
-
-    Per-project overridable via the ``tenant:`` block under each
-    project entry in ``voicegw.yaml``. ``virtual_key_stale_days``
-    drives the dashboard's stale-key surface (a key whose last_used_at
-    or issued_at is older than this threshold is flagged in the
-    Virtual Keys page); the default matches the Foundry's 90-day
-    lock.
-    """
+    """v0.4.0 multi-tenant attribution knobs (REQ-VG-TENANT-001..004)."""
 
     virtual_key_stale_days: int = Field(default=90, ge=1)
 
@@ -189,12 +155,7 @@ class DashboardConfig(BaseModel):
 
 
 class ServeConfig(BaseModel):
-    """HTTP API serve config (the daemon-first ``voicegw serve`` target).
-
-    The v0.1.0 onboarding wizard persists the user-selected port here so
-    that the platform service unit (which runs bare ``voicegw serve``)
-    binds to the same port the user typed during install.
-    """
+    """HTTP API serve config (the daemon-first ``voicegw serve`` target)."""
 
     model_config = ConfigDict(extra="allow")
 

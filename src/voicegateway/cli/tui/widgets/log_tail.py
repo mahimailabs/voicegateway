@@ -1,37 +1,4 @@
-"""``LogTail`` widget for the Logs tab (REQ-VG-TUI-004).
-
-Wraps Textual's :class:`textual.widgets.RichLog` with two affordances
-the Logs screen needs:
-
-- :meth:`LogTail.append_entries` takes a list of request-row dicts
-  (from :meth:`MetricsClient.list_logs`) and writes one line per
-  entry, de-duped on the row's ``id`` field so a polling loop that
-  re-fetches overlapping windows does not re-append rows.
-- :meth:`LogTail.reset` clears the buffer and the de-dup set
-  together so the screen can switch projects / modalities cleanly.
-
-The widget itself is passive: it does NOT poll. The Logs screen
-owns the polling loop and calls ``append_entries`` with the new
-batch each tick. ``RichLog``'s built-in ``auto_scroll`` keeps the
-bottom in view unless the user scrolls up, which is the Refinery's
-"now tailing" / "manual scrolled up" contract for free.
-
-Expected entry shape (matches storage.get_recent_requests + the
-daemon's /v1/logs response):
-
-    {
-        "id": str,
-        "timestamp": float,            # epoch seconds
-        "modality": "stt" | "llm" | "tts",
-        "provider": str,
-        "model_id": str,
-        "project": str,
-        "cost_usd": float,
-        "status": "success" | ...,
-        "total_latency_ms": float | None,
-        "ttfb_ms": float | None,
-    }
-"""
+"""``LogTail`` widget for the Logs tab."""
 
 from __future__ import annotations
 
@@ -50,38 +17,15 @@ class LogTail(RichLog):
         kwargs.setdefault("markup", False)
         kwargs.setdefault("wrap", False)
         super().__init__(**kwargs)
-        # Bounded growth is a Phase-9 polish concern; v0.1.1 lets the
-        # set grow with the buffer because Textual already caps the
-        # rendered line count via ``max_lines`` on RichLog.
+
         self._seen_ids: set[str] = set()
-        # Retain every appended entry so set_filter can re-render the
-        # buffer without re-fetching from the daemon. Same growth
-        # caveat as ``_seen_ids``; Phase-9 polish addresses both.
+
         self._all_entries: list[dict[str, Any]] = []
-        # ``None`` means "no filter active"; a string filters lines
-        # that contain it (case-insensitive substring match).
+
         self._filter: str | None = None
 
     def append_entries(self, entries: list[dict[str, Any]]) -> None:
-        """Append every entry whose id has not been seen yet.
-
-        The Logs screen polls :meth:`MetricsClient.list_logs` on a
-        cadence; the windowed result overlaps the previous fetch by
-        design (so a slow request that finishes after the cutoff
-        still surfaces). De-dup on ``entry["id"]`` drops the
-        already-rendered rows so the visible tail reads forward-only.
-
-        Entries without an ``id`` (e.g. a synthetic test fixture
-        that omits the field) are appended unconditionally; the
-        de-dup set never grows for them, which mirrors the
-        screen's "stream every line we see" expectation when the
-        upstream cannot identify rows.
-
-        With a filter active, only matching entries are written to
-        the visible buffer; non-matches still land in
-        ``_all_entries`` so :meth:`set_filter` can re-include them
-        when the filter is cleared.
-        """
+        """Append every entry whose id has not been seen yet."""
         for entry in entries:
             entry_id = str(entry.get("id", ""))
             if entry_id:
@@ -93,14 +37,7 @@ class LogTail(RichLog):
                 self.write(format_entry(entry))
 
     def set_filter(self, substring: str | None) -> None:
-        """Apply (or clear) a case-insensitive substring filter.
-
-        Re-renders the visible buffer with only matching entries;
-        non-matching rows stay in ``_all_entries`` so a later call
-        with ``substring=None`` restores the full view. Empty
-        string is treated as ``None`` (no filter) so submitting an
-        empty input clears the filter cleanly.
-        """
+        """Apply (or clear) a case-insensitive substring filter."""
         self._filter = substring or None
         self.clear()
         for entry in self._all_entries:
@@ -121,16 +58,7 @@ class LogTail(RichLog):
 
 
 def format_entry(entry: dict[str, Any]) -> str:
-    """Render one request row as a single fixed-width line.
-
-    Layout: ``HH:MM:SS  STT  provider     model_id              $cost   Nms  status``
-
-    The widths are tuned to fit on an 80-column terminal without
-    truncation for typical providers + model ids; longer model
-    strings overflow into the next column rather than truncate
-    (Phase 8's TCSS pass + the Phase-9 narrow-width handling will
-    revisit if a real user complains).
-    """
+    """Render one request row as a single fixed-width line."""
     ts = format_timestamp(entry.get("timestamp"))
     modality = str(entry.get("modality") or "").upper()
     provider = str(entry.get("provider") or "?")
@@ -149,12 +77,7 @@ def format_entry(entry: dict[str, Any]) -> str:
 
 
 def format_timestamp(ts: Any) -> str:
-    """Render epoch (float / int) or ISO 8601 (str) as ``HH:MM:SS``.
-
-    Returns ``--:--:--`` on parse failure or ``None`` so the row
-    column alignment never breaks; the Logs screen's empty-state
-    message handles the no-data case at a higher level.
-    """
+    """Render epoch (float / int) or ISO 8601 (str) as ``HH:MM:SS``."""
     if ts is None:
         return "--:--:--"
     if isinstance(ts, (int, float)):

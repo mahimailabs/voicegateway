@@ -1,17 +1,4 @@
-"""Async repo for the ``dead_air_events`` table.
-
-Implements REQ-VG-METRICS-004 (dead-air events). Mirrors the
-flat-function-module pattern of ``turns_repo.py``: each function takes
-an ``aiosqlite.Connection`` and the caller owns the connection
-lifecycle.
-
-The default DeadAirDetector event-callback shape from T03 is
-``async def on_event(event: DeadAirEvent) -> None``. ``create_event``
-below matches that signature, so T08 can wire detector instances
-with ``on_event=functools.partial(dead_air_repo.create_event, db)``.
-
-Schema reference: ``voicegateway/storage/migrations/0003_turns_and_deadair.py``.
-"""
+"""Async repo for the ``dead_air_events`` table."""
 
 from __future__ import annotations
 
@@ -47,16 +34,7 @@ async def create_event(
     *,
     tenant_id: str | None = None,
 ) -> None:
-    """Insert one ``DeadAirEvent``. Commits the connection.
-
-    ``tenant_id`` defaults to ``current_tenant()`` (the v0.4.0
-    ContextVar). The dead-air watcher runs inside the session's
-    asyncio context, so the ContextVar carries the session's tenant
-    without any explicit wiring.
-
-    Signature matches :data:`voicegateway.middleware.dead_air_detector.EventCallback`
-    via a partial application that drops the tenant kwarg.
-    """
+    """Insert one ``DeadAirEvent``. Commits the connection."""
     resolved = tenant_id if tenant_id is not None else current_tenant()
     await db.execute(_INSERT_EVENT, _event_to_params(event, resolved))
     await db.commit()
@@ -82,13 +60,7 @@ async def count_events_by_filter(
     started_after_ms: int | None = None,
     started_before_ms: int | None = None,
 ) -> int:
-    """Count dead-air events matching the supplied filter.
-
-    All filters are optional and combined with AND. ``started_after_ms``
-    is inclusive; ``started_before_ms`` is exclusive — matches the
-    half-open interval convention used elsewhere in the storage layer.
-    Passing no filters counts all rows in the table.
-    """
+    """Count dead-air events matching the supplied filter."""
     clauses: list[str] = []
     params: list[object] = []
     if session_id is not None:

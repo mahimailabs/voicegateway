@@ -1,18 +1,4 @@
-"""Async repo for the ``turns`` table.
-
-Implements REQ-VG-METRICS-002 (response-speed aggregation) and provides
-the ``count_overlap_turns`` primitive that REQ-VG-METRICS-003 (talk-over
-rate) builds on. The talk-over rate itself is computed in
-``finalize_session_metrics`` (T07) as ``count_overlap_turns / total_turns``.
-
-The module is a flat set of async functions, not a class: each function
-takes an ``aiosqlite.Connection`` and the caller (the v0.0.5 SQLiteStorage
-facade in T07, the TurnTracker flush wiring in T08, or the unit tests in
-T20) owns the connection lifecycle. This keeps the repo composable
-without forcing a separate object hierarchy.
-
-Schema reference: ``voicegateway/storage/migrations/0003_turns_and_deadair.py``.
-"""
+"""Async repo for the ``turns`` table."""
 
 from __future__ import annotations
 
@@ -55,12 +41,7 @@ async def create_turn(
     *,
     tenant_id: str | None = None,
 ) -> None:
-    """Insert one ``TurnRow``. Commits the connection.
-
-    ``tenant_id`` defaults to ``current_tenant()`` (the v0.4.0
-    ContextVar). Pass it explicitly to override (e.g. backfill jobs
-    that rebuild rows for a known historical tenant).
-    """
+    """Insert one ``TurnRow``. Commits the connection."""
     resolved = tenant_id if tenant_id is not None else current_tenant()
     await db.execute(_INSERT_TURN, _turn_to_params(turn, resolved))
     await db.commit()
@@ -72,14 +53,7 @@ async def create_turns_bulk(
     *,
     tenant_id: str | None = None,
 ) -> int:
-    """Bulk-insert turns. Returns the number inserted.
-
-    Intended target of :class:`voicegateway.middleware.turn_tracker.TurnTracker`'s
-    ``flush_callback``. Empty input is a no-op (returns 0). Commits the
-    connection on success. ``tenant_id`` defaults to ``current_tenant()``
-    captured at call time and applied to every row in the batch (turns
-    are session-scoped so they share the session's tenant).
-    """
+    """Bulk-insert turns. Returns the number inserted."""
     if not turns:
         return 0
     resolved = tenant_id if tenant_id is not None else current_tenant()
@@ -111,21 +85,7 @@ async def aggregate_response_speed(
     db: aiosqlite.Connection,
     session_id: str | None = None,
 ) -> dict[str, int | None]:
-    """Compute p50/p95/p99 of ``response_speed_ms`` over the filtered turns.
-
-    Returns a dict with keys ``p50_ms``, ``p95_ms``, ``p99_ms`` and integer
-    millisecond values, or ``None`` for each when the filter yields no rows
-    with a measured response speed (rows where the tracker inferred
-    ``caller_speak_end_ms`` carry ``NULL`` for ``response_speed_ms`` per
-    the T02 contract).
-
-    The optional ``session_id`` filter scopes the aggregation to one
-    session; otherwise the aggregate spans every recorded turn.
-
-    Percentiles use ``statistics.quantiles(n=100, method="inclusive")``
-    per the Foundry; ``n=1`` short-circuits to return the single value
-    on all three percentile keys to avoid the stdlib's ``n < 2`` error.
-    """
+    """Compute p50/p95/p99 of ``response_speed_ms`` over the filtered turns."""
     if session_id is not None:
         cursor = await db.execute(
             "SELECT response_speed_ms FROM turns "
@@ -153,21 +113,7 @@ async def aggregate_response_speed(
 
 
 async def count_overlap_turns(db: aiosqlite.Connection, session_id: str) -> int:
-    """Return the number of turn pairs that overlap (talk-over events).
-
-    A turn is an "overlap" when its ``caller_speak_start_ms`` is strictly
-    less than the previous turn's ``agent_speak_end_ms`` — meaning the
-    caller started speaking before the agent finished speaking. Adjacent
-    turns are paired by ``turn_index = previous_turn_index + 1``.
-
-    Turns where the agent never spoke (``agent_speak_end_ms IS NULL``)
-    are excluded from the previous-turn side; they cannot host an overlap
-    by definition.
-
-    Implements REQ-VG-METRICS-003's data primitive. The talk-over rate
-    itself (``count_overlap_turns / total_turns``) is computed in
-    ``finalize_session_metrics`` (T07).
-    """
+    """Return the number of turn pairs that overlap (talk-over events)."""
     cursor = await db.execute(
         "SELECT COUNT(*) FROM turns t1 "
         "JOIN turns t0 "

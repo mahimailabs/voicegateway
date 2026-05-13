@@ -48,10 +48,7 @@ class PiperProvider(BaseProvider):
 
 
 class PiperTTS:
-    """Local Piper TTS.
-
-    Lazily loads the voice model on first use.
-    """
+    """Local Piper TTS."""
 
     def __init__(
         self,

@@ -1,35 +1,4 @@
-"""Async read-side repo for the tenant index.
-
-Implements REQ-VG-TENANT-002: the dashboard's per-tenant filter and
-the Tenants overview need a typeahead-friendly list of tenants with
-aggregates. Tenants are not stored in a dedicated table; they are
-derived from ``DISTINCT sessions.tenant_id`` (migration 0005 column).
-This module owns the aggregation SQL so callers (the dashboard API
-T10, the future CLI T16) share the same definition of "what counts as
-a tenant" and "what aggregates are surfaced".
-
-Aggregates returned per tenant:
-
-- ``session_count`` — number of sessions tagged with the tenant.
-- ``total_cost_usd`` — SUM of ``sessions.total_cost_usd`` (already
-  rolled up by ``log_request``).
-- ``first_seen`` — earliest ``sessions.started_at`` (ISO string).
-- ``last_seen`` — most recent ``sessions.ended_at`` (or
-  ``started_at`` if ``ended_at`` is NULL).
-
-The "unattributed" bucket (sessions with ``tenant_id IS NULL``) is
-intentionally NOT surfaced as a tenant row: the dashboard renders it
-via a muted pill rather than via the tenant list. Callers that need
-the unattributed totals call ``get_unattributed_aggregates`` instead.
-
-Mirrors the flat-function-module pattern of ``turns_repo.py``,
-``virtual_keys_repo.py``, and ``replay_repo.py``. The caller owns the
-connection lifecycle.
-
-Schema reference:
-``voicegateway/storage/migrations/0005_tenant_attribution.py`` adds
-``tenant_id`` to ``sessions``.
-"""
+"""Async read-side repo for the tenant index."""
 
 from __future__ import annotations
 
@@ -93,18 +62,7 @@ async def list_tenants(
     limit: int = _DEFAULT_LIMIT,
     query: str | None = None,
 ) -> list[TenantRow]:
-    """Return the tenant index, ordered by ``last_seen`` descending.
-
-    ``limit`` is clamped to ``[1, 1000]``. ``query`` is a substring
-    match against ``tenant_id``; case-insensitive, no escaping (callers
-    pass user-typed strings, and the query is parameterized so SQL
-    injection is impossible — but ``%`` and ``_`` are treated as
-    literal characters via SQLite's ``ESCAPE`` clause). Pass
-    ``query=None`` or ``query=""`` to list everything.
-
-    Sort order is most-recently-active first; ties broken by
-    tenant_id ASC so the feed is deterministic across page reloads.
-    """
+    """Return the tenant index, ordered by ``last_seen`` descending."""
     if limit < 1:
         limit = 1
     if limit > _MAX_LIMIT:
@@ -114,8 +72,7 @@ async def list_tenants(
     params: list[Any] = []
     if query:
         clauses.append("AND tenant_id LIKE ? ESCAPE '\\'")
-        # Treat the user-supplied substring as literal: escape % and _
-        # so they don't act as wildcards.
+
         escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         params.append(f"%{escaped}%")
 
@@ -151,12 +108,7 @@ async def count_tenants(db: aiosqlite.Connection) -> int:
 async def get_unattributed_aggregates(
     db: aiosqlite.Connection,
 ) -> UnattributedAggregates:
-    """Return aggregates for the ``tenant_id IS NULL`` bucket.
-
-    The dashboard shows this as a separate "unattributed" entry below
-    the tenant filter. Always returns a row even when zero sessions
-    are unattributed (the dataclass uses sensible empty defaults).
-    """
+    """Return aggregates for the ``tenant_id IS NULL`` bucket."""
     cursor = await db.execute(
         """SELECT COUNT(*) AS session_count,
                   COALESCE(SUM(total_cost_usd), 0.0) AS total_cost_usd,
