@@ -1,12 +1,4 @@
-"""Staleness gate for STT and TTS catalogs (Phase 2.6).
-
-Fails CI when any entry's `pricing_source_date` is more than 60 days
-old. Forces a manual refresh of the catalog with each release:
-maintainers re-verify the rate against the linked
-`pricing_source_url` and bump the date. genai-prices handles LLM
-pricing freshness upstream, so the gate only covers the local
-catalogs (`voicegateway/pricing/stt.py` and `voicegateway/pricing/tts.py`).
-"""
+"""Staleness gate for STT and TTS catalogs (Phase 2.6)."""
 
 from __future__ import annotations
 

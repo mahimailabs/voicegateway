@@ -1,28 +1,4 @@
-"""The wedge gate: voicegateway.inference must mirror livekit.agents.inference.
-
-This is the single most important test in the v0.0.5 suite. The release
-ships on the claim that swapping ``from livekit.agents import inference``
-for ``from voicegateway import inference`` requires no other code change.
-That claim survives only if every public class on the VG side accepts
-the same parameters, in the same order, with the same defaults, as the
-LK 1.5.7 class.
-
-We deliberately do NOT compare annotations: LK uses string forwards and
-local type aliases that resolve differently across modules, and even
-modest typing churn upstream would break a strict annotation check
-without indicating a real drop-in regression. The user-visible contract
-is the *call shape*: parameter name, kind, default, ordering. Those we
-compare exactly.
-
-When this test fails after a livekit-agents bump, the right fix is
-either:
-  1. Mirror the new LK signature in the corresponding VG factory; or
-  2. Tighten the version pin in pyproject.toml so we keep targeting a
-     known-good LK release.
-
-Skipping or relaxing this test silently is a direct violation of the
-v0.0.5 wedge claim.
-"""
+"""The wedge gate: voicegateway.inference must mirror livekit.agents.inference."""
 
 from __future__ import annotations
 
@@ -100,9 +76,7 @@ def test_parameter_defaults_match(vg_cls, lk_cls):
 
 
 def test_public_module_exposes_three_modalities():
-    """voicegateway.inference must expose STT, LLM, TTS as importable
-    symbols and they must point at the factory classes.
-    """
+    """voicegateway.inference must expose STT, LLM, TTS as importable"""
     from voicegateway import inference
 
     assert inference.STT is VG_STT

@@ -1,8 +1,4 @@
-"""Helpers used by two or more ``voicegateway.cli`` command modules.
-
-Anything used by only one command lives in
-``voicegateway.utils.cli.<command>`` instead.
-"""
+"""Helpers used by two or more ``voicegateway.cli`` command modules."""
 
 from __future__ import annotations
 
@@ -20,12 +16,7 @@ if TYPE_CHECKING:
 
 
 def _load_gateway(config_path: str | None) -> Gateway:
-    """Build a Gateway from ``config_path`` (or the default search path).
-
-    Exits with a Rich-styled error message and exit code 1 on any
-    config-load failure so each cli command can stay focused on its
-    own logic.
-    """
+    """Build a Gateway from ``config_path`` (or the default search path)."""
     from voicegateway.core.gateway import Gateway
 
     try:
@@ -36,11 +27,7 @@ def _load_gateway(config_path: str | None) -> Gateway:
 
 
 def _parse_iso_date_arg(value: str, *, end_of_day: bool) -> float:
-    """Parse ``YYYY-MM-DD`` into a UTC timestamp.
-
-    ``end_of_day=True`` advances by 24 h so callers can use the
-    parsed value as an exclusive upper bound on a daily range.
-    """
+    """Parse ``YYYY-MM-DD`` into a UTC timestamp."""
     try:
         d = _dt.datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=_dt.UTC)
     except ValueError as e:

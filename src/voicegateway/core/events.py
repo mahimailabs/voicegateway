@@ -1,7 +1,4 @@
-"""FastAPI ``lifespan`` that initializes and tears down container resources.
-
-Bound to the :class:`AppCreator` at construction time. Idempotent.
-"""
+"""FastAPI ``lifespan`` that initializes and tears down container resources."""
 
 from __future__ import annotations
 

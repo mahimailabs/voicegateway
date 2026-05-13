@@ -7,7 +7,7 @@ import time
 import pytest
 
 from voicegateway.models.request import RequestRecord
-from voicegateway.repository import latency_observations as lor
+from voicegateway.repository import latency_observations_repository as lor
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

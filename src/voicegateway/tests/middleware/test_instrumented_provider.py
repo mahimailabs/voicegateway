@@ -1,26 +1,4 @@
-"""Tests for the _InstrumentedBase TTFB hook contract.
-
-The audit found that `_mark_first_byte` is a manual hook the streaming
-code paths in each modality wrapper must call; if a future refactor
-forgets to call it, TTFB silently becomes total latency. These tests
-exercise the hook itself (not the per-provider code paths that should
-call it) so a refactor that breaks the mechanism gets caught:
-
-- TTFB reflects start -> first_byte when the hook is called.
-- TTFB falls back to total latency when the hook is not called.
-- The hook is idempotent: subsequent calls do not overwrite the
-  first-byte timestamp.
-
-Layer-B coverage (the per-provider streaming code paths actually
-calling the hook at the right moment) lands when streaming fixtures
-arrive and the wrapper-replay tests are wired up; see
-`tests/test_streaming_cost_accounting.py`.
-
-Post-AC-2-fix: ``InstrumentedSTT`` subclasses ``livekit.agents.stt.STT``
-so isinstance gates inside ``agent_activity.py`` succeed. The wrapped
-fake therefore needs ``capabilities`` + ``on(event, callback)`` so the
-wrapper's ``super().__init__`` and event-bridge construction work.
-"""
+"""Tests for the _InstrumentedBase TTFB hook contract."""
 
 from __future__ import annotations
 
@@ -35,16 +13,7 @@ from voicegateway.middleware.instrumented_provider import InstrumentedSTT
 
 
 def _make_lk_shaped_mock() -> MagicMock:
-    """Build a MagicMock pre-loaded with the LK STT-shaped attributes
-    the new wrapper consumes during construction.
-
-    Without this, ``super().__init__(capabilities=wrapped.capabilities)``
-    would store an auto-generated MagicMock attribute instead of an
-    actual ``STTCapabilities``, and any test that ends up reading
-    ``self.capabilities.streaming`` from the wrapper would get
-    nonsense. The MagicMock's ``on(...)`` is auto-callable and acts as
-    a no-op.
-    """
+    """Build a MagicMock pre-loaded with the LK STT-shaped attributes"""
     wrapped = MagicMock()
     wrapped.capabilities = STTCapabilities(streaming=False, interim_results=False)
     return wrapped
@@ -163,14 +132,7 @@ async def test_log_request_is_idempotent() -> None:
 
 
 def test_getattr_proxies_to_wrapped_for_unknown_attrs() -> None:
-    """Provider-specific attributes (not on lk_stt.STT) still proxy through.
-
-    Post-AC-2-fix the wrapper IS-A ``lk_stt.STT`` so methods declared
-    on the LK base class no longer travel via ``__getattr__``. Anything
-    *not* defined on the wrapper or the LK hierarchy still falls
-    through to the wrapped plugin — that's the contract for
-    provider-specific helpers like Cartesia's ``set_voice``.
-    """
+    """Provider-specific attributes (not on lk_stt.STT) still proxy through."""
     wrapped = _make_lk_shaped_mock()
     wrapped.cartesia_specific_helper = MagicMock(return_value="hello")
     wrapped.unique_attribute = 42
@@ -217,15 +179,7 @@ def test_repr_includes_wrapped_and_modality() -> None:
 
 
 def test_wrapper_is_isinstance_of_lk_stt() -> None:
-    """Headline AC-2 contract: ``isinstance(wrapper, lk_stt.STT)`` is True.
-
-    The pre-fix proxy failed every isinstance gate inside
-    ``livekit.agents.voice.agent_activity`` (16+ checks), causing the
-    ``metrics_collected`` listener to never attach and SpeechHandle's
-    5s INTERRUPTION_TIMEOUT to fire on every TTS speech under real
-    audio. This is the regression test that catches a future refactor
-    reverting that wiring.
-    """
+    """Headline AC-2 contract: ``isinstance(wrapper, lk_stt.STT)`` is True."""
     from livekit.agents import stt as lk_stt
 
     wrapper = _make_wrapper()
@@ -255,13 +209,7 @@ async def test_log_request_with_storage_writes_to_storage() -> None:
 
 
 async def test_log_request_swallows_storage_exception() -> None:
-    """A failing storage backend must not break in-memory accounting.
-
-    A storage outage already costs the user observability of the
-    request; it must not also cause the request itself to fail.
-    The wrapper logs at warning and continues to notify the budget
-    enforcer so per-project caps still hold.
-    """
+    """A failing storage backend must not break in-memory accounting."""
     wrapper = _make_wrapper()
     cost_tracker = object.__getattribute__(wrapper, "_cost_tracker")
 

@@ -1,10 +1,4 @@
-"""ORM model for the ``virtual_keys`` table.
-
-Mirrors the schema defined by the legacy storage migration. The model
-opts out of the standard :class:`voicegateway.models.base.BaseModel`
-because the entity carries its own audit columns (``issued_at``,
-``last_used_at``, ``revoked_at``) and has no ``uuid``.
-"""
+"""ORM model for the ``virtual_keys`` table."""
 
 from __future__ import annotations
 

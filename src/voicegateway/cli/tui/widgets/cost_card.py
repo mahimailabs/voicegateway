@@ -84,9 +84,7 @@ class CostCard(Container):
 
 
 def stale_marker(source: Any, threshold_hours: float = _STALENESS_HOURS) -> str:
-    """Return ``  (as of YYYY-MM-DD)`` when ``source`` carries a date
-    older than ``threshold_hours``; empty string otherwise.
-    """
+    """Return ``  (as of YYYY-MM-DD)`` when ``source`` carries a date"""
     if not source or not isinstance(source, str) or "@" not in source:
         return ""
     _, token = source.rsplit("@", 1)

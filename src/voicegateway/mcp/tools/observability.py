@@ -202,7 +202,7 @@ Returns:
 async def _handle_get_latency_stats(
     gateway: Gateway, arguments: dict[str, Any]
 ) -> dict[str, Any]:
-    from voicegateway.storage._percentiles import compute_percentiles
+    from voicegateway.utils.percentiles import compute_percentiles
 
     payload = _parse(GetLatencyStatsInput, arguments)
     pcts = gateway.config.latency.get("percentiles") or [50.0, 95.0, 99.0]

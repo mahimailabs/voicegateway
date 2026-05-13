@@ -1,9 +1,4 @@
-"""Contract tests for voicegateway.middleware.dead_air_detector.
-
-Covers DeadAirDetector (T03) lifecycle and emission semantics:
-threshold crossing, no-rerun on continuous silence, reset on activity,
-clean cancel on stop.
-"""
+"""Contract tests for voicegateway.middleware.dead_air_detector."""
 
 from __future__ import annotations
 

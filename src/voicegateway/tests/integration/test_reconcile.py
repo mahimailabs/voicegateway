@@ -1,8 +1,4 @@
-"""Smoke tests for `voicegateway/reconcile/core.py` diff math.
-
-Comprehensive CLI-side tests (CliRunner) belong to Phase 4.3 #5.
-These tests exercise the parse + aggregate + diff logic directly.
-"""
+"""Smoke tests for `voicegateway/reconcile/core.py` diff math."""
 
 from __future__ import annotations
 
@@ -98,10 +94,7 @@ def test_parse_provider_file_deepgram_csv_handles_missing_columns(tmp_path):
 def test_parse_provider_file_deepgram_csv_units_are_seconds_not_minutes(
     tmp_path,
 ):
-    """Canonical schema's units column is `audio_seconds`; the parser must not
-    treat it as minutes and silently scale by 60. VG-side conversion (minutes
-    -> seconds) happens in aggregate_vg_records, not here.
-    """
+    """Canonical schema's units column is `audio_seconds`; the parser must not"""
     path = tmp_path / "deepgram-units.csv"
     path.write_text("model,audio_seconds,n_requests,cost_usd\nnova-3,3600.0,30,0.258\n")
     parsed = reconcile.parse_provider_file("deepgram", path)
@@ -165,13 +158,7 @@ def test_parse_provider_file_cartesia_csv_handles_missing_columns(tmp_path):
 
 
 def test_parse_provider_file_cartesia_units_are_characters(tmp_path):
-    """Cartesia bills via credits but our canonical column is characters.
-
-    A future refactor should not silently switch the units column to
-    `credits` (which Cartesia also exports). The parser must read
-    `characters` to stay aligned with VG's input_units (TTS character
-    count) per design §3.2.
-    """
+    """Cartesia bills via credits but our canonical column is characters."""
     path = tmp_path / "cartesia-units.csv"
     # Note: characters and credits are intentionally different to
     # confirm the parser reads the right column.
@@ -291,12 +278,7 @@ def test_aggregate_vg_records_filters_other_providers():
 
 
 def test_aggregate_vg_records_filters_other_modalities():
-    """Records with the right provider but wrong modality are skipped.
-
-    Catches the multi-modality bug: an `openai/whisper-1` STT row
-    must NOT be summed into the OpenAI LLM reconcile (where it would
-    show up as bogus token counts).
-    """
+    """Records with the right provider but wrong modality are skipped."""
     records = [
         {
             "model_id": "openai/gpt-4o-mini",
@@ -390,14 +372,7 @@ def test_reconcile_surfaces_divergence(tmp_path):
 
 
 def test_reconcile_currency_precision_sub_cent(tmp_path):
-    """Sub-cent diffs round-trip through reconcile without precision loss.
-
-    LLM cost per request is often in the 1e-6 to 1e-4 USD range.
-    The diff math must preserve enough precision that small drifts
-    surface accurately — a 5% drift on $0.00001000 is $0.0000005,
-    which would round to $0 if the math used float-to-cents
-    rounding anywhere along the path.
-    """
+    """Sub-cent diffs round-trip through reconcile without precision loss."""
     path = tmp_path / "openai.csv"
     path.write_text(
         "model,input_tokens,output_tokens,n_requests,cost_usd\n"
@@ -425,13 +400,7 @@ def test_reconcile_currency_precision_sub_cent(tmp_path):
 
 
 def test_reconcile_currency_precision_high_volume(tmp_path):
-    """Million-dollar volumes preserve cent-level precision.
-
-    The opposite end of the precision range: when VG and provider
-    each report ~$1M, a $1.23 drift should surface as exactly
-    $1.23, not get washed out by float rounding to "$1.0" or
-    "$1.0000".
-    """
+    """Million-dollar volumes preserve cent-level precision."""
     path = tmp_path / "openai.csv"
     path.write_text(
         "model,input_tokens,output_tokens,n_requests,cost_usd\n"
@@ -489,10 +458,7 @@ def test_reconcile_model_only_in_vg(tmp_path):
 
 
 def test_format_text_surfaces_no_provider_data_label(tmp_path):
-    """When VG has data but provider does not, the rendered row must
-    say 'no provider data' rather than presenting a bare $0 cell.
-    Per design §3.3 + TODO 4.3 #2.
-    """
+    """When VG has data but provider does not, the rendered row must"""
     path = tmp_path / "openai.csv"
     # Empty provider file (header only).
     path.write_text("model,input_tokens,output_tokens,n_requests,cost_usd\n")
@@ -550,12 +516,7 @@ def test_format_text_includes_total_row(tmp_path):
 
 
 def test_format_text_total_excludes_missing_side_rows(tmp_path):
-    """Rows with only one side of data must not contribute to the Total.
-
-    Including a $0 VG cell or $0 provider cell in the Total would
-    skew it (e.g., a missing-VG row with provider $5.00 would push
-    Total VG down by $5.00 worth of unmatched volume).
-    """
+    """Rows with only one side of data must not contribute to the Total."""
     path = tmp_path / "openai.csv"
     # Provider has gpt-4o-mini AND a never-seen-in-VG model.
     path.write_text(
@@ -647,10 +608,7 @@ def test_format_text_flagged_row_marked_with_asterisk():
 
 
 def test_format_text_surfaces_no_vg_data_label(tmp_path):
-    """Symmetric to 4.3 #2: when provider has data but VG does not,
-    the rendered row must say 'no vg data'. Per design §3.3 + TODO
-    4.3 #3.
-    """
+    """Symmetric to 4.3 #2: when provider has data but VG does not,"""
     path = tmp_path / "openai.csv"
     path.write_text(
         "model,input_tokens,output_tokens,n_requests,cost_usd\n"
@@ -731,12 +689,7 @@ def test_reconcile_threshold_is_configurable(tmp_path):
 
 
 def test_reconcile_flags_zero_provider_cost_with_nonzero_vg(tmp_path):
-    """Edge case: provider invoice line is $0 (free tier, credit-covered,
-    or rounded down) but VG recorded a non-zero cost. The percent diff
-    against a zero base is undefined; without an absolute-delta gate the
-    row would silently pass review even though it is exactly the kind
-    of accounting mismatch an operator wants surfaced.
-    """
+    """Edge case: provider invoice line is $0 (free tier, credit-covered,"""
     path = tmp_path / "openai.csv"
     path.write_text(
         "model,input_tokens,output_tokens,n_requests,cost_usd\n"
@@ -763,11 +716,7 @@ def test_reconcile_flags_zero_provider_cost_with_nonzero_vg(tmp_path):
 
 
 def test_reconcile_does_not_flag_zero_zero_match(tmp_path):
-    """Symmetric case: both sides matched and both costs are zero
-    (a free-tier model with no charges on either side). cost_diff is
-    zero; flagged must stay False so the new zero-base rule does not
-    over-trigger on legitimate zero-zero matches.
-    """
+    """Symmetric case: both sides matched and both costs are zero"""
     path = tmp_path / "openai.csv"
     path.write_text(
         "model,input_tokens,output_tokens,n_requests,cost_usd\n"
@@ -789,10 +738,7 @@ def test_reconcile_does_not_flag_zero_zero_match(tmp_path):
 
 
 def test_reconcile_does_not_flag_missing_sides(tmp_path):
-    """Lines missing data on either side carry undefined percent diff;
-    flagged must stay False so users do not get false positives just
-    because a model is unique to one source.
-    """
+    """Lines missing data on either side carry undefined percent diff;"""
     path = tmp_path / "openai.csv"
     # Provider lists a model VG has no records for.
     path.write_text(
@@ -893,9 +839,7 @@ def test_format_csv_writes_diff_rows():
 
 
 def test_format_csv_includes_flagged_column():
-    """CSV exposes `flagged` so spreadsheets can filter on it without
-    re-running the threshold comparison.
-    """
+    """CSV exposes `flagged` so spreadsheets can filter on it without"""
     import csv as _csv
     import io as _io
 

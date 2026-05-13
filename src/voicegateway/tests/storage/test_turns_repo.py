@@ -1,14 +1,11 @@
-"""Contract tests for voicegateway.repository.turns (T05).
-
-Covers CRUD, percentile aggregation, and talk-over count primitive.
-"""
+"""Contract tests for voicegateway.repository.turns (T05)."""
 
 from __future__ import annotations
 
 import aiosqlite
 
 from voicegateway.middleware.turn_tracker import TurnRow
-from voicegateway.repository import turns
+from voicegateway.repository import turns_repository as turns
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

@@ -1,10 +1,4 @@
-"""Tests for ``voicegw migrate``.
-
-Per design decision 2 the v0.1.0 config home matches v0.0.5, so
-migration is read-only detection + integrity verification + next-
-step guidance. Tests build sample v0.0.5 install fixtures under
-tmp_path and run the command against ``--config-home``.
-"""
+"""Tests for ``voicegw migrate``."""
 
 from __future__ import annotations
 
@@ -38,11 +32,7 @@ def _make_v005_yaml(home, providers=None):
 
 
 def _make_v005_db(home, *, with_managed_providers=()):
-    """Drop a minimal v0.0.5-shaped voicegw.db at <home>/voicegw.db.
-
-    ``with_managed_providers`` is a list of (provider_id,
-    api_key_encrypted) tuples to seed in managed_providers.
-    """
+    """Drop a minimal v0.0.5-shaped voicegw.db at <home>/voicegw.db."""
     home.mkdir(parents=True, exist_ok=True)
     db = home / "voicegw.db"
     conn = sqlite3.connect(str(db))
@@ -60,9 +50,7 @@ def _make_v005_db(home, *, with_managed_providers=()):
 
 @pytest.fixture(autouse=True)
 def _stub_daemon_manager(monkeypatch):
-    """Replace DaemonManager with a fake reporting registered=False
-    so migrate's daemon-registration check is deterministic.
-    """
+    """Replace DaemonManager with a fake reporting registered=False"""
     fake = MagicMock()
     fake.status.return_value = {"registered": False, "running": False, "pid": None}
     monkeypatch.setattr(
@@ -90,9 +78,7 @@ def test_migrate_when_no_install_present(tmp_path):
 
 
 def test_migrate_detects_clean_install_no_keys(tmp_path):
-    """v0.0.5 yaml + db with no managed_providers rows: clean detection,
-    daemon-not-registered prompts the install-daemon next step.
-    """
+    """v0.0.5 yaml + db with no managed_providers rows: clean detection,"""
     home = tmp_path / "voicegw"
     _make_v005_yaml(home)
     _make_v005_db(home)
@@ -126,9 +112,7 @@ def test_migrate_idempotent_on_re_run(tmp_path):
 
 
 def test_migrate_when_only_yaml_present(tmp_path):
-    """v0.0.5 install with cost-tracking off has no voicegw.db.
-    Migration succeeds; the missing-db note explains the situation.
-    """
+    """v0.0.5 install with cost-tracking off has no voicegw.db."""
     home = tmp_path / "voicegw"
     _make_v005_yaml(home)
     # No db on purpose.
@@ -185,9 +169,7 @@ def test_migrate_reports_managed_providers_count(tmp_path, monkeypatch):
 
 
 def test_migrate_warns_when_keys_fail_to_decrypt(tmp_path, monkeypatch):
-    """Decrypt failure surfaces as a yellow note + the
-    rotate-secret remediation pointer.
-    """
+    """Decrypt failure surfaces as a yellow note + the"""
     home = tmp_path / "voicegw"
     _make_v005_yaml(home)
     _make_v005_db(home, with_managed_providers=[("default:openai", "garbage")])
@@ -209,9 +191,7 @@ def test_migrate_warns_when_keys_fail_to_decrypt(tmp_path, monkeypatch):
 
 
 def test_migrate_says_complete_when_daemon_registered(tmp_path, monkeypatch):
-    """When the daemon is already registered, the next-step is
-    `voicegw status`, not `voicegw onboard`.
-    """
+    """When the daemon is already registered, the next-step is"""
     home = tmp_path / "voicegw"
     _make_v005_yaml(home)
     _make_v005_db(home)
@@ -249,9 +229,7 @@ def test_migrate_help_renders():
 
 
 def test_migrate_output_states_read_only_guarantee(tmp_path):
-    """Every migrate run, regardless of detection outcome, prints
-    the read-only footer so the operator knows nothing was written.
-    """
+    """Every migrate run, regardless of detection outcome, prints"""
     home = tmp_path / "voicegw"
     _make_v005_yaml(home)
     _make_v005_db(home)
@@ -266,9 +244,7 @@ def test_migrate_output_states_read_only_guarantee(tmp_path):
 
 
 def test_migrate_preserves_yaml_byte_for_byte(tmp_path):
-    """Run migrate against a v0.0.5 fixture; assert the yaml on disk
-    is byte-identical before and after. Pins the read-only contract.
-    """
+    """Run migrate against a v0.0.5 fixture; assert the yaml on disk"""
     home = tmp_path / "voicegw"
     cfg = _make_v005_yaml(home)
     _make_v005_db(home)
@@ -307,12 +283,7 @@ def test_migrate_preserves_db_byte_for_byte(tmp_path):
 
 
 def test_migrate_handles_corrupt_db_with_clear_note(tmp_path):
-    """A corrupt voicegw.db (e.g., interrupted write at v0.0.5 time)
-    surfaces as a note pointing at `voicegw doctor` rather than
-    crashing the command. Exit code stays 0 because migrate is
-    read-only and informational; the doctor command is the deeper
-    diagnostic surface.
-    """
+    """A corrupt voicegw.db (e.g., interrupted write at v0.0.5 time)"""
     home = tmp_path / "voicegw"
     home.mkdir(parents=True)
     _make_v005_yaml(home)
@@ -329,10 +300,7 @@ def test_migrate_handles_corrupt_db_with_clear_note(tmp_path):
 
 
 def test_migrate_handles_daemon_status_failure_gracefully(tmp_path, monkeypatch):
-    """If DaemonManager construction or status() raises, migrate
-    falls back to registered=False and prints the install-daemon
-    next-step pointer rather than crashing.
-    """
+    """If DaemonManager construction or status() raises, migrate"""
     home = tmp_path / "voicegw"
     _make_v005_yaml(home)
     _make_v005_db(home)

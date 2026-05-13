@@ -1,10 +1,4 @@
-"""FastAPI exception handlers that emit a uniform JSON error envelope.
-
-Every error response carries the same keys: ``message`` (human-friendly),
-``error`` (raw detail), ``type`` (exception class name), and an optional
-``details`` / ``errors`` payload. Frontends can rely on the shape; the
-HTTP status code carries the semantics.
-"""
+"""FastAPI exception handlers that emit a uniform JSON error envelope."""
 
 from __future__ import annotations
 

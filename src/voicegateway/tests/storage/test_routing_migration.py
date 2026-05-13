@@ -1,7 +1,4 @@
-"""Contract tests for migration 0006 (routing columns + branding + latency_observations).
-
-REQ-VG-ROUTE-001..004 schema gate.
-"""
+"""Contract tests for migration 0006 (routing columns + branding + latency_observations)."""
 
 from __future__ import annotations
 

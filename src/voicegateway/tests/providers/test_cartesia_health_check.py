@@ -1,12 +1,4 @@
-"""Tests for ``CartesiaProvider.health_check``.
-
-Cartesia's API requires a ``Cartesia-Version`` header on every request
-and returns 400 without it. livekit-plugins-cartesia sets the header
-internally for TTS, but our bypass health_check probe (used by
-``vg_test_provider_key`` and the dashboard "Test" button) hits
-``GET /voices`` with httpx directly. These tests pin the contract so a
-future refactor that drops the header trips immediately.
-"""
+"""Tests for ``CartesiaProvider.health_check``."""
 
 from __future__ import annotations
 
@@ -16,10 +8,7 @@ from voicegateway.providers.cartesia_provider import CartesiaProvider
 
 
 def _make_async_client_mock(status_code: int = 200) -> MagicMock:
-    """Build an httpx.AsyncClient stand-in whose ``get()`` returns a
-    response object with the given status_code. The MagicMock supports
-    ``async with`` via the AsyncMock context-manager pattern.
-    """
+    """Build an httpx.AsyncClient stand-in whose ``get()`` returns a"""
     response = MagicMock(status_code=status_code)
     client_instance = MagicMock()
     client_instance.get = AsyncMock(return_value=response)
@@ -30,10 +19,7 @@ def _make_async_client_mock(status_code: int = 200) -> MagicMock:
 
 
 async def test_health_check_sends_cartesia_version_header():
-    """The fix the test guards: every health_check probe must include
-    ``Cartesia-Version`` (any non-empty value). Catches a regression
-    where someone strips the header during a refactor.
-    """
+    """The fix the test guards: every health_check probe must include"""
     provider = CartesiaProvider({"api_key": "sk_car_test"})
     client_ctx, client = _make_async_client_mock(200)
     with patch("httpx.AsyncClient", return_value=client_ctx):
@@ -51,9 +37,7 @@ async def test_health_check_sends_cartesia_version_header():
 
 
 async def test_health_check_returns_false_on_400():
-    """Even a 400 (e.g. an unrecognised version date) must surface as
-    an unhealthy probe, not as an exception.
-    """
+    """Even a 400 (e.g. an unrecognised version date) must surface as"""
     provider = CartesiaProvider({"api_key": "sk_car_test"})
     client_ctx, _ = _make_async_client_mock(400)
     with patch("httpx.AsyncClient", return_value=client_ctx):
@@ -62,9 +46,7 @@ async def test_health_check_returns_false_on_400():
 
 
 async def test_health_check_returns_false_when_key_missing(monkeypatch):
-    """No API key, no probe — returns False immediately without
-    attempting the network call.
-    """
+    """No API key, no probe — returns False immediately without"""
     monkeypatch.delenv("CARTESIA_API_KEY", raising=False)
     provider = CartesiaProvider({})
     # If the code path is correct, httpx.AsyncClient is never invoked.
@@ -74,9 +56,7 @@ async def test_health_check_returns_false_when_key_missing(monkeypatch):
 
 
 async def test_health_check_swallows_network_errors():
-    """A genuine network failure (DNS, connection refused, timeout)
-    surfaces as False, not an exception.
-    """
+    """A genuine network failure (DNS, connection refused, timeout)"""
     import httpx
 
     provider = CartesiaProvider({"api_key": "sk_car_test"})

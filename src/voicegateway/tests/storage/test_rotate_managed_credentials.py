@@ -1,10 +1,4 @@
-"""Tests for SQLiteStorage.rotate_managed_credentials.
-
-REQ Q10: ``voicegw rotate-secret`` re-encrypts every
-``managed_providers`` row's api_key_encrypted under a new primary
-Fernet key. The storage method this test exercises is the engine
-the CLI command drives.
-"""
+"""Tests for SQLiteStorage.rotate_managed_credentials."""
 
 from __future__ import annotations
 
@@ -51,9 +45,7 @@ async def _seed_provider_rows(storage: SQLiteStorage) -> None:
 
 
 async def test_rotate_re_encrypts_every_row_under_new_primary(monkeypatch, tmp_path):
-    """End-to-end: write rows under key A, rotate to key B with A as
-    fallback, then prove the rows decrypt under B alone.
-    """
+    """End-to-end: write rows under key A, rotate to key B with A as"""
     old_key = _generate_key()
     monkeypatch.setenv("VOICEGW_SECRET", old_key)
     reset_fernet()
@@ -96,9 +88,7 @@ async def test_rotate_re_encrypts_every_row_under_new_primary(monkeypatch, tmp_p
 
 
 async def test_rotate_skips_rows_with_empty_api_key(monkeypatch, tmp_path):
-    """An empty api_key column has no ciphertext to rotate; the
-    summary records the row as skipped without touching it.
-    """
+    """An empty api_key column has no ciphertext to rotate; the"""
     monkeypatch.setenv("VOICEGW_SECRET", _generate_key())
     reset_fernet()
 
@@ -127,11 +117,7 @@ async def test_rotate_skips_rows_with_empty_api_key(monkeypatch, tmp_path):
 
 
 async def test_rotate_records_rows_that_fail_to_decrypt(monkeypatch, tmp_path):
-    """A row encrypted under a key that is no longer in primary or
-    fallback must NOT abort the rotation. The storage method records
-    the provider_id in ``failed`` so the CLI surfaces it without
-    losing the rotation progress on healthy rows.
-    """
+    """A row encrypted under a key that is no longer in primary or"""
     primary_a = _generate_key()
     monkeypatch.setenv("VOICEGW_SECRET", primary_a)
     reset_fernet()

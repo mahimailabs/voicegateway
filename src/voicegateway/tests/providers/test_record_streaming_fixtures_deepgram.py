@@ -1,15 +1,4 @@
-"""End-to-end tests for the Deepgram STT batch recorder.
-
-Mocks Deepgram's pre-recorded HTTP endpoint with respx, exercises
-the batch path, and asserts the produced fixture validates against
-StreamingFixture and carries the right ``audio_seconds`` ground
-truth plus a catalog-matched ``expected_cost_usd``.
-
-The recorder reads a bundled WAV under
-``tests/fixtures/audio/test_sample.wav``. Tests verify the file
-exists in the repo so this dependency is committed alongside the
-script.
-"""
+"""End-to-end tests for the Deepgram STT batch recorder."""
 
 from __future__ import annotations
 
@@ -262,12 +251,7 @@ async def test_deepgram_recorder_requires_audio_sample(
 
 
 class _FakeDeepgramWS:
-    """In-process fake of a Deepgram live WebSocket.
-
-    Records every frame the recorder sends, yields a pre-canned set
-    of JSON text messages when iterated, and lets tests drive the
-    full producer / consumer flow without any real network.
-    """
+    """In-process fake of a Deepgram live WebSocket."""
 
     def __init__(self, responses: list[dict[str, Any]]):
         self.sent: list[Any] = []
@@ -297,10 +281,7 @@ def _patch_deepgram_ws(
     monkeypatch: pytest.MonkeyPatch,
     fake: _FakeDeepgramWS,
 ) -> dict[str, Any]:
-    """Replace _open_deepgram_websocket so the recorder uses the fake.
-
-    Captures the (url, api_key) arguments for assertion.
-    """
+    """Replace _open_deepgram_websocket so the recorder uses the fake."""
     captured: dict[str, Any] = {}
 
     @asynccontextmanager

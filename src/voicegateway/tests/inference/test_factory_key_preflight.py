@@ -1,11 +1,4 @@
-"""Tests for the inference factory key-resolution preflight.
-
-REQ-VG-INFER-003.3: when a cloud provider has no api_key configured
-for the active project, the factory must raise a plain-English
-``ConfigError`` naming the provider and the project before
-constructing the LK plugin. Local providers (ollama / whisper /
-kokoro / piper) skip the check; they don't need keys.
-"""
+"""Tests for the inference factory key-resolution preflight."""
 
 from __future__ import annotations
 
@@ -19,12 +12,7 @@ from voicegateway.inference import _factory, _llm, _project, _stt, _tts
 
 
 class _LkShapedStub:
-    """Provider-side stub carrying the LK surface the wrappers consume.
-
-    Returned by ``_FakeProvider.create_*`` so InstrumentedSTT/LLM/TTS
-    can call ``super().__init__(capabilities=...)`` and register the
-    metrics-event bridge without raising.
-    """
+    """Provider-side stub carrying the LK surface the wrappers consume."""
 
     def __init__(self) -> None:
         from livekit.agents.stt import STTCapabilities
@@ -228,9 +216,7 @@ def test_per_project_yaml_key_satisfies_preflight(
 def test_other_project_in_yaml_does_not_satisfy_preflight(
     tmp_path, monkeypatch, fake_create_provider
 ):
-    """A key configured under project A must NOT satisfy a request
-    routed to project B. The error names project B, not A.
-    """
+    """A key configured under project A must NOT satisfy a request"""
     _build_gateway(
         tmp_path,
         monkeypatch,
@@ -258,10 +244,7 @@ def test_other_project_in_yaml_does_not_satisfy_preflight(
 
 
 def test_empty_api_key_treated_as_missing(tmp_path, monkeypatch, fake_create_provider):
-    """A YAML entry with ``api_key: ''`` (e.g. an unset env var that
-    expanded to the empty string) must trip the preflight rather
-    than silently constructing a broken plugin instance.
-    """
+    """A YAML entry with ``api_key: ''`` (e.g. an unset env var that"""
     _build_gateway(
         tmp_path,
         monkeypatch,

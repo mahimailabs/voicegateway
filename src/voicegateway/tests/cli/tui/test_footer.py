@@ -1,17 +1,4 @@
-"""Pilot tests for the Phase-9 CounterFooter live counter row.
-
-Covers REQ-VG-TUI-007:
-
-- Initial render: pre-fetch text is the documented placeholder.
-- Synthetic-data update: a cost change in the stub surfaces in the
-  rendered counter line within the polling budget.
-- Disconnect: HttpClient's ``is_connected = False`` flips the
-  rendered text to ``Reconnecting to daemon...``.
-- Recovery: the next successful round-trip flips back to
-  ``Today: $... Requests: ...``.
-- Pure formatter: ``_format`` rounds the total + aggregates per-
-  modality request counts; tolerates None / missing fields.
-"""
+"""Pilot tests for the Phase-9 CounterFooter live counter row."""
 
 from __future__ import annotations
 
@@ -118,10 +105,7 @@ def test_format_age_days_bucket(tmp_path: Path) -> None:
 
 
 def test_format_age_returns_none_on_missing_file(tmp_path: Path) -> None:
-    """Pre-init / wiped state: the helper returns None rather than
-    raising so the formatter can fall through to the un-suffixed
-    base line.
-    """
+    """Pre-init / wiped state: the helper returns None rather than"""
     missing = tmp_path / "no-such-file.db"
     assert _format_age(missing) is None
 
@@ -136,9 +120,7 @@ def test_format_appends_age_suffix_in_local_mode(tmp_path: Path) -> None:
 
 
 def test_format_omits_age_suffix_in_gateway_mode(tmp_path: Path) -> None:
-    """Gateway mode serves live data; the suffix is misleading here
-    so it stays off even when ``db_path`` is supplied.
-    """
+    """Gateway mode serves live data; the suffix is misleading here"""
     db = tmp_path / "voicegw.db"
     db.write_text("seed")
     text = _format({"total": 0.05, "request_count": 3}, is_local=False, db_path=db)
@@ -146,9 +128,7 @@ def test_format_omits_age_suffix_in_gateway_mode(tmp_path: Path) -> None:
 
 
 def test_format_omits_age_suffix_when_db_path_missing() -> None:
-    """``is_local=True`` but ``db_path=None`` (pre-resolution) renders
-    the un-suffixed base line.
-    """
+    """``is_local=True`` but ``db_path=None`` (pre-resolution) renders"""
     text = _format({"total": 0.05, "request_count": 3}, is_local=True, db_path=None)
     assert "(as of" not in text
 
@@ -200,9 +180,7 @@ async def test_counter_footer_updates_with_synthetic_data() -> None:
 
 
 async def test_counter_footer_shows_reconnecting_indicator() -> None:
-    """``HttpClient.is_connected = False`` (after a ConnectError)
-    flips the rendered text to ``Reconnecting to daemon...``.
-    """
+    """``HttpClient.is_connected = False`` (after a ConnectError)"""
     state = {"fail": True}
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -217,9 +195,7 @@ async def test_counter_footer_shows_reconnecting_indicator() -> None:
 
 
 async def test_counter_footer_recovery_hides_indicator() -> None:
-    """When the stub stops failing, the next poll tick replaces the
-    indicator with the cost summary; ``Reconnecting`` is gone.
-    """
+    """When the stub stops failing, the next poll tick replaces the"""
     state = {"fail": True}
 
     def handler(_request: httpx.Request) -> httpx.Response:

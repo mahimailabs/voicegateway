@@ -1,15 +1,4 @@
-"""Tests for the macOS LaunchAgent backend.
-
-Strategy: every subprocess.run call goes through one seam
-(``MacOSBackend._run_launchctl``); tests monkeypatch the module-level
-``subprocess.run`` to capture args + return canned output. Filesystem
-state goes to ``tmp_path`` via a ``HOME`` env-var override and a
-patched ``user_log_dir`` so the tests never touch the developer's
-real ``~/Library/LaunchAgents``.
-
-Skipped on Windows where ``os.getuid`` doesn't exist; the macOS
-backend is never imported in production on Windows.
-"""
+"""Tests for the macOS LaunchAgent backend."""
 
 from __future__ import annotations
 
@@ -32,9 +21,7 @@ def _ok(stdout: str = "", returncode: int = 0) -> subprocess.CompletedProcess:
 
 @pytest.fixture
 def backend(tmp_path, monkeypatch):
-    """A MacOSBackend rooted in tmp_path so every filesystem write
-    is sandboxed.
-    """
+    """A MacOSBackend rooted in tmp_path so every filesystem write"""
     home = tmp_path / "home"
     home.mkdir()
     log_dir = tmp_path / "logs"
@@ -52,12 +39,7 @@ def backend(tmp_path, monkeypatch):
 
 @pytest.fixture
 def fake_launchctl(monkeypatch):
-    """Replace subprocess.run with a recording fake.
-
-    Each test sets ``fake.return_value = _ok(stdout=..., returncode=...)``
-    or assigns ``fake.side_effect`` for per-call control. Calls are
-    inspected via ``fake.call_args_list``.
-    """
+    """Replace subprocess.run with a recording fake."""
     from unittest.mock import MagicMock
 
     fake = MagicMock(return_value=_ok())

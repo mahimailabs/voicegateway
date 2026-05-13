@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
-from voicegateway.repository import replay
+from voicegateway.repository import replay_repository as replay
 
 if TYPE_CHECKING:
     from voicegateway.storage.sqlite import SQLiteStorage
@@ -72,11 +72,7 @@ class RetentionWorker:
             pass
 
     async def tick_now(self) -> dict[str, int]:
-        """Run one deletion pass synchronously. Returns per-project counts.
-
-        Public for test rigs and the eventual ``voicegw replay-retention
-        --run-now`` CLI command (future scope).
-        """
+        """Run one deletion pass synchronously. Returns per-project counts."""
         return await self._tick()
 
     # ---- internals -------------------------------------------------------

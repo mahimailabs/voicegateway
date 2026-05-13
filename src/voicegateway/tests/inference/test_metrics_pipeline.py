@@ -1,29 +1,4 @@
-"""Integration test for the v0.2.0 metrics-capture pipeline.
-
-Foundry Open Question 1 (the only architectural risk for v0.2.0) asks
-whether plugin-level hooks on InstrumentedSTT and InstrumentedTTS
-reliably capture VAD events and audio-frame events when wired against
-a stock livekit-agents AgentSession. This test does NOT load the
-livekit-agents SDK (it's a heavy dependency with network and audio
-plumbing that does not belong in the unit-test pipeline). Instead, it
-validates the escape-hatch path:
-
-- ``voicegateway.inference.attach_session(agent_session, ...)`` is
-  called with a fake AgentSession that exposes the
-  EventEmitter-style ``.on(event, handler)`` API.
-- Each event lifecycle method is fired in order.
-- The TurnTracker observes the events and produces a TurnRow on close.
-
-If the stock AgentSession's plugin hooks turn out to miss events at
-release time, the Foundry's resolution path is to elevate
-``attach_session`` from an opt-in escape hatch to a required default;
-the pipeline this test validates is already in place to absorb that.
-
-The "real plugin-level hooks" question is documented in the journal
-(v0.2.0/T17) as not fully closed by v0.2.0; the agent_session-side
-validation belongs in a manual smoke step before the v0.2.0 release
-PR opens, NOT in CI's unit pipeline.
-"""
+"""Integration test for the v0.2.0 metrics-capture pipeline."""
 
 from __future__ import annotations
 
@@ -39,12 +14,7 @@ from voicegateway.middleware.turn_tracker import TurnRow, TurnTracker
 
 
 class FakeAgentSession:
-    """Minimal EventEmitter doubling for livekit-agents AgentSession.
-
-    Implements the only API surface ``attach_session`` cares about:
-    ``on(event_name, async_handler)`` to register and ``emit(event_name)``
-    to dispatch. Each registered handler is awaited in registration order.
-    """
+    """Minimal EventEmitter doubling for livekit-agents AgentSession."""
 
     def __init__(self) -> None:
         self._handlers: dict[str, list[Any]] = {}

@@ -1,9 +1,4 @@
-"""Unit tests for v0.1.1 TUI widgets.
-
-Focuses on the pure-Python formatting helpers (date/time parsing,
-duration rendering, dict-to-row formatting). Pilot-level rendering
-is covered when the consuming screen lands its own test file.
-"""
+"""Unit tests for v0.1.1 TUI widgets."""
 
 from __future__ import annotations
 
@@ -135,10 +130,7 @@ def test_session_row_update_replaces_dict_and_rerenders() -> None:
 
 
 def test_session_row_is_focusable() -> None:
-    """The Sessions screen relies on Enter focusing a row to push the
-    per-turn detail modal (Phase 3 bullet 4); ``can_focus`` has to be
-    True for the keyboard event to reach the widget.
-    """
+    """The Sessions screen relies on Enter focusing a row to push the"""
     row = SessionRow(_session_fixture())
     assert row.can_focus is True
 
@@ -191,10 +183,7 @@ def test_cost_card_format_modality_renders_each() -> None:
 
 
 def test_cost_card_format_modality_handles_missing_by_modality() -> None:
-    """When the response lacks a modality, render `--` rather than
-    crash. The Costs screen must still mount cleanly even on a
-    fresh install with zero traffic.
-    """
+    """When the response lacks a modality, render `--` rather than"""
     card = CostCard({"total": 0.0, "by_modality": {}})
     assert "--" in card._format_modality("stt")
     assert "--" in card._format_modality("llm")
@@ -202,20 +191,13 @@ def test_cost_card_format_modality_handles_missing_by_modality() -> None:
 
 
 def test_cost_card_format_modality_handles_no_by_modality_key() -> None:
-    """The pre-v0.1.1 daemon response shape may not carry by_modality;
-    the card should still render the totals row plus per-modality `--`.
-    """
+    """The pre-v0.1.1 daemon response shape may not carry by_modality;"""
     card = CostCard({"total": 1.23})
     assert "--" in card._format_modality("stt")
 
 
 def test_cost_card_update_costs_replaces_dict_state() -> None:
-    """``update_costs`` swaps the in-memory dict so ``_format_*``
-    helpers reflect the new values. The Costs screen relies on this
-    for time-range changes and the polling refresh. Safe to call
-    pre-mount: the dict update always succeeds and the next
-    compose() picks up the new values.
-    """
+    """``update_costs`` swaps the in-memory dict so ``_format_*``"""
     card = CostCard({"total": 0.001})
     assert "$0.0010" in card._format_total()
     card.update_costs({"total": 9.99, "period": "this_month"})
@@ -246,10 +228,7 @@ def test_stale_marker_silent_on_recent_date() -> None:
 
 
 def test_stale_marker_silent_on_version_token() -> None:
-    """genai-prices stamps the LLM source as ``genai-prices@0.0.57``;
-    the token is a SemVer version, not a date, so we do not infer
-    age from it. No marker.
-    """
+    """genai-prices stamps the LLM source as ``genai-prices@0.0.57``;"""
     assert stale_marker("genai-prices@0.0.57") == ""
 
 
@@ -266,9 +245,7 @@ def test_stale_marker_silent_on_non_string() -> None:
 
 
 def test_cost_card_modality_carries_stale_marker() -> None:
-    """``_format_modality`` appends the (as of X) suffix when the
-    response's ``pricing_sources[modality]`` carries an old date.
-    """
+    """``_format_modality`` appends the (as of X) suffix when the"""
     costs = {
         "total": 0.05,
         "by_modality": {
@@ -421,9 +398,7 @@ def _entries_fixture() -> list[dict[str, object]]:
 
 
 def test_log_tail_retains_all_entries_via_append() -> None:
-    """``_all_entries`` accumulates every appended row so set_filter
-    can re-render without re-fetching from the daemon.
-    """
+    """``_all_entries`` accumulates every appended row so set_filter"""
     tail = LogTail()
     tail.append_entries(_entries_fixture())
     assert len(tail._all_entries) == 3
@@ -484,10 +459,7 @@ def test_log_tail_reset_clears_state() -> None:
 
 
 def test_log_tail_append_skips_non_matching_under_active_filter() -> None:
-    """Real-time append while a filter is set: matching rows go to
-    the rendered buffer; non-matches still land in _all_entries so
-    a later filter clear restores them.
-    """
+    """Real-time append while a filter is set: matching rows go to"""
     tail = LogTail()
     tail.set_filter("openai")
     tail.append_entries(_entries_fixture())
@@ -530,9 +502,7 @@ def test_format_status_renders_untested_for_explicit_value() -> None:
 
 
 def test_format_status_handles_none_and_unknown() -> None:
-    """None and unknown statuses fall through to the untested form
-    so a malformed daemon response never breaks row alignment.
-    """
+    """None and unknown statuses fall through to the untested form"""
     assert "[?]" in format_status(None)
     assert "[?]" in format_status("")
     assert "[?]" in format_status("mystery")
@@ -549,9 +519,7 @@ def test_provider_row_renders_every_field() -> None:
 
 
 def test_provider_row_renders_global_label_when_project_missing() -> None:
-    """A NULL ``project`` (the v0.0.5 pre-per-project rows) renders
-    as ``(global)`` so the column is never blank.
-    """
+    """A NULL ``project`` (the v0.0.5 pre-per-project rows) renders"""
     row = ProviderRow(_provider_fixture(project=None))
     assert "(global)" in str(row.renderable)
 
@@ -562,9 +530,7 @@ def test_provider_row_exposes_provider_id() -> None:
 
 
 def test_provider_row_exposes_normalised_status() -> None:
-    """``.status`` returns the normalised value ``ok`` / ``fail`` /
-    ``untested`` regardless of what the underlying dict stores.
-    """
+    """``.status`` returns the normalised value ``ok`` / ``fail`` /"""
     assert ProviderRow(_provider_fixture(status="ok")).status == "ok"
     assert ProviderRow(_provider_fixture(status="fail")).status == "fail"
     assert ProviderRow(_provider_fixture(status=None)).status == "untested"
@@ -572,19 +538,14 @@ def test_provider_row_exposes_normalised_status() -> None:
 
 
 def test_provider_row_carries_status_css_class() -> None:
-    """Phase 8's TCSS pass styles ``status-ok`` etc. green / red /
-    gray; the widget assigns the right class so the colour follows
-    the indicator without touching Python.
-    """
+    """Phase 8's TCSS pass styles ``status-ok`` etc. green / red /"""
     assert "status-ok" in ProviderRow(_provider_fixture(status="ok")).classes
     assert "status-fail" in ProviderRow(_provider_fixture(status="fail")).classes
     assert "status-untested" in ProviderRow(_provider_fixture(status=None)).classes
 
 
 def test_provider_row_update_provider_swaps_status_class() -> None:
-    """``update_provider`` re-renders the row + swaps the CSS class so
-    a successful test flips the indicator + colour without re-mount.
-    """
+    """``update_provider`` re-renders the row + swaps the CSS class so"""
     row = ProviderRow(_provider_fixture(status="untested"))
     assert "status-untested" in row.classes
     row.update_provider(_provider_fixture(status="ok"))
@@ -594,8 +555,5 @@ def test_provider_row_update_provider_swaps_status_class() -> None:
 
 
 def test_provider_row_is_focusable() -> None:
-    """Phase 6 bullet 3 binds ``t`` -> test_provider on the focused
-    row, mirroring the SessionRow Enter contract; ``can_focus`` has
-    to be True for the keyboard event to reach the widget.
-    """
+    """Phase 6 bullet 3 binds ``t`` -> test_provider on the focused"""
     assert ProviderRow(_provider_fixture()).can_focus is True

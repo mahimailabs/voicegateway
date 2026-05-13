@@ -101,12 +101,7 @@ async def bulk_write_events(
 async def read_full_replay(
     db: aiosqlite.Connection, session_id: str
 ) -> list[ReplayEvent]:
-    """Return the full replay for one session, ordered by ``t_ms`` ASC.
-
-    UNION ALL across the four replay tables. Each row carries its
-    modality so the consumer (the dashboard's Replay page, T11) can
-    route to the right pane.
-    """
+    """Return the full replay for one session, ordered by ``t_ms`` ASC."""
 
     sql = (
         "SELECT session_id, 'stt' AS modality, t_ms, payload, "

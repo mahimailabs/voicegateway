@@ -155,20 +155,7 @@ def _run_smoke_test(config_path: Path) -> None:
 
 
 def _rollback_partial(config_path: Path, pre_existing_bytes: bytes | None) -> None:
-    """Restore the pre-wizard config state.
-
-    Three cases:
-      1. config didn't exist before AND nothing was written: nothing
-         to do.
-      2. config didn't exist before AND a partial write happened:
-         remove the partial file.
-      3. config existed before: restore the snapshot (byte-for-byte
-         atomic).
-
-    OSError is swallowed because the rollback is best-effort: a
-    failure here loses some idempotency but should not raise from
-    inside an except block (would mask the original KeyboardInterrupt).
-    """
+    """Restore the pre-wizard config state."""
     if not config_path.exists():
         return
     try:

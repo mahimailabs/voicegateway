@@ -1,12 +1,4 @@
-"""Tests for tenant_id stamping at session-create (REQ-VG-TENANT-001).
-
-The session row's tenant_id comes from ``current_tenant()`` at the
-moment ``log_request`` fires for the session_id. Three coverage cases:
-
-- Caller explicitly sets tenant via ContextVar -> session row tagged.
-- No caller scope -> session row tenant_id is NULL.
-- Tenant set after first request -> COALESCE rule fills the slot.
-"""
+"""Tests for tenant_id stamping at session-create (REQ-VG-TENANT-001)."""
 
 from __future__ import annotations
 

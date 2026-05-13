@@ -1,13 +1,4 @@
-"""Tests for the Linux systemd user-unit backend.
-
-Strategy mirrors test_daemon_macos.py: every subprocess call goes
-through one seam so tests monkeypatch the module-level
-``subprocess.run`` to capture args and return canned output. HOME
-points at tmp_path so writes are sandboxed. The integration test
-that drives a real ``systemctl --user`` lives in the Docker matrix
-workflow (deferred follow-up); these tests cover the unit-level
-contract.
-"""
+"""Tests for the Linux systemd user-unit backend."""
 
 from __future__ import annotations
 
@@ -56,9 +47,7 @@ def _journalctl_calls(fake) -> list[list[str]]:
 
 
 def test_render_unit_substitutes_all_variables(backend):
-    """The rendered unit parses through configparser and resolves
-    every promised key.
-    """
+    """The rendered unit parses through configparser and resolves"""
     import configparser
 
     rendered = backend._render_unit(executable_path="/usr/local/bin/voicegw")
@@ -222,9 +211,7 @@ def test_status_when_inactive(backend, fake_subprocess):
 
 
 def test_status_when_unit_missing(backend, fake_subprocess):
-    """No unit file on disk → registered=False even if systemctl
-    reports 'loaded' (which it should not, but defensive).
-    """
+    """No unit file on disk → registered=False even if systemctl"""
     fake_subprocess.return_value = _ok(
         stdout="LoadState=not-found\nActiveState=inactive\nMainPID=0\n"
     )
@@ -263,9 +250,7 @@ def test_logs_calls_journalctl_with_tail(backend, fake_subprocess):
 
 
 def test_logs_returns_empty_on_journalctl_failure(backend, fake_subprocess):
-    """journalctl exits non-zero when there's no journal access; we
-    return empty rather than raising.
-    """
+    """journalctl exits non-zero when there's no journal access; we"""
     fake_subprocess.return_value = _ok(returncode=1)
     assert backend.logs(tail=10) == ""
 

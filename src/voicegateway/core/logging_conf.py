@@ -1,9 +1,4 @@
-"""Loguru configuration for the HTTP server stack.
-
-Plain stdlib logging keeps working for the CLI / LiveKit / providers.
-This module is only imported by the server lifespan to wire structured
-output and pipe stdlib log records into loguru for one consistent sink.
-"""
+"""Loguru configuration for the HTTP server stack."""
 
 from __future__ import annotations
 
@@ -33,10 +28,7 @@ class _InterceptHandler(logging.Handler):
 
 
 def configure_logging(level: str = "INFO") -> None:
-    """Replace loguru's default sink and pipe stdlib log records in.
-
-    Idempotent. Safe to call multiple times across reloads / tests.
-    """
+    """Replace loguru's default sink and pipe stdlib log records in."""
     logger.remove()
     logger.add(
         sys.stderr,

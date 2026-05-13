@@ -1,17 +1,4 @@
-"""Tests for the v0.4.0 virtual-key path in the HTTP API auth middleware.
-
-Covers REQ-VG-TENANT-004:
-
-- A valid virtual key resolves and the request reaches the handler.
-- A revoked virtual key returns 401.
-- A virtual key scoped to tenant A + a body that declares tenant B
-  returns 403 with a structured reason (via
-  ``check_tenant_body_conflict``).
-- An unscoped virtual key allows the body to declare any tenant.
-
-The unit-level helpers in ``voicegateway/core/auth.py`` are exercised
-directly without spinning up a FastAPI app where possible.
-"""
+"""Tests for the v0.4.0 virtual-key path in the HTTP API auth middleware."""
 
 from __future__ import annotations
 
@@ -26,7 +13,7 @@ from voicegateway.core.auth import (
     verify_virtual_key,
 )
 from voicegateway.core.gateway import Gateway
-from voicegateway.repository import virtual_keys
+from voicegateway.repository import virtual_keys_repository as virtual_keys
 from voicegateway.server import build_app
 
 _BASE_CONFIG = {

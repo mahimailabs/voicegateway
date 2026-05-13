@@ -19,13 +19,7 @@ from voicegateway.inference._session_context import get_session_id
 
 
 class _FakeLLM:
-    """Pretends to be a livekit.plugins.<provider>.LLM instance.
-
-    InstrumentedLLM subclasses lk_llm.LLM (whose ``__init__`` takes no
-    args), so this fake doesn't need ``capabilities``. The wrapper
-    still bridges events via ``wrapped.on(...)``, so a no-op ``on`` is
-    required.
-    """
+    """Pretends to be a livekit.plugins.<provider>.LLM instance."""
 
     def __init__(self, model: str, **kwargs: Any) -> None:
         self.model = model

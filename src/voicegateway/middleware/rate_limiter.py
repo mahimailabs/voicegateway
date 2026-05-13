@@ -18,20 +18,13 @@ class RateLimiter:
     """Token bucket rate limiter per provider."""
 
     def __init__(self, limits: dict[str, dict[str, int]]):
-        """Initialize with rate limits config.
-
-        Args:
-            limits: Dict mapping provider name to {"requests_per_minute": N}.
-        """
+        """Initialize with rate limits config."""
         self._limits = limits
         self._buckets: dict[str, list[float]] = defaultdict(list)
         self._lock = asyncio.Lock()
 
     async def acquire(self, provider: str) -> None:
-        """Acquire a rate limit token for the provider.
-
-        Raises RateLimitExceeded if the provider's limit is exceeded.
-        """
+        """Acquire a rate limit token for the provider."""
         if provider not in self._limits:
             return
 

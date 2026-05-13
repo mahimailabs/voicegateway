@@ -11,7 +11,7 @@ from voicegateway.middleware.latency_observations_worker import (
     LatencyObservationsWorker,
 )
 from voicegateway.models.request import RequestRecord
-from voicegateway.repository import latency_observations as lor
+from voicegateway.repository import latency_observations_repository as lor
 from voicegateway.storage.sqlite import SQLiteStorage
 
 
@@ -76,8 +76,7 @@ async def test_custom_window_provider(storage) -> None:
 
 
 async def test_loop_continues_on_tick_exception(storage) -> None:
-    """A failing window_provider does not crash the loop; the worker
-    still cancels cleanly on stop()."""
+    """A failing window_provider does not crash the loop; the worker"""
 
     async def boom() -> int:
         raise RuntimeError("boom")

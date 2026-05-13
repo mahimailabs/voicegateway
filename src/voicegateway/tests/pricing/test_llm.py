@@ -1,9 +1,4 @@
-"""Unit tests for voicegateway.pricing.llm.
-
-Covers the genai-prices wrapper: known models, unknown models,
-edge cases (zero / very large counts, bare model names, slash-only
-strings), and the PRICING_SOURCE attribution constant.
-"""
+"""Unit tests for voicegateway.pricing.llm."""
 
 from __future__ import annotations
 

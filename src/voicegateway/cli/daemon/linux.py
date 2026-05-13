@@ -136,9 +136,7 @@ class LinuxBackend:
     def _systemctl(
         self, *args: str, check: bool = False
     ) -> subprocess.CompletedProcess[str]:
-        """Single subprocess seam for systemctl --user. Tests
-        monkeypatch this module's ``subprocess.run``.
-        """
+        """Single subprocess seam for systemctl --user. Tests"""
         result = subprocess.run(
             ["systemctl", "--user", *args],
             capture_output=True,
@@ -153,10 +151,7 @@ class LinuxBackend:
         return result
 
     def _systemctl_show(self) -> dict[str, str]:
-        """Run ``systemctl --user show <unit>`` and parse the
-        ``Key=Value`` output. Returns an empty dict on failure
-        so ``status()`` can still report a sensible shape.
-        """
+        """Run ``systemctl --user show <unit>`` and parse the"""
         result = self._systemctl("show", self._unit_name())
         if result.returncode != 0 or not result.stdout:
             return {}

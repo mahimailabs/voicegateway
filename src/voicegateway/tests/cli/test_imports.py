@@ -1,17 +1,4 @@
-"""Backward-compat gate for the v0.0.5 → v0.1.0 cli refactor.
-
-The v0.0.5 cli was a single ``voicegateway/cli.py`` module exporting
-the Typer ``app`` (and incidentally the Rich ``console``). Any
-external script that imported ``app`` to drive Typer's testing
-``CliRunner``, or anything pinned to the
-``voicegw = "voicegateway.cli:app"`` console-script entry point,
-must still resolve cleanly under v0.1.0.
-
-These tests are the regression gate. If a future refactor shadows
-``app`` with something that is not a Typer instance, drops a v0.0.5
-command, renames one to a non-canonical alias, or otherwise breaks
-the import contract, this file fails immediately.
-"""
+"""Backward-compat gate for the v0.0.5 → v0.1.0 cli refactor."""
 
 from __future__ import annotations
 
@@ -29,20 +16,7 @@ from voicegateway.cli import app, console
 
 
 def test_voicegateway_cli_import_does_not_load_textual() -> None:
-    """``from voicegateway.cli import app`` must not pull in ``textual``.
-
-    ``textual`` is an optional dependency that only ships with the
-    ``[tui]`` extra. A regression where the TUI sub-package's
-    side-effect import drags ``textual`` into the main CLI startup
-    breaks every ``voicegw`` command on installs that did not opt
-    into ``[tui]`` (``pip install voicegateway``,
-    ``voicegateway[cloud]``, etc.) -- the import would fail before
-    Typer could route to any non-TUI command.
-
-    Runs in a fresh interpreter so the test process's own ``sys.modules``
-    (which has ``textual`` loaded for the Pilot suite) does not mask
-    the regression.
-    """
+    """``from voicegateway.cli import app`` must not pull in ``textual``."""
     probe = (
         "import sys, voicegateway.cli;\n"
         "leaked = sorted(m for m in sys.modules if m == 'textual' "
@@ -68,34 +42,20 @@ def test_voicegateway_cli_import_does_not_load_textual() -> None:
 
 
 def test_app_is_a_typer_instance() -> None:
-    """``app`` is the Typer object every command registers on.
-
-    External scripts use ``typer.testing.CliRunner`` against this
-    object; a regression where ``app`` becomes anything else (a
-    Click ``Group``, a function, ``None``) breaks every such caller.
-    """
+    """``app`` is the Typer object every command registers on."""
     assert isinstance(app, typer.Typer)
     assert app.info.name == "voicegw"
 
 
 def test_console_is_a_rich_console() -> None:
-    """``console`` keeps its v0.0.5 type.
-
-    Some external integrations (notebooks, embedded shells) pull the
-    package's ``console`` to share a Rich rendering context. Loosely
-    typed but the duck shape we promise is ``rich.console.Console``.
-    """
+    """``console`` keeps its v0.0.5 type."""
     from rich.console import Console
 
     assert isinstance(console, Console)
 
 
 def test_dotted_attribute_access_still_works() -> None:
-    """``import voicegateway.cli; voicegateway.cli.app`` resolves.
-
-    Some callers prefer attribute access over ``from … import …``;
-    the contract covers both.
-    """
+    """``import voicegateway.cli; voicegateway.cli.app`` resolves."""
     import voicegateway.cli as cli_pkg
 
     assert cli_pkg.app is app
@@ -108,14 +68,7 @@ def test_dotted_attribute_access_still_works() -> None:
 
 
 def test_voicegw_entry_point_resolves_to_app() -> None:
-    """``voicegw = "voicegateway.cli:app"`` from pyproject.toml.
-
-    A regression where the entry-point target moves (e.g. someone
-    rewires the pointer to ``voicegateway.cli._app:app`` or to a
-    different module) breaks the installed CLI command without
-    breaking any direct imports. The entry-points registry is the
-    only place that catches it.
-    """
+    """``voicegw = "voicegateway.cli:app"`` from pyproject.toml."""
     eps = entry_points()
     console_scripts = eps.select(group="console_scripts")
     voicegw_eps = [ep for ep in console_scripts if ep.name == "voicegw"]
@@ -190,12 +143,7 @@ def _registered_command_names() -> set[str]:
 
 
 def test_every_v005_command_still_registered() -> None:
-    """Every v0.0.5 command name resolves on the v0.1.0 app.
-
-    A regression where a section-2 carve-out drops or renames one of
-    these (say, ``smoke-test`` becomes ``smoketest``) trips this gate
-    without depending on anyone running the actual command.
-    """
+    """Every v0.0.5 command name resolves on the v0.1.0 app."""
     registered = _registered_command_names()
     missing = _V005_COMMAND_NAMES - registered
     assert not missing, (
@@ -205,12 +153,7 @@ def test_every_v005_command_still_registered() -> None:
 
 
 def test_no_command_name_collisions() -> None:
-    """Each command name appears exactly once.
-
-    Double-registration would mean two submodules attached the same
-    ``@app.command(name=...)`` decorator and one silently shadows
-    the other under Typer.
-    """
+    """Each command name appears exactly once."""
     names: list[str] = []
     for cmd in app.registered_commands:
         if cmd.name is not None:
@@ -223,15 +166,7 @@ def test_no_command_name_collisions() -> None:
 
 
 def test_command_count_matches_documented_surface() -> None:
-    """Exactly the documented (v0.0.5 + v0.1.0-additions) count.
-
-    Each new v0.1.0 command (``onboard`` lands first; ``doctor``,
-    ``migrate``, the lifecycle group follow) bumps
-    ``_V010_COMMAND_NAMES`` above. A surprise command — one that
-    registers on app without showing up in either frozenset — trips
-    this gate, which is exactly the deliberate touch-point we want
-    for "the public command surface grew."
-    """
+    """Exactly the documented (v0.0.5 + v0.1.0-additions) count."""
     expected = (
         _V005_COMMAND_NAMES
         | _V010_COMMAND_NAMES

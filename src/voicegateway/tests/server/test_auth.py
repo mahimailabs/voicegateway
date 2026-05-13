@@ -1,9 +1,4 @@
-"""Tests for the HTTP API's bearer-token auth layer.
-
-Covers the ``voicegateway/core/auth.py`` primitives directly (mirrors the
-style of ``tests/mcp/test_auth.py``) and the end-to-end enforcement on
-``voicegateway/server.py`` via FastAPI's TestClient.
-"""
+"""Tests for the HTTP API's bearer-token auth layer."""
 
 from __future__ import annotations
 
@@ -258,9 +253,7 @@ async def test_read_scope_rejected_on_write(gateway_factory):
 
 
 async def test_reads_open_regardless_of_auth(gateway_factory):
-    """This slice leaves GET endpoints open; confirm the ones the audit
-    flagged as sensitive (/v1/costs, /v1/logs, /v1/projects) still
-    respond 200 without a token."""
+    """This slice leaves GET endpoints open; confirm the ones the audit"""
     gw = gateway_factory(
         {"api_keys": [{"token": "secret", "name": "t", "scopes": ["*"]}]}
     )
@@ -282,11 +275,7 @@ async def test_health_and_metrics_always_public(gateway_factory):
 
 
 async def test_env_api_key_shortcut_end_to_end(tmp_path, monkeypatch):
-    """No YAML auth block + VOICEGW_API_KEY env → enforcement kicks in.
-
-    This bypasses the shared factory so the env var survives into
-    build_app's load_api_keys call.
-    """
+    """No YAML auth block + VOICEGW_API_KEY env → enforcement kicks in."""
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "auth-env.db"))
     monkeypatch.setenv("VOICEGW_API_KEY", "from-env")
     path = _write_config(tmp_path, None)
@@ -307,8 +296,7 @@ async def test_env_api_key_shortcut_end_to_end(tmp_path, monkeypatch):
 
 
 async def test_cors_origins_config_restricts(gateway_factory):
-    """Preflight with a configured origin succeeds; disallowed origin
-    gets no Access-Control-Allow-Origin header."""
+    """Preflight with a configured origin succeeds; disallowed origin"""
     gw = gateway_factory(
         {
             "api_keys": [],

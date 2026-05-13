@@ -1,26 +1,4 @@
-"""End-to-end integration test for v0.0.5 session correlation.
-
-This is the "all three modalities share one session_id" gate. Drops in
-fake providers so we don't need real livekit plugins, then drives the
-full request path:
-
-  1. Open an asyncio context.
-  2. Construct ``inference.STT``, ``inference.LLM``, ``inference.TTS``
-     in that same context.
-  3. Trigger ``_log_request`` on each wrapper (simulating one
-     completed request per modality).
-  4. Assert the three ``requests`` rows share one ``session_id``.
-  5. Assert the ``sessions`` table has exactly one row with
-     ``request_count == 3`` and modalities containing
-     ``stt``, ``llm``, and ``tts``.
-
-The wrappers ARE the seam livekit.agents.AgentSession would use —
-``AgentSession(stt=inference.STT(...), llm=inference.LLM(...),
-tts=inference.TTS(...))`` constructs nothing extra; the request
-logging happens inside the wrapper, not inside AgentSession. So
-exercising the wrappers directly here covers the same correlation
-contract without bringing real LK runtime state into the test.
-"""
+"""End-to-end integration test for v0.0.5 session correlation."""
 
 from __future__ import annotations
 
@@ -40,13 +18,7 @@ from voicegateway.inference._session_context import get_session_id
 
 
 class _FakeInstance:
-    """Generic stand-in for livekit.plugins.<provider>.STT/LLM/TTS.
-
-    Carries the LK-side surface the wrappers need to subclass cleanly:
-    ``capabilities``, ``sample_rate`` / ``num_channels`` (for TTS), and
-    a no-op ``on(event, callback)`` so the metrics-event bridge can
-    register without firing.
-    """
+    """Generic stand-in for livekit.plugins.<provider>.STT/LLM/TTS."""
 
     def __init__(self, *, model: str = "test", **kwargs: Any) -> None:
         from livekit.agents.stt import STTCapabilities
@@ -105,9 +77,7 @@ class _FakeProvider:
 
 @pytest.fixture
 def fake_providers(monkeypatch):
-    """Replace create_provider in all three inference modules so the
-    factories can construct wrapped fakes without real LK plugins.
-    """
+    """Replace create_provider in all three inference modules so the"""
 
     def _create(_provider_name: str, config: dict[str, Any]) -> _FakeProvider:
         return _FakeProvider(config)
@@ -150,15 +120,7 @@ def configured_gateway(tmp_path, monkeypatch):
 
 
 async def _run_in_isolated_context(coro_factory):
-    """Run a coroutine inside an isolated copied contextvars.Context.
-
-    Awaiting a coroutine inside the test task always runs it in the
-    test task's context — that's how asyncio normally propagates
-    ContextVar state. To get real isolation we have to schedule the
-    coroutine as its own Task and pass an explicit ``context=``: that
-    task runs entirely in the copied context and never touches the
-    outer one.
-    """
+    """Run a coroutine inside an isolated copied contextvars.Context."""
     import asyncio
 
     ctx = contextvars.copy_context()
@@ -228,10 +190,7 @@ async def test_three_modalities_share_one_session_and_one_sessions_row(
 async def test_two_async_contexts_get_separate_sessions(
     configured_gateway, fake_providers
 ):
-    """The negative half of the contract. Two independently-copied
-    contextvars.Context instances each create their own session_id;
-    the sessions table ends up with two rows, not one.
-    """
+    """The negative half of the contract. Two independently-copied"""
     gateway, db_path = configured_gateway
 
     sids: list[str] = []
@@ -265,18 +224,7 @@ async def test_two_async_contexts_get_separate_sessions(
 async def test_n_requests_within_one_context_collapse_to_one_sessions_row(
     configured_gateway, fake_providers
 ):
-    """Five separate STT factory calls inside ONE context produce five
-    request rows but only ONE sessions row with request_count=5.
-
-    Each `inference.STT(...)` call builds a fresh wrapper (the wrapper
-    has a once-only ``_logged`` guard), so simulating multiple
-    requests means constructing multiple wrappers — which is also the
-    realistic per-utterance pattern for the AgentSession integration.
-
-    The assertion guards against the UPSERT mistakenly keying off the
-    request id rather than the session_id (that bug would leave us
-    with N sessions rows for N requests).
-    """
+    """Five separate STT factory calls inside ONE context produce five"""
     _, db_path = configured_gateway
 
     async def _scenario():

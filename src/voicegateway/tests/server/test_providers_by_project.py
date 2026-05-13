@@ -1,12 +1,4 @@
-"""Tests for /api/providers/by-project (dashboard) and the project-
-aware /v1/providers POST + PATCH (gateway HTTP API).
-
-Wires the v0.0.5 dashboard Providers page (frontend, iter 31-33) to
-the backend layer. The dashboard endpoint surfaces both YAML-defined
-projects.<id>.providers entries and DB-managed managed_providers rows
-with a non-null project column. The /v1/providers POST + PATCH
-handlers persist the project field through to managed_providers.
-"""
+"""Tests for /api/providers/by-project (dashboard) and the project-"""
 
 from __future__ import annotations
 
@@ -97,9 +89,7 @@ async def test_by_project_masks_api_keys(dash_client):
 
 
 async def test_by_project_includes_db_managed_rows(yaml_seeded_gateway, dash_client):
-    """Persist a DB-managed per-project row directly through storage
-    and confirm the dashboard endpoint surfaces it tagged source=db.
-    """
+    """Persist a DB-managed per-project row directly through storage"""
     storage = yaml_seeded_gateway.storage
     assert storage is not None
     await storage.upsert_managed_provider(
@@ -121,9 +111,7 @@ async def test_by_project_includes_db_managed_rows(yaml_seeded_gateway, dash_cli
 async def test_by_project_excludes_legacy_global_db_rows(
     yaml_seeded_gateway, dash_client
 ):
-    """Rows with project IS NULL belong to the existing /v1/providers
-    global view; this dashboard endpoint must not return them.
-    """
+    """Rows with project IS NULL belong to the existing /v1/providers"""
     storage = yaml_seeded_gateway.storage
     assert storage is not None
     await storage.upsert_managed_provider(
@@ -246,11 +234,7 @@ async def test_v1_patch_preserves_project_when_omitted(v1_client, gw_for_v1):
 async def test_v1_post_rejects_project_scoped_when_yaml_pins_slot(
     tmp_path, monkeypatch
 ):
-    """If voicegw.yaml already defines projects.<id>.providers.<type>,
-    the DB row would silently never be used (ConfigManager keeps the
-    YAML entry). The handler must reject the create with 409 instead
-    of writing a credential that nobody will read.
-    """
+    """If voicegw.yaml already defines projects.<id>.providers.<type>,"""
     cfg = {
         "providers": {"openai": {"api_key": "global"}},
         "projects": {
@@ -290,9 +274,7 @@ async def test_v1_post_rejects_project_scoped_when_yaml_pins_slot(
 async def test_v1_post_allows_project_scoped_when_yaml_slot_empty(
     tmp_path, monkeypatch
 ):
-    """Conversely, when the YAML has the project but not the specific
-    provider type, the create must succeed.
-    """
+    """Conversely, when the YAML has the project but not the specific"""
     cfg = {
         "providers": {"openai": {"api_key": "global"}},
         "projects": {
@@ -328,9 +310,7 @@ async def test_v1_post_allows_project_scoped_when_yaml_slot_empty(
 
 
 async def test_v1_patch_explicit_project_override_honored(v1_client, gw_for_v1):
-    """Explicit project field on PATCH overrides the existing scope —
-    rare, but useful for promoting/demoting a row.
-    """
+    """Explicit project field on PATCH overrides the existing scope —"""
     await v1_client.post(
         "/v1/providers",
         json={

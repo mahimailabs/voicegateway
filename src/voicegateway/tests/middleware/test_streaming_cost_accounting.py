@@ -1,47 +1,4 @@
-"""Streaming cost accounting: replay recorded fixtures through VG.
-
-The parametrized ``streaming_fixture`` pytest fixture iterates
-every JSON file in ``tests/fixtures/streaming/`` whose filename
-matches the locked convention, loads it via ``load_fixture``, and
-yields a validated ``StreamingFixture`` instance to each test.
-
-Three test functions live in this file (per §3.5 #2-#4):
-
-1. ``test_unit_counts_are_consistent_with_response_stream`` (#2):
-   per-modality structural assertion that
-   ``provider_reported_usage`` agrees with the actual contents of
-   the recorded ``response_stream``. For LLM, the fixture's
-   normalized input/output/total tokens must equal the values
-   inside the ChatCompletion JSON (batch) or the final SSE usage
-   chunk (stream). For STT, ``audio_seconds`` must equal the
-   ``metadata.duration`` carried in the Deepgram response. For
-   TTS, ``character_count`` must equal ``len(request.transcript)``.
-
-   Note on scope: the design doc imagined this assertion replaying
-   chunks through the ``Instrumented*`` wrapper and comparing the
-   wrapper's accumulated count to the provider-reported count. The
-   v0.0.4 wrapper is a transparent proxy with no stream-interception
-   logic, so there is no wrapper-side accumulator to compare. The
-   structural-integrity test here catches the bugs that would
-   surface either way: recorder field-name typos, provider schema
-   drift, off-by-one normalization. A v0.0.5+ task in Discovered
-   Work tracks wiring the wrapper interceptor so the literal design
-   intent (replay-and-compare) becomes implementable later.
-2. ``test_cost_calculation_matches_expected_cost_usd`` (#3):
-   passes ``provider_reported_usage`` through
-   ``voicegateway.pricing.catalog.calculate_cost`` and asserts the
-   quantized result equals the fixture's ``expected_cost_usd``.
-3. ``test_ttfb_hook_fires_on_first_chunk`` (#4): replays the
-   stream and asserts the wrapper's TTFB hook fires when the first
-   content chunk arrives, not at request issuance.
-
-When no fixtures are committed, the parametrize emits a single
-skipped case with a clear "fixtures not recorded yet" reason so
-the suite stays green pre-recording. As soon as
-``tests/fixtures/streaming/record_streaming_fixtures.py --record --all --confirm``
-lands six fixtures in the directory, those skipped cases activate
-automatically; nothing in this file changes.
-"""
+"""Streaming cost accounting: replay recorded fixtures through VG."""
 
 from __future__ import annotations
 
@@ -99,17 +56,7 @@ _INCONSISTENT_STATE_MESSAGE = (
 
 
 def _placeholder_marker_present(fixtures_dir: Path | None = None) -> bool:
-    """Returns True when ``PLACEHOLDER.md`` exists in ``fixtures_dir``.
-
-    The marker file documents the "fixtures intentionally pending"
-    state. While present, the replay suite skips with a clear pointer
-    at the runbook (so CI on infrastructure-only branches can be
-    green). When mahimairaja runs the recorder and commits fixtures,
-    the runbook tells her to delete PLACEHOLDER.md in the same commit;
-    once it is gone, the skip stops applying. If PLACEHOLDER.md is
-    deleted *without* fixtures landing, the consistency check below
-    fails loudly so the inconsistent state cannot ship.
-    """
+    """Returns True when ``PLACEHOLDER.md`` exists in ``fixtures_dir``."""
     base = fixtures_dir if fixtures_dir is not None else FIXTURES_DIR
     return (base / "PLACEHOLDER.md").exists()
 
@@ -117,21 +64,7 @@ def _placeholder_marker_present(fixtures_dir: Path | None = None) -> bool:
 def _streaming_fixture_params(
     fixtures_dir: Path | None = None,
 ) -> list[Any]:
-    """Build the parametrize list.
-
-    Three states:
-
-    - Fixtures present: one ``pytest.param`` per fixture.
-    - Fixtures absent + PLACEHOLDER.md present: a single skip-marked
-      sentinel param (the documented "fixtures pending" state; CI
-      stays green so infrastructure-only branches can merge).
-    - Fixtures absent + PLACEHOLDER.md absent: a single fail-closed
-      sentinel param. ``streaming_fixture`` then raises pytest.fail
-      so CI catches the inconsistent repo state.
-
-    The optional ``fixtures_dir`` argument is for unit tests that need
-    to drive the helper against a tmp directory.
-    """
+    """Build the parametrize list."""
     base = fixtures_dir if fixtures_dir is not None else FIXTURES_DIR
     fixtures = discover_fixtures(base)
     if fixtures:
@@ -161,14 +94,7 @@ def _streaming_fixture_params(
 def _ensure_fixture_or_fail(
     f: StreamingFixture | None,
 ) -> StreamingFixture:
-    """Return ``f`` or fail loudly with the inconsistent-state message.
-
-    The sentinel from ``_streaming_fixture_params`` only lands here as
-    ``None`` when fixtures are missing AND PLACEHOLDER.md is gone (the
-    pending-state path is skip-marked at parametrize time, so it
-    never reaches this helper). pytest.fail() ensures CI catches the
-    inconsistent repo state without quietly merging an unsafe diff.
-    """
+    """Return ``f`` or fail loudly with the inconsistent-state message."""
     if f is None:
         pytest.fail(_INCONSISTENT_STATE_MESSAGE)
     return f
@@ -276,12 +202,7 @@ def _stt_duration_from_stream_chunks(f: StreamingFixture) -> float:
 def test_unit_counts_are_consistent_with_response_stream(
     streaming_fixture: StreamingFixture,
 ) -> None:
-    """provider_reported_usage agrees with the actual response_stream contents.
-
-    Catches recorder normalization bugs, provider schema drift, and
-    off-by-one errors. See module docstring for why this is at the
-    structural-integrity layer rather than the wrapper-replay layer.
-    """
+    """provider_reported_usage agrees with the actual response_stream contents."""
     f = streaming_fixture
     fid = _fixture_id(f)
     usage = f.provider_reported_usage
@@ -395,14 +316,7 @@ def _calculate_cost_from_usage(f: StreamingFixture) -> Decimal:
 def test_cost_calculation_matches_expected_cost_usd(
     streaming_fixture: StreamingFixture,
 ) -> None:
-    """calculate_cost(provider_reported_usage) == fixture.expected_cost_usd.
-
-    Both sides are quantized to 8 decimal places (the precision the
-    StreamingFixture schema and the recorder both pin). A drift here
-    means either the catalog's price changed since the fixture was
-    recorded (re-record) or the cost-calculation layer regressed
-    (debug the catalog).
-    """
+    """calculate_cost(provider_reported_usage) == fixture.expected_cost_usd."""
     f = streaming_fixture
     fid = _fixture_id(f)
 
@@ -442,21 +356,7 @@ def _build_wrapper_for_fixture(f: StreamingFixture) -> _InstrumentedBase:
 def test_ttfb_hook_fires_on_first_chunk(
     streaming_fixture: StreamingFixture,
 ) -> None:
-    """Behavior-level: TTFB metric is set after first chunk, not before.
-
-    Per design §6.4 mitigation: assert at the *behavior* level
-    (TTFB metric is set after the first chunk arrives) rather than
-    the implementation level (the internal _first_byte_time
-    attribute is None). The behavior is observable via
-    cost_tracker.create_record's ttfb_ms argument, which is what
-    downstream metrics consume.
-
-    Skips batch-mode fixtures: a single-shot batch response has no
-    meaningful "first chunk" distinct from "request issuance," so
-    TTFB is intentionally equal to total_latency_ms in that case
-    (validated by the existing
-    test_log_request_falls_back_to_total_when_hook_not_called).
-    """
+    """Behavior-level: TTFB metric is set after first chunk, not before."""
     f = streaming_fixture
     if f.metadata.mode == "batch":
         pytest.skip(
@@ -553,12 +453,7 @@ def test_recording_script_exists() -> None:
 def test_streaming_fixture_params_skips_when_placeholder_present(
     tmp_path: Path,
 ) -> None:
-    """Empty dir + PLACEHOLDER.md present -> single skip-marked param.
-
-    Documents the "fixtures intentionally pending" state. CI stays
-    green so infrastructure-only branches can merge before the
-    operator records fixtures.
-    """
+    """Empty dir + PLACEHOLDER.md present -> single skip-marked param."""
     (tmp_path / "PLACEHOLDER.md").write_text("# pending\n", encoding="utf-8")
 
     params = _streaming_fixture_params(tmp_path)
@@ -576,13 +471,7 @@ def test_streaming_fixture_params_skips_when_placeholder_present(
 def test_streaming_fixture_params_fails_closed_without_placeholder(
     tmp_path: Path,
 ) -> None:
-    """Empty dir + PLACEHOLDER.md absent -> fail-closed sentinel.
-
-    Catches the inconsistent state where someone deletes
-    PLACEHOLDER.md (signalling fixtures should be present) but
-    forgets to commit the fixture JSONs. CI is red so the bad state
-    cannot ship.
-    """
+    """Empty dir + PLACEHOLDER.md absent -> fail-closed sentinel."""
     # tmp_path has no PLACEHOLDER.md and no fixtures.
     params = _streaming_fixture_params(tmp_path)
     assert len(params) == 1
@@ -622,14 +511,7 @@ def test_placeholder_marker_present_helper(tmp_path: Path) -> None:
 
 
 def test_replay_suite_state_consistent() -> None:
-    """Repo-level invariant: PLACEHOLDER.md gone => fixtures present.
-
-    This test runs against the real fixtures dir. While PLACEHOLDER.md
-    is committed (today), this test passes regardless of whether
-    fixtures are also present (the marker takes precedence). When
-    mahimairaja deletes PLACEHOLDER.md, this test enforces that the
-    six fixture JSONs landed in the same commit.
-    """
+    """Repo-level invariant: PLACEHOLDER.md gone => fixtures present."""
     placeholder = FIXTURES_DIR / "PLACEHOLDER.md"
     if placeholder.exists():
         # Documented pending state. Marker present is always OK.

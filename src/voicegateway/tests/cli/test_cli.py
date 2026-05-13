@@ -55,11 +55,7 @@ def test_costs(temp_config, tmp_path, monkeypatch):
 
 
 def test_costs_prints_staleness_reminder(temp_config, tmp_path, monkeypatch):
-    """Q7: `voicegw costs` ends with a one-line reminder naming the
-    pricing sources and pointing at `voicegw reconcile`. The reminder
-    is dim-styled but still appears in plain stdout when colour is
-    stripped, which is what CliRunner captures.
-    """
+    """Q7: `voicegw costs` ends with a one-line reminder naming the"""
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "cli-staleness.db"))
     result = runner.invoke(app, ["costs", "--config", temp_config])
     assert result.exit_code == 0
@@ -454,10 +450,7 @@ def test_export_costs_missing_end_returns_helpful_error(temp_config):
 def test_export_costs_renders_iso_timestamp_and_fixed_point_cost(
     temp_config, tmp_path, monkeypatch
 ):
-    """Per design §2.1: timestamps are ISO-8601 UTC and costs are not
-    rendered in scientific notation. Sub-cent values like 1e-5 must
-    surface as fixed-point strings.
-    """
+    """Per design §2.1: timestamps are ISO-8601 UTC and costs are not"""
     import asyncio
     import csv
     import datetime as _dt
@@ -806,12 +799,7 @@ def test_reconcile_invalid_date_returns_2(temp_config, tmp_path):
 
 
 def test_reconcile_threshold_flag_propagates(temp_config, tmp_path, monkeypatch):
-    """--threshold lowers the flag bar; rows under default 5% can flip to flagged.
-
-    Drives the CLI with both the default threshold (no flag at 3% drift)
-    and an explicit --threshold 1.0 (flag at the same 3% drift). Pins
-    that the CLI flag flows through to reconcile(threshold_pct=...).
-    """
+    """--threshold lowers the flag bar; rows under default 5% can flip to flagged."""
     import asyncio
     import datetime as _dt
     import json as _json
@@ -963,15 +951,7 @@ _USAGE_EXPORTS_DIR = _REPO_ROOT / "tests" / "fixtures" / "usage_exports"
 def test_reconcile_runs_against_committed_openai_sample(
     temp_config, tmp_path, monkeypatch
 ):
-    """End-to-end reconcile against the committed openai-sample.csv.
-
-    Pairs the canonical-schema reference fixture from 4.2 #5 with
-    the CLI to confirm the openai code path works against a real
-    file shape. _seed_reconcile_records seeds a single
-    openai/gpt-4o-mini VG record alongside Deepgram ones, so
-    gpt-4o-mini matches on both sides while gpt-4o + gpt-4-turbo
-    are provider-only.
-    """
+    """End-to-end reconcile against the committed openai-sample.csv."""
     import asyncio
     import json as _json
 
@@ -1141,9 +1121,7 @@ def test_rotate_secret_handles_empty_storage(temp_config, tmp_path, monkeypatch)
 
 
 def test_rotate_secret_end_to_end(temp_config, tmp_path, monkeypatch):
-    """End-to-end: seed rows under primary A, set primary B + fallback
-    A, run rotate-secret, confirm rows decrypt under B alone.
-    """
+    """End-to-end: seed rows under primary A, set primary B + fallback"""
     from voicegateway.core.crypto import (
         decrypt as _decrypt,
     )
@@ -1194,10 +1172,7 @@ def test_rotate_secret_end_to_end(temp_config, tmp_path, monkeypatch):
 
 
 def test_smoke_test_passes_with_keys_configured(tmp_path, monkeypatch):
-    """Default mode constructs each modality through the inference
-    factories with stubbed LK plugins, drives a request through the
-    wrapper, and confirms the sessions row aggregates correctly.
-    """
+    """Default mode constructs each modality through the inference"""
     import yaml as _yaml
 
     cfg_path = tmp_path / "smoke.yaml"
@@ -1257,9 +1232,7 @@ def test_smoke_test_passes_with_keys_configured(tmp_path, monkeypatch):
 
 
 def test_smoke_test_fails_when_provider_keys_missing(tmp_path, monkeypatch):
-    """Without configured api_keys the inference preflight raises and
-    the smoke test reports per-modality failures with non-zero exit.
-    """
+    """Without configured api_keys the inference preflight raises and"""
     import yaml as _yaml
 
     cfg_path = tmp_path / "smoke.yaml"
@@ -1341,10 +1314,7 @@ def test_smoke_test_skips_when_storage_disabled(tmp_path, monkeypatch):
 
 
 def test_smoke_test_explicit_project_argument(tmp_path, monkeypatch):
-    """`--project` selects which project the smoke test runs against,
-    overriding default_project. Useful for multi-project deployments
-    where the operator wants to validate a specific workload.
-    """
+    """`--project` selects which project the smoke test runs against,"""
     import yaml as _yaml
 
     cfg_path = tmp_path / "smoke-multi.yaml"
@@ -1384,10 +1354,7 @@ def test_smoke_test_explicit_project_argument(tmp_path, monkeypatch):
 
 
 def test_smoke_test_unknown_project_fails_fast(tmp_path, monkeypatch):
-    """A typo in --project must fail with a clear "Unknown project"
-    message instead of letting the run sail through to a confusing
-    "no provider key" deeper in the pipeline.
-    """
+    """A typo in --project must fail with a clear 'Unknown project' error message."""
     import yaml as _yaml
 
     cfg_path = tmp_path / "smoke-typo.yaml"
@@ -1417,10 +1384,7 @@ def test_smoke_test_unknown_project_fails_fast(tmp_path, monkeypatch):
 
 
 def test_rotate_secret_surfaces_failed_rows(temp_config, tmp_path, monkeypatch):
-    """A row encrypted under a key that is not in primary or fallback
-    surfaces as a non-zero exit and the provider_id is named in the
-    output.
-    """
+    """A row encrypted under a key that is not in primary or fallback"""
     from cryptography.fernet import Fernet
 
     from voicegateway.core.crypto import reset_fernet

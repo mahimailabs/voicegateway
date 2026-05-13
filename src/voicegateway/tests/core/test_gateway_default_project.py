@@ -1,14 +1,4 @@
-"""Tests for the v0.0.5 auto-created ``default`` project.
-
-Item 2 of the v0.0.5 punch list: every Gateway init must populate a
-``"default"`` project so the inference resolver always has something
-to charge against. With storage enabled the row goes into the
-``managed_projects`` table and shows up as ``source="db"`` after the
-merge. Without storage the row is added to the in-memory
-``GatewayConfig.projects`` map as ``source="auto"``. When YAML or the
-DB already configures a ``default`` project, that takes precedence;
-the auto-create is a no-op.
-"""
+"""Tests for the v0.0.5 auto-created ``default`` project."""
 
 from __future__ import annotations
 
@@ -74,11 +64,7 @@ async def test_empty_yaml_storage_enabled_persists_managed_row(tmp_path, monkeyp
 
 
 def test_yaml_projects_without_default_project_still_get_default(tmp_path):
-    """A user who configures ``projects: {tony, mama}`` without a
-    ``default_project`` field gets the auto-created ``default``
-    alongside their projects. The resolver falls through to it when
-    no override is set.
-    """
+    """A user who configures ``projects: {tony, mama}`` without a"""
     cfg_path = _write_config(
         tmp_path,
         projects={
@@ -95,10 +81,7 @@ def test_yaml_projects_without_default_project_still_get_default(tmp_path):
 
 
 def test_inference_falls_through_to_default_with_named_projects(tmp_path, monkeypatch):
-    """End-to-end check: with ``projects: {tony}`` and no override,
-    ``inference.STT(...)`` resolves to ``"default"`` and uses the
-    top-level provider key, not Tony's per-project one.
-    """
+    """End-to-end check: with ``projects: {tony}`` and no override,"""
     cfg_path = _write_config(
         tmp_path,
         projects={
@@ -167,9 +150,7 @@ def test_inference_falls_through_to_default_with_named_projects(tmp_path, monkey
 
 
 def test_yaml_default_project_preserved(tmp_path):
-    """When the user explicitly defines ``projects.default`` in YAML,
-    Gateway init must NOT overwrite it with the auto-created stub.
-    """
+    """When the user explicitly defines ``projects.default`` in YAML,"""
     cfg_path = _write_config(
         tmp_path,
         projects={
@@ -193,9 +174,7 @@ def test_yaml_default_project_preserved(tmp_path):
 
 
 async def test_db_default_project_preserved(tmp_path, monkeypatch):
-    """When a managed_projects row already exists for ``default``,
-    Gateway init must NOT overwrite it.
-    """
+    """When a managed_projects row already exists for ``default``,"""
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "vg.db"))
     cfg_path = _write_config(tmp_path, cost_tracking={"enabled": True})
 

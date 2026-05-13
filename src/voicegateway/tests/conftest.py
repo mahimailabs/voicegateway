@@ -29,14 +29,7 @@ def _test_env(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _close_aiosqlite_connections(monkeypatch):
-    """Close raw SQLite handles returned by tests through _ensure_initialized.
-
-    SQLiteStorage opens a fresh aiosqlite connection for each call. Most
-    production paths close those handles in finally blocks, but a number of
-    tests call the internal initializer only to apply migrations, then discard
-    the returned connection. Unclosed aiosqlite worker threads can finish after
-    pytest closes the event loop and emit PytestUnhandledThreadExceptionWarning.
-    """
+    """Close raw SQLite handles returned by tests through _ensure_initialized."""
     from voicegateway.storage.sqlite import SQLiteStorage
 
     opened: list[Any] = []
@@ -67,12 +60,7 @@ def _close_aiosqlite_connections(monkeypatch):
 
 @pytest.fixture
 def example_config_path(tmp_path):
-    """Write the bundled example config to a tmp file and return its path.
-
-    Sources the file from ``voicegateway.data`` (where it actually ships
-    inside the wheel) rather than the repo root. Writing to ``tmp_path``
-    keeps tests free to mutate without affecting the canonical copy.
-    """
+    """Write the bundled example config to a tmp file and return its path."""
     from importlib import resources
 
     src = resources.files("voicegateway.data").joinpath("voicegw.example.yaml")

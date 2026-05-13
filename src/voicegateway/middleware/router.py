@@ -8,7 +8,9 @@ from dataclasses import dataclass
 from importlib import resources
 from typing import TYPE_CHECKING
 
-from voicegateway.repository import latency_observations
+from voicegateway.repository import (
+    latency_observations_repository as latency_observations,
+)
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -47,7 +49,7 @@ def _load_baselines() -> dict[tuple[str, str], int]:
 
     try:
         raw = (
-            resources.files("voicegateway.core")
+            resources.files("voicegateway.data")
             .joinpath("provider_baselines.json")
             .read_text(encoding="utf-8")
         )

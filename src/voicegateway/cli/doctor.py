@@ -14,12 +14,7 @@ from voicegateway.utils.cli.doctor import _CHECKS, _build_context
 def doctor(
     config: str = typer.Option(None, "--config", "-c", help="Path to voicegw.yaml"),
 ) -> None:
-    """Run diagnostic checks. Numbered punch list with fix actions.
-
-    Exits 0 when every check is ok or skipped. Exits 1 when any
-    check fails so chained tooling can detect "not healthy" without
-    parsing output.
-    """
+    """Run diagnostic checks. Numbered punch list with fix actions."""
     ctx = _build_context(config)
     results = [check(ctx) for check in _CHECKS]
 

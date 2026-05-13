@@ -1,15 +1,9 @@
-"""Shared request/response pydantic shapes for list-and-filter endpoints.
-
-``FindBase`` is the standard pagination + ordering + search payload.
-``FilterSchema`` is the nested AND/OR + per-field-operator language
-generic list endpoints accept. ``ModelBaseInfo`` is the slim envelope
-every detail response embeds (id + uuid + timestamps).
-"""
+"""Shared request/response pydantic shapes for list-and-filter endpoints."""
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Union
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -44,7 +38,7 @@ class LogicalCondition(BaseModel):
     conditions: list[ConditionType]
 
 
-ConditionType = Union[LogicalCondition, FieldOperatorCondition]
+ConditionType = LogicalCondition | FieldOperatorCondition
 LogicalCondition.model_rebuild()
 
 

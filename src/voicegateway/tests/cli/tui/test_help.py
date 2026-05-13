@@ -1,18 +1,4 @@
-"""Pilot tests for the Phase-7 help-overlay modal.
-
-REQ-VG-TUI-006 cheatsheet half:
-
-- ``?`` opens the modal; the modal lands on ``app.screen_stack``.
-- Overlay content matches the active screen: switching tabs +
-  re-opening the modal renders the new tab's BINDINGS in the
-  per-screen section. Parametrised across all four tabs so a
-  future per-screen rename surfaces immediately.
-- ``escape`` dismisses; ``?`` (typed back) dismisses; ``q``
-  dismisses (matches the SessionDetailScreen pattern).
-- ``show=False`` entries (the ``h``/``l`` aliases on the list
-  screens) are filtered out of the cheatsheet so the documented
-  contract stays the explicit ``j/k/g/G`` set.
-"""
+"""Pilot tests for the Phase-7 help-overlay modal."""
 
 from __future__ import annotations
 
@@ -111,9 +97,7 @@ async def test_overlay_per_screen_section_matches_active_tab(
     screen_name: str,
     expected_keys: list[str],
 ) -> None:
-    """Switching tabs + opening the overlay renders the new tab's
-    BINDINGS in the per-screen section. Pinned for all four tabs.
-    """
+    """Switching tabs + opening the overlay renders the new tab's"""
     async with help_app.run_test() as pilot:
         await _settle(pilot)
         await pilot.press(tab_key)
@@ -129,10 +113,7 @@ async def test_overlay_per_screen_section_matches_active_tab(
 
 
 async def test_overlay_filters_show_false_aliases(help_app: TUIApp) -> None:
-    """``h`` and ``l`` are bound on list screens as aliases of
-    ``k``/``j`` with ``show=False``; the cheatsheet must NOT list
-    them so the documented contract stays the explicit four-key set.
-    """
+    """``h`` and ``l`` are bound on list screens as aliases of"""
     async with help_app.run_test() as pilot:
         await _settle(pilot)
         # Sessions tab is the default and carries h/l aliases.

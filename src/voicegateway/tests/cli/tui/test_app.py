@@ -1,25 +1,4 @@
-"""Tests for TUIApp construction + the Phase-2 keybinding wiring.
-
-Covers:
-
-- :class:`TUIApp` construction with both real client implementations
-  (HttpClient via ``httpx.MockTransport``, LocalClient against a
-  tempdir SQLite) and the constructor's invariant that ``client``
-  and ``is_local`` survive untouched onto instance attributes.
-- The four placeholder Container screens mount under their
-  documented ids.
-- The Phase-2 vim ``BINDINGS`` fire end-to-end through
-  ``app.run_test()``: ``q`` exits cleanly, ``?`` calls
-  :meth:`TUIApp.action_help` (the bell stub Phase 7 will swap for
-  the modal cheatsheet), ``1`` / ``4`` jumps and ``tab`` /
-  ``shift-tab`` cycles route through the
-  :class:`textual.widgets.ContentSwitcher`.
-- ``voicegw tui`` (no ``--local``) prints the daemon-down message
-  and exits 1 when the preflight ``/health`` probe fails.
-- ``voicegw tui --local`` skips the preflight regardless (locked
-  decision 5 covers the case where the daemon happens to be down
-  and the user explicitly asked for Local mode).
-"""
+"""Tests for TUIApp construction + the Phase-2 keybinding wiring."""
 
 from __future__ import annotations
 
@@ -99,11 +78,7 @@ def test_tuiapp_constructs_with_local_client(
 
 
 async def test_tuiapp_mounts_four_screens(local_client: LocalClient) -> None:
-    """Each tab id resolves to its dedicated screen class, regardless of
-    whether the body is still a Phase-3-onward placeholder or the
-    real implementation. Bodies that have not yet been filled keep
-    rendering a ``<tab>-placeholder`` Static.
-    """
+    """Each tab id resolves to its dedicated screen class, regardless of"""
     app = TUIApp(client=local_client, is_local=True)
     async with app.run_test() as _pilot:
         assert isinstance(app.query_one("#sessions"), SessionsScreen)
@@ -124,12 +99,7 @@ async def test_tuiapp_mounts_four_screens(local_client: LocalClient) -> None:
 
 
 async def test_q_exits_cleanly(local_client: LocalClient) -> None:
-    """Pressing ``q`` exits the app via Textual's built-in quit action.
-
-    The ``run_test`` context-manager exits cleanly when the app
-    quits; assert that ``return_code`` is 0 (clean exit) once the
-    Pilot loop unwinds.
-    """
+    """Pressing ``q`` exits the app via Textual's built-in quit action."""
     app = TUIApp(client=local_client, is_local=False)
     async with app.run_test() as pilot:
         await pilot.press("q")
@@ -140,11 +110,7 @@ async def test_q_exits_cleanly(local_client: LocalClient) -> None:
 async def test_question_mark_pushes_help_overlay(
     local_client: LocalClient,
 ) -> None:
-    """Pressing ``?`` dispatches ``action_help`` which pushes the
-    Phase-7 :class:`HelpOverlay` modal onto the screen stack. The
-    overlay reads ``BINDINGS`` from the active tab + the App so the
-    cheatsheet stays in lockstep with the registered set.
-    """
+    """Pressing ``?`` dispatches ``action_help`` which pushes the"""
     from voicegateway.cli.tui.screens.help import HelpOverlay
 
     app = TUIApp(client=local_client, is_local=False)
@@ -222,10 +188,7 @@ def test_voicegw_tui_help_renders() -> None:
 def test_voicegw_tui_prints_daemon_down_message_when_unreachable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Without ``--local``, an unreachable daemon yields a clear
-    "Daemon at <url> is not reachable" message and exit code 1
-    instead of launching Textual into a hung-poll state.
-    """
+    """Without ``--local``, an unreachable daemon yields a clear"""
 
     def _raise_connect_error(*args: Any, **kwargs: Any) -> Any:
         raise httpx.ConnectError("Connection refused")
@@ -244,10 +207,7 @@ def test_voicegw_tui_prints_daemon_down_message_when_unreachable(
 def test_voicegw_tui_local_skips_preflight(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Locked decision 5: ``--local`` always wins regardless of daemon
-    state. Even when the preflight would fail, ``--local`` should not
-    invoke it -- LocalClient does not need the daemon at all.
-    """
+    """Locked decision 5: ``--local`` always wins regardless of daemon"""
     fake_get = MagicMock()
     monkeypatch.setattr("voicegateway.cli.tui.httpx.get", fake_get)
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "voicegw.db"))
@@ -285,12 +245,7 @@ def test_voicegw_tui_passes_when_health_ok(
 def test_voicegw_tui_local_threads_yaml_db_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """``voicegw tui --local`` honours ``cost_tracking.db_path`` from
-    voicegw.yaml: without this threading the LocalClient would silently
-    read ``~/.config/voicegateway/voicegw.db`` (or
-    ``$VOICEGW_DB_PATH``) instead of whatever path the daemon writes
-    to, and the TUI would show an empty history.
-    """
+    """``voicegw tui --local`` honours ``cost_tracking.db_path`` from"""
     monkeypatch.delenv("VOICEGW_DB_PATH", raising=False)
 
     yaml_db = tmp_path / "custom-history.db"

@@ -29,8 +29,13 @@ from voicegateway.core.guardrail_policy import (
 )
 from voicegateway.inference._session_context import set_tenant
 from voicegateway.pricing import catalog
-from voicegateway.repository import guardrail_events, virtual_keys
-from voicegateway.storage._percentiles import quantile_label
+from voicegateway.repository import (
+    guardrail_events_repository as guardrail_events,
+)
+from voicegateway.repository import (
+    virtual_keys_repository as virtual_keys,
+)
+from voicegateway.utils.percentiles import quantile_label
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -53,14 +58,7 @@ def _parse_iso_date(value: str, *, end_of_day: bool) -> float:
 
 
 def _attach_layered_stack(app: FastAPI, gateway: Gateway) -> None:
-    """Wire the SQLAlchemy + dependency-injector layer onto the FastAPI app.
-
-    Builds a :class:`Container`, overrides the ``config`` provider with
-    the live :class:`GatewayConfig` (so the container's
-    :class:`Database` lands on the same SQLite file the gateway is
-    already using), wires every router in ``Container.wiring_config``,
-    mounts those routers, and registers the structured error handlers.
-    """
+    """Wire the SQLAlchemy + dependency-injector layer onto the FastAPI app."""
     from dependency_injector import providers
     from fastapi.exceptions import RequestValidationError
     from sqlalchemy.exc import SQLAlchemyError
@@ -849,10 +847,7 @@ def build_app(gateway: Gateway) -> FastAPI:
 
     @app.post("/v1/providers/test", dependencies=[write_dep])
     async def v1_test_provider_stateless(body: dict[str, Any]) -> dict:
-        """Stateless health check: takes provider_type + api_key + base_url,
-        runs the provider's health_check, returns the same shape as the
-        id-based variant. Persists nothing.
-        """
+        """Stateless health check: takes provider_type + api_key + base_url,"""
         import asyncio as _asyncio
         import logging as _logging
 

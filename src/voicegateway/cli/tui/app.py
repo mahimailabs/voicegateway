@@ -1,23 +1,4 @@
-"""TUIApp shell for ``voicegw tui``.
-
-This iteration scaffolds the spine the next four phases plug into:
-
-- Phase 2 next bullets land global vim ``BINDINGS`` (q, ?, 1-4,
-  tab/shift-tab) and the Typer ``tui`` command that calls
-  :func:`run`.
-- Phases 3-6 swap each ``Static`` placeholder in the
-  ``ContentSwitcher`` for the real ``Sessions`` / ``Costs`` /
-  ``Logs`` / ``Providers`` :class:`textual.screen.Screen` subclass.
-- Phases 9-10 replace the Textual built-in :class:`Header` /
-  :class:`Footer` with the project-specific widgets that carry the
-  daemon-status chip, the persistent ``[Local mode]`` chip (locked
-  decision 5), and the live counters.
-
-The constructor takes the resolved :class:`MetricsClient` and the
-``is_local`` flag at launch time so screens consume them via
-``self.app.client`` / ``self.app.is_local`` without redoing mode
-selection at runtime.
-"""
+"""TUIApp shell for ``voicegw tui``."""
 
 from __future__ import annotations
 
@@ -45,33 +26,7 @@ _TAB_IDS: tuple[str, ...] = ("sessions", "costs", "logs", "providers")
 
 
 class TUIApp(App[None]):
-    """Textual ``App`` subclass that owns the four-tab TUI.
-
-    Constructor arguments are keyword-only so launch-site
-    ``TUIApp(client=..., is_local=...).run()`` reads cleanly.
-
-    Global vim keybindings:
-
-    - ``q`` -- quit the app cleanly via Textual's built-in ``quit``.
-    - ``?`` -- ``action_help``; rings the bell for now and gets
-      replaced by a modal cheatsheet in Phase 7.
-    - ``1`` / ``2`` / ``3`` / ``4`` -- jump to Sessions / Costs /
-      Logs / Providers via :meth:`action_switch_tab`.
-    - ``tab`` / ``shift-tab`` -- cycle forward / backward through
-      ``_TAB_IDS`` via :meth:`action_cycle_tab`. Both are
-      ``priority=True`` so the App-level binding wins over Textual's
-      default focus traversal (vim users expect tab-switching here).
-
-    Attributes:
-        client: the :class:`MetricsClient` resolved by
-            :func:`voicegateway.cli.tui.data.factory.make_client` at
-            launch time. Screens read this via ``self.app.client``
-            so they never branch on which backend is live.
-        is_local: ``True`` when ``--local`` was passed (locked
-            decision 5). Phase 10's header widget reads this to
-            render the persistent ``[Local mode]`` chip; the screens
-            read it to suppress write-path actions cleanly.
-    """
+    """Textual ``App`` subclass that owns the four-tab TUI."""
 
     # CSS_PATH points at the TCSS brand foundation; Textual resolves
     # the path relative to this module file. Per-widget DEFAULT_CSS
@@ -99,16 +54,7 @@ class TUIApp(App[None]):
         self.is_local = is_local
 
     def compose(self) -> ComposeResult:
-        """Mount the header / four-tab switcher / footer spine.
-
-        Each ``*Screen`` body lives in its own module under
-        ``voicegateway.cli.tui.screens``; Phases 3-6 each replace one
-        placeholder body without renaming the class or changing the
-        import path, so the mounting code below never has to move.
-        The id-strings stay stable from iteration 10 onward; the vim
-        ``1``-``4`` shortcuts and the tab-cycle action target them
-        directly.
-        """
+        """Mount the header / four-tab switcher / footer spine."""
         yield HeaderBar(is_local=self.is_local, id="header-bar")
         with ContentSwitcher(initial=_TAB_IDS[0], id="content"):
             yield SessionsScreen(id=_TAB_IDS[0])
@@ -121,17 +67,7 @@ class TUIApp(App[None]):
         yield Footer()
 
     async def on_unmount(self) -> None:
-        """Cancel background refresh workers and close the active client.
-
-        Workers we just cancelled raise ``WorkerCancelled`` from
-        ``Worker.wait()``; under the test harness CI sometimes also sees
-        ``WorkerFailed`` if a worker observed cancellation mid-await.
-        Both are expected after ``cancel_all()`` so the per-worker drain
-        swallows them. Without this the random worker that happened to
-        be in-flight when ``run_test`` tore down propagated an exception
-        out of ``on_unmount`` and failed the test (observed on CI for
-        ``LogsScreen.refresh_data``).
-        """
+        """Cancel background refresh workers and close the active client."""
         self.workers.cancel_all()
         for worker in list(self.workers):
             try:
@@ -148,24 +84,13 @@ class TUIApp(App[None]):
     # on the App. Each method below maps to one binding above.
 
     def action_switch_tab(self, tab_id: str) -> None:
-        """Jump the ``ContentSwitcher`` to ``tab_id``.
-
-        Bound by the ``1`` / ``2`` / ``3`` / ``4`` keys via
-        ``switch_tab('<id>')`` in BINDINGS so the four jumps share
-        one parameterised action.
-        """
+        """Jump the ``ContentSwitcher`` to ``tab_id``."""
         switcher = self.query_one("#content", ContentSwitcher)
         switcher.current = tab_id
         self._focus_active_tab()
 
     def action_cycle_tab(self, delta: int) -> None:
-        """Cycle through ``_TAB_IDS`` by ``delta`` (wrap-around).
-
-        ``delta=1`` is ``tab``; ``delta=-1`` is ``shift-tab``. The
-        modulo wrap means hitting ``tab`` from the last tab lands
-        back on Sessions, matching the vim-style expectation users
-        carry over from buffer/window cycling.
-        """
+        """Cycle through ``_TAB_IDS`` by ``delta`` (wrap-around)."""
         switcher = self.query_one("#content", ContentSwitcher)
         current = switcher.current or _TAB_IDS[0]
         # ``current`` is set by ``initial=`` and by switch_tab; it is
@@ -180,20 +105,7 @@ class TUIApp(App[None]):
         self._focus_active_tab()
 
     def _focus_active_tab(self) -> None:
-        """Move keyboard focus into the active tab.
-
-        Each tab declares its own per-tab vim BINDINGS (``s`` on
-        SessionsScreen, ``r`` on CostsScreen, ``/`` on LogsScreen,
-        ``t`` on ProvidersScreen). Textual's binding resolution
-        starts from the focused widget and walks up the DOM tree,
-        so a screen's bindings only fire when something in its
-        subtree holds focus. ContentSwitcher does not transfer
-        focus on ``current=`` change, so this method does it
-        explicitly: prefer the new tab's first focusable
-        descendant, fall back to the screen Container itself when
-        none of its children are focusable (e.g. CostsScreen,
-        whose Label + Static rows are passive).
-        """
+        """Move keyboard focus into the active tab."""
         switcher = self.query_one("#content", ContentSwitcher)
         if switcher.current is None:
             return
@@ -218,13 +130,7 @@ class TUIApp(App[None]):
             new_active.focus()
 
     def action_help(self) -> None:
-        """Push the keybinding cheatsheet modal.
-
-        Reads the active tab's BINDINGS plus the App's own to build
-        a two-section cheatsheet at modal-mount time, so adding a
-        new binding to any screen surfaces in the overlay
-        automatically without a parallel docs list to maintain.
-        """
+        """Push the keybinding cheatsheet modal."""
         # Lazy import: the help screen lives under
         # voicegateway.cli.tui.screens, which the package's
         # __init__.py also re-exports SessionsScreen / CostsScreen

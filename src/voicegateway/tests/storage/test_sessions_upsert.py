@@ -1,12 +1,4 @@
-"""Tests for the sessions-table upsert in SQLiteStorage.log_request.
-
-Per design.md section 3.2 the sessions table accumulates over the life
-of a logical voice session: started_at on first insert, then each
-subsequent request bumps request_count, adds to total_cost_usd, and
-adds the modality (de-duplicated) to the comma-separated modalities
-list. The upsert lives in ``log_request`` so it shares a single
-connection / commit with the requests INSERT for atomicity.
-"""
+"""Tests for the sessions-table upsert in SQLiteStorage.log_request."""
 
 from __future__ import annotations
 
@@ -97,9 +89,7 @@ async def test_first_request_inserts_session_row(tmp_path):
 
 
 async def test_started_at_is_iso8601_utc(tmp_path):
-    """started_at format is ISO 8601 with timezone — required for the
-    v0.0.6 metrics view to do range queries client-side.
-    """
+    """started_at format is ISO 8601 with timezone — required for the"""
     db_path = str(tmp_path / "session.db")
     storage = SQLiteStorage(db_path)
 
@@ -133,10 +123,7 @@ async def test_second_request_same_session_accumulates_cost(tmp_path):
 
 
 async def test_modalities_grows_without_duplicates(tmp_path):
-    """Three requests across stt/llm/tts on one session: modalities
-    becomes "stt,llm,tts" (or the same set in encounter order),
-    never "stt,stt,stt".
-    """
+    """Three requests across stt/llm/tts on one session: modalities"""
     db_path = str(tmp_path / "session.db")
     storage = SQLiteStorage(db_path)
 
@@ -154,11 +141,7 @@ async def test_modalities_grows_without_duplicates(tmp_path):
 
 
 async def test_modalities_dedupe_does_not_substring_match(tmp_path):
-    """Adding "tt" to a session that already has "stt" must NOT consider
-    them duplicates. The bracketed-INSTR scheme guards against this:
-    "stt" surrounded by commas is ",stt," and "tt" surrounded by commas
-    is ",tt," — INSTR will not find ",tt," inside ",stt,".
-    """
+    """Adding "tt" to a session that already has "stt" must NOT consider"""
     db_path = str(tmp_path / "session.db")
     storage = SQLiteStorage(db_path)
 
@@ -195,11 +178,7 @@ async def test_started_at_does_not_change_on_subsequent_requests(tmp_path):
 
 
 async def test_no_session_row_when_session_id_is_none(tmp_path):
-    """Callers that do not run inside an inference factory call (no
-    ContextVar session_id) must NOT trigger a sessions row insert.
-    Direct `storage.log_request` use, e.g. from server-side
-    instrumentation outside an AgentSession, lands a NULL session_id.
-    """
+    """Callers that do not run inside an inference factory call (no"""
     db_path = str(tmp_path / "session.db")
     storage = SQLiteStorage(db_path)
 
@@ -281,11 +260,7 @@ async def test_two_sessions_are_independent(tmp_path):
 
 
 async def test_started_at_takes_minimum_when_requests_arrive_out_of_order(tmp_path):
-    """Requests are logged on completion, so a slow STT call started at
-    T=0 may finish after a fast LLM call started at T=1. The session's
-    started_at must reflect the earliest START, not the earliest
-    COMPLETION. The MIN CASE in the UPSERT guarantees this.
-    """
+    """Requests are logged on completion, so a slow STT call started at"""
     db_path = str(tmp_path / "session.db")
     storage = SQLiteStorage(db_path)
 
@@ -305,10 +280,7 @@ async def test_started_at_takes_minimum_when_requests_arrive_out_of_order(tmp_pa
 
 
 async def test_zero_cost_request_still_bumps_count_and_modalities(tmp_path):
-    """A request with cost_usd=0 (e.g. local provider, free tier) must
-    still update request_count and modalities — only total_cost_usd
-    stays unchanged.
-    """
+    """A request with cost_usd=0 (e.g. local provider, free tier) must"""
     db_path = str(tmp_path / "session.db")
     storage = SQLiteStorage(db_path)
 

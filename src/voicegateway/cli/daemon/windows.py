@@ -72,10 +72,7 @@ class WindowsBackend:
             ) from fallback_error
 
     def uninstall(self) -> None:
-        """Best-effort: remove BOTH the Scheduled Task and the
-        Startup-folder shortcut. Either may already be absent;
-        non-zero exit is swallowed.
-        """
+        """Best-effort: remove BOTH the Scheduled Task and the"""
         self._schtasks("/Delete", "/TN", self._task_name, "/F")
         self._shortcut_path.unlink(missing_ok=True)
 
@@ -131,9 +128,7 @@ class WindowsBackend:
     # ---- Internals ---------------------------------------------------------
 
     def _schtasks(self, *args: str) -> subprocess.CompletedProcess[str]:
-        """Single subprocess seam for schtasks. Tests monkeypatch
-        this module's ``subprocess.run``.
-        """
+        """Single subprocess seam for schtasks. Tests monkeypatch"""
         return subprocess.run(
             ["schtasks", *args],
             capture_output=True,
@@ -142,9 +137,7 @@ class WindowsBackend:
         )
 
     def _install_startup_shortcut(self, executable: str) -> None:
-        """Fallback path: drop a .lnk into the Startup folder via
-        PowerShell + WScript.Shell.
-        """
+        """Fallback path: drop a .lnk into the Startup folder via"""
         self._startup_dir.mkdir(parents=True, exist_ok=True)
 
         ps_script = (

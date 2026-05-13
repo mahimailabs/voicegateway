@@ -68,9 +68,7 @@ class MacOSBackend:
             )
 
     def uninstall(self) -> None:
-        """bootout + delete plist. Per design.md decision 5, config
-        and the SQLite DB are preserved; only the registration goes.
-        """
+        """bootout + delete plist. Per design.md decision 5, config"""
         self._run_launchctl("bootout", self._service_target)
         self._plist_path.unlink(missing_ok=True)
 
@@ -154,10 +152,7 @@ class MacOSBackend:
         )
 
     def _run_launchctl(self, *args: str) -> subprocess.CompletedProcess[str]:
-        """Single subprocess seam. Tests monkeypatch this module's
-        ``subprocess.run`` to capture args without touching real
-        launchctl.
-        """
+        """Single subprocess seam. Tests monkeypatch this module's"""
         return subprocess.run(
             ["launchctl", *args],
             capture_output=True,

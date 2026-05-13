@@ -1,9 +1,4 @@
-"""HTTP-shaped exception types raised by services/repositories.
-
-Each subclass binds a single status code so call sites stay terse:
-``raise NotFoundError("session not found")``. The matching JSON shape
-is rendered by :mod:`voicegateway.core.exception_handlers`.
-"""
+"""HTTP-shaped exception types raised by services/repositories."""
 
 from __future__ import annotations
 

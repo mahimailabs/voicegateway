@@ -5,7 +5,7 @@ from __future__ import annotations
 import aiosqlite
 
 from voicegateway.middleware.replay_capture import ReplayEvent
-from voicegateway.repository import replay
+from voicegateway.repository import replay_repository as replay
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

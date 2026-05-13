@@ -1,43 +1,5 @@
 #!/usr/bin/env python
-"""tests/fixtures/streaming/record_streaming_fixtures.py: dev-only fixture recorder.
-
-Hits real provider APIs to capture responses for fixture-based
-replay testing in ``tests/test_streaming_cost_accounting.py``. The
-recorded fixtures are committed to ``tests/fixtures/streaming/`` so
-CI can replay them via HTTP and WebSocket mocking without ever
-calling real APIs.
-
-This script is **dev-only**. Default-deny:
-
-- Without ``--record`` it prints a "recording disabled" notice and
-  exits 0. Accidental invocation (cron, CI, autocomplete) cannot
-  charge the user.
-- With ``--record`` but without ``--confirm`` it prints an
-  estimated dollar cost and exits 0. Forces an explicit
-  acknowledgement that real money is about to be spent.
-- With both flags it actually hits the provider API.
-
-Usage:
-
-    # Show the recording-disabled banner.
-    python tests/fixtures/streaming/record_streaming_fixtures.py --provider openai \\
-      --modality llm --model gpt-4o-mini --mode batch
-
-    # Show the cost estimate without recording.
-    python tests/fixtures/streaming/record_streaming_fixtures.py --record \\
-      --provider openai --modality llm --model gpt-4o-mini --mode batch
-
-    # Actually record.
-    python tests/fixtures/streaming/record_streaming_fixtures.py --record --confirm \\
-      --provider openai --modality llm --model gpt-4o-mini --mode batch
-
-Output path:
-
-    tests/fixtures/streaming/<provider>_<model>_<modality>_<mode>_<YYYY-MM-DD>.json
-
-Phase 3 deliverable. Recorded payload validates against
-``tests/fixtures/streaming/_schema.py``'s ``StreamingFixture``.
-"""
+"""tests/fixtures/streaming/record_streaming_fixtures.py: dev-only fixture recorder."""
 
 from __future__ import annotations
 
@@ -128,16 +90,7 @@ def _save(path: Path, payload: dict[str, Any]) -> None:
 
 
 async def _record_openai_llm(model: str, mode: str) -> dict[str, Any]:
-    """Record an OpenAI LLM response and return an intermediate fixture shape.
-
-    Returns a dict with three keys: ``request`` (the literal payload
-    sent to the API), ``response_stream`` (a list of FixtureChunk-
-    shaped dicts), and ``provider_reported_usage`` (the usage block
-    normalized to ``input_tokens`` / ``output_tokens`` /
-    ``total_tokens``). ``_run`` wraps this with metadata and the
-    computed expected_cost_usd to produce a StreamingFixture-valid
-    payload.
-    """
+    """Record an OpenAI LLM response and return an intermediate fixture shape."""
     try:
         import openai
     except ImportError as exc:
@@ -243,15 +196,7 @@ async def _aenumerate(
 
 
 async def _record_deepgram_stt(model: str, mode: str) -> dict[str, Any]:
-    """Record a Deepgram STT response and return an intermediate fixture shape.
-
-    The bundled ``tests/fixtures/audio/test_sample.wav`` (3 seconds,
-    8 kHz mono 16-bit PCM, ~48 KB) is the audio source for both
-    batch and stream modes. The fixture's ``request`` block stores
-    a path reference rather than inlining the audio so the JSON
-    stays small; replay tests load the same file when they need
-    bytes.
-    """
+    """Record a Deepgram STT response and return an intermediate fixture shape."""
     try:
         import httpx
     except ImportError as exc:
@@ -392,12 +337,7 @@ async def _record_deepgram_stt(model: str, mode: str) -> dict[str, Any]:
 
 
 def _open_deepgram_websocket(url: str, api_key: str) -> Any:
-    """Return an async context manager that opens a Deepgram WebSocket.
-
-    Tests monkey-patch this helper so the recorder never imports
-    ``websockets`` during a unit-test run. Production calls into the
-    real library lazily.
-    """
+    """Return an async context manager that opens a Deepgram WebSocket."""
     try:
         from websockets.asyncio.client import connect
     except ImportError as exc:
@@ -415,21 +355,7 @@ def _open_deepgram_websocket(url: str, api_key: str) -> Any:
 
 
 async def _record_cartesia_tts(model: str, mode: str) -> dict[str, Any]:
-    """Record a Cartesia TTS response and return an intermediate fixture shape.
-
-    Cartesia bills TTS by *input* characters (text length) rather
-    than output audio. The fixture's
-    ``provider_reported_usage.character_count`` is therefore
-    ``len(transcript)`` rather than something extracted from the
-    HTTP response. The Cartesia HTTP API does not return a usage
-    block on its own.
-
-    Audio bytes are *not* stored in the fixture: the fixture's
-    purpose is to validate VG's character-count accounting, not
-    audio fidelity, and inlining ~hundreds of KB of base64 PCM
-    would inflate every JSON file. Only audio metadata
-    (size, format, sample rate) lands in the fixture.
-    """
+    """Record a Cartesia TTS response and return an intermediate fixture shape."""
     try:
         import httpx
     except ImportError as exc:
@@ -549,12 +475,7 @@ async def _record_cartesia_tts(model: str, mode: str) -> dict[str, Any]:
 
 
 def _open_cartesia_websocket(url: str) -> Any:
-    """Return an async context manager that opens a Cartesia WebSocket.
-
-    Tests monkey-patch this helper so the recorder never imports
-    ``websockets`` during a unit-test run. Production calls into
-    the real library lazily.
-    """
+    """Return an async context manager that opens a Cartesia WebSocket."""
     try:
         from websockets.asyncio.client import connect
     except ImportError as exc:
@@ -636,13 +557,7 @@ def _compute_expected_cost_usd(
     modality: str,
     usage: dict[str, Any],
 ) -> str:
-    """Calculate, quantize, and serialize ``expected_cost_usd`` for a fixture.
-
-    Imports the catalog facade lazily so the script can run without
-    the installed package on path for the gating-only branches.
-    Raises ``RuntimeError`` if the model is unknown to the catalog;
-    a fixture without a known cost cannot be replayed.
-    """
+    """Calculate, quantize, and serialize ``expected_cost_usd`` for a fixture."""
     from voicegateway.pricing.catalog import calculate_cost
 
     full_model = f"{provider}/{model}"
@@ -711,12 +626,7 @@ def _build_fixture_payload(
 
 
 def _validate_payload(payload: dict[str, Any]) -> None:
-    """Raise if ``payload`` does not match the StreamingFixture schema.
-
-    Lazy import so the script's gating-only branches never pull in
-    pydantic. By the time we reach validation we are about to write
-    a real fixture and the cost of the import is trivial.
-    """
+    """Raise if ``payload`` does not match the StreamingFixture schema."""
     from voicegateway.tests.fixtures.streaming._schema import StreamingFixture
 
     StreamingFixture.model_validate(payload)
@@ -789,13 +699,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 async def _run_all() -> list[Path]:
-    """Sequentially record every Phase 3 fixture; return the written paths.
-
-    Prints a ``[N/total]`` progress marker before each recording so
-    the human running ``--record --all --confirm`` sees real-time
-    progress over the sequence rather than one big silence punctuated
-    by six file paths.
-    """
+    """Sequentially record every Phase 3 fixture; return the written paths."""
     written: list[Path] = []
     total = len(_ALL_FIXTURES)
     for index, (provider, model, modality, mode) in enumerate(_ALL_FIXTURES, 1):

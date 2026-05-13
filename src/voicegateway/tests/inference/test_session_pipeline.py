@@ -1,11 +1,4 @@
-"""Tests for the session_id pipeline: ContextVar to requests.session_id.
-
-InstrumentedSTT/LLM/TTS reads the active session_id from the ContextVar
-established by `voicegateway.inference._session_context` and writes it
-through CostTracker into the `requests.session_id` column. These tests
-pin the end-to-end shape so a future refactor cannot quietly break
-session correlation between the in-memory wrapper and storage.
-"""
+"""Tests for the session_id pipeline: ContextVar to requests.session_id."""
 
 from __future__ import annotations
 
@@ -32,12 +25,7 @@ from voicegateway.storage.sqlite import SQLiteStorage
 
 
 class _FakeWrapped:
-    """A bare provider-side instance the wrapper can proxy to.
-
-    Carries the LK-side surface InstrumentedSTT needs at construction:
-    ``capabilities`` (passed into super().__init__) and a no-op
-    ``on(event, callback)`` for the metrics-event bridge.
-    """
+    """A bare provider-side instance the wrapper can proxy to."""
 
     def __init__(self, model: str = "test-model") -> None:
         from livekit.agents.stt import STTCapabilities
@@ -156,10 +144,7 @@ async def test_storage_persists_session_id(tmp_path):
 
 
 async def test_storage_persists_null_session_id_for_uninstrumented_path(tmp_path):
-    """Callers that do not set session_id (e.g. direct
-    storage.log_request from server-side code, or rows logged before
-    the v0.0.5 sessions table existed) keep landing with NULL.
-    """
+    """Callers that do not set session_id (e.g. direct"""
     db_path = str(tmp_path / "store.db")
     storage = SQLiteStorage(db_path)
 
@@ -232,10 +217,7 @@ async def test_wrapper_writes_session_id_when_context_has_one(tmp_path):
 
 
 async def test_wrapper_writes_null_session_id_when_no_context(tmp_path):
-    """Outside an inference factory call, get_session_id is None and
-    the wrapper records NULL — protects callers that drive the
-    Instrumented* wrapper directly without opening a session.
-    """
+    """Outside an inference factory call, get_session_id is None and"""
     db_path = str(tmp_path / "session.db")
     storage = SQLiteStorage(db_path)
     cost_tracker = CostTracker(storage=storage)
@@ -252,11 +234,7 @@ async def test_wrapper_writes_null_session_id_when_no_context(tmp_path):
 async def test_wrapper_reads_session_id_at_request_time_not_construction(
     tmp_path,
 ):
-    """The session ID is captured when _log_request runs, not when the
-    wrapper is constructed. This matters because a user could plausibly
-    construct the wrapper, then enter a session context, then make a
-    request — they'd still expect correlation.
-    """
+    """The session ID is captured when _log_request runs, not when the"""
     db_path = str(tmp_path / "session.db")
     storage = SQLiteStorage(db_path)
     cost_tracker = CostTracker(storage=storage)

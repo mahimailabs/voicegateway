@@ -1,21 +1,9 @@
-"""Storage-cost smoke test for v0.3.0 conversation replay.
-
-Validates Foundry Open Question 1: a 60-second synthetic conversation
-captured end-to-end produces an on-disk replay footprint within the
-documented target. The Refinery's expectation is 30-100 KB/min;
-docs/storage/replay-storage-costs.md surfaces a wider 130-580 KB/min
-realistic range. This smoke asserts the upper bound at 600 KB/min
-(matches the docs' "trending above 500 KB/min consistently triggers
-the `replay.enabled: false` fallback" guideline).
-
-If this assertion trips, OQ1's fallback path is documented in T07's
-ProjectConfig.replay.enabled toggle and in the journal.
-"""
+"""Storage-cost smoke test for v0.3.0 conversation replay."""
 
 from __future__ import annotations
 
 from voicegateway.middleware.replay_capture import ReplayCapture, ReplayEvent
-from voicegateway.repository import replay
+from voicegateway.repository import replay_repository as replay
 from voicegateway.storage.sqlite import SQLiteStorage
 
 # Generous upper bound. The actual measured size for the synthetic
@@ -26,15 +14,7 @@ _MAX_REPLAY_BYTES_PER_MINUTE = 600 * 1024  # 600 KB
 
 
 async def _synthesize_one_minute(capture: ReplayCapture, session_id: str) -> None:
-    """Push a realistic 60-second conversation through ReplayCapture.
-
-    Roughly mirrors the per-minute event-rate table from
-    docs/storage/replay-storage-costs.md:
-    - 40 STT chunks (mixed partial + final)
-    - 400 LLM tokens
-    - 1200 TTS frames (50ms each across 60s of speech)
-    - 60 state snapshots (one per second cap)
-    """
+    """Push a realistic 60-second conversation through ReplayCapture."""
     base_ts = 0
     for i in range(40):
         await capture.record_stt_chunk(

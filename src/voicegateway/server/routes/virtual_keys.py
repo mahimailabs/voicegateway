@@ -1,12 +1,4 @@
-"""FastAPI router for virtual-key management.
-
-Demonstrates the layered architecture end-to-end: an HTTP request enters
-here, the ``@inject`` decorator pulls a :class:`VirtualKeyService` out
-of the :class:`Container`, the service handles bcrypt/plaintext rules,
-the repository runs SQLAlchemy against the ``virtual_keys`` table.
-
-Mounted under ``/v1/virtual-keys`` by :func:`build_app`.
-"""
+"""FastAPI router for virtual-key management."""
 
 from __future__ import annotations
 
@@ -21,7 +13,7 @@ from voicegateway.schemas.virtual_key import (
     VirtualKeyListResponse,
     VirtualKeyResponse,
 )
-from voicegateway.services.virtual_key import VirtualKeyService
+from voicegateway.services.virtual_key_service import VirtualKeyService
 
 router = APIRouter(prefix="/v1/virtual-keys", tags=["virtual-keys"])
 
@@ -63,7 +55,7 @@ async def get_virtual_key(
     service: VirtualKeyService = Depends(Provide[Container.virtual_key_service]),
 ) -> VirtualKeyResponse:
     """Fetch one key by id. 404 when missing."""
-    row = await service.get_key(key_id)
+    row = await service.get_by_id(key_id)
     return VirtualKeyResponse.model_validate(row)
 
 

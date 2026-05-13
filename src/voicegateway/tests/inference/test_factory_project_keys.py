@@ -1,13 +1,4 @@
-"""Tests for per-project provider key resolution in inference factories.
-
-The shared ``_resolve_provider_config`` helper consults
-``GatewayConfig.get_provider_config_for_project`` so each factory call
-picks up the per-project ``providers:`` block when one is defined,
-falling back to the top-level global ``providers:`` block otherwise.
-
-This test file pins the resolution order from the factory's
-perspective: api_key kwarg > project providers > global providers.
-"""
+"""Tests for per-project provider key resolution in inference factories."""
 
 from __future__ import annotations
 
@@ -42,12 +33,7 @@ class _FakeProvider:
 
 
 class _Stub:
-    """Provider-side stub the wrapper subclasses receive at construction.
-
-    Carries the LK-side surface (capabilities, sample_rate, num_channels,
-    on) so InstrumentedSTT/LLM/TTS can call ``super().__init__`` and
-    register the metrics-event bridge without raising.
-    """
+    """Provider-side stub the wrapper subclasses receive at construction."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         from livekit.agents.stt import STTCapabilities
@@ -138,9 +124,7 @@ def gateway_with_per_project_keys(tmp_path, monkeypatch):
 
 
 def test_stt_uses_default_project_keys(gateway_with_per_project_keys, fake_providers):
-    """default_project=mama-diner. mama overrides openai but not
-    deepgram. STT(deepgram/...) should pick up the global deepgram key.
-    """
+    """default_project=mama-diner. mama overrides openai but not"""
     _stt.STT("deepgram/nova-3")
     assert fake_providers.last_config["api_key"] == "global-dg-key"
 
@@ -148,9 +132,7 @@ def test_stt_uses_default_project_keys(gateway_with_per_project_keys, fake_provi
 def test_llm_uses_default_project_overridden_key(
     gateway_with_per_project_keys, fake_providers
 ):
-    """LLM(openai/...) under default_project=mama-diner picks up
-    mama's overridden openai key.
-    """
+    """LLM(openai/...) under default_project=mama-diner picks up"""
     _llm.LLM("openai/gpt-4o-mini")
     assert fake_providers.last_config["api_key"] == "mama-openai-key"
 
@@ -227,9 +209,7 @@ def test_tts_api_key_kwarg_beats_project_override(
 def test_legacy_global_only_config_still_resolves(
     tmp_path, monkeypatch, fake_providers
 ):
-    """A pre-v0.0.5 config with no projects: block keeps using the
-    top-level providers map verbatim.
-    """
+    """A pre-v0.0.5 config with no projects: block keeps using the"""
     cfg = {
         "providers": {"openai": {"api_key": "legacy-key"}},
         "models": {"stt": {}, "llm": {}, "tts": {}},

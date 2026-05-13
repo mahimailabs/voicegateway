@@ -1,9 +1,4 @@
-"""Contract tests for voicegateway.middleware.turn_tracker.
-
-Covers the lifecycle edge cases TurnTracker (T02) handles: normal turn,
-missed caller-stop, agent-never-speaks, auto-flush at buffer size,
-multi-session isolation.
-"""
+"""Contract tests for voicegateway.middleware.turn_tracker."""
 
 from __future__ import annotations
 

@@ -1,23 +1,4 @@
-"""Contract test: every supported public import path resolves post-refactor.
-
-The v0.1.2 project-polish refactor (REQ-VG-POLISH-004) split two
-top-level modules into subpackages, plus a now-retired third:
-
-- ``voicegateway/server.py`` -> ``voicegateway/server/{__init__,main}.py``
-- ``voicegateway/reconcile.py`` -> ``voicegateway/reconcile/{__init__,core}.py``
-- ``voicegateway/combined_server.py`` was a re-export shim through v0.5.0;
-  v0.6.0 retires the shim. Callers must use
-  ``from voicegateway.server.combined import build_combined_app, main``.
-
-REQ-VG-POLISH-004 AC-2 mandates that every supported import path keeps
-working. This file is the canary for that contract: if any of these
-imports breaks, downstream code will hit ImportError. Failing here on
-PR/CI catches that before release.
-
-Scope: the imports callers actually use. Internal-only imports under
-leading-underscore modules are NOT in scope (those are part of the
-private surface and may change without a deprecation cycle).
-"""
+"""Contract test: every supported public import path resolves post-refactor."""
 
 from __future__ import annotations
 
@@ -25,17 +6,14 @@ from __future__ import annotations
 
 
 def test_voicegateway_server_build_app_resolves() -> None:
-    """``from voicegateway.server import build_app`` survives the
-    v0.1.2 split. ``voicegateway.cli.serve``, the server tests, and
-    ``voicegateway.server.combined`` all rely on this path."""
+    """``from voicegateway.server import build_app`` survives the"""
     from voicegateway.server import build_app
 
     assert callable(build_app)
 
 
 def test_voicegateway_server_all_lists_build_app() -> None:
-    """The new ``server/__init__.py`` declares ``__all__`` with the
-    single public symbol."""
+    """The new ``server/__init__.py`` declares ``__all__`` with the"""
     import voicegateway.server as server_pkg
 
     assert hasattr(server_pkg, "__all__")
@@ -46,9 +24,7 @@ def test_voicegateway_server_all_lists_build_app() -> None:
 
 
 def test_voicegateway_server_combined_resolves() -> None:
-    """The canonical combined-server path resolves. The
-    ``voicegateway.combined_server`` re-export shim was retired in
-    v0.6.0; callers must import from ``voicegateway.server.combined``."""
+    """The canonical combined-server path resolves. The"""
     from voicegateway.server.combined import build_combined_app, main
 
     assert callable(build_combined_app)
@@ -59,10 +35,7 @@ def test_voicegateway_server_combined_resolves() -> None:
 
 
 def test_voicegateway_reconcile_module_namespace_resolves() -> None:
-    """``from voicegateway import reconcile`` resolves, and the
-    attribute-access surface covers every name v0.1.x callers use
-    (``voicegateway/cli/reconcile.py`` and the integration tests
-    both reach into the namespace)."""
+    """``from voicegateway import reconcile`` resolves, and the"""
     from voicegateway import reconcile
 
     # Functions
@@ -80,8 +53,7 @@ def test_voicegateway_reconcile_module_namespace_resolves() -> None:
 
 
 def test_voicegateway_reconcile_all_lists_full_surface() -> None:
-    """The new ``reconcile/__init__.py`` declares ``__all__`` with
-    every public symbol."""
+    """The new ``reconcile/__init__.py`` declares ``__all__`` with"""
     import voicegateway.reconcile as rec_pkg
 
     expected = {
@@ -103,8 +75,7 @@ def test_voicegateway_reconcile_all_lists_full_surface() -> None:
 
 
 def test_voicegateway_top_level_inference_resolves() -> None:
-    """``from voicegateway import inference`` (the drop-in
-    LiveKit-parity surface from v0.0.5) still works."""
+    """``from voicegateway import inference`` (the drop-in"""
     from voicegateway import inference
 
     assert hasattr(inference, "LLM")
@@ -122,8 +93,7 @@ def test_voicegateway_inference_factories_resolve() -> None:
 
 
 def test_voicegateway_version_resolves() -> None:
-    """``from voicegateway import __version__`` works (hatch-vcs
-    generated, exported via ``voicegateway/__init__.py``)."""
+    """``from voicegateway import __version__`` works (hatch-vcs"""
     from voicegateway import __version__
 
     assert isinstance(__version__, str)
@@ -131,9 +101,7 @@ def test_voicegateway_version_resolves() -> None:
 
 
 def test_voicegateway_cli_app_resolves() -> None:
-    """``from voicegateway.cli import app`` works -- this is the
-    console-script entry point declared in pyproject.toml as
-    ``voicegw = "voicegateway.cli:app"``."""
+    """``from voicegateway.cli import app`` works -- this is the"""
     from voicegateway.cli import app
 
     assert app is not None

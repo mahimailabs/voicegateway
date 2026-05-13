@@ -20,10 +20,7 @@ class MetricsClient(Protocol):
         ...
 
     async def get_session_detail(self, session_id: str) -> dict[str, Any] | None:
-        """Return one session plus its per-turn rows for the
-        drill-in modal pushed by Enter on a focused row, or ``None``
-        when the id does not match a known session.
-        """
+        """Return one session plus its per-turn rows for the"""
         ...
 
     async def list_costs(
@@ -55,9 +52,7 @@ class MetricsClient(Protocol):
         ...
 
     async def test_provider(self, provider_id: str) -> dict[str, Any]:
-        """Trigger a live key-test against ``provider_id``'s upstream
-        and return the result row.
-        """
+        """Trigger a live key-test against ``provider_id``'s upstream"""
         ...
 
 

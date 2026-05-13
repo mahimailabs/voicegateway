@@ -23,7 +23,7 @@ from voicegateway.middleware.guardrails import (
     tools_contain_reserved_report_tool,
 )
 from voicegateway.middleware.instrumented_provider import InstrumentedLLM
-from voicegateway.repository import guardrail_events
+from voicegateway.repository import guardrail_events_repository as guardrail_events
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

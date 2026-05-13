@@ -96,10 +96,7 @@ def _format(
 
 
 def _format_age(db_path: Path) -> str | None:
-    """Render ``"as of <Ns / Nmin / Nh / Nd> ago"`` from the file's
-    mtime; returns ``None`` when the file does not exist (the
-    Pilot smoke can pass a fake path -- no raise).
-    """
+    """Render ``"as of <Ns / Nmin / Nh / Nd> ago"`` from the file's"""
     try:
         mtime = db_path.stat().st_mtime
     except OSError:
@@ -118,10 +115,7 @@ def _format_age(db_path: Path) -> str | None:
 
 
 def _aggregate_request_count(costs: dict[str, Any]) -> str:
-    """Sum per-modality request_count when present; flat fallback;
-    ``--`` when neither is available. Returned as ``str`` so the
-    formatter renders ``--`` directly without a ``int(--)`` cast.
-    """
+    """Sum per-modality request_count when present; flat fallback;"""
     by_modality = costs.get("by_modality") or {}
     if isinstance(by_modality, dict) and by_modality:
         total = 0

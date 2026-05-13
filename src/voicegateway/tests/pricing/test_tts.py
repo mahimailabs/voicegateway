@@ -1,8 +1,4 @@
-"""Unit tests for voicegateway.pricing.tts.
-
-Covers the local TTS catalog: known/unknown models, source-date and
-source-URL metadata, PRICING_SOURCE format, Decimal precision.
-"""
+"""Unit tests for voicegateway.pricing.tts."""
 
 from __future__ import annotations
 

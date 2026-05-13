@@ -412,15 +412,7 @@ def wrap_provider(
     cost_tracker: CostTracker,
     storage: SQLiteStorage | None,
 ) -> Any:
-    """Wrap a provider instance with instrumentation.
-
-    Public signature is byte-identical to the pre-fix version so the
-    four call sites in ``voicegateway/inference/_{stt,llm,tts}.py`` and
-    the smoke-test stub path in ``voicegateway/cli.py`` keep working.
-    Behind it the wrapper is now a proper LK base-class subclass so
-    ``AgentSession``'s ``isinstance`` gates succeed and the
-    ``metrics_collected`` / ``error`` listeners attach.
-    """
+    """Wrap a provider instance with instrumentation."""
     wrapper_cls = {
         "stt": InstrumentedSTT,
         "llm": InstrumentedLLM,

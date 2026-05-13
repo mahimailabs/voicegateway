@@ -44,10 +44,7 @@ async def test_v1_status(client):
 
 
 async def test_v1_status_includes_pricing_freshness(client):
-    """Q7: /v1/status carries the catalog freshness subtree so the
-    dashboard can render an "estimates last verified ..." banner
-    without scraping the pricing modules itself.
-    """
+    """Q7: /v1/status carries the catalog freshness subtree so the"""
     resp = await client.get("/v1/status")
     data = resp.json()
     assert "pricing" in data
@@ -114,10 +111,7 @@ async def test_v1_costs_per_modality_when_requested(client):
 
 
 async def test_v1_costs_includes_pricing_source_by_default(client, gateway):
-    """Q7: include_pricing_source defaults to True since v0.0.5 so the
-    dashboard's cost view always carries the attribution string per
-    by_model entry without an opt-in flag.
-    """
+    """Q7: include_pricing_source defaults to True since v0.0.5 so the"""
     import time
     import uuid
 
@@ -149,10 +143,7 @@ async def test_v1_costs_includes_pricing_source_by_default(client, gateway):
 
 
 async def test_v1_costs_pricing_source_opt_out(client, gateway):
-    """Pass ?include_pricing_source=false to drop the per-row
-    attribution. Useful when the caller doesn't need it (e.g. raw
-    metric scrapes that key off cost only).
-    """
+    """Pass ?include_pricing_source=false to drop the per-row"""
     import time
     import uuid
 
@@ -178,11 +169,7 @@ async def test_v1_costs_pricing_source_opt_out(client, gateway):
 
 
 async def test_v1_costs_include_pricing_source_default_on(client):
-    """Q7: include_pricing_source defaults to True since v0.0.5. With
-    no traffic recorded the response is shape-valid and by_model is
-    empty; the flag's effect on populated entries is exercised by
-    test_v1_costs_includes_pricing_source_by_default below.
-    """
+    """Q7: include_pricing_source defaults to True since v0.0.5. With"""
     resp = await client.get("/v1/costs")
     assert resp.status_code == 200
     data = resp.json()
@@ -222,10 +209,7 @@ async def test_v1_costs_with_only_start_or_only_end(client):
 
 
 async def test_v1_costs_period_with_window_emits_deprecation_header(client):
-    """Mixing legacy `period` with new `start`/`end` surfaces the
-    Deprecation response header so dashboards mid-migration discover
-    that period is ignored when the new params are present.
-    """
+    """Mixing legacy `period` with new `start`/`end` surfaces the"""
     resp = await client.get("/v1/costs?period=week&start=2026-05-01&end=2026-05-04")
     assert resp.status_code == 200
     assert "deprecation" in {k.lower() for k in resp.headers}
@@ -234,11 +218,7 @@ async def test_v1_costs_period_with_window_emits_deprecation_header(client):
 
 
 async def test_v1_costs_period_with_window_exposes_deprecation_to_cors(client):
-    """The CORS preflight must list `Deprecation` in
-    Access-Control-Expose-Headers, otherwise browser JS cannot read the
-    header (the legacy `period` deprecation signal would be invisible
-    to the dashboard, which is the whole point of setting it).
-    """
+    """The CORS preflight must list `Deprecation` in"""
     resp = await client.get(
         "/v1/costs?period=week&start=2026-05-01&end=2026-05-04",
         headers={"origin": "http://localhost:3000"},
@@ -275,14 +255,7 @@ async def test_v1_costs_no_params_defaults_to_today(client):
 
 
 async def test_v1_costs_combined_query_params(client, gateway):
-    """All three new params (per_modality, include_pricing_source, start/end) compose.
-
-    Pop a populated DB across three modalities and three days, then
-    hit `/v1/costs?per_modality=true&include_pricing_source=true` with
-    a window that excludes the oldest record. Asserts the response
-    surfaces `by_modality`, per-line `pricing_source`, and the
-    out-of-window record is not in the totals.
-    """
+    """All three new params (per_modality, include_pricing_source, start/end) compose."""
     import datetime as _dt
     import uuid
 
@@ -363,15 +336,7 @@ async def test_v1_costs_combined_query_params(client, gateway):
 
 
 async def test_v1_costs_window_overrides_period_at_data_layer(client, gateway):
-    """Precedence rule: when both period and start/end are passed,
-    the data returned reflects the start/end window, NOT the period.
-
-    The Deprecation header tests confirm the header surfaces, but
-    they do not pin the actual storage behavior. This test seeds a
-    record outside `period=today` but inside the explicit window,
-    then asserts the cost is in the response (proving start/end
-    won at the storage layer).
-    """
+    """Precedence rule: when both period and start/end are passed,"""
     import datetime as _dt
     import uuid
 

@@ -1,19 +1,4 @@
-"""Local-mode end-to-end Pilot tests (REQ-VG-TUI-008 verification).
-
-Mounts the full :class:`TUIApp` against a seeded SQLite backing
-``LocalClient`` and visits each tab to confirm:
-
-- The ``[Local mode]`` chip is visible in the header.
-- Sessions / Costs / Logs / Providers each render their seeded
-  data via the LocalClient read path.
-- The CounterFooter renders the ``(as of N s ago)`` suffix
-  computed from the SQLite file's mtime.
-- Write actions surface :class:`LocalModeUnsupportedError`
-  visibly: pressing ``t`` on the Providers screen leaves the row's
-  status unchanged (no silent state mutation), the LocalClient
-  raises the documented exception with the documented feature
-  attribute.
-"""
+"""Local-mode end-to-end Pilot tests (REQ-VG-TUI-008 verification)."""
 
 from __future__ import annotations
 
@@ -43,9 +28,7 @@ from voicegateway.storage.sqlite import SQLiteStorage
 
 @pytest.fixture
 async def seeded_local_app(tmp_path: Path) -> TUIApp:
-    """Full App with 2 sessions + 2 providers seeded into the SQLite
-    file the LocalClient reads.
-    """
+    """Full App with 2 sessions + 2 providers seeded into the SQLite"""
     db = tmp_path / "voicegw.db"
     storage = SQLiteStorage(db)
     for i in range(2):
@@ -160,11 +143,7 @@ async def test_providers_renders_rows_in_local_mode(
 
 
 async def test_local_client_test_provider_raises_unsupported_error() -> None:
-    """Pinned at the data-layer surface so the screen-level Pilot
-    test (in test_screens.py) inherits a clear contract: write paths
-    in Local mode raise the documented exception with the feature
-    name. No silent failure.
-    """
+    """Pinned at the data-layer surface so the screen-level Pilot"""
     client = LocalClient(db_path=Path("/tmp/nonexistent.db"))
     with pytest.raises(LocalModeUnsupportedError) as exc_info:
         await client.test_provider("openai-prod")
@@ -175,29 +154,7 @@ async def test_local_client_test_provider_raises_unsupported_error() -> None:
 async def test_providers_t_shortcut_surfaces_visible_notification_in_local_mode(
     seeded_local_app: TUIApp,
 ) -> None:
-    """End-to-end visible-surfacing contract for Phase-10 write paths.
-
-    Drives the full stack the user touches in Local mode: TUIApp wired
-    to a real LocalClient over a seeded SQLite file, switches to the
-    Providers tab, focuses a row, presses ``t``. Expectations:
-
-    - The LocalClient raises :class:`LocalModeUnsupportedError`
-      with the documented ``feature='test_provider'`` payload
-      (verified above at the data layer).
-    - ProvidersScreen catches the exception and routes it through
-      :meth:`App.notify` with the warning severity + the
-      ``Action requires the daemon`` title.
-    - The notification message names ``test_provider`` so the user
-      sees the unsupported feature name verbatim -- the locked
-      decision-4 contract that write paths surface honestly.
-    - The row's ``status`` stays at the pre-press value: no silent
-      mutation, no half-committed state.
-
-    Locked decisions covered: 4 (Local mode raises with feature) +
-    5 (Local mode write actions are visible, not silent). Plus
-    REQ-VG-TUI-008's bottom contract: Local mode is a read-only
-    surface and write attempts say so out loud.
-    """
+    """End-to-end visible-surfacing contract for Phase-10 write paths."""
     async with seeded_local_app.run_test() as pilot:
         await _settle(pilot)
         await pilot.press("4")
@@ -242,10 +199,7 @@ async def test_providers_t_shortcut_surfaces_visible_notification_in_local_mode(
 async def test_counter_footer_renders_age_suffix_in_local_mode(
     seeded_local_app: TUIApp,
 ) -> None:
-    """The footer row carries ``(as of N s ago)`` when in Local mode.
-    The just-seeded SQLite file mtime is within seconds of now, so
-    the suffix lands in the seconds bucket.
-    """
+    """The footer row carries ``(as of N s ago)`` when in Local mode."""
     async with seeded_local_app.run_test() as pilot:
         # Wait for the initial CounterFooter refresh to land.
         for _ in range(15):

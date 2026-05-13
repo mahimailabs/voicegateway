@@ -179,11 +179,7 @@ async def verify(db: aiosqlite.Connection, plaintext: str) -> VerifiedKey | None
 
 
 async def mark_used(db: aiosqlite.Connection, key_id: int) -> None:
-    """Bump ``last_used_at`` to the current timestamp.
-
-    Idempotent. Commits the connection. Called by the auth middleware
-    after a successful :func:`verify`.
-    """
+    """Bump ``last_used_at`` to the current timestamp."""
     await db.execute(
         "UPDATE virtual_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?",
         (key_id,),

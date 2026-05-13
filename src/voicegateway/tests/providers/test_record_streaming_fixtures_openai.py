@@ -1,17 +1,4 @@
-"""End-to-end tests for the OpenAI LLM batch recorder.
-
-These tests load the recording script as a module, monkey-patch its
-FIXTURES_DIR to a tmp path, mock the OpenAI HTTP endpoint with
-respx, and drive the batch recording path. The assertions cover
-the full happy path: a fixture file is written, validates through
-the StreamingFixture schema, and carries a `expected_cost_usd`
-that matches what `voicegateway.pricing.catalog.calculate_cost`
-would compute for the same usage.
-
-The script lives at tests/fixtures/streaming/record_streaming_fixtures.py and is
-not in an importable package, so importlib.util loads it from its
-absolute file path.
-"""
+"""End-to-end tests for the OpenAI LLM batch recorder."""
 
 from __future__ import annotations
 
@@ -159,14 +146,7 @@ async def test_openai_batch_expected_cost_matches_catalog(
 async def test_openai_batch_uses_canonical_test_prompt(
     recorder: ModuleType,
 ) -> None:
-    """Recorder POSTs the canonical prompt with stream=False and the right model.
-
-    The HTTP body sent to OpenAI must contain ``model=gpt-4o-mini``,
-    ``stream=False`` (this is the batch path), and the canonical
-    DEFAULT_LLM_PROMPT text on the user message. Asserted via
-    ``route.calls.last.request.content`` after respx intercepts the
-    call.
-    """
+    """Recorder POSTs the canonical prompt with stream=False and the right model."""
     response_payload = _openai_batch_response(input_tokens=18, output_tokens=8)
     async with respx.mock(assert_all_called=True) as router:
         route = router.post("https://api.openai.com/v1/chat/completions").mock(
@@ -199,13 +179,7 @@ async def test_openai_batch_refuses_when_usage_missing(
 def _openai_stream_sse(
     *, content_chunks: list[str], input_tokens: int, output_tokens: int
 ) -> bytes:
-    """Return SSE bytes mimicking an OpenAI chat completion stream.
-
-    Chunk shape matches what the openai python client expects: a
-    leading role chunk, one chunk per content piece, a finish chunk,
-    and the trailing usage chunk that ``stream_options.include_usage``
-    enables.
-    """
+    """Return SSE bytes mimicking an OpenAI chat completion stream."""
     base = {
         "id": "chatcmpl-stream-fixture",
         "object": "chat.completion.chunk",

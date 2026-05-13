@@ -1,9 +1,4 @@
-"""Tests for the v0.1.0 ``voicegw status`` daemon-first ordering.
-
-The provider-status half is exercised by tests/test_cli.py
-(``test_status``); this file targets the daemon-section that was
-added on top per design.md decision 4.
-"""
+"""Tests for the v0.1.0 ``voicegw status`` daemon-first ordering."""
 
 from __future__ import annotations
 
@@ -95,9 +90,7 @@ def test_status_unregistered_daemon_points_at_onboard(temp_config, monkeypatch):
 
 
 def test_status_handles_daemon_backend_failure(temp_config, monkeypatch):
-    """If DaemonManager construction blows up, the provider half still
-    renders (the two sections are independent).
-    """
+    """If DaemonManager construction blows up, the provider half still"""
     monkeypatch.setattr(
         "voicegateway.cli.daemon.DaemonManager",
         MagicMock(side_effect=RuntimeError("backend exploded")),
