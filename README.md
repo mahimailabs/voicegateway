@@ -40,6 +40,8 @@ voicegw onboard --install-daemon
 
 The installer detects your OS, ensures Python 3.11+ and `pipx`, installs `voicegateway[cloud,dashboard]`, runs a five-question wizard, validates your provider key, and registers a per-user daemon (LaunchAgent / systemd / Scheduled Task). Open the dashboard at `http://localhost:9090` to see your first cost row land.
 
+If [`uv`](https://docs.astral.sh/uv/) is already on your PATH, the installer auto-detects it and uses `uv tool install` instead of pipx. Same `~/.local/bin/voicegw` outcome, faster cold install.
+
 Prefer manual install? `pipx install "voicegateway[cloud,dashboard,mcp]"` then `voicegw init && voicegw dashboard`.
 
 ## 🎯 Why VoiceGateway

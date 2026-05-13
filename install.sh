@@ -29,6 +29,7 @@ PYTHON_VERSION=""
 EXISTING_VERSION=""
 UPGRADED=0
 OS=""
+VG_INSTALLER=""
 
 # ---------------------------------------------------------------------------
 # Output helpers. Plain text. No em dashes per project convention.
@@ -189,6 +190,54 @@ ensure_pipx() {
 }
 
 # ---------------------------------------------------------------------------
+# Installer backend selector.
+#
+# Prefers `uv` when present (Astral's uv ships `uv tool install`, which is
+# significantly faster than pipx and uses the same isolated-tool model).
+# Falls back to the existing pipx path otherwise. Both backends produce
+# the same ~/.local/bin/voicegw outcome.
+#
+# The thin wrappers below let the rest of the script stay
+# installer-agnostic; the three call sites in main() and
+# detect_existing_voicegw branch on $VG_INSTALLER.
+# ---------------------------------------------------------------------------
+
+ensure_installer() {
+    if command -v uv >/dev/null 2>&1; then
+        say "uv detected: $(uv --version 2>/dev/null || echo unknown)"
+        VG_INSTALLER="uv"
+        ensure_pipx_path
+        return 0
+    fi
+    ensure_pipx
+    VG_INSTALLER="pipx"
+}
+
+installer_install() {
+    case "$VG_INSTALLER" in
+        uv)   uv tool install "$@" ;;
+        pipx) pipx install "$@" ;;
+        *)    die "internal error: VG_INSTALLER unset before installer_install" ;;
+    esac
+}
+
+installer_reinstall() {
+    case "$VG_INSTALLER" in
+        uv)   uv tool install --force "$@" ;;
+        pipx) pipx install --force "$@" ;;
+        *)    die "internal error: VG_INSTALLER unset before installer_reinstall" ;;
+    esac
+}
+
+installer_upgrade() {
+    case "$VG_INSTALLER" in
+        uv)   uv tool upgrade "$@" ;;
+        pipx) pipx upgrade "$@" ;;
+        *)    die "internal error: VG_INSTALLER unset before installer_upgrade" ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
 # Existing voicegateway detection.
 #
 # Returns 0 and sets EXISTING_VERSION when a previous install is found.
@@ -196,7 +245,17 @@ ensure_pipx() {
 # ---------------------------------------------------------------------------
 
 detect_existing_voicegw() {
-    if command -v pipx >/dev/null 2>&1; then
+    if [ "$VG_INSTALLER" = "uv" ] && command -v uv >/dev/null 2>&1; then
+        local list_out
+        list_out="$(uv tool list 2>/dev/null || true)"
+        # uv tool list output: "voicegateway v0.5.0" followed by "- voicegw"
+        # entries (one tool per top-level line). Match on first column.
+        if printf '%s\n' "$list_out" | awk -v p="$VG_PYPI_NAME" '$1==p{found=1} END{exit !found}'; then
+            EXISTING_VERSION="$(printf '%s\n' "$list_out" | awk -v p="$VG_PYPI_NAME" '$1==p{print $2; exit}')"
+            return 0
+        fi
+    fi
+    if [ "$VG_INSTALLER" = "pipx" ] && command -v pipx >/dev/null 2>&1; then
         local short
         short="$(pipx list --short 2>/dev/null || true)"
         if [ -n "$short" ] && printf '%s\n' "$short" | awk '{print $1}' | grep -qx "$VG_PYPI_NAME"; then
@@ -241,15 +300,15 @@ VoiceGateway does NOT auto-install Python. That choice is left to your OS packag
     fi
     say "Found $PYTHON_BIN (version $PYTHON_VERSION)."
 
-    step "Ensuring pipx is installed."
-    ensure_pipx
+    step "Selecting installer backend (uv preferred, pipx fallback)."
+    ensure_installer
 
     step "Checking for an existing VoiceGateway install."
     if detect_existing_voicegw; then
         say "Found existing voicegateway: ${EXISTING_VERSION:-unknown}."
         if confirm "Upgrade to the latest release now?"; then
-            pipx upgrade "$VG_PYPI_NAME" >/dev/null 2>&1 \
-                || pipx install --force "$VG_PACKAGE_SPEC"
+            installer_upgrade "$VG_PYPI_NAME" >/dev/null 2>&1 \
+                || installer_reinstall "$VG_PACKAGE_SPEC"
             UPGRADED=1
             say "Upgrade complete."
 
@@ -268,8 +327,8 @@ VoiceGateway does NOT auto-install Python. That choice is left to your OS packag
             say "Skipping upgrade. Existing install left untouched."
         fi
     else
-        step "Installing $VG_PACKAGE_SPEC via pipx."
-        pipx install "$VG_PACKAGE_SPEC"
+        step "Installing $VG_PACKAGE_SPEC via $VG_INSTALLER."
+        installer_install "$VG_PACKAGE_SPEC"
     fi
 
     step "Done."

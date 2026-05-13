@@ -16,8 +16,16 @@
 # fetching the (still-unpublished) package.
 #
 # Usage:
-#   bash tests/cli/test_install_script.sh                 # run all images
-#   bash tests/cli/test_install_script.sh --image ubuntu:24.04   # single
+#   bash tests/cli/test_install_script.sh                              # all images, pipx
+#   bash tests/cli/test_install_script.sh --image ubuntu:24.04         # single image, pipx
+#   bash tests/cli/test_install_script.sh --installer uv               # all images, uv backend
+#   bash tests/cli/test_install_script.sh --image debian:12 --installer uv
+#
+# --installer chooses which stub is mounted inside the container:
+#   pipx (default) — _pipx_stub.sh at /usr/local/bin/pipx; install.sh sees
+#                    no uv on PATH and falls through to the pipx branch.
+#   uv             — _uv_stub.sh at /usr/local/bin/uv; install.sh detects
+#                    uv first and routes through `uv tool install`.
 #
 # Environment:
 #   SKIP_IF_NO_DOCKER=1   exit 0 silently when Docker is unavailable
@@ -29,6 +37,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 INSTALL_SCRIPT="$REPO_ROOT/install.sh"
 PIPX_STUB="$REPO_ROOT/tests/cli/_pipx_stub.sh"
+UV_STUB="$REPO_ROOT/tests/cli/_uv_stub.sh"
 EXPECTED_NEXT_STEP="Run the wizard to configure your gateway"
 
 if [ ! -f "$INSTALL_SCRIPT" ]; then
@@ -37,6 +46,10 @@ if [ ! -f "$INSTALL_SCRIPT" ]; then
 fi
 if [ ! -f "$PIPX_STUB" ]; then
     printf 'pipx stub not found at %s\n' "$PIPX_STUB" >&2
+    exit 2
+fi
+if [ ! -f "$UV_STUB" ]; then
+    printf 'uv stub not found at %s\n' "$UV_STUB" >&2
     exit 2
 fi
 
@@ -68,50 +81,88 @@ IMAGES=(
 )
 
 filter=""
-if [ "${1:-}" = "--image" ]; then
-    if [ -z "${2:-}" ]; then
-        printf '%s\n' "--image requires an argument (e.g. --image ubuntu:24.04)" >&2
-        exit 2
-    fi
-    filter="$2"
-fi
+INSTALLER="pipx"
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --image)
+            if [ -z "${2:-}" ]; then
+                printf '%s\n' "--image requires an argument (e.g. --image ubuntu:24.04)" >&2
+                exit 2
+            fi
+            filter="$2"
+            shift 2
+            ;;
+        --installer)
+            if [ -z "${2:-}" ]; then
+                printf '%s\n' "--installer requires an argument (pipx or uv)" >&2
+                exit 2
+            fi
+            case "$2" in
+                pipx|uv) INSTALLER="$2" ;;
+                *)
+                    printf 'unknown installer: %s (expected pipx or uv)\n' "$2" >&2
+                    exit 2
+                    ;;
+            esac
+            shift 2
+            ;;
+        *)
+            printf 'unknown argument: %s\n' "$1" >&2
+            printf 'usage: %s [--image <image>] [--installer pipx|uv]\n' "$0" >&2
+            exit 2
+            ;;
+    esac
+done
+
+case "$INSTALLER" in
+    pipx)
+        STUB_PATH="$PIPX_STUB"
+        STUB_MOUNT="/usr/local/bin/pipx"
+        INSTALL_MARKER="[stub] pipx install"
+        ;;
+    uv)
+        STUB_PATH="$UV_STUB"
+        STUB_MOUNT="/usr/local/bin/uv"
+        INSTALL_MARKER="[stub] uv tool install"
+        ;;
+esac
 
 run_one() {
     local image="$1"
     local bootstrap="$2"
 
     printf '\n==========================================================\n'
-    printf ' Running install.sh in: %s\n' "$image"
+    printf ' Running install.sh in: %s (installer=%s)\n' "$image" "$INSTALLER"
     printf '==========================================================\n'
 
     local out exit_code=0
     out="$(docker run --rm \
         -v "$INSTALL_SCRIPT:/install.sh:ro" \
-        -v "$PIPX_STUB:/usr/local/bin/pipx:ro" \
+        -v "$STUB_PATH:$STUB_MOUNT:ro" \
         -e DEBIAN_FRONTEND=noninteractive \
         "$image" \
         bash -c "set -e; $bootstrap; bash /install.sh" 2>&1)" || exit_code=$?
 
     if [ "$exit_code" -ne 0 ]; then
-        printf 'FAIL: install.sh exited %d in %s\n' "$exit_code" "$image" >&2
+        printf 'FAIL: install.sh exited %d in %s (installer=%s)\n' "$exit_code" "$image" "$INSTALLER" >&2
         printf -- '----- captured output -----\n%s\n----- end -----\n' "$out" >&2
         return 1
     fi
 
     if ! printf '%s\n' "$out" | grep -qF "$EXPECTED_NEXT_STEP"; then
-        printf 'FAIL: expected next-step line not found in %s\n' "$image" >&2
+        printf 'FAIL: expected next-step line not found in %s (installer=%s)\n' "$image" "$INSTALLER" >&2
         printf 'Expected substring: %s\n' "$EXPECTED_NEXT_STEP" >&2
         printf -- '----- captured output -----\n%s\n----- end -----\n' "$out" >&2
         return 1
     fi
 
-    if ! printf '%s\n' "$out" | grep -qF "[stub] pipx install"; then
-        printf 'WARN: stub pipx install was not invoked in %s.\n' "$image" >&2
+    if ! printf '%s\n' "$out" | grep -qF "$INSTALL_MARKER"; then
+        printf 'WARN: install marker %q was not seen in %s (installer=%s).\n' "$INSTALL_MARKER" "$image" "$INSTALLER" >&2
         printf 'This means install.sh probably skipped the install step. Investigate.\n' >&2
         return 1
     fi
 
-    printf 'PASS: %s\n' "$image"
+    printf 'PASS: %s (installer=%s)\n' "$image" "$INSTALLER"
     return 0
 }
 
