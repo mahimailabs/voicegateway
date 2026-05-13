@@ -8,8 +8,8 @@ import typer
 
 from voicegateway.cli._app import app, console
 from voicegateway.core.constants import DEFAULT_DASHBOARD_URL
-from voicegateway.core.guardrail_policy import GUARDRAIL_CATEGORIES, GuardrailPolicy
 from voicegateway.middleware.guardrails import compose_guardrail_block
+from voicegateway.schemas.guardrail_policy import GUARDRAIL_CATEGORIES, GuardrailPolicy
 from voicegateway.utils.cli.guardrails import _request
 
 guardrails_app = typer.Typer(

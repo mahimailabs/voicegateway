@@ -262,10 +262,6 @@ class InstrumentedLLM(lk_llm.LLM, _InstrumentedBase):
 
     def _apply_guardrails(self, *, chat_ctx: Any, tools: Any) -> tuple[Any, Any]:
         """Inject the guardrail prompt/tool when the project is active."""
-        from voicegateway.core.guardrail_policy import (
-            REPORT_GUARDRAIL_TOOL_NAME,
-            GuardrailPolicy,
-        )
         from voicegateway.inference._factory import get_gateway
         from voicegateway.inference._session_context import (
             current_guardrails_bypassed,
@@ -281,6 +277,10 @@ class InstrumentedLLM(lk_llm.LLM, _InstrumentedBase):
             inject_guardrail_block,
             schedule_bypass_event,
             tools_contain_reserved_report_tool,
+        )
+        from voicegateway.schemas.guardrail_policy import (
+            REPORT_GUARDRAIL_TOOL_NAME,
+            GuardrailPolicy,
         )
 
         try:

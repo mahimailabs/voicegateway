@@ -21,12 +21,6 @@ from voicegateway.core.auth import (
     resolve_cors_origins,
     verify_virtual_key,
 )
-from voicegateway.core.guardrail_policy import (
-    ACTIVE_GUARDRAIL_ACTIONS,
-    GUARDRAIL_CATEGORIES,
-    GUARDRAIL_CATEGORY_DESCRIPTIONS,
-    GuardrailPolicy,
-)
 from voicegateway.inference._session_context import set_tenant
 from voicegateway.pricing import catalog
 from voicegateway.repository import (
@@ -34,6 +28,12 @@ from voicegateway.repository import (
 )
 from voicegateway.repository import (
     virtual_keys_repository as virtual_keys,
+)
+from voicegateway.schemas.guardrail_policy import (
+    ACTIVE_GUARDRAIL_ACTIONS,
+    GUARDRAIL_CATEGORIES,
+    GUARDRAIL_CATEGORY_DESCRIPTIONS,
+    GuardrailPolicy,
 )
 from voicegateway.utils.percentiles import quantile_label
 

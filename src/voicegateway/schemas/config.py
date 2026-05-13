@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from voicegateway.core.guardrail_policy import GuardrailPolicy
+from voicegateway.schemas.guardrail_policy import GuardrailPolicy
 
 
 class _StrictBase(BaseModel):
