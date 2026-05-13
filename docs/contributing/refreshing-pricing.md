@@ -31,11 +31,11 @@ In both cases, follow the steps below for the affected entries.
    ```
 5. Confirm the staleness gate passes locally:
    ```bash
-   pytest tests/pricing/test_staleness.py -q
+   pytest src/voicegateway/tests/pricing/test_staleness.py -q
    ```
 6. Confirm the entry-level tests still pass:
    ```bash
-   pytest tests/pricing/ -q
+   pytest src/voicegateway/tests/pricing/ -q
    ```
 7. Commit with a message that names the entry, the old rate, and the new rate:
    ```
@@ -55,7 +55,7 @@ When adding a new STT or TTS model:
 3. Set `pricing_source_date` to the date you verified the rate.
 4. Run the full pricing suite:
    ```bash
-   pytest tests/pricing/ -q
+   pytest src/voicegateway/tests/pricing/ -q
    ```
 5. If the new model has unusual billing semantics (credit systems, plan-tier dependent rates, audio-seconds vs characters mismatches), add a comment above the entry explaining the estimate and pointing readers at `voicegw reconcile` for verification.
 

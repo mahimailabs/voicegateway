@@ -5,9 +5,9 @@
 FROM node:20-alpine AS frontend-builder
 
 WORKDIR /build/frontend
-COPY dashboard/frontend/package*.json ./
+COPY src/dashboard/frontend/package*.json ./
 RUN npm ci
-COPY dashboard/frontend/ ./
+COPY src/dashboard/frontend/ ./
 RUN npm run build
 
 # -------- Stage 2: Python builder --------
@@ -26,7 +26,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md ./
-COPY voicegateway/ ./voicegateway/
+# src/ layout: pyproject.toml's [tool.hatch.build.targets.wheel].packages
+# points at src/voicegateway and src/dashboard, so hatchling needs both
+# directories present at the path it expects.
+COPY src/voicegateway/ ./src/voicegateway/
+COPY src/dashboard/ ./src/dashboard/
 
 ARG VERSION=0.5.0
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
@@ -65,9 +69,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && chown -R voicegw:voicegw /data
 
 COPY --from=builder /install /install
-COPY --chown=voicegw:voicegw voicegateway/ /app/voicegateway/
-COPY --chown=voicegw:voicegw dashboard/api/ /app/dashboard/api/
-COPY --chown=voicegw:voicegw dashboard/__init__.py /app/dashboard/
+COPY --chown=voicegw:voicegw src/voicegateway/ /app/voicegateway/
+COPY --chown=voicegw:voicegw src/dashboard/api/ /app/dashboard/api/
+COPY --chown=voicegw:voicegw src/dashboard/__init__.py /app/dashboard/
 COPY --from=frontend-builder --chown=voicegw:voicegw /build/frontend/dist /app/dashboard/frontend/dist
 
 USER voicegw

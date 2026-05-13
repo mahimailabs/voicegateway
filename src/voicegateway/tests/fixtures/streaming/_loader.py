@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from tests.fixtures.streaming._schema import StreamingFixture
+from voicegateway.tests.fixtures.streaming._schema import StreamingFixture
 
 FIXTURES_DIR: Path = Path(__file__).parent
 
@@ -63,9 +63,7 @@ def parse_fixture_filename(path: Path | str) -> FixtureFilename:
     """
     p = Path(path)
     if p.suffix != ".json":
-        raise ValueError(
-            f"Fixture filename {p.name!r} must end in .json"
-        )
+        raise ValueError(f"Fixture filename {p.name!r} must end in .json")
     parts = p.stem.split("_")
     if len(parts) < 5:
         raise ValueError(
@@ -87,24 +85,18 @@ def parse_fixture_filename(path: Path | str) -> FixtureFilename:
         )
     if mode not in {"batch", "stream"}:
         raise ValueError(
-            f"Fixture filename {p.name!r}: mode {mode!r} must be "
-            "one of batch, stream."
+            f"Fixture filename {p.name!r}: mode {mode!r} must be one of batch, stream."
         )
     try:
         recorded_date = date.fromisoformat(date_str)
     except ValueError as err:
         raise ValueError(
-            f"Fixture filename {p.name!r}: date {date_str!r} is "
-            "not a valid YYYY-MM-DD."
+            f"Fixture filename {p.name!r}: date {date_str!r} is not a valid YYYY-MM-DD."
         ) from err
     if not provider:
-        raise ValueError(
-            f"Fixture filename {p.name!r}: provider segment empty."
-        )
+        raise ValueError(f"Fixture filename {p.name!r}: provider segment empty.")
     if not model_slug:
-        raise ValueError(
-            f"Fixture filename {p.name!r}: model slug segment empty."
-        )
+        raise ValueError(f"Fixture filename {p.name!r}: model slug segment empty.")
 
     return FixtureFilename(
         provider=provider,

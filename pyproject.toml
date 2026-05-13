@@ -102,7 +102,7 @@ Issues = "https://github.com/mahimailabs/voicegateway/issues"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["src/voicegateway/tests"]
 markers = [
     "integration: marks tests that run only in the integration CI job",
 ]
@@ -111,15 +111,20 @@ markers = [
 source = ["voicegateway", "dashboard"]
 omit = [
     # Provider implementations require external LiveKit plugins to test
-    "voicegateway/providers/openai_provider.py",
-    "voicegateway/providers/deepgram_provider.py",
-    "voicegateway/providers/anthropic_provider.py",
-    "voicegateway/providers/cartesia_provider.py",
-    "voicegateway/providers/elevenlabs_provider.py",
-    "voicegateway/providers/groq_provider.py",
-    "voicegateway/providers/assemblyai_provider.py",
-    "voicegateway/providers/kokoro_provider.py",
-    "voicegateway/providers/piper_provider.py",
+    "src/voicegateway/providers/openai_provider.py",
+    "src/voicegateway/providers/deepgram_provider.py",
+    "src/voicegateway/providers/anthropic_provider.py",
+    "src/voicegateway/providers/cartesia_provider.py",
+    "src/voicegateway/providers/elevenlabs_provider.py",
+    "src/voicegateway/providers/groq_provider.py",
+    "src/voicegateway/providers/assemblyai_provider.py",
+    "src/voicegateway/providers/kokoro_provider.py",
+    "src/voicegateway/providers/piper_provider.py",
+    # Tests live inside the package directory but are excluded from the
+    # wheel via [tool.hatch.build.targets.wheel] exclude below. Omit
+    # from coverage too so the test code does not inflate its own
+    # coverage numbers.
+    "src/voicegateway/tests/*",
 ]
 
 [tool.coverage.report]
@@ -135,7 +140,15 @@ build-backend = "hatchling.build"
 source = "vcs"
 
 [tool.hatch.build.hooks.vcs]
-version-file = "voicegateway/_version.py"
+version-file = "src/voicegateway/_version.py"
+
+[tool.hatch.build.targets.wheel]
+# Explicit packages list because we are on a src/ layout (PyPA convention).
+# Hatchling cannot auto-detect packages outside the repo root.
+packages = ["src/voicegateway", "src/dashboard"]
+# tests/ lives inside src/voicegateway/ for repo hygiene but must NOT
+# ship inside the installed wheel — exclude it from the build.
+exclude = ["src/voicegateway/tests"]
 
 [tool.pyright]
 typeCheckingMode = "off"
@@ -212,3 +225,13 @@ warn_redundant_casts = true       # flag `cast(int, x)` where x is already int (
 warn_unused_ignores = true        # flag `# type: ignore` comments that no longer suppress anything
 no_implicit_optional = true       # require `int | None` instead of bare `int` for default=None args
 ignore_missing_imports = true     # third-party SDKs (livekit, deepgram, etc.) often ship without stubs
+# src/ layout: tell mypy where to find the packages when invoked without
+# explicit file args. `mypy` (no args) now picks up both packages; legacy
+# `mypy voicegateway dashboard` invocations need to switch to `mypy -p
+# voicegateway -p dashboard` or just `mypy`.
+mypy_path = ["src"]
+files = ["src/voicegateway", "src/dashboard"]
+# Tests inside the package directory are excluded from type checking;
+# they live in src/voicegateway/tests/ but should not be part of the
+# library's type contract.
+exclude = ["^src/voicegateway/tests/"]

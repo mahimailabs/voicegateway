@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from tests.fixtures.streaming._schema import (
+from voicegateway.tests.fixtures.streaming._schema import (
     FixtureChunk,
     FixtureMetadata,
     StreamingFixture,

@@ -14,6 +14,11 @@ All notable changes to VoiceGateway are documented here. This project follows [S
 - **`.editorconfig`, `.env.example`, `.env.fixtures.example`** at repo root. No functional callers; documentation references rewritten or inlined.
 - **`examples/` directory.** The five example agents (`basic_agent.py`, `fallback_agent.py`, `hybrid_agent.py`, `local_only_agent.py`, `v005_inference_drop_in.py`) had no test or production-code dependency. `voicegw smoke-test`'s closing recommendation (and its docs) was rewritten to point at "wire `voicegateway.inference` into a LiveKit AgentSession" instead of a specific example file. Four docs (`docs/guide/quick-start.md`, `docs/guide/first-agent.md`, `docs/guide/core-concepts.md`, `docs/architecture/middleware.md`) had their inline GitHub blob links to `examples/fallback_agent.py` removed; the surrounding text describing the manual fallback chain walk pattern stayed.
 
+### Changed
+
+- **Adopted `src/` layout (PyPA convention).** `voicegateway/` → `src/voicegateway/` and `dashboard/` → `src/dashboard/`. The import paths `voicegateway` and `dashboard` are unchanged; only the on-disk locations moved. `pyproject.toml` declares `[tool.hatch.build.targets.wheel].packages = ["src/voicegateway", "src/dashboard"]` so hatchling finds them. Both Dockerfiles, `pyproject.toml` coverage `omit` paths, mypy config (`mypy_path = ["src"]`, `files = ["src/voicegateway", "src/dashboard"]`), and the `.github/workflows/{ci,test-coverage,docker-publish}.yml` workflow paths updated. After pulling, run `pip install -e .` to rebuild the editable install against the new layout.
+- **`tests/` moved inside the package** at `src/voicegateway/tests/`. The tests subtree is excluded from the wheel via `[tool.hatch.build.targets.wheel].exclude = ["src/voicegateway/tests"]` (and from coverage and mypy) so end users do not receive test code in `pip install voicegateway`. Cross-test imports updated from `from tests.X` to `from voicegateway.tests.X` (9 files). `tests/integration/test_public_api.py` walker excludes the `voicegateway.tests.*` namespace from the public-API contract. New `.dockerignore` at repo root also blocks `src/voicegateway/tests/` from the Docker build context.
+
 ### Migration
 
 If your code imports from the old shim path, update it:

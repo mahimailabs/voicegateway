@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from tests.fixtures.streaming._loader import (
+from voicegateway.tests.fixtures.streaming._loader import (
     FixtureFilename,
     discover_fixture_paths,
     discover_fixtures,
@@ -253,7 +253,7 @@ def test_discover_fixture_paths_skips_non_conforming(tmp_path: Path) -> None:
 
 def test_default_directory_is_this_package() -> None:
     """When called with no argument, discover_fixtures scans this directory."""
-    from tests.fixtures.streaming import _loader
+    from voicegateway.tests.fixtures.streaming import _loader
 
     assert _loader.FIXTURES_DIR.name == "streaming"
     assert (_loader.FIXTURES_DIR / "_loader.py").exists()

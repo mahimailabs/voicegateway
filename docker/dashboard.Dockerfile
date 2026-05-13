@@ -5,9 +5,9 @@
 FROM node:20-alpine AS frontend-builder
 
 WORKDIR /build/frontend
-COPY dashboard/frontend/package*.json ./
+COPY src/dashboard/frontend/package*.json ./
 RUN npm ci
-COPY dashboard/frontend/ ./
+COPY src/dashboard/frontend/ ./
 RUN npm run build
 
 # -------- Stage 2: Python runtime --------
@@ -35,9 +35,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY pyproject.toml README.md ./
-COPY voicegateway/ ./voicegateway/
-COPY dashboard/api/ ./dashboard/api/
-COPY dashboard/__init__.py ./dashboard/
+# src/ layout: hatchling reads packages = ["src/voicegateway", "src/dashboard"]
+# from pyproject so the src/ structure has to be present during pip install.
+COPY src/voicegateway/ ./src/voicegateway/
+COPY src/dashboard/ ./src/dashboard/
 
 ARG SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${SETUPTOOLS_SCM_PRETEND_VERSION}

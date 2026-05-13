@@ -50,7 +50,7 @@ Before opening your PR, verify:
 
 - [ ] Tests pass: `pytest`
 - [ ] Linting passes: `ruff check .`
-- [ ] Type checking passes: `mypy voicegateway`
+- [ ] Type checking passes: `mypy`
 - [ ] New public APIs have Google-style docstrings
 - [ ] Commit messages use Conventional Commits format
 - [ ] Documentation is updated if behavior changed

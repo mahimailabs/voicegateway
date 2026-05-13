@@ -27,7 +27,7 @@ import httpx
 import pytest
 import respx
 
-from tests.fixtures.streaming._loader import load_fixture
+from voicegateway.tests.fixtures.streaming._loader import load_fixture
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 RECORDER_PATH = (

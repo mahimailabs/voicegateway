@@ -14,9 +14,9 @@ pip install -e ".[dev]"
 
 # Run tests
 pytest
-pytest tests/test_config.py              # single file
-pytest tests/test_config.py::test_name   # single test
-pytest --cov                             # with coverage
+pytest src/voicegateway/tests/core/test_config.py              # single file
+pytest src/voicegateway/tests/core/test_config.py::test_name   # single test
+pytest --cov                                                   # with coverage
 
 # CLI
 voicegw init                             # create config template

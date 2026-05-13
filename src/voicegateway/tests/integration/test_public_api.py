@@ -35,13 +35,24 @@ def _walk_subpackages() -> list[ModuleType]:
     Uses :func:`pkgutil.walk_packages` filtered to ``ispkg``. The root
     ``voicegateway`` itself is yielded first because ``walk_packages``
     starts one level down.
+
+    ``voicegateway.tests`` and its subpackages are excluded: tests live
+    inside the package directory for repo hygiene but are not part of
+    the runtime public surface and are explicitly excluded from the
+    wheel via ``[tool.hatch.build.targets.wheel].exclude`` in
+    ``pyproject.toml``.
     """
     found: list[ModuleType] = [voicegateway]
     for module_info in pkgutil.walk_packages(
         voicegateway.__path__, prefix="voicegateway."
     ):
-        if module_info.ispkg:
-            found.append(importlib.import_module(module_info.name))
+        if not module_info.ispkg:
+            continue
+        if module_info.name == "voicegateway.tests" or module_info.name.startswith(
+            "voicegateway.tests."
+        ):
+            continue
+        found.append(importlib.import_module(module_info.name))
     return found
 
 

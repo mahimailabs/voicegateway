@@ -57,10 +57,10 @@ pre-commit run --all-files
 pytest
 
 # Run a specific file
-pytest tests/test_config.py
+pytest src/voicegateway/tests/core/test_config.py
 
 # Run a specific test
-pytest tests/test_config.py::test_name
+pytest src/voicegateway/tests/core/test_config.py::test_name
 
 # Run with coverage report
 pytest --cov
@@ -78,7 +78,7 @@ Tests use `asyncio_mode = "auto"` so you do not need `@pytest.mark.asyncio` deco
 ruff check .
 
 # Type checking
-mypy voicegateway
+mypy
 
 # Tests
 pytest
