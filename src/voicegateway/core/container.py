@@ -18,6 +18,8 @@ from dependency_injector import containers, providers
 
 from voicegateway.core.config import GatewayConfig
 from voicegateway.core.database import Database
+from voicegateway.repository.virtual_key import VirtualKeyRepository
+from voicegateway.services.virtual_key import VirtualKeyService
 
 logger = logging.getLogger(__name__)
 
@@ -40,3 +42,15 @@ class Container(containers.DeclarativeContainer):
     config = providers.Singleton(_load_gateway_config)
 
     database = providers.Singleton(Database, config=config)
+
+    # Repositories
+    virtual_key_repository = providers.Factory(
+        VirtualKeyRepository,
+        session_factory=database.provided.session,
+    )
+
+    # Services
+    virtual_key_service = providers.Factory(
+        VirtualKeyService,
+        repository=virtual_key_repository,
+    )

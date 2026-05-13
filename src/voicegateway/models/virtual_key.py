@@ -1,0 +1,38 @@
+"""ORM model for the ``virtual_keys`` table.
+
+Mirrors the schema defined by the legacy storage migration. The model
+opts out of the standard :class:`voicegateway.models.base.BaseModel`
+because the entity carries its own audit columns (``issued_at``,
+``last_used_at``, ``revoked_at``) and has no ``uuid``.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import ClassVar
+
+from sqlalchemy import DateTime
+from sqlmodel import Field, SQLModel
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+class VirtualKey(SQLModel, table=True):
+    """A long-lived authentication token issued to a tenant operator."""
+
+    __tablename__: ClassVar[str] = "virtual_keys"
+
+    id: int | None = Field(default=None, primary_key=True)
+    key_prefix: str = Field(index=True)
+    key_hash: str
+    name: str
+    tenant_id: str | None = Field(default=None, index=True)
+    issued_by: str | None = None
+    issued_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_type=DateTime(timezone=True),
+    )
+    last_used_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    revoked_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
