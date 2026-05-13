@@ -21,7 +21,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from voicegateway.cli.migrate import _atomic_write_text
+from voicegateway.utils.cli.migrate import _atomic_write_text
 
 
 def test_atomic_write_creates_new_file(tmp_path):

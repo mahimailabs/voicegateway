@@ -75,7 +75,7 @@ def _stub_provider_validation(request, monkeypatch):
     async def _stub(provider: str, api_key: str) -> tuple[str, str | None]:
         return "ok", None
 
-    monkeypatch.setattr("voicegateway.cli.onboard._validate_provider_key", _stub)
+    monkeypatch.setattr("voicegateway.utils.cli.onboard._validate_provider_key", _stub)
 
 
 # Default Typer prompt response stream the happy path consumes:
@@ -287,7 +287,7 @@ def _run_wizard_with_validation(monkeypatch, tmp_path, status, message=None):
     async def _stub(provider: str, api_key: str) -> tuple[str, str | None]:
         return status, message
 
-    monkeypatch.setattr("voicegateway.cli.onboard._validate_provider_key", _stub)
+    monkeypatch.setattr("voicegateway.utils.cli.onboard._validate_provider_key", _stub)
 
     cfg = tmp_path / "voicegw.yaml"
     # Trailing "n" declines the smoke-test offering.
@@ -353,7 +353,7 @@ def test_onboard_validation_skipped_for_unknown_provider(tmp_path, monkeypatch):
 
 async def test_validate_returns_ok_when_health_check_true(monkeypatch):
     """Happy path through create_provider + health_check returning True."""
-    from voicegateway.cli.onboard import _validate_provider_key
+    from voicegateway.utils.cli.onboard import _validate_provider_key
 
     monkeypatch.setattr(
         "voicegateway.core.registry._PROVIDER_REGISTRY",
@@ -384,7 +384,7 @@ async def test_validate_returns_timeout_when_health_check_hangs(monkeypatch):
     """
     import asyncio as _aio
 
-    from voicegateway.cli import onboard as onboard_mod
+    from voicegateway.utils.cli import onboard as onboard_mod
 
     monkeypatch.setattr(
         "voicegateway.core.registry._PROVIDER_REGISTRY", {"openai": object}
@@ -408,7 +408,7 @@ async def test_validate_returns_timeout_when_health_check_hangs(monkeypatch):
 
 
 async def test_validate_returns_failed_when_health_check_returns_false(monkeypatch):
-    from voicegateway.cli.onboard import _validate_provider_key
+    from voicegateway.utils.cli.onboard import _validate_provider_key
 
     monkeypatch.setattr(
         "voicegateway.core.registry._PROVIDER_REGISTRY", {"openai": object}
@@ -429,7 +429,7 @@ async def test_validate_returns_failed_when_health_check_returns_false(monkeypat
 
 
 async def test_validate_returns_failed_when_health_check_raises(monkeypatch):
-    from voicegateway.cli.onboard import _validate_provider_key
+    from voicegateway.utils.cli.onboard import _validate_provider_key
 
     monkeypatch.setattr(
         "voicegateway.core.registry._PROVIDER_REGISTRY", {"openai": object}
@@ -450,7 +450,7 @@ async def test_validate_returns_failed_when_health_check_raises(monkeypatch):
 
 
 async def test_validate_skipped_for_unknown_provider(monkeypatch):
-    from voicegateway.cli.onboard import _validate_provider_key
+    from voicegateway.utils.cli.onboard import _validate_provider_key
 
     monkeypatch.setattr(
         "voicegateway.core.registry._PROVIDER_REGISTRY", {"openai": object}
@@ -732,13 +732,13 @@ def test_smoke_test_runs_when_user_accepts(tmp_path, monkeypatch):
     from unittest.mock import MagicMock
 
     monkeypatch.setattr(
-        "voicegateway.cli.onboard.shutil.which",
+        "voicegateway.utils.cli.onboard.shutil.which",
         lambda _: "/fake/bin/voicegw",
     )
     fake_run = MagicMock(
         return_value=_sp.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
     )
-    monkeypatch.setattr("voicegateway.cli.onboard.subprocess.run", fake_run)
+    monkeypatch.setattr("voicegateway.utils.cli.onboard.subprocess.run", fake_run)
 
     cfg = tmp_path / "voicegw.yaml"
     # Trailing "y" accepts the smoke-test offer.
@@ -764,7 +764,7 @@ def test_smoke_test_skipped_when_user_declines(tmp_path, monkeypatch):
     from unittest.mock import MagicMock
 
     fake_run = MagicMock()
-    monkeypatch.setattr("voicegateway.cli.onboard.subprocess.run", fake_run)
+    monkeypatch.setattr("voicegateway.utils.cli.onboard.subprocess.run", fake_run)
 
     cfg = tmp_path / "voicegw.yaml"
     result = runner.invoke(
@@ -785,7 +785,7 @@ def test_smoke_test_failure_prints_pointer(tmp_path, monkeypatch):
     from unittest.mock import MagicMock
 
     monkeypatch.setattr(
-        "voicegateway.cli.onboard.shutil.which",
+        "voicegateway.utils.cli.onboard.shutil.which",
         lambda _: "/fake/bin/voicegw",
     )
     fake_run = MagicMock(
@@ -796,7 +796,7 @@ def test_smoke_test_failure_prints_pointer(tmp_path, monkeypatch):
             stderr="config\nfailed: details here\n",
         )
     )
-    monkeypatch.setattr("voicegateway.cli.onboard.subprocess.run", fake_run)
+    monkeypatch.setattr("voicegateway.utils.cli.onboard.subprocess.run", fake_run)
 
     cfg = tmp_path / "voicegw.yaml"
     result = runner.invoke(
@@ -820,7 +820,7 @@ def test_smoke_test_timeout_prints_pointer(tmp_path, monkeypatch):
     from unittest.mock import MagicMock
 
     monkeypatch.setattr(
-        "voicegateway.cli.onboard.shutil.which",
+        "voicegateway.utils.cli.onboard.shutil.which",
         lambda _: "/fake/bin/voicegw",
     )
 
@@ -828,7 +828,7 @@ def test_smoke_test_timeout_prints_pointer(tmp_path, monkeypatch):
         raise _sp.TimeoutExpired(cmd=args[0] if args else [], timeout=10.0)
 
     monkeypatch.setattr(
-        "voicegateway.cli.onboard.subprocess.run",
+        "voicegateway.utils.cli.onboard.subprocess.run",
         MagicMock(side_effect=_raise_timeout),
     )
 
@@ -851,9 +851,9 @@ def test_smoke_test_skipped_when_voicegw_not_on_path(tmp_path, monkeypatch):
     """
     from unittest.mock import MagicMock
 
-    monkeypatch.setattr("voicegateway.cli.onboard.shutil.which", lambda _: None)
+    monkeypatch.setattr("voicegateway.utils.cli.onboard.shutil.which", lambda _: None)
     fake_run = MagicMock()
-    monkeypatch.setattr("voicegateway.cli.onboard.subprocess.run", fake_run)
+    monkeypatch.setattr("voicegateway.utils.cli.onboard.subprocess.run", fake_run)
 
     cfg = tmp_path / "voicegw.yaml"
     result = runner.invoke(
@@ -869,7 +869,7 @@ def test_smoke_test_skipped_when_voicegw_not_on_path(tmp_path, monkeypatch):
 
 
 async def test_validate_skipped_when_plugin_not_installed(monkeypatch):
-    from voicegateway.cli.onboard import _validate_provider_key
+    from voicegateway.utils.cli.onboard import _validate_provider_key
 
     monkeypatch.setattr(
         "voicegateway.core.registry._PROVIDER_REGISTRY", {"openai": object}
