@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from voicegateway.pricing import llm, stt, tts
+from voicegateway.inference.pricing import llm, stt, tts
 
 
 def calculate_cost(

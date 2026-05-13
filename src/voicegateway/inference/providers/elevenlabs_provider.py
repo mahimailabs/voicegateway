@@ -1,54 +1,52 @@
-"""Deepgram provider — STT and TTS via livekit-plugins-deepgram."""
+"""ElevenLabs provider — TTS via livekit-plugins-elevenlabs."""
 
 from __future__ import annotations
 
 import os
 from typing import Any
 
-from voicegateway.providers.base import BaseProvider
+from voicegateway.inference.providers.base import BaseProvider
 
 
-class DeepgramProvider(BaseProvider):
+class ElevenLabsProvider(BaseProvider):
     def __init__(self, config: dict[str, Any]):
-        self.api_key = config.get("api_key") or os.environ.get("DEEPGRAM_API_KEY")
+        self.api_key = config.get("api_key") or os.environ.get("ELEVENLABS_API_KEY")
 
     def _ensure_plugin(self):
         try:
-            from livekit.plugins import deepgram
+            from livekit.plugins import elevenlabs
 
-            return deepgram
+            return elevenlabs
         except ImportError as e:
             raise ImportError(
-                "Deepgram plugin not installed. Run: pip install voicegateway[deepgram]"
+                "ElevenLabs plugin not installed. Run: pip install voicegateway[elevenlabs]"
             ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:
-        deepgram = self._ensure_plugin()
-        opts = {"model": model, **kwargs}
-        if self.api_key:
-            opts["api_key"] = self.api_key
-        return deepgram.STT(**opts)
+        self._unsupported("stt")
 
     def create_llm(self, model: str, **kwargs: Any) -> Any:
         self._unsupported("llm")
 
     def create_tts(self, model: str, voice: str | None = None, **kwargs: Any) -> Any:
-        deepgram = self._ensure_plugin()
-        if voice and voice not in model:
-            model = f"{model}-{voice}-en"
+        elevenlabs = self._ensure_plugin()
         opts = {"model": model, **kwargs}
         if self.api_key:
             opts["api_key"] = self.api_key
-        return deepgram.TTS(**opts)
+        if voice:
+            opts["voice_id"] = voice
+        return elevenlabs.TTS(**opts)
 
     async def health_check(self) -> bool:
         import httpx
 
+        if not self.api_key:
+            return False
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
-                    "https://api.deepgram.com/v1/projects",
-                    headers={"Authorization": f"Token {self.api_key}"},
+                    "https://api.elevenlabs.io/v1/voices",
+                    headers={"xi-api-key": self.api_key},
                     timeout=5.0,
                 )
                 return resp.status_code == 200

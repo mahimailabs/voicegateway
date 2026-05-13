@@ -9,7 +9,7 @@ from voicegateway.repository import replay_repository as replay
 from voicegateway.storage.sqlite import SQLiteStorage
 
 
-def _stt(session_id: str, t_ms: int, text: str) -> ReplayEvent:
+def stt(session_id: str, t_ms: int, text: str) -> ReplayEvent:
     return ReplayEvent(
         session_id=session_id,
         modality="stt",
@@ -20,7 +20,7 @@ def _stt(session_id: str, t_ms: int, text: str) -> ReplayEvent:
     )
 
 
-def _llm(session_id: str, t_ms: int, token: str) -> ReplayEvent:
+def llm(session_id: str, t_ms: int, token: str) -> ReplayEvent:
     return ReplayEvent(
         session_id=session_id,
         modality="llm",
@@ -63,8 +63,8 @@ async def test_bulk_write_round_trip(tmp_path) -> None:
     db_path = await _fresh_db(tmp_path)
     async with aiosqlite.connect(db_path) as db:
         events = [
-            _stt("s1", 100, "hello"),
-            _llm("s1", 500, "hi"),
+            stt("s1", 100, "hello"),
+            llm("s1", 500, "hi"),
             _state("s1", 510),
         ]
         n = await replay.bulk_write_events(db, events)
@@ -96,8 +96,8 @@ async def test_delete_replay_cascades_all_four_tables(tmp_path) -> None:
     db_path = await _fresh_db(tmp_path)
     async with aiosqlite.connect(db_path) as db:
         events = [
-            _stt("s1", 0, "a"),
-            _llm("s1", 100, "b"),
+            stt("s1", 0, "a"),
+            llm("s1", 100, "b"),
             _state("s1", 200),
         ]
         await replay.bulk_write_events(db, events)
@@ -130,7 +130,7 @@ async def test_delete_replay_cascades_all_four_tables(tmp_path) -> None:
 async def test_aggregate_storage_per_session(tmp_path) -> None:
     db_path = await _fresh_db(tmp_path)
     async with aiosqlite.connect(db_path) as db:
-        await replay.bulk_write_events(db, [_stt("s1", 0, "hello world")])
+        await replay.bulk_write_events(db, [stt("s1", 0, "hello world")])
         size = await replay.aggregate_storage_per_session(db, "s1")
         # Payload contains JSON with text+is_final+alternatives;
         # length should be at least 30 chars and at most a few hundred.

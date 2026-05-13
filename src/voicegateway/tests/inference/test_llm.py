@@ -1,4 +1,4 @@
-"""Tests for voicegateway.inference._llm.LLM."""
+"""Tests for voicegateway.inference.llm.LLM."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from typing import Any
 import pytest
 import yaml
 
-from voicegateway.inference import _factory, _llm
-from voicegateway.inference._resolution import ModelResolutionError
-from voicegateway.inference._session_context import get_session_id
+from voicegateway.inference import factory, llm
+from voicegateway.inference.resolution import ModelResolutionError
+from voicegateway.inference.session.context import get_session_id
 
 # ---------------------------------------------------------------------------
 # Fakes
@@ -69,7 +69,7 @@ def fake_provider(monkeypatch):
         _FakeProvider.last_provider_name = provider_name
         return _FakeProvider(config)
 
-    monkeypatch.setattr(_llm, "create_provider", _create)
+    monkeypatch.setattr(llm, "create_provider", _create)
     return _FakeProvider
 
 
@@ -93,7 +93,7 @@ def configured_gateway(tmp_path, monkeypatch):
     from voicegateway.core.gateway import Gateway
 
     gw = Gateway(config_path=str(config_path))
-    monkeypatch.setattr(_factory, "_gateway", gw)
+    monkeypatch.setattr(factory, "_gateway", gw)
     return gw
 
 
@@ -104,14 +104,14 @@ def configured_gateway(tmp_path, monkeypatch):
 
 class TestConstructorAcceptsLkSignatureParams:
     def test_minimal_call_with_only_model(self, configured_gateway, fake_provider):
-        result = _llm.LLM("openai/gpt-4o-mini")
+        result = llm.LLM("openai/gpt-4o-mini")
         assert result.__class__.__name__ == "InstrumentedLLM"
         assert result._wrapped.model == "gpt-4o-mini"
 
     def test_all_lk_params_accepted(self, configured_gateway, fake_provider):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            result = _llm.LLM(
+            result = llm.LLM(
                 "openai/gpt-4o-mini",
                 provider="openai",
                 base_url="https://example.test",
@@ -128,21 +128,21 @@ class TestModelResolution:
         # Explicit provider="openai" overrides any leading "anthropic/" segment
         # in the model string. The model string is used verbatim minus the
         # leading provider prefix.
-        _llm.LLM("anthropic/claude-3", provider="openai")
+        llm.LLM("anthropic/claude-3", provider="openai")
         assert fake_provider.last_provider_name == "openai"
         assert fake_provider.last_create_llm["model"] == "claude-3"
 
     def test_provider_kwarg_with_no_slash_in_model(
         self, configured_gateway, fake_provider
     ):
-        _llm.LLM("gpt-4o-mini", provider="openai")
+        llm.LLM("gpt-4o-mini", provider="openai")
         assert fake_provider.last_provider_name == "openai"
         assert fake_provider.last_create_llm["model"] == "gpt-4o-mini"
 
     def test_model_string_parsed_when_provider_omitted(
         self, configured_gateway, fake_provider
     ):
-        _llm.LLM("openai/gpt-4o-mini")
+        llm.LLM("openai/gpt-4o-mini")
         assert fake_provider.last_provider_name == "openai"
         assert fake_provider.last_create_llm["model"] == "gpt-4o-mini"
 
@@ -151,25 +151,25 @@ class TestModelResolution:
     ):
         # LLM does NOT have STT/TTS's colon-suffix convention. Ollama
         # tags like ":3b" must arrive at the plugin verbatim.
-        _llm.LLM("ollama/qwen2.5:3b")
+        llm.LLM("ollama/qwen2.5:3b")
         assert fake_provider.last_create_llm["model"] == "qwen2.5:3b"
 
     def test_missing_model_raises(self, configured_gateway, fake_provider):
         with pytest.raises(TypeError):
-            _llm.LLM()  # type: ignore[call-arg]
+            llm.LLM()  # type: ignore[call-arg]
 
     def test_empty_model_raises(self, configured_gateway, fake_provider):
         with pytest.raises(ValueError, match="non-empty model string"):
-            _llm.LLM("")
+            llm.LLM("")
 
     def test_unknown_provider_raises(self, configured_gateway, fake_provider):
         with pytest.raises(ModelResolutionError, match="Unknown provider"):
-            _llm.LLM("not-a-real-co/foo")
+            llm.LLM("not-a-real-co/foo")
 
 
 class TestKwargForwarding:
     def test_extra_kwargs_spread_to_create_llm(self, configured_gateway, fake_provider):
-        _llm.LLM(
+        llm.LLM(
             "openai/gpt-4o-mini",
             extra_kwargs={"temperature": 0.2, "max_tokens": 1024},
         )
@@ -177,11 +177,11 @@ class TestKwargForwarding:
         assert fake_provider.last_create_llm["max_tokens"] == 1024
 
     def test_base_url_forwarded(self, configured_gateway, fake_provider):
-        _llm.LLM("openai/gpt-4o-mini", base_url="https://my-proxy.test")
+        llm.LLM("openai/gpt-4o-mini", base_url="https://my-proxy.test")
         assert fake_provider.last_create_llm["base_url"] == "https://my-proxy.test"
 
     def test_omitted_params_not_forwarded(self, configured_gateway, fake_provider):
-        _llm.LLM("openai/gpt-4o-mini")
+        llm.LLM("openai/gpt-4o-mini")
         # Only `model` should appear; None defaults must NOT leak as
         # explicit kwargs.
         assert set(fake_provider.last_create_llm) == {"model"}
@@ -189,11 +189,11 @@ class TestKwargForwarding:
 
 class TestApiKeyOverride:
     def test_override_replaces_yaml_key(self, configured_gateway, fake_provider):
-        _llm.LLM("openai/gpt-4o-mini", api_key="per-call-override")
+        llm.LLM("openai/gpt-4o-mini", api_key="per-call-override")
         assert fake_provider.last_config["api_key"] == "per-call-override"
 
     def test_no_override_uses_yaml_key(self, configured_gateway, fake_provider):
-        _llm.LLM("openai/gpt-4o-mini")
+        llm.LLM("openai/gpt-4o-mini")
         assert fake_provider.last_config["api_key"] == "from-yaml-openai-key"
 
 
@@ -201,7 +201,7 @@ class TestSessionCorrelation:
     def test_construction_creates_session_id(self, configured_gateway, fake_provider):
         def _scenario():
             assert get_session_id() is None
-            _llm.LLM("openai/gpt-4o-mini")
+            llm.LLM("openai/gpt-4o-mini")
             return get_session_id()
 
         sid = contextvars.copy_context().run(_scenario)
@@ -212,9 +212,9 @@ class TestSessionCorrelation:
         self, configured_gateway, fake_provider
     ):
         def _scenario():
-            _llm.LLM("openai/gpt-4o-mini")
+            llm.LLM("openai/gpt-4o-mini")
             first = get_session_id()
-            _llm.LLM("openai/gpt-4o-mini")
+            llm.LLM("openai/gpt-4o-mini")
             second = get_session_id()
             return first, second
 
@@ -227,13 +227,13 @@ class TestUnsupportedParamWarnings:
     def test_api_secret_warns(self, configured_gateway, fake_provider):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            _llm.LLM("openai/gpt-4o-mini", api_secret="ignored")
+            llm.LLM("openai/gpt-4o-mini", api_secret="ignored")
         messages = [str(w.message) for w in caught]
         assert any("api_secret" in m for m in messages)
 
     def test_inference_class_warns(self, configured_gateway, fake_provider):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            _llm.LLM("openai/gpt-4o-mini", inference_class="standard")
+            llm.LLM("openai/gpt-4o-mini", inference_class="standard")
         messages = [str(w.message) for w in caught]
         assert any("inference_class" in m for m in messages)

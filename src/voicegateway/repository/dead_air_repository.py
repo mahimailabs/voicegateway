@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from voicegateway.inference._session_context import current_tenant
+from voicegateway.inference.session.context import current_tenant
 from voicegateway.middleware.dead_air_detector import DeadAirEvent
 
 if TYPE_CHECKING:

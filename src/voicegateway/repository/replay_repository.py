@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from voicegateway.inference._session_context import current_tenant
+from voicegateway.inference.session.context import current_tenant
 from voicegateway.middleware.replay_capture import ReplayEvent
 
 if TYPE_CHECKING:

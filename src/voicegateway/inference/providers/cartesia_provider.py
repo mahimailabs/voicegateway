@@ -1,25 +1,27 @@
-"""ElevenLabs provider — TTS via livekit-plugins-elevenlabs."""
+"""Cartesia provider — TTS via livekit-plugins-cartesia."""
 
 from __future__ import annotations
 
 import os
 from typing import Any
 
-from voicegateway.providers.base import BaseProvider
+from voicegateway.inference.providers.base import BaseProvider
+
+_CARTESIA_API_VERSION = "2025-04-16"
 
 
-class ElevenLabsProvider(BaseProvider):
+class CartesiaProvider(BaseProvider):
     def __init__(self, config: dict[str, Any]):
-        self.api_key = config.get("api_key") or os.environ.get("ELEVENLABS_API_KEY")
+        self.api_key = config.get("api_key") or os.environ.get("CARTESIA_API_KEY")
 
     def _ensure_plugin(self):
         try:
-            from livekit.plugins import elevenlabs
+            from livekit.plugins import cartesia
 
-            return elevenlabs
+            return cartesia
         except ImportError as e:
             raise ImportError(
-                "ElevenLabs plugin not installed. Run: pip install voicegateway[elevenlabs]"
+                "Cartesia plugin not installed. Run: pip install voicegateway[cartesia]"
             ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:
@@ -29,13 +31,13 @@ class ElevenLabsProvider(BaseProvider):
         self._unsupported("llm")
 
     def create_tts(self, model: str, voice: str | None = None, **kwargs: Any) -> Any:
-        elevenlabs = self._ensure_plugin()
+        cartesia = self._ensure_plugin()
         opts = {"model": model, **kwargs}
         if self.api_key:
             opts["api_key"] = self.api_key
         if voice:
-            opts["voice_id"] = voice
-        return elevenlabs.TTS(**opts)
+            opts["voice"] = voice
+        return cartesia.TTS(**opts)
 
     async def health_check(self) -> bool:
         import httpx
@@ -45,8 +47,11 @@ class ElevenLabsProvider(BaseProvider):
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
-                    "https://api.elevenlabs.io/v1/voices",
-                    headers={"xi-api-key": self.api_key},
+                    "https://api.cartesia.ai/voices",
+                    headers={
+                        "X-API-Key": self.api_key,
+                        "Cartesia-Version": _CARTESIA_API_VERSION,
+                    },
                     timeout=5.0,
                 )
                 return resp.status_code == 200

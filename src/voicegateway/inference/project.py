@@ -28,7 +28,7 @@ def get_active_project() -> str:
     if env_value:
         return env_value
 
-    from voicegateway.inference._factory import get_gateway
+    from voicegateway.inference.factory import get_gateway
 
     gateway = get_gateway()
     yaml_default = gateway.config.default_project

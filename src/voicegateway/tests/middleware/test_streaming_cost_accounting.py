@@ -10,13 +10,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from voicegateway.inference.pricing.catalog import calculate_cost
 from voicegateway.middleware.instrumented_provider import (
     InstrumentedLLM,
     InstrumentedSTT,
     InstrumentedTTS,
     _InstrumentedBase,
 )
-from voicegateway.pricing.catalog import calculate_cost
 from voicegateway.tests.fixtures.streaming._loader import (
     FIXTURES_DIR,
     discover_fixtures,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from voicegateway.inference._session_context import (
+from voicegateway.inference.session.context import (
     reset_tenant_id,
     set_tenant,
 )
@@ -108,7 +108,7 @@ async def test_deferred_attribution_fills_null_slot(storage) -> None:
 
 async def test_attach_session_sets_tenant_via_ctx_var(storage) -> None:
     """attach_session(tenant_id=...) flows through to the next log_request."""
-    from voicegateway.inference._session_attach import attach_session
+    from voicegateway.inference.session.attach import attach_session
 
     class FakeAgent:
         def __init__(self) -> None:

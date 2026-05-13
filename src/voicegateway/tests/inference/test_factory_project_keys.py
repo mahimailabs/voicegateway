@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 import yaml
 
-from voicegateway.inference import _factory, _llm, _project, _stt, _tts
+from voicegateway.inference import factory, llm, project, stt, tts
 
 
 class _FakeProvider:
@@ -58,9 +58,9 @@ class _Stub:
 @pytest.fixture(autouse=True)
 def _reset_state(monkeypatch):
     monkeypatch.delenv("VOICEGW_ACTIVE_PROJECT", raising=False)
-    _project.reset_project()
+    project.reset_project()
     yield
-    _project.reset_project()
+    project.reset_project()
 
 
 @pytest.fixture
@@ -70,9 +70,9 @@ def fake_providers(monkeypatch):
     def _create(_provider_name: str, config: dict[str, Any]) -> _FakeProvider:
         return _FakeProvider(config)
 
-    monkeypatch.setattr(_stt, "create_provider", _create)
-    monkeypatch.setattr(_llm, "create_provider", _create)
-    monkeypatch.setattr(_tts, "create_provider", _create)
+    monkeypatch.setattr(stt, "create_provider", _create)
+    monkeypatch.setattr(llm, "create_provider", _create)
+    monkeypatch.setattr(tts, "create_provider", _create)
     return _FakeProvider
 
 
@@ -114,7 +114,7 @@ def gateway_with_per_project_keys(tmp_path, monkeypatch):
     from voicegateway.core.gateway import Gateway
 
     gw = Gateway(config_path=str(config_path))
-    monkeypatch.setattr(_factory, "_gateway", gw)
+    monkeypatch.setattr(factory, "_gateway", gw)
     return gw
 
 
@@ -125,7 +125,7 @@ def gateway_with_per_project_keys(tmp_path, monkeypatch):
 
 def test_stt_uses_default_project_keys(gateway_with_per_project_keys, fake_providers):
     """default_project=mama-diner. mama overrides openai but not"""
-    _stt.STT("deepgram/nova-3")
+    stt.STT("deepgram/nova-3")
     assert fake_providers.last_config["api_key"] == "global-dg-key"
 
 
@@ -133,12 +133,12 @@ def test_llm_uses_default_project_overridden_key(
     gateway_with_per_project_keys, fake_providers
 ):
     """LLM(openai/...) under default_project=mama-diner picks up"""
-    _llm.LLM("openai/gpt-4o-mini")
+    llm.LLM("openai/gpt-4o-mini")
     assert fake_providers.last_config["api_key"] == "mama-openai-key"
 
 
 def test_tts_uses_default_project_keys(gateway_with_per_project_keys, fake_providers):
-    _tts.TTS("cartesia/sonic-3")
+    tts.TTS("cartesia/sonic-3")
     # mama-diner does not override cartesia → falls back to global.
     assert fake_providers.last_config["api_key"] == "global-cartesia-key"
 
@@ -151,24 +151,24 @@ def test_tts_uses_default_project_keys(gateway_with_per_project_keys, fake_provi
 def test_stt_uses_set_project_overridden_key(
     gateway_with_per_project_keys, fake_providers
 ):
-    _project.set_project("tony-pizza")
-    _stt.STT("deepgram/nova-3")
+    project.set_project("tony-pizza")
+    stt.STT("deepgram/nova-3")
     assert fake_providers.last_config["api_key"] == "tony-dg-key"
 
 
 def test_llm_uses_set_project_overridden_key(
     gateway_with_per_project_keys, fake_providers
 ):
-    _project.set_project("tony-pizza")
-    _llm.LLM("openai/gpt-4o-mini")
+    project.set_project("tony-pizza")
+    llm.LLM("openai/gpt-4o-mini")
     assert fake_providers.last_config["api_key"] == "tony-openai-key"
 
 
 def test_tts_uses_set_project_overridden_key(
     gateway_with_per_project_keys, fake_providers
 ):
-    _project.set_project("tony-pizza")
-    _tts.TTS("cartesia/sonic-3")
+    project.set_project("tony-pizza")
+    tts.TTS("cartesia/sonic-3")
     assert fake_providers.last_config["api_key"] == "tony-cartesia-key"
 
 
@@ -180,24 +180,24 @@ def test_tts_uses_set_project_overridden_key(
 def test_stt_api_key_kwarg_beats_project_override(
     gateway_with_per_project_keys, fake_providers
 ):
-    _project.set_project("tony-pizza")
-    _stt.STT("deepgram/nova-3", api_key="per-call-dg-override")
+    project.set_project("tony-pizza")
+    stt.STT("deepgram/nova-3", api_key="per-call-dg-override")
     assert fake_providers.last_config["api_key"] == "per-call-dg-override"
 
 
 def test_llm_api_key_kwarg_beats_project_override(
     gateway_with_per_project_keys, fake_providers
 ):
-    _project.set_project("tony-pizza")
-    _llm.LLM("openai/gpt-4o-mini", api_key="per-call-openai-override")
+    project.set_project("tony-pizza")
+    llm.LLM("openai/gpt-4o-mini", api_key="per-call-openai-override")
     assert fake_providers.last_config["api_key"] == "per-call-openai-override"
 
 
 def test_tts_api_key_kwarg_beats_project_override(
     gateway_with_per_project_keys, fake_providers
 ):
-    _project.set_project("tony-pizza")
-    _tts.TTS("cartesia/sonic-3", api_key="per-call-cartesia-override")
+    project.set_project("tony-pizza")
+    tts.TTS("cartesia/sonic-3", api_key="per-call-cartesia-override")
     assert fake_providers.last_config["api_key"] == "per-call-cartesia-override"
 
 
@@ -224,7 +224,7 @@ def test_legacy_global_only_config_still_resolves(
     from voicegateway.core.gateway import Gateway
 
     gw = Gateway(config_path=str(config_path))
-    monkeypatch.setattr(_factory, "_gateway", gw)
+    monkeypatch.setattr(factory, "_gateway", gw)
 
-    _llm.LLM("openai/gpt-4o-mini")
+    llm.LLM("openai/gpt-4o-mini")
     assert fake_providers.last_config["api_key"] == "legacy-key"

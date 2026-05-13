@@ -1,10 +1,10 @@
-"""Unit tests for voicegateway.pricing.catalog."""
+"""Unit tests for voicegateway.inference.pricing.catalog."""
 
 from __future__ import annotations
 
 from decimal import Decimal
 
-from voicegateway.pricing import catalog, llm, stt, tts
+from voicegateway.inference.pricing import catalog, llm, stt, tts
 
 # ----- calculate_cost dispatch -----------------------------------------
 

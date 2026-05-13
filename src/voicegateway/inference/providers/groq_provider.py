@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from voicegateway.providers.base import BaseProvider
+from voicegateway.inference.providers.base import BaseProvider
 
 
 class GroqProvider(BaseProvider):

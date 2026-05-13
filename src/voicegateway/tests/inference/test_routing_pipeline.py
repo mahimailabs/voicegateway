@@ -7,7 +7,7 @@ import time
 import pytest
 
 from voicegateway.core.config import ProjectConfig, RoutingConfig
-from voicegateway.inference._session_context import (
+from voicegateway.inference.session.context import (
     reset_routing_decision,
     set_routing_decision,
 )
@@ -44,7 +44,7 @@ def _req(session_id: str, project: str) -> RequestRecord:
     )
 
 
-async def _project(project_id: str, budget_ms: int) -> ProjectConfig:
+async def project(project_id: str, budget_ms: int) -> ProjectConfig:
     return ProjectConfig(
         id=project_id,
         name=project_id,
@@ -64,9 +64,9 @@ async def test_three_projects_get_distinct_routes(storage) -> None:
     """A tight, mid, and loose budget all pick from the same rosters"""
     db = await storage._ensure_initialized()
 
-    tight = await _project("tight", budget_ms=300)  # 250+80+150=480 > 300
-    mid = await _project("mid", budget_ms=600)
-    loose = await _project("loose", budget_ms=2000)
+    tight = await project("tight", budget_ms=300)  # 250+80+150=480 > 300
+    mid = await project("mid", budget_ms=600)
+    loose = await project("loose", budget_ms=2000)
 
     for project_id, pc, sid in [
         ("tight", tight, "s-tight"),
@@ -107,7 +107,7 @@ async def test_three_projects_get_distinct_routes(storage) -> None:
 async def test_pipeline_persists_immutable_triple(storage) -> None:
     """A second request on the same session with no routing decision"""
     db = await storage._ensure_initialized()
-    pc = await _project("acme", budget_ms=600)
+    pc = await project("acme", budget_ms=600)
     triple = await router.route_session(db, project_id="acme", project_config=pc)
     set_routing_decision(
         (triple.stt, triple.llm, triple.tts, 600, triple.budget_overrun)

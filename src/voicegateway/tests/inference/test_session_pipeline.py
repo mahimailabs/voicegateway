@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from voicegateway.inference._session_context import (
+from voicegateway.inference.session.context import (
     get_or_create_session_id,
     reset_session_id,
 )

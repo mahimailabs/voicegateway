@@ -90,7 +90,7 @@ async def test_cartesia_batch_expected_cost_matches_catalog(
     recorder: ModuleType,
 ) -> None:
     """expected_cost_usd is computed via the TTS catalog at recording time."""
-    from voicegateway.pricing.catalog import calculate_cost
+    from voicegateway.inference.pricing.catalog import calculate_cost
 
     audio = _fake_audio_bytes()
     async with respx.mock(assert_all_called=True) as router:
@@ -251,11 +251,11 @@ def _patch_cartesia_ws(
     async def _fake_cm() -> Any:
         yield fake
 
-    def _factory(url: str) -> Any:
+    def factory(url: str) -> Any:
         captured["url"] = url
         return _fake_cm()
 
-    monkeypatch.setattr(recorder, "_open_cartesia_websocket", _factory)
+    monkeypatch.setattr(recorder, "_open_cartesia_websocket", factory)
     return captured
 
 
@@ -348,7 +348,7 @@ async def test_cartesia_stream_request_block_in_fixture_carries_context_id(
 async def test_cartesia_stream_expected_cost_matches_catalog(
     recorder: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from voicegateway.pricing.catalog import calculate_cost
+    from voicegateway.inference.pricing.catalog import calculate_cost
 
     fake = _FakeCartesiaWS(_cartesia_stream_responses())
     _patch_cartesia_ws(recorder, monkeypatch, fake)

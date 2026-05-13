@@ -9,7 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.inference._session_context import (
+from voicegateway.inference.session.context import (
     get_or_freeze_guardrail_policy_snapshot,
     reset_session_id,
     start_session,
@@ -44,7 +44,7 @@ async def _seed_session(
     project: str = "test-project",
     tenant_id: str | None = None,
 ) -> None:
-    from voicegateway.inference._session_context import set_tenant
+    from voicegateway.inference.session.context import set_tenant
 
     if tenant_id is not None:
         set_tenant(tenant_id)

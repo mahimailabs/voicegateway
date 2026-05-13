@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from voicegateway.core.config import ConfigError
-from voicegateway.inference import _factory, _llm, _project, _stt, _tts
+from voicegateway.inference import factory, llm, project, stt, tts
 
 
 class _LkShapedStub:
@@ -49,10 +49,10 @@ class _FakeProvider:
 @pytest.fixture(autouse=True)
 def _reset_state(monkeypatch):
     monkeypatch.delenv("VOICEGW_ACTIVE_PROJECT", raising=False)
-    _project.reset_project()
+    project.reset_project()
     _FakeProvider.last_config = None
     yield
-    _project.reset_project()
+    project.reset_project()
 
 
 @pytest.fixture
@@ -60,9 +60,9 @@ def fake_create_provider(monkeypatch):
     def _create(_provider_name: str, config: dict[str, Any]) -> _FakeProvider:
         return _FakeProvider(config)
 
-    monkeypatch.setattr(_stt, "create_provider", _create)
-    monkeypatch.setattr(_llm, "create_provider", _create)
-    monkeypatch.setattr(_tts, "create_provider", _create)
+    monkeypatch.setattr(stt, "create_provider", _create)
+    monkeypatch.setattr(llm, "create_provider", _create)
+    monkeypatch.setattr(tts, "create_provider", _create)
     return _create
 
 
@@ -83,7 +83,7 @@ def _build_gateway(tmp_path, monkeypatch, projects: dict | None = None):
     from voicegateway.core.gateway import Gateway
 
     gw = Gateway(config_path=str(cfg_path))
-    monkeypatch.setattr(_factory, "_gateway", gw)
+    monkeypatch.setattr(factory, "_gateway", gw)
     return gw
 
 
@@ -96,10 +96,10 @@ def test_stt_missing_key_raises_naming_provider_and_project(
     tmp_path, monkeypatch, fake_create_provider
 ):
     _build_gateway(tmp_path, monkeypatch)
-    _project.set_project("mama-diner")
+    project.set_project("mama-diner")
 
     with pytest.raises(ConfigError) as excinfo:
-        _stt.STT("deepgram/nova-3")
+        stt.STT("deepgram/nova-3")
 
     msg = str(excinfo.value)
     assert "deepgram" in msg
@@ -112,10 +112,10 @@ def test_llm_missing_key_raises_naming_provider_and_project(
     tmp_path, monkeypatch, fake_create_provider
 ):
     _build_gateway(tmp_path, monkeypatch)
-    _project.set_project("tony-pizza")
+    project.set_project("tony-pizza")
 
     with pytest.raises(ConfigError) as excinfo:
-        _llm.LLM("openai/gpt-4o-mini")
+        llm.LLM("openai/gpt-4o-mini")
 
     msg = str(excinfo.value)
     assert "openai" in msg
@@ -126,10 +126,10 @@ def test_tts_missing_key_raises_naming_provider_and_project(
     tmp_path, monkeypatch, fake_create_provider
 ):
     _build_gateway(tmp_path, monkeypatch)
-    _project.set_project("voice-app")
+    project.set_project("voice-app")
 
     with pytest.raises(ConfigError) as excinfo:
-        _tts.TTS("cartesia/sonic-3")
+        tts.TTS("cartesia/sonic-3")
 
     msg = str(excinfo.value)
     assert "cartesia" in msg
@@ -145,7 +145,7 @@ def test_local_whisper_stt_does_not_require_api_key(
     tmp_path, monkeypatch, fake_create_provider
 ):
     _build_gateway(tmp_path, monkeypatch)
-    _stt.STT("whisper/large-v3")
+    stt.STT("whisper/large-v3")
     assert _FakeProvider.last_config is not None
     assert "api_key" not in _FakeProvider.last_config
 
@@ -154,7 +154,7 @@ def test_local_ollama_llm_does_not_require_api_key(
     tmp_path, monkeypatch, fake_create_provider
 ):
     _build_gateway(tmp_path, monkeypatch)
-    _llm.LLM("ollama/qwen2.5:3b")
+    llm.LLM("ollama/qwen2.5:3b")
     assert _FakeProvider.last_config is not None
     assert "api_key" not in _FakeProvider.last_config
 
@@ -163,7 +163,7 @@ def test_local_kokoro_tts_does_not_require_api_key(
     tmp_path, monkeypatch, fake_create_provider
 ):
     _build_gateway(tmp_path, monkeypatch)
-    _tts.TTS("kokoro/v019")
+    tts.TTS("kokoro/v019")
     assert _FakeProvider.last_config is not None
     assert "api_key" not in _FakeProvider.last_config
 
@@ -172,7 +172,7 @@ def test_local_piper_tts_does_not_require_api_key(
     tmp_path, monkeypatch, fake_create_provider
 ):
     _build_gateway(tmp_path, monkeypatch)
-    _tts.TTS("piper/en_US-lessac-medium")
+    tts.TTS("piper/en_US-lessac-medium")
     assert _FakeProvider.last_config is not None
 
 
@@ -185,7 +185,7 @@ def test_per_call_api_key_kwarg_satisfies_preflight(
     tmp_path, monkeypatch, fake_create_provider
 ):
     _build_gateway(tmp_path, monkeypatch)
-    _stt.STT("deepgram/nova-3", api_key="explicit-override")
+    stt.STT("deepgram/nova-3", api_key="explicit-override")
     assert _FakeProvider.last_config is not None
     assert _FakeProvider.last_config["api_key"] == "explicit-override"
 
@@ -208,8 +208,8 @@ def test_per_project_yaml_key_satisfies_preflight(
             }
         },
     )
-    _project.set_project("tony-pizza")
-    _stt.STT("deepgram/nova-3")
+    project.set_project("tony-pizza")
+    stt.STT("deepgram/nova-3")
     assert _FakeProvider.last_config["api_key"] == "tony-dg-key"
 
 
@@ -228,10 +228,10 @@ def test_other_project_in_yaml_does_not_satisfy_preflight(
             "mama-diner": {"name": "Mama"},
         },
     )
-    _project.set_project("mama-diner")
+    project.set_project("mama-diner")
 
     with pytest.raises(ConfigError) as excinfo:
-        _stt.STT("deepgram/nova-3")
+        stt.STT("deepgram/nova-3")
 
     msg = str(excinfo.value)
     assert "mama-diner" in msg
@@ -255,7 +255,7 @@ def test_empty_api_key_treated_as_missing(tmp_path, monkeypatch, fake_create_pro
             }
         },
     )
-    _project.set_project("tony-pizza")
+    project.set_project("tony-pizza")
 
     with pytest.raises(ConfigError):
-        _stt.STT("deepgram/nova-3")
+        stt.STT("deepgram/nova-3")

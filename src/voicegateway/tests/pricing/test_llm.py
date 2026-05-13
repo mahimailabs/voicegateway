@@ -1,4 +1,4 @@
-"""Unit tests for voicegateway.pricing.llm."""
+"""Unit tests for voicegateway.inference.pricing.llm."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from voicegateway.pricing import llm
+from voicegateway.inference.pricing import llm
 
 
 def test_pricing_source_format() -> None:

@@ -45,7 +45,7 @@ def test_create_provider_unknown_error_lists_alternatives() -> None:
 
 def test_create_provider_known_name_returns_instance() -> None:
     """Creating an Ollama provider returns a BaseProvider subclass instance."""
-    from voicegateway.providers.base import BaseProvider
+    from voicegateway.inference.providers.base import BaseProvider
 
     provider = registry.create_provider("ollama", {})
     assert isinstance(provider, BaseProvider)

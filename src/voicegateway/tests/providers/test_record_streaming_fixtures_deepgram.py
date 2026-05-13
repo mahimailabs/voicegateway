@@ -133,7 +133,7 @@ async def test_deepgram_batch_expected_cost_matches_catalog(
     recorder: ModuleType,
 ) -> None:
     """expected_cost_usd is computed at recording time via the STT catalog."""
-    from voicegateway.pricing.catalog import calculate_cost
+    from voicegateway.inference.pricing.catalog import calculate_cost
 
     response_payload = _deepgram_batch_response(duration_seconds=3.0)
     async with respx.mock(assert_all_called=True) as router:
@@ -288,12 +288,12 @@ def _patch_deepgram_ws(
     async def _fake_cm() -> Any:
         yield fake
 
-    def _factory(url: str, api_key: str) -> Any:
+    def factory(url: str, api_key: str) -> Any:
         captured["url"] = url
         captured["api_key"] = api_key
         return _fake_cm()
 
-    monkeypatch.setattr(recorder, "_open_deepgram_websocket", _factory)
+    monkeypatch.setattr(recorder, "_open_deepgram_websocket", factory)
     return captured
 
 
@@ -399,7 +399,7 @@ async def test_deepgram_stream_sends_finalize_then_close(
 async def test_deepgram_stream_expected_cost_matches_catalog(
     recorder: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from voicegateway.pricing.catalog import calculate_cost
+    from voicegateway.inference.pricing.catalog import calculate_cost
 
     fake = _FakeDeepgramWS(_stream_responses(duration_seconds=3.0))
     _patch_deepgram_ws(recorder, monkeypatch, fake)

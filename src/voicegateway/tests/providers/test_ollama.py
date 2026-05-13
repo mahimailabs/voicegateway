@@ -2,7 +2,7 @@
 
 import pytest
 
-from voicegateway.providers.ollama_provider import OllamaProvider
+from voicegateway.inference.providers.ollama_provider import OllamaProvider
 
 
 def _has_openai_plugin():

@@ -36,7 +36,7 @@ async def _seed_observations(storage, rows):
     await db.commit()
 
 
-def _project(budget_ms=600, fallback=True):
+def project(budget_ms=600, fallback=True):
     return ProjectConfig(
         id="default",
         name="Default",
@@ -66,7 +66,7 @@ async def test_picks_lowest_under_budget(storage) -> None:
     )
     db = await storage._ensure_initialized()
     triple = await router.route_session(
-        db, project_id="default", project_config=_project(budget_ms=600)
+        db, project_id="default", project_config=project(budget_ms=600)
     )
     assert triple.stt == "deepgram"
     assert triple.llm == "groq"
@@ -144,7 +144,7 @@ async def test_caller_overrides_pin_modalities(storage) -> None:
     triple = await router.route_session(
         db,
         project_id="default",
-        project_config=_project(budget_ms=600),
+        project_config=project(budget_ms=600),
         caller_overrides={"llm": "openai"},
     )
     assert triple.llm == "openai"
@@ -157,7 +157,7 @@ async def test_falls_back_to_baselines_when_no_observations(storage) -> None:
     """No observations seeded; router should use provider_baselines.json."""
     db = await storage._ensure_initialized()
     triple = await router.route_session(
-        db, project_id="default", project_config=_project(budget_ms=600)
+        db, project_id="default", project_config=project(budget_ms=600)
     )
     # provider_baselines.json: deepgram stt 250 + groq llm 80 + cartesia tts 150 = 480 (under 600)
     assert triple.stt == "deepgram"
@@ -172,7 +172,7 @@ async def test_unknown_override_modality_raises(storage) -> None:
         await router.route_session(
             db,
             project_id="default",
-            project_config=_project(budget_ms=600),
+            project_config=project(budget_ms=600),
             caller_overrides={"audio": "deepgram"},
         )
 
@@ -206,7 +206,7 @@ async def test_observed_p50_beats_baseline(storage) -> None:
     )
     db = await storage._ensure_initialized()
     triple = await router.route_session(
-        db, project_id="default", project_config=_project(budget_ms=600)
+        db, project_id="default", project_config=project(budget_ms=600)
     )
     # With observed values, openai (200) beats groq (500): 100+200+150=450.
     assert triple.llm == "openai"

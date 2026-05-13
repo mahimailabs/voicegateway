@@ -1,0 +1,47 @@
+"""Session correlation: ContextVars and LiveKit AgentSession attach helpers."""
+
+from voicegateway.inference.session.attach import (
+    attach_session,
+    register_components,
+    reset_components,
+)
+from voicegateway.inference.session.context import (
+    current_guardrail_policy_snapshot,
+    current_guardrails_bypassed,
+    current_routing_decision,
+    current_tenant,
+    get_or_create_session_id,
+    get_or_freeze_guardrail_policy_snapshot,
+    get_session_id,
+    guardrail_bypass_already_logged,
+    mark_guardrail_bypass_logged,
+    reset_routing_decision,
+    reset_session_id,
+    reset_tenant_id,
+    set_guardrails_bypassed,
+    set_routing_decision,
+    set_tenant,
+    start_session,
+)
+
+__all__ = [
+    "attach_session",
+    "current_guardrail_policy_snapshot",
+    "current_guardrails_bypassed",
+    "current_routing_decision",
+    "current_tenant",
+    "get_or_create_session_id",
+    "get_or_freeze_guardrail_policy_snapshot",
+    "get_session_id",
+    "guardrail_bypass_already_logged",
+    "mark_guardrail_bypass_logged",
+    "register_components",
+    "reset_components",
+    "reset_routing_decision",
+    "reset_session_id",
+    "reset_tenant_id",
+    "set_guardrails_bypassed",
+    "set_routing_decision",
+    "set_tenant",
+    "start_session",
+]

@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from voicegateway.providers.base import BaseProvider
+from voicegateway.inference.providers.base import BaseProvider
 
 
 class OpenAIProvider(BaseProvider):

@@ -5,7 +5,7 @@ from __future__ import annotations
 import statistics
 from typing import TYPE_CHECKING
 
-from voicegateway.inference._session_context import current_tenant
+from voicegateway.inference.session.context import current_tenant
 from voicegateway.middleware.turn_tracker import TurnRow
 
 if TYPE_CHECKING:

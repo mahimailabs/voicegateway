@@ -6,7 +6,7 @@ import sqlite3
 import time
 import uuid
 
-from voicegateway.inference._session_context import (
+from voicegateway.inference.session.context import (
     get_or_freeze_guardrail_policy_snapshot,
     reset_session_id,
     start_session,

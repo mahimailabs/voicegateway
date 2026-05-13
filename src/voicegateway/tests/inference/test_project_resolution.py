@@ -8,8 +8,8 @@ import contextvars
 import pytest
 import yaml
 
-from voicegateway.inference import _factory, _project
-from voicegateway.inference._project import (
+from voicegateway.inference import factory, project
+from voicegateway.inference.project import (
     get_active_project,
     reset_project,
     set_project,
@@ -41,7 +41,7 @@ def _build_gateway(tmp_path, *, projects: dict, default_project: str | None = No
 def empty_projects_gw(tmp_path, monkeypatch):
     """A gateway whose voicegw.yaml has NO projects configured."""
     gw = _build_gateway(tmp_path, projects={})
-    monkeypatch.setattr(_factory, "_gateway", gw)
+    monkeypatch.setattr(factory, "_gateway", gw)
     return gw
 
 
@@ -56,7 +56,7 @@ def projects_no_default_gw(tmp_path, monkeypatch):
         },
         default_project=None,
     )
-    monkeypatch.setattr(_factory, "_gateway", gw)
+    monkeypatch.setattr(factory, "_gateway", gw)
     return gw
 
 
@@ -71,7 +71,7 @@ def projects_with_default_gw(tmp_path, monkeypatch):
         },
         default_project="tony-pizza",
     )
-    monkeypatch.setattr(_factory, "_gateway", gw)
+    monkeypatch.setattr(factory, "_gateway", gw)
     return gw
 
 
@@ -195,7 +195,7 @@ def test_inference_package_re_exports_set_and_get_active_project():
     """``voicegateway.inference.set_project`` and"""
     from voicegateway import inference
 
-    assert inference.set_project is _project.set_project
-    assert inference.get_active_project is _project.get_active_project
+    assert inference.set_project is project.set_project
+    assert inference.get_active_project is project.get_active_project
     assert "set_project" in inference.__all__
     assert "get_active_project" in inference.__all__

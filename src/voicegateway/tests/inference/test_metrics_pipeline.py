@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from voicegateway.inference import attach_session
-from voicegateway.inference._session_attach import reset_components
+from voicegateway.inference.session.attach import reset_components
 from voicegateway.middleware.dead_air_detector import DeadAirDetector, DeadAirEvent
 from voicegateway.middleware.turn_tracker import TurnRow, TurnTracker
 

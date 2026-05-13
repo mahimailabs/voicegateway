@@ -25,7 +25,7 @@ class _InstrumentedBase:
     _wrapped: Any
     _model_id: str
     _provider: str
-    _project: str
+    project: str
     _cost_tracker: CostTracker
     _storage: SQLiteStorage | None
     _start_time: float
@@ -45,7 +45,7 @@ class _InstrumentedBase:
         self._wrapped = wrapped
         self._model_id = model_id
         self._provider = provider
-        self._project = project
+        self.project = project
         self._cost_tracker = cost_tracker
         self._storage = storage
         self._start_time = time.perf_counter()
@@ -86,13 +86,13 @@ class _InstrumentedBase:
             else total_ms
         )
 
-        from voicegateway.inference._session_context import get_session_id
+        from voicegateway.inference.session.context import get_session_id
 
         record = self._cost_tracker.create_record(
             model_id=self._model_id,
             modality=self._modality,
             provider=self._provider,
-            project=self._project,
+            project=self.project,
             input_units=input_units,
             output_units=output_units,
             ttfb_ms=ttfb_ms,
@@ -262,8 +262,8 @@ class InstrumentedLLM(lk_llm.LLM, _InstrumentedBase):
 
     def _apply_guardrails(self, *, chat_ctx: Any, tools: Any) -> tuple[Any, Any]:
         """Inject the guardrail prompt/tool when the project is active."""
-        from voicegateway.inference._factory import get_gateway
-        from voicegateway.inference._session_context import (
+        from voicegateway.inference.factory import get_gateway
+        from voicegateway.inference.session.context import (
             current_guardrails_bypassed,
             current_tenant,
             get_or_create_session_id,
@@ -285,7 +285,7 @@ class InstrumentedLLM(lk_llm.LLM, _InstrumentedBase):
 
         try:
             gateway = get_gateway()
-            project_cfg = gateway.config.projects.get(self._project)
+            project_cfg = gateway.config.projects.get(self.project)
         except Exception:
             project_cfg = None
 

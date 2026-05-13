@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from voicegateway.inference._session_context import (
+from voicegateway.inference.session.context import (
     reset_tenant_id,
     set_tenant,
 )

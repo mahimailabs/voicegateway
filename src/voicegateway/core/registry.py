@@ -5,21 +5,36 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from voicegateway.providers.base import BaseProvider
+    from voicegateway.inference.providers.base import BaseProvider
 
 
 _PROVIDER_REGISTRY: dict[str, tuple[str, str]] = {
-    "openai": ("voicegateway.providers.openai_provider", "OpenAIProvider"),
-    "deepgram": ("voicegateway.providers.deepgram_provider", "DeepgramProvider"),
-    "cartesia": ("voicegateway.providers.cartesia_provider", "CartesiaProvider"),
-    "anthropic": ("voicegateway.providers.anthropic_provider", "AnthropicProvider"),
-    "groq": ("voicegateway.providers.groq_provider", "GroqProvider"),
-    "elevenlabs": ("voicegateway.providers.elevenlabs_provider", "ElevenLabsProvider"),
-    "assemblyai": ("voicegateway.providers.assemblyai_provider", "AssemblyAIProvider"),
-    "ollama": ("voicegateway.providers.ollama_provider", "OllamaProvider"),
-    "whisper": ("voicegateway.providers.whisper_provider", "WhisperProvider"),
-    "kokoro": ("voicegateway.providers.kokoro_provider", "KokoroProvider"),
-    "piper": ("voicegateway.providers.piper_provider", "PiperProvider"),
+    "openai": ("voicegateway.inference.providers.openai_provider", "OpenAIProvider"),
+    "deepgram": (
+        "voicegateway.inference.providers.deepgram_provider",
+        "DeepgramProvider",
+    ),
+    "cartesia": (
+        "voicegateway.inference.providers.cartesia_provider",
+        "CartesiaProvider",
+    ),
+    "anthropic": (
+        "voicegateway.inference.providers.anthropic_provider",
+        "AnthropicProvider",
+    ),
+    "groq": ("voicegateway.inference.providers.groq_provider", "GroqProvider"),
+    "elevenlabs": (
+        "voicegateway.inference.providers.elevenlabs_provider",
+        "ElevenLabsProvider",
+    ),
+    "assemblyai": (
+        "voicegateway.inference.providers.assemblyai_provider",
+        "AssemblyAIProvider",
+    ),
+    "ollama": ("voicegateway.inference.providers.ollama_provider", "OllamaProvider"),
+    "whisper": ("voicegateway.inference.providers.whisper_provider", "WhisperProvider"),
+    "kokoro": ("voicegateway.inference.providers.kokoro_provider", "KokoroProvider"),
+    "piper": ("voicegateway.inference.providers.piper_provider", "PiperProvider"),
 }
 
 

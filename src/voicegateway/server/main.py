@@ -21,8 +21,8 @@ from voicegateway.core.auth import (
     resolve_cors_origins,
     verify_virtual_key,
 )
-from voicegateway.inference._session_context import set_tenant
-from voicegateway.pricing import catalog
+from voicegateway.inference.pricing import catalog
+from voicegateway.inference.session.context import set_tenant
 from voicegateway.repository import (
     guardrail_events_repository as guardrail_events,
 )
@@ -210,9 +210,9 @@ def build_app(gateway: Gateway) -> FastAPI:
                 else "cloud",
             }
 
-        from voicegateway.pricing import llm as _llm_pricing
-        from voicegateway.pricing import stt as _stt_pricing
-        from voicegateway.pricing import tts as _tts_pricing
+        from voicegateway.inference.pricing import llm as _llm_pricing
+        from voicegateway.inference.pricing import stt as _stt_pricing
+        from voicegateway.inference.pricing import tts as _tts_pricing
 
         pricing = {
             "llm": {"source": _llm_pricing.PRICING_SOURCE},
