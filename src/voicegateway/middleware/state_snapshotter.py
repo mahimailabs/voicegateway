@@ -7,23 +7,13 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any, Final
 
-from pydantic import BaseModel, Field
-
 from voicegateway.inference._session_context import get_session_id
+from voicegateway.schemas.state_snapshot import StateSnapshot
 
 logger = logging.getLogger(__name__)
 
 
 _DEFAULT_MIN_INTERVAL_SECONDS: Final[float] = 1.0
-
-
-class StateSnapshot(BaseModel):
-    """One captured conversation-state snapshot."""
-
-    system_prompt: str = ""
-    message_history: list[dict[str, Any]] = Field(default_factory=list)
-    tool_call_in_flight: dict[str, Any] | None = None
-    structured_output_collected: dict[str, Any] | None = None
 
 
 SnapshotCallback = Callable[[dict[str, Any]], Awaitable[None]]

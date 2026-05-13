@@ -14,7 +14,8 @@ from voicegateway.mcp.errors import (
     ReadOnlyResourceError,
     ValidationError,
 )
-from voicegateway.mcp.schemas import (
+from voicegateway.mcp.tools.base import ToolDef, make_tool
+from voicegateway.schemas.mcp import (
     AddProviderInput,
     DeleteProviderInput,
     GetProviderInput,
@@ -26,7 +27,6 @@ from voicegateway.mcp.schemas import (
     VgSetProviderKeyInput,
     VgTestProviderKeyInput,
 )
-from voicegateway.mcp.tools.base import ToolDef, make_tool
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway

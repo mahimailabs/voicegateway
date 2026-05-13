@@ -13,7 +13,6 @@ from typing import Any
 
 import aiosqlite
 
-from voicegateway.core.guardrail_policy import GuardrailPolicy
 from voicegateway.inference._session_context import (
     current_guardrail_policy_snapshot,
     current_guardrails_bypassed,
@@ -31,6 +30,7 @@ from voicegateway.repository import (
 from voicegateway.repository import (
     turns_repository as turns,
 )
+from voicegateway.schemas.guardrail_policy import GuardrailPolicy
 from voicegateway.utils.percentiles import compute_percentiles
 
 _DEFAULT_PERCENTILES: list[float] = [50.0, 95.0, 99.0]

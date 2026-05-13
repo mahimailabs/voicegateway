@@ -15,12 +15,6 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from voicegateway.core.auth import load_api_keys, resolve_cors_origins
-from voicegateway.core.guardrail_policy import (
-    ACTIVE_GUARDRAIL_ACTIONS,
-    GUARDRAIL_CATEGORIES,
-    GUARDRAIL_CATEGORY_DESCRIPTIONS,
-    GuardrailPolicy,
-)
 from voicegateway.repository import (
     dead_air_repository as dead_air,
 )
@@ -41,6 +35,12 @@ from voicegateway.repository import (
 )
 from voicegateway.repository import (
     virtual_keys_repository as virtual_keys,
+)
+from voicegateway.schemas.guardrail_policy import (
+    ACTIVE_GUARDRAIL_ACTIONS,
+    GUARDRAIL_CATEGORIES,
+    GUARDRAIL_CATEGORY_DESCRIPTIONS,
+    GuardrailPolicy,
 )
 
 if TYPE_CHECKING:

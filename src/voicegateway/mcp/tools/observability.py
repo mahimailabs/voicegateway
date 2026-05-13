@@ -7,14 +7,14 @@ from typing import TYPE_CHECKING, Any
 
 from voicegateway import __version__ as VOICEGW_VERSION
 from voicegateway.mcp.errors import ValidationError
-from voicegateway.mcp.schemas import (
+from voicegateway.mcp.tools.base import ToolDef, make_tool
+from voicegateway.schemas.mcp import (
     GetCostsInput,
     GetHealthInput,
     GetLatencyStatsInput,
     GetLogsInput,
     GetProviderStatusInput,
 )
-from voicegateway.mcp.tools.base import ToolDef, make_tool
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway

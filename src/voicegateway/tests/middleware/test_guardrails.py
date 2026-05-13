@@ -9,10 +9,6 @@ from unittest.mock import MagicMock
 import pytest
 from livekit.agents import llm as lk_llm
 
-from voicegateway.core.guardrail_policy import (
-    REPORT_GUARDRAIL_TOOL_NAME,
-    GuardrailPolicy,
-)
 from voicegateway.inference import _factory
 from voicegateway.inference._session_context import reset_session_id, start_session
 from voicegateway.middleware.guardrails import (
@@ -24,6 +20,10 @@ from voicegateway.middleware.guardrails import (
 )
 from voicegateway.middleware.instrumented_provider import InstrumentedLLM
 from voicegateway.repository import guardrail_events_repository as guardrail_events
+from voicegateway.schemas.guardrail_policy import (
+    REPORT_GUARDRAIL_TOOL_NAME,
+    GuardrailPolicy,
+)
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

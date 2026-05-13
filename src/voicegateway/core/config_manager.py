@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from voicegateway.core.config import GatewayConfig, ProjectConfig
 from voicegateway.core.crypto import decrypt
-from voicegateway.core.guardrail_policy import GuardrailPolicy
+from voicegateway.schemas.guardrail_policy import GuardrailPolicy
 
 if TYPE_CHECKING:
     from voicegateway.storage.sqlite import SQLiteStorage
