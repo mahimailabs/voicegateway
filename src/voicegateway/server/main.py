@@ -29,7 +29,7 @@ from voicegateway.repository import (
 from voicegateway.repository import (
     virtual_keys_repository as virtual_keys,
 )
-from voicegateway.schemas.guardrail_policy import (
+from voicegateway.schemas.guardrail_policy_schema import (
     ACTIVE_GUARDRAIL_ACTIONS,
     GUARDRAIL_CATEGORIES,
     GUARDRAIL_CATEGORY_DESCRIPTIONS,
@@ -89,7 +89,7 @@ def _attach_layered_stack(app: FastAPI, gateway: Gateway) -> None:
     from voicegateway.core.exceptions import (
         ValidationError as LayeredValidationError,
     )
-    from voicegateway.server.routes import virtual_keys as virtual_keys_routes
+    from voicegateway.server.api import virtual_keys as virtual_keys_routes
 
     container = Container()
     container.config.override(providers.Object(gateway.config))

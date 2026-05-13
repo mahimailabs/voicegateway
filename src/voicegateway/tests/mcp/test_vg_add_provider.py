@@ -17,8 +17,8 @@ from __future__ import annotations
 import pytest
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.mcp.errors import ProviderAlreadyExistsError, ValidationError
-from voicegateway.mcp.tools import ALL_TOOLS
+from voicegateway.server.mcp.errors import ProviderAlreadyExistsError, ValidationError
+from voicegateway.server.mcp.tools import ALL_TOOLS
 
 
 @pytest.fixture

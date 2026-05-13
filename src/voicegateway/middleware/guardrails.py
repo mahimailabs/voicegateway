@@ -8,7 +8,7 @@ import logging
 from importlib import resources
 from typing import TYPE_CHECKING, Any
 
-from voicegateway.schemas.guardrail_policy import (
+from voicegateway.schemas.guardrail_policy_schema import (
     GUARDRAIL_CATEGORIES,
     GUARDRAIL_CATEGORY_DESCRIPTIONS,
     GUARDRAIL_PROMPT_VERSION,

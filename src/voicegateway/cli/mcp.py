@@ -30,7 +30,7 @@ def mcp_cmd(
         raise typer.Exit(1)
 
     try:
-        from voicegateway.mcp.server import serve_http, serve_stdio
+        from voicegateway.server.mcp.server import serve_http, serve_stdio
     except ImportError as e:
         console.print(
             "[red]MCP dependencies not installed. "

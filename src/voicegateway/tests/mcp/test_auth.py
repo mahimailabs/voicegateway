@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from voicegateway.mcp.auth import AuthError, check_authorization_header
+from voicegateway.server.mcp.auth import AuthError, check_authorization_header
 
 
 def test_no_token_set_passes_anything(monkeypatch):
@@ -55,7 +55,7 @@ def test_uses_constant_time_comparison():
     """Just a smoke check that hmac.compare_digest is on the code path."""
     import inspect
 
-    from voicegateway.mcp import auth
+    from voicegateway.server.mcp import auth
 
     source = inspect.getsource(auth)
     assert "hmac.compare_digest" in source

@@ -111,7 +111,7 @@ async def _seed_export_records(db_path: str) -> tuple[str, str, str]:
     import datetime as _dt
     import uuid
 
-    from voicegateway.models.request import RequestRecord
+    from voicegateway.models.request_model import RequestRecord
     from voicegateway.storage.sqlite import SQLiteStorage
 
     storage = SQLiteStorage(db_path)
@@ -457,7 +457,7 @@ def test_export_costs_renders_iso_timestamp_and_fixed_point_cost(
     import io
     import uuid
 
-    from voicegateway.models.request import RequestRecord
+    from voicegateway.models.request_model import RequestRecord
     from voicegateway.storage.sqlite import SQLiteStorage
 
     db_path = str(tmp_path / "export-precision.db")
@@ -524,7 +524,7 @@ async def _seed_reconcile_records(db_path: str) -> tuple[str, str]:
     import datetime as _dt
     import uuid
 
-    from voicegateway.models.request import RequestRecord
+    from voicegateway.models.request_model import RequestRecord
     from voicegateway.storage.sqlite import SQLiteStorage
 
     storage = SQLiteStorage(db_path)
@@ -805,7 +805,7 @@ def test_reconcile_threshold_flag_propagates(temp_config, tmp_path, monkeypatch)
     import json as _json
     import uuid
 
-    from voicegateway.models.request import RequestRecord
+    from voicegateway.models.request_model import RequestRecord
     from voicegateway.storage.sqlite import SQLiteStorage
 
     db_path = str(tmp_path / "reconcile-threshold.db")

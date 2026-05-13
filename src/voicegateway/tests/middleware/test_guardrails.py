@@ -20,7 +20,7 @@ from voicegateway.middleware.guardrails import (
 )
 from voicegateway.middleware.instrumented_provider import InstrumentedLLM
 from voicegateway.repository import guardrail_events_repository as guardrail_events
-from voicegateway.schemas.guardrail_policy import (
+from voicegateway.schemas.guardrail_policy_schema import (
     REPORT_GUARDRAIL_TOOL_NAME,
     GuardrailPolicy,
 )

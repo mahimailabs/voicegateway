@@ -20,7 +20,7 @@ from voicegateway.inference._session_context import (
     current_tenant,
 )
 from voicegateway.middleware.guardrails import guardrail_policy_json
-from voicegateway.models.request import RequestRecord
+from voicegateway.models.request_model import RequestRecord
 from voicegateway.repository import (
     guardrail_events_repository as guardrail_events,
 )
@@ -30,7 +30,7 @@ from voicegateway.repository import (
 from voicegateway.repository import (
     turns_repository as turns,
 )
-from voicegateway.schemas.guardrail_policy import GuardrailPolicy
+from voicegateway.schemas.guardrail_policy_schema import GuardrailPolicy
 from voicegateway.utils.percentiles import compute_percentiles
 
 _DEFAULT_PERCENTILES: list[float] = [50.0, 95.0, 99.0]

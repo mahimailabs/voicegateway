@@ -36,7 +36,7 @@ from voicegateway.repository import (
 from voicegateway.repository import (
     virtual_keys_repository as virtual_keys,
 )
-from voicegateway.schemas.guardrail_policy import (
+from voicegateway.schemas.guardrail_policy_schema import (
     ACTIVE_GUARDRAIL_ACTIONS,
     GUARDRAIL_CATEGORIES,
     GUARDRAIL_CATEGORY_DESCRIPTIONS,

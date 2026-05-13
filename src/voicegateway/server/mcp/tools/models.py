@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from voicegateway.mcp.errors import (
+from voicegateway.schemas.mcp.models_schema import (
+    DeleteModelInput,
+    ListModelsInput,
+    RegisterModelInput,
+)
+from voicegateway.server.mcp.errors import (
     ConfirmationRequiredError,
     ModelAlreadyExistsError,
     ModelNotFoundError,
@@ -12,12 +17,7 @@ from voicegateway.mcp.errors import (
     ReadOnlyResourceError,
     ValidationError,
 )
-from voicegateway.mcp.tools.base import ToolDef, make_tool
-from voicegateway.schemas.mcp import (
-    DeleteModelInput,
-    ListModelsInput,
-    RegisterModelInput,
-)
+from voicegateway.server.mcp.tools.base import ToolDef, make_tool
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway

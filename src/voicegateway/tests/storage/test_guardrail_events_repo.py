@@ -7,7 +7,7 @@ import uuid
 
 import pytest
 
-from voicegateway.models.request import RequestRecord
+from voicegateway.models.request_model import RequestRecord
 from voicegateway.repository import guardrail_events_repository as guardrail_events
 from voicegateway.storage.sqlite import SQLiteStorage
 

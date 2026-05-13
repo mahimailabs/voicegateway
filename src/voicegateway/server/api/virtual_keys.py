@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 
 from voicegateway.core.container import Container
 from voicegateway.core.exceptions import NotFoundError
-from voicegateway.schemas.virtual_key import (
+from voicegateway.schemas.api.virtual_key_schema import (
     CreatedVirtualKey,
     VirtualKeyCreate,
     VirtualKeyListResponse,

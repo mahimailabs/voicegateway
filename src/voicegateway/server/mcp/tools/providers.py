@@ -6,16 +6,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from voicegateway.core.registry import _PROVIDER_REGISTRY
-from voicegateway.mcp.errors import (
-    ConfirmationRequiredError,
-    ProviderAlreadyExistsError,
-    ProviderNotFoundError,
-    ProviderTestFailedError,
-    ReadOnlyResourceError,
-    ValidationError,
-)
-from voicegateway.mcp.tools.base import ToolDef, make_tool
-from voicegateway.schemas.mcp import (
+from voicegateway.schemas.mcp.providers_schema import (
     AddProviderInput,
     DeleteProviderInput,
     GetProviderInput,
@@ -27,6 +18,15 @@ from voicegateway.schemas.mcp import (
     VgSetProviderKeyInput,
     VgTestProviderKeyInput,
 )
+from voicegateway.server.mcp.errors import (
+    ConfirmationRequiredError,
+    ProviderAlreadyExistsError,
+    ProviderNotFoundError,
+    ProviderTestFailedError,
+    ReadOnlyResourceError,
+    ValidationError,
+)
+from voicegateway.server.mcp.tools.base import ToolDef, make_tool
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway

@@ -8,7 +8,7 @@ from typing import Final
 
 import bcrypt
 
-from voicegateway.models.virtual_key import VirtualKey
+from voicegateway.models.virtual_key_model import VirtualKey
 from voicegateway.repository.virtual_key_repository import VirtualKeyRepository
 from voicegateway.services.base_service import BaseService
 

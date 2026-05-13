@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
-from voicegateway.schemas.guardrail_policy import (
+from voicegateway.schemas.guardrail_policy_schema import (
     ACTIVE_GUARDRAIL_ACTIONS,
     GUARDRAIL_CATEGORIES,
 )

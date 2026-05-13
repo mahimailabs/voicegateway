@@ -278,7 +278,7 @@ class InstrumentedLLM(lk_llm.LLM, _InstrumentedBase):
             schedule_bypass_event,
             tools_contain_reserved_report_tool,
         )
-        from voicegateway.schemas.guardrail_policy import (
+        from voicegateway.schemas.guardrail_policy_schema import (
             REPORT_GUARDRAIL_TOOL_NAME,
             GuardrailPolicy,
         )

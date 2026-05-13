@@ -1,4 +1,4 @@
-"""ORM-based repository for :class:`voicegateway.models.virtual_key.VirtualKey`."""
+"""ORM-based repository for :class:`voicegateway.models.virtual_key_model.VirtualKey`."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import func, select
 
-from voicegateway.models.virtual_key import VirtualKey
+from voicegateway.models.virtual_key_model import VirtualKey
 from voicegateway.repository.base_repository import BaseRepository, SessionFactory
 
 

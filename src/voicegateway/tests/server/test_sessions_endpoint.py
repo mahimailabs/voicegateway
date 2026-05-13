@@ -9,7 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.models.request import RequestRecord
+from voicegateway.models.request_model import RequestRecord
 from voicegateway.server import build_app
 
 

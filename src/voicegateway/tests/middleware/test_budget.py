@@ -12,7 +12,7 @@ from voicegateway.middleware.budget_enforcer import (
     BudgetExceededError,
     BudgetThrottleSignal,
 )
-from voicegateway.models.request import RequestRecord
+from voicegateway.models.request_model import RequestRecord
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

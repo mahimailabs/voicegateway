@@ -6,7 +6,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
-from voicegateway.mcp.errors import MCPToolError
+from voicegateway.server.mcp.errors import MCPToolError
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -44,7 +44,7 @@ def create_server(gateway: Gateway) -> Any:
             "mcp package not installed. Run: pip install voicegateway[mcp]"
         ) from e
 
-    from voicegateway.mcp.tools import ALL_TOOLS
+    from voicegateway.server.mcp.tools import ALL_TOOLS
 
     server = Server("voicegateway")
 
@@ -129,7 +129,7 @@ async def serve_http(
             "fastapi/uvicorn not installed. Run: pip install voicegateway[dashboard]"
         ) from e
 
-    from voicegateway.mcp.auth import AuthError, check_authorization_header
+    from voicegateway.server.mcp.auth import AuthError, check_authorization_header
 
     server = create_server(gateway)
     sse = SseServerTransport("/messages/")

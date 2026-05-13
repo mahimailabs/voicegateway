@@ -11,7 +11,7 @@ import pytest
 import yaml
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.mcp.tools import ALL_TOOLS
+from voicegateway.server.mcp.tools import ALL_TOOLS
 
 
 def _tool(name: str):
