@@ -53,13 +53,14 @@ _SUBPACKAGES = _walk_subpackages()
 # (``voicegateway/storage/migrations/``), so the post-v0.2.0-T04 count is
 # 19 (root + 18 nested). v0.6.0 adds
 # ``voicegateway.middleware.guardrail_prompts`` for package data loaded
-# via importlib.resources, so the current count is 20. If this drifts
-# unexpectedly, that is a hint a new subpackage landed without being
-# thought through.
+# via importlib.resources. ``voicegateway.data`` joined the count when
+# ``voicegw.example.yaml`` moved into the package (was at repo root).
+# Current count is 21. If this drifts unexpectedly, that is a hint a
+# new subpackage landed without being thought through.
 def test_walker_finds_expected_number_of_subpackages() -> None:
-    """Subpackage count is stable post-v0.6.0 guardrail prompts."""
-    assert len(_SUBPACKAGES) == 20, (
-        f"Expected 20 subpackages (root + 19 nested), got "
+    """Subpackage count is stable post-v0.6.0 (guardrail prompts + data)."""
+    assert len(_SUBPACKAGES) == 21, (
+        f"Expected 21 subpackages (root + 20 nested), got "
         f"{len(_SUBPACKAGES)}: "
         f"{sorted(p.__name__ for p in _SUBPACKAGES)}"
     )

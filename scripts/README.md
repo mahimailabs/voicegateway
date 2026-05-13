@@ -45,8 +45,8 @@ provider's reply length but is consistently sub-cent per fixture.
 | `CARTESIA_API_KEY` | Cartesia TTS recording |
 | `CARTESIA_VOICE_ID` (optional) | Override Cartesia voice id |
 
-`.env.fixtures.example` at the repo root documents the full set.
-Copy to `.env.fixtures`, fill in keys, and source before running:
+Drop the variables above into a gitignored `.env.fixtures` file (or
+export them in your shell directly) and source before running:
 
 ```bash
 set -a; source .env.fixtures; set +a

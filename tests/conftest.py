@@ -1,7 +1,6 @@
 """Shared pytest fixtures."""
 
 import asyncio
-import os
 import time
 import uuid
 from typing import Any
@@ -67,12 +66,19 @@ def _close_aiosqlite_connections(monkeypatch):
 
 
 @pytest.fixture
-def example_config_path():
-    """Return path to example config."""
-    return os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "voicegw.example.yaml",
-    )
+def example_config_path(tmp_path):
+    """Write the bundled example config to a tmp file and return its path.
+
+    Sources the file from ``voicegateway.data`` (where it actually ships
+    inside the wheel) rather than the repo root. Writing to ``tmp_path``
+    keeps tests free to mutate without affecting the canonical copy.
+    """
+    from importlib import resources
+
+    src = resources.files("voicegateway.data").joinpath("voicegw.example.yaml")
+    target = tmp_path / "voicegw.example.yaml"
+    target.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    return str(target)
 
 
 _MINIMAL_CONFIG = {

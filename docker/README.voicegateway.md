@@ -9,17 +9,19 @@ Full documentation: **[docs.voicegateway.dev](https://docs.voicegateway.dev)**
 ## Quick Start
 
 ```bash
-# 1. Create a config file
+# 1. Create a data directory and generate the starter config inside it
 mkdir -p voicegw-data
-curl -sL https://raw.githubusercontent.com/mahimailabs/voicegateway/main/voicegw.example.yaml \
-  -o voicegw-data/voicegw.yaml
-# Edit voicegw.yaml with your API keys
+docker run --rm \
+  -v "$(pwd)/voicegw-data:/data" \
+  mahimairaja/voicegateway:latest \
+  voicegw init --output /data/voicegw.yaml
+# Edit voicegw-data/voicegw.yaml with your API keys
 
 # 2. Run the container
 docker run -d \
   --name voicegateway \
   -p 8080:8080 \
-  -v $(pwd)/voicegw-data:/data \
+  -v "$(pwd)/voicegw-data:/data" \
   mahimairaja/voicegateway:latest
 ```
 

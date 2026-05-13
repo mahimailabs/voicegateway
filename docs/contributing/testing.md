@@ -69,7 +69,7 @@ You never need to call this fixture explicitly -- it is autouse.
 
 ### `example_config_path`
 
-Returns the path to `voicegw.example.yaml` at the repository root. Use this to test config loading against the shipped example:
+Writes the bundled starter config (sourced from `voicegateway/data/voicegw.example.yaml`) to a tmp file and returns its path. Use this to test config loading against the shipped example:
 
 ```python
 def test_load_example(example_config_path):
