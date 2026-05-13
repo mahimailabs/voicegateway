@@ -64,8 +64,8 @@ _SUBPACKAGES = _walk_subpackages()
 # it is a hint a new subpackage landed without being thought through.
 def test_walker_finds_expected_number_of_subpackages() -> None:
     """Subpackage count is stable across the structural refactor."""
-    assert len(_SUBPACKAGES) == 27, (
-        f"Expected 27 subpackages (root + 26 nested), got "
+    assert len(_SUBPACKAGES) == 28, (
+        f"Expected 28 subpackages (root + 27 nested), got "
         f"{len(_SUBPACKAGES)}: "
         f"{sorted(p.__name__ for p in _SUBPACKAGES)}"
     )

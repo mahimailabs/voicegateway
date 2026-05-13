@@ -52,6 +52,71 @@ def _parse_iso_date(value: str, *, end_of_day: bool) -> float:
     return d.timestamp()
 
 
+def _attach_layered_stack(app: FastAPI, gateway: Gateway) -> None:
+    """Wire the SQLAlchemy + dependency-injector layer onto the FastAPI app.
+
+    Builds a :class:`Container`, overrides the ``config`` provider with
+    the live :class:`GatewayConfig` (so the container's
+    :class:`Database` lands on the same SQLite file the gateway is
+    already using), wires every router in ``Container.wiring_config``,
+    mounts those routers, and registers the structured error handlers.
+    """
+    from dependency_injector import providers
+    from fastapi.exceptions import RequestValidationError
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from voicegateway.core.container import Container
+    from voicegateway.core.exception_handlers import (
+        auth_error_handler,
+        duplicated_error_handler,
+        global_exception_handler,
+        not_found_error_handler,
+        not_satisfiable_error_handler,
+        permission_denied_error_handler,
+        request_validation_exception_handler,
+        sqlalchemy_exception_handler,
+        unauthorized_error_handler,
+        validation_error_handler,
+    )
+    from voicegateway.core.exceptions import (
+        AuthError as LayeredAuthError,
+    )
+    from voicegateway.core.exceptions import (
+        DuplicatedError,
+        NotFoundError,
+        NotSatisfiableError,
+        PermissionDeniedError,
+        UnauthorizedError,
+    )
+    from voicegateway.core.exceptions import (
+        ValidationError as LayeredValidationError,
+    )
+    from voicegateway.server.routes import virtual_keys as virtual_keys_routes
+
+    container = Container()
+    container.config.override(providers.Object(gateway.config))
+    container.wire(modules=container.wiring_config.modules)
+    app.state.container = container
+
+    app.include_router(virtual_keys_routes.router)
+
+    app.add_exception_handler(
+        RequestValidationError, request_validation_exception_handler
+    )
+    app.add_exception_handler(SQLAlchemyError, sqlalchemy_exception_handler)
+    for exc_class, handler in (
+        (DuplicatedError, duplicated_error_handler),
+        (LayeredAuthError, auth_error_handler),
+        (NotFoundError, not_found_error_handler),
+        (LayeredValidationError, validation_error_handler),
+        (PermissionDeniedError, permission_denied_error_handler),
+        (UnauthorizedError, unauthorized_error_handler),
+        (NotSatisfiableError, not_satisfiable_error_handler),
+    ):
+        app.add_exception_handler(exc_class, handler)
+    app.add_exception_handler(Exception, global_exception_handler)
+
+
 def build_app(gateway: Gateway) -> FastAPI:
     """Build a FastAPI app bound to the given Gateway instance."""
     app = FastAPI(
@@ -59,6 +124,8 @@ def build_app(gateway: Gateway) -> FastAPI:
         version="0.6.0",
         description="HTTP API for VoiceGateway: cost tracking and reconciliation for LiveKit voice agents.",
     )
+
+    _attach_layered_stack(app, gateway)
 
     api_keys = load_api_keys(gateway.config.auth)
     cors_origins = resolve_cors_origins(gateway.config.auth)
