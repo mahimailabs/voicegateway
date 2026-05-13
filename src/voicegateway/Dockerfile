@@ -1,4 +1,6 @@
-# docker/voicegateway.Dockerfile (core gateway)
+# src/voicegateway/Dockerfile (core gateway)
+# Build context: repo root. Reference from docker-compose.yml as
+# `dockerfile: src/voicegateway/Dockerfile`.
 # Multi-stage build: builder installs deps, runtime has only what's needed.
 
 # -------- Stage 1: Frontend builder --------

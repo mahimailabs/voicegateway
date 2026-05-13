@@ -58,22 +58,36 @@ voicegateway-web rebuild automatically. No manual GitHub Pages deploy is needed.
 ## Project layout (quick orientation)
 
 ```
-voicegateway/      # Python package (subpackages only at top level)
-  cli/             # voicegw CLI commands and Textual TUI
-  core/            # gateway orchestrator, config, router
-  inference/       # LiveKit-Cloud-parity STT / LLM / TTS factories
-  middleware/      # cost tracking, latency, rate limiting, fallback
-  pricing/         # genai-prices (LLM) + local STT and TTS catalogs
-  providers/       # 11 provider adapters (cloud + local)
-  reconcile/       # provider-invoice reconciliation
-  server/          # FastAPI HTTP API + combined server
-  storage/         # SQLite backend with versioned migrations
+src/
+  voicegateway/        # Python package (subpackages only at top level)
+    cli/               # voicegw CLI commands and Textual TUI
+    core/              # gateway orchestrator, config, router
+    data/              # bundled resource files (voicegw.example.yaml)
+    inference/         # LiveKit-Cloud-parity STT / LLM / TTS factories
+    mcp/               # MCP server + tools
+    middleware/        # cost tracking, latency, rate limiting, fallback,
+                       # routing, guardrails
+    pricing/           # genai-prices (LLM) + local STT and TTS catalogs
+    providers/         # 11 provider adapters (cloud + local)
+    reconcile/         # provider-invoice reconciliation
+    server/            # FastAPI HTTP API + combined server
+    storage/           # SQLite backend with versioned migrations
+    tests/             # pytest suite mirroring the subpackages above;
+                       # excluded from the wheel via pyproject hatch config.
+                       # Hosts tests/fixtures/streaming/record_streaming_fixtures.py,
+                       # the dev-only fixture recorder.
+    Dockerfile         # gateway runtime image (build context: repo root)
+    README.dockerhub.md # DockerHub-only description, published on release
+  dashboard/
+    api/               # FastAPI dashboard backend
+    frontend/          # React/TypeScript/Vite frontend
+    Dockerfile         # dashboard runtime image
+    README.dockerhub.md
 
-tests/             # pytest suite mirroring voicegateway/
-                   # also hosts tests/fixtures/streaming/record_streaming_fixtures.py
-                   # (dev-only fixture recorder for the streaming cost suite)
-docker/            # Dockerfiles (voicegateway.Dockerfile, dashboard.Dockerfile)
-docs/              # Markdown docs source rendered by voicegateway-web
+docs/                  # Markdown docs source rendered by voicegateway-web
+install.sh             # one-line installer (curl|bash) — repo root by convention
+pyproject.toml
+docker-compose.yml
 ```
 
 ## First time?

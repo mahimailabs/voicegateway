@@ -84,7 +84,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./docker/voicegateway.Dockerfile
+          file: ./src/voicegateway/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -100,7 +100,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ env.CORE_IMAGE }}
-          readme-filepath: ./docker/README.voicegateway.md
+          readme-filepath: ./src/voicegateway/README.dockerhub.md
           short-description: "Cost tracking and reconciliation for LiveKit voice agents, with MCP"
 
   publish-dashboard:
@@ -152,7 +152,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./docker/dashboard.Dockerfile
+          file: ./src/dashboard/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -166,7 +166,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ env.DASHBOARD_IMAGE }}
-          readme-filepath: ./docker/README.dashboard.md
+          readme-filepath: ./src/dashboard/README.dockerhub.md
           short-description: "Web dashboard for VoiceGateway"
 
   create-release:

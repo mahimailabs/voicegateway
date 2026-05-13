@@ -7,6 +7,13 @@
 # from the wheel; this excludes them from the runtime COPY too.
 src/voicegateway/tests/
 
+# Dockerfiles and DockerHub READMEs live alongside their packages but
+# should not be COPYed into the image they describe.
+src/voicegateway/Dockerfile
+src/voicegateway/README.dockerhub.md
+src/dashboard/Dockerfile
+src/dashboard/README.dockerhub.md
+
 # Frontend build output (regenerated inside the frontend-builder stage).
 src/dashboard/frontend/dist/
 src/dashboard/frontend/node_modules/
