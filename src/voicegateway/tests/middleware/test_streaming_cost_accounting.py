@@ -53,11 +53,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from tests.fixtures.streaming._loader import (
-    FIXTURES_DIR,
-    discover_fixtures,
-)
-from tests.fixtures.streaming._schema import StreamingFixture
 from voicegateway.middleware.instrumented_provider import (
     InstrumentedLLM,
     InstrumentedSTT,
@@ -65,6 +60,11 @@ from voicegateway.middleware.instrumented_provider import (
     _InstrumentedBase,
 )
 from voicegateway.pricing.catalog import calculate_cost
+from voicegateway.tests.fixtures.streaming._loader import (
+    FIXTURES_DIR,
+    discover_fixtures,
+)
+from voicegateway.tests.fixtures.streaming._schema import StreamingFixture
 
 _COST_PRECISION = Decimal("0.00000001")
 _WRAPPER_CLASSES: dict[str, type[_InstrumentedBase]] = {

@@ -9,10 +9,10 @@ VoiceGateway has 200+ tests with over 70% code coverage. This guide covers runni
 pytest
 
 # Run a specific file
-pytest tests/test_config.py
+pytest src/voicegateway/tests/core/test_config.py
 
 # Run a specific test by name
-pytest tests/test_config.py::test_load_example_config
+pytest src/voicegateway/tests/core/test_config.py::test_load_example_config
 
 # Run with coverage
 pytest --cov

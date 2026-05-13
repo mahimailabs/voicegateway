@@ -111,7 +111,7 @@ After recording, validate that each file parses against the
 `StreamingFixture` schema (created in 3.2 #4):
 
 ```bash
-uv run pytest tests/fixtures/streaming/ -q
+uv run pytest src/voicegateway/tests/fixtures/streaming/ -q
 ```
 
 This loads every JSON file in this directory through the schema's
@@ -123,7 +123,7 @@ loader are in place.
 Then run the full Phase 3 suite:
 
 ```bash
-uv run pytest tests/test_streaming_cost_accounting.py -q
+uv run pytest src/voicegateway/tests/middleware/test_streaming_cost_accounting.py -q
 ```
 
 Six fixtures times three assertions each yields 18 parameterized

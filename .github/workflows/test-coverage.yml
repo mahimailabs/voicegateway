@@ -55,7 +55,7 @@ jobs:
 
       - name: Run tests with coverage.py
         run: |
-          uv run coverage run -m pytest tests/ --ignore=tests/test_providers/test_ollama.py
+          uv run coverage run -m pytest src/voicegateway/tests/ --ignore=src/voicegateway/tests/test_providers/test_ollama.py
           uv run coverage xml
           uv run coverage report
 

@@ -717,7 +717,7 @@ def _validate_payload(payload: dict[str, Any]) -> None:
     pydantic. By the time we reach validation we are about to write
     a real fixture and the cost of the import is trivial.
     """
-    from tests.fixtures.streaming._schema import StreamingFixture
+    from voicegateway.tests.fixtures.streaming._schema import StreamingFixture
 
     StreamingFixture.model_validate(payload)
 

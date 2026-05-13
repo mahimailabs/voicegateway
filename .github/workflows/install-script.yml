@@ -21,9 +21,9 @@ on:
   pull_request:
     paths:
       - 'install.sh'
-      - 'tests/cli/_pipx_stub.sh'
-      - 'tests/cli/_uv_stub.sh'
-      - 'tests/cli/test_install_script.sh'
+      - 'src/voicegateway/tests/cli/_pipx_stub.sh'
+      - 'src/voicegateway/tests/cli/_uv_stub.sh'
+      - 'src/voicegateway/tests/cli/test_install_script.sh'
       - '.github/workflows/install-script.yml'
   push:
     branches:
@@ -31,9 +31,9 @@ on:
       - feat/add-uvx-sh
     paths:
       - 'install.sh'
-      - 'tests/cli/_pipx_stub.sh'
-      - 'tests/cli/_uv_stub.sh'
-      - 'tests/cli/test_install_script.sh'
+      - 'src/voicegateway/tests/cli/_pipx_stub.sh'
+      - 'src/voicegateway/tests/cli/_uv_stub.sh'
+      - 'src/voicegateway/tests/cli/test_install_script.sh'
       - '.github/workflows/install-script.yml'
   schedule:
     - cron: '0 6 * * *'
@@ -72,4 +72,4 @@ jobs:
         env:
           IMAGE: ${{ matrix.image }}
           INSTALLER: ${{ matrix.installer }}
-        run: bash tests/cli/test_install_script.sh --image "$IMAGE" --installer "$INSTALLER"
+        run: bash src/voicegateway/tests/cli/test_install_script.sh --image "$IMAGE" --installer "$INSTALLER"

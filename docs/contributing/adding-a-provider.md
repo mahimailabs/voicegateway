@@ -197,13 +197,13 @@ Add the provider to relevant documentation pages:
 
 ```bash
 # Lint
-ruff check voicegateway/providers/<name>_provider.py
+ruff check src/voicegateway/providers/<name>_provider.py
 
 # Type check
-mypy voicegateway/providers/<name>_provider.py
+mypy -p voicegateway.providers.<name>_provider
 
 # Run your tests
-pytest tests/test_<name>_provider.py -v
+pytest src/voicegateway/tests/providers/test_<name>_provider.py -v
 
 # Run the full suite to check for regressions
 pytest

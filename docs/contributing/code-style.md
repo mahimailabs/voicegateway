@@ -78,7 +78,7 @@ ignore_missing_imports = true
 Run mypy:
 
 ```bash
-mypy voicegateway
+mypy
 ```
 
 ### Type annotation guidelines

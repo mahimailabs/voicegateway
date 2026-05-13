@@ -1,0 +1,45 @@
+# Keep the Docker build context small and the runtime image tight.
+# Mirrors .gitignore where relevant, plus dev-only artifacts that
+# would otherwise leak into the image.
+
+# Tests live inside src/voicegateway/ for repo hygiene but must NEVER
+# ship inside the Docker runtime image. pyproject.toml excludes them
+# from the wheel; this excludes them from the runtime COPY too.
+src/voicegateway/tests/
+
+# Frontend build output (regenerated inside the frontend-builder stage).
+src/dashboard/frontend/dist/
+src/dashboard/frontend/node_modules/
+
+# VCS / IDE / Python cache / build outputs.
+.git/
+.github/
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.pyc
+*.pyo
+.coverage
+.coverage.*
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Local config that should not bleed into images.
+.env
+.env.*
+voicegw.yaml
+voicegw.db
+
+# OS junk.
+.DS_Store
+Thumbs.db
+
+# Agent / planning artifacts.
+.agents/
+.claude/
+.codex/
+.playwright-mcp/

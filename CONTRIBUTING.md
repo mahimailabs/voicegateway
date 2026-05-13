@@ -31,7 +31,7 @@ Before opening your PR, verify locally:
 
 - [ ] `pytest` -- full suite green
 - [ ] `ruff check .` -- linting clean
-- [ ] `mypy voicegateway` -- type checking clean
+- [ ] `mypy` -- type checking clean
 - [ ] New public APIs have Google-style docstrings
 - [ ] Commit messages follow Conventional Commits
 - [ ] Documentation updated if behavior changed

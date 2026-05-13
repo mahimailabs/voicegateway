@@ -34,10 +34,14 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Walk four directories up from src/voicegateway/tests/cli/ to reach the
+# actual repo root where install.sh lives.
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 INSTALL_SCRIPT="$REPO_ROOT/install.sh"
-PIPX_STUB="$REPO_ROOT/tests/cli/_pipx_stub.sh"
-UV_STUB="$REPO_ROOT/tests/cli/_uv_stub.sh"
+# Stubs live alongside this test script.
+PIPX_STUB="$SCRIPT_DIR/_pipx_stub.sh"
+UV_STUB="$SCRIPT_DIR/_uv_stub.sh"
 EXPECTED_NEXT_STEP="Run the wizard to configure your gateway"
 
 if [ ! -f "$INSTALL_SCRIPT" ]; then

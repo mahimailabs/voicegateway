@@ -31,7 +31,7 @@ jobs:
           uv pip install -e ".[dev,dashboard,mcp]"
 
       - name: Run tests
-        run: uv run pytest --tb=short --ignore=tests/providers
+        run: uv run pytest --tb=short --ignore=src/voicegateway/tests/providers
 
   publish-core:
     needs: test
