@@ -374,3 +374,10 @@ docs/.vitepress/
 docs/node_modules/
 docs/package-lock.json
 docs/reference/changelog.md
+
+# Local Alembic sandbox DB created by 'alembic check' against the
+# fallback alembic.ini URL. Real DBs live under ~/.config/voicegateway/.
+voicegw.db
+voicegw.db-journal
+voicegw.db-wal
+voicegw.db-shm
