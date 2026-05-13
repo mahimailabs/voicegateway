@@ -12,7 +12,7 @@ import typer
 import yaml
 
 from voicegateway.cli._app import app, console
-from voicegateway.core.contants import (
+from voicegateway.core.constants import (
     DEFAULT_DASHBOARD_PORT,
     KNOWN_PROVIDERS,
     SMOKE_TEST_TIMEOUT_S,

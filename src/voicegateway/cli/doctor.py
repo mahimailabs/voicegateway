@@ -11,7 +11,7 @@ import typer
 from rich.table import Table
 
 from voicegateway.cli._app import app, console
-from voicegateway.core.contants import STATUS_RENDER
+from voicegateway.core.constants import STATUS_RENDER
 
 
 @dataclass
