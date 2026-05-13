@@ -2,21 +2,12 @@
 
 from __future__ import annotations
 
-from importlib import resources
 from pathlib import Path
 
 import typer
 
 from voicegateway.cli._app import app, console
-
-
-def _read_example_config() -> str:
-    """Return the canonical example config shipped with the wheel."""
-    return (
-        resources.files("voicegateway.data")
-        .joinpath("voicegw.example.yaml")
-        .read_text(encoding="utf-8")
-    )
+from voicegateway.utils.cli.init import _read_example_config
 
 
 @app.command()
