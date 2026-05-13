@@ -33,10 +33,9 @@ class Container(containers.DeclarativeContainer):
     """Single source of truth for runtime singletons."""
 
     wiring_config = containers.WiringConfiguration(
-        # Populated as each api/* router is migrated onto @inject. The
-        # first entity-migration commit appends the matching module path
-        # here (e.g. "voicegateway.server.routes.virtual_keys").
-        modules=[],
+        modules=[
+            "voicegateway.server.routes.virtual_keys",
+        ],
     )
 
     config = providers.Singleton(_load_gateway_config)
