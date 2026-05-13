@@ -15,10 +15,6 @@ Operations live outside the SDK: ``voicegw <subcommand>`` for the CLI,
 """
 
 from voicegateway import inference
-
-try:
-    from voicegateway._version import __version__
-except ImportError:  # editable install before hatch-vcs has run
-    __version__ = "0.0.0+unknown"
+from voicegateway._version import __version__
 
 __all__ = ["inference", "__version__"]
