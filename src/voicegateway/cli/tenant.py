@@ -9,7 +9,7 @@ from typing import Any
 import typer
 
 from voicegateway.cli._app import app, console
-from voicegateway.cli._helpers import _load_gateway
+from voicegateway.utils.cli._shared import _load_gateway
 
 tenant_app = typer.Typer(
     name="tenant",

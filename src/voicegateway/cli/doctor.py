@@ -316,7 +316,7 @@ def _resolve_dashboard_port(ctx: _Context) -> int:
 def _build_context(config_path: str | None) -> _Context:
     ctx = _Context(config_path=config_path)
     try:
-        from voicegateway.cli._helpers import _load_gateway
+        from voicegateway.utils.cli._shared import _load_gateway
 
         ctx.gateway = _load_gateway(config_path)
     except (typer.Exit, Exception) as exc:  # noqa: BLE001

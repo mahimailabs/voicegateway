@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
 
 import httpx
@@ -13,6 +12,7 @@ from voicegateway.cli._app import app, console
 from voicegateway.core.constants import DEFAULT_DASHBOARD_URL
 from voicegateway.core.guardrail_policy import GUARDRAIL_CATEGORIES, GuardrailPolicy
 from voicegateway.middleware.guardrails import compose_guardrail_block
+from voicegateway.utils.cli._shared import _auth_headers
 
 guardrails_app = typer.Typer(
     name="guardrails",
@@ -20,13 +20,6 @@ guardrails_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(guardrails_app, name="guardrails")
-
-
-def _auth_headers() -> dict[str, str]:
-    token = os.environ.get("VOICEGW_API_KEY", "").strip()
-    if token:
-        return {"Authorization": f"Bearer {token}"}
-    return {}
 
 
 def _request(

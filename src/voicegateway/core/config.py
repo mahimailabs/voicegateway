@@ -53,14 +53,7 @@ def _substitute_env_vars(value: Any) -> Any:
 
 @dataclass
 class MetricsConfig:
-    """v0.2.0 voice-conversation metrics knobs.
-
-    Defaults match the Foundry-locked values (Open Questions 2 and 3).
-    Per-project overridable via the ``metrics:`` block in
-    ``voicegw.yaml``. ``MetricsConfig()`` with no args produces the
-    canonical configuration that REQ-VG-METRICS-002, -003, -004 wire
-    against.
-    """
+    """v0.2.0 voice-conversation metrics knobs."""
 
     dead_air_threshold_seconds: float = 3.0
     talk_over_min_overlap_ms: int = 100

@@ -8,6 +8,7 @@ from pathlib import Path
 import typer
 
 from voicegateway.cli._app import app, console
+from voicegateway.utils.cli._shared import _config_home
 
 
 @dataclass
@@ -35,11 +36,6 @@ class MigrationReport:
         load-bearing detection signal.
         """
         return self.config_present
-
-
-def _config_home() -> Path:
-    """v0.0.5's canonical config home, kept verbatim in v0.1.0."""
-    return Path.home() / ".config" / "voicegateway"
 
 
 def _atomic_write_text(target: Path, content: str) -> None:

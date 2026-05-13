@@ -7,7 +7,7 @@ import asyncio
 import typer
 
 from voicegateway.cli._app import app, console
-from voicegateway.cli._helpers import _load_gateway
+from voicegateway.utils.cli._shared import _load_gateway
 
 
 @app.command(name="mcp")

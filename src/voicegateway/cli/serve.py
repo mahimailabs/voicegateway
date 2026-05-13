@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from voicegateway.cli._app import app, console
-from voicegateway.cli._helpers import _load_gateway
+from voicegateway.utils.cli._shared import _load_gateway
 
 _DEFAULT_HOST = "0.0.0.0"
 _DEFAULT_PORT = 8080
