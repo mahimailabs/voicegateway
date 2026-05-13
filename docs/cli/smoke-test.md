@@ -13,8 +13,9 @@ Validate the v0.0.5 inference pipeline end-to-end without spinning up a LiveKit 
 If any check fails, the command exits with status 1 and the report names the failed checks. On success it exits 0 with the message:
 
 ```text
-All structural checks passed. For an actual end-to-end run, point a
-LiveKit dev server at examples/v005_inference_drop_in.py.
+All structural checks passed. For an actual end-to-end run, wire
+voicegateway.inference into a LiveKit AgentSession and connect to a
+dev server.
 ```
 
 ## Usage
@@ -40,7 +41,8 @@ Without `--live` the smoke test is offline-safe: stubbed plugins, no API calls. 
 - Perform real audio capture or playback.
 - Verify end-to-end latency (TTFB across STT → LLM → TTS).
 
-For those, run the worked example with real keys and a LiveKit dev server:
+For those, run a minimal agent script (see the README Quick Start)
+against a LiveKit dev server with real provider keys:
 
 ```bash
 docker run --rm -p 7880:7880 -p 7881:7881 -p 7882:7882/udp \
@@ -50,7 +52,7 @@ export LIVEKIT_URL=ws://localhost:7880
 export LIVEKIT_API_KEY=devkey
 export LIVEKIT_API_SECRET=secret
 
-python examples/v005_inference_drop_in.py dev
+python my_agent.py dev   # your AgentSession using voicegateway.inference
 ```
 
 ## Sample output

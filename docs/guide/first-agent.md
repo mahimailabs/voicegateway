@@ -172,7 +172,7 @@ stt = inference.STT("deepgram/nova-3")  # uses tony-pizza's key
 
 ## Adding fallbacks
 
-For resolver-time fallback (try the next model in the chain when the primary fails at startup) walk a chain manually using the inference factories. See [`examples/fallback_agent.py`](https://github.com/mahimailabs/voicegateway/blob/main/examples/fallback_agent.py) for the worked pattern. v0.0.6 will add a first-class `fallback=` parameter to the `inference` factories.
+For resolver-time fallback (try the next model in the chain when the primary fails at startup) walk a chain manually using the inference factories — iterate the `fallbacks.<modality>` list from `voicegw.yaml` and use the first model whose provider plugin imports cleanly. v0.0.6 will add a first-class `fallback=` parameter to the `inference` factories.
 
 ## Next steps
 
