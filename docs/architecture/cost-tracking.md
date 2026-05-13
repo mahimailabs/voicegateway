@@ -33,7 +33,7 @@ graph LR
 
 ## Pricing layer
 
-The pricing facade in `voicegateway/pricing/catalog.py` exposes two functions:
+The pricing facade in `src/voicegateway/pricing/catalog.py` exposes two functions:
 
 ```python
 calculate_cost(
@@ -77,7 +77,7 @@ Streaming is where the real-world cost-tracking bugs hide: tokens that double at
 
 ### The substitute strategy
 
-Rather than dogfood the gateway in production and reconcile against provider invoices, VG records real provider streaming responses **once** via `tests/fixtures/streaming/record_streaming_fixtures.py` and replays them in CI forever. Each fixture is a JSON file with three load-bearing sections:
+Rather than dogfood the gateway in production and reconcile against provider invoices, VG records real provider streaming responses **once** via `src/voicegateway/tests/fixtures/streaming/record_streaming_fixtures.py` and replays them in CI forever. Each fixture is a JSON file with three load-bearing sections:
 
 - `request`: the literal payload VG sent.
 - `response_stream`: the chunks the provider returned, with `received_at_ms` timestamps.
@@ -89,13 +89,13 @@ Filename convention is locked at `<provider>_<model>_<modality>_<mode>_<YYYY-MM-
 
 ### What the replay tests assert
 
-`tests/test_streaming_cost_accounting.py` parameterizes over every committed fixture and asserts three things per fixture:
+`src/voicegateway/tests/test_streaming_cost_accounting.py` parameterizes over every committed fixture and asserts three things per fixture:
 
 1. **Unit-count consistency**: `provider_reported_usage` agrees with the actual contents of `response_stream`. For LLM, the normalized `input_tokens` / `output_tokens` / `total_tokens` must equal the values inside the trailing ChatCompletion usage chunk. For STT, `audio_seconds` must equal Deepgram's `metadata.duration`. For TTS, `character_count` must equal `len(request.transcript)`. Catches recorder field-name typos, provider schema drift, and off-by-one normalization.
 2. **Cost calculation**: `calculate_cost(provider_reported_usage)` quantized to 8 dp must equal `fixture.expected_cost_usd` quantized to 8 dp. Catches cost-layer regressions (modality-dispatch bugs, pricing-source attribution drift, Decimal precision losses).
 3. **TTFB hook behavior** (stream fixtures only): a wrapper that calls `_mark_first_byte` partway through must produce `ttfb_ms < total_latency_ms`. A wrapper that never calls it must produce `ttfb_ms == total_latency_ms` (the documented fallback). Catches modality refactors that forget to wire TTFB.
 
-Plus a separate `tests/test_ttfb_hook_coverage.py` runs the TTFB-hook contract against synthetic streams for every modality, gated against `wrap_provider`'s dispatch table so a future modality cannot land without TTFB coverage.
+Plus a separate `src/voicegateway/tests/test_ttfb_hook_coverage.py` runs the TTFB-hook contract against synthetic streams for every modality, gated against `wrap_provider`'s dispatch table so a future modality cannot land without TTFB coverage.
 
 ### Honest limits of the substitute strategy
 
@@ -110,16 +110,16 @@ The CHANGELOG disclosure for v0.0.4 is honest about this: "Cost tracking is vali
 
 ### Where to find each piece
 
-- `voicegateway/pricing/catalog.py`, `llm.py`, `stt.py`, `tts.py`: the pricing layer.
-- `voicegateway/middleware/cost_tracker.py`: per-request record builder.
-- `voicegateway/middleware/instrumented_provider.py`: `_InstrumentedBase` + `wrap_provider` + the TTFB / log_request hooks.
-- `tests/fixtures/streaming/`: recorded fixtures, schema, loader.
+- `src/voicegateway/pricing/catalog.py`, `llm.py`, `stt.py`, `tts.py`: the pricing layer.
+- `src/voicegateway/middleware/cost_tracker.py`: per-request record builder.
+- `src/voicegateway/middleware/instrumented_provider.py`: `_InstrumentedBase` + `wrap_provider` + the TTFB / log_request hooks.
+- `src/voicegateway/tests/fixtures/streaming/`: recorded fixtures, schema, loader.
   - `_schema.py`: `StreamingFixture` Pydantic model.
   - `_loader.py`: `discover_fixtures`, `load_fixture`, filename-decode helper.
   - `README.md`: the fixture format and refresh policy.
   - `PLACEHOLDER.md`: runbook for recording the six minimum fixtures.
-- `tests/fixtures/streaming/record_streaming_fixtures.py`: the dev-only recorder, gated behind `--record` and `--confirm`. Its module docstring documents cost expectations and operational warnings.
-- `tests/test_streaming_cost_accounting.py`: the three-assertion replay suite.
-- `tests/test_ttfb_hook_coverage.py`: per-modality TTFB hardening.
+- `src/voicegateway/tests/fixtures/streaming/record_streaming_fixtures.py`: the dev-only recorder, gated behind `--record` and `--confirm`. Its module docstring documents cost expectations and operational warnings.
+- `src/voicegateway/tests/test_streaming_cost_accounting.py`: the three-assertion replay suite.
+- `src/voicegateway/tests/test_ttfb_hook_coverage.py`: per-modality TTFB hardening.
 
 For the locked design rationale, see `.agents/v0.0.4-phase3.md` (especially §1 for why the substitute strategy exists, §3 for the JSON schema, and §6 for known risks and mitigations).

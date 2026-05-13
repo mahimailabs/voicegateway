@@ -73,7 +73,7 @@ Open the dashboard at `http://127.0.0.1:9090/projects`, find the `acme` card, cl
 
 - **Product name**: e.g. `AcmeVoice` (up to 64 chars; appears in the sidebar in place of "VoiceGateway").
 - **Accent color**: `#FF6633` or any valid hex (the dashboard offers a native color picker too).
-- **Logo**: a PNG or SVG file. Maximum 256 KB, max dimensions 512x512 px for PNG (SVG is vector, no dimension check). Saved under `dashboard/api/static/branding/acme.{png,svg}` and served at `/static/branding/acme.png`.
+- **Logo**: a PNG or SVG file. Maximum 256 KB, max dimensions 512x512 px for PNG (SVG is vector, no dimension check). Saved under `src/dashboard/api/static/branding/acme.{png,svg}` and served at `/static/branding/acme.png`.
 
 For scripted provisioning, the CLI's `brand` subgroup hits the same endpoints:
 
@@ -133,10 +133,10 @@ A few capabilities are deliberately deferred. Plan accordingly.
 ## Where the design lives
 
 - **Refinery / Foundry**: REQ-VG-ROUTE-001..004 in the Linear project.
-- **Migration**: `voicegateway/storage/migrations/0006_routing_and_branding.py`.
-- **Router**: `voicegateway/middleware/router.py` + `latency_observations_worker.py`.
-- **Baselines**: `voicegateway/core/provider_baselines.json`.
-- **Storage**: `voicegateway/storage/latency_observations_repo.py`.
-- **Dashboard API**: `dashboard/api/main.py` (search for `/api/routing` and `/api/projects/{id}/branding`).
-- **Frontend**: `dashboard/frontend/src/pages/Routing.tsx`, `lib/branding.ts`, `pages/Sessions.tsx` (`RoutingStrip`), `pages/Projects.tsx` (`BrandingModal`).
-- **CLI**: `voicegateway/cli/route.py`, `voicegateway/cli/brand.py`.
+- **Migration**: `src/voicegateway/storage/migrations/0006_routing_and_branding.py`.
+- **Router**: `src/voicegateway/middleware/router.py` + `latency_observations_worker.py`.
+- **Baselines**: `src/voicegateway/core/provider_baselines.json`.
+- **Storage**: `src/voicegateway/storage/latency_observations_repo.py`.
+- **Dashboard API**: `src/dashboard/api/main.py` (search for `/api/routing` and `/api/projects/{id}/branding`).
+- **Frontend**: `src/dashboard/frontend/src/pages/Routing.tsx`, `lib/branding.ts`, `pages/Sessions.tsx` (`RoutingStrip`), `pages/Projects.tsx` (`BrandingModal`).
+- **CLI**: `src/voicegateway/cli/route.py`, `src/voicegateway/cli/brand.py`.

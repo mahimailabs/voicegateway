@@ -247,7 +247,7 @@ stt = inference.STT("deepgram/nova-3")
 
 ### 3. Virtual API keys (no code change required)
 
-When a request authenticates with a `vk_`-prefixed virtual key whose `tenant_id` is set, the HTTP API's auth middleware (in `voicegateway/server/main.py::build_app`) auto-tags the session with the key's scope. Agent code does not need to know the tenant: the dashboard's Virtual Keys page (`/virtual-keys`) issues a scoped key, the operator ships it as `Authorization: Bearer vk_…`, and every request inherits the scope.
+When a request authenticates with a `vk_`-prefixed virtual key whose `tenant_id` is set, the HTTP API's auth middleware (in `src/voicegateway/server/main.py::build_app`) auto-tags the session with the key's scope. Agent code does not need to know the tenant: the dashboard's Virtual Keys page (`/virtual-keys`) issues a scoped key, the operator ships it as `Authorization: Bearer vk_…`, and every request inherits the scope.
 
 Body-level `tenant_id` is rejected with `403` when it conflicts with a scoped virtual key. Unscoped virtual keys (issued without a tenant) allow the body to declare any tenant, matching the static-key behavior.
 
@@ -281,7 +281,7 @@ projects:
 At session start, the router reads three inputs and produces a `RoutedTriple` plus a `budget_overrun` boolean.
 
 1. **Observed p50 per (provider, modality)**: rolled up by the 15-minute worker from the requests table, written to `latency_observations`. The router prefers observed data when present.
-2. **Curated published-median baselines** in `voicegateway/core/provider_baselines.json` (REQ-VG-ROUTE-002 AC-4 fallback). Used when no observation exists for a candidate. Operators can edit the JSON to update a published median or add a missing provider.
+2. **Curated published-median baselines** in `src/voicegateway/core/provider_baselines.json` (REQ-VG-ROUTE-002 AC-4 fallback). Used when no observation exists for a candidate. Operators can edit the JSON to update a published median or add a missing provider.
 3. **Caller overrides**: explicit `{modality: provider}` map passed from the agent code. The router respects overrides for the named modalities and only picks for the unset ones (AC-3).
 
 Candidate triples are the cartesian product of the rosters minus the overridden modalities. The router computes a predicted total (sum of per-modality predictions), picks the lowest one whose total fits the budget. If nothing fits and `fallback_to_fastest=true`, it picks the fastest available and flags `budget_overrun=true`. If `fallback_to_fastest=false`, it raises `BudgetExceeded`.

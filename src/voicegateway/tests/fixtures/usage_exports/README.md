@@ -4,8 +4,8 @@ Reference fixtures for `voicegw reconcile`. Each file is a small,
 plausible monthly usage export in the canonical schema documented at
 `docs/reference/reconcile-formats.md`. Use them in two ways:
 
-1. **As test inputs.** `tests/test_reconcile.py` and
-   `tests/test_cli.py` load these directly to exercise the parser
+1. **As test inputs.** `src/voicegateway/tests/test_reconcile.py` and
+   `src/voicegateway/tests/test_cli.py` load these directly to exercise the parser
    and `voicegw reconcile` end-to-end. Adding a new sample here
    should land alongside a focused test case that pins its
    parsed values.

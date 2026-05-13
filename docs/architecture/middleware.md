@@ -54,7 +54,7 @@ When a request flows through the Gateway:
 
 ## BudgetEnforcer
 
-**File:** `voicegateway/middleware/budget_enforcer.py`
+**File:** `src/voicegateway/middleware/budget_enforcer.py`
 
 Enforces per-project daily spending limits. Budget checks are cached in memory with a **30-second TTL** to avoid hitting the database on every request.
 
@@ -92,7 +92,7 @@ The `get_budget_status()` method returns a status string for API responses: `"ok
 
 ## CostTracker
 
-**File:** `voicegateway/middleware/cost_tracker.py`
+**File:** `src/voicegateway/middleware/cost_tracker.py`
 
 Calculates per-request costs based on the pricing catalog and writes request records to SQLite.
 
@@ -112,7 +112,7 @@ Calculates per-request costs based on the pricing catalog and writes request rec
 
 ## LatencyMonitor
 
-**File:** `voicegateway/middleware/latency_monitor.py`
+**File:** `src/voicegateway/middleware/latency_monitor.py`
 
 Tracks two timing metrics:
 
@@ -132,7 +132,7 @@ The `_LatencyTimer` logs a warning when TTFB exceeds the configured threshold (d
 
 ## RateLimiter
 
-**File:** `voicegateway/middleware/rate_limiter.py`
+**File:** `src/voicegateway/middleware/rate_limiter.py`
 
 A sliding-window rate limiter using a token bucket pattern, enforced per provider.
 
@@ -183,7 +183,7 @@ Once that resolved model is wired into `AgentSession`, the call uses it for its 
 
 ## RequestLogger
 
-**File:** `voicegateway/middleware/logger.py`
+**File:** `src/voicegateway/middleware/logger.py`
 
 Structured logging for all gateway operations under the `gateway.requests` logger name.
 
@@ -196,7 +196,7 @@ Structured logging for all gateway operations under the `gateway.requests` logge
 
 ## InstrumentedProvider
 
-**File:** `voicegateway/middleware/instrumented_provider.py`
+**File:** `src/voicegateway/middleware/instrumented_provider.py`
 
 Transparent proxy wrappers that record TTFB, total latency, and cost without changing the provider's API surface.
 

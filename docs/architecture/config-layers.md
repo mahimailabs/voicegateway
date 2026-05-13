@@ -40,7 +40,7 @@ graph TB
 
 ## ConfigManager
 
-**File:** `voicegateway/core/config_manager.py`
+**File:** `src/voicegateway/core/config_manager.py`
 
 The `ConfigManager` is responsible for merging YAML and SQLite sources into a single `GatewayConfig`.
 
@@ -97,7 +97,7 @@ merged.providers[pid] = {
 
 ## YAML Configuration
 
-**File:** `voicegateway/core/config.py`
+**File:** `src/voicegateway/core/config.py`
 
 ### Environment Variable Substitution
 
@@ -129,7 +129,7 @@ When no explicit path is provided:
 
 ### Pydantic Validation
 
-**File:** `voicegateway/core/schema.py`
+**File:** `src/voicegateway/core/schema.py`
 
 Before parsing, the raw YAML dict is validated against a Pydantic model (`VoiceGatewayConfig`). Validation errors are formatted with field paths and messages:
 

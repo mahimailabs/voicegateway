@@ -2,7 +2,7 @@
 
 VoiceGateway uses SQLite via `aiosqlite` for all persistent data: request logs, cost tracking, managed configuration, and audit trails.
 
-**File:** `voicegateway/storage/sqlite.py`
+**File:** `src/voicegateway/storage/sqlite.py`
 
 ## Database Location
 

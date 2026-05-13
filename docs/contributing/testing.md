@@ -40,11 +40,11 @@ testpaths = ["tests"]
 This means:
 - **No `@pytest.mark.asyncio` needed** -- async test functions are detected automatically
 - **All tests run in the same event loop policy** -- no loop conflicts
-- Test files live in the `tests/` directory
+- Test files live in the `src/voicegateway/tests/` directory
 
 ## Shared fixtures
 
-The `tests/conftest.py` file provides four key fixtures:
+The `src/voicegateway/tests/conftest.py` file provides four key fixtures:
 
 ### `_test_env` (autouse)
 
@@ -69,7 +69,7 @@ You never need to call this fixture explicitly -- it is autouse.
 
 ### `example_config_path`
 
-Writes the bundled starter config (sourced from `voicegateway/data/voicegw.example.yaml`) to a tmp file and returns its path. Use this to test config loading against the shipped example:
+Writes the bundled starter config (sourced from `src/voicegateway/data/voicegw.example.yaml`) to a tmp file and returns its path. Use this to test config loading against the shipped example:
 
 ```python
 def test_load_example(example_config_path):
@@ -107,7 +107,7 @@ async def test_query_costs(seeded_storage):
 
 ### Test file naming
 
-- Test files: `tests/test_<module>.py`
+- Test files: `src/voicegateway/tests/test_<module>.py`
 - Test functions: `test_<what_it_tests>`
 - Test classes (grouping related tests): `TestClassName`
 

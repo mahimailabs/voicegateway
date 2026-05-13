@@ -193,13 +193,13 @@ and adds conftest fixtures for MCP testing.
 Files whose names start with a leading underscore are internal
 implementation details and not part of the public import surface:
 
-- `voicegateway/_version.py` -- hatch-vcs generated, do not edit.
-- `tests/fixtures/streaming/_loader.py` -- private test helper.
-- `voicegateway/inference/_llm.py`, `_stt.py`, `_tts.py` -- private
+- `src/voicegateway/_version.py` -- hatch-vcs generated, do not edit.
+- `src/voicegateway/tests/fixtures/streaming/_loader.py` -- private test helper.
+- `src/voicegateway/inference/_llm.py`, `_stt.py`, `_tts.py` -- private
   factories; the public surface is `voicegateway.inference.{LLM,STT,TTS}`.
 
 A future ruff rule could enforce that nothing under
-`voicegateway/` imports a leading-underscore module from a different
+`src/voicegateway/` imports a leading-underscore module from a different
 subpackage; for now the convention is documentation-only.
 
 ## Public API contract
@@ -239,19 +239,19 @@ follow them unless there is a concrete reason not to.
 
 Prefer ``typing.Protocol`` for structural typing where multiple
 implementations need to satisfy an interface without sharing helper
-code (see ``voicegateway/cli/tui/data`` for a real example -- the
+code (see ``src/voicegateway/cli/tui/data`` for a real example -- the
 ``DataClient`` Protocol is satisfied by both ``HttpClient`` and
 ``LocalClient`` without inheritance). Use an abstract base class only
 when the base genuinely supplies shared behaviour
-(``voicegateway/providers/base.py``'s ``BaseProvider`` is the
+(``src/voicegateway/providers/base.py``'s ``BaseProvider`` is the
 canonical example: every concrete provider inherits real helper
 methods).
 
 ### Pydantic for config
 
 Anything parsed from YAML or environment variables is a Pydantic
-model. See ``voicegateway/core/config.py`` and
-``voicegateway/core/schema.py`` for the project-wide config shape;
+model. See ``src/voicegateway/core/config.py`` and
+``src/voicegateway/core/schema.py`` for the project-wide config shape;
 the validators there are the single source of truth for what
 ``voicegw.yaml`` accepts.
 
@@ -276,17 +276,17 @@ paths -- they hide real bugs and bypass the type system.
 See [Testing](/contributing/testing) for the full guide. Quick
 reference:
 
-- Tests live under ``tests/`` mirroring the package layout
-  (``tests/middleware/`` for ``voicegateway/middleware/`` tests, etc.).
+- Tests live under ``src/voicegateway/tests/`` mirroring the package layout
+  (``src/voicegateway/tests/middleware/`` for ``src/voicegateway/middleware/`` tests, etc.).
 - ``pytest`` + ``pytest-asyncio`` with ``asyncio_mode = "auto"``
   (configured in ``pyproject.toml``). No ``@pytest.mark.asyncio`` is
   needed; async tests are detected automatically.
-- Shared fixtures live in ``tests/conftest.py``. Per-subpackage
+- Shared fixtures live in ``src/voicegateway/tests/conftest.py``. Per-subpackage
   fixtures live in that subpackage's ``conftest.py``.
 - File-name pattern: ``test_<thing-under-test>.py``. Function-name
   pattern: ``test_<behaviour>``.
 - Subprocess CLI tests use the patterns in
-  ``tests/cli/test_record_streaming_fixtures_cli.py``.
+  ``src/voicegateway/tests/cli/test_record_streaming_fixtures_cli.py``.
 - Coverage stays at or above the project gate (see
   ``[tool.coverage.run]`` in ``pyproject.toml``).
 

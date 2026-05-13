@@ -295,7 +295,7 @@ A list of log record dicts, each containing:
 | `model_id` | `string` | Full model identifier. |
 | `provider` | `string` | Provider name. |
 | `cost_usd` | `float` | Cost of this request. |
-| `pricing_source` | `string \| null` | Catalog that priced this row (e.g. `"genai-prices@0.0.57"` or `"voicegateway-catalog@2026-05-04"`). Empty string when no catalog matched (unknown model). Persisted on the `requests` table; see `voicegateway/storage/sqlite.py`. |
+| `pricing_source` | `string \| null` | Catalog that priced this row (e.g. `"genai-prices@0.0.57"` or `"voicegateway-catalog@2026-05-04"`). Empty string when no catalog matched (unknown model). Persisted on the `requests` table; see `src/voicegateway/storage/sqlite.py`. |
 | `ttfb_ms` | `float` | Time to first byte in milliseconds. |
 | `total_latency_ms` | `float` | Total latency in milliseconds. |
 | `status` | `string` | `"success"`, `"error"`, or `"fallback"`. |

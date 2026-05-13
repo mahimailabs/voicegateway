@@ -2,14 +2,14 @@
 
 VoiceGateway uses [pydantic/genai-prices](https://github.com/pydantic/genai-prices) for LLM pricing. STT and TTS pricing live in two local catalogs that the project maintains by hand:
 
-- `voicegateway/pricing/stt.py`
-- `voicegateway/pricing/tts.py`
+- `src/voicegateway/pricing/stt.py`
+- `src/voicegateway/pricing/tts.py`
 
 Each entry carries a `pricing_source_date` (the date the maintainer last verified the rate against the provider's pricing page) and a `pricing_source_url`. The dates are per entry, so a refresh of one provider does not lie about the freshness of the others.
 
 ## When a refresh is required
 
-`tests/pricing/test_staleness.py` runs in CI and fails the build when any catalog entry's `pricing_source_date` is more than 60 days older than `date.today()`. Either:
+`src/voicegateway/tests/pricing/test_staleness.py` runs in CI and fails the build when any catalog entry's `pricing_source_date` is more than 60 days older than `date.today()`. Either:
 
 - A provider published a price change that affects an entry, or
 - An entry crossed the 60-day staleness threshold.
@@ -18,7 +18,7 @@ In both cases, follow the steps below for the affected entries.
 
 ## Step-by-step refresh
 
-1. Open the relevant catalog file (`voicegateway/pricing/stt.py` or `voicegateway/pricing/tts.py`).
+1. Open the relevant catalog file (`src/voicegateway/pricing/stt.py` or `src/voicegateway/pricing/tts.py`).
 2. Find the entry whose rate or date you are refreshing.
 3. Visit the entry's `pricing_source_url` and read the current published rate. If the provider changed pricing tiers, plan caps, or unit conventions, capture both numbers (old and new) in the commit body so reviewers can verify the calculation.
 4. Update both the rate (`per_minute` for STT, `per_character` for TTS) and the `pricing_source_date` to the date you actually pulled the page. Use a `date(YYYY, M, D)` literal:
