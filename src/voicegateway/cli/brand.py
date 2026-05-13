@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +11,7 @@ import typer
 
 from voicegateway.cli._app import app, console
 from voicegateway.core.constants import DEFAULT_DASHBOARD_URL
+from voicegateway.utils.cli._shared import _auth_headers
 
 brand_app = typer.Typer(
     name="brand",
@@ -19,14 +19,6 @@ brand_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(brand_app, name="brand")
-
-
-def _auth_headers() -> dict[str, str]:
-    """Return Bearer auth headers when ``VOICEGW_API_KEY`` is set."""
-    token = os.environ.get("VOICEGW_API_KEY", "").strip()
-    if token:
-        return {"Authorization": f"Bearer {token}"}
-    return {}
 
 
 def _upload_logo(

@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import typer
 
 from voicegateway.cli._app import app, console
+from voicegateway.utils.cli._shared import _config_home
 
 
 @app.command()
@@ -46,10 +45,6 @@ def restart() -> None:
         console.print(f"[red]Failed to restart daemon:[/red] {exc}")
         raise typer.Exit(1) from exc
     console.print("[green]Daemon restarted.[/green]")
-
-
-def _config_home() -> Path:
-    return Path.home() / ".config" / "voicegateway"
 
 
 @app.command(name="daemon-logs")

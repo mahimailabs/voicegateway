@@ -66,12 +66,14 @@ _SUBPACKAGES = _walk_subpackages()
 # ``voicegateway.middleware.guardrail_prompts`` for package data loaded
 # via importlib.resources. ``voicegateway.data`` joined the count when
 # ``voicegw.example.yaml`` moved into the package (was at repo root).
-# Current count is 21. If this drifts unexpectedly, that is a hint a
+# The cli-helpers-namespacing pass added ``voicegateway.utils`` and
+# ``voicegateway.utils.cli`` for the per-command helper modules.
+# Current count is 23. If this drifts unexpectedly, that is a hint a
 # new subpackage landed without being thought through.
 def test_walker_finds_expected_number_of_subpackages() -> None:
-    """Subpackage count is stable post-v0.6.0 (guardrail prompts + data)."""
-    assert len(_SUBPACKAGES) == 21, (
-        f"Expected 21 subpackages (root + 20 nested), got "
+    """Subpackage count is stable post-v0.6.0 (guardrail prompts + data + utils)."""
+    assert len(_SUBPACKAGES) == 23, (
+        f"Expected 23 subpackages (root + 22 nested), got "
         f"{len(_SUBPACKAGES)}: "
         f"{sorted(p.__name__ for p in _SUBPACKAGES)}"
     )
