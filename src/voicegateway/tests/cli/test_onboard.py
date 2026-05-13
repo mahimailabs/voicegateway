@@ -400,7 +400,7 @@ async def test_validate_returns_timeout_when_health_check_hangs(monkeypatch):
         lambda name, cfg: _FakeProvider(),
     )
     # Lower the cap to 50 ms so the test stays fast.
-    monkeypatch.setattr(onboard_mod, "_VALIDATION_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(onboard_mod, "VALIDATION_TIMEOUT_S", 0.05)
 
     status, message = await onboard_mod._validate_provider_key("openai", "sk-test")
     assert status == "timeout"
