@@ -1,30 +1,4 @@
-"""``voicegw doctor`` command.
-
-Implements REQ-VG-ONBOARD-006: ten diagnostic checks rendered as a
-numbered punch list with plain-language fix actions on every failure.
-
-The check list follows the order in the v0.1.0 TODO:
-
-  1. Python version (>= 3.11)
-  2. pipx installed
-  3. Daemon registered with the OS service manager
-  4. Daemon running
-  5. Port conflict on the configured serve port
-  6. Provider configured in voicegw.yaml
-  7. Provider key validates against the upstream API (fail-soft)
-  8. Recent error count low (storage scan)
-  9. Dashboard reachable on its bind port
-  10. MCP responsive (when MCP is enabled)
-
-Each check returns a ``CheckResult`` with one of three statuses:
-``ok`` (green), ``fail`` (red, drives exit 1), ``skip`` (yellow,
-non-blocking — used when the configured surface is intentionally
-disabled, e.g. cost-tracking off skips the storage-error check).
-
-Fix-action wording follows AC-VG-ONBOARD-006.2: a specific, plain-
-language remediation step for every failure. No stack traces. No
-bare ``see docs`` pointers.
-"""
+"""``voicegw doctor`` command."""
 
 from __future__ import annotations
 
@@ -37,6 +11,7 @@ import typer
 from rich.table import Table
 
 from voicegateway.cli._app import app, console
+from voicegateway.core.contants import STATUS_RENDER
 
 
 @dataclass
@@ -55,26 +30,12 @@ class CheckResult:
 
 @dataclass
 class _Context:
-    """Bundle of state every check needs.
-
-    Built once per ``doctor`` invocation so individual checks don't
-    each pay the gateway-load cost. ``gateway_load_error`` carries the
-    exception message when the gateway-dependent checks should
-    soft-skip rather than report a fail (e.g., voicegw.yaml missing —
-    the provider-configured check covers that case directly).
-    """
+    """Bundle of state every check needs."""
 
     config_path: str | None
     gateway: Any | None = None
     gateway_load_error: str | None = None
     daemon_status: dict[str, Any] = field(default_factory=dict)
-
-
-# ---------------------------------------------------------------------------
-# Individual checks. Each takes the shared _Context and returns a
-# CheckResult. Order in _CHECKS below is the order the punch list
-# renders.
-# ---------------------------------------------------------------------------
 
 
 def _check_python_version(ctx: _Context) -> CheckResult:
@@ -127,8 +88,6 @@ def _check_daemon_running(ctx: _Context) -> CheckResult:
         pid = ctx.daemon_status.get("pid")
         return CheckResult("Daemon running", "ok", f"pid={pid}" if pid else "")
     if not ctx.daemon_status.get("registered"):
-        # Already covered by check 3; surface a skip so the
-        # operator's eye doesn't get duplicated noise.
         return CheckResult(
             "Daemon running", "skip", "(skipped because daemon not registered)"
         )
@@ -196,13 +155,7 @@ def _check_provider_configured(ctx: _Context) -> CheckResult:
 
 
 def _check_provider_key_valid(ctx: _Context) -> CheckResult:
-    """Best-effort: validate at most one configured provider's key.
-
-    Reuses the same plumbing the wizard uses (5-second cap +
-    fail-soft). Probes the FIRST configured provider only so doctor
-    runs in bounded time even with many providers; full coverage
-    lives in the wizard's per-provider validation flow.
-    """
+    """Best-effort: validate at most one configured provider's key."""
     if ctx.gateway is None:
         return CheckResult(
             "Provider key valid",
@@ -290,12 +243,6 @@ def _check_dashboard_reachable(ctx: _Context) -> CheckResult:
 
         response = httpx.get(url, timeout=2.0)
     except httpx.ConnectError:
-        # The v0.1.0 daemon (LaunchAgent / systemd / Scheduled Task)
-        # only auto-runs ``voicegw serve``; ``voicegw dashboard`` is a
-        # separate, optional process. A connect-failure therefore is
-        # not a deployment problem on a daemon-first install -- it is
-        # the documented default state. Skip with a hint to start the
-        # dashboard manually if the user wants it.
         return CheckResult(
             "Dashboard reachable",
             "skip",
@@ -320,13 +267,7 @@ def _check_dashboard_reachable(ctx: _Context) -> CheckResult:
 
 
 def _check_mcp_responsive(ctx: _Context) -> CheckResult:
-    """MCP responsive when MCP is enabled.
-
-    v0.1.0 ships an MCP probe that's best-effort: the cli has no
-    way to know whether the operator runs MCP via stdio (always
-    available; nothing to ping) vs. http (port-bound; pingable).
-    Skip with a documented note rather than guessing.
-    """
+    """MCP responsive when MCP is enabled."""
     return CheckResult(
         "MCP responsive",
         "skip",
@@ -346,11 +287,6 @@ _CHECKS = (
     _check_dashboard_reachable,
     _check_mcp_responsive,
 )
-
-
-# ---------------------------------------------------------------------------
-# Helpers shared across checks.
-# ---------------------------------------------------------------------------
 
 
 def _resolve_serve_port(ctx: _Context) -> int | None:
@@ -395,18 +331,6 @@ def _build_context(config_path: str | None) -> _Context:
     return ctx
 
 
-# ---------------------------------------------------------------------------
-# Typer command.
-# ---------------------------------------------------------------------------
-
-
-_STATUS_RENDER = {
-    "ok": "[green]PASS[/green]",
-    "fail": "[red]FAIL[/red]",
-    "skip": "[yellow]SKIP[/yellow]",
-}
-
-
 @app.command()
 def doctor(
     config: str = typer.Option(None, "--config", "-c", help="Path to voicegw.yaml"),
@@ -430,7 +354,7 @@ def doctor(
         table.add_row(
             str(i),
             r.label,
-            _STATUS_RENDER.get(r.status, r.status.upper()),
+            STATUS_RENDER.get(r.status, r.status.upper()),
             r.detail,
         )
 

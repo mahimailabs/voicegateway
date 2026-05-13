@@ -1,9 +1,4 @@
-"""``voicegw costs`` command.
-
-Carved out of voicegateway/cli/_legacy.py during the v0.1.0 section-2
-refactor. Prints today/week/month cost summary plus the modality-aware
-pricing-source attribution line.
-"""
+"""``voicegw costs`` command."""
 
 from __future__ import annotations
 
@@ -60,11 +55,6 @@ def costs(
     if not summary["by_provider"]:
         console.print("[dim]No requests recorded yet.[/dim]")
 
-    # Cost-staleness reminder (Q7). Print as a single dim-styled line
-    # so terminals without color support still get the message. Naming
-    # the catalogs surfaces the modality-aware unit accounting story
-    # without forcing the reader to remember which prices come from
-    # genai-prices and which from VG's local catalog.
     from voicegateway.pricing import llm as _llm_pricing
     from voicegateway.pricing import stt as _stt_pricing
     from voicegateway.pricing import tts as _tts_pricing

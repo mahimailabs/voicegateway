@@ -1,10 +1,4 @@
-"""``voicegw dashboard`` command.
-
-Carved out of voicegateway/cli/_legacy.py during the v0.1.0 section-2
-refactor. Boots the FastAPI dashboard backend (``dashboard.api.main``)
-under uvicorn against the loaded gateway. Defaults to 0.0.0.0:9090
-which is the v0.0.5 contract.
-"""
+"""``voicegw dashboard`` command."""
 
 from __future__ import annotations
 

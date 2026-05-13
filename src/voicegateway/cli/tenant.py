@@ -1,25 +1,4 @@
-"""``voicegw tenant`` command group: read-only tenant index for CI scripts.
-
-Implements REQ-VG-TENANT-002 from a non-dashboard surface. Two
-subcommands:
-
-* ``voicegw tenant list`` — print the tenant index with session count,
-  total cost, and first/last-seen timestamps. Optional ``--json`` for
-  machine consumption.
-* ``voicegw tenant show <id>`` — print the aggregates for a single
-  tenant. ``--json`` available.
-
-Issuing virtual keys is intentionally NOT in scope here: the Foundry
-locks key issuance to the dashboard (REQ-VG-TENANT-003 AC-2 requires
-the "show key once" modal, which a CLI can't reproduce safely). The
-CLI exists so deployment scripts and CI checks can query attribution
-state without spinning up the dashboard.
-
-Path correction note: the Foundry's text listed
-``voicegw/cli/tenant.py`` (same typo it carried for v0.3.0/T15's
-``replay`` command). The file lives at ``voicegateway/cli/tenant.py``
-per the actual layout.
-"""
+"""``voicegw tenant`` command group: read-only tenant index for CI scripts."""
 
 from __future__ import annotations
 
@@ -32,7 +11,6 @@ import typer
 from voicegateway.cli._app import app, console
 from voicegateway.cli._helpers import _load_gateway
 
-# Subcommand group: ``voicegw tenant <subcommand>``.
 tenant_app = typer.Typer(
     name="tenant",
     help="Read-only tenant index for CI scripts. Use the dashboard to issue keys.",
@@ -42,13 +20,7 @@ app.add_typer(tenant_app, name="tenant")
 
 
 def _format_relative(iso: str | None) -> str:
-    """Return ``iso`` verbatim or ``-`` when ``None``.
-
-    CLI consumers prefer the exact ISO timestamp over a "5 days ago"
-    rendering because they pipe the output into scripts. The
-    dashboard's relative formatting is a UI affordance, not a CLI
-    one.
-    """
+    """Return ``iso`` verbatim or ``-`` when ``None``."""
     return iso if iso else "-"
 
 

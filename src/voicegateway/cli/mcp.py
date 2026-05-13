@@ -1,10 +1,4 @@
-"""``voicegw mcp`` command.
-
-Carved out of voicegateway/cli/_legacy.py during the v0.1.0 section-2
-refactor. Boots the MCP (Model Context Protocol) server for
-agent-managed gateway configuration. Supports stdio (local agents:
-Claude Code, Cursor, Codex, Cline) or HTTP/SSE (remote access).
-"""
+"""``voicegw mcp`` command."""
 
 from __future__ import annotations
 
@@ -28,18 +22,7 @@ def mcp_cmd(
     port: int = typer.Option(8090, "--port", "-p", help="HTTP bind port (http only)"),
     config: str = typer.Option(None, "--config", "-c", help="Path to voicegw.yaml"),
 ) -> None:
-    """Start the VoiceGateway MCP server.
-
-    Use stdio transport for local agents (Claude Code, Cursor):
-
-        voicegw mcp --transport stdio
-
-    Use HTTP/SSE for remote access or team gateways:
-
-        voicegw mcp --transport http --port 8090
-
-    Authentication (HTTP only) via VOICEGW_MCP_TOKEN env var.
-    """
+    """Start the VoiceGateway MCP server."""
     if transport not in ("stdio", "http"):
         console.print(
             f"[red]Unknown transport: {transport}. Use 'stdio' or 'http'.[/red]"

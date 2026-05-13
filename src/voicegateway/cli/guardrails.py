@@ -10,6 +10,7 @@ import httpx
 import typer
 
 from voicegateway.cli._app import app, console
+from voicegateway.core.contants import DEFAULT_DASHBOARD_URL
 from voicegateway.core.guardrail_policy import GUARDRAIL_CATEGORIES, GuardrailPolicy
 from voicegateway.middleware.guardrails import compose_guardrail_block
 
@@ -19,8 +20,6 @@ guardrails_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(guardrails_app, name="guardrails")
-
-_DEFAULT_DASHBOARD_URL = "http://127.0.0.1:9090"
 
 
 def _auth_headers() -> dict[str, str]:
@@ -61,7 +60,7 @@ def _request(
 def show_cmd(
     project: str = typer.Option(..., "--project", "-p", help="Project id."),
     dashboard_url: str = typer.Option(
-        _DEFAULT_DASHBOARD_URL, "--dashboard-url", help="Dashboard base URL."
+        DEFAULT_DASHBOARD_URL, "--dashboard-url", help="Dashboard base URL."
     ),
     json_output: bool = typer.Option(False, "--json", help="Print JSON."),
 ) -> None:
@@ -89,7 +88,7 @@ def set_cmd(
         ..., "--action", "-a", help="redact, block, alert, or off."
     ),
     dashboard_url: str = typer.Option(
-        _DEFAULT_DASHBOARD_URL, "--dashboard-url", help="Dashboard base URL."
+        DEFAULT_DASHBOARD_URL, "--dashboard-url", help="Dashboard base URL."
     ),
 ) -> None:
     """Set one category action, preserving the other categories."""
@@ -120,7 +119,7 @@ def set_cmd(
 def clear_cmd(
     project: str = typer.Option(..., "--project", "-p", help="Project id."),
     dashboard_url: str = typer.Option(
-        _DEFAULT_DASHBOARD_URL, "--dashboard-url", help="Dashboard base URL."
+        DEFAULT_DASHBOARD_URL, "--dashboard-url", help="Dashboard base URL."
     ),
 ) -> None:
     """Disable all guardrails for a project."""
@@ -138,7 +137,7 @@ def clear_cmd(
 def dry_run_cmd(
     project: str = typer.Option(..., "--project", "-p", help="Project id."),
     dashboard_url: str = typer.Option(
-        _DEFAULT_DASHBOARD_URL, "--dashboard-url", help="Dashboard base URL."
+        DEFAULT_DASHBOARD_URL, "--dashboard-url", help="Dashboard base URL."
     ),
 ) -> None:
     """Print the composed guardrail prompt block for inspection."""

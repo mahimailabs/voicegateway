@@ -1,43 +1,4 @@
-"""``voicegw migrate`` command.
-
-Implements REQ-VG-ONBOARD-007: detect a v0.0.5 install at the
-canonical config home, verify integrity, and guide the user to
-v0.1.0's daemon-first surface.
-
-Migration semantics for v0.1.0 are deliberately conservative.
-Per design.md decision 2 ("config home: same as v0.0.5 — no
-migration pain") the canonical path is unchanged:
-``~/.config/voicegateway/voicegw.yaml`` plus
-``~/.config/voicegateway/voicegw.db``. There is no copy step.
-
-What this command DOES:
-
-  - Detect a v0.0.5 install at the canonical path.
-  - Verify ``voicegw.yaml`` parses cleanly under the v0.1.0
-    schema.
-  - Verify ``voicegw.db`` opens (managed_providers + sessions
-    + requests tables present).
-  - Best-effort: confirm the Fernet-encrypted ``managed_providers``
-    rows decrypt under ``VOICEGW_SECRET`` so the operator
-    knows whether ``voicegw rotate-secret`` is needed.
-  - Print a structured summary plus the recommended next-step
-    commands for v0.1.0 (``voicegw onboard --install-daemon``
-    or ``voicegw start`` if the daemon is already registered).
-
-What this command does NOT do (yet):
-
-  - Atomic-rename staging path: relevant when migration mutates
-    files in place; v0.1.0 keeps the schema unchanged. Lands as
-    a separate iteration once an actual schema bump arrives.
-  - Rollback: covered by the same staging task. Today the
-    command is read-only against the existing install so there
-    is nothing to roll back.
-
-Idempotency: re-running on an already-migrated install is safe
-and produces the same summary. Re-running on a missing install
-prints "no v0.0.5 install detected; run `voicegw onboard` to
-start fresh".
-"""
+"""``voicegw migrate`` command."""
 
 from __future__ import annotations
 
@@ -51,12 +12,7 @@ from voicegateway.cli._app import app, console
 
 @dataclass
 class MigrationReport:
-    """Structured outcome of a migrate run.
-
-    The cli renders the table from these fields; tests pin
-    individual flags so a regression in one branch doesn't bleed
-    into the others.
-    """
+    """Structured outcome of a migrate run."""
 
     config_path: Path
     db_path: Path
@@ -86,32 +42,8 @@ def _config_home() -> Path:
     return Path.home() / ".config" / "voicegateway"
 
 
-# ---------------------------------------------------------------------------
-# Staging-and-atomic-rename helper.
-#
-# v0.1.0's migrate command is read-only because the v0.0.5 path is
-# preserved verbatim (decision 2). When a future schema bump
-# introduces mutations, this helper is the seam every write goes
-# through: write to ``<target>.tmp`` first, fsync the file, then
-# ``Path.replace()`` onto the target. ``replace()`` is the POSIX
-# atomic-rename so a partial write or interrupt cannot leave a
-# half-written file at the target path.
-#
-# The helper is tested separately from migrate's flow so the safety
-# guarantees are pinned regardless of which migrate iteration first
-# invokes it.
-# ---------------------------------------------------------------------------
-
-
 def _atomic_write_text(target: Path, content: str) -> None:
-    """Stage to ``target.with_suffix('.tmp')``, fsync, then atomic-rename.
-
-    The rename is atomic on every POSIX filesystem and on NTFS
-    (Path.replace dispatches to MoveFileEx with REPLACE_EXISTING +
-    WRITE_THROUGH on Windows). On failure the staging file is
-    unlinked and the existing target stays untouched, satisfying
-    AC-VG-ONBOARD-007's "failure leaves v0.0.5 files untouched."
-    """
+    """Stage to ``target.with_suffix('.tmp')``, fsync, then atomic-rename."""
     target.parent.mkdir(parents=True, exist_ok=True)
     staging = target.with_name(target.name + ".tmp")
 
@@ -124,10 +56,6 @@ def _atomic_write_text(target: Path, content: str) -> None:
             _os.fsync(f.fileno())
         staging.replace(target)
     except Exception:
-        # On any failure: drop the staging file so the parent dir
-        # is left in the same state as before the call. The original
-        # ``target`` is never touched since replace() is the only
-        # write to that path.
         try:
             staging.unlink(missing_ok=True)
         except OSError:
@@ -332,11 +260,6 @@ def _render(report: MigrationReport) -> None:
             "[cyan]voicegw status[/cyan] to verify it's running."
         )
 
-    # AC-VG-ONBOARD-007 rollback contract. v0.1.0's migrate is
-    # read-only by design (decision 2 keeps the v0.0.5 path), so the
-    # rollback path is "we never wrote anything." Surfacing this
-    # to the operator removes the worry that re-running would
-    # mutate a working install.
     console.print(
         "\n[dim]This command is read-only: no files were written; "
         "your v0.0.5 install is unchanged.[/dim]"
@@ -351,13 +274,7 @@ def migrate(
         help="Override the canonical config home (default: ~/.config/voicegateway).",
     ),
 ) -> None:
-    """Migrate a v0.0.5 install into the v0.1.0 layout.
-
-    The path is unchanged from v0.0.5 (per design decision 2), so
-    migration is detection + integrity verification + next-step
-    guidance. Idempotent on re-run; read-only against the existing
-    install.
-    """
+    """Migrate a v0.0.5 install into the v0.1.0 layout."""
     home = Path(config_home) if config_home else _config_home()
     report = _build_report(home)
     _render(report)

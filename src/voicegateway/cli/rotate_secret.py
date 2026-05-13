@@ -1,10 +1,4 @@
-"""``voicegw rotate-secret`` command.
-
-Carved out of voicegateway/cli/_legacy.py during the v0.1.0 section-2
-refactor. Re-encrypts every row in ``managed_providers`` under a new
-primary Fernet key while still being able to decrypt under the
-previous one (held in ``VOICEGW_SECRET_FALLBACK``).
-"""
+"""``voicegw rotate-secret`` command."""
 
 from __future__ import annotations
 
@@ -27,22 +21,7 @@ def rotate_secret(
         help="Skip the confirmation prompt.",
     ),
 ) -> None:
-    """Re-encrypt managed provider keys under the new primary Fernet key.
-
-    Workflow:
-
-      1. Generate a fresh key:  python -c 'from cryptography.fernet
-         import Fernet; print(Fernet.generate_key().decode())'
-      2. Set VOICEGW_SECRET to the new value.
-      3. Set VOICEGW_SECRET_FALLBACK to the previous VOICEGW_SECRET.
-      4. Run `voicegw rotate-secret`.
-      5. Once it completes successfully, remove
-         VOICEGW_SECRET_FALLBACK from the environment.
-
-    The command refuses to run unless both env vars are present,
-    so an accidental invocation cannot truncate access to the
-    fallback key.
-    """
+    """Re-encrypt managed provider keys under the new primary Fernet key."""
     new_primary = os.environ.get("VOICEGW_SECRET")
     fallback = os.environ.get("VOICEGW_SECRET_FALLBACK")
     if not new_primary:

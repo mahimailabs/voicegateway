@@ -1,9 +1,4 @@
-"""``voicegw logs`` command.
-
-Carved out of voicegateway/cli/_legacy.py during the v0.1.0 section-2
-refactor. Prints the most recent N request rows from the SQLite
-storage backend, optionally filtered by project or modality.
-"""
+"""``voicegw logs`` command."""
 
 from __future__ import annotations
 

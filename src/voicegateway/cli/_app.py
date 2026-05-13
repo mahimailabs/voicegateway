@@ -1,15 +1,4 @@
-"""Shared Typer ``app`` and Rich ``console`` instances.
-
-Internal module: every command submodule (``init``, ``status``, ...)
-attaches itself to ``app`` via ``@app.command()`` at import time, and
-prints through ``console`` for terminal output.
-
-Splitting this off from ``__init__.py`` lets the package's
-``__init__.py`` keep clean, isort-friendly import order: each
-side-effect import of a command submodule resolves ``_app`` first,
-which has no other dependencies inside the package, so there is no
-circular-import surface.
-"""
+"""Shared Typer ``app`` and Rich ``console`` instances."""
 
 from __future__ import annotations
 
