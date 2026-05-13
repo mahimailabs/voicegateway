@@ -1,24 +1,4 @@
-"""``voicegw route`` command group: routing observations + dry-run simulator.
-
-Read-only ops surface for cross-modality routing (REQ-VG-ROUTE-002 +
--003). Two subcommands:
-
-* ``voicegw route show <project>`` — prints the current
-  ``latency_observations`` rollup rows for a project plus the project's
-  rosters from voicegw.yaml. Useful when debugging \"why did the router
-  pick X\".
-* ``voicegw route simulate <project> [--stt X] [--llm Y] [--tts Z]`` —
-  runs ``route_session`` against the live observations and the project
-  config (no session row written). Prints the picked triple, the
-  predicted total, and the budget_overrun flag.
-
-Issuance / config edits are NOT in scope here. The CLI is read-only;
-operators tune budgets and rosters via voicegw.yaml.
-
-Path correction note: Foundry text listed ``voicegw/cli/route.py``;
-the actual CLI subpackage is ``voicegateway/cli/`` (same correction
-as v0.3.0 / v0.4.0).
-"""
+"""``voicegw route`` command group: routing observations + dry-run simulator."""
 
 from __future__ import annotations
 

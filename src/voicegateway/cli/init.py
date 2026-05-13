@@ -1,14 +1,4 @@
-"""``voicegw init`` command.
-
-Carved out of voicegateway/cli/_legacy.py during the v0.1.0 section-2
-refactor. The example config that init copies lives at
-``voicegateway/data/voicegw.example.yaml`` so the wheel always ships
-it and the repo root stays uncluttered.
-
-Importing this module triggers the ``@app.command()`` decorator on
-``init``, registering the command on the shared Typer ``app``.
-``voicegateway/cli/__init__.py`` does this side-effect import.
-"""
+"""``voicegw init`` command."""
 
 from __future__ import annotations
 

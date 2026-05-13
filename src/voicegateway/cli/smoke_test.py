@@ -1,18 +1,4 @@
-"""``voicegw smoke-test`` command.
-
-Carved out of voicegateway/cli/_legacy.py during the v0.1.0 section-2
-refactor. Runs the v0.0.5 inference pipeline end-to-end without
-LiveKit so AC-3 / AC-5 evidence stays reproducible:
-
-  - structural pipeline checks against stubbed LK plugins, then
-  - optional ``--live`` health-check probes against real provider
-    APIs.
-
-Owns its three private helpers (`_smoke_active_project`,
-`_smoke_pick_models`, `_print_smoke_report`), the two async runners
-(`_run_smoke_pipeline_checks`, `_run_smoke_health_checks`), and the
-`_SMOKE_MODALITIES` lookup tuple.
-"""
+"""``voicegw smoke-test`` command."""
 
 from __future__ import annotations
 
@@ -24,6 +10,7 @@ from rich.table import Table
 
 from voicegateway.cli._app import app, console
 from voicegateway.cli._helpers import _load_gateway
+from voicegateway.core.constants import SMOKE_MODALITIES
 
 
 @app.command(name="smoke-test")
@@ -42,33 +29,7 @@ def smoke_test(
         ),
     ),
 ) -> None:
-    """Verify the v0.0.5 inference pipeline end-to-end without LiveKit.
-
-    Walks every layer the agent path goes through, with stubbed
-    LiveKit plugins so the run does not need a LiveKit server or
-    real provider API calls:
-
-      1. Config loads, the active project resolves.
-      2. Each modality (STT, LLM, TTS) constructs through
-         `voicegateway.inference.STT/LLM/TTS` and returns the
-         expected wrapped instance.
-      3. Driving a simulated request through the wrapper writes a
-         row to the requests table with the correct session_id,
-         project, and pricing_source.
-      4. The sessions table aggregates the request: started_at,
-         ended_at, modalities, total_cost_usd are populated.
-
-    With ``--live`` the command additionally runs each configured
-    provider's health_check (the same probe ``vg_test_provider_key``
-    runs over MCP) so the report covers credential validity too.
-
-    What this does NOT replace: a real audio interaction against a
-    running LiveKit server. For that, wire ``voicegateway.inference``
-    into a LiveKit ``AgentSession`` and connect to a dev server with
-    real provider keys (see the README Quick Start).
-
-    Exit code is 0 when every check passes, 1 otherwise.
-    """
+    """Verify the v0.0.5 inference pipeline end-to-end without LiveKit."""
     from voicegateway.inference._factory import reset_gateway
 
     gw = _load_gateway(config)
@@ -89,10 +50,6 @@ def smoke_test(
         raise typer.Exit(1)
     add("config", True, str(gw.config.cost_tracking.get("db_path", "(default)")))
 
-    # Validate an explicit --project up front. Without this check a
-    # typo (--project tony-piza) sails through `project or _smoke_…`
-    # and surfaces as a confusing "no provider key" failure deeper in
-    # the pipeline.
     if project is not None and project not in gw.config.projects:
         known = ", ".join(sorted(gw.config.projects)) or "(none)"
         add(
@@ -114,11 +71,6 @@ def smoke_test(
         raise typer.Exit(1)
     add("active project", True, active)
 
-    # try/finally so reset_gateway() always runs — including when a
-    # pipeline check raises or the typer.Exit(1) below fires. Without
-    # this the singleton cache stays mutated across a failed smoke
-    # run, which trips up the next test invocation in the same
-    # process.
     try:
         # 2. Per-modality construction with stubbed LiveKit plugins.
         asyncio.run(_run_smoke_pipeline_checks(gw, active, add))
@@ -135,12 +87,7 @@ def smoke_test(
 
 
 def _smoke_active_project(gw: Any) -> str | None:
-    """Pick a project for the smoke test.
-
-    Order: ``default_project`` from YAML, then any non-``default``
-    project (so the auto-created stub is the last resort), then
-    ``"default"`` itself.
-    """
+    """Pick a project for the smoke test."""
     if gw.config.default_project:
         return str(gw.config.default_project)
     named = [p for p in gw.config.projects if p != "default"]
@@ -151,22 +98,8 @@ def _smoke_active_project(gw: Any) -> str | None:
     return None
 
 
-_SMOKE_MODALITIES: tuple[tuple[str, str], ...] = (
-    ("stt", "STT"),
-    ("llm", "LLM"),
-    ("tts", "TTS"),
-)
-
-
 def _smoke_pick_models(gw: Any, project: str) -> dict[str, str]:
-    """Return a model_id per modality available to ``project``.
-
-    Looks at the project's `providers:` block first; falls back to
-    the top-level providers map. Picks any registered model for the
-    matching provider so the smoke test exercises the same code
-    path the agent will use, without forcing the operator to pin
-    one in YAML.
-    """
+    """Return a model_id per modality available to ``project``."""
     proj = gw.config.get_project(project)
     if proj is None:
         return {}
@@ -177,7 +110,7 @@ def _smoke_pick_models(gw: Any, project: str) -> dict[str, str]:
     available_providers.update({"ollama", "whisper", "kokoro", "piper"})
 
     chosen: dict[str, str] = {}
-    for modality, _ in _SMOKE_MODALITIES:
+    for modality, _ in SMOKE_MODALITIES:
         bucket = gw.config.models.get(modality) or {}
         for model_id, model_cfg in bucket.items():
             provider_name = model_cfg.get("provider", model_id.split("/", 1)[0])
@@ -196,13 +129,6 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
 
     models = _smoke_pick_models(gw, project)
 
-    # Smoke-test stubs: each stub instance must carry the LK-side
-    # surface InstrumentedSTT/LLM/TTS reads at construction —
-    # ``capabilities`` (passed to the LK base class via super().__init__),
-    # ``sample_rate`` / ``num_channels`` for TTS, and a no-op
-    # ``on(event, callback)`` for the metrics-event bridge. Without these
-    # the wrapper rewrite (AC-2 fix) raises AttributeError on every
-    # modality and the smoke test exits 1.
     from livekit.agents.stt import STTCapabilities
     from livekit.agents.tts import TTSCapabilities
 
@@ -243,8 +169,6 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
     def _stub_create(_provider_name: str, _config: dict) -> _StubProvider:
         return _StubProvider(_config)
 
-    # Pin the inference module to the gateway we already loaded so
-    # the smoke test does not spin a second one with its own storage.
     _factory._gateway = gw
     _project.reset_project()
     _project.set_project(project)
@@ -259,13 +183,9 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
     session_id_holder: dict[str, str | None] = {"sid": None}
 
     try:
-        for modality, label in _SMOKE_MODALITIES:
+        for modality, label in SMOKE_MODALITIES:
             model_id = models.get(modality)
             if model_id is None:
-                # A project that only uses some modalities (e.g. an
-                # LLM-only chatbot) is a valid shape, not a failure.
-                # Surface as PASS with a "skipped" detail so the
-                # report still notes the absence.
                 add(
                     f"inference.{label}",
                     True,
@@ -298,11 +218,6 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
                 continue
             add(f"inference.{label}", True, f"wrapped {model_id}")
 
-            # Drive _log_request — the seam where the wrapper writes
-            # to storage and bumps the session row. Use small but
-            # non-zero unit counts so cost shows up if pricing is
-            # configured for the model; for unknown models the row
-            # still lands at $0.
             try:
                 await instance._log_request(input_units=1.0)
             except Exception as exc:  # noqa: BLE001
@@ -322,9 +237,6 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
         _llm.create_provider = real_llm_create
         _tts.create_provider = real_tts_create
 
-    # Verify session row aggregation. The wrapper reads the
-    # ContextVar at request time; in a sync CLI run all three
-    # wrappers share one context, so they all carry the same sid.
     from voicegateway.inference._session_context import get_session_id
 
     sid = get_session_id()
@@ -344,7 +256,7 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
             f"sessions table has no row for {sid}.",
         )
         return
-    expected_modalities = {m for m, _ in _SMOKE_MODALITIES if m in models}
+    expected_modalities = {m for m, _ in SMOKE_MODALITIES if m in models}
     actual_modalities = set(session["modalities"])
     if not expected_modalities.issubset(actual_modalities):
         add(

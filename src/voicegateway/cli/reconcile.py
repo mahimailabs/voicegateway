@@ -1,14 +1,4 @@
-"""``voicegw reconcile`` command.
-
-Carved out of voicegateway/cli/_legacy.py during the v0.1.0 section-2
-refactor. Diffs VG's logged costs against a provider's normalized
-usage export and prints rows where the discrepancy exceeds the
-configured threshold.
-
-The shared ``_parse_iso_date_arg`` date parser still lives in
-``_legacy.py`` (also used by ``export-costs``); both consumers move
-to a shared helpers module in the section-2 finalisation commit.
-"""
+"""``voicegw reconcile`` command."""
 
 from __future__ import annotations
 
@@ -51,12 +41,7 @@ def reconcile_cmd(
         ),
     ),
 ) -> None:
-    """Diff VG's logged costs against a provider's usage export.
-
-    See `docs/reference/reconcile-formats.md` for the per-provider
-    file schema. Pair with `voicegw export-costs` to surface VG's
-    side of the comparison if you want to inspect the raw rows.
-    """
+    """Diff VG's logged costs against a provider's usage export."""
     from voicegateway import reconcile as _reconcile
 
     if provider not in _reconcile.SUPPORTED_PROVIDERS:
@@ -109,8 +94,6 @@ def reconcile_cmd(
             )
         )
     else:
-        # Colorize flagged rows only on a real TTY; piped output and
-        # CliRunner captures stay plain text.
         sys.stdout.write(
             _reconcile.format_text(lines, provider, colorize=sys.stdout.isatty())
         )

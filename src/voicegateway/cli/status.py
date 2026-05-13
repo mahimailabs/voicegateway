@@ -1,15 +1,4 @@
-"""``voicegw status`` command.
-
-Carved out of voicegateway/cli/_legacy.py during the v0.1.0 section-2
-refactor and extended in section 5 to show DAEMON status first, then
-provider status (per design.md decision 4: "voicegw status order:
-Daemon status first, then provider status").
-
-The two sections are independent: a missing daemon backend (e.g.
-construction error inside a hardened sandbox) does NOT block the
-provider table from rendering. ``voicegw doctor`` is the deeper
-diagnostic when the daemon side reports something concerning here.
-"""
+"""``voicegw status`` command."""
 
 from __future__ import annotations
 
@@ -32,13 +21,7 @@ def status(
 
 
 def _print_daemon_status() -> None:
-    """Render the daemon-status section.
-
-    Calls ``DaemonManager().status()`` and reports the three
-    Protocol-required fields (registered / running / pid). On any
-    error (e.g., backend module fails to load), prints a yellow
-    soft-warn line and returns; the provider section still renders.
-    """
+    """Render the daemon-status section."""
     try:
         from voicegateway.cli.daemon import DaemonManager
 

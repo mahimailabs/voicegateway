@@ -1,16 +1,4 @@
-"""``voicegw export-costs`` command.
-
-Carved out of voicegateway/cli/_legacy.py during the v0.1.0 section-2
-refactor. Streams per-request cost line items as CSV or JSONL for a
-date window. Pair with ``voicegw reconcile`` to verify against a
-provider's invoice export.
-
-Owns the export schema (``_EXPORT_COLUMNS``, ``_EXPORT_KEY_MAP``)
-and its two formatter helpers. The shared ``_parse_iso_date_arg``
-date parser stays in ``_legacy.py`` for now because ``reconcile`` is
-also a consumer; the helper moves to a shared module once both
-commands are carved out.
-"""
+"""``voicegw export-costs`` command."""
 
 from __future__ import annotations
 
@@ -36,10 +24,7 @@ _EXPORT_COLUMNS = (
     "status",
 )
 
-# Map output column names to the storage row keys they project from.
-# Storage uses `model_id` and `cost_usd`; the export schema (design
-# §2.1) names them `model` and `calculated_cost_usd`. The other 8
-# column names match storage keys directly.
+
 _EXPORT_KEY_MAP = {
     "model": "model_id",
     "calculated_cost_usd": "cost_usd",
@@ -47,16 +32,7 @@ _EXPORT_KEY_MAP = {
 
 
 def _format_export_value(column: str, value: Any) -> Any:
-    """Format one cell of an export row.
-
-    - timestamp: storage Unix-epoch float -> ISO-8601 UTC string.
-    - calculated_cost_usd: float -> fixed-point Decimal string so
-      sub-cent costs do not render in scientific notation
-      (e.g. 1e-05 -> "0.00001"). The float -> str(Decimal(str(...)))
-      hop dodges binary-precision artifacts.
-    - everything else: pass through (csv.writer / json.dump handle
-      the rest).
-    """
+    """Format one cell of an export row."""
     import datetime as _dt
     from decimal import Decimal
 
@@ -103,21 +79,7 @@ def export_costs_cmd(
         "-", "--output", "-o", help="Output path; '-' (default) writes to stdout."
     ),
 ) -> None:
-    """Export per-request cost line items for a date window.
-
-    Output columns: timestamp (ISO-8601 UTC), project, modality,
-    provider, model, input_units, output_units,
-    calculated_cost_usd (fixed-point, no scientific notation),
-    pricing_source, status.
-
-    Output formats:
-    - csv (default): header row + one data row per request.
-    - json: JSONL (one JSON object per line; no outer array, no
-      indent). Streamable; consumers iterate `json.loads` per line.
-
-    Pair with `voicegw reconcile` (Phase 4.3) to compare against a
-    provider's invoice.
-    """
+    """Export per-request cost line items for a date window."""
     if fmt not in ("csv", "json"):
         console.print(f"[red]Unknown format: {fmt}. Use 'csv' or 'json'.[/red]")
         raise typer.Exit(2)
@@ -150,9 +112,6 @@ def export_costs_cmd(
             formatted = _format_export_row(r)
             writer.writerow([formatted[col] for col in _EXPORT_COLUMNS])
     else:
-        # JSONL: one JSON object per line, no outer array, no indent.
-        # Per design §2.1 and TODO 4.1 #4. Streamable; downstream
-        # consumers can `for line in f: row = json.loads(line)`.
         for r in rows:
             _json.dump(_format_export_row(r), buf, default=str)
             buf.write("\n")

@@ -1,24 +1,4 @@
-"""``voicegw start`` / ``stop`` / ``restart`` / ``daemon-logs`` /
-``uninstall-daemon`` commands.
-
-Implements the lifecycle slice of REQ-VG-ONBOARD-004. Each command
-delegates to ``DaemonManager`` (the platform-agnostic facade in
-``voicegateway/cli/daemon/``) and surfaces a plain-language result.
-
-The v0.0.5 ``voicegw logs`` command stays as the request-row surface
-(reads from the SQLite ``requests`` table). The new daemon-log
-surface ships as ``voicegw daemon-logs`` with a hyphenated name that
-matches the existing v0.1.0 vocabulary (``uninstall-daemon``,
-``smoke-test``). A ``voicegw daemon`` typer-group restructure was
-considered but rejected for v0.1.0: it would require deprecating the
-top-level ``start/stop/restart`` commands, which is too invasive for
-this release. Group restructure may return as a v0.1.1 Terminal UI
-iteration where the tabs benefit from a sub-namespace.
-
-``status`` is the one lifecycle surface that lives elsewhere
-(``voicegateway/cli/status.py``) because it has to merge with the
-v0.0.5 provider-status view.
-"""
+"""``voicegw start`` / ``stop`` / ``restart`` / ``daemon-logs`` / ``uninstall-daemon`` commands."""
 
 from __future__ import annotations
 
@@ -31,13 +11,7 @@ from voicegateway.cli._app import app, console
 
 @app.command()
 def start() -> None:
-    """Bring the background daemon up.
-
-    Calls ``DaemonManager.start()`` which delegates to the
-    platform backend (LaunchAgent on macOS, systemd --user on
-    Linux, Scheduled Task on Windows). Idempotent: starting an
-    already-running daemon is a no-op on every backend.
-    """
+    """Bring the background daemon up."""
     from voicegateway.cli.daemon import DaemonManager
 
     try:
@@ -50,14 +24,7 @@ def start() -> None:
 
 @app.command()
 def stop() -> None:
-    """Bring the background daemon down.
-
-    Calls ``DaemonManager.stop()``. Idempotent: stopping an
-    already-stopped daemon is a no-op. Per design.md decision 5,
-    this does NOT remove the OS-level registration; the daemon
-    will still auto-start at next login. Use ``voicegw
-    uninstall-daemon`` for that.
-    """
+    """Bring the background daemon down."""
     from voicegateway.cli.daemon import DaemonManager
 
     try:
@@ -70,13 +37,7 @@ def stop() -> None:
 
 @app.command()
 def restart() -> None:
-    """Restart the background daemon (stop + start).
-
-    Calls ``DaemonManager.restart()``. The platform backend uses
-    the most efficient OS primitive (``kickstart -k`` on macOS,
-    ``systemctl restart`` on Linux); the cli surface is the same
-    everywhere.
-    """
+    """Restart the background daemon (stop + start)."""
     from voicegateway.cli.daemon import DaemonManager
 
     try:
@@ -87,10 +48,6 @@ def restart() -> None:
     console.print("[green]Daemon restarted.[/green]")
 
 
-# v0.0.5's canonical config home. v0.1.0 keeps the same path per
-# design decision 2 (no migration pain), so the uninstall message
-# can hard-reference it. Resolved at call time so a HOME override
-# in tests gets picked up.
 def _config_home() -> Path:
     return Path.home() / ".config" / "voicegateway"
 
@@ -104,16 +61,7 @@ def daemon_logs(
         help="Number of recent log lines to print.",
     ),
 ) -> None:
-    """Tail the OS-native daemon log stream.
-
-    Routes through ``DaemonManager.logs(tail=...)`` so each platform
-    backend pulls from the right surface: ``log show`` on macOS
-    (Console.app), ``journalctl --user-unit voicegateway`` on Linux,
-    the per-user log file under ``%LOCALAPPDATA%`` on Windows.
-
-    Soft-fails on backend RuntimeError. Empty output prints a
-    "no daemon logs yet" hint rather than a blank screen.
-    """
+    """Tail the OS-native daemon log stream."""
     from voicegateway.cli.daemon import DaemonManager
 
     try:
@@ -128,25 +76,12 @@ def daemon_logs(
         )
         return
 
-    # ``soft_wrap=True`` keeps long log lines on a single line in CI
-    # logs and tmp paths; Rich's default folds mid-segment.
     console.print(output, soft_wrap=True)
 
 
 @app.command(name="uninstall-daemon")
 def uninstall_daemon() -> None:
-    """Remove the daemon registration only.
-
-    Per design decision 5 the preserved-state contract is: the
-    config file (``voicegw.yaml``), the SQLite call DB
-    (``voicegw.db``), and the encrypted managed_providers rows
-    inside that DB are NOT touched. Re-running ``voicegw onboard
-    --install-daemon`` re-registers without losing any state.
-
-    Output explicitly states what was preserved and how to remove
-    it manually. ``voicegw purge-data`` is deferred to a later
-    release; for now the manual command is documented.
-    """
+    """Remove the daemon registration only."""
     from voicegateway.cli.daemon import DaemonManager
 
     try:
@@ -158,9 +93,6 @@ def uninstall_daemon() -> None:
     home = _config_home()
     console.print("[green]Daemon registration removed.[/green]\n")
     console.print("[bold]Preserved (NOT removed):[/bold]")
-    # ``soft_wrap=True`` keeps long tmp/CI paths on a single line.
-    # Rich's default wrapping folds them mid-segment which breaks
-    # both readability and any test that asserts a substring.
     console.print(f"  Config file:     {home / 'voicegw.yaml'}", soft_wrap=True)
     console.print(f"  Call database:   {home / 'voicegw.db'}", soft_wrap=True)
     console.print(

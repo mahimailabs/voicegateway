@@ -1,8 +1,4 @@
-"""``voicegw projects`` and ``voicegw project`` commands.
-
-Carved out of voicegateway/cli/_legacy.py during the v0.1.0 section-2
-refactor. This module owns the project-related Typer commands.
-"""
+"""``voicegw projects`` and ``voicegw project`` commands."""
 
 from __future__ import annotations
 

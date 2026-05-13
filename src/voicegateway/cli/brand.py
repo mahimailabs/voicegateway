@@ -1,30 +1,4 @@
-"""``voicegw brand`` command group: scripted white-label provisioning.
-
-Implements the operator-side companion to the v0.5.0 dashboard's
-BrandingModal (T18). Hits the same dashboard endpoints as the FE so
-provisioning scripts can roll new agencies without clicking through
-the UI.
-
-Subcommand:
-
-* ``voicegw brand set --project <id> [--logo <path>] [--accent <hex>]
-  [--name <str>] [--dashboard-url URL]`` — at least one of --logo /
-  --accent / --name is required. The CLI POSTs each surface to the
-  matching endpoint and prints the resulting branding payload.
-
-``voicegw brand clear --project <id>`` clears the branding (POSTs an
-empty payload). Note that the v0.5.0 backend's COALESCE-protected
-UPSERT means the clear may not fully blank stored values until a
-dedicated DELETE endpoint ships (see T18 journal note).
-
-The CLI uses ``httpx`` (already a base dep) and reads the
-``VOICEGW_API_KEY`` env var for the Bearer header when set. Default
-dashboard URL is ``http://127.0.0.1:9090`` matching the
-``voicegw dashboard`` defaults.
-
-Path correction note: Foundry text listed ``voicegw/cli/brand.py``;
-the actual CLI subpackage is ``voicegateway/cli/``.
-"""
+"""``voicegw brand`` command group: scripted white-label provisioning."""
 
 from __future__ import annotations
 
@@ -37,16 +11,14 @@ import httpx
 import typer
 
 from voicegateway.cli._app import app, console
+from voicegateway.core.constants import DEFAULT_DASHBOARD_URL
 
 brand_app = typer.Typer(
     name="brand",
-    help="Scripted per-project white-label provisioning (REQ-VG-ROUTE-004).",
+    help="Scripted per-project white-label provisioning",
     no_args_is_help=True,
 )
 app.add_typer(brand_app, name="brand")
-
-
-_DEFAULT_DASHBOARD_URL = "http://127.0.0.1:9090"
 
 
 def _auth_headers() -> dict[str, str]:
@@ -124,9 +96,9 @@ def set_cmd(
         None, "--name", help="Product name shown in the dashboard chrome."
     ),
     dashboard_url: str = typer.Option(
-        _DEFAULT_DASHBOARD_URL,
+        DEFAULT_DASHBOARD_URL,
         "--dashboard-url",
-        help=f"Dashboard base URL (default {_DEFAULT_DASHBOARD_URL}).",
+        help=f"Dashboard base URL (default {DEFAULT_DASHBOARD_URL}).",
     ),
     json_output: bool = typer.Option(
         False, "--json", help="Print the resulting branding as JSON."
@@ -173,17 +145,12 @@ def set_cmd(
 def clear_cmd(
     project: str = typer.Option(..., "--project", "-p", help="Project id to clear."),
     dashboard_url: str = typer.Option(
-        _DEFAULT_DASHBOARD_URL,
+        DEFAULT_DASHBOARD_URL,
         "--dashboard-url",
-        help=f"Dashboard base URL (default {_DEFAULT_DASHBOARD_URL}).",
+        help=f"Dashboard base URL (default {DEFAULT_DASHBOARD_URL}).",
     ),
 ) -> None:
-    """Clear per-project branding (POSTs an empty payload).
-
-    NOTE: the v0.5.0 backend's COALESCE-protected UPSERT means this
-    may not fully blank already-stored values until a dedicated
-    DELETE endpoint ships. Documented in the v0.5.0/T18 journal.
-    """
+    """Clear per-project branding (POSTs an empty payload)."""
     base = dashboard_url.rstrip("/")
     with httpx.Client(base_url=base, timeout=30.0) as client:
         _post_branding(client, project, {})
@@ -194,9 +161,9 @@ def clear_cmd(
 def show_cmd(
     project: str = typer.Option(..., "--project", "-p", help="Project id to inspect."),
     dashboard_url: str = typer.Option(
-        _DEFAULT_DASHBOARD_URL,
+        DEFAULT_DASHBOARD_URL,
         "--dashboard-url",
-        help=f"Dashboard base URL (default {_DEFAULT_DASHBOARD_URL}).",
+        help=f"Dashboard base URL (default {DEFAULT_DASHBOARD_URL}).",
     ),
     json_output: bool = typer.Option(
         False, "--json", help="Print the current branding as JSON."
