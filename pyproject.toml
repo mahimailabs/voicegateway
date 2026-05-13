@@ -147,9 +147,18 @@ version-file = "src/voicegateway/_version.py"
 # Explicit packages list because we are on a src/ layout (PyPA convention).
 # Hatchling cannot auto-detect packages outside the repo root.
 packages = ["src/voicegateway", "src/dashboard"]
-# tests/ lives inside src/voicegateway/ for repo hygiene but must NOT
-# ship inside the installed wheel — exclude it from the build.
-exclude = ["src/voicegateway/tests"]
+# Things that live inside the package directories for repo hygiene but
+# must NOT ship inside the installed wheel:
+#   - tests/             — test suite, large and not part of the runtime
+#   - Dockerfile         — container build, not a Python file
+#   - README.dockerhub.md — DockerHub-only description, irrelevant to pip users
+exclude = [
+    "src/voicegateway/tests",
+    "src/voicegateway/Dockerfile",
+    "src/voicegateway/README.dockerhub.md",
+    "src/dashboard/Dockerfile",
+    "src/dashboard/README.dockerhub.md",
+]
 
 [tool.pyright]
 typeCheckingMode = "off"

@@ -1,4 +1,6 @@
-# docker/dashboard.Dockerfile
+# src/dashboard/Dockerfile
+# Build context: repo root. Reference from docker-compose.yml as
+# `dockerfile: src/dashboard/Dockerfile`.
 # Multi-stage build: Node builds frontend, Python serves the dashboard API.
 
 # -------- Stage 1: Frontend builder --------

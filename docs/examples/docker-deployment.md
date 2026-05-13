@@ -121,7 +121,7 @@ services:
   voicegateway:
     build:
       context: .
-      dockerfile: docker/voicegateway.Dockerfile
+      dockerfile: src/voicegateway/Dockerfile
     container_name: voicegateway
     ports:
       - "8080:8080"
@@ -153,7 +153,7 @@ services:
   dashboard:
     build:
       context: .
-      dockerfile: docker/dashboard.Dockerfile
+      dockerfile: src/dashboard/Dockerfile
     container_name: voicegateway-dash
     ports:
       - "9090:9090"
