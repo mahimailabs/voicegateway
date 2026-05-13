@@ -43,7 +43,7 @@ class StackConfig(_StrictBase):
 
 
 class MetricsConfig(_StrictBase):
-    """v0.2.0 voice-conversation metrics knobs (REQ-VG-METRICS-001..006)."""
+    """Voice-conversation metrics knobs."""
 
     dead_air_threshold_seconds: float = Field(default=3.0, gt=0)
     talk_over_min_overlap_ms: int = Field(default=100, gt=0)
@@ -51,7 +51,7 @@ class MetricsConfig(_StrictBase):
 
 
 class ReplayConfig(_StrictBase):
-    """v0.3.0 conversation-replay knobs (REQ-VG-REPLAY-001..006)."""
+    """Conversation-replay capture and retention knobs."""
 
     enabled: bool = True
     retention_days: int = Field(default=90, ge=1)
@@ -60,7 +60,7 @@ class ReplayConfig(_StrictBase):
 
 
 class RoutingConfig(_StrictBase):
-    """v0.5.0 cross-modality routing knobs (REQ-VG-ROUTE-001..002)."""
+    """Cross-modality routing knobs."""
 
     budget_ms: int = Field(default=1500, ge=1)
     rosters: dict[str, list[str]] = Field(default_factory=dict)
@@ -68,7 +68,7 @@ class RoutingConfig(_StrictBase):
 
 
 class BrandingConfig(_StrictBase):
-    """v0.5.0 white-label branding knobs (REQ-VG-ROUTE-004)."""
+    """White-label branding knobs."""
 
     logo_url: str | None = None
     accent_color: str | None = None
@@ -76,7 +76,7 @@ class BrandingConfig(_StrictBase):
 
 
 class GuardrailsConfig(_StrictBase):
-    """v0.6.0 per-project LLM-side guardrail policy."""
+    """Per-project LLM-side guardrail policy."""
 
     enabled: bool = False
     categories: dict[str, Any] = Field(default_factory=dict)
@@ -88,7 +88,7 @@ class GuardrailsConfig(_StrictBase):
 
 
 class TenantConfig(_StrictBase):
-    """v0.4.0 multi-tenant attribution knobs (REQ-VG-TENANT-001..004)."""
+    """Multi-tenant attribution knobs."""
 
     virtual_key_stale_days: int = Field(default=90, ge=1)
 
@@ -100,22 +100,14 @@ class ProjectConfig(_StrictBase):
     daily_budget: float = Field(default=0.0, ge=0)
     budget_action: str = Field(default="warn", pattern=r"^(warn|throttle|block)$")
     tags: list[str] = Field(default_factory=list)
-    # v0.0.5: per-project provider keys override the top-level
-    # `providers:` block when set. See design.md section 3.3.
+    # Per-project provider keys override the top-level ``providers:`` block
+    # when set.
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
-    # v0.2.0: per-project metrics knobs. The defaults match
-    # MetricsConfig's own defaults so projects that do not set
-    # ``metrics:`` get the canonical Foundry values.
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
-    # v0.3.0: per-project replay capture + retention knobs.
     replay: ReplayConfig = Field(default_factory=ReplayConfig)
-    # v0.4.0: per-project multi-tenant knobs.
     tenant: TenantConfig = Field(default_factory=TenantConfig)
-    # v0.5.0: per-project routing knobs.
     routing: RoutingConfig = Field(default_factory=RoutingConfig)
-    # v0.5.0: per-project branding knobs.
     branding: BrandingConfig = Field(default_factory=BrandingConfig)
-    # v0.6.0: per-project LLM-side guardrail policy.
     guardrails: GuardrailsConfig = Field(default_factory=GuardrailsConfig)
 
 

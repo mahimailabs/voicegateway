@@ -1,4 +1,4 @@
-"""Guardrail policy model for v0.6.0 LLM-side voice guardrails."""
+"""Guardrail policy model for LLM-side voice guardrails."""
 
 from __future__ import annotations
 

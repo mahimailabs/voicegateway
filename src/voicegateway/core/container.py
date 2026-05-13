@@ -1,39 +1,38 @@
-import logging
+"""Application container: a thin facade over :class:`Gateway`."""
 
-from dependency_injector import containers, providers
-from src.core.config import get_config
-from src.core.database import Database
+from __future__ import annotations
 
-logger = logging.getLogger(__name__)
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-
-def _create_redis_client(redis_url: str | None = None):  # type: ignore[no-untyped-def]
-    """Create an async Redis client, or return None if not configured."""
-    if not redis_url:
-        return None
-    try:
-        import redis.asyncio as aioredis
-
-        url = (
-            redis_url.get_secret_value()
-            if hasattr(redis_url, "get_secret_value")
-            else str(redis_url)
-        )
-        if not url:
-            return None
-        return aioredis.from_url(url)
-    except Exception:
-        logger.warning("Failed to create Redis client", exc_info=True)
-        return None
+if TYPE_CHECKING:
+    from voicegateway.core.config import GatewayConfig
+    from voicegateway.core.gateway import Gateway
+    from voicegateway.middleware.cost_tracker import CostTracker
+    from voicegateway.storage.sqlite import SQLiteStorage
 
 
-class Container(containers.DeclarativeContainer):
-    wiring_config = containers.WiringConfiguration(
-        modules=[],
-    )
+@dataclass(frozen=True)
+class Container:
+    """Holds the shared :class:`Gateway` and exposes its collaborators."""
 
-    config = providers.Singleton(get_config)
+    gateway: Gateway
 
-    database = providers.Singleton(Database, config=config)
+    @classmethod
+    def from_config_path(cls, config_path: str | None = None) -> Container:
+        """Construct a Gateway from disk and wrap it."""
+        from voicegateway.core.gateway import Gateway
 
-    # Repositories
+        return cls(gateway=Gateway(config_path=config_path))
+
+    @property
+    def config(self) -> GatewayConfig:
+        return self.gateway.config
+
+    @property
+    def storage(self) -> SQLiteStorage | None:
+        return self.gateway.storage
+
+    @property
+    def cost_tracker(self) -> CostTracker:
+        return self.gateway.cost_tracker

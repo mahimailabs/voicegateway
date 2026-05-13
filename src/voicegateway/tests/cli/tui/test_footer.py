@@ -81,8 +81,6 @@ def test_aggregate_request_count_returns_dashes_when_unknown() -> None:
 # ---------------------------------------------------------------------------
 
 
-
-
 def test_format_age_seconds_bucket(tmp_path: Path) -> None:
     db = tmp_path / "voicegw.db"
     db.write_text("seed")

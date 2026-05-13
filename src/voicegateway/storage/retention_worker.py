@@ -1,4 +1,4 @@
-"""Hourly retention worker for v0.3.0 replay rows."""
+"""Hourly retention worker for replay rows."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
-from voicegateway.storage import replay_repo
+from voicegateway.repository import replay
 
 if TYPE_CHECKING:
     from voicegateway.storage.sqlite import SQLiteStorage
@@ -123,7 +123,7 @@ class RetentionWorker:
                     continue
                 deleted_rows = 0
                 for sid in stale_ids:
-                    deleted_rows += await replay_repo.delete_replay(db, sid)
+                    deleted_rows += await replay.delete_replay(db, sid)
                 per_project_deletes[project_id] = deleted_rows
                 logger.info(
                     "RetentionWorker: project %s, retention %d days, "

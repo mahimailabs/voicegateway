@@ -7,8 +7,8 @@ import uuid
 
 import pytest
 
-from voicegateway.storage import guardrail_events_repo
-from voicegateway.storage.models import RequestRecord
+from voicegateway.models.request import RequestRecord
+from voicegateway.repository import guardrail_events
 from voicegateway.storage.sqlite import SQLiteStorage
 
 
@@ -36,7 +36,7 @@ async def test_create_and_list_events_by_session(tmp_path) -> None:
     await storage.log_request(_record("vg-a", project="support"))
     db = await _db(storage)
     try:
-        event_id = await guardrail_events_repo.create_event(
+        event_id = await guardrail_events.create_event(
             db,
             session_id="vg-a",
             tenant_id="tenant-1",
@@ -46,7 +46,7 @@ async def test_create_and_list_events_by_session(tmp_path) -> None:
             context_excerpt="phone number",
         )
         await db.commit()
-        rows = await guardrail_events_repo.list_events_by_session(db, "vg-a")
+        rows = await guardrail_events.list_events_by_session(db, "vg-a")
     finally:
         await db.close()
 
@@ -65,7 +65,7 @@ async def test_bypass_rows_clear_category_and_are_excluded_from_aggregate(
     await storage.log_request(_record("vg-a"))
     db = await _db(storage)
     try:
-        await guardrail_events_repo.create_event(
+        await guardrail_events.create_event(
             db,
             session_id="vg-a",
             event_type="bypassed",
@@ -73,7 +73,7 @@ async def test_bypass_rows_clear_category_and_are_excluded_from_aggregate(
             action="block",
             context_excerpt="opt out",
         )
-        await guardrail_events_repo.create_event(
+        await guardrail_events.create_event(
             db,
             session_id="vg-a",
             event_type="fired",
@@ -82,15 +82,15 @@ async def test_bypass_rows_clear_category_and_are_excluded_from_aggregate(
             context_excerpt="ignore instructions",
         )
         await db.commit()
-        rows = await guardrail_events_repo.list_events(db, event_type="bypassed")
-        counts = await guardrail_events_repo.aggregate_counts(db)
+        rows = await guardrail_events.list_events(db, event_type="bypassed")
+        counts = await guardrail_events.aggregate_counts(db)
     finally:
         await db.close()
 
     assert rows[0].category is None
     assert rows[0].action is None
     assert counts == [
-        guardrail_events_repo.GuardrailAggregate(
+        guardrail_events.GuardrailAggregate(
             category="prompt_injection",
             action="block",
             count=1,
@@ -106,7 +106,7 @@ async def test_filters_and_top_sessions(tmp_path) -> None:
     db = await _db(storage)
     try:
         for sid, tenant in (("vg-a", "t1"), ("vg-a", "t1"), ("vg-b", "t2")):
-            await guardrail_events_repo.create_event(
+            await guardrail_events.create_event(
                 db,
                 session_id=sid,
                 tenant_id=tenant,
@@ -115,7 +115,7 @@ async def test_filters_and_top_sessions(tmp_path) -> None:
                 action="alert",
                 context_excerpt="account details",
             )
-        await guardrail_events_repo.create_event(
+        await guardrail_events.create_event(
             db,
             session_id="vg-c",
             tenant_id="t1",
@@ -126,10 +126,10 @@ async def test_filters_and_top_sessions(tmp_path) -> None:
         )
         await db.commit()
 
-        tenant_rows = await guardrail_events_repo.list_events(
+        tenant_rows = await guardrail_events.list_events(
             db, project="support", tenant="t1"
         )
-        top = await guardrail_events_repo.top_sessions_by_category(
+        top = await guardrail_events.top_sessions_by_category(
             db, category="financial", project="support"
         )
     finally:
@@ -144,7 +144,7 @@ async def test_rejects_invalid_fired_event(tmp_path) -> None:
     db = await _db(storage)
     try:
         with pytest.raises(ValueError, match="unknown guardrail category"):
-            await guardrail_events_repo.create_event(
+            await guardrail_events.create_event(
                 db,
                 session_id="vg-a",
                 event_type="fired",

@@ -21,9 +21,9 @@ from voicegateway.inference._session_context import (
     current_tenant,
 )
 from voicegateway.middleware.guardrails import guardrail_policy_json
-from voicegateway.storage import guardrail_events_repo, replay_repo, turns_repo
+from voicegateway.models.request import RequestRecord
+from voicegateway.repository import guardrail_events, replay, turns
 from voicegateway.storage._percentiles import compute_percentiles
-from voicegateway.storage.models import RequestRecord
 
 _DEFAULT_PERCENTILES: list[float] = [50.0, 95.0, 99.0]
 
@@ -198,7 +198,7 @@ class SQLiteStorage:
                 await db.execute(
                     "ALTER TABLE requests ADD COLUMN pricing_source TEXT NOT NULL DEFAULT ''"
                 )
-            # Migration: add `session_id` column if missing (v0.0.5).
+            # Migration: add `session_id` column if missing.
             # Pre-v0.0.5 rows get NULL — correct, they predate the
             # session-correlation feature. New rows carry a real value
             # written by InstrumentedSTT/LLM/TTS once 5.6 #3 wires it through.
@@ -235,7 +235,7 @@ class SQLiteStorage:
             )
 
             # Migration: add `project` column to managed_providers if
-            # missing (v0.0.5). NULL means "global / legacy scope" so
+            # missing. NULL means "global / legacy scope" so
             # pre-v0.0.5 rows keep behaving exactly as before. New rows
             # written by vg_add_provider can carry a non-null project
             # name. The index lives outside the column-missing branch so
@@ -268,27 +268,27 @@ class SQLiteStorage:
             # Migrate plaintext API keys to encrypted
             await self._migrate_plaintext_keys(db)
 
-            # v0.2.0 migration 0003: turns + dead_air_events tables,
+            # migration 0003: turns + dead_air_events tables,
             # session-aggregate columns. Idempotent.
             await _migration_0003.apply(db)
 
-            # v0.3.0 migration 0004: replay event tables + sessions.replay_size_bytes.
+            # migration 0004: replay event tables + sessions.replay_size_bytes.
             # Idempotent.
             await _migration_0004.apply(db)
 
-            # v0.4.0 migration 0005: virtual_keys table + tenant_id columns
+            # migration 0005: virtual_keys table + tenant_id columns
             # on sessions/requests (unconditionally) and on the v0.2.0/v0.3.0
             # derived tables (conditionally via sqlite_master presence check
             # per OQ4). Idempotent.
             await _migration_0005.apply(db)
 
-            # v0.5.0 migration 0006: routing columns on sessions
+            # migration 0006: routing columns on sessions
             # (budget_ms / budget_ms_used / budget_overrun / routed_llm /
             # routed_tts), branding_json on managed_projects (conditional),
             # and the new latency_observations table. Idempotent.
             await _migration_0006.apply(db)
 
-            # v0.6.0 migration 0007: guardrail policy snapshots and
+            # migration 0007: guardrail policy snapshots and
             # audit events. Idempotent.
             await _migration_0007.apply(db)
 
@@ -488,7 +488,7 @@ class SQLiteStorage:
                 # CASE keeps started_at at the earliest request_started
                 # timestamp regardless of completion order.
                 # ``request_tenant_id`` (read once at the top from the
-                # v0.4.0 tenant_id_ctx ContextVar, REQ-VG-TENANT-001) is
+                # tenant_id_ctx ContextVar, REQ-VG-TENANT-001) is
                 # reused for both the requests row and the sessions
                 # UPSERT. On INSERT it stamps the session row; on
                 # CONFLICT we COALESCE so an already-set tenant_id
@@ -498,7 +498,7 @@ class SQLiteStorage:
                 # the Refinery: the first tenant-bearing request wins,
                 # subsequent unattributed-bucket requests don't clear
                 # it.
-                # v0.5.0: stamp the router's pick on the session row.
+                # stamp the router's pick on the session row.
                 # AC-5 guarantees the triple is immutable for the
                 # session's lifetime, so COALESCE on conflict keeps the
                 # first-set values and ignores later sessions writes
@@ -644,7 +644,7 @@ class SQLiteStorage:
         the named-period window. When either is set, `period` is
         ignored. `start_ts` is inclusive, `end_ts` is exclusive.
 
-        ``tenant`` (v0.4.0) scopes the aggregate to a single tenant.
+        ``tenant`` scopes the aggregate to a single tenant.
         Pass an empty string ``""`` to target the unattributed bucket
         (sessions with NULL tenant_id). Pass ``None`` to include every
         tenant (default).
@@ -734,7 +734,7 @@ class SQLiteStorage:
     ) -> dict[str, Any]:
         """Get cost summary grouped by project.
 
-        ``tenant`` (v0.4.0) scopes the result to one tenant; ``""``
+        ``tenant`` scopes the result to one tenant; ``""``
         targets the unattributed bucket; ``None`` includes everything.
         """
         db = await self._ensure_initialized()
@@ -993,7 +993,7 @@ class SQLiteStorage:
     ) -> list[dict[str, Any]]:
         """Get recent request records, optionally filtered by modality, project, tenant.
 
-        ``tenant`` (v0.4.0) accepts a tenant id; ``""`` targets the
+        ``tenant`` accepts a tenant id; ``""`` targets the
         unattributed bucket; ``None`` includes everything.
         """
         db = await self._ensure_initialized()
@@ -1066,7 +1066,7 @@ class SQLiteStorage:
             await db.close()
 
     # ------------------------------------------------------------------
-    # Sessions (v0.0.5)
+    # Sessions
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -1080,9 +1080,9 @@ class SQLiteStorage:
             "total_cost_usd": float(row[5] or 0.0),
             "request_count": int(row[6] or 0),
         }
-        # v0.4.0: include tenant_id when the SELECT picked it up.
-        # v0.5.0: include the four routing columns the same way.
-        # v0.6.0: include guardrail session flags/policy snapshot.
+        # include tenant_id when the SELECT picked it up.
+        # include the four routing columns the same way.
+        # include guardrail session flags/policy snapshot.
         # The Any-typed Row may not raise on out-of-bounds; guard
         # defensively so a SELECT that omits the columns (e.g. an
         # external caller reading the legacy seven-column shape)
@@ -1145,9 +1145,8 @@ class SQLiteStorage:
                 ``"started_at_asc"``, ``"cost_desc"``, ``"cost_asc"``.
                 Cost orderings break ties by started_at DESC so two
                 $0 sessions still surface newest first.
-            tenant: v0.4.0 tenant filter. Pass an empty string to
-                target the unattributed bucket; ``None`` lists every
-                tenant.
+            tenant: Tenant filter. Pass an empty string to target the
+                unattributed bucket; ``None`` lists every tenant.
 
         Raises:
             ValueError: When ``order_by`` is not one of the supported
@@ -1244,7 +1243,7 @@ class SQLiteStorage:
                 (session_id,),
             )
             session["providers"] = [prov_row[0] async for prov_row in prov_cursor]
-            events = await guardrail_events_repo.list_events_by_session(db, session_id)
+            events = await guardrail_events.list_events_by_session(db, session_id)
             session["guardrail_events"] = [
                 dataclasses.asdict(event) for event in events
             ]
@@ -1253,9 +1252,9 @@ class SQLiteStorage:
             await db.close()
 
     async def finalize_session_metrics(self, session_id: str) -> None:
-        """Recompute and upsert the v0.2.0 aggregate columns on a session row.
+        """Recompute and upsert the aggregate columns on a session row.
 
-        Called by the cost_tracker session-close hook (T08) once the
+        Called by the cost_tracker session-close hook once the
         TurnTracker and DeadAirDetector have flushed their captures.
         Reads from the ``turns`` and ``dead_air_events`` tables and
         writes five aggregate columns to the ``sessions`` row:
@@ -1265,28 +1264,25 @@ class SQLiteStorage:
         - ``per_minute_cost_usd`` -- ``total_cost_usd /
           (talk_time_seconds / 60)``. NULL when talk_time is zero.
         - ``response_speed_p50_ms``, ``response_speed_p95_ms`` -- from
-          :func:`voicegateway.storage.turns_repo.aggregate_response_speed`.
-          (p99 is computed but not stored on the sessions row per Foundry.)
+          :func:`voicegateway.repository.turns.aggregate_response_speed`.
+          (p99 is computed but not stored on the sessions row.)
         - ``talk_over_rate`` -- ``overlap_count / total_turns``. NULL
           when total_turns is zero.
 
-        Pre-v0.2.0 sessions that recorded no turns keep NULL on every
-        new column (REQ-VG-METRICS-006). A session that recorded turns
-        but ended with zero cost still gets ``per_minute_cost_usd =
-        0.0``, not NULL — the metric is defined when talk_time > 0.
-
-        Implements REQ-VG-METRICS-001 (per-minute cost) and feeds
-        REQ-VG-METRICS-002, -003, -004, -006 via the same row.
+        Sessions that recorded no turns keep NULL on every aggregate
+        column. A session that recorded turns but ended with zero cost
+        still gets ``per_minute_cost_usd = 0.0``, not NULL — the metric
+        is defined when talk_time > 0.
         """
         db = await self._ensure_initialized()
         try:
-            turns = await turns_repo.list_turns_by_session(db, session_id)
-            if not turns:
-                # No turn data → leave aggregates NULL (REQ-006 contract).
+            session_turns = await turns.list_turns_by_session(db, session_id)
+            if not session_turns:
+                # No turn data → leave aggregates NULL.
                 return
 
             talk_time_ms = 0
-            for t in turns:
+            for t in session_turns:
                 talk_time_ms += t.caller_speak_end_ms - t.caller_speak_start_ms
                 if (
                     t.agent_speak_start_ms is not None
@@ -1311,9 +1307,9 @@ class SQLiteStorage:
                 else None
             )
 
-            pcts = await turns_repo.aggregate_response_speed(db, session_id)
-            overlap_count = await turns_repo.count_overlap_turns(db, session_id)
-            total_turns = len(turns)
+            pcts = await turns.aggregate_response_speed(db, session_id)
+            overlap_count = await turns.count_overlap_turns(db, session_id)
+            total_turns = len(session_turns)
             talk_over_rate = overlap_count / total_turns if total_turns > 0 else None
 
             await db.execute(
@@ -1344,21 +1340,21 @@ class SQLiteStorage:
         replay-capture buffer has flushed (T02's ReplayCapture flushes
         in its own session-close path). Reads the per-modality
         ``replay_*`` tables via
-        :func:`voicegateway.storage.replay_repo.aggregate_storage_per_session`
+        :func:`voicegateway.repository.replay.aggregate_storage_per_session`
         and writes the byte-length sum to the sessions row's
         ``replay_size_bytes`` column.
 
         NULL is preserved when the session captured no replay events
-        (pre-v0.3.0 sessions per REQ-VG-REPLAY-006, or projects with
-        ``replay.enabled = False`` per T07). The column is also NULL
-        when the session row is missing entirely.
+        (sessions predating replay, or projects with
+        ``replay.enabled = False``). The column is also NULL when the
+        session row is missing entirely.
         """
         db = await self._ensure_initialized()
         try:
-            size_bytes = await replay_repo.aggregate_storage_per_session(db, session_id)
+            size_bytes = await replay.aggregate_storage_per_session(db, session_id)
             # Leave NULL for sessions that captured nothing — the
             # dashboard reads NULL as "not measured" the same way it
-            # does for v0.2.0 aggregate columns.
+            # does for the other session-aggregate columns.
             if size_bytes <= 0:
                 return
             await db.execute(
@@ -1646,9 +1642,9 @@ class SQLiteStorage:
 
     @staticmethod
     def _validate_branding(branding: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Validate the v0.5.0 branding payload before write.
+        """Validate the branding payload before write.
 
-        OQ4 + dashboard contract:
+        Dashboard contract:
         - ``logo_url`` (optional): string up to 2048 chars.
         - ``accent_color`` (optional): hex string ``#RRGGBB`` or
           ``#RGB``.

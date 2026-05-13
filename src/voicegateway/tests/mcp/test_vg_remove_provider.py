@@ -164,9 +164,7 @@ async def test_storage_disabled_raises_provider_not_found(
 
 async def test_missing_required_args_rejected(gateway):
     with pytest.raises(ValidationError):
-        await _tool("vg_remove_provider").handler(
-            gateway, {"project": "tony-pizza"}
-        )
+        await _tool("vg_remove_provider").handler(gateway, {"project": "tony-pizza"})
 
 
 async def test_double_remove_raises_provider_not_found(gateway):

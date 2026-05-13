@@ -7,8 +7,8 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any
 
+from voicegateway.models.request import RequestRecord
 from voicegateway.pricing import catalog
-from voicegateway.storage.models import RequestRecord
 
 if TYPE_CHECKING:
     from voicegateway.middleware.budget_enforcer import BudgetEnforcer
@@ -132,7 +132,6 @@ class CostTracker:
         """Finalize session-aggregate metrics + replay on session close."""
         if self._storage is None:
             return
-        # v0.2.0 metrics finalize.
         metrics_finalize = getattr(self._storage, "finalize_session_metrics", None)
         if metrics_finalize is None:
             logger.debug(

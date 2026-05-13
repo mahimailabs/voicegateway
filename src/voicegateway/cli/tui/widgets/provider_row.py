@@ -1,4 +1,4 @@
-"""``ProviderRow`` widget for the Providers tab (REQ-VG-TUI-005)."""
+"""``ProviderRow`` widget for the Providers tab."""
 
 from __future__ import annotations
 

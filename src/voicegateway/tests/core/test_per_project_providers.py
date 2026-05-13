@@ -126,9 +126,7 @@ def test_project_provider_overrides_global(tmp_path):
     cfg = GatewayConfig.load(cfg_path)
 
     # Project-level entry wins.
-    resolved = cfg.get_provider_config_for_project(
-        "openai", project_id="tony-pizza"
-    )
+    resolved = cfg.get_provider_config_for_project("openai", project_id="tony-pizza")
     assert resolved["api_key"] == "tony-openai-key"
 
 
@@ -184,9 +182,7 @@ def test_unknown_project_falls_back_to_global(tmp_path):
         },
     )
     cfg = GatewayConfig.load(cfg_path)
-    resolved = cfg.get_provider_config_for_project(
-        "openai", project_id="not-a-project"
-    )
+    resolved = cfg.get_provider_config_for_project("openai", project_id="not-a-project")
     assert resolved["api_key"] == "global-openai-key"
 
 
@@ -204,9 +200,7 @@ def test_provider_returns_empty_when_neither_global_nor_project(tmp_path):
         },
     )
     cfg = GatewayConfig.load(cfg_path)
-    resolved = cfg.get_provider_config_for_project(
-        "openai", project_id="tony-pizza"
-    )
+    resolved = cfg.get_provider_config_for_project("openai", project_id="tony-pizza")
     assert resolved == {}
 
 

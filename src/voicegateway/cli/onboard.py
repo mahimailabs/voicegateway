@@ -33,7 +33,7 @@ def onboard(
         "-c",
         help=(
             "Path to the voicegw.yaml to create or update. Default: "
-            "~/.config/voicegateway/voicegw.yaml (matches v0.0.5)."
+            "~/.config/voicegateway/voicegw.yaml."
         ),
     ),
 ) -> None:

@@ -7,7 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
 from voicegateway.middleware.replay_capture import ReplayEvent
-from voicegateway.storage import replay_repo
+from voicegateway.repository import replay
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ async def _seed_replay(gateway, session_id: str, n: int = 3) -> None:
             )
             for i in range(n)
         ]
-        await replay_repo.bulk_write_events(db, events)
+        await replay.bulk_write_events(db, events)
     finally:
         await db.close()
 

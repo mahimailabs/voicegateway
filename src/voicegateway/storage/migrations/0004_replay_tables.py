@@ -18,7 +18,7 @@ Pre-v0.3.0 rows in the ``sessions`` table get NULL on
 
 Four new tables share an identical column shape so a single SQL
 DDL block does all four. The dashboard ``Replay.tsx`` page (T11)
-fetches a time-ordered union of all four via ``replay_repo.read_full_replay``
+fetches a time-ordered union of all four via ``replay.read_full_replay``
 (T05).
 """
 

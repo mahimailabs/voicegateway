@@ -59,21 +59,13 @@ def _walk_subpackages() -> list[ModuleType]:
 _SUBPACKAGES = _walk_subpackages()
 
 
-# Sanity floor: the audit in v0.1.2's T13 found 18 ``__init__.py`` files
-# under ``voicegateway/``. v0.2.0's T04 added one
-# (``voicegateway/storage/migrations/``), so the post-v0.2.0-T04 count is
-# 19 (root + 18 nested). v0.6.0 adds
-# ``voicegateway.middleware.guardrail_prompts`` for package data loaded
-# via importlib.resources. ``voicegateway.data`` joined the count when
-# ``voicegw.example.yaml`` moved into the package (was at repo root).
-# The cli-helpers-namespacing pass added ``voicegateway.utils`` and
-# ``voicegateway.utils.cli`` for the per-command helper modules.
-# Current count is 23. If this drifts unexpectedly, that is a hint a
-# new subpackage landed without being thought through.
+# Sanity floor on subpackage count. The structural-refactor pass added
+# ``voicegateway.models`` (entity dataclasses). If this drifts unexpectedly,
+# it is a hint a new subpackage landed without being thought through.
 def test_walker_finds_expected_number_of_subpackages() -> None:
-    """Subpackage count is stable post-v0.6.0 (guardrail prompts + data + utils)."""
-    assert len(_SUBPACKAGES) == 23, (
-        f"Expected 23 subpackages (root + 22 nested), got "
+    """Subpackage count is stable across the structural refactor."""
+    assert len(_SUBPACKAGES) == 27, (
+        f"Expected 27 subpackages (root + 26 nested), got "
         f"{len(_SUBPACKAGES)}: "
         f"{sorted(p.__name__ for p in _SUBPACKAGES)}"
     )

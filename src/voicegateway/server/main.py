@@ -29,7 +29,7 @@ from voicegateway.core.guardrail_policy import (
 )
 from voicegateway.inference._session_context import set_tenant
 from voicegateway.pricing import catalog
-from voicegateway.storage import guardrail_events_repo, virtual_keys_repo
+from voicegateway.repository import guardrail_events, virtual_keys
 from voicegateway.storage._percentiles import quantile_label
 
 if TYPE_CHECKING:
@@ -89,7 +89,7 @@ def build_app(gateway: Gateway) -> FastAPI:
                     raise HTTPException(
                         status_code=exc.status_code, detail=exc.message
                     ) from None
-                await virtual_keys_repo.mark_used(db, verified.id)
+                await virtual_keys.mark_used(db, verified.id)
                 request.state.virtual_key_id = verified.id
                 request.state.virtual_key_tenant_id = verified.tenant_id
                 if verified.tenant_id is not None:
@@ -422,7 +422,7 @@ def build_app(gateway: Gateway) -> FastAPI:
         _validate_guardrail_event_filter(category=category, action=action)
         db = await gateway.storage._ensure_initialized()
         try:
-            rows = await guardrail_events_repo.list_events(
+            rows = await guardrail_events.list_events(
                 db,
                 since=_guardrail_since(days),
                 project=project,
@@ -459,11 +459,11 @@ def build_app(gateway: Gateway) -> FastAPI:
         db = await gateway.storage._ensure_initialized()
         try:
             since = _guardrail_since(days)
-            counts = await guardrail_events_repo.aggregate_counts(
+            counts = await guardrail_events.aggregate_counts(
                 db, since=since, project=project, tenant=tenant
             )
             top_sessions = (
-                await guardrail_events_repo.top_sessions_by_category(
+                await guardrail_events.top_sessions_by_category(
                     db,
                     category=category,
                     since=since,

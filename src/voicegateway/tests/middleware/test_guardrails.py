@@ -23,7 +23,7 @@ from voicegateway.middleware.guardrails import (
     tools_contain_reserved_report_tool,
 )
 from voicegateway.middleware.instrumented_provider import InstrumentedLLM
-from voicegateway.storage import guardrail_events_repo
+from voicegateway.repository import guardrail_events
 from voicegateway.storage.sqlite import SQLiteStorage
 
 
@@ -76,7 +76,7 @@ async def _wait_for_guardrail_events(storage: SQLiteStorage, sid: str):
     while loop.time() < deadline:
         db = await storage._ensure_initialized()
         try:
-            events = await guardrail_events_repo.list_events_by_session(db, sid)
+            events = await guardrail_events.list_events_by_session(db, sid)
         finally:
             await db.close()
         if events:

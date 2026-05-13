@@ -28,6 +28,7 @@ def test_whisper_requires_library():
     provider = WhisperProvider({})
     try:
         import faster_whisper  # noqa: F401
+
         pytest.skip("faster-whisper is installed")
     except ImportError:
         with pytest.raises(ImportError, match="pip install"):

@@ -1,4 +1,4 @@
-"""Per-session drill-in modal (REQ-VG-TUI-002 detail view)."""
+"""Per-session drill-in modal."""
 
 from __future__ import annotations
 

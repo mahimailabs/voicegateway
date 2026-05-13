@@ -27,9 +27,7 @@ def test_dispatch_llm_routes_to_llm_module() -> None:
 def test_dispatch_stt_routes_to_stt_module() -> None:
     """STT dispatch returns same value as direct stt.calculate_stt_cost."""
     direct = stt.calculate_stt_cost("deepgram/nova-3", 60)
-    via_facade = catalog.calculate_cost(
-        "stt", "deepgram/nova-3", audio_seconds=60
-    )
+    via_facade = catalog.calculate_cost("stt", "deepgram/nova-3", audio_seconds=60)
     assert via_facade == direct
     assert via_facade == Decimal("0.0043")
 
@@ -37,9 +35,7 @@ def test_dispatch_stt_routes_to_stt_module() -> None:
 def test_dispatch_tts_routes_to_tts_module() -> None:
     """TTS dispatch returns same value as direct tts.calculate_tts_cost."""
     direct = tts.calculate_tts_cost("cartesia/sonic-3", 1000)
-    via_facade = catalog.calculate_cost(
-        "tts", "cartesia/sonic-3", character_count=1000
-    )
+    via_facade = catalog.calculate_cost("tts", "cartesia/sonic-3", character_count=1000)
     assert via_facade == direct
     assert via_facade == Decimal("0.065")
 
@@ -52,34 +48,22 @@ def test_dispatch_unknown_modality_returns_none() -> None:
 
 def test_dispatch_unknown_model_propagates_none() -> None:
     """Known modality + unknown model -> None (no silent zero)."""
-    assert (
-        catalog.calculate_cost("llm", "foo/bar-baz", input_tokens=100) is None
-    )
-    assert (
-        catalog.calculate_cost("stt", "unknown/model", audio_seconds=60) is None
-    )
-    assert (
-        catalog.calculate_cost("tts", "unknown/model", character_count=100)
-        is None
-    )
+    assert catalog.calculate_cost("llm", "foo/bar-baz", input_tokens=100) is None
+    assert catalog.calculate_cost("stt", "unknown/model", audio_seconds=60) is None
+    assert catalog.calculate_cost("tts", "unknown/model", character_count=100) is None
 
 
 def test_dispatch_zero_usage() -> None:
     """Zero usage returns Decimal('0') for known models, not None."""
-    assert (
-        catalog.calculate_cost(
-            "llm", "openai/gpt-4o-mini", input_tokens=0, output_tokens=0
-        )
-        == Decimal("0")
+    assert catalog.calculate_cost(
+        "llm", "openai/gpt-4o-mini", input_tokens=0, output_tokens=0
+    ) == Decimal("0")
+    assert catalog.calculate_cost("stt", "deepgram/nova-3", audio_seconds=0) == Decimal(
+        "0"
     )
-    assert (
-        catalog.calculate_cost("stt", "deepgram/nova-3", audio_seconds=0)
-        == Decimal("0")
-    )
-    assert (
-        catalog.calculate_cost("tts", "cartesia/sonic-3", character_count=0)
-        == Decimal("0")
-    )
+    assert catalog.calculate_cost(
+        "tts", "cartesia/sonic-3", character_count=0
+    ) == Decimal("0")
 
 
 def test_dispatch_kwargs_for_other_modalities_ignored() -> None:

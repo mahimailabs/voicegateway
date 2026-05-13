@@ -56,9 +56,7 @@ def healthy_provider_factory(monkeypatch):
         received["provider_type"] = provider_name
         return _Healthy(config)
 
-    monkeypatch.setattr(
-        "voicegateway.core.registry.create_provider", _create
-    )
+    monkeypatch.setattr("voicegateway.core.registry.create_provider", _create)
     return received
 
 
@@ -109,9 +107,7 @@ async def test_test_endpoint_resolves_yaml_per_project_composite_id(
                 "projects": {
                     "tony-pizza": {
                         "name": "Tony",
-                        "providers": {
-                            "openai": {"api_key": "yaml-tony-openai"}
-                        },
+                        "providers": {"openai": {"api_key": "yaml-tony-openai"}},
                     }
                 },
                 "models": {"stt": {}, "llm": {}, "tts": {}},
@@ -195,9 +191,7 @@ async def test_stateless_test_unknown_provider_type_returns_failed(client):
     assert "Unknown" in data["message"]
 
 
-async def test_stateless_test_health_check_failure_does_not_crash(
-    client, monkeypatch
-):
+async def test_stateless_test_health_check_failure_does_not_crash(client, monkeypatch):
     """A simulated exception during health_check returns failed,
     not a 500.
     """

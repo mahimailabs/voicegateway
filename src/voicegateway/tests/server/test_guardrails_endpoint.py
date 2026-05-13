@@ -14,9 +14,9 @@ from voicegateway.inference._session_context import (
     reset_session_id,
     start_session,
 )
+from voicegateway.models.request import RequestRecord
+from voicegateway.repository import guardrail_events
 from voicegateway.server import build_app
-from voicegateway.storage import guardrail_events_repo
-from voicegateway.storage.models import RequestRecord
 
 
 @pytest.fixture
@@ -69,7 +69,7 @@ async def _seed_session(
 async def _create_event(storage, **kwargs) -> None:
     db = await storage._ensure_initialized()
     try:
-        await guardrail_events_repo.create_event(db, **kwargs)
+        await guardrail_events.create_event(db, **kwargs)
         await db.commit()
     finally:
         await db.close()

@@ -1,6 +1,8 @@
-from src.models.base_model import BaseModel, BaseUUIDModel
+"""Persistent-entity dataclasses (``RequestRecord`` etc.).
 
-__all__ = [
-    "BaseModel",
-    "BaseUUIDModel",
-]
+Currently re-exports nothing at the package top level. Submodules are
+added as the domain grows; the canonical import path stays
+``voicegateway.models.<entity>``.
+"""
+
+__all__: list[str] = []

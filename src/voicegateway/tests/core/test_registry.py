@@ -13,8 +13,17 @@ def test_list_providers_returns_sorted_known_names() -> None:
     assert names == sorted(names)
     # Sanity: all 11 v0.1.0 providers are registered.
     assert {
-        "openai", "deepgram", "cartesia", "anthropic", "groq",
-        "elevenlabs", "assemblyai", "ollama", "whisper", "kokoro", "piper",
+        "openai",
+        "deepgram",
+        "cartesia",
+        "anthropic",
+        "groq",
+        "elevenlabs",
+        "assemblyai",
+        "ollama",
+        "whisper",
+        "kokoro",
+        "piper",
     }.issubset(set(names))
 
 

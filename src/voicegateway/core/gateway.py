@@ -23,7 +23,7 @@ DEFAULT_DB_PATH = "~/.config/voicegateway/voicegw.db"
 
 
 class Gateway:
-    """Shared internal container for the v0.0.5+ inference module."""
+    """Shared internal container for the inference module, server, CLI, and MCP."""
 
     def __init__(self, config_path: str | None = None):
         """Initialize the gateway."""

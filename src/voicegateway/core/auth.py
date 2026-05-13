@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     import aiosqlite
 
     from voicegateway.core.config import AuthConfig
-    from voicegateway.storage.virtual_keys_repo import VerifiedKey
+    from voicegateway.repository.virtual_keys import VerifiedKey
 
 
 logger = logging.getLogger(__name__)
@@ -134,7 +134,7 @@ def describe_auth(keys: list[ApiKey]) -> str:
 
 
 def is_virtual_key_token(authorization: str | None) -> bool:
-    """Return True if the bearer token uses the ``vk_`` prefix (REQ-VG-TENANT-004)."""
+    """Return True if the bearer token uses the ``vk_`` prefix."""
     token = _extract_bearer(authorization)
     return token is not None and token.startswith(VIRTUAL_KEY_PREFIX)
 
@@ -143,7 +143,7 @@ async def verify_virtual_key(
     authorization: str | None, db: aiosqlite.Connection
 ) -> VerifiedKey:
     """Validate a ``Bearer vk_…`` header against ``virtual_keys``."""
-    from voicegateway.storage import virtual_keys_repo
+    from voicegateway.repository import virtual_keys
 
     token = _extract_bearer(authorization)
     if token is None:
@@ -151,7 +151,7 @@ async def verify_virtual_key(
     if not token.startswith(VIRTUAL_KEY_PREFIX):
         # Caller should have routed to ``check_request`` for static keys.
         raise AuthError("Invalid virtual key", status_code=401)
-    verified = await virtual_keys_repo.verify(db, token)
+    verified = await virtual_keys.verify(db, token)
     if verified is None:
         raise AuthError("Invalid virtual key", status_code=401)
     return verified

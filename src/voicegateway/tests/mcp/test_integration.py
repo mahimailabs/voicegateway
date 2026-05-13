@@ -33,40 +33,51 @@ async def test_full_agent_workflow(gateway):
         assert providers["count"] >= 2
 
         # 2. add_provider — a new local provider (no credentials tested)
-        result = await client.call_tool("add_provider", {
-            "provider_id": "ollama-local",
-            "provider_type": "ollama",
-            "api_key": "",
-            "base_url": "http://localhost:11434",
-        })
+        result = await client.call_tool(
+            "add_provider",
+            {
+                "provider_id": "ollama-local",
+                "provider_type": "ollama",
+                "api_key": "",
+                "base_url": "http://localhost:11434",
+            },
+        )
         added = _parse(result)
         assert added["created"] is True
 
         # 3. test_provider — will fail (no Ollama actually running), but returns
         # structured status, not an exception
-        result = await client.call_tool("test_provider", {"provider_id": "ollama-local"})
+        result = await client.call_tool(
+            "test_provider", {"provider_id": "ollama-local"}
+        )
         tested = _parse(result)
         assert tested["status"] in ("ok", "failed")
         assert "latency_ms" in tested
 
         # 4. register_model — add a model from the new provider
-        result = await client.call_tool("register_model", {
-            "modality": "llm",
-            "provider_id": "ollama-local",
-            "model_name": "llama3.2",
-        })
+        result = await client.call_tool(
+            "register_model",
+            {
+                "modality": "llm",
+                "provider_id": "ollama-local",
+                "model_name": "llama3.2",
+            },
+        )
         registered = _parse(result)
         assert registered["model_id"] == "ollama-local/llama3.2"
 
         # 5. create_project — using the new model
-        result = await client.call_tool("create_project", {
-            "project_id": "acme-corp",
-            "name": "ACME Corp",
-            "description": "E2E integration test",
-            "daily_budget": 10.0,
-            "budget_action": "warn",
-            "llm_model": "ollama-local/llama3.2",
-        })
+        result = await client.call_tool(
+            "create_project",
+            {
+                "project_id": "acme-corp",
+                "name": "ACME Corp",
+                "description": "E2E integration test",
+                "daily_budget": 10.0,
+                "budget_action": "warn",
+                "llm_model": "ollama-local/llama3.2",
+            },
+        )
         created = _parse(result)
         assert created["project_id"] == "acme-corp"
 

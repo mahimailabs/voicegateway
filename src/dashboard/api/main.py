@@ -21,13 +21,14 @@ from voicegateway.core.guardrail_policy import (
     GUARDRAIL_CATEGORY_DESCRIPTIONS,
     GuardrailPolicy,
 )
-from voicegateway.storage import (
-    dead_air_repo,
-    guardrail_events_repo,
-    replay_repo,
-    tenants_repo,
-    turns_repo,
-    virtual_keys_repo,
+from voicegateway.repository import (
+    dead_air,
+    guardrail_events,
+    latency_observations,
+    replay,
+    tenants,
+    turns,
+    virtual_keys,
 )
 
 if TYPE_CHECKING:
@@ -403,7 +404,7 @@ async def get_guardrail_events(
     _validate_guardrail_event_filter(category=category, action=action)
     db = await gw.storage._ensure_initialized()
     try:
-        rows = await guardrail_events_repo.list_events(
+        rows = await guardrail_events.list_events(
             db,
             since=_guardrail_since(days),
             project=project,
@@ -443,11 +444,11 @@ async def get_guardrail_aggregate(
     db = await gw.storage._ensure_initialized()
     try:
         since = _guardrail_since(days)
-        counts = await guardrail_events_repo.aggregate_counts(
+        counts = await guardrail_events.aggregate_counts(
             db, since=since, project=project, tenant=tenant
         )
         top_sessions = (
-            await guardrail_events_repo.top_sessions_by_category(
+            await guardrail_events.top_sessions_by_category(
                 db,
                 category=category,
                 since=since,
@@ -605,10 +606,10 @@ async def get_session_turns(session_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="Storage not configured")
     db = await gw.storage._ensure_initialized()
     try:
-        turns = await turns_repo.list_turns_by_session(db, session_id)
+        rows = await turns.list_turns_by_session(db, session_id)
         return {
             "session_id": session_id,
-            "turns": [dataclasses.asdict(t) for t in turns],
+            "turns": [dataclasses.asdict(t) for t in rows],
         }
     finally:
         await db.close()
@@ -627,7 +628,7 @@ async def get_session_dead_air(session_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="Storage not configured")
     db = await gw.storage._ensure_initialized()
     try:
-        events = await dead_air_repo.list_events_by_session(db, session_id)
+        events = await dead_air.list_events_by_session(db, session_id)
         return {
             "session_id": session_id,
             "events": [dataclasses.asdict(e) for e in events],
@@ -665,7 +666,7 @@ async def get_session_replay(session_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="Storage not configured")
     db = await gw.storage._ensure_initialized()
     try:
-        events = await replay_repo.read_full_replay(db, session_id)
+        events = await replay.read_full_replay(db, session_id)
         return {
             "session_id": session_id,
             "events": [dataclasses.asdict(e) for e in events],
@@ -687,7 +688,7 @@ async def delete_session_replay(session_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="Storage not configured")
     db = await gw.storage._ensure_initialized()
     try:
-        deleted = await replay_repo.delete_replay(db, session_id)
+        deleted = await replay.delete_replay(db, session_id)
         return {"session_id": session_id, "deleted_rows": deleted}
     finally:
         await db.close()
@@ -879,8 +880,8 @@ async def list_tenants_endpoint(
             },
         }
     db = await gw.storage._ensure_initialized()
-    rows = await tenants_repo.list_tenants(db, limit=limit, query=q)
-    u = await tenants_repo.get_unattributed_aggregates(db)
+    rows = await tenants.list_tenants(db, limit=limit, query=q)
+    u = await tenants.get_unattributed_aggregates(db)
     return {
         "tenants": [dataclasses.asdict(r) for r in rows],
         "unattributed": dataclasses.asdict(u),
@@ -894,7 +895,7 @@ async def get_tenant_endpoint(tenant_id: str) -> dict[str, Any]:
     if gw.storage is None:
         raise HTTPException(status_code=404, detail=f"Tenant {tenant_id!r} not found")
     db = await gw.storage._ensure_initialized()
-    row = await tenants_repo.get_tenant(db, tenant_id)
+    row = await tenants.get_tenant(db, tenant_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Tenant {tenant_id!r} not found")
     return dataclasses.asdict(row)
@@ -914,7 +915,7 @@ async def list_virtual_keys_endpoint(
     if gw.storage is None:
         return {"keys": []}
     db = await gw.storage._ensure_initialized()
-    rows = await virtual_keys_repo.list_keys(db, include_revoked=include_revoked)
+    rows = await virtual_keys.list_keys(db, include_revoked=include_revoked)
     return {"keys": [dataclasses.asdict(r) for r in rows]}
 
 
@@ -945,7 +946,7 @@ async def create_virtual_key_endpoint(
     if gw.storage is None:
         raise HTTPException(status_code=503, detail="Storage backend not configured")
     db = await gw.storage._ensure_initialized()
-    created = await virtual_keys_repo.create_virtual_key(
+    created = await virtual_keys.create_virtual_key(
         db, name=name, tenant_id=tenant_id, issued_by=issued_by
     )
     return {
@@ -962,13 +963,13 @@ async def revoke_virtual_key_endpoint(key_id: int) -> dict[str, Any]:
     if gw.storage is None:
         raise HTTPException(status_code=503, detail="Storage backend not configured")
     db = await gw.storage._ensure_initialized()
-    ok = await virtual_keys_repo.revoke(db, key_id)
+    ok = await virtual_keys.revoke(db, key_id)
     if not ok:
         raise HTTPException(
             status_code=404,
             detail=f"Virtual key {key_id} not found or already revoked",
         )
-    row = await virtual_keys_repo.get_by_id(db, key_id)
+    row = await virtual_keys.get_by_id(db, key_id)
     if row is None:
         # Should never happen: revoke() just returned True. Defensive.
         raise HTTPException(status_code=404, detail=f"Virtual key {key_id} vanished")
@@ -1010,16 +1011,15 @@ async def get_routing_observations(
     Pass ``project`` to scope to one project; omit for every
     project's observations.
     """
-    from voicegateway.storage import latency_observations_repo
 
     gw = _get_gateway()
     if gw.storage is None:
         return {"observations": [], "filter": {"project": project}}
     db = await gw.storage._ensure_initialized()
     rows = (
-        await latency_observations_repo.get_for_project(db, project)
+        await latency_observations.get_for_project(db, project)
         if project
-        else await latency_observations_repo.read_all(db)
+        else await latency_observations.read_all(db)
     )
     return {
         "observations": [dataclasses.asdict(r) for r in rows],

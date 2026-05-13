@@ -8,7 +8,7 @@ import aiosqlite
 import pytest
 
 from voicegateway.middleware.replay_capture import ReplayEvent
-from voicegateway.storage import replay_repo
+from voicegateway.repository import replay
 from voicegateway.storage.retention_worker import RetentionWorker
 from voicegateway.storage.sqlite import SQLiteStorage
 
@@ -20,9 +20,7 @@ async def _seed_session(
     ended_at_offset_days: float,
 ) -> None:
     """Insert a sessions row with a project + an `ended_at` in the past."""
-    ended_at = (
-        datetime.now(UTC) - timedelta(days=ended_at_offset_days)
-    ).isoformat()
+    ended_at = (datetime.now(UTC) - timedelta(days=ended_at_offset_days)).isoformat()
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
             "INSERT INTO sessions "
@@ -30,7 +28,7 @@ async def _seed_session(
             "VALUES (?, ?, ?, ?, ?, ?)",
             (session_id, project, ended_at, ended_at, 0.0, 0),
         )
-        await replay_repo.bulk_write_events(
+        await replay.bulk_write_events(
             db,
             [
                 ReplayEvent(
@@ -67,8 +65,8 @@ async def test_deletes_rows_older_than_window(storage, tmp_path) -> None:
 
     # Verify old session's replay rows are gone, young's are kept.
     async with aiosqlite.connect(db_path) as db:
-        old_left = await replay_repo.read_full_replay(db, "old-1")
-        young_left = await replay_repo.read_full_replay(db, "young-1")
+        old_left = await replay.read_full_replay(db, "old-1")
+        young_left = await replay.read_full_replay(db, "young-1")
     assert old_left == []
     assert len(young_left) == 1
 
@@ -100,7 +98,7 @@ async def test_in_flight_sessions_never_deleted(storage, tmp_path) -> None:
                 0,
             ),
         )
-        await replay_repo.bulk_write_events(
+        await replay.bulk_write_events(
             db,
             [
                 ReplayEvent(
@@ -121,7 +119,7 @@ async def test_in_flight_sessions_never_deleted(storage, tmp_path) -> None:
     await worker.tick_now()
 
     async with aiosqlite.connect(db_path) as db:
-        kept = await replay_repo.read_full_replay(db, "in-flight-1")
+        kept = await replay.read_full_replay(db, "in-flight-1")
     assert len(kept) == 1
 
 

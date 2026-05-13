@@ -70,9 +70,7 @@ def healthy_provider(monkeypatch):
     def _create(_provider_name: str, config: dict[str, Any]) -> _FakeProviderHealthy:
         return _FakeProviderHealthy(config)
 
-    monkeypatch.setattr(
-        "voicegateway.core.registry.create_provider", _create
-    )
+    monkeypatch.setattr("voicegateway.core.registry.create_provider", _create)
     return _FakeProviderHealthy
 
 
@@ -81,9 +79,7 @@ def unhealthy_provider(monkeypatch):
     def _create(_provider_name: str, config: dict[str, Any]) -> _FakeProviderUnhealthy:
         return _FakeProviderUnhealthy(config)
 
-    monkeypatch.setattr(
-        "voicegateway.core.registry.create_provider", _create
-    )
+    monkeypatch.setattr("voicegateway.core.registry.create_provider", _create)
 
 
 @pytest.fixture
@@ -91,14 +87,10 @@ def raising_provider(monkeypatch):
     def _create(_provider_name: str, config: dict[str, Any]) -> _FakeProviderRaises:
         return _FakeProviderRaises(config)
 
-    monkeypatch.setattr(
-        "voicegateway.core.registry.create_provider", _create
-    )
+    monkeypatch.setattr("voicegateway.core.registry.create_provider", _create)
 
 
-async def _seed_db_key(
-    gateway: Gateway, project: str, provider: str, key: str
-):
+async def _seed_db_key(gateway: Gateway, project: str, provider: str, key: str):
     add = _tool("vg_add_provider")
     await add.handler(
         gateway,
@@ -250,9 +242,7 @@ async def test_storage_disabled_with_no_yaml_match_raises_not_found(
 
 async def test_missing_required_args_rejected(gateway):
     with pytest.raises(ValidationError):
-        await _tool("vg_test_provider_key").handler(
-            gateway, {"project": "tony-pizza"}
-        )
+        await _tool("vg_test_provider_key").handler(gateway, {"project": "tony-pizza"})
 
 
 async def test_unknown_provider_type_returns_failed(

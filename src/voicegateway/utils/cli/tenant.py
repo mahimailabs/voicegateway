@@ -13,17 +13,17 @@ def _format_relative(iso: str | None) -> str:
 async def _list_tenants_async(
     storage: Any, *, limit: int, query: str | None
 ) -> tuple[list[Any], Any]:
-    """Run ``tenants_repo.list_tenants`` + the unattributed aggregator."""
-    from voicegateway.storage import tenants_repo
+    """Run ``tenants.list_tenants`` + the unattributed aggregator."""
+    from voicegateway.repository import tenants
 
     db = await storage._ensure_initialized()
-    rows = await tenants_repo.list_tenants(db, limit=limit, query=query)
-    unattributed = await tenants_repo.get_unattributed_aggregates(db)
+    rows = await tenants.list_tenants(db, limit=limit, query=query)
+    unattributed = await tenants.get_unattributed_aggregates(db)
     return rows, unattributed
 
 
 async def _get_tenant_async(storage: Any, tenant_id: str) -> Any:
-    from voicegateway.storage import tenants_repo
+    from voicegateway.repository import tenants
 
     db = await storage._ensure_initialized()
-    return await tenants_repo.get_tenant(db, tenant_id)
+    return await tenants.get_tenant(db, tenant_id)

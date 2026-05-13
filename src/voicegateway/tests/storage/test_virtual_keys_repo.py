@@ -1,4 +1,4 @@
-"""Tests for ``virtual_keys_repo`` (REQ-VG-TENANT-003).
+"""Tests for ``virtual_keys`` (REQ-VG-TENANT-003).
 
 Covers issuance + hash-and-verify round-trip, soft revoke (OQ5), stale
 detection, and the invariant that list responses never carry the
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from voicegateway.storage import virtual_keys_repo as vk
+from voicegateway.repository import virtual_keys as vk
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

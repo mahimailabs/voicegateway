@@ -6,10 +6,10 @@ from typing import Any
 
 
 async def _show_async(storage: Any, project_id: str) -> list[Any]:
-    from voicegateway.storage import latency_observations_repo
+    from voicegateway.repository import latency_observations
 
     db = await storage._ensure_initialized()
-    return await latency_observations_repo.get_for_project(db, project_id)
+    return await latency_observations.get_for_project(db, project_id)
 
 
 async def _simulate_async(

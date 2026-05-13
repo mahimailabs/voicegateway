@@ -53,7 +53,7 @@ def _substitute_env_vars(value: Any) -> Any:
 
 @dataclass
 class MetricsConfig:
-    """v0.2.0 voice-conversation metrics knobs."""
+    """Voice-conversation metrics knobs."""
 
     dead_air_threshold_seconds: float = 3.0
     talk_over_min_overlap_ms: int = 100
@@ -62,7 +62,7 @@ class MetricsConfig:
 
 @dataclass
 class ReplayConfig:
-    """v0.3.0 conversation-replay capture + retention knobs."""
+    """Conversation-replay capture + retention knobs."""
 
     enabled: bool = True
     retention_days: int = 90
@@ -72,7 +72,7 @@ class ReplayConfig:
 
 @dataclass
 class RoutingConfig:
-    """v0.5.0 cross-modality routing knobs (REQ-VG-ROUTE-001..002)."""
+    """Cross-modality routing knobs."""
 
     budget_ms: int = 1500
     rosters: dict[str, list[str]] = field(default_factory=dict)
@@ -81,7 +81,7 @@ class RoutingConfig:
 
 @dataclass
 class BrandingConfig:
-    """v0.5.0 white-label branding knobs (REQ-VG-ROUTE-004)."""
+    """White-label branding knobs."""
 
     logo_url: str | None = None
     accent_color: str | None = None
@@ -90,7 +90,7 @@ class BrandingConfig:
 
 @dataclass
 class TenantConfig:
-    """v0.4.0 multi-tenant attribution knobs."""
+    """Multi-tenant attribution knobs."""
 
     virtual_key_stale_days: int = 90
 
@@ -107,21 +107,14 @@ class ProjectConfig:
     budget_action: str = "warn"
     tags: list[str] = field(default_factory=list)
     source: str = "yaml"
-    # v0.0.5: per-project provider keys. When a project entry sets
-    # ``providers:`` in voicegw.yaml, those keys win over the top-level
-    # ``providers:`` block for inference factory calls inside this
+    # Per-project provider keys override the top-level ``providers:`` block
+    # for inference factory calls inside this project.
     providers: dict[str, dict[str, Any]] = field(default_factory=dict)
-    # v0.2.0: per-project metric capture knobs (REQ-VG-METRICS-001..006).
     metrics: MetricsConfig = field(default_factory=MetricsConfig)
-    # v0.3.0: per-project replay capture knobs (REQ-VG-REPLAY-001..006).
     replay: ReplayConfig = field(default_factory=ReplayConfig)
-    # v0.4.0: per-project multi-tenant knobs (REQ-VG-TENANT-003).
     tenant: TenantConfig = field(default_factory=TenantConfig)
-    # v0.5.0: per-project routing knobs (REQ-VG-ROUTE-001..002).
     routing: RoutingConfig = field(default_factory=RoutingConfig)
-    # v0.5.0: per-project white-label branding (REQ-VG-ROUTE-004).
     branding: BrandingConfig = field(default_factory=BrandingConfig)
-    # v0.6.0: per-project LLM-side voice guardrails.
     guardrails: GuardrailPolicy = field(default_factory=GuardrailPolicy.disabled)
 
     @property
@@ -160,7 +153,7 @@ class GatewayConfig:
     dashboard: dict[str, Any] = field(default_factory=dict)
     serve: dict[str, Any] = field(default_factory=dict)
     projects: dict[str, ProjectConfig] = field(default_factory=dict)
-    default_project: str | None = None  # v0.0.5: see design.md section 3.3
+    default_project: str | None = None
     stacks: dict[str, dict[str, str]] = field(default_factory=dict)
     auth: AuthConfig = field(default_factory=AuthConfig)
     observability: dict[str, Any] = field(
@@ -396,124 +389,3 @@ class GatewayConfig:
     def get_project(self, project_id: str) -> ProjectConfig | None:
         """Return a project by id, or None if not configured."""
         return self.projects.get(project_id)
-
-
-# import logging
-# from enum import StrEnum
-# from functools import lru_cache
-
-# from dotenv import load_dotenv
-# from pydantic import SecretStr, model_validator
-# from pydantic_settings import BaseSettings, SettingsConfigDict
-
-# load_dotenv(override=False)
-
-
-# logger = logging.getLogger(__name__)
-
-
-# class EnvironmentOption(StrEnum):
-#     DEV = "dev"
-#     STAGING = "staging"
-#     PROD = "prod"
-
-
-# class LLMProvider(StrEnum):
-#     DEEPSEEK = "deepseek"
-#     ANTHROPIC = "anthropic"
-
-
-# class Config(BaseSettings):
-#     model_config = SettingsConfigDict(
-#         env_file=".env",
-#         env_file_encoding="utf-8",
-#         extra="ignore",
-#         case_sensitive=True,
-#     )
-
-#     ENV: EnvironmentOption = EnvironmentOption.PROD
-#     API: str = "/api"
-#     API_V1_STR: str = "/api/v1"
-#     API_STR: str = "/api"
-#     MCP_STR: str = "/mcp"
-#     MCP_SERVER_URL: str = "http://127.0.0.1:8000/mcp"
-#     PROJECT_NAME: str = "VoiceClaw Backend"
-#     DEBUG: bool | None = None
-
-#     # CORS
-#     CORS_ORIGINS_STR: str | None = ""
-#     BACKEND_CORS_ORIGINS: list[str] | None = (
-#         [origin.strip() for origin in CORS_ORIGINS_STR.split(",")]
-#         if CORS_ORIGINS_STR
-#         else ["*"]
-#     )
-
-#     # Database
-#     DATABASE_URL: str | None = None
-#     DB_USER: str | None = None
-#     DB_HOST: str | None = None
-#     DB_PORT: int | None = None
-#     DB_NAME: str | None = None
-#     DB_PASSWORD: SecretStr | None = None
-#     DB_SSL: str | None = None
-#     DB_FORCE_ROLL_BACK: bool = False
-
-#     @model_validator(mode="after")
-#     def set_debug_default(self):
-#         if self.DEBUG is None:
-#             self.DEBUG = self.ENV == EnvironmentOption.DEV
-#         return self
-
-#     @property
-#     def SQLALCHEMY_DATABASE_URI(self) -> str:
-#         from urllib.parse import quote_plus
-
-#         if self.DATABASE_URL:
-#             return self.DATABASE_URL
-
-#         if not all(
-#             [self.DB_USER, self.DB_HOST, self.DB_PORT, self.DB_NAME, self.DB_PASSWORD]
-#         ):
-#             raise ValueError(
-#                 "Either DATABASE_URL or all DB_* fields (DB_USER, DB_HOST, DB_PORT, DB_NAME, DB_PASSWORD) must be set"
-#             )
-
-#         db_password = quote_plus(self.DB_PASSWORD.get_secret_value())
-#         return (
-#             f"postgresql+asyncpg://{quote_plus(self.DB_USER)}:{db_password}@"
-#             f"{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
-#         )
-
-#     @property
-#     def SQLALCHEMY_CONNECT_ARGS(self) -> dict[str, object]:
-#         args: dict[str, object] = {"statement_cache_size": 0}
-
-#         if self.DB_SSL:
-#             ssl_mode = self.DB_SSL.strip().lower()
-#             if ssl_mode in {"disable", "false", "0", "no"}:
-#                 args["ssl"] = False
-#             else:
-#                 # asyncpg accepts bool/SSLContext; map common modes to enabled TLS.
-#                 args["ssl"] = True
-
-#         return args
-
-
-#     JWT_SECRET_KEY: SecretStr = SecretStr(
-#         "change-me-in-prod-change-me-in-prod-32chars-min"
-#     )
-#     JWT_ALGORITHM: str = "HS256"
-#     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-
-#     # find query
-#     PAGE: int = 1
-#     PAGE_SIZE: int = 10
-#     ORDERING: str = "-id"
-
-
-# @lru_cache
-# def get_config() -> Config:
-#     return Config()
-
-
-# config = get_config()

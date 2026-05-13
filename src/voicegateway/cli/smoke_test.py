@@ -32,7 +32,7 @@ def smoke_test(
         ),
     ),
 ) -> None:
-    """Verify the v0.0.5 inference pipeline end-to-end without LiveKit."""
+    """Verify the inference pipeline end-to-end without LiveKit."""
     from voicegateway.inference._factory import reset_gateway
 
     gw = _load_gateway(config)

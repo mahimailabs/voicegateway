@@ -1,4 +1,4 @@
-"""``SessionRow`` widget for the Sessions tab (REQ-VG-TUI-002)."""
+"""``SessionRow`` widget for the Sessions tab."""
 
 from __future__ import annotations
 

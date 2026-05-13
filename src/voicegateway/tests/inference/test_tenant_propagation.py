@@ -16,8 +16,8 @@ from voicegateway.inference._session_context import (
     reset_tenant_id,
     set_tenant,
 )
-from voicegateway.storage import tenants_repo
-from voicegateway.storage.models import RequestRecord
+from voicegateway.models.request import RequestRecord
+from voicegateway.repository import tenants
 from voicegateway.storage.sqlite import SQLiteStorage
 
 
@@ -77,7 +77,7 @@ async def test_three_tenants_aggregate_independently(storage) -> None:
 
     # Tenants repo index aggregates.
     db = await storage._ensure_initialized()
-    rows = await tenants_repo.list_tenants(db)
+    rows = await tenants.list_tenants(db)
     by_tenant = {r.tenant_id: r for r in rows}
     assert by_tenant["alpha"].session_count == 2
     assert by_tenant["alpha"].total_cost_usd == pytest.approx(0.30)
@@ -107,9 +107,9 @@ async def test_unattributed_sessions_separate_from_tenant_index(storage) -> None
     await storage.log_request(_req("u-2", cost=0.05))
 
     db = await storage._ensure_initialized()
-    tenant_rows = await tenants_repo.list_tenants(db)
+    tenant_rows = await tenants.list_tenants(db)
     assert {r.tenant_id for r in tenant_rows} == {"alpha"}
 
-    unattr = await tenants_repo.get_unattributed_aggregates(db)
+    unattr = await tenants.get_unattributed_aggregates(db)
     assert unattr.session_count == 2
     assert unattr.total_cost_usd == pytest.approx(0.10)

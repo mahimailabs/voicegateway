@@ -41,7 +41,7 @@ def _print_daemon_status() -> None:
 
 
 def _print_provider_status(*, config: str | None, project: str | None) -> None:
-    """Render the provider-status table (v0.0.5 behaviour)."""
+    """Render the provider-status table."""
     gw = _load_gateway(config)
     cfg = gw.config
 
