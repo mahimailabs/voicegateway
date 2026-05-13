@@ -70,9 +70,10 @@ voicegateway/      # Python package (subpackages only at top level)
   storage/         # SQLite backend with versioned migrations
 
 tests/             # pytest suite mirroring voicegateway/
+                   # also hosts tests/fixtures/streaming/record_streaming_fixtures.py
+                   # (dev-only fixture recorder for the streaming cost suite)
 docker/            # Dockerfiles (voicegateway.Dockerfile, dashboard.Dockerfile)
 docs/              # Markdown docs source rendered by voicegateway-web
-scripts/           # dev-only tooling (fixture recording, smoke tests)
 ```
 
 ## First time?

@@ -5,6 +5,7 @@ voicegateway/_version.py
 .agents
 .codex
 .playwright-mcp
+.DS_Store
 
 # Fly.io deploy
 deploy/fly/.env.deploy

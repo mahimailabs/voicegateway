@@ -1,4 +1,4 @@
-"""CLI gating tests for scripts/record_streaming_fixtures.py.
+"""CLI gating tests for tests/fixtures/streaming/record_streaming_fixtures.py.
 
 These tests cover the default-deny gating: --record gates real API
 calls; --confirm gates past the cost-estimate dry-run. The actual
@@ -19,7 +19,9 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-RECORDER = REPO_ROOT / "scripts" / "record_streaming_fixtures.py"
+RECORDER = (
+    REPO_ROOT / "tests" / "fixtures" / "streaming" / "record_streaming_fixtures.py"
+)
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:

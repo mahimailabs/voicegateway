@@ -38,7 +38,7 @@ Three test functions live in this file (per §3.5 #2-#4):
 When no fixtures are committed, the parametrize emits a single
 skipped case with a clear "fixtures not recorded yet" reason so
 the suite stays green pre-recording. As soon as
-``scripts/record_streaming_fixtures.py --record --all --confirm``
+``tests/fixtures/streaming/record_streaming_fixtures.py --record --all --confirm``
 lands six fixtures in the directory, those skipped cases activate
 automatically; nothing in this file changes.
 """
@@ -81,7 +81,7 @@ _FIXTURES_PENDING_MESSAGE = (
     "tests/fixtures/streaming/PLACEHOLDER.md is present, marking the "
     "documented 'fixtures pending' state. Skipping the replay-driven "
     "assertions for now. Run "
-    "scripts/record_streaming_fixtures.py --record --all --confirm to "
+    "tests/fixtures/streaming/record_streaming_fixtures.py --record --all --confirm to "
     "record the six minimum fixtures, then delete PLACEHOLDER.md in "
     "the same commit (see PLACEHOLDER.md for the runbook). The replay "
     "tests activate automatically on the next CI run."
@@ -539,9 +539,11 @@ def test_fixtures_directory_and_readme_exist() -> None:
 def test_recording_script_exists() -> None:
     """Phase 3.3 deliverable: the recording script is at the documented path."""
     repo_root = Path(__file__).resolve().parent.parent.parent
-    recorder = repo_root / "scripts" / "record_streaming_fixtures.py"
+    recorder = (
+        repo_root / "tests" / "fixtures" / "streaming" / "record_streaming_fixtures.py"
+    )
     assert recorder.exists(), (
-        f"scripts/record_streaming_fixtures.py expected at {recorder}"
+        f"tests/fixtures/streaming/record_streaming_fixtures.py expected at {recorder}"
     )
 
 
@@ -654,7 +656,7 @@ def test_streaming_fixture_params_returns_one_per_real_fixture(
             "modality": "llm",
             "mode": "batch",
             "recorded_at": "2026-05-04T14:32:11Z",
-            "recorded_by": "scripts/record_streaming_fixtures.py",
+            "recorded_by": "tests/fixtures/streaming/record_streaming_fixtures.py",
             "voicegateway_version": "0.0.3",
         },
         "request": {"prompt": "hi", "stream": False},

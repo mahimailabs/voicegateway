@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""scripts/record_streaming_fixtures.py: dev-only fixture recorder.
+"""tests/fixtures/streaming/record_streaming_fixtures.py: dev-only fixture recorder.
 
 Hits real provider APIs to capture responses for fixture-based
 replay testing in ``tests/test_streaming_cost_accounting.py``. The
@@ -20,15 +20,15 @@ This script is **dev-only**. Default-deny:
 Usage:
 
     # Show the recording-disabled banner.
-    python scripts/record_streaming_fixtures.py --provider openai \\
+    python tests/fixtures/streaming/record_streaming_fixtures.py --provider openai \\
       --modality llm --model gpt-4o-mini --mode batch
 
     # Show the cost estimate without recording.
-    python scripts/record_streaming_fixtures.py --record \\
+    python tests/fixtures/streaming/record_streaming_fixtures.py --record \\
       --provider openai --modality llm --model gpt-4o-mini --mode batch
 
     # Actually record.
-    python scripts/record_streaming_fixtures.py --record --confirm \\
+    python tests/fixtures/streaming/record_streaming_fixtures.py --record --confirm \\
       --provider openai --modality llm --model gpt-4o-mini --mode batch
 
 Output path:
@@ -53,7 +53,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures" / "streaming"
 AUDIO_SAMPLE_PATH = REPO_ROOT / "tests" / "fixtures" / "audio" / "test_sample.wav"
 
@@ -83,7 +83,7 @@ _CARTESIA_DEFAULT_VOICE_ID = "a0e99841-438c-4a64-b679-ae501e7d6091"
 # Decimal-as-string in JSON without scientific notation, and gives
 # enough resolution for sub-cent fixture costs.
 _COST_PRECISION = Decimal("0.00000001")
-_RECORDED_BY = "scripts/record_streaming_fixtures.py"
+_RECORDED_BY = "tests/fixtures/streaming/record_streaming_fixtures.py"
 
 # Estimated provider cost for the canonical Phase 3 fixtures, in USD.
 # Computed from the v0.0.4 pricing catalog at the prompts and audio
@@ -141,9 +141,7 @@ async def _record_openai_llm(model: str, mode: str) -> dict[str, Any]:
     try:
         import openai
     except ImportError as exc:
-        raise RuntimeError(
-            "openai package required: pip install openai"
-        ) from exc
+        raise RuntimeError("openai package required: pip install openai") from exc
 
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -158,9 +156,7 @@ async def _record_openai_llm(model: str, mode: str) -> dict[str, Any]:
     }
 
     if mode == "batch":
-        resp = await client.chat.completions.create(
-            stream=False, **base_request
-        )
+        resp = await client.chat.completions.create(stream=False, **base_request)
         if resp.usage is None:
             raise RuntimeError(
                 "OpenAI batch response did not include a usage block; "
@@ -259,9 +255,7 @@ async def _record_deepgram_stt(model: str, mode: str) -> dict[str, Any]:
     try:
         import httpx
     except ImportError as exc:
-        raise RuntimeError(
-            "httpx package required: pip install httpx"
-        ) from exc
+        raise RuntimeError("httpx package required: pip install httpx") from exc
 
     api_key = os.environ.get("DEEPGRAM_API_KEY")
     if not api_key:
@@ -292,9 +286,7 @@ async def _record_deepgram_stt(model: str, mode: str) -> dict[str, Any]:
             "Content-Type": "audio/wav",
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                url, content=audio_bytes, headers=headers
-            )
+            resp = await client.post(url, content=audio_bytes, headers=headers)
             resp.raise_for_status()
             response_dict = resp.json()
 
@@ -369,9 +361,7 @@ async def _record_deepgram_stt(model: str, mode: str) -> dict[str, Any]:
                 if data.get("type") == "Metadata":
                     duration = data.get("duration")
                     if duration is not None:
-                        usage_normalized = {
-                            "audio_seconds": float(duration)
-                        }
+                        usage_normalized = {"audio_seconds": float(duration)}
                     break
 
             # Close the stream cleanly. Best-effort; if the server
@@ -443,17 +433,13 @@ async def _record_cartesia_tts(model: str, mode: str) -> dict[str, Any]:
     try:
         import httpx
     except ImportError as exc:
-        raise RuntimeError(
-            "httpx package required: pip install httpx"
-        ) from exc
+        raise RuntimeError("httpx package required: pip install httpx") from exc
 
     api_key = os.environ.get("CARTESIA_API_KEY")
     if not api_key:
         raise RuntimeError("CARTESIA_API_KEY env var required")
 
-    voice_id = (
-        os.environ.get("CARTESIA_VOICE_ID") or _CARTESIA_DEFAULT_VOICE_ID
-    )
+    voice_id = os.environ.get("CARTESIA_VOICE_ID") or _CARTESIA_DEFAULT_VOICE_ID
     request_payload: dict[str, Any] = {
         "model_id": model,
         "transcript": DEFAULT_TTS_TEXT,
@@ -469,9 +455,7 @@ async def _record_cartesia_tts(model: str, mode: str) -> dict[str, Any]:
             "Content-Type": "application/json",
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                url, json=request_payload, headers=headers
-            )
+            resp = await client.post(url, json=request_payload, headers=headers)
             resp.raise_for_status()
             audio_bytes = resp.content
 
@@ -527,9 +511,7 @@ async def _record_cartesia_tts(model: str, mode: str) -> dict[str, Any]:
             async for message in ws:
                 received_at_ms = int((time.perf_counter() - start) * 1000)
                 text = (
-                    message.decode("utf-8")
-                    if isinstance(message, bytes)
-                    else message
+                    message.decode("utf-8") if isinstance(message, bytes) else message
                 )
                 data = json.loads(text)
                 chunks.append(
@@ -586,9 +568,7 @@ def _open_cartesia_websocket(url: str) -> Any:
 # ---------- Dispatch / CLI -----------------------------------------------
 
 
-_RECORDERS: dict[
-    tuple[str, str], Callable[[str, str], Awaitable[dict[str, Any]]]
-] = {
+_RECORDERS: dict[tuple[str, str], Callable[[str, str], Awaitable[dict[str, Any]]]] = {
     ("openai", "llm"): _record_openai_llm,
     ("deepgram", "stt"): _record_deepgram_stt,
     ("cartesia", "tts"): _record_cartesia_tts,
@@ -618,9 +598,7 @@ def _print_recording_disabled() -> None:
     )
 
 
-def _print_cost_estimate(
-    provider: str, model: str, modality: str, mode: str
-) -> None:
+def _print_cost_estimate(provider: str, model: str, modality: str, mode: str) -> None:
     estimate = _estimate_cost_usd(provider, model, modality, mode)
     print(f"Recording {provider}/{model} {modality}/{mode}")
     if estimate is None:
@@ -631,10 +609,7 @@ def _print_cost_estimate(
         )
     else:
         print(f"  Estimated cost: ~${estimate} USD")
-    print(
-        "\n"
-        "Pass --confirm in addition to --record to actually hit the API."
-    )
+    print("\nPass --confirm in addition to --record to actually hit the API.")
 
 
 def _print_all_cost_estimate() -> None:
@@ -645,22 +620,14 @@ def _print_all_cost_estimate() -> None:
     for provider, model, modality, mode in _ALL_FIXTURES:
         estimate = _estimate_cost_usd(provider, model, modality, mode)
         if estimate is None:
-            print(
-                f"  {provider}/{model} {modality}/{mode}    "
-                "estimate unavailable"
-            )
+            print(f"  {provider}/{model} {modality}/{mode}    estimate unavailable")
             continue
         total += estimate
-        print(
-            f"  {provider}/{model:<14s} {modality:>3s}/{mode:<6s}  ~${estimate} USD"
-        )
+        print(f"  {provider}/{model:<14s} {modality:>3s}/{mode:<6s}  ~${estimate} USD")
     print()
     print(f"Estimated total: ~${total} USD")
     print()
-    print(
-        "Pass --confirm in addition to --record --all to actually hit "
-        "the APIs."
-    )
+    print("Pass --confirm in addition to --record --all to actually hit the APIs.")
 
 
 def _compute_expected_cost_usd(
@@ -806,9 +773,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--confirm. Mutually exclusive with --provider/--modality/"
         "--model/--mode.",
     )
-    parser.add_argument(
-        "--provider", choices=["openai", "deepgram", "cartesia"]
-    )
+    parser.add_argument("--provider", choices=["openai", "deepgram", "cartesia"])
     parser.add_argument("--modality", choices=["llm", "stt", "tts"])
     parser.add_argument("--model")
     parser.add_argument(
@@ -897,9 +862,7 @@ def main() -> None:
 
     # --record without --confirm: dry-run cost estimate, no API call.
     if not args.confirm:
-        _print_cost_estimate(
-            args.provider, args.model, args.modality, mode
-        )
+        _print_cost_estimate(args.provider, args.model, args.modality, mode)
         return
 
     asyncio.run(_run(args.provider, args.modality, args.model, mode))

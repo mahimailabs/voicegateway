@@ -4,11 +4,14 @@ All notable changes to VoiceGateway are documented here. This project follows [S
 
 ## v0.6.0 -- unreleased
 
-**Final v0.1.x re-export shim retirement.** The `voicegateway.combined_server` module was a re-export shim introduced in v0.1.2 to preserve the pre-refactor import path. It was flagged for removal in v0.2.0 but persisted through v0.5.0; v0.6.0 retires it. Callers must use the canonical `voicegateway.server.combined` path.
+**Final v0.1.x re-export shim retirement plus repo-root hygiene.** The `voicegateway.combined_server` module was a re-export shim introduced in v0.1.2 to preserve the pre-refactor import path. It was flagged for removal in v0.2.0 but persisted through v0.5.0; v0.6.0 retires it. Callers must use the canonical `voicegateway.server.combined` path. The repo root also drops four stale files (`.editorconfig`, `.env.example`, `.env.fixtures.example`, the root-level `voicegw.example.yaml`) and the `scripts/` directory.
 
 ### Removed
 
 - **`voicegateway/combined_server.py`** re-export shim. The three contract tests that exercised the shim path in `tests/integration/test_v0_1_x_imports.py` were dropped; the canonical-path test was kept and re-headed. `tests/server/test_combined_server.py` and `docker/voicegateway.Dockerfile` (container CMD) were updated to the canonical import.
+- **`scripts/` directory.** `scripts/smoke_v005_inference.py` had no callers and is gone; `scripts/record_streaming_fixtures.py` moved to `tests/fixtures/streaming/record_streaming_fixtures.py` (next to the fixtures it produces). All 7 caller files, 2 docs files, and the recorder's `_RECORDED_BY` constant updated to the new path. pytest's default `python_files` glob (`test_*.py`) does not collect the recorder.
+- **Root-level `voicegw.example.yaml`** moved to `voicegateway/data/voicegw.example.yaml`. `voicegw init` reads via `importlib.resources` so the wheel still ships the template. New `voicegateway.data` subpackage hosts wheel-shipped resource data alongside the existing `voicegateway/core/provider_baselines.json` and `voicegateway/middleware/guardrail_prompts/*.txt` pattern.
+- **`.editorconfig`, `.env.example`, `.env.fixtures.example`** at repo root. No functional callers; documentation references rewritten or inlined.
 
 ### Migration
 
@@ -18,6 +21,11 @@ If your code imports from the old shim path, update it:
   → `from voicegateway.server.combined import build_combined_app, main`
 - `python -m voicegateway.combined_server`
   → `python -m voicegateway.server.combined`
+
+If your scripts call the fixture recorder, update the path:
+
+- `python scripts/record_streaming_fixtures.py ...`
+  → `python tests/fixtures/streaming/record_streaming_fixtures.py ...`
 
 ## v0.5.0 -- 2026-05-12
 
