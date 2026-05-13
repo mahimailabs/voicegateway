@@ -19,7 +19,7 @@ from voicegateway.inference._session_context import (
     reset_session_id,
     start_session,
 )
-from voicegateway.storage.models import RequestRecord
+from voicegateway.models.request import RequestRecord
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

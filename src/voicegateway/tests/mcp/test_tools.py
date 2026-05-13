@@ -10,7 +10,7 @@ import pytest
 from voicegateway.core.gateway import Gateway
 from voicegateway.mcp.errors import ModelNotFoundError, ValidationError
 from voicegateway.mcp.tools import ALL_TOOLS
-from voicegateway.storage.models import RequestRecord
+from voicegateway.models.request import RequestRecord
 
 
 @pytest.fixture
@@ -208,6 +208,7 @@ async def test_get_provider_yaml(gateway):
 
 async def test_get_provider_not_found(gateway):
     from voicegateway.mcp.errors import ProviderNotFoundError
+
     tool = _tool("get_provider")
     with pytest.raises(ProviderNotFoundError):
         await tool.handler(gateway, {"provider_id": "doesnt-exist"})
@@ -215,40 +216,51 @@ async def test_get_provider_not_found(gateway):
 
 async def test_add_provider_yaml_conflict(gateway):
     from voicegateway.mcp.errors import ProviderAlreadyExistsError
+
     tool = _tool("add_provider")
     with pytest.raises(ProviderAlreadyExistsError):
-        await tool.handler(gateway, {
-            "provider_id": "openai",
-            "provider_type": "openai",
-            "api_key": "sk-test",
-        })
+        await tool.handler(
+            gateway,
+            {
+                "provider_id": "openai",
+                "provider_type": "openai",
+                "api_key": "sk-test",
+            },
+        )
 
 
 async def test_add_provider_unknown_type(gateway):
     tool = _tool("add_provider")
     with pytest.raises(ValidationError):
-        await tool.handler(gateway, {
-            "provider_id": "bogus",
-            "provider_type": "nonexistent-provider",
-            "api_key": "x",
-        })
+        await tool.handler(
+            gateway,
+            {
+                "provider_id": "bogus",
+                "provider_type": "nonexistent-provider",
+                "api_key": "x",
+            },
+        )
 
 
 async def test_add_provider_local_succeeds(gateway):
     """Local providers don't need credentials tested."""
     tool = _tool("add_provider")
-    result = await tool.handler(gateway, {
-        "provider_id": "my-ollama",
-        "provider_type": "ollama",
-        "api_key": "",
-        "base_url": "http://localhost:11434",
-    })
+    result = await tool.handler(
+        gateway,
+        {
+            "provider_id": "my-ollama",
+            "provider_type": "ollama",
+            "api_key": "",
+            "base_url": "http://localhost:11434",
+        },
+    )
     assert result["created"] is True
     assert result["source"] == "db"
 
 
 async def test_delete_provider_yaml_readonly(gateway):
     from voicegateway.mcp.errors import ReadOnlyResourceError
+
     tool = _tool("delete_provider")
     with pytest.raises(ReadOnlyResourceError):
         await tool.handler(gateway, {"provider_id": "openai", "confirm": True})
@@ -256,6 +268,7 @@ async def test_delete_provider_yaml_readonly(gateway):
 
 async def test_delete_provider_not_found(gateway):
     from voicegateway.mcp.errors import ProviderNotFoundError
+
     tool = _tool("delete_provider")
     with pytest.raises(ProviderNotFoundError):
         await tool.handler(gateway, {"provider_id": "never-added", "confirm": True})
@@ -263,33 +276,45 @@ async def test_delete_provider_not_found(gateway):
 
 async def test_delete_provider_requires_confirm(gateway):
     from voicegateway.mcp.errors import ConfirmationRequiredError
+
     # First add a managed one
     add_tool = _tool("add_provider")
-    await add_tool.handler(gateway, {
-        "provider_id": "ollama-custom",
-        "provider_type": "ollama",
-        "api_key": "",
-    })
+    await add_tool.handler(
+        gateway,
+        {
+            "provider_id": "ollama-custom",
+            "provider_type": "ollama",
+            "api_key": "",
+        },
+    )
     del_tool = _tool("delete_provider")
     with pytest.raises(ConfirmationRequiredError):
-        await del_tool.handler(gateway, {"provider_id": "ollama-custom", "confirm": False})
+        await del_tool.handler(
+            gateway, {"provider_id": "ollama-custom", "confirm": False}
+        )
 
 
 async def test_delete_provider_with_confirm(gateway):
     add_tool = _tool("add_provider")
-    await add_tool.handler(gateway, {
-        "provider_id": "ollama-one",
-        "provider_type": "ollama",
-        "api_key": "",
-    })
+    await add_tool.handler(
+        gateway,
+        {
+            "provider_id": "ollama-one",
+            "provider_type": "ollama",
+            "api_key": "",
+        },
+    )
     del_tool = _tool("delete_provider")
-    result = await del_tool.handler(gateway, {"provider_id": "ollama-one", "confirm": True})
+    result = await del_tool.handler(
+        gateway, {"provider_id": "ollama-one", "confirm": True}
+    )
     assert result["action"] == "deleted"
     assert result["provider_id"] == "ollama-one"
 
 
 async def test_test_provider_not_found(gateway):
     from voicegateway.mcp.errors import ProviderNotFoundError
+
     tool = _tool("test_provider")
     with pytest.raises(ProviderNotFoundError):
         await tool.handler(gateway, {"provider_id": "never-added"})
@@ -323,39 +348,51 @@ async def test_list_models_filter_provider(gateway):
 async def test_register_model_new(gateway):
     # First need a provider — use an existing YAML one.
     tool = _tool("register_model")
-    result = await tool.handler(gateway, {
-        "modality": "llm",
-        "provider_id": "openai",
-        "model_name": "gpt-5-turbo",
-    })
+    result = await tool.handler(
+        gateway,
+        {
+            "modality": "llm",
+            "provider_id": "openai",
+            "model_name": "gpt-5-turbo",
+        },
+    )
     assert result["created"] is True
     assert result["model_id"] == "openai/gpt-5-turbo"
 
 
 async def test_register_model_yaml_conflict(gateway):
     from voicegateway.mcp.errors import ModelAlreadyExistsError
+
     tool = _tool("register_model")
     with pytest.raises(ModelAlreadyExistsError):
-        await tool.handler(gateway, {
-            "modality": "llm",
-            "provider_id": "openai",
-            "model_name": "gpt-4o-mini",
-        })
+        await tool.handler(
+            gateway,
+            {
+                "modality": "llm",
+                "provider_id": "openai",
+                "model_name": "gpt-4o-mini",
+            },
+        )
 
 
 async def test_register_model_unknown_provider(gateway):
     from voicegateway.mcp.errors import ProviderNotFoundError
+
     tool = _tool("register_model")
     with pytest.raises(ProviderNotFoundError):
-        await tool.handler(gateway, {
-            "modality": "llm",
-            "provider_id": "nonexistent",
-            "model_name": "foo",
-        })
+        await tool.handler(
+            gateway,
+            {
+                "modality": "llm",
+                "provider_id": "nonexistent",
+                "model_name": "foo",
+            },
+        )
 
 
 async def test_delete_model_yaml_readonly(gateway):
     from voicegateway.mcp.errors import ReadOnlyResourceError
+
     tool = _tool("delete_model")
     with pytest.raises(ReadOnlyResourceError):
         await tool.handler(gateway, {"model_id": "deepgram/nova-3", "confirm": True})
@@ -364,23 +401,32 @@ async def test_delete_model_yaml_readonly(gateway):
 async def test_delete_model_confirm_flow(gateway):
     # Register → preview → delete
     reg = _tool("register_model")
-    await reg.handler(gateway, {
-        "modality": "llm",
-        "provider_id": "openai",
-        "model_name": "custom-llm",
-    })
+    await reg.handler(
+        gateway,
+        {
+            "modality": "llm",
+            "provider_id": "openai",
+            "model_name": "custom-llm",
+        },
+    )
 
     from voicegateway.mcp.errors import ConfirmationRequiredError
+
     del_tool = _tool("delete_model")
     with pytest.raises(ConfirmationRequiredError):
-        await del_tool.handler(gateway, {"model_id": "openai/custom-llm", "confirm": False})
+        await del_tool.handler(
+            gateway, {"model_id": "openai/custom-llm", "confirm": False}
+        )
 
-    result = await del_tool.handler(gateway, {"model_id": "openai/custom-llm", "confirm": True})
+    result = await del_tool.handler(
+        gateway, {"model_id": "openai/custom-llm", "confirm": True}
+    )
     assert result["action"] == "deleted"
 
 
 async def test_delete_model_not_found(gateway):
     from voicegateway.mcp.errors import ModelNotFoundError
+
     tool = _tool("delete_model")
     with pytest.raises(ModelNotFoundError):
         await tool.handler(gateway, {"model_id": "never/existed", "confirm": True})
@@ -408,6 +454,7 @@ async def test_get_project_yaml(gateway):
 
 async def test_get_project_not_found(gateway):
     from voicegateway.mcp.errors import ProjectNotFoundError
+
     tool = _tool("get_project")
     with pytest.raises(ProjectNotFoundError):
         await tool.handler(gateway, {"project_id": "never-created"})
@@ -415,60 +462,77 @@ async def test_get_project_not_found(gateway):
 
 async def test_create_project_happy_path(gateway):
     tool = _tool("create_project")
-    result = await tool.handler(gateway, {
-        "project_id": "new-proj",
-        "name": "New Project",
-        "description": "Testing",
-        "daily_budget": 2.5,
-        "budget_action": "warn",
-    })
+    result = await tool.handler(
+        gateway,
+        {
+            "project_id": "new-proj",
+            "name": "New Project",
+            "description": "Testing",
+            "daily_budget": 2.5,
+            "budget_action": "warn",
+        },
+    )
     assert result["created"] is True
     assert result["project_id"] == "new-proj"
 
 
 async def test_create_project_conflict(gateway):
     from voicegateway.mcp.errors import ProjectAlreadyExistsError
+
     tool = _tool("create_project")
     with pytest.raises(ProjectAlreadyExistsError):
-        await tool.handler(gateway, {
-            "project_id": "test-project",
-            "name": "dup",
-        })
+        await tool.handler(
+            gateway,
+            {
+                "project_id": "test-project",
+                "name": "dup",
+            },
+        )
 
 
 async def test_create_project_unknown_model(gateway):
     tool = _tool("create_project")
     with pytest.raises(ModelNotFoundError):
-        await tool.handler(gateway, {
-            "project_id": "broken-proj",
-            "name": "Broken",
-            "llm_model": "openai/gpt-99",
-        })
+        await tool.handler(
+            gateway,
+            {
+                "project_id": "broken-proj",
+                "name": "Broken",
+                "llm_model": "openai/gpt-99",
+            },
+        )
 
 
 async def test_create_project_default_stack_and_model_conflict(gateway):
     tool = _tool("create_project")
     with pytest.raises(ValidationError):
-        await tool.handler(gateway, {
-            "project_id": "conflict",
-            "name": "X",
-            "default_stack": "default",
-            "llm_model": "openai/gpt-4o-mini",
-        })
+        await tool.handler(
+            gateway,
+            {
+                "project_id": "conflict",
+                "name": "X",
+                "default_stack": "default",
+                "llm_model": "openai/gpt-4o-mini",
+            },
+        )
 
 
 async def test_create_project_negative_budget(gateway):
     tool = _tool("create_project")
     with pytest.raises(ValidationError):
-        await tool.handler(gateway, {
-            "project_id": "neg",
-            "name": "X",
-            "daily_budget": -1.0,
-        })
+        await tool.handler(
+            gateway,
+            {
+                "project_id": "neg",
+                "name": "X",
+                "daily_budget": -1.0,
+            },
+        )
 
 
 async def test_delete_project_yaml_readonly(gateway):
     from voicegateway.mcp.errors import ReadOnlyResourceError
+
     tool = _tool("delete_project")
     with pytest.raises(ReadOnlyResourceError):
         await tool.handler(gateway, {"project_id": "test-project", "confirm": True})
@@ -476,6 +540,7 @@ async def test_delete_project_yaml_readonly(gateway):
 
 async def test_delete_project_confirm_flow(gateway):
     from voicegateway.mcp.errors import ConfirmationRequiredError
+
     create = _tool("create_project")
     await create.handler(gateway, {"project_id": "delete-me", "name": "Del"})
 
@@ -489,8 +554,7 @@ async def test_delete_project_confirm_flow(gateway):
 
 async def test_delete_project_not_found(gateway):
     from voicegateway.mcp.errors import ProjectNotFoundError
+
     tool = _tool("delete_project")
     with pytest.raises(ProjectNotFoundError):
         await tool.handler(gateway, {"project_id": "not-real", "confirm": True})
-
-

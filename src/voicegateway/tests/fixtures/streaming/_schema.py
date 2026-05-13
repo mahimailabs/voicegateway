@@ -73,9 +73,7 @@ class StreamingFixture(BaseModel):
 
     @field_validator("response_stream")
     @classmethod
-    def _chunk_indices_are_sequential(
-        cls, v: list[FixtureChunk]
-    ) -> list[FixtureChunk]:
+    def _chunk_indices_are_sequential(cls, v: list[FixtureChunk]) -> list[FixtureChunk]:
         for position, chunk in enumerate(v):
             if chunk.chunk_index != position:
                 raise ValueError(
@@ -90,7 +88,5 @@ class StreamingFixture(BaseModel):
     @classmethod
     def _expected_cost_non_negative(cls, v: Decimal) -> Decimal:
         if v < 0:
-            raise ValueError(
-                f"expected_cost_usd must be non-negative, got {v}"
-            )
+            raise ValueError(f"expected_cost_usd must be non-negative, got {v}")
         return v

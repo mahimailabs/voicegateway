@@ -1,4 +1,4 @@
-"""TUIApp shell for ``voicegw tui`` (v0.1.1).
+"""TUIApp shell for ``voicegw tui``.
 
 This iteration scaffolds the spine the next four phases plug into:
 
@@ -50,9 +50,7 @@ class TUIApp(App[None]):
     Constructor arguments are keyword-only so launch-site
     ``TUIApp(client=..., is_local=...).run()`` reads cleanly.
 
-    Global vim keybindings (REQ-VG-TUI-006 partial; Phase 7 finishes
-    the rest with the ``?`` overlay and the per-screen ``h/j/k/l``,
-    ``gg/G``, ``/`` bindings):
+    Global vim keybindings:
 
     - ``q`` -- quit the app cleanly via Textual's built-in ``quit``.
     - ``?`` -- ``action_help``; rings the bell for now and gets

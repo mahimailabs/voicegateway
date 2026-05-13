@@ -1,4 +1,4 @@
-"""SQLite-backed ``MetricsClient`` for v0.1.1 Local mode."""
+"""SQLite-backed ``MetricsClient`` for Local mode."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Cross-modality provider routing for v0.5.0."""
+"""Cross-modality provider routing."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from importlib import resources
 from typing import TYPE_CHECKING
 
-from voicegateway.storage import latency_observations_repo
+from voicegateway.repository import latency_observations
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -116,7 +116,7 @@ async def route_session(
             f"project {project_id!r} has empty roster(s) for {missing}; cannot route"
         )
 
-    obs_rows = await latency_observations_repo.get_for_project(db, project_id)
+    obs_rows = await latency_observations.get_for_project(db, project_id)
     observed: dict[tuple[str, str], int] = {
         (r.provider, r.modality): r.p50_ms for r in obs_rows if r.p50_ms is not None
     }

@@ -1,4 +1,4 @@
-"""``voicegw guardrails`` command group for v0.6.0 policies."""
+"""``voicegw guardrails`` command group."""
 
 from __future__ import annotations
 

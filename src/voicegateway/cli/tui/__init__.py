@@ -117,7 +117,7 @@ def tui_cmd(
     theme: str = typer.Option(
         "brand",
         "--theme",
-        help="Color theme. `brand` is the v0.1.1 default.",
+        help="Color theme. `brand` is the default.",
     ),
     poll: float = typer.Option(
         None,

@@ -1,4 +1,4 @@
-"""HTTP-backed ``MetricsClient`` for v0.1.1 Gateway mode."""
+"""HTTP-backed ``MetricsClient`` for Gateway mode."""
 
 from __future__ import annotations
 

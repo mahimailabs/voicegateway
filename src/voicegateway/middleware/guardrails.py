@@ -1,4 +1,4 @@
-"""LLM-side guardrail prompt/tool plumbing for v0.6.0."""
+"""LLM-side guardrail prompt and tool plumbing."""
 
 from __future__ import annotations
 
@@ -153,11 +153,11 @@ def create_report_guardrail_action_tool(
         category = str(raw_arguments.get("category") or "")
         action = str(raw_arguments.get("action") or "")
         context_excerpt = str(raw_arguments.get("context_excerpt") or "")
-        from voicegateway.storage import guardrail_events_repo
+        from voicegateway.repository import guardrail_events
 
         db = await storage._ensure_initialized()
         try:
-            await guardrail_events_repo.create_event(
+            await guardrail_events.create_event(
                 db,
                 session_id=session_id,
                 tenant_id=tenant_id,
@@ -185,12 +185,12 @@ def schedule_bypass_event(
         return
 
     async def _record() -> None:
-        from voicegateway.storage import guardrail_events_repo
+        from voicegateway.repository import guardrail_events
 
         try:
             db = await storage._ensure_initialized()
             try:
-                await guardrail_events_repo.create_event(
+                await guardrail_events.create_event(
                     db,
                     session_id=session_id,
                     tenant_id=tenant_id,

@@ -8,7 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from voicegateway.core.gateway import Gateway
 from voicegateway.middleware.dead_air_detector import DeadAirEvent
 from voicegateway.middleware.turn_tracker import TurnRow
-from voicegateway.storage import dead_air_repo, turns_repo
+from voicegateway.repository import dead_air, turns
 
 
 @pytest.fixture
@@ -44,7 +44,7 @@ async def _seed_turns(gateway, session_id: str, count: int = 3) -> None:
                     response_speed_ms=100 + i,
                 )
             )
-        await turns_repo.create_turns_bulk(db, rows)
+        await turns.create_turns_bulk(db, rows)
     finally:
         await db.close()
 
@@ -53,7 +53,7 @@ async def _seed_dead_air(gateway, session_id: str, count: int = 2) -> None:
     db = await gateway.storage._ensure_initialized()
     try:
         for i in range(count):
-            await dead_air_repo.create_event(
+            await dead_air.create_event(
                 db,
                 DeadAirEvent(
                     session_id=session_id,

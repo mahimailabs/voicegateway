@@ -1,18 +1,10 @@
 """Reconciliation tooling for verifying VG-recorded costs against provider invoices.
 
-v0.1.2 split the original ``voicegateway/reconcile.py`` into this
-subpackage so the top-level ``voicegateway/`` tree contains only
-subpackages plus ``__init__.py`` and ``_version.py``
-(REQ-VG-POLISH-004). The implementation lives in
-``voicegateway/reconcile/core.py``; this ``__init__`` re-exports the
-public surface so the v0.1.x callers continue to work:
-
-* ``from voicegateway import reconcile`` followed by attribute access
-  (e.g. ``reconcile.parse_provider_file``,
-  ``reconcile.reconcile``, ``reconcile.format_text``).
-
-REQ-VG-POLISH-004 AC-2 mandates that every v0.1.x import path keeps
-resolving after the refactor; this shim is the mechanism.
+The implementation lives in :mod:`voicegateway.reconcile.core`; this
+``__init__`` re-exports the public surface so callers can use either
+``from voicegateway import reconcile`` followed by attribute access
+(e.g. ``reconcile.parse_provider_file``, ``reconcile.reconcile``) or
+``from voicegateway.reconcile import reconcile`` directly.
 """
 
 from voicegateway.reconcile.core import (

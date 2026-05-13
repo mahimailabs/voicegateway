@@ -9,8 +9,8 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
+from voicegateway.models.request import RequestRecord
 from voicegateway.server import build_app
-from voicegateway.storage.models import RequestRecord
 
 
 @pytest.fixture
@@ -32,8 +32,13 @@ async def client(app):
 
 
 async def _seed_session(
-    storage, sid: str, *, project: str = "tony-pizza", modality: str = "stt",
-    cost: float = 0.001, ts: float | None = None,
+    storage,
+    sid: str,
+    *,
+    project: str = "tony-pizza",
+    modality: str = "stt",
+    cost: float = 0.001,
+    ts: float | None = None,
     provider: str = "deepgram",
 ):
     rec = RequestRecord(
@@ -210,9 +215,7 @@ async def test_session_detail_out_of_order_request_does_not_drag_ended_at_back(
     ended_at backwards. The CASE clause in the upsert guards this.
     """
     await _seed_session(gateway.storage, "vg-ooo", ts=1700000100.0)
-    expected_ended = (
-        await gateway.storage.get_session("vg-ooo")
-    )["ended_at"]
+    expected_ended = (await gateway.storage.get_session("vg-ooo"))["ended_at"]
     await _seed_session(gateway.storage, "vg-ooo", ts=1700000050.0)  # earlier!
 
     resp = await client.get("/v1/sessions/vg-ooo")

@@ -19,7 +19,7 @@ def migrate(
         help="Override the canonical config home (default: ~/.config/voicegateway).",
     ),
 ) -> None:
-    """Migrate a v0.0.5 install into the v0.1.0 layout."""
+    """Migrate a v0.0.5 install into the current layout."""
     home = Path(config_home) if config_home else _config_home()
     report = _build_report(home)
     _render(report)

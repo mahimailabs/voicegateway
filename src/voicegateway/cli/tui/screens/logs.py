@@ -92,7 +92,7 @@ class LogsScreen(Container):
         self._update_header()
         self.focus()
 
-    # -- Vim scroll actions (REQ-VG-TUI-006) -----------------------
+    # -- Vim scroll actions -----------------------
 
     def action_scroll_down(self) -> None:
         self.query_one("#logs-tail", LogTail).scroll_down(animate=False)

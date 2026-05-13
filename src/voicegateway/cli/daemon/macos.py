@@ -1,4 +1,4 @@
-"""macOS LaunchAgent backend for the v0.1.0 daemon."""
+"""macOS LaunchAgent backend for the daemon."""
 
 from __future__ import annotations
 

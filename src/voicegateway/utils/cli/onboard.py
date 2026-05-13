@@ -20,7 +20,7 @@ from voicegateway.core.constants import (
 
 
 def _resolve_config_path(explicit: str | None) -> Path:
-    """Use the explicit path if provided, else the v0.0.5 default."""
+    """Use the explicit path if provided, else the documented default."""
     if explicit:
         return Path(explicit)
     return Path.home() / ".config" / "voicegateway" / "voicegw.yaml"
@@ -202,7 +202,7 @@ def _report_validation(provider: str, api_key: str) -> None:
 
 
 async def _validate_provider_key(provider: str, api_key: str) -> tuple[str, str | None]:
-    """Drive the v0.0.5 provider health_check path under a 5-second timeout."""
+    """Drive the provider ``health_check`` path under a 5-second timeout."""
     from voicegateway.core.registry import _PROVIDER_REGISTRY, create_provider
 
     if provider not in _PROVIDER_REGISTRY:

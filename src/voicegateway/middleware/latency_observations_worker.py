@@ -1,4 +1,4 @@
-"""15-minute roll-up worker for v0.5.0 latency_observations."""
+"""15-minute roll-up worker for the ``latency_observations`` table."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Final
 
-from voicegateway.storage import latency_observations_repo
+from voicegateway.repository import latency_observations
 
 if TYPE_CHECKING:
     from voicegateway.storage.sqlite import SQLiteStorage
@@ -91,9 +91,7 @@ class LatencyObservationsWorker:
             )
             window_minutes = _DEFAULT_WINDOW_MINUTES
         db = await self._storage._ensure_initialized()
-        inserted = await latency_observations_repo.roll_up(
-            db, window_minutes=window_minutes
-        )
+        inserted = await latency_observations.roll_up(db, window_minutes=window_minutes)
         logger.info(
             "LatencyObservationsWorker: rolled up %d (project, provider, "
             "modality) observations over %d-minute window",

@@ -1,4 +1,4 @@
-"""Windows Scheduled Task backend for the v0.1.0 daemon."""
+"""Windows Scheduled Task backend for the daemon."""
 
 from __future__ import annotations
 

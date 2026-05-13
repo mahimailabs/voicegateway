@@ -261,7 +261,7 @@ class InstrumentedLLM(lk_llm.LLM, _InstrumentedBase):
         )
 
     def _apply_guardrails(self, *, chat_ctx: Any, tools: Any) -> tuple[Any, Any]:
-        """Inject the v0.6.0 guardrail prompt/tool when the project is active."""
+        """Inject the guardrail prompt/tool when the project is active."""
         from voicegateway.core.guardrail_policy import (
             REPORT_GUARDRAIL_TOOL_NAME,
             GuardrailPolicy,

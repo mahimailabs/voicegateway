@@ -19,7 +19,7 @@ import sqlite3
 import time
 import uuid
 
-from voicegateway.storage.models import RequestRecord
+from voicegateway.models.request import RequestRecord
 from voicegateway.storage.sqlite import SQLiteStorage
 
 # v0.0.4 schema fragment for the requests table — verbatim from before
@@ -219,14 +219,20 @@ async def test_new_inserts_can_carry_session_id(tmp_path):
                (id, timestamp, project, modality, model_id, provider,
                 cost_usd, session_id)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (new_id, time.time(), "test", "stt", "deepgram/nova-3",
-             "deepgram", 0.001, "vg-test-session"),
+            (
+                new_id,
+                time.time(),
+                "test",
+                "stt",
+                "deepgram/nova-3",
+                "deepgram",
+                0.001,
+                "vg-test-session",
+            ),
         )
         conn.commit()
 
-        cursor = conn.execute(
-            "SELECT session_id FROM requests WHERE id = ?", (new_id,)
-        )
+        cursor = conn.execute("SELECT session_id FROM requests WHERE id = ?", (new_id,))
         row = cursor.fetchone()
     finally:
         conn.close()

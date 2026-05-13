@@ -17,9 +17,7 @@ from voicegateway.mcp.server import _format_tool_error, _format_tool_result
 
 def test_format_tool_error_with_mcp_tool_error_uses_to_dict() -> None:
     """An MCPToolError serializes via its to_dict envelope."""
-    exc = ProviderNotFoundError(
-        "no such provider 'foobar'", details={"name": "foobar"}
-    )
+    exc = ProviderNotFoundError("no such provider 'foobar'", details={"name": "foobar"})
     payload = json.loads(_format_tool_error(exc))
     assert payload["error"]["code"] == "PROVIDER_NOT_FOUND"
     assert payload["error"]["message"] == "no such provider 'foobar'"
@@ -37,6 +35,7 @@ def test_format_tool_error_with_unknown_exception_uses_internal_envelope() -> No
 
 def test_format_tool_error_falls_back_to_class_name_when_message_empty() -> None:
     """An exception with an empty str() falls back to its class name."""
+
     class _CustomBoom(Exception):
         pass
 

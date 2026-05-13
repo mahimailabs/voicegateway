@@ -57,7 +57,7 @@ def _assert_key_resolved(
     project: str,
     config: dict[str, Any],
 ) -> None:
-    """Fail-fast preflight per REQ-VG-INFER-003.3."""
+    """Fail-fast preflight that verifies the API key before stream start."""
     if provider_name in _LOCAL_PROVIDERS:
         return
     api_key = config.get("api_key")

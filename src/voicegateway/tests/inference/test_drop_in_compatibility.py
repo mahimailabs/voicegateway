@@ -70,8 +70,7 @@ def test_parameter_kinds_match(vg_cls, lk_cls):
                 f"  {name}: LK={lk_param.kind.name} VG={vg_param.kind.name}"
             )
     assert not mismatches, (
-        f"Parameter kinds drifted for {vg_cls.__name__}:\n"
-        + "\n".join(mismatches)
+        f"Parameter kinds drifted for {vg_cls.__name__}:\n" + "\n".join(mismatches)
     )
 
 
@@ -83,7 +82,9 @@ def test_parameter_defaults_match(vg_cls, lk_cls):
     for name, lk_param in lk_params.items():
         vg_param = vg_params.get(name)
         if vg_param is None:
-            mismatches.append(f"  {name}: missing on VG (LK default={lk_param.default!r})")
+            mismatches.append(
+                f"  {name}: missing on VG (LK default={lk_param.default!r})"
+            )
             continue
         # We compare defaults by repr because NOT_GIVEN is a singleton
         # imported from the same livekit.agents.types module on both
@@ -94,8 +95,7 @@ def test_parameter_defaults_match(vg_cls, lk_cls):
                 f"  {name}: LK={lk_param.default!r} VG={vg_param.default!r}"
             )
     assert not mismatches, (
-        f"Parameter defaults drifted for {vg_cls.__name__}:\n"
-        + "\n".join(mismatches)
+        f"Parameter defaults drifted for {vg_cls.__name__}:\n" + "\n".join(mismatches)
     )
 
 

@@ -60,5 +60,5 @@ def _auth_headers() -> dict[str, str]:
 
 
 def _config_home() -> Path:
-    """v0.0.5's canonical config home: ``~/.config/voicegateway``."""
+    """Canonical config home: ``~/.config/voicegateway``."""
     return Path.home() / ".config" / "voicegateway"

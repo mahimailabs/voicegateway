@@ -22,7 +22,10 @@ class TestHappyPath:
     def test_internal_colons_preserved_for_tts_voice(self):
         # cartesia/sonic-3:voice_id selects a voice via colon-suffix. resolve_model
         # passes it through; the TTS factory strips the suffix later.
-        assert resolve_model("cartesia/sonic-3:voice_id") == ("cartesia", "sonic-3:voice_id")
+        assert resolve_model("cartesia/sonic-3:voice_id") == (
+            "cartesia",
+            "sonic-3:voice_id",
+        )
 
     def test_partition_uses_first_slash_only(self):
         # Path-style model names with extra slashes survive; only the first

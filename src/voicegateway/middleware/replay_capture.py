@@ -1,4 +1,4 @@
-"""Per-session replay-event capture for the v0.3.0 conversation timeline."""
+"""Per-session replay-event capture for the conversation timeline."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ FlushCallback = Callable[[list[ReplayEvent]], Awaitable[None]]
 
 
 async def _noop_flush(events: list[ReplayEvent]) -> None:
-    """Default callback used before replay_repo (T05) is wired."""
+    """Default callback used before replay (T05) is wired."""
     if events:
         logger.debug(
             "ReplayCapture no-op flush: %d events dropped (no repository wired)",
@@ -53,7 +53,7 @@ class _SessionState:
 
 
 class ReplayCapture:
-    """Captures replay events for v0.3.0's conversation timeline."""
+    """Captures replay events for the conversation timeline."""
 
     def __init__(
         self,

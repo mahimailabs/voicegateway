@@ -50,9 +50,7 @@ async def _seed_provider_rows(storage: SQLiteStorage) -> None:
     )
 
 
-async def test_rotate_re_encrypts_every_row_under_new_primary(
-    monkeypatch, tmp_path
-):
+async def test_rotate_re_encrypts_every_row_under_new_primary(monkeypatch, tmp_path):
     """End-to-end: write rows under key A, rotate to key B with A as
     fallback, then prove the rows decrypt under B alone.
     """

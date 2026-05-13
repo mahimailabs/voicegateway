@@ -18,7 +18,7 @@ from voicegateway.inference._session_context import (
     set_routing_decision,
 )
 from voicegateway.middleware import router
-from voicegateway.storage.models import RequestRecord
+from voicegateway.models.request import RequestRecord
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

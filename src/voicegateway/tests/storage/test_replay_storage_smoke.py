@@ -15,7 +15,7 @@ ProjectConfig.replay.enabled toggle and in the journal.
 from __future__ import annotations
 
 from voicegateway.middleware.replay_capture import ReplayCapture, ReplayEvent
-from voicegateway.storage import replay_repo
+from voicegateway.repository import replay
 from voicegateway.storage.sqlite import SQLiteStorage
 
 # Generous upper bound. The actual measured size for the synthetic
@@ -84,7 +84,7 @@ async def _synthesize_one_minute(capture: ReplayCapture, session_id: str) -> Non
 
 
 async def test_synthetic_one_minute_under_600kb(tmp_path) -> None:
-    """End-to-end: ReplayCapture -> replay_repo -> on-disk footprint."""
+    """End-to-end: ReplayCapture -> replay -> on-disk footprint."""
     db_path = str(tmp_path / "smoke.db")
     storage = SQLiteStorage(db_path)
     await storage._ensure_initialized()
@@ -107,11 +107,11 @@ async def test_synthetic_one_minute_under_600kb(tmp_path) -> None:
     import aiosqlite
 
     async with aiosqlite.connect(db_path) as db:
-        n = await replay_repo.bulk_write_events(db, captured)
+        n = await replay.bulk_write_events(db, captured)
         assert n == len(captured)
 
         # Sum the payload bytes (the dominant cost term).
-        size = await replay_repo.aggregate_storage_per_session(db, "smoke-session")
+        size = await replay.aggregate_storage_per_session(db, "smoke-session")
 
     # 60-second synthetic conversation should land under 600 KB/min.
     # Documented target in docs/storage/replay-storage-costs.md.
@@ -154,8 +154,8 @@ async def test_storage_size_reported_via_aggregate(tmp_path) -> None:
     import aiosqlite
 
     async with aiosqlite.connect(db_path) as db:
-        await replay_repo.bulk_write_events(db, captured)
-        size = await replay_repo.aggregate_storage_per_session(db, "tiny")
+        await replay.bulk_write_events(db, captured)
+        size = await replay.aggregate_storage_per_session(db, "tiny")
 
     # 10 small STT chunks: each payload roughly 50 bytes JSON-encoded,
     # so 500 bytes total floor, a few KB ceiling.

@@ -19,11 +19,13 @@ class RequestRecord:
     input_units: float = 0.0  # minutes (stt), tokens (llm), characters (tts)
     output_units: float = 0.0  # tokens (llm)
     cost_usd: float = 0.0
-    pricing_source: str = ""  # e.g. "genai-prices@0.0.57" or "voicegateway-catalog@2026-05-04"
+    pricing_source: str = (
+        ""  # e.g. "genai-prices@0.0.57" or "voicegateway-catalog@2026-05-04"
+    )
     ttfb_ms: float | None = None
     total_latency_ms: float | None = None
     status: str = "success"  # 'success', 'error', 'fallback'
     fallback_from: str | None = None
     error_message: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
-    session_id: str | None = None  # v0.0.5: ContextVar-derived session correlation
+    session_id: str | None = None  # ContextVar-derived session correlation

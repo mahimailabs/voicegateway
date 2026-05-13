@@ -1,4 +1,4 @@
-"""Linux systemd user-unit backend for the v0.1.0 daemon."""
+"""Linux systemd user-unit backend for the daemon."""
 
 from __future__ import annotations
 

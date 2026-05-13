@@ -1,6 +1,5 @@
 """Integration test — exercises the full Gateway → Router → Provider → Storage flow."""
 
-
 import pytest
 import yaml
 
@@ -71,7 +70,11 @@ def test_latency_tracking_disabled(tmp_path, monkeypatch):
     """When latency_tracking is false, raw instances are returned (no wrapper)."""
     config = {
         "providers": {"deepgram": {"api_key": "test-key"}},
-        "models": {"stt": {"deepgram/nova-3": {"provider": "deepgram", "model": "nova-3"}}, "llm": {}, "tts": {}},
+        "models": {
+            "stt": {"deepgram/nova-3": {"provider": "deepgram", "model": "nova-3"}},
+            "llm": {},
+            "tts": {},
+        },
         "projects": {},
         "fallbacks": {"stt": [], "llm": [], "tts": []},
         "observability": {"latency_tracking": False},
@@ -90,5 +93,6 @@ def test_config_validation_catches_typos(tmp_path):
     with open(config_path, "w") as f:
         yaml.dump(config, f)
     from voicegateway.core.config import ConfigError
+
     with pytest.raises(ConfigError, match="providrs"):
         Gateway(config_path=str(config_path))

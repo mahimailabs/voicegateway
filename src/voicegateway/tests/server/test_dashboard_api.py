@@ -69,7 +69,7 @@ async def test_api_costs_includes_pricing_source(client, gateway):
     import time
     import uuid
 
-    from voicegateway.storage.models import RequestRecord
+    from voicegateway.models.request import RequestRecord
 
     await gateway.storage.log_request(
         RequestRecord(
@@ -109,7 +109,7 @@ async def _seed_session_request(
     import time
     import uuid
 
-    from voicegateway.storage.models import RequestRecord
+    from voicegateway.models.request import RequestRecord
 
     await storage.log_request(
         RequestRecord(
@@ -301,7 +301,7 @@ async def test_api_projects_includes_source_field(client):
 
 
 async def test_api_guardrails_mirror_policy_and_aggregate(client, gateway):
-    from voicegateway.storage import guardrail_events_repo
+    from voicegateway.repository import guardrail_events
 
     resp = await client.post(
         "/api/projects/test-project/guardrails",
@@ -313,7 +313,7 @@ async def test_api_guardrails_mirror_policy_and_aggregate(client, gateway):
     await _seed_session_request(gateway.storage, "vg-guard", project="test-project")
     db = await gateway.storage._ensure_initialized()
     try:
-        await guardrail_events_repo.create_event(
+        await guardrail_events.create_event(
             db,
             session_id="vg-guard",
             event_type="fired",

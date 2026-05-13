@@ -48,6 +48,7 @@ def test_wrong_key_raises(monkeypatch, tmp_path):
     # Change the key
     reset_fernet()
     from cryptography.fernet import Fernet
+
     monkeypatch.setenv("VOICEGW_SECRET", Fernet.generate_key().decode())
 
     with pytest.raises(ValueError, match="Failed to decrypt"):
@@ -66,7 +67,9 @@ def test_mask_empty():
     assert mask("") == ""
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX file permissions not available on Windows")
+@pytest.mark.skipif(
+    os.name == "nt", reason="POSIX file permissions not available on Windows"
+)
 def test_secret_file_created_with_600_perms(tmp_path, monkeypatch):
     secret_file = tmp_path / ".secret"
     monkeypatch.setattr("voicegateway.core.crypto._SECRET_FILE", secret_file)
@@ -83,6 +86,7 @@ def test_secret_file_created_with_600_perms(tmp_path, monkeypatch):
 
 def test_env_var_overrides_secret_file(tmp_path, monkeypatch):
     from cryptography.fernet import Fernet
+
     env_key = Fernet.generate_key().decode()
     monkeypatch.setenv("VOICEGW_SECRET", env_key)
 

@@ -1,4 +1,4 @@
-"""Tests for ``latency_observations_repo`` (REQ-VG-ROUTE-002 + -003)."""
+"""Tests for ``latency_observations`` (REQ-VG-ROUTE-002 + -003)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import time
 
 import pytest
 
-from voicegateway.storage import latency_observations_repo as lor
-from voicegateway.storage.models import RequestRecord
+from voicegateway.models.request import RequestRecord
+from voicegateway.repository import latency_observations as lor
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

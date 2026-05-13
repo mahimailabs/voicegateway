@@ -97,7 +97,10 @@ async def test_rotation_does_not_create_extra_rows(gateway):
 async def test_rotation_preserves_base_url_when_omitted(gateway):
     """base_url=None on input means \"no change\", not \"clear it\"."""
     await _seed_project_key(
-        gateway, "tony-pizza", "openai", "sk-1",
+        gateway,
+        "tony-pizza",
+        "openai",
+        "sk-1",
         base_url="https://my-proxy.example",
     )
     await _tool("vg_set_provider_key").handler(
@@ -111,7 +114,10 @@ async def test_rotation_preserves_base_url_when_omitted(gateway):
 
 async def test_rotation_updates_base_url_when_given(gateway):
     await _seed_project_key(
-        gateway, "tony-pizza", "openai", "sk-1",
+        gateway,
+        "tony-pizza",
+        "openai",
+        "sk-1",
         base_url="https://old-proxy.example",
     )
     await _tool("vg_set_provider_key").handler(

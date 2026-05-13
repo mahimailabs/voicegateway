@@ -10,8 +10,8 @@ import pytest
 from voicegateway.middleware.latency_observations_worker import (
     LatencyObservationsWorker,
 )
-from voicegateway.storage import latency_observations_repo as lor
-from voicegateway.storage.models import RequestRecord
+from voicegateway.models.request import RequestRecord
+from voicegateway.repository import latency_observations as lor
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

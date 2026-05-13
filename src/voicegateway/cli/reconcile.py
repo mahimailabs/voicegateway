@@ -36,7 +36,7 @@ def reconcile_cmd(
         "--threshold",
         help=(
             "Flag rows whose |cost diff %| exceeds this threshold "
-            "(default 5.0). The v0.0.4 disclosure expects LLM "
+            "(default 5.0). The disclosure expects LLM "
             "estimates to drift up to ~5%."
         ),
     ),

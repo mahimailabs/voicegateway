@@ -1,4 +1,4 @@
-"""Data-layer Protocol for the v0.1.1 TUI."""
+"""Data-layer Protocol for the TUI."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any, Protocol, runtime_checkable
 
 @runtime_checkable
 class MetricsClient(Protocol):
-    """Backend-agnostic interface every v0.1.1 TUI screen consumes."""
+    """Backend-agnostic interface every TUI screen consumes."""
 
     async def list_sessions(
         self,

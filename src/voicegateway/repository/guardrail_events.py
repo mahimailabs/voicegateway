@@ -1,4 +1,4 @@
-"""Async repo for v0.6.0 guardrail audit events."""
+"""Async repo for guardrail audit events."""
 
 from __future__ import annotations
 

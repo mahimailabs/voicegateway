@@ -32,7 +32,9 @@ def test_tts_cost_calculation():
 
 def test_local_model_is_free():
     tracker = CostTracker()
-    cost = tracker.calculate_cost("ollama/qwen2.5:3b", "llm", input_units=10000, output_units=5000)
+    cost = tracker.calculate_cost(
+        "ollama/qwen2.5:3b", "llm", input_units=10000, output_units=5000
+    )
     assert cost == 0.0
 
     cost = tracker.calculate_cost("local/whisper-large-v3", "stt", input_units=60)
