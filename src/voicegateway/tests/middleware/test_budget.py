@@ -176,8 +176,7 @@ async def test_unknown_project_no_action():
 
 
 class _CountingStorage:
-    """Minimal storage stub that counts get_cost_summary calls and lets the
-    test control what spend each call reports."""
+    """Minimal storage stub that counts get_cost_summary calls and lets the"""
 
     def __init__(self, spend: float = 0.0):
         self.calls = 0
@@ -192,12 +191,7 @@ class _CountingStorage:
 
 
 async def test_concurrent_check_budget_coalesces_storage_calls():
-    """N concurrent budget checks for the same project hit storage once.
-
-    Without the per-project lock, each racing task would see an empty
-    cache and fire its own storage query; the cache writes would also
-    race. Both behaviors are safety-relevant for the 'block' action.
-    """
+    """N concurrent budget checks for the same project hit storage once."""
     config = _make_config(
         {
             "expensive-project": ProjectConfig(
@@ -223,12 +217,7 @@ async def test_concurrent_check_budget_coalesces_storage_calls():
 
 
 async def test_record_spend_updates_cache_within_ttl():
-    """Post-request spend notifications close the TTL blind spot.
-
-    Before: cache says $0.50 for 30s; a flood of in-flight requests all
-    see $0.50 < $1.00 budget and sail through. After: each logged
-    request increments the cached spend so the block kicks in promptly.
-    """
+    """Post-request spend notifications close the TTL blind spot."""
     config = _make_config(
         {
             "p": ProjectConfig(
@@ -270,9 +259,7 @@ async def test_record_spend_no_entry_is_noop():
 
 
 async def test_record_spend_skips_when_cache_refreshed_after_write():
-    """A refresh that happened AFTER storage.log_request already
-    reflects the cost, so a late record_spend must not double-count.
-    """
+    """A refresh that happened AFTER storage.log_request already"""
     import time as _time
 
     config = _make_config(

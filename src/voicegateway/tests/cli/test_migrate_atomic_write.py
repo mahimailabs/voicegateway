@@ -1,19 +1,4 @@
-"""Tests for ``voicegateway/cli/migrate._atomic_write_text``.
-
-The migrate command is read-only in v0.1.0 (the path matches v0.0.5
-per design decision 2), so the staging-and-atomic-rename helper
-ships without an in-tree caller. The contract still matters though:
-any future schema bump uses this seam, and AC-VG-ONBOARD-007's
-"failure leaves v0.0.5 files untouched" hinges on the rename being
-atomic and the staging file getting cleaned up on error.
-
-These tests pin the three contract guarantees:
-
-  1. Atomic write to a missing target creates the target.
-  2. Atomic write to an existing target replaces it byte-for-byte.
-  3. Failure during the rename leaves the target unchanged AND
-     does not leave the staging file behind.
-"""
+"""Tests for ``voicegateway/cli/migrate._atomic_write_text``."""
 
 from __future__ import annotations
 
@@ -52,9 +37,7 @@ def test_atomic_write_creates_parent_directory(tmp_path):
 
 
 def test_atomic_write_failure_leaves_existing_target_intact(tmp_path, monkeypatch):
-    """If the rename step blows up, the original target is untouched
-    AND the staging file is cleaned up.
-    """
+    """If the rename step blows up, the original target is untouched"""
     target = tmp_path / "voicegw.yaml"
     original = "providers:\n  preserved: yes\n"
     target.write_text(original)
@@ -80,9 +63,7 @@ def test_atomic_write_failure_leaves_existing_target_intact(tmp_path, monkeypatc
 
 
 def test_atomic_write_failure_during_write_leaves_no_staging(tmp_path, monkeypatch):
-    """Write-side failure (e.g., disk full mid-write) cleans up the
-    partial staging file rather than leaving cruft.
-    """
+    """Write-side failure (e.g., disk full mid-write) cleans up the"""
     target = tmp_path / "voicegw.yaml"
     target.write_text("preserved\n")
 

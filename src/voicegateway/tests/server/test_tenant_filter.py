@@ -1,14 +1,4 @@
-"""Tests for tenant URL-parameter scoping on read endpoints (T10/T13).
-
-Exercises the storage-level tenant kwarg on the five filtered methods:
-- get_cost_summary
-- get_cost_by_project
-- get_recent_requests
-- list_sessions
-- get_latency_stats
-
-Plus the dashboard handler that parses the URL param and forwards it.
-"""
+"""Tests for tenant URL-parameter scoping on read endpoints (T10/T13)."""
 
 from __future__ import annotations
 

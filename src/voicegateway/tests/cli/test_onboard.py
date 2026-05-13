@@ -1,39 +1,4 @@
-"""Tests for the ``voicegw onboard`` wizard.
-
-REQ-VG-ONBOARD-002 coverage map (spec asks for):
-
-  - Happy path:
-      test_onboard_happy_path_writes_config
-      test_onboard_custom_project_and_port
-      test_onboard_preserves_existing_yaml
-      test_onboard_unknown_provider_warns_but_continues
-
-  - Each cancellation point (REQ-VG-ONBOARD-002.4):
-      test_ctrl_c_at_each_prompt_no_partial_config (parametrized
-        across prompts 1..4: project / provider / api / port)
-      test_ctrl_c_at_daemon_confirm_no_partial_config
-      test_ctrl_c_at_smoke_test_confirm_rolls_back_config
-      test_ctrl_c_during_first_prompt_no_partial_config (legacy)
-      test_ctrl_c_after_config_write_removes_partial_when_new
-        (KBI during _install_daemon)
-      test_ctrl_c_restores_pre_existing_config_byte_for_byte
-        (KBI during _install_daemon, with pre-existing yaml)
-
-  - Key-validation timeout (REQ-VG-ONBOARD-002.2):
-      test_onboard_validation_timeout_fails_soft
-      test_validate_returns_timeout_when_health_check_hangs
-
-  - Smoke-test success (REQ-VG-ONBOARD-005):
-      test_smoke_test_runs_when_user_accepts
-
-  - Smoke-test failure (REQ-VG-ONBOARD-005):
-      test_smoke_test_failure_prints_pointer
-      test_smoke_test_timeout_prints_pointer
-      test_smoke_test_skipped_when_voicegw_not_on_path
-
-Plus the v0.0.5-style help/registration/summary checks and the
-direct-call tests for ``_validate_provider_key`` (each branch).
-"""
+"""Tests for the ``voicegw onboard`` wizard."""
 
 from __future__ import annotations
 
@@ -48,27 +13,13 @@ runner = CliRunner()
 
 
 def _plain(output: str) -> str:
-    """Strip ANSI escape codes from CliRunner output.
-
-    GitHub Actions exports ``FORCE_COLOR=1`` so Typer's Rich help
-    renderer splits option flags across bold spans
-    (``\\x1b[1m-\\x1b[0m\\x1b[1m-install-daemon\\x1b[0m``), which
-    breaks substring matches against ``--install-daemon`` etc.
-    ``click.unstyle`` is the canonical way to normalise the output.
-    """
+    """Strip ANSI escape codes from CliRunner output."""
     return click.unstyle(output)
 
 
 @pytest.fixture(autouse=True)
 def _stub_provider_validation(request, monkeypatch):
-    """Replace the live ``health_check()`` plumbing with a stub that
-    returns "ok" so prompt-and-write tests do not depend on the
-    actual provider plugin being installed (or on network access).
-
-    Tests that exercise the validator directly (``test_validate_*``)
-    opt out of this autouse: they need the real function under
-    test, with their own monkeypatched registry.
-    """
+    """Replace the live ``health_check()`` plumbing with a stub that"""
     if request.node.name.startswith("test_validate_"):
         return
 
@@ -130,16 +81,7 @@ def test_onboard_custom_project_and_port(tmp_path):
 
 
 def test_wizard_produced_yaml_loads_under_schema(tmp_path):
-    """The wizard's voicegw.yaml has to load through ``GatewayConfig.load``
-    without tripping the strict (``extra='forbid'``) top-level schema, and
-    the ``serve.port`` the user typed has to survive the round-trip.
-
-    This pins the contract that exposed Codex's P1.1 review finding: an
-    earlier iteration persisted ``serve: {port: ...}`` while the schema
-    only knew about ``providers``, ``projects``, ``cost_tracking`` etc.,
-    so a fresh ``voicegw onboard`` produced a config that every gateway-
-    backed command (status, serve, daemon startup) refused to load.
-    """
+    """The wizard's voicegw.yaml has to load through ``GatewayConfig.load``"""
     from voicegateway.core.config import GatewayConfig
 
     cfg = tmp_path / "voicegw.yaml"
@@ -158,9 +100,7 @@ def test_wizard_produced_yaml_loads_under_schema(tmp_path):
 
 
 def test_onboard_preserves_existing_yaml(tmp_path):
-    """Re-running the wizard merges into existing config rather than
-    overwriting it. Idempotency requirement (AC-VG-ONBOARD-002.5).
-    """
+    """Re-running the wizard merges into existing config rather than"""
     cfg = tmp_path / "voicegw.yaml"
     # Pre-existing config that the wizard must NOT clobber.
     cfg.write_text(
@@ -188,9 +128,7 @@ def test_onboard_preserves_existing_yaml(tmp_path):
 
 
 def test_onboard_unknown_provider_warns_but_continues(tmp_path):
-    """A provider name outside the known list does not abort the
-    wizard; a yellow warning suggests checking the YAML schema.
-    """
+    """A provider name outside the known list does not abort the"""
     cfg = tmp_path / "voicegw.yaml"
     # Trailing "n" declines the smoke-test offering.
     inp = "default\nfooprovider\nsk-test\n8080\nn\nn\n"
@@ -204,10 +142,7 @@ def test_onboard_unknown_provider_warns_but_continues(tmp_path):
 
 
 def test_onboard_install_daemon_path_invokes_manager(tmp_path, monkeypatch):
-    """When --install-daemon is set, _install_daemon runs and calls
-    the manager. Tests inject a fake DaemonManager so we don't drive
-    real launchctl/systemctl during the run.
-    """
+    """When --install-daemon is set, _install_daemon runs and calls"""
     from unittest.mock import MagicMock
 
     fake_manager = MagicMock()
@@ -241,19 +176,7 @@ def test_onboard_help_renders():
 
 
 def test_onboard_wizard_mocked_end_to_end_under_one_second(tmp_path):
-    """Mocked end-to-end wizard run completes well under 1s.
-
-    The 60-second budget in design.md §6 acceptance #5 is the
-    stranger-test wall clock from curl through first call. With
-    DaemonManager mocked + provider validation stubbed (the real
-    network call is the only second-scale cost), the cli itself
-    must finish in negligible time so the 60-second budget hinges
-    only on the network-bound bits.
-
-    A regression that adds a slow import, a sleep, or an
-    accidental network call to the wizard surface trips this gate
-    immediately, without depending on the stranger-test.
-    """
+    """Mocked end-to-end wizard run completes well under 1s."""
     import time
 
     cfg = tmp_path / "voicegw.yaml"
@@ -280,9 +203,7 @@ def test_onboard_wizard_mocked_end_to_end_under_one_second(tmp_path):
 
 
 def _run_wizard_with_validation(monkeypatch, tmp_path, status, message=None):
-    """Helper: run the wizard once with the validator stubbed to
-    return ``(status, message)``. Returns the CliRunner result.
-    """
+    """Helper: run the wizard once with the validator stubbed to"""
 
     async def _stub(provider: str, api_key: str) -> tuple[str, str | None]:
         return status, message
@@ -305,12 +226,7 @@ def test_onboard_validation_ok_prints_validated(tmp_path, monkeypatch):
 
 
 def test_onboard_validation_timeout_fails_soft(tmp_path, monkeypatch):
-    """Timeout is the headline soft-fail per REQ-VG-ONBOARD-002.2.
-
-    The wizard MUST NOT fail; it prints the documented message
-    ("validation timed out: your key may still be correct;
-    continuing") and the YAML is still written.
-    """
+    """Timeout is the headline soft-fail per REQ-VG-ONBOARD-002.2."""
     result = _run_wizard_with_validation(monkeypatch, tmp_path, "timeout")
     assert result.exit_code == 0, result.output
     assert "timed out" in result.output
@@ -321,10 +237,7 @@ def test_onboard_validation_timeout_fails_soft(tmp_path, monkeypatch):
 
 
 def test_onboard_validation_failed_continues_with_warning(tmp_path, monkeypatch):
-    """Auth failure (e.g., 401 unauthorized): wizard continues so
-    the typo gets fixed via voicegw doctor or a re-run, not by
-    abandoning the wizard mid-flight.
-    """
+    """Auth failure (e.g., 401 unauthorized): wizard continues so"""
     result = _run_wizard_with_validation(
         monkeypatch, tmp_path, "failed", "authentication declined"
     )
@@ -334,10 +247,7 @@ def test_onboard_validation_failed_continues_with_warning(tmp_path, monkeypatch)
 
 
 def test_onboard_validation_skipped_for_unknown_provider(tmp_path, monkeypatch):
-    """Provider name outside the registry skips live validation
-    entirely (the YAML schema validator catches typos at gateway
-    construction time).
-    """
+    """Provider name outside the registry skips live validation"""
     result = _run_wizard_with_validation(
         monkeypatch, tmp_path, "skipped", "unknown provider name 'fooprovider'"
     )
@@ -378,10 +288,7 @@ async def test_validate_returns_ok_when_health_check_true(monkeypatch):
 
 
 async def test_validate_returns_timeout_when_health_check_hangs(monkeypatch):
-    """Five-second cap. Use a sentinel future that never completes
-    plus a tiny patched timeout so the test does not actually take
-    five seconds.
-    """
+    """Five-second cap. Use a sentinel future that never completes"""
     import asyncio as _aio
 
     from voicegateway.utils.cli import onboard as onboard_mod
@@ -467,9 +374,7 @@ async def test_validate_skipped_for_unknown_provider(monkeypatch):
 
 
 def _typer_prompt_kbi_at(target_call: int):
-    """Return a typer.prompt replacement that raises KeyboardInterrupt
-    on the Nth call (1-indexed). Earlier calls return their default.
-    """
+    """Return a typer.prompt replacement that raises KeyboardInterrupt"""
     state = {"calls": 0}
 
     def _fn(*args, **kwargs):
@@ -482,9 +387,7 @@ def _typer_prompt_kbi_at(target_call: int):
 
 
 def _typer_confirm_kbi_at(target_call: int):
-    """Return a typer.confirm replacement that raises KeyboardInterrupt
-    on the Nth call (1-indexed). Earlier calls return the default.
-    """
+    """Return a typer.confirm replacement that raises KeyboardInterrupt"""
     state = {"calls": 0}
 
     def _fn(*args, **kwargs):
@@ -508,9 +411,7 @@ def _typer_confirm_kbi_at(target_call: int):
 def test_ctrl_c_at_each_prompt_no_partial_config(
     tmp_path, monkeypatch, position, label
 ):
-    """Cancellation at every prompt position 1..4 leaves no partial
-    config on disk. Spec calls for 'each cancellation point'.
-    """
+    """Cancellation at every prompt position 1..4 leaves no partial"""
     cfg = tmp_path / "voicegw.yaml"
     monkeypatch.setattr(
         "voicegateway.cli.onboard.typer.prompt",
@@ -528,10 +429,7 @@ def test_ctrl_c_at_each_prompt_no_partial_config(
 
 
 def test_ctrl_c_at_daemon_confirm_no_partial_config(tmp_path, monkeypatch):
-    """Cancellation at the daemon-install confirm prompt (typer.confirm,
-    not typer.prompt) leaves no partial config: the write happens AFTER
-    this confirm.
-    """
+    """Cancellation at the daemon-install confirm prompt (typer.confirm,"""
     cfg = tmp_path / "voicegw.yaml"
     monkeypatch.setattr(
         "voicegateway.cli.onboard.typer.confirm",
@@ -549,11 +447,7 @@ def test_ctrl_c_at_daemon_confirm_no_partial_config(tmp_path, monkeypatch):
 
 
 def test_ctrl_c_at_smoke_test_confirm_rolls_back_config(tmp_path, monkeypatch):
-    """The smoke-test confirm fires AFTER the config write. Cancelling
-    here triggers the rollback path: a brand-new config gets unlinked,
-    a pre-existing config gets restored byte-for-byte. Verifies the
-    new-file branch.
-    """
+    """The smoke-test confirm fires AFTER the config write. Cancelling"""
     cfg = tmp_path / "voicegw.yaml"
     # Run with --no-install-daemon so the only typer.confirm in the
     # wizard body is the smoke-test offer.
@@ -588,9 +482,7 @@ def test_ctrl_c_during_first_prompt_no_partial_config(tmp_path, monkeypatch):
 
 
 def test_ctrl_c_after_config_write_removes_partial_when_new(tmp_path, monkeypatch):
-    """Ctrl+C right before daemon install: the partial config the
-    wizard wrote (file did not exist before) is removed.
-    """
+    """Ctrl+C right before daemon install: the partial config the"""
     cfg = tmp_path / "voicegw.yaml"
     # Confirm prompts run fine (1..4) but typer.confirm (call 5) Ctrl+Cs.
     # ...except the wizard does the write BEFORE the daemon prompt
@@ -623,9 +515,7 @@ def test_ctrl_c_after_config_write_removes_partial_when_new(tmp_path, monkeypatc
 
 
 def test_ctrl_c_restores_pre_existing_config_byte_for_byte(tmp_path, monkeypatch):
-    """When a config existed before the wizard, Ctrl+C restores it
-    exactly. The wizard's partial merge does NOT persist.
-    """
+    """When a config existed before the wizard, Ctrl+C restores it"""
     cfg = tmp_path / "voicegw.yaml"
     pre_existing = b"providers:\n  hand_edited:\n    api_key: PRESERVE_ME\n"
     cfg.write_bytes(pre_existing)
@@ -657,9 +547,7 @@ def test_ctrl_c_restores_pre_existing_config_byte_for_byte(tmp_path, monkeypatch
 
 
 def test_summary_shows_every_configured_field(tmp_path):
-    """The summary names project, provider, port, daemon status,
-    config path, and the dashboard URL.
-    """
+    """The summary names project, provider, port, daemon status,"""
     cfg = tmp_path / "voicegw.yaml"
     # Trailing "n" declines the smoke-test offering.
     inp = "tony-pizza\ndeepgram\nsk-test\n9001\nn\nn\n"
@@ -683,10 +571,7 @@ def test_summary_shows_every_configured_field(tmp_path):
 
 
 def test_summary_marks_daemon_as_installed_when_flag_passed(tmp_path, monkeypatch):
-    """With --install-daemon the summary reports the daemon as
-    installed; the explicit phrase exists so a future regression
-    that flips the boolean is caught.
-    """
+    """With --install-daemon the summary reports the daemon as"""
     from unittest.mock import MagicMock
 
     monkeypatch.setattr("voicegateway.cli.daemon.DaemonManager", MagicMock())
@@ -703,9 +588,7 @@ def test_summary_marks_daemon_as_installed_when_flag_passed(tmp_path, monkeypatc
 
 
 def test_summary_marks_daemon_as_not_installed_with_pointer_when_skipped(tmp_path):
-    """When the daemon is declined, the summary tells the user
-    exactly how to enable it later.
-    """
+    """When the daemon is declined, the summary tells the user"""
     cfg = tmp_path / "voicegw.yaml"
     # Trailing "n" declines the smoke-test offering.
     result = runner.invoke(
@@ -724,10 +607,7 @@ def test_summary_marks_daemon_as_not_installed_with_pointer_when_skipped(tmp_pat
 
 
 def test_smoke_test_runs_when_user_accepts(tmp_path, monkeypatch):
-    """User accepts (Y by default) -> voicegw smoke-test subprocess
-    runs with --config pointing at the wizard's path. Exit 0
-    surfaces as a green pass.
-    """
+    """User accepts (Y by default) -> voicegw smoke-test subprocess"""
     import subprocess as _sp
     from unittest.mock import MagicMock
 
@@ -778,9 +658,7 @@ def test_smoke_test_skipped_when_user_declines(tmp_path, monkeypatch):
 
 
 def test_smoke_test_failure_prints_pointer(tmp_path, monkeypatch):
-    """Non-zero smoke-test exit prints a yellow warning with the
-    manual-run command so the user can debug.
-    """
+    """Non-zero smoke-test exit prints a yellow warning with the"""
     import subprocess as _sp
     from unittest.mock import MagicMock
 
@@ -813,9 +691,7 @@ def test_smoke_test_failure_prints_pointer(tmp_path, monkeypatch):
 
 
 def test_smoke_test_timeout_prints_pointer(tmp_path, monkeypatch):
-    """A 10-second timeout fires soft: print a manual-run pointer
-    and continue (do NOT fail the wizard).
-    """
+    """A 10-second timeout fires soft: print a manual-run pointer"""
     import subprocess as _sp
     from unittest.mock import MagicMock
 
@@ -846,9 +722,7 @@ def test_smoke_test_timeout_prints_pointer(tmp_path, monkeypatch):
 
 
 def test_smoke_test_skipped_when_voicegw_not_on_path(tmp_path, monkeypatch):
-    """If shutil.which returns None for voicegw, skip the smoke
-    test with a soft warning rather than crashing the wizard.
-    """
+    """If shutil.which returns None for voicegw, skip the smoke"""
     from unittest.mock import MagicMock
 
     monkeypatch.setattr("voicegateway.utils.cli.onboard.shutil.which", lambda _: None)

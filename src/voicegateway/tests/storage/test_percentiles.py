@@ -1,10 +1,4 @@
-"""Tests for the pure-Python percentile helper.
-
-The monitoring dashboards read these numbers directly, so linear-
-interpolation correctness matters. Cross-checks selected cases against
-``statistics.quantiles(method='inclusive')`` (which uses the same
-definition).
-"""
+"""Tests for the pure-Python percentile helper."""
 
 from __future__ import annotations
 
@@ -12,7 +6,7 @@ import statistics
 
 import pytest
 
-from voicegateway.storage._percentiles import (
+from voicegateway.utils.percentiles import (
     compute_percentiles,
     quantile_label,
 )

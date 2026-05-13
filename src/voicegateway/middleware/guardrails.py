@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from voicegateway.storage.sqlite import SQLiteStorage
 
 
-_PROMPT_PACKAGE = "voicegateway.middleware.guardrail_prompts"
+_PROMPT_PACKAGE = "voicegateway.data.guardrail_prompts"
 _MARKER = "<voicegateway_guardrails"
 logger = logging.getLogger(__name__)
 
@@ -153,7 +153,9 @@ def create_report_guardrail_action_tool(
         category = str(raw_arguments.get("category") or "")
         action = str(raw_arguments.get("action") or "")
         context_excerpt = str(raw_arguments.get("context_excerpt") or "")
-        from voicegateway.repository import guardrail_events
+        from voicegateway.repository import (
+            guardrail_events_repository as guardrail_events,
+        )
 
         db = await storage._ensure_initialized()
         try:
@@ -185,7 +187,9 @@ def schedule_bypass_event(
         return
 
     async def _record() -> None:
-        from voicegateway.repository import guardrail_events
+        from voicegateway.repository import (
+            guardrail_events_repository as guardrail_events,
+        )
 
         try:
             db = await storage._ensure_initialized()

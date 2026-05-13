@@ -1,9 +1,4 @@
-"""Contract tests for migration 0003 (turns + dead_air_events + session aggregates).
-
-Validates idempotency and v0.1.x row preservation per Foundry test
-strategy: tables created, columns added, indexes present, pre-v0.2.0
-rows preserved with NULL on new columns, idempotent re-run.
-"""
+"""Contract tests for migration 0003 (turns + dead_air_events + session aggregates)."""
 
 from __future__ import annotations
 

@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from voicegateway.storage._percentiles import compute_percentiles
+from voicegateway.utils.percentiles import compute_percentiles
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -111,11 +111,7 @@ async def roll_up(
 
 
 async def read_all(db: aiosqlite.Connection) -> list[LatencyObservation]:
-    """Return every row in the current rollup snapshot.
-
-    Ordered by ``project_id ASC, modality ASC, provider ASC`` for
-    deterministic dashboard display.
-    """
+    """Return every row in the current rollup snapshot."""
     cursor = await db.execute(
         f"SELECT {_SELECT_FIELDS} FROM latency_observations "
         "ORDER BY project_id ASC, modality ASC, provider ASC"

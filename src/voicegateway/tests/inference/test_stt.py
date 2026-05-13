@@ -20,14 +20,7 @@ from voicegateway.inference._session_context import get_session_id
 
 
 class _FakeSTT:
-    """Pretends to be a livekit.plugins.<provider>.STT instance.
-
-    InstrumentedSTT subclasses lk_stt.STT and calls
-    ``super().__init__(capabilities=wrapped.capabilities)`` plus
-    ``wrapped.on("metrics_collected", ...)`` for event bridging, so this
-    fake exposes both. ``capabilities`` returns a real
-    ``STTCapabilities`` so the LK base accepts it.
-    """
+    """Pretends to be a livekit.plugins.<provider>.STT instance."""
 
     def __init__(self, model: str, **kwargs: Any) -> None:
         from livekit.agents.stt import STTCapabilities

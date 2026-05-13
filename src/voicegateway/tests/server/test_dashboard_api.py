@@ -33,10 +33,7 @@ async def test_api_status(client):
 
 
 async def test_api_status_includes_pricing_freshness(client):
-    """Item C: dashboard /api/status mirrors the /v1/status pricing
-    subtree so the frontend StalenessBanner can render without
-    hitting two origins.
-    """
+    """Item C: dashboard /api/status mirrors the /v1/status pricing"""
     resp = await client.get("/api/status")
     data = resp.json()
     assert "pricing" in data
@@ -62,10 +59,7 @@ async def test_api_costs_with_project(client):
 
 
 async def test_api_costs_includes_pricing_source(client, gateway):
-    """Q7: dashboard's /api/costs always includes per-row
-    pricing_source so the staleness banner has the data without an
-    extra round-trip.
-    """
+    """Q7: dashboard's /api/costs always includes per-row"""
     import time
     import uuid
 
@@ -137,9 +131,7 @@ async def test_api_sessions_returns_seeded_rows(client, gateway):
 
 
 async def test_api_sessions_orders_by_cost(client, gateway):
-    """Mirror endpoint must honour the same order_by whitelist as
-    /v1/sessions so dashboard can sort by cost.
-    """
+    """Mirror endpoint must honour the same order_by whitelist as"""
     await _seed_session_request(
         gateway.storage, "vg-cheap", cost=0.001, ts=1700000300.0
     )
@@ -171,9 +163,7 @@ async def test_api_sessions_project_filter(client, gateway):
 
 
 async def test_api_session_detail_carries_breakdown(client, gateway):
-    """The detail endpoint must return the per-modality breakdown +
-    providers list — the same shape /v1/sessions/{id} produces.
-    """
+    """The detail endpoint must return the per-modality breakdown +"""
     await _seed_session_request(
         gateway.storage,
         "vg-detail",
@@ -288,11 +278,7 @@ async def test_api_projects(client):
 
 
 async def test_api_projects_includes_source_field(client):
-    """Item D: every project carries a ``source`` field so the
-    dashboard can render the right SourceBadge ("yaml" / "db" /
-    "auto"). Items 1 and 2 set the column on every project row;
-    list_projects forwards it.
-    """
+    """Item D: every project carries a ``source`` field so the"""
     resp = await client.get("/api/projects")
     data = resp.json()
     for p in data["projects"]:
@@ -301,7 +287,7 @@ async def test_api_projects_includes_source_field(client):
 
 
 async def test_api_guardrails_mirror_policy_and_aggregate(client, gateway):
-    from voicegateway.repository import guardrail_events
+    from voicegateway.repository import guardrail_events_repository as guardrail_events
 
     resp = await client.post(
         "/api/projects/test-project/guardrails",

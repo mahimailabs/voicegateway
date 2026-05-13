@@ -1,15 +1,4 @@
-"""Contract tests for migration 0005 (tenant_id columns + virtual_keys table).
-
-Covers REQ-VG-TENANT-001 (tenant_id on every cost / metric / replay
-row) and REQ-VG-TENANT-003 (virtual_keys table). Two scenarios:
-
-- v0.0.5-only baseline: migrations 0003 and 0004 have not run, so the
-  ``turns`` / ``dead_air_events`` / ``replay_*`` tables don't exist
-  yet. Migration 0005 must skip the conditional ALTERs silently (OQ4
-  lock).
-- Fully-migrated baseline: every prior migration has run, so the
-  conditional ALTERs land tenant_id on the derived tables.
-"""
+"""Contract tests for migration 0005 (tenant_id columns + virtual_keys table)."""
 
 from __future__ import annotations
 

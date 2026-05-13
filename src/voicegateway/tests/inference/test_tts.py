@@ -19,14 +19,7 @@ from voicegateway.inference._session_context import get_session_id
 
 
 class _FakeTTS:
-    """Pretends to be a livekit.plugins.<provider>.TTS instance.
-
-    InstrumentedTTS subclasses lk_tts.TTS and forwards
-    ``capabilities``, ``sample_rate``, and ``num_channels`` from the
-    wrapped instance into ``super().__init__``. It also registers a
-    listener via ``wrapped.on("metrics_collected", ...)``. This fake
-    exposes the full surface the wrapper needs.
-    """
+    """Pretends to be a livekit.plugins.<provider>.TTS instance."""
 
     def __init__(self, model: str, voice: str | None = None, **kwargs: Any) -> None:
         from livekit.agents.tts import TTSCapabilities

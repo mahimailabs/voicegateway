@@ -1,12 +1,4 @@
-"""Tests for the DaemonManager facade and its platform selector.
-
-These tests exercise the platform-routing logic and the seven-method
-delegation contract without requiring any real OS backend (the
-backends arrive in subsequent v0.1.0 commits). The strategy is to
-inject a ``unittest.mock.Mock`` as the backend so every facade method
-can be verified to forward the call exactly once with the expected
-arguments.
-"""
+"""Tests for the DaemonManager facade and its platform selector."""
 
 from __future__ import annotations
 
@@ -38,11 +30,7 @@ from voicegateway.cli.daemon import DaemonManager, _select_backend_name
     ],
 )
 def test_select_backend_name_routes_correctly(monkeypatch, platform, expected):
-    """Every supported platform string maps to one of the three backends.
-
-    WSL is transparent: inside WSL ``sys.platform`` is ``linux``, so
-    the linux entry covers it without a special branch.
-    """
+    """Every supported platform string maps to one of the three backends."""
     monkeypatch.setattr("sys.platform", platform)
     assert _select_backend_name() == expected
 
@@ -91,11 +79,7 @@ def test_restart_delegates() -> None:
 
 
 def test_status_returns_backend_payload() -> None:
-    """``status()`` is the only method that returns a value.
-
-    The facade just forwards the dict; what's inside is the backend's
-    contract per the DaemonBackend Protocol.
-    """
+    """``status()`` is the only method that returns a value."""
     backend = Mock()
     expected = {"running": True, "registered": True, "pid": 1234}
     backend.status.return_value = expected
@@ -107,10 +91,7 @@ def test_status_returns_backend_payload() -> None:
 
 
 def test_logs_forwards_tail_kwarg() -> None:
-    """``logs(tail=42)`` reaches the backend with the tail kwarg.
-
-    The default (tail=100) and explicit overrides are both contract.
-    """
+    """``logs(tail=42)`` reaches the backend with the tail kwarg."""
     backend = Mock()
     backend.logs.return_value = "line1\nline2\nline3"
 

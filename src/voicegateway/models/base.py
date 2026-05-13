@@ -1,8 +1,4 @@
-"""Shared SQLModel bases every persistent entity inherits.
-
-``BaseModel`` is the int-PK + uuid + timestamps standard. ``BaseUUIDModel``
-is the UUID-PK variant for resources that need an externally-stable id.
-"""
+"""Shared SQLModel bases every persistent entity inherits."""
 
 from __future__ import annotations
 

@@ -54,8 +54,7 @@ class ProviderRow(Static):
 
     @property
     def provider_id(self) -> str:
-        """Storage-canonical id used by the Providers screen's ``t``
-        shortcut to drive ``MetricsClient.test_provider``."""
+        """Storage-canonical id used by the Providers screen's ``t``"""
         return str(self.provider.get("provider_id") or "")
 
     @property

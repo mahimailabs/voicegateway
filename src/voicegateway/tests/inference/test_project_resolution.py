@@ -1,14 +1,4 @@
-"""Tests for the v0.0.5 active-project resolution order.
-
-Resolution order:
-
-1. inference.set_project(name) in the current async context
-2. VOICEGW_ACTIVE_PROJECT environment variable
-3. default_project field in voicegw.yaml
-4. The literal "default" (Gateway.__init__ auto-creates that project
-   on every fresh install, so the fallback is always backed by a
-   real row).
-"""
+"""Tests for the v0.0.5 active-project resolution order."""
 
 from __future__ import annotations
 
@@ -49,10 +39,7 @@ def _build_gateway(tmp_path, *, projects: dict, default_project: str | None = No
 
 @pytest.fixture
 def empty_projects_gw(tmp_path, monkeypatch):
-    """A gateway whose voicegw.yaml has NO projects configured.
-
-    Preserves the legacy "default" behavior; soft fallback wins.
-    """
+    """A gateway whose voicegw.yaml has NO projects configured."""
     gw = _build_gateway(tmp_path, projects={})
     monkeypatch.setattr(_factory, "_gateway", gw)
     return gw
@@ -60,11 +47,7 @@ def empty_projects_gw(tmp_path, monkeypatch):
 
 @pytest.fixture
 def projects_no_default_gw(tmp_path, monkeypatch):
-    """A gateway with projects but no default_project configured.
-
-    Falls through to the auto-created ``"default"`` project per
-    Item 2 (was a hard error in pre-v0.0.5 design.md drafts).
-    """
+    """A gateway with projects but no default_project configured."""
     gw = _build_gateway(
         tmp_path,
         projects={
@@ -155,18 +138,12 @@ def test_yaml_default_project_used_when_no_override(projects_with_default_gw):
 def test_fallback_when_projects_configured_without_default(
     projects_no_default_gw,
 ):
-    """A user who configures ``projects:`` without ``default_project``
-    and never calls ``set_project`` lands on the auto-created
-    ``"default"`` project. Their per-project keys are not used until
-    they explicitly select one.
-    """
+    """A user who configures ``projects:`` without ``default_project``"""
     assert get_active_project() == "default"
 
 
 def test_fallback_when_no_projects_configured(empty_projects_gw):
-    """Fresh install with no projects: block. Gateway init creates
-    ``"default"`` and the resolver returns it.
-    """
+    """Fresh install with no projects: block. Gateway init creates"""
     assert get_active_project() == "default"
 
 
@@ -176,9 +153,7 @@ def test_fallback_when_no_projects_configured(empty_projects_gw):
 
 
 async def test_set_project_isolated_per_context(projects_with_default_gw):
-    """Two independently-copied contexts each manage their own
-    set_project state without leaking into each other or the caller.
-    """
+    """Two independently-copied contexts each manage their own"""
 
     async def _ctx_a():
         set_project("from-ctx-a")
@@ -217,9 +192,7 @@ def test_reset_project_clears_set_project(projects_with_default_gw):
 
 
 def test_inference_package_re_exports_set_and_get_active_project():
-    """``voicegateway.inference.set_project`` and
-    ``.get_active_project`` are part of the public surface.
-    """
+    """``voicegateway.inference.set_project`` and"""
     from voicegateway import inference
 
     assert inference.set_project is _project.set_project

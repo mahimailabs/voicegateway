@@ -1,16 +1,4 @@
-"""Tests for DB-managed per-project provider key resolution.
-
-Item 1 of the v0.0.5 punch list: a row written by ``vg_add_provider``
-(or any direct ``storage.upsert_managed_provider`` call carrying a
-non-null ``project`` column) must flow into the merged
-``GatewayConfig.projects[<project>].providers[<provider>]`` map so the
-inference resolver picks it up via
-``GatewayConfig.get_provider_config_for_project``.
-
-Companion file: ``tests/inference/test_factory_project_keys.py`` covers
-the YAML side. This file covers the DB side and pins the precedence
-between them: per-call ``api_key`` kwarg > YAML > DB > top-level YAML.
-"""
+"""Tests for DB-managed per-project provider key resolution."""
 
 from __future__ import annotations
 
@@ -45,12 +33,7 @@ class _FakeProvider:
 
 
 class _Stub:
-    """Provider-side stub the wrapper subclasses receive at construction.
-
-    Carries the LK-side surface (capabilities, sample_rate, num_channels,
-    on) so InstrumentedSTT/LLM/TTS can call ``super().__init__`` and
-    register the metrics-event bridge without raising.
-    """
+    """Provider-side stub the wrapper subclasses receive at construction."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         from livekit.agents.stt import STTCapabilities
@@ -149,10 +132,7 @@ async def test_db_managed_key_resolves_after_refresh(
 async def test_db_managed_key_creates_stub_project(
     tmp_path, monkeypatch, fake_providers
 ):
-    """A DB row whose project does not appear in voicegw.yaml must
-    still surface — the merger creates a stub ProjectConfig so
-    inference can attach the providers dict and resolve it.
-    """
+    """A DB row whose project does not appear in voicegw.yaml must"""
     gw = _build_gateway(tmp_path, monkeypatch)
 
     await gw.storage.upsert_managed_provider(
@@ -175,11 +155,7 @@ async def test_db_managed_key_creates_stub_project(
 
 
 async def test_db_managed_key_does_not_leak_to_global_providers(tmp_path, monkeypatch):
-    """The fix moves project-scoped DB rows OUT of merged.providers and
-    INTO merged.projects[<name>].providers[<provider>]. Pin both sides:
-    the composite key is absent from top-level providers, the
-    per-project entry is present.
-    """
+    """The fix moves project-scoped DB rows OUT of merged.providers and"""
     gw = _build_gateway(tmp_path, monkeypatch)
 
     await gw.storage.upsert_managed_provider(
@@ -221,11 +197,7 @@ async def test_per_call_api_key_kwarg_beats_db(tmp_path, monkeypatch, fake_provi
 
 
 async def test_yaml_per_project_entry_beats_db(tmp_path, monkeypatch, fake_providers):
-    """When voicegw.yaml has projects.tony.providers.openai, that
-    entry must win over a DB-managed row for the same (project,
-    provider) pair. Mirrors the precedence enforced by the
-    config_manager merge (YAML always wins on conflict).
-    """
+    """When voicegw.yaml has projects.tony.providers.openai, that"""
     gw = _build_gateway(
         tmp_path,
         monkeypatch,
@@ -328,10 +300,7 @@ async def test_two_projects_with_distinct_db_openai_keys(
 async def test_legacy_global_db_row_lands_at_top_level(
     tmp_path, monkeypatch, fake_providers
 ):
-    """Pre-v0.0.5 add_provider tool wrote rows with no project column.
-    Those rows must keep merging into merged.providers[<id>] (the
-    legacy behavior) so existing installs do not regress.
-    """
+    """Pre-v0.0.5 add_provider tool wrote rows with no project column."""
     gw = _build_gateway(tmp_path, monkeypatch)
 
     # `project=None` mirrors the pre-v0.0.5 schema.

@@ -1,15 +1,11 @@
-"""Contract tests for voicegateway.repository.dead_air (T06).
-
-Covers create_event / list_events_by_session / count_events_by_filter
-across the supported filter combinations.
-"""
+"""Contract tests for voicegateway.repository.dead_air (T06)."""
 
 from __future__ import annotations
 
 import aiosqlite
 
 from voicegateway.middleware.dead_air_detector import DeadAirEvent
-from voicegateway.repository import dead_air
+from voicegateway.repository import dead_air_repository as dead_air
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

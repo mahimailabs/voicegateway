@@ -1,9 +1,4 @@
-"""Unit tests for voicegateway.pricing.catalog.
-
-Covers the unified facade: modality dispatch correctness for
-calculate_cost(), pricing_source() per-modality attribution, and
-unknown-modality fallback behavior.
-"""
+"""Unit tests for voicegateway.pricing.catalog."""
 
 from __future__ import annotations
 

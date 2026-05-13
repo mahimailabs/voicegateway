@@ -1,11 +1,4 @@
-"""Tests for ``ConfigManager.load_merged`` ordering invariants.
-
-The merge loop must run managed_projects BEFORE managed_providers so a
-project-scoped provider write doesn't blank the DB-managed project's
-metadata (name, description, daily_budget, tags, budget_action). Also
-guards the reserved-keys-vs-extra_config precedence: api_key /
-base_url / _source must always come from the dedicated columns.
-"""
+"""Tests for ``ConfigManager.load_merged`` ordering invariants."""
 
 from __future__ import annotations
 
@@ -33,10 +26,7 @@ def yaml_no_projects(tmp_path):
 async def test_managed_project_metadata_survives_provider_scoped_write(
     yaml_no_projects, tmp_path, monkeypatch
 ):
-    """Reproduce the codex P2: a managed_projects row with rich
-    metadata must not be replaced by a stub when a managed_providers
-    row references the same project.
-    """
+    """Reproduce the codex P2: a managed_projects row with rich"""
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "merge.db"))
     gw = Gateway(config_path=yaml_no_projects)
     storage = gw.storage
@@ -72,10 +62,7 @@ async def test_managed_project_metadata_survives_provider_scoped_write(
 async def test_db_only_project_with_no_metadata_row_falls_back_to_stub(
     yaml_no_projects, tmp_path, monkeypatch
 ):
-    """When the DB only has a project-scoped provider row but no
-    matching managed_projects row, the stub kicks in: the project
-    appears with name == project_id and source == 'db'.
-    """
+    """When the DB only has a project-scoped provider row but no"""
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "merge-stub.db"))
     gw = Gateway(config_path=yaml_no_projects)
     storage = gw.storage
@@ -98,10 +85,7 @@ async def test_db_only_project_with_no_metadata_row_falls_back_to_stub(
 async def test_extra_config_cannot_override_reserved_keys(
     yaml_no_projects, tmp_path, monkeypatch
 ):
-    """``extra_config`` is a freeform JSON column. A malformed entry
-    that names ``api_key`` / ``base_url`` / ``_source`` must NOT win
-    over the dedicated columns — those carry the encrypted-key path.
-    """
+    """``extra_config`` is a freeform JSON column. A malformed entry"""
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "merge-extra.db"))
     gw = Gateway(config_path=yaml_no_projects)
     storage = gw.storage

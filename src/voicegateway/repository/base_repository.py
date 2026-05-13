@@ -1,13 +1,4 @@
-"""Generic async repository: shared CRUD over any SQLModel entity.
-
-Each concrete repository subclasses :class:`BaseRepository` with the
-entity type bound. Container providers wire the ``session_factory``
-(``database.provided.session``) so callers never construct sessions.
-
-Hot-path queries (time-series aggregates, percentile rollups) bypass
-this class and live in their domain repo as raw ``session.execute(text(...))``
-calls — the ORM tax on those queries is unnecessary.
-"""
+"""Generic async repository: shared CRUD over any SQLModel entity."""
 
 from __future__ import annotations
 

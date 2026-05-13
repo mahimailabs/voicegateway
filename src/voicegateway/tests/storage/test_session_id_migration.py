@@ -1,17 +1,4 @@
-"""Migration tests for the v0.0.5 ``session_id`` column on ``requests``.
-
-The release notes promise a clean upgrade from v0.0.4 databases: the new
-``session_id TEXT`` column lands as nullable, existing rows survive with
-``NULL`` (correct semantics — those requests pre-date session
-correlation), and the index is created. These tests pin that contract
-down so a future schema refactor cannot silently drop it.
-
-The "v0.0.4 snapshot" we test against is the pre-session_id schema
-shape: the requests table from prior releases has 16 columns, no
-session_id, no idx_requests_session_id index. We seed a small
-representative dataset, then re-open the DB through SQLiteStorage and
-assert the migration ran cleanly.
-"""
+"""Migration tests for the v0.0.5 ``session_id`` column on ``requests``."""
 
 from __future__ import annotations
 
@@ -49,12 +36,7 @@ CREATE INDEX IF NOT EXISTS idx_requests_timestamp ON requests(timestamp);
 
 
 def _seed_v004_database(db_path: str) -> list[dict]:
-    """Build a v0.0.4-shaped sqlite file with a few request rows.
-
-    Uses the synchronous sqlite3 module to seed the fixture: this is a
-    one-off setup step in a test, and avoiding aiosqlite here sidesteps
-    any event-loop interactions while the assert phase is still async.
-    """
+    """Build a v0.0.4-shaped sqlite file with a few request rows."""
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(_V004_REQUESTS_DDL)
@@ -242,11 +224,7 @@ async def test_new_inserts_can_carry_session_id(tmp_path):
 
 
 async def test_fresh_database_has_session_id_in_initial_schema(tmp_path):
-    """A clean install (not a migration) must already include the column.
-
-    Otherwise the migration check is the only thing creating the column
-    in fresh databases too — fragile coupling.
-    """
+    """A clean install (not a migration) must already include the column."""
     db_path = str(tmp_path / "fresh.db")
     storage = SQLiteStorage(db_path)
     await storage._ensure_initialized()
@@ -259,12 +237,7 @@ async def test_fresh_database_has_session_id_in_initial_schema(tmp_path):
 
 
 async def test_migration_is_idempotent(tmp_path):
-    """Re-initializing an already-migrated DB does not error.
-
-    SQLiteStorage opens the same file repeatedly across the runtime;
-    the migration check must short-circuit when the column is already
-    present.
-    """
+    """Re-initializing an already-migrated DB does not error."""
     db_path = str(tmp_path / "v004.db")
     seeds = _seed_v004_database(db_path)
 
@@ -279,12 +252,7 @@ async def test_migration_is_idempotent(tmp_path):
 
 
 async def test_request_record_log_after_migration_does_not_break(tmp_path):
-    """Logging a fresh RequestRecord on a migrated DB still works.
-
-    RequestRecord hasn't been extended with session_id yet (5.6 #3
-    territory); the existing INSERT path must keep working without
-    populating the new column.
-    """
+    """Logging a fresh RequestRecord on a migrated DB still works."""
     db_path = str(tmp_path / "v004.db")
     _seed_v004_database(db_path)
 

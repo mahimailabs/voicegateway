@@ -1,10 +1,4 @@
-"""Tests for ``voicegw doctor``.
-
-This iteration covers the framework: command registration,
-table render, exit-code handling, and a single all-pass smoke
-case. The next iteration adds per-check pass + one-fail-each
-coverage in detail.
-"""
+"""Tests for ``voicegw doctor``."""
 
 from __future__ import annotations
 
@@ -129,9 +123,7 @@ def test_doctor_failure_exits_one(temp_config, monkeypatch):
 def test_doctor_renders_skip_status_distinct_from_pass_and_fail(
     temp_config, monkeypatch
 ):
-    """The three statuses (PASS / FAIL / SKIP) all appear when at
-    least one check returns each.
-    """
+    """The three statuses (PASS / FAIL / SKIP) all appear when at"""
     # No DaemonManager so the daemon-running check skips because the
     # registered check fails first. Provider configured -> ok.
     monkeypatch.setattr(
@@ -166,12 +158,7 @@ _FIX_ACTION_VERBS = (
 
 
 def _check_modules_with_fail_paths():
-    """Return every (check_function, mock_context_factory) pair that
-    deterministically triggers the check's fail path.
-
-    Each entry yields a ``(name, check_fn, ctx_factory)`` tuple so a
-    parametrized test can pin AC-006.2 contract per check.
-    """
+    """Return every (check_function, mock_context_factory) pair that"""
     from voicegateway.utils.cli import doctor as d
 
     def _bare_ctx(**kwargs):
@@ -284,14 +271,7 @@ def _build_empty_key_ctx():
 def test_each_check_fail_path_carries_specific_fix_action(
     name, check_fn, ctx_factory, patch_fn, monkeypatch
 ):
-    """AC-VG-ONBOARD-006.2: every fail row contains a specific
-    actionable instruction.
-
-    The contract: the detail string starts with (or contains) at
-    least one verb from _FIX_ACTION_VERBS, and either references a
-    `voicegw <command>` or names a concrete file/value to change.
-    No bare 'see docs' pointers.
-    """
+    """AC-VG-ONBOARD-006.2: every fail row contains a specific"""
     if patch_fn is not None:
         patch_fn(monkeypatch)
     ctx = ctx_factory() if callable(ctx_factory) else ctx_factory
@@ -351,9 +331,7 @@ def test_daemon_registered_check_passes_when_status_says_yes():
 
 
 def test_daemon_running_check_skips_when_not_registered():
-    """The skip path is documented: don't repeat the noise of the
-    previous check.
-    """
+    """The skip path is documented: don't repeat the noise of the"""
     from voicegateway.utils.cli.doctor import _check_daemon_running, _Context
 
     ctx = _Context(
@@ -365,9 +343,7 @@ def test_daemon_running_check_skips_when_not_registered():
 
 
 def test_port_conflict_check_passes_when_port_held_by_our_daemon(monkeypatch):
-    """If the listener on the configured port IS the voicegw daemon,
-    that's expected and the check passes.
-    """
+    """If the listener on the configured port IS the voicegw daemon,"""
     import psutil
 
     fake_gw = MagicMock()
@@ -421,13 +397,7 @@ def test_mcp_responsive_skips_with_documented_rationale():
 
 
 def test_dashboard_reachable_skips_when_no_listener(monkeypatch):
-    """A daemon-first install runs only ``voicegw serve``; the dashboard
-    is a separate optional process. ``voicegw doctor`` must therefore
-    SKIP (not FAIL) the dashboard check on a normal connect-failure --
-    otherwise every healthy install reports a red row and exits 1.
-
-    Pins Codex P1.3.
-    """
+    """A daemon-first install runs only ``voicegw serve``; the dashboard"""
     import httpx
 
     from voicegateway.utils.cli.doctor import _check_dashboard_reachable, _Context

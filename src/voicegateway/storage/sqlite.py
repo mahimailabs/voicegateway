@@ -22,8 +22,16 @@ from voicegateway.inference._session_context import (
 )
 from voicegateway.middleware.guardrails import guardrail_policy_json
 from voicegateway.models.request import RequestRecord
-from voicegateway.repository import guardrail_events, replay, turns
-from voicegateway.storage._percentiles import compute_percentiles
+from voicegateway.repository import (
+    guardrail_events_repository as guardrail_events,
+)
+from voicegateway.repository import (
+    replay_repository as replay,
+)
+from voicegateway.repository import (
+    turns_repository as turns,
+)
+from voicegateway.utils.percentiles import compute_percentiles
 
 _DEFAULT_PERCENTILES: list[float] = [50.0, 95.0, 99.0]
 
@@ -160,11 +168,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions(started_at);
 
 
 class SQLiteStorage:
-    """SQLite storage for request logs, costs, and latency metrics.
-
-    Opens a fresh connection per call — no pooling, keeps things simple.
-    Auto-migrates legacy schemas to add the `project` column.
-    """
+    """SQLite storage for request logs, costs, and latency metrics."""
 
     def __init__(self, db_path: str | Path):
         self._db_path = Path(db_path).expanduser()
@@ -428,15 +432,7 @@ class SQLiteStorage:
     # ------------------------------------------------------------------
 
     async def log_request(self, record: RequestRecord) -> None:
-        """Log a request record to the database.
-
-        When ``record.session_id`` is set, this also upserts the matching
-        row in the ``sessions`` table: starts the session on first
-        request, accumulates total_cost_usd and request_count on each
-        subsequent request, and adds the modality to the comma-separated
-        modalities list (without duplication). Both writes happen on the
-        same connection / commit for atomicity.
-        """
+        """Log a request record to the database."""
         db = await self._ensure_initialized()
         request_tenant_id = current_tenant()
         try:
@@ -611,16 +607,7 @@ class SQLiteStorage:
         start_ts: float | None = None,
         end_ts: float | None = None,
     ) -> tuple[float, float | None]:
-        """Resolve a query window into a `(since, until)` timestamp pair.
-
-        When either `start_ts` or `end_ts` is provided, the explicit
-        bounds win and `period` is ignored. Missing bound defaults to
-        unbounded on that side (``since=0`` / ``until=None``).
-
-        When neither is provided, falls back to the named-period semantics
-        via ``_period_since`` and returns ``until=None`` (no upper bound),
-        preserving existing call sites' behavior.
-        """
+        """Resolve a query window into a `(since, until)` timestamp pair."""
         if start_ts is not None or end_ts is not None:
             return (start_ts if start_ts is not None else 0.0, end_ts)
         return (SQLiteStorage._period_since(period), None)
@@ -634,21 +621,7 @@ class SQLiteStorage:
         end_ts: float | None = None,
         tenant: str | None = None,
     ) -> dict[str, Any]:
-        """Get cost summary for the given period, optionally filtered by project and tenant.
-
-        With ``include_pricing_source=True``, each entry in ``by_model``
-        gains a ``pricing_source`` field carrying the catalog (or
-        catalogs, comma-joined) that priced that model's requests.
-
-        Pass `start_ts` and/or `end_ts` (POSIX timestamps) to override
-        the named-period window. When either is set, `period` is
-        ignored. `start_ts` is inclusive, `end_ts` is exclusive.
-
-        ``tenant`` scopes the aggregate to a single tenant.
-        Pass an empty string ``""`` to target the unattributed bucket
-        (sessions with NULL tenant_id). Pass ``None`` to include every
-        tenant (default).
-        """
+        """Get cost summary for the given period, optionally filtered by project and tenant."""
         db = await self._ensure_initialized()
         try:
             since, until = self._resolve_window(period, start_ts, end_ts)
@@ -732,11 +705,7 @@ class SQLiteStorage:
         end_ts: float | None = None,
         tenant: str | None = None,
     ) -> dict[str, Any]:
-        """Get cost summary grouped by project.
-
-        ``tenant`` scopes the result to one tenant; ``""``
-        targets the unattributed bucket; ``None`` includes everything.
-        """
+        """Get cost summary grouped by project."""
         db = await self._ensure_initialized()
         try:
             since, until = self._resolve_window(period, start_ts, end_ts)
@@ -770,13 +739,7 @@ class SQLiteStorage:
         start_ts: float | None = None,
         end_ts: float | None = None,
     ) -> dict[str, Any]:
-        """Get cost summary grouped by modality (stt/llm/tts).
-
-        Returns a dict keyed by modality. Modalities with no requests in
-        the period are absent from the result; callers that want a
-        zero-filled view should overlay onto a {"stt": {...}, "llm":
-        {...}, "tts": {...}} template.
-        """
+        """Get cost summary grouped by modality (stt/llm/tts)."""
         db = await self._ensure_initialized()
         try:
             since, until = self._resolve_window(period, start_ts, end_ts)
@@ -807,21 +770,7 @@ class SQLiteStorage:
         percentiles: list[float] | None = None,
         tenant: str | None = None,
     ) -> dict[str, Any]:
-        """Get per-model latency stats for ``period``.
-
-        Each entry contains the existing averages (``avg_ttfb_ms``,
-        ``avg_latency_ms``, ``request_count``) plus nested
-        ``ttfb_percentiles`` and ``latency_percentiles`` dicts keyed by
-        ``p50`` / ``p95`` / ``p99`` (or whatever ``percentiles`` asks
-        for). Models appear if they have *any* latency sample (either
-        TTFB or total) — the averages and percentiles are computed
-        independently, so a model with only ``total_latency_ms`` still
-        gets ``latency_percentiles`` populated.
-
-        With fewer than two samples for a particular metric, that
-        metric's percentiles mirror the single value — see
-        ``compute_percentiles`` for edge cases.
-        """
+        """Get per-model latency stats for ``period``."""
         pcts = percentiles or _DEFAULT_PERCENTILES
         db = await self._ensure_initialized()
         try:
@@ -901,15 +850,7 @@ class SQLiteStorage:
         project: str | None = None,
         modality: str | None = None,
     ) -> tuple[list[float], list[float]]:
-        """Return ``(ttfb_samples, total_latency_samples)`` for ``period``.
-
-        Used by callers that want overall (cross-model) percentiles —
-        e.g. the MCP observability tool and the Prometheus summary
-        lines. Rows with NULL latencies are omitted. ``modality``
-        restricts samples to ``"stt"`` / ``"llm"`` / ``"tts"`` so the
-        "overall" block in callers can reflect the same filter applied
-        to their per-model view.
-        """
+        """Return ``(ttfb_samples, total_latency_samples)`` for ``period``."""
         db = await self._ensure_initialized()
         try:
             since = self._period_since(period)
@@ -945,15 +886,7 @@ class SQLiteStorage:
         end_ts: float | None = None,
         project: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return every request record falling in `[start_ts, end_ts)`.
-
-        Differs from `get_recent_requests` in two ways: no row limit
-        (intended for export, not display), and time window is the
-        primary filter. `start_ts` is inclusive, `end_ts` is exclusive,
-        either is optional. Project is an optional secondary filter.
-        Rows are returned ordered by timestamp ascending so a CSV
-        export reads chronologically.
-        """
+        """Return every request record falling in `[start_ts, end_ts)`."""
         db = await self._ensure_initialized()
         try:
             conditions: list[str] = []
@@ -991,11 +924,7 @@ class SQLiteStorage:
         project: str | None = None,
         tenant: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Get recent request records, optionally filtered by modality, project, tenant.
-
-        ``tenant`` accepts a tenant id; ``""`` targets the
-        unattributed bucket; ``None`` includes everything.
-        """
+        """Get recent request records, optionally filtered by modality, project, tenant."""
         db = await self._ensure_initialized()
         try:
             conditions: list[str] = []
@@ -1136,23 +1065,7 @@ class SQLiteStorage:
         order_by: str = "started_at_desc",
         tenant: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return recent sessions, ordered per ``order_by``.
-
-        Args:
-            limit: Max rows to return.
-            project: Optional project filter.
-            order_by: One of ``"started_at_desc"`` (default),
-                ``"started_at_asc"``, ``"cost_desc"``, ``"cost_asc"``.
-                Cost orderings break ties by started_at DESC so two
-                $0 sessions still surface newest first.
-            tenant: Tenant filter. Pass an empty string to target the
-                unattributed bucket; ``None`` lists every tenant.
-
-        Raises:
-            ValueError: When ``order_by`` is not one of the supported
-                values. The whitelist guards against SQL injection
-                via the user-supplied parameter.
-        """
+        """Return recent sessions, ordered per ``order_by``."""
         clause = self._SESSION_ORDER_CLAUSES.get(order_by)
         if clause is None:
             supported = ", ".join(sorted(self._SESSION_ORDER_CLAUSES))
@@ -1188,13 +1101,7 @@ class SQLiteStorage:
             await db.close()
 
     async def get_session(self, session_id: str) -> dict[str, Any] | None:
-        """Return a single session by id, or None if not found.
-
-        The returned dict carries the row's stored fields plus a
-        ``by_modality`` breakdown ({modality: {"cost", "request_count"}})
-        and a deduplicated ``providers`` list. Both are computed from
-        the ``requests`` table on read, joined on ``session_id``.
-        """
+        """Return a single session by id, or None if not found."""
         db = await self._ensure_initialized()
         try:
             cursor = await db.execute(
@@ -1252,28 +1159,7 @@ class SQLiteStorage:
             await db.close()
 
     async def finalize_session_metrics(self, session_id: str) -> None:
-        """Recompute and upsert the aggregate columns on a session row.
-
-        Called by the cost_tracker session-close hook once the
-        TurnTracker and DeadAirDetector have flushed their captures.
-        Reads from the ``turns`` and ``dead_air_events`` tables and
-        writes five aggregate columns to the ``sessions`` row:
-
-        - ``talk_time_seconds`` -- sum of caller and agent speech
-          durations across all turns, in seconds.
-        - ``per_minute_cost_usd`` -- ``total_cost_usd /
-          (talk_time_seconds / 60)``. NULL when talk_time is zero.
-        - ``response_speed_p50_ms``, ``response_speed_p95_ms`` -- from
-          :func:`voicegateway.repository.turns.aggregate_response_speed`.
-          (p99 is computed but not stored on the sessions row.)
-        - ``talk_over_rate`` -- ``overlap_count / total_turns``. NULL
-          when total_turns is zero.
-
-        Sessions that recorded no turns keep NULL on every aggregate
-        column. A session that recorded turns but ended with zero cost
-        still gets ``per_minute_cost_usd = 0.0``, not NULL — the metric
-        is defined when talk_time > 0.
-        """
+        """Recompute and upsert the aggregate columns on a session row."""
         db = await self._ensure_initialized()
         try:
             session_turns = await turns.list_turns_by_session(db, session_id)
@@ -1334,21 +1220,7 @@ class SQLiteStorage:
             await db.close()
 
     async def finalize_session_replay(self, session_id: str) -> None:
-        """Compute ``replay_size_bytes`` for a session and upsert the row.
-
-        Called by the cost_tracker session-close hook (T09) after the
-        replay-capture buffer has flushed (T02's ReplayCapture flushes
-        in its own session-close path). Reads the per-modality
-        ``replay_*`` tables via
-        :func:`voicegateway.repository.replay.aggregate_storage_per_session`
-        and writes the byte-length sum to the sessions row's
-        ``replay_size_bytes`` column.
-
-        NULL is preserved when the session captured no replay events
-        (sessions predating replay, or projects with
-        ``replay.enabled = False``). The column is also NULL when the
-        session row is missing entirely.
-        """
+        """Compute ``replay_size_bytes`` for a session and upsert the row."""
         db = await self._ensure_initialized()
         try:
             size_bytes = await replay.aggregate_storage_per_session(db, session_id)
@@ -1478,28 +1350,7 @@ class SQLiteStorage:
     async def rotate_managed_credentials(
         self, *, time_now: float | None = None
     ) -> dict[str, Any]:
-        """Re-encrypt every managed_providers row under the current
-        primary Fernet key.
-
-        Used by ``voicegw rotate-secret`` after the operator sets a
-        new ``VOICEGW_SECRET`` and the previous value as
-        ``VOICEGW_SECRET_FALLBACK``. Each row's ``api_key_encrypted``
-        is decrypted via MultiFernet (which tries primary then any
-        fallbacks) and re-encrypted via the primary, then written
-        back. The ``updated_at`` column is bumped so the dashboard
-        and audit views show the rotation as a recent change.
-
-        Empty ``api_key_encrypted`` columns (from rows that the user
-        added without a key) are skipped — there is nothing to
-        rotate. Rows whose ciphertext does not decrypt under any
-        configured key are recorded in the returned ``failed`` list
-        so the CLI can surface them to the operator without aborting
-        the rotation halfway through.
-
-        Returns:
-            ``{"rotated": <int>, "skipped_empty": <int>,
-              "failed": [<provider_id>, ...]}``
-        """
+        """Re-encrypt every managed_providers row under the current"""
         from voicegateway.core.crypto import rotate_token
 
         now = time_now if time_now is not None else time.time()
@@ -1642,17 +1493,7 @@ class SQLiteStorage:
 
     @staticmethod
     def _validate_branding(branding: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Validate the branding payload before write.
-
-        Dashboard contract:
-        - ``logo_url`` (optional): string up to 2048 chars.
-        - ``accent_color`` (optional): hex string ``#RRGGBB`` or
-          ``#RGB``.
-        - ``product_name`` (optional): string up to 64 chars.
-
-        Returns the validated dict (or ``None`` when input is None /
-        empty). Raises ``ValueError`` on shape or constraint violations.
-        """
+        """Validate the branding payload before write."""
         import re
 
         if branding is None:

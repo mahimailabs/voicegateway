@@ -1,8 +1,4 @@
-"""Unit tests for voicegateway.pricing.stt.
-
-Covers the local STT catalog: known/unknown models, source-date and
-source-URL metadata, PRICING_SOURCE format, Decimal precision.
-"""
+"""Unit tests for voicegateway.pricing.stt."""
 
 from __future__ import annotations
 

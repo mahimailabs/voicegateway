@@ -1,11 +1,4 @@
-"""End-to-end tenant propagation across three synthetic sessions.
-
-REQ-VG-TENANT-001 AC-1: every cost row, metric row, and replay event
-for a session is tagged with that session's tenant. This test runs
-three sessions with three different tenants through
-``log_request`` and asserts the resulting aggregates match the
-per-tenant ground truth.
-"""
+"""End-to-end tenant propagation across three synthetic sessions."""
 
 from __future__ import annotations
 
@@ -17,7 +10,7 @@ from voicegateway.inference._session_context import (
     set_tenant,
 )
 from voicegateway.models.request import RequestRecord
-from voicegateway.repository import tenants
+from voicegateway.repository import tenants_repository as tenants
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

@@ -1,15 +1,10 @@
-"""Tests for ``virtual_keys`` (REQ-VG-TENANT-003).
-
-Covers issuance + hash-and-verify round-trip, soft revoke (OQ5), stale
-detection, and the invariant that list responses never carry the
-bcrypt hash or the plaintext key.
-"""
+"""Tests for ``virtual_keys`` (REQ-VG-TENANT-003)."""
 
 from __future__ import annotations
 
 import pytest
 
-from voicegateway.repository import virtual_keys as vk
+from voicegateway.repository import virtual_keys_repository as vk
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

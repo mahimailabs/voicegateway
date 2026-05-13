@@ -1,10 +1,4 @@
-"""End-to-end routing pipeline: three synthetic sessions per project.
-
-REQ-VG-ROUTE-001 + REQ-VG-ROUTE-002 persistence: the router picks a
-triple, the session row carries the picked LLM / TTS / budget /
-overrun, and a per-project rosters + budget produce three distinct
-routes for three distinct projects.
-"""
+"""End-to-end routing pipeline: three synthetic sessions per project."""
 
 from __future__ import annotations
 
@@ -67,10 +61,7 @@ async def _project(project_id: str, budget_ms: int) -> ProjectConfig:
 
 
 async def test_three_projects_get_distinct_routes(storage) -> None:
-    """A tight, mid, and loose budget all pick from the same rosters
-    but the tight project triggers overrun while the loose project
-    fits its budget comfortably. The sessions row reflects what the
-    router picked."""
+    """A tight, mid, and loose budget all pick from the same rosters"""
     db = await storage._ensure_initialized()
 
     tight = await _project("tight", budget_ms=300)  # 250+80+150=480 > 300
@@ -114,8 +105,7 @@ async def test_three_projects_get_distinct_routes(storage) -> None:
 
 
 async def test_pipeline_persists_immutable_triple(storage) -> None:
-    """A second request on the same session with no routing decision
-    in scope does not overwrite the originally-stamped triple."""
+    """A second request on the same session with no routing decision"""
     db = await storage._ensure_initialized()
     pc = await _project("acme", budget_ms=600)
     triple = await router.route_session(db, project_id="acme", project_config=pc)

@@ -1,20 +1,4 @@
-"""Contract test: every voicegateway subpackage declares __all__.
-
-REQ-VG-POLISH-006 AC-1 ("an __all__ list declares the symbols intended
-for external import") becomes a runtime contract here: walk every
-subpackage under ``voicegateway/``, assert it has ``__all__``, and
-assert every name in ``__all__`` resolves to a real attribute on the
-package.
-
-If a contributor adds a new subpackage without ``__all__``, this test
-fails. If a contributor adds a name to ``__all__`` but forgets to
-re-export it, this test fails. Both are exactly the regressions
-REQ-006 is designed to prevent.
-
-Scope: package ``__init__.py`` files only. Submodules
-(e.g. ``voicegateway.core.gateway``) are NOT required to have
-``__all__``; the contract is about the package-level public surface.
-"""
+"""Contract test: every voicegateway subpackage declares __all__."""
 
 from __future__ import annotations
 
@@ -30,18 +14,7 @@ pytestmark = pytest.mark.integration
 
 
 def _walk_subpackages() -> list[ModuleType]:
-    """Yield every subpackage of ``voicegateway`` (including the root).
-
-    Uses :func:`pkgutil.walk_packages` filtered to ``ispkg``. The root
-    ``voicegateway`` itself is yielded first because ``walk_packages``
-    starts one level down.
-
-    ``voicegateway.tests`` and its subpackages are excluded: tests live
-    inside the package directory for repo hygiene but are not part of
-    the runtime public surface and are explicitly excluded from the
-    wheel via ``[tool.hatch.build.targets.wheel].exclude`` in
-    ``pyproject.toml``.
-    """
+    """Yield every subpackage of ``voicegateway`` (including the root)."""
     found: list[ModuleType] = [voicegateway]
     for module_info in pkgutil.walk_packages(
         voicegateway.__path__, prefix="voicegateway."
@@ -84,12 +57,7 @@ def test_subpackage_declares_all(package: ModuleType) -> None:
 
 @pytest.mark.parametrize("package", _SUBPACKAGES, ids=lambda p: p.__name__)
 def test_subpackage_all_is_list_of_str(package: ModuleType) -> None:
-    """``__all__`` must be a list (or tuple) of str, not anything else.
-
-    Static analyzers and ``from X import *`` both rely on the standard
-    shape; an accidentally-set ``__all__ = "build_app"`` (a single
-    string) would silently degrade to character-by-character iteration.
-    """
+    """``__all__`` must be a list (or tuple) of str, not anything else."""
     all_attr = package.__all__
     assert isinstance(all_attr, (list, tuple)), (
         f"{package.__name__}.__all__ must be list or tuple, "
@@ -104,13 +72,7 @@ def test_subpackage_all_is_list_of_str(package: ModuleType) -> None:
 
 @pytest.mark.parametrize("package", _SUBPACKAGES, ids=lambda p: p.__name__)
 def test_subpackage_all_names_resolve(package: ModuleType) -> None:
-    """Every name in ``__all__`` must resolve to a real attribute.
-
-    Catches the regression of: adding a re-export to ``__all__`` but
-    forgetting the actual ``from .x import y`` line above it. The
-    package would still import, but ``from package import y`` would
-    fail with AttributeError.
-    """
+    """Every name in ``__all__`` must resolve to a real attribute."""
     missing = [name for name in package.__all__ if not hasattr(package, name)]
     assert not missing, (
         f"{package.__name__}.__all__ lists names that do not resolve: "
@@ -121,12 +83,7 @@ def test_subpackage_all_names_resolve(package: ModuleType) -> None:
 
 @pytest.mark.parametrize("package", _SUBPACKAGES, ids=lambda p: p.__name__)
 def test_subpackage_all_has_no_private_names(package: ModuleType) -> None:
-    """``__all__`` should not list names starting with underscore.
-
-    Leading-underscore names are by-convention private. Listing them
-    in ``__all__`` confuses the public-API contract documented in
-    ``docs/contributing/code-style.md``.
-    """
+    """``__all__`` should not list names starting with underscore."""
     private = [name for name in package.__all__ if name.startswith("_")]
     # ``__version__`` and other dunder names are not "private" in this
     # sense; only single-underscore prefixes.

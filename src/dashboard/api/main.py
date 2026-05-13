@@ -22,13 +22,25 @@ from voicegateway.core.guardrail_policy import (
     GuardrailPolicy,
 )
 from voicegateway.repository import (
-    dead_air,
-    guardrail_events,
-    latency_observations,
-    replay,
-    tenants,
-    turns,
-    virtual_keys,
+    dead_air_repository as dead_air,
+)
+from voicegateway.repository import (
+    guardrail_events_repository as guardrail_events,
+)
+from voicegateway.repository import (
+    latency_observations_repository as latency_observations,
+)
+from voicegateway.repository import (
+    replay_repository as replay,
+)
+from voicegateway.repository import (
+    tenants_repository as tenants,
+)
+from voicegateway.repository import (
+    turns_repository as turns,
+)
+from voicegateway.repository import (
+    virtual_keys_repository as virtual_keys,
 )
 
 if TYPE_CHECKING:

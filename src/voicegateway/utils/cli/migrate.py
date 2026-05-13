@@ -29,12 +29,7 @@ class MigrationReport:
 
     @property
     def has_v005_install(self) -> bool:
-        """True when at least the config file exists.
-
-        v0.0.5 always wrote a yaml; the SQLite db may be absent
-        if cost-tracking was disabled. config_present is the
-        load-bearing detection signal.
-        """
+        """True when at least the config file exists."""
         return self.config_present
 
 

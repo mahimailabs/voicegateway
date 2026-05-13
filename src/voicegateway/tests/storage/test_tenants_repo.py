@@ -1,15 +1,10 @@
-"""Tests for ``tenants`` (REQ-VG-TENANT-002).
-
-Covers the tenant index aggregates, typeahead substring search with
-literal ``%`` / ``_`` escaping, count helper, and the unattributed
-bucket aggregator.
-"""
+"""Tests for ``tenants`` (REQ-VG-TENANT-002)."""
 
 from __future__ import annotations
 
 import pytest
 
-from voicegateway.repository import tenants as tr
+from voicegateway.repository import tenants_repository as tr
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

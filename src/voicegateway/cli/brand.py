@@ -43,13 +43,7 @@ def set_cmd(
         False, "--json", help="Print the resulting branding as JSON."
     ),
 ) -> None:
-    """Set per-project branding via the dashboard API.
-
-    At least one of --logo / --accent / --name is required. The CLI
-    uploads the logo first (if provided), then POSTs the merged
-    branding so the resulting payload carries logo_url + the
-    user-supplied accent_color / product_name.
-    """
+    """Set per-project branding via the dashboard API."""
     if not (logo or accent or name):
         console.print(
             "[red]At least one of --logo / --accent / --name is required.[/red]"

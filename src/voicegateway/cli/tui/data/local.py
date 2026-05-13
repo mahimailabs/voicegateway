@@ -66,10 +66,7 @@ class LocalClient:
         project: str | None = None,
         include_pricing_source: bool = False,
     ) -> dict[str, Any]:
-        """Combine total + per-modality so the response shape matches
-        the daemon's ``/v1/costs?per_modality=true`` (the Costs tab
-        consumes one shape regardless of which client is live).
-        """
+        """Combine total + per-modality so the response shape matches"""
         summary = await self._storage.get_cost_summary(
             period=period,
             project=project,

@@ -77,10 +77,7 @@ async def test_list_sessions_returns_seeded_rows(client, gateway):
 
 
 async def test_list_sessions_returns_modalities_as_list(client, gateway):
-    """The list endpoint returns modalities as a JSON array (not the
-    raw comma-separated string in the table) so dashboard consumers
-    don't have to split client-side.
-    """
+    """The list endpoint returns modalities as a JSON array (not the"""
     await _seed_session(gateway.storage, "vg-multi", modality="stt", cost=0.01)
     await _seed_session(gateway.storage, "vg-multi", modality="llm", cost=0.02)
     await _seed_session(gateway.storage, "vg-multi", modality="tts", cost=0.03)
@@ -161,9 +158,7 @@ async def test_session_detail_returns_session(client, gateway):
 async def test_session_detail_per_modality_breakdown_aggregates_by_modality(
     client, gateway
 ):
-    """A session with mixed STT / LLM / TTS requests returns one
-    by_modality entry per modality, with the right cost and count.
-    """
+    """A session with mixed STT / LLM / TTS requests returns one"""
     await _seed_session(
         gateway.storage, "vg-mix", modality="stt", cost=0.01, provider="deepgram"
     )
@@ -194,9 +189,7 @@ async def test_session_detail_per_modality_breakdown_aggregates_by_modality(
 
 
 async def test_session_detail_ended_at_advances_with_each_request(client, gateway):
-    """AC-002.3: ended_at tracks last-activity, not first-activity, so
-    duration is queryable without a session-close hook.
-    """
+    """AC-002.3: ended_at tracks last-activity, not first-activity, so"""
     await _seed_session(gateway.storage, "vg-dur", ts=1700000000.0, cost=0.01)
     await _seed_session(gateway.storage, "vg-dur", ts=1700000050.0, cost=0.01)
     await _seed_session(gateway.storage, "vg-dur", ts=1700000123.0, cost=0.01)
@@ -211,9 +204,7 @@ async def test_session_detail_ended_at_advances_with_each_request(client, gatewa
 async def test_session_detail_out_of_order_request_does_not_drag_ended_at_back(
     client, gateway
 ):
-    """A late-arriving record with an older timestamp must NOT move
-    ended_at backwards. The CASE clause in the upsert guards this.
-    """
+    """A late-arriving record with an older timestamp must NOT move"""
     await _seed_session(gateway.storage, "vg-ooo", ts=1700000100.0)
     expected_ended = (await gateway.storage.get_session("vg-ooo"))["ended_at"]
     await _seed_session(gateway.storage, "vg-ooo", ts=1700000050.0)  # earlier!
@@ -282,9 +273,7 @@ async def test_session_detail_returns_404_for_missing(client):
 async def test_session_detail_returns_404_when_storage_disabled(
     temp_config, tmp_path, monkeypatch
 ):
-    """If cost_tracking is disabled (no storage), the endpoint cannot
-    return any session by id and must 404.
-    """
+    """If cost_tracking is disabled (no storage), the endpoint cannot"""
     monkeypatch.delenv("VOICEGW_DB_PATH", raising=False)
     # Build with no DB path and storage disabled by config default; the
     # temp_config fixture has cost_tracking.enabled=True, so override

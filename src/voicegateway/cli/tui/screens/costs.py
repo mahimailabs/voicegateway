@@ -47,11 +47,7 @@ class CostsScreen(Container):
         self.set_interval(poll_seconds, self._poll_tick)
 
     def _poll_tick(self) -> None:
-        """Sync wrapper around the async refresh; ``set_interval``
-        accepts only sync callbacks. ``exclusive=True`` so a poll
-        tick that lands while ``action_cycle_range`` is mid-fetch
-        cancels the older worker rather than racing two refreshes.
-        """
+        """Sync wrapper around the async refresh; ``set_interval``"""
         self.run_worker(cast(Any, self.refresh_data), exclusive=True)
 
     async def refresh_data(self) -> None:
@@ -79,9 +75,6 @@ class CostsScreen(Container):
     # -- Helpers -----------------------------------------------------
 
     def _header_text(self) -> str:
-        """Active-range indicator. Brackets mark the live mode so the
-        plain-ASCII rendering reads unambiguously even on terminals
-        that drop styling.
-        """
+        """Active-range indicator. Brackets mark the live mode so the"""
         labels = [f"[{r}]" if r == self._range else r for r in _RANGES]
         return "Costs  |  Range:  " + "  ".join(labels) + "   (press `r` to cycle)"

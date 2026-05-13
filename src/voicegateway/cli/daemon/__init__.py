@@ -30,11 +30,7 @@ class DaemonBackend(Protocol):
         ...
 
     def status(self) -> dict[str, Any]:
-        """Return at least: ``running`` (bool), ``registered`` (bool),
-        ``pid`` (int or None). Backends MAY include extra keys
-        (e.g. ``last_exit_code`` on macOS) for richer reporting in
-        ``voicegw doctor``.
-        """
+        """Return at least: ``running`` (bool), ``registered`` (bool),"""
         ...
 
     def logs(self, *, tail: int = 100) -> str:
@@ -62,9 +58,7 @@ class DaemonManager:
 
     @staticmethod
     def _load_backend() -> DaemonBackend:
-        """Lazy-import the platform backend so unit tests that pass
-        an explicit fake backend never touch the real ones.
-        """
+        """Lazy-import the platform backend so unit tests that pass"""
         name = _select_backend_name()
 
         from typing import cast

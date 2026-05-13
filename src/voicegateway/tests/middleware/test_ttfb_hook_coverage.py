@@ -1,24 +1,4 @@
-"""TTFB hook hardening: coverage across every modality.
-
-The audit identified TTFB capture as fragile and easy to break
-across modalities: ``_InstrumentedBase`` provides the
-``_mark_first_byte`` mechanism, but each modality's streaming code
-path has to call it at the right moment. If a future modality is
-added without wiring TTFB, this suite fails loudly with a clear
-message naming the missing modality.
-
-This file is intentionally fixture-independent. The replay tests
-in ``tests/test_streaming_cost_accounting.py`` cover TTFB through
-recorded fixtures; this file covers it via synthetic streams so
-the assertion runs in CI before any human records a fixture for a
-new modality.
-
-The behavior under test is the same as
-``tests/middleware/test_instrumented_provider.py`` but parametrized
-across all three modalities (STT, LLM, TTS) and gated against the
-``wrap_provider`` dispatch table so a new modality cannot land
-without adding its row to the test's parametrize.
-"""
+"""TTFB hook hardening: coverage across every modality."""
 
 from __future__ import annotations
 
@@ -154,14 +134,7 @@ def test_every_known_modality_has_a_wrapper_class() -> None:
 
 
 def test_every_instrumented_subclass_is_dispatchable() -> None:
-    """Every _InstrumentedBase subclass must be reachable via wrap_provider.
-
-    Walks the source of wrap_provider and asserts that every subclass
-    of _InstrumentedBase shows up in its dispatch table. If a future
-    contributor adds InstrumentedFoo (for a new modality) but forgets
-    to add the modality string to wrap_provider's dispatch, this
-    fails with a clear message.
-    """
+    """Every _InstrumentedBase subclass must be reachable via wrap_provider."""
     subclasses = [
         cls
         for cls in _InstrumentedBase.__subclasses__()
@@ -216,16 +189,7 @@ def test_known_modalities_are_dispatched_by_wrap_provider() -> None:
 
 
 def test_unknown_modality_returns_unwrapped_instance() -> None:
-    """Documented contract: an unknown modality returns the raw instance.
-
-    This is intentional behavior (graceful degradation: a new modality
-    that hasn't been wired works without instrumentation rather than
-    crashing). It is also the failure mode that the dispatch-coverage
-    test above exists to catch: a brand-new modality slips through
-    silently. The two tests together gate it: this one documents the
-    contract; the other ensures _InstrumentedBase subclasses cannot
-    diverge from the dispatch table.
-    """
+    """Documented contract: an unknown modality returns the raw instance."""
     sentinel = MagicMock()
     cost_tracker = MagicMock()
     cost_tracker.notify_spend = AsyncMock()

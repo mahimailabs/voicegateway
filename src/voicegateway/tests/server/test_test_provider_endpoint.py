@@ -1,15 +1,4 @@
-"""Regression tests for /v1/providers/{id}/test and /v1/providers/test
-(stateless) — both fix Codex P1 #1 and P1 #2 from the iter-41 review.
-
-The id-based endpoint must work for the v0.0.5 composite per-project
-ids (``"<project>:<provider>"``); previously it only handled top-level
-provider ids and returned ``Unknown type 'project:provider'`` for
-DB-managed rows or 404 for YAML per-project rows.
-
-The new stateless endpoint replaces the dashboard's sentinel-row
-hack on the Add Provider modal: takes provider_type + api_key + base_url,
-runs health_check, persists nothing.
-"""
+"""Regression tests for /v1/providers/{id}/test and /v1/providers/test"""
 
 from __future__ import annotations
 
@@ -39,10 +28,7 @@ async def client(gateway):
 
 @pytest.fixture
 def healthy_provider_factory(monkeypatch):
-    """Stub create_provider so health_check returns ok without a real
-    network call. Records the config it received so the test can
-    assert the right key reached the provider class.
-    """
+    """Stub create_provider so health_check returns ok without a real"""
     received: dict[str, Any] = {}
 
     class _Healthy:
@@ -68,9 +54,7 @@ def healthy_provider_factory(monkeypatch):
 async def test_test_endpoint_resolves_db_managed_composite_id(
     client, gateway, healthy_provider_factory
 ):
-    """Persist a per-project DB row with composite id, hit the test
-    endpoint with that id, expect ok status.
-    """
+    """Persist a per-project DB row with composite id, hit the test"""
     await client.post(
         "/v1/providers",
         json={
@@ -95,10 +79,7 @@ async def test_test_endpoint_resolves_db_managed_composite_id(
 async def test_test_endpoint_resolves_yaml_per_project_composite_id(
     tmp_path, monkeypatch, healthy_provider_factory
 ):
-    """A YAML per-project provider key gets tested via the composite
-    id path. Previously this 404ed because the id is not in
-    cfg.providers.
-    """
+    """A YAML per-project provider key gets tested via the composite"""
     cfg_path = tmp_path / "voicegw.yaml"
     cfg_path.write_text(
         yaml.dump(
@@ -138,9 +119,7 @@ async def test_test_endpoint_unknown_id_still_404(client):
 async def test_test_endpoint_legacy_top_level_id_still_works(
     client, gateway, healthy_provider_factory
 ):
-    """Pre-v0.0.5 callers that test by top-level provider id (e.g.,
-    'openai' from voicegw.yaml's providers block) keep working.
-    """
+    """Pre-v0.0.5 callers that test by top-level provider id (e.g.,"""
     # The temp_config fixture already has providers.openai configured.
     resp = await client.post("/v1/providers/openai/test")
     assert resp.status_code == 200
@@ -155,9 +134,7 @@ async def test_test_endpoint_legacy_top_level_id_still_works(
 async def test_stateless_test_runs_without_persisting(
     client, gateway, healthy_provider_factory
 ):
-    """POST /v1/providers/test takes provider_type + api_key + base_url
-    and runs the health check without writing to managed_providers.
-    """
+    """POST /v1/providers/test takes provider_type + api_key + base_url"""
     pre_rows = await gateway.storage.list_managed_providers()
     pre_ids = {r["provider_id"] for r in pre_rows}
 
@@ -192,9 +169,7 @@ async def test_stateless_test_unknown_provider_type_returns_failed(client):
 
 
 async def test_stateless_test_health_check_failure_does_not_crash(client, monkeypatch):
-    """A simulated exception during health_check returns failed,
-    not a 500.
-    """
+    """A simulated exception during health_check returns failed,"""
 
     class _Raises:
         def __init__(self, config: dict[str, Any]) -> None:
@@ -220,10 +195,7 @@ async def test_stateless_test_health_check_failure_does_not_crash(client, monkey
 async def test_stateless_test_does_not_pollute_provider_list(
     client, gateway, healthy_provider_factory
 ):
-    """Ten repeated stateless tests must not accumulate any sentinel
-    rows. This test guards against accidental persistence in the
-    cleanup path of a future refactor.
-    """
+    """Ten repeated stateless tests must not accumulate any sentinel"""
     for _ in range(10):
         await client.post(
             "/v1/providers/test",

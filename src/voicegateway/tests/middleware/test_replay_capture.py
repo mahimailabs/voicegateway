@@ -1,10 +1,4 @@
-"""Contract tests for voicegateway.middleware.replay_capture (T02 of v0.3.0).
-
-Covers the lifecycle the Refinery and Foundry care about: per-modality
-events buffer correctly, oldest is dropped with a counter when memory
-pressure forces it, flush triggers at threshold + session close, and
-write-failure does not crash the live conversation.
-"""
+"""Contract tests for voicegateway.middleware.replay_capture (T02 of v0.3.0)."""
 
 from __future__ import annotations
 
@@ -75,16 +69,7 @@ async def test_auto_flush_at_threshold() -> None:
 
 
 async def test_dropped_count_starts_at_zero() -> None:
-    """Sanity: fresh session has no drops recorded.
-
-    The overflow path (oldest-dropped-with-counter) is timing-
-    dependent: it fires when appends arrive faster than the
-    auto-flush can clear the buffer, which is hard to simulate
-    deterministically. Production observability is the warning
-    log at every 100 drops; the contract is exercised in the
-    storage-cost smoke test (T18 below) where the synthetic
-    conversation can stress the buffer realistically.
-    """
+    """Sanity: fresh session has no drops recorded."""
     capture = ReplayCapture(flush_size_events=5, buffer_size_events=10)
     await capture.record_stt_chunk(text="x", session_id="s1")
     assert capture.dropped_count("s1") == 0

@@ -1,10 +1,4 @@
-"""Thin service-layer delegate over a single repository.
-
-Domain services compose multiple repositories and policy; this base
-covers the trivial CRUD pass-through so an entity that only needs
-``get_list / get_by_id / add / patch / remove`` doesn't need a full
-hand-rolled service class.
-"""
+"""Thin service-layer delegate over a single repository."""
 
 from __future__ import annotations
 

@@ -58,9 +58,7 @@ class HelpOverlay(ModalScreen[None]):
         return _format_sections(sections)
 
     def _active_tab_widget(self) -> Any:
-        """Walk the screen stack to find the non-modal screen + the
-        active tab widget inside it.
-        """
+        """Walk the screen stack to find the non-modal screen + the"""
         for screen in self.app.screen_stack:
             if isinstance(screen, ModalScreen):
                 continue

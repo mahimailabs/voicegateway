@@ -1,10 +1,4 @@
-"""End-to-end test of the layered virtual-keys HTTP endpoints.
-
-Exercises model → schema → repository → service → container → router
-through the live FastAPI app. Each request triggers an ``@inject``
-resolution that pulls :class:`VirtualKeyService` out of the container
-and reaches the SQLite file via an async SQLAlchemy session.
-"""
+"""End-to-end test of the layered virtual-keys HTTP endpoints."""
 
 from __future__ import annotations
 

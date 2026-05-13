@@ -1,8 +1,4 @@
-"""Unit tests for the streaming fixture loader.
-
-These tests work against synthetic fixture files written into
-tmp_path. They do not depend on real Phase 3 fixtures landing.
-"""
+"""Unit tests for the streaming fixture loader."""
 
 from __future__ import annotations
 

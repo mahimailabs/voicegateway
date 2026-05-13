@@ -1,14 +1,4 @@
-"""Declarative dependency-injection container for the HTTP server stack.
-
-Built on :mod:`dependency_injector`. The container owns every singleton
-the server needs (config, database, repositories, services) and wires
-them into the FastAPI routers via ``@inject`` + ``Provide[]``.
-
-Start of the per-entity migration is intentionally small: only the
-``config`` and ``database`` providers are declared today. Repository
-and service providers are added as entities move off the legacy
-aiosqlite paths.
-"""
+"""Declarative dependency-injection container for the HTTP server stack."""
 
 from __future__ import annotations
 
@@ -18,8 +8,8 @@ from dependency_injector import containers, providers
 
 from voicegateway.core.config import GatewayConfig
 from voicegateway.core.database import Database
-from voicegateway.repository.virtual_key import VirtualKeyRepository
-from voicegateway.services.virtual_key import VirtualKeyService
+from voicegateway.repository.virtual_key_repository import VirtualKeyRepository
+from voicegateway.services.virtual_key_service import VirtualKeyService
 
 logger = logging.getLogger(__name__)
 

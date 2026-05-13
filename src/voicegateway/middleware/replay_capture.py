@@ -198,8 +198,7 @@ class ReplayCapture:
         return flushed
 
     def dropped_count(self, session_id: str) -> int:
-        """Return the running dropped-count for the session (for the
-        replay timeline's "events dropped here" surface)."""
+        """Return the running dropped-count for the session (for the"""
         state = self._sessions.get(session_id)
         return state.dropped_count if state else 0
 

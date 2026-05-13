@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     import aiosqlite
 
     from voicegateway.core.config import AuthConfig
-    from voicegateway.repository.virtual_keys import VerifiedKey
+    from voicegateway.repository.virtual_keys_repository import VerifiedKey
 
 
 logger = logging.getLogger(__name__)
@@ -143,7 +143,7 @@ async def verify_virtual_key(
     authorization: str | None, db: aiosqlite.Connection
 ) -> VerifiedKey:
     """Validate a ``Bearer vk_…`` header against ``virtual_keys``."""
-    from voicegateway.repository import virtual_keys
+    from voicegateway.repository import virtual_keys_repository as virtual_keys
 
     token = _extract_bearer(authorization)
     if token is None:

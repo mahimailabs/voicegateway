@@ -37,8 +37,7 @@ class SessionRow(Static):
 
     @property
     def session_id(self) -> str:
-        """Storage-canonical id; the Sessions screen uses this to
-        push the per-turn detail modal on Enter (Phase 3 bullet 4)."""
+        """Storage-canonical id; the Sessions screen uses this to"""
         return str(self.session.get("id", ""))
 
     # -- Formatting --------------------------------------------------
@@ -72,9 +71,7 @@ def format_time(iso: str) -> str:
 
 
 def format_duration(start: str, end: str) -> str:
-    """Render duration as ``Ns`` (<60s) or ``MmNs`` (<1h) or
-    ``HhMm`` (>=1h). Returns ``--`` when either bound is unparseable.
-    """
+    """Render duration as ``Ns`` (<60s) or ``MmNs`` (<1h) or"""
     if not start or not end:
         return "--"
     try:

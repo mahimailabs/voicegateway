@@ -127,11 +127,7 @@ class HttpClient:
         project: str | None = None,
         include_pricing_source: bool = False,
     ) -> dict[str, Any]:
-        """``GET /v1/costs`` -- total + per-modality breakdown.
-
-        Always requests ``per_modality=true`` so the Costs tab can
-        render the per-modality breakdown without a second call.
-        """
+        """``GET /v1/costs`` -- total + per-modality breakdown."""
         params: dict[str, Any] = {
             "period": period,
             "per_modality": "true",

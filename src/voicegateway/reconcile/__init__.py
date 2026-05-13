@@ -1,11 +1,4 @@
-"""Reconciliation tooling for verifying VG-recorded costs against provider invoices.
-
-The implementation lives in :mod:`voicegateway.reconcile.core`; this
-``__init__`` re-exports the public surface so callers can use either
-``from voicegateway import reconcile`` followed by attribute access
-(e.g. ``reconcile.parse_provider_file``, ``reconcile.reconcile``) or
-``from voicegateway.reconcile import reconcile`` directly.
-"""
+"""Reconciliation tooling for verifying VG-recorded costs against provider invoices."""
 
 from voicegateway.reconcile.core import (
     DEFAULT_DIFF_THRESHOLD_PCT,

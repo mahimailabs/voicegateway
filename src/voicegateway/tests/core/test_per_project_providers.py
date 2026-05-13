@@ -1,16 +1,4 @@
-"""Tests for the v0.0.5 per-project provider keys schema.
-
-Per design.md section 3.3, voicegw.yaml gains two new shapes:
-1. Each entry under ``projects:`` may carry its own ``providers:``
-   block with provider-specific api keys / urls.
-2. A top-level ``default_project:`` field names which project
-   ``inference.STT/LLM/TTS`` should resolve against when the user
-   has not called ``inference.set_project()``.
-
-Backward compat: pre-v0.0.5 configs without per-project providers
-must keep working, and the top-level ``providers:`` block must keep
-serving as the global fallback.
-"""
+"""Tests for the v0.0.5 per-project provider keys schema."""
 
 from __future__ import annotations
 
@@ -31,9 +19,7 @@ def _write_config(path, content: dict) -> str:
 
 
 def test_legacy_global_providers_still_load(tmp_path):
-    """Configs without project.providers continue to work — the
-    top-level providers block resolves as before.
-    """
+    """Configs without project.providers continue to work — the"""
     cfg_path = _write_config(
         tmp_path,
         {
@@ -131,10 +117,7 @@ def test_project_provider_overrides_global(tmp_path):
 
 
 def test_project_without_provider_falls_back_to_global(tmp_path):
-    """Project has providers but not the requested one → falls back to
-    the top-level providers block. Mama-diner uses the global Deepgram
-    key because it didn't override one.
-    """
+    """Project has providers but not the requested one → falls back to"""
     cfg_path = _write_config(
         tmp_path,
         {
@@ -249,10 +232,7 @@ def test_default_project_defaults_to_none(tmp_path):
 
 
 def test_existing_example_config_loads(example_config_path):
-    """The shipped voicegw.example.yaml must continue to load with the
-    expanded schema. This guards against accidentally introducing a
-    migration the user has to perform manually before VG can boot.
-    """
+    """The shipped voicegw.example.yaml must continue to load with the"""
     cfg = GatewayConfig.load(example_config_path)
     # Just verify load completes and core attributes exist.
     assert isinstance(cfg.providers, dict)

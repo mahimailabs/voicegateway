@@ -77,10 +77,7 @@ class TestReset:
 
 
 class TestStartSession:
-    """``start_session`` rolls a fresh id for sequential conversations
-    in a single asyncio task — fixes the v0.0.5 review P1 #3 case
-    where a worker reusing tasks would merge two sessions into one.
-    """
+    """``start_session`` rolls a fresh id for sequential conversations"""
 
     def test_start_session_returns_new_id(self):
         ctx = contextvars.copy_context()
@@ -99,11 +96,7 @@ class TestStartSession:
         assert after == second
 
     def test_simulated_worker_pattern(self):
-        """One asyncio task handles two conversations sequentially.
-        Without start_session() between them, the second conversation
-        inherits the first's id (the bug). With start_session(), each
-        conversation gets a distinct id.
-        """
+        """One asyncio task handles two conversations sequentially."""
 
         def _scenario():
             sid_a = get_or_create_session_id()

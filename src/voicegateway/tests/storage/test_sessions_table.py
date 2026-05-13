@@ -1,12 +1,4 @@
-"""Tests for the v0.0.5 ``sessions`` table.
-
-Per design.md section 3.2 the sessions table is the second pillar of
-session correlation: one row per logical voice session, accumulating
-total_cost_usd and request_count, with started_at / ended_at framing.
-The CostTracker populates rows on the first request of a session; this
-test file pins the schema contract so plumbing changes can't quietly
-break the storage shape.
-"""
+"""Tests for the v0.0.5 ``sessions`` table."""
 
 from __future__ import annotations
 
@@ -133,13 +125,7 @@ async def test_sessions_indexes_exist(tmp_path):
 
 
 async def test_sessions_table_appears_on_legacy_db(tmp_path):
-    """Pre-v0.0.5 databases pick up the sessions table at first open.
-
-    Same pattern as the requests session_id migration: the v0.0.4 file
-    has no sessions table; opening it through SQLiteStorage runs the
-    schema executescript with CREATE TABLE IF NOT EXISTS, which adds
-    the table without touching anything else.
-    """
+    """Pre-v0.0.5 databases pick up the sessions table at first open."""
     db_path = str(tmp_path / "v004.db")
     legacy = sqlite3.connect(db_path)
     try:
@@ -190,12 +176,7 @@ async def test_sessions_table_appears_on_legacy_db(tmp_path):
 
 
 async def test_sessions_insert_round_trip(tmp_path):
-    """A direct INSERT + SELECT works against the new schema.
-
-    Higher-level CostTracker plumbing comes in 5.6 #3+; this test just
-    locks the basic write/read contract so a future schema refactor
-    can't change column names or types silently.
-    """
+    """A direct INSERT + SELECT works against the new schema."""
     db_path = str(tmp_path / "fresh.db")
     storage = SQLiteStorage(db_path)
     await storage._ensure_initialized()

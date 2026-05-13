@@ -1,22 +1,4 @@
-"""Loader for Phase 3 streaming fixtures.
-
-Reads fixture JSON files from this directory, validates them against
-the schema in `_schema.py`, and exposes them to the replay tests
-in `tests/test_streaming_cost_accounting.py`.
-
-Public API:
-
-- ``load_fixture(path)`` returns a validated ``StreamingFixture``.
-- ``discover_fixtures(directory=...)`` returns every fixture file in
-  the directory, parsed and validated.
-- ``parse_fixture_filename(path)`` extracts the (provider, model
-  slug, modality, mode, recorded date) tuple encoded in the
-  filename. The staleness check uses this; pytest parametrize ids
-  use it for human-readable test names.
-
-The loader has no dependency on `respx` or any provider SDK; it is
-safe to import from any test or script.
-"""
+"""Loader for Phase 3 streaming fixtures."""
 
 from __future__ import annotations
 
@@ -33,12 +15,7 @@ FIXTURES_DIR: Path = Path(__file__).parent
 
 @dataclass(frozen=True)
 class FixtureFilename:
-    """Decoded components of a fixture filename.
-
-    Filenames follow ``<provider>_<model_slug>_<modality>_<mode>_<YYYY-MM-DD>.json``,
-    per design §3.2. Model slugs may contain underscores (e.g.
-    ``ollama_qwen2.5_3b``), so parsing happens from the right.
-    """
+    """Decoded components of a fixture filename."""
 
     provider: str
     model_slug: str
@@ -55,12 +32,7 @@ class FixtureFilename:
 
 
 def parse_fixture_filename(path: Path | str) -> FixtureFilename:
-    """Decode a fixture filename into its five components.
-
-    Raises ``ValueError`` if the filename does not match the locked
-    convention. The error message names which field failed so a
-    misnamed fixture surfaces immediately.
-    """
+    """Decode a fixture filename into its five components."""
     p = Path(path)
     if p.suffix != ".json":
         raise ValueError(f"Fixture filename {p.name!r} must end in .json")
@@ -108,14 +80,7 @@ def parse_fixture_filename(path: Path | str) -> FixtureFilename:
 
 
 def load_fixture(path: Path | str) -> StreamingFixture:
-    """Load and validate a single fixture JSON file.
-
-    Raises:
-        FileNotFoundError: if ``path`` does not exist.
-        json.JSONDecodeError: if the file is not valid JSON.
-        pydantic.ValidationError: if the JSON shape does not match
-            ``StreamingFixture``.
-    """
+    """Load and validate a single fixture JSON file."""
     p = Path(path)
     raw = p.read_text(encoding="utf-8")
     payload = json.loads(raw)
@@ -123,23 +88,12 @@ def load_fixture(path: Path | str) -> StreamingFixture:
 
 
 def _iter_fixture_files(directory: Path) -> Iterator[Path]:
-    """Yield every ``*.json`` file in ``directory`` in deterministic order.
-
-    Sorted by name so pytest's parametrize ids are stable across
-    runs.
-    """
+    """Yield every ``*.json`` file in ``directory`` in deterministic order."""
     yield from sorted(directory.glob("*.json"))
 
 
 def discover_fixtures(directory: Path | str | None = None) -> list[StreamingFixture]:
-    """Return every fixture in ``directory`` (default: this dir), validated.
-
-    A fixture file is any ``*.json`` whose name decodes via
-    ``parse_fixture_filename``. Files that fail filename parsing are
-    skipped silently (so unrelated JSON in the directory cannot
-    derail discovery), but files that pass filename parsing and
-    fail schema validation raise loudly.
-    """
+    """Return every fixture in ``directory`` (default: this dir), validated."""
     base = Path(directory) if directory is not None else FIXTURES_DIR
     fixtures: list[StreamingFixture] = []
     for fixture_file in _iter_fixture_files(base):
@@ -154,11 +108,7 @@ def discover_fixtures(directory: Path | str | None = None) -> list[StreamingFixt
 def discover_fixture_paths(
     directory: Path | str | None = None,
 ) -> list[Path]:
-    """Return every conforming fixture path in ``directory``.
-
-    Useful for pytest parametrize when the test wants the filename
-    string in addition to the parsed model.
-    """
+    """Return every conforming fixture path in ``directory``."""
     base = Path(directory) if directory is not None else FIXTURES_DIR
     out: list[Path] = []
     for fixture_file in _iter_fixture_files(base):

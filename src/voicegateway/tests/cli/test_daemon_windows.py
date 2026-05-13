@@ -1,14 +1,4 @@
-"""Tests for the Windows Scheduled Task backend.
-
-Strategy mirrors the macOS / Linux backend tests: monkeypatch
-``subprocess.run`` once at the module level, capture every shell-out,
-assert against ``call_args_list``. HOME points at tmp_path so writes
-to the AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup
-sub-tree are sandboxed.
-
-The tests run on every platform (no os.getuid call); the Windows
-backend never invokes schtasks or PowerShell for real here.
-"""
+"""Tests for the Windows Scheduled Task backend."""
 
 from __future__ import annotations
 
@@ -176,9 +166,7 @@ def test_stop_calls_schtasks_end(backend, fake_subprocess):
 
 
 def test_stop_swallows_failure(backend, fake_subprocess):
-    """schtasks /End returns non-zero when the task is not running;
-    that is the desired stop outcome, not an error.
-    """
+    """schtasks /End returns non-zero when the task is not running;"""
     fake_subprocess.return_value = _ok(returncode=1)
     backend.stop()  # must not raise
 

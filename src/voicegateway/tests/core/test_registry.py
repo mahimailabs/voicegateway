@@ -44,12 +44,7 @@ def test_create_provider_unknown_error_lists_alternatives() -> None:
 
 
 def test_create_provider_known_name_returns_instance() -> None:
-    """Creating an Ollama provider returns a BaseProvider subclass instance.
-
-    Ollama is the safest provider to test against because it has no
-    SDK install requirement (it speaks plain HTTP to a local daemon)
-    and no API-key requirement (local-only).
-    """
+    """Creating an Ollama provider returns a BaseProvider subclass instance."""
     from voicegateway.providers.base import BaseProvider
 
     provider = registry.create_provider("ollama", {})

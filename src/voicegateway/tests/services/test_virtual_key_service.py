@@ -1,11 +1,4 @@
-"""End-to-end test of the ORM-based VirtualKey stack.
-
-Bootstraps the schema via the legacy :class:`SQLiteStorage` (which runs
-the manual migrations), then exercises the new
-:class:`VirtualKeyService` against the same SQLite file through an
-async SQLAlchemy session. Proves the new ORM path interoperates with
-the existing migrated schema.
-"""
+"""End-to-end test of the ORM-based VirtualKey stack."""
 
 from __future__ import annotations
 
@@ -16,8 +9,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from voicegateway.repository.virtual_key import VirtualKeyRepository
-from voicegateway.services.virtual_key import VirtualKeyService
+from voicegateway.repository.virtual_key_repository import VirtualKeyRepository
+from voicegateway.services.virtual_key_service import VirtualKeyService
 from voicegateway.storage.sqlite import SQLiteStorage
 
 
@@ -92,11 +85,11 @@ async def test_mark_used_is_idempotent(service: VirtualKeyService) -> None:
     created = await service.create_key(name="poller")
     assert created.row.last_used_at is None
     await service.mark_used(created.row.id)
-    after = await service.get_key(created.row.id)
+    after = await service.get_by_id(created.row.id)
     first_stamp = after.last_used_at
     assert first_stamp is not None
     await service.mark_used(created.row.id)
-    again = await service.get_key(created.row.id)
+    again = await service.get_by_id(created.row.id)
     assert again.last_used_at is not None
     # Time advances, so the second stamp is >=
     assert again.last_used_at >= first_stamp

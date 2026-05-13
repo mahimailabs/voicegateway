@@ -1,25 +1,4 @@
-"""Protocol contract tests for the v0.1.1 TUI data layer.
-
-Covers:
-
-- :class:`MetricsClient` Protocol conformance for both real
-  implementations under ``runtime_checkable``.
-- :class:`HttpClient` method coverage against an
-  :class:`httpx.MockTransport`-backed daemon, plus the
-  empty-token-treated-as-None contract and the
-  owns-vs-injected-client lifecycle.
-- :class:`LocalClient` method coverage against a fixture-backed
-  :class:`SQLiteStorage`, plus the
-  ``LocalModeUnsupportedError(feature='test_provider')`` write-path
-  contract from locked decision 4.
-- ``factory.make_client`` dispatch (locked decision 5 -- ``--local``
-  always wins regardless of ``url``), poll-cadence resolution per
-  locked decisions 1+2, and the three-tier db-path resolution
-  (explicit > ``$VOICEGW_DB_PATH`` > v0.0.5 canonical).
-
-These tests are the gate that catches a future refactor that
-breaks the screens' assumption that "I always get a MetricsClient".
-"""
+"""Protocol contract tests for the v0.1.1 TUI data layer."""
 
 from __future__ import annotations
 
@@ -145,12 +124,7 @@ _PROTOCOL_METHODS: tuple[str, ...] = (
 
 
 def test_http_client_is_metrics_client(http_client):
-    """``HttpClient`` passes ``isinstance(_, MetricsClient)``.
-
-    runtime_checkable is the v0.1.1 trip-wire that catches a future
-    rename of any of the six method names; without this the screens
-    would fail at import time instead of during a test.
-    """
+    """``HttpClient`` passes ``isinstance(_, MetricsClient)``."""
     assert isinstance(http_client, MetricsClient)
 
 
@@ -309,10 +283,7 @@ async def test_local_list_providers_filters_by_project(local_client):
 async def test_local_test_provider_raises_with_feature_attribute(
     local_client,
 ):
-    """Locked decision 4: write paths in Local mode raise
-    ``LocalModeUnsupportedError`` carrying the machine-readable
-    ``feature`` attribute, not a generic exception.
-    """
+    """Locked decision 4: write paths in Local mode raise"""
     with pytest.raises(LocalModeUnsupportedError) as exc_info:
         await local_client.test_provider("p1")
     assert exc_info.value.feature == "test_provider"
@@ -356,12 +327,7 @@ def test_factory_local_false_returns_http_client():
 
 
 def test_factory_local_true_overrides_reachable_daemon(tmp_path):
-    """Locked decision 5: ``--local`` always wins regardless of url.
-
-    The persistent ``[Local mode]`` chip in the header (Phase 10) is
-    the user-visible signal that the override applied; this test
-    pins the dispatch contract that the chip's invariant relies on.
-    """
+    """Locked decision 5: ``--local`` always wins regardless of url."""
     c = make_client(
         local=True,
         url="http://reachable-daemon.example",
@@ -404,11 +370,7 @@ def test_factory_db_path_env_var_resolution(tmp_path, monkeypatch):
 
 
 def test_factory_db_path_env_overrides_explicit(tmp_path, monkeypatch):
-    """``$VOICEGW_DB_PATH`` is the top-priority debugging escape hatch
-    and wins over an explicit ``db_path`` argument (which :func:`run`
-    sources from ``voicegw.yaml``'s ``cost_tracking.db_path``). Matches
-    :class:`voicegateway.core.gateway.Gateway`'s precedence exactly.
-    """
+    """``$VOICEGW_DB_PATH`` is the top-priority debugging escape hatch"""
     env_path = tmp_path / "from-env.db"
     yaml_path = tmp_path / "from-yaml.db"
     monkeypatch.setenv("VOICEGW_DB_PATH", str(env_path))
@@ -436,18 +398,14 @@ def test_factory_db_path_expands_user(monkeypatch):
 
 
 async def test_http_client_starts_connected() -> None:
-    """``is_connected`` defaults True so the indicator does not flash
-    on launch before the first poll resolves.
-    """
+    """``is_connected`` defaults True so the indicator does not flash"""
     c = HttpClient(url="http://x")
     assert c.is_connected is True
     await c.aclose()
 
 
 async def test_http_client_marks_disconnected_on_connect_error() -> None:
-    """A ConnectError flips ``is_connected`` to False before
-    re-raising; ``_last_error`` carries the message string.
-    """
+    """A ConnectError flips ``is_connected`` to False before"""
 
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("Connection refused")
@@ -465,9 +423,7 @@ async def test_http_client_marks_disconnected_on_connect_error() -> None:
 
 
 async def test_http_client_marks_connected_on_recovery() -> None:
-    """After a failure, the next successful round-trip flips
-    ``is_connected`` back to True and clears ``_last_error``.
-    """
+    """After a failure, the next successful round-trip flips"""
     state = {"fail": True}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -492,10 +448,7 @@ async def test_http_client_marks_connected_on_recovery() -> None:
 
 
 async def test_http_client_status_error_does_not_flip_connected() -> None:
-    """A 4xx/5xx response means the daemon answered but rejected the
-    request; ``is_connected`` stays True. The user does NOT see the
-    reconnection indicator on a permission denial or a missing route.
-    """
+    """A 4xx/5xx response means the daemon answered but rejected the"""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(401, json={"detail": "unauthorized"})

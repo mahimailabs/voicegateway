@@ -1,11 +1,4 @@
-"""End-to-end tests for the Cartesia TTS batch recorder.
-
-Mocks Cartesia's /tts/bytes HTTP endpoint with respx, drives the
-batch path, and asserts the produced fixture validates against
-StreamingFixture and carries the right ``character_count`` ground
-truth (len(DEFAULT_TTS_TEXT)) plus a catalog-matched
-``expected_cost_usd``.
-"""
+"""End-to-end tests for the Cartesia TTS batch recorder."""
 
 from __future__ import annotations
 
@@ -226,13 +219,7 @@ async def test_cartesia_recorder_requires_api_key(
 
 
 class _FakeCartesiaWS:
-    """In-process fake of a Cartesia TTS WebSocket.
-
-    Records every JSON request the recorder sends and yields a
-    pre-canned set of text messages on iteration. Mirrors the
-    Deepgram fake's interface intentionally; same shape, different
-    payloads.
-    """
+    """In-process fake of a Cartesia TTS WebSocket."""
 
     def __init__(self, responses: list[dict[str, Any]]):
         self.sent: list[Any] = []

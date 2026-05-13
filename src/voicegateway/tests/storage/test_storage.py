@@ -233,12 +233,7 @@ async def test_get_cost_summary_pricing_source_omitted_by_default(storage):
 
 
 async def test_get_cost_summary_pricing_source_concats_distinct(storage):
-    """Multiple distinct sources for one model become a comma-joined string.
-
-    Happens when the gateway is upgraded mid-period (e.g., genai-prices
-    bumped from one minor to the next). Surfacing both is more honest
-    than picking one arbitrarily.
-    """
+    """Multiple distinct sources for one model become a comma-joined string."""
     now = time.time()
     for source in ["genai-prices@0.0.57", "genai-prices@0.0.58"]:
         await storage.log_request(
@@ -480,12 +475,7 @@ async def test_get_latency_stats(storage):
 
 
 def _midday_today() -> float:
-    """Return a Unix timestamp anchored at 12:00 today.
-
-    Using ``time.time() - i`` seconds in a test near midnight can drift
-    into yesterday and drop samples from the "today" window. Anchoring
-    at noon gives us ~12h of headroom on either side.
-    """
+    """Return a Unix timestamp anchored at 12:00 today."""
     import datetime as _dt
 
     return _dt.datetime.combine(_dt.date.today(), _dt.time(12, 0)).timestamp()

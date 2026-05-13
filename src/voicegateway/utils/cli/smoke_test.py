@@ -45,9 +45,7 @@ def _smoke_pick_models(gw: Any, project: str) -> dict[str, str]:
 
 
 async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
-    """Construct each modality with stubbed LK plugins, drive a fake
-    request through the wrapper, verify storage rows.
-    """
+    """Construct each modality with stubbed LK plugins, drive a fake"""
 
     from voicegateway.inference import _factory, _llm, _project, _stt, _tts
 

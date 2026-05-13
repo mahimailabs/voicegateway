@@ -1,19 +1,4 @@
-"""Pin the LK-subclass contract that unblocks AC-2.
-
-The pre-fix wrapper was a ``__getattr__``-style proxy. LK's
-``livekit.agents.voice.agent_activity`` runs at least 16
-``isinstance(self.tts, tts.TTS)`` (and STT/LLM equivalents) checks
-before attaching its ``metrics_collected`` and ``error`` listeners.
-With a proxy, those checks failed; the metrics listener never
-attached; SpeechHandle never observed completion; and the framework's
-5s INTERRUPTION_TIMEOUT cancelled every TTS speech under real audio.
-
-This file is the regression gate: a future refactor that reverts to
-the proxy will fail these tests immediately. The bridge test in
-particular is the headline assertion — events emitted by the wrapped
-plugin must reach listeners attached to the wrapper, because LK only
-ever attaches listeners to the wrapper.
-"""
+"""Pin the LK-subclass contract that unblocks AC-2."""
 
 from __future__ import annotations
 
@@ -236,10 +221,7 @@ def test_tts_capabilities_and_sample_rate_forward_from_wrapped() -> None:
 
 
 def test_label_model_provider_forward_from_wrapped() -> None:
-    """The override of label/model/provider should surface the wrapped
-    plugin's identity so dashboards / logs name the actual provider
-    instead of "voicegateway.middleware.instrumented_provider.InstrumentedTTS".
-    """
+    """The override of label/model/provider should surface the wrapped"""
     wrapped = _RealTTS()
     wrapper = InstrumentedTTS(
         wrapped=wrapped,

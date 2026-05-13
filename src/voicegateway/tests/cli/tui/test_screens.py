@@ -1,27 +1,4 @@
-"""Pilot tests for the Phase-3 Sessions + Phase-4 Costs screens.
-
-REQ-VG-TUI-002 (Sessions):
-
-- List renders with fixture data and the empty state.
-- ``s`` toggles between started_at_desc and cost_desc; the bracket
-  marker on the header flips and the row order matches the fetch.
-- Pure-formatter coverage of :func:`_format_detail` so the modal's
-  rendering contract is unit-testable without Textual.
-- Enter on a focused :class:`SessionRow` pushes
-  :class:`SessionDetailScreen`; ``escape`` / ``q`` dismisses it
-  and focus returns to the originating row.
-- Enter with nothing focused is a documented no-op.
-
-REQ-VG-TUI-003 (Costs):
-
-- Total + per-modality breakdown render from canned client data.
-- ``r`` cycles ``today`` / ``this_week`` / ``this_month`` and
-  drives a refresh against the active range with wrap-around.
-- ``include_pricing_source=True`` reaches the client on every
-  refresh so the freshness suffix can render.
-- Stale-stamp modalities surface the ``(as of YYYY-MM-DD)`` marker;
-  fresh and version-token modalities stay un-marked.
-"""
+"""Pilot tests for the Phase-3 Sessions + Phase-4 Costs screens."""
 
 from __future__ import annotations
 
@@ -81,13 +58,7 @@ async def _seed(
 
 @pytest.fixture
 async def populated_app(tmp_path: Path):
-    """TUIApp with a seeded LocalClient backing it.
-
-    Two sessions: ``vg-old`` is older (lower timestamp) but more
-    expensive; ``vg-new`` is newer but cheaper. The reverse ordering
-    on time vs. cost makes the sort-toggle assertion trivially
-    visible.
-    """
+    """TUIApp with a seeded LocalClient backing it."""
     db = tmp_path / "voicegw.db"
     storage = SQLiteStorage(db)
     base = time.time() - 60
@@ -260,10 +231,7 @@ async def test_detail_modal_dismisses_on_escape(
 async def test_enter_with_nothing_focused_is_noop(
     populated_app: TUIApp,
 ) -> None:
-    """Action falls through silently when the focused widget is not
-    a SessionRow (e.g., focus is on a Header link or no widget has
-    focus). No exception, no modal pushed.
-    """
+    """Action falls through silently when the focused widget is not"""
     async with populated_app.run_test() as pilot:
         await _settle(pilot)
         # Don't focus a row; press Enter at the screen level.
@@ -339,15 +307,7 @@ def test_format_detail_handles_empty_lists() -> None:
 
 
 class _StubMetricsClient:
-    """Stub :class:`MetricsClient` with canned per-period responses.
-
-    Lets the Costs tests inject ``pricing_sources`` shapes the local
-    SQLite path would not produce on its own (specifically a stamp
-    older than 24 h for the freshness assertion). Records every
-    ``list_costs`` call so tests can verify the active period and
-    the ``include_pricing_source`` flag both flow through the
-    refresh path.
-    """
+    """Stub :class:`MetricsClient` with canned per-period responses."""
 
     def __init__(self, responses: dict[str, dict[str, Any]]) -> None:
         self.responses = responses
@@ -388,13 +348,7 @@ class _StubMetricsClient:
 
 @pytest.fixture
 def costs_app() -> TUIApp:
-    """TUIApp wired to a deterministic :class:`_StubMetricsClient`.
-
-    ``today``: total $0.05, STT stamp old (2025-01-01 -> stale),
-    LLM stamp is a SemVer (no age inferable), TTS stamp today.
-    ``this_week``: total $0.20, breakdown only.
-    ``this_month``: total $1.25, no breakdown (covers fresh-install).
-    """
+    """TUIApp wired to a deterministic :class:`_StubMetricsClient`."""
     today = date.today().isoformat()
     responses = {
         "today": {
@@ -479,9 +433,7 @@ async def test_costs_range_cycle_drives_refresh(costs_app: TUIApp) -> None:
 async def test_costs_passes_include_pricing_source_true(
     costs_app: TUIApp,
 ) -> None:
-    """Every refresh requests the per-modality stamps so the
-    freshness suffix can render.
-    """
+    """Every refresh requests the per-modality stamps so the"""
     async with costs_app.run_test() as pilot:
         await pilot.press("2")
         await _settle(pilot)
@@ -493,10 +445,7 @@ async def test_costs_passes_include_pricing_source_true(
 async def test_costs_freshness_marker_renders_on_stale_modality(
     costs_app: TUIApp,
 ) -> None:
-    """The Phase-4 freshness indicator surfaces ``(as of YYYY-MM-DD)``
-    on a stale STT stamp; LLM (SemVer token) and TTS (today) stay
-    un-marked. Pins REQ-VG-TUI-003's freshness contract end-to-end.
-    """
+    """The Phase-4 freshness indicator surfaces ``(as of YYYY-MM-DD)``"""
     async with costs_app.run_test() as pilot:
         await pilot.press("2")
         await _settle(pilot)
@@ -510,15 +459,7 @@ async def test_costs_freshness_marker_renders_on_stale_modality(
 
 
 async def test_costs_screen_polls_for_live_refresh() -> None:
-    """``CostsScreen.on_mount`` registers an interval so the card
-    refreshes on the client's cadence, not just at first mount.
-
-    Without the interval the totals would freeze after the first
-    fetch (``ContentSwitcher`` keeps the screen mounted while other
-    tabs are active, so re-entering Costs does not retrigger
-    on_mount). The interval keeps the Costs tab in lockstep with
-    the Sessions / Logs / Footer polling.
-    """
+    """``CostsScreen.on_mount`` registers an interval so the card"""
     responses = {"today": {"period": "today", "total": 0.05}}
     client = _StubMetricsClient(responses)
     client.poll_seconds = 0.05  # tight for the test budget
@@ -553,12 +494,7 @@ async def test_costs_screen_polls_for_live_refresh() -> None:
 
 
 class _LogsStubClient:
-    """Stub :class:`MetricsClient` driving ``list_logs`` from a
-    mutable list so tests can simulate live append by appending to
-    ``self.entries`` between Pilot pauses. ``poll_seconds`` is short
-    so the live-append assertion runs in well under a wall-clock
-    second.
-    """
+    """Stub :class:`MetricsClient` driving ``list_logs`` from a"""
 
     def __init__(self) -> None:
         self.entries: list[dict[str, Any]] = []
@@ -705,11 +641,7 @@ async def test_logs_filter_clears_on_escape(
 async def test_logs_polling_picks_up_new_entries(
     logs_app: tuple[TUIApp, _LogsStubClient],
 ) -> None:
-    """A new entry added after mount surfaces in LogTail within a
-    handful of poll ticks (poll_seconds=0.05 in the stub).
-    Synthetic-data-change-within-5s contract from REQ-VG-TUI-007's
-    Phase-5 half.
-    """
+    """A new entry added after mount surfaces in LogTail within a"""
     app, client = logs_app
     async with app.run_test() as pilot:
         await pilot.press("3")
@@ -732,15 +664,7 @@ async def test_logs_polling_picks_up_new_entries(
 
 
 class _ProvidersStubClient:
-    """Stub :class:`MetricsClient` for the Providers tests.
-
-    ``providers`` is a mutable list so the test can assert
-    rendering against a fixed shape; ``test_provider`` records
-    every call and returns whatever ``test_response`` carries.
-    Setting ``test_response`` to ``None`` makes the call raise
-    :class:`LocalModeUnsupportedError`, which models the LocalClient
-    behaviour without spinning up a SQLite fixture.
-    """
+    """Stub :class:`MetricsClient` for the Providers tests."""
 
     def __init__(self) -> None:
         self.providers: list[dict[str, Any]] = []
@@ -808,10 +732,7 @@ def providers_app() -> tuple[TUIApp, _ProvidersStubClient]:
 async def test_providers_renders_three_indicator_states(
     providers_app: tuple[TUIApp, _ProvidersStubClient],
 ) -> None:
-    """Three rows; one each of ok / fail / untested. Each row's
-    .status property normalises through to the documented set so
-    the indicator + CSS class match.
-    """
+    """Three rows; one each of ok / fail / untested. Each row's"""
     app, _ = providers_app
     async with app.run_test() as pilot:
         await pilot.press("4")
@@ -827,9 +748,7 @@ async def test_providers_renders_three_indicator_states(
 
 
 async def test_providers_empty_state_renders_static() -> None:
-    """An empty client mounts cleanly; the empty-state Static
-    appears in place of any rows.
-    """
+    """An empty client mounts cleanly; the empty-state Static"""
     client = _ProvidersStubClient()  # providers list left empty
     app = TUIApp(client=client, is_local=False)
     async with app.run_test() as pilot:
@@ -849,10 +768,7 @@ async def test_providers_empty_state_renders_static() -> None:
 async def test_providers_test_shortcut_updates_indicator_in_gateway_mode(
     providers_app: tuple[TUIApp, _ProvidersStubClient],
 ) -> None:
-    """``t`` on a focused row drives ``test_provider`` and the
-    indicator flips to the response's ``status`` (untested -> ok
-    in this fixture).
-    """
+    """``t`` on a focused row drives ``test_provider`` and the"""
     app, client = providers_app
     async with app.run_test() as pilot:
         await pilot.press("4")
@@ -871,14 +787,7 @@ async def test_providers_test_shortcut_updates_indicator_in_gateway_mode(
 
 
 async def test_providers_test_shortcut_shows_daemon_message_in_local_mode() -> None:
-    """In Local mode the stub raises ``LocalModeUnsupportedError``;
-    the row's status stays unchanged and no test_provider calls
-    are recorded against the response side because the exception
-    fires before a real call dispatches. The notification
-    surfaces via Textual's notify subsystem (visible to the user
-    in the running TUI; the assertion here is the contract that
-    the action did not silently mutate state).
-    """
+    """In Local mode the stub raises ``LocalModeUnsupportedError``;"""
     client = _ProvidersStubClient()
     client.providers.extend(_three_provider_fixture())
     client.test_response = None  # Trigger LocalModeUnsupportedError.
@@ -904,10 +813,7 @@ async def test_providers_test_shortcut_shows_daemon_message_in_local_mode() -> N
 async def test_providers_test_shortcut_with_no_focus_is_noop(
     providers_app: tuple[TUIApp, _ProvidersStubClient],
 ) -> None:
-    """Action falls through silently when the focused widget is
-    not a ProviderRow (e.g. focus is on the screen Container or
-    a header link). No test_provider calls.
-    """
+    """Action falls through silently when the focused widget is"""
     app, client = providers_app
     async with app.run_test() as pilot:
         await pilot.press("4")
@@ -926,10 +832,7 @@ async def test_providers_test_shortcut_with_no_focus_is_noop(
 async def test_vim_navigation_works_on_sessions_tab(
     populated_app: TUIApp,
 ) -> None:
-    """``g`` jumps to first row, ``j`` advances, ``G`` jumps to last,
-    ``k`` retreats. Wrap-around behaviour is part of the contract;
-    smoke-tested in iteration 32.
-    """
+    """``g`` jumps to first row, ``j`` advances, ``G`` jumps to last,"""
     async with populated_app.run_test() as pilot:
         await _settle(pilot)
         rows = list(populated_app.query(SessionRow))
@@ -971,10 +874,7 @@ async def test_vim_navigation_works_on_providers_tab(
 async def test_vim_navigation_h_l_aliases_on_list_screens(
     populated_app: TUIApp,
 ) -> None:
-    """``h`` aliases ``k`` (up) and ``l`` aliases ``j`` (down) on
-    list screens for vim muscle memory; ``show=False`` keeps them
-    out of the footer hint.
-    """
+    """``h`` aliases ``k`` (up) and ``l`` aliases ``j`` (down) on"""
     async with populated_app.run_test() as pilot:
         await _settle(pilot)
         rows = list(populated_app.query(SessionRow))
@@ -991,11 +891,7 @@ async def test_vim_navigation_h_l_aliases_on_list_screens(
 async def test_vim_navigation_on_logs_tab_dispatches_scroll_actions(
     logs_app: tuple[TUIApp, _LogsStubClient],
 ) -> None:
-    """LogsScreen has no row widgets; ``j``/``k``/``g``/``G`` map to
-    LogTail's ScrollView methods. The contract is "no exception on
-    dispatch" -- the visible scroll position depends on RichLog's
-    internal state which Pilot does not assert against directly.
-    """
+    """LogsScreen has no row widgets; ``j``/``k``/``g``/``G`` map to"""
     app, _ = logs_app
     async with app.run_test() as pilot:
         await pilot.press("3")
@@ -1012,11 +908,7 @@ async def test_vim_navigation_on_logs_tab_dispatches_scroll_actions(
 
 
 class _SessionsStubClient:
-    """Stub MetricsClient with a mutable sessions list so tests can
-    simulate live append by appending to ``self.sessions`` between
-    Pilot pauses. ``poll_seconds`` is short so the assertion runs
-    in well under a wall-clock second.
-    """
+    """Stub MetricsClient with a mutable sessions list so tests can"""
 
     def __init__(self) -> None:
         self.sessions: list[dict[str, Any]] = []
@@ -1051,12 +943,7 @@ class _SessionsStubClient:
 
 
 async def test_sessions_live_append_picks_up_new_session() -> None:
-    """A new session added to the stub mid-Pilot surfaces in the
-    rendered list within the documented 5 s budget. Pins the
-    second half of REQ-VG-TUI-007's "synthetic new session
-    appears" contract end-to-end through the TUIApp's polling
-    loop and SessionsScreen's focus-preserving rebuild.
-    """
+    """A new session added to the stub mid-Pilot surfaces in the"""
     client = _SessionsStubClient()
     client.sessions.append(
         {

@@ -1,14 +1,4 @@
-"""CLI gating tests for tests/fixtures/streaming/record_streaming_fixtures.py.
-
-These tests cover the default-deny gating: --record gates real API
-calls; --confirm gates past the cost-estimate dry-run. The actual
-recording bodies are not exercised here; they require real API
-keys and provider SDKs that live behind the recorder.
-
-Subprocess invocation is intentional. The script is meant to be
-run as a CLI; testing the full process boundary catches argparse
-wiring mistakes that an in-process import would miss.
-"""
+"""CLI gating tests for tests/fixtures/streaming/record_streaming_fixtures.py."""
 
 from __future__ import annotations
 
@@ -224,15 +214,7 @@ def test_all_flag_rejects_per_fixture_identity_flags() -> None:
 
 
 def test_all_flag_rejects_mode_flag() -> None:
-    """--all and --mode are mutually exclusive (regression: see Codex review).
-
-    Before this fix, --mode defaulted to "batch" so the mutex check
-    `args.provider or args.modality or args.model` was always falsy
-    against --mode. Running `--record --all --mode stream` would
-    quietly record all six fixtures (both batch and stream) instead
-    of erroring. The argparse default is now None and --mode is
-    explicitly rejected when --all is set.
-    """
+    """--all and --mode are mutually exclusive (regression: see Codex review)."""
     result = _run("--record", "--all", "--mode", "stream")
     assert result.returncode != 0, (
         "--all + --mode must reject; got returncode "
@@ -299,12 +281,7 @@ async def test_run_all_dispatches_each_fixture_in_documented_order(
 
 
 def test_all_flag_dry_run_makes_no_network_call() -> None:
-    """--record --all without --confirm exits cleanly even with no API keys.
-
-    The cost-estimate path uses only _COST_ESTIMATES_USD lookups; if it
-    tried to hit a provider, the missing API keys in this test process
-    would surface as a RuntimeError with non-zero exit.
-    """
+    """--record --all without --confirm exits cleanly even with no API keys."""
     import os
 
     env_no_keys = {

@@ -7,7 +7,9 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Final
 
-from voicegateway.repository import latency_observations
+from voicegateway.repository import (
+    latency_observations_repository as latency_observations,
+)
 
 if TYPE_CHECKING:
     from voicegateway.storage.sqlite import SQLiteStorage

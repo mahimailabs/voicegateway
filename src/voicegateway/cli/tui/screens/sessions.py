@@ -114,10 +114,7 @@ class SessionsScreen(FocusRowsMixin, Container):
     # -- Helpers -----------------------------------------------------
 
     def _header_text(self) -> str:
-        """Active-sort indicator. Brackets mark the live mode so the
-        plain-ASCII rendering reads unambiguously even on terminals
-        that drop styling.
-        """
+        """Active-sort indicator. Brackets mark the live mode so the"""
         if self._sort == _SORT_COST:
             return "Sessions  |  Sort:  time   [cost]   (press `s` to toggle)"
         return "Sessions  |  Sort: [time]   cost    (press `s` to toggle)"

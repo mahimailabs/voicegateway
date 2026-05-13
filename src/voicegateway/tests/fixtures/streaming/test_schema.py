@@ -1,10 +1,4 @@
-"""Unit tests for the StreamingFixture pydantic schema.
-
-These tests cover the schema itself, not real fixture files. They
-validate that the structural contract from design doc §3.1 is
-enforced on load: required fields, modality / mode literals,
-chunk-index ordering, expected_cost_usd type and sign.
-"""
+"""Unit tests for the StreamingFixture pydantic schema."""
 
 from __future__ import annotations
 

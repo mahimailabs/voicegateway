@@ -1,13 +1,4 @@
-"""ORM-based repository for :class:`voicegateway.models.virtual_key.VirtualKey`.
-
-Domain logic (plaintext key generation, bcrypt hashing) lives one layer
-up in :class:`voicegateway.services.virtual_key.VirtualKeyService`. This
-class deals only with data access.
-
-Coexists with the legacy function-based
-:mod:`voicegateway.repository.virtual_keys` against the same SQLite file
-during the migration window.
-"""
+"""ORM-based repository for :class:`voicegateway.models.virtual_key.VirtualKey`."""
 
 from __future__ import annotations
 
@@ -17,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import func, select
 
 from voicegateway.models.virtual_key import VirtualKey
-from voicegateway.repository.base import BaseRepository, SessionFactory
+from voicegateway.repository.base_repository import BaseRepository, SessionFactory
 
 
 class VirtualKeyRepository(BaseRepository[VirtualKey]):
@@ -29,11 +20,7 @@ class VirtualKeyRepository(BaseRepository[VirtualKey]):
     async def find_by_prefix(
         self, prefix: str, *, session: AsyncSession | None = None
     ) -> list[VirtualKey]:
-        """Return every row matching the visible 8-char prefix.
-
-        Used by the verify path: the caller iterates the candidates and
-        runs ``bcrypt.checkpw`` to find the one whose plaintext matches.
-        """
+        """Return every row matching the visible 8-char prefix."""
         async with self._session(session) as s:
             result = await s.execute(
                 select(VirtualKey).where(VirtualKey.key_prefix == prefix)

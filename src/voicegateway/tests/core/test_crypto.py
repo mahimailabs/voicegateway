@@ -123,11 +123,7 @@ def _generate_key() -> str:
 
 
 def test_fallback_decrypts_old_token(monkeypatch):
-    """A token encrypted under key A is still decryptable when A is
-    moved to VOICEGW_SECRET_FALLBACK and a new key B becomes the
-    primary VOICEGW_SECRET. Critical for the rotation window between
-    rolling out the new key and running ``voicegw rotate-secret``.
-    """
+    """A token encrypted under key A is still decryptable when A is"""
     old_key = _generate_key()
     monkeypatch.setenv("VOICEGW_SECRET", old_key)
     reset_fernet()
@@ -156,10 +152,7 @@ def test_decrypt_fails_when_neither_primary_nor_fallback_match(monkeypatch):
 
 
 def test_multiple_fallback_keys_separated_by_commas(monkeypatch):
-    """VOICEGW_SECRET_FALLBACK accepts a comma-separated list so an
-    operator can stage two consecutive rotations without losing
-    access to the oldest tokens.
-    """
+    """VOICEGW_SECRET_FALLBACK accepts a comma-separated list so an"""
     oldest = _generate_key()
     middle = _generate_key()
     newest = _generate_key()
@@ -197,11 +190,7 @@ def test_fallback_env_with_trailing_comma_is_tolerated(monkeypatch):
 
 
 def test_rotate_token_re_encrypts_under_primary(monkeypatch):
-    """rotate_token() decrypts via any configured key and re-encrypts
-    via the primary, returning a token the new primary alone can
-    read. After rotation, removing the fallback no longer breaks
-    decrypt.
-    """
+    """rotate_token() decrypts via any configured key and re-encrypts"""
     old_key = _generate_key()
     monkeypatch.setenv("VOICEGW_SECRET", old_key)
     reset_fernet()
@@ -241,10 +230,7 @@ def test_rotate_token_raises_when_no_key_decrypts(monkeypatch):
 
 
 def test_encrypt_uses_primary_when_fallback_set(monkeypatch):
-    """A token freshly encrypted with both primary and fallback set
-    must decrypt under the primary alone afterwards. Guards against
-    accidentally encrypting under the fallback.
-    """
+    """A token freshly encrypted with both primary and fallback set"""
     old_key = _generate_key()
     new_key = _generate_key()
     monkeypatch.setenv("VOICEGW_SECRET", new_key)
