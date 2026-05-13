@@ -69,7 +69,6 @@ COPY --chown=voicegw:voicegw voicegateway/ /app/voicegateway/
 COPY --chown=voicegw:voicegw dashboard/api/ /app/dashboard/api/
 COPY --chown=voicegw:voicegw dashboard/__init__.py /app/dashboard/
 COPY --from=frontend-builder --chown=voicegw:voicegw /build/frontend/dist /app/dashboard/frontend/dist
-COPY --chown=voicegw:voicegw voicegw.example.yaml /app/
 
 USER voicegw
 WORKDIR /app

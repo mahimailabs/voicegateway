@@ -1,8 +1,9 @@
 """``voicegw init`` command.
 
 Carved out of voicegateway/cli/_legacy.py during the v0.1.0 section-2
-refactor. Owns ``_PACKAGE_ROOT``, ``_EXAMPLE_CONFIG_CANDIDATES``, and
-``_find_example_config`` because they are only used here.
+refactor. The example config that init copies lives at
+``voicegateway/data/voicegw.example.yaml`` so the wheel always ships
+it and the repo root stays uncluttered.
 
 Importing this module triggers the ``@app.command()`` decorator on
 ``init``, registering the command on the shared Typer ``app``.
@@ -11,31 +12,21 @@ Importing this module triggers the ``@app.command()`` decorator on
 
 from __future__ import annotations
 
-import shutil
+from importlib import resources
 from pathlib import Path
 
 import typer
 
 from voicegateway.cli._app import app, console
 
-# Resolve the repo root from this submodule's location:
-#   voicegateway/cli/init.py -> voicegateway/cli -> voicegateway -> <root>
-# The example configs live at the repo root in source checkouts and at
-# the wheel's data root after install. ``resolve()`` makes the path
-# stable under symlinks and editable installs.
-_PACKAGE_ROOT = Path(__file__).resolve().parent.parent.parent
 
-_EXAMPLE_CONFIG_CANDIDATES = [
-    _PACKAGE_ROOT / "voicegw.example.yaml",
-    _PACKAGE_ROOT / "gateway.example.yaml",
-]
-
-
-def _find_example_config() -> Path | None:
-    for p in _EXAMPLE_CONFIG_CANDIDATES:
-        if p.exists():
-            return p
-    return None
+def _read_example_config() -> str:
+    """Return the canonical example config shipped with the wheel."""
+    return (
+        resources.files("voicegateway.data")
+        .joinpath("voicegw.example.yaml")
+        .read_text(encoding="utf-8")
+    )
 
 
 @app.command()
@@ -51,16 +42,6 @@ def init(
         if not overwrite:
             raise typer.Abort()
 
-    example = _find_example_config()
-    if example is not None:
-        shutil.copy(example, dest)
-    else:
-        dest.write_text(
-            "# VoiceGateway Configuration\n"
-            "# See: https://github.com/mahimailabs/voicegateway\n\n"
-            "providers: {}\nmodels:\n  stt: {}\n  llm: {}\n  tts: {}\n"
-            "projects: {}\n"
-        )
-
+    dest.write_text(_read_example_config(), encoding="utf-8")
     console.print(f"[green]Created {dest}[/green]")
     console.print("Edit it with your API keys, models, and projects.")

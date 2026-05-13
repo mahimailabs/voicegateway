@@ -149,9 +149,9 @@ the full 6-fixture run).
    uv pip install openai deepgram-sdk cartesia
    ```
 
-2. Set the API keys for whichever providers you are recording (see
-   `.env.fixtures.example` at the repo root for the variable
-   names):
+2. Set the API keys for whichever providers you are recording. The
+   recorder reads `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, and
+   `CARTESIA_API_KEY` (plus optional `CARTESIA_VOICE_ID`):
 
    ```bash
    export OPENAI_API_KEY=sk-...
@@ -297,5 +297,5 @@ traffic.
   recording the six minimum fixtures. Delete it in the same
   commit that lands them.
 - `scripts/record_streaming_fixtures.py` is the recorder.
-  `scripts/README.md` documents its usage and cost expectations.
-- `.env.fixtures.example` (repo root) lists the env vars.
+  `scripts/README.md` documents its usage, env vars, and cost
+  expectations.

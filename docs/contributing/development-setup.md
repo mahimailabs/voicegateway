@@ -175,8 +175,11 @@ voicegateway/
     test_*.py            # Test files
   docs/                  # Markdown docs source
   pyproject.toml         # Project metadata, dependencies, tool config
-  voicegw.example.yaml   # Example configuration
 ```
+
+The starter config template that `voicegw init` writes lives at
+`voicegateway/data/voicegw.example.yaml` (loaded via `importlib.resources`
+so the wheel ships it).
 
 ## Environment variables for development
 

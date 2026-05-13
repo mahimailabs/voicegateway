@@ -141,17 +141,17 @@ version-file = "voicegateway/_version.py"
 typeCheckingMode = "off"
 
 # Ruff is the single linter + formatter (replaces flake8, isort, Black).
-# Settings here must agree with .editorconfig at repo root: 4-space
-# indent, LF line endings, utf-8, trim trailing whitespace. The format
-# section below is explicit so the two tools are visibly in sync.
+# Format settings are declared explicitly below so the choice (4-space
+# indent, LF line endings, utf-8, trim trailing whitespace, 88-col line
+# length) is visible at a glance rather than relying on Ruff defaults.
 
 [tool.ruff]
 target-version = "py311"  # project's minimum Python (pyupgrade targets this)
-line-length = 88          # Black's default; mirrored in .editorconfig as max_line_length
+line-length = 88          # Black's default
 
 [tool.ruff.format]
-# Ruff defaults are correct here; declared explicitly so the agreement
-# with .editorconfig (LF, spaces, utf-8) is visible at a glance.
+# Ruff defaults are correct here; declared explicitly so the choice is
+# visible at a glance.
 indent-style = "space"
 line-ending = "lf"
 quote-style = "double"          # Black-compatible

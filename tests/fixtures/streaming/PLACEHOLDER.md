@@ -18,9 +18,9 @@ Delete this file in the same commit that lands the six fixtures.
    uv pip install -e ".[dev,openai,deepgram,cartesia]"
    ```
 
-2. Provider API keys exported in the shell. Either copy
-   `.env.fixtures.example` to `.env.fixtures` and source it, or
-   export them inline:
+2. Provider API keys exported in the shell. Either drop them into a
+   gitignored `.env.fixtures` file and source it, or export them
+   inline:
 
    ```bash
    set -a; source .env.fixtures; set +a

@@ -4,7 +4,7 @@ Create a `voicegw.yaml` configuration file from the bundled template.
 
 ## Purpose
 
-The `init` command scaffolds a new configuration file with example provider, model, and project definitions. This is the recommended first step when setting up VoiceGateway. If an example config ships with the installed package, it is copied directly; otherwise, a minimal skeleton is generated.
+The `init` command scaffolds a new configuration file with example provider, model, and project definitions. This is the recommended first step when setting up VoiceGateway. The starter template ships inside the wheel at `voicegateway/data/voicegw.example.yaml` and is copied verbatim to the output path.
 
 ## Syntax
 
@@ -21,8 +21,7 @@ voicegw init [OPTIONS]
 ## Behavior
 
 1. If the target file already exists, the CLI prompts for confirmation before overwriting.
-2. If the package includes `voicegw.example.yaml` (or the legacy `gateway.example.yaml`), that file is copied to the output path.
-3. If no example config is found, a minimal YAML skeleton is written with empty `providers`, `models`, and `projects` sections.
+2. The starter template bundled at `voicegateway/data/voicegw.example.yaml` is written to the output path.
 
 ## Examples
 
