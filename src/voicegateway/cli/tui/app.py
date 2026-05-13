@@ -25,6 +25,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widget import Widget
 from textual.widgets import ContentSwitcher, Footer
+from textual.worker import WorkerCancelled, WorkerFailed
 
 from voicegateway.cli.tui.data import MetricsClient
 from voicegateway.cli.tui.screens import (
@@ -122,9 +123,23 @@ class TUIApp(App[None]):
         yield Footer()
 
     async def on_unmount(self) -> None:
-        """Cancel background refresh workers and close the active client."""
+        """Cancel background refresh workers and close the active client.
+
+        Workers we just cancelled raise ``WorkerCancelled`` from
+        ``Worker.wait()``; under the test harness CI sometimes also sees
+        ``WorkerFailed`` if a worker observed cancellation mid-await.
+        Both are expected after ``cancel_all()`` so the per-worker drain
+        swallows them. Without this the random worker that happened to
+        be in-flight when ``run_test`` tore down propagated an exception
+        out of ``on_unmount`` and failed the test (observed on CI for
+        ``LogsScreen.refresh_data``).
+        """
         self.workers.cancel_all()
-        await self.workers.wait_for_complete()
+        for worker in list(self.workers):
+            try:
+                await worker.wait()
+            except (WorkerCancelled, WorkerFailed):
+                pass
         close = getattr(self.client, "aclose", None)
         if close is not None:
             await close()
