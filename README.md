@@ -185,8 +185,6 @@ docker compose up -d                      # core + dashboard
 docker compose --profile local up -d      # + Ollama for local LLMs
 ```
 
-One-command Fly.io deploy: `./deploy/fly/deploy.sh`. [Deployment guide →](deploy/fly/README.md)
-
 ## 🌐 HTTP API
 
 ```bash

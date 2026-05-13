@@ -1,7 +1,7 @@
 """Combined server — runs API, Dashboard, and MCP SSE on a single port.
 
-Used for Fly.io and other single-process deployments where multiple ports
-are not practical. Mounts:
+Used for single-process deployments where multiple ports are not
+practical. Mounts:
   /          → Dashboard (Vite-built frontend)
   /health    → Health check
   /v1/*      → HTTP API

@@ -7,10 +7,6 @@ src/voicegateway/_version.py
 .playwright-mcp
 .DS_Store
 
-# Fly.io deploy
-deploy/fly/.env.deploy
-deploy/fly/.fly/
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
