@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from voicegateway.schemas.guardrail_policy import GuardrailPolicy
+from voicegateway.schemas.guardrail_policy_schema import GuardrailPolicy
 
 _ENV_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
@@ -192,7 +192,7 @@ class GatewayConfig:
         """Validate raw config dict against the Pydantic schema."""
         from pydantic import ValidationError
 
-        from voicegateway.schemas.config import VoiceGatewayConfig
+        from voicegateway.schemas.config_schema import VoiceGatewayConfig
 
         try:
             VoiceGatewayConfig.model_validate(raw)

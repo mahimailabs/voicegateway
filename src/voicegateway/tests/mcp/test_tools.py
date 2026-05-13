@@ -8,9 +8,9 @@ import uuid
 import pytest
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.mcp.errors import ModelNotFoundError, ValidationError
-from voicegateway.mcp.tools import ALL_TOOLS
-from voicegateway.models.request import RequestRecord
+from voicegateway.models.request_model import RequestRecord
+from voicegateway.server.mcp.errors import ModelNotFoundError, ValidationError
+from voicegateway.server.mcp.tools import ALL_TOOLS
 
 
 @pytest.fixture
@@ -207,7 +207,7 @@ async def test_get_provider_yaml(gateway):
 
 
 async def test_get_provider_not_found(gateway):
-    from voicegateway.mcp.errors import ProviderNotFoundError
+    from voicegateway.server.mcp.errors import ProviderNotFoundError
 
     tool = _tool("get_provider")
     with pytest.raises(ProviderNotFoundError):
@@ -215,7 +215,7 @@ async def test_get_provider_not_found(gateway):
 
 
 async def test_add_provider_yaml_conflict(gateway):
-    from voicegateway.mcp.errors import ProviderAlreadyExistsError
+    from voicegateway.server.mcp.errors import ProviderAlreadyExistsError
 
     tool = _tool("add_provider")
     with pytest.raises(ProviderAlreadyExistsError):
@@ -259,7 +259,7 @@ async def test_add_provider_local_succeeds(gateway):
 
 
 async def test_delete_provider_yaml_readonly(gateway):
-    from voicegateway.mcp.errors import ReadOnlyResourceError
+    from voicegateway.server.mcp.errors import ReadOnlyResourceError
 
     tool = _tool("delete_provider")
     with pytest.raises(ReadOnlyResourceError):
@@ -267,7 +267,7 @@ async def test_delete_provider_yaml_readonly(gateway):
 
 
 async def test_delete_provider_not_found(gateway):
-    from voicegateway.mcp.errors import ProviderNotFoundError
+    from voicegateway.server.mcp.errors import ProviderNotFoundError
 
     tool = _tool("delete_provider")
     with pytest.raises(ProviderNotFoundError):
@@ -275,7 +275,7 @@ async def test_delete_provider_not_found(gateway):
 
 
 async def test_delete_provider_requires_confirm(gateway):
-    from voicegateway.mcp.errors import ConfirmationRequiredError
+    from voicegateway.server.mcp.errors import ConfirmationRequiredError
 
     # First add a managed one
     add_tool = _tool("add_provider")
@@ -313,7 +313,7 @@ async def test_delete_provider_with_confirm(gateway):
 
 
 async def test_test_provider_not_found(gateway):
-    from voicegateway.mcp.errors import ProviderNotFoundError
+    from voicegateway.server.mcp.errors import ProviderNotFoundError
 
     tool = _tool("test_provider")
     with pytest.raises(ProviderNotFoundError):
@@ -361,7 +361,7 @@ async def test_register_model_new(gateway):
 
 
 async def test_register_model_yaml_conflict(gateway):
-    from voicegateway.mcp.errors import ModelAlreadyExistsError
+    from voicegateway.server.mcp.errors import ModelAlreadyExistsError
 
     tool = _tool("register_model")
     with pytest.raises(ModelAlreadyExistsError):
@@ -376,7 +376,7 @@ async def test_register_model_yaml_conflict(gateway):
 
 
 async def test_register_model_unknown_provider(gateway):
-    from voicegateway.mcp.errors import ProviderNotFoundError
+    from voicegateway.server.mcp.errors import ProviderNotFoundError
 
     tool = _tool("register_model")
     with pytest.raises(ProviderNotFoundError):
@@ -391,7 +391,7 @@ async def test_register_model_unknown_provider(gateway):
 
 
 async def test_delete_model_yaml_readonly(gateway):
-    from voicegateway.mcp.errors import ReadOnlyResourceError
+    from voicegateway.server.mcp.errors import ReadOnlyResourceError
 
     tool = _tool("delete_model")
     with pytest.raises(ReadOnlyResourceError):
@@ -410,7 +410,7 @@ async def test_delete_model_confirm_flow(gateway):
         },
     )
 
-    from voicegateway.mcp.errors import ConfirmationRequiredError
+    from voicegateway.server.mcp.errors import ConfirmationRequiredError
 
     del_tool = _tool("delete_model")
     with pytest.raises(ConfirmationRequiredError):
@@ -425,7 +425,7 @@ async def test_delete_model_confirm_flow(gateway):
 
 
 async def test_delete_model_not_found(gateway):
-    from voicegateway.mcp.errors import ModelNotFoundError
+    from voicegateway.server.mcp.errors import ModelNotFoundError
 
     tool = _tool("delete_model")
     with pytest.raises(ModelNotFoundError):
@@ -453,7 +453,7 @@ async def test_get_project_yaml(gateway):
 
 
 async def test_get_project_not_found(gateway):
-    from voicegateway.mcp.errors import ProjectNotFoundError
+    from voicegateway.server.mcp.errors import ProjectNotFoundError
 
     tool = _tool("get_project")
     with pytest.raises(ProjectNotFoundError):
@@ -477,7 +477,7 @@ async def test_create_project_happy_path(gateway):
 
 
 async def test_create_project_conflict(gateway):
-    from voicegateway.mcp.errors import ProjectAlreadyExistsError
+    from voicegateway.server.mcp.errors import ProjectAlreadyExistsError
 
     tool = _tool("create_project")
     with pytest.raises(ProjectAlreadyExistsError):
@@ -531,7 +531,7 @@ async def test_create_project_negative_budget(gateway):
 
 
 async def test_delete_project_yaml_readonly(gateway):
-    from voicegateway.mcp.errors import ReadOnlyResourceError
+    from voicegateway.server.mcp.errors import ReadOnlyResourceError
 
     tool = _tool("delete_project")
     with pytest.raises(ReadOnlyResourceError):
@@ -539,7 +539,7 @@ async def test_delete_project_yaml_readonly(gateway):
 
 
 async def test_delete_project_confirm_flow(gateway):
-    from voicegateway.mcp.errors import ConfirmationRequiredError
+    from voicegateway.server.mcp.errors import ConfirmationRequiredError
 
     create = _tool("create_project")
     await create.handler(gateway, {"project_id": "delete-me", "name": "Del"})
@@ -553,7 +553,7 @@ async def test_delete_project_confirm_flow(gateway):
 
 
 async def test_delete_project_not_found(gateway):
-    from voicegateway.mcp.errors import ProjectNotFoundError
+    from voicegateway.server.mcp.errors import ProjectNotFoundError
 
     tool = _tool("delete_project")
     with pytest.raises(ProjectNotFoundError):

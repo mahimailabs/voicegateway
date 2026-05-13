@@ -17,7 +17,7 @@ import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.mcp.server import create_server
+from voicegateway.server.mcp.server import create_server
 
 
 @pytest.fixture

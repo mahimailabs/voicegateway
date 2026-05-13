@@ -5,7 +5,13 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-from voicegateway.mcp.errors import (
+from voicegateway.schemas.mcp.projects_schema import (
+    CreateProjectInput,
+    DeleteProjectInput,
+    GetProjectInput,
+    ListProjectsInput,
+)
+from voicegateway.server.mcp.errors import (
     ConfirmationRequiredError,
     ModelNotFoundError,
     ProjectAlreadyExistsError,
@@ -13,13 +19,7 @@ from voicegateway.mcp.errors import (
     ReadOnlyResourceError,
     ValidationError,
 )
-from voicegateway.mcp.tools.base import ToolDef, make_tool
-from voicegateway.schemas.mcp import (
-    CreateProjectInput,
-    DeleteProjectInput,
-    GetProjectInput,
-    ListProjectsInput,
-)
+from voicegateway.server.mcp.tools.base import ToolDef, make_tool
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway

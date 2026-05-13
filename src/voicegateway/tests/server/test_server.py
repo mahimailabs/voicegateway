@@ -115,7 +115,7 @@ async def test_v1_costs_includes_pricing_source_by_default(client, gateway):
     import time
     import uuid
 
-    from voicegateway.models.request import RequestRecord
+    from voicegateway.models.request_model import RequestRecord
 
     await gateway.storage.log_request(
         RequestRecord(
@@ -147,7 +147,7 @@ async def test_v1_costs_pricing_source_opt_out(client, gateway):
     import time
     import uuid
 
-    from voicegateway.models.request import RequestRecord
+    from voicegateway.models.request_model import RequestRecord
 
     await gateway.storage.log_request(
         RequestRecord(
@@ -259,7 +259,7 @@ async def test_v1_costs_combined_query_params(client, gateway):
     import datetime as _dt
     import uuid
 
-    from voicegateway.models.request import RequestRecord
+    from voicegateway.models.request_model import RequestRecord
 
     today = _dt.date.today()
     in_window = _dt.datetime.combine(today, _dt.time(12, 0)).timestamp()
@@ -340,7 +340,7 @@ async def test_v1_costs_window_overrides_period_at_data_layer(client, gateway):
     import datetime as _dt
     import uuid
 
-    from voicegateway.models.request import RequestRecord
+    from voicegateway.models.request_model import RequestRecord
 
     today = _dt.date.today()
     # Record from 5 days ago - outside `period=today` but inside the
@@ -437,7 +437,7 @@ async def test_v1_latency_includes_percentiles(client, gateway):
     """/v1/latency now returns percentile buckets per model."""
     import uuid
 
-    from voicegateway.models.request import RequestRecord
+    from voicegateway.models.request_model import RequestRecord
 
     now = _midday_today()
     for i in range(1, 21):
@@ -463,7 +463,7 @@ async def test_v1_latency_includes_percentiles(client, gateway):
 async def test_v1_metrics_emits_latency_summary(client, gateway):
     import uuid
 
-    from voicegateway.models.request import RequestRecord
+    from voicegateway.models.request_model import RequestRecord
 
     now = _midday_today()
     for i in range(1, 11):

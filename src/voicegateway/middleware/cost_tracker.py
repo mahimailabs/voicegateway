@@ -7,7 +7,7 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from voicegateway.models.request import RequestRecord
+from voicegateway.models.request_model import RequestRecord
 from voicegateway.pricing import catalog
 
 if TYPE_CHECKING:

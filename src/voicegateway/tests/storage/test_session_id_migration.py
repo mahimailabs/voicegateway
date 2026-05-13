@@ -6,7 +6,7 @@ import sqlite3
 import time
 import uuid
 
-from voicegateway.models.request import RequestRecord
+from voicegateway.models.request_model import RequestRecord
 from voicegateway.storage.sqlite import SQLiteStorage
 
 # v0.0.4 schema fragment for the requests table — verbatim from before

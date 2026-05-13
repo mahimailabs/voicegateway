@@ -5,7 +5,7 @@ import uuid
 
 import pytest
 
-from voicegateway.models.request import RequestRecord
+from voicegateway.models.request_model import RequestRecord
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

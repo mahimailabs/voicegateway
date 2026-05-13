@@ -13,12 +13,12 @@ import yaml
 
 from voicegateway.core.crypto import decrypt
 from voicegateway.core.gateway import Gateway
-from voicegateway.mcp.errors import (
+from voicegateway.server.mcp.errors import (
     ProviderNotFoundError,
     ReadOnlyResourceError,
     ValidationError,
 )
-from voicegateway.mcp.tools import ALL_TOOLS
+from voicegateway.server.mcp.tools import ALL_TOOLS
 
 
 def _tool(name: str):

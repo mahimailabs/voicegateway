@@ -27,8 +27,8 @@ def build_combined_app(gateway: Gateway) -> Any:
         from starlette.responses import JSONResponse, Response
         from starlette.routing import Mount, Route
 
-        from voicegateway.mcp.auth import AuthError, check_authorization_header
-        from voicegateway.mcp.server import create_server
+        from voicegateway.server.mcp.auth import AuthError, check_authorization_header
+        from voicegateway.server.mcp.server import create_server
 
         mcp_server = create_server(gateway)
         sse = SseServerTransport("/mcp/messages/")

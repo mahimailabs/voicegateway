@@ -63,7 +63,7 @@ async def test_api_costs_includes_pricing_source(client, gateway):
     import time
     import uuid
 
-    from voicegateway.models.request import RequestRecord
+    from voicegateway.models.request_model import RequestRecord
 
     await gateway.storage.log_request(
         RequestRecord(
@@ -103,7 +103,7 @@ async def _seed_session_request(
     import time
     import uuid
 
-    from voicegateway.models.request import RequestRecord
+    from voicegateway.models.request_model import RequestRecord
 
     await storage.log_request(
         RequestRecord(

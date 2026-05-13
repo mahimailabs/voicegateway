@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 import yaml
 
-from voicegateway.models.request import RequestRecord
+from voicegateway.models.request_model import RequestRecord
 
 
 @pytest.fixture(autouse=True)

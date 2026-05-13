@@ -7,7 +7,7 @@ import yaml
 from pydantic import ValidationError
 
 from voicegateway.core.config import GatewayConfig
-from voicegateway.schemas.guardrail_policy import (
+from voicegateway.schemas.guardrail_policy_schema import (
     GUARDRAIL_CATEGORIES,
     GuardrailPolicy,
 )

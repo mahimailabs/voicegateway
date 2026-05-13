@@ -16,7 +16,7 @@ from voicegateway.inference._session_context import (
 )
 from voicegateway.middleware.cost_tracker import CostTracker
 from voicegateway.middleware.instrumented_provider import wrap_provider
-from voicegateway.models.request import RequestRecord
+from voicegateway.models.request_model import RequestRecord
 from voicegateway.storage.sqlite import SQLiteStorage
 
 # ---------------------------------------------------------------------------

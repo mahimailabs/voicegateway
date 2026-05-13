@@ -24,7 +24,7 @@ class Container(containers.DeclarativeContainer):
 
     wiring_config = containers.WiringConfiguration(
         modules=[
-            "voicegateway.server.routes.virtual_keys",
+            "voicegateway.server.api.virtual_keys",
         ],
     )
 

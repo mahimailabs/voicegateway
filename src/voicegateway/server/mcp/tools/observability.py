@@ -6,15 +6,15 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from voicegateway import __version__ as VOICEGW_VERSION
-from voicegateway.mcp.errors import ValidationError
-from voicegateway.mcp.tools.base import ToolDef, make_tool
-from voicegateway.schemas.mcp import (
+from voicegateway.schemas.mcp.observability_schema import (
     GetCostsInput,
     GetHealthInput,
     GetLatencyStatsInput,
     GetLogsInput,
     GetProviderStatusInput,
 )
+from voicegateway.server.mcp.errors import ValidationError
+from voicegateway.server.mcp.tools.base import ToolDef, make_tool
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway

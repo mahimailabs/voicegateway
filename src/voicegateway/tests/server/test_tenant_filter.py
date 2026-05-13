@@ -8,7 +8,7 @@ from voicegateway.inference._session_context import (
     reset_tenant_id,
     set_tenant,
 )
-from voicegateway.models.request import RequestRecord
+from voicegateway.models.request_model import RequestRecord
 from voicegateway.storage.sqlite import SQLiteStorage
 
 

@@ -1,4 +1,4 @@
-"""Unit tests for the small helpers in voicegateway.mcp.server.
+"""Unit tests for the small helpers in voicegateway.server.mcp.server.
 
 `_format_tool_error` and `_format_tool_result` are leaf helpers that
 serialize tool outputs into the MCP transport-friendly JSON shape.
@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import json
 
-from voicegateway.mcp.errors import MCPToolError, ProviderNotFoundError
-from voicegateway.mcp.server import _format_tool_error, _format_tool_result
+from voicegateway.server.mcp.errors import MCPToolError, ProviderNotFoundError
+from voicegateway.server.mcp.server import _format_tool_error, _format_tool_result
 
 
 def test_format_tool_error_with_mcp_tool_error_uses_to_dict() -> None:
