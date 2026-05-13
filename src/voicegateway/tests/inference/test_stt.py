@@ -1,4 +1,4 @@
-"""Tests for voicegateway.inference._stt.STT."""
+"""Tests for voicegateway.inference.stt.STT."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ import pytest
 import yaml
 from livekit.agents.types import NOT_GIVEN
 
-from voicegateway.inference import _factory, _stt
-from voicegateway.inference._resolution import ModelResolutionError
-from voicegateway.inference._session_context import get_session_id
+from voicegateway.inference import factory, stt
+from voicegateway.inference.resolution import ModelResolutionError
+from voicegateway.inference.session.context import get_session_id
 
 # ---------------------------------------------------------------------------
 # Fakes
@@ -64,14 +64,14 @@ class _FakeProvider:
 
 @pytest.fixture
 def fake_provider(monkeypatch):
-    """Replace _stt.create_provider with one that returns _FakeProvider."""
+    """Replace stt.create_provider with one that returns _FakeProvider."""
     _FakeProvider.last_config = None
     _FakeProvider.last_create_stt = None
 
     def _create(provider_name: str, config: dict[str, Any]) -> _FakeProvider:
         return _FakeProvider(config)
 
-    monkeypatch.setattr(_stt, "create_provider", _create)
+    monkeypatch.setattr(stt, "create_provider", _create)
     return _FakeProvider
 
 
@@ -95,7 +95,7 @@ def configured_gateway(tmp_path, monkeypatch):
     from voicegateway.core.gateway import Gateway
 
     gw = Gateway(config_path=str(config_path))
-    monkeypatch.setattr(_factory, "_gateway", gw)
+    monkeypatch.setattr(factory, "_gateway", gw)
     return gw
 
 
@@ -106,7 +106,7 @@ def configured_gateway(tmp_path, monkeypatch):
 
 class TestConstructorAcceptsLkSignatureParams:
     def test_minimal_call_with_only_model(self, configured_gateway, fake_provider):
-        result = _stt.STT("deepgram/nova-3")
+        result = stt.STT("deepgram/nova-3")
         # InstrumentedSTT is what wrap_provider returns; the underlying
         # _wrapped is the _FakeSTT we stubbed.
         assert result.__class__.__name__ == "InstrumentedSTT"
@@ -118,7 +118,7 @@ class TestConstructorAcceptsLkSignatureParams:
         # warnings for parameters not yet honored.
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            result = _stt.STT(
+            result = stt.STT(
                 "deepgram/nova-3",
                 language="en",
                 base_url="https://example.test",
@@ -136,36 +136,36 @@ class TestConstructorAcceptsLkSignatureParams:
 
 class TestModelResolution:
     def test_language_suffix_extracted(self, configured_gateway, fake_provider):
-        _stt.STT("deepgram/nova-3:en")
+        stt.STT("deepgram/nova-3:en")
         assert fake_provider.last_create_stt["language"] == "en"
         assert fake_provider.last_create_stt["model"] == "nova-3"
 
     def test_explicit_language_wins_over_suffix(
         self, configured_gateway, fake_provider
     ):
-        _stt.STT("deepgram/nova-3:en", language="de")
+        stt.STT("deepgram/nova-3:en", language="de")
         assert fake_provider.last_create_stt["language"] == "de"
 
     def test_no_colon_no_language(self, configured_gateway, fake_provider):
-        _stt.STT("deepgram/nova-3")
+        stt.STT("deepgram/nova-3")
         assert "language" not in fake_provider.last_create_stt
 
     def test_missing_model_raises(self, configured_gateway, fake_provider):
         with pytest.raises(ValueError, match="provider/model"):
-            _stt.STT()
+            stt.STT()
 
     def test_not_given_model_raises(self, configured_gateway, fake_provider):
         with pytest.raises(ValueError, match="provider/model"):
-            _stt.STT(NOT_GIVEN)
+            stt.STT(NOT_GIVEN)
 
     def test_unknown_provider_raises(self, configured_gateway, fake_provider):
         with pytest.raises(ModelResolutionError, match="Unknown provider"):
-            _stt.STT("not-a-real-co/whisper")
+            stt.STT("not-a-real-co/whisper")
 
 
 class TestKwargForwarding:
     def test_extra_kwargs_spread_to_create_stt(self, configured_gateway, fake_provider):
-        _stt.STT(
+        stt.STT(
             "deepgram/nova-3",
             extra_kwargs={"keyterm": ["livekit", "agent"], "smart_format": True},
         )
@@ -175,12 +175,12 @@ class TestKwargForwarding:
     def test_encoding_and_sample_rate_forwarded(
         self, configured_gateway, fake_provider
     ):
-        _stt.STT("deepgram/nova-3", encoding="pcm_s16le", sample_rate=24000)
+        stt.STT("deepgram/nova-3", encoding="pcm_s16le", sample_rate=24000)
         assert fake_provider.last_create_stt["encoding"] == "pcm_s16le"
         assert fake_provider.last_create_stt["sample_rate"] == 24000
 
     def test_omitted_params_not_forwarded(self, configured_gateway, fake_provider):
-        _stt.STT("deepgram/nova-3")
+        stt.STT("deepgram/nova-3")
         # Only `model` should appear; nothing else should be passed through
         # implicitly (NOT_GIVEN sentinels must NOT appear as kwargs).
         assert set(fake_provider.last_create_stt) == {"model"}
@@ -188,13 +188,13 @@ class TestKwargForwarding:
 
 class TestApiKeyOverride:
     def test_override_replaces_yaml_key(self, configured_gateway, fake_provider):
-        _stt.STT("deepgram/nova-3", api_key="per-call-override")
+        stt.STT("deepgram/nova-3", api_key="per-call-override")
         # The fake provider's __init__ recorded the config dict; the
         # api_key field should be the per-call override, not the YAML one.
         assert fake_provider.last_config["api_key"] == "per-call-override"
 
     def test_no_override_uses_yaml_key(self, configured_gateway, fake_provider):
-        _stt.STT("deepgram/nova-3")
+        stt.STT("deepgram/nova-3")
         assert fake_provider.last_config["api_key"] == "from-yaml-deepgram-key"
 
 
@@ -204,7 +204,7 @@ class TestSessionCorrelation:
         # in the conftest doesn't fight the assertion.
         def _scenario():
             assert get_session_id() is None
-            _stt.STT("deepgram/nova-3")
+            stt.STT("deepgram/nova-3")
             return get_session_id()
 
         sid = contextvars.copy_context().run(_scenario)
@@ -215,9 +215,9 @@ class TestSessionCorrelation:
         self, configured_gateway, fake_provider
     ):
         def _scenario():
-            _stt.STT("deepgram/nova-3")
+            stt.STT("deepgram/nova-3")
             first = get_session_id()
-            _stt.STT("deepgram/nova-3")
+            stt.STT("deepgram/nova-3")
             second = get_session_id()
             return first, second
 
@@ -230,20 +230,20 @@ class TestUnsupportedParamWarnings:
     def test_api_secret_warns(self, configured_gateway, fake_provider):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            _stt.STT("deepgram/nova-3", api_secret="ignored")
+            stt.STT("deepgram/nova-3", api_secret="ignored")
         messages = [str(w.message) for w in caught]
         assert any("api_secret" in m for m in messages)
 
     def test_fallback_warns(self, configured_gateway, fake_provider):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            _stt.STT("deepgram/nova-3", fallback="cartesia/ink-whisper")
+            stt.STT("deepgram/nova-3", fallback="cartesia/ink-whisper")
         messages = [str(w.message) for w in caught]
         assert any("fallback" in m for m in messages)
 
     def test_conn_options_warns(self, configured_gateway, fake_provider):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            _stt.STT("deepgram/nova-3", conn_options="anything")
+            stt.STT("deepgram/nova-3", conn_options="anything")
         messages = [str(w.message) for w in caught]
         assert any("conn_options" in m for m in messages)

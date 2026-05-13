@@ -13,7 +13,7 @@ from typing import Any
 
 import aiosqlite
 
-from voicegateway.inference._session_context import (
+from voicegateway.inference.session.context import (
     current_guardrail_policy_snapshot,
     current_guardrails_bypassed,
     current_routing_decision,

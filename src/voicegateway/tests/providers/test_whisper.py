@@ -2,7 +2,7 @@
 
 import pytest
 
-from voicegateway.providers.whisper_provider import WhisperProvider
+from voicegateway.inference.providers.whisper_provider import WhisperProvider
 
 
 def test_whisper_defaults():
@@ -39,7 +39,7 @@ def test_whisper_pricing_zero():
     """Local Whisper STT prices at $0 via the unified catalog."""
     from decimal import Decimal
 
-    from voicegateway.pricing import catalog
+    from voicegateway.inference.pricing import catalog
 
     cost = catalog.calculate_cost("stt", "local/whisper-large-v3", audio_seconds=60)
     assert cost == Decimal("0")

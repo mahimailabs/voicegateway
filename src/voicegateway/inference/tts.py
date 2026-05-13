@@ -19,11 +19,11 @@ from livekit.agents.types import (
 from livekit.agents.utils import is_given
 
 from voicegateway.core.registry import create_provider
-from voicegateway.inference._factory import get_gateway
-from voicegateway.inference._project import get_active_project
-from voicegateway.inference._resolution import resolve_model
-from voicegateway.inference._session_context import get_or_create_session_id
-from voicegateway.inference._stt import _assert_key_resolved, _resolve_provider_config
+from voicegateway.inference.factory import get_gateway
+from voicegateway.inference.project import get_active_project
+from voicegateway.inference.resolution import resolve_model
+from voicegateway.inference.session.context import get_or_create_session_id
+from voicegateway.inference.stt import _assert_key_resolved, _resolve_provider_config
 from voicegateway.middleware.instrumented_provider import wrap_provider
 
 

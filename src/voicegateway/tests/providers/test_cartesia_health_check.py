@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from voicegateway.providers.cartesia_provider import CartesiaProvider
+from voicegateway.inference.providers.cartesia_provider import CartesiaProvider
 
 
 def _make_async_client_mock(status_code: int = 200) -> MagicMock:

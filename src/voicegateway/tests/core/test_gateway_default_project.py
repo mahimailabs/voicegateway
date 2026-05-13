@@ -5,8 +5,8 @@ from __future__ import annotations
 import yaml
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.inference import _factory, _project, _stt
-from voicegateway.inference._project import get_active_project
+from voicegateway.inference import factory, project, stt
+from voicegateway.inference.project import get_active_project
 
 
 def _write_config(tmp_path, **overrides):
@@ -93,9 +93,9 @@ def test_inference_falls_through_to_default_with_named_projects(tmp_path, monkey
         providers={"openai": {"api_key": "global-fallback"}},
     )
     gw = Gateway(config_path=cfg_path)
-    monkeypatch.setattr(_factory, "_gateway", gw)
+    monkeypatch.setattr(factory, "_gateway", gw)
     monkeypatch.delenv("VOICEGW_ACTIVE_PROJECT", raising=False)
-    _project.reset_project()
+    project.reset_project()
 
     captured: dict = {}
 
@@ -136,11 +136,11 @@ def test_inference_falls_through_to_default_with_named_projects(tmp_path, monkey
             return True
 
     monkeypatch.setattr(
-        _stt, "create_provider", lambda _name, config: _FakeProvider(config)
+        stt, "create_provider", lambda _name, config: _FakeProvider(config)
     )
 
     assert get_active_project() == "default"
-    _stt.STT("openai/whisper-1")
+    stt.STT("openai/whisper-1")
     assert captured["api_key"] == "global-fallback"
 
 

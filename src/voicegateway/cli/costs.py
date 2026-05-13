@@ -55,9 +55,9 @@ def costs(
     if not summary["by_provider"]:
         console.print("[dim]No requests recorded yet.[/dim]")
 
-    from voicegateway.pricing import llm as _llm_pricing
-    from voicegateway.pricing import stt as _stt_pricing
-    from voicegateway.pricing import tts as _tts_pricing
+    from voicegateway.inference.pricing import llm as _llm_pricing
+    from voicegateway.inference.pricing import stt as _stt_pricing
+    from voicegateway.inference.pricing import tts as _tts_pricing
 
     sources = (
         f"LLM: {_llm_pricing.PRICING_SOURCE} | "

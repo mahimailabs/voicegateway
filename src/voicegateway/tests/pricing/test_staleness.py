@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from voicegateway.pricing.stt import CATALOG as STT_CATALOG
-from voicegateway.pricing.tts import CATALOG as TTS_CATALOG
+from voicegateway.inference.pricing.stt import CATALOG as STT_CATALOG
+from voicegateway.inference.pricing.tts import CATALOG as TTS_CATALOG
 
 _MAX_AGE_DAYS = 60
 

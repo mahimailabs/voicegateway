@@ -7,7 +7,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any, Final
 
-from voicegateway.inference._session_context import get_session_id
+from voicegateway.inference.session.context import get_session_id
 from voicegateway.schemas.state_snapshot_schema import StateSnapshot
 
 logger = logging.getLogger(__name__)

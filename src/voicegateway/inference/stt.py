@@ -20,10 +20,10 @@ from livekit.agents.utils import is_given
 
 from voicegateway.core.config import ConfigError
 from voicegateway.core.registry import create_provider
-from voicegateway.inference._factory import get_gateway
-from voicegateway.inference._project import get_active_project
-from voicegateway.inference._resolution import resolve_model
-from voicegateway.inference._session_context import get_or_create_session_id
+from voicegateway.inference.factory import get_gateway
+from voicegateway.inference.project import get_active_project
+from voicegateway.inference.resolution import resolve_model
+from voicegateway.inference.session.context import get_or_create_session_id
 from voicegateway.middleware.instrumented_provider import wrap_provider
 
 _LOCAL_PROVIDERS = frozenset({"ollama", "whisper", "kokoro", "piper"})

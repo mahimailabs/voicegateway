@@ -125,7 +125,7 @@ async def test_openai_batch_expected_cost_matches_catalog(
     recorder: ModuleType,
 ) -> None:
     """expected_cost_usd is computed via the pricing catalog at recording time."""
-    from voicegateway.pricing.catalog import calculate_cost
+    from voicegateway.inference.pricing.catalog import calculate_cost
 
     response_payload = _openai_batch_response(input_tokens=18, output_tokens=8)
     async with respx.mock(assert_all_called=True) as router:

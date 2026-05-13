@@ -1,10 +1,10 @@
-"""Tests for voicegateway.inference._resolution.resolve_model."""
+"""Tests for voicegateway.inference.resolution.resolve_model."""
 
 from __future__ import annotations
 
 import pytest
 
-from voicegateway.inference._resolution import ModelResolutionError, resolve_model
+from voicegateway.inference.resolution import ModelResolutionError, resolve_model
 
 
 class TestHappyPath:
@@ -16,7 +16,7 @@ class TestHappyPath:
 
     def test_internal_colons_preserved_for_ollama_tags(self):
         # Ollama uses ":3b" style tags as part of the model name. resolve_model
-        # MUST NOT strip them; that is _stt/_tts colon-suffix territory only.
+        # MUST NOT strip them; that is stt/tts colon-suffix territory only.
         assert resolve_model("ollama/qwen2.5:3b") == ("ollama", "qwen2.5:3b")
 
     def test_internal_colons_preserved_for_tts_voice(self):

@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 import yaml
 
-from voicegateway.inference import _factory, _llm, _project, _stt, _tts
+from voicegateway.inference import factory, llm, project, stt, tts
 
 
 class _FakeProvider:
@@ -55,9 +55,9 @@ class _Stub:
 @pytest.fixture(autouse=True)
 def _reset_state(monkeypatch):
     monkeypatch.delenv("VOICEGW_ACTIVE_PROJECT", raising=False)
-    _project.reset_project()
+    project.reset_project()
     yield
-    _project.reset_project()
+    project.reset_project()
 
 
 @pytest.fixture
@@ -67,9 +67,9 @@ def fake_providers(monkeypatch):
     def _create(_provider_name: str, config: dict[str, Any]) -> _FakeProvider:
         return _FakeProvider(config)
 
-    monkeypatch.setattr(_stt, "create_provider", _create)
-    monkeypatch.setattr(_llm, "create_provider", _create)
-    monkeypatch.setattr(_tts, "create_provider", _create)
+    monkeypatch.setattr(stt, "create_provider", _create)
+    monkeypatch.setattr(llm, "create_provider", _create)
+    monkeypatch.setattr(tts, "create_provider", _create)
     return _FakeProvider
 
 
@@ -102,7 +102,7 @@ def _build_gateway(tmp_path, monkeypatch, extra: dict[str, Any] | None = None):
     from voicegateway.core.gateway import Gateway
 
     gw = Gateway(config_path=cfg_path)
-    monkeypatch.setattr(_factory, "_gateway", gw)
+    monkeypatch.setattr(factory, "_gateway", gw)
     return gw
 
 
@@ -124,8 +124,8 @@ async def test_db_managed_key_resolves_after_refresh(
     )
     await gw.refresh_config()
 
-    _project.set_project("tony")
-    _llm.LLM("openai/gpt-4o-mini")
+    project.set_project("tony")
+    llm.LLM("openai/gpt-4o-mini")
     assert fake_providers.last_config["api_key"] == "sk-tony-db"
 
 
@@ -149,8 +149,8 @@ async def test_db_managed_key_creates_stub_project(
         gw.config.projects["mama"].providers["deepgram"]["api_key"] == "sk-mama-dg-db"
     )
 
-    _project.set_project("mama")
-    _stt.STT("deepgram/nova-3")
+    project.set_project("mama")
+    stt.STT("deepgram/nova-3")
     assert fake_providers.last_config["api_key"] == "sk-mama-dg-db"
 
 
@@ -186,8 +186,8 @@ async def test_per_call_api_key_kwarg_beats_db(tmp_path, monkeypatch, fake_provi
     )
     await gw.refresh_config()
 
-    _project.set_project("tony")
-    _llm.LLM("openai/gpt-4o-mini", api_key="per-call-override")
+    project.set_project("tony")
+    llm.LLM("openai/gpt-4o-mini", api_key="per-call-override")
     assert fake_providers.last_config["api_key"] == "per-call-override"
 
 
@@ -219,8 +219,8 @@ async def test_yaml_per_project_entry_beats_db(tmp_path, monkeypatch, fake_provi
     )
     await gw.refresh_config()
 
-    _project.set_project("tony")
-    _llm.LLM("openai/gpt-4o-mini")
+    project.set_project("tony")
+    llm.LLM("openai/gpt-4o-mini")
     assert fake_providers.last_config["api_key"] == "yaml-tony-openai"
 
 
@@ -242,8 +242,8 @@ async def test_db_key_rotation_visible_after_refresh(
     )
     await gw.refresh_config()
 
-    _project.set_project("tony")
-    _llm.LLM("openai/gpt-4o-mini")
+    project.set_project("tony")
+    llm.LLM("openai/gpt-4o-mini")
     assert fake_providers.last_config["api_key"] == "sk-original"
 
     # Rotate via the same upsert path vg_set_provider_key uses.
@@ -255,7 +255,7 @@ async def test_db_key_rotation_visible_after_refresh(
     )
     await gw.refresh_config()
 
-    _llm.LLM("openai/gpt-4o-mini")
+    llm.LLM("openai/gpt-4o-mini")
     assert fake_providers.last_config["api_key"] == "sk-rotated"
 
 
@@ -283,12 +283,12 @@ async def test_two_projects_with_distinct_db_openai_keys(
     )
     await gw.refresh_config()
 
-    _project.set_project("tony")
-    _llm.LLM("openai/gpt-4o-mini")
+    project.set_project("tony")
+    llm.LLM("openai/gpt-4o-mini")
     assert fake_providers.last_config["api_key"] == "sk-tony"
 
-    _project.set_project("mama")
-    _llm.LLM("openai/gpt-4o-mini")
+    project.set_project("mama")
+    llm.LLM("openai/gpt-4o-mini")
     assert fake_providers.last_config["api_key"] == "sk-mama"
 
 

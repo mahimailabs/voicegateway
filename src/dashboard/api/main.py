@@ -160,9 +160,9 @@ async def get_status() -> dict:
                         "provider": model_cfg.get("provider", ""),
                     }
 
-    from voicegateway.pricing import llm as _llm_pricing
-    from voicegateway.pricing import stt as _stt_pricing
-    from voicegateway.pricing import tts as _tts_pricing
+    from voicegateway.inference.pricing import llm as _llm_pricing
+    from voicegateway.inference.pricing import stt as _stt_pricing
+    from voicegateway.inference.pricing import tts as _tts_pricing
 
     pricing = {
         "llm": {"source": _llm_pricing.PRICING_SOURCE},

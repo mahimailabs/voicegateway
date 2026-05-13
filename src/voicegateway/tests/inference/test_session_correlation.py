@@ -9,8 +9,8 @@ from typing import Any
 import pytest
 import yaml
 
-from voicegateway.inference import _factory, _llm, _stt, _tts
-from voicegateway.inference._session_context import get_session_id
+from voicegateway.inference import factory, llm, stt, tts
+from voicegateway.inference.session.context import get_session_id
 
 # ---------------------------------------------------------------------------
 # Fakes
@@ -82,9 +82,9 @@ def fake_providers(monkeypatch):
     def _create(_provider_name: str, config: dict[str, Any]) -> _FakeProvider:
         return _FakeProvider(config)
 
-    monkeypatch.setattr(_stt, "create_provider", _create)
-    monkeypatch.setattr(_llm, "create_provider", _create)
-    monkeypatch.setattr(_tts, "create_provider", _create)
+    monkeypatch.setattr(stt, "create_provider", _create)
+    monkeypatch.setattr(llm, "create_provider", _create)
+    monkeypatch.setattr(tts, "create_provider", _create)
 
 
 @pytest.fixture
@@ -110,7 +110,7 @@ def configured_gateway(tmp_path, monkeypatch):
     from voicegateway.core.gateway import Gateway
 
     gw = Gateway(config_path=str(config_path))
-    monkeypatch.setattr(_factory, "_gateway", gw)
+    monkeypatch.setattr(factory, "_gateway", gw)
     return gw, db_path
 
 
@@ -139,9 +139,9 @@ async def test_three_modalities_share_one_session_and_one_sessions_row(
         # All three factories run inside this single context, so the
         # FIRST one creates the session ID via get_or_create_session_id
         # and the OTHER two inherit it via the ContextVar lookup.
-        stt = _stt.STT("deepgram/nova-3")
-        llm = _llm.LLM("openai/gpt-4o-mini")
-        tts = _tts.TTS("cartesia/sonic-3")
+        stt_inst = stt.STT("deepgram/nova-3")
+        llm_inst = llm.LLM("openai/gpt-4o-mini")
+        tts_inst = tts.TTS("cartesia/sonic-3")
 
         captured["sid_at_construction"] = get_session_id()
 
@@ -151,9 +151,9 @@ async def test_three_modalities_share_one_session_and_one_sessions_row(
         # this test; the mock model_id won't be in the catalog and
         # cost_usd resolves to 0. We bump input_units so cost-by-source
         # tracking still records a row.
-        await stt._log_request(input_units=1.0)
-        await llm._log_request(input_units=100.0, output_units=50.0)
-        await tts._log_request(input_units=200.0)
+        await stt_inst._log_request(input_units=1.0)
+        await llm_inst._log_request(input_units=100.0, output_units=50.0)
+        await tts_inst._log_request(input_units=200.0)
 
     await _run_in_isolated_context(_scenario)
 
@@ -196,14 +196,14 @@ async def test_two_async_contexts_get_separate_sessions(
     sids: list[str] = []
 
     async def _ctx_a():
-        stt = _stt.STT("deepgram/nova-3")
+        stt_inst = stt.STT("deepgram/nova-3")
         sids.append(get_session_id() or "")
-        await stt._log_request(input_units=1.0)
+        await stt_inst._log_request(input_units=1.0)
 
     async def _ctx_b():
-        llm = _llm.LLM("openai/gpt-4o-mini")
+        llm_inst = llm.LLM("openai/gpt-4o-mini")
         sids.append(get_session_id() or "")
-        await llm._log_request(input_units=100.0)
+        await llm_inst._log_request(input_units=100.0)
 
     await _run_in_isolated_context(_ctx_a)
     await _run_in_isolated_context(_ctx_b)
@@ -229,8 +229,8 @@ async def test_n_requests_within_one_context_collapse_to_one_sessions_row(
 
     async def _scenario():
         for _ in range(5):
-            stt = _stt.STT("deepgram/nova-3")
-            await stt._log_request(input_units=1.0)
+            stt_inst = stt.STT("deepgram/nova-3")
+            await stt_inst._log_request(input_units=1.0)
 
     await _run_in_isolated_context(_scenario)
 

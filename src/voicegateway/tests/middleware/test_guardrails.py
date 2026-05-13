@@ -9,8 +9,8 @@ from unittest.mock import MagicMock
 import pytest
 from livekit.agents import llm as lk_llm
 
-from voicegateway.inference import _factory
-from voicegateway.inference._session_context import reset_session_id, start_session
+from voicegateway.inference import factory
+from voicegateway.inference.session.context import reset_session_id, start_session
 from voicegateway.middleware.guardrails import (
     compose_guardrail_block,
     create_report_guardrail_action_tool,
@@ -58,7 +58,7 @@ def _wrapper(policy: GuardrailPolicy, monkeypatch, storage=None) -> Instrumented
     gw = SimpleNamespace(
         config=SimpleNamespace(projects={"default": SimpleNamespace(guardrails=policy)})
     )
-    monkeypatch.setattr(_factory, "_gateway", gw)
+    monkeypatch.setattr(factory, "_gateway", gw)
     return InstrumentedLLM(
         wrapped=_WrappedLLM(),
         model_id="openai/gpt-test",
@@ -169,7 +169,7 @@ def test_instrumented_llm_freezes_policy_for_session(monkeypatch) -> None:
 
     wrapper.chat(chat_ctx=lk_llm.ChatContext(), tools=[])
     wrapper._wrapped.calls.clear()
-    _factory._gateway.config.projects["default"].guardrails = _active_policy(
+    factory._gateway.config.projects["default"].guardrails = _active_policy(
         financial="block"
     )
 

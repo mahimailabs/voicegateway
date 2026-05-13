@@ -558,7 +558,7 @@ def _compute_expected_cost_usd(
     usage: dict[str, Any],
 ) -> str:
     """Calculate, quantize, and serialize ``expected_cost_usd`` for a fixture."""
-    from voicegateway.pricing.catalog import calculate_cost
+    from voicegateway.inference.pricing.catalog import calculate_cost
 
     full_model = f"{provider}/{model}"
     if modality == "llm":

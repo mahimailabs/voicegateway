@@ -47,7 +47,8 @@ def _smoke_pick_models(gw: Any, project: str) -> dict[str, str]:
 async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
     """Construct each modality with stubbed LK plugins, drive a fake"""
 
-    from voicegateway.inference import _factory, _llm, _project, _stt, _tts
+    from voicegateway.inference import factory, llm, stt, tts
+    from voicegateway.inference import project as project_module
 
     models = _smoke_pick_models(gw, project)
 
@@ -91,16 +92,16 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
     def _stub_create(_provider_name: str, _config: dict) -> _StubProvider:
         return _StubProvider(_config)
 
-    _factory._gateway = gw
-    _project.reset_project()
-    _project.set_project(project)
+    factory._gateway = gw
+    project_module.reset_project()
+    project_module.set_project(project)
 
-    real_stt_create = _stt.create_provider
-    real_llm_create = _llm.create_provider
-    real_tts_create = _tts.create_provider
-    _stt.create_provider = _stub_create  # type: ignore[assignment]
-    _llm.create_provider = _stub_create  # type: ignore[assignment]
-    _tts.create_provider = _stub_create  # type: ignore[assignment]
+    real_stt_create = stt.create_provider
+    real_llm_create = llm.create_provider
+    real_tts_create = tts.create_provider
+    stt.create_provider = _stub_create  # type: ignore[assignment]
+    llm.create_provider = _stub_create  # type: ignore[assignment]
+    tts.create_provider = _stub_create  # type: ignore[assignment]
 
     session_id_holder: dict[str, str | None] = {"sid": None}
 
@@ -117,11 +118,11 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
             instance: Any
             try:
                 if modality == "stt":
-                    instance = _stt.STT(model_id)
+                    instance = stt.STT(model_id)
                 elif modality == "llm":
-                    instance = _llm.LLM(model_id)
+                    instance = llm.LLM(model_id)
                 else:
-                    instance = _tts.TTS(model_id)
+                    instance = tts.TTS(model_id)
             except Exception as exc:  # noqa: BLE001
                 add(
                     f"inference.{label}",
@@ -155,11 +156,11 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
                 "request row written via wrapper",
             )
     finally:
-        _stt.create_provider = real_stt_create
-        _llm.create_provider = real_llm_create
-        _tts.create_provider = real_tts_create
+        stt.create_provider = real_stt_create
+        llm.create_provider = real_llm_create
+        tts.create_provider = real_tts_create
 
-    from voicegateway.inference._session_context import get_session_id
+    from voicegateway.inference.session.context import get_session_id
 
     sid = get_session_id()
     session_id_holder["sid"] = sid

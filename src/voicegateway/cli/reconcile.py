@@ -42,7 +42,7 @@ def reconcile_cmd(
     ),
 ) -> None:
     """Diff VG's logged costs against a provider's usage export."""
-    from voicegateway import reconcile as _reconcile
+    from voicegateway.services import reconciliation_service as _reconcile
 
     if provider not in _reconcile.SUPPORTED_PROVIDERS:
         console.print(

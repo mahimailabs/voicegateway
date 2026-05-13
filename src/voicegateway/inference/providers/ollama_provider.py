@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 from openai import AsyncOpenAI
 
-from voicegateway.providers.base import BaseProvider
+from voicegateway.inference.providers.base import BaseProvider
 
 
 class OllamaProvider(BaseProvider):

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from voicegateway.inference._session_context import (
+from voicegateway.inference.session.context import (
     RoutingDecisionTuple,
     get_or_create_session_id,
     set_guardrails_bypassed,

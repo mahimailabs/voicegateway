@@ -31,12 +31,12 @@ def test_voicegateway_server_combined_resolves() -> None:
     assert callable(main)
 
 
-# ---------- voicegateway.reconcile (T08: __init__ is the shim) ----------
+# ---------- voicegateway.services.reconciliation_service (T08: __init__ is the shim) ----------
 
 
 def test_voicegateway_reconcile_module_namespace_resolves() -> None:
-    """``from voicegateway import reconcile`` resolves, and the"""
-    from voicegateway import reconcile
+    """``from voicegateway.services import reconciliation_service as reconcile`` resolves, and the"""
+    from voicegateway.services import reconciliation_service as reconcile
 
     # Functions
     assert callable(reconcile.parse_provider_file)
@@ -54,7 +54,7 @@ def test_voicegateway_reconcile_module_namespace_resolves() -> None:
 
 def test_voicegateway_reconcile_all_lists_full_surface() -> None:
     """The new ``reconcile/__init__.py`` declares ``__all__`` with"""
-    import voicegateway.reconcile as rec_pkg
+    import voicegateway.services.reconciliation_service as rec_pkg
 
     expected = {
         "DEFAULT_DIFF_THRESHOLD_PCT",

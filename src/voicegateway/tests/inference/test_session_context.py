@@ -1,4 +1,4 @@
-"""Tests for voicegateway.inference._session_context."""
+"""Tests for voicegateway.inference.session.context."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import re
 
 import pytest
 
-from voicegateway.inference._session_context import (
+from voicegateway.inference.session.context import (
     current_guardrail_policy_snapshot,
     current_guardrails_bypassed,
     get_or_create_session_id,

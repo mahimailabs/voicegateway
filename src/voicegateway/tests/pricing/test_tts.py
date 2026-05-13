@@ -1,11 +1,11 @@
-"""Unit tests for voicegateway.pricing.tts."""
+"""Unit tests for voicegateway.inference.pricing.tts."""
 
 from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
 
-from voicegateway.pricing import tts
+from voicegateway.inference.pricing import tts
 
 
 def test_pricing_source_format() -> None:

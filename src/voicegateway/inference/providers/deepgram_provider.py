@@ -1,57 +1,54 @@
-"""Cartesia provider — TTS via livekit-plugins-cartesia."""
+"""Deepgram provider — STT and TTS via livekit-plugins-deepgram."""
 
 from __future__ import annotations
 
 import os
 from typing import Any
 
-from voicegateway.providers.base import BaseProvider
-
-_CARTESIA_API_VERSION = "2025-04-16"
+from voicegateway.inference.providers.base import BaseProvider
 
 
-class CartesiaProvider(BaseProvider):
+class DeepgramProvider(BaseProvider):
     def __init__(self, config: dict[str, Any]):
-        self.api_key = config.get("api_key") or os.environ.get("CARTESIA_API_KEY")
+        self.api_key = config.get("api_key") or os.environ.get("DEEPGRAM_API_KEY")
 
     def _ensure_plugin(self):
         try:
-            from livekit.plugins import cartesia
+            from livekit.plugins import deepgram
 
-            return cartesia
+            return deepgram
         except ImportError as e:
             raise ImportError(
-                "Cartesia plugin not installed. Run: pip install voicegateway[cartesia]"
+                "Deepgram plugin not installed. Run: pip install voicegateway[deepgram]"
             ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:
-        self._unsupported("stt")
+        deepgram = self._ensure_plugin()
+        opts = {"model": model, **kwargs}
+        if self.api_key:
+            opts["api_key"] = self.api_key
+        return deepgram.STT(**opts)
 
     def create_llm(self, model: str, **kwargs: Any) -> Any:
         self._unsupported("llm")
 
     def create_tts(self, model: str, voice: str | None = None, **kwargs: Any) -> Any:
-        cartesia = self._ensure_plugin()
+        deepgram = self._ensure_plugin()
+        if voice and voice not in model:
+            model = f"{model}-{voice}-en"
         opts = {"model": model, **kwargs}
         if self.api_key:
             opts["api_key"] = self.api_key
-        if voice:
-            opts["voice"] = voice
-        return cartesia.TTS(**opts)
+        return deepgram.TTS(**opts)
 
     async def health_check(self) -> bool:
         import httpx
 
-        if not self.api_key:
-            return False
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
-                    "https://api.cartesia.ai/voices",
-                    headers={
-                        "X-API-Key": self.api_key,
-                        "Cartesia-Version": _CARTESIA_API_VERSION,
-                    },
+                    "https://api.deepgram.com/v1/projects",
+                    headers={"Authorization": f"Token {self.api_key}"},
                     timeout=5.0,
                 )
                 return resp.status_code == 200

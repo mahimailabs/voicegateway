@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from voicegateway import reconcile
+from voicegateway.services import reconciliation_service as reconcile
 
 
 def test_parse_provider_file_openai_csv(tmp_path):

@@ -1,4 +1,4 @@
-"""Tests for voicegateway.inference._tts.TTS."""
+"""Tests for voicegateway.inference.tts.TTS."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from typing import Any
 import pytest
 import yaml
 
-from voicegateway.inference import _factory, _tts
-from voicegateway.inference._resolution import ModelResolutionError
-from voicegateway.inference._session_context import get_session_id
+from voicegateway.inference import factory, tts
+from voicegateway.inference.resolution import ModelResolutionError
+from voicegateway.inference.session.context import get_session_id
 
 # ---------------------------------------------------------------------------
 # Fakes
@@ -81,7 +81,7 @@ def fake_provider(monkeypatch):
         _FakeProvider.last_provider_name = provider_name
         return _FakeProvider(config)
 
-    monkeypatch.setattr(_tts, "create_provider", _create)
+    monkeypatch.setattr(tts, "create_provider", _create)
     return _FakeProvider
 
 
@@ -104,7 +104,7 @@ def configured_gateway(tmp_path, monkeypatch):
     from voicegateway.core.gateway import Gateway
 
     gw = Gateway(config_path=str(config_path))
-    monkeypatch.setattr(_factory, "_gateway", gw)
+    monkeypatch.setattr(factory, "_gateway", gw)
     return gw
 
 
@@ -115,14 +115,14 @@ def configured_gateway(tmp_path, monkeypatch):
 
 class TestConstructorAcceptsLkSignatureParams:
     def test_minimal_call_with_only_model(self, configured_gateway, fake_provider):
-        result = _tts.TTS("cartesia/sonic-3")
+        result = tts.TTS("cartesia/sonic-3")
         assert result.__class__.__name__ == "InstrumentedTTS"
         assert result._wrapped.model == "sonic-3"
 
     def test_all_lk_params_accepted(self, configured_gateway, fake_provider):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            result = _tts.TTS(
+            result = tts.TTS(
                 "cartesia/sonic-3",
                 voice="bob",
                 language="en",
@@ -143,42 +143,42 @@ class TestVoiceSuffixParsing:
     def test_colon_suffix_treated_as_voice(self, configured_gateway, fake_provider):
         # Mirrors LK TTS: "cartesia/sonic-3:my-voice-id" puts "my-voice-id"
         # into the voice slot, not language.
-        _tts.TTS("cartesia/sonic-3:my-voice-id")
+        tts.TTS("cartesia/sonic-3:my-voice-id")
         assert fake_provider.last_create_tts["model"] == "sonic-3"
         assert fake_provider.last_create_tts["voice"] == "my-voice-id"
 
     def test_explicit_voice_wins_over_suffix(self, configured_gateway, fake_provider):
-        _tts.TTS("cartesia/sonic-3:from-suffix", voice="explicit-voice")
+        tts.TTS("cartesia/sonic-3:from-suffix", voice="explicit-voice")
         assert fake_provider.last_create_tts["voice"] == "explicit-voice"
 
     def test_no_colon_no_voice(self, configured_gateway, fake_provider):
-        _tts.TTS("cartesia/sonic-3")
+        tts.TTS("cartesia/sonic-3")
         assert fake_provider.last_create_tts["voice"] is None
 
     def test_suffix_does_not_affect_language(self, configured_gateway, fake_provider):
         # Critical asymmetry vs STT: `:my-voice-id` must NOT land as
         # `language="my-voice-id"`. Language stays None.
-        _tts.TTS("cartesia/sonic-3:my-voice-id")
+        tts.TTS("cartesia/sonic-3:my-voice-id")
         assert "language" not in fake_provider.last_create_tts
 
 
 class TestModelResolution:
     def test_missing_model_raises(self, configured_gateway, fake_provider):
         with pytest.raises(TypeError):
-            _tts.TTS()  # type: ignore[call-arg]
+            tts.TTS()  # type: ignore[call-arg]
 
     def test_empty_model_raises(self, configured_gateway, fake_provider):
         with pytest.raises(ValueError, match="provider/model"):
-            _tts.TTS("")
+            tts.TTS("")
 
     def test_unknown_provider_raises(self, configured_gateway, fake_provider):
         with pytest.raises(ModelResolutionError, match="Unknown provider"):
-            _tts.TTS("not-a-real-co/sonic-3")
+            tts.TTS("not-a-real-co/sonic-3")
 
 
 class TestKwargForwarding:
     def test_extra_kwargs_spread_to_create_tts(self, configured_gateway, fake_provider):
-        _tts.TTS(
+        tts.TTS(
             "cartesia/sonic-3",
             extra_kwargs={"speed": 1.2, "stability": 0.5},
         )
@@ -188,28 +188,28 @@ class TestKwargForwarding:
     def test_language_and_sample_rate_forwarded(
         self, configured_gateway, fake_provider
     ):
-        _tts.TTS("cartesia/sonic-3", language="en", sample_rate=22050)
+        tts.TTS("cartesia/sonic-3", language="en", sample_rate=22050)
         assert fake_provider.last_create_tts["language"] == "en"
         assert fake_provider.last_create_tts["sample_rate"] == 22050
 
     def test_omitted_params_not_forwarded(self, configured_gateway, fake_provider):
-        _tts.TTS("cartesia/sonic-3")
+        tts.TTS("cartesia/sonic-3")
         # Only `model` and `voice` (None) should appear; NOT_GIVEN
         # sentinels must NOT leak as explicit kwargs.
         assert set(fake_provider.last_create_tts) == {"model", "voice"}
 
     def test_voice_forwarded_when_given(self, configured_gateway, fake_provider):
-        _tts.TTS("cartesia/sonic-3", voice="alice")
+        tts.TTS("cartesia/sonic-3", voice="alice")
         assert fake_provider.last_create_tts["voice"] == "alice"
 
 
 class TestApiKeyOverride:
     def test_override_replaces_yaml_key(self, configured_gateway, fake_provider):
-        _tts.TTS("cartesia/sonic-3", api_key="per-call-override")
+        tts.TTS("cartesia/sonic-3", api_key="per-call-override")
         assert fake_provider.last_config["api_key"] == "per-call-override"
 
     def test_no_override_uses_yaml_key(self, configured_gateway, fake_provider):
-        _tts.TTS("cartesia/sonic-3")
+        tts.TTS("cartesia/sonic-3")
         assert fake_provider.last_config["api_key"] == "from-yaml-cartesia-key"
 
 
@@ -217,7 +217,7 @@ class TestSessionCorrelation:
     def test_construction_creates_session_id(self, configured_gateway, fake_provider):
         def _scenario():
             assert get_session_id() is None
-            _tts.TTS("cartesia/sonic-3")
+            tts.TTS("cartesia/sonic-3")
             return get_session_id()
 
         sid = contextvars.copy_context().run(_scenario)
@@ -228,9 +228,9 @@ class TestSessionCorrelation:
         self, configured_gateway, fake_provider
     ):
         def _scenario():
-            _tts.TTS("cartesia/sonic-3")
+            tts.TTS("cartesia/sonic-3")
             first = get_session_id()
-            _tts.TTS("cartesia/sonic-3")
+            tts.TTS("cartesia/sonic-3")
             second = get_session_id()
             return first, second
 
@@ -243,20 +243,20 @@ class TestUnsupportedParamWarnings:
     def test_api_secret_warns(self, configured_gateway, fake_provider):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            _tts.TTS("cartesia/sonic-3", api_secret="ignored")
+            tts.TTS("cartesia/sonic-3", api_secret="ignored")
         messages = [str(w.message) for w in caught]
         assert any("api_secret" in m for m in messages)
 
     def test_fallback_warns(self, configured_gateway, fake_provider):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            _tts.TTS("cartesia/sonic-3", fallback="elevenlabs/eleven-turbo-v2")
+            tts.TTS("cartesia/sonic-3", fallback="elevenlabs/eleven-turbo-v2")
         messages = [str(w.message) for w in caught]
         assert any("fallback" in m for m in messages)
 
     def test_conn_options_warns(self, configured_gateway, fake_provider):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            _tts.TTS("cartesia/sonic-3", conn_options="anything")
+            tts.TTS("cartesia/sonic-3", conn_options="anything")
         messages = [str(w.message) for w in caught]
         assert any("conn_options" in m for m in messages)
