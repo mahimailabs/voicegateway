@@ -4,7 +4,7 @@ The core layer wires configuration, storage, and middleware together so the `voi
 
 ## Gateway Class
 
-**File:** `voicegateway/core/gateway.py`
+**File:** `src/voicegateway/core/gateway.py`
 
 `Gateway` is an internal container; it is not part of the public Python SDK. The inference module holds a process-wide singleton via `voicegateway.inference._factory.get_gateway()`. The CLI, HTTP server, and MCP runtime each instantiate it directly because they own their own process lifecycle.
 
@@ -70,13 +70,13 @@ This re-runs `ConfigManager.load_merged()` and rebuilds the `BudgetEnforcer` so 
 
 ## ConfigManager
 
-**File:** `voicegateway/core/config_manager.py`
+**File:** `src/voicegateway/core/config_manager.py`
 
 `ConfigManager.load_merged()` deep-copies the YAML config and layers in `managed_providers`, `managed_models`, and `managed_projects` rows from SQLite. Per-project provider rows (those with a non-null `project` column) merge into `merged.projects[<id>].providers[<provider_type>]` so the inference resolver finds them via `GatewayConfig.get_provider_config_for_project`. YAML always wins on conflict.
 
 ## inference resolution
 
-**File:** `voicegateway/inference/_resolution.py`
+**File:** `src/voicegateway/inference/_resolution.py`
 
 The inference factories parse `"provider/model"` strings inline and validate the provider against the registry. The variant suffix (language for STT, voice for TTS) is parsed in the modality-specific factory file (`_stt.py`, `_tts.py`) before resolution; LLM strings keep their trailing colon segments verbatim so Ollama tags survive.
 
@@ -97,7 +97,7 @@ The factories then call `voicegateway.core.registry.create_provider(provider_nam
 
 ## Registry
 
-**File:** `voicegateway/core/registry.py`
+**File:** `src/voicegateway/core/registry.py`
 
 The Registry maps provider names to their implementation classes via lazy import. No provider module is imported until it is actually needed.
 

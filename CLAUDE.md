@@ -24,7 +24,7 @@ voicegw serve --port 8080                # start HTTP API
 voicegw dashboard                        # start web UI (port 9090)
 voicegw status                           # show provider status
 
-# Dashboard frontend (dashboard/frontend/)
+# Dashboard frontend (src/dashboard/frontend/)
 npm install && npm run dev               # dev server
 npm run build                            # production build
 
@@ -37,20 +37,20 @@ docker compose --profile local up -d     # + Ollama
 
 **Request flow:** User code → `Gateway.stt()`/`llm()`/`tts()` → Router → Provider → Middleware pipeline (cost tracking, latency, rate limiting, fallback) → SQLite storage → Dashboard reads stored data.
 
-**Core (`voicegateway/core/`):**
+**Core (`src/voicegateway/core/`):**
 - `gateway.py` — Main orchestrator, entry point for all requests
 - `config.py` — YAML parser with `${ENV_VAR}` substitution
 - `router.py` — Resolves `provider/model` strings to provider instances
 - `registry.py` — Lazy provider factory (instantiates on first use)
 - `model_id.py` — Parses `provider/model` format strings
 
-**Providers (`voicegateway/providers/`):** Each extends `BaseProvider` from `base.py`. 11 implementations covering cloud and local models.
+**Providers (`src/voicegateway/providers/`):** Each extends `BaseProvider` from `base.py`. 11 implementations covering cloud and local models.
 
-**Middleware (`voicegateway/middleware/`):** Cost tracking, latency monitoring, rate limiting, request logging, fallback chains. All wrap provider calls.
+**Middleware (`src/voicegateway/middleware/`):** Cost tracking, latency monitoring, rate limiting, request logging, fallback chains. All wrap provider calls.
 
-**Storage (`voicegateway/storage/`):** SQLite backend with `RequestRecord` dataclass. Includes SQL views for daily costs and per-project aggregation.
+**Storage (`src/voicegateway/storage/`):** SQLite backend with `RequestRecord` dataclass. Includes SQL views for daily costs and per-project aggregation.
 
-**HTTP API (`voicegateway/server.py`):** FastAPI with endpoints at `/health`, `/v1/status`, `/v1/models`, `/v1/costs`, `/v1/projects`, `/v1/logs`, `/v1/metrics`.
+**HTTP API (`src/voicegateway/server/main.py`):** FastAPI with endpoints at `/health`, `/v1/status`, `/v1/models`, `/v1/costs`, `/v1/projects`, `/v1/logs`, `/v1/metrics`.
 
 **Dashboard (`dashboard/`):** FastAPI backend (`api/`) + React/TypeScript/Vite frontend (`frontend/`). Uses Recharts for visualization. Neo-Brutalism design aesthetic.
 
@@ -64,4 +64,4 @@ docker compose --profile local up -d     # + Ollama
 - **Modular provider installs** — `pip install -e ".[openai,deepgram]"` installs only needed providers
 - **Config format** — YAML at `voicegw.yaml`, env vars via `${VAR_NAME}` syntax
 - **pytest-asyncio** — `asyncio_mode = "auto"` in pyproject.toml, no manual `@pytest.mark.asyncio` needed
-- **Test fixtures** in `tests/conftest.py` set fake API keys for all providers
+- **Test fixtures** in `src/voicegateway/tests/conftest.py` set fake API keys for all providers

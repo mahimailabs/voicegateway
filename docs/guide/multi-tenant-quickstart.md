@@ -147,9 +147,9 @@ A few operator workflows are deliberately deferred to keep v0.4.0 focused. Plan 
 ## Where the design lives
 
 - **Refinery / Foundry**: REQ-VG-TENANT-001..004 (see the Linear project for the requirements rationale).
-- **Migration**: `voicegateway/storage/migrations/0005_tenant_attribution.py`.
-- **ContextVar**: `voicegateway/inference/_session_context.py`.
-- **Auth middleware**: `voicegateway/server/main.py::build_app` + `voicegateway/core/auth.py`.
-- **Repos**: `voicegateway/storage/virtual_keys_repo.py`, `voicegateway/storage/tenants_repo.py`.
-- **Dashboard API**: `dashboard/api/main.py` (search for `/api/tenants` and `/api/virtual_keys`).
-- **Frontend primitives**: `dashboard/frontend/src/components/{FilterBar,TenantFilter,TenantPill}.tsx`.
+- **Migration**: `src/voicegateway/storage/migrations/0005_tenant_attribution.py`.
+- **ContextVar**: `src/voicegateway/inference/_session_context.py`.
+- **Auth middleware**: `src/voicegateway/server/main.py::build_app` + `src/voicegateway/core/auth.py`.
+- **Repos**: `src/voicegateway/storage/virtual_keys_repo.py`, `src/voicegateway/storage/tenants_repo.py`.
+- **Dashboard API**: `src/dashboard/api/main.py` (search for `/api/tenants` and `/api/virtual_keys`).
+- **Frontend primitives**: `src/dashboard/frontend/src/components/{FilterBar,TenantFilter,TenantPill}.tsx`.

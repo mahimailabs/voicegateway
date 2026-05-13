@@ -1230,5 +1230,5 @@ else:
     async def missing_frontend():
         return {
             "error": "Frontend not built",
-            "fix": "Run: cd dashboard/frontend && npm install && npm run build",
+            "fix": "Run: cd src/dashboard/frontend && npm install && npm run build",
         }

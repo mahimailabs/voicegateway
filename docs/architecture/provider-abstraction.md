@@ -4,7 +4,7 @@ All 11 providers in VoiceGateway implement the same abstract base class, giving 
 
 ## BaseProvider ABC
 
-**File:** `voicegateway/providers/base.py`
+**File:** `src/voicegateway/providers/base.py`
 
 ```python
 class BaseProvider(ABC):
@@ -45,13 +45,13 @@ class BaseProvider(ABC):
 | `create_tts(model, voice, **kwargs)` | LiveKit-compatible TTS instance | Call `self._unsupported("tts")` |
 | `health_check()` | `True` if reachable, `False` otherwise | Must always be implemented |
 
-Pricing is no longer a provider-level concern. LLM rates resolve via `pydantic/genai-prices` (see `voicegateway/pricing/llm.py`); STT and TTS rates resolve via the local source-date-tagged catalogs in `voicegateway/pricing/{stt,tts}.py`. Use `voicegateway.pricing.catalog.calculate_cost(modality, model, ...)` from anywhere that needs a per-request cost.
+Pricing is no longer a provider-level concern. LLM rates resolve via `pydantic/genai-prices` (see `src/voicegateway/pricing/llm.py`); STT and TTS rates resolve via the local source-date-tagged catalogs in `src/voicegateway/pricing/{stt,tts}.py`. Use `voicegateway.pricing.catalog.calculate_cost(modality, model, ...)` from anywhere that needs a per-request cost.
 
 > **Argument order trap.** `voicegateway.pricing.catalog.calculate_cost(modality, model, ...)` takes `modality` first; the legacy `CostTracker.calculate_cost(model_id, modality, ...)` on `voicegateway.middleware.cost_tracker` takes `model_id` first. The two helpers serve different layers (catalog is the pricing facade; CostTracker bridges to the storage record), but the reversed positional order is easy to transpose. When in doubt, use keyword arguments or call the catalog directly.
 
 ## Provider Registry
 
-All 11 providers are registered in `voicegateway/core/registry.py` as `(module_path, class_name)` tuples. The Registry uses `importlib.import_module()` for lazy loading -- a provider's SDK is only imported when that provider is first used.
+All 11 providers are registered in `src/voicegateway/core/registry.py` as `(module_path, class_name)` tuples. The Registry uses `importlib.import_module()` for lazy loading -- a provider's SDK is only imported when that provider is first used.
 
 ```mermaid
 graph LR
@@ -152,11 +152,11 @@ Install with: pip install voicegateway[deepgram]
 
 ## Adding a New Provider
 
-1. Create `voicegateway/providers/myprovider_provider.py` extending `BaseProvider`
+1. Create `src/voicegateway/providers/myprovider_provider.py` extending `BaseProvider`
 2. Implement the five abstract methods (use `_unsupported()` for unsupported modalities)
-3. Register it in `voicegateway/core/registry.py`:
+3. Register it in `src/voicegateway/core/registry.py`:
    ```python
    "myprovider": ("voicegateway.providers.myprovider_provider", "MyProviderProvider"),
    ```
-4. Add pricing data to `voicegateway/pricing/catalog.py`
+4. Add pricing data to `src/voicegateway/pricing/catalog.py`
 5. Add the optional dependency to `pyproject.toml`

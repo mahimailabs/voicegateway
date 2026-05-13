@@ -75,12 +75,13 @@ mcp = ["mcp>=1.2.0"]
 tui = ["textual>=0.85,<0.90"]
 
 # Dev. Includes psutil + platformdirs so the daemon-backend tests
-# (tests/cli/test_daemon_*.py) and doctor tests can import the
-# OS-specific cli modules without pulling in the full cloud extras
-# (the seven livekit-plugins-* wheels). Real users get these
+# (src/voicegateway/tests/cli/test_daemon_*.py) and doctor tests can
+# import the OS-specific cli modules without pulling in the full cloud
+# extras (the seven livekit-plugins-* wheels). Real users get these
 # transitively from the cloud extras the install.sh path requests.
-# textual is in dev so Pilot-based screen tests under tests/cli/tui/
-# can import textual.pilot without `pip install -e .[tui]`.
+# textual is in dev so Pilot-based screen tests under
+# src/voicegateway/tests/cli/tui/ can import textual.pilot without
+# `pip install -e .[tui]`.
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23.0",

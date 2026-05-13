@@ -1,7 +1,7 @@
 # Streaming cost-accounting fixtures
 
 This directory holds JSON fixtures captured from real provider APIs.
-`tests/test_streaming_cost_accounting.py` replays each fixture and
+`src/voicegateway/tests/test_streaming_cost_accounting.py` replays each fixture and
 asserts:
 
 1. **Unit-count consistency.** The fixture's
@@ -229,7 +229,7 @@ recording a new fixture, not refreshing the old one.
 ### Deepgram STT
 
 - The script ships with a small bundled audio sample
-  (`tests/fixtures/audio/test_sample.wav`, 3-second 8 kHz mono
+  (`src/voicegateway/tests/fixtures/audio/test_sample.wav`, 3-second 8 kHz mono
   16-bit PCM, ~48 KB). The recorder refuses to run if the file
   is missing.
 - The fixture's `request` block stores a path reference
@@ -292,10 +292,10 @@ traffic.
 - `_loader.py` exports `load_fixture(path)`,
   `discover_fixtures()`, `discover_fixture_paths()`, and
   `parse_fixture_filename()`. The replay tests in
-  `tests/test_streaming_cost_accounting.py` consume these.
-- `tests/fixtures/streaming/PLACEHOLDER.md` is the runbook for
+  `src/voicegateway/tests/test_streaming_cost_accounting.py` consume these.
+- `src/voicegateway/tests/fixtures/streaming/PLACEHOLDER.md` is the runbook for
   recording the six minimum fixtures. Delete it in the same
   commit that lands them.
-- `tests/fixtures/streaming/record_streaming_fixtures.py` is the
+- `src/voicegateway/tests/fixtures/streaming/record_streaming_fixtures.py` is the
   recorder. Its module docstring documents usage, env vars, and cost
   expectations.

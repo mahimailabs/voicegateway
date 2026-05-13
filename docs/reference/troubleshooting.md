@@ -116,7 +116,7 @@ voicegw serve
    ```bash
    pip install --upgrade cryptography
    ```
-3. If using encrypted storage, check that the `VOICEGW_SECRET` environment variable is set to the same value used when keys were stored. (See `voicegateway/core/crypto.py` for the canonical secret-resolution order: env var, then `~/.config/voicegateway/.secret`, then auto-generated.)
+3. If using encrypted storage, check that the `VOICEGW_SECRET` environment variable is set to the same value used when keys were stored. (See `src/voicegateway/core/crypto.py` for the canonical secret-resolution order: env var, then `~/.config/voicegateway/.secret`, then auto-generated.)
 
 ---
 
@@ -149,7 +149,7 @@ voicegw serve
    ```
 4. Rebuild the frontend if running from source:
    ```bash
-   cd dashboard/frontend && npm run build
+   cd src/dashboard/frontend && npm run build
    ```
 5. Ensure all dashboard dependencies are installed:
    ```bash

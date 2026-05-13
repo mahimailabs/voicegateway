@@ -17,7 +17,7 @@ the day-to-day reconciliation workflow lives at
 
 ::: tip Reference fixtures
 Working examples of each provider's canonical schema live in the
-repo at `tests/fixtures/usage_exports/`:
+repo at `src/voicegateway/tests/fixtures/usage_exports/`:
 
 - `openai-sample.csv` (3 LLM models, 4M tokens)
 - `deepgram-sample.csv` (3 STT models, 5 hours of audio)
@@ -253,7 +253,7 @@ If your Deepgram export reports minutes instead of seconds, replace
 Deepgram's billing dashboards display minutes by default, but VG
 records audio duration in seconds (the unit `livekit-plugins-deepgram`
 emits on its `usage_collected` event, and the unit
-`voicegateway/pricing/stt.py` calculates against). Storing seconds in
+`src/voicegateway/pricing/stt.py` calculates against). Storing seconds in
 the canonical reconcile file keeps both sides of the comparison in
 the same unit. If your export hands you minutes, the conversion above
 multiplies in.
@@ -363,7 +363,7 @@ is credits, and the credits-to-USD conversion depends on the account's
 plan tier. VG records characters (the LiveKit plugin's
 `usage_collected` event ships character counts, not credits) and
 calculates an estimated cost via a documented per-character rate in
-`voicegateway/pricing/tts.py`. Surfacing both columns lets reconcile
+`src/voicegateway/pricing/tts.py`. Surfacing both columns lets reconcile
 report two diffs:
 
 - VG's character-count vs Cartesia's character-count (a units check).

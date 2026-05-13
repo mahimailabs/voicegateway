@@ -45,7 +45,7 @@ async def entrypoint():
     await session.start()
 ```
 
-`voicegateway.inference.STT/LLM/TTS` mirror `livekit.agents.inference.STT/LLM/TTS` parameter for parameter — name, kind, default. The drop-in compatibility test in the VG repo (`tests/inference/test_drop_in_compatibility.py`) runs on every CI build to keep that promise honest as LiveKit ships new releases.
+`voicegateway.inference.STT/LLM/TTS` mirror `livekit.agents.inference.STT/LLM/TTS` parameter for parameter — name, kind, default. The drop-in compatibility test in the VG repo (`src/voicegateway/tests/inference/test_drop_in_compatibility.py`) runs on every CI build to keep that promise honest as LiveKit ships new releases.
 
 ## Configure your providers
 

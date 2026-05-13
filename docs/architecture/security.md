@@ -4,7 +4,7 @@ VoiceGateway encrypts all API keys stored in its database, masks secrets in API 
 
 ## Fernet Encryption
 
-**File:** `voicegateway/core/crypto.py`
+**File:** `src/voicegateway/core/crypto.py`
 
 All API keys stored in the `managed_providers` table are encrypted with **Fernet** (AES-128-CBC with HMAC-SHA256 authentication) from the `cryptography` library.
 

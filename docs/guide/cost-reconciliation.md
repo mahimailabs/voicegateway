@@ -137,7 +137,7 @@ re-run; if the gap persists, your account is on a non-public rate
 and the gap is the discount you are getting.
 
 For STT and TTS costs, this means the per-minute or per-character
-rate in `voicegateway/pricing/stt.py` (or `tts.py`) is stale. Refresh
+rate in `src/voicegateway/pricing/stt.py` (or `tts.py`) is stale. Refresh
 that catalog entry against the provider's current price page and
 ship a patch release. The 60-day staleness gate (Phase 2.6) will
 also catch this if the pricing-source date drifts.

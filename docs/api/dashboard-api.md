@@ -184,7 +184,7 @@ curl http://localhost:9090/api/projects
 
 ## Static File Serving
 
-The dashboard also serves the React frontend's built assets. If the frontend has been built (`dashboard/frontend/dist/` exists), the dashboard serves:
+The dashboard also serves the React frontend's built assets. If the frontend has been built (`src/dashboard/frontend/dist/` exists), the dashboard serves:
 
 - `GET /` -- the React app's `index.html`
 - `GET /assets/*` -- bundled JavaScript, CSS, and other static files

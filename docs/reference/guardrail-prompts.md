@@ -1,6 +1,6 @@
 # Guardrail prompt reference
 
-VoiceGateway ships curated prompt assets in `voicegateway/middleware/guardrail_prompts/`. At runtime, the composer renders only the active categories into this wrapper:
+VoiceGateway ships curated prompt assets in `src/voicegateway/middleware/guardrail_prompts/`. At runtime, the composer renders only the active categories into this wrapper:
 
 ```text
 <voicegateway_guardrails version="v0.6.0">

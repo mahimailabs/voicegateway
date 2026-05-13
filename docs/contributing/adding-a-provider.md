@@ -12,7 +12,7 @@ VoiceGateway uses a provider registry pattern that makes adding new providers st
 
 ### 1. Create the provider file
 
-Create `voicegateway/providers/<name>_provider.py`. Use an existing provider as a template (e.g., `deepgram_provider.py` for STT, `cartesia_provider.py` for TTS).
+Create `src/voicegateway/providers/<name>_provider.py`. Use an existing provider as a template (e.g., `deepgram_provider.py` for STT, `cartesia_provider.py` for TTS).
 
 ```python
 """<Provider Name> provider implementation."""
@@ -51,7 +51,7 @@ class <Name>Provider(BaseProvider):
 
 ### 2. Implement the BaseProvider ABC
 
-The `BaseProvider` abstract class in `voicegateway/providers/base.py` requires four methods:
+The `BaseProvider` abstract class in `src/voicegateway/providers/base.py` requires four methods:
 
 | Method | Purpose | Return type |
 |---|---|---|
@@ -62,11 +62,11 @@ The `BaseProvider` abstract class in `voicegateway/providers/base.py` requires f
 
 For modalities the provider does not support, call `self._unsupported("modality_name")` to raise a clear error.
 
-Pricing is not a provider-level concern. LLM rates resolve via `pydantic/genai-prices` upstream; STT and TTS rates live in the local source-date-tagged catalogs at `voicegateway/pricing/{stt,tts}.py`. To add pricing for a new model, see step 4.
+Pricing is not a provider-level concern. LLM rates resolve via `pydantic/genai-prices` upstream; STT and TTS rates live in the local source-date-tagged catalogs at `src/voicegateway/pricing/{stt,tts}.py`. To add pricing for a new model, see step 4.
 
 ### 3. Register the provider
 
-Add your provider to the registry in `voicegateway/core/registry.py`:
+Add your provider to the registry in `src/voicegateway/core/registry.py`:
 
 ```python
 _PROVIDER_REGISTRY: dict[str, tuple[str, str]] = {
@@ -115,7 +115,7 @@ cloud = ["voicegateway[deepgram,openai,...,<name>]"]
 
 ### 6. Add fake API key to test fixtures
 
-In `tests/conftest.py`, add the key to the `_test_env` fixture:
+In `src/voicegateway/tests/conftest.py`, add the key to the `_test_env` fixture:
 
 ```python
 @pytest.fixture(autouse=True)
@@ -129,7 +129,7 @@ def _test_env(monkeypatch):
 
 ### 7. Write tests
 
-Create `tests/test_<name>_provider.py`:
+Create `src/voicegateway/tests/test_<name>_provider.py`:
 
 ```python
 """Tests for the <Name> provider."""

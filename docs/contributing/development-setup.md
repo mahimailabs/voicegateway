@@ -94,18 +94,18 @@ The dashboard has a FastAPI backend and a React/TypeScript/Vite frontend.
 
 ### Backend
 
-The dashboard API lives in `dashboard/api/`. It starts automatically when you run:
+The dashboard API lives in `src/dashboard/api/`. It starts automatically when you run:
 
 ```bash
 voicegw dashboard
 ```
 
-This serves the API on port 9090 and the frontend (if built) from `dashboard/frontend/dist/`.
+This serves the API on port 9090 and the frontend (if built) from `src/dashboard/frontend/dist/`.
 
 ### Frontend
 
 ```bash
-cd dashboard/frontend
+cd src/dashboard/frontend
 
 # Install dependencies
 npm install
@@ -178,7 +178,7 @@ voicegateway/
 ```
 
 The starter config template that `voicegw init` writes lives at
-`voicegateway/data/voicegw.example.yaml` (loaded via `importlib.resources`
+`src/voicegateway/data/voicegw.example.yaml` (loaded via `importlib.resources`
 so the wheel ships it).
 
 ## Environment variables for development

@@ -31,7 +31,7 @@ pip install "voicegateway[dashboard]"
 2. The frontend must be built (for the full UI experience):
 
 ```bash
-cd dashboard/frontend
+cd src/dashboard/frontend
 npm install && npm run build
 ```
 
@@ -41,7 +41,7 @@ If the frontend is not built, the dashboard API endpoints still work, but `GET /
 
 1. Loads the gateway configuration.
 2. Injects the gateway instance into the dashboard FastAPI app.
-3. Serves the built React frontend from `dashboard/frontend/dist/`.
+3. Serves the built React frontend from `src/dashboard/frontend/dist/`.
 4. All `/api/*` routes serve JSON data for the dashboard.
 5. All other routes fall through to `index.html` for client-side routing (SPA).
 

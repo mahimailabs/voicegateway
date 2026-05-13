@@ -31,7 +31,7 @@ If your code imports from the old shim path, update it:
 If your scripts call the fixture recorder, update the path:
 
 - `python scripts/record_streaming_fixtures.py ...`
-  → `python tests/fixtures/streaming/record_streaming_fixtures.py ...`
+  → `python src/voicegateway/tests/fixtures/streaming/record_streaming_fixtures.py ...`
 
 ## v0.5.0 -- 2026-05-12
 
