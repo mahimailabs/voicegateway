@@ -31,7 +31,7 @@ def _valid_payload(modality: str = "llm", mode: str = "stream") -> dict[str, Any
             "modality": modality,
             "mode": mode,
             "recorded_at": "2026-05-04T14:32:11Z",
-            "recorded_by": "scripts/record_streaming_fixtures.py",
+            "recorded_by": "tests/fixtures/streaming/record_streaming_fixtures.py",
             "voicegateway_version": "0.0.3",
         },
         "request": {"prompt": "Hi", "stream": True},
@@ -56,9 +56,7 @@ def _write(path: Path, payload: dict[str, Any]) -> Path:
 
 
 def test_parse_fixture_filename_basic() -> None:
-    decoded = parse_fixture_filename(
-        "openai_gpt-4o-mini_llm_stream_2026-05-04.json"
-    )
+    decoded = parse_fixture_filename("openai_gpt-4o-mini_llm_stream_2026-05-04.json")
     assert decoded.provider == "openai"
     assert decoded.model_slug == "gpt-4o-mini"
     assert decoded.modality == "llm"
@@ -68,9 +66,7 @@ def test_parse_fixture_filename_basic() -> None:
 
 def test_parse_fixture_filename_handles_underscored_model_slug() -> None:
     """Model slugs flatten ``/`` and ``:`` to ``_`` so they may contain underscores."""
-    decoded = parse_fixture_filename(
-        "ollama_qwen2.5_3b_llm_batch_2026-05-04.json"
-    )
+    decoded = parse_fixture_filename("ollama_qwen2.5_3b_llm_batch_2026-05-04.json")
     assert decoded.provider == "ollama"
     assert decoded.model_slug == "qwen2.5_3b"
     assert decoded.modality == "llm"
@@ -215,8 +211,7 @@ def test_discover_fixtures_orders_results_deterministically(tmp_path: Path) -> N
     fixture_paths = discover_fixture_paths(tmp_path)
     names = [p.name for p in fixture_paths]
     assert names == sorted(names), (
-        f"discover_fixture_paths must return paths sorted by name; "
-        f"got {names!r}"
+        f"discover_fixture_paths must return paths sorted by name; got {names!r}"
     )
 
     fixtures = discover_fixtures(tmp_path)

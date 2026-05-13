@@ -46,7 +46,7 @@ Delete this file in the same commit that lands the six fixtures.
 ## Record all six fixtures in one run
 
 ```bash
-python scripts/record_streaming_fixtures.py --record --confirm --all
+python tests/fixtures/streaming/record_streaming_fixtures.py --record --confirm --all
 ```
 
 Expected output (timing and exact dollar amounts will vary by a
@@ -91,17 +91,17 @@ recording for the same provider/model/modality/mode/date overwrites
 the prior file. Different dates produce different files.
 
 ```bash
-python scripts/record_streaming_fixtures.py --record --confirm \
+python tests/fixtures/streaming/record_streaming_fixtures.py --record --confirm \
   --provider openai --modality llm --model gpt-4o-mini --mode batch
-python scripts/record_streaming_fixtures.py --record --confirm \
+python tests/fixtures/streaming/record_streaming_fixtures.py --record --confirm \
   --provider openai --modality llm --model gpt-4o-mini --mode stream
-python scripts/record_streaming_fixtures.py --record --confirm \
+python tests/fixtures/streaming/record_streaming_fixtures.py --record --confirm \
   --provider deepgram --modality stt --model nova-3 --mode batch
-python scripts/record_streaming_fixtures.py --record --confirm \
+python tests/fixtures/streaming/record_streaming_fixtures.py --record --confirm \
   --provider deepgram --modality stt --model nova-3 --mode stream
-python scripts/record_streaming_fixtures.py --record --confirm \
+python tests/fixtures/streaming/record_streaming_fixtures.py --record --confirm \
   --provider cartesia --modality tts --model sonic-3 --mode batch
-python scripts/record_streaming_fixtures.py --record --confirm \
+python tests/fixtures/streaming/record_streaming_fixtures.py --record --confirm \
   --provider cartesia --modality tts --model sonic-3 --mode stream
 ```
 

@@ -74,7 +74,7 @@ Every fixture matches the `StreamingFixture` Pydantic model in
     "modality": "llm",
     "mode": "stream",
     "recorded_at": "2026-05-04T14:32:11Z",
-    "recorded_by": "scripts/record_streaming_fixtures.py",
+    "recorded_by": "tests/fixtures/streaming/record_streaming_fixtures.py",
     "voicegateway_version": "0.0.3"
   },
   "request": {
@@ -163,7 +163,7 @@ the full 6-fixture run).
    required; the cost estimate prints first either way.
 
    ```bash
-   python scripts/record_streaming_fixtures.py --record --confirm \
+   python tests/fixtures/streaming/record_streaming_fixtures.py --record --confirm \
      --provider openai --modality llm --model gpt-4o-mini --mode batch
    ```
 
@@ -181,7 +181,7 @@ To record all six fixtures in one go (single `--confirm`,
 aggregate cost estimate):
 
 ```bash
-python scripts/record_streaming_fixtures.py --record --confirm --all
+python tests/fixtures/streaming/record_streaming_fixtures.py --record --confirm --all
 ```
 
 ## How to refresh a fixture
@@ -296,6 +296,6 @@ traffic.
 - `tests/fixtures/streaming/PLACEHOLDER.md` is the runbook for
   recording the six minimum fixtures. Delete it in the same
   commit that lands them.
-- `scripts/record_streaming_fixtures.py` is the recorder.
-  `scripts/README.md` documents its usage, env vars, and cost
+- `tests/fixtures/streaming/record_streaming_fixtures.py` is the
+  recorder. Its module docstring documents usage, env vars, and cost
   expectations.
