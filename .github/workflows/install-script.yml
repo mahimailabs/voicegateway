@@ -22,14 +22,17 @@ on:
     paths:
       - 'install.sh'
       - 'tests/cli/_pipx_stub.sh'
+      - 'tests/cli/_uv_stub.sh'
       - 'tests/cli/test_install_script.sh'
       - '.github/workflows/install-script.yml'
   push:
     branches:
       - feat/daemon-first-onboarding
+      - feat/add-uvx-sh
     paths:
       - 'install.sh'
       - 'tests/cli/_pipx_stub.sh'
+      - 'tests/cli/_uv_stub.sh'
       - 'tests/cli/test_install_script.sh'
       - '.github/workflows/install-script.yml'
   schedule:
@@ -38,7 +41,7 @@ on:
 
 jobs:
   install-script:
-    name: install.sh / ${{ matrix.image }}
+    name: install.sh / ${{ matrix.image }} / ${{ matrix.installer }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -47,6 +50,7 @@ jobs:
           - ubuntu:24.04
           - debian:12
           - fedora:40
+        installer: [pipx, uv]
     steps:
       - uses: actions/checkout@v4
 
@@ -58,7 +62,7 @@ jobs:
       - name: Pre-pull base image
         # Pulling out-of-band gives clearer failure attribution if the
         # registry is flaking and avoids the test timing out on a slow
-        # cold pull. Matrix value is funneled through env so the run
+        # cold pull. Matrix values are funneled through env so the run
         # block never interpolates ${{ ... }} directly into the shell.
         env:
           IMAGE: ${{ matrix.image }}
@@ -67,4 +71,5 @@ jobs:
       - name: Run install.sh inside container
         env:
           IMAGE: ${{ matrix.image }}
-        run: bash tests/cli/test_install_script.sh --image "$IMAGE"
+          INSTALLER: ${{ matrix.installer }}
+        run: bash tests/cli/test_install_script.sh --image "$IMAGE" --installer "$INSTALLER"
