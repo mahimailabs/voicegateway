@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
-from typing import Any
 
 import typer
 
 from voicegateway.cli._app import app, console
 from voicegateway.utils.cli._shared import _load_gateway
+from voicegateway.utils.cli.route import _show_async, _simulate_async
 
 route_app = typer.Typer(
     name="route",
@@ -18,31 +18,6 @@ route_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(route_app, name="route")
-
-
-async def _show_async(storage: Any, project_id: str) -> list[Any]:
-    from voicegateway.storage import latency_observations_repo
-
-    db = await storage._ensure_initialized()
-    return await latency_observations_repo.get_for_project(db, project_id)
-
-
-async def _simulate_async(
-    storage: Any,
-    *,
-    project_id: str,
-    project_config: Any,
-    overrides: dict[str, str],
-) -> Any:
-    from voicegateway.middleware import router
-
-    db = await storage._ensure_initialized()
-    return await router.route_session(
-        db,
-        project_id=project_id,
-        project_config=project_config,
-        caller_overrides=overrides or None,
-    )
 
 
 @route_app.command("show")
