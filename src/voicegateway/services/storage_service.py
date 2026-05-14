@@ -401,3 +401,41 @@ class StorageService:
         """Delegate to ManagedConfigService.delete_project."""
         await self._ensure_initialized()
         return await self._managed_config_service.delete_project(project_id)
+
+    # ------------------------------------------------------------------
+    # Guardrail event logging
+    # ------------------------------------------------------------------
+
+    async def log_guardrail_fired(
+        self,
+        *,
+        session_id: str,
+        tenant_id: str | None,
+        category: str,
+        action: str,
+        context_excerpt: str,
+    ) -> None:
+        """Delegate to GuardrailService.log_fired_event."""
+        await self._ensure_initialized()
+        await self._guardrail_service.log_fired_event(
+            session_id=session_id,
+            tenant_id=tenant_id,
+            category=category,
+            action=action,
+            context_excerpt=context_excerpt,
+        )
+
+    async def log_guardrail_bypassed(
+        self,
+        *,
+        session_id: str,
+        tenant_id: str | None,
+        context_excerpt: str = "guardrail injection bypassed for this session",
+    ) -> None:
+        """Delegate to GuardrailService.log_bypassed_event."""
+        await self._ensure_initialized()
+        await self._guardrail_service.log_bypassed_event(
+            session_id=session_id,
+            tenant_id=tenant_id,
+            context_excerpt=context_excerpt,
+        )

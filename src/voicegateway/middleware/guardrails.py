@@ -111,25 +111,13 @@ def create_report_guardrail_action_tool(
     async def _handler(raw_arguments: dict[str, object]) -> None:
         if storage is None:
             return None
-        category = str(raw_arguments.get("category") or "")
-        action = str(raw_arguments.get("action") or "")
-        context_excerpt = str(raw_arguments.get("context_excerpt") or "")
-        from voicegateway.repository import (
-            guardrail_events_repository as guardrail_events,
+        await storage.log_guardrail_fired(
+            session_id=session_id,
+            tenant_id=tenant_id,
+            category=str(raw_arguments.get("category") or ""),
+            action=str(raw_arguments.get("action") or ""),
+            context_excerpt=str(raw_arguments.get("context_excerpt") or ""),
         )
-
-        await storage._ensure_initialized()
-        async with storage._conn.session() as db:
-            await guardrail_events.create_event(
-                db,
-                session_id=session_id,
-                tenant_id=tenant_id,
-                event_type="fired",
-                category=category,
-                action=action,
-                context_excerpt=context_excerpt,
-            )
-            await db.commit()
         return None
 
     return function_tool(_handler, raw_schema=raw_schema)
@@ -146,28 +134,10 @@ def schedule_bypass_event(
         return
 
     async def _record() -> None:
-        from voicegateway.repository import (
-            guardrail_events_repository as guardrail_events,
+        await storage.log_guardrail_bypassed(
+            session_id=session_id,
+            tenant_id=tenant_id,
         )
-
-        try:
-            await storage._ensure_initialized()
-            async with storage._conn.session() as db:
-                await guardrail_events.create_event(
-                    db,
-                    session_id=session_id,
-                    tenant_id=tenant_id,
-                    event_type="bypassed",
-                    context_excerpt="guardrail injection bypassed for this session",
-                )
-                await db.commit()
-        except Exception:
-            logger.warning(
-                "failed to record guardrail bypass event session_id=%s tenant_id=%s",
-                session_id,
-                tenant_id,
-                exc_info=True,
-            )
 
     try:
         loop = asyncio.get_running_loop()
