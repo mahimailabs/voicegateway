@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import warnings
 from typing import Any
 
 from livekit.agents.inference.llm import (
     ChatCompletionOptions,
-    InferenceClass,
     LLMModels,
 )
 
@@ -30,8 +28,6 @@ class LLM:
         provider: str | None = None,
         base_url: str | None = None,
         api_key: str | None = None,
-        api_secret: str | None = None,
-        inference_class: InferenceClass | None = None,
         extra_kwargs: ChatCompletionOptions | dict[str, Any] | None = None,
     ) -> Any:
         if not isinstance(model, str) or not model:
@@ -52,19 +48,6 @@ class LLM:
             plugin_kwargs["base_url"] = base_url
         if extra_kwargs is not None:
             plugin_kwargs.update(dict(extra_kwargs))
-
-        if api_secret is not None:
-            warnings.warn(
-                "voicegateway.inference.LLM ignores api_secret; VG uses "
-                "provider keys directly. See docs/migration/from-livekit-inference.md.",
-                stacklevel=2,
-            )
-        if inference_class is not None:
-            warnings.warn(
-                "voicegateway.inference.LLM ignores inference_class; "
-                "LK Cloud routing modes do not apply when self-hosting.",
-                stacklevel=2,
-            )
 
         gateway = get_gateway()
         active_project = get_active_project()

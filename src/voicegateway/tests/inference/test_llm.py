@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextvars
-import warnings
 from typing import Any
 
 import pytest
@@ -109,17 +108,13 @@ class TestConstructorAcceptsLkSignatureParams:
         assert result._wrapped.model == "gpt-4o-mini"
 
     def test_all_lk_params_accepted(self, configured_gateway, fake_provider):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            result = llm.LLM(
-                "openai/gpt-4o-mini",
-                provider="openai",
-                base_url="https://example.test",
-                api_key="override-key",
-                api_secret="ignored",
-                inference_class="standard",
-                extra_kwargs={"temperature": 0.2},
-            )
+        result = llm.LLM(
+            "openai/gpt-4o-mini",
+            provider="openai",
+            base_url="https://example.test",
+            api_key="override-key",
+            extra_kwargs={"temperature": 0.2},
+        )
         assert result.__class__.__name__ == "InstrumentedLLM"
 
 
@@ -223,17 +218,11 @@ class TestSessionCorrelation:
         assert a == b
 
 
-class TestUnsupportedParamWarnings:
-    def test_api_secret_warns(self, configured_gateway, fake_provider):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+class TestUnsupportedParamRejected:
+    def test_api_secret_no_longer_a_kwarg(self, configured_gateway, fake_provider):
+        with pytest.raises(TypeError):
             llm.LLM("openai/gpt-4o-mini", api_secret="ignored")
-        messages = [str(w.message) for w in caught]
-        assert any("api_secret" in m for m in messages)
 
-    def test_inference_class_warns(self, configured_gateway, fake_provider):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+    def test_inference_class_no_longer_a_kwarg(self, configured_gateway, fake_provider):
+        with pytest.raises(TypeError):
             llm.LLM("openai/gpt-4o-mini", inference_class="standard")
-        messages = [str(w.message) for w in caught]
-        assert any("inference_class" in m for m in messages)

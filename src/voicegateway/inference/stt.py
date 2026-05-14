@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-import warnings
 from typing import Any
 
 import aiohttp
 from livekit.agents.inference.stt import (
-    FallbackModelType,
     STTEncoding,
     STTModels,
 )
 from livekit.agents.types import (
     NOT_GIVEN,
-    APIConnectOptions,
     NotGivenOr,
 )
 from livekit.agents.utils import is_given
@@ -86,11 +83,8 @@ class STT:
         encoding: NotGivenOr[STTEncoding] = NOT_GIVEN,
         sample_rate: NotGivenOr[int] = NOT_GIVEN,
         api_key: NotGivenOr[str] = NOT_GIVEN,
-        api_secret: NotGivenOr[str] = NOT_GIVEN,
         http_session: aiohttp.ClientSession | None = None,
         extra_kwargs: NotGivenOr[Any] = NOT_GIVEN,
-        fallback: NotGivenOr[list[FallbackModelType] | FallbackModelType] = NOT_GIVEN,
-        conn_options: NotGivenOr[APIConnectOptions] = NOT_GIVEN,
     ) -> Any:
         if not is_given(model) or not isinstance(model, str):
             raise ValueError(
@@ -121,26 +115,6 @@ class STT:
             plugin_kwargs["http_session"] = http_session
         if is_given(extra_kwargs):
             plugin_kwargs.update(dict(extra_kwargs))
-
-        if is_given(api_secret):
-            warnings.warn(
-                "voicegateway.inference.STT ignores api_secret; VG uses "
-                "provider keys directly. See docs/migration/from-livekit-inference.md.",
-                stacklevel=2,
-            )
-        if is_given(fallback):
-            warnings.warn(
-                "voicegateway.inference.STT does not yet honor `fallback`; "
-                "the parameter is accepted for drop-in compat but ignored. "
-                "Use voicegw.yaml `fallbacks:` for now.",
-                stacklevel=2,
-            )
-        if is_given(conn_options):
-            warnings.warn(
-                "voicegateway.inference.STT does not yet honor `conn_options`; "
-                "ignored.",
-                stacklevel=2,
-            )
 
         gateway = get_gateway()
         project = get_active_project()

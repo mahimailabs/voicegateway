@@ -125,11 +125,8 @@ class TestConstructorAcceptsLkSignatureParams:
                 encoding="pcm_s16le",
                 sample_rate=16000,
                 api_key="override-key",
-                api_secret="ignored",
                 http_session=None,
                 extra_kwargs={"keyterm": ["livekit"]},
-                fallback="cartesia/ink-whisper",
-                conn_options=None,
             )
         assert result.__class__.__name__ == "InstrumentedSTT"
 
@@ -226,24 +223,15 @@ class TestSessionCorrelation:
         assert a == b
 
 
-class TestUnsupportedParamWarnings:
-    def test_api_secret_warns(self, configured_gateway, fake_provider):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+class TestUnsupportedParamRejected:
+    def test_api_secret_no_longer_a_kwarg(self, configured_gateway, fake_provider):
+        with pytest.raises(TypeError):
             stt.STT("deepgram/nova-3", api_secret="ignored")
-        messages = [str(w.message) for w in caught]
-        assert any("api_secret" in m for m in messages)
 
-    def test_fallback_warns(self, configured_gateway, fake_provider):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+    def test_fallback_no_longer_a_kwarg(self, configured_gateway, fake_provider):
+        with pytest.raises(TypeError):
             stt.STT("deepgram/nova-3", fallback="cartesia/ink-whisper")
-        messages = [str(w.message) for w in caught]
-        assert any("fallback" in m for m in messages)
 
-    def test_conn_options_warns(self, configured_gateway, fake_provider):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+    def test_conn_options_no_longer_a_kwarg(self, configured_gateway, fake_provider):
+        with pytest.raises(TypeError):
             stt.STT("deepgram/nova-3", conn_options="anything")
-        messages = [str(w.message) for w in caught]
-        assert any("conn_options" in m for m in messages)
