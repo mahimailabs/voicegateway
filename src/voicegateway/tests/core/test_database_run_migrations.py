@@ -25,10 +25,10 @@ async def test_run_migrations_on_fresh_db_builds_baseline(tmp_path: Path) -> Non
         await db.dispose()
 
     with sqlite3.connect(str(db_path)) as conn:
-        # alembic_version row pinned at baseline (the only revision in this commit).
+        # alembic_version row pinned at head (the full 0001-0006 chain).
         version = conn.execute("SELECT version_num FROM alembic_version").fetchone()
         assert version is not None
-        assert version[0] == "0001_baseline"
+        assert version[0] == "0006_guardrails"
 
         # Every legacy + new table exists.
         names = {
@@ -70,7 +70,7 @@ async def test_run_migrations_is_idempotent(tmp_path: Path) -> None:
 
     with sqlite3.connect(str(db_path)) as conn:
         rows = conn.execute("SELECT version_num FROM alembic_version").fetchall()
-    assert rows == [("0001_baseline",)]
+    assert rows == [("0006_guardrails",)]
 
 
 @pytest.mark.asyncio
