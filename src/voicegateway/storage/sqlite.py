@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import dataclasses
-import datetime as _dt
 import json
 import logging
 import time
@@ -12,13 +11,6 @@ from typing import Any
 
 import aiosqlite
 
-from voicegateway.inference.session.context import (
-    current_guardrail_policy_snapshot,
-    current_guardrails_bypassed,
-    current_routing_decision,
-    current_tenant,
-)
-from voicegateway.middleware.guardrails import guardrail_policy_json
 from voicegateway.models.request_model import RequestRecord
 from voicegateway.repository import (
     guardrail_events_repository as guardrail_events,
@@ -30,6 +22,7 @@ from voicegateway.repository import (
     turns_repository as turns,
 )
 from voicegateway.schemas.guardrail_policy_schema import GuardrailPolicy
+from voicegateway.services.request_log_service import RequestLogService
 from voicegateway.storage.connection import ConnectionManager
 from voicegateway.storage.migrator import initialize as _initialize_schema
 from voicegateway.utils.percentiles import compute_percentiles
@@ -44,6 +37,7 @@ class SQLiteStorage:
 
     def __init__(self, db_path: str | Path) -> None:
         self._conn = ConnectionManager(db_path)
+        self._request_log_service = RequestLogService(self._conn)
 
     @property
     def _db_path(self) -> Path:
@@ -76,32 +70,11 @@ class SQLiteStorage:
         changes: dict[str, Any] | None = None,
         source: str = "api",
     ) -> None:
-        """Write an entry to the config_audit_log table. Best-effort — never raises."""
-        db = await self._ensure_initialized()
-        try:
-            await db.execute(
-                "INSERT INTO config_audit_log (timestamp, entity_type, entity_id, "
-                "action, changes_json, source) VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    time.time(),
-                    entity_type,
-                    entity_id,
-                    action,
-                    json.dumps(changes) if changes else None,
-                    source,
-                ),
-            )
-            await db.commit()
-        except Exception:  # noqa: BLE001
-            _logger.warning(
-                "Failed to write audit log for %s/%s action=%s",
-                entity_type,
-                entity_id,
-                action,
-                exc_info=True,
-            )
-        finally:
-            await db.close()
+        """Delegate to RequestLogService.log_audit_event."""
+        await self._ensure_initialized()
+        await self._request_log_service.log_audit_event(
+            entity_type, entity_id, action, changes, source
+        )
 
     async def get_audit_log(
         self,
@@ -110,200 +83,20 @@ class SQLiteStorage:
         entity_id: str | None = None,
         action: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return recent audit log entries."""
-        db = await self._ensure_initialized()
-        try:
-            conditions: list[str] = []
-            params: list[Any] = []
-            if entity_type:
-                conditions.append("entity_type = ?")
-                params.append(entity_type)
-            if entity_id:
-                conditions.append("entity_id = ?")
-                params.append(entity_id)
-            if action:
-                conditions.append("action = ?")
-                params.append(action)
-            where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-            query = f"SELECT id, timestamp, entity_type, entity_id, action, changes_json, source FROM config_audit_log {where} ORDER BY timestamp DESC LIMIT ?"
-            params.append(limit)
-
-            cursor = await db.execute(query, tuple(params))
-            rows = []
-            async for row in cursor:
-                rows.append(
-                    {
-                        "id": row[0],
-                        "timestamp": row[1],
-                        "entity_type": row[2],
-                        "entity_id": row[3],
-                        "action": row[4],
-                        "changes": json.loads(row[5]) if row[5] else None,
-                        "source": row[6],
-                    }
-                )
-            return rows
-        finally:
-            await db.close()
+        """Delegate to RequestLogService.get_audit_log."""
+        await self._ensure_initialized()
+        return await self._request_log_service.get_audit_log(
+            limit, entity_type, entity_id, action
+        )
 
     # ------------------------------------------------------------------
     # Writes
     # ------------------------------------------------------------------
 
     async def log_request(self, record: RequestRecord) -> None:
-        """Log a request record to the database."""
-        db = await self._ensure_initialized()
-        request_tenant_id = current_tenant()
-        try:
-            await db.execute(
-                """INSERT INTO requests
-                   (id, timestamp, project, modality, model_id, provider,
-                    input_units, output_units, cost_usd, pricing_source,
-                    ttfb_ms, total_latency_ms, status,
-                    fallback_from, error_message, metadata, session_id,
-                    tenant_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    record.id,
-                    record.timestamp,
-                    record.project,
-                    record.modality,
-                    record.model_id,
-                    record.provider,
-                    record.input_units,
-                    record.output_units,
-                    record.cost_usd,
-                    record.pricing_source,
-                    record.ttfb_ms,
-                    record.total_latency_ms,
-                    record.status,
-                    record.fallback_from,
-                    record.error_message,
-                    json.dumps(record.metadata) if record.metadata else None,
-                    record.session_id,
-                    request_tenant_id,
-                ),
-            )
-            if record.session_id:
-                started_at_iso = _dt.datetime.fromtimestamp(
-                    record.timestamp, tz=_dt.UTC
-                ).isoformat()
-                # SQL-side upsert: on conflict, accumulate cost / count
-                # and union the modality into the comma-separated list
-                # without duplicates. INSTR on bracketed keys (",stt,")
-                # avoids substring false-positives like "tt" matching
-                # in "stt". ended_at is set to the request's timestamp
-                # on insert and bumped on every conflict so a session
-                # row always reflects last-activity time without
-                # requiring a session-close hook. Out-of-order arrivals
-                # cannot drag ended_at backwards (CASE guards it).
-                # started_at is symmetrically guarded: requests are
-                # logged on completion, so an STT call that started
-                # earlier may finish after a faster LLM call. The MIN
-                # CASE keeps started_at at the earliest request_started
-                # timestamp regardless of completion order.
-                # ``request_tenant_id`` (read once at the top from the
-                # tenant_id_ctx ContextVar, REQ-VG-TENANT-001) is
-                # reused for both the requests row and the sessions
-                # UPSERT. On INSERT it stamps the session row; on
-                # CONFLICT we COALESCE so an already-set tenant_id
-                # never gets overwritten by a later request that
-                # arrived without a tenant in scope. This is the
-                # "session has one tenant for its lifetime" rule from
-                # the Refinery: the first tenant-bearing request wins,
-                # subsequent unattributed-bucket requests don't clear
-                # it.
-                # stamp the router's pick on the session row.
-                # AC-5 guarantees the triple is immutable for the
-                # session's lifetime, so COALESCE on conflict keeps the
-                # first-set values and ignores later sessions writes
-                # that arrive without a routing decision in scope.
-                routing = current_routing_decision()
-                r_llm: str | None
-                r_tts: str | None
-                r_budget: int | None
-                r_overrun: int | None
-                if routing is not None:
-                    r_llm = routing[1]
-                    r_tts = routing[2]
-                    r_budget = routing[3]
-                    r_overrun = 1 if routing[4] else 0
-                else:
-                    r_llm = None
-                    r_tts = None
-                    r_budget = None
-                    r_overrun = None
-                guardrail_snapshot = current_guardrail_policy_snapshot()
-                if guardrail_snapshot is not None:
-                    guardrail_policy = GuardrailPolicy.from_raw(guardrail_snapshot)
-                    guardrails_active = 1 if guardrail_policy.is_active else 0
-                    guardrails_bypassed = (
-                        1
-                        if guardrail_policy.is_active and current_guardrails_bypassed()
-                        else 0
-                    )
-                    guardrail_snapshot_json = guardrail_policy_json(guardrail_policy)
-                else:
-                    guardrails_active = None
-                    guardrails_bypassed = None
-                    guardrail_snapshot_json = None
-                await db.execute(
-                    """INSERT INTO sessions
-                       (id, project, started_at, ended_at, modalities,
-                        total_cost_usd, request_count, tenant_id,
-                        routed_llm, routed_tts, budget_ms, budget_overrun,
-                        guardrails_active, guardrails_bypassed,
-                        guardrail_policy_snapshot_json)
-                       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
-                       ON CONFLICT(id) DO UPDATE SET
-                           total_cost_usd = total_cost_usd + excluded.total_cost_usd,
-                           request_count = request_count + 1,
-                           tenant_id = COALESCE(tenant_id, excluded.tenant_id),
-                           routed_llm = COALESCE(routed_llm, excluded.routed_llm),
-                           routed_tts = COALESCE(routed_tts, excluded.routed_tts),
-                           budget_ms = COALESCE(budget_ms, excluded.budget_ms),
-                           budget_overrun = COALESCE(budget_overrun, excluded.budget_overrun),
-                           guardrails_active = COALESCE(guardrails_active, excluded.guardrails_active),
-                           guardrails_bypassed = COALESCE(guardrails_bypassed, excluded.guardrails_bypassed),
-                           guardrail_policy_snapshot_json = COALESCE(guardrail_policy_snapshot_json, excluded.guardrail_policy_snapshot_json),
-                           started_at = CASE
-                               WHEN started_at IS NULL THEN excluded.started_at
-                               WHEN started_at > excluded.started_at THEN excluded.started_at
-                               ELSE started_at
-                           END,
-                           ended_at = CASE
-                               WHEN ended_at IS NULL THEN excluded.ended_at
-                               WHEN ended_at < excluded.ended_at THEN excluded.ended_at
-                               ELSE ended_at
-                           END,
-                           modalities = CASE
-                               WHEN modalities = '' THEN excluded.modalities
-                               WHEN INSTR(
-                                   ',' || modalities || ',',
-                                   ',' || excluded.modalities || ','
-                               ) > 0 THEN modalities
-                               ELSE modalities || ',' || excluded.modalities
-                           END""",
-                    (
-                        record.session_id,
-                        record.project,
-                        started_at_iso,
-                        started_at_iso,
-                        record.modality,
-                        record.cost_usd,
-                        request_tenant_id,
-                        r_llm,
-                        r_tts,
-                        r_budget,
-                        r_overrun,
-                        guardrails_active,
-                        guardrails_bypassed,
-                        guardrail_snapshot_json,
-                    ),
-                )
-            await db.commit()
-        finally:
-            await db.close()
+        """Delegate to RequestLogService.log_request."""
+        await self._ensure_initialized()
+        await self._request_log_service.log_request(record)
 
     # ------------------------------------------------------------------
     # Reads
@@ -605,36 +398,11 @@ class SQLiteStorage:
         end_ts: float | None = None,
         project: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return every request record falling in `[start_ts, end_ts)`."""
-        db = await self._ensure_initialized()
-        try:
-            conditions: list[str] = []
-            params: list[Any] = []
-            if start_ts is not None:
-                conditions.append("timestamp >= ?")
-                params.append(start_ts)
-            if end_ts is not None:
-                conditions.append("timestamp < ?")
-                params.append(end_ts)
-            if project:
-                conditions.append("project = ?")
-                params.append(project)
-            where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-            query = f"SELECT * FROM requests {where} ORDER BY timestamp ASC"
-            cursor = await db.execute(query, tuple(params))
-            columns = [d[0] for d in cursor.description]
-            rows = []
-            async for row in cursor:
-                record = dict(zip(columns, row, strict=False))
-                if record.get("metadata"):
-                    try:
-                        record["metadata"] = json.loads(record["metadata"])
-                    except (ValueError, TypeError):
-                        pass
-                rows.append(record)
-            return rows
-        finally:
-            await db.close()
+        """Delegate to RequestLogService.get_requests_in_window."""
+        await self._ensure_initialized()
+        return await self._request_log_service.get_requests_in_window(
+            start_ts, end_ts, project
+        )
 
     async def get_recent_requests(
         self,
@@ -643,41 +411,11 @@ class SQLiteStorage:
         project: str | None = None,
         tenant: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Get recent request records, optionally filtered by modality, project, tenant."""
-        db = await self._ensure_initialized()
-        try:
-            conditions: list[str] = []
-            params: list[Any] = []
-            if modality:
-                conditions.append("modality = ?")
-                params.append(modality)
-            if project:
-                conditions.append("project = ?")
-                params.append(project)
-            if tenant is not None:
-                if tenant == "":
-                    conditions.append("tenant_id IS NULL")
-                else:
-                    conditions.append("tenant_id = ?")
-                    params.append(tenant)
-            where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-            query = f"SELECT * FROM requests {where} ORDER BY timestamp DESC LIMIT ?"
-            params.append(limit)
-
-            cursor = await db.execute(query, tuple(params))
-            columns = [d[0] for d in cursor.description]
-            rows = []
-            async for row in cursor:
-                record = dict(zip(columns, row, strict=False))
-                if record.get("metadata"):
-                    try:
-                        record["metadata"] = json.loads(record["metadata"])
-                    except (ValueError, TypeError):
-                        pass
-                rows.append(record)
-            return rows
-        finally:
-            await db.close()
+        """Delegate to RequestLogService.get_recent_requests."""
+        await self._ensure_initialized()
+        return await self._request_log_service.get_recent_requests(
+            limit, modality, project, tenant
+        )
 
     async def get_project_stats(self, project: str) -> dict[str, Any]:
         """Get today's stats for a single project."""
