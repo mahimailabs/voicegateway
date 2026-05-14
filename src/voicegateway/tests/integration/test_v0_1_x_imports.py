@@ -20,14 +20,14 @@ def test_voicegateway_server_all_lists_build_app() -> None:
     assert "build_app" in server_pkg.__all__
 
 
-# ---------- voicegateway.server.combined (canonical; shim retired in v0.6.0) ----------
+# ---------- voicegateway.server.main (combined + API consolidated in v0.6.0) ----------
 
 
-def test_voicegateway_server_combined_resolves() -> None:
-    """The canonical combined-server path resolves. The"""
-    from voicegateway.server.combined import build_combined_app, main
+def test_voicegateway_server_main_resolves() -> None:
+    """``build_app`` and ``main`` are importable from ``server.main``."""
+    from voicegateway.server.main import build_app, main
 
-    assert callable(build_combined_app)
+    assert callable(build_app)
     assert callable(main)
 
 
