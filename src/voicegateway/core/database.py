@@ -6,10 +6,11 @@ import asyncio
 import logging
 import os
 import sqlite3
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import aiosqlite
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -105,6 +106,21 @@ class Database:
                 raise
             finally:
                 await session.close()
+
+    @asynccontextmanager
+    async def aiosqlite_connect(self) -> AsyncIterator[aiosqlite.Connection]:
+        """Yield a fresh ``aiosqlite.Connection`` for legacy repositories.
+
+        Transitional bridge during the ORM migration: opens its own
+        connection to the same SQLite file (not borrowed from the
+        SQLAlchemy pool, so the two paths cannot deadlock each other).
+        Will be removed once every repository takes ``AsyncSession``.
+        """
+        db = await aiosqlite.connect(str(self._db_file_path))
+        try:
+            yield db
+        finally:
+            await db.close()
 
     async def run_migrations(self) -> None:
         """Stamp any legacy DB, then ``alembic upgrade head``. Idempotent."""
