@@ -107,18 +107,12 @@ class ManagedConfigService:
     # --- projects ----------------------------------------------------
 
     async def list_projects(self) -> list[dict[str, Any]]:
-        db = await self._conn.connect()
-        try:
-            return await project_repo.list_projects(db)
-        finally:
-            await db.close()
+        async with self._conn.session() as s:
+            return await project_repo.list_projects(s)
 
     async def get_project(self, project_id: str) -> dict[str, Any] | None:
-        db = await self._conn.connect()
-        try:
-            return await project_repo.get_project(db, project_id)
-        finally:
-            await db.close()
+        async with self._conn.session() as s:
+            return await project_repo.get_project(s, project_id)
 
     async def upsert_project(
         self,
@@ -135,10 +129,9 @@ class ManagedConfigService:
         branding: dict[str, Any] | None = None,
         guardrail_policy: dict[str, Any] | None = None,
     ) -> None:
-        db = await self._conn.connect()
-        try:
+        async with self._conn.session() as s:
             await project_repo.upsert_project(
-                db,
+                s,
                 project_id,
                 name,
                 description=description,
@@ -152,8 +145,6 @@ class ManagedConfigService:
                 branding=branding,
                 guardrail_policy=guardrail_policy,
             )
-        finally:
-            await db.close()
 
     async def set_project_guardrails(
         self,
@@ -170,10 +161,9 @@ class ManagedConfigService:
         tts_model: str | None = None,
         tags: list[str] | None = None,
     ) -> None:
-        db = await self._conn.connect()
-        try:
+        async with self._conn.session() as s:
             await project_repo.set_project_guardrails(
-                db,
+                s,
                 project_id=project_id,
                 policy=policy,
                 name=name,
@@ -186,15 +176,10 @@ class ManagedConfigService:
                 tts_model=tts_model,
                 tags=tags,
             )
-        finally:
-            await db.close()
 
     async def delete_project(self, project_id: str) -> bool:
-        db = await self._conn.connect()
-        try:
-            return await project_repo.delete_project(db, project_id)
-        finally:
-            await db.close()
+        async with self._conn.session() as s:
+            return await project_repo.delete_project(s, project_id)
 
 
 __all__ = ["ManagedConfigService"]

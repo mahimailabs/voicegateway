@@ -1,4 +1,12 @@
-"""Async repo for the managed_projects table + branding validator."""
+"""Async repo for the managed_projects table + branding validator (ORM).
+
+The UPSERTs use ``text()`` clauses because the legacy SQL relied on a
+COALESCE-with-excluded pattern that has battle-tested semantics: when
+an upsert call passes ``branding=None`` the existing branding column
+must NOT be overwritten with NULL. Expressing this in pure ORM is
+verbose and harder to audit-by-diff; ``text()`` keeps the SQL bytes
+identical to the legacy migration.
+"""
 
 from __future__ import annotations
 
@@ -7,10 +15,62 @@ import re
 import time
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import text
+from sqlmodel import delete, select
+
+from voicegateway.models.managed_project_model import ManagedProject
 from voicegateway.schemas.guardrail_policy_schema import GuardrailPolicy
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+
+_PROJECT_UPSERT = text(
+    """
+    INSERT INTO managed_projects (
+        project_id, name, description, daily_budget, budget_action,
+        default_stack, stt_model, llm_model, tts_model, tags,
+        created_at, updated_at, branding_json, guardrail_policy_json
+    ) VALUES (
+        :project_id, :name, :description, :daily_budget, :budget_action,
+        :default_stack, :stt_model, :llm_model, :tts_model, :tags,
+        :now, :now, :branding_json, :guardrail_json
+    )
+    ON CONFLICT(project_id) DO UPDATE SET
+        name=excluded.name,
+        description=excluded.description,
+        daily_budget=excluded.daily_budget,
+        budget_action=excluded.budget_action,
+        default_stack=excluded.default_stack,
+        stt_model=excluded.stt_model,
+        llm_model=excluded.llm_model,
+        tts_model=excluded.tts_model,
+        tags=excluded.tags,
+        branding_json=COALESCE(excluded.branding_json, branding_json),
+        guardrail_policy_json=COALESCE(
+            excluded.guardrail_policy_json, guardrail_policy_json
+        ),
+        updated_at=excluded.updated_at
+    """
+)
+
+
+_GUARDRAILS_UPSERT = text(
+    """
+    INSERT INTO managed_projects (
+        project_id, name, description, daily_budget, budget_action,
+        default_stack, stt_model, llm_model, tts_model, tags,
+        created_at, updated_at, guardrail_policy_json
+    ) VALUES (
+        :project_id, :name, :description, :daily_budget, :budget_action,
+        :default_stack, :stt_model, :llm_model, :tts_model, :tags,
+        :now, :now, :guardrail_json
+    )
+    ON CONFLICT(project_id) DO UPDATE SET
+        guardrail_policy_json=excluded.guardrail_policy_json,
+        updated_at=excluded.updated_at
+    """
+)
 
 
 def validate_branding(
@@ -54,63 +114,53 @@ def validate_branding(
     return out or None
 
 
-async def list_projects(db: aiosqlite.Connection) -> list[dict[str, Any]]:
-    """Return every managed_projects row with branding + guardrail JSON parsed."""
-    cursor = await db.execute(
-        "SELECT project_id, name, description, daily_budget, budget_action, "
-        "default_stack, stt_model, llm_model, tts_model, tags, "
-        "created_at, updated_at, branding_json, guardrail_policy_json "
-        "FROM managed_projects ORDER BY created_at ASC"
+def _row_to_dict(p: ManagedProject) -> dict[str, Any]:
+    branding = None
+    if p.branding_json:
+        try:
+            branding = json.loads(p.branding_json)
+        except (ValueError, TypeError):
+            branding = None
+    guardrail_policy = None
+    if p.guardrail_policy_json:
+        try:
+            guardrail_policy = json.loads(p.guardrail_policy_json)
+        except (ValueError, TypeError):
+            guardrail_policy = None
+    return {
+        "project_id": p.project_id,
+        "name": p.name,
+        "description": p.description,
+        "daily_budget": p.daily_budget,
+        "budget_action": p.budget_action,
+        "default_stack": p.default_stack,
+        "stt_model": p.stt_model,
+        "llm_model": p.llm_model,
+        "tts_model": p.tts_model,
+        "tags": json.loads(p.tags or "[]"),
+        "created_at": p.created_at,
+        "updated_at": p.updated_at,
+        "branding": branding,
+        "guardrail_policy": guardrail_policy,
+    }
+
+
+async def list_projects(session: AsyncSession) -> list[dict[str, Any]]:
+    """Return every managed_projects row with branding + guardrail parsed."""
+    result = await session.execute(
+        select(ManagedProject).order_by(ManagedProject.created_at.asc())
     )
-    rows: list[dict[str, Any]] = []
-    async for row in cursor:
-        branding_raw = row[12] if len(row) > 12 else None
-        guardrail_raw = row[13] if len(row) > 13 else None
-        branding = None
-        if branding_raw:
-            try:
-                branding = json.loads(branding_raw)
-            except (ValueError, TypeError):
-                branding = None
-        guardrail_policy = None
-        if guardrail_raw:
-            try:
-                guardrail_policy = json.loads(guardrail_raw)
-            except (ValueError, TypeError):
-                guardrail_policy = None
-        rows.append(
-            {
-                "project_id": row[0],
-                "name": row[1],
-                "description": row[2],
-                "daily_budget": row[3],
-                "budget_action": row[4],
-                "default_stack": row[5],
-                "stt_model": row[6],
-                "llm_model": row[7],
-                "tts_model": row[8],
-                "tags": json.loads(row[9] or "[]"),
-                "created_at": row[10],
-                "updated_at": row[11],
-                "branding": branding,
-                "guardrail_policy": guardrail_policy,
-            }
-        )
-    return rows
+    return [_row_to_dict(p) for p in result.scalars().all()]
 
 
-async def get_project(
-    db: aiosqlite.Connection, project_id: str
-) -> dict[str, Any] | None:
-    """Find one managed project by id (linear scan over the small table)."""
-    for p in await list_projects(db):
-        if p["project_id"] == project_id:
-            return p
-    return None
+async def get_project(session: AsyncSession, project_id: str) -> dict[str, Any] | None:
+    """Find one managed project by id."""
+    p = await session.get(ManagedProject, project_id)
+    return _row_to_dict(p) if p is not None else None
 
 
 async def upsert_project(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     project_id: str,
     name: str,
     description: str = "",
@@ -124,7 +174,11 @@ async def upsert_project(
     branding: dict[str, Any] | None = None,
     guardrail_policy: dict[str, Any] | None = None,
 ) -> None:
-    """Insert or update one managed_projects row."""
+    """Insert or update one managed_projects row.
+
+    ``branding=None`` and ``guardrail_policy=None`` preserve the
+    existing column values via SQLite ``COALESCE(excluded.x, x)``.
+    """
     validated_branding = validate_branding(branding)
     branding_json = json.dumps(validated_branding) if validated_branding else None
     validated_guardrails = (
@@ -137,48 +191,29 @@ async def upsert_project(
         if validated_guardrails is not None
         else None
     )
-    now = time.time()
-    await db.execute(
-        """INSERT INTO managed_projects
-               (project_id, name, description, daily_budget, budget_action,
-                default_stack, stt_model, llm_model, tts_model, tags,
-                created_at, updated_at, branding_json, guardrail_policy_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(project_id) DO UPDATE SET
-               name=excluded.name,
-               description=excluded.description,
-               daily_budget=excluded.daily_budget,
-               budget_action=excluded.budget_action,
-               default_stack=excluded.default_stack,
-               stt_model=excluded.stt_model,
-               llm_model=excluded.llm_model,
-               tts_model=excluded.tts_model,
-               tags=excluded.tags,
-               branding_json=COALESCE(excluded.branding_json, branding_json),
-               guardrail_policy_json=COALESCE(excluded.guardrail_policy_json, guardrail_policy_json),
-               updated_at=excluded.updated_at""",
-        (
-            project_id,
-            name,
-            description,
-            daily_budget,
-            budget_action,
-            default_stack,
-            stt_model,
-            llm_model,
-            tts_model,
-            json.dumps(tags or []),
-            now,
-            now,
-            branding_json,
-            guardrail_json,
-        ),
+    await session.execute(
+        _PROJECT_UPSERT,
+        {
+            "project_id": project_id,
+            "name": name,
+            "description": description,
+            "daily_budget": daily_budget,
+            "budget_action": budget_action,
+            "default_stack": default_stack,
+            "stt_model": stt_model,
+            "llm_model": llm_model,
+            "tts_model": tts_model,
+            "tags": json.dumps(tags or []),
+            "now": time.time(),
+            "branding_json": branding_json,
+            "guardrail_json": guardrail_json,
+        },
     )
-    await db.commit()
+    await session.commit()
 
 
 async def set_project_guardrails(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     *,
     project_id: str,
     policy: dict[str, Any] | None,
@@ -197,42 +232,33 @@ async def set_project_guardrails(
     if policy is not None:
         validated = GuardrailPolicy.from_raw(policy).to_storage_dict()
         guardrail_json = json.dumps(validated, sort_keys=True)
-    now = time.time()
-    await db.execute(
-        """INSERT INTO managed_projects
-               (project_id, name, description, daily_budget, budget_action,
-                default_stack, stt_model, llm_model, tts_model, tags,
-                created_at, updated_at, guardrail_policy_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(project_id) DO UPDATE SET
-               guardrail_policy_json=excluded.guardrail_policy_json,
-               updated_at=excluded.updated_at""",
-        (
-            project_id,
-            name,
-            description,
-            daily_budget,
-            budget_action,
-            default_stack,
-            stt_model,
-            llm_model,
-            tts_model,
-            json.dumps(tags or []),
-            now,
-            now,
-            guardrail_json,
-        ),
+    await session.execute(
+        _GUARDRAILS_UPSERT,
+        {
+            "project_id": project_id,
+            "name": name,
+            "description": description,
+            "daily_budget": daily_budget,
+            "budget_action": budget_action,
+            "default_stack": default_stack,
+            "stt_model": stt_model,
+            "llm_model": llm_model,
+            "tts_model": tts_model,
+            "tags": json.dumps(tags or []),
+            "now": time.time(),
+            "guardrail_json": guardrail_json,
+        },
     )
-    await db.commit()
+    await session.commit()
 
 
-async def delete_project(db: aiosqlite.Connection, project_id: str) -> bool:
-    """Delete one managed_projects row. Returns True when a row was removed."""
-    cursor = await db.execute(
-        "DELETE FROM managed_projects WHERE project_id = ?", (project_id,)
+async def delete_project(session: AsyncSession, project_id: str) -> bool:
+    """Delete one managed_projects row. True when a row was removed."""
+    result = await session.execute(
+        delete(ManagedProject).where(ManagedProject.project_id == project_id)
     )
-    await db.commit()
-    return (cursor.rowcount or 0) > 0
+    await session.commit()
+    return (result.rowcount or 0) > 0
 
 
 __all__ = [
