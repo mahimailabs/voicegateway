@@ -145,11 +145,24 @@ class Database:
         if not _has_table(path, "requests"):
             return  # fresh DB — upgrade head builds everything
 
+        # Require the FULL baseline shape before stamping. A partial-legacy
+        # DB (test fixtures that seed only ``requests``, for example) falls
+        # through; baseline.upgrade() then runs and fills in the missing
+        # tables idempotently via CREATE IF NOT EXISTS.
+        baseline_required = (
+            "sessions",
+            "managed_providers",
+            "managed_models",
+            "managed_projects",
+            "config_audit_log",
+        )
+        if not all(_has_table(path, t) for t in baseline_required):
+            return
+
         detected = _detect_schema_level(path)
-        # Only stamp at a revision Alembic actually knows about. If the DB
-        # is more advanced than this branch's migration tree (e.g., during
-        # Commit 2 when only 0001_baseline exists), clamp to head so the
-        # subsequent upgrade is a no-op rather than crashing.
+        # Only stamp at a revision Alembic actually knows about. The clamp
+        # protects against running ahead of the migration tree (during the
+        # multi-commit rollout when not every revision is on disk yet).
         script = ScriptDirectory.from_config(cfg)
         known = {rev.revision for rev in script.walk_revisions()}
         if detected not in known:

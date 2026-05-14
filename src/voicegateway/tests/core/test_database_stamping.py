@@ -141,20 +141,95 @@ def test_detect_guardrails_via_sessions_column(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_migrations_legacy_stamps_then_upgrades(tmp_path: Path) -> None:
-    """A legacy DB at the 0004 schema level stamps then upgrades to head.
+async def test_run_migrations_legacy_baseline_db_upgrades_to_head(
+    tmp_path: Path,
+) -> None:
+    """A legacy DB at the full v0.0.5 baseline shape stamps then upgrades.
 
-    The detector returns ``0004_tenant_attribution``; alembic stamps
-    that, then ``upgrade head`` runs 0005 + 0006 (each is a PRAGMA-
-    guarded no-op against the legacy DB's missing columns, which the
-    ALTER TABLE branch happily adds).
+    Seeds the same tables ``storage/schema.py:SCHEMA_SQL`` produced
+    before the alembic cutover, then drives ``Database.run_migrations``.
+    Stamping detects baseline; alembic upgrade runs 0002 through 0006
+    forward, each PRAGMA-guarded so they happily ADD COLUMN on the
+    legacy table.
     """
     db_path = tmp_path / "legacy.db"
     _seed_legacy_db(
         db_path,
         """
-        CREATE TABLE requests (id TEXT PRIMARY KEY, timestamp REAL, tenant_id TEXT);
-        CREATE TABLE sessions (id TEXT PRIMARY KEY, tenant_id TEXT);
+        CREATE TABLE requests (
+            id TEXT PRIMARY KEY,
+            timestamp REAL NOT NULL,
+            project TEXT NOT NULL DEFAULT 'default',
+            modality TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            input_units REAL DEFAULT 0,
+            output_units REAL DEFAULT 0,
+            cost_usd REAL DEFAULT 0,
+            pricing_source TEXT NOT NULL DEFAULT '',
+            ttfb_ms REAL,
+            total_latency_ms REAL,
+            status TEXT DEFAULT 'success',
+            fallback_from TEXT,
+            error_message TEXT,
+            metadata TEXT,
+            session_id TEXT
+        );
+        CREATE TABLE sessions (
+            id TEXT PRIMARY KEY,
+            project TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            ended_at TEXT,
+            modalities TEXT NOT NULL DEFAULT '',
+            total_cost_usd REAL DEFAULT 0,
+            request_count INTEGER DEFAULT 0
+        );
+        CREATE TABLE managed_providers (
+            provider_id TEXT PRIMARY KEY,
+            provider_type TEXT NOT NULL,
+            api_key_encrypted TEXT NOT NULL DEFAULT '',
+            base_url TEXT,
+            extra_config TEXT NOT NULL DEFAULT '{}',
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            project TEXT
+        );
+        CREATE TABLE managed_models (
+            model_id TEXT PRIMARY KEY,
+            modality TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            model_name TEXT NOT NULL,
+            display_name TEXT,
+            default_language TEXT,
+            default_voice TEXT,
+            extra_config TEXT NOT NULL DEFAULT '{}',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        );
+        CREATE TABLE managed_projects (
+            project_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            daily_budget REAL NOT NULL DEFAULT 0,
+            budget_action TEXT NOT NULL DEFAULT 'warn',
+            default_stack TEXT,
+            stt_model TEXT,
+            llm_model TEXT,
+            tts_model TEXT,
+            tags TEXT NOT NULL DEFAULT '[]',
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        );
+        CREATE TABLE config_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp REAL NOT NULL,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            changes_json TEXT,
+            source TEXT NOT NULL DEFAULT 'api'
+        );
         """,
     )
     db = Database(_build_config(db_path))
@@ -165,9 +240,15 @@ async def test_run_migrations_legacy_stamps_then_upgrades(tmp_path: Path) -> Non
 
     with sqlite3.connect(str(db_path)) as conn:
         ver = conn.execute("SELECT version_num FROM alembic_version").fetchone()
-        # head reached after 0005 + 0006 forward-applied.
         sessions_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
+        tables = {
+            row[0]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
     assert ver == ("0006_guardrails",)
-    # Routing + guardrail columns appeared via the forward upgrades.
+    # Migrations 0002 + 0006 added these column families to sessions.
+    assert "talk_time_seconds" in sessions_cols
     assert "routed_llm" in sessions_cols
     assert "guardrails_active" in sessions_cols
+    # Migrations 0003 + 0006 added these new tables to the legacy DB.
+    assert {"replay_stt_events", "guardrail_events"}.issubset(tables)
