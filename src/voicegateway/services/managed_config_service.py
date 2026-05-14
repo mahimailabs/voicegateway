@@ -82,18 +82,12 @@ class ManagedConfigService:
     # --- models ------------------------------------------------------
 
     async def list_models(self) -> list[dict[str, Any]]:
-        db = await self._conn.connect()
-        try:
-            return await model_repo.list_models(db)
-        finally:
-            await db.close()
+        async with self._conn.session() as s:
+            return await model_repo.list_models(s)
 
     async def get_model(self, model_id: str) -> dict[str, Any] | None:
-        db = await self._conn.connect()
-        try:
-            return await model_repo.get_model(db, model_id)
-        finally:
-            await db.close()
+        async with self._conn.session() as s:
+            return await model_repo.get_model(s, model_id)
 
     async def upsert_model(
         self,
@@ -107,10 +101,9 @@ class ManagedConfigService:
         extra_config: dict[str, Any] | None = None,
         enabled: bool = True,
     ) -> None:
-        db = await self._conn.connect()
-        try:
+        async with self._conn.session() as s:
             await model_repo.upsert_model(
-                db,
+                s,
                 model_id,
                 modality,
                 provider_id,
@@ -121,15 +114,10 @@ class ManagedConfigService:
                 extra_config=extra_config,
                 enabled=enabled,
             )
-        finally:
-            await db.close()
 
     async def delete_model(self, model_id: str) -> bool:
-        db = await self._conn.connect()
-        try:
-            return await model_repo.delete_model(db, model_id)
-        finally:
-            await db.close()
+        async with self._conn.session() as s:
+            return await model_repo.delete_model(s, model_id)
 
     # --- projects ----------------------------------------------------
 
