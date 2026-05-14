@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import text
 
 from voicegateway.inference.session.context import (
     reset_tenant_id,
@@ -42,26 +43,34 @@ def _record(
     )
 
 
+async def _fetch_tenant(
+    storage: SQLiteStorage, table: str, key: str, value: str
+) -> str | None:
+    await storage._ensure_initialized()
+    async with storage._conn.session() as db:
+        result = await db.execute(
+            text(f"SELECT tenant_id FROM {table} WHERE {key} = :value"),
+            {"value": value},
+        )
+        row = result.first()
+    assert row is not None
+    return row[0]
+
+
 async def test_caller_with_tenant_tags_session(storage) -> None:
     set_tenant("acme")
     await storage.log_request(_record("s1"))
 
-    db = await storage._ensure_initialized()
-    cur = await db.execute("SELECT tenant_id FROM sessions WHERE id = 's1'")
-    row = await cur.fetchone()
-    assert row is not None
-    assert row[0] == "acme"
+    tenant = await _fetch_tenant(storage, "sessions", "id", "s1")
+    assert tenant == "acme"
 
 
 async def test_caller_with_no_tenant_writes_null(storage) -> None:
     reset_tenant_id()  # belt-and-suspenders; the fixture also resets on teardown
     await storage.log_request(_record("s2"))
 
-    db = await storage._ensure_initialized()
-    cur = await db.execute("SELECT tenant_id FROM sessions WHERE id = 's2'")
-    row = await cur.fetchone()
-    assert row is not None
-    assert row[0] is None
+    tenant = await _fetch_tenant(storage, "sessions", "id", "s2")
+    assert tenant is None
 
 
 async def test_requests_row_also_carries_tenant(storage) -> None:
@@ -69,11 +78,8 @@ async def test_requests_row_also_carries_tenant(storage) -> None:
     set_tenant("acme")
     await storage.log_request(_record("s3"))
 
-    db = await storage._ensure_initialized()
-    cur = await db.execute("SELECT tenant_id FROM requests WHERE session_id = 's3'")
-    row = await cur.fetchone()
-    assert row is not None
-    assert row[0] == "acme"
+    tenant = await _fetch_tenant(storage, "requests", "session_id", "s3")
+    assert tenant == "acme"
 
 
 async def test_coalesce_keeps_first_tenant_on_conflict(storage) -> None:
@@ -84,11 +90,8 @@ async def test_coalesce_keeps_first_tenant_on_conflict(storage) -> None:
     reset_tenant_id()
     await storage.log_request(_record("s4", cost=0.10))
 
-    db = await storage._ensure_initialized()
-    cur = await db.execute("SELECT tenant_id FROM sessions WHERE id = 's4'")
-    row = await cur.fetchone()
-    assert row is not None
-    assert row[0] == "acme"
+    tenant = await _fetch_tenant(storage, "sessions", "id", "s4")
+    assert tenant == "acme"
 
 
 async def test_deferred_attribution_fills_null_slot(storage) -> None:
@@ -99,11 +102,8 @@ async def test_deferred_attribution_fills_null_slot(storage) -> None:
     set_tenant("acme")
     await storage.log_request(_record("s5", cost=0.10))
 
-    db = await storage._ensure_initialized()
-    cur = await db.execute("SELECT tenant_id FROM sessions WHERE id = 's5'")
-    row = await cur.fetchone()
-    assert row is not None
-    assert row[0] == "acme"
+    tenant = await _fetch_tenant(storage, "sessions", "id", "s5")
+    assert tenant == "acme"
 
 
 async def test_attach_session_sets_tenant_via_ctx_var(storage) -> None:
@@ -121,8 +121,5 @@ async def test_attach_session_sets_tenant_via_ctx_var(storage) -> None:
     attach_session(fake, session_id="s6", tenant_id="beta")
     await storage.log_request(_record("s6"))
 
-    db = await storage._ensure_initialized()
-    cur = await db.execute("SELECT tenant_id FROM sessions WHERE id = 's6'")
-    row = await cur.fetchone()
-    assert row is not None
-    assert row[0] == "beta"
+    tenant = await _fetch_tenant(storage, "sessions", "id", "s6")
+    assert tenant == "beta"

@@ -19,8 +19,7 @@ async def service(tmp_path):
     """Bootstrap schema via the legacy storage, then build the ORM stack."""
     db_path = tmp_path / "vk-orm.db"
     storage = SQLiteStorage(db_path=str(db_path))
-    conn = await storage._ensure_initialized()
-    await conn.close()
+    await storage._ensure_initialized()
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
     session_factory = async_sessionmaker(
