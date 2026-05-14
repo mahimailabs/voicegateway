@@ -24,17 +24,14 @@ class LatencyService:
         tenant: str | None = None,
     ) -> dict[str, Any]:
         """Per-model latency rollup with percentiles."""
-        db = await self._conn.connect()
-        try:
+        async with self._conn.session() as s:
             return await repo.get_latency_stats(
-                db,
+                s,
                 period=period,
                 project=project,
                 percentiles=percentiles,
                 tenant=tenant,
             )
-        finally:
-            await db.close()
 
     async def get_samples(
         self,
@@ -43,13 +40,10 @@ class LatencyService:
         modality: str | None = None,
     ) -> tuple[list[float], list[float]]:
         """Return ``(ttfb_samples, total_latency_samples)``."""
-        db = await self._conn.connect()
-        try:
+        async with self._conn.session() as s:
             return await repo.get_latency_samples(
-                db, period=period, project=project, modality=modality
+                s, period=period, project=project, modality=modality
             )
-        finally:
-            await db.close()
 
 
 __all__ = ["LatencyService"]
