@@ -1,10 +1,12 @@
-"""Async repo for the sessions table + session-row finalize helpers."""
+"""Async repo for the sessions table + session-row finalize helpers (ORM)."""
 
 from __future__ import annotations
 
 import dataclasses
 import json
 from typing import TYPE_CHECKING, Any
+
+from sqlalchemy import text
 
 from voicegateway.repository import (
     guardrail_events_repository as guardrail_events,
@@ -17,7 +19,7 @@ from voicegateway.repository import (
 )
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 _SESSION_ORDER_CLAUSES: dict[str, str] = {
@@ -73,8 +75,18 @@ def row_to_session(row: Any) -> dict[str, Any]:
     return out
 
 
+_BASE_SELECT = (
+    "SELECT id, project, started_at, ended_at, modalities, "
+    "       total_cost_usd, request_count, tenant_id, "
+    "       routed_llm, routed_tts, budget_ms, budget_overrun, "
+    "       guardrails_active, guardrails_bypassed, "
+    "       guardrail_policy_snapshot_json "
+    "FROM sessions"
+)
+
+
 async def list_sessions(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     limit: int = 100,
     project: str | None = None,
     order_by: str = "started_at_desc",
@@ -86,84 +98,67 @@ async def list_sessions(
         supported = ", ".join(sorted(_SESSION_ORDER_CLAUSES))
         raise ValueError(f"Unknown order_by {order_by!r}. Supported: {supported}.")
     conditions: list[str] = []
-    params: list[Any] = []
+    params: dict[str, Any] = {"limit": limit}
     if project:
-        conditions.append("project = ?")
-        params.append(project)
+        conditions.append("project = :project")
+        params["project"] = project
     if tenant is not None:
         if tenant == "":
             conditions.append("tenant_id IS NULL")
         else:
-            conditions.append("tenant_id = ?")
-            params.append(tenant)
+            conditions.append("tenant_id = :tenant")
+            params["tenant"] = tenant
     where = f"WHERE {' AND '.join(conditions)} " if conditions else ""
-    params.append(limit)
-    cursor = await db.execute(
-        f"""SELECT id, project, started_at, ended_at, modalities,
-                  total_cost_usd, request_count, tenant_id,
-                  routed_llm, routed_tts, budget_ms, budget_overrun,
-                  guardrails_active, guardrails_bypassed,
-                  guardrail_policy_snapshot_json
-           FROM sessions
-           {where}ORDER BY {clause}
-           LIMIT ?""",
-        tuple(params),
+    result = await session.execute(
+        text(f"{_BASE_SELECT} {where}ORDER BY {clause} LIMIT :limit"),
+        params,
     )
-    return [row_to_session(row) async for row in cursor]
+    return [row_to_session(row) for row in result]
 
 
-async def get_session(
-    db: aiosqlite.Connection, session_id: str
-) -> dict[str, Any] | None:
-    """Return one session by id plus per-modality / provider / guardrail-event breakdowns."""
-    cursor = await db.execute(
-        """SELECT id, project, started_at, ended_at, modalities,
-                  total_cost_usd, request_count, tenant_id,
-                  routed_llm, routed_tts, budget_ms, budget_overrun,
-                  guardrails_active, guardrails_bypassed,
-                  guardrail_policy_snapshot_json
-           FROM sessions
-           WHERE id = ?""",
-        (session_id,),
+async def get_session(session: AsyncSession, session_id: str) -> dict[str, Any] | None:
+    """Return one session by id + per-modality / provider / guardrail breakdowns."""
+    result = await session.execute(
+        text(f"{_BASE_SELECT} WHERE id = :session_id"),
+        {"session_id": session_id},
     )
-    row = await cursor.fetchone()
+    row = result.fetchone()
     if row is None:
         return None
-    session = row_to_session(row)
+    out = row_to_session(row)
 
-    mod_cursor = await db.execute(
-        """SELECT modality,
-                  COALESCE(SUM(cost_usd), 0) AS cost,
-                  COUNT(*) AS request_count
-           FROM requests
-           WHERE session_id = ?
-           GROUP BY modality""",
-        (session_id,),
+    mod_result = await session.execute(
+        text(
+            "SELECT modality, COALESCE(SUM(cost_usd), 0) AS cost, "
+            "COUNT(*) AS request_count "
+            "FROM requests WHERE session_id = :session_id GROUP BY modality"
+        ),
+        {"session_id": session_id},
     )
-    session["by_modality"] = {
+    out["by_modality"] = {
         mod_row[0]: {
             "cost": float(mod_row[1] or 0.0),
             "request_count": int(mod_row[2] or 0),
         }
-        async for mod_row in mod_cursor
+        for mod_row in mod_result
     }
 
-    prov_cursor = await db.execute(
-        """SELECT DISTINCT provider
-           FROM requests
-           WHERE session_id = ?
-           ORDER BY provider""",
-        (session_id,),
+    prov_result = await session.execute(
+        text(
+            "SELECT DISTINCT provider FROM requests "
+            "WHERE session_id = :session_id ORDER BY provider"
+        ),
+        {"session_id": session_id},
     )
-    session["providers"] = [prov_row[0] async for prov_row in prov_cursor]
-    events = await guardrail_events.list_events_by_session(db, session_id)
-    session["guardrail_events"] = [dataclasses.asdict(event) for event in events]
-    return session
+    out["providers"] = [prov_row[0] for prov_row in prov_result]
+    events = await guardrail_events.list_events_by_session(session, session_id)
+    out["guardrail_events"] = [dataclasses.asdict(event) for event in events]
+    return out
 
 
-async def finalize_session_metrics(db: aiosqlite.Connection, session_id: str) -> None:
+async def finalize_session_metrics(session: AsyncSession, session_id: str) -> None:
     """Recompute and upsert the five aggregate columns on a session row."""
-    session_turns = await turns.list_turns_by_session(db, session_id)
+    session_turns = await turns.list_turns_by_session(session, session_id)
     if not session_turns:
         return
 
@@ -174,11 +169,11 @@ async def finalize_session_metrics(db: aiosqlite.Connection, session_id: str) ->
             talk_time_ms += t.agent_speak_end_ms - t.agent_speak_start_ms
     talk_time_seconds = talk_time_ms / 1000.0
 
-    cost_cursor = await db.execute(
-        "SELECT total_cost_usd FROM sessions WHERE id = ?",
-        (session_id,),
+    cost_result = await session.execute(
+        text("SELECT total_cost_usd FROM sessions WHERE id = :session_id"),
+        {"session_id": session_id},
     )
-    cost_row = await cost_cursor.fetchone()
+    cost_row = cost_result.fetchone()
     total_cost = (
         float(cost_row[0]) if cost_row is not None and cost_row[0] is not None else 0.0
     )
@@ -186,41 +181,45 @@ async def finalize_session_metrics(db: aiosqlite.Connection, session_id: str) ->
         total_cost / (talk_time_seconds / 60.0) if talk_time_seconds > 0 else None
     )
 
-    pcts = await turns.aggregate_response_speed(db, session_id)
-    overlap_count = await turns.count_overlap_turns(db, session_id)
+    pcts = await turns.aggregate_response_speed(session, session_id)
+    overlap_count = await turns.count_overlap_turns(session, session_id)
     total_turns = len(session_turns)
     talk_over_rate = overlap_count / total_turns if total_turns > 0 else None
 
-    await db.execute(
-        """UPDATE sessions
-              SET talk_time_seconds = ?,
-                  per_minute_cost_usd = ?,
-                  response_speed_p50_ms = ?,
-                  response_speed_p95_ms = ?,
-                  talk_over_rate = ?
-            WHERE id = ?""",
-        (
-            talk_time_seconds,
-            per_minute_cost,
-            pcts["p50_ms"],
-            pcts["p95_ms"],
-            talk_over_rate,
-            session_id,
+    await session.execute(
+        text(
+            "UPDATE sessions "
+            "   SET talk_time_seconds = :tts, "
+            "       per_minute_cost_usd = :pmc, "
+            "       response_speed_p50_ms = :p50, "
+            "       response_speed_p95_ms = :p95, "
+            "       talk_over_rate = :tor "
+            " WHERE id = :session_id"
         ),
+        {
+            "tts": talk_time_seconds,
+            "pmc": per_minute_cost,
+            "p50": pcts["p50_ms"],
+            "p95": pcts["p95_ms"],
+            "tor": talk_over_rate,
+            "session_id": session_id,
+        },
     )
-    await db.commit()
+    await session.commit()
 
 
-async def finalize_session_replay(db: aiosqlite.Connection, session_id: str) -> None:
+async def finalize_session_replay(session: AsyncSession, session_id: str) -> None:
     """Compute ``replay_size_bytes`` for the session and upsert the column."""
-    size_bytes = await replay.aggregate_storage_per_session(db, session_id)
+    size_bytes = await replay.aggregate_storage_per_session(session, session_id)
     if size_bytes <= 0:
         return
-    await db.execute(
-        "UPDATE sessions SET replay_size_bytes = ? WHERE id = ?",
-        (size_bytes, session_id),
+    await session.execute(
+        text(
+            "UPDATE sessions SET replay_size_bytes = :size_bytes WHERE id = :session_id"
+        ),
+        {"size_bytes": size_bytes, "session_id": session_id},
     )
-    await db.commit()
+    await session.commit()
 
 
 __all__ = [

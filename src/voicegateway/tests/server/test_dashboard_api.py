@@ -297,8 +297,8 @@ async def test_api_guardrails_mirror_policy_and_aggregate(client, gateway):
     assert resp.json()["policy"]["categories"]["pii"] == "redact"
 
     await _seed_session_request(gateway.storage, "vg-guard", project="test-project")
-    db = await gateway.storage._ensure_initialized()
-    try:
+    await gateway.storage._ensure_initialized()
+    async with gateway.storage._conn.session() as db:
         await guardrail_events.create_event(
             db,
             session_id="vg-guard",
@@ -308,8 +308,6 @@ async def test_api_guardrails_mirror_policy_and_aggregate(client, gateway):
             context_excerpt="phone",
         )
         await db.commit()
-    finally:
-        await db.close()
 
     resp = await client.get("/api/guardrails/aggregate?category=pii")
     assert resp.status_code == 200

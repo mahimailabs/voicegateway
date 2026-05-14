@@ -414,8 +414,8 @@ async def get_guardrail_events(
     if gw.storage is None:
         return {"events": [], "filter": {"project": project, "tenant": tenant}}
     _validate_guardrail_event_filter(category=category, action=action)
-    db = await gw.storage._ensure_initialized()
-    try:
+    await gw.storage._ensure_initialized()
+    async with gw.storage._conn.session() as db:
         rows = await guardrail_events.list_events(
             db,
             since=_guardrail_since(days),
@@ -426,8 +426,6 @@ async def get_guardrail_events(
             event_type=event_type,
             limit=limit,
         )
-    finally:
-        await db.close()
     return {
         "events": [dataclasses.asdict(row) for row in rows],
         "filter": {
@@ -453,8 +451,8 @@ async def get_guardrail_aggregate(
     if gw.storage is None:
         return {"counts": [], "top_sessions": []}
     _validate_guardrail_event_filter(category=category, action=None)
-    db = await gw.storage._ensure_initialized()
-    try:
+    await gw.storage._ensure_initialized()
+    async with gw.storage._conn.session() as db:
         since = _guardrail_since(days)
         counts = await guardrail_events.aggregate_counts(
             db, since=since, project=project, tenant=tenant
@@ -470,8 +468,6 @@ async def get_guardrail_aggregate(
             if category
             else []
         )
-    finally:
-        await db.close()
     return {
         "counts": [dataclasses.asdict(row) for row in counts],
         "top_sessions": [dataclasses.asdict(row) for row in top_sessions],
@@ -616,15 +612,13 @@ async def get_session_turns(session_id: str) -> dict[str, Any]:
     gw = _get_gateway()
     if gw.storage is None:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    db = await gw.storage._ensure_initialized()
-    try:
+    await gw.storage._ensure_initialized()
+    async with gw.storage._conn.session() as db:
         rows = await turns.list_turns_by_session(db, session_id)
-        return {
-            "session_id": session_id,
-            "turns": [dataclasses.asdict(t) for t in rows],
-        }
-    finally:
-        await db.close()
+    return {
+        "session_id": session_id,
+        "turns": [dataclasses.asdict(t) for t in rows],
+    }
 
 
 @app.get("/api/sessions/{session_id}/dead_air")
@@ -638,15 +632,13 @@ async def get_session_dead_air(session_id: str) -> dict[str, Any]:
     gw = _get_gateway()
     if gw.storage is None:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    db = await gw.storage._ensure_initialized()
-    try:
+    await gw.storage._ensure_initialized()
+    async with gw.storage._conn.session() as db:
         events = await dead_air.list_events_by_session(db, session_id)
-        return {
-            "session_id": session_id,
-            "events": [dataclasses.asdict(e) for e in events],
-        }
-    finally:
-        await db.close()
+    return {
+        "session_id": session_id,
+        "events": [dataclasses.asdict(e) for e in events],
+    }
 
 
 # ----------------------------------------------------------------------
@@ -676,15 +668,13 @@ async def get_session_replay(session_id: str) -> dict[str, Any]:
     gw = _get_gateway()
     if gw.storage is None:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    db = await gw.storage._ensure_initialized()
-    try:
+    await gw.storage._ensure_initialized()
+    async with gw.storage._conn.session() as db:
         events = await replay.read_full_replay(db, session_id)
-        return {
-            "session_id": session_id,
-            "events": [dataclasses.asdict(e) for e in events],
-        }
-    finally:
-        await db.close()
+    return {
+        "session_id": session_id,
+        "events": [dataclasses.asdict(e) for e in events],
+    }
 
 
 @app.delete("/api/sessions/{session_id}/replay")
@@ -698,12 +688,10 @@ async def delete_session_replay(session_id: str) -> dict[str, Any]:
     gw = _get_gateway()
     if gw.storage is None:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    db = await gw.storage._ensure_initialized()
-    try:
+    await gw.storage._ensure_initialized()
+    async with gw.storage._conn.session() as db:
         deleted = await replay.delete_replay(db, session_id)
-        return {"session_id": session_id, "deleted_rows": deleted}
-    finally:
-        await db.close()
+    return {"session_id": session_id, "deleted_rows": deleted}
 
 
 @app.get("/api/replay/storage")
@@ -1027,12 +1015,13 @@ async def get_routing_observations(
     gw = _get_gateway()
     if gw.storage is None:
         return {"observations": [], "filter": {"project": project}}
-    db = await gw.storage._ensure_initialized()
-    rows = (
-        await latency_observations.get_for_project(db, project)
-        if project
-        else await latency_observations.read_all(db)
-    )
+    await gw.storage._ensure_initialized()
+    async with gw.storage._conn.session() as db:
+        rows = (
+            await latency_observations.get_for_project(db, project)
+            if project
+            else await latency_observations.read_all(db)
+        )
     return {
         "observations": [dataclasses.asdict(r) for r in rows],
         "filter": {"project": project},

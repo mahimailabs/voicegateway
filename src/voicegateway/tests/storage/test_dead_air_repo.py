@@ -2,23 +2,20 @@
 
 from __future__ import annotations
 
-import aiosqlite
-
 from voicegateway.middleware.dead_air_detector import DeadAirEvent
 from voicegateway.repository import dead_air_repository as dead_air
 from voicegateway.storage.sqlite import SQLiteStorage
 
 
-async def _fresh_db(tmp_path) -> str:
-    db_path = str(tmp_path / "dead_air.db")
-    storage = SQLiteStorage(db_path)
+async def _fresh_storage(tmp_path) -> SQLiteStorage:
+    storage = SQLiteStorage(str(tmp_path / "dead_air.db"))
     await storage._ensure_initialized()
-    return db_path
+    return storage
 
 
 async def test_create_event_round_trip(tmp_path) -> None:
-    db_path = await _fresh_db(tmp_path)
-    async with aiosqlite.connect(db_path) as db:
+    storage = await _fresh_storage(tmp_path)
+    async with storage._conn.session() as db:
         event = DeadAirEvent(
             session_id="s1",
             started_at_ms=1000,
@@ -33,8 +30,8 @@ async def test_create_event_round_trip(tmp_path) -> None:
 
 
 async def test_list_events_ordered_by_started_at_asc(tmp_path) -> None:
-    db_path = await _fresh_db(tmp_path)
-    async with aiosqlite.connect(db_path) as db:
+    storage = await _fresh_storage(tmp_path)
+    async with storage._conn.session() as db:
         events = [
             DeadAirEvent("s1", 3000, 100, 50),
             DeadAirEvent("s1", 1000, 100, 50),
@@ -48,8 +45,8 @@ async def test_list_events_ordered_by_started_at_asc(tmp_path) -> None:
 
 
 async def test_count_events_by_session(tmp_path) -> None:
-    db_path = await _fresh_db(tmp_path)
-    async with aiosqlite.connect(db_path) as db:
+    storage = await _fresh_storage(tmp_path)
+    async with storage._conn.session() as db:
         for i in range(4):
             await dead_air.create_event(db, DeadAirEvent("s1", i * 1000, 100, 50))
         await dead_air.create_event(db, DeadAirEvent("s2", 0, 100, 50))
@@ -61,12 +58,12 @@ async def test_count_events_by_session(tmp_path) -> None:
 
 
 async def test_count_events_by_time_range(tmp_path) -> None:
-    db_path = await _fresh_db(tmp_path)
-    async with aiosqlite.connect(db_path) as db:
+    storage = await _fresh_storage(tmp_path)
+    async with storage._conn.session() as db:
         for i in range(5):
             await dead_air.create_event(db, DeadAirEvent("s1", i * 1000, 100, 50))
 
-        # [2000, 4000) → started_at_ms in {2000, 3000} → 2 events.
+        # [2000, 4000) -> started_at_ms in {2000, 3000} -> 2 events.
         n = await dead_air.count_events_by_filter(
             db, started_after_ms=2000, started_before_ms=4000
         )
@@ -74,6 +71,6 @@ async def test_count_events_by_time_range(tmp_path) -> None:
 
 
 async def test_list_events_unknown_session_returns_empty(tmp_path) -> None:
-    db_path = await _fresh_db(tmp_path)
-    async with aiosqlite.connect(db_path) as db:
+    storage = await _fresh_storage(tmp_path)
+    async with storage._conn.session() as db:
         assert await dead_air.list_events_by_session(db, "ghost") == []

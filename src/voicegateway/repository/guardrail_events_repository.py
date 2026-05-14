@@ -1,4 +1,4 @@
-"""Async repo for guardrail audit events."""
+"""Async repo for guardrail audit events (ORM)."""
 
 from __future__ import annotations
 
@@ -6,13 +6,15 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
+from sqlalchemy import text
+
 from voicegateway.schemas.guardrail_policy_schema import (
     ACTIVE_GUARDRAIL_ACTIONS,
     GUARDRAIL_CATEGORIES,
 )
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 GuardrailEventType = Literal["fired", "bypassed"]
 
@@ -77,39 +79,39 @@ def _window_clause(
     category: str | None = None,
     action: str | None = None,
     event_type: str | None = None,
-) -> tuple[str, list[Any]]:
+) -> tuple[str, dict[str, Any]]:
     clauses: list[str] = []
-    params: list[Any] = []
+    params: dict[str, Any] = {}
     if since:
-        clauses.append("ge.created_at >= ?")
-        params.append(since)
+        clauses.append("ge.created_at >= :since")
+        params["since"] = since
     if until:
-        clauses.append("ge.created_at < ?")
-        params.append(until)
+        clauses.append("ge.created_at < :until")
+        params["until"] = until
     if project:
-        clauses.append("s.project = ?")
-        params.append(project)
+        clauses.append("s.project = :project")
+        params["project"] = project
     if tenant is not None:
         if tenant == "":
             clauses.append("ge.tenant_id IS NULL")
         else:
-            clauses.append("ge.tenant_id = ?")
-            params.append(tenant)
+            clauses.append("ge.tenant_id = :tenant")
+            params["tenant"] = tenant
     if category:
-        clauses.append("ge.category = ?")
-        params.append(category)
+        clauses.append("ge.category = :category")
+        params["category"] = category
     if action:
-        clauses.append("ge.action = ?")
-        params.append(action)
+        clauses.append("ge.action = :action")
+        params["action"] = action
     if event_type:
-        clauses.append("ge.event_type = ?")
-        params.append(event_type)
+        clauses.append("ge.event_type = :event_type")
+        params["event_type"] = event_type
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     return where, params
 
 
 async def create_event(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     *,
     session_id: str,
     event_type: GuardrailEventType,
@@ -131,40 +133,45 @@ async def create_event(
     else:
         raise ValueError(f"unknown guardrail event_type: {event_type}")
 
-    cursor = await db.execute(
-        """INSERT INTO guardrail_events
-           (event_type, session_id, tenant_id, turn_index, category, action,
-            context_excerpt)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (
-            event_type,
-            session_id,
-            tenant_id,
-            turn_index,
-            category,
-            action,
-            context_excerpt,
+    result = await session.execute(
+        text(
+            "INSERT INTO guardrail_events "
+            "(event_type, session_id, tenant_id, turn_index, category, action, "
+            " context_excerpt) "
+            "VALUES (:event_type, :session_id, :tenant_id, :turn_index, "
+            " :category, :action, :context_excerpt)"
         ),
+        {
+            "event_type": event_type,
+            "session_id": session_id,
+            "tenant_id": tenant_id,
+            "turn_index": turn_index,
+            "category": category,
+            "action": action,
+            "context_excerpt": context_excerpt,
+        },
     )
-    return int(cursor.lastrowid or 0)
+    return int(result.lastrowid or 0)
 
 
 async def list_events_by_session(
-    db: aiosqlite.Connection, session_id: str
+    session: AsyncSession, session_id: str
 ) -> list[GuardrailEvent]:
-    cursor = await db.execute(
-        f"""SELECT {_SELECT_FIELDS}
-            FROM guardrail_events ge
-            LEFT JOIN sessions s ON s.id = ge.session_id
-            WHERE ge.session_id = ?
-            ORDER BY ge.created_at ASC, ge.id ASC""",
-        (session_id,),
+    result = await session.execute(
+        text(
+            f"""SELECT {_SELECT_FIELDS}
+                FROM guardrail_events ge
+                LEFT JOIN sessions s ON s.id = ge.session_id
+                WHERE ge.session_id = :session_id
+                ORDER BY ge.created_at ASC, ge.id ASC"""
+        ),
+        {"session_id": session_id},
     )
-    return [_row_to_event(row) async for row in cursor]
+    return [_row_to_event(row) for row in result]
 
 
 async def list_events(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     *,
     since: str | None = None,
     until: str | None = None,
@@ -184,21 +191,23 @@ async def list_events(
         action=action,
         event_type=event_type,
     )
-    params.append(max(1, min(limit, 1000)))
-    cursor = await db.execute(
-        f"""SELECT {_SELECT_FIELDS}
-            FROM guardrail_events ge
-            LEFT JOIN sessions s ON s.id = ge.session_id
-            {where}
-            ORDER BY ge.created_at DESC, ge.id DESC
-            LIMIT ?""",
-        tuple(params),
+    params["limit"] = max(1, min(limit, 1000))
+    result = await session.execute(
+        text(
+            f"""SELECT {_SELECT_FIELDS}
+                FROM guardrail_events ge
+                LEFT JOIN sessions s ON s.id = ge.session_id
+                {where}
+                ORDER BY ge.created_at DESC, ge.id DESC
+                LIMIT :limit"""
+        ),
+        params,
     )
-    return [_row_to_event(row) async for row in cursor]
+    return [_row_to_event(row) for row in result]
 
 
 async def aggregate_counts(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     *,
     since: str | None = None,
     until: str | None = None,
@@ -212,23 +221,25 @@ async def aggregate_counts(
         tenant=tenant,
         event_type="fired",
     )
-    cursor = await db.execute(
-        f"""SELECT ge.category, ge.action, COUNT(*) AS count
-            FROM guardrail_events ge
-            LEFT JOIN sessions s ON s.id = ge.session_id
-            {where}
-            GROUP BY ge.category, ge.action
-            ORDER BY count DESC, ge.category ASC, ge.action ASC""",
-        tuple(params),
+    result = await session.execute(
+        text(
+            f"""SELECT ge.category, ge.action, COUNT(*) AS count
+                FROM guardrail_events ge
+                LEFT JOIN sessions s ON s.id = ge.session_id
+                {where}
+                GROUP BY ge.category, ge.action
+                ORDER BY count DESC, ge.category ASC, ge.action ASC"""
+        ),
+        params,
     )
     return [
         GuardrailAggregate(category=str(row[0]), action=str(row[1]), count=int(row[2]))
-        async for row in cursor
+        for row in result
     ]
 
 
 async def top_sessions_by_category(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     *,
     category: str,
     since: str | None = None,
@@ -245,17 +256,19 @@ async def top_sessions_by_category(
         category=category,
         event_type="fired",
     )
-    params.append(max(1, min(limit, 100)))
-    cursor = await db.execute(
-        f"""SELECT ge.session_id, s.project, ge.tenant_id,
-                   COUNT(*) AS count, MAX(ge.created_at) AS last_event_at
-            FROM guardrail_events ge
-            LEFT JOIN sessions s ON s.id = ge.session_id
-            {where}
-            GROUP BY ge.session_id, s.project, ge.tenant_id
-            ORDER BY count DESC, last_event_at DESC
-            LIMIT ?""",
-        tuple(params),
+    params["limit"] = max(1, min(limit, 100))
+    result = await session.execute(
+        text(
+            f"""SELECT ge.session_id, s.project, ge.tenant_id,
+                       COUNT(*) AS count, MAX(ge.created_at) AS last_event_at
+                FROM guardrail_events ge
+                LEFT JOIN sessions s ON s.id = ge.session_id
+                {where}
+                GROUP BY ge.session_id, s.project, ge.tenant_id
+                ORDER BY count DESC, last_event_at DESC
+                LIMIT :limit"""
+        ),
+        params,
     )
     return [
         GuardrailTopSession(
@@ -265,7 +278,7 @@ async def top_sessions_by_category(
             count=int(row[3]),
             last_event_at=None if row[4] is None else str(row[4]),
         )
-        async for row in cursor
+        for row in result
     ]
 
 

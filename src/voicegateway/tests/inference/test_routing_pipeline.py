@@ -62,7 +62,7 @@ async def project(project_id: str, budget_ms: int) -> ProjectConfig:
 
 async def test_three_projects_get_distinct_routes(storage) -> None:
     """A tight, mid, and loose budget all pick from the same rosters"""
-    db = await storage._ensure_initialized()
+    await storage._ensure_initialized()
 
     tight = await project("tight", budget_ms=300)  # 250+80+150=480 > 300
     mid = await project("mid", budget_ms=600)
@@ -73,9 +73,10 @@ async def test_three_projects_get_distinct_routes(storage) -> None:
         ("mid", mid, "s-mid"),
         ("loose", loose, "s-loose"),
     ]:
-        triple = await router.route_session(
-            db, project_id=project_id, project_config=pc
-        )
+        async with storage._conn.session() as db:
+            triple = await router.route_session(
+                db, project_id=project_id, project_config=pc
+            )
         set_routing_decision(
             (
                 triple.stt,
@@ -106,9 +107,10 @@ async def test_three_projects_get_distinct_routes(storage) -> None:
 
 async def test_pipeline_persists_immutable_triple(storage) -> None:
     """A second request on the same session with no routing decision"""
-    db = await storage._ensure_initialized()
+    await storage._ensure_initialized()
     pc = await project("acme", budget_ms=600)
-    triple = await router.route_session(db, project_id="acme", project_config=pc)
+    async with storage._conn.session() as db:
+        triple = await router.route_session(db, project_id="acme", project_config=pc)
     set_routing_decision(
         (triple.stt, triple.llm, triple.tts, 600, triple.budget_overrun)
     )

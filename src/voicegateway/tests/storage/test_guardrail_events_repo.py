@@ -27,15 +27,10 @@ def _record(session_id: str, *, project: str = "default") -> RequestRecord:
     )
 
 
-async def _db(storage: SQLiteStorage):
-    return await storage._ensure_initialized()
-
-
 async def test_create_and_list_events_by_session(tmp_path) -> None:
     storage = SQLiteStorage(str(tmp_path / "events.db"))
     await storage.log_request(_record("vg-a", project="support"))
-    db = await _db(storage)
-    try:
+    async with storage._conn.session() as db:
         event_id = await guardrail_events.create_event(
             db,
             session_id="vg-a",
@@ -47,8 +42,6 @@ async def test_create_and_list_events_by_session(tmp_path) -> None:
         )
         await db.commit()
         rows = await guardrail_events.list_events_by_session(db, "vg-a")
-    finally:
-        await db.close()
 
     assert event_id > 0
     assert len(rows) == 1
@@ -63,8 +56,7 @@ async def test_bypass_rows_clear_category_and_are_excluded_from_aggregate(
 ) -> None:
     storage = SQLiteStorage(str(tmp_path / "events.db"))
     await storage.log_request(_record("vg-a"))
-    db = await _db(storage)
-    try:
+    async with storage._conn.session() as db:
         await guardrail_events.create_event(
             db,
             session_id="vg-a",
@@ -84,8 +76,6 @@ async def test_bypass_rows_clear_category_and_are_excluded_from_aggregate(
         await db.commit()
         rows = await guardrail_events.list_events(db, event_type="bypassed")
         counts = await guardrail_events.aggregate_counts(db)
-    finally:
-        await db.close()
 
     assert rows[0].category is None
     assert rows[0].action is None
@@ -103,8 +93,7 @@ async def test_filters_and_top_sessions(tmp_path) -> None:
     await storage.log_request(_record("vg-a", project="support"))
     await storage.log_request(_record("vg-b", project="support"))
     await storage.log_request(_record("vg-c", project="other"))
-    db = await _db(storage)
-    try:
+    async with storage._conn.session() as db:
         for sid, tenant in (("vg-a", "t1"), ("vg-a", "t1"), ("vg-b", "t2")):
             await guardrail_events.create_event(
                 db,
@@ -132,8 +121,6 @@ async def test_filters_and_top_sessions(tmp_path) -> None:
         top = await guardrail_events.top_sessions_by_category(
             db, category="financial", project="support"
         )
-    finally:
-        await db.close()
 
     assert [row.session_id for row in tenant_rows] == ["vg-a", "vg-a"]
     assert [(row.session_id, row.count) for row in top] == [("vg-a", 2), ("vg-b", 1)]
@@ -141,8 +128,8 @@ async def test_filters_and_top_sessions(tmp_path) -> None:
 
 async def test_rejects_invalid_fired_event(tmp_path) -> None:
     storage = SQLiteStorage(str(tmp_path / "events.db"))
-    db = await _db(storage)
-    try:
+    await storage._ensure_initialized()
+    async with storage._conn.session() as db:
         with pytest.raises(ValueError, match="unknown guardrail category"):
             await guardrail_events.create_event(
                 db,
@@ -151,5 +138,3 @@ async def test_rejects_invalid_fired_event(tmp_path) -> None:
                 category="bad",
                 action="block",
             )
-    finally:
-        await db.close()

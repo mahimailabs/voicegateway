@@ -74,11 +74,9 @@ async def _wait_for_guardrail_events(storage: SQLiteStorage, sid: str):
     deadline = loop.time() + 1.0
     events = []
     while loop.time() < deadline:
-        db = await storage._ensure_initialized()
-        try:
+        await storage._ensure_initialized()
+        async with storage._conn.session() as db:
             events = await guardrail_events.list_events_by_session(db, sid)
-        finally:
-            await db.close()
         if events:
             return events
         await asyncio.sleep(0.01)

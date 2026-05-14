@@ -92,8 +92,11 @@ class LatencyObservationsWorker:
                 _DEFAULT_WINDOW_MINUTES,
             )
             window_minutes = _DEFAULT_WINDOW_MINUTES
-        db = await self._storage._ensure_initialized()
-        inserted = await latency_observations.roll_up(db, window_minutes=window_minutes)
+        await self._storage._ensure_initialized()
+        async with self._storage._conn.session() as db:
+            inserted = await latency_observations.roll_up(
+                db, window_minutes=window_minutes
+            )
         logger.info(
             "LatencyObservationsWorker: rolled up %d (project, provider, "
             "modality) observations over %d-minute window",
