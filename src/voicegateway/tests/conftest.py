@@ -82,11 +82,12 @@ _MINIMAL_CONFIG = {
 
 
 @pytest.fixture
-def temp_config(tmp_path):
-    """Write a minimal voicegw.yaml to a temp dir and return the path."""
+def temp_config(tmp_path, monkeypatch):
+    """Write a minimal voicegw.yaml + isolate the SQLite path for the test."""
     config_path = tmp_path / "voicegw.yaml"
     with open(config_path, "w") as f:
         yaml.dump(_MINIMAL_CONFIG, f)
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "temp-config.db"))
     return str(config_path)
 
 
