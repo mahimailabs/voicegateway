@@ -1,12 +1,21 @@
-"""Async repo for the cost-aggregation queries against the requests table."""
+"""Async repo for cost-aggregation queries against the requests table (ORM).
+
+The aggregation SQL stays as ``text()`` clauses because the WHERE-clause
+composition + the ``GROUP_CONCAT(DISTINCT pricing_source)`` path in
+``get_cost_summary`` were tested and tuned in the legacy aiosqlite
+form. Translating each ``GROUP BY`` to ORM ``select(...).group_by(...)``
+buys us little: the dict-shape post-processing dominates the function.
+"""
 
 from __future__ import annotations
 
 import time
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import text
+
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def period_since(period: str) -> float:
@@ -39,27 +48,27 @@ def _build_where(
     project: str | None,
     tenant: str | None,
     include_project: bool = True,
-) -> tuple[str, list[Any]]:
-    """Compose the WHERE clause + bound params for a window-+-filter query."""
-    params: list[Any] = [since]
-    where = "WHERE timestamp >= ?"
+) -> tuple[str, dict[str, Any]]:
+    """Compose the WHERE clause + named params for a window-+-filter query."""
+    params: dict[str, Any] = {"since": since}
+    where = "WHERE timestamp >= :since"
     if until is not None:
-        where += " AND timestamp < ?"
-        params.append(until)
+        where += " AND timestamp < :until"
+        params["until"] = until
     if include_project and project:
-        where += " AND project = ?"
-        params.append(project)
+        where += " AND project = :project"
+        params["project"] = project
     if tenant is not None:
         if tenant == "":
             where += " AND tenant_id IS NULL"
         else:
-            where += " AND tenant_id = ?"
-            params.append(tenant)
+            where += " AND tenant_id = :tenant"
+            params["tenant"] = tenant
     return where, params
 
 
 async def get_cost_summary(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     period: str = "today",
     project: str | None = None,
     include_pricing_source: bool = False,
@@ -73,47 +82,50 @@ async def get_cost_summary(
         since=since, until=until, project=project, tenant=tenant
     )
 
-    cursor = await db.execute(
-        f"SELECT COALESCE(SUM(cost_usd), 0) FROM requests {where}",
-        tuple(params),
+    result = await session.execute(
+        text(f"SELECT COALESCE(SUM(cost_usd), 0) FROM requests {where}"), params
     )
-    row = await cursor.fetchone()
+    row = result.fetchone()
     total = row[0] if row else 0.0
 
-    cursor = await db.execute(
-        f"""SELECT provider, SUM(cost_usd) as cost, COUNT(*) as count
-            FROM requests {where}
-            GROUP BY provider ORDER BY cost DESC""",
-        tuple(params),
+    result = await session.execute(
+        text(
+            f"""SELECT provider, SUM(cost_usd) as cost, COUNT(*) as count
+                FROM requests {where}
+                GROUP BY provider ORDER BY cost DESC"""
+        ),
+        params,
     )
-    by_provider = {row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor}
+    by_provider = {r[0]: {"cost": r[1], "requests": r[2]} for r in result}
 
     if include_pricing_source:
-        cursor = await db.execute(
-            f"""SELECT model_id, SUM(cost_usd) as cost, COUNT(*) as count,
-                       GROUP_CONCAT(DISTINCT pricing_source) as sources
-                FROM requests {where}
-                GROUP BY model_id ORDER BY cost DESC""",
-            tuple(params),
+        result = await session.execute(
+            text(
+                f"""SELECT model_id, SUM(cost_usd) as cost, COUNT(*) as count,
+                           GROUP_CONCAT(DISTINCT pricing_source) as sources
+                    FROM requests {where}
+                    GROUP BY model_id ORDER BY cost DESC"""
+            ),
+            params,
         )
         by_model = {
-            row[0]: {
-                "cost": row[1],
-                "requests": row[2],
-                "pricing_source": row[3] or "",
+            r[0]: {
+                "cost": r[1],
+                "requests": r[2],
+                "pricing_source": r[3] or "",
             }
-            async for row in cursor
+            for r in result
         }
     else:
-        cursor = await db.execute(
-            f"""SELECT model_id, SUM(cost_usd) as cost, COUNT(*) as count
-                FROM requests {where}
-                GROUP BY model_id ORDER BY cost DESC""",
-            tuple(params),
+        result = await session.execute(
+            text(
+                f"""SELECT model_id, SUM(cost_usd) as cost, COUNT(*) as count
+                    FROM requests {where}
+                    GROUP BY model_id ORDER BY cost DESC"""
+            ),
+            params,
         )
-        by_model = {
-            row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor
-        }
+        by_model = {r[0]: {"cost": r[1], "requests": r[2]} for r in result}
 
     return {
         "period": period,
@@ -125,7 +137,7 @@ async def get_cost_summary(
 
 
 async def get_cost_by_project(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     period: str = "today",
     start_ts: float | None = None,
     end_ts: float | None = None,
@@ -140,17 +152,19 @@ async def get_cost_by_project(
         tenant=tenant,
         include_project=False,
     )
-    cursor = await db.execute(
-        f"""SELECT project, SUM(cost_usd) as cost, COUNT(*) as count
-            FROM requests {where}
-            GROUP BY project ORDER BY cost DESC""",
-        tuple(params),
+    result = await session.execute(
+        text(
+            f"""SELECT project, SUM(cost_usd) as cost, COUNT(*) as count
+                FROM requests {where}
+                GROUP BY project ORDER BY cost DESC"""
+        ),
+        params,
     )
-    return {row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor}
+    return {r[0]: {"cost": r[1], "requests": r[2]} for r in result}
 
 
 async def get_cost_by_modality(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     period: str = "today",
     project: str | None = None,
     start_ts: float | None = None,
@@ -159,29 +173,32 @@ async def get_cost_by_modality(
     """Return cost rollup grouped by modality (stt/llm/tts)."""
     since, until = resolve_window(period, start_ts, end_ts)
     where, params = _build_where(since=since, until=until, project=project, tenant=None)
-    cursor = await db.execute(
-        f"""SELECT modality, SUM(cost_usd) as cost, COUNT(*) as count
-            FROM requests {where}
-            GROUP BY modality ORDER BY cost DESC""",
-        tuple(params),
+    result = await session.execute(
+        text(
+            f"""SELECT modality, SUM(cost_usd) as cost, COUNT(*) as count
+                FROM requests {where}
+                GROUP BY modality ORDER BY cost DESC"""
+        ),
+        params,
     )
-    return {row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor}
+    return {r[0]: {"cost": r[1], "requests": r[2]} for r in result}
 
 
-async def get_project_stats(db: aiosqlite.Connection, project: str) -> dict[str, Any]:
-    """Per-project today snapshot: requests, cost, average ttfb + latency."""
+async def get_project_stats(session: AsyncSession, project: str) -> dict[str, Any]:
+    """Per-project today snapshot: requests, cost, avg ttfb + latency."""
     since_today = period_since("today")
-    cursor = await db.execute(
-        """SELECT
-               COUNT(*),
-               COALESCE(SUM(cost_usd), 0),
-               AVG(ttfb_ms),
-               AVG(total_latency_ms)
-           FROM requests
-           WHERE project = ? AND timestamp >= ?""",
-        (project, since_today),
+    result = await session.execute(
+        text(
+            """SELECT COUNT(*),
+                      COALESCE(SUM(cost_usd), 0),
+                      AVG(ttfb_ms),
+                      AVG(total_latency_ms)
+               FROM requests
+               WHERE project = :project AND timestamp >= :since"""
+        ),
+        {"project": project, "since": since_today},
     )
-    row = await cursor.fetchone()
+    row = result.fetchone()
     if row is None:
         return {
             "project": project,
