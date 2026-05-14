@@ -1,10 +1,10 @@
-"""Tests for voicegateway/combined_server.py — the unified server entrypoint."""
+"""Tests for the unified ``build_app`` entry point (HTTP + MCP + dashboard)."""
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.server.combined import build_combined_app
+from voicegateway.server.main import build_app
 
 
 @pytest.fixture
@@ -15,7 +15,7 @@ def gateway(temp_config, tmp_path, monkeypatch):
 
 @pytest.fixture
 def app(gateway):
-    return build_combined_app(gateway)
+    return build_app(gateway)
 
 
 @pytest.fixture
