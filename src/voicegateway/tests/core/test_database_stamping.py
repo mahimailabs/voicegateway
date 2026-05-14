@@ -141,21 +141,20 @@ def test_detect_guardrails_via_sessions_column(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_migrations_clamps_unknown_stamp_to_head(tmp_path: Path) -> None:
-    """A DB at a future schema level should still upgrade cleanly.
+async def test_run_migrations_legacy_stamps_then_upgrades(tmp_path: Path) -> None:
+    """A legacy DB at the 0004 schema level stamps then upgrades to head.
 
-    In Commit 2 only ``0001_baseline`` exists. A legacy DB at the 0004
-    schema level returns ``0004_tenant_attribution`` from the detector,
-    but the stamping function clamps that to head (=baseline) because
-    0004 is not in the script directory yet. ``command.upgrade(head)``
-    is then a no-op, leaving the DB stamped at baseline. From Commit 3
-    onward, this clamping disappears.
+    The detector returns ``0004_tenant_attribution``; alembic stamps
+    that, then ``upgrade head`` runs 0005 + 0006 (each is a PRAGMA-
+    guarded no-op against the legacy DB's missing columns, which the
+    ALTER TABLE branch happily adds).
     """
     db_path = tmp_path / "legacy.db"
     _seed_legacy_db(
         db_path,
         """
         CREATE TABLE requests (id TEXT PRIMARY KEY, timestamp REAL, tenant_id TEXT);
+        CREATE TABLE sessions (id TEXT PRIMARY KEY, tenant_id TEXT);
         """,
     )
     db = Database(_build_config(db_path))
@@ -166,4 +165,9 @@ async def test_run_migrations_clamps_unknown_stamp_to_head(tmp_path: Path) -> No
 
     with sqlite3.connect(str(db_path)) as conn:
         ver = conn.execute("SELECT version_num FROM alembic_version").fetchone()
-    assert ver == ("0001_baseline",)
+        # head reached after 0005 + 0006 forward-applied.
+        sessions_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
+    assert ver == ("0006_guardrails",)
+    # Routing + guardrail columns appeared via the forward upgrades.
+    assert "routed_llm" in sessions_cols
+    assert "guardrails_active" in sessions_cols
