@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from voicegateway.services.storage_service import StorageService
 
 
-_PROMPT_PACKAGE = "voicegateway.data.guardrail_prompts"
+_PROMPT_PACKAGE = "voicegateway.data.prompts"
 _MARKER = "<voicegateway_guardrails"
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ def load_guardrail_prompt(category: str) -> str:
         raise ValueError(f"unknown guardrail category: {category}")
     return (
         resources.files(_PROMPT_PACKAGE)
-        .joinpath(f"{category}.txt")
+        .joinpath(f"{category}.md")
         .read_text(encoding="utf-8")
         .strip()
     )
@@ -44,7 +44,7 @@ def compose_guardrail_block(policy: GuardrailPolicy) -> str:
         return ""
     template = (
         resources.files(_PROMPT_PACKAGE)
-        .joinpath("_template.txt")
+        .joinpath("_template.md")
         .read_text(encoding="utf-8")
     )
     category_blocks = []

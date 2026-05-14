@@ -49,7 +49,7 @@ def _load_baselines() -> dict[tuple[str, str], int]:
 
     try:
         raw = (
-            resources.files("voicegateway.data")
+            resources.files("voicegateway.inference.pricing")
             .joinpath("provider_baselines.json")
             .read_text(encoding="utf-8")
         )
