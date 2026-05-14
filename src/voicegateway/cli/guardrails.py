@@ -12,6 +12,7 @@ from voicegateway.schemas.guardrail_policy_schema import (
     GUARDRAIL_CATEGORIES,
     GuardrailPolicy,
 )
+from voicegateway.services.guardrail_service import compose_block
 from voicegateway.utils.cli.guardrails import _request
 
 guardrails_app = typer.Typer(

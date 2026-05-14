@@ -8,9 +8,11 @@ writes and guardrail event reads/writes.
 from __future__ import annotations
 
 import json
+import logging
 from importlib import resources
 from typing import TYPE_CHECKING, Any
 
+from voicegateway.repository import guardrail_events_repository as events_repo
 from voicegateway.repository import managed_project_repository as project_repo
 from voicegateway.schemas.guardrail_policy_schema import (
     GUARDRAIL_CATEGORIES,
@@ -22,6 +24,8 @@ from voicegateway.schemas.guardrail_policy_schema import (
 
 if TYPE_CHECKING:
     from voicegateway.core.database import Database
+
+logger = logging.getLogger(__name__)
 
 
 _PROMPT_PACKAGE = "voicegateway.data.prompts"
@@ -106,6 +110,54 @@ class GuardrailService:
                 llm_model=llm_model,
                 tts_model=tts_model,
                 tags=tags,
+            )
+
+    async def log_fired_event(
+        self,
+        *,
+        session_id: str,
+        tenant_id: str | None,
+        category: str,
+        action: str,
+        context_excerpt: str,
+    ) -> None:
+        """Record one guardrail-fired audit row."""
+        async with self._db.session() as s:
+            await events_repo.create_event(
+                s,
+                session_id=session_id,
+                tenant_id=tenant_id,
+                event_type="fired",
+                category=category,
+                action=action,
+                context_excerpt=context_excerpt,
+            )
+            await s.commit()
+
+    async def log_bypassed_event(
+        self,
+        *,
+        session_id: str,
+        tenant_id: str | None,
+        context_excerpt: str = "guardrail injection bypassed for this session",
+    ) -> None:
+        """Best-effort guardrail-bypassed audit row. Never raises."""
+        try:
+            async with self._db.session() as s:
+                await events_repo.create_event(
+                    s,
+                    session_id=session_id,
+                    tenant_id=tenant_id,
+                    event_type="bypassed",
+                    context_excerpt=context_excerpt,
+                )
+                await s.commit()
+        except Exception:
+            logger.warning(
+                "failed to record guardrail bypass event session_id=%s tenant_id=%s",
+                session_id,
+                tenant_id,
+                exc_info=True,
             )
 
 
