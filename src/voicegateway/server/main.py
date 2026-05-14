@@ -8,26 +8,18 @@ import time
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pydantic import ValidationError
 
 from voicegateway.core.auth import (
-    AuthError,
-    check_request,
-    is_virtual_key_token,
     load_api_keys,
     resolve_cors_origins,
-    verify_virtual_key,
 )
 from voicegateway.inference.pricing import catalog
-from voicegateway.inference.session.context import set_tenant
 from voicegateway.repository import (
     guardrail_events_repository as guardrail_events,
-)
-from voicegateway.repository import (
-    virtual_keys_repository as virtual_keys,
 )
 from voicegateway.schemas.guardrail_policy_schema import (
     ACTIVE_GUARDRAIL_ACTIONS,
@@ -35,6 +27,8 @@ from voicegateway.schemas.guardrail_policy_schema import (
     GUARDRAIL_CATEGORY_DESCRIPTIONS,
     GuardrailPolicy,
 )
+from voicegateway.server.api._deps import require_scope
+from voicegateway.server.routes import api_router, system_router
 from voicegateway.utils.percentiles import quantile_label
 
 if TYPE_CHECKING:
@@ -133,6 +127,12 @@ def build_app(gateway: Gateway) -> FastAPI:
             "voicegw.yaml to restrict."
         )
 
+    # Bind the gateway + resolved API keys onto the app so the
+    # ``get_gateway`` and ``require_scope`` dependencies (in
+    # ``server.api._deps``) can read them without closure capture.
+    app.state.gateway = gateway
+    app.state.api_keys = api_keys
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
@@ -141,39 +141,10 @@ def build_app(gateway: Gateway) -> FastAPI:
         expose_headers=["Deprecation"],
     )
 
-    def require_scope(scope: str):
-        """Return a FastAPI dependency enforcing ``scope`` on a request."""
-
-        async def _dep(request: Request) -> None:
-            authorization = request.headers.get("Authorization")
-            if is_virtual_key_token(authorization) and gateway.storage is not None:
-                try:
-                    await gateway.storage._ensure_initialized()
-                    async with gateway.storage._conn.session() as session:
-                        verified = await verify_virtual_key(authorization, session)
-                        await virtual_keys.mark_used(session, verified.id)
-                except AuthError as exc:
-                    raise HTTPException(
-                        status_code=exc.status_code, detail=exc.message
-                    ) from None
-                request.state.virtual_key_id = verified.id
-                request.state.virtual_key_tenant_id = verified.tenant_id
-                if verified.tenant_id is not None:
-                    set_tenant(verified.tenant_id)
-                return
-
-            try:
-                check_request(
-                    authorization,
-                    scope,
-                    api_keys,
-                )
-            except AuthError as exc:
-                raise HTTPException(
-                    status_code=exc.status_code, detail=exc.message
-                ) from None
-
-        return _dep
+    # Mount the empty aggregator routers up front so per-domain modules
+    # land underneath them in Commit 2 without further main.py edits.
+    app.include_router(system_router)
+    app.include_router(api_router)
 
     def _guardrail_since(days: int) -> str:
         days = max(1, min(days, 365))
