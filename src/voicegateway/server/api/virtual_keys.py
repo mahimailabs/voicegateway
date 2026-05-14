@@ -15,7 +15,7 @@ from voicegateway.schemas.api.virtual_key_schema import (
 )
 from voicegateway.services.virtual_key_service import VirtualKeyService
 
-router = APIRouter(prefix="/v1/virtual-keys", tags=["virtual-keys"])
+router = APIRouter(prefix="/virtual-keys", tags=["virtual-keys"])
 
 
 @router.post("", response_model=CreatedVirtualKey, status_code=201)
