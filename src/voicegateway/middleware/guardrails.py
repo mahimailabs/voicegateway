@@ -1,66 +1,27 @@
-"""LLM-side guardrail prompt and tool plumbing."""
+"""LLM-side guardrail runtime hooks (chat context surgery + tool plumbing).
+
+Prompt loading, composition, and policy JSON serialization live on
+:mod:`voicegateway.services.guardrail_service`. The hooks here run at
+request time and bridge LiveKit chat context to that service.
+"""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-from importlib import resources
 from typing import TYPE_CHECKING, Any
 
 from voicegateway.schemas.guardrail_policy_schema import (
     GUARDRAIL_CATEGORIES,
-    GUARDRAIL_CATEGORY_DESCRIPTIONS,
-    GUARDRAIL_PROMPT_VERSION,
     REPORT_GUARDRAIL_TOOL_NAME,
-    GuardrailPolicy,
 )
 
 if TYPE_CHECKING:
     from voicegateway.services.storage_service import StorageService
 
 
-_PROMPT_PACKAGE = "voicegateway.data.prompts"
 _MARKER = "<voicegateway_guardrails"
 logger = logging.getLogger(__name__)
-
-
-def load_guardrail_prompt(category: str) -> str:
-    """Load the curated prompt text for a category."""
-    if category not in GUARDRAIL_CATEGORIES:
-        raise ValueError(f"unknown guardrail category: {category}")
-    return (
-        resources.files(_PROMPT_PACKAGE)
-        .joinpath(f"{category}.md")
-        .read_text(encoding="utf-8")
-        .strip()
-    )
-
-
-def compose_guardrail_block(policy: GuardrailPolicy) -> str:
-    """Return the versioned prompt block for an active policy."""
-    active = policy.active_categories
-    if not active:
-        return ""
-    template = (
-        resources.files(_PROMPT_PACKAGE)
-        .joinpath("_template.md")
-        .read_text(encoding="utf-8")
-    )
-    category_blocks = []
-    for category, action in active.items():
-        text = load_guardrail_prompt(category)
-        category_blocks.append(
-            f"## {category}\n"
-            f"Description: {GUARDRAIL_CATEGORY_DESCRIPTIONS[category]}\n"
-            f"Action: {action}\n"
-            f"{text}"
-        )
-    return template.format(
-        version=GUARDRAIL_PROMPT_VERSION,
-        categories="\n\n".join(category_blocks),
-        tool_name=REPORT_GUARDRAIL_TOOL_NAME,
-    ).strip()
 
 
 def inject_guardrail_block(chat_ctx: Any, block: str) -> Any:
@@ -216,11 +177,6 @@ def schedule_bypass_event(
         loop.create_task(_record())
 
 
-def guardrail_policy_json(policy: GuardrailPolicy) -> str:
-    """Canonical compact JSON for session snapshots."""
-    return json.dumps(policy.to_storage_dict(), sort_keys=True, separators=(",", ":"))
-
-
 def _make_system_message(block: str) -> Any:
     try:
         from livekit.agents import llm as lk_llm
@@ -253,11 +209,8 @@ def _item_text(item: Any) -> str:
 
 
 __all__ = [
-    "compose_guardrail_block",
     "create_report_guardrail_action_tool",
-    "guardrail_policy_json",
     "inject_guardrail_block",
-    "load_guardrail_prompt",
     "schedule_bypass_event",
     "tools_contain_reserved_report_tool",
 ]

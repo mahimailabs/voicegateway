@@ -11,6 +11,7 @@ from voicegateway.core.config import GatewayConfig
 from voicegateway.core.database import Database
 from voicegateway.models.request_model import RequestRecord
 from voicegateway.services.cost_service import CostService
+from voicegateway.services.guardrail_service import GuardrailService
 from voicegateway.services.latency_service import LatencyService
 from voicegateway.services.managed_config_service import ManagedConfigService
 from voicegateway.services.request_log_service import RequestLogService
@@ -38,6 +39,7 @@ class StorageService:
         self._latency_service = LatencyService(self._conn)
         self._session_service = SessionService(self._conn)
         self._managed_config_service = ManagedConfigService(self._conn)
+        self._guardrail_service = GuardrailService(self._conn)
 
     async def _ensure_initialized(self) -> None:
         if self._initialized:
@@ -379,9 +381,9 @@ class StorageService:
         tts_model: str | None = None,
         tags: list[str] | None = None,
     ) -> None:
-        """Delegate to ManagedConfigService.set_project_guardrails."""
+        """Delegate to GuardrailService.set_project_policy."""
         await self._ensure_initialized()
-        await self._managed_config_service.set_project_guardrails(
+        await self._guardrail_service.set_project_policy(
             project_id=project_id,
             policy=policy,
             name=name,

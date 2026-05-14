@@ -1,4 +1,8 @@
-"""Umbrella service over the three managed_* repositories."""
+"""Umbrella service over the three managed_* repositories.
+
+Guardrail policy CRUD used to live here; it now lives on
+:class:`voicegateway.services.guardrail_service.GuardrailService`.
+"""
 
 from __future__ import annotations
 
@@ -144,37 +148,6 @@ class ManagedConfigService:
                 tags=tags,
                 branding=branding,
                 guardrail_policy=guardrail_policy,
-            )
-
-    async def set_project_guardrails(
-        self,
-        *,
-        project_id: str,
-        policy: dict[str, Any] | None,
-        name: str,
-        description: str = "",
-        daily_budget: float = 0.0,
-        budget_action: str = "warn",
-        default_stack: str | None = None,
-        stt_model: str | None = None,
-        llm_model: str | None = None,
-        tts_model: str | None = None,
-        tags: list[str] | None = None,
-    ) -> None:
-        async with self._db.session() as s:
-            await project_repo.set_project_guardrails(
-                s,
-                project_id=project_id,
-                policy=policy,
-                name=name,
-                description=description,
-                daily_budget=daily_budget,
-                budget_action=budget_action,
-                default_stack=default_stack,
-                stt_model=stt_model,
-                llm_model=llm_model,
-                tts_model=tts_model,
-                tags=tags,
             )
 
     async def delete_project(self, project_id: str) -> bool:

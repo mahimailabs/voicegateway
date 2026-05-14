@@ -24,8 +24,8 @@ from voicegateway.inference.session.context import (
     current_routing_decision,
     current_tenant,
 )
-from voicegateway.middleware.guardrails import guardrail_policy_json
 from voicegateway.schemas.guardrail_policy_schema import GuardrailPolicy
+from voicegateway.services.guardrail_service import policy_to_json
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -154,7 +154,7 @@ async def log_request(session: AsyncSession, record: RequestRecord) -> None:
             guardrails_bypassed = (
                 1 if guardrail_policy.is_active and current_guardrails_bypassed() else 0
             )
-            guardrail_snapshot_json = guardrail_policy_json(guardrail_policy)
+            guardrail_snapshot_json = policy_to_json(guardrail_policy)
         else:
             guardrails_active = None
             guardrails_bypassed = None
