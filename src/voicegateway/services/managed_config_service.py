@@ -27,18 +27,12 @@ class ManagedConfigService:
     # --- providers ---------------------------------------------------
 
     async def list_providers(self) -> list[dict[str, Any]]:
-        db = await self._conn.connect()
-        try:
-            return await provider_repo.list_providers(db)
-        finally:
-            await db.close()
+        async with self._conn.session() as s:
+            return await provider_repo.list_providers(s)
 
     async def get_provider(self, provider_id: str) -> dict[str, Any] | None:
-        db = await self._conn.connect()
-        try:
-            return await provider_repo.get_provider(db, provider_id)
-        finally:
-            await db.close()
+        async with self._conn.session() as s:
+            return await provider_repo.get_provider(s, provider_id)
 
     async def upsert_provider(
         self,
@@ -49,10 +43,9 @@ class ManagedConfigService:
         extra_config: dict[str, Any] | None = None,
         project: str | None = None,
     ) -> None:
-        db = await self._conn.connect()
-        try:
+        async with self._conn.session() as s:
             await provider_repo.upsert_provider(
-                db,
+                s,
                 provider_id,
                 provider_type,
                 api_key,
@@ -60,24 +53,16 @@ class ManagedConfigService:
                 extra_config=extra_config,
                 project=project,
             )
-        finally:
-            await db.close()
 
     async def delete_provider(self, provider_id: str) -> bool:
-        db = await self._conn.connect()
-        try:
-            return await provider_repo.delete_provider(db, provider_id)
-        finally:
-            await db.close()
+        async with self._conn.session() as s:
+            return await provider_repo.delete_provider(s, provider_id)
 
     async def rotate_credentials(
         self, *, time_now: float | None = None
     ) -> dict[str, Any]:
-        db = await self._conn.connect()
-        try:
-            return await provider_repo.rotate_credentials(db, time_now=time_now)
-        finally:
-            await db.close()
+        async with self._conn.session() as s:
+            return await provider_repo.rotate_credentials(s, time_now=time_now)
 
     # --- models ------------------------------------------------------
 

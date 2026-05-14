@@ -1,4 +1,4 @@
-"""Async repo for the managed_providers table."""
+"""Async repo for the managed_providers table (ORM)."""
 
 from __future__ import annotations
 
@@ -6,39 +6,46 @@ import json
 import time
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlmodel import delete, select
+
+from voicegateway.models.managed_provider_model import ManagedProvider
+
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
-async def list_providers(db: aiosqlite.Connection) -> list[dict[str, Any]]:
+def _row_to_dict(p: ManagedProvider) -> dict[str, Any]:
+    return {
+        "provider_id": p.provider_id,
+        "provider_type": p.provider_type,
+        "api_key_encrypted": p.api_key_encrypted,
+        "base_url": p.base_url,
+        "extra_config": json.loads(p.extra_config or "{}"),
+        "created_at": p.created_at,
+        "updated_at": p.updated_at,
+        "project": p.project,
+    }
+
+
+async def list_providers(session: AsyncSession) -> list[dict[str, Any]]:
     """Return managed providers. api_key_encrypted is ciphertext."""
-    cursor = await db.execute(
-        "SELECT provider_id, provider_type, api_key_encrypted, base_url, "
-        "extra_config, created_at, updated_at, project FROM managed_providers "
-        "ORDER BY created_at ASC"
+    result = await session.execute(
+        select(ManagedProvider).order_by(ManagedProvider.created_at.asc())
     )
-    rows: list[dict[str, Any]] = []
-    async for row in cursor:
-        rows.append(_row_to_dict(row))
-    return rows
+    return [_row_to_dict(p) for p in result.scalars().all()]
 
 
 async def get_provider(
-    db: aiosqlite.Connection, provider_id: str
+    session: AsyncSession, provider_id: str
 ) -> dict[str, Any] | None:
     """Return a managed provider by id, or None if missing."""
-    cursor = await db.execute(
-        "SELECT provider_id, provider_type, api_key_encrypted, base_url, "
-        "extra_config, created_at, updated_at, project FROM managed_providers "
-        "WHERE provider_id = ?",
-        (provider_id,),
-    )
-    row = await cursor.fetchone()
-    return _row_to_dict(row) if row is not None else None
+    p = await session.get(ManagedProvider, provider_id)
+    return _row_to_dict(p) if p is not None else None
 
 
 async def upsert_provider(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     provider_id: str,
     provider_type: str,
     api_key: str,
@@ -51,43 +58,43 @@ async def upsert_provider(
 
     now = time.time()
     encrypted_key = encrypt(api_key)
-    await db.execute(
-        """INSERT INTO managed_providers
-               (provider_id, provider_type, api_key_encrypted, base_url,
-                extra_config, created_at, updated_at, project)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(provider_id) DO UPDATE SET
-               provider_type=excluded.provider_type,
-               api_key_encrypted=excluded.api_key_encrypted,
-               base_url=excluded.base_url,
-               extra_config=excluded.extra_config,
-               updated_at=excluded.updated_at,
-               project=excluded.project""",
-        (
-            provider_id,
-            provider_type,
-            encrypted_key,
-            base_url,
-            json.dumps(extra_config or {}),
-            now,
-            now,
-            project,
-        ),
+    values = {
+        "provider_id": provider_id,
+        "provider_type": provider_type,
+        "api_key_encrypted": encrypted_key,
+        "base_url": base_url,
+        "extra_config": json.dumps(extra_config or {}),
+        "created_at": now,
+        "updated_at": now,
+        "project": project,
+    }
+    stmt = sqlite_insert(ManagedProvider.__table__).values(**values)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["provider_id"],
+        set_={
+            "provider_type": stmt.excluded.provider_type,
+            "api_key_encrypted": stmt.excluded.api_key_encrypted,
+            "base_url": stmt.excluded.base_url,
+            "extra_config": stmt.excluded.extra_config,
+            "updated_at": stmt.excluded.updated_at,
+            "project": stmt.excluded.project,
+        },
     )
-    await db.commit()
+    await session.execute(stmt)
+    await session.commit()
 
 
-async def delete_provider(db: aiosqlite.Connection, provider_id: str) -> bool:
-    """Delete one managed provider row. Returns True when a row was removed."""
-    cursor = await db.execute(
-        "DELETE FROM managed_providers WHERE provider_id = ?", (provider_id,)
+async def delete_provider(session: AsyncSession, provider_id: str) -> bool:
+    """Delete one managed provider row. True when a row was removed."""
+    result = await session.execute(
+        delete(ManagedProvider).where(ManagedProvider.provider_id == provider_id)
     )
-    await db.commit()
-    return (cursor.rowcount or 0) > 0
+    await session.commit()
+    return (result.rowcount or 0) > 0
 
 
 async def rotate_credentials(
-    db: aiosqlite.Connection, *, time_now: float | None = None
+    session: AsyncSession, *, time_now: float | None = None
 ) -> dict[str, Any]:
     """Re-encrypt every managed_providers row under the current Fernet key."""
     from voicegateway.core.crypto import rotate_token
@@ -97,40 +104,22 @@ async def rotate_credentials(
     skipped_empty = 0
     failed: list[str] = []
 
-    cursor = await db.execute(
-        "SELECT provider_id, api_key_encrypted FROM managed_providers"
-    )
-    rows = await cursor.fetchall()
-    for provider_id, ciphertext in rows:
-        if not ciphertext:
+    result = await session.execute(select(ManagedProvider))
+    for provider in result.scalars().all():
+        if not provider.api_key_encrypted:
             skipped_empty += 1
             continue
         try:
-            new_ciphertext = rotate_token(ciphertext)
+            new_ciphertext = rotate_token(provider.api_key_encrypted)
         except ValueError:
-            failed.append(provider_id)
+            failed.append(provider.provider_id)
             continue
-        await db.execute(
-            "UPDATE managed_providers SET api_key_encrypted = ?, "
-            "updated_at = ? WHERE provider_id = ?",
-            (new_ciphertext, now, provider_id),
-        )
+        provider.api_key_encrypted = new_ciphertext
+        provider.updated_at = now
+        session.add(provider)
         rotated += 1
-    await db.commit()
+    await session.commit()
     return {"rotated": rotated, "skipped_empty": skipped_empty, "failed": failed}
-
-
-def _row_to_dict(row: Any) -> dict[str, Any]:
-    return {
-        "provider_id": row[0],
-        "provider_type": row[1],
-        "api_key_encrypted": row[2],
-        "base_url": row[3],
-        "extra_config": json.loads(row[4] or "{}"),
-        "created_at": row[5],
-        "updated_at": row[6],
-        "project": row[7],
-    }
 
 
 __all__ = [
