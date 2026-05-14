@@ -1,18 +1,20 @@
 """Baseline: post-0007 schema for every legacy + new table + the two views.
 
-Generated initially via ``alembic revision --autogenerate`` against the
-SQLModel definitions in :mod:`voicegateway.models`, then hand-tuned:
+The body is byte-equivalent to the legacy ``storage/migrator.py`` +
+``storage/schema.py`` + runtime backfills: every CREATE uses
+``IF NOT EXISTS`` so the upgrade is idempotent against:
 
-- ``downgrade()`` is a no-op (forward-only migrations on SQLite).
-- The two cost views (``daily_costs``, ``project_daily_costs``) are
-  added explicitly. Alembic autogen does not detect views.
+  - a fresh DB (everything gets built)
+  - a partial-legacy DB (e.g. test fixtures that seed only ``requests``;
+    the missing tables get filled in here)
+  - a fully-migrated legacy DB stamped at baseline (the upgrade is a
+    no-op against the already-present tables; 0002-0006 then run
+    forward, each PRAGMA-guarded so re-applying them is also a no-op)
 
-Existing production databases get stamped to this revision (or a later
-one, depending on which migrations they have applied) by
-:func:`voicegateway.core.database.Database._stamp_legacy_db_if_needed`,
-so ``upgrade()`` never executes against a database that already has the
-tables. Fresh databases run ``upgrade()`` and end up with the post-0007
-shape directly.
+Stamping logic in ``Database._stamp_legacy_db_if_needed`` skips this
+upgrade only when the legacy DB matches the FULL baseline shape; any
+partial-legacy DB falls through to running this upgrade so missing
+tables get filled in.
 
 Revision ID: 0001_baseline
 Revises:
@@ -23,8 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-import sqlalchemy as sa
-import sqlmodel  # noqa: F401  used by generated migrations
+from sqlalchemy import text
 
 from alembic import op
 
@@ -34,434 +35,178 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+_BASE_TABLES = [
+    """
+    CREATE TABLE IF NOT EXISTS requests (
+        id TEXT PRIMARY KEY,
+        timestamp REAL NOT NULL,
+        project TEXT NOT NULL DEFAULT 'default',
+        modality TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        input_units REAL DEFAULT 0,
+        output_units REAL DEFAULT 0,
+        cost_usd REAL DEFAULT 0,
+        pricing_source TEXT NOT NULL DEFAULT '',
+        ttfb_ms REAL,
+        total_latency_ms REAL,
+        status TEXT DEFAULT 'success',
+        fallback_from TEXT,
+        error_message TEXT,
+        metadata TEXT,
+        session_id TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_requests_timestamp ON requests(timestamp)",
+    "CREATE INDEX IF NOT EXISTS idx_requests_model ON requests(model_id)",
+    "CREATE INDEX IF NOT EXISTS idx_requests_modality ON requests(modality)",
+    """
+    CREATE TABLE IF NOT EXISTS managed_providers (
+        provider_id TEXT PRIMARY KEY,
+        provider_type TEXT NOT NULL,
+        api_key_encrypted TEXT NOT NULL DEFAULT '',
+        base_url TEXT,
+        extra_config TEXT NOT NULL DEFAULT '{}',
+        created_at REAL NOT NULL,
+        updated_at REAL NOT NULL,
+        project TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_managed_providers_type ON managed_providers(provider_type)",
+    """
+    CREATE TABLE IF NOT EXISTS managed_models (
+        model_id TEXT PRIMARY KEY,
+        modality TEXT NOT NULL,
+        provider_id TEXT NOT NULL,
+        model_name TEXT NOT NULL,
+        display_name TEXT,
+        default_language TEXT,
+        default_voice TEXT,
+        extra_config TEXT NOT NULL DEFAULT '{}',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at REAL NOT NULL,
+        updated_at REAL NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_managed_models_modality ON managed_models(modality)",
+    "CREATE INDEX IF NOT EXISTS idx_managed_models_provider ON managed_models(provider_id)",
+    """
+    CREATE TABLE IF NOT EXISTS managed_projects (
+        project_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        daily_budget REAL NOT NULL DEFAULT 0,
+        budget_action TEXT NOT NULL DEFAULT 'warn',
+        default_stack TEXT,
+        stt_model TEXT,
+        llm_model TEXT,
+        tts_model TEXT,
+        tags TEXT NOT NULL DEFAULT '[]',
+        created_at REAL NOT NULL,
+        updated_at REAL NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        project TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        modalities TEXT NOT NULL DEFAULT '',
+        total_cost_usd REAL DEFAULT 0,
+        request_count INTEGER DEFAULT 0
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project)",
+    "CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions(started_at)",
+    """
+    CREATE TABLE IF NOT EXISTS config_audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp REAL NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        changes_json TEXT,
+        source TEXT NOT NULL DEFAULT 'api'
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON config_audit_log(timestamp)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_entity ON config_audit_log(entity_type, entity_id)",
+]
+
+
+_VIEWS = [
+    "DROP VIEW IF EXISTS daily_costs",
+    """
+    CREATE VIEW IF NOT EXISTS daily_costs AS
+    SELECT
+        date(timestamp, 'unixepoch') as day,
+        modality,
+        model_id,
+        provider,
+        COUNT(*) as request_count,
+        SUM(cost_usd) as total_cost,
+        AVG(ttfb_ms) as avg_ttfb,
+        AVG(total_latency_ms) as avg_latency
+    FROM requests
+    GROUP BY day, modality, model_id, provider
+    """,
+    "DROP VIEW IF EXISTS project_daily_costs",
+    """
+    CREATE VIEW IF NOT EXISTS project_daily_costs AS
+    SELECT
+        project,
+        date(timestamp, 'unixepoch') as day,
+        modality,
+        model_id,
+        COUNT(*) as request_count,
+        SUM(cost_usd) as total_cost,
+        AVG(ttfb_ms) as avg_ttfb
+    FROM requests
+    GROUP BY project, day, modality, model_id
+    """,
+]
+
+
+_BACKFILL_COLUMNS = (
+    ("requests", "project", "TEXT NOT NULL DEFAULT 'default'"),
+    ("requests", "pricing_source", "TEXT NOT NULL DEFAULT ''"),
+    ("requests", "session_id", "TEXT"),
+    ("managed_providers", "project", "TEXT"),
+)
+
+
+# Indexes that depend on backfilled columns. They run after the
+# backfill step so legacy DBs that lack ``session_id`` or ``project``
+# don't fail the CREATE INDEX on the missing column.
+_POST_BACKFILL_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_requests_project ON requests(project)",
+    "CREATE INDEX IF NOT EXISTS idx_requests_project_timestamp ON requests(project, timestamp)",
+    "CREATE INDEX IF NOT EXISTS idx_requests_session_id ON requests(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_managed_providers_project ON managed_providers(project)",
+)
+
+
+def _existing_columns(table: str) -> set[str]:
+    bind = op.get_bind()
+    rows = bind.execute(text(f"PRAGMA table_info({table})")).fetchall()
+    return {row[1] for row in rows}
+
+
+def _add_column_if_missing(table: str, column: str, sql_type: str) -> None:
+    if column not in _existing_columns(table):
+        op.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
+
+
 def upgrade() -> None:
-    op.create_table(
-        "config_audit_log",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("timestamp", sa.Float(), nullable=False),
-        sa.Column("entity_type", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("entity_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("action", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("changes_json", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column(
-            "source",
-            sqlmodel.sql.sqltypes.AutoString(),
-            server_default="api",
-            nullable=False,
-        ),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    with op.batch_alter_table("config_audit_log", schema=None) as batch_op:
-        batch_op.create_index(
-            "idx_audit_entity", ["entity_type", "entity_id"], unique=False
-        )
-        batch_op.create_index("idx_audit_timestamp", ["timestamp"], unique=False)
-
-    op.create_table(
-        "dead_air_events",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("session_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("started_at_ms", sa.Integer(), nullable=False),
-        sa.Column("duration_ms", sa.Integer(), nullable=False),
-        sa.Column("threshold_used_ms", sa.Integer(), nullable=False),
-        sa.Column(
-            "created_at",
-            sqlmodel.sql.sqltypes.AutoString(),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
-            nullable=False,
-        ),
-        sa.Column("tenant_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    with op.batch_alter_table("dead_air_events", schema=None) as batch_op:
-        batch_op.create_index("idx_dead_air_session_id", ["session_id"], unique=False)
-
-    op.create_table(
-        "guardrail_events",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("event_type", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("session_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("tenant_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("turn_index", sa.Integer(), nullable=True),
-        sa.Column("category", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("action", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("context_excerpt", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column(
-            "created_at",
-            sqlmodel.sql.sqltypes.AutoString(),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
-            nullable=False,
-        ),
-        sa.CheckConstraint(
-            "event_type IN ('fired', 'bypassed')",
-            name="ck_guardrail_events_event_type",
-        ),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    with op.batch_alter_table("guardrail_events", schema=None) as batch_op:
-        batch_op.create_index("idx_guardrail_events_action", ["action"], unique=False)
-        batch_op.create_index(
-            "idx_guardrail_events_category", ["category"], unique=False
-        )
-        batch_op.create_index(
-            "idx_guardrail_events_created_at", ["created_at"], unique=False
-        )
-        batch_op.create_index(
-            "idx_guardrail_events_session_id", ["session_id"], unique=False
-        )
-        batch_op.create_index(
-            "idx_guardrail_events_tenant_id", ["tenant_id"], unique=False
-        )
-
-    op.create_table(
-        "latency_observations",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("project_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("provider", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("modality", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("p50_ms", sa.Integer(), nullable=True),
-        sa.Column("p95_ms", sa.Integer(), nullable=True),
-        sa.Column("sample_count", sa.Integer(), server_default="0", nullable=False),
-        sa.Column("window_start", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("window_end", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column(
-            "refreshed_at",
-            sqlmodel.sql.sqltypes.AutoString(),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
-            nullable=False,
-        ),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    with op.batch_alter_table("latency_observations", schema=None) as batch_op:
-        batch_op.create_index(
-            "idx_latency_obs_project_provider",
-            ["project_id", "provider", "modality"],
-            unique=False,
-        )
-
-    op.create_table(
-        "managed_models",
-        sa.Column("model_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("modality", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("provider_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("model_name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column(
-            "default_language", sqlmodel.sql.sqltypes.AutoString(), nullable=True
-        ),
-        sa.Column("default_voice", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column(
-            "extra_config",
-            sqlmodel.sql.sqltypes.AutoString(),
-            server_default="{}",
-            nullable=False,
-        ),
-        sa.Column("enabled", sa.Integer(), server_default="1", nullable=False),
-        sa.Column("created_at", sa.Float(), nullable=False),
-        sa.Column("updated_at", sa.Float(), nullable=False),
-        sa.PrimaryKeyConstraint("model_id"),
-    )
-    with op.batch_alter_table("managed_models", schema=None) as batch_op:
-        batch_op.create_index("idx_managed_models_modality", ["modality"], unique=False)
-        batch_op.create_index(
-            "idx_managed_models_provider", ["provider_id"], unique=False
-        )
-
-    op.create_table(
-        "managed_projects",
-        sa.Column("project_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column(
-            "description",
-            sqlmodel.sql.sqltypes.AutoString(),
-            server_default="",
-            nullable=False,
-        ),
-        sa.Column("daily_budget", sa.Float(), server_default="0", nullable=False),
-        sa.Column(
-            "budget_action",
-            sqlmodel.sql.sqltypes.AutoString(),
-            server_default="warn",
-            nullable=False,
-        ),
-        sa.Column("default_stack", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("stt_model", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("llm_model", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("tts_model", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column(
-            "tags",
-            sqlmodel.sql.sqltypes.AutoString(),
-            server_default="[]",
-            nullable=False,
-        ),
-        sa.Column("created_at", sa.Float(), nullable=False),
-        sa.Column("updated_at", sa.Float(), nullable=False),
-        sa.Column("branding_json", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column(
-            "guardrail_policy_json",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=True,
-        ),
-        sa.PrimaryKeyConstraint("project_id"),
-    )
-
-    op.create_table(
-        "managed_providers",
-        sa.Column("provider_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("provider_type", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column(
-            "api_key_encrypted",
-            sqlmodel.sql.sqltypes.AutoString(),
-            server_default="",
-            nullable=False,
-        ),
-        sa.Column("base_url", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column(
-            "extra_config",
-            sqlmodel.sql.sqltypes.AutoString(),
-            server_default="{}",
-            nullable=False,
-        ),
-        sa.Column("created_at", sa.Float(), nullable=False),
-        sa.Column("updated_at", sa.Float(), nullable=False),
-        sa.Column("project", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.PrimaryKeyConstraint("provider_id"),
-    )
-    with op.batch_alter_table("managed_providers", schema=None) as batch_op:
-        batch_op.create_index(
-            "idx_managed_providers_project", ["project"], unique=False
-        )
-        batch_op.create_index(
-            "idx_managed_providers_type", ["provider_type"], unique=False
-        )
-
-    for table_name in (
-        "replay_llm_tokens",
-        "replay_stt_events",
-        "replay_tts_frames",
-    ):
-        op.create_table(
-            table_name,
-            sa.Column("id", sa.Integer(), nullable=False),
-            sa.Column("session_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-            sa.Column("t_ms", sa.Integer(), nullable=False),
-            sa.Column("payload", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-            sa.Column(
-                "provider",
-                sqlmodel.sql.sqltypes.AutoString(),
-                server_default="",
-                nullable=False,
-            ),
-            sa.Column("cost_usd", sa.Float(), nullable=True),
-            sa.Column(
-                "created_at",
-                sqlmodel.sql.sqltypes.AutoString(),
-                server_default=sa.text("(CURRENT_TIMESTAMP)"),
-                nullable=False,
-            ),
-            sa.Column("tenant_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-            sa.PrimaryKeyConstraint("id"),
-        )
-
-    op.create_index(
-        "idx_replay_llm_session_t",
-        "replay_llm_tokens",
-        ["session_id", "t_ms"],
-        unique=False,
-    )
-    op.create_index(
-        "idx_replay_stt_session_t",
-        "replay_stt_events",
-        ["session_id", "t_ms"],
-        unique=False,
-    )
-    op.create_index(
-        "idx_replay_tts_session_t",
-        "replay_tts_frames",
-        ["session_id", "t_ms"],
-        unique=False,
-    )
-
-    op.create_table(
-        "replay_state_snapshots",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("session_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("t_ms", sa.Integer(), nullable=False),
-        sa.Column("payload", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column(
-            "created_at",
-            sqlmodel.sql.sqltypes.AutoString(),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
-            nullable=False,
-        ),
-        sa.Column("tenant_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        "idx_replay_state_session_t",
-        "replay_state_snapshots",
-        ["session_id", "t_ms"],
-        unique=False,
-    )
-
-    op.create_table(
-        "requests",
-        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("timestamp", sa.Float(), nullable=False),
-        sa.Column(
-            "project",
-            sqlmodel.sql.sqltypes.AutoString(),
-            server_default="default",
-            nullable=False,
-        ),
-        sa.Column("modality", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("model_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("provider", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("input_units", sa.Float(), nullable=True),
-        sa.Column("output_units", sa.Float(), nullable=True),
-        sa.Column("cost_usd", sa.Float(), nullable=True),
-        sa.Column(
-            "pricing_source",
-            sqlmodel.sql.sqltypes.AutoString(),
-            server_default="",
-            nullable=False,
-        ),
-        sa.Column("ttfb_ms", sa.Float(), nullable=True),
-        sa.Column("total_latency_ms", sa.Float(), nullable=True),
-        sa.Column("status", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("fallback_from", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("error_message", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("metadata", sa.Text(), nullable=True),
-        sa.Column("session_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("tenant_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    with op.batch_alter_table("requests", schema=None) as batch_op:
-        batch_op.create_index("idx_requests_modality", ["modality"], unique=False)
-        batch_op.create_index("idx_requests_model", ["model_id"], unique=False)
-        batch_op.create_index("idx_requests_project", ["project"], unique=False)
-        batch_op.create_index(
-            "idx_requests_project_timestamp", ["project", "timestamp"], unique=False
-        )
-        batch_op.create_index("idx_requests_session_id", ["session_id"], unique=False)
-        batch_op.create_index("idx_requests_timestamp", ["timestamp"], unique=False)
-
-    op.create_table(
-        "sessions",
-        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("project", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("started_at", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("ended_at", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column(
-            "modalities",
-            sqlmodel.sql.sqltypes.AutoString(),
-            server_default="",
-            nullable=False,
-        ),
-        sa.Column("total_cost_usd", sa.Float(), nullable=True),
-        sa.Column("request_count", sa.Integer(), nullable=True),
-        sa.Column("talk_time_seconds", sa.Float(), nullable=True),
-        sa.Column("per_minute_cost_usd", sa.Float(), nullable=True),
-        sa.Column("response_speed_p50_ms", sa.Integer(), nullable=True),
-        sa.Column("response_speed_p95_ms", sa.Integer(), nullable=True),
-        sa.Column("talk_over_rate", sa.Float(), nullable=True),
-        sa.Column("replay_size_bytes", sa.Integer(), nullable=True),
-        sa.Column("tenant_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("budget_ms", sa.Integer(), nullable=True),
-        sa.Column("budget_ms_used", sa.Integer(), nullable=True),
-        sa.Column("budget_overrun", sa.Integer(), nullable=True),
-        sa.Column("routed_llm", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("routed_tts", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("guardrails_active", sa.Integer(), nullable=True),
-        sa.Column("guardrails_bypassed", sa.Integer(), nullable=True),
-        sa.Column(
-            "guardrail_policy_snapshot_json",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=True,
-        ),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    with op.batch_alter_table("sessions", schema=None) as batch_op:
-        batch_op.create_index("idx_sessions_project", ["project"], unique=False)
-        batch_op.create_index("idx_sessions_started_at", ["started_at"], unique=False)
-
-    op.create_table(
-        "turns",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("session_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("turn_index", sa.Integer(), nullable=False),
-        sa.Column("caller_speak_start_ms", sa.Integer(), nullable=False),
-        sa.Column("caller_speak_end_ms", sa.Integer(), nullable=False),
-        sa.Column("agent_speak_start_ms", sa.Integer(), nullable=True),
-        sa.Column("agent_speak_end_ms", sa.Integer(), nullable=True),
-        sa.Column("response_speed_ms", sa.Integer(), nullable=True),
-        sa.Column(
-            "created_at",
-            sqlmodel.sql.sqltypes.AutoString(),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
-            nullable=False,
-        ),
-        sa.Column("tenant_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    with op.batch_alter_table("turns", schema=None) as batch_op:
-        batch_op.create_index(
-            "idx_turns_response_speed", ["response_speed_ms"], unique=False
-        )
-        batch_op.create_index("idx_turns_session_id", ["session_id"], unique=False)
-
-    op.create_table(
-        "virtual_keys",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("key_prefix", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("key_hash", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("tenant_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("issued_by", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("issued_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    with op.batch_alter_table("virtual_keys", schema=None) as batch_op:
-        batch_op.create_index(
-            batch_op.f("ix_virtual_keys_key_prefix"), ["key_prefix"], unique=False
-        )
-        batch_op.create_index(
-            batch_op.f("ix_virtual_keys_tenant_id"), ["tenant_id"], unique=False
-        )
-
-    op.execute(
-        """
-        CREATE VIEW IF NOT EXISTS daily_costs AS
-        SELECT
-            date(timestamp, 'unixepoch') as day,
-            modality,
-            model_id,
-            provider,
-            COUNT(*) as request_count,
-            SUM(cost_usd) as total_cost,
-            AVG(ttfb_ms) as avg_ttfb,
-            AVG(total_latency_ms) as avg_latency
-        FROM requests
-        GROUP BY day, modality, model_id, provider
-        """
-    )
-    op.execute(
-        """
-        CREATE VIEW IF NOT EXISTS project_daily_costs AS
-        SELECT
-            project,
-            date(timestamp, 'unixepoch') as day,
-            modality,
-            model_id,
-            COUNT(*) as request_count,
-            SUM(cost_usd) as total_cost,
-            AVG(ttfb_ms) as avg_ttfb
-        FROM requests
-        GROUP BY project, day, modality, model_id
-        """
-    )
+    for stmt in _BASE_TABLES:
+        op.execute(stmt)
+    for table, column, sql_type in _BACKFILL_COLUMNS:
+        _add_column_if_missing(table, column, sql_type)
+    for stmt in _POST_BACKFILL_INDEXES:
+        op.execute(stmt)
+    for stmt in _VIEWS:
+        op.execute(stmt)
 
 
 def downgrade() -> None:

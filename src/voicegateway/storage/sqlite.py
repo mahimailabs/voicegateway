@@ -8,6 +8,8 @@ from typing import Any
 
 import aiosqlite
 
+from voicegateway.core.config import GatewayConfig
+from voicegateway.core.database import Database
 from voicegateway.models.request_model import RequestRecord
 from voicegateway.repository import cost_repository as cost_repo
 from voicegateway.services.cost_service import CostService
@@ -16,7 +18,6 @@ from voicegateway.services.managed_config_service import ManagedConfigService
 from voicegateway.services.request_log_service import RequestLogService
 from voicegateway.services.session_service import SessionService
 from voicegateway.storage.connection import ConnectionManager
-from voicegateway.storage.migrator import initialize as _initialize_schema
 
 _DEFAULT_PERCENTILES: list[float] = [50.0, 95.0, 99.0]
 
@@ -27,12 +28,20 @@ class SQLiteStorage:
     """SQLite storage for request logs, costs, and latency metrics."""
 
     def __init__(self, db_path: str | Path) -> None:
+        import asyncio
+
         self._conn = ConnectionManager(db_path)
         self._request_log_service = RequestLogService(self._conn)
         self._cost_service = CostService(self._conn)
         self._latency_service = LatencyService(self._conn)
         self._session_service = SessionService(self._conn)
         self._managed_config_service = ManagedConfigService(self._conn)
+        # Lazy-built; created on first _ensure_initialized so we can drive
+        # alembic upgrade head without touching every caller's __init__.
+        self._database: Database | None = None
+        # Serialize concurrent _ensure_initialized calls so alembic's
+        # bootstrap of the alembic_version table never races itself.
+        self._init_lock = asyncio.Lock()
 
     @property
     def _db_path(self) -> Path:
@@ -45,9 +54,17 @@ class SQLiteStorage:
         return self._conn.is_initialized
 
     async def _ensure_initialized(self) -> aiosqlite.Connection:
-        db = await self._conn.connect()
-        await _initialize_schema(db, self._conn)
-        return db
+        if not self._conn.is_initialized:
+            async with self._init_lock:
+                if not self._conn.is_initialized:  # double-checked after lock
+                    if self._database is None:
+                        cfg = GatewayConfig(
+                            cost_tracking={"db_path": str(self._conn.db_path)}
+                        )
+                        self._database = Database(cfg)
+                    await self._database.run_migrations()
+                    self._conn.mark_initialized()
+        return await self._conn.connect()
 
     async def aclose(self) -> None:
         """Close any raw connections still owned by this storage instance."""
