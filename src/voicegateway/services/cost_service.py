@@ -1,4 +1,4 @@
-"""Service wrapping the cost-aggregation repo with connection lifecycle."""
+"""Service wrapping the cost-aggregation repo with session lifecycle."""
 
 from __future__ import annotations
 
@@ -26,10 +26,9 @@ class CostService:
         tenant: str | None = None,
     ) -> dict[str, Any]:
         """Return total / by_provider / by_model rollups."""
-        db = await self._conn.connect()
-        try:
+        async with self._conn.session() as s:
             return await repo.get_cost_summary(
-                db,
+                s,
                 period=period,
                 project=project,
                 include_pricing_source=include_pricing_source,
@@ -37,8 +36,6 @@ class CostService:
                 end_ts=end_ts,
                 tenant=tenant,
             )
-        finally:
-            await db.close()
 
     async def get_by_project(
         self,
@@ -48,13 +45,10 @@ class CostService:
         tenant: str | None = None,
     ) -> dict[str, Any]:
         """Return cost rollup grouped by project."""
-        db = await self._conn.connect()
-        try:
+        async with self._conn.session() as s:
             return await repo.get_cost_by_project(
-                db, period=period, start_ts=start_ts, end_ts=end_ts, tenant=tenant
+                s, period=period, start_ts=start_ts, end_ts=end_ts, tenant=tenant
             )
-        finally:
-            await db.close()
 
     async def get_by_modality(
         self,
@@ -64,25 +58,19 @@ class CostService:
         end_ts: float | None = None,
     ) -> dict[str, Any]:
         """Return cost rollup grouped by modality."""
-        db = await self._conn.connect()
-        try:
+        async with self._conn.session() as s:
             return await repo.get_cost_by_modality(
-                db,
+                s,
                 period=period,
                 project=project,
                 start_ts=start_ts,
                 end_ts=end_ts,
             )
-        finally:
-            await db.close()
 
     async def get_project_stats(self, project: str) -> dict[str, Any]:
         """Per-project today snapshot."""
-        db = await self._conn.connect()
-        try:
-            return await repo.get_project_stats(db, project)
-        finally:
-            await db.close()
+        async with self._conn.session() as s:
+            return await repo.get_project_stats(s, project)
 
 
 __all__ = ["CostService"]
