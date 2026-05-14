@@ -17,7 +17,7 @@ from voicegateway.inference.session.context import (
 from voicegateway.middleware.cost_tracker import CostTracker
 from voicegateway.middleware.instrumented_provider import wrap_provider
 from voicegateway.models.request_model import RequestRecord
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 # ---------------------------------------------------------------------------
 # Fakes
@@ -54,7 +54,7 @@ def _reset_session_state():
 
 @pytest.fixture
 async def storage(tmp_path):
-    return SQLiteStorage(str(tmp_path / "session.db"))
+    return StorageService(str(tmp_path / "session.db"))
 
 
 @pytest.fixture
@@ -122,7 +122,7 @@ def test_cost_tracker_session_id_defaults_to_none(cost_tracker):
 
 async def test_storage_persists_session_id(tmp_path):
     db_path = str(tmp_path / "store.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
 
     rec = RequestRecord(
         id=str(uuid.uuid4()),
@@ -146,7 +146,7 @@ async def test_storage_persists_session_id(tmp_path):
 async def test_storage_persists_null_session_id_for_uninstrumented_path(tmp_path):
     """Callers that do not set session_id (e.g. direct"""
     db_path = str(tmp_path / "store.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
 
     rec = RequestRecord(
         id=str(uuid.uuid4()),
@@ -171,7 +171,7 @@ async def test_storage_persists_null_session_id_for_uninstrumented_path(tmp_path
 # ---------------------------------------------------------------------------
 
 
-async def _exercise_wrapper(cost_tracker: CostTracker, storage: SQLiteStorage) -> Any:
+async def _exercise_wrapper(cost_tracker: CostTracker, storage: StorageService) -> Any:
     """Construct a wrapped instance and drive its _log_request path."""
     wrapped = wrap_provider(
         instance=_FakeWrapped("nova-3"),
@@ -190,7 +190,7 @@ async def _exercise_wrapper(cost_tracker: CostTracker, storage: SQLiteStorage) -
 
 async def test_wrapper_writes_session_id_when_context_has_one(tmp_path):
     db_path = str(tmp_path / "session.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     cost_tracker = CostTracker(storage=storage)
 
     sid_holder = {}
@@ -219,7 +219,7 @@ async def test_wrapper_writes_session_id_when_context_has_one(tmp_path):
 async def test_wrapper_writes_null_session_id_when_no_context(tmp_path):
     """Outside an inference factory call, get_session_id is None and"""
     db_path = str(tmp_path / "session.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     cost_tracker = CostTracker(storage=storage)
 
     # No get_or_create_session_id() in this flow — simulates direct
@@ -236,7 +236,7 @@ async def test_wrapper_reads_session_id_at_request_time_not_construction(
 ):
     """The session ID is captured when _log_request runs, not when the"""
     db_path = str(tmp_path / "session.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     cost_tracker = CostTracker(storage=storage)
 
     # Build the wrapper FIRST, with no session context active.

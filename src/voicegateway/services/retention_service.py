@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Final
 from voicegateway.repository import replay_repository as replay
 
 if TYPE_CHECKING:
-    from voicegateway.storage.sqlite import SQLiteStorage
+    from voicegateway.services.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class RetentionWorker:
 
     def __init__(
         self,
-        storage: SQLiteStorage,
+        storage: StorageService,
         retention_provider: RetentionProvider | None = None,
         default_retention_days: int = _DEFAULT_RETENTION_DAYS,
         poll_interval_seconds: float = _DEFAULT_POLL_INTERVAL_SECONDS,

@@ -13,7 +13,7 @@ from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, NOT_GIVEN
 
 if TYPE_CHECKING:
     from voicegateway.middleware.cost_tracker import CostTracker
-    from voicegateway.storage.sqlite import SQLiteStorage
+    from voicegateway.services.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class _InstrumentedBase:
     _provider: str
     project: str
     _cost_tracker: CostTracker
-    _storage: SQLiteStorage | None
+    _storage: StorageService | None
     _start_time: float
     _first_byte_time: float | None
     _logged: bool
@@ -40,7 +40,7 @@ class _InstrumentedBase:
         provider: str,
         project: str,
         cost_tracker: CostTracker,
-        storage: SQLiteStorage | None,
+        storage: StorageService | None,
     ) -> None:
         self._wrapped = wrapped
         self._model_id = model_id
@@ -131,7 +131,7 @@ class InstrumentedSTT(lk_stt.STT, _InstrumentedBase):
         provider: str,
         project: str,
         cost_tracker: CostTracker,
-        storage: SQLiteStorage | None,
+        storage: StorageService | None,
     ) -> None:
         super().__init__(capabilities=wrapped.capabilities)
         self._init_instrumentation(
@@ -212,7 +212,7 @@ class InstrumentedLLM(lk_llm.LLM, _InstrumentedBase):
         provider: str,
         project: str,
         cost_tracker: CostTracker,
-        storage: SQLiteStorage | None,
+        storage: StorageService | None,
     ) -> None:
         super().__init__()
         self._init_instrumentation(
@@ -353,7 +353,7 @@ class InstrumentedTTS(lk_tts.TTS, _InstrumentedBase):
         provider: str,
         project: str,
         cost_tracker: CostTracker,
-        storage: SQLiteStorage | None,
+        storage: StorageService | None,
     ) -> None:
         super().__init__(
             capabilities=wrapped.capabilities,
@@ -410,7 +410,7 @@ def wrap_provider(
     provider: str,
     project: str,
     cost_tracker: CostTracker,
-    storage: SQLiteStorage | None,
+    storage: StorageService | None,
 ) -> Any:
     """Wrap a provider instance with instrumentation."""
     wrapper_cls = {

@@ -13,7 +13,7 @@ from voicegateway.middleware.budget_enforcer import (
     BudgetThrottleSignal,
 )
 from voicegateway.models.request_model import RequestRecord
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 def _make_config(projects: dict[str, ProjectConfig]) -> GatewayConfig:
@@ -23,7 +23,7 @@ def _make_config(projects: dict[str, ProjectConfig]) -> GatewayConfig:
 @pytest.fixture
 async def storage_with_spend(tmp_path):
     """Create storage with $5 spent today on 'expensive-project'."""
-    storage = SQLiteStorage(str(tmp_path / "budget.db"))
+    storage = StorageService(str(tmp_path / "budget.db"))
     now = time.time()
     for i in range(5):
         await storage.log_request(
@@ -53,7 +53,7 @@ async def test_no_budget_no_action():
 
 async def test_under_budget_no_action(tmp_path):
     """Under budget — no action taken."""
-    storage = SQLiteStorage(str(tmp_path / "under.db"))
+    storage = StorageService(str(tmp_path / "under.db"))
     config = _make_config(
         {
             "test": ProjectConfig(id="test", name="Test", daily_budget=100.0),

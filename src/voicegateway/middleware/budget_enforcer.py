@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from voicegateway.core.config import GatewayConfig, ProjectConfig
-    from voicegateway.storage.sqlite import SQLiteStorage
+    from voicegateway.services.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class BudgetEnforcer:
     def __init__(
         self,
         config: GatewayConfig,
-        storage: SQLiteStorage | None,
+        storage: StorageService | None,
         cache_ttl_seconds: float = 30.0,
     ):
         self._config = config

@@ -14,7 +14,7 @@ from voicegateway.cli.tui.data.factory import _resolve_db_path, make_client
 from voicegateway.cli.tui.data.http import HttpClient
 from voicegateway.cli.tui.data.local import LocalClient
 from voicegateway.middleware.cost_tracker import RequestRecord
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -73,9 +73,9 @@ def http_client(mock_transport):
 
 @pytest.fixture
 async def populated_storage(tmp_path):
-    """SQLiteStorage seeded with two sessions + one managed provider."""
+    """StorageService seeded with two sessions + one managed provider."""
     db = tmp_path / "voicegw.db"
-    storage = SQLiteStorage(db)
+    storage = StorageService(db)
     if hasattr(storage, "init_db"):
         await storage.init_db()
     for i in range(2):
@@ -297,7 +297,7 @@ def test_local_default_poll_is_five_seconds(tmp_path):
 
 
 async def test_local_aclose_is_no_op(local_client):
-    """SQLiteStorage opens connections per-call; no global resource."""
+    """StorageService opens connections per-call; no global resource."""
     await local_client.aclose()  # must not raise
     # Methods still work after close because the storage adapter
     # opens a fresh connection per await.
@@ -387,7 +387,7 @@ def test_factory_db_path_default(monkeypatch):
 def test_factory_db_path_expands_user(monkeypatch):
     monkeypatch.delenv("VOICEGW_DB_PATH", raising=False)
     path = _resolve_db_path("~/some/place.db")
-    # ``~`` must be expanded so SQLiteStorage doesn't try to mkdir the
+    # ``~`` must be expanded so StorageService doesn't try to mkdir the
     # literal ``~`` directory under cwd.
     assert "~" not in str(path)
 

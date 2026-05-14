@@ -6,14 +6,14 @@ from importlib import import_module
 
 import aiosqlite
 
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 _migration = import_module("voicegateway.storage.migrations.0007_guardrails")
 
 
 async def test_guardrail_events_table_created(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -39,7 +39,7 @@ async def test_guardrail_events_table_created(tmp_path) -> None:
 
 async def test_sessions_and_projects_gain_guardrail_columns(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -56,7 +56,7 @@ async def test_sessions_and_projects_gain_guardrail_columns(tmp_path) -> None:
 
 async def test_migration_is_idempotent(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -70,7 +70,7 @@ async def test_migration_is_idempotent(tmp_path) -> None:
 
 async def test_existing_session_rows_keep_null_guardrail_state(tmp_path) -> None:
     db_path = str(tmp_path / "with-row.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:

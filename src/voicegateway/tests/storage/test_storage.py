@@ -1,4 +1,4 @@
-"""Tests for voicegateway/storage/sqlite.py."""
+"""Tests for voicegateway/services/storage_service.py."""
 
 import time
 import uuid
@@ -6,12 +6,12 @@ import uuid
 import pytest
 
 from voicegateway.models.request_model import RequestRecord
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 @pytest.fixture
 async def storage(tmp_path):
-    return SQLiteStorage(str(tmp_path / "test.db"))
+    return StorageService(str(tmp_path / "test.db"))
 
 
 async def test_init_creates_tables(storage):

@@ -1,4 +1,4 @@
-"""Tests for SQLiteStorage.rotate_managed_credentials."""
+"""Tests for StorageService.rotate_managed_credentials."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from voicegateway.core.crypto import (
     is_fernet_token,
     reset_fernet,
 )
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +29,7 @@ def _generate_key() -> str:
     return Fernet.generate_key().decode()
 
 
-async def _seed_provider_rows(storage: SQLiteStorage) -> None:
+async def _seed_provider_rows(storage: StorageService) -> None:
     await storage.upsert_managed_provider(
         provider_id="tony-pizza:openai",
         provider_type="openai",
@@ -50,7 +50,7 @@ async def test_rotate_re_encrypts_every_row_under_new_primary(monkeypatch, tmp_p
     monkeypatch.setenv("VOICEGW_SECRET", old_key)
     reset_fernet()
 
-    storage = SQLiteStorage(str(tmp_path / "rotate.db"))
+    storage = StorageService(str(tmp_path / "rotate.db"))
     await _seed_provider_rows(storage)
 
     # Snapshot the encrypted-under-A ciphertexts.
@@ -92,7 +92,7 @@ async def test_rotate_skips_rows_with_empty_api_key(monkeypatch, tmp_path):
     monkeypatch.setenv("VOICEGW_SECRET", _generate_key())
     reset_fernet()
 
-    storage = SQLiteStorage(str(tmp_path / "rotate.db"))
+    storage = StorageService(str(tmp_path / "rotate.db"))
     await storage.upsert_managed_provider(
         provider_id="empty:openai",
         provider_type="openai",
@@ -122,7 +122,7 @@ async def test_rotate_records_rows_that_fail_to_decrypt(monkeypatch, tmp_path):
     monkeypatch.setenv("VOICEGW_SECRET", primary_a)
     reset_fernet()
 
-    storage = SQLiteStorage(str(tmp_path / "rotate.db"))
+    storage = StorageService(str(tmp_path / "rotate.db"))
     await storage.upsert_managed_provider(
         provider_id="healthy:openai",
         provider_type="openai",
@@ -177,7 +177,7 @@ async def test_rotate_records_rows_that_fail_to_decrypt(monkeypatch, tmp_path):
 async def test_rotate_returns_zeros_on_empty_table(monkeypatch, tmp_path):
     monkeypatch.setenv("VOICEGW_SECRET", _generate_key())
     reset_fernet()
-    storage = SQLiteStorage(str(tmp_path / "rotate.db"))
+    storage = StorageService(str(tmp_path / "rotate.db"))
 
     summary = await storage.rotate_managed_credentials()
     assert summary == {"rotated": 0, "skipped_empty": 0, "failed": []}

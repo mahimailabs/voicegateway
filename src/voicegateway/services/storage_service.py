@@ -1,4 +1,4 @@
-"""SQLite storage backend for request logs, projects, and cost tracking."""
+"""SQLite storage facade aggregating per-domain service objects."""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ _DEFAULT_PERCENTILES: list[float] = [50.0, 95.0, 99.0]
 _logger = logging.getLogger(__name__)
 
 
-class SQLiteStorage:
-    """SQLite storage for request logs, costs, and latency metrics."""
+class StorageService:
+    """Aggregates per-domain services over one SQLite database."""
 
     def __init__(self, db_path: str | Path) -> None:
         self._db_path = Path(db_path).expanduser()

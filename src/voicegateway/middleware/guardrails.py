@@ -17,7 +17,7 @@ from voicegateway.schemas.guardrail_policy_schema import (
 )
 
 if TYPE_CHECKING:
-    from voicegateway.storage.sqlite import SQLiteStorage
+    from voicegateway.services.storage_service import StorageService
 
 
 _PROMPT_PACKAGE = "voicegateway.data.guardrail_prompts"
@@ -110,7 +110,7 @@ def tools_contain_reserved_report_tool(tools: Any) -> bool:
 
 def create_report_guardrail_action_tool(
     *,
-    storage: SQLiteStorage | None,
+    storage: StorageService | None,
     session_id: str,
     tenant_id: str | None,
 ) -> Any:
@@ -176,7 +176,7 @@ def create_report_guardrail_action_tool(
 
 def schedule_bypass_event(
     *,
-    storage: SQLiteStorage | None,
+    storage: StorageService | None,
     session_id: str,
     tenant_id: str | None,
 ) -> None:

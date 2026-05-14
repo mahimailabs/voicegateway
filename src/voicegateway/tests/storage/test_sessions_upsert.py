@@ -1,4 +1,4 @@
-"""Tests for the sessions-table upsert in SQLiteStorage.log_request."""
+"""Tests for the sessions-table upsert in StorageService.log_request."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from voicegateway.inference.session.context import (
     start_session,
 )
 from voicegateway.models.request_model import RequestRecord
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 def _read_session(db_path: str, sid: str) -> dict | None:
@@ -68,7 +68,7 @@ def _make_record(
 
 async def test_first_request_inserts_session_row(tmp_path):
     db_path = str(tmp_path / "session.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
 
     sid = "vg-first-request"
     record = _make_record(session_id=sid, modality="stt", cost=0.0043)
@@ -91,7 +91,7 @@ async def test_first_request_inserts_session_row(tmp_path):
 async def test_started_at_is_iso8601_utc(tmp_path):
     """started_at format is ISO 8601 with timezone — required for the"""
     db_path = str(tmp_path / "session.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
 
     sid = "vg-iso-format"
     fixed_ts = 1746556800.0  # 2026-05-06T19:20:00Z (deterministic)
@@ -109,7 +109,7 @@ async def test_started_at_is_iso8601_utc(tmp_path):
 
 async def test_second_request_same_session_accumulates_cost(tmp_path):
     db_path = str(tmp_path / "session.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
 
     sid = "vg-accum-cost"
     await storage.log_request(_make_record(session_id=sid, cost=0.01))
@@ -125,7 +125,7 @@ async def test_second_request_same_session_accumulates_cost(tmp_path):
 async def test_modalities_grows_without_duplicates(tmp_path):
     """Three requests across stt/llm/tts on one session: modalities"""
     db_path = str(tmp_path / "session.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
 
     sid = "vg-modalities"
     await storage.log_request(_make_record(session_id=sid, modality="stt"))
@@ -143,7 +143,7 @@ async def test_modalities_grows_without_duplicates(tmp_path):
 async def test_modalities_dedupe_does_not_substring_match(tmp_path):
     """Adding "tt" to a session that already has "stt" must NOT consider"""
     db_path = str(tmp_path / "session.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
 
     sid = "vg-substring"
     # We don't actually have a "tt" modality in the real system, but
@@ -163,7 +163,7 @@ async def test_modalities_dedupe_does_not_substring_match(tmp_path):
 
 async def test_started_at_does_not_change_on_subsequent_requests(tmp_path):
     db_path = str(tmp_path / "session.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
 
     sid = "vg-frozen-start"
     await storage.log_request(_make_record(session_id=sid, ts=1700000000.0))
@@ -180,7 +180,7 @@ async def test_started_at_does_not_change_on_subsequent_requests(tmp_path):
 async def test_no_session_row_when_session_id_is_none(tmp_path):
     """Callers that do not run inside an inference factory call (no"""
     db_path = str(tmp_path / "session.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
 
     await storage.log_request(_make_record(session_id=None))
 
@@ -195,7 +195,7 @@ async def test_no_session_row_when_session_id_is_none(tmp_path):
 
 async def test_guardrail_snapshot_flags_persist_with_zero_events(tmp_path):
     db_path = str(tmp_path / "session.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
 
     sid = start_session()
     try:
@@ -216,7 +216,7 @@ async def test_guardrail_snapshot_flags_persist_with_zero_events(tmp_path):
 
 async def test_guardrail_bypass_flag_persists(tmp_path):
     db_path = str(tmp_path / "session.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
 
     sid = start_session(bypass_guardrails=True)
     try:
@@ -235,7 +235,7 @@ async def test_guardrail_bypass_flag_persists(tmp_path):
 
 async def test_two_sessions_are_independent(tmp_path):
     db_path = str(tmp_path / "session.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
 
     await storage.log_request(
         _make_record(
@@ -262,7 +262,7 @@ async def test_two_sessions_are_independent(tmp_path):
 async def test_started_at_takes_minimum_when_requests_arrive_out_of_order(tmp_path):
     """Requests are logged on completion, so a slow STT call started at"""
     db_path = str(tmp_path / "session.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
 
     sid = "vg-out-of-order"
     # First write: ts = 1700000060 (the LLM that finished first)
@@ -282,7 +282,7 @@ async def test_started_at_takes_minimum_when_requests_arrive_out_of_order(tmp_pa
 async def test_zero_cost_request_still_bumps_count_and_modalities(tmp_path):
     """A request with cost_usd=0 (e.g. local provider, free tier) must"""
     db_path = str(tmp_path / "session.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
 
     sid = "vg-zero-cost"
     await storage.log_request(_make_record(session_id=sid, cost=0.0))

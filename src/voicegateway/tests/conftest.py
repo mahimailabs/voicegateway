@@ -92,11 +92,11 @@ def temp_config(tmp_path):
 
 @pytest.fixture
 async def seeded_storage(tmp_path):
-    """Create a SQLiteStorage with sample request records."""
-    from voicegateway.storage.sqlite import SQLiteStorage
+    """Create a StorageService with sample request records."""
+    from voicegateway.services.storage_service import StorageService
 
     db_path = str(tmp_path / "test.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
 
     now = time.time()
     records = [

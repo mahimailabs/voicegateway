@@ -28,7 +28,7 @@ from voicegateway.cli.tui.widgets.log_tail import LogTail
 from voicegateway.cli.tui.widgets.provider_row import ProviderRow
 from voicegateway.cli.tui.widgets.session_row import SessionRow
 from voicegateway.middleware.cost_tracker import RequestRecord
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -36,7 +36,7 @@ from voicegateway.storage.sqlite import SQLiteStorage
 
 
 async def _seed(
-    storage: SQLiteStorage, sessions: list[tuple[str, float, float]]
+    storage: StorageService, sessions: list[tuple[str, float, float]]
 ) -> None:
     """Log one request per ``(session_id, ts, cost)`` triple."""
     for session_id, ts, cost in sessions:
@@ -60,7 +60,7 @@ async def _seed(
 async def populated_app(tmp_path: Path):
     """TUIApp with a seeded LocalClient backing it."""
     db = tmp_path / "voicegw.db"
-    storage = SQLiteStorage(db)
+    storage = StorageService(db)
     base = time.time() - 60
     await _seed(
         storage,
@@ -99,7 +99,7 @@ async def _wait_for_session_ids(app: TUIApp, pilot: Any, expected: set[str]) -> 
 
 async def test_sessions_empty_state(tmp_path: Path) -> None:
     db = tmp_path / "voicegw.db"
-    storage = SQLiteStorage(db)
+    storage = StorageService(db)
     client = LocalClient(db_path=db, storage=storage)
     app = TUIApp(client=client, is_local=True)
     async with app.run_test() as pilot:

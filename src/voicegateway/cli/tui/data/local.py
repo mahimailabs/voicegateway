@@ -7,7 +7,7 @@ from types import TracebackType
 from typing import Any
 
 from voicegateway.cli.tui.data.exceptions import LocalModeUnsupportedError
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 class LocalClient:
@@ -18,11 +18,11 @@ class LocalClient:
         *,
         db_path: str | Path,
         poll_seconds: float = 5.0,
-        storage: SQLiteStorage | None = None,
+        storage: StorageService | None = None,
     ) -> None:
         self._db_path = Path(db_path)
         self.poll_seconds = poll_seconds
-        self._storage = storage if storage is not None else SQLiteStorage(self._db_path)
+        self._storage = storage if storage is not None else StorageService(self._db_path)
 
     # -- lifecycle ---------------------------------------------------
 
@@ -50,13 +50,13 @@ class LocalClient:
         project: str | None = None,
         order_by: str = "started_at_desc",
     ) -> list[dict[str, Any]]:
-        """Delegate to ``SQLiteStorage.list_sessions``."""
+        """Delegate to ``StorageService.list_sessions``."""
         return await self._storage.list_sessions(
             limit=limit, project=project, order_by=order_by
         )
 
     async def get_session_detail(self, session_id: str) -> dict[str, Any] | None:
-        """Delegate to ``SQLiteStorage.get_session``."""
+        """Delegate to ``StorageService.get_session``."""
         return await self._storage.get_session(session_id)
 
     async def list_costs(
@@ -90,7 +90,7 @@ class LocalClient:
         project: str | None = None,
         modality: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Delegate to ``SQLiteStorage.get_recent_requests``."""
+        """Delegate to ``StorageService.get_recent_requests``."""
         return await self._storage.get_recent_requests(
             limit=limit, modality=modality, project=project
         )
@@ -100,7 +100,7 @@ class LocalClient:
         *,
         project: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Delegate to ``SQLiteStorage.list_managed_providers``."""
+        """Delegate to ``StorageService.list_managed_providers``."""
         rows = await self._storage.list_managed_providers()
         if project is None:
             return rows

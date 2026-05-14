@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from voicegateway.middleware.replay_capture import ReplayEvent
 from voicegateway.repository import replay_repository as replay
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 def stt(session_id: str, t_ms: int, text: str) -> ReplayEvent:
@@ -50,8 +50,8 @@ def _state(session_id: str, t_ms: int) -> ReplayEvent:
     )
 
 
-async def _fresh_storage(tmp_path) -> SQLiteStorage:
-    storage = SQLiteStorage(str(tmp_path / "replay.db"))
+async def _fresh_storage(tmp_path) -> StorageService:
+    storage = StorageService(str(tmp_path / "replay.db"))
     await storage._ensure_initialized()
     return storage
 

@@ -10,15 +10,15 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from voicegateway.repository.virtual_key_repository import VirtualKeyRepository
+from voicegateway.services.storage_service import StorageService
 from voicegateway.services.virtual_key_service import VirtualKeyService
-from voicegateway.storage.sqlite import SQLiteStorage
 
 
 @pytest.fixture
 async def service(tmp_path):
     """Bootstrap schema via the legacy storage, then build the ORM stack."""
     db_path = tmp_path / "vk-orm.db"
-    storage = SQLiteStorage(db_path=str(db_path))
+    storage = StorageService(db_path=str(db_path))
     await storage._ensure_initialized()
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")

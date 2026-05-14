@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from voicegateway.middleware.replay_capture import ReplayCapture, ReplayEvent
 from voicegateway.repository import replay_repository as replay
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 # Generous upper bound. The actual measured size for the synthetic
 # conversation below sits well under this; the test fails loudly if
@@ -66,7 +66,7 @@ async def _synthesize_one_minute(capture: ReplayCapture, session_id: str) -> Non
 async def test_synthetic_one_minute_under_600kb(tmp_path) -> None:
     """End-to-end: ReplayCapture -> replay -> on-disk footprint."""
     db_path = str(tmp_path / "smoke.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     captured: list[ReplayEvent] = []
@@ -104,7 +104,7 @@ async def test_synthetic_one_minute_under_600kb(tmp_path) -> None:
 async def test_storage_size_reported_via_aggregate(tmp_path) -> None:
     """The aggregate function reports the same byte sum the smoke uses."""
     db_path = str(tmp_path / "smoke2.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     captured: list[ReplayEvent] = []
