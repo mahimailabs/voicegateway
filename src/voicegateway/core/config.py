@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import re
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -15,18 +14,10 @@ from voicegateway.schemas.guardrail_policy_schema import GuardrailPolicy
 
 _ENV_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
-# Preferred (new) search paths — voicegw.yaml first.
-_NEW_CONFIG_PATHS = [
+_CONFIG_PATHS = [
     Path("./voicegw.yaml"),
     Path.home() / ".config" / "voicegateway" / "voicegw.yaml",
     Path("/etc/voicegateway/voicegw.yaml"),
-]
-
-# Legacy search paths — still honoured with a deprecation warning.
-_LEGACY_CONFIG_PATHS = [
-    Path("./gateway.yaml"),
-    Path.home() / ".config" / "inference-gateway" / "gateway.yaml",
-    Path("/etc/inference-gateway/gateway.yaml"),
 ]
 
 
@@ -167,19 +158,8 @@ class GatewayConfig:
     @classmethod
     def load(cls, config_path: str | Path | None = None) -> GatewayConfig:
         """Load configuration from a YAML file."""
-        # Allow VOICEGW_CONFIG env var to override if no explicit path given
         if config_path is None:
-            config_path = os.environ.get("VOICEGW_CONFIG") or os.environ.get(
-                "INFERENCE_GATEWAY_CONFIG"
-            )
-            if os.environ.get("INFERENCE_GATEWAY_CONFIG") and not os.environ.get(
-                "VOICEGW_CONFIG"
-            ):
-                warnings.warn(
-                    "INFERENCE_GATEWAY_CONFIG is deprecated; use VOICEGW_CONFIG instead.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
+            config_path = os.environ.get("VOICEGW_CONFIG")
 
         path = cls._resolve_path(config_path)
         raw = cls._read_yaml(path)
@@ -214,18 +194,8 @@ class GatewayConfig:
                 raise ConfigError(f"Config file not found: {p}")
             return p
 
-        for p in _NEW_CONFIG_PATHS:
+        for p in _CONFIG_PATHS:
             if p.exists():
-                return p
-
-        for p in _LEGACY_CONFIG_PATHS:
-            if p.exists():
-                warnings.warn(
-                    f"Using legacy config path {p}. Rename to 'voicegw.yaml' and "
-                    f"move to ~/.config/voicegateway/ to silence this warning.",
-                    DeprecationWarning,
-                    stacklevel=3,
-                )
                 return p
 
         raise ConfigError("No voicegw.yaml found. Create one with: voicegw init")
