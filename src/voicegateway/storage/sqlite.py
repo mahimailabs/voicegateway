@@ -7,7 +7,6 @@ import datetime as _dt
 import json
 import logging
 import time
-from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -31,319 +30,39 @@ from voicegateway.repository import (
     turns_repository as turns,
 )
 from voicegateway.schemas.guardrail_policy_schema import GuardrailPolicy
+from voicegateway.storage.connection import ConnectionManager
+from voicegateway.storage.migrator import initialize as _initialize_schema
 from voicegateway.utils.percentiles import compute_percentiles
 
 _DEFAULT_PERCENTILES: list[float] = [50.0, 95.0, 99.0]
 
-
-_migration_0003 = import_module(
-    "voicegateway.storage.migrations.0003_turns_and_deadair"
-)
-_migration_0004 = import_module("voicegateway.storage.migrations.0004_replay_tables")
-_migration_0005 = import_module(
-    "voicegateway.storage.migrations.0005_tenant_attribution"
-)
-_migration_0006 = import_module(
-    "voicegateway.storage.migrations.0006_routing_and_branding"
-)
-_migration_0007 = import_module("voicegateway.storage.migrations.0007_guardrails")
-
 _logger = logging.getLogger(__name__)
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS requests (
-    id TEXT PRIMARY KEY,
-    timestamp REAL NOT NULL,
-    project TEXT NOT NULL DEFAULT 'default',
-    modality TEXT NOT NULL,
-    model_id TEXT NOT NULL,
-    provider TEXT NOT NULL,
-    input_units REAL DEFAULT 0,
-    output_units REAL DEFAULT 0,
-    cost_usd REAL DEFAULT 0,
-    pricing_source TEXT NOT NULL DEFAULT '',
-    ttfb_ms REAL,
-    total_latency_ms REAL,
-    status TEXT DEFAULT 'success',
-    fallback_from TEXT,
-    error_message TEXT,
-    metadata TEXT,
-    session_id TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_requests_timestamp ON requests(timestamp);
-CREATE INDEX IF NOT EXISTS idx_requests_model ON requests(model_id);
-CREATE INDEX IF NOT EXISTS idx_requests_modality ON requests(modality);
-CREATE INDEX IF NOT EXISTS idx_requests_project ON requests(project);
-CREATE INDEX IF NOT EXISTS idx_requests_project_timestamp ON requests(project, timestamp);
--- session_id index created post-migration; see _ensure_initialized.
--- A pre-v0.0.5 file will not yet have the column when this script runs,
--- so creating the index here would fail on the legacy schema.
-
-DROP VIEW IF EXISTS daily_costs;
-CREATE VIEW IF NOT EXISTS daily_costs AS
-SELECT
-    date(timestamp, 'unixepoch') as day,
-    modality,
-    model_id,
-    provider,
-    COUNT(*) as request_count,
-    SUM(cost_usd) as total_cost,
-    AVG(ttfb_ms) as avg_ttfb,
-    AVG(total_latency_ms) as avg_latency
-FROM requests
-GROUP BY day, modality, model_id, provider;
-
-DROP VIEW IF EXISTS project_daily_costs;
-CREATE VIEW IF NOT EXISTS project_daily_costs AS
-SELECT
-    project,
-    date(timestamp, 'unixepoch') as day,
-    modality,
-    model_id,
-    COUNT(*) as request_count,
-    SUM(cost_usd) as total_cost,
-    AVG(ttfb_ms) as avg_ttfb
-FROM requests
-GROUP BY project, day, modality, model_id;
-
-CREATE TABLE IF NOT EXISTS managed_providers (
-    provider_id TEXT PRIMARY KEY,
-    provider_type TEXT NOT NULL,
-    api_key_encrypted TEXT NOT NULL DEFAULT '',
-    base_url TEXT,
-    extra_config TEXT NOT NULL DEFAULT '{}',
-    created_at REAL NOT NULL,
-    updated_at REAL NOT NULL,
-    project TEXT
-);
-
-CREATE TABLE IF NOT EXISTS managed_models (
-    model_id TEXT PRIMARY KEY,
-    modality TEXT NOT NULL,
-    provider_id TEXT NOT NULL,
-    model_name TEXT NOT NULL,
-    display_name TEXT,
-    default_language TEXT,
-    default_voice TEXT,
-    extra_config TEXT NOT NULL DEFAULT '{}',
-    enabled INTEGER NOT NULL DEFAULT 1,
-    created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS managed_projects (
-    project_id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    daily_budget REAL NOT NULL DEFAULT 0,
-    budget_action TEXT NOT NULL DEFAULT 'warn',
-    default_stack TEXT,
-    stt_model TEXT,
-    llm_model TEXT,
-    tts_model TEXT,
-    tags TEXT NOT NULL DEFAULT '[]',
-    created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
-);
-
--- v0.0.5 sessions table per design.md section 3.2.
--- One row per logical voice session. Populated by CostTracker on
--- the first request of a session; total_cost_usd and request_count
--- accumulate per request. ended_at stays NULL until the session
--- closes (session-close hook lands later in v0.0.5+).
-CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY,
-    project TEXT NOT NULL,
-    started_at TEXT NOT NULL,
-    ended_at TEXT,
-    modalities TEXT NOT NULL DEFAULT '',
-    total_cost_usd REAL DEFAULT 0,
-    request_count INTEGER DEFAULT 0
-);
-
-CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project);
-CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions(started_at);
-"""
 
 
 class SQLiteStorage:
     """SQLite storage for request logs, costs, and latency metrics."""
 
-    def __init__(self, db_path: str | Path):
-        self._db_path = Path(db_path).expanduser()
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._initialized = False
-        self._open_connections: set[aiosqlite.Connection] = set()
+    def __init__(self, db_path: str | Path) -> None:
+        self._conn = ConnectionManager(db_path)
+
+    @property
+    def _db_path(self) -> Path:
+        """Back-compat shim for callers reading the file path directly."""
+        return self._conn.db_path
+
+    @property
+    def _initialized(self) -> bool:
+        """Back-compat shim used by a few tests to assert post-init state."""
+        return self._conn.is_initialized
 
     async def _ensure_initialized(self) -> aiosqlite.Connection:
-        db = await aiosqlite.connect(str(self._db_path))
-        self._track_connection(db)
-        if not self._initialized:
-            await db.executescript(_SCHEMA)
-            # Migration: add `project` column if missing (from older schemas)
-            cursor = await db.execute("PRAGMA table_info(requests)")
-            cols = [row[1] async for row in cursor]
-            if "project" not in cols:
-                await db.execute(
-                    "ALTER TABLE requests ADD COLUMN project TEXT NOT NULL DEFAULT 'default'"
-                )
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_requests_project ON requests(project)"
-                )
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_requests_project_timestamp "
-                    "ON requests(project, timestamp)"
-                )
-            # Migration: add `pricing_source` column if missing (Phase 2.3 v0.1.0).
-            # Pre-v0.1 rows get the empty-string default; new rows carry a real
-            # value via CostTracker once Phase 2.3 #4 wires it through.
-            if "pricing_source" not in cols:
-                await db.execute(
-                    "ALTER TABLE requests ADD COLUMN pricing_source TEXT NOT NULL DEFAULT ''"
-                )
-            # Migration: add `session_id` column if missing.
-            # Pre-v0.0.5 rows get NULL — correct, they predate the
-            # session-correlation feature. New rows carry a real value
-            # written by InstrumentedSTT/LLM/TTS once 5.6 #3 wires it through.
-            if "session_id" not in cols:
-                await db.execute("ALTER TABLE requests ADD COLUMN session_id TEXT")
-            # Always create the index (idempotent CREATE INDEX IF NOT EXISTS).
-            # Lives outside the column-missing branch so a fresh install,
-            # which already has the column from _SCHEMA, still gets the
-            # index. Cannot live inside _SCHEMA itself because legacy
-            # databases without the column yet would fail the CREATE.
-            await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_requests_session_id "
-                "ON requests(session_id)"
-            )
-            # Audit log table
-            await db.execute("""
-                CREATE TABLE IF NOT EXISTS config_audit_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp REAL NOT NULL,
-                    entity_type TEXT NOT NULL,
-                    entity_id TEXT NOT NULL,
-                    action TEXT NOT NULL,
-                    changes_json TEXT,
-                    source TEXT NOT NULL DEFAULT 'api'
-                )
-            """)
-            await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_timestamp "
-                "ON config_audit_log(timestamp)"
-            )
-            await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_entity "
-                "ON config_audit_log(entity_type, entity_id)"
-            )
-
-            # Migration: add `project` column to managed_providers if
-            # missing. NULL means "global / legacy scope" so
-            # pre-v0.0.5 rows keep behaving exactly as before. New rows
-            # written by vg_add_provider can carry a non-null project
-            # name. The index lives outside the column-missing branch so
-            # both fresh and migrated installs end up with it.
-            mp_cursor = await db.execute("PRAGMA table_info(managed_providers)")
-            mp_cols = [row[1] async for row in mp_cursor]
-            if "project" not in mp_cols:
-                await db.execute(
-                    "ALTER TABLE managed_providers ADD COLUMN project TEXT"
-                )
-            await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_managed_providers_project "
-                "ON managed_providers(project)"
-            )
-
-            # Indexes on managed tables
-            await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_managed_providers_type "
-                "ON managed_providers(provider_type)"
-            )
-            await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_managed_models_modality "
-                "ON managed_models(modality)"
-            )
-            await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_managed_models_provider "
-                "ON managed_models(provider_id)"
-            )
-
-            # Migrate plaintext API keys to encrypted
-            await self._migrate_plaintext_keys(db)
-
-            # migration 0003: turns + dead_air_events tables,
-            # session-aggregate columns. Idempotent.
-            await _migration_0003.apply(db)
-
-            # migration 0004: replay event tables + sessions.replay_size_bytes.
-            # Idempotent.
-            await _migration_0004.apply(db)
-
-            # migration 0005: virtual_keys table + tenant_id columns
-            # on sessions/requests (unconditionally) and on the v0.2.0/v0.3.0
-            # derived tables (conditionally via sqlite_master presence check
-            # per OQ4). Idempotent.
-            await _migration_0005.apply(db)
-
-            # migration 0006: routing columns on sessions
-            # (budget_ms / budget_ms_used / budget_overrun / routed_llm /
-            # routed_tts), branding_json on managed_projects (conditional),
-            # and the new latency_observations table. Idempotent.
-            await _migration_0006.apply(db)
-
-            # migration 0007: guardrail policy snapshots and
-            # audit events. Idempotent.
-            await _migration_0007.apply(db)
-
-            await db.commit()
-            self._initialized = True
+        db = await self._conn.connect()
+        await _initialize_schema(db, self._conn)
         return db
-
-    def _track_connection(self, db: aiosqlite.Connection) -> None:
-        """Track raw handles so owner lifecycles can clean up stragglers."""
-        self._open_connections.add(db)
-        original_close = db.close
-
-        async def _tracked_close() -> None:
-            try:
-                await original_close()
-            finally:
-                self._open_connections.discard(db)
-
-        db.close = _tracked_close  # type: ignore[method-assign]
 
     async def aclose(self) -> None:
         """Close any raw connections still owned by this storage instance."""
-        for db in list(self._open_connections):
-            try:
-                await db.close()
-            except Exception:
-                self._open_connections.discard(db)
-
-    async def _migrate_plaintext_keys(self, db: aiosqlite.Connection) -> None:
-        """Encrypt any plaintext API keys left over from before encryption was added."""
-        from voicegateway.core.crypto import encrypt, is_fernet_token
-
-        cursor = await db.execute(
-            "SELECT provider_id, api_key_encrypted FROM managed_providers "
-            "WHERE api_key_encrypted != ''"
-        )
-        rows = await cursor.fetchall()
-        migrated = 0
-        for row in rows:
-            provider_id, raw_key = row[0], row[1]
-            if not is_fernet_token(raw_key):
-                encrypted = encrypt(raw_key)
-                await db.execute(
-                    "UPDATE managed_providers SET api_key_encrypted = ? WHERE provider_id = ?",
-                    (encrypted, provider_id),
-                )
-                migrated += 1
-        if migrated:
-            _logger.warning(
-                "Migrated %d plaintext API key(s) to encrypted storage.", migrated
-            )
+        await self._conn.aclose()
 
     # ------------------------------------------------------------------
     # Audit log
