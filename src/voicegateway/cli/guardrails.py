@@ -8,7 +8,6 @@ import typer
 
 from voicegateway.cli._app import app, console
 from voicegateway.core.constants import DEFAULT_DASHBOARD_URL
-from voicegateway.middleware.guardrails import compose_guardrail_block
 from voicegateway.schemas.guardrail_policy_schema import (
     GUARDRAIL_CATEGORIES,
     GuardrailPolicy,
@@ -114,5 +113,5 @@ def dry_run_cmd(
         dashboard_url=dashboard_url,
     )
     policy = GuardrailPolicy.from_raw(payload.get("policy"))
-    block = compose_guardrail_block(policy)
+    block = compose_block(policy)
     console.print(block or "No active guardrails for this project.")

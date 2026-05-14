@@ -272,7 +272,6 @@ class InstrumentedLLM(lk_llm.LLM, _InstrumentedBase):
             mark_guardrail_bypass_logged,
         )
         from voicegateway.middleware.guardrails import (
-            compose_guardrail_block,
             create_report_guardrail_action_tool,
             inject_guardrail_block,
             schedule_bypass_event,
@@ -282,6 +281,7 @@ class InstrumentedLLM(lk_llm.LLM, _InstrumentedBase):
             REPORT_GUARDRAIL_TOOL_NAME,
             GuardrailPolicy,
         )
+        from voicegateway.services.guardrail_service import compose_block
 
         try:
             gateway = get_gateway()
@@ -321,7 +321,7 @@ class InstrumentedLLM(lk_llm.LLM, _InstrumentedBase):
                 "when project guardrails are active"
             )
 
-        block = compose_guardrail_block(policy)
+        block = compose_block(policy)
         guarded_ctx = inject_guardrail_block(chat_ctx, block)
         report_tool = create_report_guardrail_action_tool(
             storage=self._storage,

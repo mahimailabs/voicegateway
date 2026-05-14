@@ -12,10 +12,8 @@ from livekit.agents import llm as lk_llm
 from voicegateway.inference import factory
 from voicegateway.inference.session.context import reset_session_id, start_session
 from voicegateway.middleware.guardrails import (
-    compose_guardrail_block,
     create_report_guardrail_action_tool,
     inject_guardrail_block,
-    load_guardrail_prompt,
     tools_contain_reserved_report_tool,
 )
 from voicegateway.middleware.instrumented_provider import InstrumentedLLM
@@ -24,6 +22,7 @@ from voicegateway.schemas.guardrail_policy_schema import (
     REPORT_GUARDRAIL_TOOL_NAME,
     GuardrailPolicy,
 )
+from voicegateway.services.guardrail_service import compose_block, load_prompt
 from voicegateway.services.storage_service import StorageService
 
 
@@ -84,9 +83,9 @@ async def _wait_for_guardrail_events(storage: StorageService, sid: str):
 
 
 def test_prompt_assets_and_composer_include_versioned_tool_contract() -> None:
-    assert "identifiers" in load_guardrail_prompt("pii").lower()
+    assert "identifiers" in load_prompt("pii").lower()
 
-    block = compose_guardrail_block(_active_policy(pii="redact"))
+    block = compose_block(_active_policy(pii="redact"))
 
     assert '<voicegateway_guardrails version="v0.6.0">' in block
     assert "## pii" in block
@@ -95,7 +94,7 @@ def test_prompt_assets_and_composer_include_versioned_tool_contract() -> None:
 
 
 def test_composer_returns_empty_for_inactive_policy() -> None:
-    assert compose_guardrail_block(GuardrailPolicy.disabled()) == ""
+    assert compose_block(GuardrailPolicy.disabled()) == ""
 
 
 def test_inject_guardrail_block_appends_after_system_and_developer() -> None:
