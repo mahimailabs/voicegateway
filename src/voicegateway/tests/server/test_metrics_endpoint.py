@@ -34,8 +34,8 @@ async def client(gateway):
 
 
 async def _seed_turns(gateway, session_id: str, count: int = 3) -> None:
-    db = await gateway.storage._ensure_initialized()
-    try:
+    await gateway.storage._ensure_initialized()
+    async with gateway.storage._conn.session() as db:
         rows = []
         for i in range(count):
             rows.append(
@@ -50,13 +50,11 @@ async def _seed_turns(gateway, session_id: str, count: int = 3) -> None:
                 )
             )
         await turns.create_turns_bulk(db, rows)
-    finally:
-        await db.close()
 
 
 async def _seed_dead_air(gateway, session_id: str, count: int = 2) -> None:
-    db = await gateway.storage._ensure_initialized()
-    try:
+    await gateway.storage._ensure_initialized()
+    async with gateway.storage._conn.session() as db:
         for i in range(count):
             await dead_air.create_event(
                 db,
@@ -67,8 +65,6 @@ async def _seed_dead_air(gateway, session_id: str, count: int = 2) -> None:
                     threshold_used_ms=3000,
                 ),
             )
-    finally:
-        await db.close()
 
 
 async def test_session_turns_endpoint_returns_ordered_turns(client, gateway) -> None:

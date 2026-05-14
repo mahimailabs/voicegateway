@@ -1,4 +1,4 @@
-"""Service wrapping the session repo with connection lifecycle."""
+"""Service wrapping the session repo with session lifecycle."""
 
 from __future__ import annotations
 
@@ -23,38 +23,22 @@ class SessionService:
         order_by: str = "started_at_desc",
         tenant: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return recent sessions."""
-        db = await self._conn.connect()
-        try:
+        async with self._conn.session() as s:
             return await repo.list_sessions(
-                db, limit=limit, project=project, order_by=order_by, tenant=tenant
+                s, limit=limit, project=project, order_by=order_by, tenant=tenant
             )
-        finally:
-            await db.close()
 
     async def get_session(self, session_id: str) -> dict[str, Any] | None:
-        """Return one session with per-modality / provider / guardrail-event drill-in."""
-        db = await self._conn.connect()
-        try:
-            return await repo.get_session(db, session_id)
-        finally:
-            await db.close()
+        async with self._conn.session() as s:
+            return await repo.get_session(s, session_id)
 
     async def finalize_metrics(self, session_id: str) -> None:
-        """Recompute the five session-aggregate columns from the turns table."""
-        db = await self._conn.connect()
-        try:
-            await repo.finalize_session_metrics(db, session_id)
-        finally:
-            await db.close()
+        async with self._conn.session() as s:
+            await repo.finalize_session_metrics(s, session_id)
 
     async def finalize_replay(self, session_id: str) -> None:
-        """Compute replay_size_bytes for the session and persist."""
-        db = await self._conn.connect()
-        try:
-            await repo.finalize_session_replay(db, session_id)
-        finally:
-            await db.close()
+        async with self._conn.session() as s:
+            await repo.finalize_session_replay(s, session_id)
 
 
 __all__ = ["SessionService"]

@@ -84,9 +84,7 @@ async def test_synthetic_one_minute_under_600kb(tmp_path) -> None:
     await capture.close_session("smoke-session")
 
     # Persist the captured events via the real repo.
-    import aiosqlite
-
-    async with aiosqlite.connect(db_path) as db:
+    async with storage._conn.session() as db:
         n = await replay.bulk_write_events(db, captured)
         assert n == len(captured)
 
@@ -131,9 +129,7 @@ async def test_storage_size_reported_via_aggregate(tmp_path) -> None:
         )
     await capture.close_session("tiny")
 
-    import aiosqlite
-
-    async with aiosqlite.connect(db_path) as db:
+    async with storage._conn.session() as db:
         await replay.bulk_write_events(db, captured)
         size = await replay.aggregate_storage_per_session(db, "tiny")
 

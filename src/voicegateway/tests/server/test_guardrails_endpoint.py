@@ -67,12 +67,10 @@ async def _seed_session(
 
 
 async def _create_event(storage, **kwargs) -> None:
-    db = await storage._ensure_initialized()
-    try:
+    await storage._ensure_initialized()
+    async with storage._conn.session() as db:
         await guardrail_events.create_event(db, **kwargs)
         await db.commit()
-    finally:
-        await db.close()
 
 
 async def test_get_project_guardrails_defaults_disabled(client) -> None:

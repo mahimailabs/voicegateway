@@ -486,8 +486,8 @@ def build_app(gateway: Gateway) -> FastAPI:
         if gateway.storage is None:
             return {"events": [], "filter": {"project": project, "tenant": tenant}}
         _validate_guardrail_event_filter(category=category, action=action)
-        db = await gateway.storage._ensure_initialized()
-        try:
+        await gateway.storage._ensure_initialized()
+        async with gateway.storage._conn.session() as db:
             rows = await guardrail_events.list_events(
                 db,
                 since=_guardrail_since(days),
@@ -498,8 +498,6 @@ def build_app(gateway: Gateway) -> FastAPI:
                 event_type=event_type,
                 limit=limit,
             )
-        finally:
-            await db.close()
         return {
             "events": [dataclasses.asdict(row) for row in rows],
             "filter": {
@@ -522,8 +520,8 @@ def build_app(gateway: Gateway) -> FastAPI:
         if gateway.storage is None:
             return {"counts": [], "top_sessions": []}
         _validate_guardrail_event_filter(category=category, action=None)
-        db = await gateway.storage._ensure_initialized()
-        try:
+        await gateway.storage._ensure_initialized()
+        async with gateway.storage._conn.session() as db:
             since = _guardrail_since(days)
             counts = await guardrail_events.aggregate_counts(
                 db, since=since, project=project, tenant=tenant
@@ -539,8 +537,6 @@ def build_app(gateway: Gateway) -> FastAPI:
                 if category
                 else []
             )
-        finally:
-            await db.close()
         return {
             "counts": [dataclasses.asdict(row) for row in counts],
             "top_sessions": [dataclasses.asdict(row) for row in top_sessions],

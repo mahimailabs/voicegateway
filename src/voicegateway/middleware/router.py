@@ -13,7 +13,7 @@ from voicegateway.repository import (
 )
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from voicegateway.core.config import ProjectConfig
 
@@ -86,7 +86,7 @@ def _reset_baselines_cache() -> None:
 
 
 async def route_session(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     *,
     project_id: str,
     project_config: ProjectConfig,

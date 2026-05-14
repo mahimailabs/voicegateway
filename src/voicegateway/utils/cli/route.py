@@ -10,8 +10,9 @@ async def _show_async(storage: Any, project_id: str) -> list[Any]:
         latency_observations_repository as latency_observations,
     )
 
-    db = await storage._ensure_initialized()
-    return await latency_observations.get_for_project(db, project_id)
+    await storage._ensure_initialized()
+    async with storage._conn.session() as db:
+        return await latency_observations.get_for_project(db, project_id)
 
 
 async def _simulate_async(
@@ -23,10 +24,11 @@ async def _simulate_async(
 ) -> Any:
     from voicegateway.middleware import router
 
-    db = await storage._ensure_initialized()
-    return await router.route_session(
-        db,
-        project_id=project_id,
-        project_config=project_config,
-        caller_overrides=overrides or None,
-    )
+    await storage._ensure_initialized()
+    async with storage._conn.session() as db:
+        return await router.route_session(
+            db,
+            project_id=project_id,
+            project_config=project_config,
+            caller_overrides=overrides or None,
+        )

@@ -1,15 +1,17 @@
-"""Async repo for the four ``replay_*`` tables."""
+"""Async repo for the four ``replay_*`` tables (ORM)."""
 
 from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import text
+
 from voicegateway.inference.session.context import current_tenant
 from voicegateway.middleware.replay_capture import ReplayEvent
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 _TABLE_BY_MODALITY: dict[str, str] = {
@@ -20,26 +22,26 @@ _TABLE_BY_MODALITY: dict[str, str] = {
 }
 
 
-_INSERT_BY_MODALITY: dict[str, str] = {
-    "stt": (
+_INSERT_BY_MODALITY: dict[str, Any] = {
+    "stt": text(
         "INSERT INTO replay_stt_events "
         "(session_id, t_ms, payload, provider, cost_usd, tenant_id) "
-        "VALUES (?, ?, ?, ?, ?, ?)"
+        "VALUES (:session_id, :t_ms, :payload, :provider, :cost_usd, :tenant_id)"
     ),
-    "llm": (
+    "llm": text(
         "INSERT INTO replay_llm_tokens "
         "(session_id, t_ms, payload, provider, cost_usd, tenant_id) "
-        "VALUES (?, ?, ?, ?, ?, ?)"
+        "VALUES (:session_id, :t_ms, :payload, :provider, :cost_usd, :tenant_id)"
     ),
-    "tts": (
+    "tts": text(
         "INSERT INTO replay_tts_frames "
         "(session_id, t_ms, payload, provider, cost_usd, tenant_id) "
-        "VALUES (?, ?, ?, ?, ?, ?)"
+        "VALUES (:session_id, :t_ms, :payload, :provider, :cost_usd, :tenant_id)"
     ),
-    "state": (
+    "state": text(
         "INSERT INTO replay_state_snapshots "
         "(session_id, t_ms, payload, tenant_id) "
-        "VALUES (?, ?, ?, ?)"
+        "VALUES (:session_id, :t_ms, :payload, :tenant_id)"
     ),
 }
 
@@ -50,7 +52,7 @@ def _payload_to_text(payload: dict[str, Any]) -> str:
 
 
 async def bulk_write_events(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     events: list[ReplayEvent],
     *,
     tenant_id: str | None = None,
@@ -60,7 +62,7 @@ async def bulk_write_events(
         return 0
     resolved = tenant_id if tenant_id is not None else current_tenant()
 
-    by_modality: dict[str, list[tuple[Any, ...]]] = {
+    by_modality: dict[str, list[dict[str, Any]]] = {
         "stt": [],
         "llm": [],
         "tts": [],
@@ -74,57 +76,61 @@ async def bulk_write_events(
             )
         if ev.modality == "state":
             by_modality["state"].append(
-                (ev.session_id, ev.t_ms, _payload_to_text(ev.payload), resolved)
+                {
+                    "session_id": ev.session_id,
+                    "t_ms": ev.t_ms,
+                    "payload": _payload_to_text(ev.payload),
+                    "tenant_id": resolved,
+                }
             )
         else:
             by_modality[ev.modality].append(
-                (
-                    ev.session_id,
-                    ev.t_ms,
-                    _payload_to_text(ev.payload),
-                    ev.provider,
-                    ev.cost_usd,
-                    resolved,
-                )
+                {
+                    "session_id": ev.session_id,
+                    "t_ms": ev.t_ms,
+                    "payload": _payload_to_text(ev.payload),
+                    "provider": ev.provider,
+                    "cost_usd": ev.cost_usd,
+                    "tenant_id": resolved,
+                }
             )
 
     inserted = 0
     for modality, rows in by_modality.items():
         if not rows:
             continue
-        await db.executemany(_INSERT_BY_MODALITY[modality], rows)
+        await session.execute(_INSERT_BY_MODALITY[modality], rows)
         inserted += len(rows)
-    await db.commit()
+    await session.commit()
     return inserted
 
 
-async def read_full_replay(
-    db: aiosqlite.Connection, session_id: str
-) -> list[ReplayEvent]:
+async def read_full_replay(session: AsyncSession, session_id: str) -> list[ReplayEvent]:
     """Return the full replay for one session, ordered by ``t_ms`` ASC."""
-
-    sql = (
-        "SELECT session_id, 'stt' AS modality, t_ms, payload, "
-        "       provider, cost_usd FROM replay_stt_events "
-        " WHERE session_id = ? "
-        "UNION ALL "
-        "SELECT session_id, 'llm' AS modality, t_ms, payload, "
-        "       provider, cost_usd FROM replay_llm_tokens "
-        " WHERE session_id = ? "
-        "UNION ALL "
-        "SELECT session_id, 'tts' AS modality, t_ms, payload, "
-        "       provider, cost_usd FROM replay_tts_frames "
-        " WHERE session_id = ? "
-        "UNION ALL "
-        "SELECT session_id, 'state' AS modality, t_ms, payload, "
-        "       '' AS provider, NULL AS cost_usd "
-        "  FROM replay_state_snapshots "
-        " WHERE session_id = ? "
-        "ORDER BY t_ms ASC"
+    result = await session.execute(
+        text(
+            "SELECT session_id, 'stt' AS modality, t_ms, payload, "
+            "       provider, cost_usd FROM replay_stt_events "
+            " WHERE session_id = :sid "
+            "UNION ALL "
+            "SELECT session_id, 'llm' AS modality, t_ms, payload, "
+            "       provider, cost_usd FROM replay_llm_tokens "
+            " WHERE session_id = :sid "
+            "UNION ALL "
+            "SELECT session_id, 'tts' AS modality, t_ms, payload, "
+            "       provider, cost_usd FROM replay_tts_frames "
+            " WHERE session_id = :sid "
+            "UNION ALL "
+            "SELECT session_id, 'state' AS modality, t_ms, payload, "
+            "       '' AS provider, NULL AS cost_usd "
+            "  FROM replay_state_snapshots "
+            " WHERE session_id = :sid "
+            "ORDER BY t_ms ASC"
+        ),
+        {"sid": session_id},
     )
-    cursor = await db.execute(sql, (session_id, session_id, session_id, session_id))
     out: list[ReplayEvent] = []
-    async for row in cursor:
+    for row in result:
         sid, modality, t_ms, payload_text, provider, cost_usd = row
         try:
             payload: dict[str, Any] = json.loads(payload_text)
@@ -143,32 +149,32 @@ async def read_full_replay(
     return out
 
 
-async def delete_replay(db: aiosqlite.Connection, session_id: str) -> int:
+async def delete_replay(session: AsyncSession, session_id: str) -> int:
     """Delete every replay row for one session across all four tables."""
     total = 0
     for table in _TABLE_BY_MODALITY.values():
-        cursor = await db.execute(
-            f"DELETE FROM {table} WHERE session_id = ?", (session_id,)
+        result = await session.execute(
+            text(f"DELETE FROM {table} WHERE session_id = :sid"),
+            {"sid": session_id},
         )
-        # aiosqlite Cursor exposes rowcount after execute for DELETE.
-        if cursor.rowcount is not None and cursor.rowcount > 0:
-            total += cursor.rowcount
-    await db.commit()
+        if result.rowcount is not None and result.rowcount > 0:
+            total += result.rowcount
+    await session.commit()
     return total
 
 
-async def aggregate_storage_per_session(
-    db: aiosqlite.Connection, session_id: str
-) -> int:
+async def aggregate_storage_per_session(session: AsyncSession, session_id: str) -> int:
     """Sum the JSON-payload byte length across all four tables."""
     total = 0
     for table in _TABLE_BY_MODALITY.values():
-        cursor = await db.execute(
-            f"SELECT COALESCE(SUM(length(payload)), 0) FROM {table} "
-            "WHERE session_id = ?",
-            (session_id,),
+        result = await session.execute(
+            text(
+                f"SELECT COALESCE(SUM(length(payload)), 0) FROM {table} "
+                "WHERE session_id = :sid"
+            ),
+            {"sid": session_id},
         )
-        row = await cursor.fetchone()
+        row = result.fetchone()
         if row is not None and row[0] is not None:
             total += int(row[0])
     return total

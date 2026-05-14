@@ -92,10 +92,12 @@ class RetentionWorker:
         projects = await self._provider()
         if not projects:
             return {}
+        from sqlalchemy import text
+
         per_project_deletes: dict[str, int] = {}
         now = datetime.now(UTC)
-        db = await self._storage._ensure_initialized()
-        try:
+        await self._storage._ensure_initialized()
+        async with self._storage._conn.session() as db:
             for project_id, retention_days in projects:
                 if retention_days < 1:
                     logger.warning(
@@ -107,13 +109,15 @@ class RetentionWorker:
                     )
                     retention_days = self._default_retention_days
                 cutoff_iso = (now - timedelta(days=retention_days)).isoformat()
-                cursor = await db.execute(
-                    "SELECT id FROM sessions "
-                    "WHERE project = ? AND ended_at IS NOT NULL "
-                    "  AND ended_at < ?",
-                    (project_id, cutoff_iso),
+                result = await db.execute(
+                    text(
+                        "SELECT id FROM sessions "
+                        "WHERE project = :project AND ended_at IS NOT NULL "
+                        "  AND ended_at < :cutoff"
+                    ),
+                    {"project": project_id, "cutoff": cutoff_iso},
                 )
-                stale_ids = [row[0] async for row in cursor]
+                stale_ids = [row[0] for row in result]
                 if not stale_ids:
                     per_project_deletes[project_id] = 0
                     continue
@@ -129,8 +133,6 @@ class RetentionWorker:
                     deleted_rows,
                     len(stale_ids),
                 )
-        finally:
-            await db.close()
         return per_project_deletes
 
 

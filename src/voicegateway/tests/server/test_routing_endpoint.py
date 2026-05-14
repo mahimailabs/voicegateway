@@ -37,15 +37,31 @@ async def client(tmp_path, monkeypatch):
 
 
 async def _seed(storage, rows):
-    db = await storage._ensure_initialized()
-    for project_id, provider, modality, p50 in rows:
-        await db.execute(
-            "INSERT INTO latency_observations "
-            "(project_id, provider, modality, p50_ms, p95_ms, sample_count, "
-            " window_start, window_end) VALUES (?,?,?,?,?,?,?,?)",
-            (project_id, provider, modality, p50, p50 + 100, 10, "x", "y"),
-        )
-    await db.commit()
+    from sqlalchemy import text
+
+    await storage._ensure_initialized()
+    async with storage._conn.session() as db:
+        for project_id, provider, modality, p50 in rows:
+            await db.execute(
+                text(
+                    "INSERT INTO latency_observations "
+                    "(project_id, provider, modality, p50_ms, p95_ms, "
+                    " sample_count, window_start, window_end) "
+                    "VALUES (:project_id, :provider, :modality, :p50, :p95, "
+                    " :sc, :ws, :we)"
+                ),
+                {
+                    "project_id": project_id,
+                    "provider": provider,
+                    "modality": modality,
+                    "p50": p50,
+                    "p95": p50 + 100,
+                    "sc": 10,
+                    "ws": "x",
+                    "we": "y",
+                },
+            )
+        await db.commit()
 
 
 async def test_returns_all_observations_when_no_filter(client) -> None:

@@ -157,8 +157,8 @@ def create_report_guardrail_action_tool(
             guardrail_events_repository as guardrail_events,
         )
 
-        db = await storage._ensure_initialized()
-        try:
+        await storage._ensure_initialized()
+        async with storage._conn.session() as db:
             await guardrail_events.create_event(
                 db,
                 session_id=session_id,
@@ -169,8 +169,6 @@ def create_report_guardrail_action_tool(
                 context_excerpt=context_excerpt,
             )
             await db.commit()
-        finally:
-            await db.close()
         return None
 
     return function_tool(_handler, raw_schema=raw_schema)
@@ -192,8 +190,8 @@ def schedule_bypass_event(
         )
 
         try:
-            db = await storage._ensure_initialized()
-            try:
+            await storage._ensure_initialized()
+            async with storage._conn.session() as db:
                 await guardrail_events.create_event(
                     db,
                     session_id=session_id,
@@ -202,8 +200,6 @@ def schedule_bypass_event(
                     context_excerpt="guardrail injection bypassed for this session",
                 )
                 await db.commit()
-            finally:
-                await db.close()
         except Exception:
             logger.warning(
                 "failed to record guardrail bypass event session_id=%s tenant_id=%s",

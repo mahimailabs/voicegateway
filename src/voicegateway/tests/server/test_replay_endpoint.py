@@ -28,8 +28,8 @@ async def client(gateway):
 
 
 async def _seed_replay(gateway, session_id: str, n: int = 3) -> None:
-    db = await gateway.storage._ensure_initialized()
-    try:
+    await gateway.storage._ensure_initialized()
+    async with gateway.storage._conn.session() as db:
         events = [
             ReplayEvent(
                 session_id=session_id,
@@ -42,8 +42,6 @@ async def _seed_replay(gateway, session_id: str, n: int = 3) -> None:
             for i in range(n)
         ]
         await replay.bulk_write_events(db, events)
-    finally:
-        await db.close()
 
 
 async def test_get_session_replay_returns_ordered_events(client, gateway) -> None:

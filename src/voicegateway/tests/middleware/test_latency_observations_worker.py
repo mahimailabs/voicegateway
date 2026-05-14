@@ -113,5 +113,6 @@ async def test_empty_db_inserts_zero(storage) -> None:
     w = LatencyObservationsWorker(storage, poll_interval_seconds=0.1)
     n = await w.tick_now()
     assert n == 0
-    db = await storage._ensure_initialized()
-    assert await lor.read_all(db) == []
+    await storage._ensure_initialized()
+    async with storage._conn.session() as db:
+        assert await lor.read_all(db) == []

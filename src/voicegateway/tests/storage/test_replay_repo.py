@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import aiosqlite
-
 from voicegateway.middleware.replay_capture import ReplayEvent
 from voicegateway.repository import replay_repository as replay
 from voicegateway.storage.sqlite import SQLiteStorage
@@ -52,16 +50,15 @@ def _state(session_id: str, t_ms: int) -> ReplayEvent:
     )
 
 
-async def _fresh_db(tmp_path) -> str:
-    db_path = str(tmp_path / "replay.db")
-    storage = SQLiteStorage(db_path)
+async def _fresh_storage(tmp_path) -> SQLiteStorage:
+    storage = SQLiteStorage(str(tmp_path / "replay.db"))
     await storage._ensure_initialized()
-    return db_path
+    return storage
 
 
 async def test_bulk_write_round_trip(tmp_path) -> None:
-    db_path = await _fresh_db(tmp_path)
-    async with aiosqlite.connect(db_path) as db:
+    storage = await _fresh_storage(tmp_path)
+    async with storage._conn.session() as db:
         events = [
             stt("s1", 100, "hello"),
             llm("s1", 500, "hi"),
@@ -73,35 +70,33 @@ async def test_bulk_write_round_trip(tmp_path) -> None:
         listed = await replay.read_full_replay(db, "s1")
         assert len(listed) == 3
         assert [e.t_ms for e in listed] == [100, 500, 510]
-        # Modality discriminator preserved.
         assert listed[0].modality == "stt"
         assert listed[1].modality == "llm"
         assert listed[2].modality == "state"
 
 
 async def test_bulk_write_empty_is_noop(tmp_path) -> None:
-    db_path = await _fresh_db(tmp_path)
-    async with aiosqlite.connect(db_path) as db:
+    storage = await _fresh_storage(tmp_path)
+    async with storage._conn.session() as db:
         n = await replay.bulk_write_events(db, [])
         assert n == 0
 
 
 async def test_read_full_replay_unknown_session_empty(tmp_path) -> None:
-    db_path = await _fresh_db(tmp_path)
-    async with aiosqlite.connect(db_path) as db:
+    storage = await _fresh_storage(tmp_path)
+    async with storage._conn.session() as db:
         assert await replay.read_full_replay(db, "ghost") == []
 
 
 async def test_delete_replay_cascades_all_four_tables(tmp_path) -> None:
-    db_path = await _fresh_db(tmp_path)
-    async with aiosqlite.connect(db_path) as db:
+    storage = await _fresh_storage(tmp_path)
+    async with storage._conn.session() as db:
         events = [
             stt("s1", 0, "a"),
             llm("s1", 100, "b"),
             _state("s1", 200),
         ]
         await replay.bulk_write_events(db, events)
-        # Also a TTS event so all four tables have content.
         await replay.bulk_write_events(
             db,
             [
@@ -128,10 +123,8 @@ async def test_delete_replay_cascades_all_four_tables(tmp_path) -> None:
 
 
 async def test_aggregate_storage_per_session(tmp_path) -> None:
-    db_path = await _fresh_db(tmp_path)
-    async with aiosqlite.connect(db_path) as db:
+    storage = await _fresh_storage(tmp_path)
+    async with storage._conn.session() as db:
         await replay.bulk_write_events(db, [stt("s1", 0, "hello world")])
         size = await replay.aggregate_storage_per_session(db, "s1")
-        # Payload contains JSON with text+is_final+alternatives;
-        # length should be at least 30 chars and at most a few hundred.
         assert 30 <= size <= 500
