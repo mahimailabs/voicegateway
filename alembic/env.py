@@ -8,6 +8,7 @@ against the declared metadata.
 from __future__ import annotations
 
 import asyncio
+import os
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -22,7 +23,14 @@ from voicegateway.core.database import resolve_database_url  # noqa: E402
 
 alembic_config = context.config
 
-if alembic_config.config_file_name is not None:
+# fileConfig() reconfigures the root logger from alembic.ini. That's
+# fine for the CLI, but Database.run_migrations() sets this env var so
+# the programmatic path doesn't clobber the caller's logging setup
+# (which breaks pytest caplog and any host that already wired logging).
+if (
+    alembic_config.config_file_name is not None
+    and os.environ.get("VOICEGW_ALEMBIC_SKIP_LOGGING") != "1"
+):
     fileConfig(alembic_config.config_file_name)
 
 
