@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import text
 
 from voicegateway.repository import tenants_repository as tr
 from voicegateway.storage.sqlite import SQLiteStorage
@@ -11,18 +12,38 @@ from voicegateway.storage.sqlite import SQLiteStorage
 @pytest.fixture
 async def db(tmp_path):
     storage = SQLiteStorage(db_path=str(tmp_path / "tenants.db"))
-    conn = await storage._ensure_initialized()
-    yield conn
+    await storage._ensure_initialized()
+    async with storage._conn.session() as session:
+        yield session
+
+
+_SEED_INSERT = text(
+    "INSERT INTO sessions ("
+    "id, project, started_at, ended_at, modalities, "
+    "total_cost_usd, request_count, tenant_id"
+    ") VALUES ("
+    ":id, :project, :started_at, :ended_at, :modalities, "
+    ":total_cost_usd, :request_count, :tenant_id"
+    ")"
+)
 
 
 async def _seed(db, rows):
-    """Insert pre-baked session rows."""
-    await db.executemany(
-        "INSERT INTO sessions (id, project, started_at, ended_at, "
-        "modalities, total_cost_usd, request_count, tenant_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        rows,
-    )
+    """Insert pre-baked session rows via the ORM session."""
+    payload = [
+        {
+            "id": r[0],
+            "project": r[1],
+            "started_at": r[2],
+            "ended_at": r[3],
+            "modalities": r[4],
+            "total_cost_usd": r[5],
+            "request_count": r[6],
+            "tenant_id": r[7],
+        }
+        for r in rows
+    ]
+    await db.execute(_SEED_INSERT, payload)
     await db.commit()
 
 

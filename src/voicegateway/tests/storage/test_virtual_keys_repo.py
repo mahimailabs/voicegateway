@@ -11,8 +11,9 @@ from voicegateway.storage.sqlite import SQLiteStorage
 @pytest.fixture
 async def db(tmp_path):
     storage = SQLiteStorage(db_path=str(tmp_path / "vk.db"))
-    conn = await storage._ensure_initialized()
-    yield conn
+    await storage._ensure_initialized()
+    async with storage._conn.session() as session:
+        yield session
 
 
 async def test_issuance_returns_plaintext_once(db) -> None:

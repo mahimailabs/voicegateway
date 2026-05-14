@@ -148,13 +148,14 @@ def build_app(gateway: Gateway) -> FastAPI:
             authorization = request.headers.get("Authorization")
             if is_virtual_key_token(authorization) and gateway.storage is not None:
                 try:
-                    db = await gateway.storage._ensure_initialized()
-                    verified = await verify_virtual_key(authorization, db)
+                    await gateway.storage._ensure_initialized()
+                    async with gateway.storage._conn.session() as session:
+                        verified = await verify_virtual_key(authorization, session)
+                        await virtual_keys.mark_used(session, verified.id)
                 except AuthError as exc:
                     raise HTTPException(
                         status_code=exc.status_code, detail=exc.message
                     ) from None
-                await virtual_keys.mark_used(db, verified.id)
                 request.state.virtual_key_id = verified.id
                 request.state.virtual_key_tenant_id = verified.tenant_id
                 if verified.tenant_id is not None:

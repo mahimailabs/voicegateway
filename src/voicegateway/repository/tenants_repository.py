@@ -1,4 +1,9 @@
-"""Async read-side repo for the tenant index."""
+"""Async read-side repo for the tenant index (ORM).
+
+Uses ``text()`` clauses to preserve the LIKE-ESCAPE search pattern and
+the ``MAX(COALESCE(ended_at, started_at))`` aggregate exactly as the
+legacy SQL had them. The post-processing dataclass shape is unchanged.
+"""
 
 from __future__ import annotations
 
@@ -6,8 +11,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import text
+
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 _DEFAULT_LIMIT = 50
@@ -57,7 +64,7 @@ WHERE tenant_id IS NOT NULL
 
 
 async def list_tenants(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     *,
     limit: int = _DEFAULT_LIMIT,
     query: str | None = None,
@@ -68,56 +75,52 @@ async def list_tenants(
     if limit > _MAX_LIMIT:
         limit = _MAX_LIMIT
 
-    clauses: list[str] = []
-    params: list[Any] = []
-    if query:
-        clauses.append("AND tenant_id LIKE ? ESCAPE '\\'")
-
-        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        params.append(f"%{escaped}%")
-
     sql = _SELECT_AGGREGATES
-    if clauses:
-        sql += " " + " ".join(clauses) + " "
-    sql += " GROUP BY tenant_id  ORDER BY last_seen DESC, tenant_id ASC  LIMIT ?"
-    params.append(limit)
+    params: dict[str, Any] = {"limit": limit}
+    if query:
+        sql += r" AND tenant_id LIKE :pattern ESCAPE '\'"
+        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        params["pattern"] = f"%{escaped}%"
+    sql += " GROUP BY tenant_id ORDER BY last_seen DESC, tenant_id ASC LIMIT :limit"
 
-    cursor = await db.execute(sql, params)
-    return [_row_to_tenant(row) async for row in cursor]
+    result = await session.execute(text(sql), params)
+    return [_row_to_tenant(row) for row in result]
 
 
-async def get_tenant(db: aiosqlite.Connection, tenant_id: str) -> TenantRow | None:
+async def get_tenant(session: AsyncSession, tenant_id: str) -> TenantRow | None:
     """Return aggregates for a single tenant or ``None`` if not seen."""
-    cursor = await db.execute(
-        _SELECT_AGGREGATES + " AND tenant_id = ? " + "GROUP BY tenant_id",
-        (tenant_id,),
-    )
-    row = await cursor.fetchone()
+    sql = _SELECT_AGGREGATES + " AND tenant_id = :tenant_id GROUP BY tenant_id"
+    result = await session.execute(text(sql), {"tenant_id": tenant_id})
+    row = result.fetchone()
     return _row_to_tenant(row) if row is not None else None
 
 
-async def count_tenants(db: aiosqlite.Connection) -> int:
+async def count_tenants(session: AsyncSession) -> int:
     """Return the number of distinct attributed tenants in the index."""
-    cursor = await db.execute(
-        "SELECT COUNT(DISTINCT tenant_id) FROM sessions WHERE tenant_id IS NOT NULL"
+    result = await session.execute(
+        text(
+            "SELECT COUNT(DISTINCT tenant_id) FROM sessions WHERE tenant_id IS NOT NULL"
+        )
     )
-    row = await cursor.fetchone()
+    row = result.fetchone()
     return int(row[0]) if row is not None else 0
 
 
 async def get_unattributed_aggregates(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
 ) -> UnattributedAggregates:
     """Return aggregates for the ``tenant_id IS NULL`` bucket."""
-    cursor = await db.execute(
-        """SELECT COUNT(*) AS session_count,
-                  COALESCE(SUM(total_cost_usd), 0.0) AS total_cost_usd,
-                  MIN(started_at) AS first_seen,
-                  MAX(COALESCE(ended_at, started_at)) AS last_seen
-           FROM sessions
-           WHERE tenant_id IS NULL"""
+    result = await session.execute(
+        text(
+            """SELECT COUNT(*) AS session_count,
+                      COALESCE(SUM(total_cost_usd), 0.0) AS total_cost_usd,
+                      MIN(started_at) AS first_seen,
+                      MAX(COALESCE(ended_at, started_at)) AS last_seen
+               FROM sessions
+               WHERE tenant_id IS NULL"""
+        )
     )
-    row = await cursor.fetchone()
+    row = result.fetchone()
     if row is None:
         return UnattributedAggregates(
             session_count=0, total_cost_usd=0.0, first_seen=None, last_seen=None
