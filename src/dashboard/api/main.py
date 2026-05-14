@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
+from sqlalchemy import text
 
 from voicegateway.core.auth import load_api_keys, resolve_cors_origins
 from voicegateway.repository import (
@@ -524,32 +525,34 @@ async def get_metrics_summary(
     since_iso = since.isoformat()
     until_iso = until.isoformat()
 
-    db = await gw.storage._ensure_initialized()
-    try:
-        where_clauses = ["started_at >= ?", "started_at < ?"]
-        params: list[Any] = [since_iso, until_iso]
+    await gw.storage._ensure_initialized()
+    async with gw.storage._conn.session() as db:
+        where_clauses = ["started_at >= :since", "started_at < :until"]
+        params: dict[str, Any] = {"since": since_iso, "until": until_iso}
         if project:
-            where_clauses.append("project = ?")
-            params.append(project)
+            where_clauses.append("project = :project")
+            params["project"] = project
         if tenant is not None:
             if tenant == "":
                 where_clauses.append("tenant_id IS NULL")
             else:
-                where_clauses.append("tenant_id = ?")
-                params.append(tenant)
+                where_clauses.append("tenant_id = :tenant")
+                params["tenant"] = tenant
         where = " AND ".join(where_clauses)
-        cursor = await db.execute(
-            f"""SELECT id,
-                       talk_time_seconds,
-                       per_minute_cost_usd,
-                       response_speed_p50_ms,
-                       response_speed_p95_ms,
-                       talk_over_rate
-                  FROM sessions
-                 WHERE {where}""",
-            tuple(params),
+        result = await db.execute(
+            text(
+                f"""SELECT id,
+                           talk_time_seconds,
+                           per_minute_cost_usd,
+                           response_speed_p50_ms,
+                           response_speed_p95_ms,
+                           talk_over_rate
+                      FROM sessions
+                     WHERE {where}"""
+            ),
+            params,
         )
-        rows = list(await cursor.fetchall())
+        rows = list(result)
 
         session_count = len(rows)
         measured_count = sum(1 for r in rows if r[2] is not None)
@@ -568,13 +571,16 @@ async def get_metrics_summary(
         # Dead-air count joined through session_id.
         session_ids = [r[0] for r in rows]
         if session_ids:
-            placeholders = ",".join("?" for _ in session_ids)
-            da_cursor = await db.execute(
-                f"SELECT COUNT(*) FROM dead_air_events "
-                f"WHERE session_id IN ({placeholders})",
-                tuple(session_ids),
+            id_params = {f"sid_{i}": sid for i, sid in enumerate(session_ids)}
+            placeholders = ",".join(f":{name}" for name in id_params)
+            da_result = await db.execute(
+                text(
+                    f"SELECT COUNT(*) FROM dead_air_events "
+                    f"WHERE session_id IN ({placeholders})"
+                ),
+                id_params,
             )
-            da_row = await da_cursor.fetchone()
+            da_row = da_result.first()
             dead_air_count = int(da_row[0]) if da_row else 0
         else:
             dead_air_count = 0
@@ -596,8 +602,6 @@ async def get_metrics_summary(
             "talk_over_rate": talk_over_rate_avg,
             "dead_air_event_count": dead_air_count,
         }
-    finally:
-        await db.close()
 
 
 @app.get("/api/sessions/{session_id}/turns")
@@ -707,18 +711,20 @@ async def get_replay_storage() -> dict[str, Any]:
     gw = _get_gateway()
     if gw.storage is None:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    db = await gw.storage._ensure_initialized()
-    try:
-        cursor = await db.execute(
-            "SELECT project, COALESCE(SUM(replay_size_bytes), 0) "
-            "FROM sessions "
-            "WHERE replay_size_bytes IS NOT NULL "
-            "GROUP BY project "
-            "ORDER BY project ASC"
+    await gw.storage._ensure_initialized()
+    async with gw.storage._conn.session() as db:
+        result = await db.execute(
+            text(
+                "SELECT project, COALESCE(SUM(replay_size_bytes), 0) "
+                "FROM sessions "
+                "WHERE replay_size_bytes IS NOT NULL "
+                "GROUP BY project "
+                "ORDER BY project ASC"
+            )
         )
         per_project = []
         total = 0
-        async for row in cursor:
+        for row in result:
             project, size = row
             size_int = int(size or 0)
             per_project.append(
@@ -732,8 +738,6 @@ async def get_replay_storage() -> dict[str, Any]:
             "total_replay_size_bytes": total,
             "by_project": per_project,
         }
-    finally:
-        await db.close()
 
 
 @app.post("/api/projects/{project_id}/replay/retention")
@@ -879,9 +883,10 @@ async def list_tenants_endpoint(
                 "last_seen": None,
             },
         }
-    db = await gw.storage._ensure_initialized()
-    rows = await tenants.list_tenants(db, limit=limit, query=q)
-    u = await tenants.get_unattributed_aggregates(db)
+    await gw.storage._ensure_initialized()
+    async with gw.storage._conn.session() as db:
+        rows = await tenants.list_tenants(db, limit=limit, query=q)
+        u = await tenants.get_unattributed_aggregates(db)
     return {
         "tenants": [dataclasses.asdict(r) for r in rows],
         "unattributed": dataclasses.asdict(u),
@@ -894,8 +899,9 @@ async def get_tenant_endpoint(tenant_id: str) -> dict[str, Any]:
     gw = _get_gateway()
     if gw.storage is None:
         raise HTTPException(status_code=404, detail=f"Tenant {tenant_id!r} not found")
-    db = await gw.storage._ensure_initialized()
-    row = await tenants.get_tenant(db, tenant_id)
+    await gw.storage._ensure_initialized()
+    async with gw.storage._conn.session() as db:
+        row = await tenants.get_tenant(db, tenant_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Tenant {tenant_id!r} not found")
     return dataclasses.asdict(row)
@@ -914,8 +920,9 @@ async def list_virtual_keys_endpoint(
     gw = _get_gateway()
     if gw.storage is None:
         return {"keys": []}
-    db = await gw.storage._ensure_initialized()
-    rows = await virtual_keys.list_keys(db, include_revoked=include_revoked)
+    await gw.storage._ensure_initialized()
+    async with gw.storage._conn.session() as db:
+        rows = await virtual_keys.list_keys(db, include_revoked=include_revoked)
     return {"keys": [dataclasses.asdict(r) for r in rows]}
 
 
@@ -945,10 +952,11 @@ async def create_virtual_key_endpoint(
     gw = _get_gateway()
     if gw.storage is None:
         raise HTTPException(status_code=503, detail="Storage backend not configured")
-    db = await gw.storage._ensure_initialized()
-    created = await virtual_keys.create_virtual_key(
-        db, name=name, tenant_id=tenant_id, issued_by=issued_by
-    )
+    await gw.storage._ensure_initialized()
+    async with gw.storage._conn.session() as db:
+        created = await virtual_keys.create_virtual_key(
+            db, name=name, tenant_id=tenant_id, issued_by=issued_by
+        )
     return {
         "id": created.id,
         "plaintext": created.plaintext,
@@ -962,14 +970,15 @@ async def revoke_virtual_key_endpoint(key_id: int) -> dict[str, Any]:
     gw = _get_gateway()
     if gw.storage is None:
         raise HTTPException(status_code=503, detail="Storage backend not configured")
-    db = await gw.storage._ensure_initialized()
-    ok = await virtual_keys.revoke(db, key_id)
-    if not ok:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Virtual key {key_id} not found or already revoked",
-        )
-    row = await virtual_keys.get_by_id(db, key_id)
+    await gw.storage._ensure_initialized()
+    async with gw.storage._conn.session() as db:
+        ok = await virtual_keys.revoke(db, key_id)
+        if not ok:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Virtual key {key_id} not found or already revoked",
+            )
+        row = await virtual_keys.get_by_id(db, key_id)
     if row is None:
         # Should never happen: revoke() just returned True. Defensive.
         raise HTTPException(status_code=404, detail=f"Virtual key {key_id} vanished")

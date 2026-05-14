@@ -7,14 +7,14 @@ from typing import TYPE_CHECKING, Any
 from voicegateway.repository import latency_repository as repo
 
 if TYPE_CHECKING:
-    from voicegateway.storage.connection import ConnectionManager
+    from voicegateway.core.database import Database
 
 
 class LatencyService:
     """Latency aggregation queries against the requests table."""
 
-    def __init__(self, connection_manager: ConnectionManager) -> None:
-        self._conn = connection_manager
+    def __init__(self, database: Database) -> None:
+        self._db = database
 
     async def get_stats(
         self,
@@ -24,7 +24,7 @@ class LatencyService:
         tenant: str | None = None,
     ) -> dict[str, Any]:
         """Per-model latency rollup with percentiles."""
-        async with self._conn.session() as s:
+        async with self._db.session() as s:
             return await repo.get_latency_stats(
                 s,
                 period=period,
@@ -40,7 +40,7 @@ class LatencyService:
         modality: str | None = None,
     ) -> tuple[list[float], list[float]]:
         """Return ``(ttfb_samples, total_latency_samples)``."""
-        async with self._conn.session() as s:
+        async with self._db.session() as s:
             return await repo.get_latency_samples(
                 s, period=period, project=project, modality=modality
             )

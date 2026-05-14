@@ -2,22 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any
 
-import aiosqlite
-
 from voicegateway.core.config import GatewayConfig
 from voicegateway.core.database import Database
 from voicegateway.models.request_model import RequestRecord
-from voicegateway.repository import cost_repository as cost_repo
 from voicegateway.services.cost_service import CostService
 from voicegateway.services.latency_service import LatencyService
 from voicegateway.services.managed_config_service import ManagedConfigService
 from voicegateway.services.request_log_service import RequestLogService
 from voicegateway.services.session_service import SessionService
-from voicegateway.storage.connection import ConnectionManager
 
 _DEFAULT_PERCENTILES: list[float] = [50.0, 95.0, 99.0]
 
@@ -28,47 +25,32 @@ class SQLiteStorage:
     """SQLite storage for request logs, costs, and latency metrics."""
 
     def __init__(self, db_path: str | Path) -> None:
-        import asyncio
-
-        self._conn = ConnectionManager(db_path)
+        self._db_path = Path(db_path).expanduser()
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg = GatewayConfig(cost_tracking={"db_path": str(self._db_path)})
+        self._conn = Database(cfg)
+        self._initialized = False
+        # Serialize concurrent _ensure_initialized calls so alembic's
+        # bootstrap of the alembic_version table never races itself.
+        self._init_lock = asyncio.Lock()
         self._request_log_service = RequestLogService(self._conn)
         self._cost_service = CostService(self._conn)
         self._latency_service = LatencyService(self._conn)
         self._session_service = SessionService(self._conn)
         self._managed_config_service = ManagedConfigService(self._conn)
-        # Lazy-built; created on first _ensure_initialized so we can drive
-        # alembic upgrade head without touching every caller's __init__.
-        self._database: Database | None = None
-        # Serialize concurrent _ensure_initialized calls so alembic's
-        # bootstrap of the alembic_version table never races itself.
-        self._init_lock = asyncio.Lock()
 
-    @property
-    def _db_path(self) -> Path:
-        """Back-compat shim for callers reading the file path directly."""
-        return self._conn.db_path
-
-    @property
-    def _initialized(self) -> bool:
-        """Back-compat shim used by a few tests to assert post-init state."""
-        return self._conn.is_initialized
-
-    async def _ensure_initialized(self) -> aiosqlite.Connection:
-        if not self._conn.is_initialized:
-            async with self._init_lock:
-                if not self._conn.is_initialized:  # double-checked after lock
-                    if self._database is None:
-                        cfg = GatewayConfig(
-                            cost_tracking={"db_path": str(self._conn.db_path)}
-                        )
-                        self._database = Database(cfg)
-                    await self._database.run_migrations()
-                    self._conn.mark_initialized()
-        return await self._conn.connect()
+    async def _ensure_initialized(self) -> None:
+        if self._initialized:
+            return
+        async with self._init_lock:
+            if self._initialized:  # double-checked after lock
+                return
+            await self._conn.run_migrations()
+            self._initialized = True
 
     async def aclose(self) -> None:
-        """Close any raw connections still owned by this storage instance."""
-        await self._conn.aclose()
+        """Dispose the underlying engine."""
+        await self._conn.dispose()
 
     # ------------------------------------------------------------------
     # Audit log
@@ -113,20 +95,6 @@ class SQLiteStorage:
     # ------------------------------------------------------------------
     # Reads
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def _period_since(period: str) -> float:
-        """Back-compat shim — call cost_repository.period_since instead."""
-        return cost_repo.period_since(period)
-
-    @staticmethod
-    def _resolve_window(
-        period: str = "today",
-        start_ts: float | None = None,
-        end_ts: float | None = None,
-    ) -> tuple[float, float | None]:
-        """Back-compat shim — call cost_repository.resolve_window instead."""
-        return cost_repo.resolve_window(period, start_ts, end_ts)
 
     async def get_cost_summary(
         self,
@@ -235,13 +203,6 @@ class SQLiteStorage:
     # ------------------------------------------------------------------
     # Sessions
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def _row_to_session(row: Any) -> dict[str, Any]:
-        """Back-compat shim — call session_repository.row_to_session instead."""
-        from voicegateway.repository import session_repository as _session_repo
-
-        return _session_repo.row_to_session(row)
 
     async def list_sessions(
         self,
@@ -361,13 +322,6 @@ class SQLiteStorage:
         return await self._managed_config_service.delete_model(model_id)
 
     # Managed projects
-    @staticmethod
-    def _validate_branding(branding: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Back-compat shim — call managed_project_repository.validate_branding instead."""
-        from voicegateway.repository import managed_project_repository as _project_repo
-
-        return _project_repo.validate_branding(branding)
-
     async def list_managed_projects(self) -> list[dict[str, Any]]:
         """Delegate to ManagedConfigService.list_projects."""
         await self._ensure_initialized()

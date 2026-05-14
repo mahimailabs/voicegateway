@@ -16,11 +16,16 @@ async def storage(tmp_path):
 
 async def test_init_creates_tables(storage):
     """Initializing storage creates the requests table and indexes."""
-    conn = await storage._ensure_initialized()
-    cursor = await conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='requests'"
-    )
-    row = await cursor.fetchone()
+    from sqlalchemy import text
+
+    await storage._ensure_initialized()
+    async with storage._conn.session() as db:
+        result = await db.execute(
+            text(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='requests'"
+            )
+        )
+        row = result.first()
     assert row is not None
 
 

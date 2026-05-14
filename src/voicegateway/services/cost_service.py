@@ -7,14 +7,14 @@ from typing import TYPE_CHECKING, Any
 from voicegateway.repository import cost_repository as repo
 
 if TYPE_CHECKING:
-    from voicegateway.storage.connection import ConnectionManager
+    from voicegateway.core.database import Database
 
 
 class CostService:
     """Cost aggregation queries against the requests table."""
 
-    def __init__(self, connection_manager: ConnectionManager) -> None:
-        self._conn = connection_manager
+    def __init__(self, database: Database) -> None:
+        self._db = database
 
     async def get_summary(
         self,
@@ -26,7 +26,7 @@ class CostService:
         tenant: str | None = None,
     ) -> dict[str, Any]:
         """Return total / by_provider / by_model rollups."""
-        async with self._conn.session() as s:
+        async with self._db.session() as s:
             return await repo.get_cost_summary(
                 s,
                 period=period,
@@ -45,7 +45,7 @@ class CostService:
         tenant: str | None = None,
     ) -> dict[str, Any]:
         """Return cost rollup grouped by project."""
-        async with self._conn.session() as s:
+        async with self._db.session() as s:
             return await repo.get_cost_by_project(
                 s, period=period, start_ts=start_ts, end_ts=end_ts, tenant=tenant
             )
@@ -58,7 +58,7 @@ class CostService:
         end_ts: float | None = None,
     ) -> dict[str, Any]:
         """Return cost rollup grouped by modality."""
-        async with self._conn.session() as s:
+        async with self._db.session() as s:
             return await repo.get_cost_by_modality(
                 s,
                 period=period,
@@ -69,7 +69,7 @@ class CostService:
 
     async def get_project_stats(self, project: str) -> dict[str, Any]:
         """Per-project today snapshot."""
-        async with self._conn.session() as s:
+        async with self._db.session() as s:
             return await repo.get_project_stats(s, project)
 
 
