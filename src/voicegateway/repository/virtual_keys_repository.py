@@ -117,8 +117,10 @@ async def create_virtual_key(
     result = await session.execute(
         text(
             "INSERT INTO virtual_keys ("
-            "key_prefix, key_hash, name, tenant_id, issued_by"
-            ") VALUES (:prefix, :digest, :name, :tenant_id, :issued_by)"
+            "key_prefix, key_hash, name, tenant_id, issued_by, issued_at"
+            ") VALUES ("
+            ":prefix, :digest, :name, :tenant_id, :issued_by, CURRENT_TIMESTAMP"
+            ")"
         ),
         {
             "prefix": prefix,

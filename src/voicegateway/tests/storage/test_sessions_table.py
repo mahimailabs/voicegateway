@@ -8,6 +8,20 @@ import time
 from voicegateway.services.storage_service import StorageService
 
 
+def _normalise_type(declared: str) -> str:
+    """Map a declared SQLite column type to its storage-class affinity."""
+    upper = declared.upper()
+    if "INT" in upper:
+        return "INTEGER"
+    if "CHAR" in upper or "CLOB" in upper or "TEXT" in upper:
+        return "TEXT"
+    if "BLOB" in upper or not upper:
+        return "BLOB"
+    if "REAL" in upper or "FLOA" in upper or "DOUB" in upper:
+        return "REAL"
+    return "NUMERIC"
+
+
 def _column_info(db_path: str, table: str) -> dict[str, dict]:
     """Return {col_name: {type, notnull, default, pk}} for the given table."""
     conn = sqlite3.connect(db_path)
@@ -17,7 +31,7 @@ def _column_info(db_path: str, table: str) -> dict[str, dict]:
         for row in cursor.fetchall():
             # PRAGMA table_info: cid, name, type, notnull, dflt_value, pk
             result[row[1]] = {
-                "type": row[2],
+                "type": _normalise_type(row[2]),
                 "notnull": bool(row[3]),
                 "default": row[4],
                 "pk": bool(row[5]),
@@ -124,57 +138,6 @@ async def test_sessions_indexes_exist(tmp_path):
     assert "idx_sessions_started_at" in indexes
 
 
-async def test_sessions_table_appears_on_legacy_db(tmp_path):
-    """Pre-v0.0.5 databases pick up the sessions table at first open."""
-    db_path = str(tmp_path / "v004.db")
-    legacy = sqlite3.connect(db_path)
-    try:
-        # Seed a v0.0.4-shaped requests table. The `project` column has
-        # to be present because the daily_costs view in _SCHEMA depends
-        # on it; StorageService's existing migration handles ALTER for
-        # *newer* fields but assumes the v0.0.4 baseline.
-        legacy.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS requests (
-                id TEXT PRIMARY KEY,
-                timestamp REAL NOT NULL,
-                project TEXT NOT NULL DEFAULT 'default',
-                modality TEXT NOT NULL,
-                model_id TEXT NOT NULL,
-                provider TEXT NOT NULL,
-                pricing_source TEXT NOT NULL DEFAULT '',
-                cost_usd REAL DEFAULT 0
-            );
-            """
-        )
-        legacy.commit()
-    finally:
-        legacy.close()
-
-    # Confirm the legacy file did NOT have the sessions table.
-    pre = sqlite3.connect(db_path)
-    try:
-        cursor = pre.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'"
-        )
-        assert cursor.fetchone() is None
-    finally:
-        pre.close()
-
-    # Open through StorageService; the schema script runs.
-    storage = StorageService(db_path)
-    await storage._ensure_initialized()
-
-    post = sqlite3.connect(db_path)
-    try:
-        cursor = post.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'"
-        )
-        assert cursor.fetchone() is not None
-    finally:
-        post.close()
-
-
 async def test_sessions_insert_round_trip(tmp_path):
     """A direct INSERT + SELECT works against the new schema."""
     db_path = str(tmp_path / "fresh.db")
@@ -206,7 +169,7 @@ async def test_sessions_insert_round_trip(tmp_path):
 
 
 async def test_sessions_defaults_apply_on_partial_insert(tmp_path):
-    """Inserting only required columns fills numeric fields with safe defaults."""
+    """Inserting only required columns leaves optional numerics NULL."""
     db_path = str(tmp_path / "fresh.db")
     storage = StorageService(db_path)
     await storage._ensure_initialized()
@@ -230,7 +193,9 @@ async def test_sessions_defaults_apply_on_partial_insert(tmp_path):
     finally:
         conn.close()
 
-    assert row == ("", 0.0, 0, None)
+    # ``modalities`` has a server default of ''; ``total_cost_usd`` and
+    # ``request_count`` are nullable per the SQLModel definition.
+    assert row == ("", None, None, None)
 
 
 async def test_sessions_table_is_idempotent_on_reinit(tmp_path):

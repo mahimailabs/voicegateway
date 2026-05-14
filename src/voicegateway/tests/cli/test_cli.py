@@ -35,13 +35,15 @@ def test_init_custom_output(tmp_path):
     assert os.path.exists(out)
 
 
-def test_status(temp_config):
+def test_status(temp_config, tmp_path, monkeypatch):
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "cli-status.db"))
     result = runner.invoke(app, ["status", "--config", temp_config])
     assert result.exit_code == 0
     assert "Provider Status" in result.output
 
 
-def test_status_with_project(temp_config):
+def test_status_with_project(temp_config, tmp_path, monkeypatch):
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "cli-status-proj.db"))
     result = runner.invoke(
         app, ["status", "--config", temp_config, "--project", "test-project"]
     )

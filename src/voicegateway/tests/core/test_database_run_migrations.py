@@ -6,13 +6,22 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 from voicegateway.core.config import GatewayConfig
-from voicegateway.core.database import Database
+from voicegateway.core.database import Database, _find_alembic_ini
 
 
 def _build_config(db_path: Path) -> GatewayConfig:
     return GatewayConfig(cost_tracking={"db_path": str(db_path)})
+
+
+def _current_head() -> str:
+    cfg = Config(str(_find_alembic_ini()))
+    head = ScriptDirectory.from_config(cfg).get_current_head()
+    assert head is not None
+    return head
 
 
 @pytest.mark.asyncio
@@ -25,12 +34,12 @@ async def test_run_migrations_on_fresh_db_builds_baseline(tmp_path: Path) -> Non
         await db.dispose()
 
     with sqlite3.connect(str(db_path)) as conn:
-        # alembic_version row pinned at head (the full 0001-0006 chain).
+        # alembic_version row pinned at the current head.
         version = conn.execute("SELECT version_num FROM alembic_version").fetchone()
         assert version is not None
-        assert version[0] == "0006_guardrails"
+        assert version[0] == _current_head()
 
-        # Every legacy + new table exists.
+        # Every table exists.
         names = {
             row[0]
             for row in conn.execute(
@@ -68,9 +77,10 @@ async def test_run_migrations_is_idempotent(tmp_path: Path) -> None:
     finally:
         await db.dispose()
 
+    head = _current_head()
     with sqlite3.connect(str(db_path)) as conn:
         rows = conn.execute("SELECT version_num FROM alembic_version").fetchall()
-    assert rows == [("0006_guardrails",)]
+    assert rows == [(head,)]
 
 
 @pytest.mark.asyncio
