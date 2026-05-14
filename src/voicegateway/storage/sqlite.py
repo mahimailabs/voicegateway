@@ -12,6 +12,7 @@ from typing import Any
 import aiosqlite
 
 from voicegateway.models.request_model import RequestRecord
+from voicegateway.repository import cost_repository as cost_repo
 from voicegateway.repository import (
     guardrail_events_repository as guardrail_events,
 )
@@ -22,6 +23,7 @@ from voicegateway.repository import (
     turns_repository as turns,
 )
 from voicegateway.schemas.guardrail_policy_schema import GuardrailPolicy
+from voicegateway.services.cost_service import CostService
 from voicegateway.services.request_log_service import RequestLogService
 from voicegateway.storage.connection import ConnectionManager
 from voicegateway.storage.migrator import initialize as _initialize_schema
@@ -38,6 +40,8 @@ class SQLiteStorage:
     def __init__(self, db_path: str | Path) -> None:
         self._conn = ConnectionManager(db_path)
         self._request_log_service = RequestLogService(self._conn)
+        self._cost_service = CostService(self._conn)
+        self._cost_service = CostService(self._conn)
 
     @property
     def _db_path(self) -> Path:
@@ -104,14 +108,8 @@ class SQLiteStorage:
 
     @staticmethod
     def _period_since(period: str) -> float:
-        now = time.time()
-        if period == "today":
-            return now - 86400
-        if period == "week":
-            return now - 7 * 86400
-        if period == "month":
-            return now - 30 * 86400
-        return 0
+        """Back-compat shim — call cost_repository.period_since instead."""
+        return cost_repo.period_since(period)
 
     @staticmethod
     def _resolve_window(
@@ -119,10 +117,8 @@ class SQLiteStorage:
         start_ts: float | None = None,
         end_ts: float | None = None,
     ) -> tuple[float, float | None]:
-        """Resolve a query window into a `(since, until)` timestamp pair."""
-        if start_ts is not None or end_ts is not None:
-            return (start_ts if start_ts is not None else 0.0, end_ts)
-        return (SQLiteStorage._period_since(period), None)
+        """Back-compat shim — call cost_repository.resolve_window instead."""
+        return cost_repo.resolve_window(period, start_ts, end_ts)
 
     async def get_cost_summary(
         self,
@@ -133,82 +129,16 @@ class SQLiteStorage:
         end_ts: float | None = None,
         tenant: str | None = None,
     ) -> dict[str, Any]:
-        """Get cost summary for the given period, optionally filtered by project and tenant."""
-        db = await self._ensure_initialized()
-        try:
-            since, until = self._resolve_window(period, start_ts, end_ts)
-
-            params: list[Any] = [since]
-            where = "WHERE timestamp >= ?"
-            if until is not None:
-                where += " AND timestamp < ?"
-                params.append(until)
-            if project:
-                where += " AND project = ?"
-                params.append(project)
-            if tenant is not None:
-                if tenant == "":
-                    where += " AND tenant_id IS NULL"
-                else:
-                    where += " AND tenant_id = ?"
-                    params.append(tenant)
-
-            # Total cost
-            cursor = await db.execute(
-                f"SELECT COALESCE(SUM(cost_usd), 0) FROM requests {where}",
-                tuple(params),
-            )
-            row = await cursor.fetchone()
-            total = row[0] if row else 0.0
-
-            # By provider
-            cursor = await db.execute(
-                f"""SELECT provider, SUM(cost_usd) as cost, COUNT(*) as count
-                    FROM requests {where}
-                    GROUP BY provider ORDER BY cost DESC""",
-                tuple(params),
-            )
-            by_provider = {
-                row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor
-            }
-
-            # By model
-            if include_pricing_source:
-                cursor = await db.execute(
-                    f"""SELECT model_id, SUM(cost_usd) as cost, COUNT(*) as count,
-                               GROUP_CONCAT(DISTINCT pricing_source) as sources
-                        FROM requests {where}
-                        GROUP BY model_id ORDER BY cost DESC""",
-                    tuple(params),
-                )
-                by_model = {
-                    row[0]: {
-                        "cost": row[1],
-                        "requests": row[2],
-                        "pricing_source": row[3] or "",
-                    }
-                    async for row in cursor
-                }
-            else:
-                cursor = await db.execute(
-                    f"""SELECT model_id, SUM(cost_usd) as cost, COUNT(*) as count
-                        FROM requests {where}
-                        GROUP BY model_id ORDER BY cost DESC""",
-                    tuple(params),
-                )
-                by_model = {
-                    row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor
-                }
-
-            return {
-                "period": period,
-                "project": project,
-                "total": total,
-                "by_provider": by_provider,
-                "by_model": by_model,
-            }
-        finally:
-            await db.close()
+        """Delegate to CostService.get_summary."""
+        await self._ensure_initialized()
+        return await self._cost_service.get_summary(
+            period=period,
+            project=project,
+            include_pricing_source=include_pricing_source,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            tenant=tenant,
+        )
 
     async def get_cost_by_project(
         self,
@@ -217,32 +147,11 @@ class SQLiteStorage:
         end_ts: float | None = None,
         tenant: str | None = None,
     ) -> dict[str, Any]:
-        """Get cost summary grouped by project."""
-        db = await self._ensure_initialized()
-        try:
-            since, until = self._resolve_window(period, start_ts, end_ts)
-            params: list[Any] = [since]
-            where = "WHERE timestamp >= ?"
-            if until is not None:
-                where += " AND timestamp < ?"
-                params.append(until)
-            if tenant is not None:
-                if tenant == "":
-                    where += " AND tenant_id IS NULL"
-                else:
-                    where += " AND tenant_id = ?"
-                    params.append(tenant)
-            cursor = await db.execute(
-                f"""SELECT project, SUM(cost_usd) as cost, COUNT(*) as count
-                    FROM requests {where}
-                    GROUP BY project ORDER BY cost DESC""",
-                tuple(params),
-            )
-            return {
-                row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor
-            }
-        finally:
-            await db.close()
+        """Delegate to CostService.get_by_project."""
+        await self._ensure_initialized()
+        return await self._cost_service.get_by_project(
+            period=period, start_ts=start_ts, end_ts=end_ts, tenant=tenant
+        )
 
     async def get_cost_by_modality(
         self,
@@ -251,29 +160,11 @@ class SQLiteStorage:
         start_ts: float | None = None,
         end_ts: float | None = None,
     ) -> dict[str, Any]:
-        """Get cost summary grouped by modality (stt/llm/tts)."""
-        db = await self._ensure_initialized()
-        try:
-            since, until = self._resolve_window(period, start_ts, end_ts)
-            params: list[Any] = [since]
-            where = "WHERE timestamp >= ?"
-            if until is not None:
-                where += " AND timestamp < ?"
-                params.append(until)
-            if project:
-                where += " AND project = ?"
-                params.append(project)
-            cursor = await db.execute(
-                f"""SELECT modality, SUM(cost_usd) as cost, COUNT(*) as count
-                    FROM requests {where}
-                    GROUP BY modality ORDER BY cost DESC""",
-                tuple(params),
-            )
-            return {
-                row[0]: {"cost": row[1], "requests": row[2]} async for row in cursor
-            }
-        finally:
-            await db.close()
+        """Delegate to CostService.get_by_modality."""
+        await self._ensure_initialized()
+        return await self._cost_service.get_by_modality(
+            period=period, project=project, start_ts=start_ts, end_ts=end_ts
+        )
 
     async def get_latency_stats(
         self,
@@ -418,38 +309,9 @@ class SQLiteStorage:
         )
 
     async def get_project_stats(self, project: str) -> dict[str, Any]:
-        """Get today's stats for a single project."""
-        db = await self._ensure_initialized()
-        try:
-            since_today = self._period_since("today")
-            cursor = await db.execute(
-                """SELECT
-                       COUNT(*),
-                       COALESCE(SUM(cost_usd), 0),
-                       AVG(ttfb_ms),
-                       AVG(total_latency_ms)
-                   FROM requests
-                   WHERE project = ? AND timestamp >= ?""",
-                (project, since_today),
-            )
-            row = await cursor.fetchone()
-            if row is None:
-                return {
-                    "project": project,
-                    "requests_today": 0,
-                    "cost_today": 0.0,
-                    "avg_ttfb_ms": None,
-                    "avg_latency_ms": None,
-                }
-            return {
-                "project": project,
-                "requests_today": int(row[0] or 0),
-                "cost_today": float(row[1] or 0.0),
-                "avg_ttfb_ms": float(row[2]) if row[2] is not None else None,
-                "avg_latency_ms": float(row[3]) if row[3] is not None else None,
-            }
-        finally:
-            await db.close()
+        """Delegate to CostService.get_project_stats."""
+        await self._ensure_initialized()
+        return await self._cost_service.get_project_stats(project)
 
     # ------------------------------------------------------------------
     # Sessions
