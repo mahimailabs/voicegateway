@@ -1394,20 +1394,11 @@ def test_rotate_secret_surfaces_failed_rows(temp_config, tmp_path, monkeypatch):
     secret_file = tmp_path / ".secret"
     monkeypatch.setattr("voicegateway.core.crypto._SECRET_FILE", secret_file)
 
-    # _migrate_plaintext_keys treats anything is_fernet_token() can't
-    # decrypt as plaintext and re-encrypts it under the current key.
-    # During a real rotation that runs as a one-time operation under
-    # both VOICEGW_SECRET and VOICEGW_SECRET_FALLBACK, the orphan
-    # token would be incorrectly re-keyed before rotate-secret got
-    # to it. Disable the migration here so the orphan path under
-    # test is the rotation, not the migration.
-    async def _noop_migrate(db):
-        return None
-
-    monkeypatch.setattr(
-        "voicegateway.storage.migrator._migrate_plaintext_keys",
-        _noop_migrate,
-    )
+    # Historical note: the legacy migrator used to re-encrypt any
+    # ciphertext that is_fernet_token() couldn't decrypt, and that
+    # migration interfered with this rotation test. The alembic
+    # cutover removed the auto-run plaintext migration entirely, so
+    # the monkeypatch is unnecessary here.
 
     primary_a = _generate_fernet_key()
     monkeypatch.setenv("VOICEGW_SECRET", primary_a)
