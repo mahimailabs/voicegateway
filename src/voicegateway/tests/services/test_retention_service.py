@@ -1,4 +1,4 @@
-"""Contract tests for voicegateway.storage.retention_worker (T06 of v0.3.0)."""
+"""Contract tests for voicegateway.services.retention_service (T06 of v0.3.0)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 
 from voicegateway.middleware.replay_capture import ReplayEvent
 from voicegateway.repository import replay_repository as replay
-from voicegateway.storage.retention_worker import RetentionWorker
+from voicegateway.services.retention_service import RetentionWorker
 from voicegateway.storage.sqlite import SQLiteStorage
 
 
