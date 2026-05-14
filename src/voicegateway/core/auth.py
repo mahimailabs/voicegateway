@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from voicegateway.core.config import AuthConfig
     from voicegateway.repository.virtual_keys_repository import VerifiedKey
@@ -140,7 +140,7 @@ def is_virtual_key_token(authorization: str | None) -> bool:
 
 
 async def verify_virtual_key(
-    authorization: str | None, db: aiosqlite.Connection
+    authorization: str | None, session: AsyncSession
 ) -> VerifiedKey:
     """Validate a ``Bearer vk_…`` header against ``virtual_keys``."""
     from voicegateway.repository import virtual_keys_repository as virtual_keys
@@ -151,7 +151,7 @@ async def verify_virtual_key(
     if not token.startswith(VIRTUAL_KEY_PREFIX):
         # Caller should have routed to ``check_request`` for static keys.
         raise AuthError("Invalid virtual key", status_code=401)
-    verified = await virtual_keys.verify(db, token)
+    verified = await virtual_keys.verify(session, token)
     if verified is None:
         raise AuthError("Invalid virtual key", status_code=401)
     return verified

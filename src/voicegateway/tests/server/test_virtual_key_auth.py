@@ -78,33 +78,38 @@ def test_check_tenant_body_conflict_rejects_mismatch():
 
 
 async def test_verify_virtual_key_returns_verified_key(gateway):
-    db = await gateway.storage._ensure_initialized()
-    created = await virtual_keys.create_virtual_key(db, name="bot", tenant_id="acme")
-    verified = await verify_virtual_key(f"Bearer {created.plaintext}", db)
+    await gateway.storage._ensure_initialized()
+    async with gateway.storage._conn.session() as db:
+        created = await virtual_keys.create_virtual_key(
+            db, name="bot", tenant_id="acme"
+        )
+        verified = await verify_virtual_key(f"Bearer {created.plaintext}", db)
     assert verified.id == created.id
     assert verified.tenant_id == "acme"
 
 
 async def test_verify_virtual_key_rejects_revoked(gateway):
-    db = await gateway.storage._ensure_initialized()
-    created = await virtual_keys.create_virtual_key(db, name="bot")
-    await virtual_keys.revoke(db, created.id)
-
-    with pytest.raises(AuthError) as ei:
-        await verify_virtual_key(f"Bearer {created.plaintext}", db)
+    await gateway.storage._ensure_initialized()
+    async with gateway.storage._conn.session() as db:
+        created = await virtual_keys.create_virtual_key(db, name="bot")
+        await virtual_keys.revoke(db, created.id)
+        with pytest.raises(AuthError) as ei:
+            await verify_virtual_key(f"Bearer {created.plaintext}", db)
     assert ei.value.status_code == 401
 
 
 async def test_verify_virtual_key_rejects_non_vk_prefix(gateway):
-    db = await gateway.storage._ensure_initialized()
-    with pytest.raises(AuthError):
-        await verify_virtual_key("Bearer sk-static", db)
+    await gateway.storage._ensure_initialized()
+    async with gateway.storage._conn.session() as db:
+        with pytest.raises(AuthError):
+            await verify_virtual_key("Bearer sk-static", db)
 
 
 async def test_verify_virtual_key_rejects_missing_header(gateway):
-    db = await gateway.storage._ensure_initialized()
-    with pytest.raises(AuthError) as ei:
-        await verify_virtual_key(None, db)
+    await gateway.storage._ensure_initialized()
+    async with gateway.storage._conn.session() as db:
+        with pytest.raises(AuthError) as ei:
+            await verify_virtual_key(None, db)
     assert ei.value.status_code == 401
 
 
@@ -121,8 +126,11 @@ async def _client(gw: Gateway):
 
 async def test_virtual_key_authenticates_write_request(gateway):
     """A valid scoped virtual key satisfies the write dep."""
-    db = await gateway.storage._ensure_initialized()
-    created = await virtual_keys.create_virtual_key(db, name="bot", tenant_id="acme")
+    await gateway.storage._ensure_initialized()
+    async with gateway.storage._conn.session() as db:
+        created = await virtual_keys.create_virtual_key(
+            db, name="bot", tenant_id="acme"
+        )
 
     client = await _client(gateway)
     async with client as c:
@@ -137,9 +145,10 @@ async def test_virtual_key_authenticates_write_request(gateway):
 
 
 async def test_virtual_key_revoked_returns_401(gateway):
-    db = await gateway.storage._ensure_initialized()
-    created = await virtual_keys.create_virtual_key(db, name="bot")
-    await virtual_keys.revoke(db, created.id)
+    await gateway.storage._ensure_initialized()
+    async with gateway.storage._conn.session() as db:
+        created = await virtual_keys.create_virtual_key(db, name="bot")
+        await virtual_keys.revoke(db, created.id)
 
     client = await _client(gateway)
     async with client as c:
@@ -156,8 +165,9 @@ async def test_virtual_key_revoked_returns_401(gateway):
 
 async def test_virtual_key_marks_last_used(gateway):
     """Successful verify bumps last_used_at via mark_used."""
-    db = await gateway.storage._ensure_initialized()
-    created = await virtual_keys.create_virtual_key(db, name="bot")
+    await gateway.storage._ensure_initialized()
+    async with gateway.storage._conn.session() as db:
+        created = await virtual_keys.create_virtual_key(db, name="bot")
     assert created.row.last_used_at is None
 
     client = await _client(gateway)
@@ -168,19 +178,18 @@ async def test_virtual_key_marks_last_used(gateway):
             json={"provider_id": "ollama-x", "provider_type": "ollama", "api_key": ""},
         )
 
-    # Re-read the row through a fresh connection (the middleware ran
-    # mark_used on its own connection; tests run in the same async
-    # context so the commit is visible).
-    db2 = await gateway.storage._ensure_initialized()
-    row = await virtual_keys.get_by_id(db2, created.id)
+    # Re-read the row through a fresh session.
+    async with gateway.storage._conn.session() as db2:
+        row = await virtual_keys.get_by_id(db2, created.id)
     assert row is not None
     assert row.last_used_at is not None
 
 
 async def test_unscoped_virtual_key_does_not_force_tenant(gateway):
     """check_tenant_body_conflict with key_tenant=None lets body pick."""
-    db = await gateway.storage._ensure_initialized()
-    await virtual_keys.create_virtual_key(db, name="unscoped")
+    await gateway.storage._ensure_initialized()
+    async with gateway.storage._conn.session() as db:
+        await virtual_keys.create_virtual_key(db, name="unscoped")
 
     # Helper-level check; no app exercise needed because the unscoped
     # behavior is enforced inside check_tenant_body_conflict.

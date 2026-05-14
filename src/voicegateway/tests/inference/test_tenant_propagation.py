@@ -69,8 +69,9 @@ async def test_three_tenants_aggregate_independently(storage) -> None:
     assert charlie["total"] == pytest.approx(0.50)
 
     # Tenants repo index aggregates.
-    db = await storage._ensure_initialized()
-    rows = await tenants.list_tenants(db)
+    await storage._ensure_initialized()
+    async with storage._conn.session() as s:
+        rows = await tenants.list_tenants(s)
     by_tenant = {r.tenant_id: r for r in rows}
     assert by_tenant["alpha"].session_count == 2
     assert by_tenant["alpha"].total_cost_usd == pytest.approx(0.30)
@@ -99,10 +100,11 @@ async def test_unattributed_sessions_separate_from_tenant_index(storage) -> None
     await storage.log_request(_req("u-1", cost=0.05))
     await storage.log_request(_req("u-2", cost=0.05))
 
-    db = await storage._ensure_initialized()
-    tenant_rows = await tenants.list_tenants(db)
+    await storage._ensure_initialized()
+    async with storage._conn.session() as s:
+        tenant_rows = await tenants.list_tenants(s)
+        unattr = await tenants.get_unattributed_aggregates(s)
     assert {r.tenant_id for r in tenant_rows} == {"alpha"}
 
-    unattr = await tenants.get_unattributed_aggregates(db)
     assert unattr.session_count == 2
     assert unattr.total_cost_usd == pytest.approx(0.10)
