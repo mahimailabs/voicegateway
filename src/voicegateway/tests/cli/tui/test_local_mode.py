@@ -23,14 +23,14 @@ from voicegateway.cli.tui.widgets.log_tail import LogTail
 from voicegateway.cli.tui.widgets.provider_row import ProviderRow
 from voicegateway.cli.tui.widgets.session_row import SessionRow
 from voicegateway.middleware.cost_tracker import RequestRecord
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 @pytest.fixture
 async def seeded_local_app(tmp_path: Path) -> TUIApp:
     """Full App with 2 sessions + 2 providers seeded into the SQLite"""
     db = tmp_path / "voicegw.db"
-    storage = SQLiteStorage(db)
+    storage = StorageService(db)
     for i in range(2):
         await storage.log_request(
             RequestRecord(

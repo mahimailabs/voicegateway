@@ -10,13 +10,13 @@ from voicegateway.cli.tui import TUIApp
 from voicegateway.cli.tui.data.local import LocalClient
 from voicegateway.cli.tui.screens.help import HelpOverlay
 from voicegateway.cli.tui.widgets.session_row import SessionRow  # noqa: F401
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 @pytest.fixture
 def help_app(tmp_path: Path) -> TUIApp:
     db = tmp_path / "voicegw.db"
-    storage = SQLiteStorage(db)
+    storage = StorageService(db)
     client = LocalClient(db_path=db, storage=storage)
     return TUIApp(client=client, is_local=True)
 

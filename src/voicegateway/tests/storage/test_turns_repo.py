@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from voicegateway.middleware.turn_tracker import TurnRow
 from voicegateway.repository import turns_repository as turns
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 def _row(
@@ -27,8 +27,8 @@ def _row(
     )
 
 
-async def _fresh_storage(tmp_path) -> SQLiteStorage:
-    storage = SQLiteStorage(str(tmp_path / "turns.db"))
+async def _fresh_storage(tmp_path) -> StorageService:
+    storage = StorageService(str(tmp_path / "turns.db"))
     await storage._ensure_initialized()
     return storage
 

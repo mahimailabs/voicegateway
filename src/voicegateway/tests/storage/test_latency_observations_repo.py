@@ -9,12 +9,12 @@ from sqlalchemy import text
 
 from voicegateway.models.request_model import RequestRecord
 from voicegateway.repository import latency_observations_repository as lor
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 @pytest.fixture
 async def storage(tmp_path):
-    yield SQLiteStorage(db_path=str(tmp_path / "lor.db"))
+    yield StorageService(db_path=str(tmp_path / "lor.db"))
 
 
 def _req(

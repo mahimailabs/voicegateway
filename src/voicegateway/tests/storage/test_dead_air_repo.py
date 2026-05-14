@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from voicegateway.middleware.dead_air_detector import DeadAirEvent
 from voicegateway.repository import dead_air_repository as dead_air
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
-async def _fresh_storage(tmp_path) -> SQLiteStorage:
-    storage = SQLiteStorage(str(tmp_path / "dead_air.db"))
+async def _fresh_storage(tmp_path) -> StorageService:
+    storage = StorageService(str(tmp_path / "dead_air.db"))
     await storage._ensure_initialized()
     return storage
 

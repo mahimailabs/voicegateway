@@ -9,7 +9,7 @@ import pytest
 
 from voicegateway.models.request_model import RequestRecord
 from voicegateway.repository import guardrail_events_repository as guardrail_events
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 def _record(session_id: str, *, project: str = "default") -> RequestRecord:
@@ -28,7 +28,7 @@ def _record(session_id: str, *, project: str = "default") -> RequestRecord:
 
 
 async def test_create_and_list_events_by_session(tmp_path) -> None:
-    storage = SQLiteStorage(str(tmp_path / "events.db"))
+    storage = StorageService(str(tmp_path / "events.db"))
     await storage.log_request(_record("vg-a", project="support"))
     async with storage._conn.session() as db:
         event_id = await guardrail_events.create_event(
@@ -54,7 +54,7 @@ async def test_create_and_list_events_by_session(tmp_path) -> None:
 async def test_bypass_rows_clear_category_and_are_excluded_from_aggregate(
     tmp_path,
 ) -> None:
-    storage = SQLiteStorage(str(tmp_path / "events.db"))
+    storage = StorageService(str(tmp_path / "events.db"))
     await storage.log_request(_record("vg-a"))
     async with storage._conn.session() as db:
         await guardrail_events.create_event(
@@ -89,7 +89,7 @@ async def test_bypass_rows_clear_category_and_are_excluded_from_aggregate(
 
 
 async def test_filters_and_top_sessions(tmp_path) -> None:
-    storage = SQLiteStorage(str(tmp_path / "events.db"))
+    storage = StorageService(str(tmp_path / "events.db"))
     await storage.log_request(_record("vg-a", project="support"))
     await storage.log_request(_record("vg-b", project="support"))
     await storage.log_request(_record("vg-c", project="other"))
@@ -127,7 +127,7 @@ async def test_filters_and_top_sessions(tmp_path) -> None:
 
 
 async def test_rejects_invalid_fired_event(tmp_path) -> None:
-    storage = SQLiteStorage(str(tmp_path / "events.db"))
+    storage = StorageService(str(tmp_path / "events.db"))
     await storage._ensure_initialized()
     async with storage._conn.session() as db:
         with pytest.raises(ValueError, match="unknown guardrail category"):

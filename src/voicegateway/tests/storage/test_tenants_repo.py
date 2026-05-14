@@ -6,12 +6,12 @@ import pytest
 from sqlalchemy import text
 
 from voicegateway.repository import tenants_repository as tr
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 @pytest.fixture
 async def db(tmp_path):
-    storage = SQLiteStorage(db_path=str(tmp_path / "tenants.db"))
+    storage = StorageService(db_path=str(tmp_path / "tenants.db"))
     await storage._ensure_initialized()
     async with storage._conn.session() as session:
         yield session

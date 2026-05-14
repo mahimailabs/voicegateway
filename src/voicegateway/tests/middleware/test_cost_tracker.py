@@ -3,7 +3,7 @@
 import pytest
 
 from voicegateway.middleware.cost_tracker import CostTracker
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 def test_stt_cost_calculation():
@@ -77,7 +77,7 @@ def test_known_free_local_model_record_carries_pricing_source():
 @pytest.mark.asyncio
 async def test_log_and_query_request(tmp_path):
     db = tmp_path / "test.db"
-    storage = SQLiteStorage(str(db))
+    storage = StorageService(str(db))
     tracker = CostTracker(storage)
 
     record = tracker.create_record(
@@ -99,7 +99,7 @@ async def test_log_and_query_request(tmp_path):
 @pytest.mark.asyncio
 async def test_cost_summary_by_model(tmp_path):
     db = tmp_path / "test2.db"
-    storage = SQLiteStorage(str(db))
+    storage = StorageService(str(db))
     tracker = CostTracker(storage)
 
     for _i in range(3):

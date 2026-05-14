@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 import time
 
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 def _column_info(db_path: str, table: str) -> dict[str, dict]:
@@ -46,7 +46,7 @@ def _index_names(db_path: str, table: str) -> list[str]:
 
 async def test_fresh_install_has_sessions_table(tmp_path):
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     conn = sqlite3.connect(db_path)
@@ -63,7 +63,7 @@ async def test_fresh_install_has_sessions_table(tmp_path):
 async def test_sessions_columns_match_design(tmp_path):
     """Columns and types match design.md section 3.2."""
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     cols = _column_info(db_path, "sessions")
@@ -116,7 +116,7 @@ async def test_sessions_columns_match_design(tmp_path):
 
 async def test_sessions_indexes_exist(tmp_path):
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     indexes = _index_names(db_path, "sessions")
@@ -131,7 +131,7 @@ async def test_sessions_table_appears_on_legacy_db(tmp_path):
     try:
         # Seed a v0.0.4-shaped requests table. The `project` column has
         # to be present because the daily_costs view in _SCHEMA depends
-        # on it; SQLiteStorage's existing migration handles ALTER for
+        # on it; StorageService's existing migration handles ALTER for
         # *newer* fields but assumes the v0.0.4 baseline.
         legacy.executescript(
             """
@@ -161,8 +161,8 @@ async def test_sessions_table_appears_on_legacy_db(tmp_path):
     finally:
         pre.close()
 
-    # Open through SQLiteStorage; the schema script runs.
-    storage = SQLiteStorage(db_path)
+    # Open through StorageService; the schema script runs.
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     post = sqlite3.connect(db_path)
@@ -178,7 +178,7 @@ async def test_sessions_table_appears_on_legacy_db(tmp_path):
 async def test_sessions_insert_round_trip(tmp_path):
     """A direct INSERT + SELECT works against the new schema."""
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     sid = "vg-test-session-id"
@@ -208,7 +208,7 @@ async def test_sessions_insert_round_trip(tmp_path):
 async def test_sessions_defaults_apply_on_partial_insert(tmp_path):
     """Inserting only required columns fills numeric fields with safe defaults."""
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     sid = "vg-test-partial"
@@ -236,7 +236,7 @@ async def test_sessions_defaults_apply_on_partial_insert(tmp_path):
 async def test_sessions_table_is_idempotent_on_reinit(tmp_path):
     """Re-opening the storage doesn't error or drop existing rows."""
     db_path = str(tmp_path / "fresh.db")
-    s1 = SQLiteStorage(db_path)
+    s1 = StorageService(db_path)
     await s1._ensure_initialized()
 
     sid = "vg-test-keep"
@@ -250,7 +250,7 @@ async def test_sessions_table_is_idempotent_on_reinit(tmp_path):
     finally:
         conn.close()
 
-    s2 = SQLiteStorage(db_path)
+    s2 = StorageService(db_path)
     await s2._ensure_initialized()
 
     conn = sqlite3.connect(db_path)

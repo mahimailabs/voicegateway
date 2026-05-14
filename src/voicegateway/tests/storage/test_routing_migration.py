@@ -6,14 +6,14 @@ from importlib import import_module
 
 import aiosqlite
 
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 _migration = import_module("voicegateway.storage.migrations.0006_routing_and_branding")
 
 
 async def test_sessions_gains_five_routing_columns(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -32,7 +32,7 @@ async def test_sessions_gains_five_routing_columns(tmp_path) -> None:
 
 async def test_managed_projects_gains_branding_json(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -44,7 +44,7 @@ async def test_managed_projects_gains_branding_json(tmp_path) -> None:
 
 async def test_latency_observations_table_created(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -71,7 +71,7 @@ async def test_latency_observations_table_created(tmp_path) -> None:
 
 async def test_composite_index_present(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -86,7 +86,7 @@ async def test_composite_index_present(tmp_path) -> None:
 
 async def test_is_idempotent(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -120,7 +120,7 @@ async def test_v005_baseline_skips_missing_managed_projects(tmp_path) -> None:
 async def test_preexisting_sessions_get_null(tmp_path) -> None:
     """OQ3-like: pre-v0.5.0 rows keep NULL on the new columns."""
     db_path = str(tmp_path / "with_rows.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:

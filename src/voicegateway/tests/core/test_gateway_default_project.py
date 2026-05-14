@@ -179,9 +179,9 @@ async def test_db_default_project_preserved(tmp_path, monkeypatch):
     cfg_path = _write_config(tmp_path, cost_tracking={"enabled": True})
 
     # Pre-seed a managed_projects row before constructing the Gateway.
-    from voicegateway.storage.sqlite import SQLiteStorage
+    from voicegateway.services.storage_service import StorageService
 
-    storage = SQLiteStorage(str(tmp_path / "vg.db"))
+    storage = StorageService(str(tmp_path / "vg.db"))
     await storage.upsert_managed_project(
         project_id="default",
         name="Pre-seeded Default",

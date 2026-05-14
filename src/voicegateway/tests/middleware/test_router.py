@@ -8,12 +8,12 @@ from sqlalchemy import text
 from voicegateway.core.config import ProjectConfig, RoutingConfig
 from voicegateway.middleware import router
 from voicegateway.middleware.router import BudgetExceeded
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 @pytest.fixture
 async def storage(tmp_path):
-    yield SQLiteStorage(db_path=str(tmp_path / "router.db"))
+    yield StorageService(db_path=str(tmp_path / "router.db"))
 
 
 _INSERT_OBS = text(

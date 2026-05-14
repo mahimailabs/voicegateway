@@ -11,12 +11,12 @@ from voicegateway.inference.session.context import (
 )
 from voicegateway.models.request_model import RequestRecord
 from voicegateway.repository import tenants_repository as tenants
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 @pytest.fixture
 async def storage(tmp_path):
-    yield SQLiteStorage(db_path=str(tmp_path / "prop.db"))
+    yield StorageService(db_path=str(tmp_path / "prop.db"))
     reset_tenant_id()
 
 

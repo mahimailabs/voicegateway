@@ -12,12 +12,12 @@ from voicegateway.middleware.latency_observations_worker import (
 )
 from voicegateway.models.request_model import RequestRecord
 from voicegateway.repository import latency_observations_repository as lor
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 @pytest.fixture
 async def storage(tmp_path):
-    yield SQLiteStorage(db_path=str(tmp_path / "w.db"))
+    yield StorageService(db_path=str(tmp_path / "w.db"))
 
 
 def _req(idx: int, latency: float = 180.0) -> RequestRecord:

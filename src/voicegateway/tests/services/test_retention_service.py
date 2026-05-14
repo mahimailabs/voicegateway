@@ -10,7 +10,7 @@ from sqlalchemy import text
 from voicegateway.middleware.replay_capture import ReplayEvent
 from voicegateway.repository import replay_repository as replay
 from voicegateway.services.retention_service import RetentionWorker
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 _INSERT_SESSION = text(
     "INSERT INTO sessions "
@@ -20,7 +20,7 @@ _INSERT_SESSION = text(
 
 
 async def _seed_session(
-    storage: SQLiteStorage,
+    storage: StorageService,
     session_id: str,
     project: str,
     ended_at_offset_days: float,
@@ -56,7 +56,7 @@ async def _seed_session(
 
 @pytest.fixture
 async def storage(tmp_path):
-    s = SQLiteStorage(str(tmp_path / "retention.db"))
+    s = StorageService(str(tmp_path / "retention.db"))
     await s._ensure_initialized()
     return s
 

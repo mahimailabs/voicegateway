@@ -12,7 +12,7 @@ from voicegateway.core.crypto import decrypt
 from voicegateway.schemas.guardrail_policy_schema import GuardrailPolicy
 
 if TYPE_CHECKING:
-    from voicegateway.storage.sqlite import SQLiteStorage
+    from voicegateway.services.storage_service import StorageService
 
 _logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ _logger = logging.getLogger(__name__)
 class ConfigManager:
     """Merge YAML config with managed_* SQLite tables at startup and after writes."""
 
-    def __init__(self, yaml_config: GatewayConfig, storage: SQLiteStorage | None):
+    def __init__(self, yaml_config: GatewayConfig, storage: StorageService | None):
         self._yaml = yaml_config
         self._storage = storage
 

@@ -12,7 +12,7 @@ from voicegateway.repository import (
 )
 
 if TYPE_CHECKING:
-    from voicegateway.storage.sqlite import SQLiteStorage
+    from voicegateway.services.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class LatencyObservationsWorker:
 
     def __init__(
         self,
-        storage: SQLiteStorage,
+        storage: StorageService,
         window_provider: WindowProvider | None = None,
         poll_interval_seconds: float = _DEFAULT_POLL_INTERVAL_SECONDS,
     ) -> None:

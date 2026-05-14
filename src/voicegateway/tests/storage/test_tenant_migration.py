@@ -6,14 +6,14 @@ from importlib import import_module
 
 import aiosqlite
 
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 _migration = import_module("voicegateway.storage.migrations.0005_tenant_attribution")
 
 
 async def test_creates_virtual_keys_table(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -25,7 +25,7 @@ async def test_creates_virtual_keys_table(tmp_path) -> None:
 
 async def test_virtual_keys_columns_match_design(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -47,7 +47,7 @@ async def test_virtual_keys_columns_match_design(tmp_path) -> None:
 
 async def test_virtual_keys_indexes_present(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -64,7 +64,7 @@ async def test_virtual_keys_indexes_present(tmp_path) -> None:
 async def test_adds_tenant_id_to_baseline_tables(tmp_path) -> None:
     """sessions and requests get tenant_id unconditionally (v0.0.5 baseline)."""
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -77,7 +77,7 @@ async def test_adds_tenant_id_to_baseline_tables(tmp_path) -> None:
 async def test_adds_tenant_id_to_derived_tables(tmp_path) -> None:
     """turns, dead_air_events, and replay_* get tenant_id when present."""
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -97,7 +97,7 @@ async def test_adds_tenant_id_to_derived_tables(tmp_path) -> None:
 async def test_is_idempotent(tmp_path) -> None:
     """Re-running the migration on an already-migrated DB is a no-op."""
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -139,7 +139,7 @@ async def test_v005_baseline_skips_missing_tables(tmp_path) -> None:
 async def test_preexisting_rows_get_null_tenant_id(tmp_path) -> None:
     """OQ3: no backfill; pre-v0.4.0 sessions stay NULL."""
     db_path = str(tmp_path / "with_rows.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     # Insert a row via the public API path (RequestRecord -> log_request

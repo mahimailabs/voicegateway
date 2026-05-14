@@ -249,7 +249,7 @@ def test_voicegw_tui_local_threads_yaml_db_path(
     monkeypatch.delenv("VOICEGW_DB_PATH", raising=False)
 
     yaml_db = tmp_path / "custom-history.db"
-    yaml_db.write_text("seed")  # exists so SQLiteStorage init is clean
+    yaml_db.write_text("seed")  # exists so StorageService init is clean
     yaml_path = tmp_path / "voicegw.yaml"
     yaml_path.write_text(
         f"cost_tracking:\n  enabled: true\n  db_path: {yaml_db}\nproviders: {{}}\n"

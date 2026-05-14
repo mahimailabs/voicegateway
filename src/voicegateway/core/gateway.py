@@ -14,7 +14,7 @@ from voicegateway.middleware.cost_tracker import CostTracker
 from voicegateway.middleware.latency_monitor import LatencyMonitor
 from voicegateway.middleware.logger import RequestLogger
 from voicegateway.middleware.rate_limiter import RateLimiter
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 T = TypeVar("T")
 
@@ -33,10 +33,10 @@ class Gateway:
         cost_cfg = self._config.cost_tracking
         env_db = os.environ.get("VOICEGW_DB_PATH")
         enabled = cost_cfg.get("enabled", False) or bool(env_db)
-        self._storage: SQLiteStorage | None
+        self._storage: StorageService | None
         if enabled:
             db_path = env_db or cost_cfg.get("db_path", DEFAULT_DB_PATH)
-            self._storage = SQLiteStorage(db_path)
+            self._storage = StorageService(db_path)
         else:
             self._storage = None
 
@@ -82,7 +82,7 @@ class Gateway:
         return self._config
 
     @property
-    def storage(self) -> SQLiteStorage | None:
+    def storage(self) -> StorageService | None:
         """Return the SQLite storage backend, if enabled."""
         return self._storage
 

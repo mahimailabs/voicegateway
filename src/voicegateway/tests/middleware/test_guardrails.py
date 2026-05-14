@@ -24,7 +24,7 @@ from voicegateway.schemas.guardrail_policy_schema import (
     REPORT_GUARDRAIL_TOOL_NAME,
     GuardrailPolicy,
 )
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 @pytest.fixture(autouse=True)
@@ -69,7 +69,7 @@ def _wrapper(policy: GuardrailPolicy, monkeypatch, storage=None) -> Instrumented
     )
 
 
-async def _wait_for_guardrail_events(storage: SQLiteStorage, sid: str):
+async def _wait_for_guardrail_events(storage: StorageService, sid: str):
     loop = asyncio.get_running_loop()
     deadline = loop.time() + 1.0
     events = []
@@ -194,7 +194,7 @@ def test_instrumented_llm_rejects_reserved_user_tool(monkeypatch) -> None:
 
 
 async def test_bypass_skips_injection_and_records_audit(tmp_path, monkeypatch) -> None:
-    storage = SQLiteStorage(str(tmp_path / "guardrail-bypass.db"))
+    storage = StorageService(str(tmp_path / "guardrail-bypass.db"))
     sid = start_session(bypass_guardrails=True)
     wrapper = _wrapper(_active_policy(medical="alert"), monkeypatch, storage=storage)
 

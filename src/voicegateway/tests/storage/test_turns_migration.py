@@ -6,14 +6,14 @@ from importlib import import_module
 
 import aiosqlite
 
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 _migration = import_module("voicegateway.storage.migrations.0003_turns_and_deadair")
 
 
 async def test_migration_creates_turns_and_dead_air_tables(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -31,7 +31,7 @@ async def test_migration_creates_turns_and_dead_air_tables(tmp_path) -> None:
 
 async def test_migration_adds_aggregate_columns_to_sessions(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -50,7 +50,7 @@ async def test_migration_adds_aggregate_columns_to_sessions(tmp_path) -> None:
 
 async def test_migration_creates_indexes(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -68,7 +68,7 @@ async def test_migration_creates_indexes(tmp_path) -> None:
 async def test_migration_is_idempotent(tmp_path) -> None:
     """Apply twice; second call should be a no-op (no SQL errors)."""
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()  # first apply
     async with aiosqlite.connect(db_path) as db:
         await _migration.apply(db)  # second apply — must not raise
@@ -78,7 +78,7 @@ async def test_migration_is_idempotent(tmp_path) -> None:
 async def test_preexisting_session_keeps_null_aggregates(tmp_path) -> None:
     """A v0.1.x-style sessions row gets NULL on the new columns."""
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:

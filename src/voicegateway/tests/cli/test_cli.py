@@ -112,9 +112,9 @@ async def _seed_export_records(db_path: str) -> tuple[str, str, str]:
     import uuid
 
     from voicegateway.models.request_model import RequestRecord
-    from voicegateway.storage.sqlite import SQLiteStorage
+    from voicegateway.services.storage_service import StorageService
 
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     today = _dt.date.today()
 
     def at_midday(d: _dt.date) -> float:
@@ -458,13 +458,13 @@ def test_export_costs_renders_iso_timestamp_and_fixed_point_cost(
     import uuid
 
     from voicegateway.models.request_model import RequestRecord
-    from voicegateway.storage.sqlite import SQLiteStorage
+    from voicegateway.services.storage_service import StorageService
 
     db_path = str(tmp_path / "export-precision.db")
     monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
 
     async def _seed() -> tuple[float, str, str]:
-        storage = SQLiteStorage(db_path)
+        storage = StorageService(db_path)
         # Pinned timestamp: 2026-04-15 09:30:00 UTC = 1776418200.0
         ts = _dt.datetime(2026, 4, 15, 9, 30, 0, tzinfo=_dt.UTC).timestamp()
         # 1e-05 would render as "1.5e-05" in default float repr; the
@@ -525,9 +525,9 @@ async def _seed_reconcile_records(db_path: str) -> tuple[str, str]:
     import uuid
 
     from voicegateway.models.request_model import RequestRecord
-    from voicegateway.storage.sqlite import SQLiteStorage
+    from voicegateway.services.storage_service import StorageService
 
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     today = _dt.date.today()
     midday = _dt.datetime.combine(today, _dt.time(12, 0), tzinfo=_dt.UTC).timestamp()
 
@@ -806,13 +806,13 @@ def test_reconcile_threshold_flag_propagates(temp_config, tmp_path, monkeypatch)
     import uuid
 
     from voicegateway.models.request_model import RequestRecord
-    from voicegateway.storage.sqlite import SQLiteStorage
+    from voicegateway.services.storage_service import StorageService
 
     db_path = str(tmp_path / "reconcile-threshold.db")
     monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
 
     async def _seed() -> tuple[str, str]:
-        storage = SQLiteStorage(db_path)
+        storage = StorageService(db_path)
         today = _dt.date.today()
         # Seed a single VG record at $0.97; provider file says
         # $1.00 -> ~3% drift.

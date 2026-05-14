@@ -6,14 +6,14 @@ from importlib import import_module
 
 import aiosqlite
 
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 _migration = import_module("voicegateway.storage.migrations.0004_replay_tables")
 
 
 async def test_creates_all_four_replay_tables(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -36,7 +36,7 @@ async def test_creates_all_four_replay_tables(tmp_path) -> None:
 
 async def test_adds_replay_size_bytes_to_sessions(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -48,7 +48,7 @@ async def test_adds_replay_size_bytes_to_sessions(tmp_path) -> None:
 
 async def test_creates_composite_indexes(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:
@@ -66,7 +66,7 @@ async def test_creates_composite_indexes(tmp_path) -> None:
 
 async def test_idempotent_reapply(tmp_path) -> None:
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
     async with aiosqlite.connect(db_path) as db:
         await _migration.apply(db)  # second apply — must not raise
@@ -76,7 +76,7 @@ async def test_idempotent_reapply(tmp_path) -> None:
 async def test_preexisting_session_keeps_null_replay_size(tmp_path) -> None:
     """A v0.2.0-era sessions row is left with NULL on replay_size_bytes."""
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     async with aiosqlite.connect(db_path) as db:

@@ -8,12 +8,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 import dashboard.api.main as api
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 class _FakeGateway:
     def __init__(self, path: str):
-        self.storage = SQLiteStorage(path)
+        self.storage = StorageService(path)
 
         class _Cfg:
             class auth:

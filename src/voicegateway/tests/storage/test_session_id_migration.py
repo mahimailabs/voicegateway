@@ -7,11 +7,11 @@ import time
 import uuid
 
 from voicegateway.models.request_model import RequestRecord
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 # v0.0.4 schema fragment for the requests table — verbatim from before
 # the v0.0.5 session_id column was added. Used to seed a "pre-migration"
-# database that SQLiteStorage then upgrades when opened.
+# database that StorageService then upgrades when opened.
 _V004_REQUESTS_DDL = """
 CREATE TABLE IF NOT EXISTS requests (
     id TEXT PRIMARY KEY,
@@ -131,7 +131,7 @@ async def test_migration_adds_session_id_column(tmp_path):
     pre_cols = _column_names(db_path, "requests")
     assert "session_id" not in pre_cols, "fixture must start without session_id"
 
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     post_cols = _column_names(db_path, "requests")
@@ -142,7 +142,7 @@ async def test_migration_creates_session_id_index(tmp_path):
     db_path = str(tmp_path / "v004.db")
     _seed_v004_database(db_path)
 
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     indexes = _index_names(db_path, "requests")
@@ -153,7 +153,7 @@ async def test_migration_preserves_existing_rows(tmp_path):
     db_path = str(tmp_path / "v004.db")
     seeds = _seed_v004_database(db_path)
 
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     rows = await storage.get_recent_requests(limit=10)
 
     assert len(rows) == len(seeds)
@@ -165,7 +165,7 @@ async def test_migration_fills_pre_existing_session_id_with_null(tmp_path):
     db_path = str(tmp_path / "v004.db")
     seeds = _seed_v004_database(db_path)
 
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     conn = sqlite3.connect(db_path)
@@ -187,7 +187,7 @@ async def test_new_inserts_can_carry_session_id(tmp_path):
     db_path = str(tmp_path / "v004.db")
     _seed_v004_database(db_path)
 
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     # Direct SQL insert with a session_id — verifies the column is
@@ -226,7 +226,7 @@ async def test_new_inserts_can_carry_session_id(tmp_path):
 async def test_fresh_database_has_session_id_in_initial_schema(tmp_path):
     """A clean install (not a migration) must already include the column."""
     db_path = str(tmp_path / "fresh.db")
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage._ensure_initialized()
 
     cols = _column_names(db_path, "requests")
@@ -241,10 +241,10 @@ async def test_migration_is_idempotent(tmp_path):
     db_path = str(tmp_path / "v004.db")
     seeds = _seed_v004_database(db_path)
 
-    s1 = SQLiteStorage(db_path)
+    s1 = StorageService(db_path)
     await s1._ensure_initialized()
 
-    s2 = SQLiteStorage(db_path)
+    s2 = StorageService(db_path)
     await s2._ensure_initialized()  # would raise OperationalError if not idempotent
 
     rows = await s2.get_recent_requests(limit=10)
@@ -256,7 +256,7 @@ async def test_request_record_log_after_migration_does_not_break(tmp_path):
     db_path = str(tmp_path / "v004.db")
     _seed_v004_database(db_path)
 
-    storage = SQLiteStorage(db_path)
+    storage = StorageService(db_path)
     await storage.log_request(
         RequestRecord(
             id=str(uuid.uuid4()),

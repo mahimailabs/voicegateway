@@ -13,12 +13,12 @@ from voicegateway.inference.session.context import (
 )
 from voicegateway.middleware import router
 from voicegateway.models.request_model import RequestRecord
-from voicegateway.storage.sqlite import SQLiteStorage
+from voicegateway.services.storage_service import StorageService
 
 
 @pytest.fixture
 async def storage(tmp_path):
-    yield SQLiteStorage(db_path=str(tmp_path / "pipeline.db"))
+    yield StorageService(db_path=str(tmp_path / "pipeline.db"))
     reset_routing_decision()
 
 
