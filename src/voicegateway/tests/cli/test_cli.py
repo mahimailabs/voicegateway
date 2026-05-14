@@ -1401,11 +1401,11 @@ def test_rotate_secret_surfaces_failed_rows(temp_config, tmp_path, monkeypatch):
     # token would be incorrectly re-keyed before rotate-secret got
     # to it. Disable the migration here so the orphan path under
     # test is the rotation, not the migration.
-    async def _noop_migrate(self, db):
+    async def _noop_migrate(db):
         return None
 
     monkeypatch.setattr(
-        "voicegateway.storage.sqlite.SQLiteStorage._migrate_plaintext_keys",
+        "voicegateway.storage.migrator._migrate_plaintext_keys",
         _noop_migrate,
     )
 
