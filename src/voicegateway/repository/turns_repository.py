@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import text
 
 from voicegateway.inference.session.context import current_tenant
-from voicegateway.middleware.turn_tracker import TurnRow
+from voicegateway.middleware.turn_tracker_middleware import TurnRow
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession

@@ -1,4 +1,4 @@
-"""Contract tests for voicegateway.middleware.dead_air_detector."""
+"""Contract tests for voicegateway.middleware.dead_air_detector_middleware."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from voicegateway.middleware.dead_air_detector import (
+from voicegateway.middleware.dead_air_detector_middleware import (
     DeadAirDetector,
     DeadAirEvent,
 )

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from voicegateway.middleware.turn_tracker import TurnRow
+from voicegateway.middleware.turn_tracker_middleware import TurnRow
 from voicegateway.repository import turns_repository as turns
 from voicegateway.services.storage_service import StorageService
 

@@ -6,8 +6,8 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.middleware.dead_air_detector import DeadAirEvent
-from voicegateway.middleware.turn_tracker import TurnRow
+from voicegateway.middleware.dead_air_detector_middleware import DeadAirEvent
+from voicegateway.middleware.turn_tracker_middleware import TurnRow
 from voicegateway.repository import (
     dead_air_repository as dead_air,
 )

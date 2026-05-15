@@ -5,9 +5,9 @@ import time
 
 import pytest
 
-from voicegateway.middleware.latency_monitor import LatencyMonitor
-from voicegateway.middleware.logger import RequestLogger
-from voicegateway.middleware.rate_limiter import RateLimiter, RateLimitExceeded
+from voicegateway.middleware.latency_monitor_middleware import LatencyMonitor
+from voicegateway.middleware.logger_middleware import RequestLogger
+from voicegateway.middleware.rate_limiter_middleware import RateLimiter, RateLimitExceeded
 
 
 def test_latency_monitor_basic():

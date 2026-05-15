@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import text
 
 from voicegateway.inference.session.context import current_tenant
-from voicegateway.middleware.replay_capture import ReplayEvent
+from voicegateway.middleware.replay_capture_middleware import ReplayEvent
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession

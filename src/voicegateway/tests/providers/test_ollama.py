@@ -48,7 +48,7 @@ def test_ollama_creates_llm():
 
 def test_ollama_pricing_zero():
     """Ollama LLMs price at $0 via the unified catalog (free local provider)."""
-    from voicegateway.middleware.cost_tracker import CostTracker
+    from voicegateway.middleware.cost_tracker_middleware import CostTracker
 
     tracker = CostTracker()
     cost = tracker.calculate_cost(

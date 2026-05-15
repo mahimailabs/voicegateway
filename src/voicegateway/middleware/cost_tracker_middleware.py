@@ -11,7 +11,7 @@ from voicegateway.inference.pricing import catalog
 from voicegateway.models.request_model import RequestRecord
 
 if TYPE_CHECKING:
-    from voicegateway.middleware.budget_enforcer import BudgetEnforcer
+    from voicegateway.middleware.budget_enforcer_middleware import BudgetEnforcer
 
 logger = logging.getLogger(__name__)
 

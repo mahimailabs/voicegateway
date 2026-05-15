@@ -1,10 +1,10 @@
-"""Contract tests for voicegateway.middleware.turn_tracker."""
+"""Contract tests for voicegateway.middleware.turn_tracker_middleware."""
 
 from __future__ import annotations
 
 import pytest
 
-from voicegateway.middleware.turn_tracker import TurnRow, TurnTracker
+from voicegateway.middleware.turn_tracker_middleware import TurnRow, TurnTracker
 
 
 async def test_normal_turn_lifecycle_produces_one_turn_row() -> None:

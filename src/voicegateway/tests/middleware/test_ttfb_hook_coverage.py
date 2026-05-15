@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from voicegateway.middleware import instrumented_provider as ip
-from voicegateway.middleware.instrumented_provider import (
+from voicegateway.middleware import instrumented_provider_middleware as ip
+from voicegateway.middleware.instrumented_provider_middleware import (
     InstrumentedLLM,
     InstrumentedSTT,
     InstrumentedTTS,

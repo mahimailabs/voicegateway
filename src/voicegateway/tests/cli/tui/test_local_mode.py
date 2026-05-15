@@ -22,7 +22,7 @@ from voicegateway.cli.tui.widgets.header import HeaderBar
 from voicegateway.cli.tui.widgets.log_tail import LogTail
 from voicegateway.cli.tui.widgets.provider_row import ProviderRow
 from voicegateway.cli.tui.widgets.session_row import SessionRow
-from voicegateway.middleware.cost_tracker import RequestRecord
+from voicegateway.middleware.cost_tracker_middleware import RequestRecord
 from voicegateway.services.storage_service import StorageService
 
 

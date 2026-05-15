@@ -12,7 +12,7 @@ from livekit.agents import tts as lk_tts
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, NOT_GIVEN
 
 if TYPE_CHECKING:
-    from voicegateway.middleware.cost_tracker import CostTracker
+    from voicegateway.middleware.cost_tracker_middleware import CostTracker
     from voicegateway.services.storage_service import StorageService
 
 logger = logging.getLogger(__name__)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from voicegateway.middleware.replay_capture import ReplayEvent
+from voicegateway.middleware.replay_capture_middleware import ReplayEvent
 from voicegateway.repository import replay_repository as replay
 from voicegateway.services.storage_service import StorageService
 

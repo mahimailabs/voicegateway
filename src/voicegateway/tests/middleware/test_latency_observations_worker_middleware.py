@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from voicegateway.middleware.latency_observations_worker import (
+from voicegateway.middleware.latency_observations_worker_middleware import (
     LatencyObservationsWorker,
 )
 from voicegateway.models.request_model import RequestRecord

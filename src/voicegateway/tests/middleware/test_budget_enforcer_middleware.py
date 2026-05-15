@@ -7,7 +7,7 @@ import uuid
 import pytest
 
 from voicegateway.core.config import GatewayConfig, ProjectConfig
-from voicegateway.middleware.budget_enforcer import (
+from voicegateway.middleware.budget_enforcer_middleware import (
     BudgetEnforcer,
     BudgetExceededError,
     BudgetThrottleSignal,

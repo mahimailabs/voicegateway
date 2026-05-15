@@ -21,7 +21,7 @@ from voicegateway.inference.factory import get_gateway
 from voicegateway.inference.project import get_active_project
 from voicegateway.inference.resolution import resolve_model
 from voicegateway.inference.session.context import get_or_create_session_id
-from voicegateway.middleware.instrumented_provider import wrap_provider
+from voicegateway.middleware.instrumented_provider_middleware import wrap_provider
 
 _LOCAL_PROVIDERS = frozenset({"ollama", "whisper", "kokoro", "piper"})
 

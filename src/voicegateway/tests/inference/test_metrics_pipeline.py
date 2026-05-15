@@ -9,8 +9,8 @@ import pytest
 
 from voicegateway.inference import attach_session
 from voicegateway.inference.session.attach import reset_components
-from voicegateway.middleware.dead_air_detector import DeadAirDetector, DeadAirEvent
-from voicegateway.middleware.turn_tracker import TurnRow, TurnTracker
+from voicegateway.middleware.dead_air_detector_middleware import DeadAirDetector, DeadAirEvent
+from voicegateway.middleware.turn_tracker_middleware import TurnRow, TurnTracker
 
 
 class FakeAgentSession:

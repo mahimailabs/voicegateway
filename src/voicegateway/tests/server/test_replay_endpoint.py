@@ -6,7 +6,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.middleware.replay_capture import ReplayEvent
+from voicegateway.middleware.replay_capture_middleware import ReplayEvent
 from voicegateway.repository import replay_repository as replay
 
 

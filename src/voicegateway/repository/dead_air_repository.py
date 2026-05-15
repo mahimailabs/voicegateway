@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import text
 
 from voicegateway.inference.session.context import current_tenant
-from voicegateway.middleware.dead_air_detector import DeadAirEvent
+from voicegateway.middleware.dead_air_detector_middleware import DeadAirEvent
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
