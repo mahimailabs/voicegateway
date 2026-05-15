@@ -1,10 +1,23 @@
 """VoiceGateway CLI package.
 
-Every command module follows the ``<name>_cli.py`` convention and
-imports :class:`voicegateway.cli.base_cli.BaseCli` for shared output,
-gateway loading, storage-required-or-die, and exit helpers. New
-commands should instantiate ``_cli = BaseCli()`` at module top and use
-its methods rather than re-implementing the patterns.
+Every command module follows the ``<name>_cli.py`` convention and uses
+:class:`BaseCli` for shared output, gateway loading, storage-required-
+or-die, and exit helpers. New commands should follow this pattern::
+
+    # cli/example_cli.py
+    from voicegateway.cli import BaseCli
+    from voicegateway.cli._app import app
+
+    _cli = BaseCli()
+
+    @app.command()
+    def example(config: str | None = None) -> None:
+        gw = _cli.require_gateway(config)
+        storage = _cli.require_storage(gw)
+        ...
+
+Subclassing :class:`BaseCli` is supported but not required; Typer is
+function-first by design.
 """
 
 from __future__ import annotations
@@ -32,5 +45,6 @@ from voicegateway.cli import status_cli as _status  # noqa: F401, E402
 from voicegateway.cli import tenant_cli as _tenant  # noqa: F401, E402
 from voicegateway.cli import tui as _tui  # noqa: F401, E402
 from voicegateway.cli._app import app, console
+from voicegateway.cli.base_cli import BaseCli
 
-__all__ = ["app", "console"]
+__all__ = ["BaseCli", "app", "console"]
