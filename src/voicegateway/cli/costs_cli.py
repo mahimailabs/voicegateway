@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import typer
 from rich.table import Table
 
 from voicegateway.cli._app import app, console
+from voicegateway.cli.base_cli import BaseCli
 from voicegateway.inference.pricing import llm as _llm_pricing
 from voicegateway.inference.pricing import stt as _stt_pricing
 from voicegateway.inference.pricing import tts as _tts_pricing
-from voicegateway.utils.cli._shared import _load_gateway
+
+_cli = BaseCli()
 
 
 @app.command()
@@ -22,14 +22,14 @@ def costs(
     month: bool = typer.Option(False, "--month", help="Show monthly summary"),
 ) -> None:
     """Show cost summary."""
-    gw = _load_gateway(config)
+    gw = _cli.require_gateway(config)
     period = "month" if month else ("week" if week else "today")
 
     if gw.storage is None:
-        console.print("[yellow]Cost tracking is not enabled in voicegw.yaml[/yellow]")
+        _cli.warn("Cost tracking is not enabled in voicegw.yaml")
         raise typer.Exit(0)
 
-    summary = asyncio.run(gw.storage.get_cost_summary(period, project=project))
+    summary = _cli.async_run(gw.storage.get_cost_summary(period, project=project))
 
     header = f"Cost Summary ({period})"
     if project:
@@ -57,7 +57,6 @@ def costs(
 
     if not summary["by_provider"]:
         console.print("[dim]No requests recorded yet.[/dim]")
-
 
     sources = (
         f"LLM: {_llm_pricing.PRICING_SOURCE} | "

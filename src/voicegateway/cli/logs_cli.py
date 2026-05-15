@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
 import datetime
 
 import typer
 from rich.table import Table
 
 from voicegateway.cli._app import app, console
-from voicegateway.utils.cli._shared import _load_gateway
+from voicegateway.cli.base_cli import BaseCli
+
+_cli = BaseCli()
 
 
 @app.command(name="logs")
@@ -20,12 +21,12 @@ def logs_cmd(
     modality: str = typer.Option(None, "--modality", "-m", help="stt, llm, or tts"),
 ) -> None:
     """Show recent request logs."""
-    gw = _load_gateway(config)
+    gw = _cli.require_gateway(config)
     if gw.storage is None:
-        console.print("[yellow]Cost tracking is not enabled in voicegw.yaml[/yellow]")
+        _cli.warn("Cost tracking is not enabled in voicegw.yaml")
         raise typer.Exit(0)
 
-    rows = asyncio.run(
+    rows = _cli.async_run(
         gw.storage.get_recent_requests(limit=tail, modality=modality, project=project)
     )
     if not rows:

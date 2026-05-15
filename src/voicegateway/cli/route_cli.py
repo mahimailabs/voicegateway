@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-import asyncio
 import dataclasses
 import json
 
 import typer
 
 from voicegateway.cli._app import app, console
+from voicegateway.cli.base_cli import BaseCli
 from voicegateway.services.routing_service import BudgetExceeded
-from voicegateway.utils.cli._shared import _load_gateway
 from voicegateway.utils.cli.route import _show_async, _simulate_async
+
+_cli = BaseCli()
 
 route_app = typer.Typer(
     name="route",
@@ -32,14 +33,10 @@ def show_cmd(
     ),
 ) -> None:
     """Show the latency_observations rollup + rosters for a project."""
-    gw = _load_gateway(config)
-    if gw.storage is None:
-        console.print(
-            "[red]Storage backend not configured (cost_tracking.db_path).[/red]"
-        )
-        raise typer.Exit(1)
+    gw = _cli.require_gateway(config)
+    storage = _cli.require_storage(gw)
 
-    rows = asyncio.run(_show_async(gw.storage, project))
+    rows = _cli.async_run(_show_async(storage, project))
     project_cfg = gw.config.projects.get(project)
     rosters = (
         getattr(getattr(project_cfg, "routing", None), "rosters", {}) or {}
@@ -116,16 +113,11 @@ def simulate_cmd(
     ),
 ) -> None:
     """Dry-run the router with optional per-modality overrides."""
-    gw = _load_gateway(config)
-    if gw.storage is None:
-        console.print(
-            "[red]Storage backend not configured (cost_tracking.db_path).[/red]"
-        )
-        raise typer.Exit(1)
+    gw = _cli.require_gateway(config)
+    storage = _cli.require_storage(gw)
     project_cfg = gw.config.projects.get(project)
     if project_cfg is None:
-        console.print(f"[red]Project {project!r} is not in voicegw.yaml.[/red]")
-        raise typer.Exit(1)
+        _cli.fail(f"Project {project!r} is not in voicegw.yaml.")
 
     overrides: dict[str, str] = {}
     if stt:
@@ -136,20 +128,18 @@ def simulate_cmd(
         overrides["tts"] = tts
 
     try:
-        triple = asyncio.run(
+        triple = _cli.async_run(
             _simulate_async(
-                gw.storage,
+                storage,
                 project_id=project,
                 project_config=project_cfg,
                 overrides=overrides,
             )
         )
     except BudgetExceeded as exc:
-        console.print(f"[red]BudgetExceeded:[/red] {exc}")
-        raise typer.Exit(1) from exc
+        _cli.fail(f"BudgetExceeded: {exc}")
     except ValueError as exc:
-        console.print(f"[red]Router rejected the call:[/red] {exc}")
-        raise typer.Exit(1) from exc
+        _cli.fail(f"Router rejected the call: {exc}")
 
     if json_output:
         typer.echo(json.dumps(dataclasses.asdict(triple), indent=2))
