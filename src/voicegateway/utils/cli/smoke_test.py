@@ -9,7 +9,7 @@ from rich.table import Table
 from voicegateway.cli._app import console
 from voicegateway.core import registry as _registry
 from voicegateway.core.constants import SMOKE_MODALITIES
-from voicegateway.inference import factory, llm, stt, tts
+from voicegateway.inference import factory, llm_inference as llm, stt_inference as stt, tts_inference as tts
 from voicegateway.inference import project as project_module
 from voicegateway.inference.session.context import get_session_id
 

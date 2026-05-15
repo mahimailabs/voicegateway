@@ -14,7 +14,7 @@ from voicegateway.inference.factory import get_gateway
 from voicegateway.inference.project import get_active_project
 from voicegateway.inference.resolution import resolve_model
 from voicegateway.inference.session.context import get_or_create_session_id
-from voicegateway.inference.stt import _assert_key_resolved, _resolve_provider_config
+from voicegateway.inference.stt_inference import _assert_key_resolved, _resolve_provider_config
 from voicegateway.middleware.instrumented_provider_middleware import wrap_provider
 
 
