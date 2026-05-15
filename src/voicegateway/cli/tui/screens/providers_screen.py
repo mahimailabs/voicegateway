@@ -10,7 +10,7 @@ from textual.containers import Container, VerticalScroll
 from textual.widgets import Label, Static
 
 from voicegateway.cli.tui.data.exceptions import LocalModeUnsupportedError
-from voicegateway.cli.tui.screens._focus import FocusRowsMixin
+from voicegateway.cli.tui.screens.focus_helpers import FocusRowsMixin
 from voicegateway.cli.tui.widgets.provider_row import ProviderRow
 
 if TYPE_CHECKING:  # pragma: no cover
