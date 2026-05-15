@@ -7,9 +7,9 @@ Layout:
 - :mod:`voicegateway.cli.daemon.manager` hosts :class:`DaemonManager`
   (the facade) plus the platform selector that lazy-imports the right
   backend module for the current OS.
-- ``linux.py`` / ``macos.py`` / ``windows.py`` host the three concrete
-  backends; ``templates/`` ships the OS-specific service definitions
-  (LaunchAgent plist, systemd unit).
+- ``linux_daemon.py`` / ``macos_daemon.py`` / ``windows_daemon.py``
+  host the three concrete backends; ``templates/`` ships the OS-specific
+  service definitions (LaunchAgent plist, systemd unit).
 """
 
 from __future__ import annotations
