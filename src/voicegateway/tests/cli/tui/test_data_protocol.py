@@ -10,9 +10,9 @@ import pytest
 
 from voicegateway.cli.tui.data import MetricsClient
 from voicegateway.cli.tui.data.exceptions import LocalModeUnsupportedError
-from voicegateway.cli.tui.data.factory import _resolve_db_path, make_client
-from voicegateway.cli.tui.data.http import HttpClient
-from voicegateway.cli.tui.data.local import LocalClient
+from voicegateway.cli.tui.data.client_factory import _resolve_db_path, make_client
+from voicegateway.cli.tui.data.http_client import HttpClient
+from voicegateway.cli.tui.data.local_client import LocalClient
 from voicegateway.middleware.cost_tracker_middleware import RequestRecord
 from voicegateway.services.storage_service import StorageService
 
