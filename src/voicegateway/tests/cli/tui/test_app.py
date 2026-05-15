@@ -14,8 +14,8 @@ from typer.testing import CliRunner
 from voicegateway.cli import app as cli_app
 from voicegateway.cli.tui import TUIApp
 from voicegateway.cli.tui.app import _TAB_IDS
-from voicegateway.cli.tui.data.http import HttpClient
-from voicegateway.cli.tui.data.local import LocalClient
+from voicegateway.cli.tui.data.http_client import HttpClient
+from voicegateway.cli.tui.data.local_client import LocalClient
 from voicegateway.cli.tui.screens import (
     CostsScreen,
     LogsScreen,
@@ -262,7 +262,7 @@ def test_voicegw_tui_local_threads_yaml_db_path(
         return MagicMock(poll_seconds=5.0, _db_path=kwargs.get("db_path"))
 
     monkeypatch.setattr(
-        "voicegateway.cli.tui.data.factory.make_client", fake_make_client
+        "voicegateway.cli.tui.data.client_factory.make_client", fake_make_client
     )
     monkeypatch.setattr(TUIApp, "run", MagicMock())
 

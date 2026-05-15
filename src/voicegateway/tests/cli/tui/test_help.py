@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from voicegateway.cli.tui import TUIApp
-from voicegateway.cli.tui.data.local import LocalClient
+from voicegateway.cli.tui.data.local_client import LocalClient
 from voicegateway.cli.tui.screens.help_screen import HelpOverlay
 from voicegateway.cli.tui.widgets.session_row_widget import SessionRow  # noqa: F401
 from voicegateway.services.storage_service import StorageService

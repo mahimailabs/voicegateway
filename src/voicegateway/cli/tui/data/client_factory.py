@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 
 from voicegateway.cli.tui.data import MetricsClient
-from voicegateway.cli.tui.data.http import HttpClient
-from voicegateway.cli.tui.data.local import LocalClient
+from voicegateway.cli.tui.data.http_client import HttpClient
+from voicegateway.cli.tui.data.local_client import LocalClient
 
 _GATEWAY_POLL_DEFAULT = 1.0
 _LOCAL_POLL_DEFAULT = 5.0

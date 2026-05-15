@@ -14,7 +14,7 @@ from textual.containers import VerticalScroll
 from textual.widgets import Label, Static
 
 from voicegateway.cli.tui import TUIApp
-from voicegateway.cli.tui.data.local import LocalClient
+from voicegateway.cli.tui.data.local_client import LocalClient
 from voicegateway.cli.tui.screens.costs_screen import CostsScreen
 from voicegateway.cli.tui.screens.logs_screen import LogsScreen
 from voicegateway.cli.tui.screens.providers_screen import ProvidersScreen

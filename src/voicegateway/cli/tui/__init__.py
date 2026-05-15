@@ -31,7 +31,7 @@ def run(
 ) -> None:
     """Launch the TUI programmatically."""
     from voicegateway.cli.tui.app import TUIApp
-    from voicegateway.cli.tui.data.factory import make_client
+    from voicegateway.cli.tui.data.client_factory import make_client
     from voicegateway.cli.tui_cli import _try_load_config, _url_from_config
 
     cfg = _try_load_config(config)
