@@ -274,15 +274,15 @@ class InstrumentedLLM(lk_llm.LLM, _InstrumentedBase):
             guardrail_bypass_already_logged,
             mark_guardrail_bypass_logged,
         )
-        from voicegateway.middleware.guardrails import (
+        from voicegateway.schemas.guardrail_policy_schema import (
+            REPORT_GUARDRAIL_TOOL_NAME,
+            GuardrailPolicy,
+        )
+        from voicegateway.services.guardrail_runtime_service import (
             create_report_guardrail_action_tool,
             inject_guardrail_block,
             schedule_bypass_event,
             tools_contain_reserved_report_tool,
-        )
-        from voicegateway.schemas.guardrail_policy_schema import (
-            REPORT_GUARDRAIL_TOOL_NAME,
-            GuardrailPolicy,
         )
         from voicegateway.services.guardrail_service import compose_block
 

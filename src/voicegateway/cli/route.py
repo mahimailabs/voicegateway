@@ -9,7 +9,7 @@ import json
 import typer
 
 from voicegateway.cli._app import app, console
-from voicegateway.middleware.router import BudgetExceeded
+from voicegateway.services.routing_service import BudgetExceeded
 from voicegateway.utils.cli._shared import _load_gateway
 from voicegateway.utils.cli.route import _show_async, _simulate_async
 

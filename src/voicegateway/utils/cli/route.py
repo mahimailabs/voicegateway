@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from voicegateway.middleware import router
 from voicegateway.repository import (
     latency_observations_repository as latency_observations,
 )
+from voicegateway.services import routing_service as router
 
 
 async def _show_async(storage: Any, project_id: str) -> list[Any]:

@@ -11,8 +11,8 @@ from voicegateway.inference.session.context import (
     reset_routing_decision,
     set_routing_decision,
 )
-from voicegateway.middleware import router
 from voicegateway.models.request_model import RequestRecord
+from voicegateway.services import routing_service as router
 from voicegateway.services.storage_service import StorageService
 
 
