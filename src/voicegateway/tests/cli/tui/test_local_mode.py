@@ -13,10 +13,10 @@ from textual.widgets import Label, Static
 from voicegateway.cli.tui import TUIApp
 from voicegateway.cli.tui.data.exceptions import LocalModeUnsupportedError
 from voicegateway.cli.tui.data.local import LocalClient
-from voicegateway.cli.tui.screens.costs import CostsScreen
-from voicegateway.cli.tui.screens.logs import LogsScreen
-from voicegateway.cli.tui.screens.providers import ProvidersScreen
-from voicegateway.cli.tui.screens.sessions import SessionsScreen
+from voicegateway.cli.tui.screens.costs_screen import CostsScreen
+from voicegateway.cli.tui.screens.logs_screen import LogsScreen
+from voicegateway.cli.tui.screens.providers_screen import ProvidersScreen
+from voicegateway.cli.tui.screens.sessions_screen import SessionsScreen
 from voicegateway.cli.tui.widgets.cost_card import CostCard
 from voicegateway.cli.tui.widgets.header import HeaderBar
 from voicegateway.cli.tui.widgets.log_tail import LogTail

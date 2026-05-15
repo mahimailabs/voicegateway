@@ -111,7 +111,7 @@ async def test_question_mark_pushes_help_overlay(
     local_client: LocalClient,
 ) -> None:
     """Pressing ``?`` dispatches ``action_help`` which pushes the"""
-    from voicegateway.cli.tui.screens.help import HelpOverlay
+    from voicegateway.cli.tui.screens.help_screen import HelpOverlay
 
     app = TUIApp(client=local_client, is_local=False)
     async with app.run_test() as pilot:

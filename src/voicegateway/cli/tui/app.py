@@ -137,7 +137,7 @@ class TUIApp(App[None]):
         # / etc. from. Importing at module scope here would create
         # a circular load between cli.tui.app and the screens
         # package.
-        from voicegateway.cli.tui.screens.help import HelpOverlay
+        from voicegateway.cli.tui.screens.help_screen import HelpOverlay
 
         self.push_screen(HelpOverlay())
 

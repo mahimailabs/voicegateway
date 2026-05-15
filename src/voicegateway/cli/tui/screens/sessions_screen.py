@@ -9,7 +9,7 @@ from textual.binding import Binding
 from textual.containers import Container, VerticalScroll
 from textual.widgets import Label, Static
 
-from voicegateway.cli.tui.screens._focus import FocusRowsMixin
+from voicegateway.cli.tui.screens.focus_helpers import FocusRowsMixin
 from voicegateway.cli.tui.widgets.session_row import SessionRow
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -103,7 +103,7 @@ class SessionsScreen(FocusRowsMixin, Container):
     def action_open_detail(self) -> None:
         """Push the per-turn detail modal for the focused row."""
 
-        from voicegateway.cli.tui.screens.session_detail import (
+        from voicegateway.cli.tui.screens.session_detail_screen import (
             SessionDetailScreen,
         )
 

@@ -8,7 +8,7 @@ import pytest
 
 from voicegateway.cli.tui import TUIApp
 from voicegateway.cli.tui.data.local import LocalClient
-from voicegateway.cli.tui.screens.help import HelpOverlay
+from voicegateway.cli.tui.screens.help_screen import HelpOverlay
 from voicegateway.cli.tui.widgets.session_row import SessionRow  # noqa: F401
 from voicegateway.services.storage_service import StorageService
 
