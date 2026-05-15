@@ -8,7 +8,8 @@ import contextvars
 import pytest
 import yaml
 
-from voicegateway.inference import factory, project
+from voicegateway.core import gateway_factory as factory
+from voicegateway.inference import project
 from voicegateway.inference.project import (
     get_active_project,
     reset_project,

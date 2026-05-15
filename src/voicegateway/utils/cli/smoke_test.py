@@ -7,11 +7,9 @@ from typing import Any
 from rich.table import Table
 
 from voicegateway.cli._app import console
+from voicegateway.core import gateway_factory as factory
 from voicegateway.core import registry as _registry
 from voicegateway.core.constants import SMOKE_MODALITIES
-from voicegateway.inference import (
-    factory,
-)
 from voicegateway.inference import (
     llm_inference as llm,
 )

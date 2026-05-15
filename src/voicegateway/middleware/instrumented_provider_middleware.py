@@ -169,7 +169,7 @@ class InstrumentedLLM(lk_llm.LLM, InstrumentationMixin):
         # Lazy: middleware <-> inference and middleware <-> guardrail-service
         # cycles. Hoisting these would force a deeper structural refactor;
         # see docs/superpowers/specs/2026-05-14-server-split-and-import-hoist-design.md.
-        from voicegateway.inference.factory import get_gateway
+        from voicegateway.core.gateway_factory import get_gateway
         from voicegateway.inference.session.context import (
             current_guardrails_bypassed,
             current_tenant,

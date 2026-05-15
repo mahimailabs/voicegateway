@@ -8,7 +8,8 @@ from typing import Any
 import pytest
 import yaml
 
-from voicegateway.inference import factory, llm_inference as llm
+from voicegateway.core import gateway_factory as factory
+from voicegateway.inference import llm_inference as llm
 from voicegateway.inference.resolution import ModelResolutionError
 from voicegateway.inference.session.context import get_session_id
 

@@ -29,7 +29,7 @@ def get_active_project() -> str:
         return env_value
 
     # Lazy: avoids the inference.factory <-> inference.project cycle.
-    from voicegateway.inference.factory import get_gateway
+    from voicegateway.core.gateway_factory import get_gateway
 
     gateway = get_gateway()
     yaml_default = gateway.config.default_project

@@ -7,7 +7,7 @@ import asyncio
 import typer
 
 from voicegateway.cli._app import app
-from voicegateway.inference.factory import reset_gateway
+from voicegateway.core.gateway_factory import reset_gateway
 from voicegateway.utils.cli._shared import _load_gateway
 from voicegateway.utils.cli.smoke_test import (
     _print_smoke_report,
