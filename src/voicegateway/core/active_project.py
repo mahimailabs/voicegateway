@@ -1,9 +1,11 @@
-"""Active-project resolution for the voicegateway.inference module."""
+"""Active-project resolution: ContextVar + env + YAML default fallback chain."""
 
 from __future__ import annotations
 
 import os
 from contextvars import ContextVar
+
+from voicegateway.core.gateway_factory import get_gateway
 
 _DEFAULT_PROJECT_NAME = "default"
 _ENV_VAR = "VOICEGW_ACTIVE_PROJECT"
@@ -27,9 +29,6 @@ def get_active_project() -> str:
     env_value = os.environ.get(_ENV_VAR)
     if env_value:
         return env_value
-
-    # Lazy: avoids the inference.factory <-> inference.project cycle.
-    from voicegateway.core.gateway_factory import get_gateway
 
     gateway = get_gateway()
     yaml_default = gateway.config.default_project
