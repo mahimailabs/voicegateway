@@ -5,7 +5,8 @@ from __future__ import annotations
 import yaml
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.inference import factory, project
+from voicegateway.core import gateway_factory as factory
+from voicegateway.inference import project
 from voicegateway.inference import stt_inference as stt
 from voicegateway.inference.project import get_active_project
 
