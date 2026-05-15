@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 import typer
 
-from voicegateway.cli._app import app, console
-from voicegateway.utils.cli._shared import _load_gateway, _parse_iso_date_arg
+from voicegateway.cli._app import app
+from voicegateway.cli.base_cli import BaseCli
+from voicegateway.utils.cli._shared import _parse_iso_date_arg
 from voicegateway.utils.cli.export_costs import _EXPORT_COLUMNS, _format_export_row
+
+_cli = BaseCli()
 
 
 @app.command(name="export-costs")
@@ -33,19 +35,16 @@ def export_costs_cmd(
 ) -> None:
     """Export per-request cost line items for a date window."""
     if fmt not in ("csv", "json"):
-        console.print(f"[red]Unknown format: {fmt}. Use 'csv' or 'json'.[/red]")
-        raise typer.Exit(2)
+        _cli.fail(f"Unknown format: {fmt}. Use 'csv' or 'json'.", code=2)
 
-    gw = _load_gateway(config)
-    if gw.storage is None:
-        console.print("[yellow]Cost tracking is not enabled in voicegw.yaml[/yellow]")
-        raise typer.Exit(1)
+    gw = _cli.require_gateway(config)
+    storage = _cli.require_storage(gw)
 
     start_ts = _parse_iso_date_arg(start, end_of_day=False)
     end_ts = _parse_iso_date_arg(end, end_of_day=True)
 
-    rows = asyncio.run(
-        gw.storage.get_requests_in_window(
+    rows = _cli.async_run(
+        storage.get_requests_in_window(
             start_ts=start_ts, end_ts=end_ts, project=project
         )
     )
@@ -76,7 +75,6 @@ def export_costs_cmd(
         out_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             out_path.write_text(payload, encoding="utf-8")
-        except OSError as e:
-            console.print(f"[red]Failed to write {output}: {e}[/red]")
-            raise typer.Exit(1) from e
-        console.print(f"[green]Wrote {len(rows)} record(s) to {output}[/green]")
+        except OSError as exc:
+            _cli.fail(f"Failed to write {output}: {exc}")
+        _cli.success(f"Wrote {len(rows)} record(s) to {output}")

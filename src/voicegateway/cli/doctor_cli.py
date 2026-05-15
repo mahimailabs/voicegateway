@@ -5,9 +5,12 @@ from __future__ import annotations
 import typer
 from rich.table import Table
 
-from voicegateway.cli._app import app, console
+from voicegateway.cli._app import app
+from voicegateway.cli.base_cli import BaseCli
 from voicegateway.core.constants import STATUS_RENDER
 from voicegateway.utils.cli.doctor import _CHECKS, _build_context
+
+_cli = BaseCli()
 
 
 @app.command()
@@ -32,14 +35,12 @@ def doctor(
             r.detail,
         )
 
-    console.print(table)
+    _cli.console.print(table)
 
     failures = [r for r in results if r.is_blocker]
     if failures:
         labels = ", ".join(r.label for r in failures)
-        console.print(
-            f"\n[yellow]{len(failures)} check(s) need attention:[/yellow] {labels}"
-        )
+        _cli.warn(f"\n{len(failures)} check(s) need attention: {labels}")
         raise typer.Exit(1)
 
-    console.print("\n[green]All checks passed.[/green]")
+    _cli.success("\nAll checks passed.")

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import typer
 
-from voicegateway.cli._app import app, console
+from voicegateway.cli._app import app
+from voicegateway.cli.base_cli import BaseCli
 from voicegateway.core.auth import describe_auth, load_api_keys
 from voicegateway.server import build_app
-from voicegateway.utils.cli._shared import _load_gateway
 from voicegateway.utils.cli.serve import _resolve_bind
+
+_cli = BaseCli()
 
 
 @app.command(name="serve")
@@ -24,17 +26,16 @@ def serve_cmd(
     """Start the VoiceGateway HTTP API server under uvicorn."""
     try:
         import uvicorn
-    except ImportError as e:
-        console.print(
-            "[red]Dashboard dependencies not installed. "
-            "Run: pip install 'voicegateway[dashboard]'[/red]"
+    except ImportError:
+        _cli.fail(
+            "Dashboard dependencies not installed. "
+            "Run: pip install 'voicegateway[dashboard]'"
         )
-        raise typer.Exit(1) from e
 
-    gw = _load_gateway(config)
+    gw = _cli.require_gateway(config)
     host, port = _resolve_bind(getattr(gw.config, "serve", None), host, port)
 
     api_app = build_app(gw)
-    console.print(f"[green]VoiceGateway API starting at http://{host}:{port}[/green]")
-    console.print(f"[cyan]{describe_auth(load_api_keys(gw.config.auth))}[/cyan]")
+    _cli.success(f"VoiceGateway API starting at http://{host}:{port}")
+    _cli.info(describe_auth(load_api_keys(gw.config.auth)))
     uvicorn.run(api_app, host=host, port=port)
