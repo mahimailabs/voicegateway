@@ -30,6 +30,9 @@ def mcp_cmd(
         raise typer.Exit(1)
 
     try:
+        # Lazy: gated on the optional ``[mcp]`` extra so the import
+        # failure can be presented as a friendly Rich error rather than
+        # blocking ``voicegw --help`` from showing this command.
         from voicegateway.server.mcp.server import serve_http, serve_stdio
     except ImportError as e:
         console.print(

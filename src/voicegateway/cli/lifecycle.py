@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import typer
 
+from voicegateway.cli import daemon as _daemon
 from voicegateway.cli._app import app, console
 from voicegateway.utils.cli._shared import _config_home
 
@@ -11,10 +12,8 @@ from voicegateway.utils.cli._shared import _config_home
 @app.command()
 def start() -> None:
     """Bring the background daemon up."""
-    from voicegateway.cli.daemon import DaemonManager
-
     try:
-        DaemonManager().start()
+        _daemon.DaemonManager().start()
     except RuntimeError as exc:
         console.print(f"[red]Failed to start daemon:[/red] {exc}")
         raise typer.Exit(1) from exc
@@ -24,10 +23,8 @@ def start() -> None:
 @app.command()
 def stop() -> None:
     """Bring the background daemon down."""
-    from voicegateway.cli.daemon import DaemonManager
-
     try:
-        DaemonManager().stop()
+        _daemon.DaemonManager().stop()
     except RuntimeError as exc:
         console.print(f"[red]Failed to stop daemon:[/red] {exc}")
         raise typer.Exit(1) from exc
@@ -37,10 +34,8 @@ def stop() -> None:
 @app.command()
 def restart() -> None:
     """Restart the background daemon (stop + start)."""
-    from voicegateway.cli.daemon import DaemonManager
-
     try:
-        DaemonManager().restart()
+        _daemon.DaemonManager().restart()
     except RuntimeError as exc:
         console.print(f"[red]Failed to restart daemon:[/red] {exc}")
         raise typer.Exit(1) from exc
@@ -57,10 +52,8 @@ def daemon_logs(
     ),
 ) -> None:
     """Tail the OS-native daemon log stream."""
-    from voicegateway.cli.daemon import DaemonManager
-
     try:
-        output = DaemonManager().logs(tail=tail)
+        output = _daemon.DaemonManager().logs(tail=tail)
     except RuntimeError as exc:
         console.print(f"[red]Failed to read daemon logs:[/red] {exc}")
         raise typer.Exit(1) from exc
@@ -77,10 +70,8 @@ def daemon_logs(
 @app.command(name="uninstall-daemon")
 def uninstall_daemon() -> None:
     """Remove the daemon registration only."""
-    from voicegateway.cli.daemon import DaemonManager
-
     try:
-        DaemonManager().uninstall()
+        _daemon.DaemonManager().uninstall()
     except RuntimeError as exc:
         console.print(f"[red]Failed to uninstall daemon:[/red] {exc}")
         raise typer.Exit(1) from exc

@@ -8,6 +8,9 @@ import typer
 from rich.table import Table
 
 from voicegateway.cli._app import app, console
+from voicegateway.inference.pricing import llm as _llm_pricing
+from voicegateway.inference.pricing import stt as _stt_pricing
+from voicegateway.inference.pricing import tts as _tts_pricing
 from voicegateway.utils.cli._shared import _load_gateway
 
 
@@ -55,9 +58,6 @@ def costs(
     if not summary["by_provider"]:
         console.print("[dim]No requests recorded yet.[/dim]")
 
-    from voicegateway.inference.pricing import llm as _llm_pricing
-    from voicegateway.inference.pricing import stt as _stt_pricing
-    from voicegateway.inference.pricing import tts as _tts_pricing
 
     sources = (
         f"LLM: {_llm_pricing.PRICING_SOURCE} | "

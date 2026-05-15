@@ -9,6 +9,7 @@ import json
 import typer
 
 from voicegateway.cli._app import app, console
+from voicegateway.middleware.router import BudgetExceeded
 from voicegateway.utils.cli._shared import _load_gateway
 from voicegateway.utils.cli.route import _show_async, _simulate_async
 
@@ -135,8 +136,6 @@ def simulate_cmd(
         overrides["tts"] = tts
 
     try:
-        from voicegateway.middleware.router import BudgetExceeded
-
         triple = asyncio.run(
             _simulate_async(
                 gw.storage,

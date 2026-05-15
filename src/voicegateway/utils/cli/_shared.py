@@ -10,15 +10,14 @@ from typing import TYPE_CHECKING
 import typer
 
 from voicegateway.cli._app import console
+from voicegateway.core.gateway import Gateway
 
 if TYPE_CHECKING:
-    from voicegateway.core.gateway import Gateway
+    pass
 
 
 def _load_gateway(config_path: str | None) -> Gateway:
     """Build a Gateway from ``config_path`` (or the default search path)."""
-    from voicegateway.core.gateway import Gateway
-
     try:
         return Gateway(config_path=config_path)
     except Exception as e:

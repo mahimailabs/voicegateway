@@ -8,6 +8,7 @@ from pathlib import Path
 import typer
 
 from voicegateway.cli._app import app, console
+from voicegateway.services import reconciliation_service as _reconcile
 from voicegateway.utils.cli._shared import _load_gateway, _parse_iso_date_arg
 
 
@@ -42,8 +43,6 @@ def reconcile_cmd(
     ),
 ) -> None:
     """Diff VG's logged costs against a provider's usage export."""
-    from voicegateway.services import reconciliation_service as _reconcile
-
     if provider not in _reconcile.SUPPORTED_PROVIDERS:
         console.print(
             f"[red]Unsupported provider: {provider!r}. "

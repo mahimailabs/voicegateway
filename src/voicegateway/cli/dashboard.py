@@ -5,6 +5,7 @@ from __future__ import annotations
 import typer
 
 from voicegateway.cli._app import app, console
+from voicegateway.core.auth import describe_auth, load_api_keys
 from voicegateway.utils.cli._shared import _load_gateway
 
 
@@ -25,7 +26,6 @@ def dashboard_cmd(
         raise typer.Exit(1) from e
 
     gw = _load_gateway(config)
-    from voicegateway.core.auth import describe_auth, load_api_keys
 
     console.print(f"[green]VoiceGateway dashboard at http://{host}:{port}[/green]")
     console.print(f"[cyan]{describe_auth(load_api_keys(gw.config.auth))}[/cyan]")

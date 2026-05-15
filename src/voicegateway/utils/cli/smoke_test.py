@@ -7,7 +7,11 @@ from typing import Any
 from rich.table import Table
 
 from voicegateway.cli._app import console
+from voicegateway.core import registry as _registry
 from voicegateway.core.constants import SMOKE_MODALITIES
+from voicegateway.inference import factory, llm, stt, tts
+from voicegateway.inference import project as project_module
+from voicegateway.inference.session.context import get_session_id
 
 
 def _smoke_active_project(gw: Any) -> str | None:
@@ -46,9 +50,6 @@ def _smoke_pick_models(gw: Any, project: str) -> dict[str, str]:
 
 async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
     """Construct each modality with stubbed LK plugins, drive a fake"""
-
-    from voicegateway.inference import factory, llm, stt, tts
-    from voicegateway.inference import project as project_module
 
     models = _smoke_pick_models(gw, project)
 
@@ -160,8 +161,6 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
         llm.create_provider = real_llm_create
         tts.create_provider = real_tts_create
 
-    from voicegateway.inference.session.context import get_session_id
-
     sid = get_session_id()
     session_id_holder["sid"] = sid
     if sid is None:
@@ -201,8 +200,6 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
 
 async def _run_smoke_health_checks(gw: Any, project: str, add) -> None:
     """Optional --live: probe each configured provider's API."""
-    from voicegateway.core.registry import _PROVIDER_REGISTRY, create_provider
-
     proj = gw.config.get_project(project)
     if proj is None:
         return
@@ -218,10 +215,10 @@ async def _run_smoke_health_checks(gw: Any, project: str, add) -> None:
         seen.add(name)
 
     for name, cfg in sources:
-        if name not in _PROVIDER_REGISTRY:
+        if name not in _registry._PROVIDER_REGISTRY:
             continue
         try:
-            provider_instance = create_provider(name, cfg)
+            provider_instance = _registry.create_provider(name, cfg)
         except Exception as exc:  # noqa: BLE001
             add(
                 f"health.{name}",

@@ -143,6 +143,7 @@ async def verify_virtual_key(
     authorization: str | None, session: AsyncSession
 ) -> VerifiedKey:
     """Validate a ``Bearer vk_…`` header against ``virtual_keys``."""
+    # Lazy: avoids the core.config -> schemas -> repository -> core.config cycle.
     from voicegateway.repository import virtual_keys_repository as virtual_keys
 
     token = _extract_bearer(authorization)
