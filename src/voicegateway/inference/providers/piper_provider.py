@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import Any
 
-from voicegateway.inference.providers.base import BaseProvider
+from voicegateway.inference.providers.base_provider import BaseProvider
 
 logger = logging.getLogger(__name__)
 

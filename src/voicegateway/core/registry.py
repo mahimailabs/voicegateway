@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from voicegateway.inference.providers.base import BaseProvider
+    from voicegateway.inference.providers.base_provider import BaseProvider
 
 
 _PROVIDER_REGISTRY: dict[str, tuple[str, str]] = {
