@@ -1,4 +1,4 @@
-"""Helpers for ``voicegateway.cli.route``."""
+"""Helpers for ``voicegateway.cli.route_cli``."""
 
 from __future__ import annotations
 

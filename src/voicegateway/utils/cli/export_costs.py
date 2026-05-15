@@ -1,4 +1,4 @@
-"""Helpers for ``voicegateway.cli.export_costs``."""
+"""Helpers for ``voicegateway.cli.export_costs_cli``."""
 
 from __future__ import annotations
 
