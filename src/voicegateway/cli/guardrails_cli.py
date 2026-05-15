@@ -7,6 +7,7 @@ import json
 import typer
 
 from voicegateway.cli._app import app, console
+from voicegateway.cli.base_cli import BaseCli
 from voicegateway.core.constants import DEFAULT_DASHBOARD_URL
 from voicegateway.schemas.guardrail_policy_schema import (
     GUARDRAIL_CATEGORIES,
@@ -14,6 +15,8 @@ from voicegateway.schemas.guardrail_policy_schema import (
 )
 from voicegateway.services.guardrail_service import compose_block
 from voicegateway.utils.cli.guardrails import _request
+
+_cli = BaseCli()  # noqa: F841 -- ready for future fail()/success() use
 
 guardrails_app = typer.Typer(
     name="guardrails",

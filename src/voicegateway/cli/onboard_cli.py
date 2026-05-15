@@ -5,6 +5,7 @@ from __future__ import annotations
 import typer
 
 from voicegateway.cli._app import app, console
+from voicegateway.cli.base_cli import BaseCli
 from voicegateway.core.constants import KNOWN_PROVIDERS
 from voicegateway.utils.cli.onboard import (
     _install_daemon,
@@ -15,6 +16,8 @@ from voicegateway.utils.cli.onboard import (
     _run_smoke_test,
     _write_config,
 )
+
+_cli = BaseCli()
 
 
 @app.command()
@@ -57,9 +60,9 @@ def onboard(
             default="openai",
         )
         if provider not in KNOWN_PROVIDERS:
-            console.print(
-                f"[yellow]Unknown provider '{provider}'. Continuing; the YAML "
-                "validator will catch typos at gateway construction time.[/yellow]"
+            _cli.warn(
+                f"Unknown provider '{provider}'. Continuing; the YAML "
+                "validator will catch typos at gateway construction time."
             )
 
         api_key = typer.prompt(f"{provider} API key", hide_input=True)
@@ -82,7 +85,7 @@ def onboard(
             port=port,
         )
 
-        console.print(f"\n[green]Wrote {config_path}[/green]", soft_wrap=True)
+        _cli.success(f"\nWrote {config_path}")
 
         if install_daemon:
             _install_daemon()
@@ -100,9 +103,5 @@ def onboard(
 
     except KeyboardInterrupt:
         _rollback_partial(config_path, pre_existing_bytes)
-        console.print(
-            "\n[yellow]Onboarding cancelled. Re-run `voicegw onboard` "
-            "when ready.[/yellow]"
-        )
-
+        _cli.warn("\nOnboarding cancelled. Re-run `voicegw onboard` when ready.")
         raise typer.Exit(130) from None

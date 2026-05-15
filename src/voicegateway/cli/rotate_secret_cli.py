@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 
 import typer
 
 from voicegateway.cli._app import app, console
-from voicegateway.utils.cli._shared import _load_gateway
+from voicegateway.cli.base_cli import BaseCli
+
+_cli = BaseCli()
 
 
 @app.command(name="rotate-secret")
@@ -25,29 +26,27 @@ def rotate_secret(
     new_primary = os.environ.get("VOICEGW_SECRET")
     fallback = os.environ.get("VOICEGW_SECRET_FALLBACK")
     if not new_primary:
-        console.print(
-            "[red]VOICEGW_SECRET is not set.[/red] Set it to the new primary "
+        _cli.fail(
+            "VOICEGW_SECRET is not set. Set it to the new primary "
             "key (the value you want to encrypt under going forward), then "
             "re-run."
         )
-        raise typer.Exit(1)
     if not fallback:
-        console.print(
-            "[red]VOICEGW_SECRET_FALLBACK is not set.[/red] Set it to the "
-            "previous VOICEGW_SECRET so the rotation can decrypt the existing "
-            "rows, then re-run."
+        _cli.fail(
+            "VOICEGW_SECRET_FALLBACK is not set. Set it to the previous "
+            "VOICEGW_SECRET so the rotation can decrypt the existing rows, "
+            "then re-run."
         )
-        raise typer.Exit(1)
 
-    gw = _load_gateway(config)
+    gw = _cli.require_gateway(config)
     if gw.storage is None:
-        console.print(
-            "[yellow]Cost tracking is disabled in voicegw.yaml; there are no "
-            "managed_providers rows to rotate.[/yellow]"
+        _cli.warn(
+            "Cost tracking is disabled in voicegw.yaml; there are no "
+            "managed_providers rows to rotate."
         )
         raise typer.Exit(0)
 
-    rows = asyncio.run(gw.storage.list_managed_providers())
+    rows = _cli.async_run(gw.storage.list_managed_providers())
     if not rows:
         console.print("No managed_providers rows to rotate.")
         raise typer.Exit(0)
@@ -59,15 +58,14 @@ def rotate_secret(
     if not yes and not typer.confirm("Proceed?"):
         raise typer.Abort()
 
-    summary = asyncio.run(gw.storage.rotate_managed_credentials())
-    console.print(
-        f"[green]Rotated {summary['rotated']} row(s).[/green] "
+    summary = _cli.async_run(gw.storage.rotate_managed_credentials())
+    _cli.success(
+        f"Rotated {summary['rotated']} row(s). "
         f"Skipped {summary['skipped_empty']} empty row(s)."
     )
     if summary["failed"]:
-        console.print(
-            "[red]Failed to rotate the following rows[/red] "
-            "(no configured key decrypts them):"
+        _cli.error(
+            "Failed to rotate the following rows (no configured key decrypts them):"
         )
         for pid in summary["failed"]:
             console.print(f"  - {pid}")

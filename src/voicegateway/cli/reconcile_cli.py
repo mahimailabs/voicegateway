@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 import typer
 
-from voicegateway.cli._app import app, console
+from voicegateway.cli._app import app
+from voicegateway.cli.base_cli import BaseCli
 from voicegateway.services import reconciliation_service as _reconcile
-from voicegateway.utils.cli._shared import _load_gateway, _parse_iso_date_arg
+from voicegateway.utils.cli._shared import _parse_iso_date_arg
+
+_cli = BaseCli()
 
 
 @app.command(name="reconcile")
@@ -44,25 +46,22 @@ def reconcile_cmd(
 ) -> None:
     """Diff VG's logged costs against a provider's usage export."""
     if provider not in _reconcile.SUPPORTED_PROVIDERS:
-        console.print(
-            f"[red]Unsupported provider: {provider!r}. "
-            f"Supported: {', '.join(_reconcile.SUPPORTED_PROVIDERS)}[/red]"
+        _cli.fail(
+            f"Unsupported provider: {provider!r}. "
+            f"Supported: {', '.join(_reconcile.SUPPORTED_PROVIDERS)}",
+            code=2,
         )
-        raise typer.Exit(2)
     if fmt not in ("text", "csv", "json"):
-        console.print(f"[red]Unknown format: {fmt}. Use text, csv, or json.[/red]")
-        raise typer.Exit(2)
+        _cli.fail(f"Unknown format: {fmt}. Use text, csv, or json.", code=2)
 
-    gw = _load_gateway(config)
-    if gw.storage is None:
-        console.print("[yellow]Cost tracking is not enabled in voicegw.yaml[/yellow]")
-        raise typer.Exit(1)
+    gw = _cli.require_gateway(config)
+    storage = _cli.require_storage(gw)
 
     start_ts = _parse_iso_date_arg(start, end_of_day=False)
     end_ts = _parse_iso_date_arg(end, end_of_day=True)
 
-    records = asyncio.run(
-        gw.storage.get_requests_in_window(start_ts=start_ts, end_ts=end_ts)
+    records = _cli.async_run(
+        storage.get_requests_in_window(start_ts=start_ts, end_ts=end_ts)
     )
 
     try:
@@ -72,12 +71,10 @@ def reconcile_cmd(
             Path(provider_usage_file),
             threshold_pct=threshold,
         )
-    except FileNotFoundError as e:
-        console.print(f"[red]{e}[/red]")
-        raise typer.Exit(2) from e
-    except (ValueError, KeyError) as e:
-        console.print(f"[red]Failed to parse provider usage file: {e}[/red]")
-        raise typer.Exit(2) from e
+    except FileNotFoundError as exc:
+        _cli.fail(str(exc), code=2)
+    except (ValueError, KeyError) as exc:
+        _cli.fail(f"Failed to parse provider usage file: {exc}", code=2)
 
     import sys
 

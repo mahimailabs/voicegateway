@@ -6,8 +6,11 @@ from pathlib import Path
 
 import typer
 
-from voicegateway.cli._app import app, console
+from voicegateway.cli._app import app
+from voicegateway.cli.base_cli import BaseCli
 from voicegateway.utils.cli.init import _read_example_config
+
+_cli = BaseCli()
 
 
 @app.command()
@@ -24,5 +27,5 @@ def init(
             raise typer.Abort()
 
     dest.write_text(_read_example_config(), encoding="utf-8")
-    console.print(f"[green]Created {dest}[/green]")
-    console.print("Edit it with your API keys, models, and projects.")
+    _cli.success(f"Created {dest}")
+    _cli.console.print("Edit it with your API keys, models, and projects.")

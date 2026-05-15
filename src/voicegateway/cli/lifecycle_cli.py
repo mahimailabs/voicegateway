@@ -5,8 +5,11 @@ from __future__ import annotations
 import typer
 
 from voicegateway.cli import daemon as _daemon
-from voicegateway.cli._app import app, console
+from voicegateway.cli._app import app
+from voicegateway.cli.base_cli import BaseCli
 from voicegateway.utils.cli._shared import _config_home
+
+_cli = BaseCli()
 
 
 @app.command()
@@ -15,9 +18,8 @@ def start() -> None:
     try:
         _daemon.DaemonManager().start()
     except RuntimeError as exc:
-        console.print(f"[red]Failed to start daemon:[/red] {exc}")
-        raise typer.Exit(1) from exc
-    console.print("[green]Daemon started.[/green]")
+        _cli.fail(f"Failed to start daemon: {exc}")
+    _cli.success("Daemon started.")
 
 
 @app.command()
@@ -26,9 +28,8 @@ def stop() -> None:
     try:
         _daemon.DaemonManager().stop()
     except RuntimeError as exc:
-        console.print(f"[red]Failed to stop daemon:[/red] {exc}")
-        raise typer.Exit(1) from exc
-    console.print("[green]Daemon stopped.[/green]")
+        _cli.fail(f"Failed to stop daemon: {exc}")
+    _cli.success("Daemon stopped.")
 
 
 @app.command()
@@ -37,9 +38,8 @@ def restart() -> None:
     try:
         _daemon.DaemonManager().restart()
     except RuntimeError as exc:
-        console.print(f"[red]Failed to restart daemon:[/red] {exc}")
-        raise typer.Exit(1) from exc
-    console.print("[green]Daemon restarted.[/green]")
+        _cli.fail(f"Failed to restart daemon: {exc}")
+    _cli.success("Daemon restarted.")
 
 
 @app.command(name="daemon-logs")
@@ -55,16 +55,13 @@ def daemon_logs(
     try:
         output = _daemon.DaemonManager().logs(tail=tail)
     except RuntimeError as exc:
-        console.print(f"[red]Failed to read daemon logs:[/red] {exc}")
-        raise typer.Exit(1) from exc
+        _cli.fail(f"Failed to read daemon logs: {exc}")
 
     if not output.strip():
-        console.print(
-            "[dim]No daemon logs yet. Try `voicegw start` first, then re-run.[/dim]"
-        )
+        _cli.dim("No daemon logs yet. Try `voicegw start` first, then re-run.")
         return
 
-    console.print(output, soft_wrap=True)
+    _cli.console.print(output, soft_wrap=True)
 
 
 @app.command(name="uninstall-daemon")
@@ -73,23 +70,22 @@ def uninstall_daemon() -> None:
     try:
         _daemon.DaemonManager().uninstall()
     except RuntimeError as exc:
-        console.print(f"[red]Failed to uninstall daemon:[/red] {exc}")
-        raise typer.Exit(1) from exc
+        _cli.fail(f"Failed to uninstall daemon: {exc}")
 
     home = _config_home()
-    console.print("[green]Daemon registration removed.[/green]\n")
-    console.print("[bold]Preserved (NOT removed):[/bold]")
-    console.print(f"  Config file:     {home / 'voicegw.yaml'}", soft_wrap=True)
-    console.print(f"  Call database:   {home / 'voicegw.db'}", soft_wrap=True)
-    console.print(
+    _cli.success("Daemon registration removed.\n")
+    _cli.console.print("[bold]Preserved (NOT removed):[/bold]")
+    _cli.console.print(f"  Config file:     {home / 'voicegw.yaml'}", soft_wrap=True)
+    _cli.console.print(f"  Call database:   {home / 'voicegw.db'}", soft_wrap=True)
+    _cli.console.print(
         "  Managed provider keys (Fernet-encrypted) inside the "
         "managed_providers table of the call database."
     )
-    console.print()
-    console.print("[bold]To remove the preserved state manually:[/bold]")
-    console.print(f"  [cyan]rm -rf {home}[/cyan]", soft_wrap=True)
-    console.print(
-        "[dim]A `voicegw purge-data` command is planned for a later "
+    _cli.console.print()
+    _cli.console.print("[bold]To remove the preserved state manually:[/bold]")
+    _cli.console.print(f"  [cyan]rm -rf {home}[/cyan]", soft_wrap=True)
+    _cli.dim(
+        "A `voicegw purge-data` command is planned for a later "
         "release; for now the manual command above is the supported "
-        "path.[/dim]"
+        "path."
     )

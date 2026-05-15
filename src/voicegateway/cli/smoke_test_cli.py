@@ -7,14 +7,16 @@ import asyncio
 import typer
 
 from voicegateway.cli._app import app
+from voicegateway.cli.base_cli import BaseCli
 from voicegateway.core.gateway_factory import reset_gateway
-from voicegateway.utils.cli._shared import _load_gateway
 from voicegateway.utils.cli.smoke_test import (
     _print_smoke_report,
     _run_smoke_health_checks,
     _run_smoke_pipeline_checks,
     _smoke_active_project,
 )
+
+_cli = BaseCli()
 
 
 @app.command(name="smoke-test")
@@ -34,7 +36,7 @@ def smoke_test(
     ),
 ) -> None:
     """Verify the inference pipeline end-to-end without LiveKit."""
-    gw = _load_gateway(config)
+    gw = _cli.require_gateway(config)
 
     rows: list[tuple[str, bool, str]] = []  # (label, passed, message)
 

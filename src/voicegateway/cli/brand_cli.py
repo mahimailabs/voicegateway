@@ -10,9 +10,12 @@ import httpx
 import typer
 
 from voicegateway.cli._app import app, console
+from voicegateway.cli.base_cli import BaseCli
 from voicegateway.core.constants import DEFAULT_DASHBOARD_URL
 from voicegateway.utils.cli._shared import _auth_headers
 from voicegateway.utils.cli.brand import _post_branding, _upload_logo
+
+_cli = BaseCli()
 
 brand_app = typer.Typer(
     name="brand",
@@ -45,10 +48,7 @@ def set_cmd(
 ) -> None:
     """Set per-project branding via the dashboard API."""
     if not (logo or accent or name):
-        console.print(
-            "[red]At least one of --logo / --accent / --name is required.[/red]"
-        )
-        raise typer.Exit(2)
+        _cli.fail("At least one of --logo / --accent / --name is required.", code=2)
 
     base = dashboard_url.rstrip("/")
     with httpx.Client(base_url=base, timeout=30.0) as client:
@@ -107,11 +107,9 @@ def show_cmd(
     with httpx.Client(base_url=base, timeout=30.0) as client:
         resp = client.get(f"/api/projects/{project}/branding", headers=_auth_headers())
     if resp.status_code == 404:
-        console.print(f"[red]Project {project!r} not found.[/red]")
-        raise typer.Exit(1)
+        _cli.fail(f"Project {project!r} not found.")
     if resp.status_code >= 400:
-        console.print(f"[red]Failed ({resp.status_code}): {resp.text}[/red]")
-        raise typer.Exit(1)
+        _cli.fail(f"Failed ({resp.status_code}): {resp.text}")
     payload = resp.json()
     if json_output:
         typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))

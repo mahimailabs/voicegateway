@@ -5,6 +5,9 @@ from __future__ import annotations
 import typer
 
 from voicegateway.cli._app import app, console
+from voicegateway.cli.base_cli import BaseCli
+
+_cli = BaseCli()
 
 
 @app.command(name="replay")
@@ -21,12 +24,11 @@ def replay_cmd(
 ) -> None:
     """Print the URL of the dashboard Replay page for a session."""
     if not session_id.strip():
-        console.print("[red]session_id is required.[/red]")
-        raise typer.Exit(code=1)
+        _cli.fail("session_id is required.")
     base = dashboard_url.rstrip("/")
     target = f"{base}/sessions/{session_id}/replay"
     console.print(f"[bold]Replay:[/bold] {target}")
-    console.print("[dim]The dashboard must be running: voicegw dashboard.[/dim]")
+    _cli.dim("The dashboard must be running: voicegw dashboard.")
 
 
 __all__ = ["replay_cmd"]
