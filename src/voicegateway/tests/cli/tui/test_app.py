@@ -193,7 +193,7 @@ def test_voicegw_tui_prints_daemon_down_message_when_unreachable(
     def _raise_connect_error(*args: Any, **kwargs: Any) -> Any:
         raise httpx.ConnectError("Connection refused")
 
-    monkeypatch.setattr("voicegateway.cli.tui.httpx.get", _raise_connect_error)
+    monkeypatch.setattr("voicegateway.cli.tui_cli.httpx.get", _raise_connect_error)
 
     result = runner.invoke(cli_app, ["tui", "--url", "http://127.0.0.1:65000"])
     assert result.exit_code == 1, result.output
@@ -209,7 +209,7 @@ def test_voicegw_tui_local_skips_preflight(
 ) -> None:
     """Locked decision 5: ``--local`` always wins regardless of daemon"""
     fake_get = MagicMock()
-    monkeypatch.setattr("voicegateway.cli.tui.httpx.get", fake_get)
+    monkeypatch.setattr("voicegateway.cli.tui_cli.httpx.get", fake_get)
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "voicegw.db"))
 
     fake_run = MagicMock()
@@ -231,7 +231,7 @@ def test_voicegw_tui_passes_when_health_ok(
     fake_response = MagicMock()
     fake_response.status_code = 200
     monkeypatch.setattr(
-        "voicegateway.cli.tui.httpx.get", lambda *a, **kw: fake_response
+        "voicegateway.cli.tui_cli.httpx.get", lambda *a, **kw: fake_response
     )
 
     fake_run = MagicMock()
