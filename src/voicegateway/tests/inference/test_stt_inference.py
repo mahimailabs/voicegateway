@@ -1,4 +1,4 @@
-"""Tests for voicegateway.inference.stt.STT."""
+"""Tests for voicegateway.inference.stt_inference.STT."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pytest
 import yaml
 from livekit.agents.types import NOT_GIVEN
 
-from voicegateway.inference import factory, stt
+from voicegateway.inference import factory, stt_inference as stt
 from voicegateway.inference.resolution import ModelResolutionError
 from voicegateway.inference.session.context import get_session_id
 

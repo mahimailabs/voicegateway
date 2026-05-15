@@ -1,4 +1,4 @@
-"""Tests for voicegateway.inference.tts.TTS."""
+"""Tests for voicegateway.inference.tts_inference.TTS."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 import yaml
 
-from voicegateway.inference import factory, tts
+from voicegateway.inference import factory, tts_inference as tts
 from voicegateway.inference.resolution import ModelResolutionError
 from voicegateway.inference.session.context import get_session_id
 
