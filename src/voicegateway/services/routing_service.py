@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from importlib import resources
 from typing import TYPE_CHECKING
 
+from voicegateway.middleware.base_middleware import MiddlewareError
 from voicegateway.repository import (
     latency_observations_repository as latency_observations,
 )
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 _MODALITIES = ("stt", "llm", "tts")
 
 
-class BudgetExceeded(Exception):
+class BudgetExceeded(MiddlewareError):
     """Raised when no candidate triple fits and fallback is disabled."""
 
 
