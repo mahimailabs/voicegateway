@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from livekit.agents.stt import STTCapabilities
 
-from voicegateway.middleware.instrumented_provider import InstrumentedSTT
+from voicegateway.middleware.instrumented_provider_middleware import InstrumentedSTT
 
 
 def _make_lk_shaped_mock() -> MagicMock:

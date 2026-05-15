@@ -14,8 +14,8 @@ from voicegateway.inference.session.context import (
     get_or_create_session_id,
     reset_session_id,
 )
-from voicegateway.middleware.cost_tracker import CostTracker
-from voicegateway.middleware.instrumented_provider import wrap_provider
+from voicegateway.middleware.cost_tracker_middleware import CostTracker
+from voicegateway.middleware.instrumented_provider_middleware import wrap_provider
 from voicegateway.models.request_model import RequestRecord
 from voicegateway.services.storage_service import StorageService
 

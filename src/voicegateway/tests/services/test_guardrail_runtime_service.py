@@ -11,7 +11,7 @@ from livekit.agents import llm as lk_llm
 
 from voicegateway.inference import factory
 from voicegateway.inference.session.context import reset_session_id, start_session
-from voicegateway.middleware.instrumented_provider import InstrumentedLLM
+from voicegateway.middleware.instrumented_provider_middleware import InstrumentedLLM
 from voicegateway.repository import guardrail_events_repository as guardrail_events
 from voicegateway.schemas.guardrail_policy_schema import (
     REPORT_GUARDRAIL_TOOL_NAME,

@@ -1,10 +1,10 @@
-"""Contract tests for voicegateway.middleware.replay_capture (T02 of v0.3.0)."""
+"""Contract tests for voicegateway.middleware.replay_capture_middleware (T02 of v0.3.0)."""
 
 from __future__ import annotations
 
 import pytest
 
-from voicegateway.middleware.replay_capture import ReplayCapture, ReplayEvent
+from voicegateway.middleware.replay_capture_middleware import ReplayCapture, ReplayEvent
 
 
 async def test_record_stt_chunk_buffers_event() -> None:

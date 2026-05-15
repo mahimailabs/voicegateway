@@ -11,7 +11,7 @@ from livekit.agents import tts as lk_tts
 from livekit.agents.stt import STTCapabilities
 from livekit.agents.tts import TTSCapabilities
 
-from voicegateway.middleware.instrumented_provider import (
+from voicegateway.middleware.instrumented_provider_middleware import (
     InstrumentedLLM,
     InstrumentedSTT,
     InstrumentedTTS,

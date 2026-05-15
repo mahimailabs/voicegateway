@@ -9,11 +9,11 @@ from typing import Any, TypeVar
 
 from voicegateway.core.config import GatewayConfig, ProjectConfig
 from voicegateway.core.config_manager import ConfigManager
-from voicegateway.middleware.budget_enforcer import BudgetEnforcer
-from voicegateway.middleware.cost_tracker import CostTracker
-from voicegateway.middleware.latency_monitor import LatencyMonitor
-from voicegateway.middleware.logger import RequestLogger
-from voicegateway.middleware.rate_limiter import RateLimiter
+from voicegateway.middleware.budget_enforcer_middleware import BudgetEnforcer
+from voicegateway.middleware.cost_tracker_middleware import CostTracker
+from voicegateway.middleware.latency_monitor_middleware import LatencyMonitor
+from voicegateway.middleware.logger_middleware import RequestLogger
+from voicegateway.middleware.rate_limiter_middleware import RateLimiter
 from voicegateway.services.storage_service import StorageService
 
 T = TypeVar("T")

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from voicegateway.middleware.dead_air_detector import DeadAirEvent
+from voicegateway.middleware.dead_air_detector_middleware import DeadAirEvent
 from voicegateway.repository import dead_air_repository as dead_air
 from voicegateway.services.storage_service import StorageService
 

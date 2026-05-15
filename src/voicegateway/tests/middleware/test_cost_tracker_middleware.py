@@ -2,7 +2,7 @@
 
 import pytest
 
-from voicegateway.middleware.cost_tracker import CostTracker
+from voicegateway.middleware.cost_tracker_middleware import CostTracker
 from voicegateway.services.storage_service import StorageService
 
 

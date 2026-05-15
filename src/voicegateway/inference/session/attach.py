@@ -14,9 +14,9 @@ from voicegateway.inference.session.context import (
 )
 
 if TYPE_CHECKING:
-    from voicegateway.middleware.cost_tracker import CostTracker
-    from voicegateway.middleware.dead_air_detector import DeadAirDetector
-    from voicegateway.middleware.turn_tracker import TurnTracker
+    from voicegateway.middleware.cost_tracker_middleware import CostTracker
+    from voicegateway.middleware.dead_air_detector_middleware import DeadAirDetector
+    from voicegateway.middleware.turn_tracker_middleware import TurnTracker
 
 logger = logging.getLogger(__name__)
 

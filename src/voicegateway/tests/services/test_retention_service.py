@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import text
 
-from voicegateway.middleware.replay_capture import ReplayEvent
+from voicegateway.middleware.replay_capture_middleware import ReplayEvent
 from voicegateway.repository import replay_repository as replay
 from voicegateway.services.retention_service import RetentionWorker
 from voicegateway.services.storage_service import StorageService

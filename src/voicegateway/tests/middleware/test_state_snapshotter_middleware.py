@@ -1,4 +1,4 @@
-"""Contract tests for voicegateway.middleware.state_snapshotter (T03 of v0.3.0)."""
+"""Contract tests for voicegateway.middleware.state_snapshotter_middleware (T03 of v0.3.0)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from voicegateway.middleware.state_snapshotter import StateSnapshotter
+from voicegateway.middleware.state_snapshotter_middleware import StateSnapshotter
 
 
 async def test_on_message_added_emits_snapshot() -> None:
