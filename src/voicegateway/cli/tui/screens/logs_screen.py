@@ -9,7 +9,7 @@ from textual.binding import Binding
 from textual.containers import Container
 from textual.widgets import Input, Label
 
-from voicegateway.cli.tui.widgets.log_tail import LogTail
+from voicegateway.cli.tui.widgets.log_tail_widget import LogTail
 
 if TYPE_CHECKING:  # pragma: no cover
     from voicegateway.cli.tui.app import TUIApp

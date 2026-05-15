@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from voicegateway.cli.tui.widgets.cost_card import CostCard, stale_marker
-from voicegateway.cli.tui.widgets.log_tail import (
+from voicegateway.cli.tui.widgets.cost_card_widget import CostCard, stale_marker
+from voicegateway.cli.tui.widgets.log_tail_widget import (
     LogTail,
     format_entry,
     format_timestamp,
 )
-from voicegateway.cli.tui.widgets.provider_row import (
+from voicegateway.cli.tui.widgets.provider_row_widget import (
     ProviderRow,
     format_status,
 )
-from voicegateway.cli.tui.widgets.session_row import (
+from voicegateway.cli.tui.widgets.session_row_widget import (
     SessionRow,
     format_duration,
     format_time,

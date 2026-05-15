@@ -15,8 +15,8 @@ from voicegateway.cli.tui.screens import (
     ProvidersScreen,
     SessionsScreen,
 )
-from voicegateway.cli.tui.widgets.footer import CounterFooter
-from voicegateway.cli.tui.widgets.header import HeaderBar
+from voicegateway.cli.tui.widgets.counter_footer_widget import CounterFooter
+from voicegateway.cli.tui.widgets.header_bar_widget import HeaderBar
 
 #: Tab ids in display order. ``ContentSwitcher`` mounts one
 #: placeholder per id; ``initial=`` selects the first tab. The vim

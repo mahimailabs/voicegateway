@@ -10,7 +10,7 @@ from textual.containers import Container, VerticalScroll
 from textual.widgets import Label, Static
 
 from voicegateway.cli.tui.screens.focus_helpers import FocusRowsMixin
-from voicegateway.cli.tui.widgets.session_row import SessionRow
+from voicegateway.cli.tui.widgets.session_row_widget import SessionRow
 
 if TYPE_CHECKING:  # pragma: no cover
     from voicegateway.cli.tui.app import TUIApp

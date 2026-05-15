@@ -23,10 +23,10 @@ from voicegateway.cli.tui.screens.session_detail_screen import (
     _format_detail,
 )
 from voicegateway.cli.tui.screens.sessions_screen import SessionsScreen
-from voicegateway.cli.tui.widgets.cost_card import CostCard
-from voicegateway.cli.tui.widgets.log_tail import LogTail
-from voicegateway.cli.tui.widgets.provider_row import ProviderRow
-from voicegateway.cli.tui.widgets.session_row import SessionRow
+from voicegateway.cli.tui.widgets.cost_card_widget import CostCard
+from voicegateway.cli.tui.widgets.log_tail_widget import LogTail
+from voicegateway.cli.tui.widgets.provider_row_widget import ProviderRow
+from voicegateway.cli.tui.widgets.session_row_widget import SessionRow
 from voicegateway.middleware.cost_tracker_middleware import RequestRecord
 from voicegateway.services.storage_service import StorageService
 
