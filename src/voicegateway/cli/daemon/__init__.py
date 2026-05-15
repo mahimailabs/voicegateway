@@ -3,39 +3,9 @@
 from __future__ import annotations
 
 import sys
-from typing import Any, Protocol
+from typing import Any
 
-
-class DaemonBackend(Protocol):
-    """Common interface every OS-specific daemon backend implements."""
-
-    def install(self) -> None:
-        """Register the daemon with the OS service manager."""
-        ...
-
-    def uninstall(self) -> None:
-        """Remove the registration only."""
-        ...
-
-    def start(self) -> None:
-        """Tell the service manager to bring the daemon up."""
-        ...
-
-    def stop(self) -> None:
-        """Tell the service manager to bring the daemon down."""
-        ...
-
-    def restart(self) -> None:
-        """Stop + start. Most service managers expose this directly."""
-        ...
-
-    def status(self) -> dict[str, Any]:
-        """Return at least: ``running`` (bool), ``registered`` (bool),"""
-        ...
-
-    def logs(self, *, tail: int = 100) -> str:
-        """Return the last N log lines (joined by newlines)."""
-        ...
+from voicegateway.cli.daemon.base_daemon import DaemonBackend
 
 
 def _select_backend_name() -> str:
