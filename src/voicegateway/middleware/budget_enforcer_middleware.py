@@ -7,6 +7,8 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
+from voicegateway.middleware.base_middleware import MiddlewareError
+
 if TYPE_CHECKING:
     from voicegateway.core.config import GatewayConfig, ProjectConfig
     from voicegateway.services.storage_service import StorageService
@@ -14,7 +16,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class BudgetExceededError(Exception):
+class BudgetExceededError(MiddlewareError):
     """Raised when a project's daily budget is exceeded and action is 'block'."""
 
     def __init__(self, project: str, spent_usd: float, budget_usd: float):
@@ -27,7 +29,7 @@ class BudgetExceededError(Exception):
         )
 
 
-class BudgetThrottleSignal(Exception):
+class BudgetThrottleSignal(MiddlewareError):
     """Raised to signal the caller should fall back to the local stack."""
 
     def __init__(self, project: str, spent_usd: float, budget_usd: float):

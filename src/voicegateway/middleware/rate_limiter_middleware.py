@@ -7,10 +7,12 @@ import logging
 import time
 from collections import defaultdict
 
+from voicegateway.middleware.base_middleware import MiddlewareError
+
 logger = logging.getLogger(__name__)
 
 
-class RateLimitExceeded(Exception):
+class RateLimitExceeded(MiddlewareError):
     """Raised when a provider's rate limit is exceeded."""
 
 
