@@ -27,12 +27,12 @@ def backend(tmp_path, monkeypatch):
     log_dir = tmp_path / "logs"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.macos.user_log_dir",
+        "voicegateway.cli.daemon.macos_daemon.user_log_dir",
         lambda *args, **kwargs: str(log_dir),
     )
-    monkeypatch.setattr("voicegateway.cli.daemon.macos.os.getuid", lambda: 501)
+    monkeypatch.setattr("voicegateway.cli.daemon.macos_daemon.os.getuid", lambda: 501)
 
-    from voicegateway.cli.daemon.macos import MacOSBackend
+    from voicegateway.cli.daemon.macos_daemon import MacOSBackend
 
     return MacOSBackend()
 
@@ -43,7 +43,7 @@ def fake_launchctl(monkeypatch):
     from unittest.mock import MagicMock
 
     fake = MagicMock(return_value=_ok())
-    monkeypatch.setattr("voicegateway.cli.daemon.macos.subprocess.run", fake)
+    monkeypatch.setattr("voicegateway.cli.daemon.macos_daemon.subprocess.run", fake)
     return fake
 
 
@@ -75,7 +75,7 @@ def test_render_plist_substitutes_all_variables(backend):
 
 def test_install_writes_plist_and_bootstraps(backend, fake_launchctl, monkeypatch):
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.macos.shutil.which",
+        "voicegateway.cli.daemon.macos_daemon.shutil.which",
         lambda _: "/usr/local/bin/voicegw",
     )
 
@@ -101,7 +101,7 @@ def test_install_writes_plist_and_bootstraps(backend, fake_launchctl, monkeypatc
 
 
 def test_install_raises_when_voicegw_not_on_path(backend, monkeypatch):
-    monkeypatch.setattr("voicegateway.cli.daemon.macos.shutil.which", lambda _: None)
+    monkeypatch.setattr("voicegateway.cli.daemon.macos_daemon.shutil.which", lambda _: None)
     with pytest.raises(RuntimeError, match="voicegw"):
         backend.install()
 
@@ -111,7 +111,7 @@ def test_install_swallows_already_loaded_returncode(
 ):
     """launchctl bootstrap returns 17 when already loaded; install is idempotent."""
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.macos.shutil.which",
+        "voicegateway.cli.daemon.macos_daemon.shutil.which",
         lambda _: "/usr/local/bin/voicegw",
     )
     fake_launchctl.return_value = _ok(returncode=17)
@@ -123,7 +123,7 @@ def test_install_raises_on_other_bootstrap_failure(
     backend, fake_launchctl, monkeypatch
 ):
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.macos.shutil.which",
+        "voicegateway.cli.daemon.macos_daemon.shutil.which",
         lambda _: "/usr/local/bin/voicegw",
     )
     fake_launchctl.return_value = subprocess.CompletedProcess(

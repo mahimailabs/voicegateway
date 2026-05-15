@@ -28,19 +28,19 @@ def macos_backend(tmp_path, monkeypatch):
     log_dir = tmp_path / "logs"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.macos.user_log_dir",
+        "voicegateway.cli.daemon.macos_daemon.user_log_dir",
         lambda *args, **kwargs: str(log_dir),
     )
-    monkeypatch.setattr("voicegateway.cli.daemon.macos.os.getuid", lambda: 501)
+    monkeypatch.setattr("voicegateway.cli.daemon.macos_daemon.os.getuid", lambda: 501)
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.macos.shutil.which",
+        "voicegateway.cli.daemon.macos_daemon.shutil.which",
         lambda _: "/usr/local/bin/voicegw",
     )
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.macos.subprocess.run", MagicMock(return_value=_ok())
+        "voicegateway.cli.daemon.macos_daemon.subprocess.run", MagicMock(return_value=_ok())
     )
 
-    from voicegateway.cli.daemon.macos import MacOSBackend
+    from voicegateway.cli.daemon.macos_daemon import MacOSBackend
 
     return MacOSBackend()
 
@@ -51,14 +51,14 @@ def linux_backend(tmp_path, monkeypatch):
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.linux.shutil.which",
+        "voicegateway.cli.daemon.linux_daemon.shutil.which",
         lambda _: "/usr/local/bin/voicegw",
     )
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.linux.subprocess.run", MagicMock(return_value=_ok())
+        "voicegateway.cli.daemon.linux_daemon.subprocess.run", MagicMock(return_value=_ok())
     )
 
-    from voicegateway.cli.daemon.linux import LinuxBackend
+    from voicegateway.cli.daemon.linux_daemon import LinuxBackend
 
     return LinuxBackend()
 
@@ -70,11 +70,11 @@ def windows_backend(tmp_path, monkeypatch):
     log_dir = tmp_path / "logs"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.windows.user_log_dir",
+        "voicegateway.cli.daemon.windows_daemon.user_log_dir",
         lambda *args, **kwargs: str(log_dir),
     )
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.windows.shutil.which",
+        "voicegateway.cli.daemon.windows_daemon.shutil.which",
         lambda name: (
             "C:\\Users\\example\\.local\\bin\\voicegw.exe"
             if name in ("voicegw", "voicegw.exe")
@@ -82,10 +82,10 @@ def windows_backend(tmp_path, monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.windows.subprocess.run", MagicMock(return_value=_ok())
+        "voicegateway.cli.daemon.windows_daemon.subprocess.run", MagicMock(return_value=_ok())
     )
 
-    from voicegateway.cli.daemon.windows import WindowsBackend
+    from voicegateway.cli.daemon.windows_daemon import WindowsBackend
 
     return WindowsBackend()
 

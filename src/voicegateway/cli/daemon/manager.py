@@ -37,15 +37,15 @@ class DaemonManager:
 
         backend: DaemonBackend
         if name == "macos":
-            from voicegateway.cli.daemon.macos import MacOSBackend
+            from voicegateway.cli.daemon.macos_daemon import MacOSBackend
 
             backend = cast(DaemonBackend, MacOSBackend())
         elif name == "linux":
-            from voicegateway.cli.daemon.linux import LinuxBackend
+            from voicegateway.cli.daemon.linux_daemon import LinuxBackend
 
             backend = cast(DaemonBackend, LinuxBackend())
         elif name == "windows":
-            from voicegateway.cli.daemon.windows import WindowsBackend
+            from voicegateway.cli.daemon.windows_daemon import WindowsBackend
 
             backend = cast(DaemonBackend, WindowsBackend())
         else:

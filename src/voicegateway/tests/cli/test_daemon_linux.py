@@ -19,7 +19,7 @@ def backend(tmp_path, monkeypatch):
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
 
-    from voicegateway.cli.daemon.linux import LinuxBackend
+    from voicegateway.cli.daemon.linux_daemon import LinuxBackend
 
     return LinuxBackend()
 
@@ -29,7 +29,7 @@ def fake_subprocess(monkeypatch):
     from unittest.mock import MagicMock
 
     fake = MagicMock(return_value=_ok())
-    monkeypatch.setattr("voicegateway.cli.daemon.linux.subprocess.run", fake)
+    monkeypatch.setattr("voicegateway.cli.daemon.linux_daemon.subprocess.run", fake)
     return fake
 
 
@@ -68,7 +68,7 @@ def test_render_unit_substitutes_all_variables(backend):
 
 def test_install_writes_unit_and_runs_systemctl(backend, fake_subprocess, monkeypatch):
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.linux.shutil.which",
+        "voicegateway.cli.daemon.linux_daemon.shutil.which",
         lambda _: "/usr/local/bin/voicegw",
     )
 
@@ -86,14 +86,14 @@ def test_install_writes_unit_and_runs_systemctl(backend, fake_subprocess, monkey
 
 
 def test_install_raises_when_voicegw_not_on_path(backend, monkeypatch):
-    monkeypatch.setattr("voicegateway.cli.daemon.linux.shutil.which", lambda _: None)
+    monkeypatch.setattr("voicegateway.cli.daemon.linux_daemon.shutil.which", lambda _: None)
     with pytest.raises(RuntimeError, match="voicegw"):
         backend.install()
 
 
 def test_install_raises_when_systemctl_fails(backend, fake_subprocess, monkeypatch):
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.linux.shutil.which",
+        "voicegateway.cli.daemon.linux_daemon.shutil.which",
         lambda _: "/usr/local/bin/voicegw",
     )
     fake_subprocess.return_value = _ok(returncode=1)
