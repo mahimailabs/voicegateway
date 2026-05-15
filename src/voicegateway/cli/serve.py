@@ -5,6 +5,8 @@ from __future__ import annotations
 import typer
 
 from voicegateway.cli._app import app, console
+from voicegateway.core.auth import describe_auth, load_api_keys
+from voicegateway.server import build_app
 from voicegateway.utils.cli._shared import _load_gateway
 from voicegateway.utils.cli.serve import _resolve_bind
 
@@ -31,9 +33,6 @@ def serve_cmd(
 
     gw = _load_gateway(config)
     host, port = _resolve_bind(getattr(gw.config, "serve", None), host, port)
-
-    from voicegateway.core.auth import describe_auth, load_api_keys
-    from voicegateway.server import build_app
 
     api_app = build_app(gw)
     console.print(f"[green]VoiceGateway API starting at http://{host}:{port}[/green]")

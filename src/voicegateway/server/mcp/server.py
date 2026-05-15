@@ -44,6 +44,8 @@ def create_server(gateway: Gateway) -> Any:
             "mcp package not installed. Run: pip install voicegateway[mcp]"
         ) from e
 
+    # Lazy: defer importing the tools subpackage until create_server is
+    # actually called, so importing this module does not load every tool.
     from voicegateway.server.mcp.tools import ALL_TOOLS
 
     server = Server("voicegateway")

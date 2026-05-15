@@ -5,6 +5,8 @@ from __future__ import annotations
 import typer
 from rich.console import Console
 
+from voicegateway import __version__
+
 app = typer.Typer(
     name="voicegw",
     help="VoiceGateway: cost tracking and reconciliation for LiveKit voice agents",
@@ -16,8 +18,6 @@ console = Console()
 def _version_callback(value: bool) -> None:
     """Print the package version and exit (eager option)."""
     if value:
-        from voicegateway import __version__
-
         console.print(__version__)
         raise typer.Exit()
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from rich.table import Table
 
 from voicegateway.cli._app import console
+from voicegateway.core import crypto as _crypto
 from voicegateway.utils.cli._shared import _config_home
 
 
@@ -148,19 +149,10 @@ def _check_managed_providers(report: MigrationReport) -> None:
         report.keys_decrypt = True  # nothing to verify, trivially "ok"
         return
 
-    try:
-        from voicegateway.core.crypto import decrypt
-    except ImportError:
-        report.notes.append(
-            "voicegateway.core.crypto not importable; skipping key "
-            "verification. Re-install with the matching extras."
-        )
-        return
-
     failures: list[str] = []
     for provider_id, encrypted in rows:
         try:
-            decrypt(encrypted or "")
+            _crypto.decrypt(encrypted or "")
         except Exception:  # noqa: BLE001
             failures.append(provider_id)
 
@@ -178,6 +170,7 @@ def _check_managed_providers(report: MigrationReport) -> None:
 def _check_daemon_registration(report: MigrationReport) -> None:
     """Read the platform daemon-status payload (best-effort)."""
     try:
+        # Lazy: cli.daemon pulls in platform-specific backends; resolve at runtime.
         from voicegateway.cli.daemon import DaemonManager
 
         info = DaemonManager().status()

@@ -15,6 +15,7 @@ from voicegateway.schemas.mcp.observability_schema import (
 )
 from voicegateway.server.mcp.errors import ValidationError
 from voicegateway.server.mcp.tools.base import ToolDef, make_tool
+from voicegateway.utils.percentiles import compute_percentiles
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -202,7 +203,6 @@ Returns:
 async def _handle_get_latency_stats(
     gateway: Gateway, arguments: dict[str, Any]
 ) -> dict[str, Any]:
-    from voicegateway.utils.percentiles import compute_percentiles
 
     payload = _parse(GetLatencyStatsInput, arguments)
     pcts = gateway.config.latency.get("percentiles") or [50.0, 95.0, 99.0]

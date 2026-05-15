@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import delete, select
 
+from voicegateway.core.crypto import encrypt, rotate_token
 from voicegateway.models.managed_provider_model import ManagedProvider
 
 if TYPE_CHECKING:
@@ -54,8 +55,6 @@ async def upsert_provider(
     project: str | None = None,
 ) -> None:
     """Insert or update a managed provider row. Encrypts the api_key."""
-    from voicegateway.core.crypto import encrypt
-
     now = time.time()
     encrypted_key = encrypt(api_key)
     values = {
@@ -97,8 +96,6 @@ async def rotate_credentials(
     session: AsyncSession, *, time_now: float | None = None
 ) -> dict[str, Any]:
     """Re-encrypt every managed_providers row under the current Fernet key."""
-    from voicegateway.core.crypto import rotate_token
-
     now = time_now if time_now is not None else time.time()
     rotated = 0
     skipped_empty = 0

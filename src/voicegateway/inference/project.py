@@ -28,6 +28,7 @@ def get_active_project() -> str:
     if env_value:
         return env_value
 
+    # Lazy: avoids the inference.factory <-> inference.project cycle.
     from voicegateway.inference.factory import get_gateway
 
     gateway = get_gateway()

@@ -5,7 +5,8 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-from voicegateway.core.registry import _PROVIDER_REGISTRY
+from voicegateway.core import registry as _registry
+from voicegateway.core.crypto import decrypt, mask
 from voicegateway.schemas.mcp.providers_schema import (
     AddProviderInput,
     DeleteProviderInput,
@@ -73,8 +74,6 @@ async def _gather_providers(gateway: Gateway) -> list[dict[str, Any]]:
 
     if gateway.storage is not None:
         import logging
-
-        from voicegateway.core.crypto import decrypt, mask
 
         _log = logging.getLogger(__name__)
         for row in await gateway.storage.list_managed_providers():
@@ -202,8 +201,6 @@ async def _handle_test_provider(
     elif gateway.storage is not None:
         row = await gateway.storage.get_managed_provider(payload.provider_id)
         if row is not None:
-            from voicegateway.core.crypto import decrypt
-
             provider_type = row["provider_type"]
             provider_cfg = {
                 "api_key": decrypt(row.get("api_key_encrypted", "")),
@@ -217,7 +214,7 @@ async def _handle_test_provider(
             details={"provider_id": payload.provider_id},
         )
 
-    if provider_type not in _PROVIDER_REGISTRY:
+    if provider_type not in _registry._PROVIDER_REGISTRY:
         return {
             "status": "failed",
             "latency_ms": 0,
@@ -225,9 +222,7 @@ async def _handle_test_provider(
         }
 
     try:
-        from voicegateway.core.registry import create_provider
-
-        provider = create_provider(provider_type, provider_cfg)
+        provider = _registry.create_provider(provider_type, provider_cfg)
     except ImportError as exc:
         return {"status": "failed", "latency_ms": 0, "message": str(exc)}
 
@@ -277,11 +272,11 @@ async def _handle_add_provider(
 ) -> dict[str, Any]:
     payload = _parse(AddProviderInput, arguments)
 
-    if payload.provider_type not in _PROVIDER_REGISTRY:
+    if payload.provider_type not in _registry._PROVIDER_REGISTRY:
         raise ValidationError(
             f"Unknown provider_type '{payload.provider_type}'. "
-            f"Supported: {', '.join(sorted(_PROVIDER_REGISTRY))}.",
-            details={"supported": sorted(_PROVIDER_REGISTRY)},
+            f"Supported: {', '.join(sorted(_registry._PROVIDER_REGISTRY))}.",
+            details={"supported": sorted(_registry._PROVIDER_REGISTRY)},
         )
 
     if payload.provider_id in gateway.config.providers:
@@ -301,9 +296,9 @@ async def _handle_add_provider(
     local = payload.provider_type in {"ollama", "whisper", "kokoro", "piper"}
     if not local:
         try:
-            from voicegateway.core.registry import create_provider
-
-            provider_instance = create_provider(payload.provider_type, test_cfg)
+            provider_instance = _registry.create_provider(
+                payload.provider_type, test_cfg
+            )
             ok = await provider_instance.health_check()
             if not ok:
                 raise ProviderTestFailedError(
@@ -462,11 +457,11 @@ async def _handle_vg_add_provider(
 ) -> dict[str, Any]:
     payload = _parse(VgAddProviderInput, arguments)
 
-    if payload.provider not in _PROVIDER_REGISTRY:
+    if payload.provider not in _registry._PROVIDER_REGISTRY:
         raise ValidationError(
             f"Unknown provider '{payload.provider}'. "
-            f"Supported: {', '.join(sorted(_PROVIDER_REGISTRY))}.",
-            details={"supported": sorted(_PROVIDER_REGISTRY)},
+            f"Supported: {', '.join(sorted(_registry._PROVIDER_REGISTRY))}.",
+            details={"supported": sorted(_registry._PROVIDER_REGISTRY)},
         )
 
     if gateway.storage is None:
@@ -642,8 +637,6 @@ async def _handle_vg_list_providers(
 
     yaml_ids = {r["provider_id"] for r in rows}
     if gateway.storage is not None:
-        from voicegateway.core.crypto import decrypt, mask
-
         for row in await gateway.storage.list_managed_providers():
             pid = row["provider_id"]
             if pid in yaml_ids:
@@ -704,11 +697,11 @@ async def _handle_vg_set_provider_key(
 ) -> dict[str, Any]:
     payload = _parse(VgSetProviderKeyInput, arguments)
 
-    if payload.provider not in _PROVIDER_REGISTRY:
+    if payload.provider not in _registry._PROVIDER_REGISTRY:
         raise ValidationError(
             f"Unknown provider '{payload.provider}'. "
-            f"Supported: {', '.join(sorted(_PROVIDER_REGISTRY))}.",
-            details={"supported": sorted(_PROVIDER_REGISTRY)},
+            f"Supported: {', '.join(sorted(_registry._PROVIDER_REGISTRY))}.",
+            details={"supported": sorted(_registry._PROVIDER_REGISTRY)},
         )
 
     composite_id = f"{payload.project}:{payload.provider}"
@@ -801,8 +794,6 @@ async def _handle_vg_test_provider_key(
     if provider_cfg is None and gateway.storage is not None:
         row = await gateway.storage.get_managed_provider(composite_id)
         if row is not None:
-            from voicegateway.core.crypto import decrypt
-
             provider_cfg = {
                 "api_key": decrypt(row.get("api_key_encrypted", "")),
                 "base_url": row.get("base_url"),
@@ -820,7 +811,7 @@ async def _handle_vg_test_provider_key(
             },
         )
 
-    if payload.provider not in _PROVIDER_REGISTRY:
+    if payload.provider not in _registry._PROVIDER_REGISTRY:
         return {
             "project": payload.project,
             "provider": payload.provider,
@@ -830,10 +821,8 @@ async def _handle_vg_test_provider_key(
             "message": f"Unknown provider type '{payload.provider}'.",
         }
 
-    from voicegateway.core.registry import create_provider
-
     try:
-        provider_instance = create_provider(payload.provider, provider_cfg)
+        provider_instance = _registry.create_provider(payload.provider, provider_cfg)
     except ImportError as exc:
         return {
             "project": payload.project,

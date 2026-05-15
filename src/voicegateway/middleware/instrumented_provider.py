@@ -262,6 +262,9 @@ class InstrumentedLLM(lk_llm.LLM, _InstrumentedBase):
 
     def _apply_guardrails(self, *, chat_ctx: Any, tools: Any) -> tuple[Any, Any]:
         """Inject the guardrail prompt/tool when the project is active."""
+        # Lazy: middleware <-> inference and middleware <-> guardrail-service
+        # cycles. Hoisting these would force a deeper structural refactor;
+        # see docs/superpowers/specs/2026-05-14-server-split-and-import-hoist-design.md.
         from voicegateway.inference.factory import get_gateway
         from voicegateway.inference.session.context import (
             current_guardrails_bypassed,
