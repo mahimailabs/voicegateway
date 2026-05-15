@@ -1,4 +1,10 @@
-"""Helpers used by two or more ``voicegateway.cli`` command modules."""
+"""Helpers used by two or more ``voicegateway.cli`` command modules.
+
+``_load_gateway`` is now a thin shim over ``BaseCli.require_gateway``.
+New code should call ``BaseCli().require_gateway(config_path)`` directly;
+this wrapper survives for callers that still import from
+``utils.cli._shared``.
+"""
 
 from __future__ import annotations
 
@@ -7,31 +13,25 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import typer
-
-from voicegateway.cli._app import console
-from voicegateway.core.gateway import Gateway
-
 if TYPE_CHECKING:
-    pass
+    from voicegateway.core.gateway import Gateway
 
 
 def _load_gateway(config_path: str | None) -> Gateway:
-    """Build a Gateway from ``config_path`` (or the default search path)."""
-    try:
-        return Gateway(config_path=config_path)
-    except Exception as e:
-        console.print(f"[red]Error loading config: {e}[/red]")
-        raise typer.Exit(1) from e
+    """Backwards-compatible wrapper. Prefer ``BaseCli().require_gateway``."""
+    from voicegateway.cli.base_cli import BaseCli
+
+    return BaseCli().require_gateway(config_path)
 
 
 def _parse_iso_date_arg(value: str, *, end_of_day: bool) -> float:
     """Parse ``YYYY-MM-DD`` into a UTC timestamp."""
+    from voicegateway.cli.base_cli import BaseCli
+
     try:
         d = _dt.datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=_dt.UTC)
-    except ValueError as e:
-        console.print(f"[red]Invalid date {value!r}: expected YYYY-MM-DD[/red]")
-        raise typer.Exit(2) from e
+    except ValueError:
+        BaseCli().fail(f"Invalid date {value!r}: expected YYYY-MM-DD", code=2)
     if end_of_day:
         d += _dt.timedelta(days=1)
     return d.timestamp()
