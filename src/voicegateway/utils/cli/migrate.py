@@ -1,4 +1,4 @@
-"""Helpers for ``voicegateway.cli.migrate``."""
+"""Helpers for ``voicegateway.cli.migrate_cli``."""
 
 from __future__ import annotations
 

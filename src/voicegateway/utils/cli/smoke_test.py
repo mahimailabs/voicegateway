@@ -1,4 +1,4 @@
-"""Helpers for ``voicegateway.cli.smoke_test``."""
+"""Helpers for ``voicegateway.cli.smoke_test_cli``."""
 
 from __future__ import annotations
 

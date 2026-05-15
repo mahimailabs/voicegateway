@@ -414,7 +414,7 @@ def test_ctrl_c_at_each_prompt_no_partial_config(
     """Cancellation at every prompt position 1..4 leaves no partial"""
     cfg = tmp_path / "voicegw.yaml"
     monkeypatch.setattr(
-        "voicegateway.cli.onboard.typer.prompt",
+        "voicegateway.cli.onboard_cli.typer.prompt",
         _typer_prompt_kbi_at(position),
     )
     result = runner.invoke(
@@ -432,7 +432,7 @@ def test_ctrl_c_at_daemon_confirm_no_partial_config(tmp_path, monkeypatch):
     """Cancellation at the daemon-install confirm prompt (typer.confirm,"""
     cfg = tmp_path / "voicegw.yaml"
     monkeypatch.setattr(
-        "voicegateway.cli.onboard.typer.confirm",
+        "voicegateway.cli.onboard_cli.typer.confirm",
         _typer_confirm_kbi_at(1),
     )
     # Run without --install-daemon / --no-install-daemon so the
@@ -452,7 +452,7 @@ def test_ctrl_c_at_smoke_test_confirm_rolls_back_config(tmp_path, monkeypatch):
     # Run with --no-install-daemon so the only typer.confirm in the
     # wizard body is the smoke-test offer.
     monkeypatch.setattr(
-        "voicegateway.cli.onboard.typer.confirm",
+        "voicegateway.cli.onboard_cli.typer.confirm",
         _typer_confirm_kbi_at(1),
     )
     result = runner.invoke(
@@ -470,7 +470,7 @@ def test_ctrl_c_during_first_prompt_no_partial_config(tmp_path, monkeypatch):
     """Ctrl+C at the very first prompt: no config file should exist."""
     cfg = tmp_path / "voicegw.yaml"
     monkeypatch.setattr(
-        "voicegateway.cli.onboard.typer.prompt",
+        "voicegateway.cli.onboard_cli.typer.prompt",
         _typer_prompt_kbi_at(1),
     )
     result = runner.invoke(

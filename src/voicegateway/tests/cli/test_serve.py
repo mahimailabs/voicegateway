@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from voicegateway.cli.serve import _resolve_bind
+from voicegateway.cli.serve_cli import _resolve_bind
 
 
 def test_resolve_bind_uses_config_when_flags_absent():
