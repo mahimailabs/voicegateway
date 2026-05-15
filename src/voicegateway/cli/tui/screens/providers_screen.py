@@ -11,7 +11,7 @@ from textual.widgets import Label, Static
 
 from voicegateway.cli.tui.data.exceptions import LocalModeUnsupportedError
 from voicegateway.cli.tui.screens.focus_helpers import FocusRowsMixin
-from voicegateway.cli.tui.widgets.provider_row import ProviderRow
+from voicegateway.cli.tui.widgets.provider_row_widget import ProviderRow
 
 if TYPE_CHECKING:  # pragma: no cover
     from voicegateway.cli.tui.app import TUIApp

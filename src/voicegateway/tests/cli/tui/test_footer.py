@@ -12,7 +12,7 @@ from textual.widgets import Static
 
 from voicegateway.cli.tui import TUIApp
 from voicegateway.cli.tui.data.http import HttpClient
-from voicegateway.cli.tui.widgets.footer import (
+from voicegateway.cli.tui.widgets.counter_footer_widget import (
     CounterFooter,
     _aggregate_request_count,
     _format,

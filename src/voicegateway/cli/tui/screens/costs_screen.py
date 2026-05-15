@@ -9,7 +9,7 @@ from textual.binding import Binding
 from textual.containers import Container
 from textual.widgets import Label
 
-from voicegateway.cli.tui.widgets.cost_card import CostCard
+from voicegateway.cli.tui.widgets.cost_card_widget import CostCard
 
 if TYPE_CHECKING:  # pragma: no cover
     from voicegateway.cli.tui.app import TUIApp

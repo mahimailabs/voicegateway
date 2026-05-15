@@ -17,11 +17,11 @@ from voicegateway.cli.tui.screens.costs_screen import CostsScreen
 from voicegateway.cli.tui.screens.logs_screen import LogsScreen
 from voicegateway.cli.tui.screens.providers_screen import ProvidersScreen
 from voicegateway.cli.tui.screens.sessions_screen import SessionsScreen
-from voicegateway.cli.tui.widgets.cost_card import CostCard
-from voicegateway.cli.tui.widgets.header import HeaderBar
-from voicegateway.cli.tui.widgets.log_tail import LogTail
-from voicegateway.cli.tui.widgets.provider_row import ProviderRow
-from voicegateway.cli.tui.widgets.session_row import SessionRow
+from voicegateway.cli.tui.widgets.cost_card_widget import CostCard
+from voicegateway.cli.tui.widgets.header_bar_widget import HeaderBar
+from voicegateway.cli.tui.widgets.log_tail_widget import LogTail
+from voicegateway.cli.tui.widgets.provider_row_widget import ProviderRow
+from voicegateway.cli.tui.widgets.session_row_widget import SessionRow
 from voicegateway.middleware.cost_tracker_middleware import RequestRecord
 from voicegateway.services.storage_service import StorageService
 
@@ -204,7 +204,7 @@ async def test_counter_footer_renders_age_suffix_in_local_mode(
         # Wait for the initial CounterFooter refresh to land.
         for _ in range(15):
             await pilot.pause(0.05)
-        from voicegateway.cli.tui.widgets.footer import CounterFooter
+        from voicegateway.cli.tui.widgets.counter_footer_widget import CounterFooter
 
         footer = seeded_local_app.query_one(CounterFooter)
         text = str(footer.query_one("#counter-text", Static).renderable)
