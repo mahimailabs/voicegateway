@@ -7,6 +7,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Final
 
+from voicegateway.middleware.base_middleware import AsyncWorker
 from voicegateway.repository import (
     latency_observations_repository as latency_observations,
 )
@@ -28,7 +29,7 @@ async def _default_window_provider() -> int:
     return _DEFAULT_WINDOW_MINUTES
 
 
-class LatencyObservationsWorker:
+class LatencyObservationsWorker(AsyncWorker):
     """Background worker that refreshes ``latency_observations``."""
 
     def __init__(
