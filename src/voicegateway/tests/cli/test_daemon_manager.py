@@ -6,7 +6,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from voicegateway.cli.daemon import DaemonManager, _select_backend_name
+from voicegateway.cli.daemon import DaemonManager
+from voicegateway.cli.daemon.manager import _select_backend_name
 
 # ---------------------------------------------------------------------------
 # Platform selection.

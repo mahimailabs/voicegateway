@@ -1,75 +1,20 @@
-"""DaemonManager facade and platform-specific backend selection."""
+"""Daemon package: Protocol contract + facade + per-OS backends.
+
+Layout:
+
+- :mod:`voicegateway.cli.daemon.base_daemon` defines the
+  :class:`DaemonBackend` Protocol every OS backend satisfies.
+- :mod:`voicegateway.cli.daemon.manager` hosts :class:`DaemonManager`
+  (the facade) plus the platform selector that lazy-imports the right
+  backend module for the current OS.
+- ``linux.py`` / ``macos.py`` / ``windows.py`` host the three concrete
+  backends; ``templates/`` ships the OS-specific service definitions
+  (LaunchAgent plist, systemd unit).
+"""
 
 from __future__ import annotations
 
-import sys
-from typing import Any
-
 from voicegateway.cli.daemon.base_daemon import DaemonBackend
-
-
-def _select_backend_name() -> str:
-    """Pick the backend module name for the current platform."""
-    if sys.platform == "darwin":
-        return "macos"
-    if sys.platform == "win32":
-        return "windows"
-    # Linux + every WSL flavour.
-    return "linux"
-
-
-class DaemonManager:
-    """Facade over the OS-specific daemon backends."""
-
-    def __init__(self, backend: DaemonBackend | None = None) -> None:
-        self._backend: DaemonBackend = (
-            backend if backend is not None else self._load_backend()
-        )
-
-    @staticmethod
-    def _load_backend() -> DaemonBackend:
-        """Lazy-import the platform backend so unit tests that pass"""
-        name = _select_backend_name()
-
-        from typing import cast
-
-        backend: DaemonBackend
-        if name == "macos":
-            from voicegateway.cli.daemon.macos import MacOSBackend
-
-            backend = cast(DaemonBackend, MacOSBackend())
-        elif name == "linux":
-            from voicegateway.cli.daemon.linux import LinuxBackend
-
-            backend = cast(DaemonBackend, LinuxBackend())
-        elif name == "windows":
-            from voicegateway.cli.daemon.windows import WindowsBackend
-
-            backend = cast(DaemonBackend, WindowsBackend())
-        else:
-            raise NotImplementedError(f"Unknown backend selector: {name!r}")
-        return backend
-
-    def install(self) -> None:
-        self._backend.install()
-
-    def uninstall(self) -> None:
-        self._backend.uninstall()
-
-    def start(self) -> None:
-        self._backend.start()
-
-    def stop(self) -> None:
-        self._backend.stop()
-
-    def restart(self) -> None:
-        self._backend.restart()
-
-    def status(self) -> dict[str, Any]:
-        return self._backend.status()
-
-    def logs(self, *, tail: int = 100) -> str:
-        return self._backend.logs(tail=tail)
-
+from voicegateway.cli.daemon.manager import DaemonManager
 
 __all__ = ["DaemonBackend", "DaemonManager"]
