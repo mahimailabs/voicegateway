@@ -126,7 +126,7 @@ def test_default_construction_loads_linux_backend_on_linux(monkeypatch) -> None:
     """Positive assertion: on linux the facade picks LinuxBackend."""
     monkeypatch.setattr("sys.platform", "linux")
 
-    from voicegateway.cli.daemon.linux import LinuxBackend
+    from voicegateway.cli.daemon.linux_daemon import LinuxBackend
 
     mgr = DaemonManager()
     assert isinstance(mgr._backend, LinuxBackend)
@@ -137,9 +137,9 @@ def test_default_construction_loads_macos_backend_on_darwin(monkeypatch) -> None
     monkeypatch.setattr("sys.platform", "darwin")
     # The MacOSBackend constructor calls os.getuid; patch so this
     # test does not depend on the runner's actual uid.
-    monkeypatch.setattr("voicegateway.cli.daemon.macos.os.getuid", lambda: 501)
+    monkeypatch.setattr("voicegateway.cli.daemon.macos_daemon.os.getuid", lambda: 501)
 
-    from voicegateway.cli.daemon.macos import MacOSBackend
+    from voicegateway.cli.daemon.macos_daemon import MacOSBackend
 
     mgr = DaemonManager()
     assert isinstance(mgr._backend, MacOSBackend)
@@ -149,7 +149,7 @@ def test_default_construction_loads_windows_backend_on_win32(monkeypatch) -> Non
     """Positive assertion: on win32 the facade picks WindowsBackend."""
     monkeypatch.setattr("sys.platform", "win32")
 
-    from voicegateway.cli.daemon.windows import WindowsBackend
+    from voicegateway.cli.daemon.windows_daemon import WindowsBackend
 
     mgr = DaemonManager()
     assert isinstance(mgr._backend, WindowsBackend)

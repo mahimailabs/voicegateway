@@ -20,11 +20,11 @@ def backend(tmp_path, monkeypatch):
     log_dir = tmp_path / "logs"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.windows.user_log_dir",
+        "voicegateway.cli.daemon.windows_daemon.user_log_dir",
         lambda *args, **kwargs: str(log_dir),
     )
 
-    from voicegateway.cli.daemon.windows import WindowsBackend
+    from voicegateway.cli.daemon.windows_daemon import WindowsBackend
 
     return WindowsBackend()
 
@@ -34,7 +34,7 @@ def fake_subprocess(monkeypatch):
     from unittest.mock import MagicMock
 
     fake = MagicMock(return_value=_ok())
-    monkeypatch.setattr("voicegateway.cli.daemon.windows.subprocess.run", fake)
+    monkeypatch.setattr("voicegateway.cli.daemon.windows_daemon.subprocess.run", fake)
     return fake
 
 
@@ -53,7 +53,7 @@ def _powershell_calls(fake) -> list[list[str]]:
 
 def test_install_uses_schtasks_first(backend, fake_subprocess, monkeypatch):
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.windows.shutil.which",
+        "voicegateway.cli.daemon.windows_daemon.shutil.which",
         lambda name: (
             "C:\\Users\\example\\.local\\bin\\voicegw.exe"
             if name in ("voicegw", "voicegw.exe")
@@ -73,7 +73,7 @@ def test_install_falls_back_to_startup_shortcut_when_schtasks_fails(
     backend, fake_subprocess, monkeypatch
 ):
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.windows.shutil.which",
+        "voicegateway.cli.daemon.windows_daemon.shutil.which",
         lambda name: (
             "C:\\Users\\example\\.local\\bin\\voicegw.exe"
             if name in ("voicegw", "voicegw.exe")
@@ -93,7 +93,7 @@ def test_install_falls_back_to_startup_shortcut_when_schtasks_fails(
 
 def test_install_raises_when_both_paths_fail(backend, fake_subprocess, monkeypatch):
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.windows.shutil.which",
+        "voicegateway.cli.daemon.windows_daemon.shutil.which",
         lambda name: (
             "C:\\Users\\example\\.local\\bin\\voicegw.exe"
             if name in ("voicegw", "voicegw.exe")
@@ -113,7 +113,7 @@ def test_install_raises_when_both_paths_fail(backend, fake_subprocess, monkeypat
 
 
 def test_install_raises_when_voicegw_not_on_path(backend, monkeypatch):
-    monkeypatch.setattr("voicegateway.cli.daemon.windows.shutil.which", lambda _: None)
+    monkeypatch.setattr("voicegateway.cli.daemon.windows_daemon.shutil.which", lambda _: None)
     with pytest.raises(RuntimeError, match="voicegw"):
         backend.install()
 
