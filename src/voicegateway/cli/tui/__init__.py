@@ -9,6 +9,17 @@ Public surface:
 - :func:`run`: launch the TUI programmatically (used by ``tui_cmd``).
 - :class:`TUIApp`: the Textual ``App`` subclass, available as
   ``voicegateway.cli.tui.TUIApp`` via lazy attribute access.
+
+Naming convention inside the subpackages:
+
+- ``screens/*_screen.py``: one file per Textual ``Screen`` subclass.
+  ``screens/focus_helpers.py`` is the one helper module (not a screen).
+- ``widgets/*_widget.py``: one file per Textual ``Widget`` subclass.
+- ``data/*_client.py``: one file per :class:`MetricsClient`
+  implementation. ``data/client_factory.py`` returns the right client
+  for a launch mode; ``data/exceptions.py`` holds shared error types.
+- ``styles/main.tcss``: cross-screen TCSS brand foundation. Per-widget
+  styling lives in each widget's ``DEFAULT_CSS``.
 """
 
 from __future__ import annotations
