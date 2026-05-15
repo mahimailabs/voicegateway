@@ -1,4 +1,4 @@
-"""Tests for ``voicegateway.middleware.router`` (REQ-VG-ROUTE-002)."""
+"""Tests for ``voicegateway.services.routing_service`` (REQ-VG-ROUTE-002)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import pytest
 from sqlalchemy import text
 
 from voicegateway.core.config import ProjectConfig, RoutingConfig
-from voicegateway.middleware import router
-from voicegateway.middleware.router import BudgetExceeded
+from voicegateway.services import routing_service as router
+from voicegateway.services.routing_service import BudgetExceeded
 from voicegateway.services.storage_service import StorageService
 
 
