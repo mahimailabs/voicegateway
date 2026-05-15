@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Final
 
 from voicegateway.inference.session.context import get_session_id
+from voicegateway.middleware.base_middleware import SessionScopedComponent
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class _SessionState:
     buffered_turns: list[TurnRow] = field(default_factory=list)
 
 
-class TurnTracker:
+class TurnTracker(SessionScopedComponent):
     """Records per-turn caller/agent speech intervals keyed by session id."""
 
     def __init__(

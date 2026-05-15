@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from voicegateway.inference.session.context import get_session_id
+from voicegateway.middleware.base_middleware import SessionScopedComponent
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class _SessionState:
     dropped_count: int = 0
 
 
-class ReplayCapture:
+class ReplayCapture(SessionScopedComponent):
     """Captures replay events for the conversation timeline."""
 
     def __init__(
