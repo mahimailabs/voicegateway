@@ -10,7 +10,7 @@ from livekit.agents.inference.llm import (
 )
 
 from voicegateway.inference.base_inference import InferenceFactory
-from voicegateway.inference.resolution import resolve_model
+from voicegateway.core.model_resolution import resolve_model
 
 
 class LLM(InferenceFactory):

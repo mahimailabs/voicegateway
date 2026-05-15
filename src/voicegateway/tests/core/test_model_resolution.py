@@ -1,10 +1,10 @@
-"""Tests for voicegateway.inference.resolution.resolve_model."""
+"""Tests for voicegateway.core.model_resolution.resolve_model."""
 
 from __future__ import annotations
 
 import pytest
 
-from voicegateway.inference.resolution import ModelResolutionError, resolve_model
+from voicegateway.core.model_resolution import ModelResolutionError, resolve_model
 
 
 class TestHappyPath:
