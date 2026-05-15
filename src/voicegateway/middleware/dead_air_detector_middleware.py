@@ -9,6 +9,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Final
 
+from voicegateway.middleware.base_middleware import PerSessionWatcher
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,7 +40,7 @@ async def _noop_callback(event: DeadAirEvent) -> None:
     )
 
 
-class DeadAirDetector:
+class DeadAirDetector(PerSessionWatcher):
     """Per-session silence watchdog."""
 
     def __init__(
