@@ -9,8 +9,19 @@ from rich.table import Table
 from voicegateway.cli._app import console
 from voicegateway.core import registry as _registry
 from voicegateway.core.constants import SMOKE_MODALITIES
-from voicegateway.inference import factory, llm_inference as llm, stt_inference as stt, tts_inference as tts
+from voicegateway.inference import (
+    factory,
+)
+from voicegateway.inference import (
+    llm_inference as llm,
+)
 from voicegateway.inference import project as project_module
+from voicegateway.inference import (
+    stt_inference as stt,
+)
+from voicegateway.inference import (
+    tts_inference as tts,
+)
 from voicegateway.inference.session.context import get_session_id
 
 
@@ -97,12 +108,8 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
     project_module.reset_project()
     project_module.set_project(project)
 
-    real_stt_create = stt.create_provider
-    real_llm_create = llm.create_provider
-    real_tts_create = tts.create_provider
-    stt.create_provider = _stub_create  # type: ignore[assignment]
-    llm.create_provider = _stub_create  # type: ignore[assignment]
-    tts.create_provider = _stub_create  # type: ignore[assignment]
+    real_create_provider = _registry.create_provider
+    _registry.create_provider = _stub_create  # type: ignore[assignment]
 
     session_id_holder: dict[str, str | None] = {"sid": None}
 
@@ -157,9 +164,7 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
                 "request row written via wrapper",
             )
     finally:
-        stt.create_provider = real_stt_create
-        llm.create_provider = real_llm_create
-        tts.create_provider = real_tts_create
+        _registry.create_provider = real_create_provider
 
     sid = get_session_id()
     session_id_holder["sid"] = sid

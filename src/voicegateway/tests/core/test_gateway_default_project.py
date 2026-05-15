@@ -5,7 +5,8 @@ from __future__ import annotations
 import yaml
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.inference import factory, project, stt_inference as stt
+from voicegateway.inference import factory, project
+from voicegateway.inference import stt_inference as stt
 from voicegateway.inference.project import get_active_project
 
 
@@ -136,7 +137,8 @@ def test_inference_falls_through_to_default_with_named_projects(tmp_path, monkey
             return True
 
     monkeypatch.setattr(
-        stt, "create_provider", lambda _name, config: _FakeProvider(config)
+        "voicegateway.core.registry.create_provider",
+        lambda _name, config: _FakeProvider(config),
     )
 
     assert get_active_project() == "default"
