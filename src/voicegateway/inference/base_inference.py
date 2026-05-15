@@ -32,8 +32,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
+from voicegateway.core import registry as _registry
 from voicegateway.core.config import ConfigError
-from voicegateway.core.registry import create_provider
 from voicegateway.inference.factory import get_gateway
 from voicegateway.inference.project import get_active_project
 from voicegateway.inference.session.context import get_or_create_session_id
@@ -131,7 +131,10 @@ class InferenceFactory(ABC):
             project=project,
         )
         cls._assert_key_resolved(provider_name, project, provider_config)
-        provider_instance = create_provider(provider_name, provider_config)
+        # Module-attribute access so tests can monkeypatch
+        # ``voicegateway.core.registry.create_provider`` without depending
+        # on the binding inside this module.
+        provider_instance = _registry.create_provider(provider_name, provider_config)
 
         plugin = cls._create_plugin(provider_instance, model_name, plugin_kwargs)
 

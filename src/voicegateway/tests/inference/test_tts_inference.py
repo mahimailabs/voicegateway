@@ -81,7 +81,7 @@ def fake_provider(monkeypatch):
         _FakeProvider.last_provider_name = provider_name
         return _FakeProvider(config)
 
-    monkeypatch.setattr(tts, "create_provider", _create)
+    monkeypatch.setattr("voicegateway.core.registry.create_provider", _create)
     return _FakeProvider
 
 

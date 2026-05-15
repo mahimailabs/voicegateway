@@ -9,17 +9,23 @@ from livekit.agents.inference.llm import (
     LLMModels,
 )
 
-from voicegateway.core.registry import create_provider
-from voicegateway.inference.factory import get_gateway
-from voicegateway.inference.project import get_active_project
+from voicegateway.inference.base_inference import InferenceFactory
 from voicegateway.inference.resolution import resolve_model
-from voicegateway.inference.session.context import get_or_create_session_id
-from voicegateway.inference.stt_inference import _assert_key_resolved, _resolve_provider_config
-from voicegateway.middleware.instrumented_provider_middleware import wrap_provider
 
 
-class LLM:
+class LLM(InferenceFactory):
     """LiveKit-plugin LLM factory backed by VoiceGateway."""
+
+    _modality = "llm"
+
+    @classmethod
+    def _create_plugin(
+        cls,
+        provider_instance: Any,
+        model_name: str,
+        plugin_kwargs: dict[str, Any],
+    ) -> Any:
+        return provider_instance.create_llm(model=model_name, **plugin_kwargs)
 
     def __new__(
         cls,
@@ -41,33 +47,15 @@ class LLM:
         else:
             provider_name, model_name = resolve_model(model)
 
-        get_or_create_session_id()
-
         plugin_kwargs: dict[str, Any] = {}
         if base_url is not None:
             plugin_kwargs["base_url"] = base_url
         if extra_kwargs is not None:
             plugin_kwargs.update(dict(extra_kwargs))
 
-        gateway = get_gateway()
-        active_project = get_active_project()
-        provider_config = _resolve_provider_config(
-            gateway=gateway,
+        return cls._build(
             provider_name=provider_name,
+            model_name=model_name,
+            plugin_kwargs=plugin_kwargs,
             api_key_override=api_key,
-            project=active_project,
-        )
-        _assert_key_resolved(provider_name, active_project, provider_config)
-        provider_instance = create_provider(provider_name, provider_config)
-
-        plugin = provider_instance.create_llm(model=model_name, **plugin_kwargs)
-
-        return wrap_provider(
-            instance=plugin,
-            modality="llm",
-            model_id=f"{provider_name}/{model_name}",
-            provider=provider_name,
-            project=active_project,
-            cost_tracker=gateway._cost_tracker,
-            storage=gateway._storage,
         )

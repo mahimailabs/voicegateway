@@ -15,64 +15,31 @@ from livekit.agents.types import (
 )
 from livekit.agents.utils import is_given
 
-from voicegateway.core.config import ConfigError
-from voicegateway.core.registry import create_provider
-from voicegateway.inference.factory import get_gateway
-from voicegateway.inference.project import get_active_project
+from voicegateway.inference.base_inference import InferenceFactory
 from voicegateway.inference.resolution import resolve_model
-from voicegateway.inference.session.context import get_or_create_session_id
-from voicegateway.middleware.instrumented_provider_middleware import wrap_provider
-
-_LOCAL_PROVIDERS = frozenset({"ollama", "whisper", "kokoro", "piper"})
 
 
-def _strip_language_suffix(model: str) -> tuple[str, str | None]:
-    """Strip a trailing ``:language`` suffix from a model string."""
-    idx = model.rfind(":")
-    if idx == -1:
-        return model, None
-    return model[:idx], model[idx + 1 :]
-
-
-def _resolve_provider_config(
-    gateway: Any,
-    provider_name: str,
-    api_key_override: str | None,
-    project: str | None = None,
-) -> dict[str, Any]:
-    """Build the provider config dict for an inference factory call."""
-    base_config = (
-        gateway.config.get_provider_config_for_project(provider_name, project) or {}
-    )
-    if api_key_override is None:
-        return dict(base_config)
-    return {**base_config, "api_key": api_key_override}
-
-
-def _assert_key_resolved(
-    provider_name: str,
-    project: str,
-    config: dict[str, Any],
-) -> None:
-    """Fail-fast preflight that verifies the API key before stream start."""
-    if provider_name in _LOCAL_PROVIDERS:
-        return
-    api_key = config.get("api_key")
-    if api_key:
-        return
-    raise ConfigError(
-        f"No API key configured for provider '{provider_name}' in "
-        f"project '{project}'. Add it to voicegw.yaml under "
-        f"projects.{project}.providers.{provider_name}.api_key, set "
-        f"the matching environment variable referenced by your YAML "
-        f"(e.g. ${{{provider_name.upper()}_API_KEY}}), or run "
-        f"`vg_add_provider(project='{project}', provider="
-        f"'{provider_name}', api_key=...)` via MCP / the dashboard."
-    )
-
-
-class STT:
+class STT(InferenceFactory):
     """LiveKit-plugin STT factory backed by VoiceGateway."""
+
+    _modality = "stt"
+
+    @classmethod
+    def _strip_suffix(cls, model: str) -> tuple[str, str | None]:
+        """Strip a trailing ``:language`` suffix from a model string."""
+        idx = model.rfind(":")
+        if idx == -1:
+            return model, None
+        return model[:idx], model[idx + 1 :]
+
+    @classmethod
+    def _create_plugin(
+        cls,
+        provider_instance: Any,
+        model_name: str,
+        plugin_kwargs: dict[str, Any],
+    ) -> Any:
+        return provider_instance.create_stt(model=model_name, **plugin_kwargs)
 
     def __new__(
         cls,
@@ -92,15 +59,13 @@ class STT:
                 "'provider/model[:language]' format"
             )
 
-        cleaned_model, parsed_language = _strip_language_suffix(model)
+        cleaned_model, parsed_language = cls._strip_suffix(model)
 
         effective_language: NotGivenOr[str] = language
         if parsed_language is not None and not is_given(effective_language):
             effective_language = parsed_language
 
         provider_name, model_name = resolve_model(cleaned_model)
-
-        get_or_create_session_id()
 
         plugin_kwargs: dict[str, Any] = {}
         if is_given(effective_language):
@@ -116,25 +81,9 @@ class STT:
         if is_given(extra_kwargs):
             plugin_kwargs.update(dict(extra_kwargs))
 
-        gateway = get_gateway()
-        project = get_active_project()
-        provider_config = _resolve_provider_config(
-            gateway=gateway,
+        return cls._build(
             provider_name=provider_name,
+            model_name=model_name,
+            plugin_kwargs=plugin_kwargs,
             api_key_override=api_key if is_given(api_key) else None,
-            project=project,
-        )
-        _assert_key_resolved(provider_name, project, provider_config)
-        provider_instance = create_provider(provider_name, provider_config)
-
-        plugin = provider_instance.create_stt(model=model_name, **plugin_kwargs)
-
-        return wrap_provider(
-            instance=plugin,
-            modality="stt",
-            model_id=f"{provider_name}/{model_name}",
-            provider=provider_name,
-            project=project,
-            cost_tracker=gateway._cost_tracker,
-            storage=gateway._storage,
         )

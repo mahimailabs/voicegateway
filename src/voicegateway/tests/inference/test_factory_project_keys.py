@@ -70,9 +70,7 @@ def fake_providers(monkeypatch):
     def _create(_provider_name: str, config: dict[str, Any]) -> _FakeProvider:
         return _FakeProvider(config)
 
-    monkeypatch.setattr(stt, "create_provider", _create)
-    monkeypatch.setattr(llm, "create_provider", _create)
-    monkeypatch.setattr(tts, "create_provider", _create)
+    monkeypatch.setattr("voicegateway.core.registry.create_provider", _create)
     return _FakeProvider
 
 
