@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from voicegateway.core.app_wiring import attach_layered_stack
 from voicegateway.core.auth import load_api_keys, resolve_cors_origins
+from voicegateway.server.dashboard import mount_dashboard
 from voicegateway.server.mcp.transport import mount_sse
 from voicegateway.server.routes import api_router, system_router
 
@@ -26,19 +27,6 @@ if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
 
 logger = logging.getLogger(__name__)
-
-
-def _mount_dashboard(app: FastAPI, gateway: Gateway) -> None:
-    """Attach the dashboard FastAPI sub-app onto the main app's routes."""
-    try:
-        import dashboard.api.main as dash_mod
-    except ImportError:
-        logger.info("Dashboard not installed, skipping")
-        return
-    dash_mod._gateway = gateway
-    for route in dash_mod.app.routes:
-        app.routes.append(route)
-    logger.info("Dashboard API mounted")
 
 
 def build_app(
@@ -92,7 +80,7 @@ def build_app(
     if enable_mcp_sse:
         mount_sse(app, gateway)
     if enable_dashboard:
-        _mount_dashboard(app, gateway)
+        mount_dashboard(app, gateway)
 
     return app
 
