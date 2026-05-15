@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 
 import typer
 
 from voicegateway.cli._app import app, console
-from voicegateway.utils.cli._shared import _load_gateway
+from voicegateway.cli.base_cli import BaseCli
 from voicegateway.utils.cli.tenant import (
     _format_relative,
     _get_tenant_async,
     _list_tenants_async,
 )
+
+_cli = BaseCli()
 
 tenant_app = typer.Typer(
     name="tenant",
@@ -39,15 +40,11 @@ def list_cmd(
     ),
 ) -> None:
     """List tenants ordered by most-recently-active."""
-    gw = _load_gateway(config)
-    if gw.storage is None:
-        console.print(
-            "[red]Storage backend not configured (cost_tracking.db_path).[/red]"
-        )
-        raise typer.Exit(1)
+    gw = _cli.require_gateway(config)
+    storage = _cli.require_storage(gw)
 
-    rows, unattributed = asyncio.run(
-        _list_tenants_async(gw.storage, limit=limit, query=query),
+    rows, unattributed = _cli.async_run(
+        _list_tenants_async(storage, limit=limit, query=query),
     )
 
     if json_output:
@@ -115,20 +112,14 @@ def show_cmd(
 ) -> None:
     """Print aggregates for a single tenant. Exits 1 when unseen."""
     if not tenant_id.strip():
-        console.print("[red]tenant_id is required.[/red]")
-        raise typer.Exit(2)
+        _cli.fail("tenant_id is required.", code=2)
 
-    gw = _load_gateway(config)
-    if gw.storage is None:
-        console.print(
-            "[red]Storage backend not configured (cost_tracking.db_path).[/red]"
-        )
-        raise typer.Exit(1)
+    gw = _cli.require_gateway(config)
+    storage = _cli.require_storage(gw)
 
-    row = asyncio.run(_get_tenant_async(gw.storage, tenant_id))
+    row = _cli.async_run(_get_tenant_async(storage, tenant_id))
     if row is None:
-        console.print(f"[red]Tenant {tenant_id!r} has no sessions.[/red]")
-        raise typer.Exit(1)
+        _cli.fail(f"Tenant {tenant_id!r} has no sessions.")
 
     if json_output:
         typer.echo(

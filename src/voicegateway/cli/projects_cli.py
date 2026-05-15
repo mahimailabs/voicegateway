@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import typer
 from rich.panel import Panel
 from rich.table import Table
 
 from voicegateway.cli._app import app, console
-from voicegateway.utils.cli._shared import _load_gateway
+from voicegateway.cli.base_cli import BaseCli
+
+_cli = BaseCli()
 
 
 @app.command(name="projects")
@@ -17,7 +17,7 @@ def projects_cmd(
     config: str = typer.Option(None, "--config", "-c", help="Path to voicegw.yaml"),
 ) -> None:
     """List all configured projects."""
-    gw = _load_gateway(config)
+    gw = _cli.require_gateway(config)
 
     if not gw.config.projects:
         console.print(
@@ -46,12 +46,11 @@ def project_cmd(
     config: str = typer.Option(None, "--config", "-c", help="Path to voicegw.yaml"),
 ) -> None:
     """Show details for a single project."""
-    gw = _load_gateway(config)
+    gw = _cli.require_gateway(config)
     pcfg = gw.config.get_project(project_id)
 
     if pcfg is None:
-        console.print(f"[red]Project not found: {project_id}[/red]")
-        raise typer.Exit(1)
+        _cli.fail(f"Project not found: {project_id}")
 
     body = (
         f"[bold]{pcfg.name}[/bold]\n"
@@ -63,7 +62,7 @@ def project_cmd(
     console.print(Panel(body, title=f"Project: {project_id}", border_style="cyan"))
 
     if gw.storage is not None:
-        today = asyncio.run(gw.storage.get_cost_summary("today", project=project_id))
+        today = _cli.async_run(gw.storage.get_cost_summary("today", project=project_id))
         console.print(
             f"\n[bold]Today[/bold]: ${today['total']:.4f} "
             f"({sum(v['requests'] for v in today['by_provider'].values())} requests)"
