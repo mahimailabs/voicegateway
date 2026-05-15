@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Final
 
 from voicegateway.inference.session.context import get_session_id
+from voicegateway.middleware.base_middleware import SessionScopedComponent
 from voicegateway.schemas.state_snapshot_schema import StateSnapshot
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ async def _noop_callback(snapshot: dict[str, Any]) -> None:
     )
 
 
-class StateSnapshotter:
+class StateSnapshotter(SessionScopedComponent):
     """Captures conversation-state snapshots with a per-session rate cap."""
 
     def __init__(
@@ -107,6 +108,14 @@ class StateSnapshotter:
     def reset_session(self, session_id: str) -> None:
         """Drop the last-snapshot timestamp for a session."""
         self._last_snapshot_ms.pop(session_id, None)
+
+    async def close_session(self, session_id: str) -> None:
+        """Drop the session's last-snapshot timestamp. SessionScopedComponent hook."""
+        self.reset_session(session_id)
+
+    def active_sessions(self) -> list[str]:
+        """Return session ids that have emitted at least one snapshot."""
+        return list(self._last_snapshot_ms)
 
     async def _emit(
         self,
