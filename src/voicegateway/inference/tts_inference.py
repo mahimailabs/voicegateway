@@ -16,7 +16,7 @@ from livekit.agents.types import (
 from livekit.agents.utils import is_given
 
 from voicegateway.inference.base_inference import InferenceFactory
-from voicegateway.inference.resolution import resolve_model
+from voicegateway.core.model_resolution import resolve_model
 
 
 class TTS(InferenceFactory):

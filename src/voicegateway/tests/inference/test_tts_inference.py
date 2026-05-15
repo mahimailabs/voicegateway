@@ -11,7 +11,7 @@ import yaml
 
 from voicegateway.core import gateway_factory as factory
 from voicegateway.inference import tts_inference as tts
-from voicegateway.inference.resolution import ModelResolutionError
+from voicegateway.core.model_resolution import ModelResolutionError
 from voicegateway.inference.session.context import get_session_id
 
 # ---------------------------------------------------------------------------
