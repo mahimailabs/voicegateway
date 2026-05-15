@@ -6,9 +6,9 @@ import yaml
 
 from voicegateway.core.gateway import Gateway
 from voicegateway.core import gateway_factory as factory
-from voicegateway.inference import project
+from voicegateway.core import active_project as project
 from voicegateway.inference import stt_inference as stt
-from voicegateway.inference.project import get_active_project
+from voicegateway.core.active_project import get_active_project
 
 
 def _write_config(tmp_path, **overrides):

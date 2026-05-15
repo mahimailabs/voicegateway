@@ -9,7 +9,8 @@ import yaml
 
 from voicegateway.core.config import ConfigError
 from voicegateway.core import gateway_factory as factory
-from voicegateway.inference import llm_inference as llm, project, stt_inference as stt, tts_inference as tts
+from voicegateway.core import active_project as project
+from voicegateway.inference import llm_inference as llm, stt_inference as stt, tts_inference as tts
 
 
 class _LkShapedStub:

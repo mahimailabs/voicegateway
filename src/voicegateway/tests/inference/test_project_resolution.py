@@ -9,8 +9,8 @@ import pytest
 import yaml
 
 from voicegateway.core import gateway_factory as factory
-from voicegateway.inference import project
-from voicegateway.inference.project import (
+from voicegateway.core import active_project as project
+from voicegateway.core.active_project import (
     get_active_project,
     reset_project,
     set_project,
