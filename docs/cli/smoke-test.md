@@ -1,14 +1,14 @@
 # `voicegw smoke-test`
 
-Validate the v0.0.5 inference pipeline end-to-end without spinning up a LiveKit server. Use this as a pre-deploy check after touching `voicegw.yaml`, after a key rotation, or when triaging a "the dashboard says zero costs" report.
+Validate the inference pipeline end-to-end without spinning up a LiveKit server. Use this as a pre-deploy check after touching `voicegw.yaml`, after a key rotation, or when triaging a "the dashboard says zero costs" report.
 
 ## What it checks
 
-1. **Config** — `voicegw.yaml` parses, cost tracking is enabled (smoke-test needs SQLite to verify storage writes).
-2. **Active project** — resolves the same way the inference module does (`--project` flag > `default_project` > first non-default project > `default`).
-3. **Inference factories** — for each modality with a configured model and provider key, `voicegateway.inference.STT/LLM/TTS` constructs cleanly. The LiveKit plugin layer is stubbed so the run does not hit any provider API.
-4. **Storage path** — the wrapped instance's `_log_request` writes a row to the `requests` table.
-5. **Session correlation** — all three wrappers share one `session_id`, the `sessions` row aggregates `modalities`, `started_at`, `ended_at`, `total_cost_usd`, and `request_count`.
+1. **Config**: `voicegw.yaml` parses, cost tracking is enabled (smoke-test needs SQLite to verify storage writes).
+2. **Active project**: resolves the same way the inference module does (`--project` flag > `default_project` > first non-default project > `default`).
+3. **Inference factories**: for each modality with a configured model and provider key, `voicegateway.inference.STT/LLM/TTS` constructs cleanly. The LiveKit plugin layer is stubbed so the run does not hit any provider API.
+4. **Storage path**: the wrapped instance's `_log_request` writes a row to the `requests` table.
+5. **Session correlation**: all three wrappers share one `session_id`, the `sessions` row aggregates `modalities`, `started_at`, `ended_at`, `total_cost_usd`, and `request_count`.
 
 If any check fails, the command exits with status 1 and the report names the failed checks. On success it exits 0 with the message:
 

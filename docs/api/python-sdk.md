@@ -1,6 +1,9 @@
 # Python SDK Reference
 
-VoiceGateway exposes a single public Python surface as of v0.0.5: the `voicegateway.inference` module, a drop-in mirror of `livekit.agents.inference`. New agent code uses it; existing LiveKit Cloud Inference code migrates with one import-line change.
+VoiceGateway exposes one public Python surface: the
+`voicegateway.inference` module, a drop-in mirror of
+`livekit.agents.inference`. New agent code uses it; existing LiveKit
+Cloud Inference code switches over with one import-line change.
 
 Cost queries, project management, latency stats, and request logs live outside the Python SDK. Use the [CLI](/cli/), the [HTTP API](/api/http-api), the [dashboard](/), or the [MCP tools](/mcp/) for those.
 
@@ -46,7 +49,7 @@ stt = inference.STT("deepgram/nova-3:en")
 # Trailing :en parses as the language (mirrors LK STT).
 ```
 
-The `model` string parses as `provider/model[:language]`. Provider names are validated against the eleven supported types (`openai`, `deepgram`, `cartesia`, `anthropic`, `groq`, `elevenlabs`, `assemblyai`, `ollama`, `whisper`, `kokoro`, `piper`). The `api_key` kwarg, when given, overrides the project's resolved key for this one instance — useful for testing.
+The `model` string parses as `provider/model[:language]`. Provider names are validated against the eleven supported types (`openai`, `deepgram`, `cartesia`, `anthropic`, `groq`, `elevenlabs`, `assemblyai`, `ollama`, `whisper`, `kokoro`, `piper`). The `api_key` kwarg, when given, overrides the project's resolved key for this one instance (useful for testing).
 
 `api_secret`, `fallback`, and `conn_options` are accepted for drop-in compatibility but emit a `UserWarning`; v0.0.6+ will honor `fallback`.
 
@@ -107,7 +110,7 @@ tts = inference.TTS("cartesia/sonic-3:my-voice-id")
 tts = inference.TTS("cartesia/sonic-3", voice="my-voice-id")
 ```
 
-Same shape as STT, plus a `voice` kwarg. The trailing colon-suffix in the model string parses as voice (NOT language) — that is the semantic asymmetry between STT and TTS that LiveKit defines.
+Same shape as STT, plus a `voice` kwarg. The trailing colon-suffix in the model string parses as voice (NOT language). That is the semantic asymmetry between STT and TTS that LiveKit defines.
 
 ## Project routing
 

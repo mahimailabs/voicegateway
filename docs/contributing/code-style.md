@@ -108,7 +108,7 @@ def create_provider(provider_name: str, config: dict[str, Any]) -> BaseProvider:
 
     Args:
         provider_name: Name of the provider (e.g., "openai", "deepgram").
-        config: Provider configuration dict from voicegateway.yaml.
+        config: Provider configuration dict from voicegw.yaml.
 
     Returns:
         Initialized provider instance.

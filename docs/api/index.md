@@ -8,12 +8,13 @@ The **`voicegateway.inference` module** is the public Python surface. It is a dr
 
 ```python
 from livekit.agents import AgentSession
-from voicegateway import inference
+
+from voicegateway.inference import STT, LLM, TTS
 
 session = AgentSession(
-    stt=inference.STT("deepgram/nova-3"),
-    llm=inference.LLM("openai/gpt-4o-mini"),
-    tts=inference.TTS("cartesia/sonic-3"),
+    stt=STT("deepgram/nova-3"),
+    llm=LLM("openai/gpt-4.1-mini"),
+    tts=TTS("cartesia/sonic-3"),
 )
 ```
 
@@ -36,11 +37,16 @@ Best for: dashboards, monitoring, CI/CD pipelines, multi-language teams.
 
 ## Dashboard API
 
-The **Dashboard API** is a separate FastAPI application that runs on port 9090 (default) via `voicegw dashboard`. It serves the React frontend and exposes a smaller set of read-only `/api/*` endpoints optimized for the dashboard UI. These endpoints aggregate data slightly differently from the HTTP API (e.g., `/api/overview` combines multiple queries into a single response).
+The **dashboard API** is mounted by the daemon (`voicegw serve`)
+under the `/api/` prefix on the same port as the HTTP API and the
+React SPA. It exposes a smaller set of read-only `/api/*` endpoints
+optimised for the dashboard UI. These endpoints aggregate data
+slightly differently from the HTTP API (for example, `/api/overview`
+combines multiple queries into a single response).
 
 ```bash
-curl http://localhost:9090/api/overview
-curl http://localhost:9090/api/costs?period=today
+curl http://localhost:8080/api/overview
+curl http://localhost:8080/api/costs?period=today
 ```
 
 Best for: the built-in web dashboard (consumed automatically).
@@ -54,5 +60,5 @@ Best for: the built-in web dashboard (consumed automatically).
 | Route voice AI requests in Python | Python SDK |
 | Manage providers/models/projects remotely | HTTP API |
 | Build a custom dashboard or integrate with monitoring | HTTP API |
-| Use the built-in web UI | Dashboard API (automatic) |
+| Use the built-in web UI | Dashboard API (automatic, served by the daemon) |
 | Integrate with AI coding agents | [MCP server](/mcp/) |

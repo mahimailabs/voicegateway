@@ -1,11 +1,11 @@
-# Agency quickstart (v0.5.0)
+# Agency quickstart
 
-VoiceGateway v0.5.0 ships the agency rung of the buyer ladder: cross-modality routing and per-project white-label branding. This guide walks an agency operator through provisioning a downstream customer project end-to-end.
+VoiceGateway supports the agency rung of the buyer ladder: cross-modality routing and per-project white-label branding. This guide walks an agency operator through provisioning a downstream customer project end-to-end.
 
 ## Prerequisites
 
-- VoiceGateway v0.5.0 or later (`voicegw --version`).
-- Dashboard running: `voicegw dashboard` (defaults to `127.0.0.1:9090`).
+- VoiceGateway installed (`voicegw --version`).
+- Daemon running (started by `voicegw onboard` or `voicegw serve`). The daemon serves the dashboard at the daemon URL (default `http://127.0.0.1:8080`).
 - `voicegw.yaml` configured with at least one project (operators usually have a `default` plus one per customer).
 
 ## 1. Configure routing rosters and budget
@@ -46,7 +46,7 @@ voicegw route show acme
 #   llm   groq, openai
 #   tts   cartesia, elevenlabs
 #
-# (no observations yet — router will fall back to provider_baselines.json)
+# (no observations yet; router will fall back to provider_baselines.json)
 ```
 
 ```bash
@@ -69,7 +69,7 @@ After production traffic accrues, the rollup worker (every 15 minutes) populates
 
 ## 3. Upload the customer's logo and brand
 
-Open the dashboard at `http://127.0.0.1:9090/projects`, find the `acme` card, click **Brand**, and fill the modal:
+Open the dashboard at `http://127.0.0.1:8080/projects` (the daemon's serve port), find the `acme` card, click **Brand**, and fill the modal:
 
 - **Product name**: e.g. `AcmeVoice` (up to 64 chars; appears in the sidebar in place of "VoiceGateway").
 - **Accent color**: `#FF6633` or any valid hex (the dashboard offers a native color picker too).

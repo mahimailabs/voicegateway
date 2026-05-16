@@ -12,7 +12,7 @@ The command is a signpost to the graphical dashboard timeline. It does not rende
 
 | Option | Description |
 |---|---|
-| `--dashboard-url` | Base URL of the dashboard. Defaults to `http://127.0.0.1:9090`. |
+| `--dashboard-url` | Base URL of the dashboard. Defaults to `http://127.0.0.1:8080` (the daemon's serve port). |
 
 ## Examples
 

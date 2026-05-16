@@ -126,7 +126,7 @@ Vim navigation is consistent across all four tabs.
 | Header chip | none | `[Local mode]` on warning background |
 | Footer staleness suffix | live, no suffix | `(as of X ago)` from SQLite mtime |
 | Write actions (`t` shortcut) | live test against upstream | surfaces `LocalModeUnsupportedError` as warning notification |
-| Daemon required | yes (preflight enforced) | no — works when the daemon is down |
+| Daemon required | yes (preflight enforced) | no (works when the daemon is down) |
 | Typical use | daily monitoring during development | postmortem after a daemon crash, audit on a stranger's machine |
 
 ## Examples
