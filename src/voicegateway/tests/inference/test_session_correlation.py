@@ -10,7 +10,9 @@ import pytest
 import yaml
 
 from voicegateway.core import gateway_factory as factory
-from voicegateway.inference import llm_inference as llm, stt_inference as stt, tts_inference as tts
+from voicegateway.inference import llm_inference as llm
+from voicegateway.inference import stt_inference as stt
+from voicegateway.inference import tts_inference as tts
 from voicegateway.inference.session.context import get_session_id
 
 # ---------------------------------------------------------------------------

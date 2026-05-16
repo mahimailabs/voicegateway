@@ -9,8 +9,8 @@ from livekit.agents.inference.llm import (
     LLMModels,
 )
 
-from voicegateway.inference.base_inference import InferenceFactory
 from voicegateway.core.model_resolution import resolve_model
+from voicegateway.inference.base_inference import InferenceFactory
 
 
 class LLM(InferenceFactory):

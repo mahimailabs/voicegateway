@@ -22,7 +22,9 @@ class LocalClient:
     ) -> None:
         self._db_path = Path(db_path)
         self.poll_seconds = poll_seconds
-        self._storage = storage if storage is not None else StorageService(self._db_path)
+        self._storage = (
+            storage if storage is not None else StorageService(self._db_path)
+        )
 
     # -- lifecycle ---------------------------------------------------
 

@@ -11,8 +11,8 @@ import yaml
 from livekit.agents.types import NOT_GIVEN
 
 from voicegateway.core import gateway_factory as factory
-from voicegateway.inference import stt_inference as stt
 from voicegateway.core.model_resolution import ModelResolutionError
+from voicegateway.inference import stt_inference as stt
 from voicegateway.inference.session.context import get_session_id
 
 # ---------------------------------------------------------------------------

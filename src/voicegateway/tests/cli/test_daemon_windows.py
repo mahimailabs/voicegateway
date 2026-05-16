@@ -113,7 +113,9 @@ def test_install_raises_when_both_paths_fail(backend, fake_subprocess, monkeypat
 
 
 def test_install_raises_when_voicegw_not_on_path(backend, monkeypatch):
-    monkeypatch.setattr("voicegateway.cli.daemon.windows_daemon.shutil.which", lambda _: None)
+    monkeypatch.setattr(
+        "voicegateway.cli.daemon.windows_daemon.shutil.which", lambda _: None
+    )
     with pytest.raises(RuntimeError, match="voicegw"):
         backend.install()
 

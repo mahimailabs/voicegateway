@@ -15,8 +15,8 @@ from livekit.agents.types import (
 )
 from livekit.agents.utils import is_given
 
-from voicegateway.inference.base_inference import InferenceFactory
 from voicegateway.core.model_resolution import resolve_model
+from voicegateway.inference.base_inference import InferenceFactory
 
 
 class STT(InferenceFactory):
