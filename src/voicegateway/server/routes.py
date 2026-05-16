@@ -42,6 +42,15 @@ from voicegateway.server.api.dashboard import (
     health as dashboard_health,
 )
 from voicegateway.server.api.dashboard import (
+    metrics as dashboard_metrics,
+)
+from voicegateway.server.api.dashboard import (
+    projects as dashboard_projects,
+)
+from voicegateway.server.api.dashboard import (
+    sessions as dashboard_sessions,
+)
+from voicegateway.server.api.dashboard import (
     status as dashboard_status,
 )
 
@@ -66,6 +75,9 @@ dashboard_router.include_router(dashboard_health.router)
 dashboard_router.include_router(dashboard_auth_status.router)
 dashboard_router.include_router(dashboard_status.router)
 dashboard_router.include_router(dashboard_costs.router)
+dashboard_router.include_router(dashboard_projects.router)
+dashboard_router.include_router(dashboard_sessions.router)
+dashboard_router.include_router(dashboard_metrics.router)
 
 
 __all__ = ["api_router", "dashboard_router", "system_router"]

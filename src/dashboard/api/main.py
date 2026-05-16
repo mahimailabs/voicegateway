@@ -12,13 +12,9 @@ from fastapi import Body, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import ValidationError
 from sqlalchemy import text
 
 from voicegateway.core.auth import resolve_cors_origins
-from voicegateway.repository import (
-    dead_air_repository as dead_air,
-)
 from voicegateway.repository import (
     guardrail_events_repository as guardrail_events,
 )
@@ -32,16 +28,11 @@ from voicegateway.repository import (
     tenants_repository as tenants,
 )
 from voicegateway.repository import (
-    turns_repository as turns,
-)
-from voicegateway.repository import (
     virtual_keys_repository as virtual_keys,
 )
 from voicegateway.schemas.guardrail_policy_schema import (
     ACTIVE_GUARDRAIL_ACTIONS,
     GUARDRAIL_CATEGORIES,
-    GUARDRAIL_CATEGORY_DESCRIPTIONS,
-    GuardrailPolicy,
 )
 
 if TYPE_CHECKING:
@@ -118,118 +109,6 @@ def configure(gateway: Gateway) -> None:
         allow_headers=["*"],
     )
     _cors_configured = True
-
-
-@app.get("/api/projects")
-async def get_projects() -> dict:
-    """List configured projects with today's stats."""
-    gw = _get_gateway()
-    projects = gw.list_projects()
-    stats = {}
-    if gw.storage is not None:
-        for p in projects:
-            stats[p["id"]] = await gw.storage.get_project_stats(p["id"])
-    return {"projects": projects, "stats": stats}
-
-
-@app.get("/api/projects/{project_id}/guardrails")
-async def get_project_guardrails(project_id: str) -> dict[str, Any]:
-    """Return the current guardrail policy for a project."""
-    gw = _get_gateway()
-    pcfg = gw.config.get_project(project_id)
-    if pcfg is None:
-        raise HTTPException(status_code=404, detail=f"Project {project_id!r} not found")
-    return {
-        "project_id": project_id,
-        "policy": pcfg.guardrails.to_storage_dict(),
-        "categories": [
-            {"id": category, "description": description}
-            for category, description in GUARDRAIL_CATEGORY_DESCRIPTIONS.items()
-        ],
-    }
-
-
-@app.post("/api/projects/{project_id}/guardrails")
-async def update_project_guardrails(
-    project_id: str, body: dict[str, Any] = Body(...)
-) -> dict[str, Any]:
-    """Persist a project's v0.6.0 guardrail policy overlay."""
-    gw = _get_gateway()
-    if gw.storage is None:
-        raise HTTPException(status_code=503, detail="Storage not configured")
-    pcfg = gw.config.get_project(project_id)
-    if pcfg is None:
-        raise HTTPException(status_code=404, detail=f"Project {project_id!r} not found")
-    try:
-        policy = GuardrailPolicy.from_raw(body)
-    except (ValidationError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    await gw.storage.set_managed_project_guardrails(
-        project_id=project_id,
-        policy=policy.to_storage_dict(),
-        name=pcfg.name,
-        description=pcfg.description,
-        daily_budget=pcfg.daily_budget,
-        budget_action=pcfg.budget_action,
-        default_stack=pcfg.default_stack,
-        tags=list(pcfg.tags),
-    )
-    await gw.storage.log_audit_event(
-        "project", project_id, "guardrails_update", policy.to_storage_dict(), "api"
-    )
-    await gw.refresh_config()
-    refreshed = gw.config.get_project(project_id)
-    return {
-        "project_id": project_id,
-        "policy": (
-            refreshed.guardrails.to_storage_dict()
-            if refreshed is not None
-            else policy.to_storage_dict()
-        ),
-    }
-
-
-@app.get("/api/sessions")
-async def get_sessions(
-    limit: int = Query(100, ge=1, le=1000),
-    project: str | None = Query(None),
-    tenant: str | None = Query(None),
-    order_by: str = Query(
-        "started_at_desc",
-        pattern="^(started_at_desc|started_at_asc|cost_desc|cost_asc)$",
-    ),
-) -> list[dict[str, Any]]:
-    """Return recent voice sessions, ordered per ``order_by``.
-
-    Mirror of the /v1/sessions endpoint so the dashboard frontend
-    can stay on a single origin in dev mode (the Vite proxy only
-    forwards /api). Storage method is shared. ``tenant`` (v0.4.0)
-    scopes the result; empty string targets the unattributed bucket.
-    """
-    gw = _get_gateway()
-    if gw.storage is None:
-        return []
-    return await gw.storage.list_sessions(
-        limit=limit, project=project, order_by=order_by, tenant=tenant
-    )
-
-
-@app.get("/api/sessions/{session_id}")
-async def get_session_detail(session_id: str) -> dict[str, Any]:
-    """Return one session by id with per-modality breakdown.
-
-    Mirror of /v1/sessions/{id}: returns the session row plus the
-    ``by_modality`` and ``providers`` fields the storage method
-    computes via a join on the requests table. 404 when no row
-    matches.
-    """
-    gw = _get_gateway()
-    if gw.storage is None:
-        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
-    row = await gw.storage.get_session(session_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
-    return row
 
 
 @app.get("/api/guardrails/events")
@@ -310,170 +189,6 @@ async def get_guardrail_aggregate(
             "tenant": tenant,
             "category": category,
         },
-    }
-
-
-# ----------------------------------------------------------------------
-# v0.2.0 voice-conversation metrics (REQ-VG-METRICS-001..006)
-#
-# Three handlers. The Foundry spelled the paths as `/v1/metrics` etc., but
-# the dashboard's convention is `/api/*` (see `/api/sessions/{id}` above,
-# which docs itself as the dashboard mirror of the main server's
-# `/v1/sessions/{id}`). Keeping the metrics paths under `/api/*` matches
-# the FE expectation; the main server may publish a parallel `/v1/metrics`
-# in a later iteration if SDK consumers need it.
-# ----------------------------------------------------------------------
-
-
-@app.get("/api/metrics")
-async def get_metrics_summary(
-    project: str | None = Query(None),
-    days: int = Query(7, ge=1, le=365),
-    tenant: str | None = Query(None),
-) -> dict[str, Any]:
-    """Aggregated voice-conversation metrics for the filter window.
-
-    Filter:
-
-    - ``project``: optional project name.
-    - ``days``: trailing window from now (default 7, matches the Costs
-      page default and Foundry Open Question 5's locked value).
-
-    Aggregation is over the ``sessions`` rows in the window that carry
-    measured v0.2.0 columns (REQ-VG-METRICS-006 graceful handling):
-    pre-v0.2.0 sessions with NULL aggregates are counted in
-    ``session_count`` but excluded from each metric average.
-
-    The dead-air event count is filtered by session id (the events
-    table's ``started_at_ms`` is monotonic-clock and cannot be
-    correlated to wall-clock windows without a join through sessions).
-    """
-    gw = _get_gateway()
-    if gw.storage is None:
-        raise HTTPException(status_code=503, detail="Storage not configured")
-
-    until = datetime.now(UTC)
-    since = until - timedelta(days=days)
-    since_iso = since.isoformat()
-    until_iso = until.isoformat()
-
-    await gw.storage._ensure_initialized()
-    async with gw.storage._conn.session() as db:
-        where_clauses = ["started_at >= :since", "started_at < :until"]
-        params: dict[str, Any] = {"since": since_iso, "until": until_iso}
-        if project:
-            where_clauses.append("project = :project")
-            params["project"] = project
-        if tenant is not None:
-            if tenant == "":
-                where_clauses.append("tenant_id IS NULL")
-            else:
-                where_clauses.append("tenant_id = :tenant")
-                params["tenant"] = tenant
-        where = " AND ".join(where_clauses)
-        result = await db.execute(
-            text(
-                f"""SELECT id,
-                           talk_time_seconds,
-                           per_minute_cost_usd,
-                           response_speed_p50_ms,
-                           response_speed_p95_ms,
-                           talk_over_rate
-                      FROM sessions
-                     WHERE {where}"""
-            ),
-            params,
-        )
-        rows = list(result)
-
-        session_count = len(rows)
-        measured_count = sum(1 for r in rows if r[2] is not None)
-
-        def _avg_col(idx: int) -> float | None:
-            vals = [float(r[idx]) for r in rows if r[idx] is not None]
-            if not vals:
-                return None
-            return sum(vals) / len(vals)
-
-        per_minute_cost_avg = _avg_col(2)
-        response_speed_p50_avg = _avg_col(3)
-        response_speed_p95_avg = _avg_col(4)
-        talk_over_rate_avg = _avg_col(5)
-
-        # Dead-air count joined through session_id.
-        session_ids = [r[0] for r in rows]
-        if session_ids:
-            id_params = {f"sid_{i}": sid for i, sid in enumerate(session_ids)}
-            placeholders = ",".join(f":{name}" for name in id_params)
-            da_result = await db.execute(
-                text(
-                    f"SELECT COUNT(*) FROM dead_air_events "
-                    f"WHERE session_id IN ({placeholders})"
-                ),
-                id_params,
-            )
-            da_row = da_result.first()
-            dead_air_count = int(da_row[0]) if da_row else 0
-        else:
-            dead_air_count = 0
-
-        return {
-            "window": {
-                "days": days,
-                "since": since_iso,
-                "until": until_iso,
-            },
-            "filter": {"project": project, "tenant": tenant},
-            "session_count": session_count,
-            "measured_session_count": measured_count,
-            "per_minute_cost_usd_avg": per_minute_cost_avg,
-            "response_speed_ms": {
-                "p50": response_speed_p50_avg,
-                "p95": response_speed_p95_avg,
-            },
-            "talk_over_rate": talk_over_rate_avg,
-            "dead_air_event_count": dead_air_count,
-        }
-
-
-@app.get("/api/sessions/{session_id}/turns")
-async def get_session_turns(session_id: str) -> dict[str, Any]:
-    """Return ordered per-turn rows for a session (REQ-VG-METRICS-002).
-
-    Used by the Metrics page's session-drill-down (T13). The shape
-    mirrors the ``TurnRow`` dataclass; ``agent_speak_*`` and
-    ``response_speed_ms`` are null when the agent never spoke for that
-    turn (T02 contract).
-    """
-    gw = _get_gateway()
-    if gw.storage is None:
-        raise HTTPException(status_code=503, detail="Storage not configured")
-    await gw.storage._ensure_initialized()
-    async with gw.storage._conn.session() as db:
-        rows = await turns.list_turns_by_session(db, session_id)
-    return {
-        "session_id": session_id,
-        "turns": [dataclasses.asdict(t) for t in rows],
-    }
-
-
-@app.get("/api/sessions/{session_id}/dead_air")
-async def get_session_dead_air(session_id: str) -> dict[str, Any]:
-    """Return dead-air events for a session (REQ-VG-METRICS-004).
-
-    Used by the Metrics page's DeadAirList drill-down (T14). Events
-    are ordered by ``started_at_ms`` ASC, matching the chronological
-    rendering the FE expects.
-    """
-    gw = _get_gateway()
-    if gw.storage is None:
-        raise HTTPException(status_code=503, detail="Storage not configured")
-    await gw.storage._ensure_initialized()
-    async with gw.storage._conn.session() as db:
-        events = await dead_air.list_events_by_session(db, session_id)
-    return {
-        "session_id": session_id,
-        "events": [dataclasses.asdict(e) for e in events],
     }
 
 

@@ -228,23 +228,19 @@ async def test_api_sessions_returns_empty_when_storage_disabled(
     )
     monkeypatch.delenv("VOICEGW_DB_PATH", raising=False)
 
-    import dashboard.api.main as dash_module
     from voicegateway.core.gateway import Gateway
 
     gw = Gateway(config_path=str(cfg_path))
     assert gw.storage is None
-    dash_module._gateway = gw
-    transport = ASGITransport(app=dash_module.app)
-    try:
-        async with AsyncClient(transport=transport, base_url="http://test") as c:
-            resp = await c.get("/api/sessions")
-            assert resp.status_code == 200
-            assert resp.json() == []
+    app = build_app(gw, enable_mcp_sse=False, enable_dashboard=True)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        resp = await c.get("/api/sessions")
+        assert resp.status_code == 200
+        assert resp.json() == []
 
-            resp = await c.get("/api/sessions/anything")
-            assert resp.status_code == 404
-    finally:
-        dash_module._gateway = None
+        resp = await c.get("/api/sessions/anything")
+        assert resp.status_code == 404
 
 
 async def test_api_latency(client):
