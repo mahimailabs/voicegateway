@@ -36,6 +36,9 @@ from voicegateway.server.api.dashboard import (
     auth_status as dashboard_auth_status,
 )
 from voicegateway.server.api.dashboard import (
+    branding as dashboard_branding,
+)
+from voicegateway.server.api.dashboard import (
     costs as dashboard_costs,
 )
 from voicegateway.server.api.dashboard import (
@@ -102,6 +105,7 @@ dashboard_router.include_router(dashboard_providers_by_project.router)
 dashboard_router.include_router(dashboard_tenants.router)
 dashboard_router.include_router(dashboard_virtual_keys.router)
 dashboard_router.include_router(dashboard_routing.router)
+dashboard_router.include_router(dashboard_branding.router)
 
 
 __all__ = ["api_router", "dashboard_router", "system_router"]
