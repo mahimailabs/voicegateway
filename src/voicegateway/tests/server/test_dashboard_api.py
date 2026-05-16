@@ -1,9 +1,20 @@
-"""Tests for dashboard/api/main.py endpoints."""
+"""Tests for the dashboard ``/api/*`` endpoints.
+
+Until the cut-over commit, dashboard endpoints live in two places:
+the ones already folded into ``server/api/dashboard/`` and the rest
+still in ``dashboard.api.main``. Both are reachable through the
+daemon's ``build_app()`` because ``ApplicationBuilder._mount_dashboard``
+grafts the legacy dashboard routes onto the daemon app at runtime. By
+pointing this test's ``client`` at the daemon, every endpoint stays
+testable through the same client regardless of which side of the
+fold-in it currently lives on.
+"""
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
+from voicegateway.server.main import build_app
 
 
 @pytest.fixture
@@ -14,13 +25,10 @@ def gateway(temp_config, tmp_path, monkeypatch):
 
 @pytest.fixture
 async def client(gateway):
-    import dashboard.api.main as dash_module
-
-    dash_module._gateway = gateway
-    transport = ASGITransport(app=dash_module.app)
+    app = build_app(gateway, enable_mcp_sse=False, enable_dashboard=True)
+    transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
-    dash_module._gateway = None
 
 
 async def test_api_status(client):
