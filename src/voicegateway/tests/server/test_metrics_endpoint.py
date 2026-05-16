@@ -1,4 +1,10 @@
-"""Tests for the v0.2.0 metrics endpoints on dashboard/api/main.py (T12)."""
+"""Tests for the v0.2.0 metrics endpoints (T12).
+
+After the dashboard fold-in, these endpoints live under
+:mod:`voicegateway.server.api.dashboard` (sessions.py + metrics.py)
+and are reached through the daemon's ``build_app(...)`` rather than
+the legacy ``dashboard.api.main:app``.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +20,7 @@ from voicegateway.repository import (
 from voicegateway.repository import (
     turns_repository as turns,
 )
+from voicegateway.server.main import build_app
 
 
 @pytest.fixture
@@ -24,13 +31,10 @@ def gateway(temp_config, tmp_path, monkeypatch):
 
 @pytest.fixture
 async def client(gateway):
-    import dashboard.api.main as dash_module
-
-    dash_module._gateway = gateway
-    transport = ASGITransport(app=dash_module.app)
+    app = build_app(gateway, enable_mcp_sse=False, enable_dashboard=True)
+    transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
-    dash_module._gateway = None
 
 
 async def _seed_turns(gateway, session_id: str, count: int = 3) -> None:
