@@ -4,7 +4,10 @@ Resolver-time fallback at agent startup: walk a chain of model ids and pass the 
 
 Once a model is wired into a LiveKit `AgentSession`, that resolved model is used for the entire call. VoiceGateway does not swap providers mid-call. For runtime failover when a provider degrades during an active call, compose LiveKit's `FallbackAdapter` around VG `inference.*` instances; see [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter).
 
-v0.0.5 has no built-in fallback middleware. v0.0.6 will add a first-class `fallback=` parameter to the `inference` factories so the manual walk pattern below goes away.
+VoiceGateway does not run an automatic fallback middleware. The
+chain in `voicegw.yaml` (under `fallbacks:`) is a documentation +
+walk-pattern convention: enumerate the chain at startup and pick
+the first model whose factory builds.
 
 ## Configuration
 
@@ -28,9 +31,9 @@ projects:
 
 default_project: prod
 
-# Fallback chains: first model is primary, rest are backups. v0.0.5
-# stores them in YAML for documentation and the v0.0.6 inference
-# factory's fallback= parameter; the manual walk below uses them too.
+# Fallback chains: first model is primary, rest are backups. The
+# YAML chain is documentation; the manual walk below picks the
+# first model whose factory builds.
 fallbacks:
   stt:
     - deepgram/nova-3              # Primary: fastest, best accuracy

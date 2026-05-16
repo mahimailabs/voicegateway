@@ -103,9 +103,9 @@ async def support_entrypoint(ctx):
 voicegw costs --project voice-agent
 voicegw logs --project voice-agent
 
-# Or start the dashboard:
+# Or open the dashboard in your browser (the daemon already serves it):
 voicegw dashboard
-# Open http://localhost:9090
+# Default URL: http://localhost:8080
 ```
 
 ```bash

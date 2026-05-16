@@ -11,7 +11,7 @@ The core layer wires configuration, storage, and middleware together so the `voi
 ### Initialization
 
 ```python
-# Internal use only — not on the public SDK surface.
+# Internal use only. Not on the public SDK surface.
 from voicegateway.core.gateway import Gateway
 
 # Auto-discovers voicegw.yaml from standard locations
@@ -23,10 +23,10 @@ gw = Gateway(config_path="/path/to/voicegw.yaml")
 
 Config file search order (when no path is given):
 
-1. `./voicegw.yaml` (and legacy `./gateway.yaml` with deprecation warning)
-2. `~/.config/voicegateway/voicegw.yaml`
-3. `/etc/voicegateway/voicegw.yaml`
-4. `VOICEGW_CONFIG` environment variable
+1. `VOICEGW_CONFIG` environment variable.
+2. `./voicegw.yaml`
+3. `~/.config/voicegateway/voicegw.yaml`
+4. `/etc/voicegateway/voicegw.yaml`
 
 ### What happens at `Gateway.__init__`
 
@@ -56,7 +56,10 @@ The database path is resolved as: `VOICEGW_DB_PATH` env > `cost_tracking.db_path
 | `gw.list_projects()` | Project list for the CLI / dashboard / MCP. |
 | `await gw.refresh_config()` | Re-merges YAML and SQLite after a managed_* write. |
 
-The legacy `gw.stt/llm/tts/stack/*_with_fallback` factories were removed in v0.0.5. The replacement is `voicegateway.inference.STT/LLM/TTS`, which constructs the Gateway singleton internally and reads the same merged config.
+The public inference surface is `voicegateway.inference.STT/LLM/TTS`,
+which constructs the Gateway singleton internally and reads the same
+merged config. There is no separate `Gateway.stt()` / `llm()` /
+`tts()` method on the Gateway object.
 
 ### Config Refresh
 

@@ -166,20 +166,9 @@ services:
     networks:
       - voicegw-net
 
-  dashboard:
-    build:
-      context: .
-      dockerfile: src/dashboard/Dockerfile
-    container_name: voicegateway-dash
-    ports:
-      - "9090:9090"
-    volumes:
-      - voicegw-data:/data:ro
-    environment:
-      - VOICEGW_API_URL=http://voicegateway:8080
-      - VOICEGW_DB_PATH=/data/voicegw.db
-    networks:
-      - voicegw-net
+  # The dashboard runs inside the voicegateway service: the daemon
+  # mounts the React SPA at / and the dashboard API at /api/* on
+  # the same port as the public HTTP API. No second service needed.
 
 volumes:
   voicegw-data:

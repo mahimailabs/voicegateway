@@ -1,6 +1,6 @@
-# Multi-tenant quickstart (v0.4.0)
+# Multi-tenant quickstart
 
-VoiceGateway tags every voice session with an optional `tenant_id` so a single deployment can serve many customers and account for each one separately. This guide walks an operator through the four moves the v0.4.0 release enables:
+VoiceGateway tags every voice session with an optional `tenant_id` so a single deployment can serve many customers and account for each one separately. This guide walks an operator through the four moves the multi-tenant surface enables:
 
 1. Tag a session with a tenant at session-create.
 2. Issue a virtual API key scoped to that tenant.
@@ -11,8 +11,8 @@ If you only need to filter the dashboard, jump straight to [Step 3](#3-view-per-
 
 ## Prerequisites
 
-- VoiceGateway v0.4.0 or later (`voicegw --version` to confirm).
-- The dashboard running: `voicegw dashboard` (defaults to `127.0.0.1:9090`).
+- VoiceGateway installed (`voicegw --version` to confirm).
+- Daemon running (started by `voicegw onboard` or `voicegw serve`). The daemon serves the dashboard at the daemon URL (default `http://127.0.0.1:8080`).
 - A `voicegw.yaml` with `cost_tracking.db_path` set (the dashboard reads the same SQLite database the gateway writes to).
 
 ## 1. Tag a session with a tenant
@@ -63,7 +63,7 @@ There is **no** automatic backfill of pre-v0.4.0 sessions. They stay `NULL` fore
 
 The dashboard is the only surface that issues virtual keys. The CLI is read-only by design: a CLI that printed the plaintext key would leak it via shell history and scrollback.
 
-1. Open the dashboard at `http://127.0.0.1:9090/virtual-keys`.
+1. Open the dashboard at `http://127.0.0.1:8080/virtual-keys` (the daemon's serve port).
 2. Click **+ Issue Key**.
 3. Fill in:
     - **Name** (required): a human label, e.g. `acme-prod`.
@@ -77,7 +77,7 @@ Ship the key to the caller as `Authorization: Bearer vk_…`. From that point:
 
 - Scoped keys auto-tag every session. A body-level `tenant_id` that disagrees with the key's scope returns `403`.
 - Unscoped keys allow the body to declare any tenant.
-- Static API keys (the v0.0.5 `auth.api_keys` block in `voicegw.yaml`) remain unchanged and never set a tenant.
+- Static API keys (the `auth.api_keys` block in `voicegw.yaml`) never set a tenant.
 
 ### Revoke
 
@@ -116,7 +116,7 @@ voicegw tenant show acme --json
 
 Both commands emit JSON with the same shape `/api/tenants` returns. `tenant show` exits 1 when the tenant has no sessions so CI scripts can branch.
 
-The `voicegw costs` command (v0.0.5) does **not** yet accept a `--tenant` flag. The dashboard's `/api/costs?tenant=…` endpoint is the canonical per-tenant cost source for v0.4.0; a CLI flag may land in v0.4.x if operators ask for it.
+The `voicegw costs` command does **not** accept a `--tenant` flag. The dashboard's `/api/costs?tenant=…` endpoint is the canonical per-tenant cost source.
 
 ### Direct SQL
 

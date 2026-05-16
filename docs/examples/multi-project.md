@@ -40,7 +40,7 @@ projects:
     daily_budget: 5.00
     budget_action: block
     tags: [development]
-    # dev uses local providers — no api_key needed; ollama and friends
+    # dev uses local providers (no api_key needed; ollama and friends)
     # read from the top-level providers: block.
 
 providers:
@@ -77,7 +77,7 @@ async def production_handler(ctx):
 
 async def staging_handler(ctx):
     inference.set_project("staging")
-    # sibling task — no leakage
+    # sibling task: no leakage
     ...
 
 async def dev_handler(ctx):

@@ -1,6 +1,12 @@
 # Docker Deployment
 
-Deploy VoiceGateway in production with Docker Compose. This setup includes the API server, web dashboard, persistent storage, health checks, and an optional Ollama sidecar for local LLM inference.
+Deploy VoiceGateway in production with Docker Compose. The
+daemon serves the HTTP API and the web dashboard on the same port,
+so one service is enough; the optional dashboard service in the
+compose file below is a convenience for operators who want the
+dashboard reachable on a different external port. Includes
+persistent storage, health checks, and an optional Ollama sidecar
+for local LLM inference.
 
 ## Project Structure
 
@@ -132,7 +138,6 @@ services:
       - VOICEGW_CONFIG=/app/voicegw.yaml
       - VOICEGW_DB_PATH=/data/voicegw.db
       - VOICEGW_SECRET=${VOICEGW_SECRET:-}
-      - VOICEGW_PROFILE=${VOICEGW_PROFILE:-production}
       # Provider API keys from .env
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -150,24 +155,9 @@ services:
     networks:
       - voicegw-net
 
-  dashboard:
-    build:
-      context: .
-      dockerfile: src/dashboard/Dockerfile
-    container_name: voicegateway-dash
-    ports:
-      - "9090:9090"
-    volumes:
-      - voicegw-data:/data:ro
-    environment:
-      - VOICEGW_API_URL=http://voicegateway:8080
-      - VOICEGW_DB_PATH=/data/voicegw.db
-    depends_on:
-      voicegateway:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - voicegw-net
+  # The dashboard runs inside the voicegateway service: the daemon
+  # mounts the React SPA at / and the dashboard API at /api/* on
+  # the same port as the public HTTP API. No second service needed.
 
   # Optional: local LLM via Ollama
   ollama:
@@ -250,7 +240,7 @@ curl http://localhost:8080/v1/status
 
 ### Dashboard
 
-Open http://localhost:9090 in your browser to see the dashboard with cost charts, latency metrics, and request logs.
+Open http://localhost:8080 in your browser to see the dashboard with cost charts, latency metrics, and request logs. The daemon serves both the React UI and the dashboard API at this port.
 
 ## Production Considerations
 

@@ -1,11 +1,14 @@
-# Dashboard API Reference
+# Dashboard API reference
 
-The Dashboard API is a separate FastAPI application served by `voicegw dashboard` (default port 9090). It provides read-only endpoints consumed by the React frontend. All endpoints are prefixed with `/api/`.
+The dashboard API is mounted by the daemon (`voicegw serve`) under
+the `/api/` prefix on the same port as the public HTTP API
+(`/v1/*`) and the React SPA (`/`). The default port is 8080; the
+`serve.port` key in `voicegw.yaml` overrides it.
 
-Start the dashboard:
+Start the daemon (the dashboard API ships with it):
 
 ```bash
-voicegw dashboard --port 9090
+voicegw serve
 ```
 
 ## GET /api/status
@@ -36,7 +39,7 @@ Returns the configuration status of all providers, registered models, and fallba
 **Example:**
 
 ```bash
-curl http://localhost:9090/api/status
+curl http://localhost:8080/api/status
 ```
 
 ## GET /api/costs
@@ -74,8 +77,8 @@ Return cost summary for a period, optionally filtered by project. Includes per-p
 **Example:**
 
 ```bash
-curl "http://localhost:9090/api/costs?period=week"
-curl "http://localhost:9090/api/costs?period=today&project=tonys-pizza"
+curl "http://localhost:8080/api/costs?period=week"
+curl "http://localhost:8080/api/costs?period=today&project=tonys-pizza"
 ```
 
 ## GET /api/latency
@@ -94,8 +97,8 @@ Return latency statistics, optionally filtered by project.
 **Example:**
 
 ```bash
-curl "http://localhost:9090/api/latency?period=today"
-curl "http://localhost:9090/api/latency?project=my-app"
+curl "http://localhost:8080/api/latency?period=today"
+curl "http://localhost:8080/api/latency?project=my-app"
 ```
 
 ## GET /api/logs
@@ -115,8 +118,8 @@ Return recent request logs.
 **Example:**
 
 ```bash
-curl "http://localhost:9090/api/logs?limit=50&modality=stt"
-curl "http://localhost:9090/api/logs?project=tonys-pizza"
+curl "http://localhost:8080/api/logs?limit=50&modality=stt"
+curl "http://localhost:8080/api/logs?project=tonys-pizza"
 ```
 
 ## GET /api/overview
@@ -144,8 +147,8 @@ Return aggregated dashboard overview statistics. This endpoint combines multiple
 **Example:**
 
 ```bash
-curl http://localhost:9090/api/overview
-curl "http://localhost:9090/api/overview?project=tonys-pizza"
+curl http://localhost:8080/api/overview
+curl "http://localhost:8080/api/overview?project=tonys-pizza"
 ```
 
 ## GET /api/projects
@@ -179,7 +182,7 @@ List all configured projects with today's stats.
 **Example:**
 
 ```bash
-curl http://localhost:9090/api/projects
+curl http://localhost:8080/api/projects
 ```
 
 ## Static File Serving

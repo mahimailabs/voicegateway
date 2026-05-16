@@ -117,15 +117,11 @@ The substitution is recursive -- it works inside strings, dicts, and lists. Miss
 
 When no explicit path is provided:
 
-1. Check `VOICEGW_CONFIG` env var (or legacy `INFERENCE_GATEWAY_CONFIG`)
+1. Check `VOICEGW_CONFIG` env var.
 2. Search these paths in order:
    - `./voicegw.yaml`
    - `~/.config/voicegateway/voicegw.yaml`
    - `/etc/voicegateway/voicegw.yaml`
-3. Fall back to legacy paths (with deprecation warning):
-   - `./gateway.yaml`
-   - `~/.config/inference-gateway/gateway.yaml`
-   - `/etc/inference-gateway/gateway.yaml`
 
 ### Pydantic Validation
 

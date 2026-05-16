@@ -1,6 +1,6 @@
 # Budget Enforcement
 
-VoiceGateway supports per-project daily budgets with three enforcement modes: `warn`, `throttle`, and `block`. v0.0.5 enforces budgets at request-completion time inside the cost tracker; the `inference` factories themselves never raise on budget. The `BudgetThrottleSignal` and `BudgetExceededError` types still exist for callers that wire their own pre-request check (CLI / HTTP / dashboard); a first-class pre-flight raise from the inference factories is on the v0.0.6 backlog.
+VoiceGateway supports per-project daily budgets with three enforcement modes: `warn`, `throttle`, and `block`. Budgets are enforced at request-completion time inside the cost tracker; the `inference` factories themselves never raise on budget. The `BudgetThrottleSignal` and `BudgetExceededError` types are available for callers that want to wire their own pre-request check (CLI / HTTP / dashboard).
 
 ## Configuration
 
@@ -56,14 +56,15 @@ cost_tracking:
 The `warn` mode logs a warning when the budget is exceeded but allows all requests to proceed. Use this for visibility without disrupting service.
 
 ```python
-from voicegateway import inference
+from voicegateway.core.active_project import set_project
+from voicegateway.inference import STT, LLM, TTS
 
-inference.set_project("warn-demo")
+set_project("warn-demo")
 # Requests proceed even after budget is exceeded.
 # Check your logs for: "Project 'warn-demo' exceeded daily budget: $X.XX / $1.00"
-stt = inference.STT("deepgram/nova-3")
-llm = inference.LLM("openai/gpt-4.1-mini")
-tts = inference.TTS("cartesia/sonic-3")
+stt = STT("deepgram/nova-3")
+llm = LLM("openai/gpt-4.1-mini")
+tts = TTS("cartesia/sonic-3")
 ```
 
 **Log output when budget is exceeded:**
@@ -74,7 +75,7 @@ WARNING - Project 'warn-demo' exceeded daily budget: $1.23 / $1.00
 
 ## Mode 2: Throttle (caller-driven)
 
-In v0.0.5 the inference factories do not raise `BudgetThrottleSignal` themselves. Wire a pre-flight check in your worker if you want the throttle path:
+The inference factories do not raise `BudgetThrottleSignal` themselves. Wire a pre-flight check in your worker if you want the throttle path:
 
 ```python
 from voicegateway import inference

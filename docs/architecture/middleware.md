@@ -155,7 +155,12 @@ The limiter maintains a list of timestamps for each provider. On each `acquire()
 
 ## Resolver-time fallback (manual walk)
 
-v0.0.5 has no built-in fallback middleware. Resolver-time fallback is a startup-walk pattern: enumerate the chain and call the matching `inference.STT/LLM/TTS` factory until one succeeds, then pass the resolved instance to `AgentSession`. The chain still lives in `voicegw.yaml` (under `fallbacks:`) for documentation and for the v0.0.6 first-class `fallback=` parameter that the inference factories will honor.
+VoiceGateway does not run an automatic fallback middleware.
+Resolver-time fallback is a startup-walk pattern: enumerate the
+chain and call the matching `voicegateway.inference.STT/LLM/TTS`
+factory until one succeeds, then pass the resolved instance to
+`AgentSession`. The chain lives in `voicegw.yaml` under
+`fallbacks:` and is documentation-only at runtime.
 
 ```yaml
 # voicegw.yaml

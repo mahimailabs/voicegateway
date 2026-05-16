@@ -49,7 +49,7 @@ llm_local = inference.LLM("ollama/qwen2.5:3b")     # :3b kept as part of model n
 
 ## Registering custom models
 
-You can register model aliases in `voicegw.yaml` under the `models` section. The aliases surface in the dashboard and CLI for display purposes; the v0.0.5 `inference` module parses `provider/model` strings directly from the factory call, so an alias does not change runtime behaviour. Aliases are organized by modality (stt, llm, tts).
+You can register model aliases in `voicegw.yaml` under the `models` section. The aliases surface in the dashboard and CLI for display purposes; the `voicegateway.inference` module parses `provider/model` strings directly from the factory call, so an alias does not change runtime behaviour. Aliases are organised by modality (stt, llm, tts).
 
 ### Via YAML
 
@@ -65,7 +65,7 @@ models:
   llm:
     reasoning:
       provider: anthropic
-      model: claude-sonnet-4-20250514
+      model: claude-sonnet-4-5
     fast-chat:
       provider: groq
       model: llama-3.1-8b-instant
@@ -87,7 +87,7 @@ Each model entry supports:
 
 ### Via the dashboard
 
-Models can also be registered through the web dashboard at `http://localhost:9090`. Models added through the dashboard are persisted in the SQLite database and merged with the YAML config at startup.
+Models can also be registered through the web dashboard at the daemon URL (default `http://localhost:8080`). Models added through the dashboard are persisted in the SQLite database and merged with the YAML config at startup.
 
 ### Via MCP
 

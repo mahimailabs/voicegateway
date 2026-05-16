@@ -1,6 +1,6 @@
 # Stacks
 
-Stacks are named YAML bundles that map a single name to one STT model, one LLM model, and one TTS model. As of v0.0.5 they are a documentation and dashboard hint only: the `voicegateway.inference` module does not consume them. The dashboard uses `default_stack` on a project to render a recommended-stack badge; the rest of the gateway ignores the field.
+Stacks are named YAML bundles that map a single name to one STT model, one LLM model, and one TTS model. They are a documentation and dashboard hint only: the `voicegateway.inference` module does not consume them. The dashboard uses `default_stack` on a project to render a recommended-stack badge; the rest of the gateway ignores the field.
 
 ## Defining stacks
 
@@ -8,7 +8,7 @@ Stacks are named YAML bundles that map a single name to one STT model, one LLM m
 stacks:
   premium:
     stt: deepgram/nova-3
-    llm: anthropic/claude-sonnet-4-20250514
+    llm: anthropic/claude-sonnet-4-5
     tts: cartesia/sonic-3
   budget:
     stt: groq/whisper-large-v3
@@ -36,13 +36,13 @@ The dashboard's project page renders the stack name next to the project. No code
 ## Using stacks from code
 
 ```python
-from voicegateway import inference
+from voicegateway.inference import STT, LLM, TTS
 
-# v0.0.5 has no Gateway.stack(...) helper. Construct each modality
-# explicitly with the model id from the stack you want.
-stt = inference.STT("deepgram/nova-3")
-llm = inference.LLM("anthropic/claude-sonnet-4-20250514")
-tts = inference.TTS("cartesia/sonic-3")
+# Construct each modality explicitly with the model id from the
+# stack you want. There is no Gateway.stack(...) helper.
+stt = STT("deepgram/nova-3")
+llm = LLM("anthropic/claude-sonnet-4-5")
+tts = TTS("cartesia/sonic-3")
 ```
 
 If you find yourself repeating the same triple across agents, define a small Python helper in your own code that returns the three calls. The gateway does not need a built-in for it.

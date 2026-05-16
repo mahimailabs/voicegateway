@@ -68,7 +68,7 @@ voicegw serve
     my-app:
       budget_action: warn
   ```
-- **Check the dashboard** at `http://localhost:9090` to see where costs are accumulating
+- **Check the dashboard** at `http://localhost:8080` (the daemon's serve port) to see where costs are accumulating
 - Budgets reset daily at midnight UTC
 
 ---
@@ -143,9 +143,9 @@ voicegw serve
    ```bash
    docker compose up -d
    ```
-3. Check port availability (default: 9090):
+3. Check port availability (default: 8080, the daemon's serve port):
    ```bash
-   lsof -i :9090
+   lsof -i :8080
    ```
 4. Rebuild the frontend if running from source:
    ```bash

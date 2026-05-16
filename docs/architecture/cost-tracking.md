@@ -103,10 +103,10 @@ Fixture replay is not a complete substitute for production traffic. It does **no
 
 - **Real-time streaming behavior**: replay is sequential and synchronous. We do not simulate network jitter, partial chunks split across TCP packets, or out-of-order delivery.
 - **Provider-side correctness**: if Deepgram's reported usage is off by 0.1 seconds, the fixture accepts that as ground truth. The suite validates VG's accounting matches the provider's, not whether the provider is right.
-- **Stale fixtures**: recorded fixtures capture provider behavior at a point in time. If a provider changes its streaming format, the fixture's `response_stream` no longer matches what VG would see today. The filename's date convention surfaces staleness; a quarterly refresh task is on the v0.0.5+ backlog.
+- **Stale fixtures**: recorded fixtures capture provider behavior at a point in time. If a provider changes its streaming format, the fixture's `response_stream` no longer matches what VG would see today. The filename's date convention surfaces staleness; a quarterly refresh task is on the maintenance backlog.
 - **End-to-end LiveKit session validation**: the wrappers are tested in isolation, not as part of a real `AgentSession`. Session-level integration testing is deferred (it sits in the OpenRTC-Python Phase 2 plan).
 
-The CHANGELOG disclosure for v0.0.4 is honest about this: "Cost tracking is validated against fixture-recorded responses, not against real production traffic." Without Phase 3, that line would be a lie; with Phase 3, it is the literal description of what shipped.
+The architecture is honest about this scope: cost tracking is validated against fixture-recorded provider responses, not against real production traffic. Without the fixture-replay phase, that distinction would be invisible; with it, the per-fixture date and provider attribution make the validation surface explicit.
 
 ### Where to find each piece
 
