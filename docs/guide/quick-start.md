@@ -1,101 +1,117 @@
-# Quick Start
+---
+title: Quick start
+description: Get VoiceGateway running in 5 minutes. Daemon up, dashboard open, one Python script proves the inference factories resolve correctly.
+---
 
-Get VoiceGateway running in 5 minutes. By the end of this guide you will have a working Python script that routes STT, LLM, and TTS requests through the gateway.
+# Quick start
+
+By the end of this guide you have a running daemon, an open
+dashboard, and a Python script that exercises the inference
+factories so you can confirm provider keys resolve and costs land
+in the dashboard.
 
 ## Prerequisites
 
 - Python 3.11 or later
-- An API key for at least one cloud provider (e.g., Deepgram, OpenAI)
+- An API key for at least one cloud provider (Deepgram, OpenAI,
+  Anthropic, Groq, Cartesia, ElevenLabs, or AssemblyAI)
 
-## 1. Install VoiceGateway
-
-```bash
-pip install voicegateway[cloud]
-```
-
-This installs VoiceGateway along with all cloud provider SDKs. For a minimal install, see [Installation](/guide/installation).
-
-## 2. Generate a config file
+## 1. Install
 
 ```bash
-voicegw init
+pipx install 'voicegateway[cloud,dashboard]'
 ```
 
-This creates a `voicegw.yaml` in your current directory with a commented-out template.
-
-<!-- TODO: screenshot of voicegw init output -->
-
-## 3. Add your API keys
-
-Open `voicegw.yaml` and add at least one provider. For this quick start we will use Deepgram for STT and OpenAI for LLM and TTS:
-
-```yaml
-providers:
-  deepgram:
-    api_key: ${DEEPGRAM_API_KEY}
-  openai:
-    api_key: ${OPENAI_API_KEY}
-
-cost_tracking:
-  enabled: true
-```
-
-Then export your keys:
+Or if you prefer uv:
 
 ```bash
-export DEEPGRAM_API_KEY="your-deepgram-key"
-export OPENAI_API_KEY="your-openai-key"
+uv tool install 'voicegateway[cloud,dashboard]'
 ```
 
-## 4. Write a Python script
+The `cloud` extra pulls every cloud provider SDK; the `dashboard`
+extra ships the prebuilt React bundle and the dashboard endpoints.
+For a minimal install of one provider only, see
+[Installation](/docs/guide/installation).
 
-Create a file called `demo.py`:
+## 2. Onboard
+
+```bash
+voicegw onboard
+```
+
+Five questions, four with working defaults (press Enter to accept):
+
+1. Project name (default: `default`).
+2. Provider (default: `openai`).
+3. API key (no default; paste yours).
+4. Port (default: `8080`).
+5. Install daemon? (default: yes).
+
+The wizard writes `~/.config/voicegateway/voicegw.yaml`, registers
+the daemon with your OS service manager (LaunchAgent on macOS,
+`systemd --user` on Linux, Scheduled Task on Windows), and starts
+it.
+
+## 3. Open the dashboard
+
+```bash
+voicegw dashboard
+```
+
+That opens your browser at the daemon URL (default
+`http://127.0.0.1:8080`). The daemon serves the React UI at `/`,
+the dashboard API at `/api/*`, and the public HTTP API at `/v1/*`
+on the same port.
+
+## 4. Verify the inference factories
+
+Create `demo.py`:
 
 ```python
-from voicegateway import inference
+from voicegateway.inference import STT, LLM, TTS
 
-# Create model instances. AgentSession would consume them directly;
-# here we print them to confirm they are wired LiveKit plugins.
-stt = inference.STT("deepgram/nova-3")
-llm = inference.LLM("openai/gpt-4.1-mini")
-tts = inference.TTS("openai/tts-1")
+# Each call resolves provider/model -> loads the SDK -> wraps with
+# cost-tracking and latency middleware. AgentSession would consume
+# them directly; here we print to confirm wiring.
+stt = STT("openai/whisper-1")
+llm = LLM("openai/gpt-4.1-mini")
+tts = TTS("openai/tts-1")
 
 print("STT:", stt)
 print("LLM:", llm)
 print("TTS:", tts)
 ```
 
-## 5. Run it
+Run it:
 
 ```bash
 python demo.py
 ```
 
-<!-- TODO: screenshot of demo.py output -->
+You should see three instantiated provider objects. VoiceGateway
+resolved the `provider/model` strings, loaded the correct SDKs, and
+wrapped each instance with cost-tracking and latency middleware.
 
-You should see the instantiated provider objects printed. VoiceGateway resolved the `provider/model` strings, loaded the correct SDKs, and wrapped each instance with cost tracking and latency monitoring middleware.
+## 5. See costs in the dashboard
 
-## 6. Check provider status
+Trigger one call (any request that uses the inference factories
+above) and refresh the dashboard at `http://127.0.0.1:8080/costs`.
+The row shows the model, provider, modality, and the per-call cost
+in USD with the pricing source attribution (`genai-prices` for LLM,
+`voicegateway-catalog` for STT/TTS).
 
-```bash
-voicegw status
-```
-
-<!-- TODO: screenshot of voicegw status output -->
-
-This shows all configured providers and their current status.
-
-## 7. View costs
+In the terminal:
 
 ```bash
 voicegw costs
+voicegw status
+voicegw logs
 ```
 
-After running some requests through the gateway, this command shows your cost breakdown by provider and model.
+## Add a project
 
-## Routing per project
-
-Once you start running multiple agents, give each its own project entry in `voicegw.yaml` so cost rows and provider keys stay separated:
+Multiple agents share one daemon? Give each its own project entry
+in `voicegw.yaml` so cost rows and provider keys stay separated:
 
 ```yaml
 projects:
@@ -111,23 +127,33 @@ projects:
 default_project: my-agent
 ```
 
-The inference factories pick the project up automatically. Override per-context with `inference.set_project("my-agent")` when you need to.
+The inference factories pick the project up automatically. Override
+per-context with `set_project("my-agent")` from
+`voicegateway.core.active_project` when you need to.
 
-## Adding fallbacks
+## Add fallbacks
 
-Manual startup-walk pattern (resolver-time fallback) with a chain in `voicegw.yaml`:
+Resolver-time fallback chain in `voicegw.yaml`:
 
 ```yaml
 fallbacks:
   stt: [deepgram/nova-3, openai/whisper-1]
-  llm: [openai/gpt-4.1-mini, anthropic/claude-sonnet-4-20250514]
+  llm: [openai/gpt-4.1-mini, anthropic/claude-sonnet-4-5]
+  tts: [openai/tts-1, elevenlabs/eleven_turbo_v2_5]
 ```
 
-Walk the chain manually at startup: try each model in `voicegw.yaml`'s `fallbacks.<modality>` list with `inference.STT/LLM/TTS(model_id)` and use the first one whose provider plugin imports cleanly. Once `AgentSession` starts, the resolved model is used for the whole call. v0.0.6 will add a first-class `fallback=` parameter to the `inference` factories.
+Walk the chain at startup by trying each model with
+`STT/LLM/TTS(model_id)` and using the first one whose provider
+plugin imports cleanly. Once `AgentSession` starts, the resolved
+model is used for the whole call.
 
 ## Next steps
 
-- [Installation](/guide/installation) -- all install variants and Docker setup
-- [First Agent](/guide/first-agent) -- build a full voice agent with LiveKit Agents
-- [Core Concepts](/guide/core-concepts) -- understand the key abstractions
-- [Configuration Reference](/configuration/voicegw-yaml) -- complete YAML reference
+- [Installation](/docs/guide/installation): all install variants
+  (curl-bash, pipx, uv, Docker).
+- [First agent](/docs/guide/first-agent): wire VoiceGateway into a
+  full LiveKit voice agent.
+- [Core concepts](/docs/guide/core-concepts): understand the
+  abstractions (modality, provider, project, stack).
+- [Configuration reference](/docs/configuration/voicegw-yaml): every
+  YAML key.

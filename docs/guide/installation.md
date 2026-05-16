@@ -1,84 +1,120 @@
+---
+title: Installation
+description: Every install path for VoiceGateway. curl-bash recommended for first-run; pipx / uv / Docker for everything else.
+---
+
 # Installation
 
 ## System requirements
 
 - **Python 3.11** or later
-- **pip 21+** (for PEP 660 editable installs)
-- **SQLite 3.35+** (ships with Python; used for cost tracking and request logs)
-- **Docker** (optional, for containerized deployments)
+- **SQLite 3.35+** (ships with Python; used for cost tracking and
+  request logs)
+- **macOS, Linux, or WSL on Windows.** Native Windows is supported
+  via Scheduled Tasks for the daemon; the rest of the docs assume a
+  POSIX shell.
+- **Docker** (optional, for containerised deployments)
 
-## Install via pip
-
-The base package installs VoiceGateway core with no provider SDKs:
+## Recommended: curl-bash one-liner
 
 ```bash
-pip install voicegateway
+curl -fsSL https://voicegateway.mahimai.ca/install.sh | bash
 ```
 
-### Install extras
+The installer:
 
-VoiceGateway uses optional extras to keep the install lightweight. Only the provider SDKs you need are installed.
+- Detects your OS (macOS / Linux / WSL).
+- Verifies Python 3.11+ is installed (refuses with package-manager
+  pointers if not; does not auto-install Python).
+- Picks `uv tool install` if uv is on PATH, otherwise installs pipx
+  and runs `pipx install voicegateway[cloud,dashboard]`.
+- Asks before any privileged step.
 
-| Extra | What it installs | Command |
-|---|---|---|
-| `cloud` | All cloud provider SDKs (Deepgram, OpenAI, Anthropic, Groq, Cartesia, ElevenLabs, AssemblyAI) | `pip install voicegateway[cloud]` |
-| `local` | Local model dependencies (Whisper, Kokoro, Piper, Ollama) | `pip install voicegateway[local]` |
-| `dashboard` | Web dashboard (FastAPI, React frontend) | `pip install voicegateway[dashboard]` |
-| `mcp` | MCP server for IDE integration | `pip install voicegateway[mcp]` |
-| `all` | Everything above | `pip install voicegateway[all]` |
+After install, run `voicegw onboard`. See [Get started](/docs/get-started)
+for the 60-second walkthrough.
+
+## pipx (manual)
+
+```bash
+pipx install 'voicegateway[cloud,dashboard]'
+```
+
+`pipx` installs VoiceGateway into its own virtualenv so the `voicegw`
+binary lands on your PATH without polluting your system Python.
+
+## uv (manual)
+
+```bash
+uv tool install 'voicegateway[cloud,dashboard]'
+```
+
+`uv tool install` is faster than pipx and uses the same per-tool-venv
+model. If you have uv already, prefer this.
+
+## Install extras
+
+VoiceGateway uses optional extras to keep the install lightweight.
+Only the provider SDKs you need are installed.
+
+| Extra | What it installs |
+|---|---|
+| `cloud` | All cloud provider SDKs (Deepgram, OpenAI, Anthropic, Groq, Cartesia, ElevenLabs, AssemblyAI) |
+| `local` | Local model dependencies (Whisper, Kokoro, Piper, Ollama) |
+| `dashboard` | Web dashboard (React bundle + Pillow for logo validation) |
+| `mcp` | MCP server for IDE integration |
+| `tui` | Terminal UI (Textual-based status / costs / sessions views) |
+| `all` | Everything above |
 
 You can combine extras:
 
 ```bash
-pip install voicegateway[cloud,dashboard]
+pipx install 'voicegateway[cloud,dashboard,mcp]'
 ```
 
 Or install individual provider SDKs:
 
 ```bash
-pip install voicegateway[openai,deepgram]
+pipx install 'voicegateway[openai,deepgram]'
 ```
 
-## Install from source
+## From source
 
 ```bash
-git clone https://github.com/mahimai/voicegateway.git
+git clone https://github.com/mahimailabs/voicegateway.git
 cd voicegateway
 pip install -e ".[dev]"
 ```
 
-The `dev` extra includes test dependencies (pytest, pytest-asyncio, pytest-cov) and linting tools.
+The `dev` extra includes test dependencies (pytest, pytest-asyncio,
+pytest-cov, ruff, mypy).
 
-### Verify the installation
-
-```bash
-voicegw --version
-voicegw status
-```
-
-If `voicegw` is not on your PATH, you can also run:
+Running from source ships the React frontend as source. Build it:
 
 ```bash
-python -m voicegateway.cli --version
+cd src/dashboard/frontend
+npm install
+npm run build
 ```
+
+The daemon mounts `src/dashboard/frontend/dist/` at `/` once that
+exists.
 
 ## Docker
 
-VoiceGateway ships with a `docker-compose.yml` for running the API server and dashboard together:
+VoiceGateway ships a `docker-compose.yml` for running the daemon
+(serving both the HTTP API and the dashboard):
 
 ```bash
-# API + Dashboard
+# Daemon (HTTP API + dashboard on one port)
 docker compose up -d
 
-# API + Dashboard + Ollama (for local LLM)
+# Plus Ollama (for local LLM)
 docker compose --profile local up -d
 ```
 
-The default Docker setup exposes:
-- Port **8080** -- HTTP API
-- Port **9090** -- Web dashboard
-
-Mount your config file and set environment variables:
+The default Docker setup exposes port **8080**: the daemon serves
+`/v1/*` (HTTP API), `/api/*` (dashboard API), and `/` (React UI)
+on that port. Mount your config and set environment variables:
 
 ```bash
 docker compose up -d \
@@ -87,10 +123,31 @@ docker compose up -d \
   -v ./voicegw.yaml:/app/voicegw.yaml
 ```
 
+## Verify the install
+
+```bash
+voicegw --version
+voicegw status
+```
+
+If `voicegw` is not on your PATH, run:
+
+```bash
+python -m voicegateway.cli --version
+```
+
+For pipx, you may need `pipx ensurepath && exec $SHELL`.
+
 ## Upgrading
 
 ```bash
-pip install --upgrade voicegateway
+pipx upgrade voicegateway
+```
+
+Or with uv:
+
+```bash
+uv tool upgrade voicegateway
 ```
 
 After upgrading, check for config schema changes:
@@ -99,29 +156,34 @@ After upgrading, check for config schema changes:
 voicegw init --diff
 ```
 
-This shows any new config options available in the latest version.
-
 ## Troubleshooting
 
 **`ModuleNotFoundError: No module named 'deepgram'`**
 
-You installed the base package without the provider extra. Install the extra you need:
+You installed the base package without the provider extra. Install
+the extra you need:
 
 ```bash
-pip install voicegateway[deepgram]
+pipx install 'voicegateway[deepgram]'
 ```
 
 **`ConfigError: No voicegw.yaml found`**
 
 VoiceGateway searches for config in this order:
+
 1. `./voicegw.yaml` (current directory)
 2. `~/.config/voicegateway/voicegw.yaml`
 3. `/etc/voicegateway/voicegw.yaml`
 
-You can also set the `VOICEGW_CONFIG` environment variable to an explicit path. Run `voicegw init` to generate a starter config.
+You can also set the `VOICEGW_CONFIG` environment variable to an
+explicit path. Run `voicegw init` to generate a starter config or
+`voicegw onboard` to be walked through it.
 
 ## Next steps
 
-- [Quick Start](/guide/quick-start) -- 5-minute walkthrough
-- [First Agent](/guide/first-agent) -- build a working agent
-- [Environment Variables](/configuration/environment-variables) -- all supported env vars
+- [Get started](/docs/get-started): 60-second walkthrough.
+- [Quick start](/docs/guide/quick-start): the 5-minute version that
+  exercises the inference factories.
+- [First agent](/docs/guide/first-agent): build a working agent.
+- [Environment variables](/docs/configuration/environment-variables):
+  all supported env vars.
