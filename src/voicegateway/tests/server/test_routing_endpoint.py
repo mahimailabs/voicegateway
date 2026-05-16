@@ -1,39 +1,27 @@
-"""Tests for /api/routing/observations (REQ-VG-ROUTE-003)."""
+"""Tests for /api/routing/observations (REQ-VG-ROUTE-003).
+
+After the dashboard fold-in, this endpoint lives in
+:mod:`voicegateway.server.api.dashboard.routing` and is reached
+through the daemon's ``build_app(...)``. The test now uses a real
+Gateway built from ``temp_config`` to match the pattern every other
+dashboard endpoint test uses.
+"""
 
 from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
 
-import dashboard.api.main as api
-from voicegateway.services.storage_service import StorageService
-
-
-class _FakeGateway:
-    def __init__(self, path: str):
-        self.storage = StorageService(path)
-
-        class _Cfg:
-            class auth:
-                api_keys = []
-                cors_origins = []
-
-            latency: dict = {}
-            projects: dict = {}
-
-        self.config = _Cfg()
-
-    def list_projects(self):
-        return []
+from voicegateway.core.gateway import Gateway
+from voicegateway.server.main import build_app
 
 
 @pytest.fixture
-async def client(tmp_path, monkeypatch):
-    path = str(tmp_path / "routing.db")
-    gw = _FakeGateway(path)
-    monkeypatch.setattr(api, "_gateway", gw)
-    monkeypatch.setattr(api, "_cors_configured", True)
-    yield gw, TestClient(api.app)
+async def client(temp_config, tmp_path, monkeypatch):
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "routing.db"))
+    gw = Gateway(config_path=temp_config)
+    app = build_app(gw, enable_mcp_sse=False, enable_dashboard=True)
+    yield gw, TestClient(app)
 
 
 async def _seed(storage, rows):
