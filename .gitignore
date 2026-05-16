@@ -5,6 +5,7 @@ src/voicegateway/_version.py
 .agents
 .codex
 .playwright-mcp
+docs/superpowers
 .DS_Store
 
 # Byte-compiled / optimized / DLL files
