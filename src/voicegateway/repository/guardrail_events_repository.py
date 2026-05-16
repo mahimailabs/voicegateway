@@ -151,7 +151,7 @@ async def create_event(
             "context_excerpt": context_excerpt,
         },
     )
-    return int(result.lastrowid or 0)
+    return int(result.lastrowid or 0)  # type: ignore[attr-defined]
 
 
 async def list_events_by_session(

@@ -20,12 +20,12 @@ class BaseModel(SQLModel):
     uuid: str = Field(
         default_factory=lambda: str(uuid.uuid4()), unique=True, index=True
     )
-    created_at: datetime = Field(
+    created_at: datetime = Field(  # type: ignore[call-overload]
         default_factory=_utcnow,
         sa_type=DateTime(timezone=True),
         sa_column_kwargs={"default": _utcnow},
     )
-    updated_at: datetime = Field(
+    updated_at: datetime = Field(  # type: ignore[call-overload]
         default_factory=_utcnow,
         sa_type=DateTime(timezone=True),
         sa_column_kwargs={"default": _utcnow, "onupdate": _utcnow},
@@ -41,12 +41,12 @@ class BaseUUIDModel(SQLModel):
         index=True,
         nullable=False,
     )
-    created_at: datetime = Field(
+    created_at: datetime = Field(  # type: ignore[call-overload]
         default_factory=_utcnow,
         sa_type=DateTime(timezone=True),
         sa_column_kwargs={"default": _utcnow},
     )
-    updated_at: datetime = Field(
+    updated_at: datetime = Field(  # type: ignore[call-overload]
         default_factory=_utcnow,
         sa_type=DateTime(timezone=True),
         sa_column_kwargs={"default": _utcnow, "onupdate": _utcnow},

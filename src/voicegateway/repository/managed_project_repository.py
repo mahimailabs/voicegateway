@@ -148,7 +148,7 @@ def _row_to_dict(p: ManagedProject) -> dict[str, Any]:
 async def list_projects(session: AsyncSession) -> list[dict[str, Any]]:
     """Return every managed_projects row with branding + guardrail parsed."""
     result = await session.execute(
-        select(ManagedProject).order_by(ManagedProject.created_at.asc())
+        select(ManagedProject).order_by(ManagedProject.created_at.asc())  # type: ignore[attr-defined]
     )
     return [_row_to_dict(p) for p in result.scalars().all()]
 
@@ -255,10 +255,10 @@ async def set_project_guardrails(
 async def delete_project(session: AsyncSession, project_id: str) -> bool:
     """Delete one managed_projects row. True when a row was removed."""
     result = await session.execute(
-        delete(ManagedProject).where(ManagedProject.project_id == project_id)
+        delete(ManagedProject).where(ManagedProject.project_id == project_id)  # type: ignore[arg-type]
     )
     await session.commit()
-    return (result.rowcount or 0) > 0
+    return (result.rowcount or 0) > 0  # type: ignore[attr-defined]
 
 
 __all__ = [

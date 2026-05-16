@@ -157,8 +157,8 @@ async def delete_replay(session: AsyncSession, session_id: str) -> int:
             text(f"DELETE FROM {table} WHERE session_id = :sid"),
             {"sid": session_id},
         )
-        if result.rowcount is not None and result.rowcount > 0:
-            total += result.rowcount
+        if result.rowcount is not None and result.rowcount > 0:  # type: ignore[attr-defined]
+            total += result.rowcount  # type: ignore[attr-defined]
     await session.commit()
     return total
 

@@ -34,7 +34,7 @@ def _row_to_dict(m: ManagedModel) -> dict[str, Any]:
 async def list_models(session: AsyncSession) -> list[dict[str, Any]]:
     """Return every managed_models row, ordered by created_at ASC."""
     result = await session.execute(
-        select(ManagedModel).order_by(ManagedModel.created_at.asc())
+        select(ManagedModel).order_by(ManagedModel.created_at.asc())  # type: ignore[attr-defined]
     )
     return [_row_to_dict(m) for m in result.scalars().all()]
 
@@ -72,7 +72,7 @@ async def upsert_model(
         "created_at": now,
         "updated_at": now,
     }
-    stmt = sqlite_insert(ManagedModel.__table__).values(**values)
+    stmt = sqlite_insert(ManagedModel.__table__).values(**values)  # type: ignore[attr-defined]
     stmt = stmt.on_conflict_do_update(
         index_elements=["model_id"],
         set_={
@@ -94,10 +94,10 @@ async def upsert_model(
 async def delete_model(session: AsyncSession, model_id: str) -> bool:
     """Delete one managed_models row. True when a row was removed."""
     result = await session.execute(
-        delete(ManagedModel).where(ManagedModel.model_id == model_id)
+        delete(ManagedModel).where(ManagedModel.model_id == model_id)  # type: ignore[arg-type]
     )
     await session.commit()
-    return (result.rowcount or 0) > 0
+    return (result.rowcount or 0) > 0  # type: ignore[attr-defined]
 
 
 __all__ = ["delete_model", "get_model", "list_models", "upsert_model"]

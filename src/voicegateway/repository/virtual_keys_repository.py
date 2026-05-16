@@ -131,7 +131,7 @@ async def create_virtual_key(
         },
     )
     await session.commit()
-    new_id = result.lastrowid
+    new_id = result.lastrowid  # type: ignore[attr-defined]
     if new_id is None:
         raise RuntimeError("INSERT into virtual_keys did not return a row id")
     row = await get_by_id(session, new_id)
@@ -219,7 +219,7 @@ async def revoke(session: AsyncSession, key_id: int) -> bool:
         {"key_id": key_id},
     )
     await session.commit()
-    return (result.rowcount or 0) > 0
+    return (result.rowcount or 0) > 0  # type: ignore[attr-defined]
 
 
 async def list_stale(
