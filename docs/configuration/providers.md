@@ -1,8 +1,15 @@
+---
+title: Providers
+description: All 11 providers VoiceGateway supports, with modality coverage, recommended models, and per-provider config notes.
+---
+
 # Providers
 
-VoiceGateway supports 11 providers across cloud and local deployments. Each provider extends the `BaseProvider` interface and is instantiated lazily on first use.
+VoiceGateway supports 11 providers across cloud and local
+deployments. Each provider extends the `BaseProvider` interface and
+is instantiated lazily on first use.
 
-## Cloud Providers
+## Cloud providers
 
 ### Deepgram
 
@@ -11,7 +18,9 @@ VoiceGateway supports 11 providers across cloud and local deployments. Each prov
 - **Recommended models:**
   - STT: `deepgram/nova-3` (best accuracy), `deepgram/nova-2` (lower cost)
   - TTS: `deepgram/aura-asteria-en`
-- **Pricing notes:** Pay-per-second for STT, pay-per-character for TTS. Nova-3 is priced higher than Nova-2 but offers better accuracy.
+- **Pricing notes:** Pay-per-second for STT, pay-per-character for
+  TTS. Nova-3 is priced higher than Nova-2 but offers better
+  accuracy.
 
 ```yaml
 providers:
@@ -25,9 +34,12 @@ providers:
 - **Required config:** `api_key`
 - **Recommended models:**
   - STT: `openai/whisper-1`
-  - LLM: `openai/gpt-4.1-mini` (balanced), `openai/gpt-4.1` (best quality)
+  - LLM: `openai/gpt-4.1-mini` (balanced), `openai/gpt-4.1` (best
+    quality)
   - TTS: `openai/tts-1` (fast), `openai/tts-1-hd` (high quality)
-- **Pricing notes:** Different pricing tiers per model. GPT-4.1-mini offers a good cost/quality balance for voice agents.
+- **Pricing notes:** Different pricing tiers per model.
+  GPT-4.1-mini offers a good cost / quality balance for voice
+  agents.
 
 ```yaml
 providers:
@@ -40,8 +52,10 @@ providers:
 - **Modalities:** LLM
 - **Required config:** `api_key`
 - **Recommended models:**
-  - LLM: `anthropic/claude-3.5-sonnet` (balanced)
-- **Pricing notes:** Per-token pricing. Check Anthropic's pricing page for latest rates.
+  - LLM: `anthropic/claude-sonnet-4-5` (balanced),
+    `anthropic/claude-opus-4-1` (highest quality)
+- **Pricing notes:** Per-token pricing. Check Anthropic's pricing
+  page for current rates.
 
 ```yaml
 providers:
@@ -56,7 +70,9 @@ providers:
 - **Recommended models:**
   - STT: `groq/whisper-large-v3`
   - LLM: `groq/llama-3.3-70b-versatile`, `groq/llama-3.1-8b-instant`
-- **Pricing notes:** Very fast inference at competitive pricing. The Whisper endpoint is significantly cheaper than OpenAI's hosted Whisper.
+- **Pricing notes:** Very fast inference at competitive pricing.
+  The Whisper endpoint is significantly cheaper than OpenAI's
+  hosted Whisper.
 
 ```yaml
 providers:
@@ -70,7 +86,8 @@ providers:
 - **Required config:** `api_key`
 - **Recommended models:**
   - TTS: `cartesia/sonic-3` (latest, best quality)
-- **Pricing notes:** Pay-per-character. Known for low-latency streaming TTS.
+- **Pricing notes:** Pay-per-character. Known for low-latency
+  streaming TTS.
 
 ```yaml
 providers:
@@ -83,8 +100,10 @@ providers:
 - **Modalities:** TTS
 - **Required config:** `api_key`
 - **Recommended models:**
-  - TTS: `elevenlabs/eleven_multilingual_v2`, `elevenlabs/eleven_turbo_v2`
-- **Pricing notes:** Per-character pricing with monthly quotas depending on plan. Multilingual v2 supports 29 languages.
+  - TTS: `elevenlabs/eleven_multilingual_v2`,
+    `elevenlabs/eleven_turbo_v2_5`
+- **Pricing notes:** Per-character pricing with monthly quotas
+  depending on plan. Multilingual v2 supports 29 languages.
 
 ```yaml
 providers:
@@ -98,7 +117,8 @@ providers:
 - **Required config:** `api_key`
 - **Recommended models:**
   - STT: `assemblyai/universal-2` (single-tier model)
-- **Pricing notes:** Per-second pricing. Offers real-time streaming and batch transcription.
+- **Pricing notes:** Per-second pricing. Offers real-time streaming
+  and batch transcription.
 
 ```yaml
 providers:
@@ -108,17 +128,21 @@ providers:
 
 ---
 
-## Local Providers
+## Local providers
 
-Local providers run on your own hardware with no API keys required. They are useful for development, privacy-sensitive deployments, and offline operation.
+Local providers run on your own hardware with no API keys required.
+They are useful for development, privacy-sensitive deployments, and
+offline operation.
 
 ### Whisper
 
 - **Modalities:** STT
 - **Required config:** None (downloads model on first use)
 - **Recommended models:**
-  - STT: `local/whisper-large-v3` (best accuracy), `local/whisper-base` (fastest)
-- **Notes:** Runs OpenAI Whisper locally via faster-whisper. Requires a capable CPU or GPU.
+  - STT: `local/whisper-large-v3` (best accuracy),
+    `local/whisper-base` (fastest)
+- **Notes:** Runs OpenAI Whisper locally via faster-whisper.
+  Requires a capable CPU or GPU.
 
 ```yaml
 providers:
@@ -129,10 +153,14 @@ providers:
 ### Ollama
 
 - **Modalities:** LLM
-- **Required config:** `base_url` (defaults to `http://localhost:11434`)
+- **Required config:** `base_url` (defaults to
+  `http://localhost:11434`)
 - **Recommended models:**
-  - LLM: `ollama/llama3.2:3b`, `ollama/mistral:7b`, `ollama/phi3:mini`
-- **Notes:** Requires a running Ollama server. Models are pulled on first use. Use `docker compose --profile local up -d` to start Ollama alongside VoiceGateway.
+  - LLM: `ollama/llama3.2:3b`, `ollama/mistral:7b`,
+    `ollama/phi3:mini`
+- **Notes:** Requires a running Ollama server. Models are pulled on
+  first use. Use `docker compose --profile local up -d` to start
+  Ollama alongside VoiceGateway.
 
 ```yaml
 providers:
@@ -146,7 +174,8 @@ providers:
 - **Required config:** None
 - **Recommended models:**
   - TTS: `local/kokoro`
-- **Notes:** Lightweight local TTS. Good for development and testing.
+- **Notes:** Lightweight local TTS. Good for development and
+  testing.
 
 ```yaml
 providers:
@@ -159,8 +188,10 @@ providers:
 - **Modalities:** TTS
 - **Required config:** None
 - **Recommended models:**
-  - TTS: `local/piper:en_US-lessac-medium`, `local/piper:en_US-amy-low` (voice ID after `:`)
-- **Notes:** Fast offline TTS using ONNX models. Supports multiple languages and voices. Voice models are downloaded on first use.
+  - TTS: `local/piper:en_US-lessac-medium`,
+    `local/piper:en_US-amy-low` (voice id after `:`)
+- **Notes:** Fast offline TTS using ONNX models. Supports multiple
+  languages and voices. Voice models are downloaded on first use.
 
 ```yaml
 providers:
@@ -186,12 +217,47 @@ providers:
 | Kokoro | -- | -- | Yes | Local |
 | Piper | -- | -- | Yes | Local |
 
+## Per-project provider keys
+
+The top-level `providers` block sets the default keys. Each project
+under `projects:` can override the providers it uses by declaring
+its own `providers` block:
+
+```yaml
+providers:
+  openai:
+    api_key: ${DEFAULT_OPENAI_KEY}
+
+projects:
+  tonys-pizza:
+    name: Tony's Pizza
+    providers:
+      openai:
+        api_key: ${TONYS_OPENAI_KEY}  # overrides for this project
+```
+
+The inference factories pick the right key automatically based on
+the active project (set via `default_project`, the `set_project`
+helper from `voicegateway.core.active_project`, or a virtual key's
+project binding).
+
+## DB-managed providers
+
+Beyond YAML, providers can be added at runtime via the MCP server
+or the dashboard. These rows live in the `managed_providers` table
+with their API keys Fernet-encrypted by `VOICEGW_SECRET`. The
+runtime resolution order is: YAML providers (top-level + per-project)
+first, then DB-managed providers for any missing entries.
+
 ## Common configuration options
 
 All providers support these shared fields:
 
-- `api_key` (string) -- API key, typically via `${ENV_VAR}` substitution
-- `base_url` (string) -- override the default API endpoint
-- `enabled` (bool, default `true`) -- disable a provider without removing its config
+- `api_key` (string): API key, typically via `${ENV_VAR}`
+  substitution.
+- `base_url` (string): override the default API endpoint.
+- `enabled` (bool, default `true`): disable a provider without
+  removing its config.
 
-See: [voicegw.yaml Reference](/configuration/voicegw-yaml), [Models](/configuration/models)
+See [voicegw.yaml reference](/docs/configuration/voicegw-yaml),
+[Models](/docs/configuration/models).

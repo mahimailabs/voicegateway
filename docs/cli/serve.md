@@ -1,71 +1,132 @@
-# voicegw serve
+---
+title: voicegw serve / start / stop / restart
+description: Run the VoiceGateway daemon. serve runs in the foreground; start, stop, restart, daemon-logs, and uninstall-daemon manage the OS-installed service.
+---
 
-Start the VoiceGateway HTTP API server.
+# voicegw serve / start / stop / restart
 
-## Purpose
+The daemon is the single long-lived process behind VoiceGateway. It
+serves the HTTP API (`/v1/*`), the dashboard API (`/api/*`), and the
+React SPA (`/`) on a single port. Five lifecycle commands manage it.
 
-The `serve` command launches a FastAPI server that exposes the full HTTP API, including CRUD operations for providers, models, and projects, plus observability endpoints for costs, latency, logs, and Prometheus metrics. The dashboard frontend and external monitoring tools consume this API.
+## `voicegw serve`
 
-## Syntax
+Run the daemon in the foreground. Useful for development, smoke
+testing, and Docker entrypoints.
+
+### Syntax
 
 ```bash
 voicegw serve [OPTIONS]
 ```
 
-## Options
+### Options
 
 | Flag | Short | Type | Default | Description |
 |---|---|---|---|---|
-| `--config` | `-c` | `string` | `null` | Path to `voicegw.yaml`. Auto-discovered if omitted. |
-| `--host` | | `string` | `0.0.0.0` | Bind address. Use `127.0.0.1` to restrict to localhost. |
-| `--port` | | `integer` | `8080` | Port number to listen on. |
+| `--config` | `-c` | `string` | auto | Path to `voicegw.yaml`. Auto-discovered if omitted. |
+| `--host` | | `string` | `serve.host` or `0.0.0.0` | Bind address. Override with `127.0.0.1` to restrict to localhost. |
+| `--port` | | `integer` | `serve.port` or `8080` | Port number to listen on. |
+
+### Behaviour
+
+1. Load the gateway configuration.
+2. Build the FastAPI app (`build_app(gateway)`): registers all
+   `/v1/*` routers, all `/api/*` dashboard routers, mounts the
+   React SPA at `/`, mounts the branding directory at
+   `/static/branding/*`, and wires the MCP SSE transport.
+3. Start uvicorn on the resolved host and port.
+
+The server runs in the foreground; stop with `Ctrl+C`. For
+background operation use `voicegw start` (after `voicegw onboard`
+has installed the daemon) or run inside a process supervisor.
+
+### Examples
+
+```bash
+# Default bind (uses serve.host / serve.port from config)
+voicegw serve
+
+# Override the port for local testing
+voicegw serve --port 8090
+
+# Bind to localhost only
+voicegw serve --host 127.0.0.1
+```
+
+## `voicegw start` {#start}
+
+Bring the OS-installed daemon up. The daemon must be installed
+first (via `voicegw onboard` or `voicegw onboard --install-daemon`).
+
+```bash
+voicegw start
+```
+
+On macOS this calls `launchctl bootstrap`; on Linux,
+`systemctl --user start`; on Windows, `schtasks /Run`.
+
+Exits 0 on success. Exits 1 if the OS service manager refuses
+(usually because the service is not installed).
+
+## `voicegw stop` {#stop}
+
+Bring the OS-installed daemon down.
+
+```bash
+voicegw stop
+```
+
+## `voicegw restart` {#restart}
+
+Stop, then start. Equivalent to `voicegw stop && voicegw start`
+but does both inside one call to the service manager (so race
+conditions cannot leave the daemon in a half-down state).
+
+```bash
+voicegw restart
+```
+
+## `voicegw daemon-logs` {#daemon-logs}
+
+Tail the OS-native daemon log stream.
+
+```bash
+voicegw daemon-logs [--tail N]
+```
+
+| Flag | Short | Type | Default | Description |
+|---|---|---|---|---|
+| `--tail` | `-n` | `integer` | `100` | Number of recent log lines to print. |
+
+On macOS this reads `~/Library/Logs/voicegateway/*.log`. On Linux,
+`journalctl --user -u voicegateway`. On Windows, the Task Scheduler
+event log.
+
+## `voicegw uninstall-daemon` {#uninstall}
+
+Remove the daemon registration. The config file at
+`~/.config/voicegateway/voicegw.yaml` and the SQLite database
+(`~/.config/voicegateway/voicegw.db` by default) are preserved.
+
+```bash
+voicegw uninstall-daemon
+```
+
+The command prints what was removed and what was preserved, plus
+the manual `rm -rf` command if you want to wipe state too.
 
 ## Prerequisites
 
-Requires the `dashboard` extra to be installed (for `uvicorn`):
+The `dashboard` extra must be installed so `uvicorn` is on the
+import path:
 
 ```bash
-pip install "voicegateway[dashboard]"
+pipx install 'voicegateway[cloud,dashboard]'
 ```
 
-If `uvicorn` is not installed, the command prints an error message with installation instructions and exits.
-
-## Behavior
-
-1. Loads the gateway configuration from the specified (or auto-discovered) config file.
-2. Builds the FastAPI application bound to the gateway instance.
-3. Starts a uvicorn server on the specified host and port.
-4. CORS is enabled for all origins (suitable for development; restrict in production via a reverse proxy).
-
-The server runs in the foreground and can be stopped with `Ctrl+C`.
-
-## Examples
-
-### Start on default port
-
-```bash
-voicegw serve
-```
-
-Starts the API at `http://0.0.0.0:8080`.
-
-### Start on a custom port
-
-```bash
-voicegw serve --port 3000
-```
-
-### Bind to localhost only
-
-```bash
-voicegw serve --host 127.0.0.1 --port 8080
-```
-
-### Use a specific config file
-
-```bash
-voicegw serve --config /etc/voicegateway/voicegw.yaml --port 8080
-```
+If `uvicorn` is missing, `voicegw serve` exits with an error
+message pointing at this install command.
 
 ## Docker
 
@@ -75,10 +136,16 @@ The `serve` command is the default entrypoint in the Docker image:
 docker compose up -d
 ```
 
-This starts the API server on port 8080 inside the container.
+The container binds port 8080 by default (override via
+`VOICEGW_PORT`).
 
-## Related Commands
+## Related commands
 
-- [`voicegw dashboard`](/cli/dashboard) -- start the web UI (separate server)
-- [`voicegw mcp`](/cli/mcp) -- start the MCP server for AI agents
-- [`voicegw status`](/cli/status) -- verify config before starting
+- [`voicegw onboard`](/docs/cli/onboard): writes the config and
+  installs the daemon in one go.
+- [`voicegw dashboard`](/docs/cli/dashboard): open the dashboard in
+  your browser once the daemon is up.
+- [`voicegw status`](/docs/cli/status): verify the daemon is
+  serving the expected providers.
+- [`voicegw mcp`](/docs/cli/mcp): start the MCP server for coding
+  agents.
