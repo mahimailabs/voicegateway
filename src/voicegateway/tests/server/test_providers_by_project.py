@@ -46,13 +46,10 @@ def yaml_seeded_gateway(tmp_path, monkeypatch):
 
 @pytest.fixture
 async def dash_client(yaml_seeded_gateway):
-    import dashboard.api.main as dash_module
-
-    dash_module._gateway = yaml_seeded_gateway
-    transport = ASGITransport(app=dash_module.app)
+    app = build_app(yaml_seeded_gateway, enable_mcp_sse=False, enable_dashboard=True)
+    transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
-    dash_module._gateway = None
 
 
 async def test_by_project_lists_yaml_per_project_keys(dash_client):
@@ -142,17 +139,12 @@ async def test_by_project_empty_when_no_project_keys(tmp_path, monkeypatch):
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "empty.db"))
     gw = Gateway(config_path=str(cfg_path))
 
-    import dashboard.api.main as dash_module
-
-    dash_module._gateway = gw
-    transport = ASGITransport(app=dash_module.app)
-    try:
-        async with AsyncClient(transport=transport, base_url="http://test") as c:
-            resp = await c.get("/api/providers/by-project")
-            assert resp.status_code == 200
-            assert resp.json() == {"providers": []}
-    finally:
-        dash_module._gateway = None
+    app = build_app(gw, enable_mcp_sse=False, enable_dashboard=True)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        resp = await c.get("/api/providers/by-project")
+        assert resp.status_code == 200
+        assert resp.json() == {"providers": []}
 
 
 # ---------------------------------------------------------------------------
