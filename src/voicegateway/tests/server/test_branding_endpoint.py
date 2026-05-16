@@ -1,4 +1,9 @@
-"""Tests for branding endpoints (REQ-VG-ROUTE-004)."""
+"""Tests for branding endpoints (REQ-VG-ROUTE-004).
+
+After the dashboard fold-in, these handlers live in
+:mod:`voicegateway.server.api.dashboard.branding` and are reached
+through the daemon's ``build_app(...)``.
+"""
 
 from __future__ import annotations
 
@@ -7,36 +12,17 @@ from io import BytesIO
 import pytest
 from fastapi.testclient import TestClient
 
-import dashboard.api.main as api
-from voicegateway.services.storage_service import StorageService
-
-
-class _FakeGateway:
-    def __init__(self, path: str):
-        self.storage = StorageService(path)
-
-        class _Cfg:
-            class auth:
-                api_keys = []
-                cors_origins = []
-
-            latency: dict = {}
-            projects: dict = {}
-
-        self.config = _Cfg()
-
-    def list_projects(self):
-        return []
+from voicegateway.core.gateway import Gateway
+from voicegateway.server.main import build_app
 
 
 @pytest.fixture
-async def client(tmp_path, monkeypatch):
-    path = str(tmp_path / "brand.db")
-    gw = _FakeGateway(path)
+async def client(temp_config, tmp_path, monkeypatch):
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "brand.db"))
+    gw = Gateway(config_path=temp_config)
     await gw.storage.upsert_managed_project("default", "Default")
-    monkeypatch.setattr(api, "_gateway", gw)
-    monkeypatch.setattr(api, "_cors_configured", True)
-    yield gw, TestClient(api.app)
+    app = build_app(gw, enable_mcp_sse=False, enable_dashboard=True)
+    yield gw, TestClient(app)
 
 
 def test_get_branding_none_for_unbranded(client) -> None:

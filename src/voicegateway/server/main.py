@@ -99,9 +99,12 @@ class ApplicationBuilder:
         )
 
     def _configure_routers(self) -> None:
+        from voicegateway.server.api.dashboard.branding import mount_static_branding
+
         self.app.include_router(system_router)
         self.app.include_router(api_router)
         self.app.include_router(dashboard_router)
+        mount_static_branding(self.app)
 
     def _mount_mcp_sse(self) -> None:
         mount_sse(self.app, self.gateway)
