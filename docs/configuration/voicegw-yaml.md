@@ -1,6 +1,14 @@
-# voicegw.yaml Reference
+---
+title: voicegw.yaml reference
+description: Every top-level section and key in the VoiceGateway config file. Validated with pydantic extra=forbid so typos fail fast at startup.
+---
 
-The `voicegw.yaml` file is the central configuration for VoiceGateway. It is validated at startup using a Pydantic schema with `extra="forbid"`, which means any typo or unknown key will produce a clear error message before your gateway starts.
+# voicegw.yaml reference
+
+The `voicegw.yaml` file is the central configuration for
+VoiceGateway. It is validated at startup using a Pydantic schema
+with `extra="forbid"`, which means any typo or unknown key produces
+a clear error message before your gateway starts.
 
 VoiceGateway searches for the config file in this order:
 
@@ -8,11 +16,12 @@ VoiceGateway searches for the config file in this order:
 2. `~/.config/voicegateway/voicegw.yaml`
 3. `/etc/voicegateway/voicegw.yaml`
 
-You can override this with the `VOICEGW_CONFIG` environment variable. See [Environment Variables](/configuration/environment-variables).
+You can override this with the `VOICEGW_CONFIG` environment
+variable. See [Environment variables](/docs/configuration/environment-variables).
 
 ## Top-level sections
 
-The config file has 10 top-level sections. All are optional.
+The config file has ten top-level sections. All are optional.
 
 | Section | Purpose |
 |---|---|
@@ -25,13 +34,15 @@ The config file has 10 top-level sections. All are optional.
 | `cost_tracking` | SQLite database settings for cost persistence |
 | `latency` | TTFB warning thresholds and percentile config |
 | `rate_limits` | Per-provider request rate limits |
-| `dashboard` | Web dashboard host, port, and toggle |
+| `serve` | Bind host and port for the daemon |
 
 ---
 
 ## `providers`
 
-Configure credentials and settings for each provider. Keys are provider names matching VoiceGateway's built-in provider identifiers.
+Configure credentials and settings for each provider. Keys are
+provider names matching VoiceGateway's built-in provider
+identifiers.
 
 ```yaml
 providers:
@@ -61,17 +72,21 @@ providers:
 
 Each provider supports at minimum:
 
-- `api_key` (string) -- API key, typically via `${ENV_VAR}` substitution
-- `base_url` (string) -- override the default API endpoint
-- `enabled` (bool, default `true`) -- disable a provider without removing its config
+- `api_key` (string): API key, typically via `${ENV_VAR}` substitution.
+- `base_url` (string): override the default API endpoint.
+- `enabled` (bool, default `true`): disable a provider without
+  removing its config.
 
-See: [Providers](/configuration/providers)
+See [Providers](/docs/configuration/providers) for per-provider
+details.
 
 ---
 
 ## `models`
 
-Register custom model aliases organized by modality. Each entry maps an alias to a `provider` and `model` name, with optional defaults.
+Register custom model aliases organised by modality. Each entry
+maps an alias to a `provider` and `model` name, with optional
+defaults.
 
 ```yaml
 models:
@@ -85,7 +100,7 @@ models:
   llm:
     reasoning:
       provider: anthropic
-      model: claude-sonnet-4-20250514
+      model: claude-sonnet-4-5
   tts:
     narrator:
       provider: cartesia
@@ -93,19 +108,20 @@ models:
       default_voice: narrator-male
 ```
 
-See: [Models](/configuration/models)
+See [Models](/docs/configuration/models).
 
 ---
 
 ## `stacks`
 
-Named bundles that map to one STT, one LLM, and one TTS model. Use stacks to define preset quality/cost tiers.
+Named bundles that map to one STT, one LLM, and one TTS model. Use
+stacks to define preset quality / cost tiers.
 
 ```yaml
 stacks:
   premium:
     stt: deepgram/nova-3
-    llm: anthropic/claude-sonnet-4-20250514
+    llm: anthropic/claude-sonnet-4-5
     tts: cartesia/sonic-3
   budget:
     stt: groq/whisper-large-v3
@@ -117,13 +133,14 @@ stacks:
     tts: local/kokoro
 ```
 
-See: [Stacks](/configuration/stacks)
+See [Stacks](/docs/configuration/stacks).
 
 ---
 
 ## `projects`
 
-Define projects for cost attribution and budget enforcement.
+Define projects for cost attribution and budget enforcement. Each
+project can override providers per-key.
 
 ```yaml
 projects:
@@ -134,6 +151,11 @@ projects:
     daily_budget: 50.00
     budget_action: throttle
     tags: [prod, support]
+    providers:
+      deepgram:
+        api_key: ${SUPPORT_DEEPGRAM_KEY}
+      anthropic:
+        api_key: ${SUPPORT_ANTHROPIC_KEY}
   internal-qa:
     name: Internal QA Bot
     description: Testing and QA agent
@@ -141,15 +163,23 @@ projects:
     daily_budget: 10.00
     budget_action: warn
     tags: [dev, qa]
+
+default_project: customer-support
 ```
 
-See: [Projects](/configuration/projects)
+`budget_action` is one of `warn`, `throttle`, or `block`. Project-
+scoped `providers` override the top-level `providers` for that
+project; otherwise the top-level keys apply.
+
+See [Projects](/docs/configuration/projects).
 
 ---
 
 ## `fallbacks`
 
-Ordered lists of model IDs per modality. The gateway tries each in order until one succeeds.
+Ordered lists of model ids per modality. Used as a resolver-time
+hint: walk the list at startup and pick the first model whose
+provider plugin imports cleanly.
 
 ```yaml
 fallbacks:
@@ -158,7 +188,7 @@ fallbacks:
     - openai/whisper-1
     - local/whisper-large-v3
   llm:
-    - anthropic/claude-sonnet-4-20250514
+    - anthropic/claude-sonnet-4-5
     - openai/gpt-4.1-mini
     - ollama/llama3.2:3b
   tts:
@@ -171,7 +201,8 @@ fallbacks:
 
 ## `observability`
 
-Three boolean flags that control which middleware runs. All default to `true`.
+Three boolean flags that control which middleware runs. All default
+to `true`.
 
 ```yaml
 observability:
@@ -180,7 +211,7 @@ observability:
   request_logging: true
 ```
 
-See: [Observability](/configuration/observability)
+See [Observability](/docs/configuration/observability).
 
 ---
 
@@ -195,9 +226,11 @@ cost_tracking:
   daily_budget_alert: 100.00
 ```
 
-- `enabled` (bool, default `false`) -- enable cost persistence. Also enabled automatically if `VOICEGW_DB_PATH` is set.
-- `db_path` (string) -- path to the SQLite database file.
-- `daily_budget_alert` (float, optional) -- global daily budget alert threshold.
+- `enabled` (bool, default `false`): enable cost persistence. Also
+  enabled automatically if `VOICEGW_DB_PATH` is set.
+- `db_path` (string): path to the SQLite database file.
+- `daily_budget_alert` (float, optional): global daily budget alert
+  threshold.
 
 ---
 
@@ -211,8 +244,10 @@ latency:
   percentiles: [50.0, 95.0, 99.0]
 ```
 
-- `ttfb_warning_ms` (float, default `500.0`) -- time-to-first-byte warning threshold in milliseconds.
-- `percentiles` (list of floats) -- which percentiles to track and report.
+- `ttfb_warning_ms` (float, default `500.0`): time-to-first-byte
+  warning threshold in milliseconds.
+- `percentiles` (list of floats): which percentiles to track and
+  report.
 
 ---
 
@@ -228,30 +263,34 @@ rate_limits:
     requests_per_minute: 60
 ```
 
-- `requests_per_minute` (int) -- maximum requests per minute for the given provider.
+- `requests_per_minute` (int): maximum requests per minute for the
+  given provider.
 
 ---
 
-## `dashboard`
+## `serve`
 
-Configure the web dashboard.
+Bind host and port for the daemon. The daemon serves the HTTP API
+(`/v1/*`), the dashboard API (`/api/*`), and the React SPA (`/`)
+all on this single port.
 
 ```yaml
-dashboard:
-  enabled: true
+serve:
   host: 0.0.0.0
-  port: 9090
+  port: 8080
 ```
 
-- `enabled` (bool, default `true`) -- whether to start the dashboard.
-- `host` (string, default `0.0.0.0`) -- bind address.
-- `port` (int, default `9090`) -- port number.
+- `host` (string, default `0.0.0.0`): bind address. Use `127.0.0.1`
+  to restrict to localhost.
+- `port` (int, default `8080`): port number. The wizard collects
+  this as question 4 of [`voicegw onboard`](/docs/cli/onboard).
 
 ---
 
 ## Environment variable substitution
 
-Any string value in the config can use `${ENV_VAR}` syntax. VoiceGateway substitutes these at load time using `os.environ`.
+Any string value in the config can use `${ENV_VAR}` syntax.
+VoiceGateway substitutes these at load time using `os.environ`.
 
 ```yaml
 providers:
@@ -259,6 +298,7 @@ providers:
     api_key: ${DEEPGRAM_API_KEY}
 ```
 
-If the environment variable is not set, it resolves to an empty string.
+If the environment variable is not set, it resolves to an empty
+string.
 
-See: [Environment Variables](/configuration/environment-variables)
+See [Environment variables](/docs/configuration/environment-variables).

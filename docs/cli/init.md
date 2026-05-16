@@ -1,10 +1,22 @@
+---
+title: voicegw init
+description: Scaffold a voicegw.yaml configuration file from the bundled template.
+---
+
 # voicegw init
 
 Create a `voicegw.yaml` configuration file from the bundled template.
 
 ## Purpose
 
-The `init` command scaffolds a new configuration file with example provider, model, and project definitions. This is the recommended first step when setting up VoiceGateway. The starter template ships inside the wheel at `src/voicegateway/data/voicegw.example.yaml` and is copied verbatim to the output path.
+`voicegw init` scaffolds a new configuration file with example
+provider, model, and project definitions. Use it when you want a
+hand-edited starting point. For a guided wizard that also installs
+the daemon, use [`voicegw onboard`](/docs/cli/onboard) instead.
+
+The starter template ships inside the wheel at
+`voicegateway/data/voicegw.example.yaml` and is copied verbatim to
+the output path.
 
 ## Syntax
 
@@ -18,10 +30,13 @@ voicegw init [OPTIONS]
 |---|---|---|---|---|
 | `--output` | `-o` | `string` | `./voicegw.yaml` | Output path for the generated config file. |
 
-## Behavior
+## Behaviour
 
-1. If the target file already exists, the CLI prompts for confirmation before overwriting.
-2. The starter template bundled at `src/voicegateway/data/voicegw.example.yaml` is written to the output path.
+1. If the target file already exists, the CLI prompts for
+   confirmation before overwriting.
+2. The starter template at `voicegateway/data/voicegw.example.yaml`
+   (inside the installed wheel, resolved via `importlib.resources`)
+   is written to the output path.
 
 ## Examples
 
@@ -39,7 +54,7 @@ Creates `./voicegw.yaml` with the example template.
 voicegw init --output /etc/voicegateway/voicegw.yaml
 ```
 
-### Create config with short flag
+### Create config with the short flag
 
 ```bash
 voicegw init -o ~/projects/my-agent/voicegw.yaml
@@ -52,7 +67,7 @@ voicegw init --output ./voicegw.yaml
 # Prompts: "./voicegw.yaml already exists. Overwrite? [y/N]"
 ```
 
-## Next Steps
+## Next steps
 
 After running `init`:
 
@@ -60,8 +75,12 @@ After running `init`:
 2. Configure models under the `models:` section.
 3. Verify with `voicegw status`.
 
-## Related Commands
+## Related commands
 
-- [`voicegw status`](/cli/status) -- verify the config loads correctly
-- [`voicegw serve`](/cli/serve) -- start the HTTP API with the config
-- [`voicegw dashboard`](/cli/dashboard) -- start the web dashboard
+- [`voicegw onboard`](/docs/cli/onboard): the wizard alternative
+  (also installs the daemon).
+- [`voicegw status`](/docs/cli/status): verify the config loads
+  correctly.
+- [`voicegw serve`](/docs/cli/serve): run the daemon with the
+  config.
+- [`voicegw dashboard`](/docs/cli/dashboard): open the dashboard.
