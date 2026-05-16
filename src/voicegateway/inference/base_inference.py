@@ -33,9 +33,9 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 from voicegateway.core import registry as _registry
+from voicegateway.core.active_project import get_active_project
 from voicegateway.core.config import ConfigError
 from voicegateway.core.gateway_factory import get_gateway
-from voicegateway.core.active_project import get_active_project
 from voicegateway.inference.session.context import get_or_create_session_id
 from voicegateway.middleware.instrumented_provider_middleware import wrap_provider
 

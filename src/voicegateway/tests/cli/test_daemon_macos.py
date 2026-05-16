@@ -101,7 +101,9 @@ def test_install_writes_plist_and_bootstraps(backend, fake_launchctl, monkeypatc
 
 
 def test_install_raises_when_voicegw_not_on_path(backend, monkeypatch):
-    monkeypatch.setattr("voicegateway.cli.daemon.macos_daemon.shutil.which", lambda _: None)
+    monkeypatch.setattr(
+        "voicegateway.cli.daemon.macos_daemon.shutil.which", lambda _: None
+    )
     with pytest.raises(RuntimeError, match="voicegw"):
         backend.install()
 

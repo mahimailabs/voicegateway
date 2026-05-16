@@ -37,7 +37,8 @@ def macos_backend(tmp_path, monkeypatch):
         lambda _: "/usr/local/bin/voicegw",
     )
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.macos_daemon.subprocess.run", MagicMock(return_value=_ok())
+        "voicegateway.cli.daemon.macos_daemon.subprocess.run",
+        MagicMock(return_value=_ok()),
     )
 
     from voicegateway.cli.daemon.macos_daemon import MacOSBackend
@@ -55,7 +56,8 @@ def linux_backend(tmp_path, monkeypatch):
         lambda _: "/usr/local/bin/voicegw",
     )
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.linux_daemon.subprocess.run", MagicMock(return_value=_ok())
+        "voicegateway.cli.daemon.linux_daemon.subprocess.run",
+        MagicMock(return_value=_ok()),
     )
 
     from voicegateway.cli.daemon.linux_daemon import LinuxBackend
@@ -82,7 +84,8 @@ def windows_backend(tmp_path, monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        "voicegateway.cli.daemon.windows_daemon.subprocess.run", MagicMock(return_value=_ok())
+        "voicegateway.cli.daemon.windows_daemon.subprocess.run",
+        MagicMock(return_value=_ok()),
     )
 
     from voicegateway.cli.daemon.windows_daemon import WindowsBackend
