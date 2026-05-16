@@ -82,7 +82,7 @@ class BaseRepository(Generic[T]):
                 else:
                     await s.flush()
                     await s.refresh(obj)
-                return obj  # type: ignore[return-value]
+                return obj
             except sa_exc.IntegrityError as e:
                 if session is None:
                     await s.rollback()

@@ -24,9 +24,13 @@ class VirtualKey(SQLModel, table=True):
     name: str
     tenant_id: str | None = Field(default=None, index=True)
     issued_by: str | None = None
-    issued_at: datetime = Field(
+    issued_at: datetime = Field(  # type: ignore[call-overload]
         default_factory=_utcnow,
         sa_type=DateTime(timezone=True),
     )
-    last_used_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
-    revoked_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    last_used_at: datetime | None = Field(  # type: ignore[call-overload]
+        default=None, sa_type=DateTime(timezone=True)
+    )
+    revoked_at: datetime | None = Field(  # type: ignore[call-overload]
+        default=None, sa_type=DateTime(timezone=True)
+    )

@@ -38,7 +38,7 @@ class VirtualKeyRepository(BaseRepository[VirtualKey]):
             stmt = select(VirtualKey)
             if not include_revoked:
                 stmt = stmt.where(VirtualKey.revoked_at.is_(None))  # type: ignore[union-attr]
-            stmt = stmt.order_by(VirtualKey.issued_at.desc(), VirtualKey.id.desc())  # type: ignore[union-attr]
+            stmt = stmt.order_by(VirtualKey.issued_at.desc(), VirtualKey.id.desc())  # type: ignore[union-attr,attr-defined]
             result = await s.execute(stmt)
             return list(result.scalars().all())
 

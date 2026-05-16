@@ -54,9 +54,10 @@ def attach_layered_stack(app: FastAPI, gateway: Gateway) -> None:
     app.state.container = container
 
     app.add_exception_handler(
-        RequestValidationError, request_validation_exception_handler
+        RequestValidationError,
+        request_validation_exception_handler,  # type: ignore[arg-type]
     )
-    app.add_exception_handler(SQLAlchemyError, sqlalchemy_exception_handler)
+    app.add_exception_handler(SQLAlchemyError, sqlalchemy_exception_handler)  # type: ignore[arg-type]
     for exc_class, handler in (
         (DuplicatedError, duplicated_error_handler),
         (LayeredAuthError, auth_error_handler),
@@ -66,7 +67,7 @@ def attach_layered_stack(app: FastAPI, gateway: Gateway) -> None:
         (UnauthorizedError, unauthorized_error_handler),
         (NotSatisfiableError, not_satisfiable_error_handler),
     ):
-        app.add_exception_handler(exc_class, handler)
+        app.add_exception_handler(exc_class, handler)  # type: ignore[arg-type]
     app.add_exception_handler(Exception, global_exception_handler)
 
 

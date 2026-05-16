@@ -32,7 +32,7 @@ def _row_to_dict(p: ManagedProvider) -> dict[str, Any]:
 async def list_providers(session: AsyncSession) -> list[dict[str, Any]]:
     """Return managed providers. api_key_encrypted is ciphertext."""
     result = await session.execute(
-        select(ManagedProvider).order_by(ManagedProvider.created_at.asc())
+        select(ManagedProvider).order_by(ManagedProvider.created_at.asc())  # type: ignore[attr-defined]
     )
     return [_row_to_dict(p) for p in result.scalars().all()]
 
@@ -67,7 +67,7 @@ async def upsert_provider(
         "updated_at": now,
         "project": project,
     }
-    stmt = sqlite_insert(ManagedProvider.__table__).values(**values)
+    stmt = sqlite_insert(ManagedProvider.__table__).values(**values)  # type: ignore[attr-defined]
     stmt = stmt.on_conflict_do_update(
         index_elements=["provider_id"],
         set_={
@@ -86,10 +86,10 @@ async def upsert_provider(
 async def delete_provider(session: AsyncSession, provider_id: str) -> bool:
     """Delete one managed provider row. True when a row was removed."""
     result = await session.execute(
-        delete(ManagedProvider).where(ManagedProvider.provider_id == provider_id)
+        delete(ManagedProvider).where(ManagedProvider.provider_id == provider_id)  # type: ignore[arg-type]
     )
     await session.commit()
-    return (result.rowcount or 0) > 0
+    return (result.rowcount or 0) > 0  # type: ignore[attr-defined]
 
 
 async def rotate_credentials(

@@ -14,7 +14,7 @@ Two top-level helpers:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from fastapi import Depends, HTTPException, Request
 
@@ -36,7 +36,7 @@ def get_gateway(request: Request) -> Gateway:
     gw = getattr(request.app.state, "gateway", None)
     if gw is None:
         raise HTTPException(status_code=503, detail="Gateway not bound to app state")
-    return gw
+    return cast("Gateway", gw)
 
 
 def require_scope(scope: str):
