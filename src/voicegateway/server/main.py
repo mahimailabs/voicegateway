@@ -22,7 +22,7 @@ from voicegateway.core.app_wiring import attach_layered_stack
 from voicegateway.core.auth import load_api_keys, resolve_cors_origins
 from voicegateway.server.dashboard import mount_dashboard
 from voicegateway.server.mcp.transport import mount_sse
-from voicegateway.server.routes import api_router, system_router
+from voicegateway.server.routes import api_router, dashboard_router, system_router
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -101,6 +101,7 @@ class ApplicationBuilder:
     def _configure_routers(self) -> None:
         self.app.include_router(system_router)
         self.app.include_router(api_router)
+        self.app.include_router(dashboard_router)
 
     def _mount_mcp_sse(self) -> None:
         mount_sse(self.app, self.gateway)
