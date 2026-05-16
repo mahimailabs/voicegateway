@@ -39,6 +39,9 @@ from voicegateway.server.api.dashboard import (
     costs as dashboard_costs,
 )
 from voicegateway.server.api.dashboard import (
+    guardrails as dashboard_guardrails,
+)
+from voicegateway.server.api.dashboard import (
     health as dashboard_health,
 )
 from voicegateway.server.api.dashboard import (
@@ -46,6 +49,9 @@ from voicegateway.server.api.dashboard import (
 )
 from voicegateway.server.api.dashboard import (
     projects as dashboard_projects,
+)
+from voicegateway.server.api.dashboard import (
+    replay as dashboard_replay,
 )
 from voicegateway.server.api.dashboard import (
     sessions as dashboard_sessions,
@@ -78,6 +84,8 @@ dashboard_router.include_router(dashboard_costs.router)
 dashboard_router.include_router(dashboard_projects.router)
 dashboard_router.include_router(dashboard_sessions.router)
 dashboard_router.include_router(dashboard_metrics.router)
+dashboard_router.include_router(dashboard_guardrails.router)
+dashboard_router.include_router(dashboard_replay.router)
 
 
 __all__ = ["api_router", "dashboard_router", "system_router"]
