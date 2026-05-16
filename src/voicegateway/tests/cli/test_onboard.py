@@ -563,8 +563,10 @@ def test_summary_shows_every_configured_field(tmp_path):
     assert "deepgram" in out
     assert "9001" in out
     assert str(cfg) in out
-    # Dashboard URL is the v0.0.5 default port (9090) on localhost.
-    assert "http://127.0.0.1:9090" in out
+    # After the dashboard fold-in, the dashboard URL points at the
+    # daemon's serve port (collected as question 4 of the wizard),
+    # not the legacy :9090.
+    assert "http://127.0.0.1:9001" in out
     # Diagnostic next-steps appear.
     assert "voicegw status" in out
     assert "voicegw doctor" in out

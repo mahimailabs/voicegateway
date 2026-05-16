@@ -1,13 +1,10 @@
 """Tests for the dashboard ``/api/*`` endpoints.
 
-Until the cut-over commit, dashboard endpoints live in two places:
-the ones already folded into ``server/api/dashboard/`` and the rest
-still in ``dashboard.api.main``. Both are reachable through the
-daemon's ``build_app()`` because ``ApplicationBuilder._mount_dashboard``
-grafts the legacy dashboard routes onto the daemon app at runtime. By
-pointing this test's ``client`` at the daemon, every endpoint stays
-testable through the same client regardless of which side of the
-fold-in it currently lives on.
+All dashboard handlers now live under
+:mod:`voicegateway.server.api.dashboard` and are reached through the
+daemon's ``build_app()`` (the standalone ``dashboard.api.main``
+FastAPI app was deleted in the cut-over commit). The ``client``
+fixture builds the daemon app once per test.
 """
 
 import pytest

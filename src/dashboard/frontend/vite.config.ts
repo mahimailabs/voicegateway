@@ -5,14 +5,14 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    // /api → dashboard backend (port 9090, the FastAPI app at
-    // dashboard/api/main.py). /v1 → core HTTP API (port 8080, the
-    // FastAPI app at voicegateway/server.py). The dev workflow
-    // expects `voicegw serve` and `voicegw dashboard` running side
-    // by side; production via combined_server.py mounts both on a
-    // single port so the proxy is unnecessary there.
+    // After the dashboard fold-in, the daemon (`voicegw serve`) owns
+    // both /v1/* (core API) and /api/* (dashboard API), so both proxy
+    // targets point at port 8080. The previous split (/api -> :9090,
+    // /v1 -> :8080) is gone along with the standalone dashboard
+    // FastAPI app. In production the daemon also serves the built
+    // bundle at /; the proxy below only matters for `npm run dev`.
     proxy: {
-      '/api': 'http://localhost:9090',
+      '/api': 'http://localhost:8080',
       '/v1': 'http://localhost:8080',
     },
   },

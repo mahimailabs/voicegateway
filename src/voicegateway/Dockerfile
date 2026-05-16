@@ -72,8 +72,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /install /install
 COPY --chown=voicegw:voicegw src/voicegateway/ /app/voicegateway/
-COPY --chown=voicegw:voicegw src/dashboard/api/ /app/dashboard/api/
 COPY --chown=voicegw:voicegw src/dashboard/__init__.py /app/dashboard/
+COPY --chown=voicegw:voicegw src/dashboard/api/static/ /app/dashboard/api/static/
 COPY --from=frontend-builder --chown=voicegw:voicegw /build/frontend/dist /app/dashboard/frontend/dist
 
 USER voicegw
