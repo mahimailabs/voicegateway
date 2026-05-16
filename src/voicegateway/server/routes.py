@@ -33,7 +33,16 @@ from voicegateway.server.api import (
     virtual_keys,
 )
 from voicegateway.server.api.dashboard import (
+    auth_status as dashboard_auth_status,
+)
+from voicegateway.server.api.dashboard import (
+    costs as dashboard_costs,
+)
+from voicegateway.server.api.dashboard import (
     health as dashboard_health,
+)
+from voicegateway.server.api.dashboard import (
+    status as dashboard_status,
 )
 
 system_router = APIRouter()
@@ -54,6 +63,9 @@ api_router.include_router(virtual_keys.router)
 
 dashboard_router = APIRouter(prefix="/api")
 dashboard_router.include_router(dashboard_health.router)
+dashboard_router.include_router(dashboard_auth_status.router)
+dashboard_router.include_router(dashboard_status.router)
+dashboard_router.include_router(dashboard_costs.router)
 
 
 __all__ = ["api_router", "dashboard_router", "system_router"]
