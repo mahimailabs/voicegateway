@@ -1,4 +1,9 @@
-"""Tests for the four v0.3.0 replay endpoints on dashboard/api/main.py (T10)."""
+"""Tests for the four v0.3.0 replay endpoints (T10).
+
+After the dashboard fold-in these handlers live in
+:mod:`voicegateway.server.api.dashboard.replay` and are reached
+through the daemon's ``build_app(...)``.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +13,7 @@ from httpx import ASGITransport, AsyncClient
 from voicegateway.core.gateway import Gateway
 from voicegateway.middleware.replay_capture_middleware import ReplayEvent
 from voicegateway.repository import replay_repository as replay
+from voicegateway.server.main import build_app
 
 
 @pytest.fixture
@@ -18,13 +24,10 @@ def gateway(temp_config, tmp_path, monkeypatch):
 
 @pytest.fixture
 async def client(gateway):
-    import dashboard.api.main as dash_module
-
-    dash_module._gateway = gateway
-    transport = ASGITransport(app=dash_module.app)
+    app = build_app(gateway, enable_mcp_sse=False, enable_dashboard=True)
+    transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
-    dash_module._gateway = None
 
 
 async def _seed_replay(gateway, session_id: str, n: int = 3) -> None:
