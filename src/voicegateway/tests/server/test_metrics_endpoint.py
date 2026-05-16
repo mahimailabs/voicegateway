@@ -1,9 +1,8 @@
 """Tests for the v0.2.0 metrics endpoints (T12).
 
-After the dashboard fold-in, these endpoints live under
+These endpoints live under
 :mod:`voicegateway.server.api.dashboard` (sessions.py + metrics.py)
-and are reached through the daemon's ``build_app(...)`` rather than
-the legacy ``dashboard.api.main:app``.
+and are reached through the daemon's ``build_app(...)``.
 """
 
 from __future__ import annotations

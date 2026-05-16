@@ -52,7 +52,13 @@ USER dashboard
 
 EXPOSE 9090
 
+# After the dashboard fold-in, the daemon owns both /v1/* (HTTP API)
+# and /api/* (dashboard API) on a single port. This image keeps 9090
+# for docker-compose compatibility but launches the unified daemon
+# bound to that port via VOICEGW_PORT.
+ENV VOICEGW_PORT=9090
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -fsS http://localhost:9090/api/overview || exit 1
 
-CMD ["uvicorn", "dashboard.api.main:app", "--host", "0.0.0.0", "--port", "9090"]
+CMD ["python", "-m", "voicegateway.server.main"]

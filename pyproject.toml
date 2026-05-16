@@ -179,13 +179,33 @@ packages = ["src/voicegateway", "src/dashboard"]
 #   - tests/             — test suite, large and not part of the runtime
 #   - Dockerfile         — container build, not a Python file
 #   - README.dockerhub.md — DockerHub-only description, irrelevant to pip users
+#   - frontend/node_modules, frontend/src, frontend/*.json, tsconfig*,
+#     vite.config.* — frontend build inputs; the daemon only needs dist/.
 exclude = [
     "src/voicegateway/tests",
     "src/voicegateway/Dockerfile",
     "src/voicegateway/README.dockerhub.md",
     "src/dashboard/Dockerfile",
     "src/dashboard/README.dockerhub.md",
+    "src/dashboard/frontend/node_modules",
+    "src/dashboard/frontend/src",
+    "src/dashboard/frontend/package.json",
+    "src/dashboard/frontend/package-lock.json",
+    "src/dashboard/frontend/tsconfig.json",
+    "src/dashboard/frontend/tsconfig.node.json",
+    "src/dashboard/frontend/tsconfig.tsbuildinfo",
+    "src/dashboard/frontend/tsconfig.node.tsbuildinfo",
+    "src/dashboard/frontend/vite.config.js",
+    "src/dashboard/frontend/vite.config.ts",
+    "src/dashboard/frontend/vite.config.d.ts",
+    "src/dashboard/frontend/index.html",
 ]
+
+# Ship the Vite-built React bundle so `pip install voicegateway[dashboard]`
+# does not require Node on the install machine. The CI publish workflow
+# runs `npm ci && npm run build` before `python -m build` so dist/ exists.
+[tool.hatch.build.targets.wheel.force-include]
+"src/dashboard/frontend/dist" = "dashboard/frontend/dist"
 
 [tool.pyright]
 typeCheckingMode = "off"

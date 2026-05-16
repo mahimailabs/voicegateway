@@ -100,7 +100,10 @@ def test_serve_help():
 def test_dashboard_help():
     result = runner.invoke(app, ["dashboard", "--help"])
     assert result.exit_code == 0
-    assert "web dashboard" in result.output
+    # After the dashboard fold-in, ``voicegw dashboard`` just opens
+    # the daemon's URL in the browser; the help text describes that.
+    assert "VoiceGateway dashboard" in result.output
+    assert "browser" in result.output
 
 
 # --------------------------------------------------------------------

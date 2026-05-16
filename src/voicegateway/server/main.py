@@ -2,10 +2,10 @@
 
 ``ApplicationBuilder`` constructs the FastAPI app for a given Gateway,
 with each concern (layered DI stack, app state, CORS, routers, optional
-MCP SSE, optional dashboard) handled by one private method. ``build_app``
-stays as the public entry point and is a thin wrapper over
-``ApplicationBuilder.build()``. ``main`` is the CLI entry point used by
-``python -m voicegateway.server.main`` and the Dockerfile.
+MCP SSE, optional dashboard SPA) handled by one private method.
+``build_app`` stays as the public entry point and is a thin wrapper
+over ``ApplicationBuilder.build()``. ``main`` is the CLI entry point
+used by ``python -m voicegateway.server.main`` and the Dockerfile.
 """
 
 from __future__ import annotations
@@ -20,9 +20,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from voicegateway.core.app_wiring import attach_layered_stack
 from voicegateway.core.auth import load_api_keys, resolve_cors_origins
-from voicegateway.server.dashboard import mount_dashboard
 from voicegateway.server.mcp.transport import mount_sse
 from voicegateway.server.routes import api_router, dashboard_router, system_router
+from voicegateway.server.static import mount_frontend
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -51,7 +51,11 @@ class ApplicationBuilder:
         self.app: FastAPI = self._make_app()
 
     def build(self) -> FastAPI:
-        """Wire every configured concern onto the FastAPI app and return it."""
+        """Wire every configured concern onto the FastAPI app and return it.
+
+        Static SPA mounts MUST come last; their ``/{full_path:path}``
+        fallback would otherwise shadow any router registered after.
+        """
         self._configure_layered_stack()
         self._configure_app_state()
         self._configure_cors()
@@ -59,7 +63,7 @@ class ApplicationBuilder:
         if self.enable_mcp_sse:
             self._mount_mcp_sse()
         if self.enable_dashboard:
-            self._mount_dashboard()
+            self._mount_dashboard_spa()
         return self.app
 
     def _make_app(self) -> FastAPI:
@@ -109,8 +113,8 @@ class ApplicationBuilder:
     def _mount_mcp_sse(self) -> None:
         mount_sse(self.app, self.gateway)
 
-    def _mount_dashboard(self) -> None:
-        mount_dashboard(self.app, self.gateway)
+    def _mount_dashboard_spa(self) -> None:
+        mount_frontend(self.app)
 
 
 def build_app(
@@ -121,10 +125,10 @@ def build_app(
 ) -> FastAPI:
     """Build a FastAPI app bound to the given Gateway instance.
 
-    Thin wrapper over :class:`ApplicationBuilder`. By default, mounts the
-    MCP SSE transport and the dashboard sub-app. Pass
+    Thin wrapper over :class:`ApplicationBuilder`. By default, mounts
+    the MCP SSE transport and the React SPA at ``/``. Pass
     ``enable_mcp_sse=False`` / ``enable_dashboard=False`` to get the
-    HTTP-API-only shape.
+    HTTP-API-only shape (no SPA fallback, no MCP transport).
     """
     return ApplicationBuilder(
         gateway,

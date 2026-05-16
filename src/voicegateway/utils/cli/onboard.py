@@ -13,7 +13,6 @@ from rich.table import Table
 
 from voicegateway.cli._app import console
 from voicegateway.core.constants import (
-    DEFAULT_DASHBOARD_PORT,
     SMOKE_TEST_TIMEOUT_S,
     VALIDATION_TIMEOUT_S,
 )
@@ -98,12 +97,13 @@ def _print_summary(
     console.print(table)
     console.print(f"\n[dim]Config:[/dim] {config_path}", soft_wrap=True)
 
-    dashboard_url = f"http://127.0.0.1:{DEFAULT_DASHBOARD_PORT}"
+    dashboard_url = f"http://127.0.0.1:{port}"
     console.print(f"\n[bold]Dashboard:[/bold] {dashboard_url}")
     console.print(
-        "Open that URL after a request lands; "
-        "use [cyan]voicegw status[/cyan] / "
-        "[cyan]voicegw doctor[/cyan] for diagnostics."
+        "Open with [cyan]voicegw dashboard[/cyan] (launches your browser), "
+        "or visit the URL directly. Use [cyan]voicegw status[/cyan] / "
+        "[cyan]voicegw doctor[/cyan] for diagnostics, "
+        "[cyan]voicegw stop[/cyan] to bring the daemon down."
     )
 
 
