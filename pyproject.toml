@@ -201,11 +201,18 @@ exclude = [
     "src/dashboard/frontend/index.html",
 ]
 
-# Ship the Vite-built React bundle so `pip install voicegateway[dashboard]`
-# does not require Node on the install machine. The CI publish workflow
-# runs `npm ci && npm run build` before `python -m build` so dist/ exists.
-[tool.hatch.build.targets.wheel.force-include]
-"src/dashboard/frontend/dist" = "dashboard/frontend/dist"
+# Note on shipping the React bundle: hatchling's `force-include`
+# errors when the source path is missing, which breaks editable
+# installs in CI before npm has run. Distribution paths for the
+# frontend bundle today:
+#  - Docker: the Dockerfile's frontend-builder stage runs npm build
+#    and copies dist/ into /app/dashboard/frontend/dist.
+#  - From source: `cd src/dashboard/frontend && npm run build`.
+#  - pip install: the daemon's mount_frontend serves a "run npm run
+#    build" hint at / when dist/ is absent.
+# A PyPI wheel that bundles the prebuilt frontend is on the backlog
+# (requires either a custom hatchling build hook or migrating off
+# hatch-vcs to a setuptools build that tolerates conditional data).
 
 [tool.pyright]
 typeCheckingMode = "off"

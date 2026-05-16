@@ -26,26 +26,10 @@ jobs:
       with:
         python-version: "3.11"
 
-    - name: Set up Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: "20"
-        cache: "npm"
-        cache-dependency-path: src/dashboard/frontend/package-lock.json
-
     - name: Install build dependencies
       run: |
         python -m pip install --upgrade pip
         pip install build
-
-    # The daemon ships the prebuilt React bundle inside the wheel
-    # (see pyproject.toml force-include) so pip install does not need
-    # Node. Build it here before python -m build packs the wheel.
-    - name: Build dashboard frontend
-      working-directory: src/dashboard/frontend
-      run: |
-        npm ci
-        npm run build
 
     - name: Build package
       run: python -m build
