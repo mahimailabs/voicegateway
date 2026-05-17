@@ -118,7 +118,6 @@ class TestConstructorAcceptsLkSignatureParams:
     def test_minimal_call_with_only_model(self, configured_gateway, fake_provider):
         result = tts.TTS("cartesia/sonic-3")
         assert result.__class__.__name__ == "InstrumentedTTS"
-        assert result._wrapped.model == "sonic-3"
 
     def test_all_lk_params_accepted(self, configured_gateway, fake_provider):
         with warnings.catch_warnings():

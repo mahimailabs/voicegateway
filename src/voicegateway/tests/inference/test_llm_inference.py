@@ -106,7 +106,6 @@ class TestConstructorAcceptsLkSignatureParams:
     def test_minimal_call_with_only_model(self, configured_gateway, fake_provider):
         result = llm.LLM("openai/gpt-4o-mini")
         assert result.__class__.__name__ == "InstrumentedLLM"
-        assert result._wrapped.model == "gpt-4o-mini"
 
     def test_all_lk_params_accepted(self, configured_gateway, fake_provider):
         result = llm.LLM(

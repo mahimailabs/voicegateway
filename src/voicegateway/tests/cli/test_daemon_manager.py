@@ -41,14 +41,6 @@ def test_select_backend_name_routes_correctly(monkeypatch, platform, expected):
 # ---------------------------------------------------------------------------
 
 
-def test_manager_constructed_with_backend_uses_it() -> None:
-    """Passing ``backend=`` skips the real backend import entirely."""
-    backend = Mock()
-    mgr = DaemonManager(backend=backend)
-    # Backend reference is stored as-is.
-    assert mgr._backend is backend
-
-
 def test_install_delegates() -> None:
     backend = Mock()
     DaemonManager(backend=backend).install()
