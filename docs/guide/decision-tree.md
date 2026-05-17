@@ -47,14 +47,9 @@ A few cases where VoiceGateway is the wrong tool, called out so you do not disco
 
 - **Not an OpenAI-compatible HTTP proxy.** There is no `/v1/chat/completions` endpoint, no `/v1/audio/transcriptions` endpoint, no HTTP shim of any kind for inference. The `voicegateway.inference` Python module is the integration surface. If your callers expect to make OpenAI-shaped HTTP requests, use LiteLLM.
 - **Not a horizontally scaled multi-tenant gateway.** SQLite is the storage layer; the supported topology is single-instance. Multiple instances pointing at the same SQLite file each have an independent in-memory budget cache, so per-project budgets are not strictly enforced across replicas. This is fine for self-hosted single-team deployments and a poor fit for SaaS infrastructure that needs Postgres + horizontal scale.
-- **Not a real-time fallback engine.** VoiceGateway's resolver-time fallback walks a chain at startup, not during a call. For runtime / error-driven failover during an active call (the "Cloud outage? Switch to local" pattern), compose LiveKit's `FallbackAdapter` around VG `inference.*` instances. v0.0.6 will add a first-class `fallback=` parameter to the inference factories.
+- **Not a real-time fallback engine.** VoiceGateway's resolver-time fallback walks a chain at startup, not during a call. For runtime / error-driven failover during an active call (the "Cloud outage? Switch to local" pattern), compose LiveKit's `FallbackAdapter` around VG `inference.*` instances.
 - **Not a key-rotation system.** API keys can be re-entered if the encryption secret changes, but there is no built-in rotation tooling, MultiFernet versioning, or KMS integration. Treat the encryption secret as a long-lived credential.
 
 ## Still unsure?
 
-If you are migrating from a specific tool, the per-tool migration guides have more detail:
-
-- [Migrating from LiteLLM](/migration/from-litellm)
-- [Migrating from LiveKit Cloud Inference](/migration/from-livekit-inference)
-
-Or jump to the [quick start](/guide/quick-start) and try VoiceGateway in five minutes against a Deepgram + OpenAI + Cartesia stack. The shape fits your workload or it does not; the integration is small enough that finding out is cheap.
+Jump to the [quick start](/guide/quick-start) and try VoiceGateway in five minutes against a Deepgram + OpenAI + Cartesia stack. The shape fits your workload or it does not; the integration is small enough that finding out is cheap.

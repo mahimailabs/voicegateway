@@ -45,7 +45,7 @@ See: [Python SDK Reference](/api/python-sdk#session-correlation)
 
 ## Fallback Chain
 
-An ordered list of model IDs in `voicegw.yaml` for resolver-time fallback. Walk the chain at agent startup using the inference factories; the first model whose provider plugin imports cleanly and whose key resolves wins. Once `AgentSession` starts, that model is used for the whole call. v0.0.6 will add a first-class `fallback=` parameter to the inference factories.
+An ordered list of model IDs in `voicegw.yaml` for resolver-time fallback. Walk the chain at agent startup using the inference factories; the first model whose provider plugin imports cleanly and whose key resolves wins. Once `AgentSession` starts, that model is used for the whole call.
 
 See: [voicegw.yaml Reference](/configuration/voicegw-yaml)
 

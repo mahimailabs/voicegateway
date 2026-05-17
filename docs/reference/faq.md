@@ -2,14 +2,14 @@
 
 ## Is VoiceGateway production-ready?
 
-VoiceGateway is currently at v0.1.0 (alpha). It is suitable for development, staging, and low-to-medium traffic production workloads. The core routing, cost tracking, and fallback features are stable and covered by 200+ tests with 75%+ code coverage enforced by CI (`pyproject.toml` sets `fail_under = 75`). For high-traffic production, you should:
+VoiceGateway is in alpha. It is suitable for development, staging, and low-to-medium traffic production workloads. The core routing, cost tracking, and fallback features are stable and covered by 200+ tests with 75%+ code coverage enforced by CI (`pyproject.toml` sets `fail_under = 75`). For high-traffic production, you should:
 
 - Run thorough load tests against your specific workload
 - Monitor the dashboard for latency and error rates
 - Set up budget alerts with `budget_action: warn` before switching to `block`
 - Pin the version in your `requirements.txt`
 
-We aim for a stable v1.0 release once the API surface has been validated by the community.
+A stable 1.0 release is the goal once the API surface has been validated by the community.
 
 ---
 
@@ -75,7 +75,7 @@ spec:
 
 **Important:** Since VoiceGateway uses SQLite, run a single replica for writes. If you need horizontal scaling, put a load balancer in front with sticky sessions, or run `voicegateway.inference` as a library within each worker process (each gets its own DB).
 
-Note: with separate per-replica DBs, the in-memory budget cache does not sync across replicas. A project-wide daily budget cannot be strictly enforced across instances, only within each one. For project-wide budgets across multiple instances, single-instance is currently the only supported topology. A shared backend (Redis or PostgreSQL) is v0.3+ scope.
+Note: with separate per-replica DBs, the in-memory budget cache does not sync across replicas. A project-wide daily budget cannot be strictly enforced across instances, only within each one. For project-wide budgets across multiple instances, single-instance is currently the only supported topology. A shared backend (Redis or PostgreSQL) is on the roadmap.
 
 ---
 
@@ -231,7 +231,7 @@ For the SQLite storage layer, writes are serialized (one writer at a time), but 
 
 - Disable cost tracking for non-critical workloads
 - Use separate database files per process
-- Switch to a different storage backend (PostgreSQL is v0.3+ scope; until then VG runs on a single instance for write workloads)
+- Switch to a different storage backend (PostgreSQL is on the roadmap; until then VG runs on a single instance for write workloads)
 
 ## Related pages
 

@@ -73,7 +73,7 @@ Each `RequestRecord` carries the same `pricing_source` string the catalog return
 
 ## How streaming cost accounting is validated
 
-Streaming is where the real-world cost-tracking bugs hide: tokens that double at chunk boundaries, audio-second accumulators that drift, character counts that miss SSML markup. Phase 3 of v0.0.4 closes the validation gap without requiring real production traffic.
+Streaming is where the real-world cost-tracking bugs hide: tokens that double at chunk boundaries, audio-second accumulators that drift, character counts that miss SSML markup. VoiceGateway closes the validation gap without requiring real production traffic.
 
 ### The substitute strategy
 
@@ -122,4 +122,3 @@ The architecture is honest about this scope: cost tracking is validated against 
 - `src/voicegateway/tests/test_streaming_cost_accounting.py`: the three-assertion replay suite.
 - `src/voicegateway/tests/test_ttfb_hook_coverage.py`: per-modality TTFB hardening.
 
-For the locked design rationale, see `.agents/v0.0.4-phase3.md` (especially §1 for why the substitute strategy exists, §3 for the JSON schema, and §6 for known risks and mitigations).

@@ -45,7 +45,7 @@ default_project: customer-support
 | `tags` | list of strings | `[]` | Arbitrary tags for filtering and dashboard display |
 | `providers` | mapping | `{}` | Per-project provider keys. Wins over the top-level `providers:` block when set. |
 | `default_stack` | string | `""` | Optional dashboard / display hint. Not used by the inference module. |
-| `guardrails` | mapping | all categories `off` | Optional v0.6.0 LLM-side guardrail policy. |
+| `guardrails` | mapping | all categories `off` | Optional LLM-side guardrail policy. |
 
 ## Budget actions
 

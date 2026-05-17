@@ -5,15 +5,15 @@ description: Schemas the voicegw reconcile command expects when reading provider
 
 # Reconcile File Formats
 
-`voicegw reconcile` (Phase 4.3 of v0.1.0) compares VoiceGateway's
-recorded costs against a provider's usage export. Different providers
-ship different exports, so VoiceGateway defines one canonical
-reconcile-input format per provider, and documents how to produce that
-format from each provider's native export.
+`voicegw reconcile` compares VoiceGateway's recorded costs against a
+provider's usage export. Different providers ship different exports,
+so VoiceGateway defines one canonical reconcile-input format per
+provider, and documents how to produce that format from each
+provider's native export.
 
 This page is the schema reference. The walkthrough that ties it to
 the day-to-day reconciliation workflow lives at
-[Cost Reconciliation](/guide/cost-reconciliation) (added in Phase 4.4).
+[Cost Reconciliation](/guide/cost-reconciliation).
 
 ::: tip Reference fixtures
 Working examples of each provider's canonical schema live in the
@@ -379,7 +379,6 @@ If your account is invoiced as flat-USD (not credits), set
 ## Other providers
 
 Reconcile schemas for Anthropic, ElevenLabs, AssemblyAI, and
-additional providers can be added as sub-items of a future
-v0.1.x release. Open an issue at
+additional providers can be added in a future release. Open an issue at
 [github.com/mahimailabs/voicegateway](https://github.com/mahimailabs/voicegateway)
 if you need a provider that is not listed here.

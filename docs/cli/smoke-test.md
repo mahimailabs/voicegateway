@@ -82,7 +82,7 @@ All structural checks passed.
 | Failure | Likely cause |
 |---|---|
 | `config` FAIL: cost tracking disabled | Enable `cost_tracking.enabled: true` in `voicegw.yaml`. |
-| `inference.STT` FAIL: `No API key configured for provider 'deepgram'` | The fail-fast preflight (REQ-VG-INFER-003.3). Set the env var the YAML references, or run `vg_add_provider`. |
+| `inference.STT` FAIL: `No API key configured for provider 'deepgram'` | The fail-fast preflight. Set the env var the YAML references, or run `vg_add_provider`. |
 | `inference.STT` PASS with "skipped (no model registered)" | The project's available providers cover this modality but no model is in `models:`. Add an entry under `models.stt:` for the relevant provider. |
 | `health.<provider>` FAIL with auth error (only with `--live`) | Wrong credentials. Rotate via `vg_set_provider_key` (MCP) or update YAML. |
 | `session correlation` FAIL: missing entries in `modalities` | Some modality's `_log_request` call did not write through. Check the row above for the underlying error. |

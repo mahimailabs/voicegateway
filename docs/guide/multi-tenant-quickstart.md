@@ -47,7 +47,7 @@ llm = inference.LLM("openai/gpt-4o-mini")
 # Every request from this point in the async context tags 'acme'.
 ```
 
-Tenant ids are bounded at 128 UTF-8 characters (locked at v0.4.0 OQ2). Unicode is allowed. Pass `None` to leave the ContextVar untouched (it does **not** clear a previously-set tenant). Use `inference.reset_tenant_id()` to clear it explicitly between sessions in long-lived tasks.
+Tenant ids are bounded at 128 UTF-8 characters. Unicode is allowed. Pass `None` to leave the ContextVar untouched (it does **not** clear a previously-set tenant). Use `inference.reset_tenant_id()` to clear it explicitly between sessions in long-lived tasks.
 
 ### Option C: scoped virtual API keys
 
@@ -56,8 +56,6 @@ When the caller is not your own agent code (a partner integration, a third-party
 ### Sessions without a tenant: the "unattributed" bucket
 
 Sessions where none of the three surfaces set a tenant get `tenant_id = NULL` in storage. The dashboard renders these as a muted **unattributed** pill. The dashboard's tenant filter has a dedicated entry for the unattributed bucket so you can audit which sessions slipped through.
-
-There is **no** automatic backfill of pre-v0.4.0 sessions. They stay `NULL` forever unless you re-tag them via the dashboard's session-detail affordance (deferred to a v0.4.x follow-up).
 
 ## 2. Issue a virtual API key
 
@@ -81,7 +79,7 @@ Ship the key to the caller as `Authorization: Bearer vk_…`. From that point:
 
 ### Revoke
 
-The same Virtual Keys page exposes a **Revoke** action per row. Revocation is soft (OQ5 lock): the row stays for audit and the stale-key surface, but verification rejects further requests bearing the key within ~30 seconds.
+The same Virtual Keys page exposes a **Revoke** action per row. Revocation is soft: the row stays for audit and the stale-key surface, but verification rejects further requests bearing the key within ~30 seconds.
 
 ### Stale-key detection
 
@@ -120,7 +118,7 @@ The `voicegw costs` command does **not** accept a `--tenant` flag. The dashboard
 
 ### Direct SQL
 
-The `sessions` table carries `tenant_id` as of migration 0005. For ad-hoc analysis:
+The `sessions` table carries `tenant_id`. For ad-hoc analysis:
 
 ```sql
 SELECT tenant_id,
@@ -132,21 +130,19 @@ GROUP BY tenant_id
 ORDER BY total_cost DESC;
 ```
 
-The `requests`, `turns`, `dead_air_events`, and `replay_*` tables all carry the column too, so any join-and-aggregate workflow you had pre-v0.4.0 can add `tenant_id` to the GROUP BY without schema gymnastics.
+The `requests`, `turns`, `dead_air_events`, and `replay_*` tables all carry the column too, so any join-and-aggregate workflow can add `tenant_id` to the GROUP BY without schema gymnastics.
 
-## What v0.4.0 does not do
+## Known limitations
 
-A few operator workflows are deliberately deferred to keep v0.4.0 focused. Plan accordingly.
+A few operator workflows are deliberately out of scope. Plan accordingly.
 
-- **No automatic backfill** of pre-v0.4.0 sessions. They stay `tenant_id = NULL` (the unattributed bucket).
-- **No CLI issuance of virtual keys.** REQ-VG-TENANT-003 AC-2 pins the plaintext surface to the dashboard's "show key once" modal. A CLI flow would leak via shell history.
-- **No `voicegw costs --tenant`.** The dashboard's `/api/costs?tenant=…` is the canonical per-tenant cost source. CLI flag follows in a later patch if asked for.
-- **No re-tag affordance for already-attributed sessions.** Once a session has a non-NULL `tenant_id`, the dashboard cannot change it; the COALESCE rule in `log_request` only fills NULL slots. A re-tag flow for unattributed sessions is on the v0.4.x roadmap.
-- **Virtual keys do not carry RBAC scopes** in v0.4.0. A verified vk grants the same access a wildcard static key would. RBAC scopes on virtual keys can layer on later.
+- **No CLI issuance of virtual keys.** The plaintext surface is the dashboard's "show key once" modal; a CLI flow would leak via shell history.
+- **No `voicegw costs --tenant`.** The dashboard's `/api/costs?tenant=…` is the canonical per-tenant cost source.
+- **No re-tag affordance for already-attributed sessions.** Once a session has a non-NULL `tenant_id`, the dashboard cannot change it; the COALESCE rule in `log_request` only fills NULL slots.
+- **Virtual keys do not carry RBAC scopes.** A verified vk grants the same access a wildcard static key would.
 
 ## Where the design lives
 
-- **Refinery / Foundry**: REQ-VG-TENANT-001..004 (see the Linear project for the requirements rationale).
 - **Migration**: `src/voicegateway/storage/migrations/0005_tenant_attribution.py`.
 - **ContextVar**: `src/voicegateway/inference/_session_context.py`.
 - **Auth middleware**: `src/voicegateway/server/main.py::build_app` + `src/voicegateway/core/auth.py`.

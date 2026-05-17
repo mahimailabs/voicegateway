@@ -1,6 +1,6 @@
 # Replay storage costs
 
-v0.3.0's conversation replay captures every STT chunk, LLM token, TTS frame, and conversation-state snapshot for every session. This page surfaces the on-disk storage cost so the trade-off between fidelity and footprint is visible before you set per-project retention.
+VoiceGateway's conversation replay captures every STT chunk, LLM token, TTS frame, and conversation-state snapshot for every session. This page surfaces the on-disk storage cost so the trade-off between fidelity and footprint is visible before you set per-project retention.
 
 ## What gets stored
 
@@ -26,9 +26,9 @@ For a typical voice conversation (caller speaks for half the time, agent for hal
 | TTS frames (20-50ms each) | 600 - 1500 | 60 KB - 180 KB |
 | State snapshots (1/sec cap) | 60 | 30 KB - 300 KB |
 
-**Total: roughly 130 KB - 580 KB per minute of conversation**, with the floor for short crisp exchanges and the ceiling for chatty agents with long conversation histories. The Foundry's design target of 30-100 KB/min is achievable on the floor; realistic agents will land closer to the ceiling.
+**Total: roughly 130 KB - 580 KB per minute of conversation**, with the floor for short crisp exchanges and the ceiling for chatty agents with long conversation histories. The design target of 30-100 KB/min is achievable on the floor; realistic agents will land closer to the ceiling.
 
-The Foundry's [Open Question 1 step-zero smoke test](https://github.com/mahimailabs/voicegateway/blob/main/.agents/journal.md) (T18 of v0.3.0) measures the actual figure on a synthetic conversation; if the smoke shows you trending above 500 KB/min consistently, the per-project `replay.enabled: false` toggle is the fastest mitigation.
+If you find yourself trending above 500 KB/min consistently, the per-project `replay.enabled: false` toggle is the fastest mitigation.
 
 ## Worked example
 
@@ -69,7 +69,7 @@ The `enabled` toggle is the binary on/off. The `retention_days` knob is the grad
 
 ## Dashboard storage view
 
-`GET /api/replay/storage` returns per-project replay byte totals (T10 of v0.3.0). The dashboard surfaces this as a breakdown so the developer sees the cost in real time:
+`GET /api/replay/storage` returns per-project replay byte totals. The dashboard surfaces this as a breakdown so the developer sees the cost in real time:
 
 ```json
 {
@@ -81,10 +81,10 @@ The `enabled` toggle is the binary on/off. The `retention_days` knob is the grad
 }
 ```
 
-A v0.3.x follow-up will surface this in a sidebar panel on the dashboard with cost-per-month estimates inline.
+A future follow-up will surface this in a sidebar panel on the dashboard with cost-per-month estimates inline.
 
 ## Related
 
-- [Python SDK reference > Conversation replay capture](/api/python-sdk#conversation-replay-capture-v030)
+- [Python SDK reference > Conversation replay capture](/api/python-sdk#conversation-replay-capture)
 - [Migration 0004 schema](https://github.com/mahimailabs/voicegateway/blob/main/voicegateway/storage/migrations/0004_replay_tables.py)
-- [`voicegw replay <session-id>` CLI signpost](/cli/replay) (T15 of v0.3.0)
+- [`voicegw replay <session-id>` CLI signpost](/cli/replay)
