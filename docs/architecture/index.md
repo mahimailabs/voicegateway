@@ -119,58 +119,73 @@ sequenceDiagram
 
 ## Directory Structure
 
-```
-voicegateway/
-  core/
-    gateway.py          # Internal Gateway container (config + storage + middleware)
-    config.py           # YAML config loader with ${ENV_VAR} substitution
-    config_manager.py   # Merges YAML + SQLite (per-project DB rows land in projects[<id>])
-    registry.py         # Lazy provider factory (imports on first use)
-    schema.py           # Pydantic validation for voicegw.yaml
-    crypto.py           # Fernet encryption for stored secrets
-  inference/            # Public Python SDK surface (drop-in for livekit.agents.inference)
-    __init__.py         # Re-exports STT, LLM, TTS, set_project, start_session
-    _factory.py         # Process-wide Gateway singleton
-    _project.py         # ContextVar-based active-project resolution
-    _session_context.py # ContextVar-based session_id correlation
-    _resolution.py      # "provider/model" string parser
-    _stt.py / _llm.py / _tts.py
-  providers/
-    base.py             # BaseProvider ABC (create_stt/llm/tts, health_check)
-    openai_provider.py  # OpenAI (STT + LLM + TTS)
-    deepgram_provider.py
-    cartesia_provider.py
-    anthropic_provider.py
-    groq_provider.py
-    elevenlabs_provider.py
-    assemblyai_provider.py
-    ollama_provider.py
-    whisper_provider.py
-    kokoro_provider.py
-    piper_provider.py
-  middleware/
-    cost_tracker.py         # Per-request cost calculation and storage
-    latency_monitor.py      # TTFB + total latency tracking
-    rate_limiter.py         # Token bucket rate limiter per provider
-    logger.py               # Structured request/response logging
-    budget_enforcer.py      # Project budget enforcement (warn/throttle/block)
-    instrumented_provider.py # Transparent proxy wrappers for metrics
-  storage/
-    sqlite.py           # SQLite backend (aiosqlite)
-    models.py           # RequestRecord dataclass
-  server.py             # FastAPI HTTP API
-  mcp/
-    server.py           # MCP server bootstrap
-    auth.py             # API key authentication
-    errors.py           # Structured error types
-    schemas.py          # Input/output schemas
-    tools/              # Tool implementations (providers, models, projects, observability)
-  pricing/
-    catalog.py          # Per-model pricing data
-dashboard/
-  api/                  # FastAPI backend for dashboard
-  frontend/             # React + TypeScript + Vite + Recharts
-```
+The Python package lives under `voicegateway/`. A separate `dashboard/`
+tree carries the FastAPI backend and the React + TypeScript + Vite +
+Recharts frontend for the local cost dashboard.
+
+<Files>
+  <Folder name="voicegateway" defaultOpen>
+    <Folder name="core" defaultOpen>
+      <File name="gateway.py" />
+      <File name="config.py" />
+      <File name="config_manager.py" />
+      <File name="registry.py" />
+      <File name="schema.py" />
+      <File name="crypto.py" />
+    </Folder>
+    <Folder name="inference">
+      <File name="__init__.py" />
+      <File name="_factory.py" />
+      <File name="_project.py" />
+      <File name="_session_context.py" />
+      <File name="_resolution.py" />
+      <File name="_stt.py" />
+      <File name="_llm.py" />
+      <File name="_tts.py" />
+    </Folder>
+    <Folder name="providers">
+      <File name="base.py" />
+      <File name="openai_provider.py" />
+      <File name="deepgram_provider.py" />
+      <File name="cartesia_provider.py" />
+      <File name="anthropic_provider.py" />
+      <File name="groq_provider.py" />
+      <File name="elevenlabs_provider.py" />
+      <File name="assemblyai_provider.py" />
+      <File name="ollama_provider.py" />
+      <File name="whisper_provider.py" />
+      <File name="kokoro_provider.py" />
+      <File name="piper_provider.py" />
+    </Folder>
+    <Folder name="middleware">
+      <File name="cost_tracker.py" />
+      <File name="latency_monitor.py" />
+      <File name="rate_limiter.py" />
+      <File name="logger.py" />
+      <File name="budget_enforcer.py" />
+      <File name="instrumented_provider.py" />
+    </Folder>
+    <Folder name="storage">
+      <File name="sqlite.py" />
+      <File name="models.py" />
+    </Folder>
+    <File name="server.py" />
+    <Folder name="mcp">
+      <File name="server.py" />
+      <File name="auth.py" />
+      <File name="errors.py" />
+      <File name="schemas.py" />
+      <Folder name="tools" />
+    </Folder>
+    <Folder name="pricing">
+      <File name="catalog.py" />
+    </Folder>
+  </Folder>
+  <Folder name="dashboard">
+    <Folder name="api" />
+    <Folder name="frontend" />
+  </Folder>
+</Files>
 
 ## Design Principles
 
