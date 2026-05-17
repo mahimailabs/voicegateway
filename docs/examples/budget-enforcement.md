@@ -95,7 +95,7 @@ async def stt_for(project: str):
     return inference.STT("deepgram/nova-3")
 ```
 
-The `_budget_enforcer` reference is an internal handle today; v0.0.6 plans a public `inference.check_budget()` helper so callers no longer reach into a private attribute.
+The `_budget_enforcer` reference is an internal handle today; a public `inference.check_budget()` helper is planned so callers no longer reach into a private attribute.
 
 ## Mode 3: Block (caller-driven)
 

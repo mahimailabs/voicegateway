@@ -18,7 +18,7 @@ projects:
     name: Acme Voice
     daily_budget: 25.0
     routing:
-      # OQ1 lock: 1500 ms is the typical conversational target.
+      # 1500 ms is the typical conversational target.
       budget_ms: 1200          # Agency wants tighter than default.
       fallback_to_fastest: true
       rosters:
@@ -27,7 +27,7 @@ projects:
         tts: [cartesia, elevenlabs]
 ```
 
-After editing, restart the gateway. The next session start picks providers from the new rosters; in-flight sessions keep their pre-existing triple (AC-VG-ROUTE-001.3).
+After editing, restart the gateway. The next session start picks providers from the new rosters; in-flight sessions keep their pre-existing triple.
 
 ### Pick a budget
 
@@ -95,15 +95,15 @@ Set `VOICEGW_API_KEY=...` to pass the static-key Bearer header when the dashboar
 
 Branding is per-project; the dashboard picks up the active project from the URL query parameter. Share `https://your-gateway/sessions?project=acme` with the customer and they see the AcmeVoice brand: sidebar logo, accent color on interactive elements, page title and favicon. Without `?project=acme` the default VoiceGateway brand renders.
 
-The branding cache is per-mount per OQ5: a customer who has the dashboard open during a brand change sees the new look on next page navigation, not in real time.
+The branding cache is per-mount: a customer who has the dashboard open during a brand change sees the new look on next page navigation, not in real time.
 
 ## 5. Watch the Routing view as traffic lands
 
 Open `/routing` in the dashboard. The page shows per-provider p50/p95 and sample count for every project the gateway has seen sessions for. Use the column headers to sort by p50 ascending to spot the fastest provider in each modality, or by sample count to gauge confidence.
 
-The page auto-refreshes every hour (AC-VG-ROUTE-003.3). The rollup worker behind the scenes refreshes every 15 minutes; the FE cadence is the page-side refresh, not the data freshness.
+The page auto-refreshes every hour. The rollup worker behind the scenes refreshes every 15 minutes; the FE cadence is the page-side refresh, not the data freshness.
 
-NULL p50 renders as "no observations yet" rather than zero (AC-VG-ROUTE-003.4) so it's obvious which entries the router is still relying on baselines for.
+NULL p50 renders as "no observations yet" rather than zero so it's obvious which entries the router is still relying on baselines for.
 
 ## 6. Inspect the routing decision per session
 
@@ -114,25 +114,22 @@ From the Sessions page, click any row to open the SessionDetail modal. The new r
 - **Actual end-to-end latency** when the close-session hook populated `budget_ms_used` (otherwise omitted).
 - **budget_overrun chip** (yellow) when the router fell back to fastest because nothing fit the budget.
 
-Sessions that predate v0.5.0 don't show the strip at all (the four routing columns are NULL).
+## Known limitations
 
-## What v0.5.0 does not do
-
-A few capabilities are deliberately deferred. Plan accordingly.
+A few capabilities are deliberately out of scope. Plan accordingly.
 
 - **No mid-call routing.** Pick-at-start only. If a provider degrades mid-call, the session keeps that provider until close.
 - **No adaptive learning.** The roll-up is static aggregation; there's no ML on in-call telemetry feeding back into pick scores.
 - **No custom-domain dashboard hosting.** White-label sits at the gateway's own host; agencies pointing `dashboard.theirfirm.com` at the gateway with their own TLS cert is future scope.
 - **No per-tenant branding inside one project.** White-label is per-project. An agency running multiple downstream tenants in one project shares one brand.
 - **No email or exported-report branding.** Dashboard chrome only.
-- **No cost-aware routing.** v0.5.0 picks on latency; cost is observed via the existing per-modality dashboards but doesn't feed back into the picker.
+- **No cost-aware routing.** The router picks on latency; cost is observed via the existing per-modality dashboards but doesn't feed back into the picker.
 - **No multi-region routing.**
 - **No latency-budget enforcement in flight.** The budget is a router input at start, not a runtime kill switch.
 - **No performance SLAs from the gateway to the operator.** Best-effort prediction; the gap between prediction and reality is visible in the Routing view so operators can tune.
 
 ## Where the design lives
 
-- **Refinery / Foundry**: REQ-VG-ROUTE-001..004 in the Linear project.
 - **Migration**: `src/voicegateway/storage/migrations/0006_routing_and_branding.py`.
 - **Router**: `src/voicegateway/middleware/router.py` + `latency_observations_worker.py`.
 - **Baselines**: `src/voicegateway/core/provider_baselines.json`.

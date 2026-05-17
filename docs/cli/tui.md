@@ -25,7 +25,7 @@ voicegw tui [OPTIONS]
 | `--url` | `string` | from `voicegw.yaml` | Daemon URL. `0.0.0.0` from `serve.host` is rewritten to `127.0.0.1`. |
 | `--token` | `string` | `null` | Bearer token for daemon write paths. Required for the Providers `t` shortcut. |
 | `--history-limit` | `integer` | `100` | Initial row count for the Sessions and Logs tabs. |
-| `--theme` | `string` | `brand` | Color theme. `brand` is the v0.1.1 default. |
+| `--theme` | `string` | `brand` | Color theme. `brand` is the default. |
 | `--poll` | `float` | mode-dependent | Polling cadence in seconds. Defaults: `1.0` (Gateway), `5.0` (Local). |
 | `--config` / `-c` | `string` | `null` | Path to `voicegw.yaml`. Auto-discovered if omitted. |
 
@@ -59,7 +59,7 @@ Today's total as a single dollar number, with a per-modality breakdown (STT, LLM
 
 ### Logs (`3`)
 
-Recent request logs in a `RichLog`-based tail viewer. New lines appear at the bottom in real time (polling-based for v0.1.1; SSE deferred). Press `/` to filter to a substring; press `Escape` to clear the filter. Scrolling up disables auto-scroll until you return to the bottom.
+Recent request logs in a `RichLog`-based tail viewer. New lines appear at the bottom in real time (polling-based; SSE is a future enhancement). Press `/` to filter to a substring; press `Escape` to clear the filter. Scrolling up disables auto-scroll until you return to the bottom.
 
 ### Providers (`4`)
 

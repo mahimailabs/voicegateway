@@ -205,7 +205,7 @@ subpackage; for now the convention is documentation-only.
 ## Public API contract
 
 Every package and subpackage `__init__.py` declares an explicit
-`__all__` list. This is the v0.1.x public surface:
+`__all__` list. This is the public surface:
 
 ```python
 # voicegateway/server/__init__.py

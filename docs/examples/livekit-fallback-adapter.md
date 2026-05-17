@@ -82,7 +82,7 @@ Each attempt VoiceGateway sees is logged as a separate `RequestRecord` in SQLite
 
 You can correlate the two records by timestamp clustering and project tag. The dashboard's request log view shows the status next to each row.
 
-The `fallback_from` field on `RequestRecord` is reserved for the v0.0.6 resolver-time fallback parameter on the inference factories, not for LiveKit's runtime `FallbackAdapter`: VG sees each attempt as an independent provider call. To trace runtime fallback events today, filter the request log by project and look for adjacent records with `status = "error"` followed by `status = "success"`.
+The `fallback_from` field on `RequestRecord` is reserved for a future resolver-time fallback parameter on the inference factories, not for LiveKit's runtime `FallbackAdapter`: VG sees each attempt as an independent provider call. To trace runtime fallback events today, filter the request log by project and look for adjacent records with `status = "error"` followed by `status = "success"`.
 
 For project budget enforcement, every attempt counts against the project budget independently. A primary that fails and a secondary that succeeds will both be billed (the primary because the provider counts the failed request, the secondary because it served the actual response). This matches what your provider invoices will show.
 
@@ -103,7 +103,7 @@ If `event.error.recoverable` is `True`, the chain advanced to the next provider 
 
 ## When this is not what you need
 
-- **You only want startup-time provider selection.** Use the manual chain walk pattern in [Fallback Chains](/examples/fallback-chains). v0.0.6 will replace it with a built-in `fallback=` parameter on the inference factories.
+- **You only want startup-time provider selection.** Use the manual chain walk pattern in [Fallback Chains](/examples/fallback-chains).
 - **You only have one cloud provider configured.** `FallbackAdapter` is overkill. A single-provider config plus a circuit breaker outside the agent is simpler.
 - **You are on Node.js.** `stt.FallbackAdapter` is Python-only. `llm.FallbackAdapter` and `tts.FallbackAdapter` are available on Node.js per the [LiveKit reference](https://docs.livekit.io/reference/agents/events/); for STT failover on Node.js you need a different approach.
 

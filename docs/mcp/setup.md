@@ -175,6 +175,6 @@ Once connected, ask the agent to check the gateway health:
 The agent should call `get_health` and return something like:
 
 ```
-Gateway is running (v0.1.0, uptime 1234.5s).
+Gateway is running (uptime 1234.5s).
 3 providers configured, 2 projects, cost tracking enabled.
 ```

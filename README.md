@@ -56,31 +56,27 @@ Voice AI vendors hide three numbers. VoiceGateway exposes them.
 
 If you are building a text-only LLM application without a voice component, [LiteLLM](https://docs.litellm.ai/) is likely a better fit. See the [decision tree](https://voicegateway.mahimai.ca/docs/guide/decision-tree).
 
-## 📦 What ships now
+## 📦 What's in the box
 
-Every capability lands as a minor version. Same Python API across all of them.
+| Capability | What it gives you |
+|:---|:---|
+| **LiveKit Cloud parity** | Drop-in for `livekit.agents.inference`. Your keys, your config |
+| **Daemon-first onboarding** | Curl-bash install, OS daemon, five-question wizard, `voicegw doctor` |
+| **Terminal UI** | `voicegw tui` opens a vim-key Textual UI for SSH-in inspection |
+| **Public-API discipline** | Subpackage layout, CHANGELOG, CONTRIBUTING, SECURITY, explicit `__all__` |
+| **Voice-conversation metrics** | Per-minute cost, latency p50/p95, interruptions, dead air, talk-over |
+| **Conversation replay** | Scrub any past call. STT chunks, LLM tokens, TTS frames with timing and cost |
+| **Multi-tenant attribution** | Per-tenant cost, virtual API keys per team, agency-ready |
+| **Cross-modality routing** | Route by combined STT + LLM + TTS latency budget. Per-project rosters. White-label branding |
+| **Voice-specific guardrails** | Real-time PII detection in STT, prompt-injection detection, compliance hooks |
 
-| Version | Capability | What it gives you |
-|:---:|:---|:---|
-| **v0.0.5** | LiveKit Cloud parity | Drop-in for `livekit.agents.inference`. Your keys, your config |
-| **v0.1.0** | Daemon-first onboarding | Curl-bash install, OS daemon, five-question wizard, `voicegw doctor` |
-| **v0.1.1** | Terminal UI | `voicegw tui` opens a vim-key Textual UI for SSH-in inspection |
-| **v0.1.2** | Project polish | Subpackage refactor, CHANGELOG, CONTRIBUTING, SECURITY, public-API discipline |
-| **v0.2.0** | Voice-conversation metrics | Per-minute cost, latency p50/p95, interruptions, dead air, talk-over |
-| **v0.3.0** | Conversation replay | Scrub any past call. STT chunks, LLM tokens, TTS frames with timing and cost |
-| **v0.4.0** | Multi-tenant attribution | Per-tenant cost, virtual API keys per team, agency-ready |
-| **v0.5.0** | Cross-modality routing | Route by combined STT + LLM + TTS latency budget. Per-project rosters. White-label branding |
-| **v0.6.0** | Voice-specific guardrails | Real-time PII detection in STT, prompt-injection detection, compliance hooks |
+Full release history: [CHANGELOG.md](CHANGELOG.md).
 
-Full per-version detail: [CHANGELOG.md](CHANGELOG.md).
+## 🚧 Roadmap
 
-## 🚧 Up next
-
-| Version | Capability | Status |
-|:---:|:---|:---:|
-| **v0.7.0** | Enterprise auth, audit log, SOC 2 prep | 🟡 In flight |
-| **v0.8.0** | One-tap latency probe | ⚪ Planned |
-| **v1.0.0** | Stability commitment, LTS branch policy | ⚪ Planned |
+- Enterprise auth, audit log, SOC 2 prep
+- One-tap latency probe
+- Stability commitment, LTS branch policy
 
 ## 📊 The dashboard
 
@@ -96,7 +92,7 @@ A self-hosted web UI at `http://localhost:9090`. Bundled. No SaaS account. No da
 - **Guardrails** — PII / prompt-injection counts per project, session drilldown
 - **Settings** — providers, projects, branding (logo, accent color, product name)
 
-White-label brand support since v0.5.0: upload a logo, pick an accent color, set a product name; the whole dashboard re-skins for your project.
+White-label brand support: upload a logo, pick an accent color, set a product name; the whole dashboard re-skins for your project.
 
 ## 🤖 Manage from your coding agent (MCP)
 
@@ -197,9 +193,9 @@ voicegw serve --port 8080
 | `GET /v1/status` | Provider health + model count |
 | `GET /v1/models` · `GET /v1/providers` · `GET /v1/projects` | Resource CRUD |
 | `GET /v1/costs?period=today&project=X&tenant=Y` | Cost summary |
-| `GET /v1/sessions/{id}/turns` · `/v1/sessions/{id}/replay` · `/v1/sessions/{id}/dead_air` | Voice-conversation surfaces (v0.2+) |
-| `GET /v1/routing/observations` | Live per-provider latency (v0.5+) |
-| `GET /v1/virtual_keys` + CRUD | Per-team scoped keys (v0.4+) |
+| `GET /v1/sessions/{id}/turns` · `/v1/sessions/{id}/replay` · `/v1/sessions/{id}/dead_air` | Voice-conversation surfaces |
+| `GET /v1/routing/observations` | Live per-provider latency |
+| `GET /v1/virtual_keys` + CRUD | Per-team scoped keys |
 | `GET /v1/audit-log` · `GET /v1/metrics` | Audit + Prometheus metrics |
 
 Full reference: [voicegateway.mahimai.ca/docs/api/http-api](https://voicegateway.mahimai.ca/docs/api/http-api).
@@ -231,11 +227,11 @@ uvx pulls the wheel into a throwaway environment per run; uv's wheel cache makes
 
 Full documentation: [voicegateway.mahimai.ca/docs](https://voicegateway.mahimai.ca/docs).
 
-Quick links: [Quick start](https://voicegateway.mahimai.ca/docs/guide/quick-start) · [First agent](https://voicegateway.mahimai.ca/docs/guide/first-agent) · [Projects](https://voicegateway.mahimai.ca/docs/configuration/projects) · [Configuration](https://voicegateway.mahimai.ca/docs/configuration/voicegw-yaml) · [CLI reference](https://voicegateway.mahimai.ca/docs/cli) · [Migration from LiveKit Cloud Inference](https://voicegateway.mahimai.ca/docs/migration/from-livekit-inference) · [Decision tree](https://voicegateway.mahimai.ca/docs/guide/decision-tree)
+Quick links: [Quick start](https://voicegateway.mahimai.ca/docs/guide/quick-start) · [First agent](https://voicegateway.mahimai.ca/docs/guide/first-agent) · [Projects](https://voicegateway.mahimai.ca/docs/configuration/projects) · [Configuration](https://voicegateway.mahimai.ca/docs/configuration/voicegw-yaml) · [CLI reference](https://voicegateway.mahimai.ca/docs/cli) · [Decision tree](https://voicegateway.mahimai.ca/docs/guide/decision-tree)
 
 ## 🤝 Contributing
 
-Issues and PRs welcome. We follow a Refinery → Foundry → Ralph workflow to plan each minor version (specs live in Linear; the SDK code lives here).
+Issues and PRs welcome.
 
 ```bash
 git clone https://github.com/mahimailabs/voicegateway
@@ -260,6 +256,6 @@ Before submitting a PR, read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CON
 
 ## 🙌 Built by
 
-[Mahimai Raja](https://mahimai.dev), founder of [Mahimai AI](https://mahimai.ca), a voice AI company. Building VoiceGateway in public, one minor version at a time.
+[Mahimai Raja](https://mahimai.dev), founder of [Mahimai AI](https://mahimai.ca), a voice AI company. Building VoiceGateway in public.
 
 Built on the shoulders of giants: [LiveKit Agents](https://github.com/livekit/agents), [FastAPI](https://fastapi.tiangolo.com/), [Pydantic](https://docs.pydantic.dev/), [pydantic/genai-prices](https://github.com/pydantic/genai-prices), [cryptography](https://cryptography.io/), [Model Context Protocol](https://modelcontextprotocol.io/).

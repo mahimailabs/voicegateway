@@ -24,7 +24,7 @@ voicegw reconcile --provider <name> --start <YYYY-MM-DD> --end <YYYY-MM-DD> \
 | `--end` | | `string` | required | End date in `YYYY-MM-DD` (UTC, inclusive day). |
 | `--provider-usage-file` | | `string` | required | Path to the provider's normalized usage file (`.csv` or `.json`). |
 | `--format` | `-f` | `string` | `text` | Output format: `text`, `csv`, or `json`. |
-| `--threshold` | | `float` | `5.0` | Flag rows whose absolute cost diff % exceeds this threshold. The default mirrors the v0.0.4 disclosure that LLM estimates can drift up to ~5%. |
+| `--threshold` | | `float` | `5.0` | Flag rows whose absolute cost diff % exceeds this threshold. The default reflects that LLM estimates can drift up to ~5%. |
 | `--config` | `-c` | `string` | `null` | Path to `voicegw.yaml`. Auto-discovered if omitted. |
 
 ## Prerequisites

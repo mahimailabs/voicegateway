@@ -1,6 +1,6 @@
 # Voice-specific guardrails
 
-VoiceGateway v0.6.0 adds project-scoped, LLM-side guardrails for voice agents. Guardrails are injected through the existing `voicegateway.inference.LLM(...)` drop-in path, so agent code keeps the same LiveKit construction pattern.
+VoiceGateway provides project-scoped, LLM-side guardrails for voice agents. Guardrails are injected through the existing `voicegateway.inference.LLM(...)` drop-in path, so agent code keeps the same LiveKit construction pattern.
 
 Guardrails do not create a proxy session service, do not inspect raw audio, and do not intercept arbitrary tool calls. They append a versioned system prompt block to the LiveKit chat context and register one reserved LiveKit function tool named `report_guardrail_action`.
 
