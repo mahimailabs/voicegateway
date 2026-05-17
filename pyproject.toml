@@ -153,6 +153,12 @@ omit = [
     # from coverage too so the test code does not inflate its own
     # coverage numbers.
     "src/voicegateway/tests/*",
+    # Generated or re-export shims with no behaviour worth testing.
+    "src/voicegateway/_version.py",
+    "src/voicegateway/cli/_app.py",
+    "src/voicegateway/inference/__init__.py",
+    # Auto-generated migration scripts; testing them is testing alembic.
+    "alembic/versions/*",
 ]
 
 [tool.coverage.report]
