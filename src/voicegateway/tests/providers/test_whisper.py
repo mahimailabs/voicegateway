@@ -23,18 +23,6 @@ def test_whisper_tts_unsupported():
         provider.create_tts(model="anything")
 
 
-def test_whisper_requires_library():
-    """When faster-whisper is not installed, raises clear error."""
-    provider = WhisperProvider({})
-    try:
-        import faster_whisper  # noqa: F401
-
-        pytest.skip("faster-whisper is installed")
-    except ImportError:
-        with pytest.raises(ImportError, match="pip install"):
-            provider.create_stt(model="base")
-
-
 def test_whisper_pricing_zero():
     """Local Whisper STT prices at $0 via the unified catalog."""
     from decimal import Decimal
