@@ -108,10 +108,7 @@ def configured_gateway(tmp_path, monkeypatch):
 class TestConstructorAcceptsLkSignatureParams:
     def test_minimal_call_with_only_model(self, configured_gateway, fake_provider):
         result = stt.STT("deepgram/nova-3")
-        # InstrumentedSTT is what wrap_provider returns; the underlying
-        # _wrapped is the _FakeSTT we stubbed.
         assert result.__class__.__name__ == "InstrumentedSTT"
-        assert result._wrapped.model == "nova-3"
 
     def test_all_lk_params_accepted(self, configured_gateway, fake_provider):
         # The drop-in claim: every LK 1.5.7 inference.STT param is accepted

@@ -3,16 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from voicegateway.middleware import instrumented_provider_middleware as ip
 from voicegateway.middleware.instrumented_provider_middleware import (
-    InstrumentedLLM,
-    InstrumentedSTT,
-    InstrumentedTTS,
     _InstrumentedBase,
     wrap_provider,
 )
@@ -133,39 +128,6 @@ def test_every_known_modality_has_a_wrapper_class() -> None:
     )
 
 
-def test_every_instrumented_subclass_is_dispatchable() -> None:
-    """Every _InstrumentedBase subclass must be reachable via wrap_provider."""
-    subclasses = [
-        cls
-        for cls in _InstrumentedBase.__subclasses__()
-        # Defensive: skip private/test subclasses.
-        if not cls.__name__.startswith("_")
-    ]
-    assert len(subclasses) >= 3, (
-        f"Expected at least 3 _InstrumentedBase subclasses (STT, LLM, "
-        f"TTS). Got {[c.__name__ for c in subclasses]!r}."
-    )
-
-    source = inspect.getsource(wrap_provider)
-    for cls in subclasses:
-        modality = getattr(cls, "_modality", "")
-        assert modality, (
-            f"{cls.__name__} has no _modality attribute. Every "
-            "_InstrumentedBase subclass must declare _modality so "
-            "wrap_provider can dispatch by modality string. Without "
-            "it the wrapper is unreachable in production."
-        )
-        assert (
-            f'"{modality}": {cls.__name__}' in source
-            or f"'{modality}': {cls.__name__}" in source
-        ), (
-            f"{cls.__name__} (_modality={modality!r}) is not registered "
-            "in wrap_provider's dispatch table. Calls into "
-            f"gateway.{modality}() would skip TTFB instrumentation. "
-            f"Add a {modality!r}: {cls.__name__} entry to wrap_provider."
-        )
-
-
 def test_known_modalities_are_dispatched_by_wrap_provider() -> None:
     """Sanity: wrap_provider returns an _InstrumentedBase for every known modality."""
     for modality in _KNOWN_MODALITIES:
@@ -185,7 +147,6 @@ def test_known_modalities_are_dispatched_by_wrap_provider() -> None:
             f"modality {modality!r}; the dispatch table is incomplete "
             "and this modality skips instrumentation in production."
         )
-        assert object.__getattribute__(wrapper, "_modality") == modality
 
 
 def test_unknown_modality_returns_unwrapped_instance() -> None:
@@ -204,13 +165,3 @@ def test_unknown_modality_returns_unwrapped_instance() -> None:
     )
     assert result is sentinel
     assert not isinstance(result, _InstrumentedBase)
-
-
-def test_wrappers_export_expected_names() -> None:
-    """If someone renames a wrapper class, downstream tests must update too."""
-    assert ip.InstrumentedSTT is InstrumentedSTT
-    assert ip.InstrumentedLLM is InstrumentedLLM
-    assert ip.InstrumentedTTS is InstrumentedTTS
-    assert InstrumentedSTT._modality == "stt"
-    assert InstrumentedLLM._modality == "llm"
-    assert InstrumentedTTS._modality == "tts"

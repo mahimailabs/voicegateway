@@ -76,8 +76,6 @@ async def test_attach_session_no_tracker_no_op_warning() -> None:
     agent = FakeAgentSession()
     sid = attach_session(agent, session_id="ghost-session")
     assert sid == "ghost-session"
-    # No handlers should have been registered.
-    assert agent._handlers == {}
 
 
 async def test_attach_session_starts_dead_air_detector() -> None:

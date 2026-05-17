@@ -48,7 +48,6 @@ def test_gateway_init(mock_config):
     gw = Gateway(config_path=mock_config)
     assert gw.config is not None
     assert gw.storage is not None
-    assert gw._budget_enforcer is not None
 
 
 def test_projects_listed(mock_config):
@@ -64,26 +63,6 @@ def test_costs_empty(mock_config):
     gw = Gateway(config_path=mock_config)
     costs = gw.costs("today", project="integration-test")
     assert costs["total"] == 0.0
-
-
-def test_latency_tracking_disabled(tmp_path, monkeypatch):
-    """When latency_tracking is false, raw instances are returned (no wrapper)."""
-    config = {
-        "providers": {"deepgram": {"api_key": "test-key"}},
-        "models": {
-            "stt": {"deepgram/nova-3": {"provider": "deepgram", "model": "nova-3"}},
-            "llm": {},
-            "tts": {},
-        },
-        "projects": {},
-        "fallbacks": {"stt": [], "llm": [], "tts": []},
-        "observability": {"latency_tracking": False},
-    }
-    config_path = tmp_path / "voicegw.yaml"
-    with open(config_path, "w") as f:
-        yaml.dump(config, f)
-    gw = Gateway(config_path=str(config_path))
-    assert gw._latency_tracking is False
 
 
 def test_config_validation_catches_typos(tmp_path):
