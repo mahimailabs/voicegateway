@@ -1,5 +1,4 @@
 #!/usr/bin/env tsx
-import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -9,25 +8,24 @@ import {
   writeFileSync,
   rmSync,
 } from 'node:fs';
-import { basename, join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const SOURCE_REPO = process.env.SOURCE_REPO ?? 'https://github.com/mahimailabs/voicegateway.git';
-const SOURCE_REF = process.env.SOURCE_REF ?? 'main';
-const TARGET = 'content/docs';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(__dirname, '..', '..');
+const SOURCE_DOCS = join(REPO_ROOT, 'docs');
+const SOURCE_CHANGELOG = join(REPO_ROOT, 'CHANGELOG.md');
+const TARGET = resolve(__dirname, '..', 'content', 'docs');
 const NATIVE_DOCS = new Set(['index.md', 'index.mdx', 'get-started.md', 'get-started.mdx']);
+// Top-level docs/ entries to skip during sync. These exist on disk but
+// must not appear on the public docs site. Pre-merge, these were
+// invisible because the old script git-cloned a fresh tree and these
+// paths are root-gitignored (so untracked); the local-read script needs
+// an explicit exclusion list.
+const EXCLUDED_TOP_LEVEL = new Set(['superpowers']);
 
-const tmp = join(tmpdir(), `vg-docs-${Date.now()}`);
-
-console.log(`Cloning ${SOURCE_REPO}@${SOURCE_REF} to ${tmp}`);
-execFileSync('git', ['clone', '--depth', '1', '--branch', SOURCE_REF, SOURCE_REPO, tmp], {
-  stdio: 'inherit',
-});
-
-const sourceDocs = join(tmp, 'docs');
-if (!existsSync(sourceDocs)) {
-  console.error(`SOURCE/docs/ not found at ${sourceDocs}`);
-  rmSync(tmp, { recursive: true, force: true });
+if (!existsSync(SOURCE_DOCS)) {
+  console.error(`SOURCE_DOCS not found at ${SOURCE_DOCS}`);
   process.exit(1);
 }
 
@@ -85,6 +83,7 @@ function ensureFrontmatter(content: string, filename: string): string {
 function copyTree(src: string, dst: string, relativeDir = '') {
   if (!existsSync(dst)) mkdirSync(dst, { recursive: true });
   for (const name of readdirSync(src)) {
+    if (relativeDir === '' && EXCLUDED_TOP_LEVEL.has(name)) continue;
     const relativePath = relativeDir ? `${relativeDir}/${name}` : name;
     const s = join(src, name);
     const d = join(dst, name);
@@ -105,14 +104,12 @@ function copyTree(src: string, dst: string, relativeDir = '') {
     }
   }
 }
-copyTree(sourceDocs, TARGET);
+copyTree(SOURCE_DOCS, TARGET);
 
-const changelog = join(tmp, 'CHANGELOG.md');
-if (existsSync(changelog)) {
-  const raw = readFileSync(changelog, 'utf8');
+if (existsSync(SOURCE_CHANGELOG)) {
+  const raw = readFileSync(SOURCE_CHANGELOG, 'utf8');
   const mdx = `---\ntitle: "Changelog"\ndescription: "VoiceGateway SDK release notes."\n---\n\n${raw}`;
   writeFileSync(join(TARGET, 'changelog.mdx'), mdx);
 }
 
-rmSync(tmp, { recursive: true, force: true });
-console.log(`Synced docs from ${SOURCE_REPO}@${SOURCE_REF} into ${TARGET}`);
+console.log(`Synced docs from ${SOURCE_DOCS} into ${TARGET}`);
