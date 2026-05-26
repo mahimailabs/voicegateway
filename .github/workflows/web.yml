@@ -7,12 +7,14 @@ on:
       - 'web/**'
       - 'docs/**'
       - 'CHANGELOG.md'
+      - 'install.sh'
       - '.github/workflows/web.yml'
   pull_request:
     paths:
       - 'web/**'
       - 'docs/**'
       - 'CHANGELOG.md'
+      - 'install.sh'
       - '.github/workflows/web.yml'
 
 jobs:
