@@ -1,0 +1,52 @@
+---
+title: VoiceGateway docs
+description: Self-hosted voice agent SDK documentation.
+---
+
+import { PackageManagerTabs } from '../../src/components/PackageManagerTabs';
+
+# VoiceGateway documentation
+
+Self-hosted voice agent SDK for LiveKit voice agents. VoiceGateway is built for
+teams that want provider routing, per-modality cost visibility, and
+reconciliation against actual provider invoices while keeping their own keys.
+
+## Where VoiceGateway fits
+
+VoiceGateway sits between your LiveKit agent and STT, LLM, and TTS providers.
+It tracks audio minutes, tokens, characters, latency, sessions, and project
+budgets without forcing you into a hosted inference runtime.
+
+For a longer breakdown of which tool fits which workload, see the
+[decision tree](/docs/guide/decision-tree).
+
+## Install
+
+<PackageManagerTabs pkg="voicegateway" />
+
+For the full first-run path, start with [Get started](/docs/get-started).
+
+## Run with Docker
+
+```bash title="Shell"
+git clone https://github.com/mahimailabs/voicegateway
+cd voicegateway
+docker compose up -d
+```
+
+## Use from Claude Code
+
+```bash title="Shell"
+claude mcp add voicegateway --command "voicegw mcp --transport stdio"
+```
+
+Then ask Claude Code:
+
+> "Add Deepgram with this API key. Register nova-3 for STT. Create a project
+> for Tony's Pizza with a five dollar daily budget using premium stack."
+
+That flow avoids manual YAML editing and dashboard clicking for common setup
+tasks.
+
+Most reference content on this site syncs from `voicegateway/docs/` at build
+time. This landing page is maintained in `voicegateway-web`.

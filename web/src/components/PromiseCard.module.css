@@ -1,0 +1,13 @@
+.vgPromise {
+  padding: 14px 16px 16px;
+  transform: rotate(-0.2deg);
+}
+.vgPromise:nth-of-type(even) {
+  transform: rotate(0.3deg);
+}
+.vgPromiseTitle {
+  margin: 4px 0 2px;
+}
+.vgPromiseBody {
+  color: var(--ink-2);
+}
