@@ -15,7 +15,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..', '..');
 const SOURCE_DOCS = join(REPO_ROOT, 'docs');
 const SOURCE_CHANGELOG = join(REPO_ROOT, 'CHANGELOG.md');
+const SOURCE_INSTALL_SH = join(REPO_ROOT, 'install.sh');
 const TARGET = resolve(__dirname, '..', 'content', 'docs');
+const PUBLIC_INSTALL_SH = resolve(__dirname, '..', 'public', 'install.sh');
 const NATIVE_DOCS = new Set(['index.md', 'index.mdx', 'get-started.md', 'get-started.mdx']);
 // Top-level docs/ entries to skip during sync. These exist on disk but
 // must not appear on the public docs site. Pre-merge, these were
@@ -110,6 +112,15 @@ if (existsSync(SOURCE_CHANGELOG)) {
   const raw = readFileSync(SOURCE_CHANGELOG, 'utf8');
   const mdx = `---\ntitle: "Changelog"\ndescription: "VoiceGateway SDK release notes."\n---\n\n${raw}`;
   writeFileSync(join(TARGET, 'changelog.mdx'), mdx);
+}
+
+// Copy install.sh into public/ so https://voicegateway.mahimai.ca/install.sh
+// resolves. Root install.sh stays the canonical source (it is also used by
+// the Python package itself); the public copy is regenerated on every build,
+// so the two never drift.
+if (existsSync(SOURCE_INSTALL_SH)) {
+  writeFileSync(PUBLIC_INSTALL_SH, readFileSync(SOURCE_INSTALL_SH, 'utf8'));
+  console.log(`Copied install.sh into ${PUBLIC_INSTALL_SH}`);
 }
 
 console.log(`Synced docs from ${SOURCE_DOCS} into ${TARGET}`);

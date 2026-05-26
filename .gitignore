@@ -394,6 +394,9 @@ web/.dev.vars*
 web/.vercel
 web/next-env.d.ts
 
+# web/ assets synced from repo root at build time (do not commit)
+web/public/install.sh
+
 # web/ docs content synced from docs/ at build time (do not commit)
 web/content/docs/api/
 web/content/docs/architecture/
