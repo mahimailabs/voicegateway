@@ -16,7 +16,7 @@ on:
       - '.github/workflows/web.yml'
 
 jobs:
-  typecheck-lint-build:
+  build-and-lint:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -32,6 +32,8 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm lint
+      # Build first so that fumadocs-mdx seeds .source/ before any
+      # standalone tsc invocation. next build also type-checks, so this
+      # step subsumes the previous separate `pnpm typecheck`.
       - run: pnpm build
+      - run: pnpm lint
