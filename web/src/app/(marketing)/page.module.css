@@ -1,0 +1,93 @@
+.vgSection {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 48px 28px 0;
+}
+
+.vgPromises {
+  padding-top: 8px;
+}
+.vgPromisesGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.vgSectionHead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+.vgCapsKicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.vgCapsKicker::before {
+  content: '§';
+  color: var(--accent);
+  font-size: 13px;
+}
+.vgCapsH {
+  max-width: 640px;
+  margin: 0;
+  font-size: clamp(26px, 3.4vw, 36px);
+  line-height: 1.05;
+}
+.vgCapsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px 22px;
+  margin-top: 12px;
+}
+
+.vgDottedRule {
+  margin: 48px auto 0;
+  max-width: 1024px;
+  height: 1px;
+  background-image: radial-gradient(circle, var(--ink-soft) 1px, transparent 1.2px);
+  background-size: 10px 1px;
+  background-repeat: repeat-x;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 880px) {
+  .vgSection {
+    padding: 36px 18px 0;
+  }
+  .vgPromisesGrid {
+    grid-template-columns: 1fr;
+  }
+  .vgCapsGrid {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+  .vgDottedRule {
+    margin-top: 32px;
+  }
+}
+
+@media (min-width: 881px) and (max-width: 1080px) {
+  .vgCapsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

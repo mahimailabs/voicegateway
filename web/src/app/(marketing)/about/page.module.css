@@ -1,0 +1,45 @@
+.vgAbout {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 72px 24px 56px;
+}
+
+.vgAboutTitle {
+  font-size: clamp(30px, 5vw, 48px);
+  line-height: 1.05;
+  margin: 0 0 18px;
+}
+
+.vgAboutLead {
+  margin: 0 0 36px;
+  font-size: clamp(15px, 1.4vw, 18px);
+  color: var(--ink-2);
+  max-width: 640px;
+}
+
+.vgAboutGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 24px;
+}
+
+.vgAboutCard {
+  padding: 18px 20px;
+}
+
+.vgAboutKicker {
+  display: inline-block;
+  margin-bottom: 8px;
+  color: var(--ink-soft);
+}
+
+@media (max-width: 720px) {
+  .vgAbout {
+    padding: 48px 16px 36px;
+  }
+  .vgAboutGrid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}

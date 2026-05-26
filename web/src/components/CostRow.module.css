@@ -1,0 +1,112 @@
+.vgCostRow {
+  border: 1.5px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.vgCostHead,
+.vgCostTotal {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) minmax(110px, 0.7fr);
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+}
+
+.vgCostHead {
+  border-bottom: 1.5px solid var(--ink);
+  background: var(--paper-2);
+}
+
+.vgCostTitle {
+  margin: 0;
+  font-family: var(--hand);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.vgCostMeta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-soft);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.vgCostList {
+  display: grid;
+}
+
+.vgCostItem {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) minmax(110px, 0.7fr);
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border-bottom: 1px dashed var(--line-soft);
+}
+
+.vgCostItem:last-child {
+  border-bottom: 0;
+}
+
+.vgCostModality {
+  margin: 0 0 3px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.vgCostProvider,
+.vgCostUnits {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--ink-2);
+}
+
+.vgCostAmount {
+  justify-self: end;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.vgCostTotal {
+  border-top: 1.5px solid var(--ink);
+  background: var(--accent-soft);
+}
+
+.vgCostTotalLabel {
+  grid-column: 1 / 3;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.vgCostTotalAmount {
+  justify-self: end;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .vgCostHead,
+  .vgCostItem,
+  .vgCostTotal {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .vgCostAmount,
+  .vgCostTotalAmount {
+    justify-self: start;
+  }
+
+  .vgCostTotalLabel {
+    grid-column: auto;
+  }
+}

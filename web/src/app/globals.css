@@ -1,0 +1,77 @@
+@import "tailwindcss";
+@import "../styles/brand.css";
+
+@theme {
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-soft: var(--ink-soft);
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --font-hand: var(--hand);
+  --font-hand-title: var(--hand-title);
+  --font-mono: var(--mono);
+  --font-sans: var(--sans);
+}
+
+:root {
+  --vg-green: oklch(0.62 0.13 155);
+
+  /* fumadocs theme overrides to match VG brand (light mode only) */
+  --color-fd-background: var(--paper);
+  --color-fd-foreground: var(--ink);
+  --color-fd-muted: var(--paper-2);
+  --color-fd-muted-foreground: var(--ink-soft);
+  --color-fd-card: var(--paper);
+  --color-fd-border: var(--line-soft);
+  --color-fd-primary: var(--accent);
+  --color-fd-primary-foreground: var(--paper);
+  --color-fd-accent: var(--accent-soft);
+  --color-fd-accent-foreground: var(--ink);
+  --color-fd-ring: var(--accent);
+  --color-fd-popover: var(--paper);
+  --color-fd-popover-foreground: var(--ink);
+}
+
+a:focus-visible,
+button:focus-visible,
+.btn:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+body {
+  min-height: 100dvh;
+}
+
+/*
+ * Fumadocs code blocks and prose surfaces sit on top of the body dot-grid.
+ * The default Pre background is semi-transparent so the dots bleed through
+ * and read as horizontal lines between code lines. Force a solid paper-2
+ * background on every code surface so the codeblocks look clean.
+ */
+#nd-docs-layout pre,
+#nd-docs-layout figure[data-rehype-pretty-code-figure],
+#nd-docs-layout figure[data-rehype-pretty-code-figure] pre,
+#nd-docs-layout [data-line],
+.fd-codeblock,
+.fd-codeblock pre {
+  background: var(--paper-2) !important;
+  background-image: none !important;
+}
+
+#nd-docs-layout pre code,
+#nd-docs-layout figure[data-rehype-pretty-code-figure] code,
+.fd-codeblock code {
+  background: transparent !important;
+}
+
+/* prose article surface needs to cover the body dot-grid too */
+#nd-docs-layout article {
+  background: var(--paper);
+}
+

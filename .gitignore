@@ -26,6 +26,7 @@ eggs/
 .eggs/
 lib/
 !dashboard/frontend/src/lib/
+!web/src/lib/
 lib64/
 parts/
 sdist/
@@ -382,3 +383,37 @@ voicegw.db
 voicegw.db-journal
 voicegw.db-wal
 voicegw.db-shm
+
+# web/ (Next.js + Fumadocs site)
+web/.next/
+web/.source/
+web/.open-next/
+web/.wrangler/
+web/.dev.vars*
+!web/.dev.vars.example
+web/.vercel
+web/next-env.d.ts
+
+# web/ docs content synced from docs/ at build time (do not commit)
+web/content/docs/api/
+web/content/docs/architecture/
+web/content/docs/guide/
+web/content/docs/configuration/
+web/content/docs/contributing/
+web/content/docs/mcp/
+web/content/docs/cli/
+web/content/docs/storage/
+web/content/docs/reference/
+web/content/docs/examples/
+web/content/docs/migration/
+web/content/docs/changelog.mdx
+web/content/docs/index.md
+
+# web/ screenshot baselines + imported wireframe references
+web/ref-*.png
+web/current-home.png
+web/v2-home.png
+web/v3-home.png
+web/v4-home.png
+web/v4-about.png
+web/references/

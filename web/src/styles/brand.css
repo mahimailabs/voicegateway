@@ -1,0 +1,210 @@
+/*
+ * Mahimai AI brand tokens.
+ * Source of truth: .brand/mahimai-wireframes.html (Claude-generated wireframe set).
+ * Edits to this file should propagate from there, not the other way around.
+ *
+ * Light mode only. Two modes (sketchy default, clean via body.clean).
+ * All four corners must read as the same brand.
+ */
+
+:root {
+  /* ink + paper */
+  --ink: #1a1a1a;
+  --ink-2: #3b3b3b;
+  --ink-soft: #6b6b6b;
+  --paper: #fafaf7;
+  --paper-2: #f2f0e9;
+  --line: #1a1a1a;
+  --line-soft: #b8b3a6;
+
+  /* accent (warm terracotta) */
+  --accent: oklch(0.62 0.17 40);
+  --accent-soft: oklch(0.94 0.05 55);
+
+  /* hex fallbacks for tooling that does not grok oklch */
+  --accent-hex: #c46a3a;
+  --accent-soft-hex: #f4ead8;
+
+  /* type stack (next/font CSS vars set on <html> in src/app/layout.tsx) */
+  --hand: var(--font-kalam), 'Kalam', 'Caveat', system-ui;
+  --hand-title: var(--font-caveat), 'Caveat', 'Kalam', system-ui;
+  --mono: var(--font-jb), 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --sans: var(--font-inter), 'Inter', system-ui;
+}
+
+/* page surface */
+html, body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  margin: 0;
+}
+
+/* paper dot pattern that anchors every Mahimai surface */
+body {
+  background-image: radial-gradient(circle at 1px 1px, rgba(0, 0, 0, 0.05) 1px, transparent 0);
+  background-size: 18px 18px;
+}
+
+/* ---------- Typography helpers ---------- */
+.h-hand {
+  font-family: var(--hand-title);
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  line-height: 1.08;
+}
+.h-hand.xl { font-size: 30px; }
+.h-hand.xxl { font-size: 36px; line-height: 1; }
+
+.p-hand {
+  font-family: var(--hand);
+  font-size: 14px;
+  line-height: 1.4;
+  margin: 0;
+}
+.p-hand.sm { font-size: 12.5px; }
+
+.tiny-mono {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.kbd {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  border: 1.2px solid var(--ink);
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--paper);
+}
+
+/* ---------- Primitives ---------- */
+.box {
+  border: 1.5px solid var(--ink);
+  border-radius: 4px;
+  padding: 10px 12px;
+  background: var(--paper);
+  position: relative;
+}
+.box.dashed { border-style: dashed; }
+.box.soft { border-color: var(--line-soft); }
+.box.filled { background: var(--ink); color: var(--paper); }
+.box.accent { background: var(--accent-soft); border-color: var(--ink); }
+.box.hatch {
+  background:
+    repeating-linear-gradient(135deg, transparent 0 6px, rgba(0, 0, 0, 0.06) 6px 7px),
+    var(--paper);
+}
+
+.chip {
+  display: inline-block;
+  font-family: var(--hand);
+  font-size: 12.5px;
+  border: 1.2px solid var(--ink);
+  border-radius: 12px;
+  padding: 1px 8px;
+  margin: 2px 4px 2px 0;
+  background: var(--paper);
+}
+.chip.accent { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+.chip.dim { border-style: dashed; color: var(--ink-soft); }
+
+.btn {
+  display: inline-block;
+  font-family: var(--hand);
+  font-size: 14px;
+  padding: 4px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: 14px 16px 13px 17px;
+  background: var(--paper);
+  color: var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+.btn.solid { background: var(--ink); color: var(--paper); }
+.btn.accent { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+
+.stamp {
+  position: absolute;
+  right: -10px;
+  top: 8px;
+  transform: rotate(8deg);
+  border: 1.5px solid var(--accent);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: var(--paper);
+  text-transform: uppercase;
+}
+
+/* hand-drawn rules — renamed from `.line` to `.vg-line` so it does not
+ * collide with Fumadocs syntax-highlighter line spans (`<span class="line">`).
+ */
+.vg-line { height: 1.5px; background: var(--ink); margin: 8px 0; border-radius: 2px; }
+.vg-line.soft { background: var(--line-soft); height: 1.2px; }
+.vg-line.wavy {
+  height: 6px;
+  background: transparent;
+  background-image: radial-gradient(circle at 6px 2px, var(--ink) 1px, transparent 1.4px);
+  background-size: 12px 6px;
+  background-repeat: repeat-x;
+}
+
+.arrow { display: inline-block; font-family: var(--hand); transform: rotate(-3deg); }
+.circled {
+  border: 1.5px solid var(--ink);
+  border-radius: 50% 60% 55% 45% / 50% 55% 48% 60%;
+  padding: 2px 8px;
+  display: inline-block;
+  font-family: var(--hand);
+}
+
+/* ---------- Artboard (sketchy double-stamp card) ---------- */
+.ab {
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 4px 4px 0 var(--ink), 4px 4px 0 1px var(--ink);
+}
+.ab-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1.5px solid var(--ink);
+  background: var(--paper-2);
+}
+.ab-head .label { font-family: var(--hand); font-size: 17px; font-weight: 700; }
+.ab-head .meta {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.ab-body { padding: 14px; }
+
+/* ---------- Clean mode (Sketchy toggle OFF) ---------- */
+body.clean .btn { transform: none; border-radius: 6px; }
+body.clean .h-hand,
+body.clean .h-hand.xl,
+body.clean .h-hand.xxl,
+body.clean .ab-head .label,
+body.clean .brand {
+  font-family: var(--sans);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+body.clean .p-hand { font-family: var(--sans); }
+body.clean .ab { box-shadow: 0 1px 0 var(--ink-soft); }
+body.clean .chip { border-radius: 999px; }

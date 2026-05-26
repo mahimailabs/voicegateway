@@ -1,0 +1,200 @@
+.vgDemo {
+  max-width: 1080px;
+  margin: 52px auto 0;
+  padding: 0 28px;
+}
+
+.vgDemoShell {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(320px, 1.05fr);
+  gap: 24px;
+  align-items: stretch;
+  border: 2px solid var(--ink);
+  background:
+    repeating-linear-gradient(135deg, transparent 0 8px, rgba(0, 0, 0, 0.035) 8px 9px),
+    var(--paper);
+  box-shadow: 5px 5px 0 var(--ink);
+  padding: 18px;
+}
+
+.vgDemoIntro {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 310px;
+  padding: 8px 4px;
+}
+
+.vgDemoKicker {
+  margin: 0 0 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.vgDemoTitle {
+  max-width: 520px;
+  margin: 0;
+  font-family: var(--hand-title);
+  font-size: 38px;
+  line-height: 1;
+}
+
+.vgDemoBody {
+  max-width: 520px;
+  margin: 14px 0 0;
+  font-family: var(--hand);
+  font-size: 17px;
+  line-height: 1.35;
+  color: var(--ink-2);
+}
+
+.vgDemoNotes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.vgDemoPanel {
+  border: 1.5px solid var(--ink);
+  background: var(--paper);
+  padding: 14px;
+}
+
+.vgDemoForm {
+  display: grid;
+  gap: 12px;
+}
+
+.vgDemoLabel {
+  display: grid;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.vgDemoInputRow {
+  display: grid;
+  grid-template-columns: 122px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.vgDemoInput,
+.vgDemoSelect {
+  width: 100%;
+  min-height: 42px;
+  border: 1.5px solid var(--ink);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 500 15px var(--sans);
+  padding: 8px 10px;
+}
+
+.vgDemoInput:focus,
+.vgDemoSelect:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.vgDemoActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.vgDemoButton {
+  min-height: 38px;
+}
+
+.vgDemoButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.vgDemoSecondary {
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.vgDemoStatus {
+  min-height: 19px;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.vgDemoError {
+  color: var(--accent);
+}
+
+.vgDemoCode {
+  max-width: 190px;
+  font-family: var(--mono);
+  font-size: 22px;
+  letter-spacing: 0.24em;
+}
+
+.vgDemoTimer {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.vgDemoTimerTrack {
+  height: 10px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-2);
+}
+
+.vgDemoTimerFill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 200ms linear;
+}
+
+.vgDemoResult {
+  display: grid;
+  gap: 12px;
+}
+
+@media (max-width: 860px) {
+  .vgDemo {
+    margin-top: 38px;
+    padding: 0 18px;
+  }
+
+  .vgDemoShell {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+
+  .vgDemoIntro {
+    min-height: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .vgDemoInputRow {
+    grid-template-columns: 1fr;
+  }
+
+  .vgDemoTitle {
+    font-size: 31px;
+  }
+}
