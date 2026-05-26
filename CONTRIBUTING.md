@@ -2,8 +2,8 @@
 
 Thank you for your interest in contributing. This file is the one-page
 quick reference. Detailed guides live under
-[`docs/contributing/`](docs/contributing/) and are rendered by
-`mahimailabs/voicegateway-web` at <https://voicegateway.mahimai.ca/docs>.
+[`docs/contributing/`](docs/contributing/) and are rendered by the
+in-tree Next.js + Fumadocs site (`web/`) at <https://voicegateway.mahimai.ca/docs>.
 
 ## Code of Conduct
 
@@ -49,11 +49,12 @@ Before opening your PR, verify locally:
 
 ## Documentation
 
-VoiceGateway owns the Markdown source content under `docs/`. The rendered docs
-site is maintained in `mahimailabs/voicegateway-web` and is published at
-<https://voicegateway.mahimai.ca/docs>. When docs changes reach `main`, the
-`.github/workflows/docs.yml` deploy-hook workflow triggers a
-voicegateway-web rebuild automatically. No manual GitHub Pages deploy is needed.
+VoiceGateway owns the Markdown source content under `docs/` and the Next.js +
+Fumadocs site that renders it (`web/`), published at
+<https://voicegateway.mahimai.ca/docs>. Vercel auto-deploys the site on every
+push to `main` (Root Directory `web/`, with an Ignored Build Step that skips
+Python-only commits). To preview a doc change locally: `cd web && pnpm install
+&& pnpm dev`. See `web/CLAUDE.md` for site-specific conventions.
 
 ## Project layout (quick orientation)
 
@@ -84,8 +85,9 @@ src/
     Dockerfile         # dashboard runtime image
     README.dockerhub.md
 
-docs/                  # Markdown docs source rendered by voicegateway-web
-install.sh             # one-line installer (curl|bash) — repo root by convention
+docs/                  # Markdown docs source (rendered by web/)
+web/                   # Next.js 16 + Fumadocs 16 marketing + docs site
+install.sh             # one-line installer (curl|bash), repo root by convention
 pyproject.toml
 docker-compose.yml
 ```

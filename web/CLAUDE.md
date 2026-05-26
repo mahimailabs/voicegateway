@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-The marketing + public documentation site for **VoiceGateway** (deployed at https://voicegateway.mahimai.ca). Marketing at `/`, `/about`. Public docs at `/docs/*` served by Fumadocs from MDX synced out of the sibling `voicegateway` repo at build time. Next.js 16 App Router + Tailwind 4, deployed on Vercel (native Next.js, Hobby tier).
+The marketing + public documentation site for **VoiceGateway** (deployed at https://voicegateway.mahimai.ca). Marketing at `/`, `/about`. Public docs at `/docs/*` served by Fumadocs from MDX synced out of the sibling `../docs/` tree at build time. Next.js 16 App Router + Tailwind 4, deployed on Vercel (native Next.js, Hobby tier, Root Directory `web/`).
 
 ## Commands
 
@@ -12,15 +12,15 @@ The marketing + public documentation site for **VoiceGateway** (deployed at http
 | --- | --- |
 | `pnpm dev` | Next.js dev server on http://localhost:3000 |
 | `pnpm build` | Next.js production build (`prebuild` runs `pnpm sync-docs` first) |
-| `pnpm sync-docs` | Shallow-clone `voicegateway` and copy `docs/` into `content/docs/` |
+| `pnpm sync-docs` | Copy `../docs/` and `../CHANGELOG.md` into `content/docs/` (no clone; reads the in-tree source) |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm lint` | ESLint |
 
-Node 22.12+, pnpm 9+. Vercel-GitHub auto-deploy is configured on push to `main`; preview deployments fire on every other branch. No `.github/workflows/deploy.yml` is needed.
+Node 22.12+, pnpm 9+. Vercel auto-deploys on push to `main` with Root Directory `web/` and an Ignored Build Step that skips when only Python files change. Preview deployments fire on every other branch. CI runs `pnpm typecheck + lint + build` via `.github/workflows/web.yml` with the same path filter (`web/**`, `docs/**`, `CHANGELOG.md`).
 
 ## Architecture notes
 
-- **Content lives in the SDK repo.** `content/docs/` is gitignored except for `meta.json` files and `index.mdx`. `scripts/sync-docs.ts` shallow-clones `https://github.com/mahimailabs/voicegateway.git` and copies `docs/*.md` plus `CHANGELOG.md` into `content/docs/` on every build. To preview new docs locally: commit them upstream, then `pnpm sync-docs`.
+- **Content lives in `../docs/`.** `content/docs/` is gitignored except for `index.mdx`, `get-started.mdx`, and per-section `meta.json` files. `scripts/sync-docs.ts` reads `../docs/` and `../CHANGELOG.md` directly (no network clone) and writes the transformed tree into `content/docs/` on every build. To preview new docs locally: edit the source under `docs/`, then `pnpm sync-docs && pnpm dev`. The script skips `docs/superpowers/` (internal specs) via an EXCLUDED_TOP_LEVEL set.
 - **Host is Vercel.** No platform adapter, no `vercel.ts`, no `vercel.json`: Next.js is auto-detected. Adding a config file would be premature; do so only when there is a custom rewrite, header, or cron to express.
 - **Fumadocs versions are pinned exact** (no `^`): `fumadocs-ui@16.8.10`, `fumadocs-mdx@15.0.3`, `fumadocs-core@16.8.10`. Major bumps require re-checking compatibility with Next.js + Vercel before merging.
 - **`mdx-components.tsx`** at repo root exposes `PackageManagerTabs` to all MDX files automatically.
