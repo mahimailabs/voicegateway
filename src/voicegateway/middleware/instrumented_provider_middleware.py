@@ -98,6 +98,11 @@ class InstrumentedSTT(lk_stt.STT, InstrumentationMixin):
 
     async def aclose(self) -> None:
         await self._wrapped.aclose()
+        # The wrapped.aclose path is where LK's stream terminal blocks
+        # run, which is where metrics_collected fires; await any log tasks
+        # the bridge scheduled so a graceful shutdown does not race the
+        # process exit cancelling pending writes.
+        await self._drain_pending_logs()
 
     def __repr__(self) -> str:
         return f"<InstrumentedSTT wrapping {self._wrapped!r}>"
@@ -242,6 +247,11 @@ class InstrumentedLLM(lk_llm.LLM, InstrumentationMixin):
 
     async def aclose(self) -> None:
         await self._wrapped.aclose()
+        # The wrapped.aclose path is where LK's stream terminal blocks
+        # run, which is where metrics_collected fires; await any log tasks
+        # the bridge scheduled so a graceful shutdown does not race the
+        # process exit cancelling pending writes.
+        await self._drain_pending_logs()
 
     def __repr__(self) -> str:
         return f"<InstrumentedLLM wrapping {self._wrapped!r}>"
@@ -305,6 +315,11 @@ class InstrumentedTTS(lk_tts.TTS, InstrumentationMixin):
 
     async def aclose(self) -> None:
         await self._wrapped.aclose()
+        # The wrapped.aclose path is where LK's stream terminal blocks
+        # run, which is where metrics_collected fires; await any log tasks
+        # the bridge scheduled so a graceful shutdown does not race the
+        # process exit cancelling pending writes.
+        await self._drain_pending_logs()
 
     def __repr__(self) -> str:
         return f"<InstrumentedTTS wrapping {self._wrapped!r}>"

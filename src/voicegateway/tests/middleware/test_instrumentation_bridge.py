@@ -217,6 +217,32 @@ async def test_pending_tasks_survive_until_done() -> None:
 # ---------- bridge wiring ---------------------------------------------------
 
 
+async def test_aclose_drains_pending_log_tasks() -> None:
+    """aclose() must await any in-flight log writes scheduled by the bridge.
+
+    Without this, a process that exits right after the last call (one-shot
+    scripts, end-of-session cleanup) loses the final cost row to
+    asyncio.run's pending-task cancellation.
+    """
+    wrapper = _make_wrapper("llm")
+    wrapped = object.__getattribute__(wrapper, "_wrapped")
+    wrapped.aclose = AsyncMock()
+
+    metric = SimpleNamespace(prompt_tokens=10, completion_tokens=5, cancelled=False)
+    wrapper._on_metrics_log(metric)
+    assert len(wrapper._pending_log_tasks) >= 1, "task should be pending pre-aclose"
+
+    await wrapper.aclose()
+
+    assert len(wrapper._pending_log_tasks) == 0, (
+        "aclose did not drain the pending log task; rows can be lost on shutdown"
+    )
+    cost_tracker = object.__getattribute__(wrapper, "_cost_tracker")
+    assert cost_tracker.create_record.call_count == 1, (
+        "log task should have completed inside aclose, writing the row"
+    )
+
+
 async def test_bridge_handlers_are_registered_on_wrapped() -> None:
     """Sanity: _init_instrumentation actually binds the new handlers."""
     wrapper = _make_wrapper("llm")
