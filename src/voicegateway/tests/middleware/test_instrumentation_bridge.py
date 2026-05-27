@@ -68,7 +68,12 @@ async def _drain_pending(wrapper: Any) -> None:
     [
         (
             "llm",
-            {"prompt_tokens": 100, "completion_tokens": 50, "cancelled": False},
+            {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "prompt_cached_tokens": 20,
+                "cancelled": False,
+            },
             100.0,
             50.0,
         ),
@@ -102,6 +107,11 @@ async def test_bridge_writes_row_on_success(
     assert kwargs["model_id"] == f"fake/{modality}-model"
     assert kwargs["modality"] == modality
     assert kwargs["provider"] == "fake"
+    # LLM-specific: prompt_cached_tokens on the metric must flow to
+    # cached_input_units on the record. STT/TTS metrics carry no cached
+    # field so cached_input_units defaults to 0 for those modalities.
+    expected_cached = float(metric_kwargs.get("prompt_cached_tokens", 0))
+    assert kwargs.get("cached_input_units", 0) == pytest.approx(expected_cached)
 
 
 # ---------- cancelled path --------------------------------------------------
