@@ -38,12 +38,12 @@ _logger = logging.getLogger(__name__)
 _INSERT_REQUEST = text(
     """INSERT INTO requests
        (id, timestamp, project, modality, model_id, provider,
-        input_units, output_units, cost_usd, pricing_source,
+        input_units, output_units, cached_input_units, cost_usd, pricing_source,
         ttfb_ms, total_latency_ms, status,
         fallback_from, error_message, metadata, session_id,
         tenant_id)
        VALUES (:id, :timestamp, :project, :modality, :model_id, :provider,
-               :input_units, :output_units, :cost_usd, :pricing_source,
+               :input_units, :output_units, :cached_input_units, :cost_usd, :pricing_source,
                :ttfb_ms, :total_latency_ms, :status,
                :fallback_from, :error_message, :metadata, :session_id,
                :tenant_id)"""
@@ -120,6 +120,7 @@ async def log_request(session: AsyncSession, record: RequestRecord) -> None:
             "provider": record.provider,
             "input_units": record.input_units,
             "output_units": record.output_units,
+            "cached_input_units": record.cached_input_units,
             "cost_usd": record.cost_usd,
             "pricing_source": record.pricing_source,
             "ttfb_ms": record.ttfb_ms,

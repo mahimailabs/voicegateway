@@ -125,29 +125,33 @@ class InstrumentationMixin:
     def _forward_error(self, *args: Any, **kwargs: Any) -> None:
         self.emit("error", *args, **kwargs)
 
-    def _extract_units(self, metric: Any) -> tuple[float, float]:
-        """Return (input_units, output_units) per the VG cost-tracker convention.
+    def _extract_units(self, metric: Any) -> tuple[float, float, float]:
+        """Return (input_units, output_units, cached_input_units).
 
         VG convention: LLM passes raw tokens, STT passes audio MINUTES
         (cost_tracker multiplies by 60 to recover seconds), TTS passes
-        characters. Defensive ``getattr(..., default) or default`` handles
-        the None values LK emits when a stream is cancelled before any
-        tokens land.
+        characters. ``cached_input_units`` is the subset of LLM prompt
+        tokens served from the provider's prompt cache (only meaningful
+        for LLM; always 0 for STT/TTS). Defensive
+        ``getattr(..., default) or default`` handles the None values
+        LK emits when a stream is cancelled before any tokens land.
         """
         if self._modality == "llm":
             return (
                 float(getattr(metric, "prompt_tokens", 0) or 0),
                 float(getattr(metric, "completion_tokens", 0) or 0),
+                float(getattr(metric, "prompt_cached_tokens", 0) or 0),
             )
         if self._modality == "stt":
             audio_duration = float(getattr(metric, "audio_duration", 0.0) or 0.0)
-            return (audio_duration / 60.0, 0.0)
+            return (audio_duration / 60.0, 0.0, 0.0)
         if self._modality == "tts":
             return (
                 float(getattr(metric, "characters_count", 0) or 0),
                 0.0,
+                0.0,
             )
-        return (0.0, 0.0)
+        return (0.0, 0.0, 0.0)
 
     def _on_metrics_log(self, metric: Any) -> None:
         """Bridge LK's metrics_collected event to ``_log_request``.
@@ -161,7 +165,7 @@ class InstrumentationMixin:
         if self._cost_tracker is None:
             return
 
-        input_units, output_units = self._extract_units(metric)
+        input_units, output_units, cached_input_units = self._extract_units(metric)
 
         # First-byte time from LK's own ttft/ttfb (when present), so the
         # storage row has a real TTFB even when nobody called
@@ -176,6 +180,7 @@ class InstrumentationMixin:
             self._log_request(
                 input_units=input_units,
                 output_units=output_units,
+                cached_input_units=cached_input_units,
                 status=status,
             )
         )
@@ -221,6 +226,7 @@ class InstrumentationMixin:
         self,
         input_units: float = 0.0,
         output_units: float = 0.0,
+        cached_input_units: float = 0.0,
         status: str = "success",
         error_message: str | None = None,
     ) -> None:
@@ -250,6 +256,7 @@ class InstrumentationMixin:
             project=self.project,
             input_units=input_units,
             output_units=output_units,
+            cached_input_units=cached_input_units,
             ttfb_ms=ttfb_ms,
             total_latency_ms=total_ms,
             status=status,
