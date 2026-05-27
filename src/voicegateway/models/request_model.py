@@ -35,6 +35,7 @@ class RequestRecord:
     project: str = "default"  # project ID the request is tagged with
     input_units: float = 0.0  # minutes (stt), tokens (llm), characters (tts)
     output_units: float = 0.0  # tokens (llm)
+    cached_input_units: float = 0.0  # cached prompt tokens (llm); 0 for stt/tts
     cost_usd: float = 0.0
     pricing_source: str = (
         ""  # e.g. "genai-prices@0.0.57" or "voicegateway-catalog@2026-05-04"
@@ -77,6 +78,9 @@ class Request(SQLModel, table=True):
     provider: str
     input_units: float | None = Field(default=0.0)
     output_units: float | None = Field(default=0.0)
+    cached_input_units: float | None = Field(
+        default=0.0, sa_column_kwargs={"server_default": "0"}
+    )
     cost_usd: float | None = Field(default=0.0)
     pricing_source: str = Field(default="", sa_column_kwargs={"server_default": ""})
     ttfb_ms: float | None = None

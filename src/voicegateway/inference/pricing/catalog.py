@@ -14,11 +14,14 @@ def calculate_cost(
     audio_seconds: float = 0.0,
     input_tokens: int = 0,
     output_tokens: int = 0,
+    cached_input_tokens: int = 0,
     character_count: int = 0,
 ) -> Decimal | None:
     """Calculate the cost of a single request."""
     if modality == "llm":
-        return llm.calculate_llm_cost(model, input_tokens, output_tokens)
+        return llm.calculate_llm_cost(
+            model, input_tokens, output_tokens, cached_input_tokens
+        )
     if modality == "stt":
         return stt.calculate_stt_cost(model, audio_seconds)
     if modality == "tts":

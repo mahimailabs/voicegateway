@@ -33,6 +33,7 @@ class CostTracker:
         modality: str,
         input_units: float = 0.0,
         output_units: float = 0.0,
+        cached_input_units: float = 0.0,
     ) -> float:
         """Calculate cost for a request."""
         if modality == "stt":
@@ -45,6 +46,7 @@ class CostTracker:
                 model_id,
                 input_tokens=int(input_units),
                 output_tokens=int(output_units),
+                cached_input_tokens=int(cached_input_units),
             )
         elif modality == "tts":
             cost = catalog.calculate_cost(
@@ -71,6 +73,7 @@ class CostTracker:
         project: str = "default",
         input_units: float = 0.0,
         output_units: float = 0.0,
+        cached_input_units: float = 0.0,
         ttfb_ms: float | None = None,
         total_latency_ms: float | None = None,
         status: str = "success",
@@ -80,7 +83,9 @@ class CostTracker:
         session_id: str | None = None,
     ) -> RequestRecord:
         """Create a request record with cost calculated."""
-        cost = self.calculate_cost(model_id, modality, input_units, output_units)
+        cost = self.calculate_cost(
+            model_id, modality, input_units, output_units, cached_input_units
+        )
         if not pricing_source:
             is_known_free = model_id.startswith(("local/", "ollama/"))
             if cost > 0.0 or is_known_free:
@@ -94,6 +99,7 @@ class CostTracker:
             provider=provider,
             input_units=input_units,
             output_units=output_units,
+            cached_input_units=cached_input_units,
             cost_usd=cost,
             pricing_source=pricing_source,
             ttfb_ms=ttfb_ms,
