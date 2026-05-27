@@ -217,6 +217,19 @@ class InstrumentationMixin:
         self._pending_log_tasks.add(task)
         task.add_done_callback(self._pending_log_tasks.discard)
 
+    async def _drain_pending_logs(self) -> None:
+        """Await any in-flight log writes scheduled by the bridge.
+
+        Called from each wrapper's ``aclose`` so that a graceful LK session
+        shutdown waits for cost rows to land. Without this drain, a process
+        that exits immediately after the last LK plugin call can lose the
+        final write to asyncio.run's pending-task cancellation.
+        """
+        if not self._pending_log_tasks:
+            return
+        pending = list(self._pending_log_tasks)
+        await asyncio.gather(*pending, return_exceptions=True)
+
     def _mark_first_byte(self) -> None:
         """Record the time of the first byte/token/audio frame."""
         if self._first_byte_time is None:
