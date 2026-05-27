@@ -13,6 +13,7 @@ extend the matching LiveKit base class (``livekit.agents.stt.STT``, etc.).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -86,6 +87,7 @@ class InstrumentationMixin:
     _start_time: float
     _first_byte_time: float | None
     _logged: bool
+    _pending_log_tasks: set[asyncio.Task[None]]
 
     def _init_instrumentation(
         self,
@@ -106,15 +108,109 @@ class InstrumentationMixin:
         self._start_time = time.perf_counter()
         self._first_byte_time = None
         self._logged = False
+        # Strong-ref set keeps background log tasks alive until done. Without
+        # it the event loop only holds weak refs to asyncio.create_task return
+        # values, and GC can collect a pending log mid-flight (silent data
+        # loss + "Task was destroyed but it is pending" warnings).
+        self._pending_log_tasks = set()
 
         wrapped.on("metrics_collected", self._forward_metrics)
+        wrapped.on("metrics_collected", self._on_metrics_log)
         wrapped.on("error", self._forward_error)
+        wrapped.on("error", self._on_error_log)
 
     def _forward_metrics(self, *args: Any, **kwargs: Any) -> None:
         self.emit("metrics_collected", *args, **kwargs)
 
     def _forward_error(self, *args: Any, **kwargs: Any) -> None:
         self.emit("error", *args, **kwargs)
+
+    def _extract_units(self, metric: Any) -> tuple[float, float]:
+        """Return (input_units, output_units) per the VG cost-tracker convention.
+
+        VG convention: LLM passes raw tokens, STT passes audio MINUTES
+        (cost_tracker multiplies by 60 to recover seconds), TTS passes
+        characters. Defensive ``getattr(..., default) or default`` handles
+        the None values LK emits when a stream is cancelled before any
+        tokens land.
+        """
+        if self._modality == "llm":
+            return (
+                float(getattr(metric, "prompt_tokens", 0) or 0),
+                float(getattr(metric, "completion_tokens", 0) or 0),
+            )
+        if self._modality == "stt":
+            audio_duration = float(getattr(metric, "audio_duration", 0.0) or 0.0)
+            return (audio_duration / 60.0, 0.0)
+        if self._modality == "tts":
+            return (
+                float(getattr(metric, "characters_count", 0) or 0),
+                0.0,
+            )
+        return (0.0, 0.0)
+
+    def _on_metrics_log(self, metric: Any) -> None:
+        """Bridge LK's metrics_collected event to ``_log_request``.
+
+        LK fires this synchronously from inside the stream's terminal block,
+        so we cannot await here. Schedule the async log via create_task
+        and retain a strong ref in ``_pending_log_tasks`` until it completes.
+        """
+        if self._logged:
+            return
+        if self._cost_tracker is None:
+            return
+
+        input_units, output_units = self._extract_units(metric)
+
+        # First-byte time from LK's own ttft/ttfb (when present), so the
+        # storage row has a real TTFB even when nobody called
+        # _mark_first_byte explicitly.
+        ttft_or_ttfb = getattr(metric, "ttft", None) or getattr(metric, "ttfb", None)
+        if ttft_or_ttfb and self._first_byte_time is None:
+            self._first_byte_time = self._start_time + float(ttft_or_ttfb)
+
+        status = "cancelled" if bool(getattr(metric, "cancelled", False)) else "success"
+
+        self._schedule_log(
+            self._log_request(
+                input_units=input_units,
+                output_units=output_units,
+                status=status,
+            )
+        )
+
+    def _on_error_log(self, error: Any) -> None:
+        """Bridge LK's error event to ``_log_request`` with status='error'."""
+        if self._logged:
+            return
+        if self._cost_tracker is None:
+            return
+        self._schedule_log(
+            self._log_request(
+                status="error",
+                error_message=str(error),
+            )
+        )
+
+    def _schedule_log(self, coro: Any) -> None:
+        """Schedule a coroutine without awaiting; keep a strong ref.
+
+        Falls back to closing the coroutine if no running event loop is
+        available, which happens in some unit-test setups; the caller's
+        flow is unaffected either way.
+        """
+        try:
+            task = asyncio.ensure_future(coro)
+        except RuntimeError:
+            # No running loop (rare: synchronous test driving the wrapper).
+            # Close the coroutine to silence the "coroutine was never
+            # awaited" warning and bail; tests that want the log written
+            # call _log_request directly.
+            coro.close()
+            return
+        self._pending_log_tasks.add(task)
+        task.add_done_callback(self._pending_log_tasks.discard)
 
     def _mark_first_byte(self) -> None:
         """Record the time of the first byte/token/audio frame."""
