@@ -271,6 +271,7 @@ _REQUEST_COLUMNS = (
     "provider",
     "input_units",
     "output_units",
+    "cached_input_units",
     "cost_usd",
     "pricing_source",
     "ttfb_ms",
