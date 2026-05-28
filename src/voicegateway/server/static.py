@@ -69,6 +69,9 @@ def mount_frontend(app: FastAPI) -> None:
     """Mount the React SPA at ``/`` (or a hint endpoint when not built)."""
     frontend_dir = _resolve_frontend_dir()
     if frontend_dir is not None:
+        # Pre-resolve once so per-request path-traversal checks are
+        # symbol comparisons, not stat() calls.
+        frontend_root = frontend_dir.resolve()
         app.mount(
             "/assets",
             StaticFiles(directory=frontend_dir / "assets"),
@@ -81,12 +84,24 @@ def mount_frontend(app: FastAPI) -> None:
 
         @app.get("/{full_path:path}")
         async def spa_fallback(full_path: str) -> FileResponse:
-            """SPA fallback: React Router handles client-side routing."""
+            """SPA fallback: React Router handles client-side routing.
+
+            Refuses ``api/*`` and ``v1/*`` so real 404s surface instead
+            of the index HTML. Rejects any resolved path that escapes
+            ``frontend_root`` (percent-encoded ``..`` segments that
+            slipped past HTTP-client normalisation). Legitimate unknown
+            paths still fall back to ``index.html`` so React Router can
+            handle them.
+            """
             if full_path.startswith(("api/", "v1/")):
                 raise HTTPException(status_code=404)
-            file_path = frontend_dir / full_path
-            if file_path.is_file():
-                return FileResponse(file_path)
+            candidate = (frontend_dir / full_path).resolve()
+            try:
+                candidate.relative_to(frontend_root)
+            except ValueError as exc:
+                raise HTTPException(status_code=404) from exc
+            if candidate.is_file():
+                return FileResponse(candidate)
             return FileResponse(frontend_dir / "index.html")
     else:
 
