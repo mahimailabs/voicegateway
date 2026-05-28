@@ -131,6 +131,31 @@ def test_mount_frontend_spa_fallback_refuses_api_paths(monkeypatch, tmp_path):
     assert client.get("/v1/does-not-exist").status_code == 404
 
 
+def test_mount_frontend_spa_fallback_refuses_path_traversal(monkeypatch, tmp_path):
+    """Resolved paths that escape ``frontend_dir`` must 404, not leak.
+
+    HTTP clients and Starlette normally normalise ``../`` in URLs before
+    the handler sees them, but percent-encoded forms (``%2E%2E%2F``)
+    slip past normalisation and reach the handler with literal ``..``
+    segments intact. Without the resolved-path check in spa_fallback,
+    `(frontend_dir / full_path).is_file()` would happily stat files
+    outside the dist root.
+    """
+    dist = _make_dist(tmp_path / "wheel" / "_dashboard_dist", marker="SAFE")
+    secret = tmp_path / "should-not-leak.txt"
+    secret.write_text("LEAKED")
+    _patch_candidates(monkeypatch, [dist])
+
+    app = FastAPI()
+    static_module.mount_frontend(app)
+    client = TestClient(app)
+
+    resp = client.get("/%2E%2E/should-not-leak.txt")
+    assert b"LEAKED" not in resp.content, (
+        "path-traversal guard failed; secret file leaked through spa_fallback"
+    )
+
+
 # ---------- two-path resolution (spec section 4) ---------------------------
 
 
