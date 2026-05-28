@@ -24,8 +24,16 @@ if [[ ! -d "$FRONTEND_SRC" ]]; then
   exit 1
 fi
 
-echo "==> npm install ($FRONTEND_SRC)"
-npm --prefix "$FRONTEND_SRC" install
+# Refuse to build without a lockfile: an unlocked install would resolve
+# dependencies against whatever the registry returns today and the wheel
+# would not be reproducible across runs.
+if [[ ! -f "$FRONTEND_SRC/package-lock.json" && ! -f "$FRONTEND_SRC/npm-shrinkwrap.json" ]]; then
+  echo "ERROR: no package-lock.json or npm-shrinkwrap.json in $FRONTEND_SRC; refusing to build a non-reproducible wheel." >&2
+  exit 1
+fi
+
+echo "==> npm ci ($FRONTEND_SRC)"
+npm --prefix "$FRONTEND_SRC" ci
 
 echo "==> npm run build ($FRONTEND_SRC)"
 npm --prefix "$FRONTEND_SRC" run build
