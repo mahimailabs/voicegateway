@@ -15,22 +15,27 @@ jobs:
     permissions:
       contents: write
 
+    # All third-party actions pinned to immutable commit SHAs. The
+    # comment after each ref records the human-readable version the SHA
+    # was when pinning so reviewers can spot stale pins. Floating tag
+    # refs (@v4, @release/v1) are a supply-chain risk on a workflow
+    # that holds PyPI publish credentials.
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
       with:
         fetch-depth: 0
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
       with:
         python-version: "3.11"
 
     - name: Set up uv
-      uses: astral-sh/setup-uv@v3
+      uses: astral-sh/setup-uv@8d55fbecc275b1c35dbe060458839f8d30439ccf  # v3
 
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
       with:
         node-version: '22'
 
@@ -38,7 +43,7 @@ jobs:
       run: bash scripts/build_wheel.sh
 
     - name: Publish to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
+      uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # release/v1
       with:
         password: ${{ secrets.PYPI_API_TOKEN }}
         packages-dir: dist/
