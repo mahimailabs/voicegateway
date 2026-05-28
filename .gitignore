@@ -8,6 +8,12 @@ src/voicegateway/_version.py
 docs/superpowers
 .DS_Store
 
+# Dashboard SPA staged into the voicegateway package by
+# scripts/build_wheel.sh just before `uv build`. The trap in the
+# script removes it on exit, but pin it in gitignore so a failed run
+# never commits the bundle by accident.
+src/voicegateway/_dashboard_dist/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
