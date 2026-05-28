@@ -119,7 +119,7 @@ def test_mount_frontend_spa_fallback_returns_index_for_unknown_path(
 
 
 def test_mount_frontend_spa_fallback_refuses_api_paths(monkeypatch, tmp_path):
-    """``/api/*`` and ``/v1/*`` 404 instead of falling back to the SPA index."""
+    """``/api`` and ``/v1`` (bare or prefixed) 404 rather than serving the SPA."""
     dist = _make_dist(tmp_path / "dist", marker="SPA-INDEX")
     _patch_candidates(monkeypatch, [dist])
 
@@ -129,6 +129,9 @@ def test_mount_frontend_spa_fallback_refuses_api_paths(monkeypatch, tmp_path):
 
     assert client.get("/api/does-not-exist").status_code == 404
     assert client.get("/v1/does-not-exist").status_code == 404
+    # Bare namespace roots must 404 too, not fall back to index.html.
+    assert client.get("/api").status_code == 404
+    assert client.get("/v1").status_code == 404
 
 
 def test_mount_frontend_spa_fallback_refuses_path_traversal(monkeypatch, tmp_path):

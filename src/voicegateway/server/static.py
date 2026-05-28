@@ -30,6 +30,7 @@ so the SPA fallback at ``/{full_path}`` does not shadow ``/v1/*`` or
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -66,7 +67,14 @@ def _resolve_frontend_dir() -> Path | None:
 
 
 def mount_frontend(app: FastAPI) -> None:
-    """Mount the React SPA at ``/`` (or a hint endpoint when not built)."""
+    """Mount the React SPA at ``/`` (or a hint endpoint when not built).
+
+    Args:
+        app: The FastAPI instance to mount the React SPA onto.
+
+    Returns:
+        None.
+    """
     frontend_dir = _resolve_frontend_dir()
     if frontend_dir is not None:
         # Pre-resolve once so per-request path-traversal checks are
@@ -86,22 +94,34 @@ def mount_frontend(app: FastAPI) -> None:
         async def spa_fallback(full_path: str) -> FileResponse:
             """SPA fallback: React Router handles client-side routing.
 
-            Refuses ``api/*`` and ``v1/*`` so real 404s surface instead
-            of the index HTML. Rejects any resolved path that escapes
-            ``frontend_root`` (percent-encoded ``..`` segments that
-            slipped past HTTP-client normalisation). Legitimate unknown
-            paths still fall back to ``index.html`` so React Router can
-            handle them.
+            Refuses ``api`` and ``v1`` (bare or as a prefix) so real
+            404s surface instead of the index HTML. Rejects any resolved
+            path that escapes ``frontend_root`` (percent-encoded ``..``
+            segments that slipped past HTTP-client normalisation).
+            Legitimate unknown paths still fall back to ``index.html``
+            so React Router can handle them.
+
+            The filesystem probes (``resolve``/``is_file``) run in a
+            worker thread so the event loop is never blocked, matching
+            how Starlette's own StaticFiles offloads its path lookups.
             """
-            if full_path.startswith(("api/", "v1/")):
+            if full_path in ("api", "v1") or full_path.startswith(("api/", "v1/")):
                 raise HTTPException(status_code=404)
-            candidate = (frontend_dir / full_path).resolve()
-            try:
+
+            def _resolve_served_file() -> Path | None:
+                # ``resolve()`` collapses ``..`` so a percent-encoded
+                # escape lands outside frontend_root and ``relative_to``
+                # raises ValueError; None means "fall back to index".
+                candidate = (frontend_dir / full_path).resolve()
                 candidate.relative_to(frontend_root)
+                return candidate if candidate.is_file() else None
+
+            try:
+                served = await asyncio.to_thread(_resolve_served_file)
             except ValueError as exc:
                 raise HTTPException(status_code=404) from exc
-            if candidate.is_file():
-                return FileResponse(candidate)
+            if served is not None:
+                return FileResponse(served)
             return FileResponse(frontend_dir / "index.html")
     else:
 
