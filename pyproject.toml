@@ -176,6 +176,16 @@ source = "vcs"
 [tool.hatch.build.hooks.vcs]
 version-file = "src/voicegateway/_version.py"
 
+# Opt the staged dashboard bundle back in for both sdist and wheel
+# targets. The path is gitignored (scripts/build_wheel.sh stages it
+# only during a build), so hatchling's default VCS-aware filter would
+# drop it. `artifacts` is the documented escape hatch for "build
+# output that should ship even though git ignores it." Hatchling
+# tolerates the path being absent (every editable install, every test
+# run), so nothing breaks when the staging step has not run.
+[tool.hatch.build]
+artifacts = ["src/voicegateway/_dashboard_dist/**/*"]
+
 [tool.hatch.build.targets.wheel]
 # Explicit packages list because we are on a src/ layout (PyPA convention).
 # Hatchling cannot auto-detect packages outside the repo root.
@@ -207,18 +217,23 @@ exclude = [
     "src/dashboard/frontend/index.html",
 ]
 
-# Note on shipping the React bundle: hatchling's `force-include`
-# errors when the source path is missing, which breaks editable
-# installs in CI before npm has run. Distribution paths for the
-# frontend bundle today:
-#  - Docker: the Dockerfile's frontend-builder stage runs npm build
-#    and copies dist/ into /app/dashboard/frontend/dist.
-#  - From source: `cd src/dashboard/frontend && npm run build`.
-#  - pip install: the daemon's mount_frontend serves a "run npm run
-#    build" hint at / when dist/ is absent.
-# A PyPI wheel that bundles the prebuilt frontend is on the backlog
-# (requires either a custom hatchling build hook or migrating off
-# hatch-vcs to a setuptools build that tolerates conditional data).
+# Note on shipping the React bundle: the wheel published to PyPI
+# carries the dashboard SPA inside the voicegateway package itself,
+# at voicegateway/_dashboard_dist/. scripts/build_wheel.sh runs the
+# npm build, copies dist/ into that staging path, invokes `uv build`,
+# and removes the staging path on exit via trap. Hatchling picks it
+# up automatically through the existing `packages = ["src/voicegateway"]`
+# entry above (the pipecat-prebuilt pattern adapted to hatchling).
+# Distribution paths for the frontend today:
+#  - PyPI wheel: scripts/build_wheel.sh stages and ships dist/ inside
+#    the wheel. The daemon's mount_frontend prefers this location.
+#  - Docker: the Dockerfile's frontend-builder stage still runs npm
+#    build and copies dist/ into /app/dashboard/frontend/dist; the
+#    daemon's two-path resolution falls back to that location.
+#  - Editable install: `cd src/dashboard/frontend && npm run build`
+#    populates the same fallback path for local dev.
+#  - Neither built: mount_frontend serves a "run npm run build"
+#    hint JSON at / so the operator knows what to do.
 
 [tool.pyright]
 typeCheckingMode = "off"
