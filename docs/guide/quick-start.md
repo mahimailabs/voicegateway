@@ -97,8 +97,8 @@ wrapped each instance with cost-tracking and latency middleware.
 Trigger one call (any request that uses the inference factories
 above) and refresh the dashboard at `http://127.0.0.1:8080/costs`.
 The row shows the model, provider, modality, and the per-call cost
-in USD with the pricing source attribution (`genai-prices` for LLM,
-`voicegateway-catalog` for STT/TTS).
+in USD with the pricing source attribution (`voice-prices@<version>`
+for cloud models, `voicegateway-local` for self-hosted).
 
 In the terminal:
 

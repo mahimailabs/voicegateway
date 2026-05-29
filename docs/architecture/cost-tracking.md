@@ -17,9 +17,9 @@ graph LR
 
     subgraph Pricing["Pricing layer (modality dispatch)"]
         FACADE["voicegateway.pricing.catalog<br/>calculate_cost()"]
-        LLM["llm.py<br/>(genai-prices wrapper)"]
-        STT["stt.py<br/>(local catalog,<br/>per_minute rates)"]
-        TTS["tts.py<br/>(local catalog,<br/>per_character rates)"]
+        LLM["llm.py<br/>(voice-prices wrapper)"]
+        STT["stt.py<br/>(voice-prices wrapper)"]
+        TTS["tts.py<br/>(voice-prices wrapper)"]
     end
 
     WRAP --> CT
@@ -51,9 +51,10 @@ pricing_source(modality: str) -> str
 
 `calculate_cost` dispatches by modality:
 
-- **LLM** (`modality="llm"`): uses `input_tokens` and `output_tokens`. Routes to `pricing/llm.py`, which wraps `pydantic/genai-prices`. Returns the genai-prices total. `pricing_source("llm")` is `genai-prices@<version>`.
-- **STT** (`modality="stt"`): uses `audio_seconds`. Routes to `pricing/stt.py`, which holds a local catalog of `per_minute` rates per model. Each entry carries `pricing_source_date` and `pricing_source_url` for auditability. `pricing_source("stt")` is `voicegateway-catalog@<oldest_date>`.
-- **TTS** (`modality="tts"`): uses `character_count`. Routes to `pricing/tts.py`, same local-catalog pattern as STT.
+- **LLM** (`modality="llm"`): uses `input_tokens` and `output_tokens`. Routes to `pricing/llm.py`, which wraps `voice-prices`. Returns the voice-prices total. `pricing_source("llm")` is `voice-prices@<version>`.
+- **STT** (`modality="stt"`): uses `audio_seconds`. Routes to `pricing/stt.py`, which maps the duration onto a `voice-prices` lookup. `pricing_source("stt")` is `voice-prices@<version>`.
+- **TTS** (`modality="tts"`): uses `character_count`. Routes to `pricing/tts.py`, same `voice-prices` pattern as STT.
+- **Self-hosted** (`local/*`, `ollama/*`): priced at `$0` by a facade guard, attributed as `voicegateway-local`.
 
 All three modalities return `None` for unknown models (never silent zero), so callers can distinguish "free" from "unknown."
 

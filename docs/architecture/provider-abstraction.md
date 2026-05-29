@@ -45,7 +45,7 @@ class BaseProvider(ABC):
 | `create_tts(model, voice, **kwargs)` | LiveKit-compatible TTS instance | Call `self._unsupported("tts")` |
 | `health_check()` | `True` if reachable, `False` otherwise | Must always be implemented |
 
-Pricing is no longer a provider-level concern. LLM rates resolve via `pydantic/genai-prices` (see `src/voicegateway/pricing/llm.py`); STT and TTS rates resolve via the local source-date-tagged catalogs in `src/voicegateway/pricing/{stt,tts}.py`. Use `voicegateway.pricing.catalog.calculate_cost(modality, model, ...)` from anywhere that needs a per-request cost.
+Pricing is no longer a provider-level concern. Rates for all three modalities (LLM, STT, and TTS) resolve via `voice-prices` (see the wrapper modules `src/voicegateway/inference/pricing/{llm,stt,tts}.py`, which call `voice_prices.calc_price`). Use `voicegateway.inference.pricing.catalog.calculate_cost(modality, model, ...)` from anywhere that needs a per-request cost.
 
 > **Argument order trap.** `voicegateway.pricing.catalog.calculate_cost(modality, model, ...)` takes `modality` first; the legacy `CostTracker.calculate_cost(model_id, modality, ...)` on `voicegateway.middleware.cost_tracker` takes `model_id` first. The two helpers serve different layers (catalog is the pricing facade; CostTracker bridges to the storage record), but the reversed positional order is easy to transpose. When in doubt, use keyword arguments or call the catalog directly.
 

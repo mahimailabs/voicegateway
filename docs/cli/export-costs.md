@@ -40,8 +40,8 @@ Both formats use the same 10-column schema (locked by design §2.1).
 | `model` | string | Full `provider/model` string. |
 | `input_units` | float | Modality-dependent: tokens (LLM input), minutes (STT), characters (TTS). |
 | `output_units` | float | Tokens (LLM output); 0 for STT and TTS. |
-| `calculated_cost_usd` | string | Decimal-stable USD, fixed-point (no scientific notation), from VG's pricing catalog. |
-| `pricing_source` | string | The catalog that priced this record (e.g., `genai-prices@0.0.57`). |
+| `calculated_cost_usd` | string | Decimal-stable USD, fixed-point (no scientific notation), priced through `voice-prices`. |
+| `pricing_source` | string | What priced this record: `voice-prices@<version>` for cloud models (e.g., `voice-prices@0.0.8`), `voicegateway-local` for self-hosted models (`local/*` and `ollama/*`), or empty for unknown models. |
 | `status` | string | `ok` or an error tag from the wrapper. |
 
 Rows are ordered by timestamp ascending.

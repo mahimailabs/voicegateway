@@ -55,7 +55,7 @@ Recent voice conversations sorted by start time or total cost. Each row shows st
 
 ### Costs (`2`)
 
-Today's total as a single dollar number, with a per-modality breakdown (STT, LLM, TTS) beneath. Press `r` to cycle the active range between today, this week, and this month. A `(as of ...)` freshness suffix appears when the pricing data is from `genai-prices` with a timestamp older than 24 h.
+Today's total as a single dollar number, with a per-modality breakdown (STT, LLM, TTS) beneath. Press `r` to cycle the active range between today, this week, and this month. Pricing is sourced from `voice-prices`, which version-stamps each source (`voice-prices@<version>`).
 
 ### Logs (`3`)
 

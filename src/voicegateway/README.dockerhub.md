@@ -1,6 +1,6 @@
 # mahimairaja/voicegateway
 
-Cost tracking and reconciliation for LiveKit voice agents. Returns native LiveKit STT/LLM/TTS plugin instances; per-modality unit accounting (audio-minutes, tokens, characters) with prices from `pydantic/genai-prices`; MCP server for coding agents.
+Cost tracking and reconciliation for LiveKit voice agents. Returns native LiveKit STT/LLM/TTS plugin instances; per-modality unit accounting (audio-minutes, tokens, characters) with prices from `voice-prices` (LLM, STT, and TTS); MCP server for coding agents.
 
 Full documentation: **[docs.voicegateway.dev](https://docs.voicegateway.dev)**
 

@@ -13,7 +13,7 @@ bills against their authoritative meter and applies any discounts,
 plan tiers, or post-hoc credits.
 
 This page walks through reconciling the two numbers. The expected
-drift is up to about 5% on LLM costs (per `pydantic/genai-prices`)
+drift is up to about 5% on LLM costs (per `voice-prices`)
 and lower on STT and TTS, where unit-of-billing maps directly to what
 VoiceGateway records.
 
@@ -129,18 +129,17 @@ you want when piping into a monitoring or alerting tool.
 The provider's per-model rate has drifted relative to what
 VoiceGateway calculated.
 
-For LLM costs, this means `pydantic/genai-prices` has not yet caught
+For LLM costs, this means `voice-prices` has not yet caught
 up to the rate change, or the operator's account has a discount
 (volume tier, BAA tier) the public catalog does not know about.
-Update `genai-prices` (`uv pip install --upgrade genai-prices`) and
+Update `voice-prices` (`uv pip install --upgrade voice-prices`) and
 re-run; if the gap persists, your account is on a non-public rate
 and the gap is the discount you are getting.
 
-For STT and TTS costs, this means the per-minute or per-character
-rate in `src/voicegateway/pricing/stt.py` (or `tts.py`) is stale. Refresh
-that catalog entry against the provider's current price page and
-ship a patch release. The 60-day staleness gate (Phase 2.6) will
-also catch this if the pricing-source date drifts.
+For STT and TTS costs, this means `voice-prices` has not yet caught up
+to the provider's published rate (or is missing the model). Update
+`voice-prices` (or add the model upstream), bump the pin, and re-run;
+the same discount logic as LLM applies.
 
 ### When the units disagree
 
@@ -183,9 +182,9 @@ else is hitting the API with the same credentials.
 | TTS | within ~2% | >3% on cost, any % on units |
 
 LLM has wider tolerance because its rate sheet is a moving target;
-`pydantic/genai-prices` updates within 24-48 hours of a published
-change, but a same-day reconcile after a price change can show
-several percent of drift that resolves itself the next day.
+`voice-prices` tracks published changes, but a same-day reconcile
+after a price change can show several percent of drift until the
+catalog is refreshed upstream and the pin is bumped.
 
 STT and TTS rates change rarely. A persistent gap there is more
 likely a missed-event or wrong-model-id issue than a stale rate.

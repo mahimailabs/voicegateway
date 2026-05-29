@@ -29,7 +29,7 @@ session = AgentSession(
 # every call logged: provider, model, tokens, $cost, latency, session_id
 ```
 
-A drop-in cost and quality observability layer for [LiveKit Agents](https://docs.livekit.io/agents). Modality-aware unit accounting (audio-minutes, tokens, characters) with LLM prices from [pydantic/genai-prices](https://github.com/pydantic/genai-prices). Reconcile recorded numbers against your actual provider invoices with one command. Self-hosted. Your keys. No data leaves your infra.
+A drop-in cost and quality observability layer for [LiveKit Agents](https://docs.livekit.io/agents). Modality-aware unit accounting (audio-minutes, tokens, characters) with LLM, STT, and TTS prices from [voice-prices](https://github.com/mahimailabs/voice-prices). Reconcile recorded numbers against your actual provider invoices with one command. Self-hosted. Your keys. No data leaves your infra.
 
 ## 🚀 Install in 60 seconds
 
@@ -258,4 +258,4 @@ Before submitting a PR, read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CON
 
 [Mahimai Raja](https://mahimai.dev), founder of [Mahimai AI](https://mahimai.ca), a voice AI company. Building VoiceGateway in public.
 
-Built on the shoulders of giants: [LiveKit Agents](https://github.com/livekit/agents), [FastAPI](https://fastapi.tiangolo.com/), [Pydantic](https://docs.pydantic.dev/), [pydantic/genai-prices](https://github.com/pydantic/genai-prices), [cryptography](https://cryptography.io/), [Model Context Protocol](https://modelcontextprotocol.io/).
+Built on the shoulders of giants: [LiveKit Agents](https://github.com/livekit/agents), [FastAPI](https://fastapi.tiangolo.com/), [Pydantic](https://docs.pydantic.dev/), [voice-prices](https://github.com/mahimailabs/voice-prices) (a fork of [pydantic/genai-prices](https://github.com/pydantic/genai-prices)), [cryptography](https://cryptography.io/), [Model Context Protocol](https://modelcontextprotocol.io/).
