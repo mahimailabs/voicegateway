@@ -56,15 +56,14 @@ def test_costs(temp_config, tmp_path, monkeypatch):
     assert result.exit_code == 0
 
 
-def test_costs_prints_staleness_reminder(temp_config, tmp_path, monkeypatch):
-    """Q7: `voicegw costs` ends with a one-line reminder naming the"""
-    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "cli-staleness.db"))
+def test_costs_prints_pricing_sources(temp_config, tmp_path, monkeypatch):
+    """`voicegw costs` ends with a one-line reminder naming the pricing sources."""
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "cli-sources.db"))
     result = runner.invoke(app, ["costs", "--config", temp_config])
     assert result.exit_code == 0
     out = result.output
     assert "Pricing sources" in out
-    assert "genai-prices@" in out
-    assert "voicegateway-catalog@" in out
+    assert "voice-prices@" in out
     assert "voicegw reconcile" in out
 
 
@@ -137,7 +136,7 @@ async def _seed_export_records(db_path: str) -> tuple[str, str, str]:
             input_units=100,
             output_units=50,
             cost_usd=0.10,
-            pricing_source="genai-prices@0.0.57",
+            pricing_source="voice-prices@0.0.8",
             status="ok",
         )
     )
@@ -214,7 +213,7 @@ def test_export_costs_csv_default(temp_config, tmp_path, monkeypatch):
     # Two in-window rows; the 99.0 record is excluded.
     assert len(rows) == 2
     by_model = {r["model"]: r for r in rows}
-    assert by_model["openai/gpt-4o-mini"]["pricing_source"] == "genai-prices@0.0.57"
+    assert by_model["openai/gpt-4o-mini"]["pricing_source"] == "voice-prices@0.0.8"
     assert by_model["deepgram/nova-3"]["project"] == "beta"
     assert float(by_model["openai/gpt-4o-mini"]["calculated_cost_usd"]) == 0.10
 
@@ -485,7 +484,7 @@ def test_export_costs_renders_iso_timestamp_and_fixed_point_cost(
                 input_units=1,
                 output_units=1,
                 cost_usd=0.000015,
-                pricing_source="genai-prices@0.0.57",
+                pricing_source="voice-prices@0.0.8",
                 status="ok",
             )
         )
@@ -835,7 +834,7 @@ def test_reconcile_threshold_flag_propagates(temp_config, tmp_path, monkeypatch)
                 input_units=1000,
                 output_units=500,
                 cost_usd=0.97,
-                pricing_source="genai-prices@0.0.57",
+                pricing_source="voice-prices@0.0.8",
                 status="ok",
             )
         )

@@ -10,8 +10,8 @@ from voicegateway.inference.pricing import llm
 
 
 def test_pricing_source_format() -> None:
-    """PRICING_SOURCE follows the documented `genai-prices@<version>` shape."""
-    assert llm.PRICING_SOURCE.startswith("genai-prices@")
+    """PRICING_SOURCE follows the documented `voice-prices@<version>` shape."""
+    assert llm.PRICING_SOURCE.startswith("voice-prices@")
     # version segment is non-empty
     version = llm.PRICING_SOURCE.split("@", 1)[1]
     assert version, "version segment should be non-empty"
@@ -32,19 +32,19 @@ def test_known_anthropic_model_priced_correctly() -> None:
 
 
 def test_unknown_provider_returns_none() -> None:
-    """genai-prices raises LookupError for unknown provider; wrapper returns None."""
+    """voice-prices raises LookupError for unknown provider; wrapper returns None."""
     cost = llm.calculate_llm_cost("foo/bar-baz", 1000, 500)
     assert cost is None
 
 
 def test_known_provider_unknown_model_returns_none() -> None:
-    """genai-prices raises LookupError for unknown model under a known provider."""
+    """voice-prices raises LookupError for unknown model under a known provider."""
     cost = llm.calculate_llm_cost("openai/totally-fake-model-2099", 1000, 500)
     assert cost is None
 
 
 def test_bare_model_name_without_slash() -> None:
-    """A model name without a provider/ prefix still resolves via genai-prices."""
+    """A model name without a provider/ prefix still resolves via voice-prices."""
     cost = llm.calculate_llm_cost("gpt-4o", 1000, 100)
     assert cost == Decimal("0.0035")
 
@@ -86,7 +86,7 @@ def test_empty_model_string_returns_none() -> None:
 
 
 def test_groq_canonical_id_priced_correctly() -> None:
-    """Phase 2.5 alignment: canonical Groq names resolve via genai-prices."""
+    """Phase 2.5 alignment: canonical Groq names resolve via voice-prices."""
     cost_8b = llm.calculate_llm_cost("groq/llama-3.1-8b-instant", 1000, 500)
     cost_70b = llm.calculate_llm_cost("groq/llama-3.1-70b-versatile", 1000, 500)
     assert cost_8b is not None and cost_8b > Decimal("0")

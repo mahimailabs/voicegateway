@@ -1,7 +1,7 @@
-"""End-to-end test that prompt_cached_tokens flows through to genai-prices.
+"""End-to-end test that prompt_cached_tokens flows through to voice-prices.
 
 LK reports cached prompt tokens in LLMMetrics.prompt_cached_tokens.
-genai-prices applies a discount (OpenAI 50%, Anthropic ~10%) when those
+voice-prices applies a discount (OpenAI 50%, Anthropic ~10%) when those
 tokens are passed via Usage.cache_read_tokens. This file asserts the full
 chain:
 
@@ -13,7 +13,7 @@ chain:
         -> catalog.calculate_cost(cached_input_tokens=...)
         -> llm.calculate_llm_cost(cached_input_tokens=...)
         -> Usage(input_tokens=fresh, cache_read_tokens=cached)
-        -> genai-prices applies the per-provider discount.
+        -> voice-prices applies the per-provider discount.
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ async def test_cached_tokens_propagate_to_record_and_storage() -> None:
 def test_cache_discount_reduces_cost_vs_uncached() -> None:
     """A cache-heavy LLM call costs strictly less than the same call uncached.
 
-    Uses the real genai-prices catalog. The exact discount differs per
+    Uses the real voice-prices catalog. The exact discount differs per
     provider (OpenAI is 50%); asserting cached < uncached is robust to
     rate changes upstream.
     """
@@ -127,7 +127,7 @@ def test_zero_cached_tokens_matches_no_cached_arg() -> None:
     assert explicit_zero == omitted, (
         "the cached path must be a no-op when cached_input_tokens=0; "
         "any drift here means we accidentally pass cache_read_tokens=0 "
-        "and genai-prices treats that as a billable signal"
+        "and voice-prices treats that as a billable signal"
     )
 
 

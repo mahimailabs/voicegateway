@@ -31,9 +31,9 @@ async def get_costs(
     """Get cost summary for a period, optionally filtered by project and tenant.
 
     Each ``by_model`` entry carries a ``pricing_source`` string (e.g.
-    ``"genai-prices@0.0.57"`` or ``"voicegateway-catalog@2026-05-04"``)
-    so the dashboard can render the cost-staleness banner without a
-    second round-trip. ``tenant`` accepts a tenant id; pass the empty
+    ``"voice-prices@0.0.8"`` for priced models or ``"voicegateway-local"``
+    for self-hosted ones) so the dashboard can attribute each cost without
+    a second round-trip. ``tenant`` accepts a tenant id; pass the empty
     string to scope to the unattributed bucket (REQ-VG-TENANT-002).
     """
     if gateway.storage is None:

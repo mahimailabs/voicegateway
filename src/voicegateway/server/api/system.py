@@ -47,14 +47,8 @@ async def v1_status(gateway: Gateway = Depends(get_gateway)) -> dict:
         }
     pricing = {
         "llm": {"source": _llm_pricing.PRICING_SOURCE},
-        "stt": {
-            "source": _stt_pricing.PRICING_SOURCE,
-            "oldest_entry_date": _stt_pricing._oldest_pricing_date().isoformat(),
-        },
-        "tts": {
-            "source": _tts_pricing.PRICING_SOURCE,
-            "oldest_entry_date": _tts_pricing._oldest_pricing_date().isoformat(),
-        },
+        "stt": {"source": _stt_pricing.PRICING_SOURCE},
+        "tts": {"source": _tts_pricing.PRICING_SOURCE},
     }
     return {
         "providers": providers,

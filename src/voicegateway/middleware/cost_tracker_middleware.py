@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from voicegateway.inference.pricing import catalog
@@ -27,6 +28,60 @@ class CostTracker:
         """Wire in a BudgetEnforcer so cost writes update its spend cache."""
         self._budget_enforcer = enforcer
 
+    def _catalog_cost(
+        self,
+        model_id: str,
+        modality: str,
+        input_units: float,
+        output_units: float,
+        cached_input_units: float,
+    ) -> Decimal | None:
+        """Map recorded units onto the catalog call for ``modality``."""
+        if modality == "stt":
+            return catalog.calculate_cost(
+                "stt", model_id, audio_seconds=input_units * 60
+            )
+        if modality == "llm":
+            return catalog.calculate_cost(
+                "llm",
+                model_id,
+                input_tokens=int(input_units),
+                output_tokens=int(output_units),
+                cached_input_tokens=int(cached_input_units),
+            )
+        if modality == "tts":
+            return catalog.calculate_cost(
+                "tts", model_id, character_count=int(input_units)
+            )
+        return None
+
+    def _resolve_cost(
+        self,
+        model_id: str,
+        modality: str,
+        input_units: float,
+        output_units: float,
+        cached_input_units: float,
+    ) -> tuple[float, Decimal | None]:
+        """Return ``(float_cost, raw_decimal_or_None)`` for a request.
+
+        ``None`` means voice-prices did not recognize the model. A warning is
+        logged for unpriced cloud models; self-hosted ``local/``/``ollama/``
+        models are expected to be free and are not warned about.
+        """
+        cost = self._catalog_cost(
+            model_id, modality, input_units, output_units, cached_input_units
+        )
+        if cost is None:
+            if not model_id.startswith(("local/", "ollama/")):
+                logger.warning(
+                    "No pricing data for %s model %r; cost recorded as $0.",
+                    modality,
+                    model_id,
+                )
+            return 0.0, None
+        return float(cost), cost
+
     def calculate_cost(
         self,
         model_id: str,
@@ -36,34 +91,10 @@ class CostTracker:
         cached_input_units: float = 0.0,
     ) -> float:
         """Calculate cost for a request."""
-        if modality == "stt":
-            cost = catalog.calculate_cost(
-                "stt", model_id, audio_seconds=input_units * 60
-            )
-        elif modality == "llm":
-            cost = catalog.calculate_cost(
-                "llm",
-                model_id,
-                input_tokens=int(input_units),
-                output_tokens=int(output_units),
-                cached_input_tokens=int(cached_input_units),
-            )
-        elif modality == "tts":
-            cost = catalog.calculate_cost(
-                "tts", model_id, character_count=int(input_units)
-            )
-        else:
-            return 0.0
-
-        if cost is None:
-            if not model_id.startswith(("local/", "ollama/")):
-                logger.warning(
-                    "No pricing data for %s model %r; cost recorded as $0.",
-                    modality,
-                    model_id,
-                )
-            return 0.0
-        return float(cost)
+        cost, _ = self._resolve_cost(
+            model_id, modality, input_units, output_units, cached_input_units
+        )
+        return cost
 
     def create_record(
         self,
@@ -83,12 +114,13 @@ class CostTracker:
         session_id: str | None = None,
     ) -> RequestRecord:
         """Create a request record with cost calculated."""
-        cost = self.calculate_cost(
+        cost, cost_dec = self._resolve_cost(
             model_id, modality, input_units, output_units, cached_input_units
         )
         if not pricing_source:
-            is_known_free = model_id.startswith(("local/", "ollama/"))
-            if cost > 0.0 or is_known_free:
+            if model_id.startswith(("local/", "ollama/")):
+                pricing_source = catalog.SELF_HOSTED_SOURCE
+            elif cost_dec is not None:
                 pricing_source = catalog.pricing_source(modality)
         return RequestRecord(
             id=str(uuid.uuid4()),

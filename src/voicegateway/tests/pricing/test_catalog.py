@@ -24,7 +24,7 @@ def test_dispatch_stt_routes_to_stt_module() -> None:
     direct = stt.calculate_stt_cost("deepgram/nova-3", 60)
     via_facade = catalog.calculate_cost("stt", "deepgram/nova-3", audio_seconds=60)
     assert via_facade == direct
-    assert via_facade == Decimal("0.0043")
+    assert via_facade == Decimal("0.0048")
 
 
 def test_dispatch_tts_routes_to_tts_module() -> None:
@@ -32,7 +32,7 @@ def test_dispatch_tts_routes_to_tts_module() -> None:
     direct = tts.calculate_tts_cost("cartesia/sonic-3", 1000)
     via_facade = catalog.calculate_cost("tts", "cartesia/sonic-3", character_count=1000)
     assert via_facade == direct
-    assert via_facade == Decimal("0.065")
+    assert via_facade == Decimal("0.04")
 
 
 def test_dispatch_unknown_modality_returns_none() -> None:
@@ -82,19 +82,19 @@ def test_dispatch_kwargs_for_other_modalities_ignored() -> None:
 def test_pricing_source_llm() -> None:
     """pricing_source('llm') == llm.PRICING_SOURCE."""
     assert catalog.pricing_source("llm") == llm.PRICING_SOURCE
-    assert catalog.pricing_source("llm").startswith("genai-prices@")
+    assert catalog.pricing_source("llm").startswith("voice-prices@")
 
 
 def test_pricing_source_stt() -> None:
     """pricing_source('stt') == stt.PRICING_SOURCE."""
     assert catalog.pricing_source("stt") == stt.PRICING_SOURCE
-    assert catalog.pricing_source("stt").startswith("voicegateway-catalog@")
+    assert catalog.pricing_source("stt").startswith("voice-prices@")
 
 
 def test_pricing_source_tts() -> None:
     """pricing_source('tts') == tts.PRICING_SOURCE."""
     assert catalog.pricing_source("tts") == tts.PRICING_SOURCE
-    assert catalog.pricing_source("tts").startswith("voicegateway-catalog@")
+    assert catalog.pricing_source("tts").startswith("voice-prices@")
 
 
 def test_pricing_source_unknown_modality() -> None:

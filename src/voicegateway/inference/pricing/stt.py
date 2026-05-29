@@ -1,82 +1,34 @@
-"""STT pricing via a local source-date-tagged catalog."""
+"""STT pricing via voice-prices."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date
 from decimal import Decimal
 
+import voice_prices
+from voice_prices import Usage, calc_price
 
-@dataclass(frozen=True)
-class STTEntry:
-    per_minute: Decimal
-    pricing_source_date: date
-    pricing_source_url: str
-
-
-CATALOG: dict[str, STTEntry] = {
-    "deepgram/nova-3": STTEntry(
-        per_minute=Decimal("0.0043"),
-        pricing_source_date=date(2026, 5, 4),
-        pricing_source_url="https://deepgram.com/pricing",
-    ),
-    "deepgram/nova-2": STTEntry(
-        per_minute=Decimal("0.0043"),
-        pricing_source_date=date(2026, 5, 4),
-        pricing_source_url="https://deepgram.com/pricing",
-    ),
-    "deepgram/flux-general": STTEntry(
-        per_minute=Decimal("0.0043"),
-        pricing_source_date=date(2026, 5, 4),
-        pricing_source_url="https://deepgram.com/pricing",
-    ),
-    "assemblyai/universal-2": STTEntry(
-        per_minute=Decimal("0.005"),
-        pricing_source_date=date(2026, 5, 4),
-        pricing_source_url="https://www.assemblyai.com/pricing",
-    ),
-    "openai/whisper-1": STTEntry(
-        per_minute=Decimal("0.006"),
-        pricing_source_date=date(2026, 5, 4),
-        pricing_source_url="https://openai.com/api/pricing/",
-    ),
-    "groq/whisper-large-v3": STTEntry(
-        per_minute=Decimal("0.00185"),
-        pricing_source_date=date(2026, 5, 4),
-        pricing_source_url="https://groq.com/pricing",
-    ),
-    "local/whisper-large-v3": STTEntry(
-        per_minute=Decimal("0"),
-        pricing_source_date=date(2026, 5, 4),
-        pricing_source_url="https://github.com/openai/whisper",
-    ),
-    "local/whisper-turbo": STTEntry(
-        per_minute=Decimal("0"),
-        pricing_source_date=date(2026, 5, 4),
-        pricing_source_url="https://github.com/openai/whisper",
-    ),
-    "local/whisper-base": STTEntry(
-        per_minute=Decimal("0"),
-        pricing_source_date=date(2026, 5, 4),
-        pricing_source_url="https://github.com/openai/whisper",
-    ),
-}
-
-
-def _oldest_pricing_date() -> date:
-    """Return the oldest `pricing_source_date` in the catalog."""
-    return min(entry.pricing_source_date for entry in CATALOG.values())
-
-
-PRICING_SOURCE = f"voicegateway-catalog@{_oldest_pricing_date().isoformat()}"
+PRICING_SOURCE = f"voice-prices@{voice_prices.__version__}"
 
 
 def calculate_stt_cost(model: str, audio_seconds: float) -> Decimal | None:
-    """Return total STT cost in USD, or None if the model is unknown."""
+    """Return total STT cost in USD, or None if the model is unknown.
+
+    Self-hosted ``local/*`` models are intercepted as free upstream in the
+    catalog facade and never reach here.
+    """
     if audio_seconds < 0:
         raise ValueError(f"audio_seconds must be non-negative, got {audio_seconds}")
-    entry = CATALOG.get(model)
-    if entry is None:
+    if "/" in model:
+        provider, _, ref = model.partition("/")
+    else:
+        provider, ref = "", model
+
+    usage = Usage(audio_input_seconds=Decimal(str(audio_seconds)))
+    try:
+        price = calc_price(usage, model_ref=ref, provider_id=provider or None)
+    except LookupError:
         return None
-    minutes = Decimal(str(audio_seconds)) / Decimal(60)
-    return minutes * entry.per_minute
+    if price is None:
+        return None
+
+    return Decimal(str(price.total_price))

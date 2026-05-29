@@ -9,10 +9,10 @@ from voicegateway.services.storage_service import StorageService
 def test_stt_cost_calculation():
     tracker = CostTracker()
     cost = tracker.calculate_cost("deepgram/nova-3", "stt", input_units=1.0)
-    assert cost == 0.0043
+    assert cost == 0.0048
 
     cost = tracker.calculate_cost("deepgram/nova-3", "stt", input_units=2.5)
-    assert cost == pytest.approx(0.01075)
+    assert cost == pytest.approx(0.012)
 
 
 def test_llm_cost_calculation():
@@ -27,7 +27,7 @@ def test_llm_cost_calculation():
 def test_tts_cost_calculation():
     tracker = CostTracker()
     cost = tracker.calculate_cost("cartesia/sonic-3", "tts", input_units=100)
-    assert cost == pytest.approx(0.0065)
+    assert cost == pytest.approx(0.004)
 
 
 def test_local_model_is_free():
@@ -113,4 +113,4 @@ async def test_cost_summary_by_model(tmp_path):
 
     summary = await storage.get_cost_summary("today")
     assert summary["by_model"]["deepgram/nova-3"]["requests"] == 3
-    assert summary["total"] == pytest.approx(0.0043 * 3)
+    assert summary["total"] == pytest.approx(0.0048 * 3)

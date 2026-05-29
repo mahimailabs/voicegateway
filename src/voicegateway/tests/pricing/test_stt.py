@@ -1,66 +1,45 @@
-"""Unit tests for voicegateway.inference.pricing.stt."""
+"""Unit tests for voicegateway.inference.pricing.stt (voice-prices backed)."""
 
 from __future__ import annotations
 
-from datetime import date
 from decimal import Decimal
+
+import pytest
 
 from voicegateway.inference.pricing import stt
 
+# Every cloud STT model VoiceGateway supports must be priced by voice-prices
+# (the Phase 0 coverage gate). A regression here means voice-prices dropped a
+# model or renamed an id; self-hosted local/* models are handled by the
+# catalog facade, not here.
+_SUPPORTED_CLOUD_STT = [
+    "deepgram/nova-3",
+    "deepgram/nova-2",
+    "deepgram/flux-general",
+    "assemblyai/universal-2",
+    "openai/whisper-1",
+    "groq/whisper-large-v3",
+]
+
 
 def test_pricing_source_format() -> None:
-    """PRICING_SOURCE follows the documented `voicegateway-catalog@<date>` shape."""
-    assert stt.PRICING_SOURCE.startswith("voicegateway-catalog@")
-    date_str = stt.PRICING_SOURCE.split("@", 1)[1]
-    parsed = date.fromisoformat(date_str)
-    assert isinstance(parsed, date)
-
-
-def test_pricing_source_uses_oldest_entry_date() -> None:
-    """Worst-case freshness: PRICING_SOURCE reflects the oldest entry."""
-    oldest = min(entry.pricing_source_date for entry in stt.CATALOG.values())
-    assert stt.PRICING_SOURCE == f"voicegateway-catalog@{oldest.isoformat()}"
-
-
-def test_catalog_not_empty() -> None:
-    assert stt.CATALOG, "STT catalog should have at least one entry"
-
-
-def test_every_entry_has_required_metadata() -> None:
-    """Each entry carries per_minute Decimal, source date, source URL."""
-    for model_id, entry in stt.CATALOG.items():
-        assert isinstance(entry.per_minute, Decimal), (
-            f"{model_id}: per_minute should be Decimal"
-        )
-        assert isinstance(entry.pricing_source_date, date), (
-            f"{model_id}: pricing_source_date should be a date"
-        )
-        assert entry.pricing_source_url, (
-            f"{model_id}: pricing_source_url should be non-empty"
-        )
-        assert entry.pricing_source_url.startswith(("http://", "https://")), (
-            f"{model_id}: pricing_source_url should be an http(s) URL, "
-            f"got {entry.pricing_source_url!r}"
-        )
+    """PRICING_SOURCE follows the `voice-prices@<version>` shape."""
+    assert stt.PRICING_SOURCE.startswith("voice-prices@")
+    version = stt.PRICING_SOURCE.split("@", 1)[1]
+    assert version, "version segment should be non-empty"
 
 
 def test_deepgram_nova_3_priced_correctly() -> None:
-    """60 audio-seconds = 1 minute × $0.0043 = $0.0043."""
-    assert stt.calculate_stt_cost("deepgram/nova-3", 60) == Decimal("0.0043")
+    """60 audio-seconds = 1 minute. voice-prices nova-3 = $0.0048/min."""
+    assert stt.calculate_stt_cost("deepgram/nova-3", 60) == Decimal("0.0048")
 
 
-def test_groq_whisper_no_longer_silent_zero() -> None:
-    """Phase 2.5 regression guard: groq/whisper-large-v3 has paid-tier pricing."""
-    cost = stt.calculate_stt_cost("groq/whisper-large-v3", 3600)
-    # 60 min × $0.00185/min = $0.111 (matches Groq's published $0.111/hour)
-    assert cost == Decimal("0.111")
-
-
-def test_local_models_priced_zero() -> None:
-    """local/* models are structurally free."""
-    assert stt.calculate_stt_cost("local/whisper-large-v3", 60) == Decimal("0")
-    assert stt.calculate_stt_cost("local/whisper-base", 3600) == Decimal("0")
-    assert stt.calculate_stt_cost("local/whisper-turbo", 1) == Decimal("0")
+@pytest.mark.parametrize("model", _SUPPORTED_CLOUD_STT)
+def test_supported_cloud_models_are_priced(model: str) -> None:
+    """Every supported cloud STT model resolves to a positive price."""
+    cost = stt.calculate_stt_cost(model, 60)
+    assert cost is not None, f"{model} is not priced by voice-prices"
+    assert cost > Decimal("0")
 
 
 def test_unknown_model_returns_none() -> None:
@@ -76,31 +55,21 @@ def test_zero_seconds_returns_zero_decimal() -> None:
 
 
 def test_fractional_minute() -> None:
-    """30 seconds resolves to half a minute via exact Decimal."""
-    # 0.5 min × $0.0043 = $0.00215
-    assert stt.calculate_stt_cost("deepgram/nova-3", 30) == Decimal("0.00215")
+    """30 seconds = half a minute: 0.5 x $0.0048 = $0.0024."""
+    assert stt.calculate_stt_cost("deepgram/nova-3", 30) == Decimal("0.0024")
 
 
 def test_one_hour() -> None:
-    """3600 seconds = 60 min × $0.0043 = $0.258."""
-    assert stt.calculate_stt_cost("deepgram/nova-3", 3600) == Decimal("0.258")
+    """3600 seconds = 60 min x $0.0048 = $0.288."""
+    assert stt.calculate_stt_cost("deepgram/nova-3", 3600) == Decimal("0.288")
+
+
+def test_negative_seconds_raises() -> None:
+    """A negative duration is a programming error, not a $0 request."""
+    with pytest.raises(ValueError):
+        stt.calculate_stt_cost("deepgram/nova-3", -1)
 
 
 def test_return_type_is_decimal() -> None:
     cost = stt.calculate_stt_cost("deepgram/nova-3", 60)
     assert isinstance(cost, Decimal)
-
-
-def test_expected_models_present() -> None:
-    """Standard providers all in catalog (regression guard against accidental drops)."""
-    expected = {
-        "deepgram/nova-3",
-        "deepgram/nova-2",
-        "openai/whisper-1",
-        "assemblyai/universal-2",
-        "groq/whisper-large-v3",
-        "local/whisper-large-v3",
-        "local/whisper-base",
-        "local/whisper-turbo",
-    }
-    assert expected.issubset(set(stt.CATALOG.keys()))
