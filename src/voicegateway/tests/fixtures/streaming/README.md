@@ -133,7 +133,7 @@ Field reference:
   `voicegateway.pricing.catalog.calculate_cost`. Stored as a
   string (not a float) and quantized to 8 decimal places so
   Decimal comparisons are exact. **This locks the cost math at
-  the recording's price**: if `genai-prices` later changes
+  the recording's price**: if `voice-prices` later changes
   prices, the fixture's `expected_cost_usd` stays the same. The
   test validates VG's math, not "today's price."
 

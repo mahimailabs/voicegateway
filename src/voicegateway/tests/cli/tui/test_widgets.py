@@ -228,8 +228,8 @@ def test_stale_marker_silent_on_recent_date() -> None:
 
 
 def test_stale_marker_silent_on_version_token() -> None:
-    """genai-prices stamps the LLM source as ``genai-prices@0.0.57``;"""
-    assert stale_marker("genai-prices@0.0.57") == ""
+    """voice-prices stamps sources as ``voice-prices@0.0.8`` (no date)."""
+    assert stale_marker("voice-prices@0.0.8") == ""
 
 
 def test_stale_marker_silent_on_bare_or_missing() -> None:
@@ -254,7 +254,7 @@ def test_cost_card_modality_carries_stale_marker() -> None:
         },
         "pricing_sources": {
             "stt": "voicegateway-catalog@2025-01-01",  # stale
-            "llm": "genai-prices@0.0.57",  # version, no age
+            "llm": "voice-prices@0.0.8",  # version, no age
         },
     }
     card = CostCard(costs)

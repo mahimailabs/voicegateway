@@ -1,68 +1,65 @@
-# Refreshing the STT and TTS Pricing Catalogs
+# Refreshing Model Pricing
 
-VoiceGateway uses [pydantic/genai-prices](https://github.com/pydantic/genai-prices) for LLM pricing. STT and TTS pricing live in two local catalogs that the project maintains by hand:
+VoiceGateway prices every modality (LLM, STT, and TTS) through
+[voice-prices](https://github.com/mahimailabs/voice-prices), a fork of
+`pydantic/genai-prices` that covers all three modalities. VoiceGateway no
+longer keeps any local rate catalogs: rates, source URLs, and verification
+dates all live in `voice-prices`.
 
+The wrappers that call into it are:
+
+- `src/voicegateway/pricing/llm.py`
 - `src/voicegateway/pricing/stt.py`
 - `src/voicegateway/pricing/tts.py`
 
-Each entry carries a `pricing_source_date` (the date the maintainer last verified the rate against the provider's pricing page) and a `pricing_source_url`. The dates are per entry, so a refresh of one provider does not lie about the freshness of the others.
+Each resolves a `provider/model` id against `voice-prices` and returns the
+computed cost. The per-request attribution string is `voice-prices@<version>`
+for priced models and `voicegateway-local` for self-hosted (`local/*`,
+`ollama/*`) models.
 
 ## When a refresh is required
 
-`src/voicegateway/tests/pricing/test_staleness.py` runs in CI and fails the build when any catalog entry's `pricing_source_date` is more than 60 days older than `date.today()`. Either:
+A rate is refreshed when a provider publishes a price change, or when a model
+VoiceGateway supports is missing from `voice-prices` (a pricing call returns
+`None`). Freshness is owned by `voice-prices`: every model entry there carries
+a `prices_checked` date and a `pricing_source_url`, so the verification trail
+lives upstream rather than in this repo.
 
-- A provider published a price change that affects an entry, or
-- An entry crossed the 60-day staleness threshold.
+## How to refresh a rate
 
-In both cases, follow the steps below for the affected entries.
-
-## Step-by-step refresh
-
-1. Open the relevant catalog file (`src/voicegateway/pricing/stt.py` or `src/voicegateway/pricing/tts.py`).
-2. Find the entry whose rate or date you are refreshing.
-3. Visit the entry's `pricing_source_url` and read the current published rate. If the provider changed pricing tiers, plan caps, or unit conventions, capture both numbers (old and new) in the commit body so reviewers can verify the calculation.
-4. Update both the rate (`per_minute` for STT, `per_character` for TTS) and the `pricing_source_date` to the date you actually pulled the page. Use a `date(YYYY, M, D)` literal:
+1. Confirm the current behaviour from VoiceGateway:
    ```python
-   "deepgram/nova-3": STTEntry(
-       per_minute=Decimal("0.0043"),
-       pricing_source_date=date(2026, 7, 12),  # was 2026, 5, 4
-       pricing_source_url="https://deepgram.com/pricing",
-   ),
-   ```
-5. Confirm the staleness gate passes locally:
-   ```bash
-   pytest src/voicegateway/tests/pricing/test_staleness.py -q
-   ```
-6. Confirm the entry-level tests still pass:
-   ```bash
-   pytest src/voicegateway/tests/pricing/ -q
-   ```
-7. Commit with a message that names the entry, the old rate, and the new rate:
-   ```
-   chore(pricing): refresh deepgram/nova-3 STT rate
+   from voicegateway.inference.pricing import llm, stt, tts
 
-   Deepgram's pricing page now lists Nova-3 streaming at $0.0046/min
-   (was $0.0043). Bumped pricing_source_date to 2026-07-12.
-   Source: https://deepgram.com/pricing
+   stt.calculate_stt_cost("deepgram/nova-3", 60)   # one minute
+   tts.calculate_tts_cost("openai/tts-1", 1000)    # 1000 characters
+   llm.calculate_llm_cost("openai/gpt-4o", 1000, 100)
    ```
-
-## Adding a new entry
-
-When adding a new STT or TTS model:
-
-1. Pick the catalog file that matches the modality.
-2. Append a new entry, mirroring the shape of the existing ones. Use a `Decimal` literal for the rate; never a `float`.
-3. Set `pricing_source_date` to the date you verified the rate.
-4. Run the full pricing suite:
+2. Update the rate in `voice-prices`: edit the model's entry in the relevant
+   provider file under `prices/providers/`, bump its `prices_checked` date, and
+   confirm `pricing_source_url` still points at the provider's price page. Run
+   the `voice-prices` test suite.
+3. Publish a new `voice-prices` version to PyPI.
+4. Bump the pin in VoiceGateway's `pyproject.toml`
+   (`voice-prices>=<new-version>,<0.1`) and re-run the pricing tests:
    ```bash
    pytest src/voicegateway/tests/pricing/ -q
    ```
-5. If the new model has unusual billing semantics (credit systems, plan-tier dependent rates, audio-seconds vs characters mismatches), add a comment above the entry explaining the estimate and pointing readers at `voicegw reconcile` for verification.
 
-## What the `PRICING_SOURCE` attribution string surfaces
+## Adding a missing model
 
-Both catalogs derive a module-level `PRICING_SOURCE` string of the form `voicegateway-catalog@<oldest_date>`. The oldest per-entry date wins, so the attribution per request is honest about worst-case freshness. Refreshing a single entry without bumping the others moves the catalog's apparent freshness only when the refreshed entry was the oldest one.
+If a pricing call returns `None` for a model VoiceGateway should support, the
+model is not yet in `voice-prices`. Add it upstream (model id, match pattern,
+and `prices` block) following the existing entries for that provider, publish a
+new `voice-prices` version, and bump the pin. The coverage tests in
+`src/voicegateway/tests/pricing/test_stt.py` and `test_tts.py` assert that
+every supported cloud model resolves, so a missing model fails CI until it is
+added.
 
-## Why this is hand-maintained
+## Why pricing lives in voice-prices
 
-LLM pricing has the [pydantic/genai-prices](https://github.com/pydantic/genai-prices) library publishing canonical rates with a release cadence VoiceGateway can pin against. STT and TTS have no equivalent project, so the catalog is maintained directly. The 60-day gate keeps the maintenance cost visible: if no one refreshes within two months, CI breaks until someone does.
+`voice-prices` gives LLM, STT, and TTS pricing a single versioned source with a
+release cadence VoiceGateway can pin against, instead of a hand-maintained
+catalog that drifts. Refreshing a rate is a `voice-prices` release plus a pin
+bump, and the attribution string records exactly which `voice-prices` version
+priced each request.

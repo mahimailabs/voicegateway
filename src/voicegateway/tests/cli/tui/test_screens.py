@@ -360,7 +360,7 @@ def costs_app() -> TUIApp:
             },
             "pricing_sources": {
                 "stt": "voicegateway-catalog@2025-01-01",
-                "llm": "genai-prices@0.0.57",
+                "llm": "voice-prices@0.0.8",
                 "tts": f"voicegateway-catalog@{today}",
             },
         },

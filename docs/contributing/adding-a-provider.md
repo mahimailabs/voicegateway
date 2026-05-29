@@ -62,7 +62,7 @@ The `BaseProvider` abstract class in `src/voicegateway/providers/base.py` requir
 
 For modalities the provider does not support, call `self._unsupported("modality_name")` to raise a clear error.
 
-Pricing is not a provider-level concern. LLM rates resolve via `pydantic/genai-prices` upstream; STT and TTS rates live in the local source-date-tagged catalogs at `src/voicegateway/pricing/{stt,tts}.py`. To add pricing for a new model, see step 4.
+Pricing is not a provider-level concern. LLM, STT, and TTS rates all resolve via `voice-prices` (the wrappers live at `src/voicegateway/pricing/{llm,stt,tts}.py`). To add pricing for a new model, see step 4.
 
 ### 3. Register the provider
 
@@ -79,27 +79,17 @@ The registry uses lazy imports -- your provider module is only loaded when a use
 
 ### 4. Add pricing data
 
-LLM models do not need a VoiceGateway entry: `pydantic/genai-prices` already covers 1,100+ models via its upstream catalog. Confirm the upstream id works with `voicegateway.pricing.llm.calculate_llm_cost("<name>/<model>", 1000, 500)`. If it returns None, file an upstream issue at [pydantic/genai-prices](https://github.com/pydantic/genai-prices).
-
-STT and TTS models live in the local catalogs:
+Pricing for every modality (LLM, STT, TTS) resolves through `voice-prices`, so there is no VoiceGateway-side catalog entry to add. Confirm the model id resolves with the matching wrapper:
 
 ```python
-# voicegateway/pricing/stt.py
-"<name>/<model>": STTEntry(
-    per_minute=Decimal("0.005"),
-    pricing_source_date=date(2026, 5, 4),
-    pricing_source_url="https://<provider>/pricing",
-),
+from voicegateway.inference.pricing import llm, stt, tts
 
-# voicegateway/pricing/tts.py
-"<name>/<model>": TTSEntry(
-    per_character=Decimal("0.0001"),
-    pricing_source_date=date(2026, 5, 4),
-    pricing_source_url="https://<provider>/pricing",
-),
+llm.calculate_llm_cost("<name>/<model>", 1000, 500)   # LLM
+stt.calculate_stt_cost("<name>/<model>", 60)          # STT (audio seconds)
+tts.calculate_tts_cost("<name>/<model>", 1000)        # TTS (characters)
 ```
 
-The `pricing_source_date` field is enforced by a 60-day staleness gate in CI; refresh entries each release.
+If a call returns `None`, the model is not yet in `voice-prices`. Add it upstream in [voice-prices](https://github.com/mahimailabs/voice-prices) (each entry carries `prices_checked` and `pricing_source_url`), publish a new `voice-prices` version, and bump the pin in `pyproject.toml`. Self-hosted models (`local/*`, `ollama/*`) price at `$0` automatically and need no entry.
 
 ### 5. Add optional dependency
 

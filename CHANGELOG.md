@@ -17,12 +17,13 @@ against provider invoices.
   import line and your agent code keeps running:
   `from voicegateway.inference import STT, LLM, TTS`. Cost tracking,
   latency monitoring, and per-session correlation happen transparently.
-- **Cost tracking per modality.** LLM cost per 1k tokens (prices from
-  `pydantic/genai-prices`, 1100+ models). STT cost per audio-minute and
-  TTS cost per character (catalog with source-date metadata). Cached
-  LLM input tokens are billed at the provider's cache-read discount
-  rate (OpenAI 50%, Anthropic ~10%) by surfacing LiveKit's
-  `prompt_cached_tokens` through to `genai-prices.cache_read_tokens`.
+- **Cost tracking per modality.** LLM cost per 1k tokens, STT cost per
+  audio-minute, and TTS cost per character: prices for all three modalities
+  come from `voice-prices` (a fork of `pydantic/genai-prices` that covers
+  LLM, STT, and TTS). Cached LLM input tokens are billed at the provider's
+  cache-read discount rate (OpenAI 50%, Anthropic ~10%) by surfacing
+  LiveKit's `prompt_cached_tokens` through to `voice-prices`'
+  `cache_read_tokens`.
 - **Background daemon.** `voicegw onboard` runs a five-question wizard,
   writes `voicegw.yaml`, registers a user-scoped service (LaunchAgent on
   macOS, `systemd --user` unit on Linux, Scheduled Task on Windows),

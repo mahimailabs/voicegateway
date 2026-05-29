@@ -148,7 +148,7 @@ async def test_three_modalities_share_one_session_and_one_sessions_row(
 
         # Drive each wrapper's logging path with a non-zero cost so the
         # sessions row's total_cost_usd is non-trivial. The exact
-        # billing semantics (genai-prices etc.) aren't the point of
+        # billing semantics (voice-prices etc.) aren't the point of
         # this test; the mock model_id won't be in the catalog and
         # cost_usd resolves to 0. We bump input_units so cost-by-source
         # tracking still records a row.

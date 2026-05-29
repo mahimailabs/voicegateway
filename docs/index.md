@@ -4,7 +4,7 @@ layout: home
 hero:
   name: VoiceGateway
   text: Cost tracking and reconciliation for LiveKit voice agents
-  tagline: Modality-aware unit accounting. LLM prices from pydantic/genai-prices. Verify against provider invoices with voicegw reconcile.
+  tagline: Modality-aware unit accounting. LLM, STT, and TTS prices from voice-prices. Verify against provider invoices with voicegw reconcile.
   image:
     src: /logo.svg
     alt: VoiceGateway
@@ -25,7 +25,7 @@ features:
 
   - icon: "\U0001F4B0"
     title: Modality-aware unit accounting
-    details: "LLM cost per-1k-token, STT cost per-audio-minute, TTS cost per-character. LLM prices come from pydantic/genai-prices (1,100+ models, monthly releases). STT and TTS live in a local catalog with explicit pricing_source_date metadata."
+    details: "LLM cost per-1k-token, STT cost per-audio-minute, TTS cost per-character. Prices for all three modalities come from voice-prices (a fork of pydantic/genai-prices that covers LLM, STT, and TTS)."
     link: /configuration/observability
     linkText: How it works
 

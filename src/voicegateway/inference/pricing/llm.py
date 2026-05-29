@@ -1,13 +1,13 @@
-"""LLM pricing via pydantic/genai-prices."""
+"""LLM pricing via voice-prices."""
 
 from __future__ import annotations
 
 from decimal import Decimal
 
-import genai_prices
-from genai_prices import Usage, calc_price
+import voice_prices
+from voice_prices import Usage, calc_price
 
-PRICING_SOURCE = f"genai-prices@{genai_prices.__version__}"
+PRICING_SOURCE = f"voice-prices@{voice_prices.__version__}"
 
 
 def calculate_llm_cost(
@@ -20,17 +20,17 @@ def calculate_llm_cost(
 
     ``cached_input_tokens`` is the subset of ``input_tokens`` served from the
     provider's prompt cache (LK reports as ``LLMMetrics.prompt_cached_tokens``,
-    a subset of ``prompt_tokens``). genai-prices' ``cache_read_tokens`` field
+    a subset of ``prompt_tokens``). voice-prices' ``cache_read_tokens`` field
     expects the cached portion as a sibling to (non-cached) ``input_tokens``,
-    so we subtract here before constructing Usage. Most providers discount
-    cached input significantly (OpenAI: 50%, Anthropic: ~10%).
+    so we clamp it to the prompt total before constructing Usage. Most providers
+    discount cached input significantly (OpenAI: 50%, Anthropic: ~10%).
     """
     if "/" in model:
         provider, _, ref = model.partition("/")
     else:
         provider, ref = "", model
 
-    # genai-prices expects ``input_tokens`` to carry the TOTAL prompt token
+    # voice-prices expects ``input_tokens`` to carry the TOTAL prompt token
     # count (cached subset included) and computes uncached = input - cached
     # internally. Clamp cached to input to avoid the library's negative-uncached
     # guard from a malformed LK metric.

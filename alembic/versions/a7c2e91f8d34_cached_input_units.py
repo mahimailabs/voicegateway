@@ -5,7 +5,7 @@ Revises: f1ae43d7fa98
 Create Date: 2026-05-27 05:00:00.000000
 
 LK reports ``LLMMetrics.prompt_cached_tokens`` separately from
-``prompt_tokens`` (cached is a subset). genai-prices applies a
+``prompt_tokens`` (cached is a subset). voice-prices applies a
 per-provider discount (OpenAI 50%, Anthropic ~10%) when cached tokens
 are passed as ``cache_read_tokens``. Tracking the raw cached count on
 the request row keeps reconcile auditable and lets the dashboard

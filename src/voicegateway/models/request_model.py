@@ -38,7 +38,7 @@ class RequestRecord:
     cached_input_units: float = 0.0  # cached prompt tokens (llm); 0 for stt/tts
     cost_usd: float = 0.0
     pricing_source: str = (
-        ""  # e.g. "genai-prices@0.0.57" or "voicegateway-catalog@2026-05-04"
+        ""  # e.g. "voice-prices@0.0.8" or "voicegateway-local" (self-hosted)
     )
     ttfb_ms: float | None = None
     total_latency_ms: float | None = None

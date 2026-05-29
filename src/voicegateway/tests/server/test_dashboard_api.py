@@ -37,17 +37,13 @@ async def test_api_status(client):
     assert "fallbacks" in data
 
 
-async def test_api_status_includes_pricing_freshness(client):
-    """Item C: dashboard /api/status mirrors the /v1/status pricing"""
+async def test_api_status_includes_pricing_sources(client):
+    """Item C: dashboard /api/status mirrors the /v1/status pricing subtree."""
     resp = await client.get("/api/status")
     data = resp.json()
     assert "pricing" in data
-    assert data["pricing"]["llm"]["source"].startswith("genai-prices@")
-    for modality in ("stt", "tts"):
-        entry = data["pricing"][modality]
-        assert entry["source"].startswith("voicegateway-catalog@")
-        # ISO YYYY-MM-DD shape
-        assert len(entry["oldest_entry_date"].split("-")) == 3
+    for modality in ("llm", "stt", "tts"):
+        assert data["pricing"][modality]["source"].startswith("voice-prices@")
 
 
 async def test_api_costs(client):
@@ -80,14 +76,14 @@ async def test_api_costs_includes_pricing_source(client, gateway):
             project="test-project",
             input_units=1.0,
             cost_usd=0.0043,
-            pricing_source="voicegateway-catalog@2026-05-04",
+            pricing_source="voice-prices@0.0.8",
         )
     )
 
     resp = await client.get("/api/costs?period=today")
     data = resp.json()
     entry = data["by_model"]["deepgram/nova-3"]
-    assert entry["pricing_source"] == "voicegateway-catalog@2026-05-04"
+    assert entry["pricing_source"] == "voice-prices@0.0.8"
 
 
 # ---------------------------------------------------------------------------

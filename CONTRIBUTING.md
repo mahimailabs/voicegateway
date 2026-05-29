@@ -68,7 +68,7 @@ src/
     mcp/               # MCP server + tools
     middleware/        # cost tracking, latency, rate limiting, fallback,
                        # routing, guardrails
-    pricing/           # genai-prices (LLM) + local STT and TTS catalogs
+    pricing/           # voice-prices wrappers (LLM, STT, TTS)
     providers/         # 11 provider adapters (cloud + local)
     reconcile/         # provider-invoice reconciliation
     server/            # FastAPI HTTP API + combined server

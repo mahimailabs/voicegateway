@@ -43,22 +43,17 @@ async def test_v1_status(client):
     assert "project_count" in data
 
 
-async def test_v1_status_includes_pricing_freshness(client):
-    """Q7: /v1/status carries the catalog freshness subtree so the"""
+async def test_v1_status_includes_pricing_sources(client):
+    """/v1/status carries the per-modality pricing source subtree."""
     resp = await client.get("/v1/status")
     data = resp.json()
     assert "pricing" in data
     assert "llm" in data["pricing"]
     assert "stt" in data["pricing"]
     assert "tts" in data["pricing"]
-    # LLM source comes from genai-prices' library version.
-    assert data["pricing"]["llm"]["source"].startswith("genai-prices@")
-    # STT and TTS sources name the local catalog and carry the
-    # oldest per-entry verification date as ISO YYYY-MM-DD.
-    for modality in ("stt", "tts"):
-        entry = data["pricing"][modality]
-        assert entry["source"].startswith("voicegateway-catalog@")
-        assert len(entry["oldest_entry_date"].split("-")) == 3
+    # All three modalities are now priced by voice-prices.
+    for modality in ("llm", "stt", "tts"):
+        assert data["pricing"][modality]["source"].startswith("voice-prices@")
 
 
 async def test_v1_models(client):
@@ -128,7 +123,7 @@ async def test_v1_costs_includes_pricing_source_by_default(client, gateway):
             input_units=100,
             output_units=50,
             cost_usd=0.01,
-            pricing_source="genai-prices@0.0.57",
+            pricing_source="voice-prices@0.0.8",
         )
     )
 
@@ -139,7 +134,7 @@ async def test_v1_costs_includes_pricing_source_by_default(client, gateway):
     assert "openai/gpt-4o-mini" in by_model
     # The attribution string is present without us having to ask
     # for it explicitly.
-    assert by_model["openai/gpt-4o-mini"]["pricing_source"] == "genai-prices@0.0.57"
+    assert by_model["openai/gpt-4o-mini"]["pricing_source"] == "voice-prices@0.0.8"
 
 
 async def test_v1_costs_pricing_source_opt_out(client, gateway):
@@ -158,7 +153,7 @@ async def test_v1_costs_pricing_source_opt_out(client, gateway):
             provider="openai",
             project="test-project",
             cost_usd=0.01,
-            pricing_source="genai-prices@0.0.57",
+            pricing_source="voice-prices@0.0.8",
         )
     )
 
@@ -274,7 +269,7 @@ async def test_v1_costs_combined_query_params(client, gateway):
             model_id="openai/gpt-4o-mini",
             provider="openai",
             cost_usd=0.10,
-            pricing_source="genai-prices@0.0.57",
+            pricing_source="voice-prices@0.0.8",
         )
     )
     await gateway.storage.log_request(
@@ -307,7 +302,7 @@ async def test_v1_costs_combined_query_params(client, gateway):
             model_id="openai/gpt-4o-mini",
             provider="openai",
             cost_usd=99.0,
-            pricing_source="genai-prices@0.0.57",
+            pricing_source="voice-prices@0.0.8",
         )
     )
 
@@ -325,7 +320,7 @@ async def test_v1_costs_combined_query_params(client, gateway):
     assert data["by_modality"]["llm"]["cost"] == pytest.approx(0.10, abs=0.001)
     assert (
         data["by_model"]["openai/gpt-4o-mini"]["pricing_source"]
-        == "genai-prices@0.0.57"
+        == "voice-prices@0.0.8"
     )
     assert (
         data["by_model"]["deepgram/nova-3"]["pricing_source"] == "local-stt@2026-05-04"
@@ -356,7 +351,7 @@ async def test_v1_costs_window_overrides_period_at_data_layer(client, gateway):
             model_id="openai/gpt-4o-mini",
             provider="openai",
             cost_usd=0.42,
-            pricing_source="genai-prices@0.0.57",
+            pricing_source="voice-prices@0.0.8",
         )
     )
 
