@@ -9,7 +9,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import FilterBar, { useTenantFilter } from '../components/FilterBar';
 import PageHeader from '../components/PageHeader';
-import StalenessBanner from '../components/StalenessBanner';
 import TenantPill from '../components/TenantPill';
 import { fetchJson } from '../lib/api';
 import { formatCost } from '../lib/ui';
@@ -97,7 +96,6 @@ export default function Sessions() {
 
   return (
     <div>
-      <StalenessBanner />
       <PageHeader
         title="Sessions"
         subtitle={`${rows.length} voice conversation${rows.length === 1 ? '' : 's'}`}

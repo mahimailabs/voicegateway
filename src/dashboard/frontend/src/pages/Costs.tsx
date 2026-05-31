@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import CostChart from '../components/CostChart';
 import FilterBar, { useTenantFilter } from '../components/FilterBar';
 import PageHeader from '../components/PageHeader';
-import StalenessBanner from '../components/StalenessBanner';
 import { fetchJson } from '../lib/api';
 import { formatCost } from '../lib/ui';
 import type { CostsResponse } from '../lib/types';
@@ -25,7 +24,6 @@ export default function Costs() {
 
   return (
     <div>
-      <StalenessBanner />
       <PageHeader title="Costs" subtitle={`Period: ${data.period}`} accent="green" />
       <FilterBar />
 

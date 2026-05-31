@@ -8,9 +8,9 @@ dates all live in `voice-prices`.
 
 The wrappers that call into it are:
 
-- `src/voicegateway/pricing/llm.py`
-- `src/voicegateway/pricing/stt.py`
-- `src/voicegateway/pricing/tts.py`
+- `src/voicegateway/inference/pricing/llm.py`
+- `src/voicegateway/inference/pricing/stt.py`
+- `src/voicegateway/inference/pricing/tts.py`
 
 Each resolves a `provider/model` id against `voice-prices` and returns the
 computed cost. The per-request attribution string is `voice-prices@<version>`

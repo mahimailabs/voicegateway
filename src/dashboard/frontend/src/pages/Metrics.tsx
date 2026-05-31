@@ -4,7 +4,6 @@ import FilterBar, { useTenantFilter } from '../components/FilterBar';
 import PageHeader from '../components/PageHeader';
 import PerMinuteCostCard from '../components/PerMinuteCostCard';
 import ResponseSpeedChart from '../components/ResponseSpeedChart';
-import StalenessBanner from '../components/StalenessBanner';
 import TalkOverChart from '../components/TalkOverChart';
 import { fetchJson } from '../lib/api';
 import type { MetricsAggregate } from '../lib/types';
@@ -57,7 +56,6 @@ export default function Metrics() {
 
   return (
     <div>
-      <StalenessBanner />
       <PageHeader
         title="Metrics"
         subtitle="Voice-conversation cost and quality"

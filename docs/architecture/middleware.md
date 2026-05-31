@@ -96,17 +96,17 @@ The `get_budget_status()` method returns a status string for API responses: `"ok
 
 Calculates per-request costs based on the pricing catalog and writes request records to SQLite.
 
-### Cost Formulas
+### Pricing
 
-| Modality | Formula |
-|----------|---------|
-| STT | `audio_duration_minutes * price_per_minute` |
-| LLM | `(input_tokens * input_price + output_tokens * output_price) / 1000` |
-| TTS | `characters * price_per_character` |
+Costs are delegated to `voice-prices`. The cost tracker maps the recorded
+units onto a `voice_prices.Usage` per modality (STT: `audio_input_seconds`,
+LLM: `input_tokens` / `output_tokens` / `cache_read_tokens`, TTS:
+`characters`) and calls `voice_prices.calc_price`. Self-hosted `local/*` and
+`ollama/*` models price at `$0`. See `voicegateway.inference.pricing.catalog`.
 
 ### Key Methods
 
-- **`calculate_cost(model_id, modality, input_units, output_units)`** -- returns cost in USD
+- **`CostTracker.calculate_cost(model_id, modality, input_units, output_units, cached_input_units)`** -- returns cost in USD (0.0 for unknown or self-hosted)
 - **`create_record(...)`** -- creates a `RequestRecord` with cost, latency, and metadata
 - **`log_request(record)`** -- persists the record to SQLite (async)
 

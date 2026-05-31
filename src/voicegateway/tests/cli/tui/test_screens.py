@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -349,7 +348,6 @@ class _StubMetricsClient:
 @pytest.fixture
 def costs_app() -> TUIApp:
     """TUIApp wired to a deterministic :class:`_StubMetricsClient`."""
-    today = date.today().isoformat()
     responses = {
         "today": {
             "period": "today",
@@ -357,11 +355,6 @@ def costs_app() -> TUIApp:
             "by_modality": {
                 "stt": {"cost": 0.01, "request_count": 4},
                 "llm": {"cost": 0.04, "request_count": 7},
-            },
-            "pricing_sources": {
-                "stt": "voicegateway-catalog@2025-01-01",
-                "llm": "voice-prices@0.0.8",
-                "tts": f"voicegateway-catalog@{today}",
             },
         },
         "this_week": {
@@ -440,22 +433,6 @@ async def test_costs_passes_include_pricing_source_true(
         client = costs_app.client  # type: ignore[attr-defined]
         assert client.calls, "client.list_costs not called"
         assert all(c["include_pricing_source"] for c in client.calls)
-
-
-async def test_costs_freshness_marker_renders_on_stale_modality(
-    costs_app: TUIApp,
-) -> None:
-    """The Phase-4 freshness indicator surfaces ``(as of YYYY-MM-DD)``"""
-    async with costs_app.run_test() as pilot:
-        await pilot.press("2")
-        await _settle(pilot)
-        screen = costs_app.query_one(CostsScreen)
-        stt = screen.query_one("#cost-modality-stt", Static)
-        llm = screen.query_one("#cost-modality-llm", Static)
-        tts = screen.query_one("#cost-modality-tts", Static)
-        assert "as of 2025-01-01" in str(stt.renderable)
-        assert "as of" not in str(llm.renderable)
-        assert "as of" not in str(tts.renderable)
 
 
 async def test_costs_screen_polls_for_live_refresh() -> None:

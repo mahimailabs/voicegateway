@@ -1,23 +1,7 @@
-export interface PricingFreshness {
-  source: string;
-  // Only present for STT and TTS — LLM gets its freshness from
-  // genai-prices' library version, encoded in the source string
-  // itself.
-  oldest_entry_date?: string;
-}
-
 export interface StatusResponse {
   providers: Record<string, { configured: boolean; type: string }>;
   models: Record<string, { modality: string; provider: string }>;
   fallbacks: Record<string, string[]>;
-  // Optional so an older dashboard server (pre-Item C) does not
-  // break the type. The frontend treats "missing" as "fresh" and
-  // skips the banner.
-  pricing?: {
-    llm?: PricingFreshness;
-    stt?: PricingFreshness;
-    tts?: PricingFreshness;
-  };
 }
 
 export interface OverviewResponse {
