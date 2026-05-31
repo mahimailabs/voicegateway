@@ -215,7 +215,23 @@ class InstrumentationMixin:
             coro.close()
             return
         self._pending_log_tasks.add(task)
-        task.add_done_callback(self._pending_log_tasks.discard)
+        task.add_done_callback(self._on_log_task_done)
+
+    def _on_log_task_done(self, task: asyncio.Task[None]) -> None:
+        """Drop the finished task and retrieve its exception.
+
+        Retrieving the exception here keeps a failed fire-and-forget log
+        write from later surfacing as an "unretrieved task exception",
+        which pytest's threadexception plugin turns into a spurious failure
+        attributed to whatever test happens to be running. Log writes are
+        best-effort, so a failure is warned about and otherwise swallowed.
+        """
+        self._pending_log_tasks.discard(task)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.warning("Background log task failed", exc_info=exc)
 
     async def _drain_pending_logs(self) -> None:
         """Await any in-flight log writes scheduled by the bridge.
