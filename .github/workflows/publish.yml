@@ -1,15 +1,20 @@
 name: Publish Python Package
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
 
 jobs:
   publish:
     name: Publish to PyPI
-    # Only run on releases starting with 'v'
-    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v')
+    # Publish on a v* tag push (automatic), or a manual workflow_dispatch run
+    # targeting a v* tag ref. A branch dispatch is skipped so it can never
+    # upload a dev version. Triggering on the tag push (not the GitHub Release
+    # event) avoids the GITHUB_TOKEN-created-release-does-not-trigger-workflows
+    # trap that previously left PyPI unpublished.
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -47,3 +52,4 @@ jobs:
       with:
         password: ${{ secrets.PYPI_API_TOKEN }}
         packages-dir: dist/
+        skip-existing: true
