@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal
+from textual.css.query import NoMatches
 from textual.widgets import Static
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -57,7 +58,13 @@ class CounterFooter(Horizontal):
         """Update the counter line, accounting for the connection state."""
         app = cast("TUIApp", self.app)
         is_connected = bool(getattr(app.client, "is_connected", True))
-        text_widget = self.query_one("#counter-text", Static)
+        try:
+            text_widget = self.query_one("#counter-text", Static)
+        except NoMatches:
+            # A refresh/poll worker can fire before compose() has mounted the
+            # child Static (race under load); skip this redraw and let the
+            # next poll tick render once the node exists.
+            return
         if not is_connected:
             text_widget.update("Reconnecting to daemon...")
             return

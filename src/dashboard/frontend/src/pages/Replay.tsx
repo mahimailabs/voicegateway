@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
-import StalenessBanner from '../components/StalenessBanner';
 import ConversationStatePane from '../components/replay/ConversationStatePane';
 import ModelOutputPane from '../components/replay/ModelOutputPane';
 import PreV030Banner from '../components/replay/PreV030Banner';
@@ -73,7 +72,6 @@ export default function Replay() {
 
   return (
     <div>
-      <StalenessBanner />
       <PageHeader
         title="Replay"
         subtitle={`Session ${sessionId}`}

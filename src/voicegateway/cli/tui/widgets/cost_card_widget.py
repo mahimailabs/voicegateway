@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
 from textual.app import ComposeResult
@@ -11,8 +10,6 @@ from textual.css.query import NoMatches
 from textual.widgets import Static
 
 _MODALITIES: tuple[str, ...] = ("stt", "llm", "tts")
-
-_STALENESS_HOURS = 24.0
 
 
 class CostCard(Container):
@@ -75,27 +72,7 @@ class CostCard(Container):
             return f"  {modality.upper()}:  --"
         cost = float(info.get("cost") or 0.0)
         count = info.get("request_count") or 0
-        base = f"  {modality.upper()}:  ${cost:.4f}  ({count} requests)"
-        sources = self._costs.get("pricing_sources") or {}
-        marker = stale_marker(
-            sources.get(modality) if isinstance(sources, dict) else None
-        )
-        return base + marker
+        return f"  {modality.upper()}:  ${cost:.4f}  ({count} requests)"
 
 
-def stale_marker(source: Any, threshold_hours: float = _STALENESS_HOURS) -> str:
-    """Return ``  (as of YYYY-MM-DD)`` when ``source`` carries a date"""
-    if not source or not isinstance(source, str) or "@" not in source:
-        return ""
-    _, token = source.rsplit("@", 1)
-    try:
-        stamp = date.fromisoformat(token)
-    except (TypeError, ValueError):
-        return ""
-    age_hours = (date.today() - stamp).days * 24
-    if age_hours > threshold_hours:
-        return f"  (as of {token})"
-    return ""
-
-
-__all__ = ["CostCard", "stale_marker"]
+__all__ = ["CostCard"]

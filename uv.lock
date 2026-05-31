@@ -983,19 +983,6 @@ wheels = [
 ]
 
 [[package]]
-name = "genai-prices"
-version = "0.0.57"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "httpx" },
-    { name = "pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/be/30/11f3d683cf3b1d9612475ad8bfffe3423ce9f50fc617733109033e73a038/genai_prices-0.0.57.tar.gz", hash = "sha256:6e101e9c53975557ceffa237b0995787d81fe75aac12410f2898504188bcad89", size = 66555, upload-time = "2026-04-21T13:42:52.554Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a9/fe/d0095040c120d97cb63d055224ecd4e913dc5655315c203c8e83bf13aa86/genai_prices-0.0.57-py3-none-any.whl", hash = "sha256:14e50fb69cdc5a06ddb2a6df5a7fe06741b9e44304ce3f1728f56abdf1856cca", size = 69654, upload-time = "2026-04-21T13:42:51.236Z" },
-]
-
-[[package]]
 name = "googleapis-common-protos"
 version = "1.74.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1170,6 +1157,19 @@ wheels = [
 ]
 
 [[package]]
+name = "httpcore2"
+version = "2.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "h11" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1a/7e/8ab39aab1d392845b6512009a9be57d24a5bd4ec7a22d02e513d0645e7a8/httpcore2-2.2.0.tar.gz", hash = "sha256:10e0e142f1ecc1c1cb2a9ebbce82e57f16169f61d163ea336abf36799e89294b", size = 63533, upload-time = "2026-05-17T05:29:55.836Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/39/22/64de17e7956e8c002f7558ed667d924c2a288344aeff4bd8ff5dc5fdb70b/httpcore2-2.2.0-py3-none-any.whl", hash = "sha256:ce859f268bf8d34fa2d7753e09e4dd5194f557e1b3038439b68a89b2999572fa", size = 79288, upload-time = "2026-05-17T05:29:52.56Z" },
+]
+
+[[package]]
 name = "httpx"
 version = "0.28.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1191,6 +1191,21 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/0f/4c/751061ffa58615a32c31b2d82e8482be8dd4a89154f003147acee90f2be9/httpx_sse-0.4.3.tar.gz", hash = "sha256:9b1ed0127459a66014aec3c56bebd93da3c1bc8bb6618c8082039a44889a755d", size = 15943, upload-time = "2025-10-10T21:48:22.271Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d2/fd/6668e5aec43ab844de6fc74927e155a3b37bf40d7c3790e49fc0406b6578/httpx_sse-0.4.3-py3-none-any.whl", hash = "sha256:0ac1c9fe3c0afad2e0ebb25a934a59f4c7823b60792691f779fad2c5568830fc", size = 8960, upload-time = "2025-10-10T21:48:21.158Z" },
+]
+
+[[package]]
+name = "httpx2"
+version = "2.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "certifi" },
+    { name = "httpcore2" },
+    { name = "idna" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f4/aa/c3119de1aa7ad870a01aaddbf3bc3445ed9a681c31d45e3838fd8b7bc155/httpx2-2.2.0.tar.gz", hash = "sha256:f3428d59b1752b8f5629826277262fb4d65e3a683f48af8a5b16c4d012e0b801", size = 80477, upload-time = "2026-05-17T05:29:57.376Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/be/e0/e0a52596c14194e428c20de4903f4abec38c0dfb5364d20f1d4a2b6266ef/httpx2-2.2.0-py3-none-any.whl", hash = "sha256:12347ebd2daeaefd50b529359778fff767082a09c5826752c963e71269722ff0", size = 74083, upload-time = "2026-05-17T05:29:54.543Z" },
 ]
 
 [[package]]
@@ -3440,13 +3455,25 @@ wheels = [
 ]
 
 [[package]]
+name = "voice-prices"
+version = "0.0.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx2" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f5/1b/8337816e4e083fc750b327d3e01b6ddb264532b5df499df6ea92ab7945c0/voice_prices-0.0.8.tar.gz", hash = "sha256:a7bf7974ad203a2aaad03d4cf0c795f9e0c964f4a6af1433ffa9137ae92f0c60", size = 74013, upload-time = "2026-05-29T13:04:22.802Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ee/20/2988e84a5ae592ec7044643c701bb89a0ee4f31a8a3ae21a4ddf7b315a22/voice_prices-0.0.8-py3-none-any.whl", hash = "sha256:48d77ec45244bd0f37680cbcd86c880a462a9aa891d751bd8aba90dfe7766071", size = 76775, upload-time = "2026-05-29T13:04:21.701Z" },
+]
+
+[[package]]
 name = "voicegateway"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
     { name = "bcrypt" },
     { name = "cryptography" },
-    { name = "genai-prices" },
     { name = "httpx" },
     { name = "livekit-agents" },
     { name = "pillow" },
@@ -3454,6 +3481,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rich" },
     { name = "typer" },
+    { name = "voice-prices" },
 ]
 
 [package.optional-dependencies]
@@ -3584,7 +3612,6 @@ requires-dist = [
     { name = "faster-whisper", marker = "extra == 'all'", specifier = ">=1.0.0" },
     { name = "faster-whisper", marker = "extra == 'local'", specifier = ">=1.0.0" },
     { name = "faster-whisper", marker = "extra == 'whisper'", specifier = ">=1.0.0" },
-    { name = "genai-prices", specifier = ">=0.0.52,<0.1" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "kokoro-onnx", marker = "extra == 'all'", specifier = ">=0.5.0" },
     { name = "kokoro-onnx", marker = "extra == 'kokoro'", specifier = ">=0.5.0" },
@@ -3647,6 +3674,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.12.0" },
     { name = "uvicorn", marker = "extra == 'dashboard'", specifier = ">=0.32.0" },
     { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.32.0" },
+    { name = "voice-prices", specifier = ">=0.0.8,<0.1" },
 ]
 provides-extras = ["all", "anthropic", "assemblyai", "cartesia", "cloud", "dashboard", "deepgram", "dev", "elevenlabs", "groq", "kokoro", "local", "mcp", "openai", "piper", "server", "tui", "whisper"]
 
