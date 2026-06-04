@@ -29,6 +29,7 @@ async def get_latency_stats(
     project: str | None = None,
     percentiles: list[float] | None = None,
     tenant: str | None = None,
+    agent: str | None = None,
 ) -> dict[str, Any]:
     """Per-model latency rollup with avg + percentile distributions."""
     pcts = percentiles or _DEFAULT_PERCENTILES
@@ -47,6 +48,12 @@ async def get_latency_stats(
         else:
             where += " AND tenant_id = :tenant"
             params["tenant"] = tenant
+    if agent is not None:
+        if agent == "":
+            where += " AND agent_id IS NULL"
+        else:
+            where += " AND agent_id = :agent"
+            params["agent"] = agent
 
     result = await session.execute(
         text(

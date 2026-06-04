@@ -28,6 +28,7 @@ async def get_metrics_summary(
     project: str | None = Query(None),
     days: int = Query(7, ge=1, le=365),
     tenant: str | None = Query(None),
+    agent: str | None = Query(None),
     gateway: Gateway = Depends(get_gateway),
 ) -> dict[str, Any]:
     """Aggregated voice-conversation metrics for the filter window.
@@ -68,6 +69,12 @@ async def get_metrics_summary(
             else:
                 where_clauses.append("tenant_id = :tenant")
                 params["tenant"] = tenant
+        if agent is not None:
+            if agent == "":
+                where_clauses.append("agent_id IS NULL")
+            else:
+                where_clauses.append("agent_id = :agent")
+                params["agent"] = agent
         where = " AND ".join(where_clauses)
         result = await db.execute(
             text(
@@ -121,7 +128,7 @@ async def get_metrics_summary(
                 "since": since_iso,
                 "until": until_iso,
             },
-            "filter": {"project": project, "tenant": tenant},
+            "filter": {"project": project, "tenant": tenant, "agent": agent},
             "session_count": session_count,
             "measured_session_count": measured_count,
             "per_minute_cost_usd_avg": per_minute_cost_avg,

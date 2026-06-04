@@ -19,10 +19,11 @@ async def list_logs(
     limit: int = Query(100, ge=1, le=1000),
     modality: str | None = Query(None),
     project: str | None = Query(None),
+    agent: str | None = Query(None),
     gateway: Gateway = Depends(get_gateway),
 ) -> list[dict]:
     if gateway.storage is None:
         return []
     return await gateway.storage.get_recent_requests(
-        limit=limit, modality=modality, project=project
+        limit=limit, modality=modality, project=project, agent=agent
     )

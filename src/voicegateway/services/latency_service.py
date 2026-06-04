@@ -22,6 +22,7 @@ class LatencyService:
         project: str | None = None,
         percentiles: list[float] | None = None,
         tenant: str | None = None,
+        agent: str | None = None,
     ) -> dict[str, Any]:
         """Per-model latency rollup with percentiles."""
         async with self._db.session() as s:
@@ -31,6 +32,7 @@ class LatencyService:
                 project=project,
                 percentiles=percentiles,
                 tenant=tenant,
+                agent=agent,
             )
 
     async def get_samples(

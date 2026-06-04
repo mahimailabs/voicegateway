@@ -106,6 +106,7 @@ class StorageService:
         start_ts: float | None = None,
         end_ts: float | None = None,
         tenant: str | None = None,
+        agent: str | None = None,
     ) -> dict[str, Any]:
         """Delegate to CostService.get_summary."""
         await self._ensure_initialized()
@@ -116,6 +117,7 @@ class StorageService:
             start_ts=start_ts,
             end_ts=end_ts,
             tenant=tenant,
+            agent=agent,
         )
 
     async def get_cost_by_project(
@@ -150,6 +152,7 @@ class StorageService:
         project: str | None = None,
         percentiles: list[float] | None = None,
         tenant: str | None = None,
+        agent: str | None = None,
     ) -> dict[str, Any]:
         """Delegate to LatencyService.get_stats."""
         await self._ensure_initialized()
@@ -158,6 +161,7 @@ class StorageService:
             project=project,
             percentiles=percentiles,
             tenant=tenant,
+            agent=agent,
         )
 
     async def get_latency_samples(
@@ -190,11 +194,12 @@ class StorageService:
         modality: str | None = None,
         project: str | None = None,
         tenant: str | None = None,
+        agent: str | None = None,
     ) -> list[dict[str, Any]]:
         """Delegate to RequestLogService.get_recent_requests."""
         await self._ensure_initialized()
         return await self._request_log_service.get_recent_requests(
-            limit, modality, project, tenant
+            limit, modality, project, tenant, agent
         )
 
     async def get_project_stats(self, project: str) -> dict[str, Any]:
