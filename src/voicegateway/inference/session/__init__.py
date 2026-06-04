@@ -1,6 +1,7 @@
 """Session correlation: ContextVars and LiveKit AgentSession attach helpers."""
 
 from voicegateway.inference.session.attach import (
+    attach,
     attach_session,
     register_components,
     reset_components,
@@ -25,6 +26,7 @@ from voicegateway.inference.session.context import (
 )
 
 __all__ = [
+    "attach",
     "attach_session",
     "current_guardrail_policy_snapshot",
     "current_guardrails_bypassed",

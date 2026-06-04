@@ -30,6 +30,18 @@ def test_tts_cost_calculation():
     assert cost == pytest.approx(0.004)
 
 
+def test_create_record_carries_agent_id():
+    """create_record threads the fleet agent_id onto the record."""
+    tracker = CostTracker()
+    record = tracker.create_record(
+        model_id="openai/gpt-4o-mini",
+        modality="llm",
+        provider="openai",
+        agent_id="agent-9",
+    )
+    assert record.agent_id == "agent-9"
+
+
 def test_local_model_is_free():
     tracker = CostTracker()
     cost = tracker.calculate_cost(

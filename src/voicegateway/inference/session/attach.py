@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING, Any
 
 from voicegateway.inference.session.context import (
@@ -17,6 +18,9 @@ if TYPE_CHECKING:
     from voicegateway.middleware.cost_tracker_middleware import CostTracker
     from voicegateway.middleware.dead_air_detector_middleware import DeadAirDetector
     from voicegateway.middleware.turn_tracker_middleware import TurnTracker
+    from voicegateway.services.sinks import Sink
+
+DEFAULT_DB_PATH = "~/.config/voicegateway/voicegw.db"
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +193,103 @@ def attach_session(
     return sid
 
 
+def _default_agent_id() -> str:
+    """Resolve the agent label: explicit env > hostname > a constant."""
+    import socket
+
+    return os.environ.get("VOICEGW_AGENT_ID") or socket.gethostname() or "agent"
+
+
+def _build_default_sink(collector_url: str | None, virtual_key: str | None) -> Sink:
+    """Build the sink for attach() from env/args.
+
+    Single-node default is a LocalSqliteSink over the embedded StorageService.
+    Fleet mode (``collector_url`` set) swaps in the RemoteCollectorSink in a
+    later build step; until then the local sink is used.
+    """
+    from voicegateway.services.sinks import LocalSqliteSink
+    from voicegateway.services.storage_service import StorageService
+
+    db_path = os.environ.get("VOICEGW_DB_PATH") or DEFAULT_DB_PATH
+    return LocalSqliteSink(StorageService(db_path))
+
+
+def attach(
+    session: Any,
+    *,
+    project: str = "default",
+    agent_id: str | None = None,
+    tenant_id: str | None = None,
+    collector_url: str | None = None,
+    virtual_key: str | None = None,
+    sink: Sink | None = None,
+) -> str:
+    """Attach VoiceGateway to an existing LiveKit ``AgentSession`` in one call.
+
+    The *observe* tier: works for ANY plugin (native LiveKit,
+    ``livekit.agents.inference``, or ``voicegateway.inference``) by subscribing
+    to the non-deprecated per-component ``metrics_collected`` events. Captures
+    per-call cost + latency + errors and writes them through a ``Sink`` (local
+    SQLite by default, or a collector when configured via ``collector_url`` /
+    ``VOICEGW_COLLECTOR_URL``).
+
+    Args:
+        session: the ``AgentSession`` to observe.
+        project: project id to tag rows with.
+        agent_id: fleet label; defaults to ``VOICEGW_AGENT_ID`` or hostname.
+        tenant_id: optional tenant attribution.
+        collector_url / virtual_key: fleet push target (env fallbacks).
+        sink: advanced/testing override; defaults to local or remote per env.
+
+    Returns:
+        The correlation session id stamped on every captured row.
+    """
+    import asyncio
+
+    from voicegateway.inference.session.capture import MetricCapture
+    from voicegateway.middleware.cost_tracker_middleware import CostTracker
+
+    resolved_agent_id = agent_id or _default_agent_id()
+    resolved_collector = collector_url or os.environ.get("VOICEGW_COLLECTOR_URL")
+    resolved_key = virtual_key or os.environ.get("VOICEGW_VIRTUAL_KEY")
+    session_id = get_or_create_session_id()
+    if tenant_id is not None:
+        set_tenant(tenant_id)
+    if sink is None:
+        sink = _build_default_sink(resolved_collector, resolved_key)
+
+    cost_tracker = CostTracker(sink)
+    capture = MetricCapture(
+        cost_tracker=cost_tracker,
+        sink=sink,
+        project=project,
+        agent_id=resolved_agent_id,
+        session_id=session_id,
+        tenant_id=tenant_id,
+    )
+    capture.bind(session)
+
+    # Expose for graceful shutdown + tests; flush in-flight writes on close.
+    try:
+        session._vg_capture = capture
+    except Exception:  # noqa: BLE001 - real session may forbid attribute set
+        logger.debug("attach: could not stash capture on session", exc_info=True)
+
+    def _on_close(*_args: Any, **_kwargs: Any) -> None:
+        try:
+            asyncio.ensure_future(capture.drain())  # noqa: RUF006
+        except RuntimeError:
+            pass
+
+    on = getattr(session, "on", None)
+    if callable(on):
+        on("close", _on_close)
+
+    return session_id
+
+
 __all__ = [
+    "attach",
     "attach_session",
     "register_components",
     "reset_components",
