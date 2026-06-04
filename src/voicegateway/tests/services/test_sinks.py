@@ -129,3 +129,30 @@ async def test_remote_sink_aclose_flushes_without_closing_injected_client():
     await sink.aclose()
     assert len(client.calls) == 1  # flushed on close
     assert client.closed is False  # injected client is not owned -> not closed
+
+
+async def test_remote_sink_drops_oldest_past_max_buffer():
+    client = _RecordingClient()
+    sink = RemoteCollectorSink(
+        "http://c",
+        "vk",
+        batch_size=100,  # never auto-flushes during this test
+        flush_interval=None,
+        max_buffer=2,
+        client=client,
+    )
+    await sink.log_request(_record(id="r1"))
+    await sink.log_request(_record(id="r2"))
+    await sink.log_request(_record(id="r3"))  # overflow -> drop oldest (r1)
+    await sink.flush()
+    assert len(client.calls) == 1
+    assert [r["id"] for r in client.calls[0]["json"]] == ["r2", "r3"]
+
+
+async def test_remote_sink_omits_auth_header_without_key():
+    client = _RecordingClient()
+    sink = RemoteCollectorSink(
+        "http://c", None, batch_size=1, flush_interval=None, client=client
+    )
+    await sink.log_request(_record(id="r1"))
+    assert "Authorization" not in client.calls[0]["headers"]
