@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import FilterBar, { useTenantFilter } from '../components/FilterBar';
+import FilterBar, { useTenantFilter, useAgentFilter } from '../components/FilterBar';
 import PageHeader from '../components/PageHeader';
 import TenantPill from '../components/TenantPill';
 import { fetchJson } from '../lib/api';
@@ -46,6 +46,7 @@ export default function Sessions() {
   const [loading, setLoading] = useState(true);
   const detailAbortRef = useRef<AbortController | null>(null);
   const tenant = useTenantFilter();
+  const agent = useAgentFilter();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -67,6 +68,7 @@ export default function Sessions() {
     const params = new URLSearchParams({ order_by: orderBy, limit: '100' });
     if (project) params.set('project', project);
     if (tenant !== null) params.set('tenant', tenant);
+    if (agent !== null) params.set('agent', agent);
     fetchJson<SessionRow[]>(`/api/sessions?${params.toString()}`, {
       signal: controller.signal,
     })
@@ -78,7 +80,7 @@ export default function Sessions() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [project, orderBy, tenant]);
+  }, [project, orderBy, tenant, agent]);
 
   const handleRowClick = (id: string) => {
     detailAbortRef.current?.abort();

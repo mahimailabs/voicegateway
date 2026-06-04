@@ -86,6 +86,9 @@ async function extractErrorDetail(res: Response): Promise<string | null> {
 // ----------------------------------------------------------------------
 
 import type {
+  AgentFilter,
+  AgentRow,
+  AgentsResponse,
   CreatedVirtualKey,
   DeadAirEvent,
   GuardrailAggregateResponse,
@@ -208,6 +211,38 @@ export function fetchTenants(
 
 export function fetchTenant(tenantId: string): Promise<TenantRow> {
   return fetchJson<TenantRow>(`/api/tenants/${encodeURIComponent(tenantId)}`);
+}
+
+// ----------------------------------------------------------------------
+// Phase 2 fleet: per-agent typed fetchers + filter param (mirror tenant).
+// ----------------------------------------------------------------------
+
+/**
+ * Append the agent filter to a URLSearchParams instance. ``null`` is "no
+ * filter"; ``""`` is the unattributed bucket; any other value is that exact
+ * agent. Matches the backend's ``agent`` query parsing on /api/costs,
+ * /api/latency, /api/logs, /api/sessions, and /api/metrics.
+ */
+export function appendAgentParam(
+  params: URLSearchParams,
+  agent: AgentFilter | undefined,
+): void {
+  if (agent === null || agent === undefined) return;
+  params.set('agent', agent);
+}
+
+export function fetchAgents(
+  options: { limit?: number; q?: string } = {},
+): Promise<AgentsResponse> {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.q !== undefined && options.q.length > 0) params.set('q', options.q);
+  const query = params.toString();
+  return fetchJson<AgentsResponse>(query ? `/api/agents?${query}` : '/api/agents');
+}
+
+export function fetchAgent(agentId: string): Promise<AgentRow> {
+  return fetchJson<AgentRow>(`/api/agents/${encodeURIComponent(agentId)}`);
 }
 
 export function fetchVirtualKeys(
