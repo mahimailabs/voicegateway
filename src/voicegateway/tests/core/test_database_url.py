@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from voicegateway.core.config import GatewayConfig
 from voicegateway.core.database import Database, resolve_database_url
 
@@ -24,7 +26,12 @@ def test_resolve_database_url_falls_back_to_sqlite_path(monkeypatch, tmp_path):
 
 
 def test_database_builds_postgres_engine_for_db_url(monkeypatch):
-    """A Postgres URL produces a postgres engine (and no filesystem mkdir)."""
+    """A Postgres URL produces a postgres engine (and no filesystem mkdir).
+
+    Building the engine imports the asyncpg driver, so this skips when the
+    optional [postgres] extra is not installed (e.g. the default CI [dev] env).
+    """
+    pytest.importorskip("asyncpg")
     monkeypatch.setenv("VOICEGW_DB_URL", "postgresql+asyncpg://u:p@localhost/vg")
     db = Database(GatewayConfig())
     assert db._engine.url.get_backend_name() == "postgresql"
