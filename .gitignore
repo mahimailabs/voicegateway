@@ -31,7 +31,7 @@ downloads/
 eggs/
 .eggs/
 lib/
-!dashboard/frontend/src/lib/
+!src/dashboard/frontend/src/lib/
 !web/src/lib/
 lib64/
 parts/

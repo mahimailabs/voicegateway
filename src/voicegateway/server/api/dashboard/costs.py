@@ -81,11 +81,12 @@ async def get_logs(
     modality: str | None = Query(None, enum=["stt", "llm", "tts"]),
     project: str | None = Query(None),
     tenant: str | None = Query(None),
+    agent: str | None = Query(None),
     gateway: Gateway = Depends(get_gateway),
 ) -> list[dict]:
-    """Get recent request logs, optionally filtered by modality, project, and tenant."""
+    """Get recent request logs, filtered by modality, project, tenant, agent."""
     if gateway.storage is None:
         return []
     return await gateway.storage.get_recent_requests(
-        limit=limit, modality=modality, project=project, tenant=tenant
+        limit=limit, modality=modality, project=project, tenant=tenant, agent=agent
     )

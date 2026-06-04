@@ -217,6 +217,44 @@ export interface TenantsResponse {
  */
 export type TenantFilter = string | null;
 
+// ---------------------------------------------------------------------------
+// Phase 2 fleet: per-agent dimension (mirrors the tenant types above).
+// ---------------------------------------------------------------------------
+
+/** One row in the agent index (the fleet table + agent-filter feed). */
+export interface AgentRow {
+  agent_id: string;
+  request_count: number;
+  total_cost_usd: number;
+  /** Epoch seconds of the agent's most recent request, or null. */
+  last_seen: number | null;
+  error_rate: number;
+  /** p95 total-latency ms, merged in by /api/agents; null when no samples. */
+  p95_latency_ms?: number | null;
+}
+
+/** Aggregates for the implicit `agent_id IS NULL` bucket. */
+export interface AgentUnattributedAggregates {
+  request_count: number;
+  total_cost_usd: number;
+  last_seen: number | null;
+  error_rate: number;
+}
+
+/** `/api/agents` response shape. */
+export interface AgentsResponse {
+  agents: AgentRow[];
+  unattributed: AgentUnattributedAggregates;
+}
+
+/**
+ * Agent filter URL convention (mirrors TenantFilter):
+ *   - `null`: no filter (everything)
+ *   - `""`: scope to the unattributed bucket (requests with NULL agent_id)
+ *   - any other string: that exact agent
+ */
+export type AgentFilter = string | null;
+
 /** One row in the Virtual Keys table; the bcrypt hash never appears. */
 export interface VirtualKey {
   id: number;

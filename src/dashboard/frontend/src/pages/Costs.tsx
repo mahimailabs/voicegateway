@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import CostChart from '../components/CostChart';
-import FilterBar, { useTenantFilter } from '../components/FilterBar';
+import FilterBar, { useTenantFilter, useAgentFilter } from '../components/FilterBar';
 import PageHeader from '../components/PageHeader';
 import { fetchJson } from '../lib/api';
 import { formatCost } from '../lib/ui';
@@ -9,14 +9,16 @@ import type { CostsResponse } from '../lib/types';
 export default function Costs() {
   const [data, setData] = useState<CostsResponse | null>(null);
   const tenant = useTenantFilter();
+  const agent = useAgentFilter();
 
   useEffect(() => {
     const params = new URLSearchParams();
     if (tenant !== null) params.set('tenant', tenant);
+    if (agent !== null) params.set('agent', agent);
     const qs = params.toString();
     const url = qs ? `/api/costs?${qs}` : '/api/costs';
     fetchJson<CostsResponse>(url).then(setData).catch(() => setData(null));
-  }, [tenant]);
+  }, [tenant, agent]);
 
   if (!data) return <div className="empty-state">Loading costs...</div>;
 

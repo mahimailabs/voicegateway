@@ -1,9 +1,12 @@
 import { useSearchParams } from 'react-router-dom';
 import TenantFilter from './TenantFilter';
+import AgentFilter from './AgentFilter';
 
 interface Props {
   /** When true, render the tenant typeahead. Default true. */
   showTenant?: boolean;
+  /** When true, render the agent typeahead. Default true. */
+  showAgent?: boolean;
   /** Optional slot for a page-specific project filter. */
   projectSlot?: React.ReactNode;
   /** Optional slot for a page-specific time-range filter. */
@@ -33,6 +36,7 @@ interface Props {
  */
 export default function FilterBar({
   showTenant = true,
+  showAgent = true,
   projectSlot,
   timeRangeSlot,
   extra,
@@ -41,16 +45,20 @@ export default function FilterBar({
   const tenantParam = searchParams.get('tenant');
   // ``null`` = no tenant filter; ``""`` = unattributed; otherwise a tenant id.
   const tenant: string | null = tenantParam === null ? null : tenantParam;
+  const agentParam = searchParams.get('agent');
+  const agent: string | null = agentParam === null ? null : agentParam;
 
-  const setTenant = (next: string | null) => {
+  const setParam = (key: string, next: string | null) => {
     const params = new URLSearchParams(searchParams);
     if (next === null) {
-      params.delete('tenant');
+      params.delete(key);
     } else {
-      params.set('tenant', next);
+      params.set(key, next);
     }
     setSearchParams(params, { replace: true });
   };
+  const setTenant = (next: string | null) => setParam('tenant', next);
+  const setAgent = (next: string | null) => setParam('agent', next);
 
   return (
     <div
@@ -65,9 +73,20 @@ export default function FilterBar({
       {projectSlot}
       {timeRangeSlot}
       {extra}
+      {showAgent && <AgentFilter value={agent} onChange={setAgent} />}
       {showTenant && <TenantFilter value={tenant} onChange={setTenant} />}
     </div>
   );
+}
+
+/**
+ * Helper hook for pages to read the current agent filter without duplicating
+ * the URL-parsing logic. Same convention as the tenant filter: `null` (no
+ * filter), `""` (unattributed), or an agent id.
+ */
+export function useAgentFilter(): string | null {
+  const [searchParams] = useSearchParams();
+  return searchParams.get('agent');
 }
 
 /**

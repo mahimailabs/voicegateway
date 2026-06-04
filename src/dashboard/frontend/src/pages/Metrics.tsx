@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import DeadAirList from '../components/DeadAirList';
-import FilterBar, { useTenantFilter } from '../components/FilterBar';
+import FilterBar, { useTenantFilter, useAgentFilter } from '../components/FilterBar';
 import PageHeader from '../components/PageHeader';
 import PerMinuteCostCard from '../components/PerMinuteCostCard';
 import ResponseSpeedChart from '../components/ResponseSpeedChart';
@@ -41,18 +41,20 @@ export default function Metrics() {
   const [data, setData] = useState<MetricsAggregate | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const tenant = useTenantFilter();
+  const agent = useAgentFilter();
 
   useEffect(() => {
     const params = new URLSearchParams();
     if (project) params.set('project', project);
     params.set('days', String(days));
     if (tenant !== null) params.set('tenant', tenant);
+    if (agent !== null) params.set('agent', agent);
     setLoading(true);
     fetchJson<MetricsAggregate>(`/api/metrics?${params.toString()}`)
       .then((d) => setData(d))
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [project, days, tenant]);
+  }, [project, days, tenant, agent]);
 
   return (
     <div>
