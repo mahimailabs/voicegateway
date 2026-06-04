@@ -36,6 +36,7 @@ async def get_sessions(
     limit: int = Query(100, ge=1, le=1000),
     project: str | None = Query(None),
     tenant: str | None = Query(None),
+    agent: str | None = Query(None),
     order_by: str = Query(
         "started_at_desc",
         pattern="^(started_at_desc|started_at_asc|cost_desc|cost_asc)$",
@@ -52,7 +53,7 @@ async def get_sessions(
     if gateway.storage is None:
         return []
     return await gateway.storage.list_sessions(
-        limit=limit, project=project, order_by=order_by, tenant=tenant
+        limit=limit, project=project, order_by=order_by, tenant=tenant, agent=agent
     )
 
 

@@ -24,6 +24,7 @@ class CostService:
         start_ts: float | None = None,
         end_ts: float | None = None,
         tenant: str | None = None,
+        agent: str | None = None,
     ) -> dict[str, Any]:
         """Return total / by_provider / by_model rollups."""
         async with self._db.session() as s:
@@ -35,6 +36,7 @@ class CostService:
                 start_ts=start_ts,
                 end_ts=end_ts,
                 tenant=tenant,
+                agent=agent,
             )
 
     async def get_by_project(

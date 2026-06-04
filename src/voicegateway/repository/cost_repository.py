@@ -47,6 +47,7 @@ def _build_where(
     until: float | None,
     project: str | None,
     tenant: str | None,
+    agent: str | None = None,
     include_project: bool = True,
 ) -> tuple[str, dict[str, Any]]:
     """Compose the WHERE clause + named params for a window-+-filter query."""
@@ -64,6 +65,12 @@ def _build_where(
         else:
             where += " AND tenant_id = :tenant"
             params["tenant"] = tenant
+    if agent is not None:
+        if agent == "":
+            where += " AND agent_id IS NULL"
+        else:
+            where += " AND agent_id = :agent"
+            params["agent"] = agent
     return where, params
 
 
@@ -75,11 +82,12 @@ async def get_cost_summary(
     start_ts: float | None = None,
     end_ts: float | None = None,
     tenant: str | None = None,
+    agent: str | None = None,
 ) -> dict[str, Any]:
     """Return total / by_provider / by_model cost rollups for the window."""
     since, until = resolve_window(period, start_ts, end_ts)
     where, params = _build_where(
-        since=since, until=until, project=project, tenant=tenant
+        since=since, until=until, project=project, tenant=tenant, agent=agent
     )
 
     result = await session.execute(

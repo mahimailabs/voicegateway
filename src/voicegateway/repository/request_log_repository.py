@@ -325,6 +325,7 @@ async def get_recent_requests(
     modality: str | None = None,
     project: str | None = None,
     tenant: str | None = None,
+    agent: str | None = None,
 ) -> list[dict[str, Any]]:
     """Return the N newest request rows, optionally filtered."""
     conditions: list[str] = []
@@ -341,6 +342,12 @@ async def get_recent_requests(
         else:
             conditions.append("tenant_id = :tenant")
             params["tenant"] = tenant
+    if agent is not None:
+        if agent == "":
+            conditions.append("agent_id IS NULL")
+        else:
+            conditions.append("agent_id = :agent")
+            params["agent"] = agent
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     column_list = ", ".join(_REQUEST_COLUMNS)
     query = (

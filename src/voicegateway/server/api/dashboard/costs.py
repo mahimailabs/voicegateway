@@ -26,6 +26,7 @@ async def get_costs(
     period: str = Query("today", enum=["today", "week", "month", "all"]),
     project: str | None = Query(None),
     tenant: str | None = Query(None),
+    agent: str | None = Query(None),
     gateway: Gateway = Depends(get_gateway),
 ) -> dict:
     """Get cost summary for a period, optionally filtered by project and tenant.
@@ -46,7 +47,7 @@ async def get_costs(
             "by_project": {},
         }
     summary = await gateway.storage.get_cost_summary(
-        period, project=project, include_pricing_source=True, tenant=tenant
+        period, project=project, include_pricing_source=True, tenant=tenant, agent=agent
     )
     if project is None:
         summary["by_project"] = await gateway.storage.get_cost_by_project(
@@ -62,6 +63,7 @@ async def get_latency(
     period: str = Query("today", enum=["today", "week"]),
     project: str | None = Query(None),
     tenant: str | None = Query(None),
+    agent: str | None = Query(None),
     gateway: Gateway = Depends(get_gateway),
 ) -> dict:
     """Get latency statistics, optionally filtered by project and tenant."""
@@ -69,7 +71,7 @@ async def get_latency(
         return {}
     pcts = gateway.config.latency.get("percentiles") or [50.0, 95.0, 99.0]
     return await gateway.storage.get_latency_stats(
-        period, project=project, percentiles=pcts, tenant=tenant
+        period, project=project, percentiles=pcts, tenant=tenant, agent=agent
     )
 
 
