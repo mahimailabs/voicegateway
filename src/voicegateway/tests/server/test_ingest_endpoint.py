@@ -118,3 +118,51 @@ async def test_ingest_rejects_revoked_key(gateway):
             json=[_payload("x")],
         )
     assert resp.status_code == 401
+
+
+async def test_two_agents_aggregate_in_one_collector(gateway):
+    """Acceptance: two distinct agents push to one collector; /v1/costs
+    aggregates both spends and each agent is individually attributable."""
+    import time
+
+    import pytest
+
+    await gateway.storage._ensure_initialized()
+    async with gateway.storage._conn.session() as db:
+        created = await virtual_keys.create_virtual_key(db, name="fleet")
+
+    now = time.time()
+
+    def at_now(rid: str, agent: str, cost: float) -> dict:
+        row = _payload(rid, agent)
+        row["timestamp"] = now
+        row["cost_usd"] = cost
+        return row
+
+    headers = {"Authorization": f"Bearer {created.plaintext}"}
+    client = await _client(gateway)
+    async with client as c:
+        ra = await c.post(
+            "/v1/ingest",
+            headers=headers,
+            json=[at_now("a-1", "agent-a", 0.01), at_now("a-2", "agent-a", 0.02)],
+        )
+        rb = await c.post(
+            "/v1/ingest",
+            headers=headers,
+            json=[at_now("b-1", "agent-b", 0.04)],
+        )
+        assert ra.status_code == 200
+        assert rb.status_code == 200
+
+        costs = await c.get("/v1/costs?period=today", headers=headers)
+        assert costs.status_code == 200
+        assert costs.json()["total"] == pytest.approx(0.07)  # 0.01 + 0.02 + 0.04
+
+    # Per-agent attribution: each agent's rows are individually queryable.
+    rows = await gateway.storage.get_recent_requests(limit=50)
+    counts: dict = {}
+    for r in rows:
+        counts[r["agent_id"]] = counts.get(r["agent_id"], 0) + 1
+    assert counts.get("agent-a") == 2
+    assert counts.get("agent-b") == 1

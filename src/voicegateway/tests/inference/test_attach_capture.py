@@ -236,3 +236,115 @@ def test_build_default_sink_uses_local_without_collector(tmp_path, monkeypatch):
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "local.db"))
     sink = _build_default_sink(None, None)
     assert isinstance(sink, LocalSqliteSink)
+
+
+# --- reconcile-at-close --------------------------------------------------
+
+
+class _FakeLLMUsage:
+    """Mirror of LiveKit LLMModelUsage: cumulative per (provider, model)."""
+
+    def __init__(
+        self,
+        *,
+        prompt_tokens: float,
+        completion_tokens: float,
+        prompt_cached_tokens: float = 200,
+        provider: str = "openai",
+        model: str = "gpt-4o-mini",
+    ) -> None:
+        self.provider = provider
+        self.model = model
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+        self.prompt_cached_tokens = prompt_cached_tokens
+
+
+class _FakeUsage:
+    def __init__(self, model_usage: list) -> None:
+        self.model_usage = model_usage
+
+
+class _FakeSessionWithUsage(_FakeSession):
+    def __init__(self, usage: Any, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.usage = usage
+
+
+async def test_reconcile_emits_correction_when_usage_exceeds_recorded(tmp_path):
+    """Cumulative session.usage above the per-call rows yields a correction."""
+    storage = StorageService(str(tmp_path / "recon.db"))
+    sink = LocalSqliteSink(storage)
+    cost_tracker = CostTracker(sink)
+    llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
+    usage = _FakeUsage(
+        [
+            _FakeLLMUsage(
+                prompt_tokens=1500, completion_tokens=700, prompt_cached_tokens=200
+            )
+        ]
+    )
+    session = _FakeSessionWithUsage(usage, llm=llm)
+
+    capture = MetricCapture(
+        cost_tracker=cost_tracker,
+        sink=sink,
+        project="fleet",
+        agent_id="agent-r",
+        session_id="vg-rec",
+    )
+    capture.bind(session)
+
+    # Per-call captured 1000 prompt / 500 completion / 200 cached.
+    llm.emit("metrics_collected", _LLMMetric())
+    await capture.drain()
+
+    await capture.reconcile(session)
+
+    rows = await storage.get_recent_requests(limit=10)
+    reconciled = [
+        r
+        for r in rows
+        if isinstance(r.get("metadata"), dict) and r["metadata"].get("reconciled")
+    ]
+    assert len(reconciled) == 1
+    assert reconciled[0]["input_units"] == 500.0  # 1500 - 1000
+    assert reconciled[0]["output_units"] == 200.0  # 700 - 500
+    assert reconciled[0]["agent_id"] == "agent-r"
+
+
+async def test_reconcile_no_correction_when_totals_match(tmp_path):
+    """When session.usage matches the per-call rows, no correction is written."""
+    storage = StorageService(str(tmp_path / "recon2.db"))
+    sink = LocalSqliteSink(storage)
+    cost_tracker = CostTracker(sink)
+    llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
+    usage = _FakeUsage(
+        [
+            _FakeLLMUsage(
+                prompt_tokens=1000, completion_tokens=500, prompt_cached_tokens=200
+            )
+        ]
+    )
+    session = _FakeSessionWithUsage(usage, llm=llm)
+
+    capture = MetricCapture(
+        cost_tracker=cost_tracker,
+        sink=sink,
+        project="fleet",
+        agent_id="agent-r",
+        session_id="vg-rec2",
+    )
+    capture.bind(session)
+    llm.emit("metrics_collected", _LLMMetric())
+    await capture.drain()
+
+    await capture.reconcile(session)
+
+    rows = await storage.get_recent_requests(limit=10)
+    reconciled = [
+        r
+        for r in rows
+        if isinstance(r.get("metadata"), dict) and r["metadata"].get("reconciled")
+    ]
+    assert reconciled == []
