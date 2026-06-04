@@ -1,0 +1,19 @@
+# Codecov configuration.
+#
+# The >=80% total-coverage gate is the contract; it is enforced here (project
+# status) and by the test-coverage CI job (pytest --cov, fail_under=80). Patch
+# (diff) coverage is reported but kept informational: defensive branches in new
+# code (RuntimeError fallbacks, no-event-loop paths, retry/backoff) are not worth
+# chasing to 100% and must not block a PR.
+coverage:
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 1%
+    patch:
+      default:
+        informational: true
+
+comment:
+  require_changes: true

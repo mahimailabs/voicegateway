@@ -156,3 +156,54 @@ async def test_remote_sink_omits_auth_header_without_key():
     )
     await sink.log_request(_record(id="r1"))
     assert "Authorization" not in client.calls[0]["headers"]
+
+
+class _FlakyClient:
+    """Returns the next queued status code per POST, then 200 once drained."""
+
+    def __init__(self, statuses: list[int]) -> None:
+        self.statuses = list(statuses)
+        self.calls = 0
+
+    async def post(self, url, json=None, headers=None):
+        self.calls += 1
+        code = self.statuses.pop(0) if self.statuses else 200
+        return _FakeResponse(code)
+
+    async def aclose(self) -> None:
+        pass
+
+
+async def test_remote_sink_retries_then_succeeds():
+    client = _FlakyClient([500, 200])  # fail once, then succeed
+    sink = RemoteCollectorSink(
+        "http://c",
+        "vk",
+        batch_size=1,
+        flush_interval=None,
+        max_retries=2,
+        backoff=0.001,
+        client=client,
+    )
+    await sink.log_request(_record(id="r1"))  # flush -> 500 -> retry -> 200
+    assert client.calls == 2
+
+
+async def test_remote_sink_creates_default_httpx_client():
+    import httpx
+
+    sink = RemoteCollectorSink("http://c", "vk", flush_interval=None)
+    created = sink._ensure_client()
+    assert isinstance(created, httpx.AsyncClient)
+    await created.aclose()
+
+
+async def test_remote_sink_starts_periodic_flusher_and_aclose_cancels_it():
+    client = _RecordingClient()
+    sink = RemoteCollectorSink(
+        "http://c", "vk", batch_size=100, flush_interval=0.01, client=client
+    )
+    await sink.log_request(_record(id="r1"))  # never hits batch_size
+    assert sink._flusher is not None  # periodic flusher started
+    await sink.aclose()  # cancels the flusher and flushes the buffer
+    assert len(client.calls) >= 1
