@@ -25,7 +25,16 @@ DEFAULT_DB_PATH = "~/.config/voicegateway/voicegw.db"
 
 
 def resolve_database_url(config: GatewayConfig) -> str:
-    """Compute the SQLAlchemy URL from the gateway config."""
+    """Compute the SQLAlchemy URL from the gateway config.
+
+    Precedence: a full ``VOICEGW_DB_URL`` (e.g. a Postgres collector URL)
+    wins outright; otherwise the SQLite path (``VOICEGW_DB_PATH`` > config >
+    default) is used. This is the seam that lets the same code run embedded on
+    SQLite and as a fleet collector on Postgres.
+    """
+    env_url = os.environ.get("VOICEGW_DB_URL")
+    if env_url:
+        return env_url
     cost_cfg = config.cost_tracking or {}
     env_db = os.environ.get("VOICEGW_DB_PATH")
     raw_path = env_db or cost_cfg.get("db_path") or DEFAULT_DB_PATH
@@ -60,7 +69,10 @@ class Database:
         self.config = config
         url = resolve_database_url(config)
         self._db_file_path = _resolve_db_file_path(config)
-        self._db_file_path.parent.mkdir(parents=True, exist_ok=True)
+        # Only the SQLite backend has a local file to create. A Postgres
+        # collector URL must not touch the filesystem.
+        if url.startswith("sqlite"):
+            self._db_file_path.parent.mkdir(parents=True, exist_ok=True)
         self._engine = create_async_engine(
             url,
             echo=False,

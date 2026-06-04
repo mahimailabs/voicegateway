@@ -84,6 +84,11 @@ dashboard = ["voicegateway[server]"]
 # MCP server (for managing the gateway from coding agents)
 mcp = ["mcp>=1.2.0"]
 
+# Postgres collector backend (fleet mode). asyncpg is the async driver
+# resolve_database_url targets when VOICEGW_DB_URL=postgresql+asyncpg://...
+# is set; embedded single-node mode still uses bundled SQLite.
+postgres = ["asyncpg>=0.29"]
+
 # Terminal UI (`voicegw tui`, v0.1.1). Textual ships breaking changes
 # between minor versions, so the upper bound is tight per design.md
 # section 8.1; revisit at v0.1.2. httpx is already a base dependency
