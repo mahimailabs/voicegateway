@@ -22,10 +22,16 @@ class SessionService:
         project: str | None = None,
         order_by: str = "started_at_desc",
         tenant: str | None = None,
+        agent: str | None = None,
     ) -> list[dict[str, Any]]:
         async with self._db.session() as s:
             return await repo.list_sessions(
-                s, limit=limit, project=project, order_by=order_by, tenant=tenant
+                s,
+                limit=limit,
+                project=project,
+                order_by=order_by,
+                tenant=tenant,
+                agent=agent,
             )
 
     async def get_session(self, session_id: str) -> dict[str, Any] | None:

@@ -212,11 +212,16 @@ class StorageService:
         project: str | None = None,
         order_by: str = "started_at_desc",
         tenant: str | None = None,
+        agent: str | None = None,
     ) -> list[dict[str, Any]]:
         """Delegate to SessionService.list_sessions."""
         await self._ensure_initialized()
         return await self._session_service.list_sessions(
-            limit=limit, project=project, order_by=order_by, tenant=tenant
+            limit=limit,
+            project=project,
+            order_by=order_by,
+            tenant=tenant,
+            agent=agent,
         )
 
     async def get_session(self, session_id: str) -> dict[str, Any] | None:

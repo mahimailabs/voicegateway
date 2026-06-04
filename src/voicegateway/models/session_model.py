@@ -22,6 +22,7 @@ class Session(SQLModel, table=True):
     __table_args__ = (
         Index("idx_sessions_project", "project"),
         Index("idx_sessions_started_at", "started_at"),
+        Index("idx_sessions_agent_id", "agent_id"),
     )
 
     id: str = Field(primary_key=True)
@@ -44,6 +45,9 @@ class Session(SQLModel, table=True):
 
     # 0005: tenant attribution
     tenant_id: str | None = None
+
+    # Phase 2 fleet: per-agent attribution (mirror of tenant_id)
+    agent_id: str | None = None
 
     # 0006: routing + budget
     budget_ms: int | None = None
