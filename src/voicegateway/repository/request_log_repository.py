@@ -106,6 +106,26 @@ _UPSERT_SESSION = text(
 )
 
 
+# Postgres uses STRPOS where SQLite uses INSTR (identical (haystack, needle)
+# signature and 1-based / 0-if-absent semantics); the rest of the UPSERT is
+# portable. Derive the PG statement from the SQLite one so the two never drift.
+_UPSERT_SESSION_PG = text(_UPSERT_SESSION.text.replace("INSTR(", "STRPOS("))
+
+_UPSERT_SESSION_BY_DIALECT: dict[str, Any] = {
+    "sqlite": _UPSERT_SESSION,
+    "postgresql": _UPSERT_SESSION_PG,
+}
+
+
+def _session_upsert_stmt(session: AsyncSession) -> Any:
+    """Pick the dialect-appropriate sessions UPSERT (defaults to SQLite)."""
+    try:
+        name = session.bind.dialect.name
+    except Exception:  # noqa: BLE001
+        name = "sqlite"
+    return _UPSERT_SESSION_BY_DIALECT.get(name, _UPSERT_SESSION_BY_DIALECT["sqlite"])
+
+
 async def log_request(session: AsyncSession, record: RequestRecord) -> None:
     """Insert one request row + accumulate the session row (UPSERT)."""
     request_tenant_id = current_tenant()
@@ -162,7 +182,7 @@ async def log_request(session: AsyncSession, record: RequestRecord) -> None:
             guardrails_bypassed = None
             guardrail_snapshot_json = None
         await session.execute(
-            _UPSERT_SESSION,
+            _session_upsert_stmt(session),
             {
                 "id": record.session_id,
                 "project": record.project,

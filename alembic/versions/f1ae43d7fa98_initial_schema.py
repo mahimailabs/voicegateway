@@ -449,8 +449,43 @@ def upgrade() -> None:
     # Views (autogen does not detect them; preserved from the legacy
     # baseline. ``daily_costs`` rolls request rows up by day/modality/
     # model/provider; ``project_daily_costs`` adds the project axis.)
-    op.execute(
-        """CREATE VIEW IF NOT EXISTS daily_costs AS
+    # SQLite and Postgres differ on the day bucket
+    # (date(ts,'unixepoch') vs to_char(to_timestamp(ts))) and on view DDL
+    # (CREATE VIEW IF NOT EXISTS vs CREATE OR REPLACE VIEW), so the DDL is
+    # dialect-branched. The SQLite branch is byte-for-byte the baseline.
+    if op.get_bind().dialect.name == "postgresql":
+        op.execute(
+            """CREATE OR REPLACE VIEW daily_costs AS
+    SELECT
+        to_char(to_timestamp(timestamp), 'YYYY-MM-DD') as day,
+        modality,
+        model_id,
+        provider,
+        COUNT(*) as request_count,
+        SUM(cost_usd) as total_cost,
+        AVG(ttfb_ms) as avg_ttfb,
+        AVG(total_latency_ms) as avg_latency
+    FROM requests
+    GROUP BY to_char(to_timestamp(timestamp), 'YYYY-MM-DD'),
+             modality, model_id, provider"""
+        )
+        op.execute(
+            """CREATE OR REPLACE VIEW project_daily_costs AS
+    SELECT
+        project,
+        to_char(to_timestamp(timestamp), 'YYYY-MM-DD') as day,
+        modality,
+        model_id,
+        COUNT(*) as request_count,
+        SUM(cost_usd) as total_cost,
+        AVG(ttfb_ms) as avg_ttfb
+    FROM requests
+    GROUP BY project, to_char(to_timestamp(timestamp), 'YYYY-MM-DD'),
+             modality, model_id"""
+        )
+    else:
+        op.execute(
+            """CREATE VIEW IF NOT EXISTS daily_costs AS
     SELECT
         date(timestamp, 'unixepoch') as day,
         modality,
@@ -462,9 +497,9 @@ def upgrade() -> None:
         AVG(total_latency_ms) as avg_latency
     FROM requests
     GROUP BY day, modality, model_id, provider"""
-    )
-    op.execute(
-        """CREATE VIEW IF NOT EXISTS project_daily_costs AS
+        )
+        op.execute(
+            """CREATE VIEW IF NOT EXISTS project_daily_costs AS
     SELECT
         project,
         date(timestamp, 'unixepoch') as day,
@@ -475,7 +510,7 @@ def upgrade() -> None:
         AVG(ttfb_ms) as avg_ttfb
     FROM requests
     GROUP BY project, day, modality, model_id"""
-    )
+        )
     # ### end Alembic commands ###
 
 
