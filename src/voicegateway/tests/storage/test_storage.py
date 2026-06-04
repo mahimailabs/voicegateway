@@ -47,6 +47,24 @@ async def test_log_request(storage):
     assert rows[0]["model_id"] == "deepgram/nova-3"
 
 
+async def test_log_request_preserves_agent_id(storage):
+    """A record's agent_id round-trips through storage to the read API."""
+    record = RequestRecord(
+        id=str(uuid.uuid4()),
+        timestamp=time.time(),
+        modality="llm",
+        model_id="openai/gpt-4o-mini",
+        provider="openai",
+        project="fleet",
+        cost_usd=0.01,
+        agent_id="agent-7",
+    )
+    await storage.log_request(record)
+    rows = await storage.get_recent_requests(limit=10)
+    assert len(rows) == 1
+    assert rows[0]["agent_id"] == "agent-7"
+
+
 async def test_get_recent_requests_with_project_filter(storage):
     now = time.time()
     for project in ["alpha", "beta"]:

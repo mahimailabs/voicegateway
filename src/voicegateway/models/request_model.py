@@ -47,6 +47,7 @@ class RequestRecord:
     error_message: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     session_id: str | None = None  # ContextVar-derived session correlation
+    agent_id: str | None = None  # fleet: self-reported agent/instance label
 
 
 class Request(SQLModel, table=True):
@@ -66,6 +67,8 @@ class Request(SQLModel, table=True):
         Index("idx_requests_project", "project"),
         Index("idx_requests_project_timestamp", "project", "timestamp"),
         Index("idx_requests_session_id", "session_id"),
+        Index("idx_requests_agent_id", "agent_id"),
+        Index("idx_requests_agent_id_timestamp", "agent_id", "timestamp"),
     )
 
     id: str = Field(primary_key=True)
@@ -96,3 +99,6 @@ class Request(SQLModel, table=True):
 
     # 0005: tenant attribution
     tenant_id: str | None = None
+
+    # Phase 1 fleet: per-agent/instance attribution (self-reported label)
+    agent_id: str | None = None
