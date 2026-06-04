@@ -22,6 +22,7 @@ from voicegateway.server.api import (
     audit_log,
     costs,
     guardrails,
+    ingest,
     latency,
     logs,
     metrics,
@@ -90,6 +91,7 @@ api_router.include_router(guardrails.router)
 api_router.include_router(metrics.router)
 api_router.include_router(audit_log.router)
 api_router.include_router(virtual_keys.router)
+api_router.include_router(ingest.router)
 
 dashboard_router = APIRouter(prefix="/api")
 dashboard_router.include_router(dashboard_health.router)
