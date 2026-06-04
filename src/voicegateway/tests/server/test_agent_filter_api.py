@@ -77,3 +77,19 @@ async def test_api_sessions_filters_by_agent(gateway):
     ids = [s["id"] for s in resp.json()]
     assert ids
     assert all(i.startswith("vg-agent-x") for i in ids)
+
+
+async def test_api_agents_index(gateway):
+    await gateway.storage.log_request(_rec("agent-x", 0.01))
+    await gateway.storage.log_request(_rec("agent-x", 0.02))
+    await gateway.storage.log_request(_rec("agent-y", 0.05))
+    client = await _client(gateway)
+    async with client as c:
+        resp = await c.get("/api/agents")
+    assert resp.status_code == 200
+    body = resp.json()
+    by_id = {a["agent_id"]: a for a in body["agents"]}
+    assert set(by_id) == {"agent-x", "agent-y"}
+    assert by_id["agent-x"]["request_count"] == 2
+    assert "p95_latency_ms" in by_id["agent-x"]
+    assert "unattributed" in body
