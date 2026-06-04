@@ -457,7 +457,7 @@ def upgrade() -> None:
         op.execute(
             """CREATE OR REPLACE VIEW daily_costs AS
     SELECT
-        to_char(to_timestamp(timestamp), 'YYYY-MM-DD') as day,
+        to_char(to_timestamp(timestamp) AT TIME ZONE 'UTC', 'YYYY-MM-DD') as day,
         modality,
         model_id,
         provider,
@@ -466,21 +466,21 @@ def upgrade() -> None:
         AVG(ttfb_ms) as avg_ttfb,
         AVG(total_latency_ms) as avg_latency
     FROM requests
-    GROUP BY to_char(to_timestamp(timestamp), 'YYYY-MM-DD'),
+    GROUP BY to_char(to_timestamp(timestamp) AT TIME ZONE 'UTC', 'YYYY-MM-DD'),
              modality, model_id, provider"""
         )
         op.execute(
             """CREATE OR REPLACE VIEW project_daily_costs AS
     SELECT
         project,
-        to_char(to_timestamp(timestamp), 'YYYY-MM-DD') as day,
+        to_char(to_timestamp(timestamp) AT TIME ZONE 'UTC', 'YYYY-MM-DD') as day,
         modality,
         model_id,
         COUNT(*) as request_count,
         SUM(cost_usd) as total_cost,
         AVG(ttfb_ms) as avg_ttfb
     FROM requests
-    GROUP BY project, to_char(to_timestamp(timestamp), 'YYYY-MM-DD'),
+    GROUP BY project, to_char(to_timestamp(timestamp) AT TIME ZONE 'UTC', 'YYYY-MM-DD'),
              modality, model_id"""
         )
     else:

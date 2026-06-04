@@ -219,6 +219,21 @@ def _build_default_sink(collector_url: str | None, virtual_key: str | None) -> S
     return LocalSqliteSink(StorageService(db_path))
 
 
+# Strong refs to in-flight session-close finalize tasks; the event loop only
+# weak-refs scheduled tasks, so without this a close-time reconcile/flush can be
+# GC'd mid-write (the hazard MetricCapture._schedule guards against for writes).
+_close_tasks: set[Any] = set()
+
+
+def _on_close_task_done(task: Any) -> None:
+    _close_tasks.discard(task)
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.warning("attach: session close finalize failed", exc_info=exc)
+
+
 def attach(
     session: Any,
     *,
@@ -281,15 +296,23 @@ def attach(
         logger.debug("attach: could not stash capture on session", exc_info=True)
 
     async def _finish() -> None:
-        # Reconcile cumulative session.usage against the per-call rows, then
-        # await any in-flight writes so a graceful shutdown loses nothing.
+        # Reconcile cumulative session.usage against the per-call rows, drain
+        # in-flight writes, then flush the sink so a buffered RemoteCollectorSink
+        # sub-batch is pushed before shutdown. A graceful close loses nothing.
         await capture.reconcile(session)
         await capture.drain()
+        await sink.flush()
 
     def _on_close(*_args: Any, **_kwargs: Any) -> None:
         try:
-            asyncio.ensure_future(_finish())  # noqa: RUF006
+            task = asyncio.ensure_future(_finish())
         except RuntimeError:
+            return
+        _close_tasks.add(task)
+        task.add_done_callback(_on_close_task_done)
+        try:
+            session._vg_close_task = task
+        except Exception:  # noqa: BLE001 - real session may forbid attribute set
             pass
 
     on = getattr(session, "on", None)

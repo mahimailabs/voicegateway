@@ -71,6 +71,11 @@ async def ingest(
         except IntegrityError:
             # Duplicate id: a sink retry re-sent an already-stored row.
             duplicates += 1
+        except Exception:  # noqa: BLE001 - one bad record must not 500 the batch
+            rejected += 1
+            logger.warning(
+                "ingest: failed to persist record %r", raw.get("id"), exc_info=True
+            )
 
     if rejected:
         logger.warning("ingest: skipped %d malformed record(s)", rejected)
