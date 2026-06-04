@@ -166,3 +166,30 @@ async def test_two_agents_aggregate_in_one_collector(gateway):
         counts[r["agent_id"]] = counts.get(r["agent_id"], 0) + 1
     assert counts.get("agent-a") == 2
     assert counts.get("agent-b") == 1
+
+
+async def test_ingest_one_failing_record_does_not_fail_batch(gateway, monkeypatch):
+    """A record that fails to persist (e.g. a dialect type error on Postgres)
+    is skipped, not allowed to 500 the whole batch."""
+    await gateway.storage._ensure_initialized()
+    async with gateway.storage._conn.session() as db:
+        created = await virtual_keys.create_virtual_key(db, name="bot")
+
+    real_log = gateway.storage.log_request
+
+    async def flaky_log(record):
+        if record.id == "bad-1":
+            raise RuntimeError("simulated persistence failure")
+        return await real_log(record)
+
+    monkeypatch.setattr(gateway.storage, "log_request", flaky_log)
+
+    client = await _client(gateway)
+    async with client as c:
+        resp = await c.post(
+            "/v1/ingest",
+            headers={"Authorization": f"Bearer {created.plaintext}"},
+            json=[_payload("good-1"), _payload("bad-1")],
+        )
+    assert resp.status_code == 200
+    assert resp.json()["accepted"] == 1

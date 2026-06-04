@@ -348,3 +348,89 @@ async def test_reconcile_no_correction_when_totals_match(tmp_path):
         if isinstance(r.get("metadata"), dict) and r["metadata"].get("reconciled")
     ]
     assert reconciled == []
+
+
+class _ZeroTtftMetric:
+    prompt_tokens = 10
+    completion_tokens = 5
+    prompt_cached_tokens = 0
+    ttft = 0.0
+
+
+def test_units_from_metric_zero_ttft_records_zero_not_none():
+    """A genuine 0.0 first-byte latency records as 0.0, not None."""
+    _inp, _out, _cached, ttfb_ms = units_from_metric(_ZeroTtftMetric(), "llm")
+    assert ttfb_ms == 0.0
+
+
+async def test_reconcile_emits_correction_for_cached_only_delta(tmp_path):
+    """A cached-token-only divergence still produces a correction row."""
+    storage = StorageService(str(tmp_path / "recon_cached.db"))
+    sink = LocalSqliteSink(storage)
+    cost_tracker = CostTracker(sink)
+    llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
+    # input/output match the per-call row (1000/500); only cached differs (500 vs 200).
+    usage = _FakeUsage(
+        [
+            _FakeLLMUsage(
+                prompt_tokens=1000, completion_tokens=500, prompt_cached_tokens=500
+            )
+        ]
+    )
+    session = _FakeSessionWithUsage(usage, llm=llm)
+
+    capture = MetricCapture(
+        cost_tracker=cost_tracker,
+        sink=sink,
+        project="fleet",
+        agent_id="a-c",
+        session_id="vg-c",
+    )
+    capture.bind(session)
+    llm.emit("metrics_collected", _LLMMetric())  # records cached=200
+    await capture.drain()
+
+    await capture.reconcile(session)
+
+    rows = await storage.get_recent_requests(limit=10)
+    reconciled = [
+        r
+        for r in rows
+        if isinstance(r.get("metadata"), dict) and r["metadata"].get("reconciled")
+    ]
+    assert len(reconciled) == 1
+    assert reconciled[0]["cached_input_units"] == 300.0  # 500 - 200
+
+
+class _FlushRecordingSink:
+    def __init__(self) -> None:
+        self.rows: list = []
+        self.flushes = 0
+
+    async def log_request(self, record: Any) -> None:
+        self.rows.append(record)
+
+    async def flush(self) -> None:
+        self.flushes += 1
+
+    async def aclose(self) -> None:
+        pass
+
+
+async def test_attach_close_flushes_sink(tmp_path):
+    """The session close path drains writes AND flushes the sink (and the
+    finalize task is strong-reffed: awaitable via session._vg_close_task)."""
+    import voicegateway
+
+    sink = _FlushRecordingSink()
+    llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
+    session = _FakeSessionWithUsage(_FakeUsage([]), llm=llm)
+
+    voicegateway.attach(session, project="fleet", agent_id="agent-f", sink=sink)
+    llm.emit("metrics_collected", _LLMMetric())
+    session.emit("close")
+
+    await session._vg_close_task
+
+    assert sink.flushes >= 1
+    assert len(sink.rows) >= 1

@@ -42,7 +42,8 @@ def _ttfb_ms(metric: object) -> float | None:
     value = getattr(metric, "ttft", None)
     if value is None:
         value = getattr(metric, "ttfb", None)
-    return float(value) * 1000.0 if value else None
+    # ``is not None`` so a genuine 0.0 latency records as 0.0, not None.
+    return float(value) * 1000.0 if value is not None else None
 
 
 def units_from_metric(
@@ -340,7 +341,11 @@ class MetricCapture:
             d_in = cum_in - recorded["input"]
             d_out = cum_out - recorded["output"]
             d_cached = cum_cached - recorded["cached"]
-            if d_in <= _RECONCILE_EPSILON and d_out <= _RECONCILE_EPSILON:
+            if (
+                d_in <= _RECONCILE_EPSILON
+                and d_out <= _RECONCILE_EPSILON
+                and d_cached <= _RECONCILE_EPSILON
+            ):
                 continue
             record = self._cost_tracker.create_record(
                 model_id=model_id,
