@@ -1,18 +1,31 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import StatusCard from '../components/StatusCard';
-import { fetchJson } from '../lib/api';
-import { formatCost } from '../lib/ui';
-import type { OverviewResponse } from '../lib/types';
+import { fetchJson, fetchAgents } from '../lib/api';
+import { formatCost, agentStatus } from '../lib/ui';
+import type { OverviewResponse, AgentRow } from '../lib/types';
 
 export default function Overview() {
   const [data, setData] = useState<OverviewResponse | null>(null);
+  const [agents, setAgents] = useState<AgentRow[]>([]);
 
   useEffect(() => {
     fetchJson<OverviewResponse>('/api/overview').then(setData).catch(() => setData(null));
   }, []);
 
+  useEffect(() => {
+    fetchAgents({ limit: 200 })
+      .then((d) => setAgents(d.agents))
+      .catch(() => setAgents([]));
+  }, []);
+
   if (!data) return <div className="empty-state">Loading overview...</div>;
+
+  const activeCount = agents.filter((a) => agentStatus(a.last_seen) === 'active').length;
+  const topAgents = [...agents]
+    .sort((a, b) => b.total_cost_usd - a.total_cost_usd)
+    .slice(0, 3);
 
   return (
     <div>
@@ -33,6 +46,52 @@ export default function Overview() {
         <StatusCard label="Cost (All Time)" value={formatCost(data.total_cost_all)} accent="blue" icon="Σ" />
         <StatusCard label="Active Models" value={data.active_models ?? 0} accent="pink" icon="M" />
       </div>
+
+      {agents.length > 0 && (
+        <div className="mt-lg neo-card neo-card--strip-blue">
+          <div
+            className="flex-row"
+            style={{ justifyContent: 'space-between', alignItems: 'baseline' }}
+          >
+            <div className="label">Fleet</div>
+            <Link className="neo-btn" to="/agents">
+              View all agents →
+            </Link>
+          </div>
+          <div className="flex-row flex-wrap mt-md" style={{ gap: '2.5rem' }}>
+            <div>
+              <div className="stat-value">{agents.length}</div>
+              <div className="label">Agents</div>
+            </div>
+            <div>
+              <div className="stat-value">{activeCount}</div>
+              <div className="label">Active now</div>
+            </div>
+          </div>
+          {topAgents.length > 0 && (
+            <div className="mt-md">
+              <div
+                className="label"
+                style={{ fontSize: '0.7rem', textTransform: 'uppercase', marginBottom: '0.25rem' }}
+              >
+                Top by cost
+              </div>
+              {topAgents.map((a) => (
+                <div
+                  key={a.agent_id}
+                  className="flex-row mt-sm"
+                  style={{ justifyContent: 'space-between' }}
+                >
+                  <Link className="mono" to={`/costs?agent=${encodeURIComponent(a.agent_id)}`}>
+                    {a.agent_id}
+                  </Link>
+                  <span className="mono">{formatCost(a.total_cost_usd, 4)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mt-lg grid grid-cols-2">
         <div className="neo-card neo-card--strip-yellow">
