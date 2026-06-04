@@ -14,6 +14,7 @@ from voicegateway.middleware.cost_tracker_middleware import CostTracker
 from voicegateway.middleware.latency_monitor_middleware import LatencyMonitor
 from voicegateway.middleware.logger_middleware import RequestLogger
 from voicegateway.middleware.rate_limiter_middleware import RateLimiter
+from voicegateway.services.sinks import LocalSqliteSink
 from voicegateway.services.storage_service import StorageService
 
 T = TypeVar("T")
@@ -63,7 +64,13 @@ class Gateway:
                     source="auto",
                 )
 
-        self._cost_tracker = CostTracker(self._storage)
+        # CostTracker writes through a Sink. In single-node mode that is the
+        # LocalSqliteSink wrapping the embedded StorageService; fleet mode
+        # swaps in a RemoteCollectorSink with no change to the producer.
+        cost_sink = (
+            LocalSqliteSink(self._storage) if self._storage is not None else None
+        )
+        self._cost_tracker = CostTracker(cost_sink)
         self._latency_monitor = LatencyMonitor(
             ttfb_warning_ms=self._config.latency.get("ttfb_warning_ms", 500.0)
         )
