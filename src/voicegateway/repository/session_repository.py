@@ -91,6 +91,7 @@ async def list_sessions(
     project: str | None = None,
     order_by: str = "started_at_desc",
     tenant: str | None = None,
+    agent: str | None = None,
 ) -> list[dict[str, Any]]:
     """Return recent sessions, ordered per ``order_by``."""
     clause = _SESSION_ORDER_CLAUSES.get(order_by)
@@ -108,6 +109,12 @@ async def list_sessions(
         else:
             conditions.append("tenant_id = :tenant")
             params["tenant"] = tenant
+    if agent is not None:
+        if agent == "":
+            conditions.append("agent_id IS NULL")
+        else:
+            conditions.append("agent_id = :agent")
+            params["agent"] = agent
     where = f"WHERE {' AND '.join(conditions)} " if conditions else ""
     result = await session.execute(
         text(f"{_BASE_SELECT} {where}ORDER BY {clause} LIMIT :limit"),

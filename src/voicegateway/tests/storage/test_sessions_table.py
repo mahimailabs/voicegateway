@@ -99,6 +99,8 @@ async def test_sessions_columns_match_design(tmp_path):
         "replay_size_bytes",
         # v0.4.0 tenant attribution column (added by migration 0005).
         "tenant_id",
+        # Phase 2 fleet per-agent attribution (migration c4f1a9e2b8d7).
+        "agent_id",
         # v0.5.0 routing columns (added by migration 0006).
         "budget_ms",
         "budget_ms_used",

@@ -58,12 +58,12 @@ _INSERT_REQUEST = text(
 _UPSERT_SESSION = text(
     """INSERT INTO sessions
        (id, project, started_at, ended_at, modalities,
-        total_cost_usd, request_count, tenant_id,
+        total_cost_usd, request_count, tenant_id, agent_id,
         routed_llm, routed_tts, budget_ms, budget_overrun,
         guardrails_active, guardrails_bypassed,
         guardrail_policy_snapshot_json)
        VALUES (:id, :project, :started_at, :ended_at, :modalities,
-               :cost, 1, :tenant_id,
+               :cost, 1, :tenant_id, :agent_id,
                :routed_llm, :routed_tts, :budget_ms, :budget_overrun,
                :guardrails_active, :guardrails_bypassed,
                :guardrail_snapshot_json)
@@ -71,6 +71,7 @@ _UPSERT_SESSION = text(
            total_cost_usd = total_cost_usd + excluded.total_cost_usd,
            request_count = request_count + 1,
            tenant_id = COALESCE(tenant_id, excluded.tenant_id),
+           agent_id = COALESCE(agent_id, excluded.agent_id),
            routed_llm = COALESCE(routed_llm, excluded.routed_llm),
            routed_tts = COALESCE(routed_tts, excluded.routed_tts),
            budget_ms = COALESCE(budget_ms, excluded.budget_ms),
@@ -191,6 +192,7 @@ async def log_request(session: AsyncSession, record: RequestRecord) -> None:
                 "modalities": record.modality,
                 "cost": record.cost_usd,
                 "tenant_id": request_tenant_id,
+                "agent_id": record.agent_id,
                 "routed_llm": r_llm,
                 "routed_tts": r_tts,
                 "budget_ms": r_budget,
