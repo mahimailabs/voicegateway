@@ -41,12 +41,12 @@ _INSERT_REQUEST = text(
         input_units, output_units, cached_input_units, cost_usd, pricing_source,
         ttfb_ms, total_latency_ms, status,
         fallback_from, error_message, metadata, session_id,
-        tenant_id)
+        tenant_id, agent_id)
        VALUES (:id, :timestamp, :project, :modality, :model_id, :provider,
                :input_units, :output_units, :cached_input_units, :cost_usd, :pricing_source,
                :ttfb_ms, :total_latency_ms, :status,
                :fallback_from, :error_message, :metadata, :session_id,
-               :tenant_id)"""
+               :tenant_id, :agent_id)"""
 )
 
 
@@ -131,6 +131,7 @@ async def log_request(session: AsyncSession, record: RequestRecord) -> None:
             "metadata": json.dumps(record.metadata) if record.metadata else None,
             "session_id": record.session_id,
             "tenant_id": request_tenant_id,
+            "agent_id": record.agent_id,
         },
     )
     if record.session_id:
@@ -282,6 +283,7 @@ _REQUEST_COLUMNS = (
     "metadata",
     "session_id",
     "tenant_id",
+    "agent_id",
 )
 
 
