@@ -31,3 +31,36 @@ export function statusBadgeClass(status: string | undefined): string {
   if (status === 'fallback') return 'neo-badge--yellow';
   return 'neo-badge--offline';
 }
+
+// ---------------------------------------------------------------------------
+// Phase 2 fleet: agent telemetry-recency status (active / idle / dormant).
+// ---------------------------------------------------------------------------
+
+export type AgentStatus = 'active' | 'idle' | 'dormant';
+
+/** Telemetry-recency status from the agent's last-seen epoch seconds. */
+export function agentStatus(lastSeen: number | null | undefined): AgentStatus {
+  if (lastSeen == null) return 'dormant';
+  const ageSec = Date.now() / 1000 - lastSeen;
+  if (ageSec < 300) return 'active'; // < 5 min
+  if (ageSec < 3600) return 'idle'; // < 1 h
+  return 'dormant';
+}
+
+export function agentStatusBadgeClass(status: AgentStatus): string {
+  if (status === 'active') return 'neo-badge--online';
+  if (status === 'idle') return 'neo-badge--yellow';
+  return 'neo-badge--offline';
+}
+
+/** Compact "Ns / Nm / Nh / Nd ago" from an epoch-seconds timestamp. */
+export function formatRelativeTime(lastSeen: number | null | undefined): string {
+  if (lastSeen == null) return '—';
+  const sec = Math.max(0, Math.floor(Date.now() / 1000 - lastSeen));
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  return `${Math.floor(hr / 24)}d ago`;
+}

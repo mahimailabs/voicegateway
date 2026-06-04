@@ -8,6 +8,7 @@ import Logs from './pages/Logs';
 import Metrics from './pages/Metrics';
 import Replay from './pages/Replay';
 import Sessions from './pages/Sessions';
+import Agents from './pages/Agents';
 import Projects from './pages/Projects';
 import Providers from './pages/Providers';
 import Routing from './pages/Routing';
@@ -43,6 +44,7 @@ const PAGES = [
   { to: '/latency',      label: 'Latency',      id: 'latency'  },
   { to: '/logs',         label: 'Logs',         id: 'logs'     },
   { to: '/sessions',     label: 'Sessions',     id: 'sessions' },
+  { to: '/agents',       label: 'Agents',       id: 'agents'   },
   { to: '/metrics',      label: 'Metrics',      id: 'metrics'  },
   { to: '/routing',      label: 'Routing',      id: 'routing'  },
   { to: '/guardrails',   label: 'Guardrails',   id: 'guardrails' },
@@ -124,6 +126,7 @@ export default function App() {
             <Route path="/logs" element={<Logs />} />
             <Route path="/sessions" element={<Sessions />} />
             <Route path="/sessions/:sessionId/replay" element={<Replay />} />
+            <Route path="/agents" element={<Agents />} />
             <Route path="/metrics" element={<Metrics />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/providers" element={<Providers />} />
