@@ -33,6 +33,9 @@ logger = logging.getLogger(__name__)
 
 _MODALITIES: tuple[str, ...] = ("stt", "llm", "tts")
 
+# Below this unit delta, a reconcile correction is not worth a row.
+_RECONCILE_EPSILON = 1e-9
+
 
 def _ttfb_ms(metric: object) -> float | None:
     """Return first-byte latency in ms from a metric's ttft/ttfb, if present."""
@@ -140,6 +143,60 @@ def _iter_components(session: object) -> Iterator[tuple[str, object]]:
             yield modality, component
 
 
+def _usage_modality(entry: object) -> str:
+    """Map an AgentSessionUsage.model_usage entry to a modality, best-effort."""
+    name = type(entry).__name__.lower()
+    if "stt" in name:
+        return "stt"
+    if "tts" in name:
+        return "tts"
+    if "llm" in name or "realtime" in name:
+        return "llm"
+    return ""
+
+
+def _usage_units(entry: object, modality: str) -> tuple[float, float, float]:
+    """Cumulative ``(input, output, cached)`` from a usage entry, VG units.
+
+    STT seconds are converted to minutes to match the per-call rows. Field
+    names are read defensively across the variants LiveKit may expose.
+    """
+    if modality == "llm":
+        return (
+            float(
+                getattr(entry, "prompt_tokens", None)
+                or getattr(entry, "input_tokens", 0)
+                or 0
+            ),
+            float(
+                getattr(entry, "completion_tokens", None)
+                or getattr(entry, "output_tokens", 0)
+                or 0
+            ),
+            float(
+                getattr(entry, "prompt_cached_tokens", None)
+                or getattr(entry, "cache_read_tokens", 0)
+                or 0
+            ),
+        )
+    if modality == "stt":
+        seconds = float(
+            getattr(entry, "audio_duration", None) or getattr(entry, "duration", 0) or 0
+        )
+        return (seconds / 60.0, 0.0, 0.0)
+    if modality == "tts":
+        return (
+            float(
+                getattr(entry, "characters", None)
+                or getattr(entry, "characters_count", 0)
+                or 0
+            ),
+            0.0,
+            0.0,
+        )
+    return (0.0, 0.0, 0.0)
+
+
 class MetricCapture:
     """Binds per-component metric + error events to a Sink write.
 
@@ -166,6 +223,9 @@ class MetricCapture:
         self._session_id = session_id
         self._tenant_id = tenant_id
         self._pending: set[asyncio.Task[None]] = set()
+        # Per-(provider, model_id) running tally of captured units, so the
+        # close-time reconcile can diff against cumulative session.usage.
+        self._recorded: dict[tuple[str, str], dict[str, float]] = {}
 
     def bind(self, session: object) -> None:
         """Subscribe to every component's metrics + the session error event."""
@@ -200,6 +260,12 @@ class MetricCapture:
                 session_id=self._session_id,
                 agent_id=self._agent_id,
             )
+            tally = self._recorded.setdefault(
+                (provider, model_id), {"input": 0.0, "output": 0.0, "cached": 0.0}
+            )
+            tally["input"] += input_units
+            tally["output"] += output_units
+            tally["cached"] += cached
             self._schedule(self._sink.log_request(record))
 
         return handler
@@ -244,6 +310,51 @@ class MetricCapture:
         if not self._pending:
             return
         await asyncio.gather(*list(self._pending), return_exceptions=True)
+
+    async def reconcile(self, session: object) -> None:
+        """Diff cumulative ``session.usage`` against the per-call rows.
+
+        The hybrid safety net: when the cumulative totals exceed what the
+        per-call ``metrics_collected`` stream recorded (a dropped event, a
+        realtime model that emits no per-component metrics, a handoff gap),
+        emit one correction row per (provider, model) for the difference,
+        tagged ``metadata.reconciled``. Awaited from the session close path.
+        """
+        usage = getattr(session, "usage", None)
+        entries = getattr(usage, "model_usage", None) if usage is not None else None
+        if not entries:
+            return
+        for entry in entries:
+            modality = _usage_modality(entry)
+            if modality not in _MODALITIES:
+                continue
+            provider = str(getattr(entry, "provider", "") or "")
+            model = str(getattr(entry, "model", "") or "")
+            model_id = (
+                f"{provider}/{model}" if provider and model else (model or "unknown")
+            )
+            cum_in, cum_out, cum_cached = _usage_units(entry, modality)
+            recorded = self._recorded.get(
+                (provider, model_id), {"input": 0.0, "output": 0.0, "cached": 0.0}
+            )
+            d_in = cum_in - recorded["input"]
+            d_out = cum_out - recorded["output"]
+            d_cached = cum_cached - recorded["cached"]
+            if d_in <= _RECONCILE_EPSILON and d_out <= _RECONCILE_EPSILON:
+                continue
+            record = self._cost_tracker.create_record(
+                model_id=model_id,
+                modality=modality,
+                provider=provider,
+                project=self._project,
+                input_units=max(0.0, d_in),
+                output_units=max(0.0, d_out),
+                cached_input_units=max(0.0, d_cached),
+                session_id=self._session_id,
+                agent_id=self._agent_id,
+            )
+            record.metadata = {"reconciled": True}
+            await self._sink.log_request(record)
 
 
 __all__ = [

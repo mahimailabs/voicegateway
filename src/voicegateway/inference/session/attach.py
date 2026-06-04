@@ -280,9 +280,15 @@ def attach(
     except Exception:  # noqa: BLE001 - real session may forbid attribute set
         logger.debug("attach: could not stash capture on session", exc_info=True)
 
+    async def _finish() -> None:
+        # Reconcile cumulative session.usage against the per-call rows, then
+        # await any in-flight writes so a graceful shutdown loses nothing.
+        await capture.reconcile(session)
+        await capture.drain()
+
     def _on_close(*_args: Any, **_kwargs: Any) -> None:
         try:
-            asyncio.ensure_future(capture.drain())  # noqa: RUF006
+            asyncio.ensure_future(_finish())  # noqa: RUF006
         except RuntimeError:
             pass
 
