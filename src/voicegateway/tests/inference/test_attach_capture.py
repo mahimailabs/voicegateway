@@ -219,3 +219,20 @@ async def test_public_attach_captures_metric_through_injected_sink(tmp_path):
     assert len(rows) == 1
     assert rows[0]["agent_id"] == "agent-x"
     assert rows[0]["session_id"] == sid
+
+
+def test_build_default_sink_uses_remote_when_collector_url_set():
+    from voicegateway.inference.session.attach import _build_default_sink
+    from voicegateway.services.sinks import RemoteCollectorSink
+
+    sink = _build_default_sink("http://collector", "vk_x")
+    assert isinstance(sink, RemoteCollectorSink)
+
+
+def test_build_default_sink_uses_local_without_collector(tmp_path, monkeypatch):
+    from voicegateway.inference.session.attach import _build_default_sink
+    from voicegateway.services.sinks import LocalSqliteSink
+
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "local.db"))
+    sink = _build_default_sink(None, None)
+    assert isinstance(sink, LocalSqliteSink)

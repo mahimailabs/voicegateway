@@ -204,9 +204,14 @@ def _build_default_sink(collector_url: str | None, virtual_key: str | None) -> S
     """Build the sink for attach() from env/args.
 
     Single-node default is a LocalSqliteSink over the embedded StorageService.
-    Fleet mode (``collector_url`` set) swaps in the RemoteCollectorSink in a
-    later build step; until then the local sink is used.
+    Fleet mode (``collector_url`` set) uses the RemoteCollectorSink, which
+    batches rows and pushes them to the collector's ``/v1/ingest``.
     """
+    if collector_url:
+        from voicegateway.services.sinks import RemoteCollectorSink
+
+        return RemoteCollectorSink(collector_url, virtual_key)
+
     from voicegateway.services.sinks import LocalSqliteSink
     from voicegateway.services.storage_service import StorageService
 
