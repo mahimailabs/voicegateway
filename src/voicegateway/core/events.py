@@ -78,15 +78,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     gateway = getattr(app.state, "gateway", None)
     workers = _build_workers(gateway) if gateway is not None else []
-    for worker in workers:
-        await worker.start()
-    app.state.workers = workers
-    if workers:
-        logger.info("Started %d background worker(s)", len(workers))
+    started: list[Any] = []
+    app.state.workers = started
+    try:
+        for worker in workers:
+            await worker.start()
+            started.append(worker)
+    except Exception:
+        logger.exception(
+            "Worker startup failed; stopping %d already-started worker(s)",
+            len(started),
+        )
+        for worker in started:
+            await worker.stop()
+        raise
+    if started:
+        logger.info("Started %d background worker(s)", len(started))
 
     yield
 
-    for worker in workers:
+    for worker in started:
         await worker.stop()
-    if workers:
-        logger.info("Stopped %d background worker(s)", len(workers))
+    if started:
+        logger.info("Stopped %d background worker(s)", len(started))
