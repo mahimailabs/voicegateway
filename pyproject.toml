@@ -225,6 +225,9 @@ exclude = [
     "src/dashboard/frontend/vite.config.ts",
     "src/dashboard/frontend/vite.config.d.ts",
     "src/dashboard/frontend/index.html",
+    # Keep compiled migration bytecode out of the force-included alembic tree.
+    "alembic/__pycache__",
+    "alembic/versions/__pycache__",
 ]
 
 [tool.hatch.build.targets.wheel.force-include]
