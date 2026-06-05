@@ -22,10 +22,10 @@ type SortKey =
 const COLUMNS: { key: SortKey; label: string }[] = [
   { key: 'agent_id', label: 'Agent' },
   { key: 'last_seen', label: 'Last seen' },
-  { key: 'total_cost_usd', label: 'Cost' },
-  { key: 'request_count', label: 'Requests' },
-  { key: 'p95_latency_ms', label: 'p95' },
-  { key: 'error_rate', label: 'Error rate' },
+  { key: 'total_cost_usd', label: 'Cost (24h)' },
+  { key: 'request_count', label: 'Requests (24h)' },
+  { key: 'p95_latency_ms', label: 'p95 (24h)' },
+  { key: 'error_rate', label: 'Error rate (24h)' },
 ];
 
 export default function Agents() {
@@ -73,7 +73,7 @@ export default function Agents() {
     <div>
       <PageHeader
         title="Agents"
-        subtitle={`${agents.length} agent${agents.length === 1 ? '' : 's'} in the fleet`}
+        subtitle={`${agents.length} agent${agents.length === 1 ? '' : 's'} in the fleet (metrics over the last 24h)`}
         accent="blue"
       />
 
