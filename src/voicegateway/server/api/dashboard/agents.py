@@ -13,11 +13,15 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from voicegateway.repository import agent_observations_repository as agent_obs
 from voicegateway.repository import agents_repository as agents
 from voicegateway.server.api._deps import get_gateway
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
+    from voicegateway.repository.agent_observations_repository import (
+        AgentObservationRow,
+    )
 
 router = APIRouter(prefix="/agents", tags=["dashboard"])
 
@@ -29,31 +33,57 @@ _EMPTY_UNATTRIBUTED = {
 }
 
 
+def _error_rate(error_count: int, request_count: int) -> float:
+    """Derive error_rate from rollup counts (a stored row has request_count >=
+    1, so the divide is safe; guard a zero denominator defensively)."""
+    return (error_count / request_count) if request_count else 0.0
+
+
+def _agent_entry(row: AgentObservationRow) -> dict[str, Any]:
+    return {
+        "agent_id": row.agent_id,
+        "request_count": row.request_count,
+        "total_cost_usd": row.total_cost_usd,
+        "last_seen": row.last_seen,
+        "error_rate": _error_rate(row.error_count, row.request_count),
+        "p95_latency_ms": row.p95_ms,
+    }
+
+
+def _unattributed_entry(row: AgentObservationRow | None) -> dict[str, Any]:
+    if row is None:
+        return dict(_EMPTY_UNATTRIBUTED)
+    return {
+        "request_count": row.request_count,
+        "total_cost_usd": row.total_cost_usd,
+        "last_seen": row.last_seen,
+        "error_rate": _error_rate(row.error_count, row.request_count),
+    }
+
+
 @router.get("")
 async def list_agents_endpoint(
     limit: int = Query(50, ge=1, le=1000),
     q: str | None = Query(None, max_length=128),
     gateway: Gateway = Depends(get_gateway),
 ) -> dict[str, Any]:
-    """Return the agent index for the fleet table + filter typeahead.
+    """Return the fleet index over the last 24h, read from the rollup.
 
-    ``q`` is a substring match against agent_id. The implicit unattributed
-    bucket (NULL agent_id) is returned separately so the FE can render it as a
-    muted row. Each agent carries ``p95_latency_ms`` (null when no samples).
+    Served from the ``agent_observations`` rollup (refreshed every 15 minutes),
+    not a live requests scan, so cost / requests / p95 / error_rate all cover the
+    same window. ``q`` is a substring match against agent_id; the unattributed
+    bucket (NULL agent_id) is returned separately.
     """
     if gateway.storage is None:
         return {"agents": [], "unattributed": dict(_EMPTY_UNATTRIBUTED)}
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        rows = await agents.list_agents(db, limit=limit, query=q)
-        unattributed = await agents.get_unattributed_aggregates(db)
-        p95 = await agents.agent_latency_p95(db)
-    out: list[dict[str, Any]] = []
-    for row in rows:
-        entry = dataclasses.asdict(row)
-        entry["p95_latency_ms"] = p95.get(row.agent_id)
-        out.append(entry)
-    return {"agents": out, "unattributed": dataclasses.asdict(unattributed)}
+        rows = await agent_obs.read_agents(db, limit=limit, query=q)
+        unattributed = await agent_obs.read_unattributed(db)
+    return {
+        "agents": [_agent_entry(r) for r in rows],
+        "unattributed": _unattributed_entry(unattributed),
+    }
 
 
 @router.get("/{agent_id}")

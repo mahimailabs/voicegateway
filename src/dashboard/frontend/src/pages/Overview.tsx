@@ -74,7 +74,7 @@ export default function Overview() {
                 className="label"
                 style={{ fontSize: '0.7rem', textTransform: 'uppercase', marginBottom: '0.25rem' }}
               >
-                Top by cost
+                Top by cost (24h)
               </div>
               {topAgents.map((a) => (
                 <div

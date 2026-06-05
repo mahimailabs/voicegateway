@@ -11,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
 from voicegateway.models.request_model import RequestRecord
+from voicegateway.repository import agent_observations_repository as agent_obs
 from voicegateway.server import build_app
 
 _CFG = {
@@ -83,6 +84,9 @@ async def test_api_agents_index(gateway):
     await gateway.storage.log_request(_rec("agent-x", 0.01))
     await gateway.storage.log_request(_rec("agent-x", 0.02))
     await gateway.storage.log_request(_rec("agent-y", 0.05))
+    # The fleet index now reads the rollup, so refresh it after seeding.
+    async with gateway.storage._conn.session() as db:
+        await agent_obs.roll_up(db)
     client = await _client(gateway)
     async with client as c:
         resp = await c.get("/api/agents")
