@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -21,6 +22,9 @@ if TYPE_CHECKING:
     from voicegateway.services.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
+
+# Clamp Retry-After so an absurd server value cannot wedge the sink.
+_RETRY_AFTER_MAX = 60.0
 
 
 @runtime_checkable
@@ -72,8 +76,10 @@ class RemoteCollectorSink:
     Best-effort by design (cost telemetry is not billing-of-record): writes
     never block or fail the agent's hot path. Records buffer in memory and
     flush on batch size, on a periodic interval, or on ``aclose``. On a full
-    buffer the oldest rows are dropped; failed POSTs are retried with backoff
-    up to ``max_retries`` and then dropped.
+    in-memory buffer the oldest rows are dropped. A 429 is backpressure: the
+    batch is retried with a clamped Retry-After delay and is never dropped on
+    rate limiting. Other failed POSTs are retried with backoff up to
+    ``max_retries`` and then dropped.
     """
 
     def __init__(
@@ -87,6 +93,7 @@ class RemoteCollectorSink:
         max_retries: int = 2,
         backoff: float = 0.2,
         client: Any | None = None,
+        sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
         self._ingest_url = url.rstrip("/") + "/v1/ingest"
         self._headers = (
@@ -99,6 +106,7 @@ class RemoteCollectorSink:
         self._backoff = backoff
         self._client = client
         self._owns_client = client is None
+        self._sleep = sleep or asyncio.sleep
         self._buffer: list[dict[str, Any]] = []
         self._flusher: asyncio.Task[None] | None = None
         self._closed = False
@@ -157,6 +165,13 @@ class RemoteCollectorSink:
                 )
                 if resp.status_code < 400:
                     return
+                if resp.status_code == 429:
+                    # Backpressure, not failure: honor Retry-After (clamped) and
+                    # retry the same batch WITHOUT counting toward max_retries,
+                    # so a 429 never drops the in-flight batch. Memory is bounded
+                    # by the log_request buffer drop-oldest, not by dropping here.
+                    await self._sleep(self._retry_after_seconds(resp))
+                    continue
                 reason = f"HTTP {resp.status_code}"
             except Exception as exc:  # noqa: BLE001 - best-effort, never propagate
                 reason = exc
@@ -168,8 +183,28 @@ class RemoteCollectorSink:
                     reason,
                 )
                 return
-            await asyncio.sleep(self._backoff * (2**attempt))
+            await self._sleep(self._backoff * (2**attempt))
             attempt += 1
+
+    def _retry_after_seconds(self, resp: Any) -> float:
+        """Parse a Retry-After header into seconds, clamped to a sane maximum.
+
+        Falls back to the configured backoff when the header is absent or not a
+        non-negative integer (we only ever emit integer-second Retry-After).
+        """
+        try:
+            raw = resp.headers.get("retry-after")
+        except Exception:  # noqa: BLE001 - a malformed response must not propagate
+            raw = None
+        if raw is None:
+            return self._backoff
+        try:
+            seconds = float(int(str(raw).strip()))
+        except (TypeError, ValueError):
+            return self._backoff
+        if seconds < 0:
+            return self._backoff
+        return min(seconds, _RETRY_AFTER_MAX)
 
     async def aclose(self) -> None:
         self._closed = True
