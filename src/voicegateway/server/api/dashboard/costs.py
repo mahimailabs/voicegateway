@@ -51,7 +51,7 @@ async def get_costs(
     )
     if project is None:
         summary["by_project"] = await gateway.storage.get_cost_by_project(
-            period, tenant=tenant
+            period, tenant=tenant, agent=agent
         )
     else:
         summary["by_project"] = {}

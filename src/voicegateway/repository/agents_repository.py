@@ -136,11 +136,22 @@ async def get_unattributed_aggregates(
 
 
 async def agent_latency_p95(
-    session: AsyncSession, *, since: float | None = None
+    session: AsyncSession,
+    *,
+    since: float | None = None,
+    agent_id: str | None = None,
 ) -> dict[str, float]:
-    """Return ``{agent_id: p95 total-latency ms}`` via one fetch + grouping."""
+    """Return ``{agent_id: p95 total-latency ms}`` via one fetch + grouping.
+
+    Pass ``agent_id`` to scope the scan to a single agent (the detail
+    endpoint), avoiding an all-fleet latency scan; omit it for the list
+    endpoint, which needs every agent's p95 in one pass.
+    """
     where = "WHERE agent_id IS NOT NULL AND total_latency_ms IS NOT NULL"
     params: dict[str, Any] = {}
+    if agent_id is not None:
+        where += " AND agent_id = :agent_id"
+        params["agent_id"] = agent_id
     if since is not None:
         where += " AND timestamp >= :since"
         params["since"] = since

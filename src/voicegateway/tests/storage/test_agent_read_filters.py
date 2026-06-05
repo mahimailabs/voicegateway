@@ -51,3 +51,12 @@ async def test_latency_stats_filters_by_agent(tmp_path):
     await storage.log_request(_rec("agent-y"))
     stats = await storage.get_latency_stats(period="today", agent="agent-x")
     assert stats["openai/gpt-4o-mini"]["request_count"] == 2
+
+
+async def test_cost_by_project_filters_by_agent(tmp_path):
+    """The by_project breakdown must be agent-scoped, not all-agents."""
+    storage = StorageService(str(tmp_path / "byproj.db"))
+    await storage.log_request(_rec("agent-x", cost=0.01))
+    await storage.log_request(_rec("agent-y", cost=0.05))
+    by_project = await storage.get_cost_by_project(period="today", agent="agent-x")
+    assert by_project["fleet"]["cost"] == pytest.approx(0.01)
