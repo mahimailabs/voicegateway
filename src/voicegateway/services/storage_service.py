@@ -126,11 +126,16 @@ class StorageService:
         start_ts: float | None = None,
         end_ts: float | None = None,
         tenant: str | None = None,
+        agent: str | None = None,
     ) -> dict[str, Any]:
         """Delegate to CostService.get_by_project."""
         await self._ensure_initialized()
         return await self._cost_service.get_by_project(
-            period=period, start_ts=start_ts, end_ts=end_ts, tenant=tenant
+            period=period,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            tenant=tenant,
+            agent=agent,
         )
 
     async def get_cost_by_modality(

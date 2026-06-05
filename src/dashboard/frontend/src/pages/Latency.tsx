@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import StatusCard from '../components/StatusCard';
 import LatencyChart from '../components/LatencyChart';
+import FilterBar, { useAgentFilter } from '../components/FilterBar';
 import { fetchJson } from '../lib/api';
 import { latencyBadgeClass, formatMs } from '../lib/ui';
 import type { LatencyResponse, LatencyStats } from '../lib/types';
@@ -30,10 +31,16 @@ function badgeFor(v: number | null | undefined): string {
 
 export default function Latency() {
   const [data, setData] = useState<LatencyResponse | null>(null);
+  const agent = useAgentFilter();
 
   useEffect(() => {
-    fetchJson<LatencyResponse>('/api/latency').then(setData).catch(() => setData(null));
-  }, []);
+    const params = new URLSearchParams();
+    if (agent !== null) params.set('agent', agent);
+    const qs = params.toString();
+    fetchJson<LatencyResponse>(qs ? `/api/latency?${qs}` : '/api/latency')
+      .then(setData)
+      .catch(() => setData(null));
+  }, [agent]);
 
   if (!data) return <div className="empty-state">Loading latency...</div>;
 
@@ -49,6 +56,8 @@ export default function Latency() {
         subtitle="Worst-model TTFB percentiles across today's requests"
         accent="pink"
       />
+
+      <FilterBar showTenant={false} />
 
       <div className="grid grid-cols-3 mb-lg">
         <StatusCard label="P50 TTFB" value={fmtP(p50)} accent="pink" icon="50" />

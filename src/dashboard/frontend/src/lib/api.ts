@@ -86,7 +86,6 @@ async function extractErrorDetail(res: Response): Promise<string | null> {
 // ----------------------------------------------------------------------
 
 import type {
-  AgentFilter,
   AgentRow,
   AgentsResponse,
   CreatedVirtualKey,
@@ -214,22 +213,9 @@ export function fetchTenant(tenantId: string): Promise<TenantRow> {
 }
 
 // ----------------------------------------------------------------------
-// Phase 2 fleet: per-agent typed fetchers + filter param (mirror tenant).
+// Phase 2 fleet: per-agent typed fetchers (mirror tenant). Pages set the
+// `agent` param inline via useAgentFilter(), matching how they set `tenant`.
 // ----------------------------------------------------------------------
-
-/**
- * Append the agent filter to a URLSearchParams instance. ``null`` is "no
- * filter"; ``""`` is the unattributed bucket; any other value is that exact
- * agent. Matches the backend's ``agent`` query parsing on /api/costs,
- * /api/latency, /api/logs, /api/sessions, and /api/metrics.
- */
-export function appendAgentParam(
-  params: URLSearchParams,
-  agent: AgentFilter | undefined,
-): void {
-  if (agent === null || agent === undefined) return;
-  params.set('agent', agent);
-}
 
 export function fetchAgents(
   options: { limit?: number; q?: string } = {},

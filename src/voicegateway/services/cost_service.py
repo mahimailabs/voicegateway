@@ -45,11 +45,17 @@ class CostService:
         start_ts: float | None = None,
         end_ts: float | None = None,
         tenant: str | None = None,
+        agent: str | None = None,
     ) -> dict[str, Any]:
         """Return cost rollup grouped by project."""
         async with self._db.session() as s:
             return await repo.get_cost_by_project(
-                s, period=period, start_ts=start_ts, end_ts=end_ts, tenant=tenant
+                s,
+                period=period,
+                start_ts=start_ts,
+                end_ts=end_ts,
+                tenant=tenant,
+                agent=agent,
             )
 
     async def get_by_modality(

@@ -126,7 +126,7 @@ export default function Routing() {
         }
       />
 
-      <FilterBar showTenant={false} />
+      <FilterBar showTenant={false} showAgent={false} />
 
       <div className="neo-card mt-md">
         {refreshedAt && (

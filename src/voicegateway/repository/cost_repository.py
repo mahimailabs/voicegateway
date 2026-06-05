@@ -150,6 +150,7 @@ async def get_cost_by_project(
     start_ts: float | None = None,
     end_ts: float | None = None,
     tenant: str | None = None,
+    agent: str | None = None,
 ) -> dict[str, Any]:
     """Return cost rollup grouped by project."""
     since, until = resolve_window(period, start_ts, end_ts)
@@ -158,6 +159,7 @@ async def get_cost_by_project(
         until=until,
         project=None,
         tenant=tenant,
+        agent=agent,
         include_project=False,
     )
     result = await session.execute(

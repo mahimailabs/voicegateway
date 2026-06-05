@@ -68,7 +68,7 @@ async def get_agent_endpoint(
         row = await agents.get_agent(db, agent_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"Agent {agent_id!r} not found")
-        p95 = await agents.agent_latency_p95(db)
+        p95 = await agents.agent_latency_p95(db, agent_id=agent_id)
     entry = dataclasses.asdict(row)
     entry["p95_latency_ms"] = p95.get(agent_id)
     return entry

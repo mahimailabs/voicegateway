@@ -94,3 +94,14 @@ async def test_agent_latency_p95(tmp_path):
         p95 = await agents.agent_latency_p95(db)
     assert "agent-x" in p95
     assert p95["agent-x"] >= 200.0  # p95 of [100, 200, 300]
+
+
+async def test_agent_latency_p95_scopes_to_agent_id(tmp_path):
+    """Passing agent_id scopes the scan to that agent (detail endpoint path)."""
+    storage = StorageService(str(tmp_path / "agentsp95.db"))
+    await storage.log_request(_rec("agent-x", total=200.0))
+    await storage.log_request(_rec("agent-y", total=999.0))
+    await storage._ensure_initialized()
+    async with storage._conn.session() as db:
+        only_x = await agents.agent_latency_p95(db, agent_id="agent-x")
+    assert set(only_x) == {"agent-x"}

@@ -94,6 +94,7 @@ export default function Guardrails() {
       />
 
       <FilterBar
+        showAgent={false}
         projectSlot={
           <>
             <span className="label">Project</span>
