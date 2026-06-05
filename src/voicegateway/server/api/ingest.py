@@ -11,7 +11,9 @@ UUID, so a duplicate (a sink retry) is counted, not double-written.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import logging
+import math
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -42,6 +44,22 @@ def _record_from_payload(raw: dict[str, Any]) -> RequestRecord | None:
         return None
 
 
+def _rate_limit_key(request: Request) -> str:
+    """Identity for ingest rate limiting: virtual key, then API-key hash, then IP.
+
+    ``require_scope`` sets ``virtual_key_id`` only on the virtual-key path, so
+    static-key and bare callers fall through to the API-key hash or client IP.
+    """
+    vk = getattr(request.state, "virtual_key_id", None)
+    if vk is not None:
+        return f"vk:{vk}"
+    auth = request.headers.get("Authorization")
+    if auth:
+        return "ak:" + hashlib.sha256(auth.encode()).hexdigest()
+    client = request.client
+    return "ip:" + (client.host if client is not None else "unknown")
+
+
 @router.post("/ingest")
 async def ingest(
     records: list[dict[str, Any]],
@@ -55,6 +73,25 @@ async def ingest(
         raise HTTPException(
             status_code=503,
             detail="cost tracking storage is disabled on this collector",
+        )
+
+    # Rate limit (429) takes precedence over the batch-size cap (413); both run
+    # before any database write. Storage-disabled (503 above) wins over both.
+    limiter = getattr(request.app.state, "ingest_rate_limiter", None)
+    if limiter is not None:
+        retry_after = limiter.check(_rate_limit_key(request))
+        if retry_after is not None:
+            raise HTTPException(
+                status_code=429,
+                detail="ingest rate limit exceeded",
+                headers={"Retry-After": str(math.ceil(retry_after))},
+            )
+
+    max_batch = gateway.config.ingest.max_batch_size
+    if len(records) > max_batch:
+        raise HTTPException(
+            status_code=413,
+            detail=f"batch too large: {len(records)} records exceeds max {max_batch}",
         )
 
     accepted = 0

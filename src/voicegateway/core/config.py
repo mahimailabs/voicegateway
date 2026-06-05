@@ -10,7 +10,7 @@ from typing import Any
 
 import yaml
 
-from voicegateway.schemas.config_schema import VoiceGatewayConfig
+from voicegateway.schemas.config_schema import IngestConfig, VoiceGatewayConfig
 from voicegateway.schemas.guardrail_policy_schema import GuardrailPolicy
 
 _ENV_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
@@ -155,6 +155,7 @@ class GatewayConfig:
             "request_logging": True,
         }
     )
+    ingest: IngestConfig = field(default_factory=IngestConfig)
 
     @classmethod
     def load(cls, config_path: str | Path | None = None) -> GatewayConfig:
@@ -334,6 +335,7 @@ class GatewayConfig:
                     "request_logging": True,
                 },
             ),
+            ingest=IngestConfig.model_validate(raw.get("ingest") or {}),
         )
 
     def get_provider_config(self, provider_name: str) -> dict[str, Any]:

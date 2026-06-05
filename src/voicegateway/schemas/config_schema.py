@@ -93,6 +93,30 @@ class TenantConfig(_StrictBase):
     virtual_key_stale_days: int = Field(default=90, ge=1)
 
 
+class IngestConfig(_StrictBase):
+    """Rate-limit knobs for POST /v1/ingest (fleet collector)."""
+
+    enabled: bool = True
+    requests_per_minute: int = Field(default=120, ge=0)
+    burst: int = Field(default=240, ge=0)
+    max_batch_size: int = Field(default=1000, ge=1)
+
+
+class RetentionConfig(_StrictBase):
+    """Collector-wide retention default for requests and sessions."""
+
+    enabled: bool = True
+    default_days: int = Field(default=90, ge=1)
+
+
+class WorkersConfig(_StrictBase):
+    """Background-worker cadence for the collector (rollups, retention)."""
+
+    enabled: bool = True
+    rollup_interval_seconds: int = Field(default=900, ge=1)
+    retention_interval_seconds: int = Field(default=3600, ge=1)
+
+
 class ProjectConfig(_StrictBase):
     name: str
     description: str = ""
@@ -192,6 +216,9 @@ _VALID_TOP_LEVEL_KEYS = {
     "dashboard",
     "serve",
     "auth",
+    "ingest",
+    "retention",
+    "workers",
 }
 
 
@@ -213,6 +240,9 @@ class VoiceGatewayConfig(BaseModel):
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
     serve: ServeConfig = Field(default_factory=ServeConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
+    ingest: IngestConfig = Field(default_factory=IngestConfig)
+    retention: RetentionConfig = Field(default_factory=RetentionConfig)
+    workers: WorkersConfig = Field(default_factory=WorkersConfig)
 
     @model_validator(mode="before")
     @classmethod
