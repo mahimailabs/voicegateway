@@ -216,6 +216,34 @@ providers:
     base_url: http://ollama:11434
 ```
 
+### Fleet collector (Postgres)
+
+To run the self-hosted collector that many LiveKit agents push telemetry to,
+use the Postgres-backed stack. The same container serves `POST /v1/ingest`, the
+dashboard API, and the SPA on port 8080.
+
+```bash
+docker compose -f docker-compose.collector.yml up -d
+```
+
+This starts a `postgres` service and a `collector` service. The collector reads
+its database from `VOICEGW_DB_URL`; setting that enables storage automatically,
+so `cost_tracking` does not need to be turned on by hand. The image ships the
+`postgres` extra (asyncpg) and the migrations, so it builds its schema on first
+start. Provide a `voicegw.yaml` next to the compose file (the collector mainly
+needs `auth.api_keys` for the agents' virtual keys), and set
+`VOICEGW_PG_PASSWORD` for anything beyond a local trial.
+
+Point the official image at any Postgres directly without compose:
+
+```bash
+docker run -p 8080:8080 \
+  -e VOICEGW_DB_URL="postgresql+asyncpg://user:pass@host:5432/voicegw" \
+  -v $(pwd)/voicegw.yaml:/app/voicegw.yaml:ro \
+  -e VOICEGW_CONFIG=/app/voicegw.yaml \
+  mahimairaja/voicegateway:latest
+```
+
 ## Verifying the Deployment
 
 ### Health Check
