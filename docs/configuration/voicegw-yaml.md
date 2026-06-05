@@ -21,7 +21,7 @@ variable. See [Environment variables](/docs/configuration/environment-variables)
 
 ## Top-level sections
 
-The config file has ten top-level sections. All are optional.
+The config file has thirteen top-level sections. All are optional.
 
 | Section | Purpose |
 |---|---|
@@ -34,6 +34,9 @@ The config file has ten top-level sections. All are optional.
 | `cost_tracking` | SQLite database settings for cost persistence |
 | `latency` | TTFB warning thresholds and percentile config |
 | `rate_limits` | Per-provider request rate limits |
+| `ingest` | Rate limits for the fleet collector ingest endpoint |
+| `retention` | Age-out policy for collector data |
+| `workers` | Background rollup and retention cadence |
 | `serve` | Bind host and port for the daemon |
 
 ---
@@ -265,6 +268,75 @@ rate_limits:
 
 - `requests_per_minute` (int): maximum requests per minute for the
   given provider.
+
+---
+
+## `ingest`
+
+Rate limiting for the fleet collector ingest endpoint (`POST /v1/ingest`),
+where remote agents push telemetry. Limiting is a per-caller token bucket
+keyed by virtual key (then static API key, then client IP).
+
+```yaml
+ingest:
+  enabled: true
+  requests_per_minute: 120
+  burst: 240
+  max_batch_size: 1000
+```
+
+- `enabled` (bool, default `true`): turn ingest rate limiting on or off.
+- `requests_per_minute` (int, default `120`): sustained per-caller request
+  rate. Set to `0` to disable limiting (unlimited).
+- `burst` (int, default `240`): token-bucket ceiling, the largest burst a
+  caller can send before being throttled.
+- `max_batch_size` (int, default `1000`): maximum records in one POST. A
+  larger batch is rejected with `413` before any database write.
+
+Over-limit requests get `429` with a `Retry-After` header (integer seconds).
+The library's remote sink honors `Retry-After` and retries without dropping the
+batch, so transient throttling never loses telemetry.
+
+---
+
+## `retention`
+
+Hard-delete aged rows from the collector database. A background worker prunes,
+per project, sessions and their dependent rows (replay, turns, dead-air,
+guardrail) by `ended_at`, and requests by `timestamp`, in batches.
+
+```yaml
+retention:
+  enabled: true
+  default_days: 90
+```
+
+- `enabled` (bool, default `true`): turn retention pruning on or off.
+- `default_days` (int, default `90`): age after which a project's rows are
+  deleted. Applies to every project that has data.
+
+---
+
+## `workers`
+
+Cadence for the collector's background workers: the latency and agent rollups,
+and the retention prune. Workers run in-process and are started by the server.
+In a multi-replica deployment, set `enabled: false` on every replica except the
+one chosen to run them (rollups and prunes are idempotent, but running them on
+every replica is wasteful).
+
+```yaml
+workers:
+  enabled: true
+  rollup_interval_seconds: 900
+  retention_interval_seconds: 3600
+```
+
+- `enabled` (bool, default `true`): start the background workers. When `false`,
+  no workers run (the rollup tables stay stale and retention does not prune).
+- `rollup_interval_seconds` (int, default `900`): how often the latency and
+  agent rollups refresh. The Agents dashboard list serves this 24h rollup.
+- `retention_interval_seconds` (int, default `3600`): how often retention runs.
 
 ---
 
