@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from voicegateway.core.app_wiring import attach_layered_stack
 from voicegateway.core.auth import load_api_keys, resolve_cors_origins
+from voicegateway.core.events import lifespan
 from voicegateway.server.mcp.transport import mount_sse
 from voicegateway.server.routes import api_router, dashboard_router, system_router
 from voicegateway.server.static import mount_frontend
@@ -75,6 +76,7 @@ class ApplicationBuilder:
                 "HTTP API for VoiceGateway: cost tracking and reconciliation "
                 "for LiveKit voice agents."
             ),
+            lifespan=lifespan,
         )
 
     def _configure_layered_stack(self) -> None:
