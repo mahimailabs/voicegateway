@@ -33,7 +33,11 @@ class Gateway:
         # Resolve DB path: env var > config > default
         cost_cfg = self._config.cost_tracking
         env_db = os.environ.get("VOICEGW_DB_PATH")
-        enabled = cost_cfg.get("enabled", False) or bool(env_db)
+        # A Postgres collector points at its DB with VOICEGW_DB_URL alone, so
+        # that must enable storage too (resolve_database_url gives it precedence
+        # over the sqlite db_path below).
+        env_url = os.environ.get("VOICEGW_DB_URL")
+        enabled = cost_cfg.get("enabled", False) or bool(env_db) or bool(env_url)
         self._storage: StorageService | None
         if enabled:
             db_path = env_db or cost_cfg.get("db_path", DEFAULT_DB_PATH)

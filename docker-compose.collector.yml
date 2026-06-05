@@ -1,0 +1,66 @@
+# Fleet collector stack: the VoiceGateway server backed by Postgres, for the
+# self-hosted collector that many LiveKit agents push telemetry to. The same
+# container serves POST /v1/ingest, the dashboard API (/api), and the SPA on
+# port 8080.
+#
+#   docker compose -f docker-compose.collector.yml up -d
+#
+# Provide a voicegw.yaml next to this file (even a minimal one is enough; the
+# collector mainly needs auth.api_keys for the agents' virtual keys). Storage is
+# enabled automatically because VOICEGW_DB_URL is set, so cost_tracking does not
+# need to be turned on by hand. Set VOICEGW_PG_PASSWORD in the environment or a
+# .env file for anything beyond a local trial.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: voicegw-postgres
+    environment:
+      POSTGRES_USER: voicegw
+      POSTGRES_PASSWORD: ${VOICEGW_PG_PASSWORD:-voicegw}
+      POSTGRES_DB: voicegw
+    volumes:
+      - voicegw-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voicegw -d voicegw"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - voicegw-net
+
+  collector:
+    image: mahimairaja/voicegateway:latest
+    container_name: voicegw-collector
+    ports:
+      - "8080:8080"
+    environment:
+      # The Postgres collector backend. Setting this enables storage and takes
+      # precedence over the embedded SQLite default.
+      VOICEGW_DB_URL: postgresql+asyncpg://voicegw:${VOICEGW_PG_PASSWORD:-voicegw}@postgres:5432/voicegw
+      VOICEGW_CONFIG: /app/voicegw.yaml
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ./voicegw.yaml:/app/voicegw.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - voicegw-net
+
+volumes:
+  voicegw-pgdata:
+    driver: local
+
+networks:
+  voicegw-net:
+    driver: bridge

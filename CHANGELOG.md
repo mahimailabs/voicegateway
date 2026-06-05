@@ -4,6 +4,28 @@ All notable changes to VoiceGateway are documented here. This project
 follows [Semantic Versioning](https://semver.org/) and
 [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.8.1: Docker fleet collector support
+
+The official Docker image can now run as the Postgres-backed fleet collector.
+
+### Fixed
+
+- **The image ships the migrations.** `alembic.ini` and the `alembic/` tree are
+  now copied into the image, so the server builds its schema on first start. It
+  could not before (neither was copied in), which left storage broken on a fresh
+  container for both SQLite and Postgres.
+- **`VOICEGW_DB_URL` enables storage.** Pointing the collector at Postgres with
+  `VOICEGW_DB_URL` alone now turns storage on. Previously it also required
+  `cost_tracking.enabled` or `VOICEGW_DB_PATH`, so `POST /v1/ingest` returned
+  503 and the collector persisted nothing.
+
+### Added
+
+- The Docker image includes the `postgres` extra (asyncpg), so it can run
+  against a Postgres collector backend out of the box.
+- `docker-compose.collector.yml`: a ready-to-run Postgres + collector stack,
+  with a deployment guide in the docs.
+
 ## v0.8.0: fleet collector operational hardening
 
 The self-hosted fleet collector becomes safe to run unattended: ingest rate

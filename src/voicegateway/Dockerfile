@@ -37,7 +37,9 @@ COPY src/dashboard/ ./src/dashboard/
 ARG VERSION=0.5.0
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 
-RUN pip install --prefix=/install ".[cloud,mcp,dashboard,tui]"
+# Include the `postgres` extra (asyncpg) so the image can run as a Postgres
+# fleet collector via VOICEGW_DB_URL, not just embedded SQLite.
+RUN pip install --prefix=/install ".[cloud,mcp,dashboard,tui,postgres]"
 
 # -------- Stage 3: Runtime --------
 FROM python:3.12-slim AS runtime
@@ -75,6 +77,14 @@ COPY --chown=voicegw:voicegw src/voicegateway/ /app/voicegateway/
 COPY --chown=voicegw:voicegw src/dashboard/__init__.py /app/dashboard/
 COPY --chown=voicegw:voicegw src/dashboard/api/static/ /app/dashboard/api/static/
 COPY --from=frontend-builder --chown=voicegw:voicegw /build/frontend/dist /app/dashboard/frontend/dist
+
+# Ship the migrations. On first DB access the runtime runs `alembic upgrade
+# head`; Database._find_alembic_ini walks up from /app/voicegateway to /app, and
+# alembic.ini's script_location is %(here)s/alembic, so both the ini and the
+# versions tree must live at /app. Without this the server cannot build its
+# schema (SQLite or a Postgres collector backend).
+COPY --chown=voicegw:voicegw alembic.ini /app/alembic.ini
+COPY --chown=voicegw:voicegw alembic/ /app/alembic/
 
 USER voicegw
 WORKDIR /app
