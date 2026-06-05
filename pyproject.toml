@@ -227,6 +227,17 @@ exclude = [
     "src/dashboard/frontend/index.html",
 ]
 
+[tool.hatch.build.targets.wheel.force-include]
+# Ship the Alembic migrations inside the installed package. alembic/ and
+# alembic.ini live at the repo root (outside the src/ packages), so without
+# this the wheel carries no migrations and run_migrations() fails at runtime
+# with "alembic.ini not found". Placed under the package dir so that
+# _find_alembic_ini (which walks up from voicegateway/core/database.py) resolves
+# voicegateway/alembic.ini, whose `script_location = %(here)s/alembic` then
+# points at the sibling voicegateway/alembic/ tree.
+"alembic.ini" = "voicegateway/alembic.ini"
+"alembic" = "voicegateway/alembic"
+
 # Note on shipping the React bundle: the wheel published to PyPI
 # carries the dashboard SPA inside the voicegateway package itself,
 # at voicegateway/_dashboard_dist/. scripts/build_wheel.sh runs the
