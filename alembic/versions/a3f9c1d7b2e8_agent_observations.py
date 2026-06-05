@@ -42,7 +42,7 @@ def upgrade() -> None:
         sa.Column(
             "refreshed_at",
             sqlmodel.sql.sqltypes.AutoString(),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
             nullable=False,
         ),
         sa.PrimaryKeyConstraint("id"),

@@ -58,7 +58,12 @@ async def _default_provider() -> list[tuple[str, int]]:
 
 
 class RetentionWorker:
-    """Background worker that ages out old replay rows per project."""
+    """Background worker that hard-deletes aged rows per project.
+
+    Sessions and their dependent rows (replay, turns, dead-air, guardrail) prune
+    by ``ended_at``; requests prune independently by ``timestamp``. Deletes run
+    child-first in batches on a periodic loop.
+    """
 
     def __init__(
         self,

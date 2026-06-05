@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
 import yaml
 from starlette.testclient import TestClient
 
+from voicegateway.core import events
 from voicegateway.core.events import lifespan
 from voicegateway.core.gateway import Gateway
 from voicegateway.server import build_app
@@ -76,3 +78,32 @@ def test_lifespan_is_attached_to_the_app(tmp_path, monkeypatch) -> None:
     app = build_app(gw)
     with TestClient(app):
         assert len(app.state.workers) == 3
+
+
+class _FakeWorker:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.started = False
+        self.stopped = False
+        self._fail = fail
+
+    async def start(self) -> None:
+        if self._fail:
+            raise RuntimeError("boom")
+        self.started = True
+
+    async def stop(self) -> None:
+        self.stopped = True
+
+
+async def test_partial_start_failure_stops_started_workers(
+    tmp_path, monkeypatch
+) -> None:
+    good = _FakeWorker()
+    bad = _FakeWorker(fail=True)
+    monkeypatch.setattr(events, "_build_workers", lambda gateway: [good, bad])
+    gw = _gateway(tmp_path, monkeypatch, {"cost_tracking": {"enabled": True}})
+    app = build_app(gw)
+    with pytest.raises(RuntimeError):
+        async with lifespan(app):
+            pass
+    assert good.started and good.stopped  # the started worker was cleaned up
