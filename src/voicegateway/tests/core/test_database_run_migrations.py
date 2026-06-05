@@ -47,6 +47,7 @@ async def test_run_migrations_on_fresh_db_builds_baseline(tmp_path: Path) -> Non
             )
         }
     expected = {
+        "agent_observations",
         "alembic_version",
         "config_audit_log",
         "dead_air_events",

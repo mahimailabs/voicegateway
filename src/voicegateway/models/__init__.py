@@ -7,6 +7,7 @@ both see them.
 
 from __future__ import annotations
 
+from voicegateway.models.agent_observation_model import AgentObservation
 from voicegateway.models.base_model import BaseModel, BaseUUIDModel
 from voicegateway.models.config_audit_log_model import ConfigAuditLog
 from voicegateway.models.dead_air_event_model import DeadAirEvent
@@ -27,6 +28,7 @@ from voicegateway.models.turn_model import Turn
 from voicegateway.models.virtual_key_model import VirtualKey
 
 __all__ = [
+    "AgentObservation",
     "BaseModel",
     "BaseUUIDModel",
     "ConfigAuditLog",
