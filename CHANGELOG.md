@@ -4,6 +4,18 @@ All notable changes to VoiceGateway are documented here. This project
 follows [Semantic Versioning](https://semver.org/) and
 [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.8.3: ship migrations in the wheel
+
+### Fixed
+
+- **The PyPI wheel now ships the Alembic migrations.** `alembic/` and
+  `alembic.ini` live at the repo root, outside the `src/` packages, so the
+  published wheel carried no migrations and `run_migrations()` failed at runtime
+  with `alembic.ini not found` whenever storage initialized (hit by
+  `voicegw serve`, `voicegw dashboard`, and `voicegateway.attach()`'s local
+  SQLite sink). They are now force-included under the package, so a
+  `pip install voicegateway` can build its schema on first run.
+
 ## v0.8.2: importable base install
 
 ### Fixed
