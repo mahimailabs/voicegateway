@@ -4,6 +4,20 @@ All notable changes to VoiceGateway are documented here. This project
 follows [Semantic Versioning](https://semver.org/) and
 [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.8.2: importable base install
+
+### Fixed
+
+- **`pip install voicegateway` is importable again.** SQLAlchemy and SQLModel
+  are pulled in at import time by `voicegateway.models`, and the embedded
+  storage that `voicegateway.attach()` writes through needs Alembic, but all
+  three lived only in the `server` extra. They are now core dependencies, so a
+  base install (the agent SDK use case) no longer fails with
+  `ModuleNotFoundError: No module named 'sqlalchemy'`.
+- **The `server` extra installs `python-multipart`.** FastAPI's dashboard logo
+  upload (an `UploadFile` route) requires it; it was missing, so `voicegw serve`
+  warned and the upload endpoint would have failed.
+
 ## v0.8.1: Docker fleet collector support
 
 The official Docker image can now run as the Postgres-backed fleet collector.

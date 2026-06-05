@@ -28,6 +28,13 @@ dependencies = [
     "voice-prices>=0.0.8,<0.1",
     "bcrypt>=4.0",
     "pillow>=10.0",
+    # ORM + migration stack. Required at import time (voicegateway.models pulls
+    # in SQLAlchemy/SQLModel) and at runtime for the embedded storage that
+    # voicegateway.attach() writes through, so these are core, not optional:
+    # a base `pip install voicegateway` must be importable.
+    "sqlalchemy[asyncio]>=2.0,<3.0",
+    "sqlmodel>=0.0.22",
+    "alembic>=1.13",
 ]
 
 [project.optional-dependencies]
@@ -69,10 +76,9 @@ all = ["voicegateway[cloud,local]"]
 server = [
     "fastapi>=0.115.0",
     "uvicorn>=0.32.0",
-    "sqlalchemy[asyncio]>=2.0,<3.0",
-    "sqlmodel>=0.0.22",
+    # python-multipart backs the dashboard logo upload (UploadFile/File route).
+    "python-multipart>=0.0.9",
     "dependency-injector>=4.43",
-    "alembic>=1.13",
     "pydantic-settings>=2.0",
     "asgi-correlation-id>=4.3",
     "loguru>=0.7",
@@ -113,12 +119,11 @@ dev = [
     "platformdirs>=4.0",
     "textual>=0.85,<0.90",
     # Server stack so tests covering core/container, repository/, etc. can
-    # import them without `pip install -e .[server]` first.
+    # import them without `pip install -e .[server]` first. SQLAlchemy,
+    # SQLModel, and Alembic are core dependencies now, so they are not relisted.
     "fastapi>=0.115.0",
-    "sqlalchemy[asyncio]>=2.0,<3.0",
-    "sqlmodel>=0.0.22",
+    "python-multipart>=0.0.9",
     "dependency-injector>=4.43",
-    "alembic>=1.13",
     "pydantic-settings>=2.0",
     "asgi-correlation-id>=4.3",
     "loguru>=0.7",
