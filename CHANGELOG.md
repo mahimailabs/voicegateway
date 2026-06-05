@@ -4,6 +4,51 @@ All notable changes to VoiceGateway are documented here. This project
 follows [Semantic Versioning](https://semver.org/) and
 [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.8.0: fleet collector operational hardening
+
+The self-hosted fleet collector becomes safe to run unattended: ingest rate
+limiting, data retention, a windowed per-agent dashboard rollup, and the
+background workers that keep them fresh. Two latent bugs that left the collector
+fragile are fixed along the way.
+
+### Added
+
+- **Ingest rate limiting.** `POST /v1/ingest` enforces a per-caller token bucket
+  (keyed by virtual key, then static API key, then client IP). Over-limit
+  requests get `429` with a `Retry-After` header; oversized batches get `413`.
+  Configured under the new `ingest` block (`requests_per_minute`, `burst`,
+  `max_batch_size`).
+- **Data retention.** A background worker hard-deletes aged rows per project:
+  sessions and their dependent rows (replay, turns, dead-air, guardrail) by
+  `ended_at`, and requests by `timestamp`, in batches. Configured under the new
+  `retention` block (`default_days`, default 90).
+- **Windowed fleet rollup.** A new `agent_observations` table and a 15-minute
+  worker pre-aggregate per-agent cost, requests, p95, and error rate over a 24h
+  window, so the Agents dashboard list is fast and internally consistent.
+- **Background workers wired into the server.** The latency rollup, agent rollup,
+  and retention workers now start with the collector. Configured under the new
+  `workers` block (`enabled`, `rollup_interval_seconds`,
+  `retention_interval_seconds`).
+
+### Changed
+
+- **Ingest rate limiting is on by default** (120 requests per minute per caller).
+  A collector already ingesting faster will start receiving `429`s; the library's
+  remote sink honors `Retry-After` and retries without dropping the batch. Set
+  `ingest.requests_per_minute: 0` or `ingest.enabled: false` to opt out.
+- **The Agents dashboard list now covers the last 24 hours** instead of all time.
+  The JSON shape is unchanged; cost, requests, p95, and error rate are now
+  window-scoped. The per-agent detail view stays all-time.
+
+### Fixed
+
+- **The remote sink no longer drops telemetry under rate limiting.** A `429` is
+  treated as backpressure (parse `Retry-After`, clamp to 60s, retry the same
+  batch) rather than dropped after a short fixed backoff.
+- **Background workers now actually run in production.** The FastAPI lifespan was
+  never attached, so the latency-rollup and retention workers were dormant; the
+  collector now starts and stops all three workers on boot and shutdown.
+
 ## v0.7.0: voice-prices pricing backend
 
 Pricing moves from `pydantic/genai-prices` to
