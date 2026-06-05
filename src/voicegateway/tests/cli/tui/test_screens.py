@@ -452,17 +452,19 @@ async def test_costs_screen_polls_for_live_refresh() -> None:
         # Simulate a fresh request landing in storage between polls.
         responses["today"]["total"] = 0.42
 
-        # Pump the event loop until the next poll tick fires.
-        for _ in range(40):
+        # Pump real time until a fresh poll fires. The stub returns the response
+        # dict by reference, so the card reflects the mutation immediately; the
+        # rising call count is what actually proves the interval is polling.
+        for _ in range(50):
+            await asyncio.sleep(0.02)
             await pilot.pause()
-            if card._costs.get("total") == 0.42:
+            if len(client.calls) > initial_calls:
                 break
 
-        assert card._costs.get("total") == 0.42, (
-            "Costs card did not pick up the synthetic change; "
+        assert len(client.calls) > initial_calls, (
             "CostsScreen.on_mount must register a polling interval."
         )
-        assert len(client.calls) > initial_calls
+        assert card._costs.get("total") == 0.42
 
 
 # ---------------------------------------------------------------------------
