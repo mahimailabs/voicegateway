@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from voicegateway._version import __version__
 from voicegateway.core.app_wiring import attach_layered_stack
 from voicegateway.core.auth import load_api_keys, resolve_cors_origins
 from voicegateway.core.events import lifespan
@@ -71,7 +72,7 @@ class ApplicationBuilder:
     def _make_app(self) -> FastAPI:
         return FastAPI(
             title="VoiceGateway API",
-            version="0.6.0",
+            version=__version__,
             description=(
                 "HTTP API for VoiceGateway: cost tracking and reconciliation "
                 "for LiveKit voice agents."
