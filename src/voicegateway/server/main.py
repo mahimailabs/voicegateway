@@ -23,6 +23,7 @@ from voicegateway.core.auth import load_api_keys, resolve_cors_origins
 from voicegateway.server.mcp.transport import mount_sse
 from voicegateway.server.routes import api_router, dashboard_router, system_router
 from voicegateway.server.static import mount_frontend
+from voicegateway.services.ingest_rate_limiter import IngestRateLimiter
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -86,6 +87,15 @@ class ApplicationBuilder:
         self.app.state.gateway = self.gateway
         self.app.state.api_keys = load_api_keys(self.gateway.config.auth)
         self.app.state.started_at = time.time()
+        ingest_cfg = self.gateway.config.ingest
+        self.app.state.ingest_rate_limiter = (
+            IngestRateLimiter(
+                requests_per_minute=ingest_cfg.requests_per_minute,
+                burst=ingest_cfg.burst,
+            )
+            if ingest_cfg.enabled and ingest_cfg.requests_per_minute > 0
+            else None
+        )
 
     def _configure_cors(self) -> None:
         cors_origins = resolve_cors_origins(self.gateway.config.auth)
