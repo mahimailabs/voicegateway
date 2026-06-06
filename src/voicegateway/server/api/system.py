@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, Request
 
+from voicegateway._version import __version__
 from voicegateway.inference.pricing import llm as _llm_pricing
 from voicegateway.inference.pricing import stt as _stt_pricing
 from voicegateway.inference.pricing import tts as _tts_pricing
@@ -17,6 +18,10 @@ if TYPE_CHECKING:
 
 router = APIRouter(tags=["system"])
 
+# Drop the PEP 440 local segment (the +g<sha>.d<date> git metadata an
+# editable install carries) so health/status report a clean public version.
+_PUBLIC_VERSION = __version__.split("+", 1)[0]
+
 
 @router.get("/health")
 async def health(request: Request) -> dict:
@@ -24,7 +29,7 @@ async def health(request: Request) -> dict:
     return {
         "status": "ok",
         "uptime_seconds": round(time.time() - started_at, 1),
-        "version": "0.5.0",
+        "version": _PUBLIC_VERSION,
     }
 
 

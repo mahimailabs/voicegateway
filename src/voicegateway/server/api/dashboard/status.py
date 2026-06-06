@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, Query
 
+from voicegateway._version import __version__
 from voicegateway.inference.pricing import llm as _llm_pricing
 from voicegateway.inference.pricing import stt as _stt_pricing
 from voicegateway.inference.pricing import tts as _tts_pricing
@@ -19,6 +20,9 @@ if TYPE_CHECKING:
 # (whisper / kokoro / piper). Drives the "configured" + "type" fields
 # in /api/status so the dashboard can colour the StatusCard correctly.
 _LOCAL_PROVIDER_NAMES = frozenset({"ollama", "whisper", "kokoro", "piper"})
+
+# Public version for the dashboard footer (local git segment stripped).
+_PUBLIC_VERSION = __version__.split("+", 1)[0]
 
 router = APIRouter(tags=["dashboard"])
 
@@ -41,15 +45,21 @@ async def get_status(gateway: Gateway = Depends(get_gateway)) -> dict:
             "type": "local" if is_local else "cloud",
         }
 
+    # Only surface models whose provider is actually usable (a cloud key is
+    # set, or it's a local provider). A roster full of models the operator
+    # can't call is noise; this keeps the count and the Models list honest.
+    configured_providers = {name for name, p in providers.items() if p["configured"]}
     models: dict[str, dict[str, Any]] = {}
     for modality, modality_models in config.models.items():
         if isinstance(modality_models, dict):
             for model_id, model_cfg in modality_models.items():
                 if isinstance(model_cfg, dict):
-                    models[model_id] = {
-                        "modality": modality,
-                        "provider": model_cfg.get("provider", ""),
-                    }
+                    provider = model_cfg.get("provider", "")
+                    if provider in configured_providers:
+                        models[model_id] = {
+                            "modality": modality,
+                            "provider": provider,
+                        }
 
     pricing = {
         "llm": {"source": _llm_pricing.PRICING_SOURCE},
@@ -58,6 +68,7 @@ async def get_status(gateway: Gateway = Depends(get_gateway)) -> dict:
     }
 
     return {
+        "version": _PUBLIC_VERSION,
         "providers": providers,
         "models": models,
         "fallbacks": config.fallbacks,

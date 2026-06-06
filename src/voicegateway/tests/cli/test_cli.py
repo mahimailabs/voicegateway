@@ -35,6 +35,39 @@ def test_init_custom_output(tmp_path):
     assert os.path.exists(out)
 
 
+def test_init_writes_minimal_template_by_default(tmp_path, monkeypatch):
+    """`voicegw init` gives first-timers a short, valid config, not a 269-line dump."""
+    from voicegateway.core.config import GatewayConfig
+
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init"])
+    assert result.exit_code == 0
+
+    content = (tmp_path / "voicegw.yaml").read_text()
+    # Small enough to read at a glance, and free of advanced blocks.
+    assert content.count("\n") < 50
+    assert "stacks:" not in content
+    assert "guardrails:" not in content
+    # Still a working voice stack: provider + model blocks present.
+    assert "providers:" in content
+    assert "models:" in content
+    # And it actually parses through the real loader (defaults fill the rest).
+    GatewayConfig.load(tmp_path / "voicegw.yaml")
+    # Points the user at the exhaustive template.
+    assert "--full" in result.output
+
+
+def test_init_full_flag_writes_exhaustive_template(tmp_path, monkeypatch):
+    """`voicegw init --full` writes the complete annotated reference config."""
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "--full"])
+    assert result.exit_code == 0
+
+    content = (tmp_path / "voicegw.yaml").read_text()
+    assert "stacks:" in content
+    assert content.count("\n") > 200
+
+
 def test_status(temp_config, tmp_path, monkeypatch):
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "cli-status.db"))
     result = runner.invoke(app, ["status", "--config", temp_config])
