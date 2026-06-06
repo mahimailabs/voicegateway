@@ -33,6 +33,13 @@ COPY pyproject.toml README.md ./
 # directories present at the path it expects.
 COPY src/voicegateway/ ./src/voicegateway/
 COPY src/dashboard/ ./src/dashboard/
+# The wheel force-includes the migrations (pyproject
+# [tool.hatch.build.targets.wheel.force-include]), so hatchling needs
+# alembic.ini + alembic/ present at build time, not just copied into the
+# runtime stage below. Without this the build fails with
+# "Forced include not found: /build/alembic".
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
 
 ARG VERSION=0.5.0
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
