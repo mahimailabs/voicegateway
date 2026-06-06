@@ -68,6 +68,23 @@ def test_init_full_flag_writes_exhaustive_template(tmp_path, monkeypatch):
     assert content.count("\n") > 200
 
 
+def test_init_minimal_template_enables_cost_tracking(tmp_path, monkeypatch):
+    """A first run must turn on storage, or `voicegw serve`'s dashboard is empty.
+
+    With no cost_tracking block (and no VOICEGW_DB_* env), Gateway leaves
+    storage disabled and /api/agents returns nothing even while the agent SDK
+    is writing to the default DB.
+    """
+    from voicegateway.core.config import GatewayConfig
+
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init"])
+    assert result.exit_code == 0
+
+    config = GatewayConfig.load(tmp_path / "voicegw.yaml")
+    assert config.cost_tracking.get("enabled") is True
+
+
 def test_status(temp_config, tmp_path, monkeypatch):
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "cli-status.db"))
     result = runner.invoke(app, ["status", "--config", temp_config])
