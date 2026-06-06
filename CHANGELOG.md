@@ -4,6 +4,20 @@ All notable changes to VoiceGateway are documented here. This project
 follows [Semantic Versioning](https://semver.org/) and
 [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.8.5: fix the Docker image build
+
+The published Docker images for v0.8.3 and v0.8.4 failed to build and were
+never pushed. This restores them. The Python package is unchanged from v0.8.4.
+
+### Fixed
+
+- **The Docker image builds again.** v0.8.3 added a wheel `force-include` for the
+  Alembic migrations, but neither Dockerfile copied `alembic/` and `alembic.ini`
+  into the build stage, so `pip install` failed during metadata generation with
+  `Forced include not found: /build/alembic`. Both the core and dashboard
+  Dockerfiles now copy the migrations into the builder before installing. PyPI
+  was unaffected (it uses a different build path); only the Docker images failed.
+
 ## v0.8.4: quieter agents, live dashboard version, friendlier init
 
 Polish from dogfooding the agent SDK. Embedded telemetry no longer floods a

@@ -41,6 +41,11 @@ COPY pyproject.toml README.md ./
 # from pyproject so the src/ structure has to be present during pip install.
 COPY src/voicegateway/ ./src/voicegateway/
 COPY src/dashboard/ ./src/dashboard/
+# The wheel force-includes the migrations (pyproject
+# [tool.hatch.build.targets.wheel.force-include]), so hatchling needs
+# alembic.ini + alembic/ present during pip install, not just at runtime.
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
 
 ARG SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${SETUPTOOLS_SCM_PRETEND_VERSION}
