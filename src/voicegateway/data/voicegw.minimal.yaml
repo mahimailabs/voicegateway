@@ -1,4 +1,4 @@
-# VoiceGateway — minimal config (voicegw.yaml)
+# VoiceGateway minimal config (voicegw.yaml)
 # A starter STT + LLM + TTS voice stack. Set the API keys via environment
 # variables (e.g. DEEPGRAM_API_KEY) or paste them inline below.
 #

@@ -30,6 +30,7 @@ _NOISY_EMBEDDED_LOGGERS = ("aiosqlite", "alembic")
 
 
 def _quiet_embedded_dependency_loggers() -> None:
+    """Raise the noisy aiosqlite/alembic loggers to WARNING, unless set already."""
     for name in _NOISY_EMBEDDED_LOGGERS:
         logger = logging.getLogger(name)
         if logger.level == logging.NOTSET:
