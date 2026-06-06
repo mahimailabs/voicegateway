@@ -4,6 +4,21 @@ All notable changes to VoiceGateway are documented here. This project
 follows [Semantic Versioning](https://semver.org/) and
 [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.8.6: minimal config records to storage so the dashboard works
+
+### Fixed
+
+- **`voicegw init` enables cost tracking by default again.** The v0.8.4 minimal
+  template dropped the `cost_tracking` block, so `voicegw serve` started with
+  storage disabled (`gateway.storage is None`) and the dashboard showed no costs,
+  sessions, or agents, even though the agent SDK's `voicegateway.attach()` was
+  writing to the default SQLite database. The minimal template now enables
+  `cost_tracking` at that same default path
+  (`~/.config/voicegateway/voicegw.db`), so a first run sees its agents on the
+  dashboard with no extra wiring. Existing configs are unaffected; if your server
+  was already started with storage off, add `cost_tracking: {enabled: true}` or
+  set `VOICEGW_DB_PATH`.
+
 ## v0.8.5: fix the Docker image build
 
 The published Docker images for v0.8.3 and v0.8.4 failed to build and were

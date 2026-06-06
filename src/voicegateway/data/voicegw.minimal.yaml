@@ -29,6 +29,15 @@ models:
       provider: cartesia
       model: sonic-3
 
+# Record requests to a local SQLite database so `voicegw serve` and
+# `voicegw dashboard` can show your costs, sessions, and agents. The agent
+# SDK's voicegateway.attach() writes to this same default path, so the
+# dashboard sees your agents with no extra wiring. Without this block the
+# server runs with storage off and the dashboard stays empty.
+cost_tracking:
+  enabled: true
+  db_path: ~/.config/voicegateway/voicegw.db
+
 projects:
   default:
     name: "My Voice Agent"
