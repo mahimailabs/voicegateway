@@ -1,4 +1,6 @@
 export interface StatusResponse {
+  // Live server version (footer pill). Optional so older servers still type-check.
+  version?: string;
   providers: Record<string, { configured: boolean; type: string }>;
   models: Record<string, { modality: string; provider: string }>;
   fallbacks: Record<string, string[]>;

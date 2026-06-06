@@ -46,6 +46,96 @@ async def test_api_status_includes_pricing_sources(client):
         assert data["pricing"][modality]["source"].startswith("voice-prices@")
 
 
+async def test_api_status_includes_version(client):
+    """The dashboard footer reads the live version from here."""
+    from voicegateway import __version__
+
+    resp = await client.get("/api/status")
+    data = resp.json()
+    assert data["version"] == __version__.split("+", 1)[0]
+
+
+async def test_api_status_lists_only_models_with_a_configured_provider(
+    tmp_path, monkeypatch
+):
+    """Models whose cloud provider has no API key are hidden; local ones stay."""
+    import yaml as _yaml
+
+    cfg = {
+        "providers": {
+            "openai": {"api_key": "test-key"},
+            "elevenlabs": {},  # cloud provider, no key -> not configured
+            "ollama": {"base_url": "http://localhost:11434"},  # local -> configured
+        },
+        "models": {
+            "llm": {
+                "openai/gpt-4o-mini": {"provider": "openai", "model": "gpt-4o-mini"},
+                "ollama/qwen2.5:3b": {"provider": "ollama", "model": "qwen2.5:3b"},
+            },
+            "tts": {
+                "elevenlabs/eleven_turbo_v2_5": {
+                    "provider": "elevenlabs",
+                    "model": "eleven_turbo_v2_5",
+                },
+            },
+        },
+    }
+    config_path = tmp_path / "voicegw.yaml"
+    config_path.write_text(_yaml.safe_dump(cfg))
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "filter-test.db"))
+
+    gateway = Gateway(config_path=str(config_path))
+    app = build_app(gateway, enable_mcp_sse=False, enable_dashboard=True)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        data = (await c.get("/api/status")).json()
+
+    # Keyed cloud model and keyless local model are listed.
+    assert "openai/gpt-4o-mini" in data["models"]
+    assert "ollama/qwen2.5:3b" in data["models"]
+    # Keyless cloud model is filtered out.
+    assert "elevenlabs/eleven_turbo_v2_5" not in data["models"]
+    # The unconfigured provider still appears so the UI can flag it.
+    assert data["providers"]["elevenlabs"]["configured"] is False
+
+
+async def test_api_overview_active_models_matches_status_filter(tmp_path, monkeypatch):
+    """`active_models` counts only callable models, matching /api/status."""
+    import yaml as _yaml
+
+    cfg = {
+        "providers": {
+            "openai": {"api_key": "test-key"},
+            "elevenlabs": {},  # no key -> its model must not be counted
+        },
+        "models": {
+            "llm": {
+                "openai/gpt-4o-mini": {"provider": "openai", "model": "gpt-4o-mini"},
+            },
+            "tts": {
+                "elevenlabs/eleven_turbo_v2_5": {
+                    "provider": "elevenlabs",
+                    "model": "eleven_turbo_v2_5",
+                },
+            },
+        },
+    }
+    config_path = tmp_path / "voicegw.yaml"
+    config_path.write_text(_yaml.safe_dump(cfg))
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "overview-filter.db"))
+
+    gateway = Gateway(config_path=str(config_path))
+    app = build_app(gateway, enable_mcp_sse=False, enable_dashboard=True)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        overview = (await c.get("/api/overview")).json()
+        status = (await c.get("/api/status")).json()
+
+    # Only the openai model is callable; the keyless elevenlabs one is excluded.
+    assert overview["active_models"] == 1
+    assert overview["active_models"] == len(status["models"])
+
+
 async def test_api_costs(client):
     resp = await client.get("/api/costs")
     assert resp.status_code == 200

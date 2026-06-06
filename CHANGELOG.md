@@ -4,6 +4,35 @@ All notable changes to VoiceGateway are documented here. This project
 follows [Semantic Versioning](https://semver.org/) and
 [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.8.4: quieter agents, live dashboard version, friendlier init
+
+Polish from dogfooding the agent SDK. Embedded telemetry no longer floods a
+host agent's debug logs, the dashboard reports the real version, the model list
+only shows models you can actually call, and `voicegw init` starts minimal.
+
+### Fixed
+
+- **Embedded storage no longer floods agent DEBUG logs.** `voicegateway.attach()`
+  runs SQLite storage in-process. Under a LiveKit `console`/`dev` run (root
+  logger at DEBUG) the `aiosqlite` and `alembic` loggers emitted a line per
+  query, burying the agent's own output. `StorageService` now quiets those two
+  dependency loggers to WARNING, and only when the caller has not set a level of
+  their own (an explicit `aiosqlite=DEBUG` still wins).
+- **The dashboard and `/health` report the real version.** The footer pill and
+  the `/health` endpoint were hardcoded to `0.5.0`. Both now read the installed
+  `__version__` (PEP 440 local build segment stripped), exposed via `/health`
+  and the dashboard `/api/status`.
+
+### Changed
+
+- **The dashboard lists only callable models.** `/api/status` now returns models
+  whose provider is configured (a cloud API key is set, or it is a local
+  provider). The sidebar count and the Models page stop advertising models the
+  operator cannot reach.
+- **`voicegw init` writes a minimal config by default.** First run gets a short
+  STT + LLM + TTS starter (about 35 lines) instead of the 269-line reference.
+  Run `voicegw init --full` for the complete annotated config.
+
 ## v0.8.3: ship migrations in the wheel
 
 ### Fixed

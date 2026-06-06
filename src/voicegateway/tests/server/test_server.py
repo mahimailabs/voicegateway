@@ -26,12 +26,16 @@ async def client(app):
 
 
 async def test_health(client):
+    from voicegateway import __version__
+
     resp = await client.get("/health")
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "ok"
     assert "uptime_seconds" in data
-    assert data["version"] == "0.5.0"
+    # Reports the real installed version (local build segment stripped),
+    # not a hand-edited string that drifts every release.
+    assert data["version"] == __version__.split("+", 1)[0]
 
 
 async def test_v1_status(client):
@@ -319,8 +323,7 @@ async def test_v1_costs_combined_query_params(client, gateway):
     assert data["by_modality"].keys() == {"llm", "stt", "tts"}
     assert data["by_modality"]["llm"]["cost"] == pytest.approx(0.10, abs=0.001)
     assert (
-        data["by_model"]["openai/gpt-4o-mini"]["pricing_source"]
-        == "voice-prices@0.0.8"
+        data["by_model"]["openai/gpt-4o-mini"]["pricing_source"] == "voice-prices@0.0.8"
     )
     assert (
         data["by_model"]["deepgram/nova-3"]["pricing_source"] == "local-stt@2026-05-04"

@@ -21,11 +21,27 @@ _DEFAULT_PERCENTILES: list[float] = [50.0, 95.0, 99.0]
 
 _logger = logging.getLogger(__name__)
 
+# aiosqlite and alembic both log every operation at DEBUG. Embedded in a
+# LiveKit agent (voicegateway.attach), a ``console``/``dev`` run sets the root
+# logger to DEBUG, so that per-query chatter floods the host's terminal. Quiet
+# the two noisy dependency loggers, but only when the caller has not picked a
+# level themselves (NOTSET = "inherit", which is what produces the flood).
+_NOISY_EMBEDDED_LOGGERS = ("aiosqlite", "alembic")
+
+
+def _quiet_embedded_dependency_loggers() -> None:
+    """Raise the noisy aiosqlite/alembic loggers to WARNING, unless set already."""
+    for name in _NOISY_EMBEDDED_LOGGERS:
+        logger = logging.getLogger(name)
+        if logger.level == logging.NOTSET:
+            logger.setLevel(logging.WARNING)
+
 
 class StorageService:
     """Aggregates per-domain services over one SQLite database."""
 
     def __init__(self, db_path: str | Path) -> None:
+        _quiet_embedded_dependency_loggers()
         self._db_path = Path(db_path).expanduser()
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         cfg = GatewayConfig(cost_tracking={"db_path": str(self._db_path)})
