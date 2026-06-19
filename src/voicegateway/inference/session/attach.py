@@ -200,12 +200,18 @@ def _default_agent_id() -> str:
     return os.environ.get("VOICEGW_AGENT_ID") or socket.gethostname() or "agent"
 
 
-def _build_default_sink(collector_url: str | None, virtual_key: str | None) -> Sink:
+def _build_default_sink(
+    collector_url: str | None,
+    virtual_key: str | None,
+    db_path: str | None = None,
+) -> Sink:
     """Build the sink for attach() from env/args.
 
     Single-node default is a LocalSqliteSink over the embedded StorageService.
     Fleet mode (``collector_url`` set) uses the RemoteCollectorSink, which
-    batches rows and pushes them to the collector's ``/v1/ingest``.
+    batches rows and pushes them to the collector's ``/v1/ingest``. ``db_path``
+    overrides the local SQLite path (falls back to ``VOICEGW_DB_PATH`` then the
+    default) and is ignored on the fleet branch.
     """
     if collector_url:
         from voicegateway.services.sinks import RemoteCollectorSink
@@ -215,8 +221,8 @@ def _build_default_sink(collector_url: str | None, virtual_key: str | None) -> S
     from voicegateway.services.sinks import LocalSqliteSink
     from voicegateway.services.storage_service import StorageService
 
-    db_path = os.environ.get("VOICEGW_DB_PATH") or DEFAULT_DB_PATH
-    return LocalSqliteSink(StorageService(db_path))
+    resolved_path = db_path or os.environ.get("VOICEGW_DB_PATH") or DEFAULT_DB_PATH
+    return LocalSqliteSink(StorageService(resolved_path))
 
 
 # Strong refs to in-flight session-close finalize tasks; the event loop only
