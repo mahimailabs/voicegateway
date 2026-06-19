@@ -52,6 +52,11 @@ whisper = ["faster-whisper>=1.0.0"]
 kokoro = ["kokoro-onnx>=0.5.0", "onnxruntime>=1.19.0"]
 piper = ["piper-tts>=1.2.0"]
 
+# OpenRTC integration: drive cost tracking from an AgentPool's SessionObserver
+# seam. The adapter (voicegateway.openrtc) has no hard runtime import of
+# openrtc; this extra pins the release that ships SessionObserver.
+openrtc = ["openrtc>=0.3.0"]
+
 # All cloud providers, plus the daemon-control deps the v0.1.0
 # lifecycle commands rely on (psutil for port + process inspection
 # in voicegw doctor, platformdirs for the OS-canonical config home
