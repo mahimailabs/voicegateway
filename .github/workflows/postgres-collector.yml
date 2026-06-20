@@ -1,0 +1,85 @@
+name: Postgres collector
+
+# Gates the fleet collector against a real Postgres backend before release.
+# The "dialect" job runs the collector code against a Postgres service (catches
+# SQLite-vs-Postgres SQL drift); the "image-smoke" job builds the published
+# image and boots the docker-compose.collector.yml stack against Postgres
+# (catches packaging/boot regressions). Both would have caught the v0.9.0-0.9.1
+# collector breakages before they shipped.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  dialect:
+    name: Dialect (code vs Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: voicegw
+          POSTGRES_PASSWORD: voicegw
+          POSTGRES_DB: voicegw
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U voicegw -d voicegw"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      VOICEGW_DB_URL: postgresql+asyncpg://voicegw:voicegw@localhost:5432/voicegw
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+      - name: Create venv and install
+        run: |
+          uv python install 3.12
+          uv venv --seed --python 3.12
+          uv pip install -e ".[dev,dashboard,mcp,postgres]"
+      - name: Run the Postgres collector integration test
+        run: uv run pytest src/voicegateway/tests/integration/test_postgres_collector.py -v
+
+  image-smoke:
+    name: Image smoke (collector stack on Postgres)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the core image
+        run: docker build -f src/voicegateway/Dockerfile -t voicegateway:ci .
+      - name: Boot the collector stack and smoke init + ingest + costs
+        run: |
+          set -euo pipefail
+          cat > voicegw.yaml <<'EOF'
+          auth:
+            api_keys:
+              - token: "citestkey"
+                name: ci
+                scopes: [write]
+          EOF
+          cat > docker-compose.ci.yml <<'EOF'
+          services:
+            collector:
+              image: voicegateway:ci
+          EOF
+          export VOICEGW_PG_PASSWORD=cipass
+          docker compose -f docker-compose.collector.yml -f docker-compose.ci.yml up -d
+          ok=0
+          for _ in $(seq 1 40); do
+            if curl -fsS http://localhost:8080/health >/dev/null 2>&1; then ok=1; break; fi
+            sleep 3
+          done
+          test "$ok" = 1 || { echo "collector never became healthy"; exit 1; }
+          echo "health: $(curl -fsS http://localhost:8080/health)"
+          curl -fsS -XPOST http://localhost:8080/v1/ingest \
+            -H 'content-type: application/json' -H 'Authorization: Bearer citestkey' \
+            -d '[{"id":"ci1","timestamp":1781880000,"modality":"llm","model_id":"openai/gpt-4o","provider":"openai","project":"default","cost_usd":0.01,"session_id":"ci","agent_id":"ci"}]'
+          curl -fsS http://localhost:8080/v1/costs -H 'Authorization: Bearer citestkey'
+      - name: Collector logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.collector.yml logs collector || true
+      - name: Teardown
+        if: always()
+        run: |
+          docker compose -f docker-compose.collector.yml -f docker-compose.ci.yml down -v || true

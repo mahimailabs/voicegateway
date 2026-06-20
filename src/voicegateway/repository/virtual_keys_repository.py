@@ -228,15 +228,26 @@ async def list_stale(
     """Return non-revoked keys whose ``last_used_at`` is older than the threshold."""
     if stale_after_days < 0:
         raise ValueError(f"stale_after_days must be >= 0, got {stale_after_days}")
+    # SQLite spells "now minus N days" datetime('now', '-N days'); Postgres has
+    # no datetime(), so use CURRENT_TIMESTAMP - make_interval(days => N).
+    try:
+        dialect = session.bind.dialect.name
+    except Exception:  # noqa: BLE001 - default to the SQLite spelling
+        dialect = "sqlite"
+    if dialect == "postgresql":
+        cutoff_sql = "CURRENT_TIMESTAMP - make_interval(days => :days)"
+        params: dict[str, object] = {"days": stale_after_days}
+    else:
+        cutoff_sql = "datetime('now', :delta || ' days')"
+        params = {"delta": f"-{stale_after_days}"}
     result = await session.execute(
         text(
             f"SELECT {_SELECT_ROW_FIELDS} FROM virtual_keys "
             "WHERE revoked_at IS NULL "
-            "AND COALESCE(last_used_at, issued_at) <= "
-            "    datetime('now', :delta || ' days') "
+            f"AND COALESCE(last_used_at, issued_at) <= {cutoff_sql} "
             "ORDER BY COALESCE(last_used_at, issued_at) ASC, id ASC"
         ),
-        {"delta": f"-{stale_after_days}"},
+        params,
     )
     return [_row_to_dataclass(row) for row in result]
 

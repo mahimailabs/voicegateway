@@ -46,9 +46,11 @@ _PROJECT_UPSERT = text(
         llm_model=excluded.llm_model,
         tts_model=excluded.tts_model,
         tags=excluded.tags,
-        branding_json=COALESCE(excluded.branding_json, branding_json),
+        branding_json=COALESCE(
+            excluded.branding_json, managed_projects.branding_json
+        ),
         guardrail_policy_json=COALESCE(
-            excluded.guardrail_policy_json, guardrail_policy_json
+            excluded.guardrail_policy_json, managed_projects.guardrail_policy_json
         ),
         updated_at=excluded.updated_at
     """

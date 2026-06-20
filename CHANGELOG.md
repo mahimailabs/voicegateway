@@ -4,6 +4,43 @@ All notable changes to VoiceGateway are documented here. This project
 follows [Semantic Versioning](https://semver.org/) and
 [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.9.2: the Postgres fleet collector actually works
+
+The Postgres collector backend carried several SQLite-only SQL constructs that
+crashed the server on startup or on first ingest. They are fixed and now covered
+by a CI job that boots the collector against a real Postgres.
+
+### Fixed
+
+- **Ambiguous `ON CONFLICT` columns.** The project and session upserts referenced
+  bare existing-row columns (`COALESCE(excluded.x, x)`), which Postgres rejects as
+  ambiguous between the target table and `excluded`. They are now table-qualified
+  (`managed_projects.x`, `sessions.x`), which both SQLite and Postgres accept.
+- **`GROUP_CONCAT` in the cost summary.** Replaced with the dialect-appropriate
+  aggregate (`STRING_AGG` on Postgres, `GROUP_CONCAT` on SQLite).
+- **`datetime('now', ...)` in the virtual-key staleness queries.** Replaced with a
+  Postgres-compatible cutoff (`make_interval` / a Python-computed timestamp).
+
+### Added
+
+- **`Postgres collector` CI workflow.** A `dialect` job runs the collector against
+  a Postgres service, and an `image-smoke` job builds the published image and
+  boots `docker-compose.collector.yml` against Postgres. Together they gate the
+  collector on a working Postgres path before release.
+
+## v0.9.1: collector image and Postgres startup fixes
+
+### Fixed
+
+- **The core Docker image boots again.** It shipped without the hatch-vcs
+  generated `_version.py` (the runtime copied the raw source over the installed
+  package), so `import voicegateway` crashed on startup. The generated file is now
+  baked into the image.
+- **Postgres engine event-loop crash.** `Gateway.__init__` runs async startup
+  through several short-lived `asyncio.run()` loops; asyncpg binds connections to
+  their creating loop, so a pooled connection was reused across loops and crashed.
+  The Postgres engine now uses `NullPool`.
+
 ## v0.9.0: per-session cost tracking for OpenRTC multi-agent workers
 
 ### Added

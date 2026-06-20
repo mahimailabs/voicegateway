@@ -107,10 +107,21 @@ async def get_cost_summary(
     by_provider = {r[0]: {"cost": r[1], "requests": r[2]} for r in result}
 
     if include_pricing_source:
+        # GROUP_CONCAT is SQLite-only; Postgres spells the same aggregate
+        # STRING_AGG(expr, sep). Pick by the bound dialect (default SQLite).
+        try:
+            dialect = session.bind.dialect.name
+        except Exception:  # noqa: BLE001 - default to the SQLite spelling
+            dialect = "sqlite"
+        sources_agg = (
+            "STRING_AGG(DISTINCT pricing_source, ',')"
+            if dialect == "postgresql"
+            else "GROUP_CONCAT(DISTINCT pricing_source)"
+        )
         result = await session.execute(
             text(
                 f"""SELECT model_id, SUM(cost_usd) as cost, COUNT(*) as count,
-                           GROUP_CONCAT(DISTINCT pricing_source) as sources
+                           {sources_agg} as sources
                     FROM requests {where}
                     GROUP BY model_id ORDER BY cost DESC"""
             ),

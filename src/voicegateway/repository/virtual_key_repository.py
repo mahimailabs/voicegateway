@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import func, select
@@ -81,13 +81,14 @@ class VirtualKeyRepository(BaseRepository[VirtualKey]):
         if stale_after_days < 0:
             raise ValueError(f"stale_after_days must be >= 0, got {stale_after_days}")
         cutoff_clause = func.coalesce(VirtualKey.last_used_at, VirtualKey.issued_at)
+        # Compute the cutoff in Python instead of the SQLite-only datetime()
+        # function, so the comparison adapts to SQLite and Postgres alike.
+        cutoff = datetime.now(UTC) - timedelta(days=stale_after_days)
         async with self._session(session) as s:
             stmt = (
                 select(VirtualKey)
                 .where(VirtualKey.revoked_at.is_(None))  # type: ignore[union-attr]
-                .where(
-                    cutoff_clause <= func.datetime("now", f"-{stale_after_days} days")
-                )
+                .where(cutoff_clause <= cutoff)
                 .order_by(cutoff_clause.asc(), VirtualKey.id.asc())  # type: ignore[union-attr]
             )
             result = await s.execute(stmt)
