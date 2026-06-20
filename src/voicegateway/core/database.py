@@ -8,12 +8,14 @@ import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import NullPool
 from sqlmodel import SQLModel
 
 from voicegateway.core.config import GatewayConfig
@@ -62,6 +64,23 @@ def _find_alembic_ini() -> Path:
     )
 
 
+def _engine_kwargs(url: str) -> dict[str, Any]:
+    """Per-backend ``create_async_engine`` options.
+
+    asyncpg binds each connection to the event loop that created it, and
+    ``Gateway.__init__`` runs its async startup through several short-lived
+    ``asyncio.run()`` loops (the server later uses its own loop). A pooled
+    Postgres connection would then be reused across loops and asyncpg raises
+    "got Future attached to a different loop". ``NullPool`` opens a fresh
+    connection per checkout, bound to the current loop, which is safe across
+    loops (at the cost of no connection pooling). SQLite (aiosqlite) has no such
+    constraint and keeps the default pool with pre-ping.
+    """
+    if url.startswith("sqlite"):
+        return {"echo": False, "pool_pre_ping": True}
+    return {"echo": False, "poolclass": NullPool}
+
+
 class Database:
     """Async SQLAlchemy engine + session factory bound to a config."""
 
@@ -69,15 +88,11 @@ class Database:
         self.config = config
         url = resolve_database_url(config)
         self._db_file_path = _resolve_db_file_path(config)
-        # Only the SQLite backend has a local file to create. A Postgres
-        # collector URL must not touch the filesystem.
         if url.startswith("sqlite"):
+            # Only the SQLite backend has a local file to create. A Postgres
+            # collector URL must not touch the filesystem.
             self._db_file_path.parent.mkdir(parents=True, exist_ok=True)
-        self._engine = create_async_engine(
-            url,
-            echo=False,
-            pool_pre_ping=True,
-        )
+        self._engine = create_async_engine(url, **_engine_kwargs(url))
         self._session_factory = async_sessionmaker(
             bind=self._engine,
             class_=AsyncSession,
