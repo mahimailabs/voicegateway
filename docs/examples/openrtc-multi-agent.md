@@ -41,7 +41,7 @@ Per call, rows are tagged:
 - `project`: the value you passed to the observer.
 - `agent_id`: which registered agent handled the call (`info.agent_name`).
 - `tenant_id`: `info.metadata["tenant"]` if present in the room or job
-  metadata, else empty.
+  metadata, else `None`.
 
 ## Where the numbers go
 
