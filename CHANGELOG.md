@@ -4,6 +4,27 @@ All notable changes to VoiceGateway are documented here. This project
 follows [Semantic Versioning](https://semver.org/) and
 [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.9.0: per-session cost tracking for OpenRTC multi-agent workers
+
+### Added
+
+- **`voicegateway.openrtc.VoiceGatewayObserver`: one-line cost tracking for
+  [OpenRTC](https://github.com/mahimailabs/openrtc) workers.** OpenRTC runs many
+  LiveKit voice agents in a single worker process. This observer implements
+  OpenRTC's `SessionObserver` protocol and drives `voicegateway.attach()` for
+  every session, so a whole multi-agent worker gets per-call STT, LLM, and TTS
+  cost tracking by passing one argument:
+  `AgentPool(observers=[VoiceGatewayObserver(project="prod", collector_url=...,
+  virtual_key=...)])`. Attribution is automatic per call: `agent_id` from the
+  resolved agent name, `tenant_id` from room or job `metadata["tenant"]`, and
+  `project` from the observer config. One sink is built lazily per worker and
+  shared across all of that worker's sessions. The adapter is duck-typed (no hard
+  runtime dependency on `openrtc`, so `import voicegateway.openrtc` works without
+  it installed) and picklable for OpenRTC's `process` isolation mode. Install with
+  `pip install "voicegateway[openrtc]"` (requires `openrtc>=0.3.0`). See the
+  [OpenRTC example](https://voicegateway.mahimai.ca/docs/examples/openrtc-multi-agent)
+  for the full walkthrough.
+
 ## v0.8.6: minimal config records to storage so the dashboard works
 
 ### Fixed
