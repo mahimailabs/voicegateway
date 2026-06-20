@@ -55,7 +55,7 @@ sudo apt update && sudo apt install caddy
 
 Create `/etc/caddy/Caddyfile`:
 
-```caddyfile
+```text
 collector.<your-domain> {
     reverse_proxy localhost:8080
 }
