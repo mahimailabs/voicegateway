@@ -81,6 +81,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /install /install
 COPY --chown=voicegw:voicegw src/voicegateway/ /app/voicegateway/
+# The source tree copied above lacks the hatch-vcs _version.py: it is gitignored
+# and written only at build time. /app is the WORKDIR and shadows the installed
+# package on sys.path, so without _version.py here the very first import
+# (``from voicegateway._version import __version__`` in __init__.py) crashes the
+# server on startup. Restore it from the wheel the builder already installed.
+COPY --from=builder --chown=voicegw:voicegw \
+    /install/lib/python3.12/site-packages/voicegateway/_version.py \
+    /app/voicegateway/_version.py
 COPY --chown=voicegw:voicegw src/dashboard/__init__.py /app/dashboard/
 COPY --chown=voicegw:voicegw src/dashboard/api/static/ /app/dashboard/api/static/
 COPY --from=frontend-builder --chown=voicegw:voicegw /build/frontend/dist /app/dashboard/frontend/dist
