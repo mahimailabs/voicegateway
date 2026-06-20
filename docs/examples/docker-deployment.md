@@ -8,6 +8,8 @@ dashboard reachable on a different external port. Includes
 persistent storage, health checks, and an optional Ollama sidecar
 for local LLM inference.
 
+For hosting the collector on a VPS, Railway, or Fly.io, see [Deployment](/docs/deployment).
+
 ## Project Structure
 
 ```
