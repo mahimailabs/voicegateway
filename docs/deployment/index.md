@@ -55,4 +55,6 @@ Then open the collector URL in a browser for the dashboard.
 
 ## Notes
 
+::: note
 The Postgres collector path works as of v0.9.2 (pin `>= 0.9.2`; the image is `mahimairaja/voicegateway:0.9.2`). The ingest key must not start with `vk_`. Only `/v1/ingest` and `/health` need to be public; all other endpoints can be firewall-restricted to your internal network.
+:::
