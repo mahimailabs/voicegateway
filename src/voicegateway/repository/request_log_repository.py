@@ -68,41 +68,44 @@ _UPSERT_SESSION = text(
                :guardrails_active, :guardrails_bypassed,
                :guardrail_snapshot_json)
        ON CONFLICT(id) DO UPDATE SET
-           total_cost_usd = total_cost_usd + excluded.total_cost_usd,
-           request_count = request_count + 1,
-           tenant_id = COALESCE(tenant_id, excluded.tenant_id),
-           agent_id = COALESCE(agent_id, excluded.agent_id),
-           routed_llm = COALESCE(routed_llm, excluded.routed_llm),
-           routed_tts = COALESCE(routed_tts, excluded.routed_tts),
-           budget_ms = COALESCE(budget_ms, excluded.budget_ms),
-           budget_overrun = COALESCE(budget_overrun, excluded.budget_overrun),
+           total_cost_usd = sessions.total_cost_usd + excluded.total_cost_usd,
+           request_count = sessions.request_count + 1,
+           tenant_id = COALESCE(sessions.tenant_id, excluded.tenant_id),
+           agent_id = COALESCE(sessions.agent_id, excluded.agent_id),
+           routed_llm = COALESCE(sessions.routed_llm, excluded.routed_llm),
+           routed_tts = COALESCE(sessions.routed_tts, excluded.routed_tts),
+           budget_ms = COALESCE(sessions.budget_ms, excluded.budget_ms),
+           budget_overrun = COALESCE(
+               sessions.budget_overrun, excluded.budget_overrun
+           ),
            guardrails_active = COALESCE(
-               guardrails_active, excluded.guardrails_active
+               sessions.guardrails_active, excluded.guardrails_active
            ),
            guardrails_bypassed = COALESCE(
-               guardrails_bypassed, excluded.guardrails_bypassed
+               sessions.guardrails_bypassed, excluded.guardrails_bypassed
            ),
            guardrail_policy_snapshot_json = COALESCE(
-               guardrail_policy_snapshot_json,
+               sessions.guardrail_policy_snapshot_json,
                excluded.guardrail_policy_snapshot_json
            ),
            started_at = CASE
-               WHEN started_at IS NULL THEN excluded.started_at
-               WHEN started_at > excluded.started_at THEN excluded.started_at
-               ELSE started_at
+               WHEN sessions.started_at IS NULL THEN excluded.started_at
+               WHEN sessions.started_at > excluded.started_at
+                   THEN excluded.started_at
+               ELSE sessions.started_at
            END,
            ended_at = CASE
-               WHEN ended_at IS NULL THEN excluded.ended_at
-               WHEN ended_at < excluded.ended_at THEN excluded.ended_at
-               ELSE ended_at
+               WHEN sessions.ended_at IS NULL THEN excluded.ended_at
+               WHEN sessions.ended_at < excluded.ended_at THEN excluded.ended_at
+               ELSE sessions.ended_at
            END,
            modalities = CASE
-               WHEN modalities = '' THEN excluded.modalities
+               WHEN sessions.modalities = '' THEN excluded.modalities
                WHEN INSTR(
-                   ',' || modalities || ',',
+                   ',' || sessions.modalities || ',',
                    ',' || excluded.modalities || ','
-               ) > 0 THEN modalities
-               ELSE modalities || ',' || excluded.modalities
+               ) > 0 THEN sessions.modalities
+               ELSE sessions.modalities || ',' || excluded.modalities
            END"""
 )
 
