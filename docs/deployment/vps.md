@@ -7,12 +7,36 @@ description: "Run the VoiceGateway fleet collector on your own server with Docke
 
 Choose this path when you already control a server (cheapest option; ideal for co-locating with a self-hosted LiveKit server).
 
-## Prerequisites
+## One-line installer (recommended)
 
-- A VPS with Docker and Compose installed (`curl -fsSL https://get.docker.com | sh`)
-- A domain you can point at the box
+The installer script handles Docker, secrets, image pinning, health checking, and HTTPS in a single command:
 
-## Deploy the collector
+```bash
+curl -fsSL https://voicegateway.mahimai.ca/collector.sh | bash
+```
+
+It prompts for backend (SQLite or Postgres) and whether to set up HTTPS. For non-interactive use:
+
+```bash
+# SQLite (single collector, no external database)
+curl -fsSL https://voicegateway.mahimai.ca/collector.sh | bash -s -- --sqlite --yes
+
+# Postgres (fleet / production), expose via https://collector.example.com
+curl -fsSL https://voicegateway.mahimai.ca/collector.sh | bash -s -- --postgres --domain example.com --yes
+```
+
+The script:
+- Installs Docker if not present (with confirmation)
+- Generates and persists the ingest key and Postgres password on first run, reuses them on subsequent runs (no password-regen footgun)
+- Pins the image to the latest release version (never `:latest`)
+- Health-checks the container before returning
+- If ports 80/443 are free and a domain is given, installs Caddy and issues a certificate automatically; otherwise prints the reverse-proxy snippet for your existing proxy
+
+The ingest key is printed to your terminal and saved to the deploy directory (`/opt/voicegateway/voicegw.yaml` by default). Use it as the `virtual_key` when connecting agents.
+
+## Manual setup
+
+Prerequisites: Docker and Compose installed (`curl -fsSL https://get.docker.com | sh`).
 
 ```bash
 mkdir -p ~/voicegw && cd ~/voicegw
@@ -35,6 +59,10 @@ echo "AGENT KEY (use as the agent virtual_key): ${INGEST_KEY}"
 docker compose -f docker-compose.collector.yml up -d
 sleep 10 && curl -fsS http://localhost:8080/health && echo     # -> ok
 ```
+
+::: warning
+Run the above exactly once. Re-running it regenerates the Postgres password but the existing volume keeps the old one, causing authentication failures. If you need to re-run, bring the stack down first and remove the volume: `docker compose down -v`. The one-line installer avoids this footgun by persisting secrets across runs.
+:::
 
 Postgres runs as a service in this Compose (self-hosted). To use a managed database instead, drop the `postgres` service and set `VOICEGW_DB_URL=postgresql+asyncpg://...` (e.g. a Neon URL) on the `collector` service.
 
@@ -74,6 +102,21 @@ For safety, bind the collector to localhost only by changing the compose port ma
 
 If the box already runs a reverse proxy on 80/443 (for example a self-hosted LiveKit server whose Caddy runs with host networking), that proxy reaches the collector at `localhost:8080` with no extra wiring. The collector publishes 8080 on the host; a host-networked proxy shares the host's network namespace. Add a vhost or TLS-SNI route for `collector.<your-domain>` pointing to `localhost:8080`. Back up the proxy config first and reload it gracefully.
 
+For LiveKit's layer-4 Caddy (structured `caddy.yaml`), add a TLS-SNI route and include the hostname in `apps.tls.certificates.automate`:
+
+```text
+# Under apps.layer4.servers.main.routes:
+          - match:
+              - tls: { sni: ["collector.<your-domain>"] }
+            handle:
+              - handler: tls
+                connection_policies: [{ alpn: ["http/1.1"] }]
+              - handler: proxy
+                upstreams: [{ dial: ["localhost:8080"] }]
+```
+
+Reload with `caddy reload --config /etc/caddy.yaml --adapter yaml` (validates before applying; LiveKit stays up if the config is invalid).
+
 ## Security
 
 ::: warning
@@ -82,8 +125,8 @@ Only `/v1/ingest` and `/health` need to be public. Put the dashboard and `/v1/vi
 
 ## Verify
 
-Follow the steps at [Verify](/docs/deployment#verify), using `https://collector.<your-domain>` as the collector URL and the `AGENT KEY` printed above.
+Follow the steps at [Verify](/docs/deployment#verify), using `https://collector.<your-domain>` as the collector URL and the ingest key printed during setup.
 
 ## Connect your agent
 
-See [Connect your agent](/docs/deployment#connect-your-agent). Use `https://collector.<your-domain>` as `collector_url` and the `AGENT KEY` as `virtual_key`.
+See [Connect your agent](/docs/deployment#connect-your-agent). Use `https://collector.<your-domain>` as `collector_url` and the ingest key as `virtual_key`.

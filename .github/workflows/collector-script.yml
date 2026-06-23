@@ -1,0 +1,54 @@
+name: collector.sh
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - 'web/public/collector.sh'
+      - 'src/voicegateway/tests/cli/test_collector_script.sh'
+      - 'src/voicegateway/tests/cli/_docker_stub.sh'
+      - '.github/workflows/collector-script.yml'
+  push:
+    branches: [main]
+
+jobs:
+  lint-and-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - run: shellcheck web/public/collector.sh
+      - run: bash src/voicegateway/tests/cli/test_collector_script.sh
+
+  boot:
+    runs-on: ubuntu-latest   # has Docker + compose preinstalled
+    strategy:
+      matrix:
+        backend: [sqlite, postgres]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+      - name: Run the installer non-interactively and assert health
+        env:
+          BACKEND: ${{ matrix.backend }}
+        run: |
+          set -euo pipefail
+          # Validate BACKEND is one of the two known values before using it in a
+          # flag so we never pass arbitrary shell content to the script.
+          case "$BACKEND" in
+            sqlite|postgres) ;;
+            *) echo "unexpected backend: $BACKEND"; exit 1;;
+          esac
+          sudo bash web/public/collector.sh "--$BACKEND" \
+            --dir "$RUNNER_TEMP/voicegw" --version 0.9.2 --yes
+          for _ in $(seq 1 40); do
+            curl -fsS http://localhost:8080/health && break || sleep 3
+          done
+          curl -fsS http://localhost:8080/health
+      - if: failure()
+        run: sudo cat "$RUNNER_TEMP/voicegw/docker-compose.yml"; cd "$RUNNER_TEMP/voicegw" && sudo docker compose logs || true
