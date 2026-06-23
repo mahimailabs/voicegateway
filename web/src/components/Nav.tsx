@@ -13,9 +13,7 @@ export default function Nav() {
   return (
     <header className={styles.vgTopbar}>
       <Link className={styles.vgWordmark} href="/" aria-label="VoiceGateway home">
-        <Image className={styles.vgMascot} src="/brand/goat.svg" alt="" width={32} height={32} priority />
-        <span className={styles.vgName}>VoiceGateway</span>
-        <span className={styles.vgTag} aria-hidden="true">{'// SDK'}</span>
+        <Image className={styles.vgWordmarkImg} src="/brand/wordings.png" alt="VoiceGateway" width={160} height={23} priority />
       </Link>
 
       <nav className={styles.vgLinks} aria-label="Primary">

@@ -19,28 +19,10 @@
   color: var(--ink);
 }
 
-.vgMascot {
-  width: 32px;
-  height: 32px;
+.vgWordmarkImg {
   display: block;
-  flex-shrink: 0;
-}
-
-.vgName {
-  font-family: var(--hand-title);
-  font-weight: 700;
-  font-size: 26px;
-  letter-spacing: 0.5px;
-  line-height: 1;
-}
-
-.vgTag {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--ink-soft);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  margin-left: 2px;
+  height: 28px;
+  width: auto;
 }
 
 .vgLinks {
@@ -85,15 +67,8 @@
     padding: 10px 16px;
     gap: 10px;
   }
-  .vgName {
-    font-size: 22px;
-  }
-  .vgMascot {
-    width: 26px;
-    height: 26px;
-  }
-  .vgTag {
-    display: none;
+  .vgWordmarkImg {
+    height: 22px;
   }
   .vgLinks {
     order: 3;
