@@ -1,14 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import SourceBadge from '../components/SourceBadge';
 import { fetchJson } from '../lib/api';
-
-interface ProviderRow {
-  provider_id: string;
-  source: string;
-  api_key_masked: string;
-  base_url: string | null;
-}
+import Projects from './Projects';
+import Providers from './Providers';
+import Routing from './Routing';
+import Guardrails from './Guardrails';
+import ApiKeys from './ApiKeys';
 
 interface AuditEntry {
   id: number;
@@ -20,7 +18,7 @@ interface AuditEntry {
   source: string;
 }
 
-const TABS = ['Providers', 'Models', 'General', 'Audit Log'] as const;
+const TABS = ['Providers', 'API Keys', 'Projects', 'Routing', 'Guardrails', 'Models', 'General', 'Audit Log'] as const;
 type Tab = (typeof TABS)[number];
 
 export default function Settings({ tab: initialTab }: { tab?: string }) {
@@ -44,125 +42,14 @@ export default function Settings({ tab: initialTab }: { tab?: string }) {
         ))}
       </div>
 
-      {activeTab === 'Providers' && <ProvidersTab />}
+      {activeTab === 'Providers' && <Providers />}
+      {activeTab === 'API Keys' && <ApiKeys />}
+      {activeTab === 'Projects' && <Projects />}
+      {activeTab === 'Routing' && <Routing />}
+      {activeTab === 'Guardrails' && <Guardrails />}
       {activeTab === 'Models' && <ModelsTab />}
       {activeTab === 'General' && <GeneralTab />}
       {activeTab === 'Audit Log' && <AuditLogTab />}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Providers Tab
-// ---------------------------------------------------------------------------
-
-function ProvidersTab() {
-  const [providers, setProviders] = useState<ProviderRow[]>([]);
-  const [showAdd, setShowAdd] = useState(false);
-
-  const refresh = useCallback(() => {
-    fetchJson<{ providers: ProviderRow[] }>('/v1/providers')
-      .then((d) => setProviders(d.providers))
-      .catch(() => setProviders([]));
-  }, []);
-
-  useEffect(() => { refresh(); }, [refresh]);
-
-  return (
-    <div className="mt-lg">
-      <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: 16 }}>
-        <h3>Configured Providers</h3>
-        <button className="neo-btn neo-btn--primary" onClick={() => setShowAdd(true)}>+ Add Provider</button>
-      </div>
-      <table className="neo-table neo-table--pink">
-        <thead>
-          <tr><th>Provider</th><th>Status</th><th>Source</th><th>Actions</th></tr>
-        </thead>
-        <tbody>
-          {providers.map((p) => (
-            <tr key={p.provider_id}>
-              <td className="mono">{p.provider_id}</td>
-              <td><span className="neo-badge neo-badge--online">Configured</span></td>
-              <td><SourceBadge source={p.source} /></td>
-              <td>
-                <button className="neo-btn neo-btn--sm" onClick={() => testProvider(p.provider_id)}>Test</button>
-              </td>
-            </tr>
-          ))}
-          {providers.length === 0 && (
-            <tr><td colSpan={4} className="empty-state">No providers configured.</td></tr>
-          )}
-        </tbody>
-      </table>
-      {showAdd && <AddProviderModal onClose={() => { setShowAdd(false); refresh(); }} />}
-    </div>
-  );
-}
-
-async function testProvider(id: string) {
-  try {
-    const res = await fetch(`/v1/providers/${encodeURIComponent(id)}/test`, { method: 'POST' });
-    const data = await res.json();
-    alert(data.status === 'ok' ? `${id}: OK (${data.latency_ms}ms)` : `${id}: ${data.message}`);
-  } catch {
-    alert(`${id}: test failed`);
-  }
-}
-
-function AddProviderModal({ onClose }: { onClose: () => void }) {
-  const [providerId, setProviderId] = useState('');
-  const [providerType, setProviderType] = useState('deepgram');
-  const [apiKey, setApiKey] = useState('');
-  const [baseUrl, setBaseUrl] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      const res = await fetch('/v1/providers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider_id: providerId || providerType,
-          provider_type: providerType,
-          api_key: apiKey,
-          base_url: baseUrl || undefined,
-        }),
-      });
-      if (res.ok) {
-        onClose();
-      } else {
-        const err = await res.json();
-        alert(err.detail || 'Failed to add provider');
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="neo-modal-backdrop" onClick={onClose}>
-      <div className="neo-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Add Provider</h3>
-        <label className="label">Provider Type</label>
-        <select className="neo-select" value={providerType} onChange={(e) => { const v = e.target.value; setProviderType(v); if (!providerId) setProviderId(v); }}>
-          {['deepgram','openai','anthropic','groq','cartesia','elevenlabs','assemblyai','ollama','whisper','kokoro','piper'].map(t => (
-            <option key={t} value={t}>{t}</option>
-          ))}
-        </select>
-        <label className="label mt-md">Provider ID</label>
-        <input className="neo-input" placeholder={providerType} value={providerId} onChange={(e) => setProviderId(e.target.value)} />
-        <label className="label mt-md">API Key</label>
-        <input className="neo-input" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-        <label className="label mt-md">Base URL (optional)</label>
-        <input className="neo-input" placeholder="e.g. http://localhost:11434" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-        <div className="flex-row mt-lg">
-          <button className="neo-btn" onClick={onClose}>Cancel</button>
-          <button className="neo-btn neo-btn--primary" onClick={save} disabled={saving}>
-            {saving ? 'Saving...' : 'Save Provider'}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

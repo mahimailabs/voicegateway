@@ -1,20 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, useMatch } from 'react-router-dom';
 import Overview from './pages/Overview';
-import Models from './pages/Models';
 import Costs from './pages/Costs';
-import Latency from './pages/Latency';
 import Logs from './pages/Logs';
-import Metrics from './pages/Metrics';
 import Replay from './pages/Replay';
 import Sessions from './pages/Sessions';
 import Agents from './pages/Agents';
-import Projects from './pages/Projects';
-import Providers from './pages/Providers';
-import Routing from './pages/Routing';
-import Guardrails from './pages/Guardrails';
 import Settings from './pages/Settings';
-import VirtualKeys from './pages/VirtualKeys';
 import Login from './pages/Login';
 import type { StatusResponse } from './lib/types';
 import { AUTH_REQUIRED_EVENT, clearToken, fetchJson, getToken } from './lib/api';
@@ -26,32 +18,13 @@ interface ActiveBranding {
   product_name?: string | null;
 }
 
-// Foundry v0.4.0 nav order: Costs, Logs, Sessions, Metrics, Replay
-// (conditional, lives under /sessions/:id/replay so it is not a top-
-// level entry), Projects, Providers, Virtual Keys. Overview, Models,
-// Latency, and Settings predate that spec and are kept above /
-// below the v0.4.0 block so existing users find them where they were.
-// Foundry v0.5.0 nav order: Costs, Logs, Sessions, Metrics, Replay
-// (conditional, lives under /sessions/:id/replay so it is not a top-
-// level entry), Routing, Projects, Providers, Virtual Keys, Settings.
-// Overview, Models, and Latency predate that spec and are kept above
-// the v0.5.0 block so existing users find them where they were.
-// Foundry v0.6.0 inserts Guardrails between Routing and Projects.
 const PAGES = [
-  { to: '/',             label: 'Overview',     id: 'overview' },
-  { to: '/models',       label: 'Models',       id: 'models'   },
-  { to: '/costs',        label: 'Costs',        id: 'costs'    },
-  { to: '/latency',      label: 'Latency',      id: 'latency'  },
-  { to: '/logs',         label: 'Logs',         id: 'logs'     },
-  { to: '/sessions',     label: 'Sessions',     id: 'sessions' },
-  { to: '/agents',       label: 'Agents',       id: 'agents'   },
-  { to: '/metrics',      label: 'Metrics',      id: 'metrics'  },
-  { to: '/routing',      label: 'Routing',      id: 'routing'  },
-  { to: '/guardrails',   label: 'Guardrails',   id: 'guardrails' },
-  { to: '/projects',     label: 'Projects',     id: 'projects' },
-  { to: '/providers',    label: 'Providers',    id: 'providers' },
-  { to: '/virtual-keys', label: 'Virtual Keys', id: 'virtual-keys' },
-  { to: '/settings',     label: 'Settings',     id: 'settings' },
+  { to: '/',         label: 'Overview',  id: 'overview'  },
+  { to: '/sessions', label: 'Sessions',  id: 'sessions'  },
+  { to: '/costs',    label: 'Costs',     id: 'costs'     },
+  { to: '/logs',     label: 'Logs',      id: 'logs'      },
+  { to: '/agents',   label: 'Agents',    id: 'agents'    },
+  { to: '/settings', label: 'Settings',  id: 'settings'  },
 ] as const;
 
 type AuthState = 'checking' | 'needs-login' | 'ready';
@@ -120,19 +93,11 @@ export default function App() {
         <main className="main">
           <Routes>
             <Route path="/" element={<Overview />} />
-            <Route path="/models" element={<Models />} />
-            <Route path="/costs" element={<Costs />} />
-            <Route path="/latency" element={<Latency />} />
-            <Route path="/logs" element={<Logs />} />
             <Route path="/sessions" element={<Sessions />} />
             <Route path="/sessions/:sessionId/replay" element={<Replay />} />
+            <Route path="/costs" element={<Costs />} />
+            <Route path="/logs" element={<Logs />} />
             <Route path="/agents" element={<Agents />} />
-            <Route path="/metrics" element={<Metrics />} />
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/providers" element={<Providers />} />
-            <Route path="/routing" element={<Routing />} />
-            <Route path="/guardrails" element={<Guardrails />} />
-            <Route path="/virtual-keys" element={<VirtualKeys />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/settings/audit-log" element={<Settings tab="audit" />} />
           </Routes>

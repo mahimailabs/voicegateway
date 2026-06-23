@@ -257,8 +257,8 @@ export interface AgentsResponse {
  */
 export type AgentFilter = string | null;
 
-/** One row in the Virtual Keys table; the bcrypt hash never appears. */
-export interface VirtualKey {
+/** One row in the API Keys table; the bcrypt hash never appears. */
+export interface ApiKey {
   id: number;
   key_prefix: string;
   name: string;
@@ -269,11 +269,11 @@ export interface VirtualKey {
   revoked_at: string | null;
 }
 
-/** `POST /api/virtual_keys` response: the only place plaintext appears. */
-export interface CreatedVirtualKey {
+/** `POST /api/api_keys` response: the only place plaintext appears. */
+export interface CreatedApiKey {
   id: number;
   plaintext: string;
-  row: VirtualKey;
+  row: ApiKey;
 }
 
 // ----------------------------------------------------------------------
