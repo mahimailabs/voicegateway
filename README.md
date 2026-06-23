@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎙️ VoiceGateway
+<img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/src/dashboard/api/static/branding/wordings.png" alt="VoiceGateway" width="320" />
 
 **Voice AI cost transparency. Self-hosted, on your keys.**
 
