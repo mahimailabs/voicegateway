@@ -49,8 +49,8 @@ def _patch(monkeypatch: Any) -> tuple[list[dict[str, Any]], _SentinelSink, list[
         attach_calls.append({"session": session, **kwargs})
         return "session-id"
 
-    def _fake_build(collector_url: Any, virtual_key: Any, db_path: Any = None) -> Any:
-        build_args.append((collector_url, virtual_key, db_path))
+    def _fake_build(collector_url: Any, api_key: Any, db_path: Any = None) -> Any:
+        build_args.append((collector_url, api_key, db_path))
         return the_sink
 
     monkeypatch.setattr("voicegateway.openrtc.attach", _fake_attach)
@@ -102,7 +102,7 @@ async def test_env_fallbacks_and_constructor_precedence(
 ) -> None:
     _, _, build_args = _patch(monkeypatch)
     monkeypatch.setenv("VOICEGW_COLLECTOR_URL", "https://env-collector")
-    monkeypatch.setenv("VOICEGW_VIRTUAL_KEY", "vk_env")
+    monkeypatch.setenv("VOICEGW_API_KEY", "vk_env")
 
     # No constructor collector/key: env wins.
     obs_env = VoiceGatewayObserver()
@@ -112,7 +112,7 @@ async def test_env_fallbacks_and_constructor_precedence(
 
     # Constructor beats env.
     obs_explicit = VoiceGatewayObserver(
-        collector_url="https://explicit", virtual_key="vk_explicit"
+        collector_url="https://explicit", api_key="vk_explicit"
     )
     await obs_explicit.on_session_start(_FakeInfo("a", {}), _FakeSession())
     assert build_args[-1][0] == "https://explicit"

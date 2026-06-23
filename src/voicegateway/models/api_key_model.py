@@ -1,4 +1,4 @@
-"""ORM model for the ``virtual_keys`` table."""
+"""ORM model for the ``api_keys`` table."""
 
 from __future__ import annotations
 
@@ -13,10 +13,10 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class VirtualKey(SQLModel, table=True):
+class ApiKey(SQLModel, table=True):
     """A long-lived authentication token issued to a tenant operator."""
 
-    __tablename__: ClassVar[str] = "virtual_keys"
+    __tablename__: ClassVar[str] = "api_keys"
 
     id: int | None = Field(default=None, primary_key=True)
     key_prefix: str = Field(index=True)

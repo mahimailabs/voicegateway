@@ -1,7 +1,7 @@
 """POST /v1/ingest: receive batched request records from fleet agents.
 
 A self-hosted collector exposes this endpoint; the library's
-``RemoteCollectorSink`` POSTs batches here. Auth is a virtual-key bearer token
+``RemoteCollectorSink`` POSTs batches here. Auth is an api-key bearer token
 (``require_scope`` short-circuits on the ``vk_`` prefix and sets the tenant
 ContextVar, which the request-log repository reads at write time -> the tenant
 is stamped server-side, not trusted from the payload). ``id`` is the record's
@@ -47,10 +47,10 @@ def _record_from_payload(raw: dict[str, Any]) -> RequestRecord | None:
 def _rate_limit_key(request: Request) -> str:
     """Identity for ingest rate limiting: virtual key, then API-key hash, then IP.
 
-    ``require_scope`` sets ``virtual_key_id`` only on the virtual-key path, so
+    ``require_scope`` sets ``api_key_id`` only on the api-key path, so
     static-key and bare callers fall through to the API-key hash or client IP.
     """
-    vk = getattr(request.state, "virtual_key_id", None)
+    vk = getattr(request.state, "api_key_id", None)
     if vk is not None:
         return f"vk:{vk}"
     auth = request.headers.get("Authorization")

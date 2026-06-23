@@ -25,7 +25,7 @@ _EXPECTED_TABLES: frozenset[str] = frozenset(
         "requests",
         "sessions",
         "turns",
-        "virtual_keys",
+        "api_keys",
     }
 )
 

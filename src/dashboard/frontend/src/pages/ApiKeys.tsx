@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import {
-  createVirtualKey,
-  fetchVirtualKeys,
-  revokeVirtualKey,
+  createApiKey,
+  fetchApiKeys,
+  revokeApiKey,
 } from '../lib/api';
-import type { CreatedVirtualKey, VirtualKey } from '../lib/types';
+import type { CreatedApiKey, ApiKey } from '../lib/types';
 
 const STALE_DAYS_DEFAULT = 90;
 
@@ -15,7 +15,7 @@ function daysSince(iso: string): number {
   return Math.floor((Date.now() - then) / 86400000);
 }
 
-function isStale(k: VirtualKey, threshold: number): boolean {
+function isStale(k: ApiKey, threshold: number): boolean {
   if (k.revoked_at !== null) return false;
   const last = k.last_used_at ?? k.issued_at;
   return daysSince(last) >= threshold;
@@ -31,14 +31,14 @@ function formatRelative(iso: string | null): string {
   return `${Math.floor(d / 365)}y ago`;
 }
 
-export default function VirtualKeys() {
-  const [keys, setKeys] = useState<VirtualKey[]>([]);
+export default function ApiKeys() {
+  const [keys, setKeys] = useState<ApiKey[]>([]);
   const [includeRevoked, setIncludeRevoked] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [showKey, setShowKey] = useState<CreatedVirtualKey | null>(null);
+  const [showKey, setShowKey] = useState<CreatedApiKey | null>(null);
 
   const refresh = () => {
-    fetchVirtualKeys({ includeRevoked })
+    fetchApiKeys({ includeRevoked })
       .then((d) => setKeys(d.keys))
       .catch(() => setKeys([]));
   };
@@ -60,7 +60,7 @@ export default function VirtualKeys() {
   return (
     <div>
       <PageHeader
-        title="Virtual Keys"
+        title="API Keys"
         subtitle={`${activeCount} active · ${staleCount} stale · ${keys.length} total`}
         accent="orange"
         actions={
@@ -86,7 +86,7 @@ export default function VirtualKeys() {
 
       <div className="neo-card mt-md">
         {keys.length === 0 ? (
-          <div className="empty-state">No virtual keys issued yet.</div>
+          <div className="empty-state">No API keys issued yet.</div>
         ) : (
           <table className="neo-table">
             <thead>
@@ -182,7 +182,7 @@ function RevokeButton({ id, onDone }: { id: number; onDone: () => void }) {
     if (!confirm('Revoke this key? It cannot be undone.')) return;
     setBusy(true);
     try {
-      await revokeVirtualKey(id);
+      await revokeApiKey(id);
       onDone();
     } catch (e) {
       alert((e as Error).message || 'Failed to revoke key');
@@ -203,7 +203,7 @@ function IssueKeyModal({
   onIssued,
 }: {
   onCancel: () => void;
-  onIssued: (resp: CreatedVirtualKey) => void;
+  onIssued: (resp: CreatedApiKey) => void;
 }) {
   const [name, setName] = useState('');
   const [tenantId, setTenantId] = useState('');
@@ -213,7 +213,7 @@ function IssueKeyModal({
   const save = async () => {
     setSaving(true);
     try {
-      const resp = await createVirtualKey({
+      const resp = await createApiKey({
         name,
         tenant_id: tenantId.trim() || null,
         issued_by: issuedBy.trim() || null,
@@ -229,7 +229,7 @@ function IssueKeyModal({
   return (
     <div className="neo-modal-backdrop" onClick={onCancel}>
       <div className="neo-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Issue Virtual Key</h3>
+        <h3>Issue API Key</h3>
         <label className="label">Name</label>
         <input
           className="neo-input"
@@ -275,7 +275,7 @@ function ShowKeyOnceModal({
   response,
   onClose,
 }: {
-  response: CreatedVirtualKey;
+  response: CreatedApiKey;
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);

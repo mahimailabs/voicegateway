@@ -88,7 +88,8 @@ async function extractErrorDetail(res: Response): Promise<string | null> {
 import type {
   AgentRow,
   AgentsResponse,
-  CreatedVirtualKey,
+  ApiKey,
+  CreatedApiKey,
   DeadAirEvent,
   GuardrailAggregateResponse,
   GuardrailCategory,
@@ -106,7 +107,6 @@ import type {
   TenantRow,
   TenantsResponse,
   TurnRow,
-  VirtualKey,
 } from './types';
 
 /**
@@ -231,34 +231,34 @@ export function fetchAgent(agentId: string): Promise<AgentRow> {
   return fetchJson<AgentRow>(`/api/agents/${encodeURIComponent(agentId)}`);
 }
 
-export function fetchVirtualKeys(
+export function fetchApiKeys(
   options: { includeRevoked?: boolean } = {},
-): Promise<{ keys: VirtualKey[] }> {
+): Promise<{ keys: ApiKey[] }> {
   const params = new URLSearchParams();
   if (options.includeRevoked !== undefined) {
     params.set('include_revoked', options.includeRevoked ? 'true' : 'false');
   }
   const query = params.toString();
-  return fetchJson<{ keys: VirtualKey[] }>(
-    query ? `/api/virtual_keys?${query}` : '/api/virtual_keys',
+  return fetchJson<{ keys: ApiKey[] }>(
+    query ? `/api/api_keys?${query}` : '/api/api_keys',
   );
 }
 
-export function createVirtualKey(body: {
+export function createApiKey(body: {
   name: string;
   tenant_id?: string | null;
   issued_by?: string | null;
-}): Promise<CreatedVirtualKey> {
-  return fetchJson<CreatedVirtualKey>('/api/virtual_keys', {
+}): Promise<CreatedApiKey> {
+  return fetchJson<CreatedApiKey>('/api/api_keys', {
     method: 'POST',
     body: JSON.stringify(body),
   });
 }
 
-export function revokeVirtualKey(
+export function revokeApiKey(
   keyId: number,
-): Promise<{ id: number; revoked: true; row: VirtualKey }> {
-  return fetchJson(`/api/virtual_keys/${keyId}/revoke`, { method: 'POST' });
+): Promise<{ id: number; revoked: true; row: ApiKey }> {
+  return fetchJson(`/api/api_keys/${keyId}/revoke`, { method: 'POST' });
 }
 
 // ----------------------------------------------------------------------

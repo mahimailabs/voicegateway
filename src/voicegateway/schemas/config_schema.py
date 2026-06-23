@@ -90,7 +90,7 @@ class GuardrailsConfig(_StrictBase):
 class TenantConfig(_StrictBase):
     """Multi-tenant attribution knobs."""
 
-    virtual_key_stale_days: int = Field(default=90, ge=1)
+    api_key_stale_days: int = Field(default=90, ge=1)
 
 
 class IngestConfig(_StrictBase):

@@ -156,19 +156,19 @@ def test_tenant_detail_returns_404_when_storage_disabled(storage_disabled_client
     assert resp.status_code == 404
 
 
-def test_virtual_keys_list_returns_empty_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.get("/api/virtual_keys")
+def test_api_keys_list_returns_empty_when_storage_disabled(storage_disabled_client):
+    resp = storage_disabled_client.get("/api/api_keys")
     assert resp.status_code == 200
     assert resp.json() == {"keys": []}
 
 
-def test_virtual_keys_create_returns_503_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.post("/api/virtual_keys", json={"name": "test"})
+def test_api_keys_create_returns_503_when_storage_disabled(storage_disabled_client):
+    resp = storage_disabled_client.post("/api/api_keys", json={"name": "test"})
     assert resp.status_code == 503
 
 
-def test_virtual_keys_revoke_returns_503_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.post("/api/virtual_keys/1/revoke")
+def test_api_keys_revoke_returns_503_when_storage_disabled(storage_disabled_client):
+    resp = storage_disabled_client.post("/api/api_keys/1/revoke")
     assert resp.status_code == 503
 
 

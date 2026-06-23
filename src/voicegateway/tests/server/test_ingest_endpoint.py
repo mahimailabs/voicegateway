@@ -7,7 +7,7 @@ import yaml
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.repository import virtual_keys_repository as virtual_keys
+from voicegateway.repository import api_keys_repository as api_keys
 from voicegateway.server import build_app
 
 _BASE_CONFIG = {
@@ -57,7 +57,7 @@ def _payload(rid: str, agent_id: str = "agent-1") -> dict:
 async def test_ingest_accepts_batch_and_stamps_tenant(gateway):
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        created = await virtual_keys.create_virtual_key(
+        created = await api_keys.create_api_key(
             db, name="bot", tenant_id="acme"
         )
 
@@ -82,7 +82,7 @@ async def test_ingest_accepts_batch_and_stamps_tenant(gateway):
 async def test_ingest_is_idempotent_on_id(gateway):
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        created = await virtual_keys.create_virtual_key(db, name="bot")
+        created = await api_keys.create_api_key(db, name="bot")
 
     client = await _client(gateway)
     async with client as c:
@@ -107,8 +107,8 @@ async def test_ingest_is_idempotent_on_id(gateway):
 async def test_ingest_rejects_revoked_key(gateway):
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        created = await virtual_keys.create_virtual_key(db, name="bot")
-        await virtual_keys.revoke(db, created.id)
+        created = await api_keys.create_api_key(db, name="bot")
+        await api_keys.revoke(db, created.id)
 
     client = await _client(gateway)
     async with client as c:
@@ -129,7 +129,7 @@ async def test_two_agents_aggregate_in_one_collector(gateway):
 
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        created = await virtual_keys.create_virtual_key(db, name="fleet")
+        created = await api_keys.create_api_key(db, name="fleet")
 
     now = time.time()
 
@@ -173,7 +173,7 @@ async def test_ingest_one_failing_record_does_not_fail_batch(gateway, monkeypatc
     is skipped, not allowed to 500 the whole batch."""
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        created = await virtual_keys.create_virtual_key(db, name="bot")
+        created = await api_keys.create_api_key(db, name="bot")
 
     real_log = gateway.storage.log_request
 

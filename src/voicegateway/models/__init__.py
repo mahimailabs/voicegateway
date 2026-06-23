@@ -8,6 +8,7 @@ both see them.
 from __future__ import annotations
 
 from voicegateway.models.agent_observation_model import AgentObservation
+from voicegateway.models.api_key_model import ApiKey
 from voicegateway.models.base_model import BaseModel, BaseUUIDModel
 from voicegateway.models.config_audit_log_model import ConfigAuditLog
 from voicegateway.models.dead_air_event_model import DeadAirEvent
@@ -25,7 +26,6 @@ from voicegateway.models.replay_event_model import (
 from voicegateway.models.request_model import Request, RequestRecord
 from voicegateway.models.session_model import Session
 from voicegateway.models.turn_model import Turn
-from voicegateway.models.virtual_key_model import VirtualKey
 
 __all__ = [
     "AgentObservation",
@@ -46,5 +46,5 @@ __all__ = [
     "RequestRecord",
     "Session",
     "Turn",
-    "VirtualKey",
+    "ApiKey",
 ]

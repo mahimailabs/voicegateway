@@ -290,12 +290,12 @@ print_summary() {
    URL:        $url
    Manage:     cd $DIR && docker compose logs -f   |   docker compose down
 
-   Point your agents at it (use the ingest key shown above as virtual_key):
+   Point your agents at it (use the ingest key shown above as api_key):
 
    from openrtc import AgentPool
    from voicegateway.openrtc import VoiceGatewayObserver
    pool = AgentPool(observers=[VoiceGatewayObserver(
-       project="prod", collector_url="$url", virtual_key="<your-ingest-key>")])
+       project="prod", collector_url="$url", api_key="<your-ingest-key>")])
 
    Note: only /v1/ingest and /health need to be public; protect the dashboard.
 EOF

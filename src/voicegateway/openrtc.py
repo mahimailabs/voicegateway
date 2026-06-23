@@ -10,7 +10,7 @@ structurally (duck-typed, no runtime ``openrtc`` import) so an OpenRTC
     pool = AgentPool(observers=[VoiceGatewayObserver(
         project="prod",
         collector_url="https://collector.example.com",
-        virtual_key="vk_...",
+        api_key="vk_...",
     )])
 
 One sink is built lazily per worker process and shared across every session.
@@ -46,12 +46,12 @@ class VoiceGatewayObserver:
         *,
         project: str = "default",
         collector_url: str | None = None,
-        virtual_key: str | None = None,
+        api_key: str | None = None,
         db_path: str | None = None,
     ) -> None:
         self._project = project
         self._collector_url = collector_url
-        self._virtual_key = virtual_key
+        self._api_key = api_key
         self._db_path = db_path
         self._sink: Sink | None = None
 
@@ -61,7 +61,7 @@ class VoiceGatewayObserver:
         if self._sink is None:
             self._sink = _build_default_sink(
                 self._collector_url or os.environ.get("VOICEGW_COLLECTOR_URL"),
-                self._virtual_key or os.environ.get("VOICEGW_VIRTUAL_KEY"),
+                self._api_key or os.environ.get("VOICEGW_API_KEY"),
                 db_path=self._db_path,
             )
         return self._sink

@@ -8,8 +8,8 @@ from typing import Final
 
 import bcrypt
 
-from voicegateway.models.virtual_key_model import VirtualKey
-from voicegateway.repository.virtual_key_repository import VirtualKeyRepository
+from voicegateway.models.api_key_model import ApiKey
+from voicegateway.repository.api_key_repository import ApiKeyRepository
 from voicegateway.services.base_service import BaseService
 
 VK_PREFIX: Final[str] = "vk_"
@@ -24,7 +24,7 @@ class CreatedKey:
     """Plaintext shown once on create, row safe to log."""
 
     plaintext: str
-    row: VirtualKey
+    row: ApiKey
 
 
 @dataclass(frozen=True)
@@ -62,13 +62,13 @@ def _check(plaintext: str, stored_hash: str) -> bool:
     return bcrypt.checkpw(plaintext.encode("utf-8"), stored_hash.encode("utf-8"))
 
 
-class VirtualKeyService(BaseService[VirtualKey]):
-    """Composes VirtualKeyRepository with bcrypt + plaintext semantics."""
+class ApiKeyService(BaseService[ApiKey]):
+    """Composes ApiKeyRepository with bcrypt + plaintext semantics."""
 
-    def __init__(self, repository: VirtualKeyRepository) -> None:
+    def __init__(self, repository: ApiKeyRepository) -> None:
         super().__init__(repository)
         # Re-typed alias for the concrete repo so domain methods get IDE help.
-        self._repository: VirtualKeyRepository = repository
+        self._repository: ApiKeyRepository = repository
 
     async def create_key(
         self,
@@ -81,7 +81,7 @@ class VirtualKeyService(BaseService[VirtualKey]):
         if not name:
             raise ValueError("name must be non-empty")
         plaintext = _generate_plaintext_key()
-        row = VirtualKey(
+        row = ApiKey(
             key_prefix=_visible_prefix(plaintext),
             key_hash=_hash(plaintext),
             name=name,
@@ -91,7 +91,7 @@ class VirtualKeyService(BaseService[VirtualKey]):
         persisted = await self._repository.create(row)
         return CreatedKey(plaintext=plaintext, row=persisted)
 
-    async def list_keys(self, *, include_revoked: bool = True) -> list[VirtualKey]:
+    async def list_keys(self, *, include_revoked: bool = True) -> list[ApiKey]:
         """Return all keys, newest first."""
         return await self._repository.list_keys(include_revoked=include_revoked)
 
@@ -117,6 +117,6 @@ class VirtualKeyService(BaseService[VirtualKey]):
         await self._repository.read_by_id(key_id)
         return await self._repository.revoke(key_id)
 
-    async def list_stale(self, *, stale_after_days: int) -> list[VirtualKey]:
+    async def list_stale(self, *, stale_after_days: int) -> list[ApiKey]:
         """Non-revoked keys past the staleness cutoff."""
         return await self._repository.list_stale(stale_after_days=stale_after_days)

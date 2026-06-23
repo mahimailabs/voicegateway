@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from voicegateway.core.config import AuthConfig
-    from voicegateway.repository.virtual_keys_repository import VerifiedKey
+    from voicegateway.repository.api_keys_repository import VerifiedKey
 
 
 logger = logging.getLogger(__name__)
@@ -133,18 +133,18 @@ def describe_auth(keys: list[ApiKey]) -> str:
     return f"auth: enabled ({len(keys)} key(s) configured)"
 
 
-def is_virtual_key_token(authorization: str | None) -> bool:
+def is_api_key_token(authorization: str | None) -> bool:
     """Return True if the bearer token uses the ``vk_`` prefix."""
     token = _extract_bearer(authorization)
     return token is not None and token.startswith(VIRTUAL_KEY_PREFIX)
 
 
-async def verify_virtual_key(
+async def verify_api_key(
     authorization: str | None, session: AsyncSession
 ) -> VerifiedKey:
-    """Validate a ``Bearer vk_…`` header against ``virtual_keys``."""
+    """Validate a ``Bearer vk_…`` header against ``api_keys``."""
     # Lazy: avoids the core.config -> schemas -> repository -> core.config cycle.
-    from voicegateway.repository import virtual_keys_repository as virtual_keys
+    from voicegateway.repository import api_keys_repository as api_keys
 
     token = _extract_bearer(authorization)
     if token is None:
@@ -152,7 +152,7 @@ async def verify_virtual_key(
     if not token.startswith(VIRTUAL_KEY_PREFIX):
         # Caller should have routed to ``check_request`` for static keys.
         raise AuthError("Invalid virtual key", status_code=401)
-    verified = await virtual_keys.verify(session, token)
+    verified = await api_keys.verify(session, token)
     if verified is None:
         raise AuthError("Invalid virtual key", status_code=401)
     return verified
@@ -182,8 +182,8 @@ __all__ = [
     "check_request",
     "check_tenant_body_conflict",
     "describe_auth",
-    "is_virtual_key_token",
+    "is_api_key_token",
     "load_api_keys",
     "resolve_cors_origins",
-    "verify_virtual_key",
+    "verify_api_key",
 ]

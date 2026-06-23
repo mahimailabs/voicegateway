@@ -32,7 +32,7 @@ The script:
 - Health-checks the container before returning
 - If ports 80/443 are free and a domain is given, installs Caddy and issues a certificate automatically; otherwise prints the reverse-proxy snippet for your existing proxy
 
-The ingest key is printed to your terminal and saved to the deploy directory (`/opt/voicegateway/voicegw.yaml` by default). Use it as the `virtual_key` when connecting agents.
+The ingest key is printed to your terminal and saved to the deploy directory (`/opt/voicegateway/voicegw.yaml` by default). Use it as the `api_key` when connecting agents.
 
 ## Manual setup
 
@@ -54,7 +54,7 @@ auth:
       name: fleet-agents
       scopes: [write]
 EOF
-echo "AGENT KEY (use as the agent virtual_key): ${INGEST_KEY}"
+echo "AGENT KEY (use as the agent api_key): ${INGEST_KEY}"
 
 docker compose -f docker-compose.collector.yml up -d
 sleep 10 && curl -fsS http://localhost:8080/health && echo     # -> ok
@@ -120,7 +120,7 @@ Reload with `caddy reload --config /etc/caddy.yaml --adapter yaml` (validates be
 ## Security
 
 ::: warning
-Only `/v1/ingest` and `/health` need to be public. Put the dashboard and `/v1/virtual-keys` behind basic auth at the proxy level, or reach them via an SSH tunnel from your local machine.
+Only `/v1/ingest` and `/health` need to be public. Put the dashboard and `/v1/api-keys` behind basic auth at the proxy level, or reach them via an SSH tunnel from your local machine.
 :::
 
 ## Verify
@@ -129,4 +129,4 @@ Follow the steps at [Verify](/docs/deployment#verify), using `https://collector.
 
 ## Connect your agent
 
-See [Connect your agent](/docs/deployment#connect-your-agent). Use `https://collector.<your-domain>` as `collector_url` and the ingest key as `virtual_key`.
+See [Connect your agent](/docs/deployment#connect-your-agent). Use `https://collector.<your-domain>` as `collector_url` and the ingest key as `api_key`.
