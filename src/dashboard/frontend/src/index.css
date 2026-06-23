@@ -383,17 +383,11 @@ a { color: inherit; text-decoration: none; }
   margin-bottom: 16px;
 }
 
-.sidebar__logo-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.sidebar__logo-mark {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
+.sidebar__wordmark {
   display: block;
+  max-width: 185px;
+  height: auto;
+  margin-bottom: 4px;
 }
 
 .sidebar__logo small {

@@ -119,21 +119,31 @@ function Sidebar({
   const providerCount = status ? Object.keys(status.providers).length : 0;
   const modelCount = status ? Object.keys(status.models).length : 0;
   const hasToken = !!getToken();
+  const isWhiteLabel = !!branding?.product_name;
   const productName = branding?.product_name || 'VoiceGateway';
-  const logoUrl = branding?.logo_url || '/static/branding/logo.svg';
 
   return (
     <aside className="sidebar">
       <div className="sidebar__logo">
-        <div className="sidebar__logo-row">
+        {isWhiteLabel ? (
+          <>
+            {branding?.logo_url && (
+              <img
+                src={branding.logo_url}
+                alt={`${productName} logo`}
+                style={{ maxHeight: '28px', maxWidth: '160px', display: 'block', marginBottom: '4px' }}
+              />
+            )}
+            <span>{productName}</span>
+          </>
+        ) : (
           <img
-            src={logoUrl}
-            alt=""
-            className="sidebar__logo-mark"
+            src="/static/branding/wordings.png"
+            alt="VoiceGateway"
+            className="sidebar__wordmark"
           />
-          <span>{productName}</span>
-        </div>
-        <small>{branding?.product_name ? 'WHITE-LABEL' : 'SELF-HOSTED VOICE AI'}</small>
+        )}
+        <small>{isWhiteLabel ? 'WHITE-LABEL' : 'SELF-HOSTED VOICE AI'}</small>
       </div>
       <nav className="sidebar__nav">
         {PAGES.map((p) => (
