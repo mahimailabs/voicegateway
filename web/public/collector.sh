@@ -31,9 +31,7 @@ step() { printf '\n>> %s\n' "$*"; }
 confirm() {
     [ "$ASSUME_YES" = 1 ] && return 0
     local reply
-    # shellcheck disable=SC2086
     printf '%s [y/N] ' "$1" > /dev/tty
-    # shellcheck disable=SC2162
     read -r reply < /dev/tty || return 1
     case "$reply" in [yY]|[yY][eE][sS]) return 0;; *) return 1;; esac
 }
@@ -173,20 +171,133 @@ EOF
 
 scaffold() { load_or_make_secrets; write_config; }
 
+# Task 4: bring up and health check
+
+bring_up() {
+    # Verify the daemon is reachable before attempting compose up.
+    docker info >/dev/null 2>&1 || die "cannot reach the Docker daemon; try re-running with sudo, or add your user to the docker group and re-login"
+    step "Starting the collector"
+    ( cd "$DIR" && docker compose up -d )
+}
+
+wait_healthy() {
+    local tries="${HEALTH_RETRIES:-30}" sleep_s="${HEALTH_SLEEP:-2}" i=0
+    while [ "$i" -lt "$tries" ]; do
+        if curl -fsS http://localhost:8080/health >/dev/null 2>&1; then
+            say "collector is healthy"
+            return 0
+        fi
+        i=$((i + 1)); sleep "$sleep_s"
+    done
+    die "collector did not become healthy. Check: cd $DIR && docker compose logs collector"
+}
+
+# Task 5: inputs, port binding, and exposure
+
+set_bind() {
+    if [ -n "$DOMAIN" ]; then
+        BIND="127.0.0.1"
+    else
+        BIND="0.0.0.0"
+    fi
+}
+
+gather_inputs() {
+    if [ -z "$BACKEND" ]; then
+        [ "$ASSUME_YES" = 1 ] && die "set --sqlite or --postgres in non-interactive mode"
+        printf 'Backend? [1] SQLite (simple, single collector)  [2] Postgres (fleet): ' > /dev/tty
+        local c; read -r c < /dev/tty
+        case "$c" in 2) BACKEND=postgres;; *) BACKEND=sqlite;; esac
+    fi
+    set_bind
+}
+
+ports_free() { ! { ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null; } | grep -qE ':(80|443)\s'; }
+
+proxy_snippet() {
+    cat <<EOF
+# Caddy (caddyl4 / layer4 caddy.yaml) - add under apps.layer4.servers.main.routes,
+# and add collector.$DOMAIN to apps.tls.certificates.automate:
+          - match:
+              - tls: { sni: ["collector.$DOMAIN"] }
+            handle:
+              - handler: tls
+                connection_policies: [{ alpn: ["http/1.1"] }]
+              - handler: proxy
+                upstreams: [{ dial: ["localhost:8080"] }]
+
+# nginx:
+# server {
+#   listen 443 ssl;
+#   server_name collector.$DOMAIN;
+#   location / { proxy_pass http://127.0.0.1:8080; }
+# }
+EOF
+}
+
+expose() {
+    [ -z "$DOMAIN" ] && { say "Collector is on http://<this-host>:8080 (no domain given). See the docs to add HTTPS."; return 0; }
+    if ports_free; then
+        if confirm "Ports 80/443 are free. Install Caddy and serve https://collector.$DOMAIN?"; then
+            command -v caddy >/dev/null 2>&1 || { curl -fsSL https://get.caddy.com? 2>/dev/null; apt-get install -y caddy 2>/dev/null || warn "install Caddy manually"; }
+            printf 'collector.%s {\n    reverse_proxy localhost:8080\n}\n' "$DOMAIN" > /etc/caddy/Caddyfile 2>/dev/null || warn "could not write Caddyfile"
+            systemctl reload caddy 2>/dev/null || warn "reload Caddy manually"
+            say "Point collector.$DOMAIN at this host. The cert issues on first request."
+            return 0
+        fi
+    fi
+    step "Add this to your existing reverse proxy (ports 80/443 are in use):"
+    proxy_snippet
+}
+
+# Task 6: summary output
+
+collector_url() {
+    if [ -n "$DOMAIN" ]; then
+        echo "https://collector.$DOMAIN"
+    else
+        echo "http://<this-host>:8080"
+    fi
+}
+
+print_summary() {
+    local url; url="$(collector_url)"
+
+    # Write the ingest key to /dev/tty to avoid leaking it into pipes/logs.
+    # Fall back to stdout only when no tty is available (e.g. CI with --yes).
+    local tty_out="/dev/tty"
+    [ -w "$tty_out" ] || tty_out="/dev/stdout"
+    printf '\n!! SAVE THIS: Ingest key (also in %s/voicegw.yaml):\n   %s\n' \
+        "$DIR" "$INGEST_KEY" > "$tty_out"
+
+    cat <<EOF
+
+>> Collector is up.
+   URL:        $url
+   Manage:     cd $DIR && docker compose logs -f   |   docker compose down
+
+   Point your agents at it:
+
+   from openrtc import AgentPool
+   from voicegateway.openrtc import VoiceGatewayObserver
+   pool = AgentPool(observers=[VoiceGatewayObserver(
+       project="prod", collector_url="$url", virtual_key="$INGEST_KEY")])
+
+   Note: only /v1/ingest and /health need to be public; protect the dashboard.
+EOF
+}
+
 main() {
     parse_args "$@"
     detect_os
-    resolve_version
     ensure_docker
-    step "Scaffolding $DIR"
+    resolve_version
+    gather_inputs
     scaffold
-    step "Starting collector"
-    docker compose -f "$DIR/docker-compose.yml" up -d
-    say "Collector is up."
-    say "Ingest token: $INGEST_KEY"
-    say "Deploy dir:   $DIR"
-    [ -n "$DOMAIN" ] && say "Domain:       $DOMAIN"
-    :
+    bring_up
+    wait_healthy
+    expose
+    print_summary
 }
 
 # Source-guard: run main only when executed, not when sourced by tests.
