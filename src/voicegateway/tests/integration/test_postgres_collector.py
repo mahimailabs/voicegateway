@@ -75,7 +75,7 @@ async def test_collector_init_ingest_costs_on_postgres(tmp_path) -> None:
             "/v1/projects",
             "/v1/logs",
             "/v1/metrics",
-            "/v1/virtual-keys",
+            "/v1/api-keys",
             "/api/overview",
             "/api/status",
         ):

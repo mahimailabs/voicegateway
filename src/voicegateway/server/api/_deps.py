@@ -8,7 +8,7 @@ Two top-level helpers:
   ``build_app``.
 - :func:`require_scope` returns a dependency that enforces a named
   scope on the incoming request. Identical behavior to the closure
-  it replaces in ``main.py``: virtual-key tokens take the storage path,
+  it replaces in ``main.py``: api-key tokens take the storage path,
   static API keys take the ``check_request`` path.
 """
 
@@ -21,11 +21,11 @@ from fastapi import Depends, HTTPException, Request
 from voicegateway.core.auth import (
     AuthError,
     check_request,
-    is_virtual_key_token,
-    verify_virtual_key,
+    is_api_key_token,
+    verify_api_key,
 )
 from voicegateway.inference.session.context import set_tenant
-from voicegateway.repository import virtual_keys_repository as virtual_keys
+from voicegateway.repository import api_keys_repository as api_keys_repo
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -47,18 +47,18 @@ def require_scope(scope: str):
         api_keys = getattr(request.app.state, "api_keys", None) or []
         authorization = request.headers.get("Authorization")
 
-        if is_virtual_key_token(authorization) and gateway.storage is not None:
+        if is_api_key_token(authorization) and gateway.storage is not None:
             try:
                 await gateway.storage._ensure_initialized()
                 async with gateway.storage._conn.session() as session:
-                    verified = await verify_virtual_key(authorization, session)
-                    await virtual_keys.mark_used(session, verified.id)
+                    verified = await verify_api_key(authorization, session)
+                    await api_keys_repo.mark_used(session, verified.id)
             except AuthError as exc:
                 raise HTTPException(
                     status_code=exc.status_code, detail=exc.message
                 ) from None
-            request.state.virtual_key_id = verified.id
-            request.state.virtual_key_tenant_id = verified.tenant_id
+            request.state.api_key_id = verified.id
+            request.state.api_key_tenant_id = verified.tenant_id
             if verified.tenant_id is not None:
                 set_tenant(verified.tenant_id)
             return

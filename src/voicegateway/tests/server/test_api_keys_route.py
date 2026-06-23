@@ -1,4 +1,4 @@
-"""End-to-end test of the layered virtual-keys HTTP endpoints."""
+"""End-to-end test of the layered api-keys HTTP endpoints."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ async def client(gateway):
 
 async def test_create_returns_plaintext_and_201(client: AsyncClient) -> None:
     response = await client.post(
-        "/v1/virtual-keys",
+        "/v1/api-keys",
         json={"name": "prod-bot", "tenant_id": "acme"},
     )
     assert response.status_code == 201
@@ -63,10 +63,10 @@ async def test_create_returns_plaintext_and_201(client: AsyncClient) -> None:
 
 
 async def test_list_includes_created_key(client: AsyncClient) -> None:
-    create_resp = await client.post("/v1/virtual-keys", json={"name": "list-target"})
+    create_resp = await client.post("/v1/api-keys", json={"name": "list-target"})
     created_id = create_resp.json()["key"]["id"]
 
-    list_resp = await client.get("/v1/virtual-keys")
+    list_resp = await client.get("/v1/api-keys")
     assert list_resp.status_code == 200
     body = list_resp.json()
     assert body["total"] >= 1
@@ -74,7 +74,7 @@ async def test_list_includes_created_key(client: AsyncClient) -> None:
 
 
 async def test_get_by_id_returns_404_when_missing(client: AsyncClient) -> None:
-    response = await client.get("/v1/virtual-keys/9999")
+    response = await client.get("/v1/api-keys/9999")
     assert response.status_code == 404
     payload = response.json()
     assert payload["type"] == "NotFoundError"
@@ -83,22 +83,22 @@ async def test_get_by_id_returns_404_when_missing(client: AsyncClient) -> None:
 async def test_delete_revokes_and_filters_from_active_list(
     client: AsyncClient,
 ) -> None:
-    created = (await client.post("/v1/virtual-keys", json={"name": "to-revoke"})).json()
+    created = (await client.post("/v1/api-keys", json={"name": "to-revoke"})).json()
     key_id = created["key"]["id"]
 
-    delete_resp = await client.delete(f"/v1/virtual-keys/{key_id}")
+    delete_resp = await client.delete(f"/v1/api-keys/{key_id}")
     assert delete_resp.status_code == 204
 
-    active = (await client.get("/v1/virtual-keys?include_revoked=false")).json()
+    active = (await client.get("/v1/api-keys?include_revoked=false")).json()
     assert all(item["id"] != key_id for item in active["items"])
 
-    all_keys = (await client.get("/v1/virtual-keys?include_revoked=true")).json()
+    all_keys = (await client.get("/v1/api-keys?include_revoked=true")).json()
     revoked = next(item for item in all_keys["items"] if item["id"] == key_id)
     assert revoked["revoked_at"] is not None
 
 
 async def test_create_validation_rejects_empty_name(client: AsyncClient) -> None:
-    response = await client.post("/v1/virtual-keys", json={"name": ""})
+    response = await client.post("/v1/api-keys", json={"name": ""})
     assert response.status_code == 422
     body = response.json()
     assert body["type"] == "RequestValidationError"

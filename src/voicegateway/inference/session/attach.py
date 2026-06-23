@@ -202,7 +202,7 @@ def _default_agent_id() -> str:
 
 def _build_default_sink(
     collector_url: str | None,
-    virtual_key: str | None,
+    api_key: str | None,
     db_path: str | None = None,
 ) -> Sink:
     """Build the sink for attach() from env/args.
@@ -216,7 +216,7 @@ def _build_default_sink(
     if collector_url:
         from voicegateway.services.sinks import RemoteCollectorSink
 
-        return RemoteCollectorSink(collector_url, virtual_key)
+        return RemoteCollectorSink(collector_url, api_key)
 
     from voicegateway.services.sinks import LocalSqliteSink
     from voicegateway.services.storage_service import StorageService
@@ -247,7 +247,7 @@ def attach(
     agent_id: str | None = None,
     tenant_id: str | None = None,
     collector_url: str | None = None,
-    virtual_key: str | None = None,
+    api_key: str | None = None,
     sink: Sink | None = None,
 ) -> str:
     """Attach VoiceGateway to an existing LiveKit ``AgentSession`` in one call.
@@ -264,7 +264,7 @@ def attach(
         project: project id to tag rows with.
         agent_id: fleet label; defaults to ``VOICEGW_AGENT_ID`` or hostname.
         tenant_id: optional tenant attribution.
-        collector_url / virtual_key: fleet push target (env fallbacks).
+        collector_url / api_key: fleet push target (env fallbacks).
         sink: advanced/testing override; defaults to local or remote per env.
 
     Returns:
@@ -277,7 +277,7 @@ def attach(
 
     resolved_agent_id = agent_id or _default_agent_id()
     resolved_collector = collector_url or os.environ.get("VOICEGW_COLLECTOR_URL")
-    resolved_key = virtual_key or os.environ.get("VOICEGW_VIRTUAL_KEY")
+    resolved_key = api_key or os.environ.get("VOICEGW_API_KEY")
     session_id = get_or_create_session_id()
     if tenant_id is not None:
         set_tenant(tenant_id)

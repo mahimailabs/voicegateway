@@ -1,4 +1,4 @@
-"""End-to-end test of the ORM-based VirtualKey stack."""
+"""End-to-end test of the ORM-based ApiKey stack."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from voicegateway.repository.virtual_key_repository import VirtualKeyRepository
+from voicegateway.repository.api_key_repository import ApiKeyRepository
 from voicegateway.services.storage_service import StorageService
-from voicegateway.services.virtual_key_service import VirtualKeyService
+from voicegateway.services.api_key_service import ApiKeyService
 
 
 @pytest.fixture
@@ -30,12 +30,12 @@ async def service(tmp_path):
         def __call__(self):
             return session_factory()
 
-    repo = VirtualKeyRepository(session_factory=_SessionCtx())
-    yield VirtualKeyService(repository=repo)
+    repo = ApiKeyRepository(session_factory=_SessionCtx())
+    yield ApiKeyService(repository=repo)
     await engine.dispose()
 
 
-async def test_create_returns_plaintext_once(service: VirtualKeyService) -> None:
+async def test_create_returns_plaintext_once(service: ApiKeyService) -> None:
     created = await service.create_key(
         name="prod-bot", tenant_id="acme", issued_by="ops@vg"
     )
@@ -47,7 +47,7 @@ async def test_create_returns_plaintext_once(service: VirtualKeyService) -> None
     assert created.row.revoked_at is None
 
 
-async def test_verify_round_trip(service: VirtualKeyService) -> None:
+async def test_verify_round_trip(service: ApiKeyService) -> None:
     created = await service.create_key(name="api-bot")
     verified = await service.verify(created.plaintext)
     assert verified is not None
@@ -55,13 +55,13 @@ async def test_verify_round_trip(service: VirtualKeyService) -> None:
     assert verified.name == "api-bot"
 
 
-async def test_verify_rejects_wrong_plaintext(service: VirtualKeyService) -> None:
+async def test_verify_rejects_wrong_plaintext(service: ApiKeyService) -> None:
     await service.create_key(name="real")
     assert await service.verify("vk_NOTAREALKEYAAAAAAAAAAAAAAAAAAAAAA") is None
     assert await service.verify("not-a-vk-token") is None
 
 
-async def test_revoke_blocks_future_verify(service: VirtualKeyService) -> None:
+async def test_revoke_blocks_future_verify(service: ApiKeyService) -> None:
     created = await service.create_key(name="ops")
     assert await service.revoke(created.row.id) is True
     assert await service.verify(created.plaintext) is None
@@ -69,7 +69,7 @@ async def test_revoke_blocks_future_verify(service: VirtualKeyService) -> None:
     assert await service.revoke(created.row.id) is False
 
 
-async def test_list_keys_filters_revoked(service: VirtualKeyService) -> None:
+async def test_list_keys_filters_revoked(service: ApiKeyService) -> None:
     a = await service.create_key(name="a")
     b = await service.create_key(name="b")
     await service.revoke(a.row.id)
@@ -80,7 +80,7 @@ async def test_list_keys_filters_revoked(service: VirtualKeyService) -> None:
     assert {k.id for k in active_keys} == {b.row.id}
 
 
-async def test_mark_used_is_idempotent(service: VirtualKeyService) -> None:
+async def test_mark_used_is_idempotent(service: ApiKeyService) -> None:
     created = await service.create_key(name="poller")
     assert created.row.last_used_at is None
     await service.mark_used(created.row.id)

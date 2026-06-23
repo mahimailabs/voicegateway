@@ -85,7 +85,7 @@ class RemoteCollectorSink:
     def __init__(
         self,
         url: str,
-        virtual_key: str | None,
+        api_key: str | None,
         *,
         batch_size: int = 20,
         flush_interval: float | None = 2.0,
@@ -97,7 +97,7 @@ class RemoteCollectorSink:
     ) -> None:
         self._ingest_url = url.rstrip("/") + "/v1/ingest"
         self._headers = (
-            {"Authorization": f"Bearer {virtual_key}"} if virtual_key else {}
+            {"Authorization": f"Bearer {api_key}"} if api_key else {}
         )
         self._batch_size = max(1, batch_size)
         self._flush_interval = flush_interval

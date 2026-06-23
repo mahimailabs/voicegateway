@@ -6,7 +6,7 @@ import yaml
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.repository import virtual_keys_repository as virtual_keys
+from voicegateway.repository import api_keys_repository as api_keys
 from voicegateway.server import build_app
 
 
@@ -46,7 +46,7 @@ def _payload(rid: str) -> dict:
 async def _vk(gw: Gateway) -> str:
     await gw.storage._ensure_initialized()
     async with gw.storage._conn.session() as db:
-        created = await virtual_keys.create_virtual_key(db, name="bot")
+        created = await api_keys.create_api_key(db, name="bot")
     return created.plaintext
 
 

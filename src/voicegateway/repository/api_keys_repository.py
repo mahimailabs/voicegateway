@@ -1,11 +1,11 @@
-"""Async function-style repo for the ``virtual_keys`` table (ORM).
+"""Async function-style repo for the ``api_keys`` table (ORM).
 
-The ORM class-based :class:`voicegateway.repository.virtual_key_repository.VirtualKeyRepository`
+The ORM class-based :class:`voicegateway.repository.api_key_repository.ApiKeyRepository`
 is used by FastAPI admin endpoints through the DI container. This
 function-style module remains the authentication-runtime path (used
 by :mod:`voicegateway.core.auth` to verify ``Bearer vk_…`` headers
 and by the CLI for create/revoke/list operations). Both back the same
-``virtual_keys`` table; this module's bodies now use AsyncSession +
+``api_keys`` table; this module's bodies now use AsyncSession +
 SQLAlchemy text() so they coexist cleanly on the unified ORM stack.
 """
 
@@ -30,8 +30,8 @@ _BASE32_ALPHABET: Final[str] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 
 
 @dataclass(frozen=True)
-class VirtualKeyRow:
-    """One row from the ``virtual_keys`` table (without ``key_hash``)."""
+class ApiKeyRow:
+    """One row from the ``api_keys`` table (without ``key_hash``)."""
 
     id: int
     key_prefix: str
@@ -44,12 +44,12 @@ class VirtualKeyRow:
 
 
 @dataclass(frozen=True)
-class CreatedVirtualKey:
-    """Return value of :func:`create_virtual_key`."""
+class CreatedApiKey:
+    """Return value of :func:`create_api_key`."""
 
     id: int
     plaintext: str
-    row: VirtualKeyRow
+    row: ApiKeyRow
 
 
 @dataclass(frozen=True)
@@ -83,8 +83,8 @@ def _check_key(plaintext: str, stored_hash: str) -> bool:
     return bcrypt.checkpw(plaintext.encode("utf-8"), stored_hash.encode("utf-8"))
 
 
-def _row_to_dataclass(row) -> VirtualKeyRow:
-    return VirtualKeyRow(
+def _row_to_dataclass(row) -> ApiKeyRow:
+    return ApiKeyRow(
         id=int(row[0]),
         key_prefix=str(row[1]),
         name=str(row[2]),
@@ -101,13 +101,13 @@ _SELECT_ROW_FIELDS = (
 )
 
 
-async def create_virtual_key(
+async def create_api_key(
     session: AsyncSession,
     *,
     name: str,
     tenant_id: str | None = None,
     issued_by: str | None = None,
-) -> CreatedVirtualKey:
+) -> CreatedApiKey:
     """Create a virtual key and return the plaintext once."""
     if not name:
         raise ValueError("name must be non-empty")
@@ -116,7 +116,7 @@ async def create_virtual_key(
     digest = _hash_key(plaintext)
     result = await session.execute(
         text(
-            "INSERT INTO virtual_keys ("
+            "INSERT INTO api_keys ("
             "key_prefix, key_hash, name, tenant_id, issued_by, issued_at"
             ") VALUES ("
             ":prefix, :digest, :name, :tenant_id, :issued_by, CURRENT_TIMESTAMP"
@@ -133,17 +133,17 @@ async def create_virtual_key(
     await session.commit()
     new_id = result.lastrowid  # type: ignore[attr-defined]
     if new_id is None:
-        raise RuntimeError("INSERT into virtual_keys did not return a row id")
+        raise RuntimeError("INSERT into api_keys did not return a row id")
     row = await get_by_id(session, new_id)
     if row is None:
-        raise RuntimeError(f"virtual_keys row {new_id} disappeared after INSERT")
-    return CreatedVirtualKey(id=new_id, plaintext=plaintext, row=row)
+        raise RuntimeError(f"api_keys row {new_id} disappeared after INSERT")
+    return CreatedApiKey(id=new_id, plaintext=plaintext, row=row)
 
 
-async def get_by_id(session: AsyncSession, key_id: int) -> VirtualKeyRow | None:
+async def get_by_id(session: AsyncSession, key_id: int) -> ApiKeyRow | None:
     """Return the row for ``key_id`` or ``None`` if not found."""
     result = await session.execute(
-        text(f"SELECT {_SELECT_ROW_FIELDS} FROM virtual_keys WHERE id = :key_id"),
+        text(f"SELECT {_SELECT_ROW_FIELDS} FROM api_keys WHERE id = :key_id"),
         {"key_id": key_id},
     )
     row = result.fetchone()
@@ -154,12 +154,12 @@ async def list_keys(
     session: AsyncSession,
     *,
     include_revoked: bool = True,
-) -> list[VirtualKeyRow]:
+) -> list[ApiKeyRow]:
     """Return all virtual keys, newest first."""
     where = "" if include_revoked else "WHERE revoked_at IS NULL "
     result = await session.execute(
         text(
-            f"SELECT {_SELECT_ROW_FIELDS} FROM virtual_keys "
+            f"SELECT {_SELECT_ROW_FIELDS} FROM api_keys "
             f"{where}ORDER BY issued_at DESC, id DESC"
         )
     )
@@ -174,7 +174,7 @@ async def verify(session: AsyncSession, plaintext: str) -> VerifiedKey | None:
     result = await session.execute(
         text(
             "SELECT id, key_hash, tenant_id, name, revoked_at "
-            "FROM virtual_keys WHERE key_prefix = :prefix"
+            "FROM api_keys WHERE key_prefix = :prefix"
         ),
         {"prefix": prefix},
     )
@@ -201,7 +201,7 @@ async def mark_used(session: AsyncSession, key_id: int) -> None:
     """Bump ``last_used_at`` to the current timestamp."""
     await session.execute(
         text(
-            "UPDATE virtual_keys SET last_used_at = CURRENT_TIMESTAMP "
+            "UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP "
             "WHERE id = :key_id"
         ),
         {"key_id": key_id},
@@ -213,7 +213,7 @@ async def revoke(session: AsyncSession, key_id: int) -> bool:
     """Soft-revoke the key (OQ5 lock)."""
     result = await session.execute(
         text(
-            "UPDATE virtual_keys SET revoked_at = CURRENT_TIMESTAMP "
+            "UPDATE api_keys SET revoked_at = CURRENT_TIMESTAMP "
             "WHERE id = :key_id AND revoked_at IS NULL"
         ),
         {"key_id": key_id},
@@ -224,7 +224,7 @@ async def revoke(session: AsyncSession, key_id: int) -> bool:
 
 async def list_stale(
     session: AsyncSession, *, stale_after_days: int
-) -> list[VirtualKeyRow]:
+) -> list[ApiKeyRow]:
     """Return non-revoked keys whose ``last_used_at`` is older than the threshold."""
     if stale_after_days < 0:
         raise ValueError(f"stale_after_days must be >= 0, got {stale_after_days}")
@@ -242,7 +242,7 @@ async def list_stale(
         params = {"delta": f"-{stale_after_days}"}
     result = await session.execute(
         text(
-            f"SELECT {_SELECT_ROW_FIELDS} FROM virtual_keys "
+            f"SELECT {_SELECT_ROW_FIELDS} FROM api_keys "
             "WHERE revoked_at IS NULL "
             f"AND COALESCE(last_used_at, issued_at) <= {cutoff_sql} "
             "ORDER BY COALESCE(last_used_at, issued_at) ASC, id ASC"
@@ -253,10 +253,10 @@ async def list_stale(
 
 
 __all__ = [
-    "CreatedVirtualKey",
+    "CreatedApiKey",
     "VerifiedKey",
-    "VirtualKeyRow",
-    "create_virtual_key",
+    "ApiKeyRow",
+    "create_api_key",
     "get_by_id",
     "list_keys",
     "list_stale",

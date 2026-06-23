@@ -1,4 +1,4 @@
-"""Dashboard endpoints under /api/virtual_keys.
+"""Dashboard endpoints under /api/api_keys.
 
 Virtual keys expose their plaintext exactly once at creation: the FE
 shows the "save this key" modal and discards it; subsequent list
@@ -14,18 +14,18 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from voicegateway.repository import (
-    virtual_keys_repository as virtual_keys,
+    api_keys_repository as api_keys,
 )
 from voicegateway.server.api._deps import get_gateway
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
 
-router = APIRouter(prefix="/virtual_keys", tags=["dashboard"])
+router = APIRouter(prefix="/api_keys", tags=["dashboard"])
 
 
 @router.get("")
-async def list_virtual_keys_endpoint(
+async def list_api_keys_endpoint(
     include_revoked: bool = Query(True),
     gateway: Gateway = Depends(get_gateway),
 ) -> dict[str, Any]:
@@ -39,12 +39,12 @@ async def list_virtual_keys_endpoint(
         return {"keys": []}
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        rows = await virtual_keys.list_keys(db, include_revoked=include_revoked)
+        rows = await api_keys.list_keys(db, include_revoked=include_revoked)
     return {"keys": [dataclasses.asdict(r) for r in rows]}
 
 
 @router.post("")
-async def create_virtual_key_endpoint(
+async def create_api_key_endpoint(
     body: dict[str, Any] = Body(...),
     gateway: Gateway = Depends(get_gateway),
 ) -> dict[str, Any]:
@@ -71,7 +71,7 @@ async def create_virtual_key_endpoint(
         raise HTTPException(status_code=503, detail="Storage backend not configured")
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        created = await virtual_keys.create_virtual_key(
+        created = await api_keys.create_api_key(
             db, name=name, tenant_id=tenant_id, issued_by=issued_by
         )
     return {
@@ -82,7 +82,7 @@ async def create_virtual_key_endpoint(
 
 
 @router.post("/{key_id}/revoke")
-async def revoke_virtual_key_endpoint(
+async def revoke_api_key_endpoint(
     key_id: int, gateway: Gateway = Depends(get_gateway)
 ) -> dict[str, Any]:
     """Soft-revoke a virtual key (OQ5: keeps the row for audit)."""
@@ -90,13 +90,13 @@ async def revoke_virtual_key_endpoint(
         raise HTTPException(status_code=503, detail="Storage backend not configured")
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        ok = await virtual_keys.revoke(db, key_id)
+        ok = await api_keys.revoke(db, key_id)
         if not ok:
             raise HTTPException(
                 status_code=404,
                 detail=f"Virtual key {key_id} not found or already revoked",
             )
-        row = await virtual_keys.get_by_id(db, key_id)
+        row = await api_keys.get_by_id(db, key_id)
     if row is None:
         # Should never happen: revoke() just returned True. Defensive.
         raise HTTPException(status_code=404, detail=f"Virtual key {key_id} vanished")

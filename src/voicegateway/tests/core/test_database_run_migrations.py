@@ -63,7 +63,7 @@ async def test_run_migrations_on_fresh_db_builds_baseline(tmp_path: Path) -> Non
         "requests",
         "sessions",
         "turns",
-        "virtual_keys",
+        "api_keys",
     }
     assert expected.issubset(names), f"missing tables: {sorted(expected - names)}"
 

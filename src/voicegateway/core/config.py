@@ -89,7 +89,7 @@ class BrandingConfig:
 class TenantConfig:
     """Multi-tenant attribution knobs."""
 
-    virtual_key_stale_days: int = 90
+    api_key_stale_days: int = 90
 
 
 @dataclass
@@ -254,8 +254,8 @@ class GatewayConfig:
                 )
                 tenant_raw = pcfg.get("tenant") or {}
                 tenant_cfg = TenantConfig(
-                    virtual_key_stale_days=int(
-                        tenant_raw.get("virtual_key_stale_days", 90)
+                    api_key_stale_days=int(
+                        tenant_raw.get("api_key_stale_days", 90)
                     ),
                 )
                 routing_raw = pcfg.get("routing") or {}

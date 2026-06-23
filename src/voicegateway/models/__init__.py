@@ -25,7 +25,7 @@ from voicegateway.models.replay_event_model import (
 from voicegateway.models.request_model import Request, RequestRecord
 from voicegateway.models.session_model import Session
 from voicegateway.models.turn_model import Turn
-from voicegateway.models.virtual_key_model import VirtualKey
+from voicegateway.models.api_key_model import ApiKey
 
 __all__ = [
     "AgentObservation",
@@ -46,5 +46,5 @@ __all__ = [
     "RequestRecord",
     "Session",
     "Turn",
-    "VirtualKey",
+    "ApiKey",
 ]
