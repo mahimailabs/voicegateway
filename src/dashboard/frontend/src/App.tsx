@@ -120,19 +120,19 @@ function Sidebar({
   const modelCount = status ? Object.keys(status.models).length : 0;
   const hasToken = !!getToken();
   const productName = branding?.product_name || 'VoiceGateway';
-  const logoUrl = branding?.logo_url || null;
+  const logoUrl = branding?.logo_url || '/static/branding/logo.svg';
 
   return (
     <aside className="sidebar">
       <div className="sidebar__logo">
-        {logoUrl && (
+        <div className="sidebar__logo-row">
           <img
             src={logoUrl}
-            alt={`${productName} logo`}
-            style={{ maxHeight: '32px', maxWidth: '160px', display: 'block', marginBottom: '0.25rem' }}
+            alt=""
+            className="sidebar__logo-mark"
           />
-        )}
-        {productName}
+          <span>{productName}</span>
+        </div>
         <small>{branding?.product_name ? 'WHITE-LABEL' : 'SELF-HOSTED VOICE AI'}</small>
       </div>
       <nav className="sidebar__nav">
