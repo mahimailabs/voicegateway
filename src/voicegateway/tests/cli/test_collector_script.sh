@@ -25,6 +25,10 @@ VOICEGW_BACKEND=sqlite parse_args
 [ "$BACKEND" = sqlite ] || fail "BACKEND env"
 pass "parse_args env"
 
+# a value-taking flag with no value fails cleanly (not a set -u crash).
+# Run in a subshell because die() calls exit.
+( parse_args --domain 2>/dev/null ) && fail "--domain with no value should error" || pass "parse_args missing value errors cleanly"
+
 # usage exits 0 and mentions the URL
 out="$(usage)"; printf '%s' "$out" | grep -q "collector.sh" || fail "usage text"
 pass "usage"

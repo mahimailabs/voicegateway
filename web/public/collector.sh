@@ -59,9 +59,9 @@ parse_args() {
         case "$1" in
             --sqlite) BACKEND=sqlite;;
             --postgres) BACKEND=postgres;;
-            --domain) DOMAIN="$2"; shift;;
-            --dir) DIR="$2"; shift;;
-            --version) VERSION="$2"; shift;;
+            --domain) [ "$#" -ge 2 ] || die "--domain needs a value"; DOMAIN="$2"; shift;;
+            --dir) [ "$#" -ge 2 ] || die "--dir needs a value"; DIR="$2"; shift;;
+            --version) [ "$#" -ge 2 ] || die "--version needs a value"; VERSION="$2"; shift;;
             --yes) ASSUME_YES=1;;
             --help|-h) usage; exit 0;;
             *) die "unknown option: $1 (try --help)";;
