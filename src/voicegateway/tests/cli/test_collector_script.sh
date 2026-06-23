@@ -140,16 +140,16 @@ out="$(DOMAIN="" collector_url)"
 [ "$out" = "http://<this-host>:8080" ] || fail "collector_url no domain (got '$out')"
 pass "collector_url no domain"
 
-# print_summary: stdout contains URL, agent snippet (but NOT the ingest key, which goes to /dev/tty)
-# Redirect /dev/tty to a temp file so we can capture the key line too.
-SUMTTY="$(mktemp)"
-out="$(DOMAIN=c.example.com INGEST_KEY=abc123 DIR=/tmp/d print_summary 2>/dev/null >/dev/stdout 3>"$SUMTTY" || true)"
-# Capture both stdout and the tty output for key check
-out_full="$(DOMAIN=c.example.com INGEST_KEY=abc123 DIR=/tmp/d print_summary 2>&1 || true)"
-printf '%s' "$out_full" | grep -q "https://collector.c.example.com" || fail "summary url"
-printf '%s' "$out_full" | grep -q "abc123" || fail "summary key"
-printf '%s' "$out_full" | grep -q "VoiceGatewayObserver" || fail "summary snippet"
-pass "print_summary"
+# print_summary: stdout has the URL, snippet, and a placeholder, but the real
+# ingest key goes to stderr (so it cannot leak into a `curl|bash > log` capture).
+sout="$(DOMAIN=c.example.com INGEST_KEY=abc123 DIR=/tmp/d print_summary 2>/dev/null)"
+serr="$(DOMAIN=c.example.com INGEST_KEY=abc123 DIR=/tmp/d print_summary 2>&1 1>/dev/null)"
+printf '%s' "$sout" | grep -q "https://collector.c.example.com" || fail "summary url"
+printf '%s' "$sout" | grep -q "VoiceGatewayObserver" || fail "summary snippet"
+printf '%s' "$sout" | grep -q "<your-ingest-key>" || fail "summary placeholder"
+printf '%s' "$sout" | grep -q "abc123" && fail "ingest key leaked to stdout"
+printf '%s' "$serr" | grep -q "abc123" || fail "ingest key not shown on stderr"
+pass "print_summary (key on stderr, not stdout)"
 
 printf '\nALL TASK-6 TESTS PASSED\n'
 printf '\nPASSED\n'

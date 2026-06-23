@@ -212,7 +212,22 @@ gather_inputs() {
     set_bind
 }
 
-ports_free() { ! { ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null; } | grep -qE ':(80|443)\s'; }
+ports_free() { ! { ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null; } | grep -qE ':(80|443)[[:space:]]'; }
+
+# Install Caddy on Debian/Ubuntu via the official apt repo. Returns non-zero
+# if it cannot (non-apt distro or any failed step), so the caller falls back
+# to printing the manual reverse-proxy snippet.
+install_caddy() {
+    command -v caddy >/dev/null 2>&1 && return 0
+    command -v apt-get >/dev/null 2>&1 || return 1
+    apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl >/dev/null 2>&1 || return 1
+    curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/gpg.key \
+        | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null || return 1
+    curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt \
+        > /etc/apt/sources.list.d/caddy-stable.list 2>/dev/null || return 1
+    apt-get update >/dev/null 2>&1 || return 1
+    apt-get install -y caddy >/dev/null 2>&1
+}
 
 proxy_snippet() {
     cat <<EOF
@@ -237,16 +252,16 @@ EOF
 
 expose() {
     [ -z "$DOMAIN" ] && { say "Collector is on http://<this-host>:8080 (no domain given). See the docs to add HTTPS."; return 0; }
-    if ports_free; then
-        if confirm "Ports 80/443 are free. Install Caddy and serve https://collector.$DOMAIN?"; then
-            command -v caddy >/dev/null 2>&1 || { curl -fsSL https://get.caddy.com? 2>/dev/null; apt-get install -y caddy 2>/dev/null || warn "install Caddy manually"; }
-            printf 'collector.%s {\n    reverse_proxy localhost:8080\n}\n' "$DOMAIN" > /etc/caddy/Caddyfile 2>/dev/null || warn "could not write Caddyfile"
-            systemctl reload caddy 2>/dev/null || warn "reload Caddy manually"
+    if ports_free && confirm "Ports 80/443 are free. Install Caddy and serve https://collector.$DOMAIN?"; then
+        if install_caddy \
+            && printf 'collector.%s {\n    reverse_proxy localhost:8080\n}\n' "$DOMAIN" > /etc/caddy/Caddyfile 2>/dev/null \
+            && systemctl reload caddy 2>/dev/null; then
             say "Point collector.$DOMAIN at this host. The cert issues on first request."
             return 0
         fi
+        warn "Caddy auto-setup did not complete; use the manual snippet below."
     fi
-    step "Add this to your existing reverse proxy (ports 80/443 are in use):"
+    step "Add this to your existing reverse proxy:"
     proxy_snippet
 }
 
@@ -263,12 +278,11 @@ collector_url() {
 print_summary() {
     local url; url="$(collector_url)"
 
-    # Write the ingest key to /dev/tty to avoid leaking it into pipes/logs.
-    # Fall back to stdout only when no tty is available (e.g. CI with --yes).
-    local tty_out="/dev/tty"
-    [ -w "$tty_out" ] || tty_out="/dev/stdout"
-    printf '\n!! SAVE THIS: Ingest key (also in %s/voicegw.yaml):\n   %s\n' \
-        "$DIR" "$INGEST_KEY" > "$tty_out"
+    # Show the ingest key on stderr, not stdout, so it stays out of a
+    # `curl|bash > log` capture; under curl|bash it is still visible on the
+    # terminal. It is also persisted in $DIR/voicegw.yaml.
+    printf '\n!! SAVE THIS: ingest key (also in %s/voicegw.yaml):\n   %s\n' \
+        "$DIR" "$INGEST_KEY" >&2
 
     cat <<EOF
 
@@ -276,12 +290,12 @@ print_summary() {
    URL:        $url
    Manage:     cd $DIR && docker compose logs -f   |   docker compose down
 
-   Point your agents at it:
+   Point your agents at it (use the ingest key shown above as virtual_key):
 
    from openrtc import AgentPool
    from voicegateway.openrtc import VoiceGatewayObserver
    pool = AgentPool(observers=[VoiceGatewayObserver(
-       project="prod", collector_url="$url", virtual_key="$INGEST_KEY")])
+       project="prod", collector_url="$url", virtual_key="<your-ingest-key>")])
 
    Note: only /v1/ingest and /health need to be public; protect the dashboard.
 EOF
