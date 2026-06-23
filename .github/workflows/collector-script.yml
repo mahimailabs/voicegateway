@@ -1,5 +1,8 @@
 name: collector.sh
 
+permissions:
+  contents: read
+
 on:
   pull_request:
     paths:
@@ -14,7 +17,9 @@ jobs:
   lint-and-unit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
       - run: sudo apt-get update && sudo apt-get install -y shellcheck
       - run: shellcheck web/public/collector.sh
       - run: bash src/voicegateway/tests/cli/test_collector_script.sh
@@ -25,7 +30,9 @@ jobs:
       matrix:
         backend: [sqlite, postgres]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
       - name: Run the installer non-interactively and assert health
         env:
           BACKEND: ${{ matrix.backend }}
