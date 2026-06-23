@@ -139,7 +139,7 @@ services:
     restart: unless-stopped
   collector:
     image: $IMAGE:$VERSION
-    ports: ["$BIND:8080"]
+    ports: ["$BIND:8080:8080"]
     environment:
       VOICEGW_DB_URL: postgresql+asyncpg://voicegw:\${VOICEGW_PG_PASSWORD}@postgres:5432/voicegw
       VOICEGW_CONFIG: /app/voicegw.yaml
@@ -155,7 +155,7 @@ EOF
 services:
   collector:
     image: $IMAGE:$VERSION
-    ports: ["$BIND:8080"]
+    ports: ["$BIND:8080:8080"]
     environment:
       VOICEGW_DB_PATH: /data/voicegw.db
       VOICEGW_CONFIG: /app/voicegw.yaml

@@ -49,7 +49,7 @@ VERSION=""; PATH="$STUBBIN:$PATH" resolve_version
 pass "resolve_version from tag"
 
 # scaffold is idempotent: secrets are generated once and reused
-T="$(mktemp -d)"; DIR="$T/deploy"; BACKEND=postgres; VERSION=0.9.2; BIND="127.0.0.1:8080"
+T="$(mktemp -d)"; DIR="$T/deploy"; BACKEND=postgres; VERSION=0.9.2; BIND="127.0.0.1"
 scaffold
 k1="$(sed -n 's/.*token: *"\(.*\)".*/\1/p' "$DIR/voicegw.yaml" | head -1)"
 p1="$(sed -n 's/^VOICEGW_PG_PASSWORD=//p' "$DIR/.env" | head -1)"
