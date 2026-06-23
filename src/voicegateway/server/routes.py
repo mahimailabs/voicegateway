@@ -19,6 +19,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from voicegateway.server.api import (
+    api_keys,
     audit_log,
     costs,
     guardrails,
@@ -31,10 +32,12 @@ from voicegateway.server.api import (
     providers,
     sessions,
     system,
-    api_keys,
 )
 from voicegateway.server.api.dashboard import (
     agents as dashboard_agents,
+)
+from voicegateway.server.api.dashboard import (
+    api_keys as dashboard_api_keys,
 )
 from voicegateway.server.api.dashboard import (
     auth_status as dashboard_auth_status,
@@ -74,9 +77,6 @@ from voicegateway.server.api.dashboard import (
 )
 from voicegateway.server.api.dashboard import (
     tenants as dashboard_tenants,
-)
-from voicegateway.server.api.dashboard import (
-    api_keys as dashboard_api_keys,
 )
 
 system_router = APIRouter()

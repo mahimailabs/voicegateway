@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from voicegateway.repository.api_key_repository import ApiKeyRepository
-from voicegateway.services.storage_service import StorageService
 from voicegateway.services.api_key_service import ApiKeyService
+from voicegateway.services.storage_service import StorageService
 
 
 @pytest.fixture
