@@ -109,6 +109,11 @@ load_or_make_secrets() {
 
 write_config() {
     mkdir -p "$DIR"
+    # 0700 deploy dir is the protection boundary for the secrets it holds.
+    # voicegw.yaml itself stays group/other-readable on purpose: the collector
+    # container (uid 1000) reads it through the bind mount. The 0700 dir blocks
+    # other host users from reaching it. The .env is locked to 0600 below.
+    chmod 700 "$DIR"
     cat > "$DIR/voicegw.yaml" <<EOF
 auth:
   api_keys:
@@ -118,6 +123,7 @@ auth:
 EOF
     if [ "$BACKEND" = postgres ]; then
         printf 'VOICEGW_PG_PASSWORD=%s\n' "$PG_PASS" > "$DIR/.env"
+        chmod 600 "$DIR/.env"
         cat > "$DIR/docker-compose.yml" <<EOF
 services:
   postgres:

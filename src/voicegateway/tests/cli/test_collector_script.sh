@@ -61,6 +61,12 @@ grep -q "postgresql+asyncpg://" "$DIR/docker-compose.yml" || fail "postgres sche
 grep -q "127.0.0.1:8080:8080" "$DIR/docker-compose.yml" || fail "bind"
 pass "scaffold idempotent + pinned + scheme + bind"
 
+# secrets are not world-readable: 0700 deploy dir, 0600 .env (portable stat)
+getperm() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
+[ "$(getperm "$DIR")" = 700 ] || fail "deploy dir not 0700 (got $(getperm "$DIR"))"
+[ "$(getperm "$DIR/.env")" = 600 ] || fail ".env not 0600 (got $(getperm "$DIR/.env"))"
+pass "secret file permissions"
+
 # sqlite backend has no postgres service
 DIR="$T/sqlite"; BACKEND=sqlite; INGEST_KEY=""; PG_PASS=""; scaffold
 grep -q "postgres" "$DIR/docker-compose.yml" && fail "sqlite should have no postgres"
