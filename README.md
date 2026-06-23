@@ -4,8 +4,6 @@
 
 **Voice AI cost transparency. Self-hosted, on your keys.**
 
-Drop-in for `livekit.agents.inference`. Per-call cost rows, voice metrics, conversation replay, multi-tenant attribution, cross-modality routing, voice guardrails. All open source.
-
 [![PyPI version](https://img.shields.io/pypi/v/voicegateway?style=for-the-badge&color=4B8BBE)](https://pypi.org/project/voicegateway)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
@@ -13,7 +11,7 @@ Drop-in for `livekit.agents.inference`. Per-call cost rows, voice metrics, conve
 [![Tests](https://img.shields.io/github/actions/workflow/status/mahimailabs/voicegateway/test-coverage.yml?branch=main&style=for-the-badge&label=tests)](https://github.com/mahimailabs/voicegateway/actions/workflows/test-coverage.yml)
 [![GitHub stars](https://img.shields.io/github/stars/mahimailabs/voicegateway?style=for-the-badge&color=FFD700)](https://github.com/mahimailabs/voicegateway/stargazers)
 
-[**🚀 Install in 60 seconds**](#-install-in-60-seconds) · [**📚 Docs**](https://voicegateway.mahimai.ca/docs) · [**📊 Dashboard**](#-the-dashboard) · [**🎯 Roadmap**](#-up-next) · [**🤝 Contributing**](CONTRIBUTING.md)
+[**Docs**](https://voicegateway.mahimai.ca/docs) · [**Dashboard**](#the-dashboard) · [**Fleet collector**](#fleet-collector) · [**Roadmap**](#roadmap) · [**Contributing**](CONTRIBUTING.md)
 
 </div>
 
@@ -31,20 +29,7 @@ session = AgentSession(
 
 A drop-in cost and quality observability layer for [LiveKit Agents](https://docs.livekit.io/agents). Modality-aware unit accounting (audio-minutes, tokens, characters) with LLM, STT, and TTS prices from [voice-prices](https://github.com/mahimailabs/voice-prices). Reconcile recorded numbers against your actual provider invoices with one command. Self-hosted. Your keys. No data leaves your infra.
 
-## 🚀 Install in 60 seconds
-
-```sh
-curl -fsSL https://voicegateway.mahimai.ca/install.sh | bash
-voicegw onboard --install-daemon
-```
-
-The installer detects your OS, ensures Python 3.11+ and `pipx`, installs `voicegateway[cloud,dashboard]`, runs a five-question wizard, validates your provider key, and registers a per-user daemon (LaunchAgent / systemd / Scheduled Task). Open the dashboard at `http://localhost:9090` to see your first cost row land.
-
-If [`uv`](https://docs.astral.sh/uv/) is already on your PATH, the installer auto-detects it and uses `uv tool install` instead of pipx. Same `~/.local/bin/voicegw` outcome, faster cold install.
-
-Prefer manual install? `pipx install "voicegateway[cloud,dashboard,mcp]"` then `voicegw init && voicegw dashboard`.
-
-## 🎯 Why VoiceGateway
+## Why VoiceGateway
 
 Voice AI vendors hide three numbers. VoiceGateway exposes them.
 
@@ -56,7 +41,7 @@ Voice AI vendors hide three numbers. VoiceGateway exposes them.
 
 If you are building a text-only LLM application without a voice component, [LiteLLM](https://docs.litellm.ai/) is likely a better fit. See the [decision tree](https://voicegateway.mahimai.ca/docs/guide/decision-tree).
 
-## 📦 What's in the box
+## What's in the box
 
 | Capability | What it gives you |
 |:---|:---|
@@ -66,35 +51,96 @@ If you are building a text-only LLM application without a voice component, [Lite
 | **Public-API discipline** | Subpackage layout, CHANGELOG, CONTRIBUTING, SECURITY, explicit `__all__` |
 | **Voice-conversation metrics** | Per-minute cost, latency p50/p95, interruptions, dead air, talk-over |
 | **Conversation replay** | Scrub any past call. STT chunks, LLM tokens, TTS frames with timing and cost |
-| **Multi-tenant attribution** | Per-tenant cost, virtual API keys per team, agency-ready |
+| **Multi-tenant attribution** | Per-tenant cost, scoped API keys per team, agency-ready |
 | **Cross-modality routing** | Route by combined STT + LLM + TTS latency budget. Per-project rosters. White-label branding |
 | **Voice-specific guardrails** | Real-time PII detection in STT, prompt-injection detection, compliance hooks |
+| **Fleet collector** | One-line installer. N agents push to one collector. Slice costs by agent, project, tenant |
 
 Full release history: [CHANGELOG.md](CHANGELOG.md).
 
-## 🚧 Roadmap
+## Install
 
-- Enterprise auth, audit log, SOC 2 prep
-- One-tap latency probe
-- Stability commitment, LTS branch policy
+```bash
+# Single node: local SQLite, runs the dashboard at http://localhost:8080
+pip install "voicegateway[cloud,dashboard]"
+voicegw init && voicegw serve
+```
 
-## 📊 The dashboard
+Or with the OS daemon installer (LaunchAgent / systemd / Scheduled Task):
 
-A self-hosted web UI at `http://localhost:9090`. Bundled. No SaaS account. No data leaves your stack.
+```bash
+curl -fsSL https://voicegateway.mahimai.ca/install.sh | bash
+voicegw onboard --install-daemon
+```
+
+**Extras:**
+
+```bash
+pip install voicegateway                              # core engine only
+pip install "voicegateway[cloud]"                     # + cloud provider plugins
+pip install "voicegateway[local]"                     # + local runtimes (Whisper, Kokoro, Piper)
+pip install "voicegateway[mcp]"                       # + MCP server
+pip install "voicegateway[tui]"                       # + voicegw tui
+pip install "voicegateway[all,dashboard,mcp,tui]"     # everything
+```
+
+**Zero-install one-shot ([uvx](https://uvx.sh)):**
+
+```bash
+uvx --from "voicegateway[cloud]" voicegw status
+uvx --from "voicegateway[cloud,dashboard]" voicegw serve --port 8080
+```
+
+Python 3.11+. Local extras pull larger ML runtimes.
+
+## Fleet collector
+
+Run one shared collector on your VPS. Every agent on your fleet pushes telemetry to it. One dashboard, one cost view, across all of them.
+
+```bash
+# Spin up a collector with Postgres backend in one command
+curl -fsSL https://voicegateway.mahimai.ca/collector.sh | bash
+```
+
+The script installs Docker if needed, generates and persists secrets, pins the image version, and health-checks the container before returning. For non-interactive use:
+
+```bash
+# SQLite (single collector, no external database)
+curl -fsSL https://voicegateway.mahimai.ca/collector.sh | bash -s -- --sqlite --yes
+
+# Postgres with HTTPS via Caddy
+curl -fsSL https://voicegateway.mahimai.ca/collector.sh | bash -s -- --postgres --domain collector.example.com --yes
+```
+
+Connect your agents to the collector:
+
+```python
+from voicegateway.sinks import RemoteCollectorSink
+
+sink = RemoteCollectorSink(
+    collector_url="https://collector.example.com",
+    api_key="<your-ingest-key>",
+)
+```
+
+[Fleet collector docs →](https://voicegateway.mahimai.ca/docs/deployment/vps)
+
+## The dashboard
+
+A self-hosted web UI at `http://localhost:8080`. Bundled. No SaaS account. No data leaves your stack.
+
+![VoiceGateway Dashboard](https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/dashboard-preview.png)
 
 - **Overview** — total requests, cost today, active models, per-project summary cards
-- **Costs** — daily spend with per-provider / model / project / tenant breakdown
-- **Sessions** — every call, every cost row, routing decisions, budget overruns
-- **Metrics** — p50/p95/p99 latency, interruption rate, dead air, talk-over
-- **Replay** — scrub through STT chunks, LLM tokens, TTS frames with timing
-- **Routing** — live per-provider latency observations, sortable
-- **Virtual Keys** — issue + revoke per-team scoped keys
-- **Guardrails** — PII / prompt-injection counts per project, session drilldown
-- **Settings** — providers, projects, branding (logo, accent color, product name)
+- **Costs** — daily spend with per-provider / model / project / tenant breakdown. Latency p50/p95 tab
+- **Sessions** — every call, every cost row, routing decisions, budget overruns. Metrics tab
+- **Logs** — raw request log with filtering
+- **Agents** — per-agent cost and session attribution
+- **Settings** — providers, API keys, projects, routing, guardrails, models, audit log
 
-White-label brand support: upload a logo, pick an accent color, set a product name; the whole dashboard re-skins for your project.
+White-label support: upload a logo, pick an accent color, set a product name — the whole dashboard re-skins for your project.
 
-## 🤖 Manage from your coding agent (MCP)
+## Manage from your coding agent (MCP)
 
 VoiceGateway ships a first-class [Model Context Protocol](https://modelcontextprotocol.io) server. Claude Code, Cursor, Codex, Cline can configure providers, create projects, check costs, and tail logs through natural language.
 
@@ -121,7 +167,7 @@ claude mcp add voicegateway \
 
 17 tools exposed: observability, providers, models, projects. Destructive ops (`delete_*`) require explicit `confirm=True` after a preview. [Full MCP reference →](https://voicegateway.mahimai.ca/docs/mcp/)
 
-## 🛠️ Supported providers
+## Supported providers
 
 11 providers across cloud and local. Mix and match per call.
 
@@ -135,7 +181,7 @@ claude mcp add voicegateway \
 
 Per-model IDs: [voicegateway.mahimai.ca/docs/configuration/providers](https://voicegateway.mahimai.ca/docs/configuration/providers). Adding a provider takes ~10 steps: [contributing/adding-a-provider](https://voicegateway.mahimai.ca/docs/contributing/adding-a-provider).
 
-## 🧱 Architecture
+## Architecture
 
 ```mermaid
 flowchart TB
@@ -158,30 +204,42 @@ Async throughout. Modular provider installs: `pip install "voicegateway[openai,d
 
 [Architecture deep dive →](https://voicegateway.mahimai.ca/docs/architecture/)
 
-## 🐳 Docker Compose
+## Docker Compose
 
 ```yaml
 services:
-  voicegateway:
-    image: mahimailabs/voicegateway:latest
-    ports: ["8080:8080"]
-    env_file: .env
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: voicegw
+      POSTGRES_PASSWORD: ${VOICEGW_PG_PASSWORD}
+      POSTGRES_DB: voicegw
+    volumes:
+      - voicegw-pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  collector:
+    image: mahimairaja/voicegateway:0.9.2
+    ports:
+      - "8080:8080"
+    environment:
+      VOICEGW_DB_URL: postgresql+asyncpg://voicegw:${VOICEGW_PG_PASSWORD}@postgres/voicegw
     volumes:
       - ./voicegw.yaml:/app/voicegw.yaml:ro
-      - voicegw_data:/data
+    depends_on: [postgres]
+    restart: unless-stopped
 
-  dashboard:
-    image: mahimailabs/voicegateway-dashboard:latest
-    ports: ["9090:9090"]
-    depends_on: [voicegateway]
+volumes:
+  voicegw-pgdata:
 ```
 
 ```bash
-docker compose up -d                      # core + dashboard
-docker compose --profile local up -d      # + Ollama for local LLMs
+docker compose up -d
 ```
 
-## 🌐 HTTP API
+Use the [fleet collector installer](#fleet-collector) for production — it handles secrets, image pinning, and health checks automatically.
+
+## HTTP API
 
 ```bash
 voicegw serve --port 8080
@@ -195,41 +253,18 @@ voicegw serve --port 8080
 | `GET /v1/costs?period=today&project=X&tenant=Y` | Cost summary |
 | `GET /v1/sessions/{id}/turns` · `/v1/sessions/{id}/replay` · `/v1/sessions/{id}/dead_air` | Voice-conversation surfaces |
 | `GET /v1/routing/observations` | Live per-provider latency |
-| `GET /v1/virtual_keys` + CRUD | Per-team scoped keys |
+| `GET /v1/api-keys` + CRUD | Per-team scoped keys |
 | `GET /v1/audit-log` · `GET /v1/metrics` | Audit + Prometheus metrics |
 
 Full reference: [voicegateway.mahimai.ca/docs/api/http-api](https://voicegateway.mahimai.ca/docs/api/http-api).
 
-## 📦 Install options
+## Roadmap
 
-```bash
-pip install voicegateway                              # core engine
-pip install "voicegateway[dashboard]"                 # + web UI
-pip install "voicegateway[cloud]"                     # + cloud provider plugins
-pip install "voicegateway[local]"                     # + local runtimes (Whisper, Kokoro, Piper)
-pip install "voicegateway[mcp]"                       # + MCP server
-pip install "voicegateway[tui]"                       # + voicegw tui
-pip install "voicegateway[all,dashboard,mcp,tui]"     # everything
-```
+- Enterprise auth, audit log, SOC 2 prep
+- One-tap latency probe
+- Stability commitment, LTS branch policy
 
-Python 3.11+. Local extras pull larger ML runtimes.
-
-**Zero-install one-shot ([uvx](https://uvx.sh)).** For CI smoke tests, status checks, or quick runs without a persistent install:
-
-```bash
-uvx --from "voicegateway[cloud]" voicegw status
-uvx --from "voicegateway[cloud,dashboard]" voicegw serve --port 8080
-```
-
-uvx pulls the wheel into a throwaway environment per run; uv's wheel cache makes second runs fast. Pin a version in scripts (`uvx --from "voicegateway[cloud]==0.5.0" voicegw status`) to avoid surprise upgrades. Not for daemon mode: uvx cannot register a LaunchAgent / systemd unit; use the [curl-bash installer](#-install-in-60-seconds) for the persistent flow.
-
-## 📚 Docs
-
-Full documentation: [voicegateway.mahimai.ca/docs](https://voicegateway.mahimai.ca/docs).
-
-Quick links: [Quick start](https://voicegateway.mahimai.ca/docs/guide/quick-start) · [First agent](https://voicegateway.mahimai.ca/docs/guide/first-agent) · [Projects](https://voicegateway.mahimai.ca/docs/configuration/projects) · [Configuration](https://voicegateway.mahimai.ca/docs/configuration/voicegw-yaml) · [CLI reference](https://voicegateway.mahimai.ca/docs/cli) · [Decision tree](https://voicegateway.mahimai.ca/docs/guide/decision-tree)
-
-## 🤝 Contributing
+## Contributing
 
 Issues and PRs welcome.
 
@@ -242,7 +277,7 @@ pytest
 
 Before submitting a PR, read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Security issues go through the disclosure flow in [SECURITY.md](SECURITY.md), not a public issue.
 
-## ⭐ Stargazers and contributors
+## Stargazers and contributors
 
 [![Star History Chart](https://api.star-history.com/svg?repos=mahimailabs/voicegateway&type=Date)](https://star-history.com/#mahimailabs/voicegateway&Date)
 
@@ -250,11 +285,11 @@ Before submitting a PR, read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CON
   <img src="https://contrib.rocks/image?repo=mahimailabs/voicegateway&max=40&columns=10&anon=0" alt="Contributors" />
 </a>
 
-## 📜 License
+## License
 
 [MIT](LICENSE). Fork it, ship it.
 
-## 🙌 Built by
+## Built by
 
 [Mahimai Raja](https://mahimai.dev), founder of [Mahimai AI](https://mahimai.ca), a voice AI company. Building VoiceGateway in public.
 
