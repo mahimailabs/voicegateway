@@ -76,4 +76,4 @@ Follow the steps at [Verify](/docs/deployment#verify), using `https://<your-app-
 
 ## Connect your agent
 
-See [Connect your agent](/docs/deployment#connect-your-agent). Use `https://<your-app-name>.fly.dev` as `collector_url` and `VOICEGW_API_KEY` as `virtual_key`.
+See [Connect your agent](/docs/deployment#connect-your-agent). Use `https://<your-app-name>.fly.dev` as `collector_url` and `VOICEGW_API_KEY` as `api_key`.

@@ -248,9 +248,9 @@ stt = inference.STT("deepgram/nova-3")
 
 `inference.current_tenant()` reads the current scope without modifying it. `inference.reset_tenant_id()` clears the ContextVar for a new session boundary inside the same task.
 
-### 3. Virtual API keys (no code change required)
+### 3. Scoped API keys (no code change required)
 
-When a request authenticates with a `vk_`-prefixed virtual key whose `tenant_id` is set, the HTTP API's auth middleware (in `src/voicegateway/server/main.py::build_app`) auto-tags the session with the key's scope. Agent code does not need to know the tenant: the dashboard's Virtual Keys page (`/virtual-keys`) issues a scoped key, the operator ships it as `Authorization: Bearer vk_…`, and every request inherits the scope.
+When a request authenticates with an API key whose `tenant_id` is set, the HTTP API's auth middleware (in `src/voicegateway/server/main.py::build_app`) auto-tags the session with the key's scope. Agent code does not need to know the tenant: the dashboard's API Keys page (`/api-keys`) issues a scoped key, the operator ships it as `Authorization: Bearer <key>`, and every request inherits the scope.
 
 Body-level `tenant_id` is rejected with `403` when it conflicts with a scoped virtual key. Unscoped virtual keys (issued without a tenant) allow the body to declare any tenant, matching the static-key behavior.
 

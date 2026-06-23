@@ -55,4 +55,4 @@ Follow the steps at [Verify](/docs/deployment#verify), using your Railway servic
 
 ## Connect your agent
 
-See [Connect your agent](/docs/deployment#connect-your-agent). Use the Railway URL as `collector_url` and `VOICEGW_API_KEY` as `virtual_key`.
+See [Connect your agent](/docs/deployment#connect-your-agent). Use the Railway URL as `collector_url` and `VOICEGW_API_KEY` as `api_key`.

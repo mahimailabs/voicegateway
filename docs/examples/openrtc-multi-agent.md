@@ -22,7 +22,7 @@ pool = AgentPool(
         VoiceGatewayObserver(
             project="prod",
             collector_url="https://collector.example.com",  # your fleet collector
-            virtual_key="vk_live_...",
+            api_key="<your-api-key>",
         )
     ],
 )
@@ -47,7 +47,7 @@ Per call, rows are tagged:
 
 - **Fleet mode** (shown above, `collector_url` set): one shared
   `RemoteCollectorSink` batches rows and POSTs them to
-  `<collector_url>/v1/ingest` with `Authorization: Bearer <virtual_key>`. Every
+  `<collector_url>/v1/ingest` with `Authorization: Bearer <api_key>`. Every
   worker pushes to the same collector, so you slice cost by `agent_id`,
   `project`, and `tenant` across the whole fleet.
 - **Single node** (omit `collector_url`): rows write to a local SQLite database

@@ -61,7 +61,7 @@ Sessions where none of the three surfaces set a tenant get `tenant_id = NULL` in
 
 The dashboard is the only surface that issues virtual keys. The CLI is read-only by design: a CLI that printed the plaintext key would leak it via shell history and scrollback.
 
-1. Open the dashboard at `http://127.0.0.1:8080/virtual-keys` (the daemon's serve port).
+1. Open the dashboard at `http://127.0.0.1:8080/api-keys` (the daemon's serve port).
 2. Click **+ Issue Key**.
 3. Fill in:
     - **Name** (required): a human label, e.g. `acme-prod`.
@@ -79,11 +79,11 @@ Ship the key to the caller as `Authorization: Bearer vk_…`. From that point:
 
 ### Revoke
 
-The same Virtual Keys page exposes a **Revoke** action per row. Revocation is soft: the row stays for audit and the stale-key surface, but verification rejects further requests bearing the key within ~30 seconds.
+The same API Keys page exposes a **Revoke** action per row. Revocation is soft: the row stays for audit and the stale-key surface, but verification rejects further requests bearing the key within ~30 seconds.
 
 ### Stale-key detection
 
-Keys whose `last_used_at` (or `issued_at`, for never-used keys) is older than `virtual_key_stale_days` (default 90, per-project overridable in `voicegw.yaml`) surface with a yellow **stale** badge. Hide revoked rows with the toggle at the top of the page when triaging.
+Keys whose `last_used_at` (or `issued_at`, for never-used keys) is older than `api_key_stale_days` (default 90, per-project overridable in `voicegw.yaml`) surface with a yellow **stale** badge. Hide revoked rows with the toggle at the top of the page when triaging.
 
 ## 3. View per-tenant costs and metrics
 
@@ -146,6 +146,6 @@ A few operator workflows are deliberately out of scope. Plan accordingly.
 - **Migration**: `src/voicegateway/storage/migrations/0005_tenant_attribution.py`.
 - **ContextVar**: `src/voicegateway/inference/_session_context.py`.
 - **Auth middleware**: `src/voicegateway/server/main.py::build_app` + `src/voicegateway/core/auth.py`.
-- **Repos**: `src/voicegateway/storage/virtual_keys_repo.py`, `src/voicegateway/storage/tenants_repo.py`.
-- **Dashboard API**: `src/dashboard/api/main.py` (search for `/api/tenants` and `/api/virtual_keys`).
+- **Repos**: `src/voicegateway/storage/api_keys_repo.py`, `src/voicegateway/storage/tenants_repo.py`.
+- **Dashboard API**: `src/dashboard/api/main.py` (search for `/api/tenants` and `/api/api_keys`).
 - **Frontend primitives**: `src/dashboard/frontend/src/components/{FilterBar,TenantFilter,TenantPill}.tsx`.

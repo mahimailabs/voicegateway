@@ -30,11 +30,11 @@ from voicegateway.openrtc import VoiceGatewayObserver
 pool = AgentPool(observers=[VoiceGatewayObserver(
     project="prod",
     collector_url="https://<your-collector-url>",
-    virtual_key="<your-ingest-key>",
+    api_key="<your-ingest-key>",
 )])
 ```
 
-The env-var form: set `VOICEGW_COLLECTOR_URL` and `VOICEGW_VIRTUAL_KEY` in the agent's environment and use `VoiceGatewayObserver(project="prod")`. Non-OpenRTC agents call `voicegateway.attach(session, collector_url=..., virtual_key=...)` instead.
+The env-var form: set `VOICEGW_COLLECTOR_URL` and `VOICEGW_API_KEY` in the agent's environment and use `VoiceGatewayObserver(project="prod")`. Non-OpenRTC agents call `voicegateway.attach(session, collector_url=..., api_key=...)` instead.
 
 ## Verify
 
