@@ -26,7 +26,7 @@ session = AgentSession(
 # every call logged: provider, model, tokens, $cost, latency, session_id
 ```
 
-A drop-in cost and quality observability layer for [LiveKit Agents](https://docs.livekit.io/agents). Modality-aware unit accounting (audio-minutes, tokens, characters) with LLM, STT, and TTS prices from [voice-prices](https://github.com/mahimailabs/voice-prices), reconciled against your real provider invoices with one command. Self-hosted. Your keys. No data leaves your infra.
+A drop-in cost and quality observability layer for [LiveKit Agents](https://docs.livekit.io/agents). Use `voicegateway.inference` for VoiceGateway-managed plugins, or `voicegateway.attach(session)` to observe any existing LiveKit STT/LLM/TTS plugin in place. Modality-aware unit accounting (audio-minutes, tokens, characters) with LLM, STT, and TTS prices from [voice-prices](https://github.com/mahimailabs/voice-prices), reconciled against your real provider invoices with one command. Self-hosted. Your keys. No data leaves your infra.
 
 ## Why VoiceGateway
 
@@ -40,17 +40,17 @@ Building a text-only LLM app with no voice component? [LiteLLM](https://docs.lit
 
 ## Features
 
-| Capability | What it gives you |
-|:---|:---|
-| **LiveKit Cloud parity** | Drop-in for `livekit.agents.inference`. Your keys, your config |
-| **Voice-conversation metrics** | Per-minute cost, latency p50/p95, interruptions, dead air, talk-over |
-| **Conversation replay** | Scrub any past call: STT chunks, LLM tokens, TTS frames with timing and cost |
-| **Terminal UI** | `voicegw tui` opens a vim-key Textual UI for SSH-in inspection |
-| **Multi-tenant attribution** | Per-tenant cost, scoped API keys per team, agency-ready |
-| **Cross-modality routing** | Route by combined latency budget, per-project rosters, white-label branding |
-| **Voice-specific guardrails** | Real-time PII detection in STT, prompt-injection detection, compliance hooks |
-| **Daemon-first onboarding** | Curl-bash install, OS daemon, five-question wizard, `voicegw doctor` |
-| **Fleet collector** | One-line installer. N agents push to one collector. Slice costs by agent, project, tenant |
+| Capability                     | What it gives you                                                                         |
+| :----------------------------- | :---------------------------------------------------------------------------------------- |
+| **LiveKit Cloud parity**       | Drop-in for `livekit.agents.inference`. Your keys, your config                            |
+| **Voice-conversation metrics** | Per-minute cost, latency p50/p95, interruptions, dead air, talk-over                      |
+| **Conversation replay**        | Scrub any past call: STT chunks, LLM tokens, TTS frames with timing and cost              |
+| **Terminal UI**                | `voicegw tui` opens a vim-key Textual UI for SSH-in inspection                            |
+| **Multi-tenant attribution**   | Per-tenant cost, scoped API keys per team, agency-ready                                   |
+| **Cross-modality routing**     | Route by combined latency budget, per-project rosters, white-label branding               |
+| **Voice-specific guardrails**  | Real-time PII detection in STT, prompt-injection detection, compliance hooks              |
+| **Daemon-first onboarding**    | Curl-bash install, OS daemon, five-question wizard, `voicegw doctor`                      |
+| **Fleet collector**            | One-line installer. N agents push to one collector. Slice costs by agent, project, tenant |
 
 Full release history: [CHANGELOG.md](CHANGELOG.md).
 
@@ -108,13 +108,13 @@ claude mcp add voicegateway --command "voicegw mcp --transport stdio"
 
 11 providers across cloud and local. Mix and match per call.
 
-| Modality | Cloud | Local |
-|:---|:---|:---|
-| **STT** | Deepgram, OpenAI Whisper, AssemblyAI, Groq | `faster-whisper` |
-| **LLM** | OpenAI, Anthropic, Groq | Ollama (any compatible) |
-| **TTS** | Cartesia, ElevenLabs, Deepgram Aura-2, OpenAI | Kokoro, Piper |
-| **VAD** \* | Silero | Silero |
-| **Turn detector** \* | LiveKit MultilingualModel | None |
+| Modality             | Cloud                                         | Local                   |
+| :------------------- | :-------------------------------------------- | :---------------------- |
+| **STT**              | Deepgram, OpenAI Whisper, AssemblyAI, Groq    | `faster-whisper`        |
+| **LLM**              | OpenAI, Anthropic, Groq                       | Ollama (any compatible) |
+| **TTS**              | Cartesia, ElevenLabs, Deepgram Aura-2, OpenAI | Kokoro, Piper           |
+| **VAD** \*           | Silero                                        | Silero                  |
+| **Turn detector** \* | LiveKit MultilingualModel                     | None                    |
 
 \* Configured directly on the LiveKit `AgentSession`, not wrapped by VoiceGateway. The 11-provider count covers STT, LLM, and TTS.
 
