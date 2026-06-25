@@ -10,6 +10,7 @@ WORKDIR /build/frontend
 COPY src/dashboard/frontend/package*.json ./
 RUN npm ci
 COPY src/dashboard/frontend/ ./
+COPY src/dashboard/api/static/ ./public/static/
 RUN npm run build
 
 # -------- Stage 2: Python runtime --------

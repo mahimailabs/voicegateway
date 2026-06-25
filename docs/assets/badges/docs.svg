@@ -1,0 +1,8 @@
+<svg width="78" height="30" viewBox="0 0 78 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0.5" y="0.5" width="77" height="29" rx="14.5" fill="#0d1e38" stroke="#2c5687"/>
+  <g transform="translate(11,7)">
+    <path d="M8 4C6 2.8 3.6 2.6 1.7 3.2V13C3.6 12.4 6 12.6 8 13.6C10 12.6 12.4 12.4 14.3 13V3.2C12.4 2.6 10 2.8 8 4Z" fill="#3EA8FF"/>
+    <line x1="8" y1="4" x2="8" y2="13.6" stroke="#0d1e38" stroke-width="0.9"/>
+  </g>
+  <text x="34" y="19.5" font-family="Inter, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="12.5" font-weight="600" fill="#ffffff">Docs</text>
+</svg>
