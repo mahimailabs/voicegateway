@@ -1,0 +1,10 @@
+<svg width="126" height="30" viewBox="0 0 126 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0.5" y="0.5" width="125" height="29" rx="14.5" fill="#0d1e38" stroke="#2c5687"/>
+  <g transform="translate(11,7)" fill="#EB5F36">
+    <rect x="1" y="6" width="2.2" height="4" rx="1.1"/>
+    <rect x="4.4" y="3.5" width="2.2" height="9" rx="1.1"/>
+    <rect x="7.8" y="1.4" width="2.2" height="13.2" rx="1.1"/>
+    <rect x="11.2" y="4.5" width="2.2" height="7" rx="1.1"/>
+  </g>
+  <text x="34" y="19.5" font-family="Inter, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="12.5" font-weight="600" fill="#ffffff">LiveKit 1.x</text>
+</svg>
