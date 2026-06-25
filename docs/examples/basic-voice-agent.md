@@ -49,6 +49,14 @@ llm = inference.LLM("openai/gpt-4.1-mini")
 tts = inference.TTS("cartesia/sonic-3")
 ```
 
+If you already build your own LiveKit plugins, use the session observer instead:
+
+```python
+from voicegateway import attach
+
+session_id = attach(session)
+```
+
 ## LiveKit Agent Integration
 
 ```python
