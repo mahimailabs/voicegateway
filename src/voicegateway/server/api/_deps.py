@@ -53,12 +53,23 @@ def require_scope(scope: str):
                 async with gateway.storage._conn.session() as session:
                     verified = await verify_api_key(authorization, session)
                     await api_keys_repo.mark_used(session, verified.id)
+                if scope == "admin" and verified.role != "admin":
+                    raise AuthError(
+                        f"Token role {verified.role!r} cannot access admin scope",
+                        status_code=403,
+                    )
+                if not verified.has_scope(scope):
+                    raise AuthError(
+                        f"Token missing required scope: {scope}",
+                        status_code=403,
+                    )
             except AuthError as exc:
                 raise HTTPException(
                     status_code=exc.status_code, detail=exc.message
                 ) from None
             request.state.api_key_id = verified.id
             request.state.api_key_tenant_id = verified.tenant_id
+            request.state.api_key_role = verified.role
             if verified.tenant_id is not None:
                 set_tenant(verified.tenant_id)
             return

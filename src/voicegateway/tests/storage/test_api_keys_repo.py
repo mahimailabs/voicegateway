@@ -163,3 +163,37 @@ async def test_two_keys_with_same_tenant_independent(db) -> None:
     await vk.revoke(db, a.id)
     assert await vk.verify(db, a.plaintext) is None
     assert await vk.verify(db, b.plaintext) is not None
+
+
+# ---------------------------------------------------------------------------
+# Task 3: scopes and roles
+# ---------------------------------------------------------------------------
+
+
+async def test_default_key_is_tenant_role_wildcard_scope(db) -> None:
+    """A key created without explicit role/scopes gets 'tenant' + '*'."""
+    created = await vk.create_api_key(db, name="default-key")
+    verified = await vk.verify(db, created.plaintext)
+    assert verified is not None
+    assert verified.role == "tenant"
+    assert verified.scopes == "*"
+    assert verified.has_scope("write") is True
+    assert verified.has_scope("admin") is True  # wildcard covers everything
+
+
+async def test_scoped_key_denies_unlisted_scope(db) -> None:
+    """A key with scopes='read' does not have scope 'write'."""
+    created = await vk.create_api_key(db, name="read-only", scopes="read")
+    verified = await vk.verify(db, created.plaintext)
+    assert verified is not None
+    assert verified.scopes == "read"
+    assert verified.has_scope("read") is True
+    assert verified.has_scope("write") is False
+
+
+async def test_admin_role_key_is_created_and_verified(db) -> None:
+    """A key created with role='admin' comes back with role='admin'."""
+    created = await vk.create_api_key(db, name="ops-key", role="admin")
+    verified = await vk.verify(db, created.plaintext)
+    assert verified is not None
+    assert verified.role == "admin"

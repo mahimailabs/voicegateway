@@ -59,6 +59,16 @@ class VerifiedKey:
     id: int
     tenant_id: str | None
     name: str
+    role: str = "tenant"
+    scopes: str = "*"
+
+    def has_scope(self, required: str) -> bool:
+        """Return True if this key covers ``required``."""
+        # Lazy import to avoid core.auth -> repository -> core.auth cycle.
+        from voicegateway.core.auth import WILDCARD_SCOPE  # noqa: PLC0415
+
+        csv = [s.strip() for s in self.scopes.split(",") if s.strip()]
+        return WILDCARD_SCOPE in csv or required in csv
 
 
 def _generate_plaintext_key() -> str:
@@ -107,6 +117,8 @@ async def create_api_key(
     name: str,
     tenant_id: str | None = None,
     issued_by: str | None = None,
+    role: str = "tenant",
+    scopes: str = "*",
 ) -> CreatedApiKey:
     """Create a virtual key and return the plaintext once."""
     if not name:
@@ -117,9 +129,10 @@ async def create_api_key(
     result = await session.execute(
         text(
             "INSERT INTO api_keys ("
-            "key_prefix, key_hash, name, tenant_id, issued_by, issued_at"
+            "key_prefix, key_hash, name, tenant_id, issued_by, role, scopes, issued_at"
             ") VALUES ("
-            ":prefix, :digest, :name, :tenant_id, :issued_by, CURRENT_TIMESTAMP"
+            ":prefix, :digest, :name, :tenant_id, :issued_by, :role, :scopes,"
+            " CURRENT_TIMESTAMP"
             ")"
         ),
         {
@@ -128,6 +141,8 @@ async def create_api_key(
             "name": name,
             "tenant_id": tenant_id,
             "issued_by": issued_by,
+            "role": role,
+            "scopes": scopes,
         },
     )
     await session.commit()
@@ -173,18 +188,20 @@ async def verify(session: AsyncSession, plaintext: str) -> VerifiedKey | None:
     prefix = _visible_prefix(plaintext)
     result = await session.execute(
         text(
-            "SELECT id, key_hash, tenant_id, name, revoked_at "
+            "SELECT id, key_hash, tenant_id, name, revoked_at, role, scopes "
             "FROM api_keys WHERE key_prefix = :prefix"
         ),
         {"prefix": prefix},
     )
     for row in result:
-        key_id, stored_hash, tenant_id, name, revoked_at = (
+        key_id, stored_hash, tenant_id, name, revoked_at, role, scopes = (
             row[0],
             row[1],
             row[2],
             row[3],
             row[4],
+            row[5],
+            row[6],
         )
         if revoked_at is not None:
             continue
@@ -193,6 +210,8 @@ async def verify(session: AsyncSession, plaintext: str) -> VerifiedKey | None:
                 id=int(key_id),
                 tenant_id=None if tenant_id is None else str(tenant_id),
                 name=str(name),
+                role=str(role) if role is not None else "tenant",
+                scopes=str(scopes) if scopes is not None else "*",
             )
     return None
 
@@ -200,10 +219,7 @@ async def verify(session: AsyncSession, plaintext: str) -> VerifiedKey | None:
 async def mark_used(session: AsyncSession, key_id: int) -> None:
     """Bump ``last_used_at`` to the current timestamp."""
     await session.execute(
-        text(
-            "UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP "
-            "WHERE id = :key_id"
-        ),
+        text("UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = :key_id"),
         {"key_id": key_id},
     )
     await session.commit()
