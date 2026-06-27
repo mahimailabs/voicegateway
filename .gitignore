@@ -427,3 +427,6 @@ web/v3-home.png
 web/v4-home.png
 web/v4-about.png
 web/references/
+
+# Local generated runtime config (voicegw init); templates are voicegw.example.yaml / data/voicegw.minimal.yaml
+/voicegw.yaml
