@@ -59,7 +59,7 @@ by a CI job that boots the collector against a real Postgres.
   runtime dependency on `openrtc`, so `import voicegateway.openrtc` works without
   it installed) and picklable for OpenRTC's `process` isolation mode. Install with
   `pip install "voicegateway[openrtc]"` (requires `openrtc>=0.3.0`). See the
-  [OpenRTC example](https://voicegateway.mahimai.ca/docs/examples/openrtc-multi-agent)
+  [OpenRTC example](https://docs.voicegateway.dev/examples/openrtc-multi-agent)
   for the full walkthrough.
 
 ## v0.8.6: minimal config records to storage so the dashboard works
@@ -288,7 +288,7 @@ against provider invoices.
 ### Install
 
 ```bash
-curl -fsSL https://voicegateway.mahimai.ca/install.sh | bash
+curl -fsSL https://voicegateway.dev/install.sh | bash
 ```
 
 Or:
@@ -298,5 +298,5 @@ pipx install 'voicegateway[cloud,dashboard]'
 uv tool install 'voicegateway[cloud,dashboard]'
 ```
 
-See [Get started](https://voicegateway.mahimai.ca/docs/get-started)
+See [Get started](https://docs.voicegateway.dev/get-started)
 for the full first-run flow.

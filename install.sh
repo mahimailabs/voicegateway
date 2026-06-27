@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # VoiceGateway one-line installer (v0.1.0).
-# Public URL:  https://voicegateway.mahimai.ca/install.sh
-# Run:         curl -fsSL https://voicegateway.mahimai.ca/install.sh | bash
+# Public URL:  https://voicegateway.dev/install.sh
+# Run:         curl -fsSL https://voicegateway.dev/install.sh | bash
 #
 # Behaviour:
 #  1. Detects OS (macOS / Linux / WSL). Refuses on anything else.
@@ -276,7 +276,7 @@ detect_existing_voicegw() {
 
 main() {
     say "VoiceGateway one-line installer (v0.1.0)."
-    say "Install host: voicegateway.mahimai.ca."
+    say "Install host: voicegateway.dev."
     say "Docs host:    vg.openrtc.tech (different domain, intentional, see README)."
 
     OS="$(detect_os)"

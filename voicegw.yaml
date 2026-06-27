@@ -5,7 +5,7 @@
 # This is the short template. For every option (fallbacks, routing, budgets,
 # auth, retention, guardrails, ...) generate the annotated reference with:
 #     voicegw init --full
-# Docs: https://docs.voicegateway.dev
+# Docs: https://voicegateway.mahimai.ca/docs
 
 providers:
   deepgram:

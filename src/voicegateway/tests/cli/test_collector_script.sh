@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Host unit tests for web/public/collector.sh. Sources the script (the
+# Host unit tests for collector.sh. Sources the script (the
 # source-guard keeps main() from running) and calls functions directly,
 # with curl/docker stubbed on PATH. No real Docker needed.
 set -euo pipefail
 DIR_SELF="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$DIR_SELF/../../../.." && pwd)"
-SCRIPT="$REPO_ROOT/web/public/collector.sh"
+SCRIPT="$REPO_ROOT/collector.sh"
 fail() { printf '!! FAIL: %s\n' "$*" >&2; exit 1; }
 pass() { printf 'ok: %s\n' "$*"; }
 

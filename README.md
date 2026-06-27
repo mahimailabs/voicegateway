@@ -3,14 +3,14 @@
 <img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/banner.svg" alt="VoiceGateway" width="100%" />
 
 <p>
-  <a href="https://voicegateway.mahimai.ca/docs"><img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/badges/docs.svg" height="30" alt="Docs"/></a>
+  <a href="https://docs.voicegateway.dev"><img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/badges/docs.svg" height="30" alt="Docs"/></a>
   <a href="https://pypi.org/project/voicegateway"><img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/badges/pypi.svg" height="30" alt="PyPI"/></a>
   <img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/badges/python.svg" height="30" alt="Python 3.11+"/>
   <a href="https://docs.livekit.io/agents"><img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/badges/livekit.svg" height="30" alt="LiveKit Agents 1.x"/></a>
   <a href="LICENSE"><img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/badges/license.svg" height="30" alt="MIT License"/></a>
 </p>
 
-[**Docs**](https://voicegateway.mahimai.ca/docs) · [**Quick start**](#quick-start) · [**Dashboard**](#the-dashboard) · [**Fleet collector**](#fleet-collector) · [**MCP**](#manage-from-your-coding-agent-mcp)
+[**Docs**](https://docs.voicegateway.dev) · [**Quick start**](#quick-start) · [**Dashboard**](#the-dashboard) · [**Fleet collector**](#fleet-collector) · [**MCP**](#manage-from-your-coding-agent-mcp)
 
 </div>
 
@@ -36,7 +36,7 @@ Voice AI vendors hide three numbers. VoiceGateway exposes them, per call.
 - **What does it cost?** STT bills by audio seconds, LLM by tokens, TTS by characters. Every call is broken down by modality and totaled to the cent. `voicegw reconcile` checks recorded numbers against your actual provider invoices.
 - **How do I make it cheaper?** Route by combined STT + LLM + TTS latency budget across providers, switch models per call type, attribute cost per tenant so agency clients see only their own usage.
 
-Building a text-only LLM app with no voice component? [LiteLLM](https://docs.litellm.ai/) is the better fit. See the [decision tree](https://voicegateway.mahimai.ca/docs/guide/decision-tree).
+Building a text-only LLM app with no voice component? [LiteLLM](https://docs.litellm.ai/) is the better fit. See the [decision tree](https://docs.voicegateway.dev/guide/decision-tree).
 
 ## Features
 
@@ -62,7 +62,7 @@ pip install "voicegateway[cloud,dashboard]"
 voicegw init && voicegw serve
 ```
 
-Add the three `inference` lines from the snippet above to your agent and every call is tracked. Provider plugins install modularly (`pip install "voicegateway[deepgram,openai,cartesia]"`). The full extras matrix, the zero-install [uvx](https://uvx.sh) path, and the OS daemon installer (LaunchAgent / systemd / Scheduled Task) are in the [get-started docs](https://voicegateway.mahimai.ca/docs/get-started). Python 3.11+.
+Add the three `inference` lines from the snippet above to your agent and every call is tracked. Provider plugins install modularly (`pip install "voicegateway[deepgram,openai,cartesia]"`). The full extras matrix, the zero-install [uvx](https://uvx.sh) path, and the OS daemon installer (LaunchAgent / systemd / Scheduled Task) are in the [get-started docs](https://docs.voicegateway.dev/get-started). Python 3.11+.
 
 ## The dashboard
 
@@ -77,7 +77,7 @@ Overview, Costs (per provider / model / project / tenant, plus latency p50/p95),
 Run one shared collector on your VPS. Every agent on your fleet pushes telemetry to it: one dashboard, one cost view, across all of them.
 
 ```bash
-curl -fsSL https://voicegateway.mahimai.ca/collector.sh | bash
+curl -fsSL https://voicegateway.dev/collector.sh | bash
 ```
 
 The script installs Docker if needed, generates and persists secrets, pins the image version, and health-checks the container before returning. Point your agents at it:
@@ -91,7 +91,7 @@ sink = RemoteCollectorSink(
 )
 ```
 
-SQLite and Postgres backends, plus HTTPS via Caddy: [fleet collector docs →](https://voicegateway.mahimai.ca/docs/deployment/vps)
+SQLite and Postgres backends, plus HTTPS via Caddy: [fleet collector docs →](https://docs.voicegateway.dev/deployment/vps)
 
 ## Manage from your coding agent (MCP)
 
@@ -102,7 +102,7 @@ pipx inject voicegateway "voicegateway[mcp]"
 claude mcp add voicegateway --command "voicegw mcp --transport stdio"
 ```
 
-22 tools across observability, providers, models, and projects. Destructive ops (`delete_*`) require explicit `confirm=True` after a preview. Remote HTTP/SSE transport with bearer auth and the full tool list: [MCP reference →](https://voicegateway.mahimai.ca/docs/mcp/)
+22 tools across observability, providers, models, and projects. Destructive ops (`delete_*`) require explicit `confirm=True` after a preview. Remote HTTP/SSE transport with bearer auth and the full tool list: [MCP reference →](https://docs.voicegateway.dev/mcp/)
 
 ## Supported providers
 
@@ -118,7 +118,7 @@ claude mcp add voicegateway --command "voicegw mcp --transport stdio"
 
 \* Configured directly on the LiveKit `AgentSession`, not wrapped by VoiceGateway. The 11-provider count covers STT, LLM, and TTS.
 
-Per-model IDs: [configuration/providers](https://voicegateway.mahimai.ca/docs/configuration/providers). Adding a provider takes about 10 steps: [contributing/adding-a-provider](https://voicegateway.mahimai.ca/docs/contributing/adding-a-provider).
+Per-model IDs: [configuration/providers](https://docs.voicegateway.dev/configuration/providers). Adding a provider takes about 10 steps: [contributing/adding-a-provider](https://docs.voicegateway.dev/contributing/adding-a-provider).
 
 ## Architecture
 
@@ -139,7 +139,7 @@ flowchart TB
     I --> J[Claude Code · Cursor · Codex]
 ```
 
-Async throughout. Modular provider installs pull only what you use. YAML config with `${ENV_VAR}` substitution. SQLite at the bottom for portability, encrypted with Fernet at rest. [Architecture deep dive →](https://voicegateway.mahimai.ca/docs/architecture/)
+Async throughout. Modular provider installs pull only what you use. YAML config with `${ENV_VAR}` substitution. SQLite at the bottom for portability, encrypted with Fernet at rest. [Architecture deep dive →](https://docs.voicegateway.dev/architecture/)
 
 ## Deploy
 
