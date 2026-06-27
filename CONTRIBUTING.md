@@ -1,9 +1,8 @@
 # Contributing to VoiceGateway
 
 Thank you for your interest in contributing. This file is the one-page
-quick reference. Detailed guides live under
-[`docs/contributing/`](docs/contributing/) and are rendered by the
-in-tree Next.js + Fumadocs site (`web/`) at <https://voicegateway.mahimai.ca/docs>.
+quick reference. Detailed guides live in the documentation site at
+<https://docs.voicegateway.dev/contributing>.
 
 ## Code of Conduct
 
@@ -41,20 +40,20 @@ Before opening your PR, verify locally:
 
 | Topic | Doc |
 |---|---|
-| Local environment, virtualenv, pre-commit | [docs/contributing/development-setup.md](docs/contributing/development-setup.md) |
-| Running, writing, and debugging tests | [docs/contributing/testing.md](docs/contributing/testing.md) |
-| Code style, ruff, mypy, naming, public-API contract | [docs/contributing/code-style.md](docs/contributing/code-style.md) |
-| Adding a new provider | [docs/contributing/adding-a-provider.md](docs/contributing/adding-a-provider.md) |
-| Refreshing STT and TTS pricing catalogs | [docs/contributing/refreshing-pricing.md](docs/contributing/refreshing-pricing.md) |
+| Local environment, virtualenv, pre-commit | [development-setup](https://docs.voicegateway.dev/contributing/development-setup) |
+| Running, writing, and debugging tests | [testing](https://docs.voicegateway.dev/contributing/testing) |
+| Code style, ruff, mypy, naming, public-API contract | [code-style](https://docs.voicegateway.dev/contributing/code-style) |
+| Adding a new provider | [adding-a-provider](https://docs.voicegateway.dev/contributing/adding-a-provider) |
+| Refreshing STT and TTS pricing catalogs | [refreshing-pricing](https://docs.voicegateway.dev/contributing/refreshing-pricing) |
 
 ## Documentation
 
-VoiceGateway owns the Markdown source content under `docs/` and the Next.js +
-Fumadocs site that renders it (`web/`), published at
-<https://voicegateway.mahimai.ca/docs>. Vercel auto-deploys the site on every
-push to `main` (Root Directory `web/`, with an Ignored Build Step that skips
-Python-only commits). To preview a doc change locally: `cd web && pnpm install
-&& pnpm dev`. See `web/CLAUDE.md` for site-specific conventions.
+The user-facing documentation lives in a separate repository,
+[`mahimailabs/voicegateway-web`](https://github.com/mahimailabs/voicegateway-web):
+a Next.js landing page published at <https://voicegateway.dev> and a Mintlify
+docs site published at <https://docs.voicegateway.dev>. Documentation changes go
+to that repo, not this one. This repository keeps only the brand assets under
+`docs/assets/` (used by the README).
 
 ## Project layout (quick orientation)
 
@@ -85,9 +84,10 @@ src/
     Dockerfile         # dashboard runtime image
     README.dockerhub.md
 
-docs/                  # Markdown docs source (rendered by web/)
-web/                   # Next.js 16 + Fumadocs 16 marketing + docs site
+docs/assets/           # brand assets used by the README (the docs site lives
+                       # in the mahimailabs/voicegateway-web repo)
 install.sh             # one-line installer (curl|bash), repo root by convention
+collector.sh           # fleet collector installer (curl|bash)
 pyproject.toml
 docker-compose.yml
 ```

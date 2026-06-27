@@ -54,7 +54,7 @@ docker compose --profile local up -d     # + Ollama
 
 **Dashboard (`dashboard/`):** FastAPI backend (`api/`) + React/TypeScript/Vite frontend (`frontend/`). Uses Recharts for visualization. Neo-Brutalism design aesthetic.
 
-**Docs (`docs/` + `web/`):** This repo owns both the Markdown source content (`docs/`) and the Next.js + Fumadocs site that renders it (`web/`), deployed at <https://voicegateway.mahimai.ca>. The site auto-deploys to Vercel on push to `main` (Vercel watches the repo with Root Directory `web/`). To preview a doc change locally: `cd web && pnpm install && pnpm dev`. Build-time sync (`web/scripts/sync-docs.ts`) copies `docs/` plus `CHANGELOG.md` into `web/content/docs/`. See `web/CLAUDE.md` for site-specific conventions.
+**Docs and site:** User-facing documentation and the marketing site live in the separate [`mahimailabs/voicegateway-web`](https://github.com/mahimailabs/voicegateway-web) repo: a Next.js landing page at <https://voicegateway.dev> and a Mintlify docs site at <https://docs.voicegateway.dev>. Documentation changes go to that repo. This repo keeps only the brand assets under `docs/assets/` (referenced by the README via raw GitHub URLs).
 
 **Public API:** `voicegateway/__init__.py` exports `Gateway`, `ModelId`, `GatewayConfig`.
 
