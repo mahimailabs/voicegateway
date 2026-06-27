@@ -7,6 +7,7 @@ from voicegateway.inference.session.attach import (
     reset_components,
 )
 from voicegateway.inference.session.context import (
+    DEFAULT_TENANT,
     current_guardrail_policy_snapshot,
     current_guardrails_bypassed,
     current_routing_decision,
@@ -26,6 +27,7 @@ from voicegateway.inference.session.context import (
 )
 
 __all__ = [
+    "DEFAULT_TENANT",
     "attach",
     "attach_session",
     "current_guardrail_policy_snapshot",
