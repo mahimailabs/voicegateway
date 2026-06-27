@@ -48,6 +48,51 @@ alembic_config.set_main_option("sqlalchemy.url", _resolve_url())
 
 target_metadata = SQLModel.metadata
 
+# Dedicated version table so a future cloud migration chain can share the same
+# database without colliding on the default "alembic_version".
+VERSION_TABLE = "alembic_version_voicegateway"
+
+
+def _maybe_rename_legacy_version_table(connection: Connection) -> None:
+    """Rename alembic_version -> alembic_version_voicegateway for existing installs.
+
+    Called at the top of do_run_migrations, before context.configure, so that
+    Alembic always sees the new namespaced table and never tries to rebuild
+    from base when it finds the old generic one.
+
+    IMPORTANT: the rename query is executed inside an explicit ``begin()``
+    block that commits before returning.  Any SQL execution on a SQLAlchemy 2
+    connection triggers autobegin; if we left the connection in that
+    auto-begun transaction, Alembic would detect ``_in_external_transaction``
+    and treat ``context.begin_transaction()`` as a no-op, causing the version
+    stamp INSERT to be issued but never committed.
+    """
+    with connection.begin():
+        rows = connection.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'"
+            if connection.dialect.name == "sqlite"
+            else "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = current_schema() AND table_name = 'alembic_version'"
+        ).fetchall()
+        old_exists = len(rows) > 0
+
+        new_rows = connection.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
+            if connection.dialect.name == "sqlite"
+            else "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = current_schema() AND table_name = %s",
+            (VERSION_TABLE,),
+        ).fetchall()
+        new_exists = len(new_rows) > 0
+
+        if old_exists and not new_exists:
+            connection.exec_driver_sql(
+                f"ALTER TABLE alembic_version RENAME TO {VERSION_TABLE}"
+            )
+    # After the begin() block commits, connection.in_transaction() is False,
+    # so Alembic will not see an external transaction and will manage its own
+    # commit for the version stamp.
+
 
 def run_migrations_offline() -> None:
     """Emit SQL to stdout without opening a DB connection."""
@@ -57,16 +102,19 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         render_as_batch=True,
+        version_table=VERSION_TABLE,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def do_run_migrations(connection: Connection) -> None:
+    _maybe_rename_legacy_version_table(connection)
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
         render_as_batch=True,
+        version_table=VERSION_TABLE,
     )
     with context.begin_transaction():
         context.run_migrations()
