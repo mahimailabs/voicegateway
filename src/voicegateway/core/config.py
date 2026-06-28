@@ -168,6 +168,7 @@ class GatewayConfig:
     ingest: IngestConfig = field(default_factory=IngestConfig)
     retention: RetentionConfig = field(default_factory=RetentionConfig)
     workers: WorkersConfig = field(default_factory=WorkersConfig)
+    clickhouse: ClickHouseConfig = field(default_factory=ClickHouseConfig)
 
     @classmethod
     def load(cls, config_path: str | Path | None = None) -> GatewayConfig:
@@ -348,6 +349,7 @@ class GatewayConfig:
             ingest=IngestConfig.model_validate(raw.get("ingest") or {}),
             retention=RetentionConfig.model_validate(raw.get("retention") or {}),
             workers=WorkersConfig.model_validate(raw.get("workers") or {}),
+            clickhouse=ClickHouseConfig.model_validate(raw.get("clickhouse") or {}),
         )
 
     def get_provider_config(self, provider_name: str) -> dict[str, Any]:
