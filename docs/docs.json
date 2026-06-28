@@ -3,9 +3,9 @@
   "theme": "mint",
   "name": "VoiceGateway",
   "colors": {
-    "primary": "#3EA8FF",
-    "light": "#3EA8FF",
-    "dark": "#EB5F36"
+    "primary": "#1F96AA",
+    "light": "#14B8C4",
+    "dark": "#14B8C4"
   },
   "logo": {
     "light": "/assets/logo.svg",
