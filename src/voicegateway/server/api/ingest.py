@@ -105,18 +105,27 @@ async def ingest(
                 continue
             await sink.log_request(record)
             accepted += 1
+        if rejected:
+            logger.warning("ingest: skipped %d malformed record(s)", rejected)
         try:
             await sink.flush()
-        except Exception:  # noqa: BLE001 - idempotent retry; do not 500
+        except Exception as exc:  # noqa: BLE001
+            # Signal the client to retry the whole batch. The deterministic
+            # insert_deduplication_token makes the re-POST idempotent (a no-op
+            # if the rows already landed), so a 503 gives lossless at-least-once
+            # delivery without risking double-counts. We do NOT fall back to
+            # SQLite here: ClickHouse is the telemetry store of record when
+            # configured, and a silent SQLite write would split the data.
             logger.warning(
-                "ingest: ClickHouse flush failed; counting %d record(s) as rejected",
+                "ingest: ClickHouse flush failed for %d record(s); returning 503 "
+                "for client retry",
                 accepted,
                 exc_info=True,
             )
-            rejected += accepted
-            accepted = 0
-        if rejected:
-            logger.warning("ingest: skipped %d malformed record(s)", rejected)
+            raise HTTPException(
+                status_code=503,
+                detail="telemetry store temporarily unavailable",
+            ) from exc
         # Dedup is handled server-side by async_insert_deduplicate; return 0.
         return {"accepted": accepted, "duplicates": 0}
 

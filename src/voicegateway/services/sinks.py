@@ -284,8 +284,8 @@ class ClickHouseSink:
         *,
         host: str,
         port: int = 8123,
-        username: str = "test",
-        password: str = "test",
+        username: str = "default",
+        password: str = "",
         database: str = "telemetry",
         client: Any | None = None,
     ) -> ClickHouseSink:

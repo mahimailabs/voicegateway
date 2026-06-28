@@ -300,6 +300,16 @@ def sink_host_port(clickhouse_container_sink):
 
 
 @pytest.fixture(scope="module")
+def sink_credentials(clickhouse_container_sink):
+    """(username, password) read from the container, not hardcoded.
+
+    Sourcing from the fixture keeps the tests correct if a future image
+    changes the default credentials.
+    """
+    return clickhouse_container_sink.username, clickhouse_container_sink.password
+
+
+@pytest.fixture(scope="module")
 def ch_sync_client_sink(clickhouse_container_sink):
     """Sync client for assertion queries."""
     import clickhouse_connect
@@ -334,7 +344,7 @@ def _wait_for_rows(sync_client, sql: str, expected_min: int = 1, timeout: float 
 class TestClickHouseSinkIntegration:
     """Integration: ClickHouseSink against a live ClickHouse 26.1 container."""
 
-    def _make_sink(self, host, port, username="test", password="test"):
+    def _make_sink(self, host, port, username, password):
         from voicegateway.services.sinks import ClickHouseSink
 
         return asyncio.run(
@@ -348,11 +358,16 @@ class TestClickHouseSinkIntegration:
         )
 
     def test_five_records_inserted_exactly_once(
-        self, sink_host_port, ch_sync_client_sink, ch_async_client_sink
+        self,
+        sink_host_port,
+        sink_credentials,
+        ch_sync_client_sink,
+        ch_async_client_sink,
     ):
         """POST 5 records -> exactly 5 rows in requests; sessions_agg correct."""
         host, port = sink_host_port
-        sink = self._make_sink(host, port)
+        username, password = sink_credentials
+        sink = self._make_sink(host, port, username, password)
 
         session_id = f"sess-{uuid.uuid4()}"
         tenant_id = "tenant-batch5"
@@ -400,10 +415,15 @@ class TestClickHouseSinkIntegration:
         )
 
     def test_repost_identical_batch_no_double_count(
-        self, sink_host_port, ch_sync_client_sink, ch_async_client_sink
+        self,
+        sink_host_port,
+        sink_credentials,
+        ch_sync_client_sink,
+        ch_async_client_sink,
     ):
         """Re-flushing the same records with the same dedup token -> still N rows."""
         host, port = sink_host_port
+        username, password = sink_credentials
         session_id = f"sess-dedup-{uuid.uuid4()}"
         tenant_id = "tenant-dedup"
 
@@ -416,6 +436,8 @@ class TestClickHouseSinkIntegration:
             sink = await ClickHouseSink.create(
                 host=host,
                 port=port,
+                username=username,
+                password=password,
                 database="telemetry",
             )
             set_tenant(tenant_id)
@@ -448,6 +470,8 @@ class TestClickHouseSinkIntegration:
             sink2 = await ClickHouseSink.create(
                 host=host,
                 port=port,
+                username=username,
+                password=password,
                 database="telemetry",
             )
             set_tenant(tenant_id)
@@ -480,10 +504,11 @@ class TestClickHouseSinkIntegration:
         )
 
     def test_tenant_captured_at_enqueue_not_flush(
-        self, sink_host_port, ch_sync_client_sink
+        self, sink_host_port, sink_credentials, ch_sync_client_sink
     ):
         """Tenant must be stamped at log_request time, not at flush time."""
         host, port = sink_host_port
+        username, password = sink_credentials
         session_id = f"sess-tenant-{uuid.uuid4()}"
 
         async def _log_with_tenant_then_clear():
@@ -494,7 +519,11 @@ class TestClickHouseSinkIntegration:
             from voicegateway.services.sinks import ClickHouseSink
 
             sink = await ClickHouseSink.create(
-                host=host, port=port, database="telemetry"
+                host=host,
+                port=port,
+                username=username,
+                password=password,
+                database="telemetry",
             )
             # Set tenant BEFORE log_request (this is the correct path)
             set_tenant("tenant-enqueue-test")
@@ -641,6 +670,96 @@ class TestIngestCHRouting:
                 assert sqlite_calls == [], (
                     f"SQLite storage.log_request called {len(sqlite_calls)} time(s); "
                     "expected 0 on the ClickHouse path"
+                )
+
+            asyncio.run(_run())
+        finally:
+            tmp_obj.cleanup()
+
+    def test_ingest_returns_503_when_clickhouse_flush_fails(self):
+        """A failed ClickHouse flush returns 503 so the client retries the batch.
+
+        The deterministic insert_deduplication_token makes the re-POST a no-op
+        if the rows already landed, so a 503 gives lossless at-least-once
+        delivery. SQLite must NOT be written as a fallback on this path.
+        """
+        import os
+        import tempfile
+
+        import yaml
+        from httpx import ASGITransport, AsyncClient
+
+        from voicegateway.core.gateway import Gateway
+        from voicegateway.repository import api_keys_repository as api_keys
+        from voicegateway.server import build_app
+
+        cfg = {
+            "providers": {"openai": {"api_key": "test-key"}},
+            "models": {"stt": {}, "llm": {}, "tts": {}},
+            "projects": {},
+            "fallbacks": {"stt": [], "llm": [], "tts": []},
+            "cost_tracking": {"enabled": True},
+        }
+
+        tmp_obj = tempfile.TemporaryDirectory()
+        tmp = tmp_obj.name
+        try:
+            os.environ["VOICEGW_DB_PATH"] = os.path.join(tmp, "test503.db")
+            cfg_path = os.path.join(tmp, "voicegw.yaml")
+            with open(cfg_path, "w") as f:
+                yaml.dump(cfg, f)
+            gw = Gateway(config_path=cfg_path)
+
+            class _FailingClient:
+                async def insert(self, table, data, *, column_names, settings):
+                    raise RuntimeError("clickhouse unreachable")
+
+                async def close(self):
+                    pass
+
+            app = build_app(gw, enable_mcp_sse=False, enable_dashboard=False)
+            app.state.ch_client = _FailingClient()
+
+            sqlite_calls: list = []
+            real_log = gw.storage.log_request
+
+            async def _spy_log(record):
+                sqlite_calls.append(record)
+                return await real_log(record)
+
+            gw.storage.log_request = _spy_log  # type: ignore[method-assign]
+
+            async def _run():
+                await gw.storage._ensure_initialized()
+                async with gw.storage._conn.session() as db:
+                    created = await api_keys.create_api_key(db, name="bot503")
+
+                async with AsyncClient(
+                    transport=ASGITransport(app=app), base_url="http://test"
+                ) as c:
+                    resp = await c.post(
+                        "/v1/ingest",
+                        headers={"Authorization": f"Bearer {created.plaintext}"},
+                        json=[
+                            {
+                                "id": "ch-fail-1",
+                                "timestamp": 1_000_000.0,
+                                "modality": "llm",
+                                "model_id": "openai/gpt-4o-mini",
+                                "provider": "openai",
+                                "project": "default",
+                                "input_units": 10.0,
+                                "output_units": 5.0,
+                                "cost_usd": 0.001,
+                            }
+                        ],
+                    )
+
+                assert resp.status_code == 503, (
+                    f"Expected 503 on flush failure, got {resp.status_code}"
+                )
+                assert sqlite_calls == [], (
+                    "SQLite must not be written as a fallback on the ClickHouse path"
                 )
 
             asyncio.run(_run())
