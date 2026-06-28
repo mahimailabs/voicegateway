@@ -234,13 +234,36 @@ class TestTurnsSchema:
         )
         assert "turn-1" in result
 
-    def test_turns_response_speed_nullable(self, ch_session):
+    def test_turns_response_speed_ms_nullable_int64(self, ch_session):
         apply_all(ch_session)
         result = _query(
             ch_session,
             """
             SELECT type FROM system.columns
-            WHERE database='telemetry' AND table='turns' AND name='response_speed'
+            WHERE database='telemetry' AND table='turns' AND name='response_speed_ms'
+            """,
+        )
+        assert "Nullable" in result
+        assert "Int64" in result
+
+    def test_turns_agent_speak_start_ms_nullable(self, ch_session):
+        apply_all(ch_session)
+        result = _query(
+            ch_session,
+            """
+            SELECT type FROM system.columns
+            WHERE database='telemetry' AND table='turns' AND name='agent_speak_start_ms'
+            """,
+        )
+        assert "Nullable" in result
+
+    def test_turns_agent_speak_end_ms_nullable(self, ch_session):
+        apply_all(ch_session)
+        result = _query(
+            ch_session,
+            """
+            SELECT type FROM system.columns
+            WHERE database='telemetry' AND table='turns' AND name='agent_speak_end_ms'
             """,
         )
         assert "Nullable" in result

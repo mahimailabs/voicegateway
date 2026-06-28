@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, cast
 from fastapi import Depends, HTTPException, Request
 
 from voicegateway.core.auth import (
+    ADMIN_SCOPE,
     AuthError,
     check_request,
     is_api_key_token,
@@ -52,8 +53,9 @@ def require_scope(scope: str):
                 await gateway.storage._ensure_initialized()
                 async with gateway.storage._conn.session() as session:
                     verified = await verify_api_key(authorization, session)
-                    await api_keys_repo.mark_used(session, verified.id)
-                if scope == "admin" and verified.role != "admin":
+                # Authorization checks run BEFORE mark_used so a denied key
+                # does not get its last_used_at bumped.
+                if scope == ADMIN_SCOPE and verified.role != ADMIN_SCOPE:
                     raise AuthError(
                         f"Token role {verified.role!r} cannot access admin scope",
                         status_code=403,
@@ -63,6 +65,8 @@ def require_scope(scope: str):
                         f"Token missing required scope: {scope}",
                         status_code=403,
                     )
+                async with gateway.storage._conn.session() as session:
+                    await api_keys_repo.mark_used(session, verified.id)
             except AuthError as exc:
                 raise HTTPException(
                     status_code=exc.status_code, detail=exc.message
