@@ -11,12 +11,17 @@ from typing import Any
 import yaml
 
 from voicegateway.schemas.config_schema import (
+    ClickHouseConfig,
     IngestConfig,
     RetentionConfig,
     VoiceGatewayConfig,
     WorkersConfig,
 )
 from voicegateway.schemas.guardrail_policy_schema import GuardrailPolicy
+
+# Re-export ClickHouseConfig so callers can import it from here without going
+# through the schema module directly.
+__all__ = ["ClickHouseConfig", "GatewayConfig"]
 
 _ENV_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
@@ -254,9 +259,7 @@ class GatewayConfig:
                 )
                 tenant_raw = pcfg.get("tenant") or {}
                 tenant_cfg = TenantConfig(
-                    api_key_stale_days=int(
-                        tenant_raw.get("api_key_stale_days", 90)
-                    ),
+                    api_key_stale_days=int(tenant_raw.get("api_key_stale_days", 90)),
                 )
                 routing_raw = pcfg.get("routing") or {}
                 rosters_raw = routing_raw.get("rosters") or {}

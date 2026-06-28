@@ -202,6 +202,21 @@ class FallbackConfig(BaseModel):
     tts: list[str] = Field(default_factory=list)
 
 
+class ClickHouseConfig(_StrictBase):
+    """Optional ClickHouse telemetry sink config.
+
+    When ``host`` is non-empty the collector constructs a ``ClickHouseSink``
+    instead of writing to the embedded SQLite store.  Migrations are applied
+    automatically on startup.
+    """
+
+    host: str = ""
+    port: int = Field(default=8123, ge=1, le=65535)
+    username: str = "default"
+    password: str = ""
+    database: str = "telemetry"
+
+
 _VALID_TOP_LEVEL_KEYS = {
     "providers",
     "models",
@@ -219,6 +234,7 @@ _VALID_TOP_LEVEL_KEYS = {
     "ingest",
     "retention",
     "workers",
+    "clickhouse",
 }
 
 
@@ -243,6 +259,7 @@ class VoiceGatewayConfig(BaseModel):
     ingest: IngestConfig = Field(default_factory=IngestConfig)
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
     workers: WorkersConfig = Field(default_factory=WorkersConfig)
+    clickhouse: ClickHouseConfig = Field(default_factory=ClickHouseConfig)
 
     @model_validator(mode="before")
     @classmethod

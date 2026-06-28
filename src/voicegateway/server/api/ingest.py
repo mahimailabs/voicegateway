@@ -69,14 +69,9 @@ async def ingest(
     """Persist a batch of request records pushed by a fleet agent."""
     gateway = get_gateway(request)
     storage = gateway.storage
-    if storage is None:
-        raise HTTPException(
-            status_code=503,
-            detail="cost tracking storage is disabled on this collector",
-        )
 
     # Rate limit (429) takes precedence over the batch-size cap (413); both run
-    # before any database write. Storage-disabled (503 above) wins over both.
+    # before any database write.
     limiter = getattr(request.app.state, "ingest_rate_limiter", None)
     if limiter is not None:
         retry_after = limiter.check(_rate_limit_key(request))
@@ -94,6 +89,43 @@ async def ingest(
             detail=f"batch too large: {len(records)} records exceeds max {max_batch}",
         )
 
+    ch_client = getattr(request.app.state, "ch_client", None)
+
+    if ch_client is not None:
+        # ClickHouse path: fresh sink per request (fresh buffer, shared client).
+        from voicegateway.services.sinks import ClickHouseSink
+
+        sink = ClickHouseSink(ch_client)
+        accepted = 0
+        rejected = 0
+        for raw in records:
+            record = _record_from_payload(raw)
+            if record is None:
+                rejected += 1
+                continue
+            await sink.log_request(record)
+            accepted += 1
+        try:
+            await sink.flush()
+        except Exception:  # noqa: BLE001 - idempotent retry; do not 500
+            logger.warning(
+                "ingest: ClickHouse flush failed; counting %d record(s) as rejected",
+                accepted,
+                exc_info=True,
+            )
+            rejected += accepted
+            accepted = 0
+        if rejected:
+            logger.warning("ingest: skipped %d malformed record(s)", rejected)
+        # Dedup is handled server-side by async_insert_deduplicate; return 0.
+        return {"accepted": accepted, "duplicates": 0}
+
+    # SQLite path (default when no ClickHouse host is configured).
+    if storage is None:
+        raise HTTPException(
+            status_code=503,
+            detail="cost tracking storage is disabled on this collector",
+        )
     accepted = 0
     duplicates = 0
     rejected = 0
