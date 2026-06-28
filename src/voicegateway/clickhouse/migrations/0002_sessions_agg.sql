@@ -3,7 +3,7 @@
 -- The MV eliminates per-record session UPSERT overhead.
 
 CREATE TABLE IF NOT EXISTS telemetry.sessions_agg (
-  tenant_id        LowCardinality(String),
+  tenant_id        LowCardinality(String) DEFAULT '',
   session_id       String,
   request_count    SimpleAggregateFunction(sum, UInt64),
   total_cost_usd   SimpleAggregateFunction(sum, Float64),

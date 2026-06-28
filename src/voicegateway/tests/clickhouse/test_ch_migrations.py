@@ -74,6 +74,7 @@ class TestMigrationRunner:
         versions = [int(v) for v in result.splitlines() if v]
         assert 1 in versions
         assert 2 in versions
+        assert 3 in versions
 
     def test_idempotent_double_apply(self, ch_session):
         apply_all(ch_session)
@@ -83,8 +84,30 @@ class TestMigrationRunner:
             ch_session,
             "SELECT count() FROM telemetry.schema_migrations",
         )
-        # Only one row per migration even after double apply
-        assert int(result) <= 10
+        # Exactly one row per migration file after double apply
+        expected = len(list(MIGRATIONS_DIR.glob("*.sql")))
+        assert int(result) == expected
+
+    def test_bad_filename_rejected_by_regex(self, tmp_path):
+        """Migration filenames with unsafe characters must be silently skipped."""
+        import shutil
+
+        from voicegateway.clickhouse.migrate import _migration_files
+
+        # Copy real migrations into a temp dir so we can add a bad one
+        bad_dir = tmp_path / "bad_migrations"
+        shutil.copytree(str(MIGRATIONS_DIR), str(bad_dir))
+
+        # Write a file whose name component contains a quote (SQL injection attempt)
+        bad_file = bad_dir / "0099_bad'name.sql"
+        bad_file.write_text("SELECT 1")
+
+        files = _migration_files(bad_dir)
+        versions = [v for v, _n, _p in files]
+        # The bad file must not appear in the parsed list
+        assert 99 not in versions
+        # The legitimate migrations are still present
+        assert 1 in versions
 
 
 class TestRequestsSchema:
@@ -172,3 +195,52 @@ class TestSessionsAgg:
             "SELECT engine FROM system.tables WHERE database='telemetry' AND name='sessions_agg'",
         )
         assert "AggregatingMergeTree" in result
+
+
+class TestTurnsSchema:
+    def test_turns_table_exists(self, ch_session):
+        apply_all(ch_session)
+        result = _query(
+            ch_session,
+            "SELECT count() FROM system.tables WHERE database='telemetry' AND name='turns'",
+        )
+        assert result == "1"
+
+    def test_turns_order_by_leads_with_tenant_id(self, ch_session):
+        apply_all(ch_session)
+        result = _query(
+            ch_session,
+            "SELECT sorting_key FROM system.tables WHERE database='telemetry' AND name='turns'",
+        )
+        sorting_key = result.strip('"')
+        assert sorting_key.startswith("tenant_id"), (
+            f"Expected turns sorting_key to start with 'tenant_id', got: {result!r}"
+        )
+
+    def test_turns_insert_and_read(self, ch_session):
+        apply_all(ch_session)
+        ch_session.query(
+            """
+            INSERT INTO telemetry.turns
+              (tenant_id, session_id, id, timestamp, turn_index)
+            VALUES
+              ('t-turn', 'sess-1', 'turn-1', '2025-06-01 12:00:00.000', 0)
+            """,
+            "CSV",
+        )
+        result = _query(
+            ch_session,
+            "SELECT id FROM telemetry.turns WHERE tenant_id='t-turn'",
+        )
+        assert "turn-1" in result
+
+    def test_turns_response_speed_nullable(self, ch_session):
+        apply_all(ch_session)
+        result = _query(
+            ch_session,
+            """
+            SELECT type FROM system.columns
+            WHERE database='telemetry' AND table='turns' AND name='response_speed'
+            """,
+        )
+        assert "Nullable" in result

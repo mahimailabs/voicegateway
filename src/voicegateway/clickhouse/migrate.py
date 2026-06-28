@@ -46,6 +46,12 @@ ORDER BY version
 """
 
 _INSERT_VERSION = "INSERT INTO telemetry.schema_migrations (version, name) VALUES ({version}, '{name}')"
+# The parameterized insert is used for the async (clickhouse-connect) path;
+# the chDB path uses a manually escaped string (see _insert_version_chdb).
+
+# Allowed characters in a migration name component (everything after the NNN_ prefix).
+# Tightened to [a-z0-9_]+ to make the SQL-injection surface zero even before escaping.
+_MIGRATION_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 
 _SELECT_VERSIONS = "SELECT version FROM telemetry.schema_migrations ORDER BY version"
 
@@ -58,22 +64,36 @@ _SELECT_VERSIONS = "SELECT version FROM telemetry.schema_migrations ORDER BY ver
 def _migration_files(
     migrations_dir: pathlib.Path,
 ) -> list[tuple[int, str, pathlib.Path]]:
-    """Return sorted list of (version, name, path) for all .sql files."""
+    """Return sorted list of (version, name, path) for all .sql files.
+
+    Filenames must match ``NNNN_[a-z0-9_]+.sql``.  The strict name regex
+    ensures the name component contains no characters that could be used in
+    an SQL injection when it is interpolated into a string literal.
+    """
     files = sorted(migrations_dir.glob("*.sql"))
     result = []
     for f in files:
-        m = re.match(r"^(\d+)_(.+)\.sql$", f.name)
+        m = re.match(r"^(\d+)_([a-z0-9_]+)\.sql$", f.name)
         if not m:
             log.warning("Skipping migration file with unexpected name: %s", f.name)
             continue
         version = int(m.group(1))
         name = m.group(2)
+        if not _MIGRATION_NAME_RE.match(name):
+            log.warning(
+                "Skipping migration file with unsafe name component: %s", f.name
+            )
+            continue
         result.append((version, name, f))
     return result
 
 
 def _split_statements(sql: str) -> list[str]:
-    """Split SQL text on ';' and return non-empty statements."""
+    """Split SQL text on ';' and return non-empty statements.
+
+    WARNING: this is a naïve split. Do NOT put bare ';' inside string literals
+    in migration files or it will be silently truncated.
+    """
     stmts = []
     for raw in sql.split(";"):
         stmt = raw.strip()
@@ -138,7 +158,11 @@ def apply_migrations_to_session(
         for stmt in _split_statements(sql):
             run(stmt)
 
-        run(_INSERT_VERSION.format(version=version, name=name))
+        # chDB has no bind-parameter support, so escape the name manually.
+        # The filename regex already guarantees name is [a-z0-9_]+, so this
+        # replace is a belt-and-suspenders defence against future regressions.
+        safe_name = name.replace("'", "''")
+        run(_INSERT_VERSION.format(version=version, name=safe_name))
         log.info("Migration %04d applied successfully.", version)
 
 
@@ -184,5 +208,10 @@ async def apply_migrations(
         for stmt in _split_statements(sql):
             await run(stmt)
 
-        await run(_INSERT_VERSION.format(version=version, name=name))
+        # Use a parameterized insert to avoid any SQL injection via the name.
+        await client.insert(
+            "telemetry.schema_migrations",
+            [[version, name]],
+            column_names=["version", "name"],
+        )
         log.info("Migration %04d applied successfully.", version)
