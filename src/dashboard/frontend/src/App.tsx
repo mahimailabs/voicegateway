@@ -11,6 +11,7 @@ import Login from './pages/Login';
 import type { StatusResponse } from './lib/types';
 import { AUTH_REQUIRED_EVENT, clearToken, fetchJson, getToken } from './lib/api';
 import { applyBrandingForProject } from './lib/branding';
+import ThemeToggle from './components/ThemeToggle';
 
 interface ActiveBranding {
   logo_url?: string | null;
@@ -138,7 +139,7 @@ function Sidebar({
           </>
         ) : (
           <img
-            src="/static/branding/wordings.png"
+            src="/static/branding/wordings.svg"
             alt="VoiceGateway"
             className="sidebar__wordmark"
           />
@@ -160,7 +161,10 @@ function Sidebar({
           <span className="neo-status-dot neo-status-dot--online" />
           {providerCount} Providers · {modelCount} Models
         </div>
-        {status?.version && <span className="version-pill">v{status.version}</span>}
+        <div className="flex-row" style={{ justifyContent: 'space-between', marginTop: '4px' }}>
+          {status?.version && <span className="version-pill">v{status.version}</span>}
+          <ThemeToggle />
+        </div>
         {hasToken && (
           <button
             type="button"

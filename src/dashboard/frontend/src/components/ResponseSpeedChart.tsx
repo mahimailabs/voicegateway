@@ -57,7 +57,7 @@ export default function ResponseSpeedChart({ p50, p95 }: Props) {
           >
             <CartesianGrid
               strokeDasharray="4 4"
-              stroke="#1A1A1A"
+              stroke="var(--border)"
               strokeOpacity={0.3}
             />
             <XAxis type="number" tick={{ fontSize: 11, fontWeight: 600 }} />
@@ -73,7 +73,7 @@ export default function ResponseSpeedChart({ p50, p95 }: Props) {
             <Bar
               dataKey="ms"
               fill={ACCENT_COLORS.blue}
-              stroke="#1A1A1A"
+              stroke="var(--border)"
               strokeWidth={2}
             />
           </BarChart>

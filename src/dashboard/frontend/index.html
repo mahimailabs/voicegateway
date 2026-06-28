@@ -9,6 +9,18 @@
             href="/static/branding/logo-light.svg"
         />
         <title>VoiceGateway Dashboard</title>
+        <script>
+            // Set the theme before first paint to avoid a flash.
+            (function () {
+                try {
+                    var t = localStorage.getItem('vg-theme');
+                    if (t !== 'light' && t !== 'dark') {
+                        t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                    }
+                    document.documentElement.dataset.theme = t;
+                } catch (e) {}
+            })();
+        </script>
     </head>
     <body>
         <div id="root"></div>
