@@ -1,0 +1,77 @@
+# Opt-in auto-update overlay for the fleet collector.
+#
+# Layer this ON TOP of docker-compose.collector.yml to:
+#   1. track a safe minor release channel (0.10.x patches, never a breaking major),
+#   2. auto-pull and recreate the collector when a new patch ships, and
+#   3. keep rolling Postgres backups so a bad migration is recoverable.
+#
+#   docker compose -f docker-compose.collector.yml -f docker-compose.autoupdate.yml up -d
+#
+# Requires v0.10.0+ to be published (the :0.10 channel tag is created by the
+# release workflow). The agent SDK buffers and retries during the few-second
+# container swap, so updates are effectively seamless for your agents. See
+# https://docs.voicegateway.dev/deployment/auto-update for the full model.
+
+services:
+  collector:
+    # Track the 0.10.x patch channel: auto-gets bug-fix releases, never a
+    # breaking major. Move to :0.11 deliberately when you choose to upgrade.
+    image: mahimairaja/voicegateway:0.10
+    labels:
+      # Only containers carrying this label are touched by Watchtower below,
+      # so the datastores (postgres, the backup sidecar) are never auto-updated.
+      com.centurylinklabs.watchtower.enable: "true"
+
+  # Watches ONLY the labeled collector and recreates it when :0.10 advances.
+  watchtower:
+    image: containrrr/watchtower:1.7.1
+    container_name: voicegw-watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_LABEL_ENABLE: "true"      # only update labeled containers (the collector)
+      WATCHTOWER_CLEANUP: "true"           # remove the superseded image after a successful update
+      WATCHTOWER_POLL_INTERVAL: "3600"     # check hourly
+      WATCHTOWER_NO_STARTUP_MESSAGE: "true"
+    restart: unless-stopped
+    networks:
+      - voicegw-net
+
+  # Rolling Postgres backups so a bad auto-update migration is recoverable.
+  # Uses postgres:16-alpine so pg_dump matches the server version exactly: a
+  # client older than the server refuses to dump, so the matching image is the
+  # safe choice. Writes timestamped dumps to the voicegw-backups volume and
+  # keeps the most recent BACKUP_KEEP files.
+  db-backup:
+    image: postgres:16-alpine
+    container_name: voicegw-db-backup
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${VOICEGW_PG_PASSWORD:-voicegw}
+      BACKUP_INTERVAL_SECONDS: ${VOICEGW_BACKUP_INTERVAL_SECONDS:-21600}  # every 6 hours
+      BACKUP_KEEP: ${VOICEGW_BACKUP_KEEP:-28}                            # ~7 days at 6h cadence
+    volumes:
+      - voicegw-backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "db-backup: dumping every $${BACKUP_INTERVAL_SECONDS}s, keeping $${BACKUP_KEEP} files";
+        while true; do
+          ts="$$(date +%Y%m%d-%H%M%S)";
+          if pg_dump -h postgres -U voicegw -d voicegw -f "/backups/voicegw-$$ts.sql"; then
+            echo "db-backup: wrote voicegw-$$ts.sql";
+          else
+            echo "db-backup: pg_dump FAILED at $$ts" >&2;
+          fi;
+          ls -1t /backups/voicegw-*.sql 2>/dev/null | tail -n +$$(( $${BACKUP_KEEP} + 1 )) | xargs -r rm -f;
+          sleep "$${BACKUP_INTERVAL_SECONDS}";
+        done
+    restart: unless-stopped
+    networks:
+      - voicegw-net
+
+volumes:
+  voicegw-backups:
+    driver: local
