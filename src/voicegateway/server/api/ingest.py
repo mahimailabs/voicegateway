@@ -69,14 +69,9 @@ async def ingest(
     """Persist a batch of request records pushed by a fleet agent."""
     gateway = get_gateway(request)
     storage = gateway.storage
-    if storage is None:
-        raise HTTPException(
-            status_code=503,
-            detail="cost tracking storage is disabled on this collector",
-        )
 
     # Rate limit (429) takes precedence over the batch-size cap (413); both run
-    # before any database write. Storage-disabled (503 above) wins over both.
+    # before any database write.
     limiter = getattr(request.app.state, "ingest_rate_limiter", None)
     if limiter is not None:
         retry_after = limiter.check(_rate_limit_key(request))
@@ -94,6 +89,52 @@ async def ingest(
             detail=f"batch too large: {len(records)} records exceeds max {max_batch}",
         )
 
+    ch_client = getattr(request.app.state, "ch_client", None)
+
+    if ch_client is not None:
+        # ClickHouse path: fresh sink per request (fresh buffer, shared client).
+        from voicegateway.services.sinks import ClickHouseSink
+
+        sink = ClickHouseSink(ch_client)
+        accepted = 0
+        rejected = 0
+        for raw in records:
+            record = _record_from_payload(raw)
+            if record is None:
+                rejected += 1
+                continue
+            await sink.log_request(record)
+            accepted += 1
+        if rejected:
+            logger.warning("ingest: skipped %d malformed record(s)", rejected)
+        try:
+            await sink.flush()
+        except Exception as exc:  # noqa: BLE001
+            # Signal the client to retry the whole batch. The deterministic
+            # insert_deduplication_token makes the re-POST idempotent (a no-op
+            # if the rows already landed), so a 503 gives lossless at-least-once
+            # delivery without risking double-counts. We do NOT fall back to
+            # SQLite here: ClickHouse is the telemetry store of record when
+            # configured, and a silent SQLite write would split the data.
+            logger.warning(
+                "ingest: ClickHouse flush failed for %d record(s); returning 503 "
+                "for client retry",
+                accepted,
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="telemetry store temporarily unavailable",
+            ) from exc
+        # Dedup is handled server-side by async_insert_deduplicate; return 0.
+        return {"accepted": accepted, "duplicates": 0}
+
+    # SQLite path (default when no ClickHouse host is configured).
+    if storage is None:
+        raise HTTPException(
+            status_code=503,
+            detail="cost tracking storage is disabled on this collector",
+        )
     accepted = 0
     duplicates = 0
     rejected = 0

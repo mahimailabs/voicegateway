@@ -15,7 +15,12 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 
-from voicegateway.server.api._deps import get_gateway
+from voicegateway.server.api._deps import (
+    Principal,
+    get_gateway,
+    require_principal,
+    resolve_read_tenant,
+)
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -30,6 +35,7 @@ async def get_metrics_summary(
     tenant: str | None = Query(None),
     agent: str | None = Query(None),
     gateway: Gateway = Depends(get_gateway),
+    principal: Principal = Depends(require_principal),
 ) -> dict[str, Any]:
     """Aggregated voice-conversation metrics for the filter window.
 
@@ -48,6 +54,7 @@ async def get_metrics_summary(
     table's ``started_at_ms`` is monotonic-clock and cannot be
     correlated to wall-clock windows without a join through sessions).
     """
+    resolved = resolve_read_tenant(principal, tenant)
     if gateway.storage is None:
         raise HTTPException(status_code=503, detail="Storage not configured")
 
@@ -63,12 +70,12 @@ async def get_metrics_summary(
         if project:
             where_clauses.append("project = :project")
             params["project"] = project
-        if tenant is not None:
-            if tenant == "":
+        if resolved is not None:
+            if resolved == "":
                 where_clauses.append("tenant_id IS NULL")
             else:
                 where_clauses.append("tenant_id = :tenant")
-                params["tenant"] = tenant
+                params["tenant"] = resolved
         if agent is not None:
             if agent == "":
                 where_clauses.append("agent_id IS NULL")
@@ -128,7 +135,7 @@ async def get_metrics_summary(
                 "since": since_iso,
                 "until": until_iso,
             },
-            "filter": {"project": project, "tenant": tenant, "agent": agent},
+            "filter": {"project": project, "tenant": resolved, "agent": agent},
             "session_count": session_count,
             "measured_session_count": measured_count,
             "per_minute_cost_usd_avg": per_minute_cost_avg,

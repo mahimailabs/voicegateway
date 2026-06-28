@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 import yaml
+from fastapi import Depends, FastAPI
+from fastapi.responses import JSONResponse
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.auth import (
@@ -15,6 +17,7 @@ from voicegateway.core.auth import (
 from voicegateway.core.gateway import Gateway
 from voicegateway.repository import api_keys_repository as api_keys
 from voicegateway.server import build_app
+from voicegateway.server.api._deps import require_scope
 
 _BASE_CONFIG = {
     "providers": {
@@ -135,8 +138,8 @@ async def test_api_key_authenticates_write_request(gateway):
             headers={"Authorization": f"Bearer {created.plaintext}"},
             json={"provider_id": "ollama-x", "provider_type": "ollama", "api_key": ""},
         )
-        # /v1/providers requires the write scope. The vk_ path satisfies
-        # every scope in v0.4.0 (RBAC scopes on vk are out of scope).
+        # /v1/providers requires the write scope. A default vk_ key has
+        # wildcard scopes ('*') and tenant role, so it passes write checks.
         assert resp.status_code == 200
 
 
@@ -190,3 +193,44 @@ async def test_unscoped_api_key_does_not_force_tenant(gateway):
     # Helper-level check; no app exercise needed because the unscoped
     # behavior is enforced inside check_tenant_body_conflict.
     check_tenant_body_conflict(key_tenant_id=None, body_tenant_id="anything")
+
+
+async def test_api_key_authenticates_write_request_default_scope(gateway):
+    """A default (wildcard-scoped) virtual key satisfies the write dep."""
+    await gateway.storage._ensure_initialized()
+    async with gateway.storage._conn.session() as db:
+        created = await api_keys.create_api_key(db, name="bot", tenant_id="acme")
+
+    client = await _client(gateway)
+    async with client as c:
+        resp = await c.post(
+            "/v1/providers",
+            headers={"Authorization": f"Bearer {created.plaintext}"},
+            json={"provider_id": "ollama-x", "provider_type": "ollama", "api_key": ""},
+        )
+        assert resp.status_code == 200
+
+
+async def test_require_scope_admin_denies_tenant_key(gateway):
+    """A tenant-role key (even with wildcard scopes) is denied 'admin' scope."""
+    # Build a minimal app with an admin-gated endpoint.
+    mini = FastAPI()
+    mini.state.gateway = gateway
+    mini.state.api_keys = []
+
+    @mini.get("/admin-only")
+    async def _admin_only(_auth: None = Depends(require_scope("admin"))):
+        return JSONResponse({"ok": True})
+
+    transport = ASGITransport(app=mini)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await gateway.storage._ensure_initialized()
+        async with gateway.storage._conn.session() as db:
+            created = await api_keys.create_api_key(
+                db, name="tenant-bot", role="tenant", scopes="*"
+            )
+        resp = await c.get(
+            "/admin-only",
+            headers={"Authorization": f"Bearer {created.plaintext}"},
+        )
+        assert resp.status_code == 403

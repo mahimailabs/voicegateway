@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 VIRTUAL_KEY_PREFIX = "vk_"
 ENV_KEY = "VOICEGW_API_KEY"
 WILDCARD_SCOPE = "*"
+ADMIN_SCOPE = "admin"
 
 
 class AuthError(Exception):
@@ -177,6 +178,7 @@ def check_tenant_body_conflict(
 
 
 __all__ = [
+    "ADMIN_SCOPE",
     "ApiKey",
     "AuthError",
     "check_request",
@@ -186,4 +188,5 @@ __all__ = [
     "load_api_keys",
     "resolve_cors_origins",
     "verify_api_key",
+    "WILDCARD_SCOPE",
 ]

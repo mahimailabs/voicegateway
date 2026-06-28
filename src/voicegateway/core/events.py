@@ -95,9 +95,45 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if started:
         logger.info("Started %d background worker(s)", len(started))
 
+    # ClickHouse client setup (runs after workers so a CH failure tears down
+    # already-started workers in the finally/raise path above).
+    ch_client = None
+    if gateway is not None:
+        cfg = gateway.config.clickhouse
+        if cfg.host:
+            try:
+                import clickhouse_connect
+
+                from voicegateway.clickhouse.migrate import apply_migrations
+
+                ch_client = await clickhouse_connect.get_async_client(
+                    host=cfg.host,
+                    port=cfg.port,
+                    username=cfg.username,
+                    password=cfg.password,
+                    database=cfg.database,
+                )
+                await apply_migrations(ch_client)
+                logger.info(
+                    "ClickHouse client ready: %s:%d/%s",
+                    cfg.host,
+                    cfg.port,
+                    cfg.database,
+                )
+            except Exception:
+                logger.exception("ClickHouse startup failed; continuing without it")
+                ch_client = None
+    app.state.ch_client = ch_client
+
     yield
 
     for worker in started:
         await worker.stop()
     if started:
         logger.info("Stopped %d background worker(s)", len(started))
+
+    if ch_client is not None:
+        try:
+            await ch_client.close()
+        except Exception:  # noqa: BLE001 - best-effort teardown
+            pass

@@ -23,6 +23,8 @@ class ApiKey(SQLModel, table=True):
     key_hash: str
     name: str
     tenant_id: str | None = Field(default=None, index=True)
+    role: str = Field(default="tenant")
+    scopes: str = Field(default="*")
     issued_by: str | None = None
     issued_at: datetime = Field(  # type: ignore[call-overload]
         default_factory=_utcnow,

@@ -5,16 +5,21 @@ inference middleware and the ``attach()`` capture pipeline) targets. In
 single-node mode the sink is :class:`LocalSqliteSink`, which writes to the
 embedded SQLite ``StorageService``. In fleet mode it is the
 ``RemoteCollectorSink`` (added in a later build step), which batches rows
-and pushes them to a collector. Producers stay identical; only the sink
-swaps.
+and pushes them to a collector. When a ClickHouse host is configured, the
+:class:`ClickHouseSink` routes telemetry writes directly to ClickHouse via
+async_insert batching with an idempotent deduplication token. Producers stay
+identical; only the sink swaps.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -96,9 +101,7 @@ class RemoteCollectorSink:
         sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
         self._ingest_url = url.rstrip("/") + "/v1/ingest"
-        self._headers = (
-            {"Authorization": f"Bearer {api_key}"} if api_key else {}
-        )
+        self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self._batch_size = max(1, batch_size)
         self._flush_interval = flush_interval
         self._max_buffer = max_buffer
@@ -220,4 +223,192 @@ class RemoteCollectorSink:
             await self._client.aclose()
 
 
-__all__ = ["LocalSqliteSink", "RemoteCollectorSink", "Sink"]
+# ---------------------------------------------------------------------------
+# ClickHouse sink
+# ---------------------------------------------------------------------------
+
+_CH_COLUMN_NAMES: list[str] = [
+    "tenant_id",
+    "id",
+    "timestamp",
+    "project",
+    "modality",
+    "provider",
+    "model_id",
+    "input_units",
+    "output_units",
+    "cached_input_units",
+    "cost_usd",
+    "pricing_source",
+    "ttfb_ms",
+    "total_latency_ms",
+    "status",
+    "fallback_from",
+    "error_message",
+    "session_id",
+    "agent_id",
+    "metadata",
+]
+
+_CH_INSERT_SETTINGS: dict[str, Any] = {
+    "async_insert": 1,
+    "wait_for_async_insert": 1,
+    "async_insert_deduplicate": 1,
+}
+
+
+class ClickHouseSink:
+    """ClickHouse sink: batches rows and inserts via clickhouse-connect async client.
+
+    ``log_request`` captures ``current_tenant()`` **at enqueue time** (not at
+    flush time) so background-task flushes do not mis-attribute rows. ``flush``
+    does a columnar insert with ``async_insert=1, wait_for_async_insert=1,
+    async_insert_deduplicate=1`` and an ``insert_deduplication_token`` that is
+    the SHA-256 of the batch's sorted record ids. Re-sending the same batch with
+    the same token is a ClickHouse no-op (idempotent retry). The internal buffer
+    is rebuilt fresh before each insert; clickhouse-connect consumes/mutates its
+    input.
+
+    Create via ``await ClickHouseSink.create(...)``; share one async client
+    per process (pass ``client=`` to reuse an existing one, or let ``create``
+    build a new one and store it on ``app.state.ch_client``).
+    """
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+        self._buffer: list[dict[str, Any]] = []
+
+    @classmethod
+    async def create(
+        cls,
+        *,
+        host: str,
+        port: int = 8123,
+        username: str = "default",
+        password: str = "",
+        database: str = "telemetry",
+        client: Any | None = None,
+    ) -> ClickHouseSink:
+        """Async factory: create (or accept) an async clickhouse-connect client."""
+        if client is None:
+            import clickhouse_connect
+
+            client = await clickhouse_connect.get_async_client(
+                host=host,
+                port=port,
+                username=username,
+                password=password,
+                database=database,
+            )
+        return cls(client)
+
+    # ------------------------------------------------------------------
+    # Row-building helpers (instance methods; tests call via instance)
+    # ------------------------------------------------------------------
+
+    def _build_row(
+        self,
+        record: RequestRecord,
+        tenant_id: str | None,
+    ) -> dict[str, Any]:
+        """Convert a RequestRecord + server-stamped tenant into a CH row dict.
+
+        ``timestamp`` is emitted as a timezone-aware ``datetime`` so
+        clickhouse-connect maps it to ``DateTime64(3,'UTC')`` correctly.
+        The ``_version`` column is MATERIALIZED in ClickHouse; do NOT include it.
+        """
+        ts: datetime = datetime.fromtimestamp(record.timestamp, tz=UTC)
+
+        return {
+            "tenant_id": tenant_id or "",
+            "id": record.id,
+            "timestamp": ts,
+            "project": record.project or "default",
+            "modality": record.modality,
+            "provider": record.provider,
+            "model_id": record.model_id,
+            "input_units": record.input_units,
+            "output_units": record.output_units,
+            "cached_input_units": record.cached_input_units,
+            "cost_usd": record.cost_usd,
+            "pricing_source": record.pricing_source or "",
+            "ttfb_ms": record.ttfb_ms,
+            "total_latency_ms": record.total_latency_ms,
+            "status": record.status or "success",
+            "fallback_from": record.fallback_from or "",
+            "error_message": record.error_message or "",
+            "session_id": record.session_id or "",
+            "agent_id": record.agent_id or "",
+            "metadata": json.dumps(record.metadata) if record.metadata else "{}",
+        }
+
+    @staticmethod
+    def _dedup_token(ids: list[str]) -> str:
+        """SHA-256 hex digest of sorted ids joined by newlines.
+
+        Deterministic across invocations: sorting makes the token independent
+        of buffer insertion order. Identical re-POST with the same token is a
+        ClickHouse no-op (``async_insert_deduplicate=1``).
+        """
+        payload = "\n".join(sorted(ids))
+        return hashlib.sha256(payload.encode()).hexdigest()
+
+    # ------------------------------------------------------------------
+    # Sink Protocol implementation
+    # ------------------------------------------------------------------
+
+    async def log_request(self, record: RequestRecord) -> None:
+        """Buffer one record, capturing the tenant ContextVar RIGHT NOW.
+
+        CRITICAL: read ``current_tenant()`` here, at enqueue time. ``flush``
+        may run in a background asyncio Task whose context does not carry the
+        originating request's tenant; reading there would yield None and
+        mis-attribute every row in the batch.
+        """
+        from voicegateway.inference.session.context import current_tenant
+
+        tenant_id = current_tenant()
+        row = self._build_row(record, tenant_id)
+        self._buffer.append(row)
+
+    async def flush(self) -> None:
+        """Insert all buffered rows into ``telemetry.requests`` and reset buffer.
+
+        Builds a fresh list copy before inserting (clickhouse-connect consumes
+        / mutates the data structure). Computes an idempotent dedup token so
+        a retry of the same batch is a server-side no-op.
+        """
+        if not self._buffer:
+            return
+
+        rows = list(self._buffer)
+        self._buffer = []
+
+        ids = [row["id"] for row in rows]
+        token = self._dedup_token(ids)
+
+        data = [[row[col] for col in _CH_COLUMN_NAMES] for row in rows]
+        settings = {**_CH_INSERT_SETTINGS, "insert_deduplication_token": token}
+
+        await self._client.insert(
+            "telemetry.requests",
+            data,
+            column_names=_CH_COLUMN_NAMES,
+            settings=settings,
+        )
+        logger.debug(
+            "ClickHouseSink: flushed %d row(s) with dedup token %s",
+            len(rows),
+            token[:8],
+        )
+
+    async def aclose(self) -> None:
+        """Flush remaining rows and release the async client."""
+        await self.flush()
+        try:
+            await self._client.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+__all__ = ["ClickHouseSink", "LocalSqliteSink", "RemoteCollectorSink", "Sink"]

@@ -8,6 +8,9 @@ from typing import Any
 
 _SESSION_ID_PREFIX = "vg-"
 
+#: The sentinel tenant identifier used when no tenant is specified.
+DEFAULT_TENANT: str = "default"
+
 _current_session_id: ContextVar[str | None] = ContextVar("vg_session_id", default=None)
 _current_guardrails_bypassed: ContextVar[bool] = ContextVar(
     "vg_guardrails_bypassed", default=False
