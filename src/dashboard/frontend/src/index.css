@@ -640,9 +640,15 @@ a { color: inherit; text-decoration: none; }
 
 .flex-row { display: flex; align-items: center; gap: 12px; }
 .flex-wrap { flex-wrap: wrap; }
-.mt-lg { margin-top: 32px; }
+.mt-xs { margin-top: 6px; }
+.mt-sm { margin-top: 10px; }
 .mt-md { margin-top: 20px; }
+.mt-lg { margin-top: 32px; }
+.mb-sm { margin-bottom: 10px; }
+.mb-md { margin-bottom: 20px; }
 .mb-lg { margin-bottom: 32px; }
+.gap-sm { gap: 8px; }
+.gap-md { gap: 16px; }
 
 /* ============================================================
    Charts (recharts overrides)

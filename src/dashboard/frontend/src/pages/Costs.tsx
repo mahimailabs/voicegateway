@@ -131,7 +131,7 @@ function CostsContent() {
     <div>
       <div className="neo-card neo-card--strip-green mb-lg">
         <div className="label">Total Spend</div>
-        <div className="stat-value stat-value--xl mt-md">{formatCost(data.total)}</div>
+        <div className="stat-value-xl mt-sm">{formatCost(data.total)}</div>
       </div>
 
       <div className="grid grid-cols-2">
