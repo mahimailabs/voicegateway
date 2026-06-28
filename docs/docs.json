@@ -87,7 +87,8 @@
           "deployment/index",
           "deployment/fly",
           "deployment/railway",
-          "deployment/vps"
+          "deployment/vps",
+          "deployment/auto-update"
         ]
       },
       {
