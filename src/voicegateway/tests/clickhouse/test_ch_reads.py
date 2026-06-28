@@ -417,8 +417,8 @@ class TestGetCostByDay:
             since=float(_DAY0 - 1),
             until=None,
         )
-        # acme has rows on _DAY0 and _DAY1 (two different calendar days)
-        assert len(result) >= 1
+        # acme has rows on _DAY0 and _DAY1 (two different calendar days, 24h apart)
+        assert len(result) == 2
 
     async def test_tenant_scoped_excludes_beta(self, seeded_client):
         from voicegateway.clickhouse.read_repository import get_cost_by_day
@@ -658,6 +658,127 @@ class TestGetRecentRequests:
             limit=2,
         )
         assert len(result) <= 2
+
+    async def test_project_filter_excludes_other_projects(self, ch_session_reads):
+        """project= must exclude rows from other projects within the same tenant.
+
+        Seeds two acme rows: one in project='default', one in project='other'.
+        Querying project='default' must return exactly 1 row (the non-matching
+        project row must not leak through).
+        """
+        from voicegateway.clickhouse.read_repository import get_recent_requests
+
+        _insert(
+            ch_session_reads,
+            [
+                {
+                    "tenant_id": "acme",
+                    "id": "rr-proj-default",
+                    "ts": _DAY1,
+                    "project": "default",
+                    "modality": "llm",
+                    "provider": "openai",
+                    "model_id": "openai/gpt-4o-mini",
+                    "cost_usd": 0.01,
+                    "ttfb_ms": 100.0,
+                    "total_latency_ms": 200.0,
+                    "session_id": "sess-proj-test",
+                    "agent_id": "agent-1",
+                },
+                {
+                    "tenant_id": "acme",
+                    "id": "rr-proj-other",
+                    "ts": _DAY1,
+                    "project": "other",
+                    "modality": "llm",
+                    "provider": "openai",
+                    "model_id": "openai/gpt-4o-mini",
+                    "cost_usd": 0.02,
+                    "ttfb_ms": 110.0,
+                    "total_latency_ms": 210.0,
+                    "session_id": "sess-proj-test",
+                    "agent_id": "agent-1",
+                },
+            ],
+        )
+        client = ChdbAdapter(ch_session_reads)
+        result = await get_recent_requests(
+            client,
+            tenant="acme",
+            since=float(_DAY0 - 1),
+            until=None,
+            project="default",
+        )
+        ids = {r["id"] for r in result}
+        assert "rr-proj-default" in ids, "Row for project='default' must appear"
+        assert "rr-proj-other" not in ids, (
+            "Row for project='other' must be excluded when project='default' is filtered"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: get_latency_stats project filter
+# ---------------------------------------------------------------------------
+
+
+class TestGetLatencyStatsProjectFilter:
+    async def test_project_filter_excludes_other_projects(self, ch_session_reads):
+        """project= must exclude rows from other projects within the same tenant.
+
+        Seeds two acme rows: one in project='default', one in project='other'.
+        Querying project='default' must return stats only for that project
+        (the non-matching project row must not contribute to aggregates).
+        """
+        from voicegateway.clickhouse.read_repository import get_latency_stats
+
+        _insert(
+            ch_session_reads,
+            [
+                {
+                    "tenant_id": "acme",
+                    "id": "lat-proj-default",
+                    "ts": _DAY1,
+                    "project": "default",
+                    "modality": "llm",
+                    "provider": "openai",
+                    "model_id": "openai/gpt-4o-mini",
+                    "cost_usd": 0.01,
+                    "ttfb_ms": 100.0,
+                    "total_latency_ms": 200.0,
+                    "session_id": "sess-lat-test",
+                    "agent_id": "agent-1",
+                },
+                {
+                    "tenant_id": "acme",
+                    "id": "lat-proj-other",
+                    "ts": _DAY1,
+                    "project": "other",
+                    "modality": "llm",
+                    "provider": "deepgram",
+                    "model_id": "deepgram/nova-2",
+                    "cost_usd": 0.02,
+                    "ttfb_ms": 999.0,
+                    "total_latency_ms": 9999.0,
+                    "session_id": "sess-lat-test",
+                    "agent_id": "agent-1",
+                },
+            ],
+        )
+        client = ChdbAdapter(ch_session_reads)
+        result = await get_latency_stats(
+            client,
+            tenant="acme",
+            since=float(_DAY0 - 1),
+            until=None,
+            project="default",
+        )
+        assert "deepgram/nova-2" not in result, (
+            "deepgram/nova-2 is in project='other' and must be excluded "
+            "when filtering project='default'"
+        )
+        assert "openai/gpt-4o-mini" in result, (
+            "openai/gpt-4o-mini is in project='default' and must appear"
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -38,11 +38,9 @@ Key design decisions:
 from __future__ import annotations
 
 import json
+import math
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    pass
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # SQL constants
@@ -115,6 +113,7 @@ FROM telemetry.requests
 WHERE tenant_id = {tenant:String}
   AND timestamp >= fromUnixTimestamp64Milli({since_ms:Int64})
   __UNTIL__
+  __PROJECT__
 GROUP BY model_id
 """
 
@@ -132,8 +131,9 @@ FROM telemetry.requests
 WHERE tenant_id = {tenant:String}
   AND timestamp >= fromUnixTimestamp64Milli({since_ms:Int64})
   __UNTIL__
+  __PROJECT__
 ORDER BY timestamp DESC
-LIMIT 1 BY id
+LIMIT 1 BY id  -- keeps the newest row per id (ORDER BY timestamp DESC above)
 LIMIT {limit:UInt32}
 """
 
@@ -249,8 +249,6 @@ def _pct_tuple_to_dict(pct_tuple: Any) -> dict[str, float | None]:
                 out[key] = None
             else:
                 v = float(raw)
-                import math
-
                 out[key] = None if math.isnan(v) else v
         except (IndexError, TypeError, ValueError):
             out[key] = None
