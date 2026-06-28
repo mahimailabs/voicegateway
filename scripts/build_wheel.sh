@@ -16,6 +16,20 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Pin the version from the release tag. This script rebuilds the dashboard SPA
+# into the source tree (below), which dirties the git working tree; hatch-vcs
+# would then derive a PEP 440 local version like 0.10.0+g<hash>.d<date>, and
+# PyPI rejects local versions with a 400. Pinning SETUPTOOLS_SCM_PRETEND_VERSION
+# to the tag makes the wheel version exactly the release, immune to tree state,
+# mirroring the Dockerfile (which pins it from its VERSION build arg). Outside a
+# tagged CI run the var is left unset and hatch-vcs derives the version from git.
+if [[ -z "${SETUPTOOLS_SCM_PRETEND_VERSION:-}" \
+      && "${GITHUB_REF_TYPE:-}" == "tag" \
+      && "${GITHUB_REF_NAME:-}" == v* ]]; then
+  export SETUPTOOLS_SCM_PRETEND_VERSION="${GITHUB_REF_NAME#v}"
+  echo "==> pinning version to ${SETUPTOOLS_SCM_PRETEND_VERSION} (from tag ${GITHUB_REF_NAME})"
+fi
+
 FRONTEND_SRC="src/dashboard/frontend"
 STAGED_DIST="src/voicegateway/_dashboard_dist"
 
