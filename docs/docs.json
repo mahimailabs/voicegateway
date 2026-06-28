@@ -1,0 +1,158 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "VoiceGateway",
+  "colors": {
+    "primary": "#3EA8FF",
+    "light": "#3EA8FF",
+    "dark": "#EB5F36"
+  },
+  "logo": {
+    "light": "/assets/logo.svg",
+    "dark": "/assets/logo.svg"
+  },
+  "favicon": "/assets/logo.svg",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get started",
+        "pages": [
+          "index",
+          "get-started"
+        ]
+      },
+      {
+        "group": "Guide",
+        "pages": [
+          "guide/what-is-voicegateway",
+          "guide/installation",
+          "guide/quick-start",
+          "guide/first-agent",
+          "guide/core-concepts",
+          "guide/decision-tree",
+          "guide/agency-quickstart",
+          "guide/multi-tenant-quickstart",
+          "guide/cost-reconciliation",
+          "guide/guardrails"
+        ]
+      },
+      {
+        "group": "Configuration",
+        "pages": [
+          "configuration/voicegw-yaml",
+          "configuration/providers",
+          "configuration/models",
+          "configuration/stacks",
+          "configuration/projects",
+          "configuration/environment-variables",
+          "configuration/observability"
+        ]
+      },
+      {
+        "group": "CLI",
+        "pages": [
+          "cli/index",
+          "cli/init",
+          "cli/onboard",
+          "cli/serve",
+          "cli/dashboard",
+          "cli/tui",
+          "cli/status",
+          "cli/costs",
+          "cli/export-costs",
+          "cli/projects",
+          "cli/logs",
+          "cli/reconcile",
+          "cli/replay",
+          "cli/mcp",
+          "cli/smoke-test"
+        ]
+      },
+      {
+        "group": "MCP",
+        "pages": [
+          "mcp/index",
+          "mcp/setup",
+          "mcp/authentication",
+          "mcp/transports",
+          "mcp/tools/models",
+          "mcp/tools/providers",
+          "mcp/tools/projects",
+          "mcp/tools/observability"
+        ]
+      },
+      {
+        "group": "Deployment",
+        "pages": [
+          "deployment/index",
+          "deployment/fly",
+          "deployment/railway",
+          "deployment/vps"
+        ]
+      },
+      {
+        "group": "Architecture",
+        "pages": [
+          "architecture/index",
+          "architecture/gateway-core",
+          "architecture/provider-abstraction",
+          "architecture/middleware",
+          "architecture/cost-tracking",
+          "architecture/config-layers",
+          "architecture/storage",
+          "architecture/security"
+        ]
+      },
+      {
+        "group": "Storage",
+        "pages": [
+          "storage/replay-storage-costs"
+        ]
+      },
+      {
+        "group": "API",
+        "pages": [
+          "api/index",
+          "api/python-sdk",
+          "api/http-api",
+          "api/dashboard-api"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/faq",
+          "reference/troubleshooting",
+          "reference/reconcile-formats",
+          "reference/guardrail-prompts"
+        ]
+      },
+      {
+        "group": "Examples",
+        "pages": [
+          "examples/index",
+          "examples/basic-voice-agent",
+          "examples/budget-enforcement",
+          "examples/fallback-chains",
+          "examples/livekit-fallback-adapter",
+          "examples/local-only",
+          "examples/multi-project",
+          "examples/docker-deployment",
+          "examples/claude-code-integration",
+          "examples/openrtc-multi-agent"
+        ]
+      },
+      {
+        "group": "Contributing",
+        "pages": [
+          "contributing/index",
+          "contributing/development-setup",
+          "contributing/adding-a-provider",
+          "contributing/testing",
+          "contributing/code-style",
+          "contributing/refreshing-pricing"
+        ]
+      }
+    ]
+  }
+}

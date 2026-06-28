@@ -54,7 +54,9 @@ docker compose --profile local up -d     # + Ollama
 
 **Dashboard (`dashboard/`):** FastAPI backend (`api/`) + React/TypeScript/Vite frontend (`frontend/`). Uses Recharts for visualization. Neo-Brutalism design aesthetic.
 
-**Docs and site:** User-facing documentation and the marketing site live in the separate [`mahimailabs/voicegateway-web`](https://github.com/mahimailabs/voicegateway-web) repo: a Next.js landing page at <https://voicegateway.dev> and a Mintlify docs site at <https://docs.voicegateway.dev>. Documentation changes go to that repo. This repo keeps only the brand assets under `docs/assets/` (referenced by the README via raw GitHub URLs).
+**Docs:** The Mintlify documentation site (<https://docs.voicegateway.dev>) lives in this repo under `docs/` (config in `docs/docs.json`, pages as `.md`, shared brand assets under `docs/assets/`). Docs version with the code: change the docs in the same PR as any behavior or API change. Mintlify deploys `docs/` from this repo's default branch.
+
+**Marketing site:** Only the Next.js landing page at <https://voicegateway.dev> lives in the separate [`mahimailabs/voicegateway-web`](https://github.com/mahimailabs/voicegateway-web) repo (deployed on Vercel). The engine repo has no Vercel connection.
 
 **Public API:** `voicegateway/__init__.py` exports `Gateway`, `ModelId`, `GatewayConfig`.
 
