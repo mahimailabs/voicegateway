@@ -35,6 +35,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0,<3.0",
     "sqlmodel>=0.0.22",
     "alembic>=1.13",
+    "clickhouse-connect>=0.9,<1.0",
 ]
 
 [project.optional-dependencies]
@@ -123,6 +124,8 @@ dev = [
     "psutil>=5.9",
     "platformdirs>=4.0",
     "textual>=0.85,<0.90",
+    "chdb>=3.0",
+    "testcontainers[clickhouse]>=4.0",
     # Server stack so tests covering core/container, repository/, etc. can
     # import them without `pip install -e .[server]` first. SQLAlchemy,
     # SQLModel, and Alembic are core dependencies now, so they are not relisted.

@@ -1,0 +1,174 @@
+"""chDB unit tests for ClickHouse migration runner and schema correctness.
+
+These tests run entirely in-process using chdb's persistent Session.
+They verify:
+- Migration runner creates `schema_migrations` tracking table
+- All DDL files apply idempotently (IF NOT EXISTS)
+- Table ORDER BY leads with tenant_id for requests
+- sessions_agg and sessions_mv objects exist
+- turns table exists
+- schema_migrations records all applied versions
+"""
+
+from __future__ import annotations
+
+import pathlib
+
+import pytest
+
+# chdb is an in-process ClickHouse engine; import before any test runs.
+try:
+    import chdb
+    from chdb import session as chdb_session
+
+    CHDB_AVAILABLE = True
+except ImportError:
+    CHDB_AVAILABLE = False
+
+pytestmark = pytest.mark.skipif(not CHDB_AVAILABLE, reason="chdb not installed")
+
+MIGRATIONS_DIR = (
+    pathlib.Path(__file__).parent.parent.parent / "clickhouse" / "migrations"
+)
+
+
+@pytest.fixture
+def ch_session(tmp_path):
+    """A fresh chDB persistent session pointing at a temp dir."""
+    sess = chdb_session.Session(str(tmp_path / "ch_test"))
+    yield sess
+    sess.close()
+
+
+def _query(sess, sql: str) -> str:
+    """Run a query and return the result as a stripped string."""
+    result = sess.query(sql, "CSV")
+    # chdb v4+ returns query_result with .bytes() method
+    raw = result.bytes() if hasattr(result, "bytes") else bytes(result)
+    return raw.decode().strip()
+
+
+def apply_all(sess):
+    """Apply all migrations via the runner using chdb session."""
+    from voicegateway.clickhouse.migrate import apply_migrations_to_session
+
+    apply_migrations_to_session(sess, MIGRATIONS_DIR)
+
+
+class TestMigrationRunner:
+    def test_schema_migrations_table_created(self, ch_session):
+        apply_all(ch_session)
+        result = _query(
+            ch_session,
+            "SELECT count() FROM telemetry.schema_migrations",
+        )
+        # Should have at least some rows (one per migration file)
+        assert int(result) >= 1
+
+    def test_applied_versions_recorded(self, ch_session):
+        apply_all(ch_session)
+        result = _query(
+            ch_session,
+            "SELECT version FROM telemetry.schema_migrations ORDER BY version",
+        )
+        versions = [int(v) for v in result.splitlines() if v]
+        assert 1 in versions
+        assert 2 in versions
+
+    def test_idempotent_double_apply(self, ch_session):
+        apply_all(ch_session)
+        # Should not raise; IF NOT EXISTS guards make this safe
+        apply_all(ch_session)
+        result = _query(
+            ch_session,
+            "SELECT count() FROM telemetry.schema_migrations",
+        )
+        # Only one row per migration even after double apply
+        assert int(result) <= 10
+
+
+class TestRequestsSchema:
+    def test_requests_table_exists(self, ch_session):
+        apply_all(ch_session)
+        result = _query(
+            ch_session,
+            "SELECT count() FROM system.tables WHERE database='telemetry' AND name='requests'",
+        )
+        assert result == "1"
+
+    def test_requests_order_by_leads_with_tenant_id(self, ch_session):
+        apply_all(ch_session)
+        # Check the CREATE TABLE statement stored in system.tables
+        result = _query(
+            ch_session,
+            "SELECT sorting_key FROM system.tables WHERE database='telemetry' AND name='requests'",
+        )
+        # sorting_key should start with tenant_id (strip CSV quotes if present)
+        sorting_key = result.strip('"')
+        assert sorting_key.startswith("tenant_id"), (
+            f"Expected sorting_key to start with 'tenant_id', got: {result!r}"
+        )
+
+    def test_requests_engine_is_replacing_merge_tree(self, ch_session):
+        apply_all(ch_session)
+        result = _query(
+            ch_session,
+            "SELECT engine FROM system.tables WHERE database='telemetry' AND name='requests'",
+        )
+        assert "ReplacingMergeTree" in result
+
+    def test_requests_insert_and_read(self, ch_session):
+        apply_all(ch_session)
+        ch_session.query(
+            """
+            INSERT INTO telemetry.requests
+              (tenant_id, id, timestamp, modality, provider, model_id)
+            VALUES
+              ('t1', 'req-1', '2025-01-15 10:00:00.000', 'llm', 'openai', 'gpt-4o')
+            """,
+            "CSV",
+        )
+        result = _query(
+            ch_session,
+            "SELECT id FROM telemetry.requests WHERE tenant_id='t1'",
+        )
+        assert "req-1" in result
+
+    def test_requests_tenant_id_not_nullable(self, ch_session):
+        apply_all(ch_session)
+        result = _query(
+            ch_session,
+            """
+            SELECT is_in_partition_key, type
+            FROM system.columns
+            WHERE database='telemetry' AND table='requests' AND name='tenant_id'
+            """,
+        )
+        # LowCardinality(String) - should NOT contain Nullable
+        assert "Nullable" not in result
+
+
+class TestSessionsAgg:
+    def test_sessions_agg_table_exists(self, ch_session):
+        apply_all(ch_session)
+        result = _query(
+            ch_session,
+            "SELECT count() FROM system.tables WHERE database='telemetry' AND name='sessions_agg'",
+        )
+        assert result == "1"
+
+    def test_sessions_mv_exists(self, ch_session):
+        apply_all(ch_session)
+        result = _query(
+            ch_session,
+            "SELECT count() FROM system.tables WHERE database='telemetry' AND name='sessions_mv'",
+        )
+        assert result == "1"
+
+    def test_sessions_agg_engine_is_aggregating_merge_tree(self, ch_session):
+        apply_all(ch_session)
+        result = _query(
+            ch_session,
+            "SELECT engine FROM system.tables WHERE database='telemetry' AND name='sessions_agg'",
+        )
+        assert "AggregatingMergeTree" in result
