@@ -223,7 +223,7 @@ def _dt_to_epoch(val: Any) -> float:
     if isinstance(val, datetime):
         if val.tzinfo is None:
             val = val.replace(tzinfo=UTC)
-        return val.timestamp()
+        return float(val.timestamp())
     # Fallback: already numeric or string
     try:
         return float(val)

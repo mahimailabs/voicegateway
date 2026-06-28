@@ -18,7 +18,6 @@ import pytest
 
 # chdb is an in-process ClickHouse engine; import before any test runs.
 try:
-    import chdb
     from chdb import session as chdb_session
 
     CHDB_AVAILABLE = True

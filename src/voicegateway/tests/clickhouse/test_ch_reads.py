@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import time
+from datetime import UTC
 
 import pytest
 
@@ -25,7 +27,6 @@ MIGRATIONS_DIR = (
 )
 
 try:
-    import chdb
     from chdb import session as chdb_session
 
     CHDB_AVAILABLE = True
@@ -72,9 +73,6 @@ def _chdb_query(sess, sql: str) -> str:
 # To bridge async -> sync in tests, the adapter exposes a synchronous .query()
 # that the test calls via asyncio (asyncio_mode="auto" means pytest handles it).
 # ---------------------------------------------------------------------------
-
-import re
-from datetime import UTC
 
 
 def _apply_params(sql: str, parameters: dict) -> str:

@@ -79,7 +79,6 @@ def _sink_instance():
 # ---------------------------------------------------------------------------
 
 try:
-    import chdb
     from chdb import session as chdb_session
 
     CHDB_AVAILABLE = True

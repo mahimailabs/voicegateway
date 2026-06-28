@@ -58,15 +58,18 @@ async def _verify_vk_key(
     stamped into the request-scoped context.
     """
     authorization = request.headers.get("Authorization")
+    storage = gateway.storage
+    if storage is None:  # pragma: no cover - callers guard storage is not None
+        raise HTTPException(status_code=503, detail="cost tracking storage is disabled")
     try:
-        await gateway.storage._ensure_initialized()
-        async with gateway.storage._conn.session() as session:
+        await storage._ensure_initialized()
+        async with storage._conn.session() as session:
             verified = await verify_api_key(authorization, session)
         if authorize is not None:
             result = authorize(verified)
             if result is not None:
                 await result
-        async with gateway.storage._conn.session() as session:
+        async with storage._conn.session() as session:
             await api_keys_repo.mark_used(session, verified.id)
     except AuthError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from None
