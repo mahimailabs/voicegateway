@@ -68,22 +68,16 @@ def _maybe_rename_legacy_version_table(connection: Connection) -> None:
     stamp INSERT to be issued but never committed.
     """
     with connection.begin():
-        rows = connection.exec_driver_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'"
-            if connection.dialect.name == "sqlite"
-            else "SELECT table_name FROM information_schema.tables "
-            "WHERE table_schema = current_schema() AND table_name = 'alembic_version'"
-        ).fetchall()
-        old_exists = len(rows) > 0
+        # Use the dialect-agnostic inspector instead of hand-written
+        # information_schema / sqlite_master queries: exec_driver_sql passes the
+        # raw paramstyle through to the driver, and asyncpg rejects the psycopg
+        # "%s" placeholder ("syntax error at or near %"). inspect().has_table
+        # works identically on SQLite and Postgres.
+        from sqlalchemy import inspect
 
-        new_rows = connection.exec_driver_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
-            if connection.dialect.name == "sqlite"
-            else "SELECT table_name FROM information_schema.tables "
-            "WHERE table_schema = current_schema() AND table_name = %s",
-            (VERSION_TABLE,),
-        ).fetchall()
-        new_exists = len(new_rows) > 0
+        inspector = inspect(connection)
+        old_exists = inspector.has_table("alembic_version")
+        new_exists = inspector.has_table(VERSION_TABLE)
 
         if old_exists and not new_exists:
             connection.exec_driver_sql(
