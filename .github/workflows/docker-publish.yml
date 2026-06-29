@@ -31,7 +31,11 @@ jobs:
           uv pip install -e ".[dev,dashboard,mcp]"
 
       - name: Run tests
-        run: uv run pytest --tb=short --ignore=src/voicegateway/tests/providers
+        # Deselect integration tests (testcontainers ClickHouse, real Postgres):
+        # they run in their dedicated jobs, and running them here both emits
+        # "Event loop is closed" teardown noise and leaks VOICEGW_DB_PATH into
+        # later unit tests. Matches ci.yml and test-coverage.yml.
+        run: uv run pytest --tb=short -m "not integration" --ignore=src/voicegateway/tests/providers
 
   publish-core:
     needs: test
