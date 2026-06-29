@@ -164,6 +164,11 @@ jobs:
             readme: ./src/dashboard/README.dockerhub.md
             short: "Web dashboard for VoiceGateway"
     steps:
+      # Checkout so the Docker Hub README files are on disk for the
+      # dockerhub-description step below (the manifest is built from the
+      # downloaded digests, not the source tree).
+      - uses: actions/checkout@v4
+
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
