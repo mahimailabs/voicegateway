@@ -158,7 +158,19 @@ function Sidebar({
             <span className="sidebar__brandname">{productName}</span>
           </div>
         ) : (
-          <img src="/static/branding/wordings.svg" alt="VoiceGateway" className="sidebar__wordmark" />
+          <>
+            <img
+              src="/static/branding/wordings.svg"
+              alt="VoiceGateway"
+              className="sidebar__wordmark sidebar__wordmark--light"
+            />
+            <img
+              src="/static/branding/wordings-dark.svg"
+              alt=""
+              aria-hidden="true"
+              className="sidebar__wordmark sidebar__wordmark--dark"
+            />
+          </>
         )}
         <button
           type="button"

@@ -40,8 +40,8 @@ export default function LatencyChart({ data }: Props) {
             <CartesianGrid strokeDasharray="4 4" stroke="var(--border)" strokeOpacity={0.3} />
             <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 600 }} />
             <YAxis tick={{ fontSize: 11, fontWeight: 600 }} />
-            <Tooltip content={<NeoTooltip />} cursor={{ fill: 'rgba(255, 0, 110, 0.1)' }} />
-            <Bar dataKey="ttfb" name="TTFB" fill={ACCENT_COLORS.pink} radius={[4, 4, 0, 0]} />
+            <Tooltip content={<NeoTooltip />} cursor={{ fill: 'rgba(31, 150, 170, 0.12)' }} />
+            <Bar dataKey="ttfb" name="TTFB" fill={ACCENT_COLORS.blue} radius={[4, 4, 0, 0]} />
             <Bar dataKey="total" name="Total" fill={ACCENT_COLORS.yellow} radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>

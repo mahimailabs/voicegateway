@@ -68,7 +68,7 @@ export default function ResponseSpeedChart({ p50, p95 }: Props) {
             />
             <Tooltip
               content={<NeoTooltip />}
-              cursor={{ fill: 'rgba(53, 80, 112, 0.15)' }}
+              cursor={{ fill: 'rgba(31, 150, 170, 0.12)' }}
             />
             <Bar dataKey="ms" fill={ACCENT_COLORS.blue} radius={[0, 4, 4, 0]} />
           </BarChart>

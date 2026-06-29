@@ -420,6 +420,10 @@ a { color: inherit; text-decoration: none; }
   border-bottom: var(--border-width) solid var(--border);
 }
 .sidebar__wordmark { display: block; max-width: 166px; height: auto; }
+/* Swap the ink wordmark for the light-ink variant on dark backgrounds. */
+.sidebar__wordmark--dark { display: none; }
+[data-theme="dark"] .sidebar__wordmark--light { display: none; }
+[data-theme="dark"] .sidebar__wordmark--dark { display: block; }
 .sidebar__mark { height: 26px; width: auto; display: block; }
 .sidebar__brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .sidebar__brandname { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
