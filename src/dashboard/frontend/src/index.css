@@ -207,11 +207,12 @@ a { color: inherit; text-decoration: none; }
   border-top-right-radius: var(--radius);
 }
 
-.neo-card--strip-yellow::before { background: var(--yellow); }
-.neo-card--strip-blue::before   { background: var(--teal); }
-.neo-card--strip-green::before  { background: var(--green); }
-.neo-card--strip-pink::before   { background: var(--pink); }
-.neo-card--strip-orange::before { background: var(--teal-deep); }
+/* One brand accent everywhere: no more rainbow of card strips. */
+.neo-card--strip-yellow::before,
+.neo-card--strip-blue::before,
+.neo-card--strip-green::before,
+.neo-card--strip-pink::before,
+.neo-card--strip-orange::before { background: var(--teal); }
 
 .neo-card--strip-yellow,
 .neo-card--strip-blue,
@@ -619,10 +620,11 @@ a { color: inherit; text-decoration: none; }
   background: var(--teal-tint);
   color: var(--teal-deep);
 }
-.icon-square--yellow { background: var(--tint-amber); color: var(--yellow); }
-.icon-square--blue   { background: var(--teal-tint); color: var(--teal-deep); }
-.icon-square--green  { background: var(--tint-green); color: var(--green); }
-.icon-square--pink   { background: var(--tint-red); color: var(--pink); }
+/* Stat icons share the brand tint instead of a per-card color. */
+.icon-square--yellow,
+.icon-square--blue,
+.icon-square--green,
+.icon-square--pink,
 .icon-square--orange { background: var(--teal-tint); color: var(--teal-deep); }
 
 .empty-state {
@@ -733,7 +735,7 @@ a { color: inherit; text-decoration: none; }
 .nav-item--projects.nav-item--active,
 .nav-item--settings.nav-item--active { background: var(--teal-tint); color: var(--teal-deep); }
 .neo-card--strip-orange { border-left: none; }
-.neo-card--strip-purple::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--purple); border-top-left-radius: var(--radius); border-top-right-radius: var(--radius); }
+.neo-card--strip-purple::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--teal); border-top-left-radius: var(--radius); border-top-right-radius: var(--radius); }
 .neo-card--strip-purple { padding-top: 26px; }
 
 /* Tabs */

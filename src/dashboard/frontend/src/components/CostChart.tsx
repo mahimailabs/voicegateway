@@ -40,7 +40,7 @@ export default function CostChart({ title, data }: Props) {
             <CartesianGrid strokeDasharray="4 4" stroke="var(--border)" strokeOpacity={0.3} />
             <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 600 }} />
             <YAxis tick={{ fontSize: 11, fontWeight: 600 }} />
-            <Tooltip content={<NeoTooltip />} cursor={{ fill: 'rgba(138, 201, 38, 0.15)' }} />
+            <Tooltip content={<NeoTooltip />} cursor={{ fill: 'rgba(31, 150, 170, 0.12)' }} />
             <Bar dataKey="cost" fill={ACCENT_COLORS.green} radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>

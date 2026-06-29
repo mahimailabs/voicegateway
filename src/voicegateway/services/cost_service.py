@@ -58,6 +58,27 @@ class CostService:
                 agent=agent,
             )
 
+    async def get_by_day(
+        self,
+        period: str = "week",
+        project: str | None = None,
+        start_ts: float | None = None,
+        end_ts: float | None = None,
+        tenant: str | None = None,
+        agent: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return a day-bucketed cost series, ascending by day."""
+        async with self._db.session() as s:
+            return await repo.get_cost_by_day(
+                s,
+                period=period,
+                project=project,
+                start_ts=start_ts,
+                end_ts=end_ts,
+                tenant=tenant,
+                agent=agent,
+            )
+
     async def get_by_modality(
         self,
         period: str = "today",
