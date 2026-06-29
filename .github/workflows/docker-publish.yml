@@ -37,11 +37,51 @@ jobs:
         # later unit tests. Matches ci.yml and test-coverage.yml.
         run: uv run pytest --tb=short -m "not integration" --ignore=src/voicegateway/tests/providers
 
-  publish-core:
+  # Build each architecture on its NATIVE runner (no QEMU emulation) and push
+  # by digest. arm64 builds on a GitHub-hosted arm runner instead of emulated
+  # on x86, which is the slow part of the old single-job build. The per-arch
+  # digests are stitched into a multi-arch manifest in the `merge` job below.
+  build:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: core
+            slug: mahimairaja/voicegateway
+            dockerfile: ./src/voicegateway/Dockerfile
+            title: VoiceGateway
+            description: Cost tracking and reconciliation for LiveKit voice agents, with MCP server for coding agents
+            platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-24.04
+          - image: core
+            slug: mahimairaja/voicegateway
+            dockerfile: ./src/voicegateway/Dockerfile
+            title: VoiceGateway
+            description: Cost tracking and reconciliation for LiveKit voice agents, with MCP server for coding agents
+            platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - image: dashboard
+            slug: mahimairaja/voicegateway-dashboard
+            dockerfile: ./src/dashboard/Dockerfile
+            title: VoiceGateway Dashboard
+            description: Web dashboard for VoiceGateway with full CRUD
+            platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-24.04
+          - image: dashboard
+            slug: mahimairaja/voicegateway-dashboard
+            dockerfile: ./src/dashboard/Dockerfile
+            title: VoiceGateway Dashboard
+            description: Web dashboard for VoiceGateway with full CRUD
+            platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,9 +93,6 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -65,66 +102,74 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract metadata
+      - name: Image labels
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.CORE_IMAGE }}
-          flavor: |
-            latest=auto
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+          images: ${{ matrix.slug }}
           labels: |
-            org.opencontainers.image.title=VoiceGateway
-            org.opencontainers.image.description=Cost tracking and reconciliation for LiveKit voice agents, with MCP server for coding agents
+            org.opencontainers.image.title=${{ matrix.title }}
+            org.opencontainers.image.description=${{ matrix.description }}
             org.opencontainers.image.url=https://voicegateway.dev
             org.opencontainers.image.documentation=https://docs.voicegateway.dev
             org.opencontainers.image.source=https://github.com/mahimailabs/voicegateway
             org.opencontainers.image.authors=Mahimai Raja J
             org.opencontainers.image.licenses=MIT
 
-      - name: Build and push core image
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./src/voicegateway/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=core
-          cache-to: type=gha,mode=max,scope=core
-          build-args: |
-            VERSION=${{ steps.version.outputs.version }}
+          # Only the core image consumes a VERSION build arg.
+          build-args: ${{ matrix.image == 'core' && format('VERSION={0}', steps.version.outputs.version) || '' }}
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+          outputs: type=image,name=${{ matrix.slug }},push-by-digest=true,name-canonical=true,push=true
 
-      - name: Update Docker Hub README
-        uses: peter-evans/dockerhub-description@v4
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ env.CORE_IMAGE }}
-          readme-filepath: ./src/voicegateway/README.dockerhub.md
-          short-description: "Cost tracking and reconciliation for LiveKit voice agents, with MCP"
+          name: digests-${{ matrix.image }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
 
-  publish-dashboard:
-    needs: test
+  # Stitch the per-arch digests into one multi-arch manifest per image and tag
+  # it (version, major.minor, latest), then refresh the Docker Hub README.
+  merge:
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: core
+            slug: mahimairaja/voicegateway
+            readme: ./src/voicegateway/README.dockerhub.md
+            short: "Cost tracking and reconciliation for LiveKit voice agents, with MCP"
+          - image: dashboard
+            slug: mahimairaja/voicegateway-dashboard
+            readme: ./src/dashboard/README.dockerhub.md
+            short: "Web dashboard for VoiceGateway"
     steps:
-      - uses: actions/checkout@v4
+      - name: Download digests
+        uses: actions/download-artifact@v4
         with:
-          fetch-depth: 0
-
-      - name: Extract version from tag
-        id: version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+          path: /tmp/digests
+          pattern: digests-${{ matrix.image }}-*
+          merge-multiple: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -135,46 +180,38 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract metadata
+      - name: Image tags
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.DASHBOARD_IMAGE }}
+          images: ${{ matrix.slug }}
           flavor: |
             latest=auto
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-          labels: |
-            org.opencontainers.image.title=VoiceGateway Dashboard
-            org.opencontainers.image.description=Web dashboard for VoiceGateway with full CRUD
-            org.opencontainers.image.source=https://github.com/mahimailabs/voicegateway
-            org.opencontainers.image.authors=Mahimai Raja J
-            org.opencontainers.image.licenses=MIT
 
-      - name: Build and push dashboard image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./src/dashboard/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=dashboard
-          cache-to: type=gha,mode=max,scope=dashboard
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ matrix.slug }}@sha256:%s ' *)
+
+      - name: Inspect
+        run: docker buildx imagetools inspect ${{ matrix.slug }}:${{ steps.meta.outputs.version }}
 
       - name: Update Docker Hub README
         uses: peter-evans/dockerhub-description@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ env.DASHBOARD_IMAGE }}
-          readme-filepath: ./src/dashboard/README.dockerhub.md
-          short-description: "Web dashboard for VoiceGateway"
+          repository: ${{ matrix.slug }}
+          readme-filepath: ${{ matrix.readme }}
+          short-description: ${{ matrix.short }}
 
   create-release:
-    needs: [publish-core, publish-dashboard]
+    needs: merge
     runs-on: ubuntu-latest
     permissions:
       contents: write
