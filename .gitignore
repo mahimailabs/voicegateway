@@ -430,3 +430,4 @@ web/references/
 
 # Local generated runtime config (voicegw init); templates are voicegw.example.yaml / data/voicegw.minimal.yaml
 /voicegw.yaml
+/helicone/
