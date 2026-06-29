@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/banner.svg" alt="VoiceGateway" width="100%" />
+<img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/banner.gif" alt="VoiceGateway" width="100%" />
 
 <p>
   <a href="https://docs.voicegateway.dev"><img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/badges/docs.svg" height="30" alt="Docs"/></a>
@@ -68,9 +68,13 @@ Add the three `inference` lines from the snippet above to your agent and every c
 
 A self-hosted web UI at `http://localhost:8080`. Bundled. No SaaS account. No data leaves your stack.
 
-![VoiceGateway Dashboard](https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/dashboard-preview.png)
+<div align="center">
+  <img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/dashboard-tour.gif" alt="VoiceGateway dashboard tour" width="100%" />
+  <br/>
+  <sub>A 7-day spend / requests trend, per-provider cost breakdowns, a live request log, and one-key light/dark.</sub>
+</div>
 
-Overview, Costs (per provider / model / project / tenant, plus latency p50/p95), Sessions (replay, routing decisions, budget overruns), Logs, Agents, and Settings. White-label it per project: upload a logo, set an accent color and product name, and the whole UI re-skins.
+Overview with a 7-day spend and requests trend, Costs (per provider / model / project / tenant, plus latency p50/p95), Sessions (replay, routing decisions, budget overruns), Logs, Agents, and Settings. One-key light/dark theme. White-label it per project: upload a logo, set an accent color and product name, and the whole UI re-skins.
 
 ## Fleet collector
 

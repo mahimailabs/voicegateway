@@ -154,6 +154,26 @@ class StorageService:
             agent=agent,
         )
 
+    async def get_cost_by_day(
+        self,
+        period: str = "week",
+        project: str | None = None,
+        start_ts: float | None = None,
+        end_ts: float | None = None,
+        tenant: str | None = None,
+        agent: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Delegate to CostService.get_by_day."""
+        await self._ensure_initialized()
+        return await self._cost_service.get_by_day(
+            period=period,
+            project=project,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            tenant=tenant,
+            agent=agent,
+        )
+
     async def get_cost_by_modality(
         self,
         period: str = "today",

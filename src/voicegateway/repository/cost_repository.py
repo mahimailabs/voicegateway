@@ -155,6 +155,56 @@ async def get_cost_summary(
     }
 
 
+async def get_cost_by_day(
+    session: AsyncSession,
+    period: str = "week",
+    project: str | None = None,
+    start_ts: float | None = None,
+    end_ts: float | None = None,
+    tenant: str | None = None,
+    agent: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return a day-bucketed cost series for the window, ascending by day.
+
+    Each entry: ``{"day": epoch_seconds, "cost": float, "requests": int}``
+    where ``day`` is the UTC start-of-day epoch. Mirrors the ClickHouse
+    ``get_cost_by_day`` shape so the dashboard renders the same trend chart on
+    the embedded (SQLite) and collector (ClickHouse) paths.
+    """
+    since, until = resolve_window(period, start_ts, end_ts)
+    where, params = _build_where(
+        since=since, until=until, project=project, tenant=tenant, agent=agent
+    )
+    try:
+        dialect = session.bind.dialect.name
+    except AttributeError:
+        # Only an unbound session (bind is None) defaults to the SQLite
+        # spelling; any other failure should surface, not be masked.
+        dialect = "sqlite"
+    # Bucket epoch-second timestamps into UTC start-of-day. SQLite's CAST
+    # truncates toward zero (floor for positive epochs); Postgres CAST rounds,
+    # so floor explicitly there.
+    day_expr = (
+        "FLOOR(timestamp / 86400) * 86400"
+        if dialect == "postgresql"
+        else "CAST(timestamp / 86400 AS INTEGER) * 86400"
+    )
+    result = await session.execute(
+        text(
+            f"""SELECT {day_expr} AS day,
+                       SUM(cost_usd) AS cost,
+                       COUNT(*) AS count
+                FROM requests {where}
+                GROUP BY day ORDER BY day ASC"""
+        ),
+        params,
+    )
+    return [
+        {"day": float(r[0]), "cost": float(r[1] or 0.0), "requests": int(r[2])}
+        for r in result
+    ]
+
+
 async def get_cost_by_project(
     session: AsyncSession,
     period: str = "today",
@@ -238,6 +288,7 @@ async def get_project_stats(session: AsyncSession, project: str) -> dict[str, An
 
 
 __all__ = [
+    "get_cost_by_day",
     "get_cost_by_modality",
     "get_cost_by_project",
     "get_cost_summary",

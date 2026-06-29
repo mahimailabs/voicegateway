@@ -76,6 +76,17 @@ async def test_get_cost_by_project_scopes_to_tenant(storage) -> None:
     assert beta.get("default", {}).get("cost", 0.0) == pytest.approx(1.00)
 
 
+async def test_get_cost_by_day_scopes_to_tenant(storage) -> None:
+    await _seed_two_tenants(storage)
+    acme = await storage.get_cost_by_day("all", tenant="acme")
+    assert sum(d["cost"] for d in acme) == pytest.approx(0.30)
+    assert sum(d["requests"] for d in acme) == 2
+    beta = await storage.get_cost_by_day("all", tenant="beta")
+    assert sum(d["cost"] for d in beta) == pytest.approx(1.00)
+    every = await storage.get_cost_by_day("all")
+    assert sum(d["cost"] for d in every) == pytest.approx(1.35)
+
+
 async def test_list_sessions_scopes_to_tenant(storage) -> None:
     await _seed_two_tenants(storage)
     acme = await storage.list_sessions(tenant="acme")

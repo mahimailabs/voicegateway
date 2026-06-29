@@ -114,6 +114,32 @@ async def test_get_cost_summary(storage):
     assert "openai" in summary["by_provider"]
 
 
+async def test_get_cost_by_day(storage):
+    """Daily series buckets rows by UTC day, ascending, with cost + requests."""
+    day = 86400
+    base = (int(time.time()) // day) * day + 100  # safely inside a UTC day
+    yesterday = base - day
+    for ts, cost in [(yesterday, 0.02), (base, 0.05), (base, 0.10)]:
+        await storage.log_request(
+            RequestRecord(
+                id=str(uuid.uuid4()),
+                timestamp=float(ts),
+                modality="llm",
+                model_id="openai/gpt-4o-mini",
+                provider="openai",
+                cost_usd=cost,
+            )
+        )
+    series = await storage.get_cost_by_day("week")
+    assert len(series) == 2
+    assert series[0]["day"] < series[1]["day"]  # ascending
+    assert series[0]["requests"] == 1
+    assert series[0]["cost"] == pytest.approx(0.02, abs=0.001)
+    assert series[1]["requests"] == 2
+    assert series[1]["cost"] == pytest.approx(0.15, abs=0.001)
+    assert series[1]["day"] % day == 0  # bucket is UTC start-of-day
+
+
 async def test_get_cost_by_project(storage):
     now = time.time()
     for proj, cost in [("proj-a", 0.05), ("proj-b", 0.10)]:

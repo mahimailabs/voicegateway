@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import CostChart from '../components/CostChart';
 import FilterBar, { useTenantFilter, useAgentFilter } from '../components/FilterBar';
+import TimeRange, { usePeriod } from '../components/TimeRange';
 import PageHeader from '../components/PageHeader';
 import StatusCard from '../components/StatusCard';
 import LatencyChart from '../components/LatencyChart';
@@ -111,28 +112,55 @@ function LatencyContent() {
 
 function CostsContent() {
   const [data, setData] = useState<CostsResponse | null>(null);
+  const [error, setError] = useState(false);
+  const [retry, setRetry] = useState(0);
   const tenant = useTenantFilter();
   const agent = useAgentFilter();
+  const period = usePeriod();
 
   useEffect(() => {
     const params = new URLSearchParams();
+    params.set('period', period);
     if (tenant !== null) params.set('tenant', tenant);
     if (agent !== null) params.set('agent', agent);
-    const qs = params.toString();
-    const url = qs ? `/api/costs?${qs}` : '/api/costs';
-    fetchJson<CostsResponse>(url).then(setData).catch(() => setData(null));
-  }, [tenant, agent]);
+    // Guard against a slow earlier request resolving after a newer
+    // period/tenant/agent selection and overwriting current data.
+    let active = true;
+    setError(false);
+    fetchJson<CostsResponse>(`/api/costs?${params.toString()}`)
+      .then((d) => {
+        if (active) setData(d);
+      })
+      .catch(() => {
+        if (active) setError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [tenant, agent, period, retry]);
 
-  if (!data) return <div className="empty-state">Loading costs...</div>;
-
-  const models = Object.entries(data.by_model);
+  const models = data ? Object.entries(data.by_model) : [];
 
   return (
     <div>
-      <div className="neo-card neo-card--strip-green mb-lg">
-        <div className="label">Total Spend</div>
-        <div className="stat-value stat-value--xl mt-md">{formatCost(data.total)}</div>
+      <div className="flex-row mb-md" style={{ justifyContent: 'flex-end' }}>
+        <TimeRange />
       </div>
+      {error ? (
+        <div className="empty-state">
+          Could not load costs.{' '}
+          <button type="button" className="neo-btn" onClick={() => setRetry((r) => r + 1)}>
+            Retry
+          </button>
+        </div>
+      ) : !data ? (
+        <div className="empty-state">Loading costs...</div>
+      ) : (
+        <>
+          <div className="neo-card neo-card--strip-green mb-lg">
+            <div className="label">Total Spend</div>
+            <div className="stat-value-xl mt-sm">{formatCost(data.total)}</div>
+          </div>
 
       <div className="grid grid-cols-2">
         <CostChart title="By Provider" data={data.by_provider} />
@@ -176,6 +204,8 @@ function CostsContent() {
             to verify against your provider invoice.
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

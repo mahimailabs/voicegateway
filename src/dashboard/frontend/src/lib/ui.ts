@@ -1,11 +1,11 @@
 export type Accent = 'yellow' | 'blue' | 'green' | 'pink' | 'orange';
 
 export const ACCENT_COLORS: Record<Accent, string> = {
-  yellow: '#FFD166',
-  blue: '#118AB2',
-  green: '#8AC926',
-  pink: '#FF006E',
-  orange: '#FB8500',
+  yellow: '#D97706',
+  blue: '#1F96AA',
+  green: '#16A34A',
+  pink: '#DC2626',
+  orange: '#15788A',
 };
 
 export function formatCost(value: number | undefined | null, decimals = 2): string {

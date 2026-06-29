@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import StatusCard from '../components/StatusCard';
+import TrendChart from '../components/TrendChart';
+import { Skeleton, StatCardSkeleton } from '../components/Skeleton';
 import { fetchJson, fetchAgents } from '../lib/api';
 import { formatCost, agentStatus } from '../lib/ui';
 import type { OverviewResponse, AgentRow } from '../lib/types';
@@ -9,18 +11,43 @@ import type { OverviewResponse, AgentRow } from '../lib/types';
 export default function Overview() {
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [agents, setAgents] = useState<AgentRow[]>([]);
+  // Bumped on an explicit Refresh so the self-fetching TrendChart reloads too.
+  const [reloadKey, setReloadKey] = useState(0);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     fetchJson<OverviewResponse>('/api/overview').then(setData).catch(() => setData(null));
-  }, []);
-
-  useEffect(() => {
     fetchAgents({ limit: 200 })
       .then((d) => setAgents(d.agents))
       .catch(() => setAgents([]));
   }, []);
 
-  if (!data) return <div className="empty-state">Loading overview...</div>;
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!data) {
+    return (
+      <div>
+        <PageHeader title="Overview" subtitle="Live voice AI gateway stats" accent="yellow" />
+        <div className="grid grid-cols-4">
+          <StatCardSkeleton />
+          <StatCardSkeleton />
+          <StatCardSkeleton />
+          <StatCardSkeleton />
+        </div>
+        <div className="mt-lg grid grid-cols-2">
+          <div className="neo-card">
+            <Skeleton width={120} height={13} />
+            <Skeleton height={88} style={{ marginTop: 16 }} />
+          </div>
+          <div className="neo-card">
+            <Skeleton width={120} height={13} />
+            <Skeleton height={88} style={{ marginTop: 16 }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const activeCount = agents.filter((a) => agentStatus(a.last_seen) === 'active').length;
   const topAgents = [...agents]
@@ -34,10 +61,15 @@ export default function Overview() {
         subtitle="Live voice AI gateway stats"
         accent="yellow"
         actions={
-          <>
-            <button className="neo-btn neo-btn--primary">Refresh</button>
-            <button className="neo-btn">Export</button>
-          </>
+          <button
+            className="neo-btn neo-btn--primary"
+            onClick={() => {
+              load();
+              setReloadKey((k) => k + 1);
+            }}
+          >
+            Refresh
+          </button>
         }
       />
       <div className="grid grid-cols-4">
@@ -45,6 +77,10 @@ export default function Overview() {
         <StatusCard label="Cost Today" value={formatCost(data.total_cost_today)} accent="green" icon="$" />
         <StatusCard label="Cost (All Time)" value={formatCost(data.total_cost_all)} accent="blue" icon="Σ" />
         <StatusCard label="Active Models" value={data.active_models ?? 0} accent="pink" icon="M" />
+      </div>
+
+      <div className="mt-lg">
+        <TrendChart reloadKey={reloadKey} />
       </div>
 
       {agents.length > 0 && (
@@ -102,9 +138,9 @@ export default function Overview() {
         <div className="neo-card neo-card--strip-blue">
           <div className="label">Quick Actions</div>
           <div className="flex-row flex-wrap mt-md">
-            <button className="neo-btn neo-btn--primary">Refresh</button>
-            <button className="neo-btn neo-btn--blue">View Models</button>
-            <button className="neo-btn neo-btn--green">View Costs</button>
+            <Link className="neo-btn neo-btn--primary" to="/costs">View Costs</Link>
+            <Link className="neo-btn" to="/models">View Models</Link>
+            <Link className="neo-btn" to="/agents">View Agents</Link>
           </div>
         </div>
       </div>

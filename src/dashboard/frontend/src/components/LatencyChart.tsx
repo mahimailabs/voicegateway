@@ -37,12 +37,12 @@ export default function LatencyChart({ data }: Props) {
       <div style={{ width: '100%', height: 280, marginTop: 16 }}>
         <ResponsiveContainer>
           <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-            <CartesianGrid strokeDasharray="4 4" stroke="#1A1A1A" strokeOpacity={0.3} />
+            <CartesianGrid strokeDasharray="4 4" stroke="var(--border)" strokeOpacity={0.3} />
             <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 600 }} />
             <YAxis tick={{ fontSize: 11, fontWeight: 600 }} />
-            <Tooltip content={<NeoTooltip />} cursor={{ fill: 'rgba(255, 0, 110, 0.1)' }} />
-            <Bar dataKey="ttfb" name="TTFB" fill={ACCENT_COLORS.pink} stroke="#1A1A1A" strokeWidth={2} />
-            <Bar dataKey="total" name="Total" fill={ACCENT_COLORS.yellow} stroke="#1A1A1A" strokeWidth={2} />
+            <Tooltip content={<NeoTooltip />} cursor={{ fill: 'rgba(31, 150, 170, 0.12)' }} />
+            <Bar dataKey="ttfb" name="TTFB" fill={ACCENT_COLORS.blue} radius={[4, 4, 0, 0]} />
+            <Bar dataKey="total" name="Total" fill={ACCENT_COLORS.yellow} radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

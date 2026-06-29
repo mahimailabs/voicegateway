@@ -88,6 +88,38 @@ async def get_costs(
     return summary
 
 
+@router.get("/costs/by-day")
+async def get_costs_by_day(
+    request: Request,
+    period: str = Query("week", enum=["today", "week", "month", "all"]),
+    project: str | None = Query(None),
+    tenant: str | None = Query(None),
+    agent: str | None = Query(None),
+    gateway: Gateway = Depends(get_gateway),
+    principal: Principal = Depends(require_principal),
+) -> list[dict]:
+    """Day-bucketed cost + request series for the Overview trend chart.
+
+    Scoped to the authenticated principal through :func:`resolve_read_tenant`,
+    exactly like ``/api/costs``: the raw ``tenant`` param is never trusted
+    onward and a non-admin cannot read a foreign tenant's series.
+    """
+    resolved = resolve_read_tenant(principal, tenant)
+    if gateway.storage is None:
+        return []
+    ch_client = getattr(request.app.state, "ch_client", None)
+    if ch_client is not None:
+        if resolved is None:
+            raise HTTPException(status_code=400, detail=_NEEDS_TENANT)
+        since, until = resolve_window(period)
+        return await ch_read.get_cost_by_day(
+            ch_client, tenant=resolved, since=since, until=until, project=project
+        )
+    return await gateway.storage.get_cost_by_day(
+        period, project=project, tenant=resolved, agent=agent
+    )
+
+
 @router.get("/latency")
 async def get_latency(
     request: Request,

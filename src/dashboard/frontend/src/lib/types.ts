@@ -14,6 +14,13 @@ export interface OverviewResponse {
   providers_configured: number;
 }
 
+/** One day-bucket of the Overview trend series (GET /api/costs/by-day). */
+export interface CostByDayPoint {
+  day: number; // UTC start-of-day epoch seconds
+  cost: number;
+  requests: number;
+}
+
 export interface CostsResponse {
   period: string;
   project: string | null;
