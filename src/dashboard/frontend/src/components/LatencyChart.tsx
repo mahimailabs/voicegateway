@@ -41,8 +41,8 @@ export default function LatencyChart({ data }: Props) {
             <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 600 }} />
             <YAxis tick={{ fontSize: 11, fontWeight: 600 }} />
             <Tooltip content={<NeoTooltip />} cursor={{ fill: 'rgba(255, 0, 110, 0.1)' }} />
-            <Bar dataKey="ttfb" name="TTFB" fill={ACCENT_COLORS.pink} />
-            <Bar dataKey="total" name="Total" fill={ACCENT_COLORS.yellow} />
+            <Bar dataKey="ttfb" name="TTFB" fill={ACCENT_COLORS.pink} radius={[4, 4, 0, 0]} />
+            <Bar dataKey="total" name="Total" fill={ACCENT_COLORS.yellow} radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

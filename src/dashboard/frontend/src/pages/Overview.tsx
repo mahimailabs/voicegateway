@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import StatusCard from '../components/StatusCard';
+import { Skeleton, StatCardSkeleton } from '../components/Skeleton';
 import { fetchJson, fetchAgents } from '../lib/api';
 import { formatCost, agentStatus } from '../lib/ui';
 import type { OverviewResponse, AgentRow } from '../lib/types';
@@ -20,7 +21,29 @@ export default function Overview() {
       .catch(() => setAgents([]));
   }, []);
 
-  if (!data) return <div className="empty-state">Loading overview...</div>;
+  if (!data) {
+    return (
+      <div>
+        <PageHeader title="Overview" subtitle="Live voice AI gateway stats" accent="yellow" />
+        <div className="grid grid-cols-4">
+          <StatCardSkeleton />
+          <StatCardSkeleton />
+          <StatCardSkeleton />
+          <StatCardSkeleton />
+        </div>
+        <div className="mt-lg grid grid-cols-2">
+          <div className="neo-card">
+            <Skeleton width={120} height={13} />
+            <Skeleton height={88} style={{ marginTop: 16 }} />
+          </div>
+          <div className="neo-card">
+            <Skeleton width={120} height={13} />
+            <Skeleton height={88} style={{ marginTop: 16 }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const activeCount = agents.filter((a) => agentStatus(a.last_seen) === 'active').length;
   const topAgents = [...agents]
