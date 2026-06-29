@@ -1,6 +1,7 @@
 <svg width="126" height="30" viewBox="0 0 126 30" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="0.5" y="0.5" width="125" height="29" rx="14.5" fill="#0d1e38" stroke="#2c5687"/>
-  <g transform="translate(11,7)" fill="#EB5F36">
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="30" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#11252B"/><stop offset="1" stop-color="#0A171B"/></linearGradient></defs>
+  <rect x="0.5" y="0.5" width="125" height="29" rx="14.5" fill="url(#bg)" stroke="#2A6B74"/>
+  <g transform="translate(11,7)" fill="#14B8C4">
     <rect x="1" y="6" width="2.2" height="4" rx="1.1"/>
     <rect x="4.4" y="3.5" width="2.2" height="9" rx="1.1"/>
     <rect x="7.8" y="1.4" width="2.2" height="13.2" rx="1.1"/>
