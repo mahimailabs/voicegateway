@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NavIcon from './NavIcon';
 import { NAV_FLAT } from '../lib/nav';
@@ -10,6 +11,7 @@ export default function CommandPalette() {
   const [sel, setSel] = useState(0);
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -53,29 +55,55 @@ export default function CommandPalette() {
     }
   };
 
+  // Handle keys on the dialog container so navigation keeps working after
+  // focus moves to a result button, and trap Tab inside the open palette.
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSel((s) => Math.min(s + 1, results.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSel((s) => Math.max(s - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      go(sel);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+    } else if (e.key === 'Tab') {
+      const nodes = dialogRef.current?.querySelectorAll<HTMLElement>('input, button');
+      if (!nodes || nodes.length === 0) return;
+      const list = Array.from(nodes);
+      const first = list[0];
+      const last = list[list.length - 1];
+      const activeEl = document.activeElement;
+      if (e.shiftKey && activeEl === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && activeEl === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  };
+
   return (
     <div className="cmdk-backdrop" onMouseDown={() => setOpen(false)}>
-      <div className="cmdk" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="cmdk"
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <input
           ref={inputRef}
           className="cmdk__input"
           placeholder="Search pages..."
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowDown') {
-              e.preventDefault();
-              setSel((s) => Math.min(s + 1, results.length - 1));
-            } else if (e.key === 'ArrowUp') {
-              e.preventDefault();
-              setSel((s) => Math.max(s - 1, 0));
-            } else if (e.key === 'Enter') {
-              e.preventDefault();
-              go(sel);
-            } else if (e.key === 'Escape') {
-              setOpen(false);
-            }
-          }}
         />
         <div className="cmdk__list">
           {results.length === 0 && <div className="cmdk__empty">No matches</div>}

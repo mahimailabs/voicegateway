@@ -11,6 +11,8 @@ import type { OverviewResponse, AgentRow } from '../lib/types';
 export default function Overview() {
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [agents, setAgents] = useState<AgentRow[]>([]);
+  // Bumped on an explicit Refresh so the self-fetching TrendChart reloads too.
+  const [reloadKey, setReloadKey] = useState(0);
 
   const load = useCallback(() => {
     fetchJson<OverviewResponse>('/api/overview').then(setData).catch(() => setData(null));
@@ -59,7 +61,15 @@ export default function Overview() {
         subtitle="Live voice AI gateway stats"
         accent="yellow"
         actions={
-          <button className="neo-btn neo-btn--primary" onClick={load}>Refresh</button>
+          <button
+            className="neo-btn neo-btn--primary"
+            onClick={() => {
+              load();
+              setReloadKey((k) => k + 1);
+            }}
+          >
+            Refresh
+          </button>
         }
       />
       <div className="grid grid-cols-4">
@@ -70,7 +80,7 @@ export default function Overview() {
       </div>
 
       <div className="mt-lg">
-        <TrendChart />
+        <TrendChart reloadKey={reloadKey} />
       </div>
 
       {agents.length > 0 && (

@@ -177,7 +177,9 @@ async def get_cost_by_day(
     )
     try:
         dialect = session.bind.dialect.name
-    except Exception:  # noqa: BLE001 - default to the SQLite spelling
+    except AttributeError:
+        # Only an unbound session (bind is None) defaults to the SQLite
+        # spelling; any other failure should surface, not be masked.
         dialect = "sqlite"
     # Bucket epoch-second timestamps into UTC start-of-day. SQLite's CAST
     # truncates toward zero (floor for positive epochs); Postgres CAST rounds,

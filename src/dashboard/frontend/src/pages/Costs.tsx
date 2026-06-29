@@ -112,6 +112,8 @@ function LatencyContent() {
 
 function CostsContent() {
   const [data, setData] = useState<CostsResponse | null>(null);
+  const [error, setError] = useState(false);
+  const [retry, setRetry] = useState(0);
   const tenant = useTenantFilter();
   const agent = useAgentFilter();
   const period = usePeriod();
@@ -121,10 +123,21 @@ function CostsContent() {
     params.set('period', period);
     if (tenant !== null) params.set('tenant', tenant);
     if (agent !== null) params.set('agent', agent);
+    // Guard against a slow earlier request resolving after a newer
+    // period/tenant/agent selection and overwriting current data.
+    let active = true;
+    setError(false);
     fetchJson<CostsResponse>(`/api/costs?${params.toString()}`)
-      .then(setData)
-      .catch(() => setData(null));
-  }, [tenant, agent, period]);
+      .then((d) => {
+        if (active) setData(d);
+      })
+      .catch(() => {
+        if (active) setError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [tenant, agent, period, retry]);
 
   const models = data ? Object.entries(data.by_model) : [];
 
@@ -133,7 +146,14 @@ function CostsContent() {
       <div className="flex-row mb-md" style={{ justifyContent: 'flex-end' }}>
         <TimeRange />
       </div>
-      {!data ? (
+      {error ? (
+        <div className="empty-state">
+          Could not load costs.{' '}
+          <button type="button" className="neo-btn" onClick={() => setRetry((r) => r + 1)}>
+            Retry
+          </button>
+        </div>
+      ) : !data ? (
         <div className="empty-state">Loading costs...</div>
       ) : (
         <>

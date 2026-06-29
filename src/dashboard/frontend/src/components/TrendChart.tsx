@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import NeoTooltip from './NeoTooltip';
 import { Skeleton } from './Skeleton';
+import { useTenantFilter } from './FilterBar';
 import { fetchJson } from '../lib/api';
 import { formatCost } from '../lib/ui';
 import type { CostByDayPoint } from '../lib/types';
@@ -31,15 +32,29 @@ const DAY_FMT = new Intl.DateTimeFormat('en-US', {
  * thin shell. Renders a teal gradient fill under a smooth line, with a Cost /
  * Requests toggle that mirrors Helicone's metric switcher.
  */
-export default function TrendChart() {
+export default function TrendChart({ reloadKey = 0 }: { reloadKey?: number }) {
   const [series, setSeries] = useState<CostByDayPoint[] | null>(null);
   const [metric, setMetric] = useState<Metric>('cost');
+  const tenant = useTenantFilter();
 
   useEffect(() => {
-    fetchJson<CostByDayPoint[]>('/api/costs/by-day?period=week')
-      .then(setSeries)
-      .catch(() => setSeries([]));
-  }, []);
+    // Forward the URL tenant the rest of the dashboard scopes by, so the
+    // request matches the server's tenant resolution (and does not 400 then
+    // get masked as empty on the tenant-scoped collector path).
+    const params = new URLSearchParams({ period: 'week' });
+    if (tenant !== null) params.set('tenant', tenant);
+    let active = true;
+    fetchJson<CostByDayPoint[]>(`/api/costs/by-day?${params.toString()}`)
+      .then((d) => {
+        if (active) setSeries(d);
+      })
+      .catch(() => {
+        if (active) setSeries([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [tenant, reloadKey]);
 
   const data = useMemo(
     () =>

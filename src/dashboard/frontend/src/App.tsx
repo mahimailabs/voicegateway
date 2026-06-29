@@ -166,8 +166,7 @@ function Sidebar({
             />
             <img
               src="/static/branding/wordings-dark.svg"
-              alt=""
-              aria-hidden="true"
+              alt="VoiceGateway"
               className="sidebar__wordmark sidebar__wordmark--dark"
             />
           </>
