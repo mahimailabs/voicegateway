@@ -7,5 +7,5 @@
     <rect x="7.8" y="1.4" width="2.2" height="13.2" rx="1.1"/>
     <rect x="11.2" y="4.5" width="2.2" height="7" rx="1.1"/>
   </g>
-  <text x="34" y="19.5" font-family="Inter, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="12.5" font-weight="600" fill="#ffffff">LiveKit 1.x</text>
+  <text x="34" y="19.5" font-family="Inter, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="12.5" font-weight="600" fill="#ffffff">LiveKit 1.6.x</text>
 </svg>
