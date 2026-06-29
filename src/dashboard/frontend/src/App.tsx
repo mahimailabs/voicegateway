@@ -21,48 +21,14 @@ import { AUTH_REQUIRED_EVENT, clearToken, fetchJson, getToken } from './lib/api'
 import { applyBrandingForProject } from './lib/branding';
 import NavIcon from './components/NavIcon';
 import AccountMenu from './components/AccountMenu';
+import CommandPalette from './components/CommandPalette';
+import { NAV, type NavLeaf } from './lib/nav';
 
 interface ActiveBranding {
   logo_url?: string | null;
   accent_color?: string | null;
   product_name?: string | null;
 }
-
-interface NavLeaf {
-  to: string;
-  label: string;
-  id: string;
-}
-interface NavGroup {
-  group: string;
-  items: NavLeaf[];
-}
-type NavEntry = NavLeaf | NavGroup;
-
-const NAV: NavEntry[] = [
-  { to: '/', label: 'Overview', id: 'overview' },
-  { to: '/sessions', label: 'Sessions', id: 'sessions' },
-  { to: '/logs', label: 'Logs', id: 'logs' },
-  {
-    group: 'Monitor',
-    items: [
-      { to: '/costs', label: 'Costs', id: 'costs' },
-      { to: '/latency', label: 'Latency', id: 'latency' },
-      { to: '/metrics', label: 'Metrics', id: 'metrics' },
-    ],
-  },
-  {
-    group: 'Configure',
-    items: [
-      { to: '/agents', label: 'Agents', id: 'agents' },
-      { to: '/providers', label: 'Providers', id: 'providers' },
-      { to: '/models', label: 'Models', id: 'models' },
-      { to: '/routing', label: 'Routing', id: 'routing' },
-      { to: '/guardrails', label: 'Guardrails', id: 'guardrails' },
-      { to: '/projects', label: 'Projects', id: 'projects' },
-    ],
-  },
-];
 
 type AuthState = 'checking' | 'needs-login' | 'ready';
 
@@ -140,6 +106,7 @@ export default function App() {
           </Routes>
         </main>
       </div>
+      <CommandPalette />
     </BrowserRouter>
   );
 }

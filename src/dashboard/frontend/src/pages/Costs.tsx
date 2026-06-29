@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import CostChart from '../components/CostChart';
 import FilterBar, { useTenantFilter, useAgentFilter } from '../components/FilterBar';
+import TimeRange, { usePeriod } from '../components/TimeRange';
 import PageHeader from '../components/PageHeader';
 import StatusCard from '../components/StatusCard';
 import LatencyChart from '../components/LatencyChart';
@@ -113,26 +114,33 @@ function CostsContent() {
   const [data, setData] = useState<CostsResponse | null>(null);
   const tenant = useTenantFilter();
   const agent = useAgentFilter();
+  const period = usePeriod();
 
   useEffect(() => {
     const params = new URLSearchParams();
+    params.set('period', period);
     if (tenant !== null) params.set('tenant', tenant);
     if (agent !== null) params.set('agent', agent);
-    const qs = params.toString();
-    const url = qs ? `/api/costs?${qs}` : '/api/costs';
-    fetchJson<CostsResponse>(url).then(setData).catch(() => setData(null));
-  }, [tenant, agent]);
+    fetchJson<CostsResponse>(`/api/costs?${params.toString()}`)
+      .then(setData)
+      .catch(() => setData(null));
+  }, [tenant, agent, period]);
 
-  if (!data) return <div className="empty-state">Loading costs...</div>;
-
-  const models = Object.entries(data.by_model);
+  const models = data ? Object.entries(data.by_model) : [];
 
   return (
     <div>
-      <div className="neo-card neo-card--strip-green mb-lg">
-        <div className="label">Total Spend</div>
-        <div className="stat-value-xl mt-sm">{formatCost(data.total)}</div>
+      <div className="flex-row mb-md" style={{ justifyContent: 'flex-end' }}>
+        <TimeRange />
       </div>
+      {!data ? (
+        <div className="empty-state">Loading costs...</div>
+      ) : (
+        <>
+          <div className="neo-card neo-card--strip-green mb-lg">
+            <div className="label">Total Spend</div>
+            <div className="stat-value-xl mt-sm">{formatCost(data.total)}</div>
+          </div>
 
       <div className="grid grid-cols-2">
         <CostChart title="By Provider" data={data.by_provider} />
@@ -176,6 +184,8 @@ function CostsContent() {
             to verify against your provider invoice.
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );
