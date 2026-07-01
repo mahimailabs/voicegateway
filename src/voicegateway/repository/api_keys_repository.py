@@ -133,7 +133,7 @@ async def create_api_key(
             ") VALUES ("
             ":prefix, :digest, :name, :tenant_id, :issued_by, :role, :scopes,"
             " CURRENT_TIMESTAMP"
-            ")"
+            ") RETURNING id"
         ),
         {
             "prefix": prefix,
@@ -145,8 +145,10 @@ async def create_api_key(
             "scopes": scopes,
         },
     )
+    # RETURNING works on both Postgres (asyncpg has no ``lastrowid``) and SQLite
+    # 3.35+. Read the id before commit closes the result.
+    new_id = result.scalar_one()
     await session.commit()
-    new_id = result.lastrowid  # type: ignore[attr-defined]
     if new_id is None:
         raise RuntimeError("INSERT into api_keys did not return a row id")
     row = await get_by_id(session, new_id)
