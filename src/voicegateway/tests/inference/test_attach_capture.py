@@ -417,6 +417,103 @@ class _FlushRecordingSink:
         pass
 
 
+# --- per-call tenant on the wire -----------------------------------------
+
+
+async def test_metric_capture_stamps_tenant_in_metadata():
+    """attach(tenant_id=...) rides in ``record.metadata`` so it survives the
+    remote wire: RequestRecord has no tenant field, and the cloud stamps the
+    top-level tenant from the ingest key. A multi-tenant embedder (many
+    sub-tenants behind one ingest key) separates them on this."""
+    sink = _FlushRecordingSink()
+    cost_tracker = CostTracker(sink)
+    llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
+    session = _FakeSession(llm=llm)
+
+    capture = MetricCapture(
+        cost_tracker=cost_tracker,
+        sink=sink,
+        project="realty-recall",
+        agent_id="agent-t",
+        session_id="vg-t",
+        tenant_id="org_realtor_42",
+    )
+    capture.bind(session)
+    llm.emit("metrics_collected", _LLMMetric())
+    await capture.drain()
+
+    assert len(sink.rows) == 1
+    assert sink.rows[0].metadata.get("tenant_id") == "org_realtor_42"
+
+
+async def test_metric_capture_omits_tenant_when_unset():
+    """No tenant_id -> no ``tenant_id`` key added to metadata (stays empty)."""
+    sink = _FlushRecordingSink()
+    cost_tracker = CostTracker(sink)
+    llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
+    session = _FakeSession(llm=llm)
+
+    capture = MetricCapture(
+        cost_tracker=cost_tracker,
+        sink=sink,
+        project="fleet",
+        agent_id="agent-n",
+        session_id="vg-n",
+    )
+    capture.bind(session)
+    llm.emit("metrics_collected", _LLMMetric())
+    await capture.drain()
+
+    assert "tenant_id" not in sink.rows[0].metadata
+
+
+async def test_metric_capture_error_row_carries_tenant():
+    """The error path also stamps the tenant so failures stay attributed."""
+    sink = _FlushRecordingSink()
+    cost_tracker = CostTracker(sink)
+    session = _FakeSession(llm=_FakeEmitter(model="gpt-4o-mini", provider="openai"))
+
+    capture = MetricCapture(
+        cost_tracker=cost_tracker,
+        sink=sink,
+        project="realty-recall",
+        agent_id="agent-te",
+        session_id="vg-te",
+        tenant_id="org_realtor_42",
+    )
+    capture.bind(session)
+    session.emit("error", _ErrorEvent("boom", _LLMErrorSource()))
+    await capture.drain()
+
+    assert sink.rows[0].metadata.get("tenant_id") == "org_realtor_42"
+
+
+async def test_reconcile_correction_carries_tenant():
+    """A close-time reconcile correction keeps both markers: reconciled + tenant."""
+    sink = _FlushRecordingSink()
+    cost_tracker = CostTracker(sink)
+    llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
+    usage = _FakeUsage([_FakeLLMUsage(prompt_tokens=1500, completion_tokens=700)])
+    session = _FakeSessionWithUsage(usage, llm=llm)
+
+    capture = MetricCapture(
+        cost_tracker=cost_tracker,
+        sink=sink,
+        project="realty-recall",
+        agent_id="agent-tr",
+        session_id="vg-tr",
+        tenant_id="org_realtor_42",
+    )
+    capture.bind(session)
+    llm.emit("metrics_collected", _LLMMetric())
+    await capture.drain()
+    await capture.reconcile(session)
+
+    recon = [r for r in sink.rows if r.metadata.get("reconciled")]
+    assert len(recon) == 1
+    assert recon[0].metadata.get("tenant_id") == "org_realtor_42"
+
+
 async def test_attach_close_flushes_sink(tmp_path):
     """The session close path drains writes AND flushes the sink (and the
     finalize task is strong-reffed: awaitable via session._vg_close_task)."""
