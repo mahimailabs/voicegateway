@@ -261,6 +261,7 @@ class MetricCapture:
                 session_id=self._session_id,
                 agent_id=self._agent_id,
             )
+            self._stamp_tenant(record)
             tally = self._recorded.setdefault(
                 (provider, model_id), {"input": 0.0, "output": 0.0, "cached": 0.0}
             )
@@ -286,7 +287,22 @@ class MetricCapture:
             session_id=self._session_id,
             agent_id=self._agent_id,
         )
+        self._stamp_tenant(record)
         self._schedule(self._sink.log_request(record))
+
+    def _stamp_tenant(self, record: RequestRecord) -> None:
+        """Carry the attach() ``tenant_id`` on the record's ``metadata``.
+
+        The remote collector serializes only ``RequestRecord`` fields, which
+        have no tenant column, and the cloud stamps the top-level tenant from
+        the ingest key. Riding in ``metadata`` is how a per-call ``tenant_id``
+        survives the wire, so an embedder that fans many sub-tenants through one
+        ingest key can still separate them downstream. A local sink already gets
+        the tenant first-class from the ``set_tenant`` ContextVar, so this is
+        additive there, not a replacement.
+        """
+        if self._tenant_id:
+            record.metadata = {**record.metadata, "tenant_id": self._tenant_id}
 
     def _schedule(self, coro: Any) -> None:
         try:
@@ -359,6 +375,7 @@ class MetricCapture:
                 agent_id=self._agent_id,
             )
             record.metadata = {"reconciled": True}
+            self._stamp_tenant(record)
             await self._sink.log_request(record)
 
 
