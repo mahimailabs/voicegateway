@@ -72,4 +72,7 @@ def resolve_creds(
             "LIVEKIT_API_KEY/LIVEKIT_API_SECRET, or add a livekit: block to "
             "voicegw.yaml."
         )
+    # All three are non-empty here (missing would be non-empty otherwise); assert
+    # it so the type checker narrows str | None to str.
+    assert resolved_url and resolved_key and resolved_secret
     return LiveKitCreds(resolved_url, resolved_key, resolved_secret)

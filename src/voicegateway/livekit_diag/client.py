@@ -74,12 +74,14 @@ class UtteranceSource:
 
 def _quality_label(q: object) -> str:
     from livekit import rtc as _rtc
-    return {
+
+    labels: dict[object, str] = {
         _rtc.ConnectionQuality.QUALITY_EXCELLENT: "Excellent",
         _rtc.ConnectionQuality.QUALITY_GOOD: "Good",
         _rtc.ConnectionQuality.QUALITY_POOR: "Poor",
         _rtc.ConnectionQuality.QUALITY_LOST: "Lost",
-    }.get(q, "Unknown")  # type: ignore[arg-type]
+    }
+    return labels.get(q, "Unknown")
 
 
 class SyntheticClient:

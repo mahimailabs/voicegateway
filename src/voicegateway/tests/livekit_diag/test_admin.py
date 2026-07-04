@@ -1,7 +1,5 @@
 from types import SimpleNamespace
 
-import pytest
-
 from voicegateway.livekit_diag.admin import LiveKitAdmin
 from voicegateway.livekit_diag.config import LiveKitCreds
 

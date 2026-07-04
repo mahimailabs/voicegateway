@@ -4,7 +4,7 @@ from voicegateway.livekit_diag.client import ReplyDetector, UtteranceSource
 
 
 def _pcm(amplitude: int, samples: int = 160) -> bytes:
-    return struct.pack("<%dh" % samples, *([amplitude] * samples))
+    return struct.pack(f"<{samples}h", *([amplitude] * samples))
 
 
 def test_reply_detector_ignores_silence_then_fires_on_speech():
@@ -18,8 +18,9 @@ def test_reply_detector_ignores_silence_then_fires_on_speech():
 
 
 def test_utterance_source_reads_bundled_wav():
-    import voicegateway.livekit_diag as pkg
     from pathlib import Path
+
+    import voicegateway.livekit_diag as pkg
 
     wav = Path(pkg.__file__).parent / "assets" / "probe.wav"
     src = UtteranceSource(str(wav))
