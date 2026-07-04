@@ -31,3 +31,28 @@ def render_agents(rows: list[AgentRow]) -> str:
 def agents_json(rows: list[AgentRow]) -> list[dict]:
     sorted_rows = sorted(rows, key=lambda r: r.agent_name)
     return [asdict(r) for r in sorted_rows]
+
+
+def render_latency(results: list, target_ms: float, summarize) -> str:
+    lines = []
+    for r in results:
+        s = summarize(r)
+        if not s["trials"]:
+            lines.append(f"{r.agent:14} no successful probe ({r.error or 'no reply'})")
+            continue
+        verdict = "GOOD" if s["avg"] * 1000 <= target_ms else "SLOW"
+        head = (
+            f"{r.agent:14} E2E avg {s['avg']:.2f}s  p50 {s['p50']:.2f}s  "
+            f"p95 {s['p95']:.2f}s   {verdict} (<{target_ms/1000:.1f}s)"
+        )
+        lines.append(head)
+        net = f"network(probe->SFU) {r.network_s:.2f}" if r.network_s is not None else "network n/a"
+        if r.components:
+            c = r.components
+            lines.append(
+                f"  {net} . turn-detect {c.get('eou', 0):.2f} . STT {c.get('stt', 0):.2f} "
+                f". LLM-ttft {c.get('llm_ttft', 0):.2f} . TTS {c.get('tts', 0):.2f}"
+            )
+        else:
+            lines.append(f"  {net} . breakdown (turn-detect/STT/LLM/TTS) lands in Phase 2 (collector correlation)")
+    return "\n".join(lines)
