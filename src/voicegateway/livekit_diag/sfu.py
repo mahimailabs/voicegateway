@@ -18,7 +18,9 @@ class RampStep:
     quality: str
 
 
-def find_knee(steps: list[RampStep], target_rtt_ms: float, max_loss: float) -> int | None:
+def find_knee(
+    steps: list[RampStep], target_rtt_ms: float, max_loss: float
+) -> int | None:
     """The last healthy client count before the first step that breaks a
     threshold. None when every step is within budget.
     """
@@ -36,11 +38,16 @@ class SfuProbe:
         self._make_client = client_factory
         self._monitor = monitor
 
-    async def _measure(self, room: str, n: int, seconds: float) -> RampStep:
+    async def _measure(
+        self, room: str, n: int, seconds: float, *, cleanup: bool = True
+    ) -> RampStep:
         clients = []
         try:
             for i in range(n):
-                c = self._make_client(getattr(self._admin, "url", ""), self._admin.join_token(room, f"c{i}"))
+                c = self._make_client(
+                    getattr(self._admin, "url", ""),
+                    self._admin.join_token(room, f"c{i}"),
+                )
                 await c.connect()
                 clients.append(c)
             await asyncio.sleep(seconds)
@@ -55,17 +62,32 @@ class SfuProbe:
                 await c.disconnect()
             # Delete the probe room so it does not linger on the server and show up
             # as a phantom (empty-name) agent in a later list_agents. Best-effort.
-            await self._admin.delete_room(room)
+            # Skipped for a shared distributed room, where one vantage deleting it
+            # mid-measurement would drop the other vantages' clients; the
+            # coordinator cleans those up after every vantage has reported.
+            if cleanup:
+                await self._admin.delete_room(room)
 
     async def baseline(self, room: str, seconds: float = 10.0) -> RampStep:
         return await self._measure(room, 2, seconds)
 
-    async def ramp(self, room: str, steps: list[int], duration: float, target_rtt_ms: float, max_loss: float):
+    async def ramp(
+        self,
+        room: str,
+        steps: list[int],
+        duration: float,
+        target_rtt_ms: float,
+        max_loss: float,
+        *,
+        cleanup: bool = True,
+    ):
         await self._monitor.start()
         results = []
         try:
             for n in steps:
-                results.append(await self._measure(f"{room}-{n}", n, duration))
+                results.append(
+                    await self._measure(f"{room}-{n}", n, duration, cleanup=cleanup)
+                )
         finally:
             await self._monitor.stop()
         return results, self._monitor.report_for(max(steps) if steps else 0)

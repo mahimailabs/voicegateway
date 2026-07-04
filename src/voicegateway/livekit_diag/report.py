@@ -170,3 +170,32 @@ def render_sfu(vantage: str, baseline, ramp_steps, resource, knee) -> str:
             f"host sustains ~{resource.sustainable_n} before CPU-bound{sat}"
         )
     return "\n".join(lines)
+
+
+def render_distributed_sfu(result: dict) -> str:
+    """Render a multi-vantage distributed SFU run (coordinator aggregate).
+
+    Combined tiers show the SFU's total concurrent load and the worst rtt / loss
+    / quality any vantage saw; the per-vantage lines below attribute it.
+    """
+    combined = result.get("combined") or []
+    vantages = result.get("vantages") or []
+    knee = result.get("knee")
+    lines = [f"SFU  distributed: {len(vantages)} vantages"]
+    if combined:
+        seg = " . ".join(
+            f"{t['clients']}({t['vantages']}v)-> {t['rtt_ms']}ms "
+            f"{t['loss_pct']}% {t['quality']}"
+            for t in combined
+        )
+        knee_txt = f"combined knee ~{knee} clients" if knee else "no knee within ramp"
+        lines.append(f"  combined: {seg}   {knee_txt}")
+    for v in vantages:
+        vseg = " . ".join(
+            f"{s['clients']}-> {s['rtt_ms']}ms {s['loss_pct']}%" for s in v["steps"]
+        )
+        lines.append(f"  {v['vantage']:12.12}: {vseg}")
+    dropped = result.get("dropped") or []
+    if dropped:
+        lines.append(f"  dropped (no steps reported): {', '.join(dropped)}")
+    return "\n".join(lines)

@@ -18,12 +18,18 @@ from voicegateway.cli.base_cli import BaseCli
 from voicegateway.livekit_diag.admin import LiveKitAdmin
 from voicegateway.livekit_diag.client import SyntheticClient, UtteranceSource
 from voicegateway.livekit_diag.config import CredsError, LiveKitCreds, resolve_creds
+from voicegateway.livekit_diag.distributed import (
+    Coordinator,
+    run_prober,
+    serve_coordinator,
+)
 from voicegateway.livekit_diag.latency import ComponentReader, ProbeRunner, summarize
 from voicegateway.livekit_diag.report import (
     agents_json,
     check_json,
     render_agents,
     render_check,
+    render_distributed_sfu,
     render_latency,
     render_sfu,
 )
@@ -170,12 +176,42 @@ def sfu_cmd(
     room: str = typer.Option("vg-sfu-probe", "--room"),
     target_rtt_ms: float = typer.Option(50.0, "--target-rtt-ms"),
     max_loss: float = typer.Option(1.0, "--max-loss"),
+    coordinator: bool = typer.Option(False, "--coordinator"),
+    expect: int = typer.Option(0, "--expect"),
+    coordinator_port: int = typer.Option(8787, "--coordinator-port"),
+    report_to: str = typer.Option(None, "--report-to"),
+    vantage: str = typer.Option(None, "--vantage"),
     url: str = typer.Option(None, "--url"),
     api_key: str = typer.Option(None, "--api-key"),
     api_secret: str = typer.Option(None, "--api-secret"),
     config: str = typer.Option(None, "--config", "-c"),
 ) -> None:
-    """Measure SFU connection quality (and capacity with --load)."""
+    """Measure SFU connection quality (single host, or distributed).
+
+    Single host: ``--load`` ramps synthetic clients from this machine.
+    Distributed: run one ``--coordinator --expect N``, then N probers with
+    ``--report-to <coordinator-url> --vantage <label>``; every vantage ramps the
+    same room at once and the coordinator prints the combined capacity.
+    """
+    if report_to:
+        _run_sfu_prober(report_to, vantage, ramp, url, api_key, api_secret, config)
+        return
+    if coordinator:
+        _run_sfu_coordinator(
+            expect,
+            coordinator_port,
+            room,
+            ramp,
+            duration,
+            target_rtt_ms,
+            max_loss,
+            url,
+            api_key,
+            api_secret,
+            config,
+        )
+        return
+
     creds = _creds(url, api_key, api_secret, config)
 
     async def _run():
@@ -201,6 +237,77 @@ def sfu_cmd(
         _cli.error(f"sfu probe failed: {exc}")
         raise typer.Exit(1) from None
     _cli.console.print(render_sfu("co-located", base, steps, resource, knee))
+
+
+def _run_sfu_prober(report_to, vantage, ramp, url, api_key, api_secret, config):
+    """Prober mode: register, wait for the barrier, ramp the shared room, report."""
+    creds = _creds(url, api_key, api_secret, config)
+    label = vantage or os.environ.get("VOICEGW_REGION") or "vantage"
+    _cli.warn(f"Reporting to coordinator {report_to} as vantage '{label}'.")
+
+    async def _run():
+        admin = LiveKitAdmin(creds)
+        admin.url = creds.url
+        probe = SfuProbe(admin, lambda u, t: SyntheticClient(u, t), ResourceMonitor())
+        try:
+            return await run_prober(report_to, probe, vantage=label)
+        finally:
+            await admin.aclose()
+
+    try:
+        payload = asyncio.run(_run())
+    except Exception as exc:  # noqa: BLE001
+        _cli.error(f"prober failed: {exc}")
+        raise typer.Exit(1) from None
+    _cli.console.print(f"vantage '{label}' reported {len(payload['steps'])} tiers.")
+
+
+def _run_sfu_coordinator(
+    expect,
+    port,
+    room,
+    ramp,
+    duration,
+    target_rtt_ms,
+    max_loss,
+    url,
+    api_key,
+    api_secret,
+    config,
+):
+    """Coordinator mode: serve the barrier, aggregate reports, clean up rooms."""
+    if expect < 1:
+        _cli.error("--coordinator needs --expect N (number of probers, >= 1).")
+        raise typer.Exit(1)
+    creds = _creds(url, api_key, api_secret, config)
+    counts = [int(x) for x in ramp.split(",") if x.strip()]
+    coord = Coordinator(
+        expect=expect,
+        room=room,
+        ramp=counts,
+        duration=duration,
+        target_rtt_ms=target_rtt_ms,
+        max_loss=max_loss,
+    )
+    _cli.warn(f"Waiting for {expect} prober(s) on port {port}; ramp {counts}.")
+
+    async def _run():
+        result = await serve_coordinator(coord, port=port)
+        admin = LiveKitAdmin(creds)
+        admin.url = creds.url
+        try:
+            for tier_room in coord.rooms:
+                await admin.delete_room(tier_room)  # best-effort shared cleanup
+        finally:
+            await admin.aclose()
+        return result
+
+    try:
+        result = asyncio.run(_run())
+    except Exception as exc:  # noqa: BLE001
+        _cli.error(f"coordinator failed: {exc}")
+        raise typer.Exit(1) from None
+    _cli.console.print(render_distributed_sfu(result))
 
 
 @livekit_app.command("check")
