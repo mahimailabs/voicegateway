@@ -538,6 +538,30 @@ async def test_metric_capture_records_eou(tmp_path):
     assert eou[0].metadata["tenant_id"] == "t"
 
 
+class _MetricsCollectedEvent:
+    def __init__(self, metrics):
+        self.metrics = metrics
+
+
+async def test_metric_capture_records_eou_wrapped():
+    from voicegateway.inference.session.capture import MetricCapture
+
+    sink = _FlushRecordingSink()
+    cost_tracker = CostTracker(sink)
+    session = _FakeSession(llm=_FakeEmitter(model="gpt-4o-mini", provider="openai"))
+    capture = MetricCapture(
+        cost_tracker=cost_tracker, sink=sink, project="p",
+        agent_id="a", session_id="s", tenant_id="t",
+    )
+    capture.bind(session)
+    session.emit("metrics_collected", _MetricsCollectedEvent(_EOUMetric()))
+    await capture.drain()
+    eou = [r for r in sink.rows if r.metadata.get("eou")]
+    assert len(eou) == 1
+    assert eou[0].metadata["eou"]["end_of_utterance_delay"] == 0.12
+    assert eou[0].metadata["tenant_id"] == "t"
+
+
 async def test_attach_close_flushes_sink(tmp_path):
     """The session close path drains writes AND flushes the sink (and the
     finalize task is strong-reffed: awaitable via session._vg_close_task)."""

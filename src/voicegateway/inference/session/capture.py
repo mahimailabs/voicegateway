@@ -292,6 +292,7 @@ class MetricCapture:
         self._schedule(self._sink.log_request(record))
 
     def _on_session_metric(self, metric: object, *_a: Any, **_k: Any) -> None:
+        metric = getattr(metric, "metrics", metric)
         eou = getattr(metric, "end_of_utterance_delay", None)
         if eou is None:
             return  # not an EOU metric; per-component metrics are handled elsewhere
