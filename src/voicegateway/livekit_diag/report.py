@@ -46,31 +46,30 @@ def render_latency(results: list, target_ms: float, summarize) -> str:
             f"p95 {s['p95']:.2f}s   {verdict} (<{target_ms/1000:.1f}s)"
         )
         lines.append(head)
-        net = f"network(probe->SFU) {r.network_s:.2f}" if r.network_s is not None else "network n/a"
         if r.components:
             c = r.components
             lines.append(
-                f"  {net} . turn-detect {c.get('eou', 0):.2f} . STT {c.get('stt', 0):.2f} "
+                f"  turn-detect {c.get('eou', 0):.2f} . STT {c.get('stt', 0):.2f} "
                 f". LLM-ttft {c.get('llm_ttft', 0):.2f} . TTS {c.get('tts', 0):.2f}"
             )
         else:
-            lines.append(f"  {net} . breakdown (turn-detect/STT/LLM/TTS) lands in Phase 2 (collector correlation)")
+            lines.append("  breakdown (turn-detect/STT/LLM/TTS) lands in Phase 2 (collector correlation)")
     return "\n".join(lines)
 
 
-def check_json(agents, latency_results, base, steps, resource, knee, summarize) -> dict:
+def check_json(agents, latency_results, base, steps, resource, knee, summarize, target_ms: float = 1500.0) -> dict:
     verdict = "PASS"
     for r in latency_results:
         s = summarize(r)
         if not s["trials"]:
             verdict = "WARN"
-        elif s["avg"] > 1.5:
+        elif s["avg"] * 1000 > target_ms:
             verdict = "WARN"
     if base and (base.loss_pct > 1.0 or base.quality in {"Poor", "Lost"}):
         verdict = "FAIL"
     return {
         "agents": agents_json(agents),
-        "latency": [{"agent": r.agent, "stats": summarize(r), "network_s": r.network_s,
+        "latency": [{"agent": r.agent, "stats": summarize(r),
                      "components": r.components} for r in latency_results],
         "sfu": {
             "baseline": {"clients": base.clients, "rtt_ms": base.rtt_ms,
@@ -83,7 +82,7 @@ def check_json(agents, latency_results, base, steps, resource, knee, summarize) 
 
 
 def render_check(agents, latency_results, base, steps, resource, knee, summarize, target_ms) -> str:
-    js = check_json(agents, latency_results, base, steps, resource, knee, summarize)
+    js = check_json(agents, latency_results, base, steps, resource, knee, summarize, target_ms)
     parts = [
         f"VERDICT: {js['verdict']}",
         "",

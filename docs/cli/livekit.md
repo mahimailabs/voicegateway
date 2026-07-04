@@ -57,16 +57,11 @@ The LiveKit server API exposes in-room participants only. Agents that are regist
 ### Example output
 
 ```
-       Active agents (2)
-┌────────────────┬───────────┬────────────┬──────────────────┐
-│ Agent          │ Room      │ State      │ Joined           │
-├────────────────┼───────────┼────────────┼──────────────────┤
-│ agent-7f4a     │ demo-room │ active     │ 14:01:32         │
-│ agent-2c9b     │ qa-room   │ dispatched │ 14:03:11         │
-└────────────────┴───────────┴────────────┴──────────────────┘
+AGENT            ROOM                   STATE       IN-CALL  AGE
+agent-7f4a       demo-room              active      1        42s
+agent-2c9b       qa-room                dispatched  0        8s
 
-Note: idle (pre-dispatch) workers are not reported by the server API.
-Full roster requires the Phase 2 heartbeat feature.
+2 agents active in 2 rooms. Idle/registered workers are not reported by LiveKit's server API; run the Phase 2 heartbeat to see the full roster.
 ```
 
 ### Options
@@ -76,7 +71,7 @@ Full roster requires the Phase 2 heartbeat feature.
 | `--url` | `string` | (see Credentials) | LiveKit server WebSocket URL. |
 | `--api-key` | `string` | (see Credentials) | LiveKit API key. |
 | `--api-secret` | `string` | (see Credentials) | LiveKit API secret. |
-| `--json` | flag | off | Emit JSON instead of a table. |
+| `--json` | flag | off | Emit JSON instead of plain text. |
 
 ---
 
@@ -90,26 +85,25 @@ voicegw livekit latency [OPTIONS]
 
 ### What it measures
 
+Phase 1 reports **end-to-end latency only**: the time from the end of the caller's speech to the first reply audio frame received from the agent. This is the number users perceive.
+
 For each probe turn the command:
 
 1. Joins a test room as a synthetic caller.
 2. Plays a short utterance and waits for end-of-utterance (EOU).
 3. Records the time from speech-end to the first reply audio frame arriving from the agent.
 
-Two numbers are reported per trial:
-
 | Metric | Description |
 |---|---|
-| **E2E latency** | Caller speech-end to first reply audio (ms). This is the number users perceive. |
-| **Network leg** | Round-trip probe to the SFU data channel (ms). Isolates the transport contribution. |
+| **E2E latency** | Caller speech-end to first reply audio (seconds). This is the number users perceive. |
+
+### Phase 2 (not yet available)
+
+The latency split across turn-detection, STT, LLM, and TTS is a **Phase 2 capability**. The network leg and the per-component breakdown require agents instrumented with `voicegateway.attach(session)` to emit internal timing spans. That integration is not available in Phase 1.
 
 ### Cost warning
 
 **Each probe is a real agent turn.** The agent's STT, LLM, and TTS providers are invoked with live credentials and will incur real provider charges. Run with a low `--trials` value (`1` or `2`) unless you are deliberately benchmarking. Keep `--agent` scoped to avoid probing every agent.
-
-### Descoped: per-component breakdown
-
-The latency split across turn-detection, STT, LLM, and TTS is a **Phase 2 capability**. Phase 1 (this release) reports E2E and network only. The component breakdown requires agents instrumented with `voicegateway.attach(session)` to emit internal timing spans; that integration is not available yet.
 
 ### Options
 
@@ -117,29 +111,19 @@ The latency split across turn-detection, STT, LLM, and TTS is a **Phase 2 capabi
 |---|---|---|---|
 | `--agent` | `string` | all agents | Probe only the named agent identity. |
 | `--trials` | `integer` | `3` | Number of probe turns per agent. |
-| `--target-ms` | `integer` | `none` | Warn (yellow) if median E2E exceeds this threshold. |
+| `--warmup/--no-warmup` | flag | warmup on | Discard first trial as cold-start warmup. |
+| `--target-ms` | `integer` | `1500` | Mark agent SLOW if avg E2E exceeds this threshold (ms). |
 | `--url` | `string` | (see Credentials) | LiveKit server WebSocket URL. |
 | `--api-key` | `string` | (see Credentials) | LiveKit API key. |
 | `--api-secret` | `string` | (see Credentials) | LiveKit API secret. |
-| `--json` | flag | off | Emit JSON instead of a table. |
 
 ### Example output
 
 ```
-       Latency results -- agent-7f4a (3 trials)
-┌───────┬──────────────┬──────────────┐
-│ Trial │ E2E (ms)     │ Network (ms) │
-├───────┼──────────────┼──────────────┤
-│ 1     │ 820          │ 12           │
-│ 2     │ 794          │ 11           │
-│ 3     │ 843          │ 13           │
-├───────┼──────────────┼──────────────┤
-│ p50   │ 820          │ 12           │
-│ p95   │ 843          │ 13           │
-└───────┴──────────────┴──────────────┘
-
-Note: each trial invokes the agent's STT/LLM/TTS and incurs real provider cost.
-Per-component breakdown (turn-detection + STT/LLM/TTS split) requires Phase 2.
+agent-7f4a     E2E avg 0.82s  p50 0.82s  p95 0.84s   GOOD (<1.5s)
+  breakdown (turn-detect/STT/LLM/TTS) lands in Phase 2 (collector correlation)
+agent-2c9b     E2E avg 1.14s  p50 1.14s  p95 1.18s   SLOW (<1.5s)
+  breakdown (turn-detect/STT/LLM/TTS) lands in Phase 2 (collector correlation)
 ```
 
 ---
@@ -183,7 +167,6 @@ Load-ramp mode (`--load`):
 | `--url` | `string` | (see Credentials) | LiveKit server WebSocket URL. |
 | `--api-key` | `string` | (see Credentials) | LiveKit API key. |
 | `--api-secret` | `string` | (see Credentials) | LiveKit API secret. |
-| `--json` | flag | off | Emit JSON instead of a table. |
 
 ### Example: baseline
 
@@ -192,8 +175,7 @@ voicegw livekit sfu
 ```
 
 ```
-  SFU quality -- wss://my-project.livekit.cloud
-  RTT p50: 11ms   RTT p95: 14ms   Quality: Excellent
+SFU  vantage: co-located   baseline: rtt 11ms . loss 0.0% . Excellent
 ```
 
 ### Example: load ramp
@@ -203,20 +185,9 @@ voicegw livekit sfu --load --ramp 2,10,25,50 --duration 20s
 ```
 
 ```
-  SFU load ramp
-┌─────────────┬──────────┬──────────┬───────────┬──────────────────┐
-│ Concurrency │ RTT p50  │ RTT p95  │ Quality   │ Host resource    │
-├─────────────┼──────────┼──────────┼───────────┼──────────────────┤
-│ 2           │ 11ms     │ 13ms     │ Excellent │ OK               │
-│ 10          │ 12ms     │ 16ms     │ Excellent │ OK               │
-│ 25          │ 18ms     │ 29ms     │ Good      │ OK               │
-│ 50          │ 41ms     │ 87ms     │ Poor      │ CPU 94% WARNING  │
-└─────────────┴──────────┴──────────┴───────────┴──────────────────┘
-
-Knee detected at concurrency 25 (RTT increase + quality drop).
-WARNING: host CPU saturated at concurrency 50.
-  Results at this level may reflect prober limits, not SFU limits.
-  Re-run from a higher-capacity host or reduce --ramp to confirm.
+SFU  vantage: co-located   baseline: rtt 11ms . loss 0.0% . Excellent
+  ramp: 2-> 11ms 0.0% . 10-> 12ms 0.0% . 25-> 18ms 0.1% . 50-> 41ms 1.2%   knee ~25 clients
+  prober: ~12% CPU + ~80 kbps up per client; host sustains ~40 before CPU-bound
 ```
 
 ---
@@ -231,7 +202,7 @@ voicegw livekit check [OPTIONS]
 
 ### What it runs
 
-Executes `agents`, `latency` (one trial per agent), and `sfu` (baseline) in sequence. For each item it assigns a status:
+Executes `agents`, `latency` (two trials per agent), and `sfu` (baseline) in sequence. For each item it assigns a status:
 
 | Status | Meaning |
 |---|---|
@@ -245,30 +216,33 @@ The command exits 0 if everything passes, 1 if any item is WARN or FAIL.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--target-ms` | `integer` | `none` | Latency threshold for the WARN/FAIL boundary. |
+| `--target-ms` | `integer` | `1500` | Latency threshold (ms) for the WARN boundary. |
 | `--url` | `string` | (see Credentials) | LiveKit server WebSocket URL. |
 | `--api-key` | `string` | (see Credentials) | LiveKit API key. |
 | `--api-secret` | `string` | (see Credentials) | LiveKit API secret. |
-| `--json` | flag | off | Emit a structured JSON record instead of a table. |
+| `--json` | flag | off | Emit a structured JSON record instead of plain text. |
 
-### Example: table output
+### Example: plain text output
 
 ```bash
 voicegw livekit check --target-ms 1000
 ```
 
 ```
-          VoiceGateway LiveKit check
-┌─────────────────────┬────────┬──────────────────────────────┐
-│ Check               │ Status │ Detail                       │
-├─────────────────────┼────────┼──────────────────────────────┤
-│ agents              │ PASS   │ 2 agents in rooms            │
-│ latency/agent-7f4a  │ PASS   │ E2E p50 820ms (target 1000)  │
-│ latency/agent-2c9b  │ WARN   │ E2E p50 1140ms > target      │
-│ sfu/rtt             │ PASS   │ p50 11ms, quality Excellent  │
-└─────────────────────┴────────┴──────────────────────────────┘
+VERDICT: WARN
 
-Exit code 1 (WARN items present).
+AGENT            ROOM                   STATE       IN-CALL  AGE
+agent-7f4a       demo-room              active      1        42s
+agent-2c9b       qa-room                dispatched  0        8s
+
+2 agents active in 2 rooms. Idle/registered workers are not reported by LiveKit's server API; run the Phase 2 heartbeat to see the full roster.
+
+agent-7f4a     E2E avg 0.82s  p50 0.82s  p95 0.84s   GOOD (<1.0s)
+  breakdown (turn-detect/STT/LLM/TTS) lands in Phase 2 (collector correlation)
+agent-2c9b     E2E avg 1.14s  p50 1.14s  p95 1.18s   SLOW (<1.0s)
+  breakdown (turn-detect/STT/LLM/TTS) lands in Phase 2 (collector correlation)
+
+SFU  vantage: co-located   baseline: rtt 11ms . loss 0.0% . Excellent
 ```
 
 ### Example: JSON output
@@ -279,13 +253,20 @@ voicegw livekit check --json
 
 ```json
 {
-  "status": "warn",
-  "agents": { "status": "pass", "count": 2 },
-  "latency": [
-    { "agent": "agent-7f4a", "status": "pass", "e2e_p50_ms": 820, "network_p50_ms": 12 },
-    { "agent": "agent-2c9b", "status": "warn", "e2e_p50_ms": 1140, "network_p50_ms": 11 }
+  "agents": [
+    {"agent_name": "agent-7f4a", "room": "demo-room", "identity": "agent-7f4a", "state": "active", "humans": 1, "age_s": 42.0},
+    {"agent_name": "agent-2c9b", "room": "qa-room", "identity": "agent-2c9b", "state": "dispatched", "humans": 0, "age_s": 8.0}
   ],
-  "sfu": { "status": "pass", "rtt_p50_ms": 11, "rtt_p95_ms": 14, "quality": "excellent" }
+  "latency": [
+    {"agent": "agent-7f4a", "stats": {"avg": 0.82, "p50": 0.82, "p95": 0.84, "min": 0.80, "max": 0.84, "trials": 2}, "components": null},
+    {"agent": "agent-2c9b", "stats": {"avg": 1.14, "p50": 1.14, "p95": 1.18, "min": 1.10, "max": 1.18, "trials": 2}, "components": null}
+  ],
+  "sfu": {
+    "baseline": {"clients": 1, "rtt_ms": 11.0, "loss_pct": 0.0, "quality": "Excellent"},
+    "ramp": [],
+    "knee": null
+  },
+  "verdict": "WARN"
 }
 ```
 
@@ -306,7 +287,7 @@ The following limitations apply across all four subcommands:
 
 **Real provider cost on latency probes.** Every `latency` probe invokes the agent's actual STT, LLM, and TTS pipeline. Charges are incurred. Use low `--trials` counts for routine checks.
 
-**Per-component latency breakdown is Phase 2.** The split across turn-detection, STT, LLM, and TTS requires agents instrumented with `voicegateway.attach(session)`. This version reports E2E and network latency only.
+**Per-component latency breakdown is Phase 2.** The split across turn-detection, STT, LLM, and TTS requires agents instrumented with `voicegateway.attach(session)`. Phase 1 reports E2E latency only; the network leg and per-component breakdown are not yet available.
 
 **Single co-located vantage.** `sfu` measures from the host running `voicegw`. This is the correct signal for a self-hosted setup where the gateway and SFU share the same network, but it does not represent latency for end users in other regions.
 

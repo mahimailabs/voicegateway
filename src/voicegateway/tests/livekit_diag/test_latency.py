@@ -16,7 +16,6 @@ class _FakeClient:
     async def connect(self): pass
     async def publish_utterance(self, src): return 0.0
     async def wait_reply(self, t0, timeout=15.0): return next(_FakeClient.seq)
-    async def ping(self, timeout=2.0): return 0.03
     def quality(self): return "Excellent"
     async def disconnect(self): pass
 
@@ -25,7 +24,6 @@ async def test_probe_discards_warmup_and_aggregates():
     runner = ProbeRunner(_FakeAdmin(), _FakeClient, utterance=_StubUtterance())
     result = await runner.probe("realty", trials=3, warmup=True, room_name=None, metadata="")
     assert len(result.e2e_samples) == 3          # warmup discarded
-    assert result.network_s == 0.03
     stats = summarize(result)
     assert round(stats["avg"], 2) == 1.42
 

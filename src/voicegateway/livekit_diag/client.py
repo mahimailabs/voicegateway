@@ -15,9 +15,10 @@ SDK surface verified against livekit>=1.0 (installed version):
 - capture_frame(frame) is async on AudioSource.
 - AudioStream(track) yields AudioFrameEvent; .frame is AudioFrame; .data is memoryview.
 - data_received callback receives DataPacket(data=bytes, kind, participant, topic).
-- connection_quality_changed callback receives (quality, participant).
+- connection_quality_changed callback receives (participant, quality).
 - track_subscribed callback receives (track, publication, participant).
 - TrackKind.KIND_AUDIO confirmed present.
+- ConnectionQuality enum members: QUALITY_EXCELLENT, QUALITY_GOOD, QUALITY_POOR, QUALITY_LOST.
 """
 
 from __future__ import annotations
@@ -71,6 +72,16 @@ class UtteranceSource:
             yield self._data[i : i + chunk], self._rate
 
 
+def _quality_label(q: object) -> str:
+    from livekit import rtc as _rtc
+    return {
+        _rtc.ConnectionQuality.QUALITY_EXCELLENT: "Excellent",
+        _rtc.ConnectionQuality.QUALITY_GOOD: "Good",
+        _rtc.ConnectionQuality.QUALITY_POOR: "Poor",
+        _rtc.ConnectionQuality.QUALITY_LOST: "Lost",
+    }.get(q, "Unknown")  # type: ignore[arg-type]
+
+
 class SyntheticClient:
     def __init__(self, url: str, token: str) -> None:
         self._url = url
@@ -80,6 +91,7 @@ class SyntheticClient:
         self._pong = asyncio.Event()
         self._quality = "Unknown"
         self._drain_tasks: set[asyncio.Task] = set()
+        self._data_tasks: set[asyncio.Task] = set()
 
     async def connect(self) -> None:
         self._room.on("data_received", self._on_data)
@@ -87,14 +99,24 @@ class SyntheticClient:
         self._room.on("track_subscribed", self._on_track)
         await self._room.connect(self._url, self._token)
 
-    def _on_quality(self, quality: object, participant: object) -> None:
-        # quality is a ConnectionQuality enum value; str() gives a readable label.
-        self._quality = str(quality)
+    def _on_quality(self, participant: object, quality: object) -> None:
+        # SDK emits (participant, quality); quality is a ConnectionQuality enum value.
+        self._quality = _quality_label(quality)
 
-    def _on_data(self, data_packet: object) -> None:
-        # data_packet is rtc.DataPacket; .data is bytes.
-        if getattr(data_packet, "data", b"") == b"vg-ping":
+    def _on_data(self, data: object) -> None:
+        payload = getattr(data, "data", b"")
+        if payload == b"vg-ping":
+            t = asyncio.ensure_future(self._send_pong())
+            self._data_tasks.add(t)
+            t.add_done_callback(self._data_tasks.discard)
+        elif payload == b"vg-pong":
             self._pong.set()
+
+    async def _send_pong(self) -> None:
+        try:
+            await self._room.local_participant.publish_data(b"vg-pong", reliable=True)
+        except Exception:  # noqa: BLE001 - best-effort echo
+            pass
 
     def _on_track(
         self, track: object, publication: object, participant: object

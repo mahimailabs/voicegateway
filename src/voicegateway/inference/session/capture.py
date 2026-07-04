@@ -299,7 +299,7 @@ class MetricCapture:
         record = RequestRecord(
             id=str(uuid.uuid4()),
             timestamp=time.time(),
-            modality="llm",
+            modality="eou",
             model_id="",
             provider="",
             project=self._project,

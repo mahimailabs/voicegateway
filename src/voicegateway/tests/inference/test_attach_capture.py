@@ -534,6 +534,7 @@ async def test_metric_capture_records_eou(tmp_path):
     await capture.drain()
     eou = [r for r in sink.rows if r.metadata.get("eou")]
     assert len(eou) == 1
+    assert eou[0].modality == "eou"
     assert eou[0].metadata["eou"]["end_of_utterance_delay"] == 0.12
     assert eou[0].metadata["tenant_id"] == "t"
 
@@ -558,6 +559,7 @@ async def test_metric_capture_records_eou_wrapped():
     await capture.drain()
     eou = [r for r in sink.rows if r.metadata.get("eou")]
     assert len(eou) == 1
+    assert eou[0].modality == "eou"
     assert eou[0].metadata["eou"]["end_of_utterance_delay"] == 0.12
     assert eou[0].metadata["tenant_id"] == "t"
 
