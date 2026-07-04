@@ -65,7 +65,8 @@
           "cli/reconcile",
           "cli/replay",
           "cli/mcp",
-          "cli/smoke-test"
+          "cli/smoke-test",
+          "cli/livekit"
         ]
       },
       {
