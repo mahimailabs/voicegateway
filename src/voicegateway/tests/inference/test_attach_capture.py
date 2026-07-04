@@ -581,3 +581,28 @@ async def test_attach_close_flushes_sink(tmp_path):
 
     assert sink.flushes >= 1
     assert len(sink.rows) >= 1
+
+
+async def test_attach_marks_worker_busy_then_idle(monkeypatch):
+    """With a registered worker, attach reflects a live session as busy and the
+    close path drops it back to idle (the fleet-roster status signal)."""
+    import voicegateway
+    from voicegateway.fleet import worker
+
+    monkeypatch.delenv("VOICEGW_COLLECTOR_URL", raising=False)
+    worker._worker = None
+    try:
+        voicegateway.register_worker("realty")  # no collector -> local status only
+        session = _FakeSessionWithUsage(
+            _FakeUsage([]), llm=_FakeEmitter(model="gpt-4o-mini", provider="openai")
+        )
+        voicegateway.attach(session, project="fleet", sink=_FlushRecordingSink())
+        assert worker._worker.active_sessions == 1
+        assert worker._worker.status == "busy"
+
+        session.emit("close")
+        await session._vg_close_task
+        assert worker._worker.active_sessions == 0
+        assert worker._worker.status == "idle"
+    finally:
+        worker._worker = None

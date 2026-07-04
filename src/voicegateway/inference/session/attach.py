@@ -272,6 +272,7 @@ def attach(
     """
     import asyncio
 
+    from voicegateway.fleet.worker import bump_active
     from voicegateway.inference.session.capture import MetricCapture
     from voicegateway.middleware.cost_tracker_middleware import CostTracker
 
@@ -295,6 +296,10 @@ def attach(
     )
     capture.bind(session)
 
+    # Mark this worker busy for the fleet roster (a no-op unless register_worker
+    # was called); the close path drops it back toward idle.
+    bump_active(1)
+
     # Expose for graceful shutdown + tests; flush in-flight writes on close.
     try:
         session._vg_capture = capture
@@ -305,6 +310,7 @@ def attach(
         # Reconcile cumulative session.usage against the per-call rows, drain
         # in-flight writes, then flush the sink so a buffered RemoteCollectorSink
         # sub-batch is pushed before shutdown. A graceful close loses nothing.
+        bump_active(-1)
         await capture.reconcile(session)
         await capture.drain()
         await sink.flush()
