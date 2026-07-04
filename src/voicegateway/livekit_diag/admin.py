@@ -7,6 +7,7 @@ join-token minting for the synthetic client.
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -15,6 +16,8 @@ from livekit import api
 from livekit.protocol.models import ParticipantInfo
 
 from voicegateway.livekit_diag.config import LiveKitCreds
+
+logger = logging.getLogger(__name__)
 
 _AGENT_KIND = ParticipantInfo.Kind.AGENT
 
@@ -39,30 +42,37 @@ class LiveKitAdmin:
         rooms = (await self._api.room.list_rooms(_req("ListRoomsRequest"))).rooms
         seen: dict[tuple[str, str], AgentRow] = {}
         for room in rooms:
-            parts = (
-                await self._api.room.list_participants(
-                    _req("ListParticipantsRequest", room=room.name)
-                )
-            ).participants
+            try:
+                parts = (
+                    await self._api.room.list_participants(
+                        _req("ListParticipantsRequest", room=room.name)
+                    )
+                ).participants
+                # list_dispatch takes the room NAME (str) and returns a list directly.
+                dispatches = await self._api.agent_dispatch.list_dispatch(room.name)
+            except Exception:  # noqa: BLE001
+                # A room can close (empty rooms auto-close) between list_rooms and
+                # these per-room queries; a vanished room is not an error, just skip it.
+                continue
             humans = sum(1 for p in parts if p.kind != _AGENT_KIND)
             for p in parts:
-                if p.kind == _AGENT_KIND:
-                    key = (p.name or p.identity, room.name)
+                name = p.name or p.identity
+                if p.kind == _AGENT_KIND and name:
+                    key = (name, room.name)
                     joined = getattr(p, "joined_at", 0) or 0
                     seen[key] = AgentRow(
-                        agent_name=p.name or p.identity,
+                        agent_name=name,
                         room=room.name,
                         identity=p.identity,
                         state="active",
                         humans=humans,
                         age_s=(now - joined) if joined else None,
                     )
-            dispatches = (
-                await self._api.agent_dispatch.list_dispatch(
-                    _req("ListAgentDispatchRequest", room=room.name)
-                )
-            ).agent_dispatches
             for d in dispatches:
+                # Skip empty-named dispatch records (a lingering probe room can
+                # report one); an agent without a name is not a real agent.
+                if not d.agent_name:
+                    continue
                 key = (d.agent_name, room.name)
                 seen.setdefault(
                     key,
@@ -74,7 +84,14 @@ class LiveKitAdmin:
         await self._api.room.create_room(_req("CreateRoomRequest", name=name))
 
     async def delete_room(self, name: str) -> None:
-        await self._api.room.delete_room(_req("DeleteRoomRequest", room=name))
+        # Best-effort cleanup: LiveKit auto-closes a room when its last participant
+        # leaves, so a delete can race to "room does not exist". That is success for
+        # our purposes (the room is gone), and this runs in probe finally blocks, so
+        # it must never raise and abort the caller.
+        try:
+            await self._api.room.delete_room(_req("DeleteRoomRequest", room=name))
+        except Exception:  # noqa: BLE001
+            logger.debug("delete_room(%s): ignored (room already gone?)", name, exc_info=True)
 
     async def create_dispatch(self, room: str, agent_name: str, metadata: str = "") -> None:
         await self._api.agent_dispatch.create_dispatch(
@@ -97,5 +114,7 @@ def api_client(creds: LiveKitCreds) -> Any:
     return api.LiveKitAPI(creds.url, creds.api_key, creds.api_secret)
 
 
-def _req(name: str, **kwargs):
-    return getattr(api, name)(**kwargs)
+def _req(cls_name: str, **kwargs):
+    # The param name must not collide with request fields (e.g. CreateRoomRequest
+    # has a `name` field), so it is cls_name, not name.
+    return getattr(api, cls_name)(**kwargs)

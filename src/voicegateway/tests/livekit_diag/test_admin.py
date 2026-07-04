@@ -25,9 +25,9 @@ class _Rooms:
 
 
 class _Dispatch:
-    async def list_dispatch(self, req):
-        rows = [SimpleNamespace(agent_name="concierge")] if req.room == "r2" else []
-        return SimpleNamespace(agent_dispatches=rows)
+    async def list_dispatch(self, room_name):
+        # Mirrors the real SDK: takes the room NAME (str), returns a list directly.
+        return [SimpleNamespace(agent_name="concierge")] if room_name == "r2" else []
 
 
 class _FakeApi:
