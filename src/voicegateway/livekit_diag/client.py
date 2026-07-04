@@ -22,6 +22,7 @@ SDK surface verified against livekit>=1.0 (installed version):
 
 from __future__ import annotations
 
+import array
 import asyncio
 import wave
 from collections.abc import Iterator
@@ -42,8 +43,6 @@ class ReplyDetector:
     def feed(self, pcm: bytes, t: float) -> None:
         if self.first_reply_at is not None or not pcm:
             return
-        import array
-
         samples = array.array("h")
         samples.frombytes(pcm)
         peak = max((abs(s) for s in samples), default=0) / 32768.0
@@ -80,6 +79,7 @@ class SyntheticClient:
         self._detector = ReplyDetector()
         self._pong = asyncio.Event()
         self._quality = "Unknown"
+        self._drain_tasks: set[asyncio.Task] = set()
 
     async def connect(self) -> None:
         self._room.on("data_received", self._on_data)
@@ -100,10 +100,12 @@ class SyntheticClient:
         self, track: object, publication: object, participant: object
     ) -> None:
         if getattr(track, "kind", None) == rtc.TrackKind.KIND_AUDIO:
-            asyncio.ensure_future(self._drain(track))  # type: ignore[arg-type]
+            t = asyncio.ensure_future(self._drain(track))  # type: ignore[arg-type]
+            self._drain_tasks.add(t)
+            t.add_done_callback(self._drain_tasks.discard)
 
     async def _drain(self, track: rtc.Track) -> None:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         stream = rtc.AudioStream(track)
         async for event in stream:
             # event is AudioFrameEvent; event.frame.data is memoryview.
@@ -113,7 +115,7 @@ class SyntheticClient:
         source = rtc.AudioSource(src._rate, 1)
         track = rtc.LocalAudioTrack.create_audio_track("probe", source)
         await self._room.local_participant.publish_track(track)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         for pcm, rate in src.frames():
             # AudioFrame(data, sample_rate, num_channels, samples_per_channel)
             frame = rtc.AudioFrame(pcm, rate, 1, len(pcm) // 2)
@@ -122,23 +124,25 @@ class SyntheticClient:
         return loop.time()  # t0 = end of playback
 
     async def wait_reply(self, t0: float, timeout: float = 15.0) -> float | None:
-        deadline = asyncio.get_event_loop().time() + timeout
-        while asyncio.get_event_loop().time() < deadline:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while loop.time() < deadline:
             if self._detector.first_reply_at is not None:
                 return self._detector.first_reply_at - t0
             await asyncio.sleep(0.02)
         return None
 
     async def ping(self, timeout: float = 2.0) -> float | None:
+        loop = asyncio.get_running_loop()
         self._pong.clear()
-        start = asyncio.get_event_loop().time()
+        start = loop.time()
         # publish_data(payload, *, reliable=True, destination_identities=[], topic='')
         await self._room.local_participant.publish_data(b"vg-ping", reliable=True)
         try:
             await asyncio.wait_for(self._pong.wait(), timeout)
         except asyncio.TimeoutError:
             return None
-        return asyncio.get_event_loop().time() - start
+        return loop.time() - start
 
     def quality(self) -> str:
         return self._quality
