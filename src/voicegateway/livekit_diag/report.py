@@ -9,12 +9,19 @@ from dataclasses import asdict
 from voicegateway.livekit_diag.admin import AgentRow
 
 _ROSTER_NOTE = (
-    "Idle/registered workers are not reported by LiveKit's server API; "
-    "run the Phase 2 heartbeat to see the full roster."
+    "Idle/registered workers are not reported by LiveKit's server API. Set "
+    "VOICEGW_COLLECTOR_URL + VOICEGW_API_KEY (and run register_worker in your "
+    "agents) to also list the heartbeat roster."
 )
 
 
-def render_agents(rows: list[AgentRow]) -> str:
+def render_agents(rows: list[AgentRow], roster: list[dict] | None = None) -> str:
+    """Render the in-room agents, plus the heartbeat roster when it is available.
+
+    ``roster`` is None when the collector is not configured (we then print the
+    note that says how to enable it); an empty list means it is configured but no
+    workers have reported yet.
+    """
     lines = [f"{'AGENT':16} {'ROOM':22} {'STATE':11} {'IN-CALL':8} {'AGE':6}"]
     for r in rows:
         age = f"{int(r.age_s)}s" if r.age_s is not None else "-"
@@ -24,7 +31,26 @@ def render_agents(rows: list[AgentRow]) -> str:
         )
     room_count = len({r.room for r in rows})
     lines.append("")
-    lines.append(f"{len(rows)} agents active in {room_count} rooms. {_ROSTER_NOTE}")
+    lines.append(f"{len(rows)} agents active in {room_count} rooms.")
+    if roster is None:
+        lines.append(_ROSTER_NOTE)
+        return "\n".join(lines)
+    lines.append("")
+    lines.append("Registered workers (heartbeat roster):")
+    lines.append(f"{'AGENT':16} {'STATUS':9} {'REGION':10} {'VERSION':10}")
+    for w in roster:
+        lines.append(
+            f"{str(w.get('agent_name') or ''):16.16} "
+            f"{str(w.get('status') or ''):9} "
+            f"{str(w.get('region') or '-'):10.10} "
+            f"{str(w.get('version') or ''):10.10}"
+        )
+    idle = sum(1 for w in roster if w.get("status") == "idle")
+    busy = sum(1 for w in roster if w.get("status") == "busy")
+    offline = sum(1 for w in roster if w.get("status") == "offline")
+    lines.append(
+        f"{len(roster)} workers registered ({idle} idle, {busy} busy, {offline} offline)."
+    )
     return "\n".join(lines)
 
 
