@@ -17,7 +17,9 @@ classifiers = [
 ]
 
 dependencies = [
+    "livekit>=1.0",
     "livekit-agents>=1.5,<1.7",
+    "livekit-api>=1.0",
     "pyyaml>=6.0",
     "aiosqlite>=0.20.0",
     "typer>=0.12.0",
@@ -28,6 +30,7 @@ dependencies = [
     "voice-prices>=0.0.8,<0.1",
     "bcrypt>=4.0",
     "pillow>=10.0",
+    "psutil>=5.9",
     # ORM + migration stack. Required at import time (voicegateway.models pulls
     # in SQLAlchemy/SQLModel) and at runtime for the embedded storage that
     # voicegateway.attach() writes through, so these are core, not optional:
