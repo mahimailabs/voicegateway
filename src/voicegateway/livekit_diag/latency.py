@@ -14,7 +14,6 @@ from statistics import mean
 class LatencyResult:
     agent: str
     e2e_samples: list[float] = field(default_factory=list)
-    network_s: float | None = None
     components: dict | None = None
     error: str | None = None
 
@@ -55,10 +54,11 @@ class ProbeRunner:
                 try:
                     t0 = await client.publish_utterance(self._utterance)
                     e2e = await client.wait_reply(t0)
-                    if result.network_s is None:
-                        result.network_s = await client.ping()
                 finally:
                     await client.disconnect()
+            except Exception as exc:  # noqa: BLE001 - isolate per-agent failures; caller loops on
+                result.error = str(exc)
+                break
             finally:
                 await self._admin.delete_room(room)
             if i == 0 and warmup:

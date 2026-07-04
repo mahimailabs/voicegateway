@@ -16,7 +16,7 @@ from voicegateway.cli._app import app
 from voicegateway.cli.base_cli import BaseCli
 from voicegateway.livekit_diag.admin import LiveKitAdmin
 from voicegateway.livekit_diag.client import SyntheticClient, UtteranceSource
-from voicegateway.livekit_diag.config import CredsError, resolve_creds
+from voicegateway.livekit_diag.config import CredsError, LiveKitCreds, resolve_creds
 from voicegateway.livekit_diag.latency import ComponentReader, ProbeRunner, summarize
 from voicegateway.livekit_diag.report import (
     agents_json,
@@ -34,7 +34,7 @@ _cli = BaseCli()
 livekit_app = typer.Typer(help="Diagnose a LiveKit deployment (agents, latency, SFU).")
 
 
-def _creds(url: str | None, api_key: str | None, api_secret: str | None, config: str | None):
+def _creds(url: str | None, api_key: str | None, api_secret: str | None, config: str | None) -> LiveKitCreds:
     try:
         return resolve_creds(url, api_key, api_secret, config)
     except CredsError as exc:
@@ -186,9 +186,13 @@ def check_cmd(
         _cli.error(f"check failed: {exc}")
         raise typer.Exit(1) from None
     if as_json:
-        _cli.console.print_json(_json.dumps(check_json(agents, lat, base, [], None, None, summarize)))
+        js = check_json(agents, lat, base, [], None, None, summarize, target_ms)
+        _cli.console.print_json(_json.dumps(js))
     else:
+        js = check_json(agents, lat, base, [], None, None, summarize, target_ms)
         _cli.console.print(render_check(agents, lat, base, [], None, None, summarize, target_ms))
+    if js["verdict"] != "PASS":
+        raise typer.Exit(1)
 
 
 app.add_typer(livekit_app, name="livekit")

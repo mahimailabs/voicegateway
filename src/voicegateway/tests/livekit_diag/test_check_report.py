@@ -6,9 +6,9 @@ from voicegateway.livekit_diag.report import check_json
 
 def test_check_json_shape():
     agents = [AgentRow("realty", "r1", "x", "active", 1, 10.0)]
-    lat = [LatencyResult("realty", [1.4, 1.42, 1.41], 0.03, {"stt": 0.2})]
+    lat = [LatencyResult("realty", [1.4, 1.42, 1.41], {"stt": 0.2})]
     base = RampStep(2, 4.0, 0.0, "Excellent")
-    js = check_json(agents, lat, base, [], None, None, summarize)
+    js = check_json(agents, lat, base, [], None, None, summarize, 1500.0)
     assert js["agents"][0]["agent_name"] == "realty"
     assert js["latency"][0]["agent"] == "realty"
     assert js["latency"][0]["stats"]["trials"] == 3
