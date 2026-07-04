@@ -8,16 +8,26 @@ from __future__ import annotations
 
 import asyncio
 import json as _json
+import pathlib
 
 import typer
 
 from voicegateway.cli._app import app
 from voicegateway.cli.base_cli import BaseCli
 from voicegateway.livekit_diag.admin import LiveKitAdmin
+from voicegateway.livekit_diag.client import SyntheticClient, UtteranceSource
 from voicegateway.livekit_diag.config import CredsError, resolve_creds
-import pathlib
-
-from voicegateway.livekit_diag.report import agents_json, render_agents, render_latency
+from voicegateway.livekit_diag.latency import ComponentReader, ProbeRunner, summarize
+from voicegateway.livekit_diag.report import (
+    agents_json,
+    check_json,
+    render_agents,
+    render_check,
+    render_latency,
+    render_sfu,
+)
+from voicegateway.livekit_diag.resources import ResourceMonitor
+from voicegateway.livekit_diag.sfu import SfuProbe, find_knee
 
 _cli = BaseCli()
 
@@ -30,6 +40,11 @@ def _creds(url: str | None, api_key: str | None, api_secret: str | None, config:
     except CredsError as exc:
         _cli.error(str(exc))
         raise typer.Exit(1) from None
+
+
+def _utterance_path() -> str:
+    import voicegateway.livekit_diag as pkg
+    return str(pathlib.Path(pkg.__file__).parent / "assets" / "probe.wav")
 
 
 @livekit_app.command("agents")
@@ -59,15 +74,6 @@ def agents_cmd(
         _cli.console.print_json(_json.dumps(agents_json(rows)))
     else:
         _cli.console.print(render_agents(rows))
-
-
-from voicegateway.livekit_diag.client import SyntheticClient, UtteranceSource
-from voicegateway.livekit_diag.latency import ComponentReader, ProbeRunner, summarize
-
-
-def _utterance_path() -> str:
-    import voicegateway.livekit_diag as pkg
-    return str(pathlib.Path(pkg.__file__).parent / "assets" / "probe.wav")
 
 
 @livekit_app.command("latency")
@@ -109,11 +115,6 @@ def latency_cmd(
     _cli.console.print(render_latency(results, target_ms, summarize))
 
 
-from voicegateway.livekit_diag.resources import ResourceMonitor
-from voicegateway.livekit_diag.sfu import SfuProbe, find_knee
-from voicegateway.livekit_diag.report import render_sfu
-
-
 @livekit_app.command("sfu")
 def sfu_cmd(
     load: bool = typer.Option(False, "--load"),
@@ -151,6 +152,43 @@ def sfu_cmd(
         _cli.error(f"sfu probe failed: {exc}")
         raise typer.Exit(1) from None
     _cli.console.print(render_sfu("co-located", base, steps, resource, knee))
+
+
+@livekit_app.command("check")
+def check_cmd(
+    as_json: bool = typer.Option(False, "--json"),
+    target_ms: float = typer.Option(1500, "--target-ms"),
+    url: str = typer.Option(None, "--url"),
+    api_key: str = typer.Option(None, "--api-key"),
+    api_secret: str = typer.Option(None, "--api-secret"),
+    config: str = typer.Option(None, "--config", "-c"),
+) -> None:
+    """Run agents + latency + sfu baseline and print one verdict report."""
+    creds = _creds(url, api_key, api_secret, config)
+
+    async def _run():
+        admin = LiveKitAdmin(creds)
+        admin.url = creds.url
+        try:
+            agents = await admin.list_agents()
+            runner = ProbeRunner(admin, lambda u, t: SyntheticClient(creds.url, t),
+                                 UtteranceSource(_utterance_path()), ComponentReader())
+            lat = [await runner.probe(a.agent_name, 2, True, None, "") for a in agents]
+            probe = SfuProbe(admin, lambda u, t: SyntheticClient(creds.url, t), ResourceMonitor())
+            base = await probe.baseline("vg-check")
+            return agents, lat, base
+        finally:
+            await admin.aclose()
+
+    try:
+        agents, lat, base = asyncio.run(_run())
+    except Exception as exc:  # noqa: BLE001
+        _cli.error(f"check failed: {exc}")
+        raise typer.Exit(1) from None
+    if as_json:
+        _cli.console.print_json(_json.dumps(check_json(agents, lat, base, [], None, None, summarize)))
+    else:
+        _cli.console.print(render_check(agents, lat, base, [], None, None, summarize, target_ms))
 
 
 app.add_typer(livekit_app, name="livekit")

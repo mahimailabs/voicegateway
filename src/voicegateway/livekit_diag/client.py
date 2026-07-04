@@ -140,7 +140,7 @@ class SyntheticClient:
         await self._room.local_participant.publish_data(b"vg-ping", reliable=True)
         try:
             await asyncio.wait_for(self._pong.wait(), timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return None
         return loop.time() - start
 

@@ -58,6 +58,44 @@ def render_latency(results: list, target_ms: float, summarize) -> str:
     return "\n".join(lines)
 
 
+def check_json(agents, latency_results, base, steps, resource, knee, summarize) -> dict:
+    verdict = "PASS"
+    for r in latency_results:
+        s = summarize(r)
+        if not s["trials"]:
+            verdict = "WARN"
+        elif s["avg"] > 1.5:
+            verdict = "WARN"
+    if base and (base.loss_pct > 1.0 or base.quality in {"Poor", "Lost"}):
+        verdict = "FAIL"
+    return {
+        "agents": agents_json(agents),
+        "latency": [{"agent": r.agent, "stats": summarize(r), "network_s": r.network_s,
+                     "components": r.components} for r in latency_results],
+        "sfu": {
+            "baseline": {"clients": base.clients, "rtt_ms": base.rtt_ms,
+                         "loss_pct": base.loss_pct, "quality": base.quality} if base else None,
+            "ramp": [{"clients": s.clients, "rtt_ms": s.rtt_ms, "loss_pct": s.loss_pct} for s in (steps or [])],
+            "knee": knee,
+        },
+        "verdict": verdict,
+    }
+
+
+def render_check(agents, latency_results, base, steps, resource, knee, summarize, target_ms) -> str:
+    js = check_json(agents, latency_results, base, steps, resource, knee, summarize)
+    parts = [
+        f"VERDICT: {js['verdict']}",
+        "",
+        render_agents(agents),
+        "",
+        render_latency(latency_results, target_ms, summarize),
+        "",
+        render_sfu("co-located", base, steps, resource, knee),
+    ]
+    return "\n".join(parts)
+
+
 def render_sfu(vantage: str, baseline, ramp_steps, resource, knee) -> str:
     lines = [
         f"SFU  vantage: {vantage}   baseline: rtt {baseline.rtt_ms}ms . "
