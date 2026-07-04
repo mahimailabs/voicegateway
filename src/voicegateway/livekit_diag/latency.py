@@ -29,7 +29,8 @@ class ComponentReader:
     async def read(self, room: str) -> dict | None:
         if self._store is None:
             return None
-        return await self._store.components_for_room(room)
+        result: dict | None = await self._store.components_for_room(room)
+        return result
 
 
 class ProbeRunner:

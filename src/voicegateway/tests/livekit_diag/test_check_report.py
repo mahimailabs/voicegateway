@@ -1,7 +1,7 @@
 from voicegateway.livekit_diag.admin import AgentRow
 from voicegateway.livekit_diag.latency import LatencyResult, summarize
-from voicegateway.livekit_diag.sfu import RampStep
 from voicegateway.livekit_diag.report import check_json
+from voicegateway.livekit_diag.sfu import RampStep
 
 
 def test_check_json_shape():
