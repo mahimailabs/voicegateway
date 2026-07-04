@@ -38,19 +38,21 @@ class SfuProbe:
 
     async def _measure(self, room: str, n: int, seconds: float) -> RampStep:
         clients = []
-        for i in range(n):
-            c = self._make_client(getattr(self._admin, "url", ""), self._admin.join_token(room, f"c{i}"))
-            await c.connect()
-            clients.append(c)
-        await asyncio.sleep(seconds)
-        pings = [p for c in clients for p in [await c.ping()] if p is not None]
-        rtt_ms = (mean(pings) * 1000) if pings else 0.0
-        quality = clients[0].quality() if clients else "Unknown"
-        for c in clients:
-            await c.disconnect()
-        # Loss is read from stats where available; default 0.0 when the SDK does
-        # not expose it. quality carries the coarse signal regardless.
-        return RampStep(n, round(rtt_ms, 1), 0.0, quality)
+        try:
+            for i in range(n):
+                c = self._make_client(getattr(self._admin, "url", ""), self._admin.join_token(room, f"c{i}"))
+                await c.connect()
+                clients.append(c)
+            await asyncio.sleep(seconds)
+            pings = [p for c in clients for p in [await c.ping()] if p is not None]
+            rtt_ms = (mean(pings) * 1000) if pings else 0.0
+            quality = clients[0].quality() if clients else "Unknown"
+            # Loss is read from stats where available; default 0.0 when the SDK does
+            # not expose it. quality carries the coarse signal regardless.
+            return RampStep(n, round(rtt_ms, 1), 0.0, quality)
+        finally:
+            for c in clients:
+                await c.disconnect()
 
     async def baseline(self, room: str, seconds: float = 10.0) -> RampStep:
         return await self._measure(room, 2, seconds)
@@ -63,4 +65,4 @@ class SfuProbe:
                 results.append(await self._measure(f"{room}-{n}", n, duration))
         finally:
             await self._monitor.stop()
-        return results, self._monitor.report_for(max(steps))
+        return results, self._monitor.report_for(max(steps) if steps else 0)
