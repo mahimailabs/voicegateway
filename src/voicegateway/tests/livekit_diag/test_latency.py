@@ -1,9 +1,11 @@
 from voicegateway.livekit_diag.latency import (
     ComponentReader,
+    LatencyResult,
     ProbeRunner,
     aggregate_components,
     summarize,
 )
+from voicegateway.livekit_diag.report import render_latency
 
 
 class _FakeAdmin:
@@ -141,19 +143,48 @@ async def test_component_reader_no_store_returns_none():
     assert await ComponentReader().read("vg-probe-x") is None
 
 
-async def test_component_reader_polls_until_rows_appear():
-    store = _FakeStore([[], [], _split_rows()])  # empty twice, then rows
+def _partial_rows(room="vg-probe-x"):
+    # STT + LLM present but no TTS yet: a mid cross-process flush.
+    return [
+        {
+            "modality": "eou",
+            "ttfb_ms": None,
+            "metadata": {
+                "room": room,
+                "eou": {"end_of_utterance_delay": 0.30, "transcription_delay": 0.08},
+            },
+        },
+        {"modality": "stt", "ttfb_ms": 120.0, "metadata": {"room": room}},
+        {"modality": "llm", "ttfb_ms": 450.0, "metadata": {"room": room}},
+    ]
+
+
+async def test_component_reader_polls_until_split_is_complete():
+    # Partial (no TTS) twice, then the full split: keep polling until whole.
+    store = _FakeStore([_partial_rows(), _partial_rows(), _split_rows()])
     reader = ComponentReader(store, poll_attempts=5, poll_delay=0.0)
     out = await reader.read("vg-probe-x")
-    assert out is not None and out["llm_ttft"] == 0.45
-    assert store.calls == 3  # stopped as soon as rows landed
+    assert out is not None and out["tts"] == 0.09
+    assert store.calls == 3  # did not return the TTS-less partial early
 
 
-async def test_component_reader_gives_up_after_attempts():
+async def test_component_reader_gives_up_immediately_on_first_empty_read():
+    # No rows for the room (uninstrumented / remote / collector mode): return
+    # None on the first read, do NOT dead-wait the whole poll budget.
     store = _FakeStore([])  # always empty
-    reader = ComponentReader(store, poll_attempts=3, poll_delay=0.0)
+    reader = ComponentReader(store, poll_attempts=6, poll_delay=0.0)
     assert await reader.read("vg-probe-x") is None
-    assert store.calls == 3
+    assert store.calls == 1
+
+
+async def test_component_reader_returns_partial_after_exhausting_polls():
+    # Rows exist but the split never completes (agent emits no TTS ttfb): return
+    # what we have rather than None, and let the renderer show only those.
+    store = _FakeStore([_partial_rows(), _partial_rows()])
+    reader = ComponentReader(store, poll_attempts=2, poll_delay=0.0)
+    out = await reader.read("vg-probe-x")
+    assert out == {"eou": 0.30, "stt": 0.12, "llm_ttft": 0.45}  # no tts key
+    assert store.calls == 2
 
 
 async def test_probe_reads_components_after_loop():
@@ -169,3 +200,16 @@ async def test_probe_reads_components_after_loop():
         "llm_ttft": 0.45,
         "tts": 0.09,
     }
+
+
+def test_render_latency_shows_only_present_components():
+    # A partial split (no TTS) must not fabricate "TTS 0.00" (reads as instant).
+    r = LatencyResult(
+        agent="a",
+        e2e_samples=[0.8],
+        components={"eou": 0.30, "stt": 0.12, "llm_ttft": 0.45},
+    )
+    out = render_latency([r], target_ms=1500, summarize=summarize)
+    assert "LLM-ttft 0.45" in out
+    assert "TTS" not in out  # missing component omitted, not shown as 0.00
+    assert "0.00" not in out

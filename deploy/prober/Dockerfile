@@ -23,8 +23,11 @@ USER prober
 #   VOICEGW_REGION   the vantage label (Fly injects FLY_REGION; map it in fly.toml)
 # LiveKit creds come from the standard env vars, same as every other command:
 #   LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET
+# The ramp and duration are dictated by the coordinator's job (every vantage runs
+# the same ones), so the prober takes no --ramp/--duration: set them once on the
+# coordinator, not here.
 ENV COORDINATOR_URL="" \
     VOICEGW_REGION=""
 
 # sh -c so ${...} expands at runtime from the environment.
-ENTRYPOINT ["sh", "-c", "voicegw livekit sfu --report-to \"$COORDINATOR_URL\" --vantage \"$VOICEGW_REGION\" --ramp \"${RAMP:-10,25,50}\" --duration \"${DURATION:-20}\""]
+ENTRYPOINT ["sh", "-c", "voicegw livekit sfu --report-to \"$COORDINATOR_URL\" --vantage \"$VOICEGW_REGION\""]

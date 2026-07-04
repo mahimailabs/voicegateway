@@ -27,8 +27,8 @@ primary_region = "iad"
   # Fly injects FLY_REGION per machine; the entrypoint reads VOICEGW_REGION.
   # Set this per-machine via `fly machine update --env VOICEGW_REGION=$FLY_REGION`,
   # or bake a small wrapper. Left blank here so it is explicit, not silently "".
-  RAMP = "10,25,50"
-  DURATION = "20"
+  # Ramp and duration are set on the coordinator, not the prober (every vantage
+  # runs the coordinator's job), so there is nothing to configure here for them.
 
 [[vm]]
   size = "shared-cpu-1x"

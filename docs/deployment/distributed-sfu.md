@@ -49,9 +49,15 @@ fly deploy -a vg-sfu-prober
 fly scale count 3 --region iad,sjc,lhr -a vg-sfu-prober
 ```
 
-Each machine reads its region from Fly's `FLY_REGION` and reports it as its vantage label, so a machine in `sjc` shows up as the `sjc` vantage with no per-region config. `RAMP` and `DURATION` are set in `fly.toml` and must match what you pass the coordinator.
+Each machine reads its region from Fly's `FLY_REGION` and reports it as its vantage label, so a machine in `sjc` shows up as the `sjc` vantage with no per-region config. The ramp and duration are dictated by the coordinator (every vantage runs the same job), so there is nothing to set for them on the prober.
 
 Any host that can run a container works the same way: set `COORDINATOR_URL`, the LiveKit creds, and `VOICEGW_REGION`, then run the image. Fly is just a convenient way to place probers in specific regions.
+
+## Limitations
+
+- **The coordinator endpoint is unauthenticated.** `/register`, `/report`, and `/result` have no auth, so anyone who can reach the port can inject fake reports or read the result. Run the coordinator on a private network the probers can reach (a VPC, Fly private networking, an SSH tunnel), not a public interface, and only for the duration of the run.
+- **Per-tier concurrency drifts after the first tier.** The barrier synchronizes only the shared start; each vantage then advances to its next ramp tier as soon as its own measurement finishes. Vantages stay aligned at the first tier, but faster ones run ahead on later tiers, so the combined per-tier client sums are exact at tier one and an upper bound thereafter. Read the combined knee as approximate, and lean on the baseline and first-tier numbers for the tightest signal.
+- **If a prober dies, the run degrades rather than hangs.** The coordinator stops after its timeout (default 10 minutes) and aggregates whatever reported; a prober that never clears the barrier gives up after its own timeout. A missing vantage shows up under `dropped` in the report.
 
 ## Cost and safety
 

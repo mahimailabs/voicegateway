@@ -307,6 +307,12 @@ def _run_sfu_coordinator(
     except Exception as exc:  # noqa: BLE001
         _cli.error(f"coordinator failed: {exc}")
         raise typer.Exit(1) from None
+    reported = len(result.get("vantages", []))
+    if reported < expect:
+        _cli.warn(
+            f"only {reported}/{expect} prober(s) reported before the timeout; "
+            "aggregating what arrived."
+        )
     _cli.console.print(render_distributed_sfu(result))
 
 

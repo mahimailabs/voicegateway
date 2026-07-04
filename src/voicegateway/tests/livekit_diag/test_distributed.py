@@ -40,7 +40,8 @@ def test_aggregate_sums_clients_and_takes_worst_rtt():
     assert [t["clients"] for t in out["combined"]] == [4, 10]  # 2+2, 5+5
     assert out["combined"][0]["vantages"] == 2
     assert out["combined"][1]["rtt_ms"] == 40.0  # worst of 20/40
-    assert out["knee"] == 10  # both tiers within budget
+    # No tier breaks -> no knee (sustained the whole ramp), matching find_knee.
+    assert out["knee"] is None
 
 
 def test_aggregate_knee_stops_at_first_broken_tier():
@@ -49,7 +50,7 @@ def test_aggregate_knee_stops_at_first_broken_tier():
         VantageReport("sjc", _steps([12.0, 15.0])),
     ]
     out = aggregate_vantages(reports, target_rtt_ms=50.0, max_loss=1.0)
-    assert out["knee"] == 4  # last healthy total (tier 1)
+    assert out["knee"] == 4  # last healthy total (tier 1) before the break
 
 
 def test_aggregate_worst_quality_wins():
@@ -221,3 +222,30 @@ async def test_run_prober_waits_reports_and_disables_cleanup():
     assert probe.ramp_calls[0]["cleanup"] is False
     # slept once for the not-ready poll; start delay was <= 0 so not again.
     assert slept == [0.5]
+
+
+class _NeverReadyHttp:
+    """A coordinator whose barrier never arms (a peer prover never registers)."""
+
+    async def post(self, path, json):
+        return {"prover_id": 0, "expected": 2}
+
+    async def get(self, path):
+        return {"ready": False, "start_at": None}
+
+
+async def test_run_prober_barrier_times_out_instead_of_hanging():
+    async def _sleep(_d):
+        pass
+
+    with pytest.raises(RuntimeError, match="barrier timed out"):
+        await run_prober(
+            "http://coord",
+            _FakeProbe(),
+            vantage="iad",
+            http=_NeverReadyHttp(),
+            sleep=_sleep,
+            clock=lambda: 0.0,
+            poll_interval=1.0,
+            barrier_timeout=3.0,  # -> at most 3 polls, then raise
+        )
