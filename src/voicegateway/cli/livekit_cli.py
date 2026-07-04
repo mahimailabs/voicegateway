@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json as _json
+import os
 import pathlib
 
 import typer
@@ -27,6 +28,7 @@ from voicegateway.livekit_diag.report import (
     render_sfu,
 )
 from voicegateway.livekit_diag.resources import ResourceMonitor
+from voicegateway.livekit_diag.roster import fetch_roster
 from voicegateway.livekit_diag.sfu import SfuProbe, find_knee
 
 _cli = BaseCli()
@@ -55,25 +57,38 @@ def agents_cmd(
     config: str = typer.Option(None, "--config", "-c"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
-    """List agents currently in rooms on the LiveKit server."""
+    """List agents currently in rooms on the LiveKit server.
+
+    When ``VOICEGW_COLLECTOR_URL`` (and ``VOICEGW_API_KEY``) are set, also fetch
+    the heartbeat roster so idle/registered workers show alongside the in-room
+    agents. Without the collector, only the in-room view (the LiveKit server API)
+    is shown, plus a note on how to enable the roster.
+    """
     creds = _creds(url, api_key, api_secret, config)
+    collector = os.environ.get("VOICEGW_COLLECTOR_URL")
 
     async def _run():
         admin = LiveKitAdmin(creds)
         try:
-            return await admin.list_agents()
+            rows = await admin.list_agents()
         finally:
             await admin.aclose()
+        roster = None
+        if collector:
+            roster = await fetch_roster(collector, os.environ.get("VOICEGW_API_KEY"))
+        return rows, roster
 
     try:
-        rows = asyncio.run(_run())
+        rows, roster = asyncio.run(_run())
     except Exception as exc:  # noqa: BLE001 - diagnostics never crash raw
         _cli.error(f"could not reach LiveKit server: {exc}")
         raise typer.Exit(1) from None
     if as_json:
-        _cli.console.print_json(_json.dumps(agents_json(rows)))
+        _cli.console.print_json(
+            _json.dumps({"in_room": agents_json(rows), "roster": roster or []})
+        )
     else:
-        _cli.console.print(render_agents(rows))
+        _cli.console.print(render_agents(rows, roster))
 
 
 @livekit_app.command("latency")
