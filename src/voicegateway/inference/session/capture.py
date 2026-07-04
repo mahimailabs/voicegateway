@@ -239,6 +239,7 @@ class MetricCapture:
         on = getattr(session, "on", None)
         if callable(on):
             on("error", self._on_error)
+            on("metrics_collected", self._on_session_metric)
 
     def _make_metric_handler(self, modality: str, provider: str, model_id: str) -> Any:
         def handler(metric: object, *_args: Any, **_kwargs: Any) -> None:
@@ -287,6 +288,30 @@ class MetricCapture:
             session_id=self._session_id,
             agent_id=self._agent_id,
         )
+        self._stamp_tenant(record)
+        self._schedule(self._sink.log_request(record))
+
+    def _on_session_metric(self, metric: object, *_a: Any, **_k: Any) -> None:
+        eou = getattr(metric, "end_of_utterance_delay", None)
+        if eou is None:
+            return  # not an EOU metric; per-component metrics are handled elsewhere
+        record = RequestRecord(
+            id=str(uuid.uuid4()),
+            timestamp=time.time(),
+            modality="llm",
+            model_id="",
+            provider="",
+            project=self._project,
+            status="success",
+            session_id=self._session_id,
+            agent_id=self._agent_id,
+        )
+        record.metadata = {
+            "eou": {
+                "end_of_utterance_delay": float(eou),
+                "transcription_delay": float(getattr(metric, "transcription_delay", 0.0) or 0.0),
+            }
+        }
         self._stamp_tenant(record)
         self._schedule(self._sink.log_request(record))
 
