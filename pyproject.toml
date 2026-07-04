@@ -205,7 +205,10 @@ version-file = "src/voicegateway/_version.py"
 # tolerates the path being absent (every editable install, every test
 # run), so nothing breaks when the staging step has not run.
 [tool.hatch.build]
-artifacts = ["src/voicegateway/_dashboard_dist/**/*"]
+artifacts = [
+    "src/voicegateway/_dashboard_dist/**/*",
+    "src/voicegateway/livekit_diag/assets/*.wav",
+]
 
 [tool.hatch.build.targets.wheel]
 # Explicit packages list because we are on a src/ layout (PyPA convention).
