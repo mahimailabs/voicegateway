@@ -89,7 +89,8 @@
           "deployment/fly",
           "deployment/railway",
           "deployment/vps",
-          "deployment/auto-update"
+          "deployment/auto-update",
+          "deployment/distributed-sfu"
         ]
       },
       {

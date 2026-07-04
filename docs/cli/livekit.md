@@ -50,9 +50,19 @@ Queries the LiveKit server API for all active rooms and the participants current
 | **State** | `active` or `dispatched`. |
 | **Joined** | Timestamp the participant joined. |
 
-### Limitation: idle workers are not shown
+### Idle workers: the heartbeat roster
 
-The LiveKit server API exposes in-room participants only. Agents that are registered and waiting for dispatch (the idle worker pool) are not returned by any current server API. The command footer notes this gap explicitly. Full worker-pool visibility requires a future heartbeat feature (Phase 2) and is not available today.
+The LiveKit server API exposes in-room participants only. Agents that are registered and waiting for dispatch (the idle worker pool) are not returned by any server API. To close that gap, instrument your agents with `voicegateway.register_worker(...)`: each worker then heartbeats its presence (idle / busy / offline) to the collector.
+
+When `VOICEGW_COLLECTOR_URL` and `VOICEGW_API_KEY` are set, `agents` also fetches that roster and prints it below the in-room table. Without the collector, only the in-room view is shown, plus a note on how to enable the roster. The roster fetch is best-effort: if the collector is unreachable, the in-room table still renders.
+
+```
+Registered workers (heartbeat roster):
+AGENT            STATUS    REGION     VERSION
+realty           busy      iad        0.13.0
+concierge        idle      -          0.13.0
+3 workers registered (1 idle, 1 busy, 1 offline).
+```
 
 ### Example output
 
@@ -61,7 +71,8 @@ AGENT            ROOM                   STATE       IN-CALL  AGE
 agent-7f4a       demo-room              active      1        42s
 agent-2c9b       qa-room                dispatched  0        8s
 
-2 agents active in 2 rooms. Idle/registered workers are not reported by LiveKit's server API; run the Phase 2 heartbeat to see the full roster.
+2 agents active in 2 rooms.
+Idle/registered workers are not reported by LiveKit's server API. Set VOICEGW_COLLECTOR_URL + VOICEGW_API_KEY (and run register_worker in your agents) to also list the heartbeat roster.
 ```
 
 ### Options
@@ -71,7 +82,7 @@ agent-2c9b       qa-room                dispatched  0        8s
 | `--url` | `string` | (see Credentials) | LiveKit server WebSocket URL. |
 | `--api-key` | `string` | (see Credentials) | LiveKit API key. |
 | `--api-secret` | `string` | (see Credentials) | LiveKit API secret. |
-| `--json` | flag | off | Emit JSON instead of plain text. |
+| `--json` | flag | off | Emit JSON instead of plain text. With the collector set, the JSON is `{"in_room": [...], "roster": [...]}`. |
 
 ---
 
@@ -85,7 +96,7 @@ voicegw livekit latency [OPTIONS]
 
 ### What it measures
 
-Phase 1 reports **end-to-end latency only**: the time from the end of the caller's speech to the first reply audio frame received from the agent. This is the number users perceive.
+Always reports **end-to-end latency**: the time from the end of the caller's speech to the first reply audio frame received from the agent. This is the number users perceive.
 
 For each probe turn the command:
 
@@ -97,9 +108,11 @@ For each probe turn the command:
 |---|---|
 | **E2E latency** | Caller speech-end to first reply audio (seconds). This is the number users perceive. |
 
-### Phase 2 (not yet available)
+### Per-component breakdown (turn-detect / STT / LLM / TTS)
 
-The latency split across turn-detection, STT, LLM, and TTS is a **Phase 2 capability**. The network leg and the per-component breakdown require agents instrumented with `voicegateway.attach(session)` to emit internal timing spans. That integration is not available in Phase 1.
+When the probed agent is instrumented with `voicegateway.attach(session)`, the command also shows the latency split across turn detection, STT, LLM (time-to-first-token), and TTS. The correlation key is the probe room name: `attach` stamps it on every captured row, and the probe reads those rows back by room after the turns finish.
+
+This read-back is **co-located** in this version: the agent and the prober must share the same local VoiceGateway store (`~/.config/voicegateway/voicegw.db`, or `VOICEGW_DB_PATH`). In collector mode (`VOICEGW_COLLECTOR_URL` set) the rows go to the collector rather than this host, so the split is not shown from the CLI. When no split is available, the command prints a one-line note explaining what is needed.
 
 ### Cost warning
 
@@ -121,9 +134,9 @@ The latency split across turn-detection, STT, LLM, and TTS is a **Phase 2 capabi
 
 ```
 agent-7f4a     E2E avg 0.82s  p50 0.82s  p95 0.84s   GOOD (<1.5s)
-  breakdown (turn-detect/STT/LLM/TTS) lands in Phase 2 (collector correlation)
+  turn-detect 0.30 . STT 0.12 . LLM-ttft 0.45 . TTS 0.09
 agent-2c9b     E2E avg 1.14s  p50 1.14s  p95 1.18s   SLOW (<1.5s)
-  breakdown (turn-detect/STT/LLM/TTS) lands in Phase 2 (collector correlation)
+  breakdown (turn-detect/STT/LLM/TTS) needs an instrumented agent (voicegateway.attach) writing to the same local store, co-located
 ```
 
 ---
@@ -151,19 +164,48 @@ Load-ramp mode (`--load`):
 - Identifies the capacity knee: the concurrency level at which RTT degrades or quality drops.
 - A resource monitor watches CPU and memory on the prober host. If the host itself saturates during the ramp, the output flags this so results are not mistaken for SFU limits.
 
+### Distributed load (multi-vantage)
+
+A single host only shows what one machine can push. To load the SFU concurrently from several regions, run one **coordinator** and N **probers**:
+
+```bash
+# on the coordinator host (needs the [server] extra: pip install 'voicegateway[server]')
+voicegw livekit sfu --coordinator --expect 3 --ramp 10,25,50 --duration 20s
+
+# on each prober host / region (needs only the base install)
+voicegw livekit sfu --report-to http://<coordinator-host>:8787 --vantage iad
+voicegw livekit sfu --report-to http://<coordinator-host>:8787 --vantage sjc
+voicegw livekit sfu --report-to http://<coordinator-host>:8787 --vantage lhr
+```
+
+Each prober registers, waits at a shared barrier so every vantage starts its ramp at the same instant, ramps the **same** room, and reports its per-tier measurements back. The coordinator aggregates: at each tier the SFU sees the sum of all vantages' clients, while rtt / loss / quality report the worst any single vantage saw. It then prints the combined capacity and cleans up the shared rooms.
+
+```
+SFU  distributed: 3 vantages
+  combined: 30(3v)-> 14.0ms 0.0% Good . 75(3v)-> 22.0ms 0.1% Good . 150(3v)-> 55.0ms 1.4% Poor   combined knee ~75 clients
+  iad         : 10-> 12.0ms 0.0% . 25-> 20.0ms 0.0% . 50-> 48.0ms 1.1%
+  sjc         : 10-> 14.0ms 0.0% . 25-> 22.0ms 0.1% . 50-> 55.0ms 1.4%
+  lhr         : 10-> 11.0ms 0.0% . 25-> 18.0ms 0.0% . 50-> 41.0ms 0.9%
+```
+
+To deploy probers across regions (for example on Fly.io), see [Distributed SFU probers](/deployment/distributed-sfu).
+
 ### Limitations
 
-**Single vantage point.** The prober runs from one host. It does not simulate geo-distributed users. Latency for remote users may differ significantly.
-
-**Prober host saturation.** Under high `--ramp` concurrency, the machine running `voicegw` can become the bottleneck before the SFU does. The resource monitor flags CPU or memory saturation in the output so you can distinguish host limits from SFU limits.
+**Prober host saturation.** Under high `--ramp` concurrency, the machine running `voicegw` can become the bottleneck before the SFU does. The resource monitor flags CPU or memory saturation in the output so you can distinguish host limits from SFU limits. Distributing across several smaller prober hosts (above) sidesteps this.
 
 ### Options
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--load` | flag | off | Enable concurrency ramp mode. |
+| `--load` | flag | off | Enable concurrency ramp mode (single host). |
 | `--ramp` | `string` | `2,10,25,50` | Comma-separated concurrency levels for the ramp. |
 | `--duration` | `string` | `20s` | How long to hold each concurrency level. |
+| `--coordinator` | flag | off | Run as the distributed coordinator (needs `[server]` extra). |
+| `--expect` | `integer` | `0` | Number of probers the coordinator waits for. |
+| `--coordinator-port` | `integer` | `8787` | Port the coordinator listens on. |
+| `--report-to` | `string` | (none) | Run as a prober reporting to this coordinator URL. |
+| `--vantage` | `string` | `$VOICEGW_REGION` | Label for this prober's vantage. |
 | `--url` | `string` | (see Credentials) | LiveKit server WebSocket URL. |
 | `--api-key` | `string` | (see Credentials) | LiveKit API key. |
 | `--api-secret` | `string` | (see Credentials) | LiveKit API secret. |
@@ -235,12 +277,13 @@ AGENT            ROOM                   STATE       IN-CALL  AGE
 agent-7f4a       demo-room              active      1        42s
 agent-2c9b       qa-room                dispatched  0        8s
 
-2 agents active in 2 rooms. Idle/registered workers are not reported by LiveKit's server API; run the Phase 2 heartbeat to see the full roster.
+2 agents active in 2 rooms.
+Idle/registered workers are not reported by LiveKit's server API. Set VOICEGW_COLLECTOR_URL + VOICEGW_API_KEY (and run register_worker in your agents) to also list the heartbeat roster.
 
 agent-7f4a     E2E avg 0.82s  p50 0.82s  p95 0.84s   GOOD (<1.0s)
-  breakdown (turn-detect/STT/LLM/TTS) lands in Phase 2 (collector correlation)
+  breakdown (turn-detect/STT/LLM/TTS) needs an instrumented agent (voicegateway.attach) writing to the same local store, co-located
 agent-2c9b     E2E avg 1.14s  p50 1.14s  p95 1.18s   SLOW (<1.0s)
-  breakdown (turn-detect/STT/LLM/TTS) lands in Phase 2 (collector correlation)
+  breakdown (turn-detect/STT/LLM/TTS) needs an instrumented agent (voicegateway.attach) writing to the same local store, co-located
 
 SFU  vantage: co-located   baseline: rtt 11ms . loss 0.0% . Excellent
 ```
@@ -283,13 +326,13 @@ voicegw livekit check --json
 
 The following limitations apply across all four subcommands:
 
-**In-room agents only.** The LiveKit server API does not expose idle (pre-dispatch) workers. `agents` and `latency` see only agents currently in rooms.
+**In-room agents only, unless workers heartbeat.** The LiveKit server API does not expose idle (pre-dispatch) workers. `agents` shows the idle/registered roster only when your agents call `voicegateway.register_worker(...)` and the collector is configured; otherwise it (and `latency`) see only agents currently in rooms.
 
 **Real provider cost on latency probes.** Every `latency` probe invokes the agent's actual STT, LLM, and TTS pipeline. Charges are incurred. Use low `--trials` counts for routine checks.
 
-**Per-component latency breakdown is Phase 2.** The split across turn-detection, STT, LLM, and TTS requires agents instrumented with `voicegateway.attach(session)`. Phase 1 reports E2E latency only; the network leg and per-component breakdown are not yet available.
+**Per-component breakdown needs an instrumented, co-located agent.** The split across turn-detection, STT, LLM, and TTS requires agents instrumented with `voicegateway.attach(session)` writing to the same local store as the prober. In collector mode the split is not shown from the CLI.
 
-**Single co-located vantage.** `sfu` measures from the host running `voicegw`. This is the correct signal for a self-hosted setup where the gateway and SFU share the same network, but it does not represent latency for end users in other regions.
+**SFU vantage.** `sfu` measures from the host running `voicegw`. For a self-hosted setup where the gateway and SFU share a network, the co-located result is the right signal; for end-user latency in other regions, use the distributed coordinator/prober mode above.
 
 **Prober host saturation.** During `sfu --load`, the prober machine can saturate before the SFU does. The resource monitor flags this in the output.
 

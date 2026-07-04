@@ -1,5 +1,9 @@
 from voicegateway.livekit_diag.admin import AgentRow
-from voicegateway.livekit_diag.report import agents_json, render_agents
+from voicegateway.livekit_diag.report import (
+    agents_json,
+    render_agents,
+    render_distributed_sfu,
+)
 
 
 def _rows():
@@ -29,9 +33,19 @@ def test_agents_json_shape():
 
 def _roster():
     return [
-        {"agent_name": "realty", "status": "busy", "region": "iad", "version": "0.13.0"},
+        {
+            "agent_name": "realty",
+            "status": "busy",
+            "region": "iad",
+            "version": "0.13.0",
+        },
         {"agent_name": "concierge", "status": "idle", "region": None, "version": ""},
-        {"agent_name": "night-shift", "status": "offline", "region": "sjc", "version": "0.12.0"},
+        {
+            "agent_name": "night-shift",
+            "status": "offline",
+            "region": "sjc",
+            "version": "0.12.0",
+        },
     ]
 
 
@@ -52,3 +66,36 @@ def test_render_agents_empty_roster_is_configured_not_note():
     assert "not reported by LiveKit" not in out
     assert "Registered workers (heartbeat roster):" in out
     assert "0 workers registered (0 idle, 0 busy, 0 offline)." in out
+
+
+def test_render_distributed_sfu_shows_combined_and_vantages():
+    result = {
+        "vantages": [
+            {
+                "vantage": "iad",
+                "steps": [{"clients": 2, "rtt_ms": 10.0, "loss_pct": 0.0}],
+            },
+            {
+                "vantage": "sjc",
+                "steps": [{"clients": 2, "rtt_ms": 12.0, "loss_pct": 0.0}],
+            },
+        ],
+        "combined": [
+            {
+                "tier": 0,
+                "clients": 4,
+                "vantages": 2,
+                "rtt_ms": 12.0,
+                "loss_pct": 0.0,
+                "quality": "Good",
+            }
+        ],
+        "knee": 4,
+        "dropped": ["lhr"],
+    }
+    out = render_distributed_sfu(result)
+    assert "2 vantages" in out
+    assert "4(2v)-> 12.0ms" in out
+    assert "combined knee ~4 clients" in out
+    assert "iad" in out and "sjc" in out
+    assert "dropped (no steps reported): lhr" in out

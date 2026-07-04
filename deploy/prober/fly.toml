@@ -1,0 +1,35 @@
+# Example Fly.io config for a distributed SFU prober.
+#
+# One prober per region. This is a template: copy it, set your app name, and
+# scale across regions with `fly scale count`. Probers are run-to-completion
+# jobs, not long-lived services, so there are no [http_service] / [[services]]
+# blocks and no public ports.
+#
+# Deploy sketch (from deploy/prober/):
+#   fly apps create vg-sfu-prober
+#   fly secrets set -a vg-sfu-prober \
+#       LIVEKIT_URL=wss://your.livekit.cloud \
+#       LIVEKIT_API_KEY=... LIVEKIT_API_SECRET=... \
+#       COORDINATOR_URL=http://<coordinator-host>:8787
+#   fly deploy -a vg-sfu-prober
+#   fly scale count 3 --region iad,sjc,lhr -a vg-sfu-prober
+#
+# VOICEGW_REGION is mapped from Fly's FLY_REGION below so each machine reports
+# its own vantage label without per-region config.
+
+app = "vg-sfu-prober"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # Fly injects FLY_REGION per machine; the entrypoint reads VOICEGW_REGION.
+  # Set this per-machine via `fly machine update --env VOICEGW_REGION=$FLY_REGION`,
+  # or bake a small wrapper. Left blank here so it is explicit, not silently "".
+  RAMP = "10,25,50"
+  DURATION = "20"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
