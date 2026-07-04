@@ -1,0 +1,42 @@
+name: LiveKit integration
+
+# Runs the `voicegw livekit` diagnostics against a REAL livekit-server --dev.
+# The unit matrix (ci.yml) uses fakes, which cannot catch a mismatch between our
+# code and the actual LiveKit SDK/server: every bug this job guards (the
+# list_dispatch signature, the create_room _req name clash, the delete_room
+# not_found race, the room-vanishes race, the data-channel ping/pong, and the
+# connection-quality callback arg order) passed the fake-based tests and only
+# showed up when run against a live server. This job re-runs those real paths so
+# the contract bugs cannot silently regress.
+
+on:
+  pull_request:
+    paths:
+      - 'src/voicegateway/livekit_diag/**'
+      - 'src/voicegateway/cli/livekit_cli.py'
+      - 'src/voicegateway/tests/livekit_diag/**'
+      - '.github/workflows/livekit-integration.yml'
+
+jobs:
+  livekit-integration:
+    name: livekit-integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+      - name: Setup Python
+        run: uv python install 3.12
+      - name: Install livekit-server
+        # The dev server the integration fixture launches on 127.0.0.1:7880.
+        run: |
+          curl -sSL https://get.livekit.io | bash
+          livekit-server --version
+      - name: Create venv and install
+        # livekit_diag imports only the engine + livekit/livekit-api/psutil (base
+        # deps); no dashboard/server extras are needed for these tests.
+        run: |
+          uv venv --seed --python 3.12
+          uv pip install -e ".[dev]"
+      - name: Run LiveKit integration tests
+        run: uv run pytest -q -m integration src/voicegateway/tests/livekit_diag/test_live_integration.py
