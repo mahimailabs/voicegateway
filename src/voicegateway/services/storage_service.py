@@ -243,6 +243,11 @@ class StorageService:
             limit, modality, project, tenant, agent
         )
 
+    async def get_requests_for_room(self, room: str) -> list[dict[str, Any]]:
+        """Delegate to RequestLogService.get_requests_for_room."""
+        await self._ensure_initialized()
+        return await self._request_log_service.get_requests_for_room(room)
+
     async def get_project_stats(self, project: str) -> dict[str, Any]:
         """Delegate to CostService.get_project_stats."""
         await self._ensure_initialized()

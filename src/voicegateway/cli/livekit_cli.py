@@ -36,7 +36,9 @@ _cli = BaseCli()
 livekit_app = typer.Typer(help="Diagnose a LiveKit deployment (agents, latency, SFU).")
 
 
-def _creds(url: str | None, api_key: str | None, api_secret: str | None, config: str | None) -> LiveKitCreds:
+def _creds(
+    url: str | None, api_key: str | None, api_secret: str | None, config: str | None
+) -> LiveKitCreds:
     try:
         return resolve_creds(url, api_key, api_secret, config)
     except CredsError as exc:
@@ -46,7 +48,31 @@ def _creds(url: str | None, api_key: str | None, api_secret: str | None, config:
 
 def _utterance_path() -> str:
     import voicegateway.livekit_diag as pkg
+
     return str(pathlib.Path(pkg.__file__).parent / "assets" / "probe.wav")
+
+
+def _component_reader() -> ComponentReader:
+    """A reader that reads the STT/LLM/TTS split back from the local VG store.
+
+    Read-back is co-located: the instrumented agent's ``attach`` wrote the split
+    to the local SQLite DB, and the probe correlates on the room name. In
+    collector mode the rows went to the collector, not this host, so return a
+    storeless reader (the split simply won't render). We also skip it when no DB
+    file exists yet, to avoid alembic-bootstrapping a DB just to read nothing.
+    """
+    if os.environ.get("VOICEGW_COLLECTOR_URL"):
+        return ComponentReader()
+    db_path = os.environ.get("VOICEGW_DB_PATH") or os.path.expanduser(
+        "~/.config/voicegateway/voicegw.db"
+    )
+    if not os.path.exists(db_path):
+        return ComponentReader()
+    from voicegateway.services.storage_service import StorageService
+
+    # Poll ~2s: the agent flushes its rows from another process around when the
+    # probe finishes, so the first read can race ahead of the write.
+    return ComponentReader(StorageService(db_path), poll_attempts=6, poll_delay=0.4)
 
 
 @livekit_app.command("agents")
@@ -113,11 +139,17 @@ def latency_cmd(
         admin.url = creds.url  # let ProbeRunner build client urls
         try:
             targets = agent or [r.agent_name for r in await admin.list_agents()]
-            runner = ProbeRunner(admin, lambda u, t: SyntheticClient(creds.url, t),
-                                  UtteranceSource(_utterance_path()), ComponentReader())
+            runner = ProbeRunner(
+                admin,
+                lambda u, t: SyntheticClient(creds.url, t),
+                UtteranceSource(_utterance_path()),
+                _component_reader(),
+            )
             out = []
             for name in targets:
-                out.append(await runner.probe(name, trials, warmup, room_name, metadata))
+                out.append(
+                    await runner.probe(name, trials, warmup, room_name, metadata)
+                )
             return out
         finally:
             await admin.aclose()
@@ -155,7 +187,9 @@ def sfu_cmd(
             steps, resource = ([], None)
             if load:
                 counts = [int(x) for x in ramp.split(",") if x.strip()]
-                steps, resource = await probe.ramp(room, counts, duration, target_rtt_ms, max_loss)
+                steps, resource = await probe.ramp(
+                    room, counts, duration, target_rtt_ms, max_loss
+                )
             knee = find_knee(steps, target_rtt_ms, max_loss) if steps else None
             return base, steps, resource, knee
         finally:
@@ -186,10 +220,16 @@ def check_cmd(
         admin.url = creds.url
         try:
             agents = await admin.list_agents()
-            runner = ProbeRunner(admin, lambda u, t: SyntheticClient(creds.url, t),
-                                 UtteranceSource(_utterance_path()), ComponentReader())
+            runner = ProbeRunner(
+                admin,
+                lambda u, t: SyntheticClient(creds.url, t),
+                UtteranceSource(_utterance_path()),
+                _component_reader(),
+            )
             lat = [await runner.probe(a.agent_name, 2, True, None, "") for a in agents]
-            probe = SfuProbe(admin, lambda u, t: SyntheticClient(creds.url, t), ResourceMonitor())
+            probe = SfuProbe(
+                admin, lambda u, t: SyntheticClient(creds.url, t), ResourceMonitor()
+            )
             base = await probe.baseline("vg-check")
             return agents, lat, base
         finally:
@@ -205,7 +245,9 @@ def check_cmd(
         _cli.console.print_json(_json.dumps(js))
     else:
         js = check_json(agents, lat, base, [], None, None, summarize, target_ms)
-        _cli.console.print(render_check(agents, lat, base, [], None, None, summarize, target_ms))
+        _cli.console.print(
+            render_check(agents, lat, base, [], None, None, summarize, target_ms)
+        )
     if js["verdict"] != "PASS":
         raise typer.Exit(1)
 

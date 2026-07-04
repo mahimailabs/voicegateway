@@ -526,8 +526,12 @@ async def test_metric_capture_records_eou(tmp_path):
     cost_tracker = CostTracker(sink)
     session = _FakeSession(llm=_FakeEmitter(model="gpt-4o-mini", provider="openai"))
     capture = MetricCapture(
-        cost_tracker=cost_tracker, sink=sink, project="p",
-        agent_id="a", session_id="s", tenant_id="t",
+        cost_tracker=cost_tracker,
+        sink=sink,
+        project="p",
+        agent_id="a",
+        session_id="s",
+        tenant_id="t",
     )
     capture.bind(session)
     session.emit("metrics_collected", _EOUMetric())
@@ -551,8 +555,12 @@ async def test_metric_capture_records_eou_wrapped():
     cost_tracker = CostTracker(sink)
     session = _FakeSession(llm=_FakeEmitter(model="gpt-4o-mini", provider="openai"))
     capture = MetricCapture(
-        cost_tracker=cost_tracker, sink=sink, project="p",
-        agent_id="a", session_id="s", tenant_id="t",
+        cost_tracker=cost_tracker,
+        sink=sink,
+        project="p",
+        agent_id="a",
+        session_id="s",
+        tenant_id="t",
     )
     capture.bind(session)
     session.emit("metrics_collected", _MetricsCollectedEvent(_EOUMetric()))
@@ -606,3 +614,103 @@ async def test_attach_marks_worker_busy_then_idle(monkeypatch):
         assert worker._worker.status == "idle"
     finally:
         worker._worker = None
+
+
+# --- probe room correlation ----------------------------------------------
+
+
+async def test_metric_capture_stamps_room_in_metadata():
+    """attach(room=...) rides in ``record.metadata`` so ``voicegw livekit
+    latency`` can correlate a throwaway probe room back to this agent's split."""
+    sink = _FlushRecordingSink()
+    llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
+    session = _FakeSession(llm=llm)
+
+    capture = MetricCapture(
+        cost_tracker=CostTracker(sink),
+        sink=sink,
+        project="p",
+        agent_id="a",
+        session_id="s",
+        room="vg-probe-realty-abc123",
+    )
+    capture.bind(session)
+    llm.emit("metrics_collected", _LLMMetric())
+    await capture.drain()
+
+    assert sink.rows[0].metadata.get("room") == "vg-probe-realty-abc123"
+
+
+async def test_metric_capture_omits_room_when_unset():
+    """No room -> no ``room`` key added (normal in-production capture)."""
+    sink = _FlushRecordingSink()
+    llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
+    session = _FakeSession(llm=llm)
+
+    capture = MetricCapture(
+        cost_tracker=CostTracker(sink),
+        sink=sink,
+        project="p",
+        agent_id="a",
+        session_id="s",
+    )
+    capture.bind(session)
+    llm.emit("metrics_collected", _LLMMetric())
+    await capture.drain()
+
+    assert "room" not in sink.rows[0].metadata
+
+
+async def test_eou_row_carries_room():
+    """The eou (turn-detection) row also carries the room, so the split's
+    turn-detect number correlates with the same probe."""
+    sink = _FlushRecordingSink()
+    session = _FakeSession(llm=_FakeEmitter(model="gpt-4o-mini", provider="openai"))
+    capture = MetricCapture(
+        cost_tracker=CostTracker(sink),
+        sink=sink,
+        project="p",
+        agent_id="a",
+        session_id="s",
+        room="vg-probe-x",
+    )
+    capture.bind(session)
+    session.emit("metrics_collected", _EOUMetric())
+    await capture.drain()
+
+    eou = [r for r in sink.rows if r.metadata.get("eou")]
+    assert eou[0].metadata["room"] == "vg-probe-x"
+    assert eou[0].metadata["eou"]["end_of_utterance_delay"] == 0.12
+
+
+async def test_attach_resolves_room_from_session_vg_room():
+    """attach picks up an explicit ``session._vg_room`` and stamps it, without a
+    LiveKit job context (the resolution's testable seam)."""
+    import voicegateway
+
+    sink = _FlushRecordingSink()
+    llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
+    session = _FakeSession(llm=llm)
+    session._vg_room = "vg-probe-from-ctx"
+
+    voicegateway.attach(session, project="fleet", agent_id="a", sink=sink)
+    llm.emit("metrics_collected", _LLMMetric())
+    await session._vg_capture.drain()
+
+    assert sink.rows[0].metadata.get("room") == "vg-probe-from-ctx"
+
+
+async def test_attach_explicit_room_overrides_session():
+    """An explicit ``room=`` arg wins over ``session._vg_room``."""
+    import voicegateway
+
+    sink = _FlushRecordingSink()
+    llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
+    session = _FakeSession(llm=llm)
+    session._vg_room = "from-session"
+
+    voicegateway.attach(session, project="fleet", sink=sink, room="explicit-room")
+    llm.emit("metrics_collected", _LLMMetric())
+    await session._vg_capture.drain()
+
+    assert sink.rows[0].metadata.get("room") == "explicit-room"
