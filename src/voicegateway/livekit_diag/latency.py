@@ -52,11 +52,13 @@ class ProbeRunner:
                 await self._admin.create_dispatch(room, agent, metadata)
                 client = self._make_client(self._url, self._admin.join_token(room, "vg-probe"))
                 await client.connect()
-                t0 = await client.publish_utterance(self._utterance)
-                e2e = await client.wait_reply(t0)
-                if result.network_s is None:
-                    result.network_s = await client.ping()
-                await client.disconnect()
+                try:
+                    t0 = await client.publish_utterance(self._utterance)
+                    e2e = await client.wait_reply(t0)
+                    if result.network_s is None:
+                        result.network_s = await client.ping()
+                finally:
+                    await client.disconnect()
             finally:
                 await self._admin.delete_room(room)
             if i == 0 and warmup:

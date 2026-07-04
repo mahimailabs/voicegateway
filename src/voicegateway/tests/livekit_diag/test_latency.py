@@ -1,7 +1,4 @@
-import asyncio
-
 from voicegateway.livekit_diag.latency import ProbeRunner, summarize
-from voicegateway.livekit_diag.config import LiveKitCreds
 
 
 class _FakeAdmin:
