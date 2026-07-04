@@ -311,6 +311,7 @@ class TestGetCostSummary:
         assert "total" in result
         assert "by_provider" in result
         assert "by_model" in result
+        assert "by_project" in result
         # period carries since/until range marker
         assert result["project"] == "default"
 
@@ -339,6 +340,22 @@ class TestGetCostSummary:
         for _model, stats in result["by_model"].items():
             assert "cost" in stats
             assert "requests" in stats
+
+    async def test_by_project_shape_and_rollup(self, seeded_client):
+        from voicegateway.clickhouse.read_repository import get_cost_summary
+
+        result = await get_cost_summary(
+            seeded_client,
+            tenant="acme",
+            since=float(_DAY0 - 1),
+            until=None,
+        )
+        for _project, stats in result["by_project"].items():
+            assert "cost" in stats
+            assert "requests" in stats
+        # acme's seeded rows all carry project "default" (0.01 + 0.02 + 0.03).
+        assert result["by_project"]["default"]["requests"] == 3
+        assert result["by_project"]["default"]["cost"] == pytest.approx(0.06)
 
     async def test_beta_total(self, seeded_client):
         from voicegateway.clickhouse.read_repository import get_cost_summary

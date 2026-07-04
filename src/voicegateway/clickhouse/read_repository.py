@@ -87,6 +87,20 @@ GROUP BY model_id
 ORDER BY cost DESC
 """
 
+_SQL_COST_BY_PROJECT = """\
+SELECT
+    project,
+    sum(cost_usd) AS cost,
+    count()       AS request_count
+FROM telemetry.requests
+WHERE tenant_id = {tenant:String}
+  AND timestamp >= fromUnixTimestamp64Milli({since_ms:Int64})
+  __UNTIL__
+  __PROJECT__
+GROUP BY project
+ORDER BY cost DESC
+"""
+
 _SQL_COST_BY_DAY = """\
 SELECT
     toStartOfDay(timestamp, 'UTC') AS day,
@@ -310,6 +324,13 @@ async def get_cost_summary(
         for row in model_result.result_rows
     }
 
+    proj_sql = _render(_SQL_COST_BY_PROJECT, until=until, project=project)
+    proj_result = await client.query(proj_sql, parameters=params)
+    by_project: dict[str, dict[str, Any]] = {
+        row[0]: {"cost": float(row[1] or 0.0), "requests": int(row[2] or 0)}
+        for row in proj_result.result_rows
+    }
+
     period_label = f"{since}..{until if until is not None else 'now'}"
     return {
         "period": period_label,
@@ -317,6 +338,7 @@ async def get_cost_summary(
         "total": total,
         "by_provider": by_provider,
         "by_model": by_model,
+        "by_project": by_project,
     }
 
 
