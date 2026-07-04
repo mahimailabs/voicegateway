@@ -53,6 +53,9 @@ class SfuProbe:
         finally:
             for c in clients:
                 await c.disconnect()
+            # Delete the probe room so it does not linger on the server and show up
+            # as a phantom (empty-name) agent in a later list_agents. Best-effort.
+            await self._admin.delete_room(room)
 
     async def baseline(self, room: str, seconds: float = 10.0) -> RampStep:
         return await self._measure(room, 2, seconds)
