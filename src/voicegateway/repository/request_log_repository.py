@@ -362,6 +362,35 @@ async def get_recent_requests(
     return [_row_to_dict(row) for row in result]
 
 
+async def get_requests_for_room(
+    session: AsyncSession,
+    room: str,
+) -> list[dict[str, Any]]:
+    """Return every request row tagged ``metadata.room == room``.
+
+    Used by ``voicegw livekit latency`` to correlate a throwaway probe room
+    with the STT/LLM/TTS + turn-detection rows the instrumented agent wrote
+    (``attach`` stamps the room on ``metadata``). There is no room column, so
+    a ``LIKE`` on the serialized ``metadata`` JSON pre-filters, then an exact
+    parsed match rejects any incidental substring hit. The ``LIKE`` only ever
+    widens the candidate set (``_`` / ``%`` in a room name match more, never
+    fewer), so the exact match below never drops a true row.
+    """
+    column_list = ", ".join(_REQUEST_COLUMNS)
+    like = f'%"room": "{room}"%'  # matches json.dumps({"room": room}) spacing
+    query = (
+        f"SELECT {column_list} FROM requests WHERE metadata LIKE :like "
+        "ORDER BY timestamp ASC"
+    )
+    result = await session.execute(text(query), {"like": like})
+    rows = [_row_to_dict(row) for row in result]
+    return [
+        r
+        for r in rows
+        if isinstance(r.get("metadata"), dict) and r["metadata"].get("room") == room
+    ]
+
+
 async def get_requests_in_window(
     session: AsyncSession,
     start_ts: float | None = None,
@@ -390,6 +419,7 @@ async def get_requests_in_window(
 __all__ = [
     "get_audit_log",
     "get_recent_requests",
+    "get_requests_for_room",
     "get_requests_in_window",
     "log_audit_event",
     "log_request",

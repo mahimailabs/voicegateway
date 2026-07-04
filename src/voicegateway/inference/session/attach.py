@@ -200,6 +200,28 @@ def _default_agent_id() -> str:
     return os.environ.get("VOICEGW_AGENT_ID") or socket.gethostname() or "agent"
 
 
+def _resolve_room(session: Any) -> str | None:
+    """Best-effort LiveKit room name for probe correlation.
+
+    ``voicegw livekit latency`` dispatches an agent to a throwaway room and
+    reads the STT/LLM/TTS + turn-detection split back by that room name, so the
+    captured rows must carry it. Prefer an explicit ``session._vg_room`` (tests
+    / advanced callers), then the running LiveKit job context. Returns None off
+    a job (nothing to correlate; the rows simply carry no room), never raises.
+    """
+    room = getattr(session, "_vg_room", None)
+    if isinstance(room, str) and room:
+        return room
+    try:
+        from livekit.agents import get_job_context
+
+        ctx = get_job_context(required=False)
+    except Exception:  # noqa: BLE001 - livekit not installed / no job context
+        return None
+    name = getattr(getattr(ctx, "room", None), "name", None)
+    return name if isinstance(name, str) and name else None
+
+
 def _build_default_sink(
     collector_url: str | None,
     api_key: str | None,
@@ -249,6 +271,7 @@ def attach(
     collector_url: str | None = None,
     api_key: str | None = None,
     sink: Sink | None = None,
+    room: str | None = None,
 ) -> str:
     """Attach VoiceGateway to an existing LiveKit ``AgentSession`` in one call.
 
@@ -266,6 +289,9 @@ def attach(
         tenant_id: optional tenant attribution.
         collector_url / api_key: fleet push target (env fallbacks).
         sink: advanced/testing override; defaults to local or remote per env.
+        room: LiveKit room name for probe correlation; auto-resolved from the
+            running job context when omitted (``voicegw livekit latency`` reads
+            the STT/LLM/TTS split back by this).
 
     Returns:
         The correlation session id stamped on every captured row.
@@ -279,6 +305,7 @@ def attach(
     resolved_agent_id = agent_id or _default_agent_id()
     resolved_collector = collector_url or os.environ.get("VOICEGW_COLLECTOR_URL")
     resolved_key = api_key or os.environ.get("VOICEGW_API_KEY")
+    resolved_room = room or _resolve_room(session)
     session_id = get_or_create_session_id()
     if tenant_id is not None:
         set_tenant(tenant_id)
@@ -293,6 +320,7 @@ def attach(
         agent_id=resolved_agent_id,
         session_id=session_id,
         tenant_id=tenant_id,
+        room=resolved_room,
     )
     capture.bind(session)
 

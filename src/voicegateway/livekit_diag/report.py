@@ -26,8 +26,7 @@ def render_agents(rows: list[AgentRow], roster: list[dict] | None = None) -> str
     for r in rows:
         age = f"{int(r.age_s)}s" if r.age_s is not None else "-"
         lines.append(
-            f"{r.agent_name:16.16} {r.room:22.22} {r.state:11} "
-            f"{r.humans:<8} {age:6}"
+            f"{r.agent_name:16.16} {r.room:22.22} {r.state:11} {r.humans:<8} {age:6}"
         )
     room_count = len({r.room for r in rows})
     lines.append("")
@@ -69,7 +68,7 @@ def render_latency(results: list, target_ms: float, summarize) -> str:
         verdict = "GOOD" if s["avg"] * 1000 <= target_ms else "SLOW"
         head = (
             f"{r.agent:14} E2E avg {s['avg']:.2f}s  p50 {s['p50']:.2f}s  "
-            f"p95 {s['p95']:.2f}s   {verdict} (<{target_ms/1000:.1f}s)"
+            f"p95 {s['p95']:.2f}s   {verdict} (<{target_ms / 1000:.1f}s)"
         )
         lines.append(head)
         if r.components:
@@ -79,11 +78,23 @@ def render_latency(results: list, target_ms: float, summarize) -> str:
                 f". LLM-ttft {c.get('llm_ttft', 0):.2f} . TTS {c.get('tts', 0):.2f}"
             )
         else:
-            lines.append("  breakdown (turn-detect/STT/LLM/TTS) lands in Phase 2 (collector correlation)")
+            lines.append(
+                "  breakdown (turn-detect/STT/LLM/TTS) needs an instrumented agent "
+                "(voicegateway.attach) writing to the same local store, co-located"
+            )
     return "\n".join(lines)
 
 
-def check_json(agents, latency_results, base, steps, resource, knee, summarize, target_ms: float = 1500.0) -> dict:
+def check_json(
+    agents,
+    latency_results,
+    base,
+    steps,
+    resource,
+    knee,
+    summarize,
+    target_ms: float = 1500.0,
+) -> dict:
     verdict = "PASS"
     for r in latency_results:
         s = summarize(r)
@@ -95,20 +106,35 @@ def check_json(agents, latency_results, base, steps, resource, knee, summarize, 
         verdict = "FAIL"
     return {
         "agents": agents_json(agents),
-        "latency": [{"agent": r.agent, "stats": summarize(r),
-                     "components": r.components} for r in latency_results],
+        "latency": [
+            {"agent": r.agent, "stats": summarize(r), "components": r.components}
+            for r in latency_results
+        ],
         "sfu": {
-            "baseline": {"clients": base.clients, "rtt_ms": base.rtt_ms,
-                         "loss_pct": base.loss_pct, "quality": base.quality} if base else None,
-            "ramp": [{"clients": s.clients, "rtt_ms": s.rtt_ms, "loss_pct": s.loss_pct} for s in (steps or [])],
+            "baseline": {
+                "clients": base.clients,
+                "rtt_ms": base.rtt_ms,
+                "loss_pct": base.loss_pct,
+                "quality": base.quality,
+            }
+            if base
+            else None,
+            "ramp": [
+                {"clients": s.clients, "rtt_ms": s.rtt_ms, "loss_pct": s.loss_pct}
+                for s in (steps or [])
+            ],
             "knee": knee,
         },
         "verdict": verdict,
     }
 
 
-def render_check(agents, latency_results, base, steps, resource, knee, summarize, target_ms) -> str:
-    js = check_json(agents, latency_results, base, steps, resource, knee, summarize, target_ms)
+def render_check(
+    agents, latency_results, base, steps, resource, knee, summarize, target_ms
+) -> str:
+    js = check_json(
+        agents, latency_results, base, steps, resource, knee, summarize, target_ms
+    )
     parts = [
         f"VERDICT: {js['verdict']}",
         "",
@@ -127,11 +153,17 @@ def render_sfu(vantage: str, baseline, ramp_steps, resource, knee) -> str:
         f"loss {baseline.loss_pct}% . {baseline.quality}"
     ]
     if ramp_steps:
-        seg = " . ".join(f"{s.clients}-> {s.rtt_ms}ms {s.loss_pct}%" for s in ramp_steps)
+        seg = " . ".join(
+            f"{s.clients}-> {s.rtt_ms}ms {s.loss_pct}%" for s in ramp_steps
+        )
         knee_txt = f"knee ~{knee} clients" if knee else "no knee within ramp"
         lines.append(f"  ramp: {seg}   {knee_txt}")
     if resource:
-        sat = " (prober saturated: results reflect this host, not the SFU)" if resource.saturated else ""
+        sat = (
+            " (prober saturated: results reflect this host, not the SFU)"
+            if resource.saturated
+            else ""
+        )
         lines.append(
             f"  prober: ~{resource.per_client['cpu_pct']}% CPU + "
             f"~{resource.per_client['kbps_up']} kbps up per client; "

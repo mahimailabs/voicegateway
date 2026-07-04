@@ -216,6 +216,7 @@ class MetricCapture:
         agent_id: str | None,
         session_id: str | None,
         tenant_id: str | None = None,
+        room: str | None = None,
     ) -> None:
         self._cost_tracker = cost_tracker
         self._sink = sink
@@ -223,6 +224,7 @@ class MetricCapture:
         self._agent_id = agent_id
         self._session_id = session_id
         self._tenant_id = tenant_id
+        self._room = room
         self._pending: set[asyncio.Task[None]] = set()
         # Per-(provider, model_id) running tally of captured units, so the
         # close-time reconcile can diff against cumulative session.usage.
@@ -262,7 +264,7 @@ class MetricCapture:
                 session_id=self._session_id,
                 agent_id=self._agent_id,
             )
-            self._stamp_tenant(record)
+            self._stamp_context(record)
             tally = self._recorded.setdefault(
                 (provider, model_id), {"input": 0.0, "output": 0.0, "cached": 0.0}
             )
@@ -288,7 +290,7 @@ class MetricCapture:
             session_id=self._session_id,
             agent_id=self._agent_id,
         )
-        self._stamp_tenant(record)
+        self._stamp_context(record)
         self._schedule(self._sink.log_request(record))
 
     def _on_session_metric(self, metric: object, *_a: Any, **_k: Any) -> None:
@@ -310,25 +312,35 @@ class MetricCapture:
         record.metadata = {
             "eou": {
                 "end_of_utterance_delay": float(eou),
-                "transcription_delay": float(getattr(metric, "transcription_delay", 0.0) or 0.0),
+                "transcription_delay": float(
+                    getattr(metric, "transcription_delay", 0.0) or 0.0
+                ),
             }
         }
-        self._stamp_tenant(record)
+        self._stamp_context(record)
         self._schedule(self._sink.log_request(record))
 
-    def _stamp_tenant(self, record: RequestRecord) -> None:
-        """Carry the attach() ``tenant_id`` on the record's ``metadata``.
+    def _stamp_context(self, record: RequestRecord) -> None:
+        """Carry the attach() ``tenant_id`` and probe ``room`` on ``metadata``.
 
-        The remote collector serializes only ``RequestRecord`` fields, which
-        have no tenant column, and the cloud stamps the top-level tenant from
-        the ingest key. Riding in ``metadata`` is how a per-call ``tenant_id``
-        survives the wire, so an embedder that fans many sub-tenants through one
-        ingest key can still separate them downstream. A local sink already gets
-        the tenant first-class from the ``set_tenant`` ContextVar, so this is
-        additive there, not a replacement.
+        Both ride in ``metadata`` because ``RequestRecord`` has no column for
+        them and the remote collector serializes only ``RequestRecord`` fields.
+        ``tenant_id`` is how a per-call tenant survives the wire (the cloud
+        stamps the top-level tenant from the ingest key), so an embedder that
+        fans many sub-tenants through one ingest key can separate them
+        downstream. ``room`` is how ``voicegw livekit latency`` correlates a
+        throwaway probe room back to the STT/LLM/TTS + turn-detection split this
+        agent captured. A local sink already gets the tenant first-class from the
+        ``set_tenant`` ContextVar, so tenant is additive there, not a
+        replacement.
         """
+        extra: dict[str, Any] = {}
         if self._tenant_id:
-            record.metadata = {**record.metadata, "tenant_id": self._tenant_id}
+            extra["tenant_id"] = self._tenant_id
+        if self._room:
+            extra["room"] = self._room
+        if extra:
+            record.metadata = {**record.metadata, **extra}
 
     def _schedule(self, coro: Any) -> None:
         try:
@@ -401,7 +413,7 @@ class MetricCapture:
                 agent_id=self._agent_id,
             )
             record.metadata = {"reconciled": True}
-            self._stamp_tenant(record)
+            self._stamp_context(record)
             await self._sink.log_request(record)
 
 
