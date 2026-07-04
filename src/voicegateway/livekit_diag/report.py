@@ -56,3 +56,22 @@ def render_latency(results: list, target_ms: float, summarize) -> str:
         else:
             lines.append(f"  {net} . breakdown (turn-detect/STT/LLM/TTS) lands in Phase 2 (collector correlation)")
     return "\n".join(lines)
+
+
+def render_sfu(vantage: str, baseline, ramp_steps, resource, knee) -> str:
+    lines = [
+        f"SFU  vantage: {vantage}   baseline: rtt {baseline.rtt_ms}ms . "
+        f"loss {baseline.loss_pct}% . {baseline.quality}"
+    ]
+    if ramp_steps:
+        seg = " . ".join(f"{s.clients}-> {s.rtt_ms}ms {s.loss_pct}%" for s in ramp_steps)
+        knee_txt = f"knee ~{knee} clients" if knee else "no knee within ramp"
+        lines.append(f"  ramp: {seg}   {knee_txt}")
+    if resource:
+        sat = " (prober saturated: results reflect this host, not the SFU)" if resource.saturated else ""
+        lines.append(
+            f"  prober: ~{resource.per_client['cpu_pct']}% CPU + "
+            f"~{resource.per_client['kbps_up']} kbps up per client; "
+            f"host sustains ~{resource.sustainable_n} before CPU-bound{sat}"
+        )
+    return "\n".join(lines)

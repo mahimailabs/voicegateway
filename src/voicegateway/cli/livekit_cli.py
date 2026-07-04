@@ -109,4 +109,48 @@ def latency_cmd(
     _cli.console.print(render_latency(results, target_ms, summarize))
 
 
+from voicegateway.livekit_diag.resources import ResourceMonitor
+from voicegateway.livekit_diag.sfu import SfuProbe, find_knee
+from voicegateway.livekit_diag.report import render_sfu
+
+
+@livekit_app.command("sfu")
+def sfu_cmd(
+    load: bool = typer.Option(False, "--load"),
+    ramp: str = typer.Option("2,10,25,50", "--ramp"),
+    duration: float = typer.Option(20.0, "--duration"),
+    room: str = typer.Option("vg-sfu-probe", "--room"),
+    target_rtt_ms: float = typer.Option(50.0, "--target-rtt-ms"),
+    max_loss: float = typer.Option(1.0, "--max-loss"),
+    url: str = typer.Option(None, "--url"),
+    api_key: str = typer.Option(None, "--api-key"),
+    api_secret: str = typer.Option(None, "--api-secret"),
+    config: str = typer.Option(None, "--config", "-c"),
+) -> None:
+    """Measure SFU connection quality (and capacity with --load)."""
+    creds = _creds(url, api_key, api_secret, config)
+
+    async def _run():
+        admin = LiveKitAdmin(creds)
+        admin.url = creds.url
+        probe = SfuProbe(admin, lambda u, t: SyntheticClient(creds.url, t), ResourceMonitor())
+        try:
+            base = await probe.baseline(room)
+            steps, resource = ([], None)
+            if load:
+                counts = [int(x) for x in ramp.split(",") if x.strip()]
+                steps, resource = await probe.ramp(room, counts, duration, target_rtt_ms, max_loss)
+            knee = find_knee(steps, target_rtt_ms, max_loss) if steps else None
+            return base, steps, resource, knee
+        finally:
+            await admin.aclose()
+
+    try:
+        base, steps, resource, knee = asyncio.run(_run())
+    except Exception as exc:  # noqa: BLE001
+        _cli.error(f"sfu probe failed: {exc}")
+        raise typer.Exit(1) from None
+    _cli.console.print(render_sfu("co-located", base, steps, resource, knee))
+
+
 app.add_typer(livekit_app, name="livekit")
