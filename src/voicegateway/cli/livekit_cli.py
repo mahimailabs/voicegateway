@@ -133,7 +133,7 @@ def sfu_cmd(
     async def _run():
         admin = LiveKitAdmin(creds)
         admin.url = creds.url
-        probe = SfuProbe(admin, lambda u, t: SyntheticClient(creds.url, t), ResourceMonitor())
+        probe = SfuProbe(admin, lambda u, t: SyntheticClient(u, t), ResourceMonitor())
         try:
             base = await probe.baseline(room)
             steps, resource = ([], None)
