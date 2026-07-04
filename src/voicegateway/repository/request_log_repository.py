@@ -377,7 +377,12 @@ async def get_requests_for_room(
     fewer), so the exact match below never drops a true row.
     """
     column_list = ", ".join(_REQUEST_COLUMNS)
-    like = f'%"room": "{room}"%'  # matches json.dumps({"room": room}) spacing
+    # Build the needle with json.dumps so it matches the write path byte-for-byte,
+    # including ensure_ascii escaping (\uXXXX for non-ASCII, escaped quotes): a
+    # raw f-string would miss a room name with such characters. ``[1:-1]`` strips
+    # the object braces, leaving the exact ``"room": "<escaped>"`` substring.
+    key = json.dumps({"room": room})[1:-1]
+    like = f"%{key}%"
     query = (
         f"SELECT {column_list} FROM requests WHERE metadata LIKE :like "
         "ORDER BY timestamp ASC"

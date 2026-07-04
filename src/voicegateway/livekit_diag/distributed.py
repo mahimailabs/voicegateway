@@ -95,11 +95,17 @@ def aggregate_vantages(
             }
         )
 
+    # Knee: the last healthy total client count BEFORE the first tier that breaks
+    # a threshold. Matches single-host find_knee semantics exactly, including None
+    # when no tier breaks ("no knee within ramp: sustained the whole ramp"), so
+    # the two SFU modes never report contradictory things for an all-healthy run.
     knee: int | None = None
+    last_ok: int | None = None
     for tier in combined:
         if tier["rtt_ms"] > target_rtt_ms or tier["loss_pct"] > max_loss:
+            knee = last_ok
             break
-        knee = tier["clients"]
+        last_ok = tier["clients"]
 
     return {
         "vantages": [{"vantage": r.vantage, "steps": r.steps} for r in valid],
@@ -220,12 +226,19 @@ def build_coordinator_app(coordinator: Coordinator) -> Any:
 
 
 async def serve_coordinator(
-    coordinator: Coordinator, *, host: str = "0.0.0.0", port: int = 8787
+    coordinator: Coordinator,
+    *,
+    host: str = "0.0.0.0",
+    port: int = 8787,
+    timeout: float = 600.0,
 ) -> dict[str, Any]:
     """Serve the coordinator until every prover has reported, then aggregate.
 
-    uvicorn (also ``[server]``) is imported lazily for the same reason as
-    FastAPI. Returns the aggregated result; the caller renders + cleans up.
+    Stops after ``timeout`` seconds even if some provers never report, so a
+    crashed or missing prover cannot hang the run forever: it aggregates whatever
+    did arrive (``result()["dropped"]`` and a short roster tell the caller who is
+    missing). uvicorn (also ``[server]``) is imported lazily like FastAPI.
+    Returns the aggregated result; the caller renders + cleans up.
     """
     try:
         import uvicorn
@@ -240,8 +253,10 @@ async def serve_coordinator(
     )
 
     async def _watch() -> None:
-        while not coordinator.all_reported:
+        waited = 0.0
+        while not coordinator.all_reported and waited < timeout:
             await asyncio.sleep(0.5)
+            waited += 0.5
         server.should_exit = True
 
     watcher = asyncio.ensure_future(_watch())
@@ -291,13 +306,16 @@ async def run_prober(
     sleep: Callable[[float], Any] = asyncio.sleep,
     clock: Callable[[], float] = time.time,
     poll_interval: float = 1.0,
+    barrier_timeout: float = 300.0,
 ) -> dict[str, Any]:
     """Register with the coordinator, wait for the barrier, ramp, report.
 
     ``http`` (an object with async ``post(path, json)`` / ``get(path)``), ``sleep``
     and ``clock`` are injectable so the flow is unit-testable without a live
     coordinator or SFU. Runs the ramp with ``cleanup=False``: the room is shared,
-    so the coordinator deletes it after all vantages report.
+    so the coordinator deletes it after all vantages report. Gives up at the
+    barrier after ``barrier_timeout`` seconds (raises) rather than waiting forever
+    when a peer prover never registers.
     """
     own_http = http is None
     client = http if http is not None else _Http(report_to)
@@ -307,10 +325,18 @@ async def run_prober(
         reg = await client.post("/register", {"vantage": vantage})
         prover_id = reg["prover_id"]
 
+        max_polls = max(1, int(barrier_timeout / poll_interval)) if poll_interval else 1
+        polls = 0
         while True:
             job = await client.get(f"/job/{prover_id}")
             if job.get("ready"):
                 break
+            polls += 1
+            if polls >= max_polls:
+                raise RuntimeError(
+                    f"barrier timed out after ~{barrier_timeout}s waiting for all "
+                    f"{reg.get('expected', '?')} probers to register"
+                )
             await sleep(poll_interval)
 
         start_at = job.get("start_at")

@@ -73,10 +73,20 @@ def render_latency(results: list, target_ms: float, summarize) -> str:
         lines.append(head)
         if r.components:
             c = r.components
-            lines.append(
-                f"  turn-detect {c.get('eou', 0):.2f} . STT {c.get('stt', 0):.2f} "
-                f". LLM-ttft {c.get('llm_ttft', 0):.2f} . TTS {c.get('tts', 0):.2f}"
-            )
+            # Show only components that were actually captured; a missing one must
+            # not render as 0.00 (that reads as "instant"). Labels in pipeline order.
+            labels = [
+                ("eou", "turn-detect"),
+                ("stt", "STT"),
+                ("llm_ttft", "LLM-ttft"),
+                ("tts", "TTS"),
+            ]
+            parts = [
+                f"{label} {c[key]:.2f}"
+                for key, label in labels
+                if c.get(key) is not None
+            ]
+            lines.append("  " + " . ".join(parts))
         else:
             lines.append(
                 "  breakdown (turn-detect/STT/LLM/TTS) needs an instrumented agent "
@@ -184,17 +194,18 @@ def render_distributed_sfu(result: dict) -> str:
     lines = [f"SFU  distributed: {len(vantages)} vantages"]
     if combined:
         seg = " . ".join(
-            f"{t['clients']}({t['vantages']}v)-> {t['rtt_ms']}ms "
-            f"{t['loss_pct']}% {t['quality']}"
+            f"{t.get('clients', 0)}({t.get('vantages', 0)}v)-> {t.get('rtt_ms', 0)}ms "
+            f"{t.get('loss_pct', 0)}% {t.get('quality', 'Unknown')}"
             for t in combined
         )
         knee_txt = f"combined knee ~{knee} clients" if knee else "no knee within ramp"
         lines.append(f"  combined: {seg}   {knee_txt}")
     for v in vantages:
         vseg = " . ".join(
-            f"{s['clients']}-> {s['rtt_ms']}ms {s['loss_pct']}%" for s in v["steps"]
+            f"{s.get('clients', 0)}-> {s.get('rtt_ms', 0)}ms {s.get('loss_pct', 0)}%"
+            for s in v.get("steps", [])
         )
-        lines.append(f"  {v['vantage']:12.12}: {vseg}")
+        lines.append(f"  {str(v.get('vantage', '')):12.12}: {vseg}")
     dropped = result.get("dropped") or []
     if dropped:
         lines.append(f"  dropped (no steps reported): {', '.join(dropped)}")

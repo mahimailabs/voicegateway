@@ -111,6 +111,17 @@ def register_worker(
     _api_key = api_key or os.environ.get("VOICEGW_API_KEY")
     _interval = interval
     _ensure_pusher()
+    if _collector_url and _pusher is None:
+        # Registered outside a running event loop: the idle heartbeat can't start
+        # yet, so this worker stays invisible in the roster until its first
+        # session (attach -> bump_active) spins the pusher up. Call from your
+        # async entrypoint to be visible while idle.
+        logger.warning(
+            "register_worker(%s): no running event loop; the idle heartbeat will "
+            "not start until the first session. Call register_worker from your "
+            "async agent entrypoint to appear in the roster while idle.",
+            _worker.agent_id,
+        )
     return _worker.agent_id
 
 

@@ -324,10 +324,6 @@ def attach(
     )
     capture.bind(session)
 
-    # Mark this worker busy for the fleet roster (a no-op unless register_worker
-    # was called); the close path drops it back toward idle.
-    bump_active(1)
-
     # Expose for graceful shutdown + tests; flush in-flight writes on close.
     try:
         session._vg_capture = capture
@@ -357,6 +353,11 @@ def attach(
 
     on = getattr(session, "on", None)
     if callable(on):
+        # Only mark this worker busy for the fleet roster once we have a close
+        # handler to drop it back toward idle; pairing the +1 with the -1 means a
+        # session that cannot signal close never pins the worker "busy" forever.
+        # (No-op unless register_worker was called.)
+        bump_active(1)
         on("close", _on_close)
 
     return session_id

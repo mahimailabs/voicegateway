@@ -26,8 +26,10 @@ def aggregate_components(rows: list[dict]) -> dict | None:
     wrote during the probe. Turn detection comes from the ``eou`` row's
     ``end_of_utterance_delay``; STT from the per-component ttfb (falling back to
     the eou row's ``transcription_delay``); LLM/TTS from their ttfb. Values are
-    seconds, averaged when a probe ran several turns. Returns None when nothing
-    usable is present (an uninstrumented agent, or rows without latencies).
+    seconds, averaged across every row for the room (so a fixed ``--room-name``
+    reused across turns averages them; the default per-trial rooms each hold one
+    turn). Returns None when nothing usable is present (an uninstrumented agent,
+    or rows without latencies).
     """
     eou: list[float] = []
     transcription: list[float] = []
@@ -67,6 +69,17 @@ def aggregate_components(rows: list[dict]) -> dict | None:
     return out or None
 
 
+def _split_complete(components: dict) -> bool:
+    """Whether a split has the always-present reply components (LLM + TTS).
+
+    Every voice reply goes through the LLM then the TTS, so both should land for
+    a finished turn. Turn detection (eou) and STT ttfb can legitimately be
+    absent, so they do not gate completeness. Used to decide when a polled
+    read-back has captured the whole turn versus a mid-flush fragment.
+    """
+    return "llm_ttft" in components and "tts" in components
+
+
 class ComponentReader:
     """Reads the probe room's component + EOU rows from a VG store and reduces
     them to a latency split. Optional; returns None when no store is configured
@@ -89,14 +102,25 @@ class ComponentReader:
     async def read(self, room: str) -> dict | None:
         if self._store is None:
             return None
+        latest: dict | None = None
         for attempt in range(self._poll_attempts):
             rows = await self._store.get_requests_for_room(room)
-            components = aggregate_components(rows)
-            if components is not None:
-                return components
+            if not rows:
+                # A first empty read means no rows will ever correlate for this room
+                # (uninstrumented agent, a remote agent writing elsewhere, or
+                # collector mode): give up now rather than dead-wait the whole poll.
+                if latest is None:
+                    return None
+            else:
+                latest = aggregate_components(rows)
+                # Return only once the split looks whole. Returning a partial split
+                # mid cross-process flush would render missing components as 0.00
+                # ("instant"), which is worse than waiting a beat for the rest.
+                if latest is not None and _split_complete(latest):
+                    return latest
             if attempt + 1 < self._poll_attempts and self._poll_delay > 0:
                 await asyncio.sleep(self._poll_delay)
-        return None
+        return latest
 
 
 class ProbeRunner:
