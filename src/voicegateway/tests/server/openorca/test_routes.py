@@ -19,7 +19,13 @@ import yaml
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
+from voicegateway.repository import guardrail_events_repository
+from voicegateway.schemas.guardrail_policy_schema import (
+    ACTIVE_GUARDRAIL_ACTIONS,
+    GUARDRAIL_CATEGORIES,
+)
 from voicegateway.server import build_app
+from voicegateway.server.api.openorca import routes as openorca_routes
 from voicegateway.server.api.openorca.routes import _sse
 
 
@@ -104,6 +110,54 @@ async def test_resolve_intervention_passes_operator_default(harness) -> None:
         )
     assert resp.status_code == 200, resp.text
     assert resp.json() == {"status": "resolved"}
+
+
+async def test_resolve_requires_intervention_id(harness) -> None:
+    async with harness.client() as c:
+        resp = await c.post(
+            "/openorca/interventions/resolve", json={"action": "approve"}
+        )
+    assert resp.status_code == 400
+
+
+async def test_resolve_rejects_bad_action(harness) -> None:
+    async with harness.client() as c:
+        resp = await c.post(
+            "/openorca/interventions/resolve",
+            json={"interventionId": "iv-1", "action": "nuke"},
+        )
+    assert resp.status_code == 400
+
+
+async def test_resolving_drops_intervention_from_snapshot(harness) -> None:
+    # A guardrail event surfaces as an intervention; resolving it must filter it
+    # out of the next snapshot so it does not reappear.
+    openorca_routes._RESOLUTIONS.clear()
+    category = next(iter(GUARDRAIL_CATEGORIES))
+    action = next(iter(ACTIVE_GUARDRAIL_ACTIONS))
+    async with harness.gateway.storage._conn.session() as db:
+        eid = await guardrail_events_repository.create_event(
+            db,
+            session_id="s1",
+            event_type="fired",
+            category=category,
+            action=action,
+        )
+        await db.commit()
+
+    async with harness.client() as c:
+        before = (await c.get("/openorca/snapshot")).json()
+        assert f"guardrail-{eid}" in {i["id"] for i in before["interventions"]}
+
+        r = await c.post(
+            "/openorca/interventions/resolve",
+            json={"interventionId": f"guardrail-{eid}", "action": "approve"},
+        )
+        assert r.status_code == 200
+
+        after = (await c.get("/openorca/snapshot")).json()
+    assert all(i["id"] != f"guardrail-{eid}" for i in after["interventions"])
+    openorca_routes._RESOLUTIONS.clear()
 
 
 async def test_runtime_info_advertises_sse(harness) -> None:
