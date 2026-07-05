@@ -103,7 +103,8 @@
           "architecture/cost-tracking",
           "architecture/config-layers",
           "architecture/storage",
-          "architecture/security"
+          "architecture/security",
+          "architecture/fleet-worker-heartbeat"
         ]
       },
       {
