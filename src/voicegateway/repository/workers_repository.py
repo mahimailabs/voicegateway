@@ -106,8 +106,8 @@ async def read_roster(
     """Return the roster, marking rows ``offline`` when heartbeats are stale."""
     stmt = select(Worker)
     if tenant_id is not None:
-        stmt = stmt.where(Worker.tenant_id == tenant_id)
-    stmt = stmt.order_by(Worker.last_seen.desc())
+        stmt = stmt.where(Worker.tenant_id == tenant_id)  # type: ignore[arg-type]
+    stmt = stmt.order_by(Worker.last_seen.desc())  # type: ignore[attr-defined]
     result = await db.execute(stmt)
     rows: list[RosterRow] = []
     for w in result.scalars().all():
