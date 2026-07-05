@@ -24,6 +24,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from voicegateway.repository import workers_repository
+from voicegateway.repository.workers_repository import DEFAULT_TTL_SECONDS
 from voicegateway.server.api._deps import (
     Depends,
     Principal,
@@ -43,7 +44,6 @@ router = APIRouter(prefix="/openorca", tags=["openorca"])
 # endpoint imports this lazily to publish agent/fleet updates).
 bus = EventBus()
 
-_TTL_SECONDS = 45.0
 _KEEPALIVE_SECONDS = 15.0
 
 
@@ -57,6 +57,25 @@ def _sse(event: dict[str, Any]) -> str:
     return f"data: {json.dumps(event)}\n\n"
 
 
+def _event_for_subscriber(
+    event: dict[str, Any], tenant_id: str | None
+) -> dict[str, Any] | None:
+    """Scope a bus event to one subscriber's tenant.
+
+    Producers tag tenant-owned events with an internal ``_tenant`` key. If that
+    tag is set and does not match this subscriber's ``tenant_id``, the event is
+    for another tenant and is dropped (returns ``None``). Otherwise a copy is
+    returned WITHOUT the internal ``_tenant`` key so it never leaks to a client.
+    An untagged event (``_tenant`` absent or ``None``) is broadcast to everyone.
+    """
+    event_tenant = event.get("_tenant")
+    if event_tenant is not None and event_tenant != tenant_id:
+        return None
+    visible = dict(event)
+    visible.pop("_tenant", None)
+    return visible
+
+
 async def _current_snapshot(gateway: Gateway, tenant_id: str | None) -> dict[str, Any]:
     """Read the roster (scoped to ``tenant_id``) and map it to a snapshot."""
     generated_at = _now_iso()
@@ -68,7 +87,7 @@ async def _current_snapshot(gateway: Gateway, tenant_id: str | None) -> dict[str
             db,
             tenant_id=tenant_id,
             now=time.time(),
-            ttl_seconds=_TTL_SECONDS,
+            ttl_seconds=DEFAULT_TTL_SECONDS,
         )
     return build_snapshot(rows, generated_at=generated_at)
 
@@ -95,8 +114,16 @@ async def snapshot(
 
 
 @router.post("/interventions/resolve")
-async def resolve_intervention(request: Request) -> dict[str, str]:
-    """Publish an intervention resolution to connected dashboards."""
+async def resolve_intervention(
+    request: Request,
+    principal: Principal = Depends(require_principal),
+) -> dict[str, str]:
+    """Publish an intervention resolution to connected dashboards.
+
+    Gated behind ``require_principal`` so an intervention write requires the
+    same authentication as the dashboard reads. In the default no-static-keys
+    config the operator passes and behavior is unchanged.
+    """
     body: dict[str, Any] = await request.json()
     await bus.publish(
         {
@@ -127,17 +154,27 @@ async def events(
                     )
                 except TimeoutError:
                     # Idle keepalive: heartbeat + fold in a periodic fleet
-                    # refresh so offline TTL transitions propagate.
-                    event = {"type": "runtime.status", "status": "connected"}
+                    # refresh so offline TTL transitions propagate. Both frames
+                    # are built from _current_snapshot (already scoped to this
+                    # subscriber's tenant), so they bypass the fan-out filter.
                     snap = await _current_snapshot(gateway, tenant_id)
                     yield _sse(
                         {"type": "fleet.updated", "fleetHealth": snap["fleetHealth"]}
                     )
-                if event["type"] == "__resync__":
+                    yield _sse({"type": "runtime.status", "status": "connected"})
+                    continue
+
+                # Bus path: scope the event to this subscriber's tenant and
+                # strip the internal tag before it reaches the client.
+                visible = _event_for_subscriber(event, tenant_id)
+                if visible is None:
+                    continue
+                if visible["type"] == "__resync__":
                     snap = await _current_snapshot(gateway, tenant_id)
-                    event = {"type": "snapshot.replace", "snapshot": snap}
-                yield _sse(event)
+                    visible = {"type": "snapshot.replace", "snapshot": snap}
+                yield _sse(visible)
         finally:
+            bus.unsubscribe(sub)
             await sub.aclose()
 
     return StreamingResponse(_generate(), media_type="text/event-stream")

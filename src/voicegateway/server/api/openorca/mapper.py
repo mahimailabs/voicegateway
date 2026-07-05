@@ -23,11 +23,11 @@ def _agent_status(statuses: list[str]) -> str:
     """Collapse a group's worker statuses into one node status.
 
     ``active`` when any worker is ``busy``; else ``idle`` when any worker is
-    ``busy`` or ``idle``; else ``offline`` (every worker stale/offline).
+    ``idle``; else ``offline`` (every worker stale/offline).
     """
     if any(s == "busy" for s in statuses):
         return "active"
-    if any(s in ("busy", "idle") for s in statuses):
+    if any(s == "idle" for s in statuses):
         return "idle"
     return "offline"
 

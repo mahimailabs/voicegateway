@@ -73,6 +73,26 @@ async def test_upsert_twice_same_key_keeps_one_row_latest_wins(
     assert rows[0].last_seen == 2100.0
 
 
+async def test_upsert_twice_null_tenant_keeps_one_row(db: AsyncSession) -> None:
+    # The self-hosted operator's heartbeats carry no tenant (tenant_id is None).
+    # A NULL tenant must still match its own row on the next heartbeat, or the
+    # roster would gain a duplicate every 15s (NULLs are distinct under a unique
+    # constraint, so this guards against a native ON CONFLICT regression).
+    await workers.upsert_heartbeat(
+        db, _presence(tenant_id=None, active_sessions=1, status="idle", ts=2000.0)
+    )
+    await workers.upsert_heartbeat(
+        db, _presence(tenant_id=None, active_sessions=4, status="busy", ts=2100.0)
+    )
+
+    rows = await workers.read_roster(db, tenant_id=None, now=2110.0)
+
+    assert len(rows) == 1
+    assert rows[0].tenant_id is None
+    assert rows[0].active_sessions == 4
+    assert rows[0].status == "busy"
+
+
 async def test_stale_last_seen_is_offline(db: AsyncSession) -> None:
     await workers.upsert_heartbeat(db, _presence(ts=1000.0, status="busy"))
 
