@@ -23,7 +23,11 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from voicegateway.repository import workers_repository
+from voicegateway.repository import (
+    guardrail_events_repository,
+    session_repository,
+    workers_repository,
+)
 from voicegateway.repository.workers_repository import DEFAULT_TTL_SECONDS
 from voicegateway.server.api._deps import (
     Depends,
@@ -89,7 +93,17 @@ async def _current_snapshot(gateway: Gateway, tenant_id: str | None) -> dict[str
             now=time.time(),
             ttl_seconds=DEFAULT_TTL_SECONDS,
         )
-    return build_snapshot(rows, generated_at=generated_at)
+        # Recent sessions -> tasks; guardrail events -> interventions. Both are
+        # tenant-scoped exactly like the roster above.
+        sessions = await session_repository.list_sessions(
+            db, tenant=tenant_id, limit=100
+        )
+        events = await guardrail_events_repository.list_events(
+            db, tenant=tenant_id, limit=50
+        )
+    return build_snapshot(
+        rows, sessions=sessions, interventions=events, generated_at=generated_at
+    )
 
 
 @router.get("/runtime-info")
