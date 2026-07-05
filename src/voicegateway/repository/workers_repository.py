@@ -14,11 +14,17 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from voicegateway.models.worker_model import Worker
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+
+# Roster liveness TTL: a worker whose last heartbeat has aged past this many
+# seconds is served ``offline``. Shared by the repository read default and by
+# the agents/openorca routes so the value is defined exactly once.
+DEFAULT_TTL_SECONDS = 45.0
 
 
 @dataclass(frozen=True)
@@ -56,21 +62,38 @@ def _fields_from_presence(presence: dict[str, Any]) -> dict[str, Any]:
 
 
 async def upsert_heartbeat(db: AsyncSession, presence: dict[str, Any]) -> None:
-    """Insert or update one worker row keyed by ``(tenant_id, agent_id)``."""
+    """Insert or update one worker row keyed by ``(tenant_id, agent_id)``.
+
+    Select-then-update rather than a database-native ``ON CONFLICT``: the
+    self-hosted operator's heartbeats carry no tenant, and a unique constraint
+    treats NULLs as distinct in both SQLite and PostgreSQL, so an on-conflict
+    upsert would duplicate the operator's row on every heartbeat. Comparing
+    ``tenant_id`` to a ``None`` value compiles to ``IS NULL`` here, so the
+    existing NULL-tenant row is matched and updated in place. A concurrent first
+    insert of the same key (non-null tenant) is handled by re-selecting and
+    updating on :class:`IntegrityError`.
+    """
     fields = _fields_from_presence(presence)
-    result = await db.execute(
-        select(Worker).where(
-            Worker.tenant_id == fields["tenant_id"],
-            Worker.agent_id == fields["agent_id"],
-        )
+    stmt = select(Worker).where(
+        Worker.tenant_id == fields["tenant_id"],
+        Worker.agent_id == fields["agent_id"],
     )
+    result = await db.execute(stmt)
     worker = result.scalar_one_or_none()
     if worker is None:
         db.add(Worker(**fields))
     else:
         for key, value in fields.items():
             setattr(worker, key, value)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        result = await db.execute(stmt)
+        worker = result.scalar_one()
+        for key, value in fields.items():
+            setattr(worker, key, value)
+        await db.commit()
 
 
 async def read_roster(
@@ -78,7 +101,7 @@ async def read_roster(
     *,
     tenant_id: str | None,
     now: float,
-    ttl_seconds: float = 45.0,
+    ttl_seconds: float = DEFAULT_TTL_SECONDS,
 ) -> list[RosterRow]:
     """Return the roster, marking rows ``offline`` when heartbeats are stale."""
     stmt = select(Worker)
@@ -108,6 +131,7 @@ async def read_roster(
 
 
 __all__ = [
+    "DEFAULT_TTL_SECONDS",
     "RosterRow",
     "read_roster",
     "upsert_heartbeat",

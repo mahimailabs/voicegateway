@@ -63,6 +63,10 @@ class EventBus:
         self._subs.add(sub)
         return sub
 
+    def unsubscribe(self, sub: Subscription) -> None:
+        """Evict ``sub`` from the fan-out set so publishes stop reaching it."""
+        self._subs.discard(sub)
+
     async def publish(self, event: dict[str, Any]) -> None:
         """Offer ``event`` to every non-closed subscriber; drop closed ones."""
         dead: list[Subscription] = []

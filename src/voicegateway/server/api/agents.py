@@ -10,18 +10,25 @@ the unscoped roster.
 
 from __future__ import annotations
 
+import logging
 import time
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
 from voicegateway.repository import workers_repository
-from voicegateway.server.api._deps import get_gateway, require_scope
+from voicegateway.repository.workers_repository import DEFAULT_TTL_SECONDS
+from voicegateway.server.api._deps import (
+    Principal,
+    get_gateway,
+    require_principal,
+    require_scope,
+    resolve_read_tenant,
+)
 
 router = APIRouter(prefix="/agents", tags=["agents"])
-
-_TTL_SECONDS = 45.0
+logger = logging.getLogger(__name__)
 
 
 @router.post(
@@ -44,7 +51,12 @@ async def heartbeat(request: Request) -> dict[str, str]:
         await gateway.storage._ensure_initialized()
         async with gateway.storage._conn.session() as db:
             await workers_repository.upsert_heartbeat(db, presence)
-        await _publish_fleet_update(gateway, presence)
+        # The upsert is already committed above, so a publish failure must not
+        # change the 202: swallow and log it rather than fail the heartbeat.
+        try:
+            await _publish_fleet_update(gateway, presence)
+        except Exception:
+            logger.exception("Fleet SSE publish failed; heartbeat was still accepted")
 
     return {"status": "accepted"}
 
@@ -52,12 +64,15 @@ async def heartbeat(request: Request) -> dict[str, str]:
 async def _publish_fleet_update(gateway: Any, presence: dict[str, Any]) -> None:
     """Push agent/fleet updates to connected OpenOrca dashboards.
 
-    Imported lazily to avoid an import cycle (the openorca routes module
-    imports shared api dependencies that would otherwise pull this module in
-    at import time). A failure here must never break the heartbeat write.
-    """
-    from datetime import datetime
+    The mapper/bus import stays lazy to avoid an import cycle (the openorca
+    routes module imports shared api dependencies that would otherwise pull
+    this module in at import time). A failure here must never break the
+    heartbeat write.
 
+    Every published event carries an internal ``_tenant`` tag so the SSE
+    fan-out can scope it to the owning tenant's subscribers only; the stream
+    strips that key before it reaches a client.
+    """
     from voicegateway.server.api.openorca.mapper import build_snapshot
     from voicegateway.server.api.openorca.routes import bus
 
@@ -67,7 +82,7 @@ async def _publish_fleet_update(gateway: Any, presence: dict[str, Any]) -> None:
             db,
             tenant_id=tenant_id,
             now=time.time(),
-            ttl_seconds=_TTL_SECONDS,
+            ttl_seconds=DEFAULT_TTL_SECONDS,
         )
     snap = build_snapshot(rows, generated_at=datetime.now(UTC).isoformat())
     agent = next(
@@ -75,15 +90,32 @@ async def _publish_fleet_update(gateway: Any, presence: dict[str, Any]) -> None:
         None,
     )
     if agent is not None:
-        await bus.publish({"type": "agent.updated", "agent": agent})
-    await bus.publish({"type": "fleet.updated", "fleetHealth": snap["fleetHealth"]})
+        await bus.publish(
+            {"type": "agent.updated", "agent": agent, "_tenant": tenant_id}
+        )
+    await bus.publish(
+        {
+            "type": "fleet.updated",
+            "fleetHealth": snap["fleetHealth"],
+            "_tenant": tenant_id,
+        }
+    )
 
 
-@router.get("", dependencies=[Depends(require_scope("read"))])
-async def list_agents(request: Request) -> dict[str, list[dict[str, Any]]]:
-    """Return the live worker roster, scoped to the caller's tenant if any."""
+@router.get("")
+async def list_agents(
+    request: Request,
+    principal: Principal = Depends(require_principal),
+) -> dict[str, list[dict[str, Any]]]:
+    """Return the live worker roster, scoped to the caller's tenant.
+
+    Uses the same read-tenant resolution as the dashboard reads: an admin/
+    operator sees every worker, a tenant key sees only its own, and a
+    non-admin key with a NULL tenant maps to the unattributed ("") bucket
+    instead of leaking the whole roster.
+    """
     gateway = get_gateway(request)
-    tenant_id = getattr(request.state, "api_key_tenant_id", None)
+    tenant_id = resolve_read_tenant(principal, None)
 
     workers: list[dict[str, Any]] = []
     if gateway.storage is not None:
@@ -93,7 +125,7 @@ async def list_agents(request: Request) -> dict[str, list[dict[str, Any]]]:
                 db,
                 tenant_id=tenant_id,
                 now=time.time(),
-                ttl_seconds=_TTL_SECONDS,
+                ttl_seconds=DEFAULT_TTL_SECONDS,
             )
         workers = [
             {

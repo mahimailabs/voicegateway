@@ -41,3 +41,15 @@ async def test_closed_subscriber_is_dropped_on_publish() -> None:
     # Publishing to a closed subscriber must not raise and must prune it.
     await bus.publish({"type": "ignored"})
     assert sub.closed is True
+
+
+async def test_unsubscribe_evicts_and_stops_delivery() -> None:
+    bus = EventBus()
+    sub = bus.subscribe()
+
+    bus.unsubscribe(sub)
+
+    # The subscriber is gone from the fan-out set and gets no further events.
+    assert sub not in bus._subs
+    await bus.publish({"type": "after-unsub"})
+    assert sub._queue.empty()

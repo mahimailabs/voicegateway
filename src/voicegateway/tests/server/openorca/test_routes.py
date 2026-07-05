@@ -95,6 +95,17 @@ async def test_heartbeat_then_snapshot_shows_node(harness) -> None:
     assert body["fleetHealth"]["activeAgents"] == 1
 
 
+async def test_resolve_intervention_passes_operator_default(harness) -> None:
+    """The resolve write is auth-gated but the no-credential operator passes."""
+    async with harness.client() as c:
+        resp = await c.post(
+            "/openorca/interventions/resolve",
+            json={"interventionId": "iv-1", "action": "approve"},
+        )
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"status": "resolved"}
+
+
 async def test_runtime_info_advertises_sse(harness) -> None:
     async with harness.client() as c:
         resp = await c.get("/openorca/runtime-info")
