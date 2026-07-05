@@ -27,6 +27,7 @@ from voicegateway.models.request_model import Request, RequestRecord
 from voicegateway.models.session_model import Session
 from voicegateway.models.tenant_model import Tenant
 from voicegateway.models.turn_model import Turn
+from voicegateway.models.worker_model import Worker
 
 __all__ = [
     "AgentObservation",
@@ -48,5 +49,6 @@ __all__ = [
     "Session",
     "Tenant",
     "Turn",
+    "Worker",
     "ApiKey",
 ]

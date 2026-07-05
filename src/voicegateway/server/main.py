@@ -117,10 +117,12 @@ class ApplicationBuilder:
 
     def _configure_routers(self) -> None:
         from voicegateway.server.api.dashboard.branding import mount_static_branding
+        from voicegateway.server.api.openorca.routes import router as openorca_router
 
         self.app.include_router(system_router)
         self.app.include_router(api_router)
         self.app.include_router(dashboard_router)
+        self.app.include_router(openorca_router)
         mount_static_branding(self.app)
 
     def _mount_mcp_sse(self) -> None:
