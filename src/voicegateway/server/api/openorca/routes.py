@@ -20,7 +20,7 @@ import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from voicegateway.repository import (
@@ -49,6 +49,31 @@ router = APIRouter(prefix="/openorca", tags=["openorca"])
 bus = EventBus()
 
 _KEEPALIVE_SECONDS = 15.0
+
+# In-memory intervention resolutions, keyed by tenant then interventionId. A
+# resolved intervention is filtered out of subsequent snapshots so it stops
+# reappearing. In-memory (not durable across restarts, not shared across
+# workers): adequate for the console; a persistent store can replace this later.
+_RESOLUTIONS: dict[str | None, dict[str, float]] = {}
+_RESOLUTION_TTL_SECONDS = 24 * 3600
+_RESOLVE_ACTIONS = {"approve", "deny", "later"}
+
+
+def _mark_resolved(tenant_id: str | None, intervention_id: str) -> None:
+    """Record an intervention as resolved for a tenant, pruning stale entries."""
+    now = time.time()
+    bucket = _RESOLUTIONS.setdefault(tenant_id, {})
+    bucket[intervention_id] = now
+    for iid, ts in list(bucket.items()):
+        if now - ts > _RESOLUTION_TTL_SECONDS:
+            del bucket[iid]
+
+
+def _resolved_ids(tenant_id: str | None) -> set[str]:
+    """The set of still-fresh resolved intervention ids for a tenant."""
+    now = time.time()
+    bucket = _RESOLUTIONS.get(tenant_id, {})
+    return {iid for iid, ts in bucket.items() if now - ts <= _RESOLUTION_TTL_SECONDS}
 
 
 def _now_iso() -> str:
@@ -101,6 +126,10 @@ async def _current_snapshot(gateway: Gateway, tenant_id: str | None) -> dict[str
         events = await guardrail_events_repository.list_events(
             db, tenant=tenant_id, limit=50
         )
+    # Drop interventions the operator has already resolved so they do not
+    # reappear on the next snapshot (their id is ``guardrail-{event.id}``).
+    resolved = _resolved_ids(tenant_id)
+    events = [e for e in events if f"guardrail-{e.id}" not in resolved]
     return build_snapshot(
         rows, sessions=sessions, interventions=events, generated_at=generated_at
     )
@@ -132,18 +161,31 @@ async def resolve_intervention(
     request: Request,
     principal: Principal = Depends(require_principal),
 ) -> dict[str, str]:
-    """Publish an intervention resolution to connected dashboards.
+    """Resolve an intervention: validate the request, record the resolution so
+    the intervention drops out of later snapshots, and publish a TENANT-SCOPED
+    ``intervention.resolved`` so only that tenant's dashboards update.
 
-    Gated behind ``require_principal`` so an intervention write requires the
-    same authentication as the dashboard reads. In the default no-static-keys
-    config the operator passes and behavior is unchanged.
+    Gated behind ``require_principal`` so a write requires the same auth as the
+    reads. The tenant is taken from the principal (never the body), so a caller
+    can only ever resolve their own tenant's interventions.
     """
     body: dict[str, Any] = await request.json()
+    intervention_id = body.get("interventionId")
+    action = body.get("action", "later")
+    if not isinstance(intervention_id, str) or not intervention_id:
+        raise HTTPException(status_code=400, detail="interventionId is required")
+    if action not in _RESOLVE_ACTIONS:
+        raise HTTPException(
+            status_code=400, detail="action must be approve, deny, or later"
+        )
+    tenant_id = resolve_read_tenant(principal, request.query_params.get("tenant"))
+    _mark_resolved(tenant_id, intervention_id)
     await bus.publish(
         {
             "type": "intervention.resolved",
-            "interventionId": body.get("interventionId"),
-            "resolution": body.get("action", "later"),
+            "interventionId": intervention_id,
+            "resolution": action,
+            "_tenant": tenant_id,
         }
     )
     return {"status": "resolved"}
