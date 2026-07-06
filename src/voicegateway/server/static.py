@@ -133,4 +133,42 @@ def mount_frontend(app: FastAPI) -> None:
             }
 
 
-__all__ = ["mount_frontend"]
+_CONSOLE_CANDIDATE_DIRS: list[Path] = [
+    # Installed-wheel layout: ``src/voicegateway/_console_dist``.
+    Path(__file__).resolve().parent.parent / "_console_dist",
+    # Editable-install / dev layout: ``src/dashboard/console/dist`` (built by
+    # ``cd src/dashboard/console && npm install && npm run build``).
+    Path(__file__).resolve().parent.parent.parent / "dashboard" / "console" / "dist",
+]
+
+
+def _resolve_console_dir() -> Path | None:
+    for candidate in _CONSOLE_CANDIDATE_DIRS:
+        if candidate.exists() and (candidate / "assets").exists():
+            return candidate
+    return None
+
+
+def mount_console(app: FastAPI) -> None:
+    """Mount the OpenOrca fleet console SPA at ``/console`` when it is built.
+
+    The console (React 19 + Tailwind, built from ``src/dashboard/console``)
+    renders ``<OpenOrcaDashboard mode="runtime">`` against this same server's
+    ``/openorca/*`` endpoints. Served as a self-contained StaticFiles mount
+    (``html=True`` handles ``/console`` -> index.html and ``/console/assets/*``);
+    the console's Vite ``base`` is ``/console/`` so its asset URLs resolve here.
+
+    MUST be called BEFORE :func:`mount_frontend` so the dashboard's
+    ``/{full_path:path}`` SPA fallback does not shadow ``/console``. A no-op when
+    the console is not built (the dashboard and API are unaffected).
+    """
+    console_dir = _resolve_console_dir()
+    if console_dir is not None:
+        app.mount(
+            "/console",
+            StaticFiles(directory=console_dir, html=True),
+            name="console",
+        )
+
+
+__all__ = ["mount_frontend", "mount_console"]
