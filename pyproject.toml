@@ -207,6 +207,7 @@ version-file = "src/voicegateway/_version.py"
 [tool.hatch.build]
 artifacts = [
     "src/voicegateway/_dashboard_dist/**/*",
+    "src/voicegateway/_console_dist/**/*",
     "src/voicegateway/livekit_diag/assets/*.wav",
 ]
 
@@ -239,6 +240,16 @@ exclude = [
     "src/dashboard/frontend/vite.config.ts",
     "src/dashboard/frontend/vite.config.d.ts",
     "src/dashboard/frontend/index.html",
+    # Console (React 19 + Tailwind) build inputs: the daemon only needs its
+    # built dist (staged into voicegateway/_console_dist), so keep the source
+    # and toolchain files out of the wheel, mirroring the frontend excludes.
+    "src/dashboard/console/node_modules",
+    "src/dashboard/console/src",
+    "src/dashboard/console/package.json",
+    "src/dashboard/console/package-lock.json",
+    "src/dashboard/console/tsconfig.json",
+    "src/dashboard/console/vite.config.ts",
+    "src/dashboard/console/index.html",
     # Keep compiled migration bytecode out of the force-included alembic tree.
     "alembic/__pycache__",
     "alembic/versions/__pycache__",

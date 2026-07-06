@@ -4,6 +4,34 @@ All notable changes to VoiceGateway are documented here. This project
 follows [Semantic Versioning](https://semver.org/) and
 [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.15.0: OpenOrca fleet console + runtime intervention resolve
+
+The `/openorca/*` runtime contract gains the pieces a live fleet console needs,
+and the engine now serves that console itself at `/console`.
+
+### Added
+
+- **OpenOrca fleet console at `/console`.** A standalone React 19 + Tailwind v4
+  SPA (built from `src/dashboard/console`) that renders `<OpenOrcaDashboard
+  mode="runtime">` against this server's own `/openorca/*` endpoints. `voicegw
+  serve` mounts it when built. Kept separate from the React 18 dashboard because
+  `@openorca-ui/react` peers on React 19 and ships source Tailwind v4.
+- **Real intervention-resolve endpoint.** `POST /openorca/interventions/resolve`
+  validates the intervention id and action (`approve` / `deny` / `later`),
+  tenant-scopes the request, persists the resolution with a TTL, and publishes a
+  tenant-scoped `intervention.resolved` event. Resolved interventions drop out of
+  the snapshot.
+- **Snapshot enrichment.** The mapper folds live sessions into agent tasks and
+  guardrail events into interventions per project, and rolls them into
+  `fleetHealth`, so the snapshot reflects real call and guardrail state.
+
+### Packaging
+
+- The wheel and Docker image now build and bundle the console SPA
+  (`build_wheel.sh` stages `_console_dist`; the Dockerfile adds a console builder
+  stage), so `pip install voicegateway` and the published image both serve
+  `/console`.
+
 ## v0.9.2: the Postgres fleet collector actually works
 
 The Postgres collector backend carried several SQLite-only SQL constructs that

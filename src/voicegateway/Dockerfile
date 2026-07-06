@@ -12,6 +12,17 @@ RUN npm ci
 COPY src/dashboard/frontend/ ./
 RUN npm run build
 
+# -------- Stage 1b: Console builder --------
+# The OpenOrca fleet console (/console) is a separate React 19 + Tailwind v4 +
+# Vite 7 SPA, so it builds in its own stage on Node 22 (Vite 7 needs >=20.19).
+FROM node:22-alpine AS console-builder
+
+WORKDIR /build/console
+COPY src/dashboard/console/package*.json ./
+RUN npm ci
+COPY src/dashboard/console/ ./
+RUN npm run build
+
 # -------- Stage 2: Python builder --------
 FROM python:3.12-slim AS builder
 
@@ -92,6 +103,9 @@ COPY --from=builder --chown=voicegw:voicegw \
 COPY --chown=voicegw:voicegw src/dashboard/__init__.py /app/dashboard/
 COPY --chown=voicegw:voicegw src/dashboard/api/static/ /app/dashboard/api/static/
 COPY --from=frontend-builder --chown=voicegw:voicegw /build/frontend/dist /app/dashboard/frontend/dist
+# The console mounts at /console; static.mount_console resolves its dev-layout
+# candidate (dashboard/console/dist) relative to /app, matching the dashboard above.
+COPY --from=console-builder --chown=voicegw:voicegw /build/console/dist /app/dashboard/console/dist
 
 # Ship the migrations. On first DB access the runtime runs `alembic upgrade
 # head`; Database._find_alembic_ini walks up from /app/voicegateway to /app, and
