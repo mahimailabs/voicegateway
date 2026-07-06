@@ -24,7 +24,7 @@ from voicegateway.core.auth import load_api_keys, resolve_cors_origins
 from voicegateway.core.events import lifespan
 from voicegateway.server.mcp.transport import mount_sse
 from voicegateway.server.routes import api_router, dashboard_router, system_router
-from voicegateway.server.static import mount_frontend
+from voicegateway.server.static import mount_console, mount_frontend
 from voicegateway.services.ingest_rate_limiter import IngestRateLimiter
 
 if TYPE_CHECKING:
@@ -129,6 +129,9 @@ class ApplicationBuilder:
         mount_sse(self.app, self.gateway)
 
     def _mount_dashboard_spa(self) -> None:
+        # Console first: its /console mount must precede the dashboard's
+        # /{full_path:path} SPA fallback so the fallback does not shadow it.
+        mount_console(self.app)
         mount_frontend(self.app)
 
 
