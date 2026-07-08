@@ -129,6 +129,44 @@ async def test_metric_capture_writes_llm_row(tmp_path):
     assert row["session_id"] == "vg-test"
 
 
+def _stamp_capture(channel):
+    """A MetricCapture built just to exercise _stamp_context (cost_tracker/sink unused there)."""
+    return MetricCapture(
+        cost_tracker=None,  # type: ignore[arg-type]
+        sink=None,  # type: ignore[arg-type]
+        project="fleet",
+        agent_id="agent-3",
+        session_id="vg-test",
+        channel=channel,
+    )
+
+
+def _blank_record():
+    from voicegateway.models.request_model import RequestRecord
+
+    return RequestRecord(
+        id="r",
+        timestamp=0.0,
+        modality="llm",
+        model_id="openai/gpt-4o-mini",
+        provider="openai",
+    )
+
+
+def test_stamp_context_adds_channel_when_set():
+    """attach()'s telephony/web classification rides on each request's metadata."""
+    record = _blank_record()
+    _stamp_capture("telephony")._stamp_context(record)
+    assert record.metadata["channel"] == "telephony"
+
+
+def test_stamp_context_omits_channel_when_unknown():
+    """No classification means the row carries no channel key, not a guess."""
+    record = _blank_record()
+    _stamp_capture(None)._stamp_context(record)
+    assert "channel" not in record.metadata
+
+
 async def test_metric_capture_handles_three_modalities(tmp_path):
     """STT, LLM, and TTS components each produce a correctly-typed row."""
     storage = StorageService(str(tmp_path / "cap3.db"))

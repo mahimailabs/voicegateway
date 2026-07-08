@@ -217,6 +217,7 @@ class MetricCapture:
         session_id: str | None,
         tenant_id: str | None = None,
         room: str | None = None,
+        channel: str | None = None,
     ) -> None:
         self._cost_tracker = cost_tracker
         self._sink = sink
@@ -225,6 +226,7 @@ class MetricCapture:
         self._session_id = session_id
         self._tenant_id = tenant_id
         self._room = room
+        self._channel = channel
         self._pending: set[asyncio.Task[None]] = set()
         # Per-(provider, model_id) running tally of captured units, so the
         # close-time reconcile can diff against cumulative session.usage.
@@ -339,6 +341,11 @@ class MetricCapture:
             extra["tenant_id"] = self._tenant_id
         if self._room:
             extra["room"] = self._room
+        # ``channel`` (telephony vs web) rides in metadata like room: it has no
+        # RequestRecord column, and the dashboard reads it back per call to show a
+        # phone/web chip. Absent when attach could not classify the participants.
+        if self._channel:
+            extra["channel"] = self._channel
         if extra:
             record.metadata = {**record.metadata, **extra}
 

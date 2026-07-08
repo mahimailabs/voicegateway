@@ -169,6 +169,24 @@ ORDER BY started_at DESC
 LIMIT {limit:UInt32}
 """
 
+# One call's individual requests, oldest first (the call timeline for the dashboard
+# drill-down). Filters on the session_id column (exact + cheap); LIMIT 1 BY id dedups
+# transient pre-merge duplicates like the recent-requests read.
+_SQL_SESSION_REQUESTS = """\
+SELECT
+    id, timestamp, project, modality, model_id, provider,
+    input_units, output_units, cached_input_units, cost_usd,
+    pricing_source, ttfb_ms, total_latency_ms, status,
+    fallback_from, error_message, metadata, session_id,
+    tenant_id, agent_id
+FROM telemetry.requests
+WHERE tenant_id = {tenant:String}
+  AND session_id = {session_id:String}
+ORDER BY timestamp ASC
+LIMIT 1 BY id
+LIMIT {limit:UInt32}
+"""
+
 # Admin-only: no tenant filter. Returns all tenants.
 _SQL_COST_BY_TENANT_ADMIN = """\
 SELECT
@@ -432,6 +450,55 @@ async def get_recent_requests(
     )
     sql = _render(_SQL_RECENT_REQUESTS, until=until, project=project)
     result = await client.query(sql, parameters=params)
+
+    _COLS = (
+        "id",
+        "timestamp",
+        "project",
+        "modality",
+        "model_id",
+        "provider",
+        "input_units",
+        "output_units",
+        "cached_input_units",
+        "cost_usd",
+        "pricing_source",
+        "ttfb_ms",
+        "total_latency_ms",
+        "status",
+        "fallback_from",
+        "error_message",
+        "metadata",
+        "session_id",
+        "tenant_id",
+        "agent_id",
+    )
+
+    rows = []
+    for row in result.result_rows:
+        record: dict[str, Any] = {col: row[i] for i, col in enumerate(_COLS)}
+        record["timestamp"] = _dt_to_epoch(record["timestamp"])
+        record["metadata"] = _parse_metadata(record["metadata"])
+        rows.append(record)
+    return rows
+
+
+async def get_session_requests(
+    client: Any,
+    *,
+    tenant: str,
+    session_id: str,
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    """Return every request row for one session, oldest first (the call's timeline).
+
+    Filters on the ``session_id`` column (exact and cheap), so it powers the dashboard call
+    drill-down: the STT/LLM/TTS sequence with per-request latency, cost, and status, plus each
+    row's ``metadata`` (from which the phone/web channel is read). Bounded by ``limit`` so one
+    pathological session cannot return unbounded rows.
+    """
+    params = {"tenant": tenant, "session_id": session_id, "limit": limit}
+    result = await client.query(_SQL_SESSION_REQUESTS, parameters=params)
 
     _COLS = (
         "id",

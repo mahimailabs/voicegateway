@@ -961,3 +961,80 @@ class TestGetCostByTenantAdmin:
         for _tenant, stats in result.items():
             assert "cost" in stats
             assert "requests" in stats
+
+
+class TestGetSessionRequests:
+    async def test_scoped_ordered_and_reads_channel(self, ch_session_reads):
+        from voicegateway.clickhouse.read_repository import get_session_requests
+
+        _insert(
+            ch_session_reads,
+            [
+                {
+                    "tenant_id": "acme",
+                    "id": "r1",
+                    "ts": _DAY1,
+                    "modality": "stt",
+                    "provider": "deepgram",
+                    "model_id": "deepgram/nova-3",
+                    "cost_usd": 0.001,
+                    "ttfb_ms": 110.0,
+                    "total_latency_ms": 110.0,
+                    "session_id": "call_a",
+                    "agent_id": "w1",
+                    "metadata": {"channel": "telephony"},
+                },
+                {
+                    "tenant_id": "acme",
+                    "id": "r2",
+                    "ts": _DAY1 + 2,
+                    "modality": "llm",
+                    "provider": "openai",
+                    "model_id": "openai/gpt-4.1-mini",
+                    "cost_usd": 0.004,
+                    "ttfb_ms": 200.0,
+                    "total_latency_ms": 200.0,
+                    "session_id": "call_a",
+                    "agent_id": "w1",
+                    "metadata": {"channel": "telephony"},
+                },
+                {
+                    "tenant_id": "acme",
+                    "id": "r3",
+                    "ts": _DAY1,
+                    "modality": "tts",
+                    "provider": "deepgram",
+                    "model_id": "deepgram/aura-2",
+                    "cost_usd": 0.002,
+                    "ttfb_ms": 135.0,
+                    "total_latency_ms": 135.0,
+                    "session_id": "call_b",
+                    "agent_id": "w1",
+                    "metadata": {},
+                },
+                {
+                    "tenant_id": "beta",
+                    "id": "b1",
+                    "ts": _DAY1,
+                    "modality": "llm",
+                    "provider": "openai",
+                    "model_id": "m",
+                    "cost_usd": 0.004,
+                    "ttfb_ms": 90.0,
+                    "total_latency_ms": 90.0,
+                    "session_id": "call_a",
+                    "agent_id": "w2",
+                    "metadata": {},
+                },
+            ],
+        )
+        client = ChdbAdapter(ch_session_reads)
+        rows = await get_session_requests(client, tenant="acme", session_id="call_a")
+
+        # Only acme's call_a, oldest first (the call timeline).
+        assert [r["id"] for r in rows] == ["r1", "r2"]
+        assert rows[0]["modality"] == "stt"
+        # Channel rides in metadata (no dedicated column).
+        assert rows[0]["metadata"]["channel"] == "telephony"
+        # beta's identically-named session never leaks into acme's drill-down.
+        assert all(r["tenant_id"] == "acme" for r in rows)
