@@ -222,6 +222,40 @@ def _resolve_room(session: Any) -> str | None:
     return name if isinstance(name, str) and name else None
 
 
+def _resolve_channel(session: Any) -> str | None:
+    """Best-effort telephony-vs-web classification for the dashboard's per-call chip.
+
+    A SIP remote participant means a phone call; any other remote participant means a web
+    session. Prefers an explicit ``session._vg_channel`` (tests / advanced callers), then the
+    running LiveKit job context. Returns None when it cannot tell (off a job, or no participant
+    has joined yet), so the row simply carries no channel rather than a wrong guess.
+    """
+    ch = getattr(session, "_vg_channel", None)
+    if isinstance(ch, str) and ch:
+        return ch
+    try:
+        from livekit.agents import get_job_context
+
+        ctx = get_job_context(required=False)
+    except Exception:  # noqa: BLE001 - livekit not installed / no job context
+        return None
+    participants = getattr(getattr(ctx, "room", None), "remote_participants", None)
+    if not participants:
+        return None
+    try:
+        from livekit import rtc
+
+        sip_kind = rtc.ParticipantKind.PARTICIPANT_KIND_SIP
+    except Exception:  # noqa: BLE001 - older livekit without the kind enum
+        sip_kind = None
+    saw_participant = False
+    for participant in participants.values():
+        saw_participant = True
+        if sip_kind is not None and getattr(participant, "kind", None) == sip_kind:
+            return "telephony"
+    return "web" if saw_participant else None
+
+
 def _build_default_sink(
     collector_url: str | None,
     api_key: str | None,
@@ -306,6 +340,7 @@ def attach(
     resolved_collector = collector_url or os.environ.get("VOICEGW_COLLECTOR_URL")
     resolved_key = api_key or os.environ.get("VOICEGW_API_KEY")
     resolved_room = room or _resolve_room(session)
+    resolved_channel = _resolve_channel(session)
     session_id = get_or_create_session_id()
     if tenant_id is not None:
         set_tenant(tenant_id)
@@ -321,6 +356,7 @@ def attach(
         session_id=session_id,
         tenant_id=tenant_id,
         room=resolved_room,
+        channel=resolved_channel,
     )
     capture.bind(session)
 
