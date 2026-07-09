@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from voicegateway._version import __version__
 from voicegateway.fleet.worker import register_worker
+from voicegateway.guard import guard
 from voicegateway.inference.session.attach import attach
 
 if TYPE_CHECKING:
@@ -34,6 +35,7 @@ __all__ = [
     "STT",
     "TTS",
     "attach",
+    "guard",
     "inference",
     "register_worker",
     "__version__",
