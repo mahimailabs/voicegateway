@@ -35,20 +35,37 @@ def detect_framework(obj: Any) -> str:
 
     No framework is imported: only the already-set ``__module__`` string on the
     object (or its type) is read.
+
+    A subclass of a framework base class (defined in user/library code outside
+    the framework package, e.g. a custom ``livekit.agents.llm.LLM`` subclass) is
+    still detected: the whole MRO's ``__module__`` strings are inspected, so the
+    inherited framework base is found. Only already-loaded classes are read; no
+    framework is imported to do this.
     """
     # A class carries its own __module__; an instance's class carries it. Prefer
     # the object's own __module__ when obj is a class so callers can pass either.
     module = getattr(obj, "__module__", None)
     if not isinstance(module, str) or not isinstance(obj, type):
         module = getattr(type(obj), "__module__", "")
-    if not isinstance(module, str):
-        return "unknown"
 
-    root = module.split(".", 1)[0]
+    root = module.split(".", 1)[0] if isinstance(module, str) else ""
     if root == "livekit":
         return "livekit"
     if root == "pipecat":
         return "pipecat"
+
+    # Fall back to the MRO: a subclass defined outside the framework package
+    # still inherits from a framework base whose __module__ names the framework.
+    cls = obj if isinstance(obj, type) else type(obj)
+    for base in getattr(cls, "__mro__", ()):
+        base_module = getattr(base, "__module__", "")
+        if not isinstance(base_module, str):
+            continue
+        base_root = base_module.split(".", 1)[0]
+        if base_root == "livekit":
+            return "livekit"
+        if base_root == "pipecat":
+            return "pipecat"
     return "unknown"
 
 

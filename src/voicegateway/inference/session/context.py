@@ -169,3 +169,29 @@ def current_routing_decision() -> RoutingDecisionTuple | None:
 def reset_routing_decision() -> None:
     """Clear the routing decision (test-only helper)."""
     _current_routing_decision.set(None)
+
+
+# ``guard()`` fallback coordination. When a guarded call falls back from its
+# primary provider to a secondary one, guard sets this ContextVar to the primary
+# provider id BEFORE the fallback provider runs. ``attach()``'s MetricCapture
+# reads it when building the record for the provider that actually ran, so the
+# stored row carries ``fallback_from=<primary>`` and ``status="fallback"``.
+# guard and attach never call each other; this ContextVar is their only channel.
+_current_guard_fallback_from: ContextVar[str | None] = ContextVar(
+    "vg_guard_fallback_from", default=None
+)
+
+
+def set_guard_fallback_from(provider: str | None) -> None:
+    """Record the primary provider a guarded call fell back FROM (or clear it)."""
+    _current_guard_fallback_from.set(provider)
+
+
+def current_guard_fallback_from() -> str | None:
+    """Return the primary provider the active guarded call fell back from."""
+    return _current_guard_fallback_from.get()
+
+
+def reset_guard_fallback_from() -> None:
+    """Clear the guard fallback marker (test-only / turn-boundary helper)."""
+    _current_guard_fallback_from.set(None)

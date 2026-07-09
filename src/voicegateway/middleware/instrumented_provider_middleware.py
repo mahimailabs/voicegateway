@@ -36,6 +36,7 @@ class InstrumentedSTT(lk_stt.STT, InstrumentationMixin):
         project: str,
         cost_tracker: CostTracker,
         storage: StorageService | None,
+        metering: bool = True,
     ) -> None:
         super().__init__(capabilities=wrapped.capabilities)
         self._init_instrumentation(
@@ -45,6 +46,7 @@ class InstrumentedSTT(lk_stt.STT, InstrumentationMixin):
             project=project,
             cost_tracker=cost_tracker,
             storage=storage,
+            metering=metering,
         )
 
     @property
@@ -122,6 +124,7 @@ class InstrumentedLLM(lk_llm.LLM, InstrumentationMixin):
         project: str,
         cost_tracker: CostTracker,
         storage: StorageService | None,
+        metering: bool = True,
     ) -> None:
         super().__init__()
         self._init_instrumentation(
@@ -131,6 +134,7 @@ class InstrumentedLLM(lk_llm.LLM, InstrumentationMixin):
             project=project,
             cost_tracker=cost_tracker,
             storage=storage,
+            metering=metering,
         )
 
     @property
@@ -271,6 +275,7 @@ class InstrumentedTTS(lk_tts.TTS, InstrumentationMixin):
         project: str,
         cost_tracker: CostTracker,
         storage: StorageService | None,
+        metering: bool = True,
     ) -> None:
         super().__init__(
             capabilities=wrapped.capabilities,
@@ -284,6 +289,7 @@ class InstrumentedTTS(lk_tts.TTS, InstrumentationMixin):
             project=project,
             cost_tracker=cost_tracker,
             storage=storage,
+            metering=metering,
         )
 
     @property
@@ -333,8 +339,15 @@ def wrap_provider(
     project: str,
     cost_tracker: CostTracker,
     storage: StorageService | None,
+    metering: bool = True,
 ) -> Any:
-    """Wrap a provider instance with instrumentation."""
+    """Wrap a provider instance with instrumentation.
+
+    ``metering`` defaults to ``True`` (the wrapper subscribes to the inner
+    plugin's ``metrics_collected`` and writes a RequestRecord per request).
+    Pass ``metering=False`` for a control-only wrapper that forwards metrics
+    transparently but writes nothing, leaving ``attach()`` as the sole meter.
+    """
     wrapper_cls = {
         "stt": InstrumentedSTT,
         "llm": InstrumentedLLM,
@@ -351,4 +364,5 @@ def wrap_provider(
         project=project,
         cost_tracker=cost_tracker,
         storage=storage,
+        metering=metering,
     )

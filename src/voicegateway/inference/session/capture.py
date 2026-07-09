@@ -253,6 +253,19 @@ class MetricCapture:
             status = (
                 "cancelled" if bool(getattr(metric, "cancelled", False)) else "success"
             )
+            # guard() coordination: if the active call fell back from a primary
+            # provider (guard set the ContextVar before the fallback ran), stamp
+            # the primary on this row and mark it a fallback. attach stays the
+            # sole meter; guard writes nothing itself.
+            from voicegateway.inference.session.context import (
+                current_guard_fallback_from,
+            )
+
+            fallback_from = current_guard_fallback_from()
+            if fallback_from is not None and fallback_from != provider:
+                status = "fallback"
+            else:
+                fallback_from = None
             record = self._cost_tracker.create_record(
                 model_id=model_id,
                 modality=modality,
@@ -263,6 +276,7 @@ class MetricCapture:
                 cached_input_units=cached,
                 ttfb_ms=ttfb_ms,
                 status=status,
+                fallback_from=fallback_from,
                 session_id=self._session_id,
                 agent_id=self._agent_id,
             )

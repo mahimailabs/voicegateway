@@ -29,6 +29,7 @@ plain ``plugin_kwargs: dict[str, Any]`` and delegates to ``cls._build``.
 
 from __future__ import annotations
 
+import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
@@ -43,6 +44,28 @@ if TYPE_CHECKING:
     pass
 
 _LOCAL_PROVIDERS = frozenset({"ollama", "whisper", "kokoro", "piper"})
+
+_DEPRECATION_MESSAGE = (
+    "voicegateway.LLM/STT/TTS are deprecated. Construct the native provider "
+    "directly and observe it with voicegateway.attach() (the sole meter); add "
+    "voicegateway.guard() for fallback / rate-limit / budget control. The "
+    "factories still work but no longer meter (attach does), and will be "
+    "removed in a future major release."
+)
+
+# Fire the DeprecationWarning at most once per process, regardless of how many
+# times the factories are called, so long-running agents that build many
+# plugins do not spam the log.
+_deprecation_emitted = False
+
+
+def _warn_deprecated_factory() -> None:
+    """Emit the LLM/STT/TTS deprecation warning once per process."""
+    global _deprecation_emitted
+    if _deprecation_emitted:
+        return
+    _deprecation_emitted = True
+    warnings.warn(_DEPRECATION_MESSAGE, DeprecationWarning, stacklevel=3)
 
 
 class InferenceFactory(ABC):
@@ -118,8 +141,18 @@ class InferenceFactory(ABC):
         model_name: str,
         plugin_kwargs: dict[str, Any],
         api_key_override: str | None,
+        guard_policy: dict[str, Any] | None = None,
     ) -> Any:
-        """Shared factory flow: session id, config, key check, create, wrap."""
+        """Shared factory flow: session id, config, key check, create, wrap.
+
+        DEPRECATED path: emits a ``DeprecationWarning`` (once) and returns a
+        control-only wrapper built with ``metering=False`` so ``attach()`` is
+        the sole meter (no double-count). Passing ``guard_policy`` (e.g.
+        ``{"fallback": [...], "rate_limit": "60/min", "budget": "$5/day"}``)
+        adds control via ``voicegateway.guard()``.
+        """
+        _warn_deprecated_factory()
+
         get_or_create_session_id()
 
         gateway = get_gateway()
@@ -138,6 +171,16 @@ class InferenceFactory(ABC):
 
         plugin = cls._create_plugin(provider_instance, model_name, plugin_kwargs)
 
+        if guard_policy:
+            # Control wrapper (guard) also meters nothing; attach still observes.
+            from voicegateway.guard import guard as _guard
+
+            return _guard(plugin, project=project, **guard_policy)
+
+        # metering=False: the factory no longer writes RequestRecords. It still
+        # returns a wrapper (with _log_request/_modality/label intact) so
+        # existing drop-in call sites keep working, but attach() is the sole
+        # meter. The wrapper forwards metrics_collected transparently.
         return wrap_provider(
             instance=plugin,
             modality=cls._modality,
@@ -146,6 +189,7 @@ class InferenceFactory(ABC):
             project=project,
             cost_tracker=gateway._cost_tracker,
             storage=gateway._storage,
+            metering=False,
         )
 
 
