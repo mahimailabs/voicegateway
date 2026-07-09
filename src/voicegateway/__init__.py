@@ -27,6 +27,9 @@ if TYPE_CHECKING:
     # public names stay visible to tooling without importing livekit at runtime.
     from voicegateway import inference
     from voicegateway.inference.llm_inference import LLM
+    from voicegateway.inference.pipecat.observer import (
+        VoiceGatewayObserver as Observer,
+    )
     from voicegateway.inference.stt_inference import STT
     from voicegateway.inference.tts_inference import TTS
 
@@ -34,6 +37,7 @@ __all__ = [
     "LLM",
     "STT",
     "TTS",
+    "Observer",
     "attach",
     "guard",
     "inference",
@@ -41,13 +45,15 @@ __all__ = [
     "__version__",
 ]
 
-# Names exposed lazily via PEP 562 __getattr__. Each pulls livekit on first
-# access, so they must not be imported at module load (that would break core
-# framework neutrality).
+# Names exposed lazily via PEP 562 __getattr__. Each pulls a framework on first
+# access (``LLM``/``STT``/``TTS`` pull livekit; ``Observer`` pulls pipecat), so
+# they must not be imported at module load (that would break core framework
+# neutrality).
 _LAZY = {
     "LLM": ("voicegateway.inference.llm_inference", "LLM"),
     "STT": ("voicegateway.inference.stt_inference", "STT"),
     "TTS": ("voicegateway.inference.tts_inference", "TTS"),
+    "Observer": ("voicegateway.inference.pipecat.observer", "VoiceGatewayObserver"),
     "inference": ("voicegateway.inference", None),
 }
 
@@ -56,8 +62,9 @@ def __getattr__(name: str) -> Any:
     """Lazily resolve framework-pulling public names (PEP 562).
 
     Keeps ``import voicegateway`` free of any framework import while preserving
-    ``voicegateway.LLM``/``STT``/``TTS`` and the ``voicegateway.inference``
-    submodule as attribute-access entry points.
+    ``voicegateway.LLM``/``STT``/``TTS`` (livekit), ``voicegateway.Observer``
+    (pipecat), and the ``voicegateway.inference`` submodule as attribute-access
+    entry points.
     """
     target = _LAZY.get(name)
     if target is None:

@@ -302,34 +302,81 @@ def attach(
     project: str = "default",
     agent_id: str | None = None,
     tenant_id: str | None = None,
+    channel: str | None = None,
     collector_url: str | None = None,
     api_key: str | None = None,
     sink: Sink | None = None,
     room: str | None = None,
 ) -> str:
-    """Attach VoiceGateway to an existing LiveKit ``AgentSession`` in one call.
+    """Attach VoiceGateway to a LiveKit ``AgentSession`` or Pipecat ``PipelineTask``.
 
-    The *observe* tier: works for ANY plugin (native LiveKit,
-    ``livekit.agents.inference``, or ``voicegateway.inference``) by subscribing
-    to the non-deprecated per-component ``metrics_collected`` events. Captures
-    per-call cost + latency + errors and writes them through a ``Sink`` (local
-    SQLite by default, or a collector when configured via ``collector_url`` /
-    ``VOICEGW_COLLECTOR_URL``).
+    The *observe* tier: a single, passive meter for cost + latency. ``attach()``
+    detects the target's framework (by type/module, without eager framework
+    imports) and installs the matching observer:
+
+    - **LiveKit** ``AgentSession``: subscribes to the non-deprecated
+      per-component ``metrics_collected`` events (works for any plugin).
+    - **Pipecat** ``PipelineTask``: registers a ``VoiceGatewayObserver`` that
+      maps ``MetricsFrame``s and derives STT duration from audio frames.
+
+    Both paths write per-call cost + latency through a ``Sink`` (local SQLite by
+    default, or a collector when ``collector_url`` / ``VOICEGW_COLLECTOR_URL`` is
+    set), and both lazily import the framework they detect so ``import
+    voicegateway`` stays framework-free.
 
     Args:
-        session: the ``AgentSession`` to observe.
+        session: the ``AgentSession`` (LiveKit) or ``PipelineTask`` (Pipecat).
         project: project id to tag rows with.
         agent_id: fleet label; defaults to ``VOICEGW_AGENT_ID`` or hostname.
         tenant_id: optional tenant attribution.
+        channel: ``"telephony"`` | ``"web"``; auto-detected from the transport
+            when omitted.
         collector_url / api_key: fleet push target (env fallbacks).
         sink: advanced/testing override; defaults to local or remote per env.
         room: LiveKit room name for probe correlation; auto-resolved from the
             running job context when omitted (``voicegw livekit latency`` reads
-            the STT/LLM/TTS split back by this).
+            the STT/LLM/TTS split back by this). Ignored on the Pipecat path.
 
     Returns:
         The correlation session id stamped on every captured row.
     """
+    from voicegateway._frameworks import detect_framework
+
+    if detect_framework(session) == "pipecat":
+        return _attach_pipecat(
+            session,
+            project=project,
+            agent_id=agent_id,
+            tenant_id=tenant_id,
+            channel=channel,
+            collector_url=collector_url,
+            api_key=api_key,
+            sink=sink,
+        )
+    return _attach_livekit(
+        session,
+        project=project,
+        agent_id=agent_id,
+        tenant_id=tenant_id,
+        collector_url=collector_url,
+        api_key=api_key,
+        sink=sink,
+        room=room,
+    )
+
+
+def _attach_livekit(
+    session: Any,
+    *,
+    project: str = "default",
+    agent_id: str | None = None,
+    tenant_id: str | None = None,
+    collector_url: str | None = None,
+    api_key: str | None = None,
+    sink: Sink | None = None,
+    room: str | None = None,
+) -> str:
+    """LiveKit ``attach()`` body: bind ``MetricCapture`` to an ``AgentSession``."""
     import asyncio
 
     from voicegateway.fleet.worker import bump_active
@@ -395,6 +442,154 @@ def attach(
         # (No-op unless register_worker was called.)
         bump_active(1)
         on("close", _on_close)
+
+    return session_id
+
+
+# --- Pipecat ---------------------------------------------------------------
+
+# Provider modules/serializers that indicate a telephony (phone) channel. Daily,
+# WebRTC, and websocket transports are treated as web.
+_PIPECAT_TELEPHONY_TOKENS: tuple[str, ...] = (
+    "twilio",
+    "telnyx",
+    "plivo",
+    "exotel",
+    "genesys",
+    "vonage",
+)
+
+
+def _iter_pipecat_processors(pipeline: Any) -> Any:
+    """Yield every processor in a pipecat pipeline, descending nested pipelines.
+
+    ``Pipeline.processors`` includes source/sink wrappers and any nested
+    pipelines; we descend so an STT service inside a sub-pipeline is still found.
+    Best-effort and defensive: a shape we do not recognize simply yields nothing.
+    """
+    seen: set[int] = set()
+    stack = [pipeline]
+    while stack:
+        node = stack.pop()
+        if node is None or id(node) in seen:
+            continue
+        seen.add(id(node))
+        children = getattr(node, "processors", None)
+        if children:
+            for child in children:
+                yield child
+                stack.append(child)
+
+
+def _detect_pipecat_channel(task: Any) -> str | None:
+    """Best-effort telephony-vs-web from the pipeline's transport/serializer.
+
+    A telephony serializer/transport module (Twilio/Telnyx/Plivo/...) means a
+    phone call; a Daily/WebRTC/websocket transport means web. Returns None when
+    nothing conclusive is found, so the row simply carries no channel.
+    """
+    pipeline = getattr(task, "pipeline", None)
+    if pipeline is None:
+        return None
+    saw_transport = False
+    for proc in _iter_pipecat_processors(pipeline):
+        module = (type(proc).__module__ or "").lower()
+        if "transports" in module or "serializers" in module:
+            saw_transport = True
+            for token in _PIPECAT_TELEPHONY_TOKENS:
+                if token in module:
+                    return "telephony"
+        # A transport may hold a serializer as an attribute rather than as its
+        # own processor; sniff a ``_serializer`` module too.
+        serializer = getattr(proc, "_serializer", None) or getattr(
+            proc, "serializer", None
+        )
+        if serializer is not None:
+            ser_module = (type(serializer).__module__ or "").lower()
+            saw_transport = True
+            for token in _PIPECAT_TELEPHONY_TOKENS:
+                if token in ser_module:
+                    return "telephony"
+    return "web" if saw_transport else None
+
+
+def _register_pipecat_stt(observer: Any, task: Any) -> None:
+    """Register every STT service found in the task's pipeline with the observer."""
+    from voicegateway.inference.pipecat.observer import _service_base_modality
+
+    pipeline = getattr(task, "pipeline", None)
+    if pipeline is None:
+        return
+    for proc in _iter_pipecat_processors(pipeline):
+        try:
+            if _service_base_modality(proc) == "stt":
+                observer.register_stt(proc)
+        except Exception:  # noqa: BLE001 - never let discovery break attach
+            logger.debug(
+                "attach(pipecat): STT discovery skipped a processor", exc_info=True
+            )
+
+
+def _attach_pipecat(
+    task: Any,
+    *,
+    project: str = "default",
+    agent_id: str | None = None,
+    tenant_id: str | None = None,
+    channel: str | None = None,
+    collector_url: str | None = None,
+    api_key: str | None = None,
+    sink: Sink | None = None,
+) -> str:
+    """Register a ``VoiceGatewayObserver`` on a Pipecat ``PipelineTask``.
+
+    Mirrors the LiveKit ``attach`` path: builds the same sink, stamps the tenant
+    ContextVar, and returns the correlation session id. The observer is the sole
+    meter; it finalizes itself on the pipeline ``EndFrame`` (drain + flush).
+    """
+    from voicegateway.inference.pipecat.observer import VoiceGatewayObserver
+
+    resolved_agent_id = agent_id or _default_agent_id()
+    resolved_collector = collector_url or os.environ.get("VOICEGW_COLLECTOR_URL")
+    resolved_key = api_key or os.environ.get("VOICEGW_API_KEY")
+    session_id = get_or_create_session_id()
+    if tenant_id is not None:
+        set_tenant(tenant_id)
+    if sink is None:
+        sink = _build_default_sink(resolved_collector, resolved_key)
+
+    resolved_channel = channel or _detect_pipecat_channel(task)
+
+    observer = VoiceGatewayObserver(
+        sink=sink,
+        project=project,
+        agent_id=resolved_agent_id,
+        session_id=session_id,
+        tenant_id=tenant_id,
+        channel=resolved_channel,
+    )
+    _register_pipecat_stt(observer, task)
+
+    # Register the observer on the task. Prefer ``add_observer`` (1.5.0 API);
+    # fall back to appending to an observers list if a variant exposes only that.
+    add_observer = getattr(task, "add_observer", None)
+    if callable(add_observer):
+        add_observer(observer)
+    else:  # pragma: no cover - 1.5.0 exposes add_observer
+        observers = getattr(task, "_observers", None)
+        if isinstance(observers, list):
+            observers.append(observer)
+        else:
+            raise TypeError(
+                "attach(pipecat): PipelineTask exposes no add_observer/observers; "
+                "pass Observer(...) to PipelineTask(observers=[...]) instead."
+            )
+
+    # Expose for graceful shutdown + tests.
+    try:
+        task._vg_observer = observer
+    except Exception:  # noqa: BLE001 - real task may forbid attribute set
+        logger.debug("attach(pipecat): could not stash observer on task", exc_info=True)
 
     return session_id
 
