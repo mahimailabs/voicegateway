@@ -29,6 +29,14 @@ voicegw init
 
 Build a simple voice agent using LiveKit Agents with VoiceGateway routing STT, LLM, and TTS requests. The minimal setup to get a working voice pipeline.
 
+### [LiveKit: attach() + guard()](./livekit-attach-guard)
+
+The framework-neutral shape on LiveKit: native `livekit.plugins` providers, metered by `attach(session)` (the single passive meter), with one `guard()` wrapper adding fallback, rate limit, and a daily spend cap.
+
+### [Pipecat: attach() + guard()](./pipecat-attach-guard)
+
+The same public surface on Pipecat: native `pipecat.services`, metered by an `Observer` (or `attach(task)`), with one `guard()` wrapper for fallback and a spend cap. Includes enabling Pipecat metrics and the fallback scope note.
+
 ### [Multi-Project Setup](./multi-project)
 
 Configure three separate projects (production, staging, dev) with different model stacks, budgets, and tags. Shows how to isolate cost tracking across teams and environments.
