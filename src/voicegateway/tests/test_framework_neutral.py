@@ -39,6 +39,36 @@ def test_core_import_pulls_no_framework() -> None:
     assert "PURE" in result.stdout
 
 
+def test_observer_symbol_is_lazy_and_pure() -> None:
+    """Referencing ``voicegateway.Observer`` must not import pipecat.
+
+    ``Observer`` is a lazily-resolved public name (like ``LLM``): it appears in
+    ``dir(voicegateway)`` and is importable, but the pipecat import only happens
+    when the class is actually resolved/instantiated. This subprocess asserts
+    that ``import voicegateway`` plus a ``dir()`` reference stays pipecat-free,
+    then that resolving the attribute does pull pipecat (so the lazy import is
+    wired, not merely absent).
+    """
+    code = (
+        "import voicegateway, sys; "
+        "assert 'Observer' in dir(voicegateway), 'Observer not exported'; "
+        "assert 'pipecat' not in sys.modules, 'pipecat imported by dir()'; "
+        "obs_cls = voicegateway.Observer; "
+        "assert 'pipecat' in sys.modules, 'Observer did not lazy-import pipecat'; "
+        "print('PURE')"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"Observer lazy-import broke purity.\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    assert "PURE" in result.stdout
+
+
 class _FakeType:
     """A stand-in whose class __module__ can be forced for detection tests."""
 
