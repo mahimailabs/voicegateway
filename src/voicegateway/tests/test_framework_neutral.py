@@ -49,24 +49,52 @@ def test_observer_symbol_is_lazy_and_pure() -> None:
     then that resolving the attribute does pull pipecat (so the lazy import is
     wired, not merely absent).
     """
-    code = (
+    # Purity holds whether or not pipecat is installed: importing voicegateway
+    # and referencing Observer via dir() must not pull pipecat.
+    purity = (
         "import voicegateway, sys; "
         "assert 'Observer' in dir(voicegateway), 'Observer not exported'; "
-        "assert 'pipecat' not in sys.modules, 'pipecat imported by dir()'; "
-        "obs_cls = voicegateway.Observer; "
-        "assert 'pipecat' in sys.modules, 'Observer did not lazy-import pipecat'; "
+        "assert 'pipecat' not in sys.modules, 'pipecat imported by import/dir()'; "
         "print('PURE')"
     )
     result = subprocess.run(
-        [sys.executable, "-c", code],
+        [sys.executable, "-c", purity],
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, (
-        f"Observer lazy-import broke purity.\n"
-        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        f"import purity broke.\nstdout: {result.stdout}\nstderr: {result.stderr}"
     )
     assert "PURE" in result.stdout
+
+    # Resolving the attribute is where the framework is pulled. With pipecat
+    # installed it lazily imports it; without it (e.g. CI's livekit-only env) it
+    # must raise the friendly extra error, not a raw ModuleNotFoundError.
+    import importlib.util
+
+    if importlib.util.find_spec("pipecat") is not None:
+        resolve = (
+            "import voicegateway, sys; "
+            "_ = voicegateway.Observer; "
+            "assert 'pipecat' in sys.modules, 'Observer did not lazy-import pipecat'; "
+            "print('LAZY')"
+        )
+        expect = "LAZY"
+    else:
+        resolve = (
+            "import voicegateway\n"
+            "try:\n"
+            "    voicegateway.Observer\n"
+            "except ImportError as e:\n"
+            "    assert 'voicegateway[pipecat]' in str(e), str(e)\n"
+            "    print('FRIENDLY')\n"
+            "else:\n"
+            "    raise SystemExit('expected ImportError for the missing pipecat extra')\n"
+        )
+        expect = "FRIENDLY"
+    r = subprocess.run([sys.executable, "-c", resolve], capture_output=True, text=True)
+    assert r.returncode == 0, f"Observer resolve failed.\nstderr: {r.stderr}"
+    assert expect in r.stdout
 
 
 class _FakeType:
