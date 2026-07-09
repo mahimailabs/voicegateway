@@ -22,6 +22,12 @@
         ]
       },
       {
+        "group": "Hosted cloud",
+        "pages": [
+          "hosted/quickstart"
+        ]
+      },
+      {
         "group": "Guide",
         "pages": [
           "guide/what-is-voicegateway",
