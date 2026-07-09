@@ -157,10 +157,17 @@ def guard(
             project=project,
         )
     if framework == "pipecat":
-        # P3 delivers the Pipecat control wrapper; until then, be explicit.
-        raise NotImplementedError(
-            "voicegateway.guard() does not yet support Pipecat providers "
-            "(coming in a later phase). Use guard() with LiveKit providers."
+        require_extra("pipecat")
+        # Lazy: importing the Pipecat impl pulls pipecat. Keeping it out of
+        # module scope is what preserves ``import voicegateway`` purity.
+        from voicegateway.inference.pipecat.guard_pipecat import guard_pipecat
+
+        return guard_pipecat(
+            provider,
+            fallback=fallback,
+            rate_limit=rate_limit,
+            budget=budget,
+            project=project,
         )
     raise ValueError(
         "voicegateway.guard() could not detect the framework of "
