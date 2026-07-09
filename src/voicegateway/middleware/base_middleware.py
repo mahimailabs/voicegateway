@@ -84,6 +84,7 @@ class InstrumentationMixin:
     project: str
     _cost_tracker: CostTracker
     _storage: StorageService | None
+    _metering: bool
     _start_time: float
     _first_byte_time: float | None
     _logged: bool
@@ -98,6 +99,7 @@ class InstrumentationMixin:
         project: str,
         cost_tracker: CostTracker,
         storage: StorageService | None,
+        metering: bool = True,
     ) -> None:
         self._wrapped = wrapped
         self._model_id = model_id
@@ -105,6 +107,7 @@ class InstrumentationMixin:
         self.project = project
         self._cost_tracker = cost_tracker
         self._storage = storage
+        self._metering = metering
         self._start_time = time.perf_counter()
         self._first_byte_time = None
         self._logged = False
@@ -114,10 +117,18 @@ class InstrumentationMixin:
         # loss + "Task was destroyed but it is pending" warnings).
         self._pending_log_tasks = set()
 
+        # Always forward the inner plugin's events TRANSPARENTLY so an
+        # ``attach()`` MetricCapture bound to this component still sees each
+        # ``metrics_collected`` / ``error`` exactly once. The metering path
+        # (``_on_metrics_log`` -> ``_log_request`` -> a RequestRecord write) is
+        # only subscribed when ``metering=True``. ``guard()`` and the deprecated
+        # ``LLM/STT/TTS`` factories pass ``metering=False`` so that ``attach``
+        # is the SOLE meter and there is no double-count.
         wrapped.on("metrics_collected", self._forward_metrics)
-        wrapped.on("metrics_collected", self._on_metrics_log)
         wrapped.on("error", self._forward_error)
-        wrapped.on("error", self._on_error_log)
+        if metering:
+            wrapped.on("metrics_collected", self._on_metrics_log)
+            wrapped.on("error", self._on_error_log)
 
     def _forward_metrics(self, *args: Any, **kwargs: Any) -> None:
         self.emit("metrics_collected", *args, **kwargs)
