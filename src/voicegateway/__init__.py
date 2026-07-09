@@ -57,6 +57,18 @@ _LAZY = {
     "inference": ("voicegateway.inference", None),
 }
 
+# The extra each lazy name needs, so a missing framework yields the friendly
+# "pip install voicegateway[<extra>]" error instead of a raw ModuleNotFoundError.
+# ``inference`` is intentionally absent: the submodule itself is framework-neutral
+# (its own factories are lazy), so pipecat-only users can reach
+# ``voicegateway.inference.pipecat`` without livekit.
+_LAZY_EXTRA = {
+    "LLM": "livekit",
+    "STT": "livekit",
+    "TTS": "livekit",
+    "Observer": "pipecat",
+}
+
 
 def __getattr__(name: str) -> Any:
     """Lazily resolve framework-pulling public names (PEP 562).
@@ -64,11 +76,17 @@ def __getattr__(name: str) -> Any:
     Keeps ``import voicegateway`` free of any framework import while preserving
     ``voicegateway.LLM``/``STT``/``TTS`` (livekit), ``voicegateway.Observer``
     (pipecat), and the ``voicegateway.inference`` submodule as attribute-access
-    entry points.
+    entry points. When the backing extra is not installed, raises the friendly
+    ``require_extra`` error (with a pip hint) rather than a raw ModuleNotFoundError.
     """
     target = _LAZY.get(name)
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    extra = _LAZY_EXTRA.get(name)
+    if extra is not None:
+        from voicegateway._frameworks import require_extra
+
+        require_extra(extra)  # no-op when installed; friendly ImportError otherwise
     import importlib
 
     module_name, attr = target
