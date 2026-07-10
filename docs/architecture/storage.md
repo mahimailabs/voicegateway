@@ -1,20 +1,26 @@
+---
+title: Storage
+description: The SQLite backend that persists every inference request, managed configuration row, and audit event. Covers the RequestRecord schema, SQL views for daily and per-project cost aggregation, indexes, and the remote ClickHouse sink for cloud deployments.
+---
+
 # Storage
 
 VoiceGateway uses SQLite via `aiosqlite` for all persistent data: request logs, cost tracking, managed configuration, and audit trails.
 
 **File:** `src/voicegateway/storage/sqlite.py`
 
-## Database Location
+## Database location
 
 The database path is resolved in this priority order:
 
-1. `VOICEGW_DB_PATH` environment variable
-2. `cost_tracking.db_path` in `voicegw.yaml`
-3. Default: `~/.config/voicegateway/voicegw.db`
+1. `VOICEGW_DB_PATH` environment variable.
+2. `VOICEGW_DB_URL` environment variable (alternative form).
+3. `cost_tracking.db_path` in `voicegw.yaml`.
+4. Default: `~/.config/voicegateway/voicegw.db`.
 
 The parent directory is created automatically on first access.
 
-## Schema Overview
+## Schema overview
 
 ```mermaid
 erDiagram
@@ -95,7 +101,7 @@ erDiagram
 The primary table for all inference request logs. Every call through the Gateway that completes (or fails) is recorded here.
 
 | Column | Type | Description |
-|--------|------|-------------|
+|---|---|---|
 | `id` | TEXT PK | UUID v4 |
 | `timestamp` | REAL | Unix epoch (seconds) |
 | `project` | TEXT | Project ID (default: `"default"`) |
@@ -114,14 +120,14 @@ The primary table for all inference request logs. Every call through the Gateway
 
 ### `managed_providers`
 
-Providers added via the dashboard or MCP server (as opposed to YAML). API keys are encrypted with Fernet.
+Providers added via the dashboard or MCP server, as opposed to YAML. API keys are encrypted with Fernet (see [Security](/architecture/security)).
 
 | Column | Type | Description |
-|--------|------|-------------|
+|---|---|---|
 | `provider_id` | TEXT PK | Unique identifier (e.g. `"my-openai"`) |
 | `provider_type` | TEXT | Provider type from registry (e.g. `"openai"`) |
 | `api_key_encrypted` | TEXT | Fernet-encrypted API key |
-| `base_url` | TEXT | Custom base URL (for proxies or self-hosted) |
+| `base_url` | TEXT | Custom base URL (for proxies or self-hosted endpoints) |
 | `extra_config` | TEXT | JSON blob for additional config |
 | `created_at` | REAL | Unix epoch |
 | `updated_at` | REAL | Unix epoch |
@@ -131,7 +137,7 @@ Providers added via the dashboard or MCP server (as opposed to YAML). API keys a
 Models registered via the dashboard or MCP server.
 
 | Column | Type | Description |
-|--------|------|-------------|
+|---|---|---|
 | `model_id` | TEXT PK | Full model ID (e.g. `"openai/gpt-4.1-mini"`) |
 | `modality` | TEXT | `"stt"`, `"llm"`, or `"tts"` |
 | `provider_id` | TEXT | References `managed_providers.provider_id` |
@@ -149,7 +155,7 @@ Models registered via the dashboard or MCP server.
 Projects created via the dashboard or MCP server.
 
 | Column | Type | Description |
-|--------|------|-------------|
+|---|---|---|
 | `project_id` | TEXT PK | Unique identifier |
 | `name` | TEXT | Display name |
 | `description` | TEXT | Project description |
@@ -168,7 +174,7 @@ Projects created via the dashboard or MCP server.
 Records all changes to managed resources for compliance and debugging.
 
 | Column | Type | Description |
-|--------|------|-------------|
+|---|---|---|
 | `id` | INTEGER PK | Auto-increment |
 | `timestamp` | REAL | Unix epoch |
 | `entity_type` | TEXT | `"provider"`, `"model"`, or `"project"` |
@@ -181,7 +187,7 @@ Records all changes to managed resources for compliance and debugging.
 
 ### `daily_costs`
 
-Aggregates request data by day, modality, model, and provider.
+Aggregates request data by day, modality, model, and provider. Used by the dashboard trend charts and `voicegw costs`.
 
 ```sql
 CREATE VIEW daily_costs AS
@@ -200,7 +206,7 @@ GROUP BY day, modality, model_id, provider;
 
 ### `project_daily_costs`
 
-Aggregates request data by project, day, modality, and model.
+Aggregates request data by project, day, modality, and model. Powers per-project budget enforcement and the project breakdown panel.
 
 ```sql
 CREATE VIEW project_daily_costs AS
@@ -219,7 +225,7 @@ GROUP BY project, day, modality, model_id;
 ## Indexes
 
 | Index | Table | Column(s) | Purpose |
-|-------|-------|-----------|---------|
+|---|---|---|---|
 | `idx_requests_timestamp` | requests | `timestamp` | Time-range queries |
 | `idx_requests_model` | requests | `model_id` | Per-model aggregation |
 | `idx_requests_modality` | requests | `modality` | Filter by STT/LLM/TTS |
@@ -231,15 +237,40 @@ GROUP BY project, day, modality, model_id;
 | `idx_managed_models_modality` | managed_models | `modality` | Filter by modality |
 | `idx_managed_models_provider` | managed_models | `provider_id` | Models per provider |
 
-## Connection Management
+## Connection management
 
-`SQLiteStorage` opens a fresh `aiosqlite` connection per call and closes it in a `finally` block. There is no connection pooling -- this keeps things simple and avoids connection state issues with async code.
+`SQLiteStorage` opens a fresh `aiosqlite` connection per call and closes it in a `finally` block. There is no connection pooling. This keeps things simple and avoids connection state issues with async code.
 
 On first connection, the schema DDL is executed via `executescript()`, and a migration check adds the `project` column to older databases. The `_initialized` flag prevents re-running the schema on subsequent connections.
 
-## Auto-Migration
+## Auto-migration
 
-When VoiceGateway opens a database created by an older version:
+When VoiceGateway opens a database created by an older version, it applies these migrations automatically:
 
-1. **Missing `project` column:** automatically added with `ALTER TABLE` and `DEFAULT 'default'`
-2. **Plaintext API keys:** detected via `is_fernet_token()` and re-encrypted in place with a warning log
+1. **Missing `project` column:** added with `ALTER TABLE` and `DEFAULT 'default'`.
+2. **Plaintext API keys:** detected via `is_fernet_token()` and re-encrypted in place with a warning log. See [Security](/architecture/security) for the encryption details.
+
+## Cloud: ClickHouse sink
+
+In the hosted cloud deployment, the engine writes request records both to its local SQLite and forwards them to a remote ClickHouse sink. The sink URL is configured via `VOICEGW_COLLECTOR_URL`. The API key used to authenticate the push is `VOICEGW_API_KEY`.
+
+<Tip>
+For multi-tenant cloud deployments, each `RequestRecord` carries a `tenant_id` that is stamped server-side from the ingest key. The agent's local `VOICEGW_API_KEY` determines which tenant the records land under.
+</Tip>
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Configuration layers" href="/architecture/config-layers">
+    How SQLite managed tables fit into the config merge order.
+  </Card>
+  <Card title="Security" href="/architecture/security">
+    Fernet encryption for API keys stored in managed_providers.
+  </Card>
+  <Card title="Cost tracking" href="/architecture/cost-tracking">
+    How costs are computed before writing to the requests table.
+  </Card>
+  <Card title="Replay storage costs" href="/storage/replay-storage-costs">
+    On-disk footprint of the conversation replay tables.
+  </Card>
+</CardGroup>
