@@ -22,7 +22,11 @@ Rules:
   3. Every page file under docs/ (excluding superpowers/, snippets/, dot/underscore
      names) is referenced exactly once in the nav.
   4. Every root-absolute internal link (in scope pages) resolves to a nav page.
-  5. Only guide/migration-attach-guard may contain the string "voicegateway.inference".
+  5. No deprecated factory/session API (voicegateway.inference.LLM/STT/TTS, the
+     `from voicegateway.inference import` factory import, inference.set_project/
+     start_session/attach_session, or `from voicegateway import LLM/STT/TTS`) outside
+     guide/migration-attach-guard. Legit paths (voicegateway.inference.pricing, ...session)
+     are allowed.
   6. No scope page carries VitePress-only frontmatter keys (layout / hero / features).
   7. Every scope page has non-empty title and description frontmatter.
   8. No scope page uses `{#custom-anchor}` heading ids (MDX/acorn cannot parse them;
@@ -39,6 +43,23 @@ from pathlib import Path
 
 DOCS = Path(__file__).resolve().parent
 MIGRATION_PAGE = "guide/migration-attach-guard"
+
+# Deprecated factory + session API that docs must not teach (except the migration page).
+# These are the specific deprecated tokens, NOT the whole `voicegateway.inference` package:
+# `voicegateway.inference.pricing`, `voicegateway.inference.session.attach`, and file paths
+# under `src/voicegateway/inference/` are the real current layout and stay allowed.
+_DEPRECATED_API_PATTERNS = (
+    "from voicegateway.inference import",  # from voicegateway.inference import STT, LLM, TTS
+    "voicegateway.inference.LLM",
+    "voicegateway.inference.STT",
+    "voicegateway.inference.TTS",
+    "inference.set_project",
+    "inference.start_session",
+    "inference.attach_session",
+    "from voicegateway import LLM",
+    "from voicegateway import STT",
+    "from voicegateway import TTS",
+)
 
 # Link targets that are not nav pages (assets, images, mail, external).
 _IMAGE_EXT = (".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico")
@@ -216,12 +237,18 @@ def main(argv: list[str]) -> int:
             if _has_top_level_key(fm, key):
                 errors.append(f"[rule 6] '{slug}' has VitePress frontmatter key '{key}:'")
 
-        # Rule 5: voicegateway.inference only in the migration page.
-        if slug != MIGRATION_PAGE and "voicegateway.inference" in text:
-            errors.append(
-                f"[rule 5] '{slug}' contains 'voicegateway.inference' "
-                f"(allowed only in {MIGRATION_PAGE})"
-            )
+        # Rule 5: no deprecated factory/session API outside the migration page.
+        # Only the DEPRECATED patterns are banned, not the whole `voicegateway.inference`
+        # namespace: legit current paths like `voicegateway.inference.pricing.catalog`
+        # and `voicegateway.inference.session.attach` must be allowed (they are the real
+        # module layout), or docs get rewritten to fabricated paths to pass the check.
+        if slug != MIGRATION_PAGE:
+            for pat in _DEPRECATED_API_PATTERNS:
+                if pat in text:
+                    errors.append(
+                        f"[rule 5] '{slug}' uses the deprecated API '{pat}' "
+                        f"(lead with attach()/guard(); allowed only in {MIGRATION_PAGE})"
+                    )
 
         # Rule 4: root-absolute internal links resolve to a nav page.
         for target in _internal_targets(body):

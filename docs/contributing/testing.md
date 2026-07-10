@@ -163,7 +163,7 @@ def test_router_resolution(temp_config):
 ```python
 from decimal import Decimal
 
-from voicegateway.pricing import catalog
+from voicegateway.inference.pricing import catalog
 
 
 def test_deepgram_nova3_pricing():

@@ -13,9 +13,9 @@ dates all live in `voice-prices`.
 
 The pricing wrappers that call into it are:
 
-- `src/voicegateway/pricing/llm.py`
-- `src/voicegateway/pricing/stt.py`
-- `src/voicegateway/pricing/tts.py`
+- `src/voicegateway/inference/pricing/llm.py`
+- `src/voicegateway/inference/pricing/stt.py`
+- `src/voicegateway/inference/pricing/tts.py`
 
 Each resolves a `provider/model` id against `voice-prices` and returns the
 computed cost. The per-request attribution string is `voice-prices@<version>`
@@ -37,7 +37,7 @@ lives upstream rather than in this repo.
     Use the pricing catalog directly to see what the current rate resolves to:
 
     ```python
-    from voicegateway.pricing import catalog
+    from voicegateway.inference.pricing import catalog
 
     catalog.calculate_cost("stt", "deepgram/nova-3", audio_seconds=60)
     catalog.calculate_cost("tts", "openai/tts-1", character_count=1000)

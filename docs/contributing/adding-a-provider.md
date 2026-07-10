@@ -67,7 +67,7 @@ The `BaseProvider` abstract class in `src/voicegateway/providers/base.py` requir
 
 For modalities the provider does not support, call `self._unsupported("modality_name")` to raise a clear error.
 
-Pricing is not a provider-level concern. LLM, STT, and TTS rates all resolve via `voice-prices` (see step 4). The pricing wrappers live under `src/voicegateway/pricing/`.
+Pricing is not a provider-level concern. LLM, STT, and TTS rates all resolve via `voice-prices` (see step 4). The pricing wrappers live under `src/voicegateway/inference/pricing/`.
 
 ### 3. Register the provider
 
@@ -153,7 +153,7 @@ async def test_health_check(provider):
 
 def test_pricing_resolves_stt(provider):
     """Pricing for a known STT model resolves to a positive Decimal via the catalog."""
-    from voicegateway.pricing import catalog
+    from voicegateway.inference.pricing import catalog
     cost = catalog.calculate_cost("stt", "<name>/model-name", audio_seconds=60)
     assert cost is not None and cost > 0
 
