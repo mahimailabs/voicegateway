@@ -7,18 +7,13 @@ description: Scaffold a voicegw.yaml configuration file from the bundled templat
 
 Create a `voicegw.yaml` configuration file from the bundled template.
 
-## Purpose
+## Synopsis
 
-`voicegw init` scaffolds a new configuration file with example
-provider, model, and project definitions. Use it when you want a
-hand-edited starting point. For a guided wizard that also installs
-the daemon, use [`voicegw onboard`](/cli/onboard) instead.
+Scaffold a new config file with example provider, model, and project definitions. Use it when you want a hand-edited starting point. For a guided wizard that also installs the daemon, use [`voicegw onboard`](/cli/onboard) instead.
 
-The starter template ships inside the wheel at
-`voicegateway/data/voicegw.example.yaml` and is copied verbatim to
-the output path.
+The starter template ships inside the wheel at `voicegateway/data/voicegw.example.yaml` and is copied verbatim to the output path.
 
-## Syntax
+## Usage
 
 ```bash
 voicegw init [OPTIONS]
@@ -32,55 +27,38 @@ voicegw init [OPTIONS]
 
 ## Behaviour
 
-1. If the target file already exists, the CLI prompts for
-   confirmation before overwriting.
-2. The starter template at `voicegateway/data/voicegw.example.yaml`
-   (inside the installed wheel, resolved via `importlib.resources`)
-   is written to the output path.
+1. If the target file already exists, the CLI prompts for confirmation before overwriting.
+2. The starter template at `voicegateway/data/voicegw.example.yaml` (inside the installed wheel, resolved via `importlib.resources`) is written to the output path.
 
 ## Examples
 
-### Create config in the current directory
-
 ```bash
+# Create config in the current directory
 voicegw init
 ```
 
-Creates `./voicegw.yaml` with the example template.
-
-### Create config at a custom path
-
 ```bash
+# Create config at a custom path
 voicegw init --output /etc/voicegateway/voicegw.yaml
 ```
 
-### Create config with the short flag
-
 ```bash
+# Create config with the short flag
 voicegw init -o ~/projects/my-agent/voicegw.yaml
 ```
 
-### Overwrite an existing config
-
 ```bash
+# Overwrite an existing config (prompts for confirmation)
 voicegw init --output ./voicegw.yaml
 # Prompts: "./voicegw.yaml already exists. Overwrite? [y/N]"
 ```
 
-## Next steps
-
-After running `init`:
+## After running init
 
 1. Open the generated file in your editor and add your API keys.
 2. Configure models under the `models:` section.
-3. Verify with `voicegw status`.
+3. Verify the config with `voicegw status`.
 
-## Related commands
+## Related
 
-- [`voicegw onboard`](/cli/onboard): the wizard alternative
-  (also installs the daemon).
-- [`voicegw status`](/cli/status): verify the config loads
-  correctly.
-- [`voicegw serve`](/cli/serve): run the daemon with the
-  config.
-- [`voicegw dashboard`](/cli/dashboard): open the dashboard.
+[`voicegw onboard`](/cli/onboard) | [`voicegw status`](/cli/status) | [`voicegw serve`](/cli/serve) | [Configuration reference](/configuration/voicegw-yaml)

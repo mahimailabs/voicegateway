@@ -30,18 +30,18 @@ After installation, the `voicegw` command is available globally. See
 | [`onboard`](/cli/onboard) | Five-question wizard. Writes config, installs and starts the daemon. |
 | [`init`](/cli/init) | Scaffold a `voicegw.yaml` from the bundled template. |
 | [`serve`](/cli/serve) | Run the daemon in the foreground. |
-| [`start`](/cli/serve#start) | Start the OS-managed daemon. |
-| [`stop`](/cli/serve#stop) | Stop the OS-managed daemon. |
-| [`restart`](/cli/serve#restart) | Restart the OS-managed daemon. |
-| [`daemon-logs`](/cli/serve#daemon-logs) | Tail the OS-native daemon log stream. |
-| [`uninstall-daemon`](/cli/serve#uninstall) | Remove the daemon registration (config + db preserved). |
+| [`start`](/cli/serve#voicegw-start) | Start the OS-managed daemon. |
+| [`stop`](/cli/serve#voicegw-stop) | Stop the OS-managed daemon. |
+| [`restart`](/cli/serve#voicegw-restart) | Restart the OS-managed daemon. |
+| [`daemon-logs`](/cli/serve#voicegw-daemon-logs) | Tail the OS-native daemon log stream. |
+| [`uninstall-daemon`](/cli/serve#voicegw-uninstall-daemon) | Remove the daemon registration (config + db preserved). |
 
 ### Inspect and verify
 
 | Command | Description |
 |---|---|
 | [`status`](/cli/status) | Provider configuration status. |
-| [`doctor`](/cli/status#doctor) | Numbered punch list with fix steps. |
+| [`doctor`](/cli/status#voicegw-doctor) | Numbered punch list with fix steps. |
 | [`smoke-test`](/cli/smoke-test) | Verify the inference pipeline end-to-end without LiveKit. |
 | [`livekit`](/cli/livekit) | Diagnostics against a LiveKit server: agents, latency, SFU health, combined check. |
 | [`logs`](/cli/logs) | Recent request logs. |

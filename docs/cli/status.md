@@ -7,14 +7,11 @@ description: Show provider configuration status. Useful for verifying setup afte
 
 Show the configuration status of all providers.
 
-## Purpose
+## Synopsis
 
-`voicegw status` displays a table of every provider defined in the
-config, whether it has credentials configured, and how many models
-are registered against it. This is the quickest way to verify your
-setup after editing `voicegw.yaml` or adding providers via the API.
+`voicegw status` displays a table of every provider defined in the config, whether it has credentials configured, and how many models are registered against it. This is the quickest way to verify your setup after editing `voicegw.yaml` or adding providers via the API.
 
-## Syntax
+## Usage
 
 ```bash
 voicegw status [OPTIONS]
@@ -39,9 +36,8 @@ A Rich-formatted table with three columns:
 
 ## Examples
 
-### Show all provider status
-
 ```bash
+# Show all provider status
 voicegw status
 ```
 
@@ -58,29 +54,15 @@ voicegw status
 └───────────┴────────────┴────────┘
 ```
 
-### Filter by project
-
 ```bash
+# Filter by project
 voicegw status --project tonys-pizza
 ```
 
-Displays the same table but with the project name in the header.
-Returns an error if the project id does not exist.
-
-### Use a specific config file
-
 ```bash
+# Use a specific config file
 voicegw status --config /etc/voicegateway/voicegw.yaml
 ```
-
-### Check for missing API keys
-
-```bash
-voicegw status
-```
-
-Look for providers showing `No API key`. Those need credentials
-before they can serve requests.
 
 ## Exit codes
 
@@ -89,26 +71,14 @@ before they can serve requests.
 | `0` | Success. |
 | `1` | Config failed to load, or the specified project was not found. |
 
-## `voicegw doctor` {#doctor}
+## `voicegw doctor`
 
-For a deeper check, run `voicegw doctor`. It runs a numbered punch
-list of checks (config loads, providers configured, daemon up,
-dashboard reachable, smoke test passes, secret-key set if managed
-providers exist, etc.) and prints a fix step for each failure. No
-stack traces. No bare "see docs" pointers.
+For a deeper check, run `voicegw doctor`. It runs a numbered punch list of checks (config loads, providers configured, daemon up, dashboard reachable, smoke test passes, secret-key set if managed providers exist, etc.) and prints a fix step for each failure. No stack traces. No bare "see docs" pointers.
 
 ```bash
 voicegw doctor
 ```
 
-## Related commands
+## Related
 
-- [`voicegw init`](/cli/init): create a config file if you do
-  not have one.
-- [`voicegw onboard`](/cli/onboard): five-question wizard.
-- [`voicegw costs`](/cli/costs): see what the providers are
-  costing you.
-- [`voicegw projects`](/cli/projects): list all configured
-  projects.
-- [`voicegw smoke-test`](/cli/smoke-test): exercise the
-  inference pipeline end-to-end without LiveKit.
+[`voicegw init`](/cli/init) | [`voicegw onboard`](/cli/onboard) | [`voicegw costs`](/cli/costs) | [`voicegw projects`](/cli/projects) | [`voicegw smoke-test`](/cli/smoke-test)

@@ -1,17 +1,17 @@
 ---
 title: voicegw mcp
-description: Start the VoiceGateway MCP (Model Context Protocol) server so coding agents can inspect and manage the gateway.
+description: Start the VoiceGateway MCP server so coding agents can inspect and manage the gateway via stdio or HTTP/SSE.
 ---
 
 # voicegw mcp
 
 Start the VoiceGateway MCP (Model Context Protocol) server.
 
-## Purpose
+## Synopsis
 
 The `mcp` command starts an MCP server that exposes 17 tools for AI coding agents to inspect and manage the gateway. Agents like Claude Code, Cursor, and Codex can use these tools to check provider status, view costs, register models, create projects, and more -- all without leaving their workflow.
 
-## Syntax
+## Usage
 
 ```bash
 voicegw mcp [OPTIONS]
@@ -32,6 +32,8 @@ The `mcp` extra must be installed:
 
 ```bash
 pip install "voicegateway[mcp]"
+# or with uv
+uv pip install "voicegateway[mcp]"
 ```
 
 For the HTTP transport, the `dashboard` extra is also needed (for `uvicorn` and `starlette`):
@@ -40,7 +42,7 @@ For the HTTP transport, the `dashboard` extra is also needed (for `uvicorn` and 
 pip install "voicegateway[mcp,dashboard]"
 ```
 
-## Transport Modes
+## Transport modes
 
 ### stdio (default)
 
@@ -60,37 +62,31 @@ Used for remote access or shared team gateways. The server exposes an SSE endpoi
 voicegw mcp --transport http --port 8090
 ```
 
-Authentication is enabled by setting the `VOICEGW_MCP_TOKEN` environment variable. See [MCP Authentication](/mcp/authentication) for details.
+Authentication is enabled by setting the `VOICEGW_MCP_TOKEN` environment variable. See [MCP transports](/mcp/transports) for details.
 
 ## Examples
 
-### Start with stdio for Claude Code
-
 ```bash
+# Start with stdio for Claude Code (default transport)
 voicegw mcp
 ```
 
-Claude Code would be configured to launch this command as its MCP server.
-
-### Start HTTP server for remote agents
-
 ```bash
+# Start HTTP server for remote agents
 VOICEGW_MCP_TOKEN=my-secret-token voicegw mcp --transport http --port 8090
 ```
 
-### Start on a custom host and port
-
 ```bash
+# Start on a custom host and port
 voicegw mcp -t http --host 0.0.0.0 --port 9000
 ```
 
-### Use a specific config file
-
 ```bash
+# Use a specific config file
 voicegw mcp --config /etc/voicegateway/voicegw.yaml
 ```
 
-## Available Tools
+## Available tools
 
 The MCP server exposes 17 tools across four categories:
 
@@ -103,8 +99,6 @@ The MCP server exposes 17 tools across four categories:
 
 See the [MCP tools reference](/mcp/tools/observability) for full documentation.
 
-## Related Commands
+## Related
 
-- [`voicegw serve`](/cli/serve) -- the HTTP API (MCP is a separate server)
-- [`voicegw dashboard`](/cli/dashboard) -- the web UI
-- [`voicegw status`](/cli/status) -- quick status check before starting MCP
+[`voicegw serve`](/cli/serve) | [`voicegw dashboard`](/cli/dashboard) | [`voicegw status`](/cli/status) | [MCP setup](/mcp/setup) | [MCP index](/mcp/index)
