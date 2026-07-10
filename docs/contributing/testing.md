@@ -1,3 +1,8 @@
+---
+title: "Testing"
+description: "pytest setup, shared fixtures, async test patterns, mocking strategies, and coverage expectations for VoiceGateway."
+---
+
 # Testing
 
 VoiceGateway has 200+ tests with over 70% code coverage. This guide covers running tests, writing new ones, and using the shared fixtures.
@@ -232,4 +237,4 @@ pytest --cov=voicegateway.middleware --cov-report=term-missing
 - [Development Setup](/contributing/development-setup)
 - [Code Style](/contributing/code-style)
 - [Adding a Provider](/contributing/adding-a-provider)
-- [Contributing](/contributing/)
+- [Contributing](/contributing/index)

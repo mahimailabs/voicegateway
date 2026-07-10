@@ -1,3 +1,8 @@
+---
+title: "Development Setup"
+description: "Set up a local development environment for VoiceGateway: clone, install, run tests, and work on the dashboard."
+---
+
 # Development Setup
 
 This guide walks you through setting up a local development environment for VoiceGateway.
@@ -11,24 +16,40 @@ This guide walks you through setting up a local development environment for Voic
 
 ## Clone and install
 
-```bash
-# Fork the repo on GitHub first, then:
-git clone https://github.com/<your-username>/voicegateway.git
-cd voicegateway
+<Steps>
+  <Step title="Fork and clone">
+    Fork the repo on GitHub, then clone your fork:
 
-# Create a virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+    ```bash
+    git clone https://github.com/<your-username>/voicegateway.git
+    cd voicegateway
+    ```
+  </Step>
+  <Step title="Create a virtual environment and install">
+    <CodeGroup>
+    ```bash uv (preferred)
+    uv venv
+    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Install with all development extras
-pip install -e ".[all,dashboard,mcp,dev]"
-```
+    # Install with all development extras
+    uv pip install -e ".[all,dashboard,mcp,dev]"
+    ```
 
-This installs:
-- All 11 provider SDKs (`all`)
-- Dashboard dependencies (`dashboard`)
-- MCP server dependencies (`mcp`)
-- Test tools: pytest, pytest-asyncio, pytest-cov (`dev`)
+    ```bash pip (alternate)
+    python -m venv .venv
+    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+    pip install -e ".[all,dashboard,mcp,dev]"
+    ```
+    </CodeGroup>
+
+    This installs:
+    - All 11 provider SDKs (`all`)
+    - Dashboard dependencies (`dashboard`)
+    - MCP server dependencies (`mcp`)
+    - Test tools: pytest, pytest-asyncio, pytest-cov (`dev`)
+  </Step>
+</Steps>
 
 ## Pre-commit hooks
 
@@ -88,7 +109,7 @@ voicegw --version
 voicegw status
 ```
 
-## Dashboard development {#dashboard}
+## Dashboard development
 
 The dashboard has a FastAPI backend and a React/TypeScript/Vite frontend.
 
@@ -125,16 +146,11 @@ The frontend uses:
 - **Recharts** for cost and latency visualizations
 - **Neo-Brutalism** design aesthetic (bold borders, solid shadows, high contrast)
 
-## Documentation site {#documentation-site}
+## Documentation site
 
-VoiceGateway owns the Markdown source under `docs/`. The rendered docs site
-lives in `mahimailabs/voicegateway-web` and is published at
-<https://voicegateway.mahimai.ca/docs>.
+VoiceGateway owns the Markdown source under `docs/`. The rendered docs site is published at `https://docs.voicegateway.dev` via Mintlify.
 
-For local preview, run the voicegateway-web app and let its docs sync script
-copy this repo's Markdown into the web workspace. When docs changes reach
-`main`, `.github/workflows/docs.yml` triggers a voicegateway-web rebuild through
-the configured `VOICEGATEWAY_WEB_DEPLOY_HOOK` secret.
+When docs changes reach `main`, `.github/workflows/docs.yml` triggers a Mintlify rebuild through the configured deploy hook secret.
 
 ## Project structure
 
@@ -177,9 +193,7 @@ voicegateway/
   pyproject.toml         # Project metadata, dependencies, tool config
 ```
 
-The starter config template that `voicegw init` writes lives at
-`src/voicegateway/data/voicegw.example.yaml` (loaded via `importlib.resources`
-so the wheel ships it).
+The starter config template that `voicegw init` writes lives at `src/voicegateway/data/voicegw.example.yaml` (loaded via `importlib.resources` so the wheel ships it).
 
 ## Environment variables for development
 
@@ -195,7 +209,7 @@ export CARTESIA_API_KEY=...
 
 ## Related pages
 
-- [Contributing](/contributing/)
+- [Contributing](/contributing/index)
 - [Code Style](/contributing/code-style)
 - [Testing](/contributing/testing)
 - [Adding a Provider](/contributing/adding-a-provider)
