@@ -1,8 +1,4 @@
-"""Umbrella service over the three managed_* repositories.
-
-Guardrail policy CRUD used to live here; it now lives on
-:class:`voicegateway.services.guardrail_service.GuardrailService`.
-"""
+"""Umbrella service over the three managed_* repositories."""
 
 from __future__ import annotations
 

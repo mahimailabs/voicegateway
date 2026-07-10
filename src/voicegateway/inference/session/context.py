@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import uuid
 from contextvars import ContextVar
-from typing import Any
 
 _SESSION_ID_PREFIX = "vg-"
 
@@ -12,15 +11,6 @@ _SESSION_ID_PREFIX = "vg-"
 DEFAULT_TENANT: str = "default"
 
 _current_session_id: ContextVar[str | None] = ContextVar("vg_session_id", default=None)
-_current_guardrails_bypassed: ContextVar[bool] = ContextVar(
-    "vg_guardrails_bypassed", default=False
-)
-_current_guardrail_policy_snapshot: ContextVar[dict[str, Any] | None] = ContextVar(
-    "vg_guardrail_policy_snapshot", default=None
-)
-_current_guardrail_bypass_logged: ContextVar[bool] = ContextVar(
-    "vg_guardrail_bypass_logged", default=False
-)
 
 
 def get_or_create_session_id() -> str:
@@ -37,66 +27,16 @@ def get_session_id() -> str | None:
     return _current_session_id.get()
 
 
-def start_session(*, bypass_guardrails: bool = False) -> str:
+def start_session() -> str:
     """Force a new session id for the current context."""
     sid = f"{_SESSION_ID_PREFIX}{uuid.uuid4()}"
     _current_session_id.set(sid)
-    _current_guardrails_bypassed.set(bool(bypass_guardrails))
-    _current_guardrail_policy_snapshot.set(None)
-    _current_guardrail_bypass_logged.set(False)
     return sid
 
 
 def reset_session_id() -> None:
     """Clear the session ID in the current context."""
     _current_session_id.set(None)
-    _current_guardrails_bypassed.set(False)
-    _current_guardrail_policy_snapshot.set(None)
-    _current_guardrail_bypass_logged.set(False)
-
-
-def set_guardrails_bypassed(bypass: bool) -> None:
-    """Set the per-session guardrail bypass flag for the active context."""
-    _current_guardrails_bypassed.set(bool(bypass))
-
-
-def current_guardrails_bypassed() -> bool:
-    """Return whether the current session opted out of guardrail injection."""
-    return _current_guardrails_bypassed.get()
-
-
-def get_or_freeze_guardrail_policy_snapshot(
-    policy: dict[str, Any],
-) -> dict[str, Any]:
-    """Freeze the guardrail policy for the current session."""
-    snapshot = _current_guardrail_policy_snapshot.get()
-    if snapshot is None:
-        snapshot = dict(policy)
-        if isinstance(policy.get("categories"), dict):
-            snapshot["categories"] = dict(policy["categories"])
-        _current_guardrail_policy_snapshot.set(snapshot)
-    return snapshot
-
-
-def current_guardrail_policy_snapshot() -> dict[str, Any] | None:
-    """Return the frozen policy snapshot, if the session has reached LLM."""
-    snapshot = _current_guardrail_policy_snapshot.get()
-    if snapshot is None:
-        return None
-    out = dict(snapshot)
-    if isinstance(snapshot.get("categories"), dict):
-        out["categories"] = dict(snapshot["categories"])
-    return out
-
-
-def guardrail_bypass_already_logged() -> bool:
-    """Return whether the bypass audit event has been recorded."""
-    return _current_guardrail_bypass_logged.get()
-
-
-def mark_guardrail_bypass_logged() -> None:
-    """Mark the current session's bypass audit event as written/scheduled."""
-    _current_guardrail_bypass_logged.set(True)
 
 
 _TENANT_ID_MAX_LEN = 128

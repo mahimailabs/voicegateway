@@ -7,8 +7,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from voicegateway.schemas.guardrail_policy_schema import GuardrailPolicy
-
 
 class _StrictBase(BaseModel):
     """Base with extra='forbid' for catching typos."""
@@ -75,18 +73,6 @@ class BrandingConfig(_StrictBase):
     product_name: str | None = None
 
 
-class GuardrailsConfig(_StrictBase):
-    """Per-project LLM-side guardrail policy."""
-
-    enabled: bool = False
-    categories: dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def _validate_policy(self) -> GuardrailsConfig:
-        GuardrailPolicy.model_validate(self.model_dump())
-        return self
-
-
 class TenantConfig(_StrictBase):
     """Multi-tenant attribution knobs."""
 
@@ -132,7 +118,6 @@ class ProjectConfig(_StrictBase):
     tenant: TenantConfig = Field(default_factory=TenantConfig)
     routing: RoutingConfig = Field(default_factory=RoutingConfig)
     branding: BrandingConfig = Field(default_factory=BrandingConfig)
-    guardrails: GuardrailsConfig = Field(default_factory=GuardrailsConfig)
 
 
 class ObservabilityConfig(_StrictBase):

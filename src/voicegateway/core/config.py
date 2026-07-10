@@ -17,7 +17,6 @@ from voicegateway.schemas.config_schema import (
     VoiceGatewayConfig,
     WorkersConfig,
 )
-from voicegateway.schemas.guardrail_policy_schema import GuardrailPolicy
 
 # Re-export ClickHouseConfig so callers can import it from here without going
 # through the schema module directly.
@@ -117,7 +116,6 @@ class ProjectConfig:
     tenant: TenantConfig = field(default_factory=TenantConfig)
     routing: RoutingConfig = field(default_factory=RoutingConfig)
     branding: BrandingConfig = field(default_factory=BrandingConfig)
-    guardrails: GuardrailPolicy = field(default_factory=GuardrailPolicy.disabled)
 
     @property
     def accent(self) -> str:
@@ -294,7 +292,6 @@ class GatewayConfig:
                         else None
                     ),
                 )
-                guardrails_cfg = GuardrailPolicy.from_raw(pcfg.get("guardrails"))
                 projects[pid] = ProjectConfig(
                     id=pid,
                     name=str(pcfg.get("name") or pid),
@@ -309,7 +306,6 @@ class GatewayConfig:
                     tenant=tenant_cfg,
                     routing=routing_cfg,
                     branding=branding_cfg,
-                    guardrails=guardrails_cfg,
                 )
 
         auth_raw = raw.get("auth", {}) or {}

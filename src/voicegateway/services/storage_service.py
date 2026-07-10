@@ -11,7 +11,6 @@ from voicegateway.core.config import GatewayConfig
 from voicegateway.core.database import Database
 from voicegateway.models.request_model import RequestRecord
 from voicegateway.services.cost_service import CostService
-from voicegateway.services.guardrail_service import GuardrailService
 from voicegateway.services.latency_service import LatencyService
 from voicegateway.services.managed_config_service import ManagedConfigService
 from voicegateway.services.request_log_service import RequestLogService
@@ -55,7 +54,6 @@ class StorageService:
         self._latency_service = LatencyService(self._conn)
         self._session_service = SessionService(self._conn)
         self._managed_config_service = ManagedConfigService(self._conn)
-        self._guardrail_service = GuardrailService(self._conn)
 
     async def _ensure_initialized(self) -> None:
         if self._initialized:
@@ -437,21 +435,25 @@ class StorageService:
         tts_model: str | None = None,
         tags: list[str] | None = None,
     ) -> None:
-        """Delegate to GuardrailService.set_project_policy."""
+        """Write or update the guardrail policy on one managed project."""
+        from voicegateway.repository import managed_project_repository as project_repo
+
         await self._ensure_initialized()
-        await self._guardrail_service.set_project_policy(
-            project_id=project_id,
-            policy=policy,
-            name=name,
-            description=description,
-            daily_budget=daily_budget,
-            budget_action=budget_action,
-            default_stack=default_stack,
-            stt_model=stt_model,
-            llm_model=llm_model,
-            tts_model=tts_model,
-            tags=tags,
-        )
+        async with self._conn.session() as s:
+            await project_repo.set_project_guardrails(
+                s,
+                project_id=project_id,
+                policy=policy,
+                name=name,
+                description=description,
+                daily_budget=daily_budget,
+                budget_action=budget_action,
+                default_stack=default_stack,
+                stt_model=stt_model,
+                llm_model=llm_model,
+                tts_model=tts_model,
+                tags=tags,
+            )
 
     async def delete_managed_project(self, project_id: str) -> bool:
         """Delegate to ManagedConfigService.delete_project."""
@@ -471,15 +473,21 @@ class StorageService:
         action: str,
         context_excerpt: str,
     ) -> None:
-        """Delegate to GuardrailService.log_fired_event."""
+        """Record one guardrail-fired audit row."""
+        from voicegateway.repository import guardrail_events_repository as events_repo
+
         await self._ensure_initialized()
-        await self._guardrail_service.log_fired_event(
-            session_id=session_id,
-            tenant_id=tenant_id,
-            category=category,
-            action=action,
-            context_excerpt=context_excerpt,
-        )
+        async with self._conn.session() as s:
+            await events_repo.create_event(
+                s,
+                session_id=session_id,
+                tenant_id=tenant_id,
+                event_type="fired",
+                category=category,
+                action=action,
+                context_excerpt=context_excerpt,
+            )
+            await s.commit()
 
     async def log_guardrail_bypassed(
         self,
@@ -488,10 +496,24 @@ class StorageService:
         tenant_id: str | None,
         context_excerpt: str = "guardrail injection bypassed for this session",
     ) -> None:
-        """Delegate to GuardrailService.log_bypassed_event."""
-        await self._ensure_initialized()
-        await self._guardrail_service.log_bypassed_event(
-            session_id=session_id,
-            tenant_id=tenant_id,
-            context_excerpt=context_excerpt,
-        )
+        """Best-effort guardrail-bypassed audit row. Never raises."""
+        from voicegateway.repository import guardrail_events_repository as events_repo
+
+        try:
+            await self._ensure_initialized()
+            async with self._conn.session() as s:
+                await events_repo.create_event(
+                    s,
+                    session_id=session_id,
+                    tenant_id=tenant_id,
+                    event_type="bypassed",
+                    context_excerpt=context_excerpt,
+                )
+                await s.commit()
+        except Exception:
+            _logger.warning(
+                "failed to record guardrail bypass event session_id=%s tenant_id=%s",
+                session_id,
+                tenant_id,
+                exc_info=True,
+            )

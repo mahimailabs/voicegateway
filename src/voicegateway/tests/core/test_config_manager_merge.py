@@ -112,26 +112,3 @@ async def test_extra_config_cannot_override_reserved_keys(
     assert cfg["_source"] == "db"
     # Non-reserved keys still flow through.
     assert cfg["organization"] == "org-real"
-
-
-async def test_managed_guardrails_overlay_yaml_project(
-    yaml_no_projects, tmp_path, monkeypatch
-):
-    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "guardrails-overlay.db"))
-    gw = Gateway(config_path=yaml_no_projects)
-    storage = gw.storage
-    assert storage is not None
-
-    await storage.upsert_managed_project(
-        project_id="default",
-        name="Default",
-        guardrail_policy={
-            "enabled": True,
-            "categories": {"pii": "redact", "medical": "alert"},
-        },
-    )
-    await gw.refresh_config()
-
-    policy = gw.config.projects["default"].guardrails
-    assert policy.is_active is True
-    assert policy.active_categories == {"pii": "redact", "medical": "alert"}
