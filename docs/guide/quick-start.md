@@ -1,159 +1,259 @@
 ---
 title: Quick start
-description: Get VoiceGateway running in 5 minutes. Daemon up, dashboard open, one Python script proves the inference factories resolve correctly.
+description: Install VoiceGateway, attach() it to a LiveKit or Pipecat agent, open the dashboard, and read your first per-call cost row in five minutes.
 ---
 
 # Quick start
 
-By the end of this guide you have a running daemon, an open
-dashboard, and a Python script that exercises the inference
-factories so you can confirm provider keys resolve and costs land
-in the dashboard.
+By the end of this guide you have VoiceGateway installed, `attach()` wired into a
+minimal agent, and cost rows appearing in the dashboard.
 
 ## Prerequisites
 
 - Python 3.11 or later
-- An API key for at least one cloud provider (Deepgram, OpenAI,
-  Anthropic, Groq, Cartesia, ElevenLabs, or AssemblyAI)
+- A running LiveKit or Pipecat agent (or follow the agent skeleton below)
+- API keys for at least one STT, LLM, and TTS provider
 
-## 1. Install
+<Steps>
+  <Step title="Install">
+    Pick the extra for your framework. Provider extras for LiveKit imply the
+    `livekit` extra, so one line is enough.
 
-```bash
-pipx install 'voicegateway[cloud,dashboard]'
-```
+    <Tabs>
+      <Tab title="LiveKit">
+        <CodeGroup>
+        ```bash uv
+        uv pip install "voicegateway[openai,deepgram,cartesia]"
+        ```
+        ```bash pip
+        pip install "voicegateway[openai,deepgram,cartesia]"
+        ```
+        </CodeGroup>
+      </Tab>
+      <Tab title="Pipecat">
+        <CodeGroup>
+        ```bash uv
+        uv pip install "voicegateway[pipecat]"
+        uv pip install "pipecat-ai[openai,deepgram,cartesia]"
+        ```
+        ```bash pip
+        pip install "voicegateway[pipecat]"
+        pip install "pipecat-ai[openai,deepgram,cartesia]"
+        ```
+        </CodeGroup>
+      </Tab>
+    </Tabs>
 
-Or if you prefer uv:
+    See [Installation](/guide/installation) for the full extras table, Docker,
+    and source install.
+  </Step>
 
-```bash
-uv tool install 'voicegateway[cloud,dashboard]'
-```
+  <Step title="Build a minimal agent">
+    Create `agent.py`. Use your native framework providers exactly as you
+    normally would.
 
-The `cloud` extra pulls every cloud provider SDK; the `dashboard`
-extra ships the prebuilt React bundle and the dashboard endpoints.
-For a minimal install of one provider only, see
-[Installation](/guide/installation).
+    <Tabs>
+      <Tab title="LiveKit">
+        ```python
+        # agent.py (LiveKit)
+        from livekit.agents import Agent, AgentSession, WorkerOptions, cli
+        from livekit.plugins import deepgram, openai, cartesia
 
-## 2. Onboard
+        import voicegateway
 
-```bash
-voicegw onboard
-```
 
-Five questions, four with working defaults (press Enter to accept):
+        async def entrypoint(ctx):
+            await ctx.connect()
 
-1. Project name (default: `default`).
-2. Provider (default: `openai`).
-3. API key (no default; paste yours).
-4. Port (default: `8080`).
-5. Install daemon? (default: yes).
+            session = AgentSession(
+                stt=deepgram.STT(model="nova-3"),
+                llm=openai.LLM(model="gpt-4o-mini"),
+                tts=cartesia.TTS(model="sonic-3"),
+            )
 
-The wizard writes `~/.config/voicegateway/voicegw.yaml`, registers
-the daemon with your OS service manager (LaunchAgent on macOS,
-`systemd --user` on Linux, Scheduled Task on Windows), and starts
-it.
+            voicegateway.attach(session, project="my-agent")
 
-## 3. Open the dashboard
+            await session.start(
+                agent=Agent(instructions="You are a helpful voice assistant."),
+                room=ctx.room,
+            )
 
-```bash
-voicegw dashboard
-```
 
-That opens your browser at the daemon URL (default
-`http://127.0.0.1:8080`). The daemon serves the React UI at `/`,
-the dashboard API at `/api/*`, and the public HTTP API at `/v1/*`
-on the same port.
+        if __name__ == "__main__":
+            cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
+        ```
+      </Tab>
+      <Tab title="Pipecat">
+        ```python
+        # agent.py (Pipecat)
+        import os
+        from pipecat.pipeline.pipeline import Pipeline
+        from pipecat.pipeline.task import PipelineParams, PipelineTask
+        from pipecat.pipeline.runner import PipelineRunner
+        from pipecat.services.deepgram.stt import DeepgramSTTService
+        from pipecat.services.openai.llm import OpenAILLMService
+        from pipecat.services.cartesia.tts import CartesiaTTSService
 
-## 4. Verify the inference factories
+        import voicegateway
 
-Create `demo.py`:
 
-```python
-from voicegateway.inference import STT, LLM, TTS
+        async def main():
+            stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"])
+            llm = OpenAILLMService(
+                api_key=os.environ["OPENAI_API_KEY"],
+                model="gpt-4o-mini",
+            )
+            tts = CartesiaTTSService(
+                api_key=os.environ["CARTESIA_API_KEY"],
+                voice_id="your-voice-id",
+            )
 
-# Each call resolves provider/model -> loads the SDK -> wraps with
-# cost-tracking and latency middleware. AgentSession would consume
-# them directly; here we print to confirm wiring.
-stt = STT("openai/whisper-1")
-llm = LLM("openai/gpt-4.1-mini")
-tts = TTS("openai/tts-1")
+            pipeline = Pipeline([stt, llm, tts])
+            task = PipelineTask(
+                pipeline,
+                params=PipelineParams(
+                    enable_metrics=True,
+                    enable_usage_metrics=True,
+                ),
+            )
 
-print("STT:", stt)
-print("LLM:", llm)
-print("TTS:", tts)
-```
+            voicegateway.attach(task, project="my-agent")
 
-Run it:
+            runner = PipelineRunner()
+            await runner.run(task)
 
-```bash
-python demo.py
-```
 
-You should see three instantiated provider objects. VoiceGateway
-resolved the `provider/model` strings, loaded the correct SDKs, and
-wrapped each instance with cost-tracking and latency middleware.
+        if __name__ == "__main__":
+            import asyncio
+            asyncio.run(main())
+        ```
 
-## 5. See costs in the dashboard
+        <Note>
+          `enable_metrics=True` and `enable_usage_metrics=True` are required on
+          `PipelineParams`. Without them, Pipecat emits no usage frames and
+          `attach()` has nothing to record.
+        </Note>
+      </Tab>
+    </Tabs>
+  </Step>
 
-Trigger one call (any request that uses the inference factories
-above) and refresh the dashboard at `http://127.0.0.1:8080/costs`.
-The row shows the model, provider, modality, and the per-call cost
-in USD with the pricing source attribution (`voice-prices@<version>`
-for cloud models, `voicegateway-local` for self-hosted).
+  <Step title="Open the dashboard">
+    In a second terminal, start the dashboard:
 
-In the terminal:
+    ```bash
+    voicegw dashboard
+    ```
 
-```bash
-voicegw costs
-voicegw status
-voicegw logs
-```
+    Your browser opens at `http://127.0.0.1:9090`. The Costs page is empty until
+    your first call completes. Leave it open.
+  </Step>
 
-## Add a project
+  <Step title="Run the agent and place a call">
+    <Tabs>
+      <Tab title="LiveKit">
+        ```bash
+        python agent.py dev
+        ```
 
-Multiple agents share one daemon? Give each its own project entry
-in `voicegw.yaml` so cost rows and provider keys stay separated:
+        Connect to your LiveKit room and say something. After the call, the
+        dashboard Costs page shows a row per modality with the provider, model,
+        usage units, and cost in USD.
+      </Tab>
+      <Tab title="Pipecat">
+        ```bash
+        python agent.py
+        ```
+
+        After the pipeline finishes, the dashboard Costs page shows a row per
+        modality with the provider, model, usage units, and cost in USD.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Read the cost rows">
+    On the Costs page, each row shows:
+
+    | Column | What it means |
+    |---|---|
+    | Modality | `stt`, `llm`, or `tts` |
+    | Provider | `deepgram`, `openai`, `cartesia`, etc. |
+    | Model | the model id passed to the plugin |
+    | Usage | audio minutes (STT), tokens (LLM), characters (TTS) |
+    | Cost | USD, priced through `voice-prices` |
+    | Project | the `project=` argument you passed to `attach()` |
+
+    In the terminal:
+
+    ```bash
+    voicegw costs    # tabular cost summary
+    voicegw status   # daemon and provider health
+    voicegw logs     # recent request stream
+    ```
+  </Step>
+</Steps>
+
+## Add a project budget
+
+Multiple agents share one daemon? Give each its own project block in
+`voicegw.yaml` to separate cost rows and daily budgets:
 
 ```yaml
 projects:
   my-agent:
     name: My First Agent
     daily_budget: 5.00
-    providers:
-      deepgram:
-        api_key: ${MY_AGENT_DEEPGRAM_KEY}
-      openai:
-        api_key: ${MY_AGENT_OPENAI_KEY}
+    budget_action: warn
 
 default_project: my-agent
 ```
 
-The inference factories pick the project up automatically. Override
-per-context with `set_project("my-agent")` from
-`voicegateway.core.active_project` when you need to.
+Pass `project="my-agent"` to `attach()` (as shown above) and the rows are
+attributed to that project automatically.
 
-## Add fallbacks
+## Add fallback and rate limits
 
-Resolver-time fallback chain in `voicegw.yaml`:
+`guard()` wraps any native provider and returns a drop-in replacement. Use it
+on the specific providers where you want control:
 
-```yaml
-fallbacks:
-  stt: [deepgram/nova-3, openai/whisper-1]
-  llm: [openai/gpt-4.1-mini, anthropic/claude-sonnet-4-5]
-  tts: [openai/tts-1, elevenlabs/eleven_turbo_v2_5]
-```
+<Tabs>
+  <Tab title="LiveKit">
+    ```python
+    import voicegateway
+    from livekit.plugins import openai
 
-Walk the chain at startup by trying each model with
-`STT/LLM/TTS(model_id)` and using the first one whose provider
-plugin imports cleanly. Once `AgentSession` starts, the resolved
-model is used for the whole call.
+    guarded_llm = voicegateway.guard(
+        openai.LLM(model="gpt-4o-mini"),
+        fallback=[openai.LLM(model="gpt-4o")],
+        rate_limit="60/min",
+        budget="$5.00/day",
+    )
+
+    session = AgentSession(stt=stt, llm=guarded_llm, tts=tts)
+    voicegateway.attach(session, project="my-agent")
+    ```
+  </Tab>
+  <Tab title="Pipecat">
+    ```python
+    import voicegateway
+    from pipecat.services.openai.llm import OpenAILLMService
+
+    guarded_llm = voicegateway.guard(
+        OpenAILLMService(model="gpt-4o-mini"),
+        fallback=[OpenAILLMService(model="gpt-4o")],
+        rate_limit="60/min",
+        budget="$5.00/day",
+    )
+
+    pipeline = Pipeline([stt, guarded_llm, tts])
+    ```
+  </Tab>
+</Tabs>
+
+`attach()` remains the single meter. `guard()` writes no metrics of its own.
 
 ## Next steps
 
-- [Installation](/guide/installation): all install variants
-  (curl-bash, pipx, uv, Docker).
-- [First agent](/guide/first-agent): wire VoiceGateway into a
-  full LiveKit voice agent.
-- [Core concepts](/guide/core-concepts): understand the
-  abstractions (modality, provider, project, stack).
-- [Configuration reference](/configuration/voicegw-yaml): every
-  YAML key.
+- [First agent](/guide/first-agent): a complete worked agent file with `guard()`.
+- [attach()](/guide/attach): full `attach()` reference, including `tenant_id` and fleet push.
+- [guard()](/guide/guard): full `guard()` reference with fallback scope details.
+- [Configuration reference](/configuration/voicegw-yaml): every YAML key.
