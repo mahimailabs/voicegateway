@@ -398,3 +398,12 @@ files = ["src/voicegateway", "src/dashboard"]
 # they live in src/voicegateway/tests/ but should not be part of the
 # library's type contract.
 exclude = ["^src/voicegateway/tests/"]
+
+# numpy's bundled stubs use PEP 695 `type` statements that mypy rejects under
+# python_version = "3.11" ("Type statement is only supported in Python 3.12 and
+# greater"), which reddened the test/py3.x CI matrix on every code PR. We do not
+# type-check numpy usage, so skip following into it (stubs included).
+[[tool.mypy.overrides]]
+module = "numpy.*"
+follow_imports = "skip"
+follow_imports_for_stubs = true
