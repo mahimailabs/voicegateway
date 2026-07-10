@@ -1,203 +1,114 @@
-# Architecture Overview
+---
+title: Architecture Overview
+description: How VoiceGateway wires attach(), guard(), the framework-neutral core, and the storage layer together into a complete cost-tracking and budget-enforcement system.
+---
 
-VoiceGateway is cost tracking and reconciliation for LiveKit voice agents. It returns native LiveKit STT, LLM, and TTS plugin instances across cloud providers and local models, with modality-aware unit accounting (audio-minutes, tokens, characters), resolver-time fallback chains, rate limiting, budget enforcement, a `voicegw reconcile` command, and a web dashboard.
+VoiceGateway is a framework-neutral observability and control layer for LiveKit voice agents. You call `attach()` as a passive observer that records every inference unit, and `guard()` as an active gate that enforces budgets and rate limits before a call is placed. Both functions share a single `RequestRecord` pipeline that lands in SQLite (or a remote sink) and feeds the dashboard and `voicegw reconcile`.
 
-## System Architecture
+## Request flow
 
 ```mermaid
-graph TB
-    subgraph UserCode["User Code / LiveKit Agent"]
-        A["gateway.stt('deepgram/nova-3')"]
-        B["gateway.llm('openai/gpt-4.1-mini')"]
-        C["gateway.tts('cartesia/sonic-3')"]
+graph TD
+    subgraph UserCode["Your Agent Code"]
+        A["attach(session, tenant_id=...)"]
+        B["guard(model_id, project=...)"]
     end
 
-    subgraph Core["Core Layer"]
-        GW[Gateway]
-        R[Router]
-        REG[Registry]
-        MID[ModelId Parser]
+    subgraph Core["Framework-neutral core"]
+        CTX["ContextVars (tenant, project)"]
+        CT["CostTracker"]
+        REC["RequestRecord builder"]
+        VPR["voice-prices catalog"]
     end
 
-    subgraph Middleware["Middleware Pipeline"]
-        BE[BudgetEnforcer]
-        IP[InstrumentedProvider]
-        CT[CostTracker]
-        LM[LatencyMonitor]
-        RL[RateLimiter]
-        FB[FallbackChain]
-        LG[RequestLogger]
-    end
-
-    subgraph Providers["Provider Layer"]
-        BP[BaseProvider ABC]
-        OAI[OpenAI]
-        DG[Deepgram]
-        CA[Cartesia]
-        AN[Anthropic]
-        GR[Groq]
-        EL[ElevenLabs]
-        AA[AssemblyAI]
-        OL[Ollama]
-        WH[Whisper]
-        KO[Kokoro]
-        PI[Piper]
-    end
-
-    subgraph Storage["Storage Layer"]
+    subgraph Storage["Storage"]
         DB[(SQLite)]
-        CM[ConfigManager]
-        CR[Crypto / Fernet]
+        SINK["Remote sink (cloud ingest)"]
     end
 
-    subgraph Interfaces["External Interfaces"]
-        API[FastAPI HTTP Server]
-        DASH[Dashboard - React/Vite]
-        MCP[MCP Server]
-        CLI[CLI - voicegw]
+    subgraph Interfaces["External interfaces"]
+        DASH["Dashboard (React + FastAPI)"]
+        CLI["voicegw reconcile / costs / logs"]
+        API["HTTP /v1/costs  /v1/logs"]
     end
 
-    A --> GW
-    B --> GW
-    C --> GW
-    GW --> BE
-    BE --> R
-    R --> MID
-    R --> REG
-    REG --> BP
-    BP --> OAI & DG & CA & AN & GR & EL & AA & OL & WH & KO & PI
-    GW --> IP
-    IP --> CT
-    IP --> LM
-    GW --> FB
-    CT --> DB
-    API --> GW
-    DASH --> API
-    MCP --> GW
-    CLI --> GW
-    CM --> DB
-    CR --> DB
+    A --> CTX
+    B --> CTX
+    CTX --> CT
+    CT --> VPR
+    VPR --> REC
+    REC --> DB
+    REC --> SINK
+    DB --> DASH
+    DB --> CLI
+    DB --> API
 ```
 
-## Request Flow
+`attach()` hooks into the LiveKit `AgentSession` event stream. It reads the current `ContextVars` (tenant, project, call ID) on each event, computes cost via `voice-prices`, and writes a `RequestRecord`. `guard()` checks BudgetEnforcer and RateLimiter before the call starts and raises `BudgetExceededError` or `RateLimitExceeded` when a limit is hit.
 
-Every call to `gateway.stt()`, `gateway.llm()`, or `gateway.tts()` follows the same path:
-
-```mermaid
-sequenceDiagram
-    participant App as User Code
-    participant GW as Gateway
-    participant BE as BudgetEnforcer
-    participant R as Router
-    participant MID as ModelId
-    participant REG as Registry
-    participant P as Provider
-    participant IP as InstrumentedProvider
-    participant CT as CostTracker
-    participant DB as SQLite
-
-    App->>GW: gateway.stt("deepgram/nova-3", project="prod")
-    GW->>BE: check_budget("prod")
-    BE->>DB: get_cost_summary("today", project="prod")
-    DB-->>BE: $4.20 / $10.00 budget
-    BE-->>GW: OK (under budget)
-    GW->>R: resolve("deepgram/nova-3", "stt")
-    R->>MID: parse("deepgram/nova-3")
-    MID-->>R: ModelId(provider="deepgram", model="nova-3")
-    R->>REG: create_provider("deepgram", config)
-    REG-->>R: DeepgramProvider instance
-    R->>P: create_stt(model="nova-3")
-    P-->>R: STT instance
-    R-->>GW: STT instance
-    GW->>IP: wrap_provider(instance, "stt", ...)
-    IP-->>GW: InstrumentedSTT wrapper
-    GW-->>App: InstrumentedSTT (proxies all access)
-    Note over IP,DB: On first byte/completion, records TTFB + latency
-    IP->>CT: create_record(...)
-    CT->>DB: log_request(record)
-```
-
-## Directory Structure
-
-The Python package lives under `voicegateway/`. A separate `dashboard/`
-tree carries the FastAPI backend and the React + TypeScript + Vite +
-Recharts frontend for the local cost dashboard.
+## Directory layout
 
 ```
-voicegateway/
+src/voicegateway/
 ├── core/
-│   ├── gateway.py
-│   ├── config.py
-│   ├── config_manager.py
-│   ├── registry.py
-│   ├── schema.py
-│   └── crypto.py
-├── inference/
-│   ├── __init__.py
-│   ├── _factory.py
-│   ├── _project.py
-│   ├── _session_context.py
-│   ├── _resolution.py
-│   ├── _stt.py
-│   ├── _llm.py
-│   └── _tts.py
+│   ├── gateway.py          # Internal orchestrator (not public API)
+│   ├── config.py           # YAML parser with ${ENV_VAR} substitution
+│   ├── config_manager.py   # Three-source merge: env > SQLite > YAML
+│   ├── registry.py         # Lazy provider factory
+│   └── schema.py           # Pydantic config models
 ├── providers/
-│   ├── base.py
-│   ├── openai_provider.py
-│   ├── deepgram_provider.py
-│   ├── cartesia_provider.py
-│   ├── anthropic_provider.py
-│   ├── groq_provider.py
-│   ├── elevenlabs_provider.py
-│   ├── assemblyai_provider.py
-│   ├── ollama_provider.py
-│   ├── whisper_provider.py
-│   ├── kokoro_provider.py
-│   └── piper_provider.py
+│   ├── base.py             # BaseProvider ABC
+│   └── *.py                # 11 provider implementations
 ├── middleware/
-│   ├── cost_tracker.py
-│   ├── latency_monitor.py
-│   ├── rate_limiter.py
-│   ├── logger.py
-│   ├── budget_enforcer.py
-│   └── instrumented_provider.py
+│   ├── cost_tracker.py     # RequestRecord builder, voice-prices dispatch
+│   ├── latency_monitor.py  # TTFB + total-latency timers
+│   ├── rate_limiter.py     # Sliding-window RPM limiter
+│   ├── budget_enforcer.py  # Per-project daily-budget checks
+│   ├── logger.py           # Structured request logger
+│   └── instrumented_provider.py  # Transparent proxy wrappers
 ├── storage/
-│   ├── sqlite.py
-│   └── models.py
-├── server.py
-├── mcp/
-│   ├── server.py
-│   ├── auth.py
-│   ├── errors.py
-│   ├── schemas.py
-│   └── tools/
+│   ├── sqlite.py           # Async SQLite backend
+│   └── models.py           # RequestRecord dataclass
 └── pricing/
-    └── catalog.py
+    └── catalog.py          # voice-prices facade
 dashboard/
-├── api/
-└── frontend/
+├── api/                    # FastAPI backend
+└── frontend/               # React + TypeScript + Vite + Recharts
 ```
 
-## Design Principles
+## Design principles
 
-1. **Async throughout** -- all database, HTTP, and provider operations use async/await. The Gateway provides synchronous wrapper methods for convenience.
+**Async throughout.** All database, HTTP, and provider operations use `async`/`await`. The public `attach()` and `guard()` helpers are async-native.
 
-2. **Lazy loading** -- providers are only imported and instantiated on first use. `pip install voicegateway[openai]` installs only the OpenAI SDK.
+**Framework neutral.** VoiceGateway does not own the inference path. You keep your own LiveKit plugin instances or Pipecat services; `attach()` observes them, `guard()` gates them.
 
-3. **Transparent instrumentation** -- `InstrumentedSTT/LLM/TTS` wrappers proxy all attribute access via `__getattr__`, so user code sees the exact same API as the underlying provider instance.
+**Lazy provider loading.** No provider SDK is imported until first use. `pip install voicegateway[openai]` installs only the OpenAI SDK.
 
-4. **Config layering** -- three sources merged at startup: environment variables (highest priority), SQLite managed tables (dashboard/MCP writes), and YAML (base config). Each resource carries a `source` field (`"yaml"` or `"db"`).
+**Transparent instrumentation.** `InstrumentedSTT/LLM/TTS` wrappers proxy all attribute access via `__getattr__`, so existing call sites see the identical API as the underlying plugin instance.
 
-5. **Encryption at rest** -- all API keys stored in SQLite are encrypted with Fernet (AES-128-CBC + HMAC-SHA256). Keys in API responses are masked to `secr...2345` format.
+**Config layering.** Three sources merge at startup: environment variables (highest priority), SQLite managed tables (dashboard/MCP writes), and YAML (base config).
 
-## Key Components
+**Encryption at rest.** API keys stored in SQLite are encrypted with Fernet (AES-128-CBC + HMAC-SHA256). Keys in API responses are masked to the `secr...2345` format.
 
-| Component | File | Purpose |
-|-----------|------|---------|
-| [Gateway Core](./gateway-core) | `core/gateway.py` | Main orchestrator, entry point for all requests |
-| [Provider Abstraction](./provider-abstraction) | `providers/base.py` | ABC for all 11 provider implementations |
-| [Middleware](./middleware) | `middleware/` | Cost, latency, rate limiting, fallback, budget |
-| [Cost Tracking](./cost-tracking) | `pricing/`, `middleware/cost_tracker.py` | Per-request cost calculation, pricing layer, streaming validation |
-| [Storage](./storage) | `storage/sqlite.py` | SQLite schema, tables, views, indexes |
-| [Config Layers](./config-layers) | `core/config_manager.py` | YAML + SQLite + env merge strategy |
-| [Security](./security) | `core/crypto.py` | Fernet encryption, secret management, masking |
+## Architecture pages
+
+<CardGroup cols={2}>
+  <Card title="Gateway Core" href="/architecture/gateway-core">
+    Gateway orchestration, config, router, registry, and ModelId parser.
+  </Card>
+  <Card title="Provider Abstraction" href="/architecture/provider-abstraction">
+    BaseProvider ABC and all 11 cloud and local provider implementations.
+  </Card>
+  <Card title="Middleware" href="/architecture/middleware">
+    Cost tracking, latency, rate limiting, budget enforcement, and request logging.
+  </Card>
+  <Card title="Cost Tracking" href="/architecture/cost-tracking">
+    Per-modality cost calculation: tokens, audio-minutes, characters, and voice-prices.
+  </Card>
+  <Card title="Config Layers" href="/architecture/config-layers">
+    YAML + SQLite + env merge strategy and the ConfigManager.
+  </Card>
+  <Card title="Storage" href="/architecture/storage">
+    SQLite schema, tables, views, indexes, and the remote-sink interface.
+  </Card>
+</CardGroup>
