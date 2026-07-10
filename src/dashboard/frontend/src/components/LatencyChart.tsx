@@ -24,25 +24,25 @@ export default function LatencyChart({ data }: Props) {
 
   if (chartData.length === 0) {
     return (
-      <div className="neo-card neo-card--strip-pink">
-        <div className="label">Latency by Model</div>
-        <div className="empty-state">No latency data yet</div>
+      <div className="vg-card">
+        <div className="vg-card__label">Latency by Model</div>
+        <div className="empty-state mt-md">No latency data yet</div>
       </div>
     );
   }
 
   return (
-    <div className="neo-card neo-card--strip-pink">
-      <div className="label">Latency by Model (ms)</div>
+    <div className="vg-card">
+      <div className="vg-card__label">Latency by Model (ms)</div>
       <div style={{ width: '100%', height: 280, marginTop: 16 }}>
         <ResponsiveContainer>
           <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-            <CartesianGrid strokeDasharray="4 4" stroke="var(--border)" strokeOpacity={0.3} />
-            <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 600 }} />
-            <YAxis tick={{ fontSize: 11, fontWeight: 600 }} />
-            <Tooltip content={<NeoTooltip />} cursor={{ fill: 'rgba(31, 150, 170, 0.12)' }} />
-            <Bar dataKey="ttfb" name="TTFB" fill={ACCENT_COLORS.blue} radius={[4, 4, 0, 0]} />
-            <Bar dataKey="total" name="Total" fill={ACCENT_COLORS.yellow} radius={[4, 4, 0, 0]} />
+            <CartesianGrid strokeDasharray="0" stroke="var(--vg-hairline-2)" strokeOpacity={1} />
+            <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 600, fill: 'var(--vg-muted-2)' }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fontWeight: 600, fill: 'var(--vg-muted-2)' }} axisLine={false} tickLine={false} width={48} />
+            <Tooltip content={<NeoTooltip />} cursor={{ fill: 'var(--vg-teal-tint)' }} />
+            <Bar dataKey="ttfb" name="TTFB" fill="var(--vg-teal)" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="total" name="Total" fill="var(--vg-teal-bright)" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

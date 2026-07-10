@@ -30,8 +30,8 @@ export default function ResponseSpeedChart({ p50, p95 }: Props) {
 
   if (allNull) {
     return (
-      <div className="neo-card neo-card--strip-blue">
-        <div className="label">Response speed</div>
+      <div className="vg-card">
+        <div className="vg-card__label">Response speed</div>
         <div className="empty-state mt-md">not measured</div>
       </div>
     );
@@ -43,9 +43,9 @@ export default function ResponseSpeedChart({ p50, p95 }: Props) {
   ];
 
   return (
-    <div className="neo-card neo-card--strip-blue">
-      <div className="label">Response speed</div>
-      <div className="stat-value mt-sm" style={{ fontSize: 14, opacity: 0.7 }}>
+    <div className="vg-card">
+      <div className="vg-card__label">Response speed</div>
+      <div className="vg-card__label mt-sm" style={{ opacity: 0.7, textTransform: 'none', letterSpacing: 0, fontSize: 12, fontWeight: 500 }}>
         Caller stops &rarr; agent first audible byte (ms)
       </div>
       <div style={{ width: '100%', height: 200, marginTop: 12 }}>
@@ -56,21 +56,23 @@ export default function ResponseSpeedChart({ p50, p95 }: Props) {
             margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
           >
             <CartesianGrid
-              strokeDasharray="4 4"
-              stroke="var(--border)"
-              strokeOpacity={0.3}
+              strokeDasharray="0"
+              stroke="var(--vg-hairline-2)"
+              strokeOpacity={1}
             />
-            <XAxis type="number" tick={{ fontSize: 11, fontWeight: 600 }} />
+            <XAxis type="number" tick={{ fontSize: 11, fontWeight: 600, fill: 'var(--vg-muted-2)' }} axisLine={false} tickLine={false} />
             <YAxis
               dataKey="name"
               type="category"
-              tick={{ fontSize: 11, fontWeight: 700 }}
+              tick={{ fontSize: 11, fontWeight: 700, fill: 'var(--vg-muted-2)' }}
+              axisLine={false}
+              tickLine={false}
             />
             <Tooltip
               content={<NeoTooltip />}
-              cursor={{ fill: 'rgba(31, 150, 170, 0.12)' }}
+              cursor={{ fill: 'var(--vg-teal-tint)' }}
             />
-            <Bar dataKey="ms" fill={ACCENT_COLORS.blue} radius={[0, 4, 4, 0]} />
+            <Bar dataKey="ms" fill="var(--vg-teal)" radius={[0, 4, 4, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

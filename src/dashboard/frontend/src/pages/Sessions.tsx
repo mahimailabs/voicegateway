@@ -56,10 +56,10 @@ function MetricsContent() {
 
   return (
     <div>
-      <div className="neo-card mb-lg">
-        <div className="flex flex-row gap-md items-end">
+      <div className="vg-card mb-lg">
+        <div className="flex-row flex-wrap" style={{ gap: 20, alignItems: 'flex-end' }}>
           <div>
-            <div className="label">Project</div>
+            <div className="vg-card__label" style={{ marginBottom: 6 }}>Project</div>
             <input
               type="text"
               className="neo-input"
@@ -69,9 +69,9 @@ function MetricsContent() {
             />
           </div>
           <div>
-            <div className="label">Window</div>
+            <div className="vg-card__label" style={{ marginBottom: 6 }}>Window</div>
             <select
-              className="neo-input"
+              className="neo-select"
               value={days}
               onChange={(e) => setDays(Number(e.target.value))}
             >
@@ -83,11 +83,11 @@ function MetricsContent() {
             </select>
           </div>
           {data && (
-            <div className="ml-auto">
-              <div className="label">Sessions</div>
-              <div className="stat-value">
+            <div style={{ marginLeft: 'auto' }}>
+              <div className="vg-card__label" style={{ marginBottom: 4 }}>Sessions</div>
+              <div className="vg-stat" style={{ fontSize: 22, letterSpacing: '-0.5px' }}>
                 {data.measured_session_count} / {data.session_count}
-                <span className="label ml-sm">measured</span>
+                <span className="vg-card__label" style={{ marginLeft: 6 }}>measured</span>
               </div>
             </div>
           )}
@@ -263,67 +263,69 @@ export default function Sessions() {
               show up here grouped by their <span className="mono">session_id</span>.
             </div>
           ) : (
-            <table className="neo-table neo-table--blue">
-              <thead>
-                <tr>
-                  <th>Started</th>
-                  <th>Duration</th>
-                  <th>Project</th>
-                  <th>Tenant</th>
-                  <th>Modalities</th>
-                  <th>Requests</th>
-                  <th style={{ textAlign: 'right' }}>Cost</th>
-                  <th style={{ width: 110 }}>Replay</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    onClick={() => handleRowClick(row.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleRowClick(row.id);
-                      }
-                    }}
-                    tabIndex={0}
-                    role="button"
-                    aria-label={`Open session ${row.id}`}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <td className="mono">{formatRelative(row.started_at)}</td>
-                    <td className="mono">
-                      {formatDuration(row.started_at, row.ended_at)}
-                    </td>
-                    <td>{row.project}</td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <TenantPill tenantId={row.tenant_id ?? null} asLink />
-                    </td>
-                    <td>
-                      <ModalityBadges modalities={row.modalities} />
-                    </td>
-                    <td>
-                      <span className="neo-badge neo-badge--black">
-                        {row.request_count}
-                      </span>
-                    </td>
-                    <td className="mono" style={{ textAlign: 'right' }}>
-                      {formatCost(row.total_cost_usd, 6)}
-                    </td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <Link
-                        to={`/sessions/${encodeURIComponent(row.id)}/replay`}
-                        className="neo-btn neo-btn--small"
-                        aria-label={`Open replay for session ${row.id}`}
-                      >
-                        Open replay
-                      </Link>
-                    </td>
+            <div className="vg-card" style={{ padding: 0, overflow: 'hidden' }}>
+              <table className="neo-table neo-table--blue">
+                <thead>
+                  <tr>
+                    <th>Started</th>
+                    <th>Duration</th>
+                    <th>Project</th>
+                    <th>Tenant</th>
+                    <th>Modalities</th>
+                    <th>Requests</th>
+                    <th style={{ textAlign: 'right' }}>Cost</th>
+                    <th style={{ width: 110 }}>Replay</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr
+                      key={row.id}
+                      onClick={() => handleRowClick(row.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleRowClick(row.id);
+                        }
+                      }}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`Open session ${row.id}`}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td className="mono">{formatRelative(row.started_at)}</td>
+                      <td className="mono">
+                        {formatDuration(row.started_at, row.ended_at)}
+                      </td>
+                      <td>{row.project}</td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <TenantPill tenantId={row.tenant_id ?? null} asLink />
+                      </td>
+                      <td>
+                        <ModalityBadges modalities={row.modalities} />
+                      </td>
+                      <td>
+                        <span className="neo-badge neo-badge--black">
+                          {row.request_count}
+                        </span>
+                      </td>
+                      <td className="mono" style={{ textAlign: 'right' }}>
+                        {formatCost(row.total_cost_usd, 6)}
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <Link
+                          to={`/sessions/${encodeURIComponent(row.id)}/replay`}
+                          className="neo-btn neo-btn--small"
+                          aria-label={`Open replay for session ${row.id}`}
+                        >
+                          Open replay
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
 
           {detail && (
@@ -539,7 +541,7 @@ function RoutingStrip({ session }: { session: SessionDetail }) {
   const overrun = !!session.budget_overrun;
 
   return (
-    <div className="neo-card neo-card--strip-green mt-lg" style={{ padding: '0.75rem 1rem' }}>
+    <div className="vg-card mt-lg" style={{ padding: '0.75rem 1rem' }}>
       <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div className="label">Routing</div>

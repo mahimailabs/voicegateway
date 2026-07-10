@@ -24,24 +24,24 @@ export default function CostChart({ title, data }: Props) {
 
   if (chartData.length === 0) {
     return (
-      <div className="neo-card neo-card--strip-green">
-        <div className="label">{title}</div>
-        <div className="empty-state">No data yet</div>
+      <div className="vg-card">
+        <div className="vg-card__label">{title}</div>
+        <div className="empty-state mt-md">No data yet</div>
       </div>
     );
   }
 
   return (
-    <div className="neo-card neo-card--strip-green">
-      <div className="label">{title}</div>
+    <div className="vg-card">
+      <div className="vg-card__label">{title}</div>
       <div style={{ width: '100%', height: 240, marginTop: 16 }}>
         <ResponsiveContainer>
           <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-            <CartesianGrid strokeDasharray="4 4" stroke="var(--border)" strokeOpacity={0.3} />
-            <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 600 }} />
-            <YAxis tick={{ fontSize: 11, fontWeight: 600 }} />
-            <Tooltip content={<NeoTooltip />} cursor={{ fill: 'rgba(31, 150, 170, 0.12)' }} />
-            <Bar dataKey="cost" fill={ACCENT_COLORS.blue} radius={[4, 4, 0, 0]} />
+            <CartesianGrid strokeDasharray="0" stroke="var(--vg-hairline-2)" strokeOpacity={1} />
+            <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 600, fill: 'var(--vg-muted-2)' }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fontWeight: 600, fill: 'var(--vg-muted-2)' }} axisLine={false} tickLine={false} width={48} />
+            <Tooltip content={<NeoTooltip />} cursor={{ fill: 'var(--vg-teal-tint)' }} />
+            <Bar dataKey="cost" fill="var(--vg-teal)" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

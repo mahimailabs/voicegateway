@@ -83,9 +83,9 @@ export default function Replay() {
       )}
 
       {error && (
-        <div className="neo-card neo-card--strip-red">
-          <div className="label">Replay unavailable</div>
-          <div className="stat-value mt-md">{error}</div>
+        <div className="vg-card" style={{ borderColor: 'var(--vg-red)', borderLeftWidth: 3 }}>
+          <div className="vg-card__label" style={{ color: 'var(--vg-red)' }}>Replay unavailable</div>
+          <div className="vg-stat mt-md" style={{ fontSize: 16, fontWeight: 600 }}>{error}</div>
         </div>
       )}
 
