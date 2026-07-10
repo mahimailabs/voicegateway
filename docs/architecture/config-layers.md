@@ -1,8 +1,13 @@
-# Configuration Layers
+---
+title: Configuration layers
+description: How VoiceGateway merges voicegw.yaml, SQLite managed tables, and environment variables into a single resolved GatewayConfig, with clear priority rules and a live refresh cycle.
+---
 
-VoiceGateway merges configuration from three sources with a clear priority order. This allows base configuration in YAML, dynamic management via the dashboard/MCP, and environment-level overrides.
+# Configuration layers
 
-## Priority Order
+VoiceGateway merges configuration from three sources with a clear priority order. You can pin critical settings in YAML, manage everything else through the dashboard or MCP server, and override individual values at runtime with environment variables.
+
+## Priority order
 
 ```
 ENV variables (highest)  >  SQLite managed tables  >  YAML file (lowest)
@@ -10,9 +15,9 @@ ENV variables (highest)  >  SQLite managed tables  >  YAML file (lowest)
 
 ```mermaid
 graph TB
-    subgraph Sources["Configuration Sources"]
-        ENV["Environment Variables<br/>DEEPGRAM_API_KEY, VOICEGW_DB_PATH, etc."]
-        DB["SQLite Managed Tables<br/>managed_providers, managed_models, managed_projects"]
+    subgraph Sources["Configuration sources"]
+        ENV["Environment variables<br/>DEEPGRAM_API_KEY, VOICEGW_DB_PATH, etc."]
+        DB["SQLite managed tables<br/>managed_providers, managed_models, managed_projects"]
         YAML["voicegw.yaml<br/>Base configuration file"]
     end
 
@@ -42,7 +47,7 @@ graph TB
 
 **File:** `src/voicegateway/core/config_manager.py`
 
-The `ConfigManager` is responsible for merging YAML and SQLite sources into a single `GatewayConfig`.
+`ConfigManager` merges the YAML config and SQLite managed rows into a single `GatewayConfig`.
 
 ```python
 class ConfigManager:
@@ -62,9 +67,9 @@ class ConfigManager:
         return await self.load_merged()
 ```
 
-### Merge Rules
+### Merge rules
 
-The key rule is: **YAML always takes precedence**. If a provider, model, or project exists in both YAML and SQLite, the YAML version wins.
+YAML always takes precedence. If a provider, model, or project exists in both YAML and SQLite, the YAML version wins.
 
 ```python
 for row in await self._storage.list_managed_providers():
@@ -73,16 +78,16 @@ for row in await self._storage.list_managed_providers():
         continue  # YAML takes precedence -- don't overwrite
 ```
 
-This means you can "pin" critical configuration in YAML and use the dashboard/MCP for everything else, without worrying about managed resources overwriting your file-based config.
+This lets you pin critical configuration in `voicegw.yaml` and use the dashboard or MCP for everything else, without risk of managed resources overwriting file-based config.
 
-### The `source` Field
+### The `source` field
 
-Each `ProjectConfig` carries a `source` field indicating where it came from:
+Each `ProjectConfig` carries a `source` field indicating origin:
 
-| `source` Value | Meaning |
-|----------------|---------|
+| `source` value | Meaning |
+|---|---|
 | `"yaml"` | Defined in `voicegw.yaml` |
-| `"db"` | Created via dashboard or MCP, stored in `managed_projects` |
+| `"db"` | Created via the dashboard or MCP, stored in `managed_projects` |
 
 For providers and models, the `_source` key is injected into the config dict:
 
@@ -95,11 +100,11 @@ merged.providers[pid] = {
 }
 ```
 
-## YAML Configuration
+## YAML configuration
 
 **File:** `src/voicegateway/core/config.py`
 
-### Environment Variable Substitution
+### Environment variable substitution
 
 YAML values containing `${ENV_VAR}` are replaced with the corresponding environment variable at load time:
 
@@ -111,23 +116,22 @@ providers:
     api_key: ${DEEPGRAM_API_KEY}
 ```
 
-The substitution is recursive -- it works inside strings, dicts, and lists. Missing env vars resolve to empty strings.
+Substitution is recursive: it works inside strings, dicts, and lists. Missing env vars resolve to empty strings.
 
-### Config File Search
+### Config file search
 
-When no explicit path is provided:
+When no explicit path is provided, VoiceGateway searches in this order:
 
-1. Check `VOICEGW_CONFIG` env var.
-2. Search these paths in order:
-   - `./voicegw.yaml`
-   - `~/.config/voicegateway/voicegw.yaml`
-   - `/etc/voicegateway/voicegw.yaml`
+1. `VOICEGW_CONFIG` environment variable.
+2. `./voicegw.yaml` in the current directory.
+3. `~/.config/voicegateway/voicegw.yaml`.
+4. `/etc/voicegateway/voicegw.yaml`.
 
-### Pydantic Validation
+### Pydantic validation
 
 **File:** `src/voicegateway/core/schema.py`
 
-Before parsing, the raw YAML dict is validated against a Pydantic model (`VoiceGatewayConfig`). Validation errors are formatted with field paths and messages:
+The raw YAML dict is validated against `VoiceGatewayConfig` before use. Validation errors include field paths and messages:
 
 ```
 Configuration validation failed:
@@ -137,12 +141,12 @@ Configuration validation failed:
 Check your voicegw.yaml for typos or invalid values.
 ```
 
-### GatewayConfig Dataclass
+### GatewayConfig dataclass
 
-The parsed config is stored as a `GatewayConfig` dataclass with these fields:
+The parsed config is stored as a `GatewayConfig` dataclass:
 
 | Field | Type | Description |
-|-------|------|-------------|
+|---|---|---|
 | `providers` | `dict[str, dict]` | Provider configs keyed by name |
 | `models` | `dict[str, dict[str, dict]]` | Models keyed by modality, then model ID |
 | `fallbacks` | `dict[str, list[str]]` | Fallback chains per modality |
@@ -154,9 +158,9 @@ The parsed config is stored as a `GatewayConfig` dataclass with these fields:
 | `stacks` | `dict[str, dict[str, str]]` | Named model bundles |
 | `observability` | `dict` | Feature flags for tracking |
 
-## Refresh Cycle
+## Refresh cycle
 
-When the dashboard or MCP server creates/updates/deletes a managed resource:
+When the dashboard or MCP server creates, updates, or deletes a managed resource, the config is refreshed without a server restart:
 
 ```mermaid
 sequenceDiagram
@@ -178,9 +182,11 @@ sequenceDiagram
     GW->>GW: Rebuild BudgetEnforcer + FallbackChains
 ```
 
-This ensures that newly added providers and models are immediately available for routing, without requiring a server restart.
+<Note>
+Newly added providers and models are immediately available for routing after the refresh. No restart needed.
+</Note>
 
-## Example Configuration
+## Example configuration
 
 ```yaml
 providers:
@@ -246,3 +252,20 @@ observability:
   cost_tracking: true
   request_logging: true
 ```
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="voicegw.yaml reference" href="/configuration/voicegw-yaml">
+    Full YAML schema with all fields and defaults.
+  </Card>
+  <Card title="Environment variables" href="/configuration/environment-variables">
+    All supported environment variables and their defaults.
+  </Card>
+  <Card title="Storage" href="/architecture/storage">
+    The SQLite tables that back managed configuration.
+  </Card>
+  <Card title="Security" href="/architecture/security">
+    How managed provider API keys are encrypted at rest.
+  </Card>
+</CardGroup>

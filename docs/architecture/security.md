@@ -1,46 +1,53 @@
-# Security
+---
+title: Security model
+description: How VoiceGateway protects provider API keys with Fernet encryption, masks secrets in API responses, enforces tenant isolation in multi-tenant deployments, and authenticates the MCP server.
+---
+
+# Security model
 
 VoiceGateway encrypts all API keys stored in its database, masks secrets in API responses, and maintains an audit log of configuration changes.
 
-## Fernet Encryption
+## Fernet encryption
 
 **File:** `src/voicegateway/core/crypto.py`
 
-All API keys stored in the `managed_providers` table are encrypted with **Fernet** (AES-128-CBC with HMAC-SHA256 authentication) from the `cryptography` library.
+All API keys stored in the `managed_providers` table are encrypted with Fernet (AES-128-CBC with HMAC-SHA256 authentication) from the `cryptography` library.
 
-### How It Works
+### How it works
 
 ```mermaid
 graph LR
-    subgraph Write["Storing a Key"]
+    subgraph Write["Storing a key"]
         A["Plaintext API key"] --> B["encrypt()"]
         B --> C["Fernet.encrypt()"]
         C --> D["Ciphertext in SQLite"]
     end
 
-    subgraph Read["Reading a Key"]
+    subgraph Read["Reading a key"]
         E["Ciphertext from SQLite"] --> F["decrypt()"]
         F --> G["Fernet.decrypt()"]
         G --> H["Plaintext API key"]
     end
 
-    subgraph Key["Fernet Key Source"]
+    subgraph Key["Fernet key source"]
         K1["VOICEGW_SECRET env var"]
         K2["~/.config/voicegateway/.secret file"]
         K3["Auto-generated on first run"]
-        K1 -->|priority 1| FK["Fernet Key"]
+        K1 -->|priority 1| FK["Fernet key"]
         K2 -->|priority 2| FK
         K3 -->|fallback| FK
     end
 ```
 
-### Secret Key Resolution
+### Secret key resolution
 
 The Fernet key is resolved in this order:
 
-1. **`VOICEGW_SECRET` environment variable** -- highest priority, useful for containerized deployments
-2. **`~/.config/voicegateway/.secret` file** -- persisted on disk with `chmod 600` permissions
-3. **Auto-generated** -- on first run, a new Fernet key is generated and saved to the secret file
+1. `VOICEGW_SECRET` environment variable. Highest priority, recommended for containerized deployments.
+2. `~/.config/voicegateway/.secret` file. Persisted on disk with `chmod 600` permissions.
+3. Auto-generated on first run. A new Fernet key is generated and saved to the secret file.
+
+A `VOICEGW_SECRET_FALLBACK` variable is also supported for zero-downtime key rotation: the gateway attempts decryption with the primary key first, then falls back to the secondary key.
 
 ```python
 def get_secret() -> bytes:
@@ -61,7 +68,7 @@ def get_secret() -> bytes:
     return key
 ```
 
-The auto-generation uses atomic file operations (`os.replace`) to prevent partial writes. The file is created with `0600` permissions (owner read/write only) from the start -- it never exists in a world-readable state.
+The auto-generation uses `os.replace()` for atomic file creation. The file is created with `0600` permissions from the start and never exists in a world-readable state.
 
 ### Encryption API
 
@@ -87,9 +94,9 @@ mask("sk-abc123456789")
 
 Empty strings pass through `encrypt()` and `decrypt()` unchanged.
 
-### Key Rotation
+### Key rotation
 
-If `VOICEGW_SECRET` changes (or the `.secret` file is deleted), existing encrypted values will fail to decrypt. The `decrypt()` function raises a clear `ValueError`:
+If `VOICEGW_SECRET` changes or the `.secret` file is deleted, existing encrypted values fail to decrypt. The `decrypt()` function raises a clear `ValueError`:
 
 ```
 Failed to decrypt managed credential. This typically means VOICEGW_SECRET
@@ -97,9 +104,13 @@ changed since the value was stored. Re-add the affected providers via the
 dashboard or MCP.
 ```
 
-## API Key Masking
+<Warning>
+Losing the Fernet key means losing all managed provider credentials stored in SQLite. Back up `VOICEGW_SECRET` or the `.secret` file the same way you back up any other secret.
+</Warning>
 
-All API responses that include provider information mask the API key using the `mask()` function:
+## API key masking
+
+All API responses that include provider information mask the API key using `mask()`:
 
 ```python
 def mask(value: str) -> str:
@@ -113,11 +124,11 @@ Examples:
 - `"short"` becomes `"*****"`
 - `""` becomes `""`
 
-This masking is applied in the HTTP API and MCP server responses -- plaintext keys never appear in API output.
+Masking is applied in the HTTP API and MCP server responses. Plaintext keys never appear in API output.
 
-## Plaintext Key Migration
+## Plaintext key migration
 
-When VoiceGateway opens a database that was created before encryption was added, it automatically detects and migrates plaintext API keys:
+When VoiceGateway opens a database created before encryption was added, it automatically detects and migrates plaintext API keys:
 
 ```python
 async def _migrate_plaintext_keys(self, db):
@@ -135,14 +146,31 @@ async def _migrate_plaintext_keys(self, db):
 
 This runs on first connection and logs a warning for each migrated key.
 
-## Audit Log
+## MCP token authentication
+
+The MCP server authenticates callers with a bearer token. Set `VOICEGW_MCP_TOKEN` to a strong random string. Any request without a matching `Authorization: Bearer <token>` header is rejected with 401.
+
+If `VOICEGW_MCP_TOKEN` is not set, the MCP server starts without authentication. This is acceptable for local development but should not be used in shared or networked environments.
+
+## Tenant isolation
+
+In multi-tenant cloud deployments, tenant identity is derived server-side from the ingest API key (`vk_` prefix). The key is presented as a bearer token on `POST /v1/ingest` and `POST /v1/agents/heartbeat`. The tenant ID from the key is stamped on every record at ingest time.
+
+Key rules:
+- A worker or record can only be written under the key's tenant. The `tenant_id` field in request bodies is advisory only and cannot override the key-derived tenant.
+- `VOICEGW_API_KEY` is the agent-side variable that holds the `vk_` key. Set it in the agent process environment.
+- The cloud verifies the key and resolves the tenant before any write.
+
+See [fleet worker heartbeat](/architecture/fleet-worker-heartbeat) for the full ingestion contract.
+
+## Audit log
 
 **Table:** `config_audit_log`
 
-Every create, update, or delete operation on managed resources is recorded in the audit log.
+Every create, update, or delete on managed resources is recorded.
 
 | Field | Description |
-|-------|-------------|
+|---|---|
 | `timestamp` | When the change was made |
 | `entity_type` | `"provider"`, `"model"`, or `"project"` |
 | `entity_id` | ID of the affected resource |
@@ -150,7 +178,7 @@ Every create, update, or delete operation on managed resources is recorded in th
 | `changes_json` | JSON describing what changed |
 | `source` | `"api"`, `"mcp"`, or `"dashboard"` |
 
-### Querying the Audit Log
+### Querying the audit log
 
 ```python
 # Get recent entries
@@ -166,16 +194,35 @@ entries = await storage.get_audit_log(entity_type="model", entity_id="openai/gpt
 entries = await storage.get_audit_log(action="delete")
 ```
 
-The audit log write is best-effort -- it never raises exceptions, to avoid blocking the actual operation if logging fails.
+The audit log write is best-effort: it never raises exceptions, to avoid blocking the actual operation if logging fails.
 
-## Security Checklist
+## Security checklist
 
 | Concern | Mitigation |
-|---------|------------|
+|---|---|
 | API keys at rest | Fernet encryption (AES-128-CBC + HMAC-SHA256) |
-| Secret key storage | `chmod 600` file or env var |
+| Secret key storage | `chmod 600` file or `VOICEGW_SECRET` env var |
 | API key exposure in responses | `mask()` applied to all API/MCP output |
 | Configuration changes | Audit log with timestamp, actor, and changes |
 | Plaintext key migration | Auto-detected and encrypted on startup |
 | Atomic secret file creation | `os.replace()` prevents partial writes |
 | Secret key change detection | Clear error message with recovery instructions |
+| MCP access control | Bearer token via `VOICEGW_MCP_TOKEN` |
+| Tenant isolation | Key-derived tenant stamped server-side on ingest |
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Storage" href="/architecture/storage">
+    The SQLite tables where encrypted keys are stored.
+  </Card>
+  <Card title="Fleet worker heartbeat" href="/architecture/fleet-worker-heartbeat">
+    Tenant isolation rules for the heartbeat ingest contract.
+  </Card>
+  <Card title="Configuration layers" href="/architecture/config-layers">
+    How managed provider credentials flow into the resolved config.
+  </Card>
+  <Card title="Environment variables" href="/configuration/environment-variables">
+    All VOICEGW_SECRET, VOICEGW_MCP_TOKEN, and related env vars.
+  </Card>
+</CardGroup>
