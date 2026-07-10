@@ -19,13 +19,9 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import text
 
 from voicegateway.inference.session.context import (
-    current_guardrail_policy_snapshot,
-    current_guardrails_bypassed,
     current_routing_decision,
     current_tenant,
 )
-from voicegateway.schemas.guardrail_policy_schema import GuardrailPolicy
-from voicegateway.services.guardrail_service import policy_to_json
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -173,18 +169,6 @@ async def log_request(session: AsyncSession, record: RequestRecord) -> None:
             r_tts = None
             r_budget = None
             r_overrun = None
-        guardrail_snapshot = current_guardrail_policy_snapshot()
-        if guardrail_snapshot is not None:
-            guardrail_policy = GuardrailPolicy.from_raw(guardrail_snapshot)
-            guardrails_active = 1 if guardrail_policy.is_active else 0
-            guardrails_bypassed = (
-                1 if guardrail_policy.is_active and current_guardrails_bypassed() else 0
-            )
-            guardrail_snapshot_json = policy_to_json(guardrail_policy)
-        else:
-            guardrails_active = None
-            guardrails_bypassed = None
-            guardrail_snapshot_json = None
         await session.execute(
             _session_upsert_stmt(session),
             {
@@ -200,9 +184,9 @@ async def log_request(session: AsyncSession, record: RequestRecord) -> None:
                 "routed_tts": r_tts,
                 "budget_ms": r_budget,
                 "budget_overrun": r_overrun,
-                "guardrails_active": guardrails_active,
-                "guardrails_bypassed": guardrails_bypassed,
-                "guardrail_snapshot_json": guardrail_snapshot_json,
+                "guardrails_active": None,
+                "guardrails_bypassed": None,
+                "guardrail_snapshot_json": None,
             },
         )
     await session.commit()

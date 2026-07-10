@@ -9,10 +9,7 @@ import re
 import pytest
 
 from voicegateway.inference.session.context import (
-    current_guardrail_policy_snapshot,
-    current_guardrails_bypassed,
     get_or_create_session_id,
-    get_or_freeze_guardrail_policy_snapshot,
     get_session_id,
     reset_session_id,
     start_session,
@@ -109,39 +106,6 @@ class TestStartSession:
         assert a != b
         assert a.startswith("vg-")
         assert b.startswith("vg-")
-
-    def test_start_session_can_mark_guardrails_bypassed(self):
-        def _scenario():
-            start_session(bypass_guardrails=True)
-            return current_guardrails_bypassed()
-
-        assert contextvars.copy_context().run(_scenario) is True
-
-    def test_start_session_defaults_guardrails_bypassed_false(self):
-        def _scenario():
-            start_session()
-            return current_guardrails_bypassed()
-
-        assert contextvars.copy_context().run(_scenario) is False
-
-    def test_policy_snapshot_freezes_until_next_session(self):
-        def _scenario():
-            start_session()
-            first = get_or_freeze_guardrail_policy_snapshot(
-                {"enabled": True, "categories": {"pii": "redact"}}
-            )
-            second = get_or_freeze_guardrail_policy_snapshot(
-                {"enabled": True, "categories": {"financial": "block"}}
-            )
-            frozen = current_guardrail_policy_snapshot()
-            start_session()
-            fresh = current_guardrail_policy_snapshot()
-            return first, second, frozen, fresh
-
-        first, second, frozen, fresh = contextvars.copy_context().run(_scenario)
-        assert first == second
-        assert frozen == {"enabled": True, "categories": {"pii": "redact"}}
-        assert fresh is None
 
 
 class TestAsyncPropagation:

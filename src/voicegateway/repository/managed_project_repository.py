@@ -19,7 +19,6 @@ from sqlalchemy import text
 from sqlmodel import delete, select
 
 from voicegateway.models.managed_project_model import ManagedProject
-from voicegateway.schemas.guardrail_policy_schema import GuardrailPolicy
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -183,14 +182,9 @@ async def upsert_project(
     """
     validated_branding = validate_branding(branding)
     branding_json = json.dumps(validated_branding) if validated_branding else None
-    validated_guardrails = (
-        GuardrailPolicy.from_raw(guardrail_policy).to_storage_dict()
-        if guardrail_policy is not None
-        else None
-    )
     guardrail_json = (
-        json.dumps(validated_guardrails, sort_keys=True)
-        if validated_guardrails is not None
+        json.dumps(guardrail_policy, sort_keys=True)
+        if guardrail_policy is not None
         else None
     )
     await session.execute(
@@ -232,8 +226,7 @@ async def set_project_guardrails(
     """Set or clear a project's guardrail policy overlay."""
     guardrail_json = None
     if policy is not None:
-        validated = GuardrailPolicy.from_raw(policy).to_storage_dict()
-        guardrail_json = json.dumps(validated, sort_keys=True)
+        guardrail_json = json.dumps(policy, sort_keys=True)
     await session.execute(
         _GUARDRAILS_UPSERT,
         {
