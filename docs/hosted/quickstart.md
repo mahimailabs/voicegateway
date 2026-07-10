@@ -1,43 +1,61 @@
 ---
-title: Hosted quickstart
-description: Send LiveKit agent telemetry to the hosted VoiceGateway cloud in two environment variables. You keep your own provider keys, we store telemetry rows only.
+title: Cloud quickstart
+description: Send your LiveKit or Pipecat agent's telemetry to VoiceGateway Hosted Cloud in two environment variables. You keep your own provider keys; we store telemetry rows only.
 ---
 
-# Hosted quickstart
+# Cloud quickstart
 
-The hosted VoiceGateway cloud at [dash.voicegateway.dev](https://dash.voicegateway.dev) is a bring-your-own-keys observability service. You keep your own provider API keys (OpenAI, Deepgram, Cartesia, and the rest) exactly where they already live, in your own agent's environment. Your LiveKit agent pushes per-call telemetry (spend, latency, and call counts) to the hosted collector, and the dashboard renders it. We store the telemetry rows, nothing else.
+VoiceGateway Hosted Cloud is a managed collector, ClickHouse-backed storage, and shared dashboard at [dash.voicegateway.dev](https://dash.voicegateway.dev). You bring your own provider API keys (OpenAI, Deepgram, Cartesia, and the rest). Your agent pushes per-call telemetry (spend, latency, call counts) to the hosted ingest endpoint, and the dashboard renders it. We store the telemetry rows, nothing else.
 
-This is the same `attach()` flow as the self-hosted collector, pointed at the hosted ingest endpoint instead of a collector you run yourself.
+The same `attach()` and `guard()` calls you use for self-hosting work identically here. Only the sink changes: a remote collector instead of a local SQLite file.
 
-## What we do NOT store
+<Note>
+The hosted cloud never receives your call audio or transcripts. `attach()` reads per-component metrics events (cost, latency, errors) and pushes only those numeric rows to the collector.
+</Note>
 
-The hosted cloud never receives your call audio or transcripts. `attach()` reads per-component metrics events (cost, latency, errors) and pushes only those numeric rows. No recording, no transcript text, no message content leaves your agent.
+---
 
-## Onboarding
+<Steps>
 
-Two environment variables and one line of code. As soon as a call runs, spend, latency, and calls appear on the dashboard.
+<Step title="Sign up and get an ingest key">
 
-### 1. Issue an ingest key
+Open [dash.voicegateway.dev](https://dash.voicegateway.dev) and create an account. After signing in, go to **Settings > Ingest keys** and issue a new key.
 
-Open [dash.voicegateway.dev](https://dash.voicegateway.dev), go to the **Ingest keys** page, and issue a key. It looks like `vk_...`. Copy it into your secret store: the dashboard shows the full key once. The same page shows your ingest URL, of the form `https://<your-cloud-api-host>/v1/ingest`.
+The key looks like `vk_...`. Copy it into your secret store immediately. The dashboard shows the full key only once.
 
-### 2. Set the two environment variables
+The same page shows your personal ingest URL, in the form:
 
-These are the exact variables the engine's `attach()` reads:
+```
+https://<your-cloud-api-host>/v1/ingest
+```
 
-- `VOICEGW_COLLECTOR_URL`: your hosted ingest URL from the Ingest keys page, of the form `https://<your-cloud-api-host>/v1/ingest`.
-- `VOICEGW_API_KEY`: your `vk_` ingest key.
+Copy that URL too. You will need both values in the next step.
+
+</Step>
+
+<Step title="Set the two environment variables">
+
+`attach()` reads exactly two variables. Set them in your agent's runtime environment (your shell, Dockerfile, Railway/Fly secret store, or `.env` file):
 
 ```bash
 export VOICEGW_COLLECTOR_URL="https://<your-cloud-api-host>/v1/ingest"
 export VOICEGW_API_KEY="vk_your_ingest_key"
 ```
 
-When `VOICEGW_COLLECTOR_URL` is set, `attach()` builds a remote sink that batches rows and pushes them to the hosted collector instead of writing to local SQLite.
+When `VOICEGW_COLLECTOR_URL` is present, `attach()` builds a remote sink that batches rows and pushes them to the hosted collector instead of writing to local SQLite. The `vk_` key authenticates the request and maps every row to your tenant.
 
-### 3. Attach in your worker
+<Tip>
+Use your platform's secret manager so the `vk_` key never lands in source control.
+</Tip>
 
-Tag each agent with its project via the `project` argument to `attach()`. There is no project environment variable: the project id is passed in code.
+</Step>
+
+<Step title="Add attach() to your agent">
+
+Pass the project name in code via the `project` argument. There is no `VOICEGW_PROJECT` environment variable. The `project` string tags every captured row so costs appear per-project on the dashboard.
+
+<Tabs>
+  <Tab title="LiveKit">
 
 ```python
 import voicegateway
@@ -49,12 +67,68 @@ async def entrypoint(ctx):
     await session.start(...)
 ```
 
-That's the whole integration. The two exported variables point telemetry at the hosted collector; the `attach(session, project="my-agent")` call binds the session and tags every captured row with the project. Run a call and watch spend, latency, and call counts land on the dashboard.
+  </Tab>
+  <Tab title="Pipecat">
+
+```python
+import voicegateway
+from pipecat.pipeline.pipeline import Pipeline
+from pipecat.pipeline.task import PipelineParams, PipelineTask
+
+pipeline = Pipeline([...])
+task = PipelineTask(
+    pipeline,
+    params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
+)
+voicegateway.attach(task, project="my-agent")
+```
+
+  </Tab>
+</Tabs>
+
+That is the whole integration. The two env vars point telemetry at the hosted collector. `attach(target, project="my-agent")` binds the session and tags every row.
+
+</Step>
+
+<Step title="Watch costs land on the dashboard">
+
+Run a call. Within a few seconds, open [dash.voicegateway.dev](https://dash.voicegateway.dev) and navigate to your project. You will see spend, latency, and call counts broken down by STT, LLM, and TTS.
+
+<Note>
+If rows do not appear after the first call, check that both env vars are exported in the process that runs your agent, then see [Troubleshooting](/reference/troubleshooting).
+</Note>
+
+</Step>
+
+</Steps>
+
+---
 
 ## Pricing
 
-- **Free**: permanent free tier.
-- **Pro**: $9 for the first month, then $29/mo. Cancel anytime.
-- **Agency**: $199/mo.
+| Plan | Price |
+|------|-------|
+| Free | Permanent free tier |
+| Pro | $9 for the first month, then $29/mo |
+| Agency | $199/mo |
 
 See [voicegateway.dev](https://voicegateway.dev) for the full breakdown and current usage-metered details.
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="attach() reference" href="/guide/attach">
+    Full options for the attach call: project, budget, metadata, and flush behaviour.
+  </Card>
+  <Card title="guard() reference" href="/guide/guard">
+    Add real-time budget enforcement and per-call spend limits on top of attach.
+  </Card>
+  <Card title="Self-host quickstart" href="/guide/quick-start">
+    Run the collector locally or on your own infra instead of using hosted cloud.
+  </Card>
+  <Card title="Which path fits?" href="/guide/decision-tree">
+    Not sure whether cloud or self-host is right? Use the decision tree.
+  </Card>
+</CardGroup>
