@@ -1,4 +1,7 @@
-# HTTP API Reference
+---
+title: HTTP API Reference
+description: REST endpoints served by `voicegw serve`. Covers health, status, models, costs, projects, providers, logs, metrics, and audit log.
+---
 
 The VoiceGateway HTTP API runs via `voicegw serve` (default port 8080). It provides read-only observability endpoints and full CRUD for managing providers, models, and projects.
 
@@ -148,9 +151,7 @@ Return latency statistics for the given period.
 | `period` | `string` | `"today"` | One of: `today`, `week`, `month`. |
 | `project` | `string` | `null` | Filter by project ID. |
 
-**Response:**
-
-Returns per-model latency statistics including average TTFB and total latency.
+**Response:** Per-model latency statistics including average TTFB and total latency.
 
 **Example:**
 
@@ -476,7 +477,7 @@ curl -X POST http://localhost:8080/v1/models \
 
 ### DELETE /v1/models/{model_id}
 
-Delete a managed model. Requires `?confirm=true`. The `model_id` is a path parameter (e.g., `deepgram/nova-3`).
+Delete a managed model. Requires `?confirm=true`. The `model_id` is a path parameter (for example, `deepgram/nova-3`).
 
 **Example:**
 
