@@ -7,6 +7,7 @@ import os
 from collections.abc import Coroutine
 from typing import Any, TypeVar
 
+from voicegateway.billing.rate_card import RateCard
 from voicegateway.core.config import GatewayConfig, ProjectConfig
 from voicegateway.core.config_manager import ConfigManager
 from voicegateway.middleware.budget_enforcer_middleware import BudgetEnforcer
@@ -75,6 +76,7 @@ class Gateway:
             LocalSqliteSink(self._storage) if self._storage is not None else None
         )
         self._cost_tracker = CostTracker(cost_sink)
+        self._cost_tracker.set_rate_card(RateCard.from_config(self._config.rate_card))
         self._latency_monitor = LatencyMonitor(
             ttfb_warning_ms=self._config.latency.get("ttfb_warning_ms", 500.0)
         )
@@ -107,6 +109,7 @@ class Gateway:
         self._config = await self._config_manager.refresh()
         self._budget_enforcer = BudgetEnforcer(self._config, self._storage)
         self._cost_tracker.set_budget_enforcer(self._budget_enforcer)
+        self._cost_tracker.set_rate_card(RateCard.from_config(self._config.rate_card))
 
     def costs(self, period: str = "today", project: str | None = None) -> dict:
         """Return cost summary for the given period, optionally filtered by project."""

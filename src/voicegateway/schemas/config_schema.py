@@ -202,6 +202,31 @@ class ClickHouseConfig(_StrictBase):
     database: str = "telemetry"
 
 
+class RateRuleConfig(_StrictBase):
+    """One rate-card rule. Scope defaults to "any" (``*`` / null).
+
+    A rule is either cost-plus (``markup``) or fixed (``fixed`` + ``unit``);
+    :meth:`voicegateway.billing.rate_card.RateCard.from_config` picks the kind
+    and validates the unit.
+    """
+
+    modality: str = "*"
+    provider: str = "*"
+    model: str = "*"
+    tenant: str | None = None
+    plan: str | None = None
+    markup: float | None = Field(default=None, gt=0)
+    fixed: float | None = Field(default=None, ge=0)
+    unit: str | None = None
+
+
+class RateCardConfig(_StrictBase):
+    """The ``rate_card:`` block: a global default markup plus override rules."""
+
+    default_markup: float = Field(default=1.0, gt=0)
+    rules: list[RateRuleConfig] = Field(default_factory=list)
+
+
 _VALID_TOP_LEVEL_KEYS = {
     "providers",
     "models",
@@ -220,6 +245,7 @@ _VALID_TOP_LEVEL_KEYS = {
     "retention",
     "workers",
     "clickhouse",
+    "rate_card",
 }
 
 
@@ -245,6 +271,7 @@ class VoiceGatewayConfig(BaseModel):
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
     workers: WorkersConfig = Field(default_factory=WorkersConfig)
     clickhouse: ClickHouseConfig = Field(default_factory=ClickHouseConfig)
+    rate_card: RateCardConfig = Field(default_factory=RateCardConfig)
 
     @model_validator(mode="before")
     @classmethod
