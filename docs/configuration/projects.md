@@ -1,11 +1,11 @@
 ---
 title: Projects
-description: Per-project cost tracking, budget enforcement, provider key overrides, tags, and guardrail policies for attributing VoiceGateway costs to specific agents, teams, or customers.
+description: Per-project cost tracking, budget enforcement, and provider key overrides for attributing VoiceGateway costs to specific agents, teams, or customers.
 ---
 
 # Projects
 
-Projects are the primary mechanism for attributing costs to specific agents, teams, or customers. Each project can carry a daily budget, override provider keys, and define guardrail policies.
+Projects are the primary mechanism for attributing costs to specific agents, teams, or customers. Each project can carry a daily budget and override provider keys.
 
 ## Defining projects
 
@@ -50,7 +50,6 @@ default_project: customer-support
 | `tags` | list of strings | `[]` | Arbitrary tags for filtering and dashboard display |
 | `providers` | mapping | `{}` | Per-project provider keys. Overrides the top-level `providers:` block for this project. |
 | `default_stack` | string | `""` | Dashboard display hint. See [Stacks](/configuration/stacks). |
-| `guardrails` | mapping | all off | Optional per-project LLM guardrail policy. |
 
 ## Budget actions
 
@@ -82,29 +81,6 @@ The active project for a call resolves in this order:
 4. The literal `"default"` (auto-created on first run).
 
 See [attach()](/guide/attach) for how to bind a tenant to a call.
-
-## Guardrails
-
-Per-project guardrails are optional policies applied to LLM calls.
-
-```yaml
-projects:
-  customer-support:
-    name: Customer Support Bot
-    guardrails:
-      enabled: true
-      categories:
-        pii: redact
-        financial: block
-        medical: alert
-        prompt_injection: block
-        off_topic: off
-```
-
-Supported categories: `pii`, `financial`, `medical`, `prompt_injection`, `off_topic`.
-Supported actions: `redact`, `block`, `alert`, `off`.
-
-Use `guard()` in agent code to enforce these policies at the call layer. See [guard()](/guide/guard) for runtime behavior and audit events.
 
 ## Querying project data
 

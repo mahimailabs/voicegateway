@@ -82,10 +82,3 @@ implementation for you.
 | [`attach()`](/guide/attach) | observe (passive) | `AgentSession` | `PipelineTask` |
 | [`guard()`](/guide/guard) | control (active) | native plugin | native service |
 
-## Deprecated: the LLM / STT / TTS factories
-
-The older `voicegateway.LLM("openai/gpt-4o")` / `STT(...)` / `TTS(...)`
-factories still work but emit a `DeprecationWarning`. Their observability role is
-now the single-meter `attach()`, and their control role (fallback, limits) moves
-to `guard()`. See the [migration guide](/guide/migration-attach-guard) to move
-off them.

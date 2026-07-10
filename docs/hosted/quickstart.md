@@ -1,6 +1,6 @@
 ---
 title: Cloud quickstart
-description: Send your LiveKit or Pipecat agent's telemetry to VoiceGateway Hosted Cloud in two environment variables. You keep your own provider keys; we store telemetry rows only.
+description: Send your LiveKit or Pipecat agent's telemetry to VoiceGateway Hosted Cloud in three environment variables. You keep your own provider keys; we store telemetry rows only.
 ---
 
 # Cloud quickstart
@@ -33,16 +33,17 @@ Copy that URL too. You will need both values in the next step.
 
 </Step>
 
-<Step title="Set the two environment variables">
+<Step title="Set the three environment variables">
 
-`attach()` reads exactly two variables. Set them in your agent's runtime environment (your shell, Dockerfile, Railway/Fly secret store, or `.env` file):
+`attach()` reads three variables. Set them in your agent's runtime environment (your shell, Dockerfile, Railway/Fly secret store, or `.env` file):
 
 ```bash
 export VOICEGW_COLLECTOR_URL="https://<your-cloud-api-host>/v1/ingest"
 export VOICEGW_API_KEY="vk_your_ingest_key"
+export VOICEGW_PROJECT="my-agent"
 ```
 
-When `VOICEGW_COLLECTOR_URL` is present, `attach()` builds a remote sink that batches rows and pushes them to the hosted collector instead of writing to local SQLite. The `vk_` key authenticates the request and maps every row to your tenant.
+When `VOICEGW_COLLECTOR_URL` is present, `attach()` builds a remote sink that batches rows and pushes them to the hosted collector instead of writing to local SQLite. The `vk_` key authenticates the request and maps every row to your tenant. `VOICEGW_PROJECT` tags every captured row so costs appear per-project on the dashboard.
 
 <Tip>
 Use your platform's secret manager so the `vk_` key never lands in source control.
@@ -52,7 +53,7 @@ Use your platform's secret manager so the `vk_` key never lands in source contro
 
 <Step title="Add attach() to your agent">
 
-Pass the project name in code via the `project` argument. There is no `VOICEGW_PROJECT` environment variable. The `project` string tags every captured row so costs appear per-project on the dashboard.
+Call `attach()` with no `project=` argument and it picks up `VOICEGW_PROJECT` automatically. Pass `project=` explicitly to override the env var for a specific call.
 
 <Tabs>
   <Tab title="LiveKit">
@@ -63,7 +64,7 @@ from livekit.agents import AgentSession
 
 async def entrypoint(ctx):
     session = AgentSession(...)
-    voicegateway.attach(session, project="my-agent")
+    voicegateway.attach(session)  # project comes from VOICEGW_PROJECT
     await session.start(...)
 ```
 
@@ -80,13 +81,13 @@ task = PipelineTask(
     pipeline,
     params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
 )
-voicegateway.attach(task, project="my-agent")
+voicegateway.attach(task)  # project comes from VOICEGW_PROJECT
 ```
 
   </Tab>
 </Tabs>
 
-That is the whole integration. The two env vars point telemetry at the hosted collector. `attach(target, project="my-agent")` binds the session and tags every row.
+That is the whole integration. The three env vars point telemetry at the hosted collector and tag every row with your project. Pass `project=` to `attach()` to override the env var for a specific session.
 
 </Step>
 
@@ -95,7 +96,7 @@ That is the whole integration. The two env vars point telemetry at the hosted co
 Run a call. Within a few seconds, open [dash.voicegateway.dev](https://dash.voicegateway.dev) and navigate to your project. You will see spend, latency, and call counts broken down by STT, LLM, and TTS.
 
 <Note>
-If rows do not appear after the first call, check that both env vars are exported in the process that runs your agent, then see [Troubleshooting](/reference/troubleshooting).
+If rows do not appear after the first call, check that all three env vars are exported in the process that runs your agent, then see [Troubleshooting](/reference/troubleshooting).
 </Note>
 
 </Step>

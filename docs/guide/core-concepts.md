@@ -113,9 +113,6 @@ This page covers the framework-neutral core. For wiring, go to the seam pages. F
   <Card title="guard() (control)" icon="shield" href="/guide/guard">
     Fallback chains, rate limiting, and spend caps with LiveKit and Pipecat examples.
   </Card>
-  <Card title="Migrate to attach() + guard()" icon="arrow-right" href="/guide/migration-attach-guard">
-    Move off the deprecated factories to native providers plus the two seams.
-  </Card>
   <Card title="Architecture overview" icon="building" href="/architecture/index">
     How the seams, core, and sink layer fit together end-to-end.
   </Card>

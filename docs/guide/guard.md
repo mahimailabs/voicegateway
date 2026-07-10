@@ -159,5 +159,3 @@ voicegateway.guard(
 - [Core Concepts](/guide/core-concepts): the two-seam model and how guard and attach coordinate.
 - [attach()](/guide/attach): the passive meter guard composes with.
 - [Frameworks and extras](/guide/frameworks): the framework-neutral core.
-- [Migration guide](/guide/migration-attach-guard): moving fallback and limits off
-  the deprecated factories onto `guard()`.

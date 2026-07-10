@@ -45,8 +45,7 @@
             "pages": [
               "guide/core-concepts",
               "guide/attach",
-              "guide/guard",
-              "guide/migration-attach-guard"
+              "guide/guard"
             ]
           },
           {
@@ -66,8 +65,7 @@
             "pages": [
               "guide/multi-tenant-quickstart",
               "guide/agency-quickstart",
-              "guide/cost-reconciliation",
-              "guide/guardrails"
+              "guide/cost-reconciliation"
             ]
           },
           {
@@ -182,8 +180,7 @@
             "pages": [
               "reference/faq",
               "reference/troubleshooting",
-              "reference/reconcile-formats",
-              "reference/guardrail-prompts"
+              "reference/reconcile-formats"
             ]
           },
           {

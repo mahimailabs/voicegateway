@@ -11,10 +11,6 @@ from voicegateway import attach, guard, Observer, __version__
 
 Cost queries, project management, latency stats, and request logs live outside the Python SDK. Use the [CLI](/cli/index), the [HTTP API](/api/http-api), the [Dashboard API](/api/dashboard-api), or the [MCP tools](/mcp/index) for those.
 
-<Note>
-The inference factories (`STT`, `LLM`, `TTS`) from the deprecated `inference` submodule are being removed. If you are migrating from them, see [Migrating from inference factories](/guide/migration-attach-guard).
-</Note>
-
 ## Installation
 
 <CodeGroup>
@@ -267,7 +263,6 @@ The installed package version string. Useful for logging and support diagnostics
 |---|---|
 | Full attach walkthrough | [Guide: attach](/guide/attach) |
 | Full guard walkthrough | [Guide: guard](/guide/guard) |
-| Migrate from inference factories | [Migration guide](/guide/migration-attach-guard) |
 | List projects via CLI | [CLI reference](/cli/index) |
 | Query costs via REST | [HTTP API](/api/http-api) |
 | Integrate with AI coding agents | [MCP server](/mcp/index) |
