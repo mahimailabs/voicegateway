@@ -33,6 +33,10 @@ Rules:
      Mintlify auto-generates heading slugs). This is the concrete MDX-safety trap that
      breaks `mint broken-links`; broader "escape literal < and { in prose" guidance lives
      in the implementer briefs.
+  9. Frontmatter title/description values that contain a colon-space or lead with a YAML
+     special char must be quoted. Unquoted, YAML reads the colon as a key separator and
+     `mint dev` fails to render the page ("syntax error in your frontmatter"). `mint
+     broken-links` does NOT catch this, so it is gated here.
 """
 
 from __future__ import annotations
@@ -168,6 +172,25 @@ def _frontmatter_value(fm: str, key: str) -> str | None:
     return None
 
 
+def _frontmatter_needs_quote(fm: str, key: str) -> bool:
+    """True if the raw ``key`` value is an unquoted YAML scalar that will misparse.
+
+    An unquoted value containing ``: `` (colon-space) or leading with a YAML indicator
+    breaks Mintlify's frontmatter parse. Quoting fixes it. Returns False when the value
+    is already quoted or safe.
+    """
+    for line in fm.splitlines():
+        m = re.match(rf"^{re.escape(key)}\s*:\s*(.*)$", line)
+        if not m:
+            continue
+        raw = m.group(1).strip()
+        if not raw or raw[0] in "\"'":
+            return False
+        if re.search(r":(\s|$)", raw) or raw[0] in "[]{}>|@`&*!%#,":
+            return True
+    return False
+
+
 def _has_top_level_key(fm: str, key: str) -> bool:
     return any(re.match(rf"^{re.escape(key)}\s*:", line) for line in fm.splitlines())
 
@@ -265,6 +288,14 @@ def main(argv: list[str]) -> int:
                 f"[rule 8] '{slug}' uses a {{#anchor}} heading id "
                 f"(MDX cannot parse it): {m.group(0).strip()!r}"
             )
+
+        # Rule 9: quote frontmatter title/description values that would misparse as YAML.
+        for key in ("title", "description"):
+            if _frontmatter_needs_quote(fm, key):
+                errors.append(
+                    f"[rule 9] '{slug}' {key}: has an unquoted colon or YAML indicator "
+                    f"(quote the value or mint dev fails to render the page)"
+                )
 
     if errors:
         print(f"docs validator: FAIL ({len(errors)} issue(s))")

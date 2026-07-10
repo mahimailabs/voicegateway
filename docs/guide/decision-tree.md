@@ -1,6 +1,6 @@
 ---
 title: Which path?
-description: A decision guide for developers arriving from LiveKit Agents or Pipecat. Two axes: self-host vs Cloud, and attach-only vs attach + guard.
+description: "A decision guide for developers arriving from LiveKit Agents or Pipecat. Two axes: self-host vs Cloud, and attach-only vs attach + guard."
 ---
 
 This page helps you pick the right combination before you write any code. Two decisions:
