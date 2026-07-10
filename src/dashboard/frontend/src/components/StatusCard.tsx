@@ -7,14 +7,14 @@ interface Props {
   icon?: string;
 }
 
-export default function StatusCard({ label, value, accent, icon }: Props) {
+export default function StatusCard({ label, value, icon }: Props) {
   return (
-    <div className={`neo-card neo-card--strip-${accent}`}>
-      <div className="stat-label-row">
-        <span className="label">{label}</span>
-        {icon && <span className={`icon-square icon-square--${accent}`}>{icon}</span>}
+    <div className="vg-card">
+      <div className="vg-card__head">
+        <div className="vg-card__label">{label}</div>
+        {icon && <span className="icon-square">{icon}</span>}
       </div>
-      <div className="stat-value">{value}</div>
+      <div className="vg-stat">{value}</div>
     </div>
   );
 }

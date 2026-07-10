@@ -18,7 +18,7 @@ export function Skeleton({
 /** Loading placeholder shaped like a KPI / StatusCard. */
 export function StatCardSkeleton() {
   return (
-    <div className="neo-card">
+    <div className="vg-card">
       <Skeleton width={88} height={12} />
       <Skeleton width={120} height={30} style={{ marginTop: 16 }} />
     </div>
