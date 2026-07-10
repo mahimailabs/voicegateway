@@ -4,13 +4,12 @@ The core is framework-neutral: ``import voicegateway`` imports neither
 ``livekit`` nor ``pipecat``. Both frameworks are optional extras
 (``pip install voicegateway[livekit]`` / ``voicegateway[pipecat]``).
 
-The ``LLM``/``STT``/``TTS`` factories are LiveKit-plugin factories, so they
-pull ``livekit`` on first use. They are therefore imported lazily via a
-module-level ``__getattr__`` (PEP 562): accessing ``voicegateway.LLM`` triggers
-the import, but a bare ``import voicegateway`` does not. ``attach`` and
-``register_worker`` are safe to import eagerly (their modules do not import any
-framework at load time; ``attach`` duck-types its target and lazily imports the
-framework it detects).
+``attach`` and ``register_worker`` are safe to import eagerly (their modules do
+not import any framework at load time; ``attach`` duck-types its target and
+lazily imports the framework it detects). ``Observer`` pulls pipecat on first
+use and is therefore imported lazily via a module-level ``__getattr__``
+(PEP 562): accessing ``voicegateway.Observer`` triggers the import, but a bare
+``import voicegateway`` does not.
 """
 
 from __future__ import annotations
@@ -24,19 +23,13 @@ from voicegateway.inference.session.attach import attach
 
 if TYPE_CHECKING:
     # Type-checkers resolve these eagerly (they do not run the module), so the
-    # public names stay visible to tooling without importing livekit at runtime.
+    # public names stay visible to tooling without importing pipecat at runtime.
     from voicegateway import inference
-    from voicegateway.inference.llm_inference import LLM
     from voicegateway.inference.pipecat.observer import (
         VoiceGatewayObserver as Observer,
     )
-    from voicegateway.inference.stt_inference import STT
-    from voicegateway.inference.tts_inference import TTS
 
 __all__ = [
-    "LLM",
-    "STT",
-    "TTS",
     "Observer",
     "attach",
     "guard",
@@ -45,27 +38,19 @@ __all__ = [
     "__version__",
 ]
 
-# Names exposed lazily via PEP 562 __getattr__. Each pulls a framework on first
-# access (``LLM``/``STT``/``TTS`` pull livekit; ``Observer`` pulls pipecat), so
-# they must not be imported at module load (that would break core framework
-# neutrality).
+# Names exposed lazily via PEP 562 __getattr__. ``Observer`` pulls pipecat on
+# first access, so it must not be imported at module load (that would break core
+# framework neutrality).
 _LAZY = {
-    "LLM": ("voicegateway.inference.llm_inference", "LLM"),
-    "STT": ("voicegateway.inference.stt_inference", "STT"),
-    "TTS": ("voicegateway.inference.tts_inference", "TTS"),
     "Observer": ("voicegateway.inference.pipecat.observer", "VoiceGatewayObserver"),
     "inference": ("voicegateway.inference", None),
 }
 
 # The extra each lazy name needs, so a missing framework yields the friendly
 # "pip install voicegateway[<extra>]" error instead of a raw ModuleNotFoundError.
-# ``inference`` is intentionally absent: the submodule itself is framework-neutral
-# (its own factories are lazy), so pipecat-only users can reach
-# ``voicegateway.inference.pipecat`` without livekit.
+# ``inference`` is intentionally absent: the submodule itself is framework-neutral,
+# so pipecat-only users can reach ``voicegateway.inference.pipecat`` without livekit.
 _LAZY_EXTRA = {
-    "LLM": "livekit",
-    "STT": "livekit",
-    "TTS": "livekit",
     "Observer": "pipecat",
 }
 
@@ -74,10 +59,10 @@ def __getattr__(name: str) -> Any:
     """Lazily resolve framework-pulling public names (PEP 562).
 
     Keeps ``import voicegateway`` free of any framework import while preserving
-    ``voicegateway.LLM``/``STT``/``TTS`` (livekit), ``voicegateway.Observer``
-    (pipecat), and the ``voicegateway.inference`` submodule as attribute-access
-    entry points. When the backing extra is not installed, raises the friendly
-    ``require_extra`` error (with a pip hint) rather than a raw ModuleNotFoundError.
+    ``voicegateway.Observer`` (pipecat) and the ``voicegateway.inference``
+    submodule as attribute-access entry points. When the backing extra is not
+    installed, raises the friendly ``require_extra`` error (with a pip hint)
+    rather than a raw ModuleNotFoundError.
     """
     target = _LAZY.get(name)
     if target is None:

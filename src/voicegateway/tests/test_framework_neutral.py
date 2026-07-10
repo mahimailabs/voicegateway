@@ -153,14 +153,3 @@ def test_require_extra_missing_raises_with_hint() -> None:
         raise AssertionError("require_extra did not raise for a missing extra")
 
 
-def test_lazy_llm_still_importable() -> None:
-    """Accessing voicegateway.LLM triggers the lazy import and returns a factory.
-
-    livekit is installed in the dev env, so the lazy import succeeds and yields a
-    callable. This proves the deferral did not break the public factory.
-    """
-    import voicegateway
-
-    assert callable(voicegateway.LLM)
-    assert callable(voicegateway.STT)
-    assert callable(voicegateway.TTS)
