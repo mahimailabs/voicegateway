@@ -20,13 +20,14 @@ A stable 1.0 release is the goal once the API surface has been validated by the 
 
 ## Can I use VoiceGateway with LangGraph or CrewAI?
 
-Yes, but with a caveat. `voicegateway.inference.LLM(...)` returns a `livekit.plugins.<provider>.LLM` instance designed for LiveKit agent pipelines. If you want to use VoiceGateway's cost tracking and routing with LangGraph or CrewAI:
+Not as a wrapper. `attach()` and `guard()` target voice-agent runtimes: a LiveKit `AgentSession` or a Pipecat `PipelineTask`. LangGraph and CrewAI are text-LLM orchestration frameworks, so VoiceGateway does not sit inside their call path.
 
-1. **Use the HTTP API** -- query `/v1/costs` and `/v1/logs` from your framework while pointing it at the providers directly.
-2. **Wrap the inference instance** -- call `inference.LLM(...)` to get a configured LK plugin instance, then extract the underlying provider client for your framework.
-3. **Use cost tracking only** -- point LangGraph / CrewAI at the providers directly, and use VoiceGateway's MCP server to track costs separately.
+You can still track spend alongside them:
 
-The MCP server's 17 tools work with any agent framework that supports MCP (Claude Code, Cursor, Codex, Cline, etc.).
+1. **Point the framework at providers directly** and read costs out of band from the [HTTP API](/api/http-api) (`/v1/costs`, `/v1/logs`) or the [MCP server](/mcp/index).
+2. **For a voice agent**, build it on LiveKit or Pipecat and meter it with `attach()` as shown in the [quick start](/guide/quick-start).
+
+See the [decision tree](/guide/decision-tree) for when VoiceGateway is the right fit. The MCP server's tools work with any agent framework that supports MCP (Claude Code, Cursor, Codex, Cline, etc.).
 
 ---
 
@@ -78,7 +79,7 @@ spec:
             claimName: voicegw-data
 ```
 
-**Important:** Since VoiceGateway uses SQLite, run a single replica for writes. If you need horizontal scaling, put a load balancer in front with sticky sessions, or run `voicegateway.inference` as a library within each worker process (each gets its own DB).
+**Important:** Since VoiceGateway uses SQLite, run a single replica for writes. If you need horizontal scaling, put a load balancer in front with sticky sessions, or embed VoiceGateway as a library within each worker process (each gets its own DB).
 
 Note: with separate per-replica DBs, the in-memory budget cache does not sync across replicas. A project-wide daily budget cannot be strictly enforced across instances, only within each one. For project-wide budgets across multiple instances, single-instance is currently the only supported topology. A shared backend (Redis or PostgreSQL) is on the roadmap.
 
@@ -121,15 +122,16 @@ For Grafana, point it at Prometheus and query `voicegw_cost_usd_total` or `voice
 Not directly. VoiceGateway routes STT, LLM, and TTS as separate modalities. For a speech-to-speech pipeline, you compose all three:
 
 ```python
-from voicegateway import inference
+from livekit.agents import AgentSession
+from livekit.plugins import deepgram, openai, cartesia
+from voicegateway import attach
 
-inference.set_project("s2s-app")
-stt = inference.STT("deepgram/nova-3")
-llm = inference.LLM("openai/gpt-4o-mini")
-tts = inference.TTS("cartesia/sonic-3")
-
-# Use in a LiveKit AgentSession for real-time S2S
-session = AgentSession(stt=stt, llm=llm, tts=tts)
+session = AgentSession(
+    stt=deepgram.STT(model="nova-3"),
+    llm=openai.LLM(model="gpt-4o-mini"),
+    tts=cartesia.TTS(model="sonic-3"),
+)
+attach(session, project="my-agent")  # meters STT, LLM, and TTS separately
 ```
 
 This gives you full control over each stage, independent fallbacks, and per-modality cost tracking. Native S2S model support (e.g., GPT-4o audio) may be added in a future release.
@@ -156,9 +158,13 @@ Use VoiceGateway's MCP server to **manage** the gateway. Use function calling wi
 Yes, through the provider's native voice configuration. Pass the voice id either as a `:suffix` on the model string or via the `voice` kwarg:
 
 ```python
-tts = inference.TTS("cartesia/sonic-3:your-voice-id")
-tts = inference.TTS("cartesia/sonic-3", voice="your-voice-id")
-tts = inference.TTS("elevenlabs/eleven_turbo_v2_5", voice="custom-voice-id")
+from livekit.plugins import cartesia, elevenlabs, openai
+
+# The voice id is native provider config. Pass the plugin into your
+# AgentSession, then call attach(session) to meter it.
+tts = cartesia.TTS(model="sonic-3", voice="your-voice-id")
+tts = elevenlabs.TTS(voice="custom-voice-id")
+tts = openai.TTS(voice="alloy")
 ```
 
 Voice IDs are provider-specific:
@@ -242,6 +248,6 @@ For the SQLite storage layer, writes are serialized (one writer at a time), but 
 
 - [Troubleshooting](/reference/troubleshooting)
 - [Quick Start](/guide/quick-start)
-- [MCP Server](/mcp/)
+- [MCP Server](/mcp/index)
 - [Changelog](https://github.com/mahimailabs/voicegateway/blob/main/CHANGELOG.md)
-- [Contributing](/contributing/)
+- [Contributing](/contributing/index)
