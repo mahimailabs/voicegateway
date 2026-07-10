@@ -12,6 +12,17 @@
     "dark": "/assets/logo.svg"
   },
   "favicon": "/assets/logo.svg",
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "mcp",
+      "cursor",
+      "vscode"
+    ]
+  },
   "navigation": {
     "tabs": [
       {
