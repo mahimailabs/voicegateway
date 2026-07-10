@@ -1,6 +1,6 @@
 ---
 title: "Deploy to Railway"
-description: "Run the VoiceGateway fleet collector on Railway with managed Postgres and automatic HTTPS."
+description: "Run the VoiceGateway daemon on Railway with managed Postgres and automatic HTTPS."
 ---
 
 # Deploy to Railway
@@ -15,17 +15,19 @@ This is the least-ops path. Cost is usage-based and higher than a self-managed V
 
 - A [Railway](https://railway.com) account
 
-## Create the service
+<Steps>
+
+### Create the service
 
 1. In your Railway project, click **New** and choose **Docker Image**.
 2. Enter `mahimairaja/voicegateway:0.9.2` as the image.
 3. In the service settings, set the **exposed port** (also shown as "Port" or "Target Port") to `8080`.
 
-## Add Postgres
+### Add Postgres
 
 Click **New** in the same project and add the **PostgreSQL** plugin. Railway provisions a managed Postgres instance and injects a `DATABASE_URL` environment variable (in `postgres://...` form) into services in the project.
 
-## Configure
+### Configure environment variables
 
 In the collector service's **Variables** tab, add:
 
@@ -45,14 +47,16 @@ VOICEGW_DB_URL=postgresql+asyncpg://<user>:<pass>@<host>:<port>/<db>
 
 `VOICEGW_API_KEY` registers a wildcard ingest key without needing a mounted `voicegw.yaml`.
 
-## Deploy
+### Deploy
 
-Redeploy the service after setting variables. Railway builds and starts the container; HTTPS is automatic at `https://<your-service>.<your-project>.up.railway.app`. You can also attach a custom domain in the service's **Settings** tab.
+Redeploy the service after setting variables. Railway builds and starts the container. HTTPS is automatic at `https://<your-service>.<your-project>.up.railway.app`. You can also attach a custom domain in the service's **Settings** tab.
+
+</Steps>
 
 ## Verify
 
-Follow the steps at [Verify](/deployment#verify), using your Railway service URL as the collector URL and `VOICEGW_API_KEY` as the key.
+Follow the steps at [Verify](/deployment/index#verify), using your Railway service URL as the daemon URL and `VOICEGW_API_KEY` as the key.
 
 ## Connect your agent
 
-See [Connect your agent](/deployment#connect-your-agent). Use the Railway URL as `collector_url` and `VOICEGW_API_KEY` as `api_key`.
+See [Connect your agent](/deployment/index#connect-your-agent). Use the Railway URL as `collector_url` and `VOICEGW_API_KEY` as `api_key`.

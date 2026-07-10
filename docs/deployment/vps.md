@@ -1,6 +1,6 @@
 ---
 title: "Deploy to a VPS"
-description: "Run the VoiceGateway fleet collector on your own server with Docker Compose and Caddy for automatic HTTPS."
+description: "Run the VoiceGateway daemon on your own server with Docker Compose and Caddy for automatic HTTPS."
 ---
 
 # Deploy to a VPS
@@ -38,14 +38,23 @@ The ingest key is printed to your terminal and saved to the deploy directory (`/
 
 Prerequisites: Docker and Compose installed (`curl -fsSL https://get.docker.com | sh`).
 
+<Steps>
+
+### Download Compose file and generate secrets
+
 ```bash
 mkdir -p ~/voicegw && cd ~/voicegw
 curl -fsSLO https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docker-compose.collector.yml
 sed -i 's#mahimairaja/voicegateway:latest#mahimairaja/voicegateway:0.9.2#' docker-compose.collector.yml
 
 printf 'VOICEGW_PG_PASSWORD=%s\n' "$(openssl rand -hex 24)" > .env
+```
 
-# Ingest key the agents will present (must NOT start with vk_).
+### Create the ingest key
+
+The ingest key must not start with `vk_`.
+
+```bash
 INGEST_KEY="$(openssl rand -hex 32)"
 cat > voicegw.yaml <<EOF
 auth:
@@ -55,7 +64,11 @@ auth:
       scopes: [write]
 EOF
 echo "AGENT KEY (use as the agent api_key): ${INGEST_KEY}"
+```
 
+### Start the stack
+
+```bash
 docker compose -f docker-compose.collector.yml up -d
 sleep 10 && curl -fsS http://localhost:8080/health && echo     # -> ok
 ```
@@ -64,7 +77,9 @@ sleep 10 && curl -fsS http://localhost:8080/health && echo     # -> ok
 Run the above exactly once. Re-running it regenerates the Postgres password but the existing volume keeps the old one, causing authentication failures. If you need to re-run, bring the stack down first and remove the volume: `docker compose down -v`. The one-line installer avoids this footgun by persisting secrets across runs.
 </Warning>
 
-Postgres runs as a service in this Compose (self-hosted). To use a managed database instead, drop the `postgres` service and set `VOICEGW_DB_URL=postgresql+asyncpg://...` (e.g. a Neon URL) on the `collector` service.
+Postgres runs as a service in this Compose (self-hosted). To use a managed database instead, drop the `postgres` service and set `VOICEGW_DB_URL=postgresql+asyncpg://...` (for example a Neon URL) on the `collector` service.
+
+</Steps>
 
 ## Expose over HTTPS
 
@@ -96,11 +111,11 @@ sudo systemctl reload caddy
 sudo ufw allow 80,443/tcp
 ```
 
-For safety, bind the collector to localhost only by changing the compose port mapping to `127.0.0.1:8080:8080` so only Caddy is internet-facing. Point a DNS A record `collector.<your-domain>` at the VPS IP.
+For safety, bind the daemon to localhost only by changing the compose port mapping to `127.0.0.1:8080:8080` so only Caddy is internet-facing. Point a DNS A record `collector.<your-domain>` at the VPS IP.
 
 ### Reuse an existing reverse proxy
 
-If the box already runs a reverse proxy on 80/443 (for example a self-hosted LiveKit server whose Caddy runs with host networking), that proxy reaches the collector at `localhost:8080` with no extra wiring. The collector publishes 8080 on the host; a host-networked proxy shares the host's network namespace. Add a vhost or TLS-SNI route for `collector.<your-domain>` pointing to `localhost:8080`. Back up the proxy config first and reload it gracefully.
+If the box already runs a reverse proxy on 80/443 (for example a self-hosted LiveKit server whose Caddy runs with host networking), that proxy reaches the daemon at `localhost:8080` with no extra wiring. The daemon publishes 8080 on the host; a host-networked proxy shares the host's network namespace. Add a vhost or TLS-SNI route for `collector.<your-domain>` pointing to `localhost:8080`. Back up the proxy config first and reload it gracefully.
 
 For LiveKit's layer-4 Caddy (structured `caddy.yaml`), add a TLS-SNI route and include the hostname in `apps.tls.certificates.automate`:
 
@@ -125,8 +140,8 @@ Only `/v1/ingest` and `/health` need to be public. Put the dashboard and `/v1/ap
 
 ## Verify
 
-Follow the steps at [Verify](/deployment#verify), using `https://collector.<your-domain>` as the collector URL and the ingest key printed during setup.
+Follow the steps at [Verify](/deployment/index#verify), using `https://collector.<your-domain>` as the daemon URL and the ingest key printed during setup.
 
 ## Connect your agent
 
-See [Connect your agent](/deployment#connect-your-agent). Use `https://collector.<your-domain>` as `collector_url` and the ingest key as `api_key`.
+See [Connect your agent](/deployment/index#connect-your-agent). Use `https://collector.<your-domain>` as `collector_url` and the ingest key as `api_key`.
