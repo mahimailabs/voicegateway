@@ -7,11 +7,11 @@ description: Show recent request logs from the gateway's SQLite database.
 
 Show recent request logs from the gateway's SQLite database.
 
-## Purpose
+## Synopsis
 
-The `logs` command displays a table of recent gateway requests, including the timestamp, project, modality, model, cost, latency, and status. Use it to debug request flow, investigate errors, or monitor activity in real time.
+`voicegw logs` displays a table of recent gateway requests, including the timestamp, project, modality, model, cost, latency, and status. Use it to debug request flow, investigate errors, or monitor activity in real time.
 
-## Syntax
+## Usage
 
 ```bash
 voicegw logs [OPTIONS]
@@ -26,9 +26,9 @@ voicegw logs [OPTIONS]
 | `--tail` | `-n` | `integer` | `20` | Number of rows to display. |
 | `--modality` | `-m` | `string` | `null` | Filter by modality: `stt`, `llm`, or `tts`. |
 
-## Prerequisites
-
+<Note>
 Cost tracking must be enabled in `voicegw.yaml` for logs to be recorded. If disabled, the command prints a warning and exits.
+</Note>
 
 ## Output
 
@@ -83,15 +83,13 @@ voicegw logs -p tonys-pizza -m llm -n 10
 
 Shows the last 10 LLM requests for the `tonys-pizza` project.
 
-## Exit Codes
+## Exit codes
 
 | Code | Meaning |
 |---|---|
 | `0` | Success (including when no logs are found). |
 | `1` | Config failed to load. |
 
-## Related Commands
+## Related
 
-- [`voicegw costs`](/cli/costs) -- aggregated cost view instead of individual records
-- [`voicegw status`](/cli/status) -- check which providers are active
-- [`voicegw projects`](/cli/projects) -- find project IDs to filter on
+[`voicegw costs`](/cli/costs) | [`voicegw status`](/cli/status) | [`voicegw projects`](/cli/projects)

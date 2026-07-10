@@ -7,13 +7,13 @@ description: Diff VoiceGateway's recorded costs against a provider's usage expor
 
 Diff VoiceGateway's recorded costs against a provider's usage export.
 
-## Purpose
+## Synopsis
 
-The `reconcile` command reads VG's per-request log records for a date window, parses an operator-supplied normalized provider usage file, and produces a per-model diff with absolute and percent differences. The full workflow (when to reconcile, how to interpret the diff, expected drift per modality) lives at [Cost Reconciliation](/guide/cost-reconciliation).
+`voicegw reconcile` reads VG's per-request log records for a date window, parses an operator-supplied normalized provider usage file, and produces a per-model diff with absolute and percent differences. The full workflow (when to reconcile, how to interpret the diff, expected drift per modality) lives at [Cost Reconciliation](/guide/cost-reconciliation).
 
 The provider-side input file format is documented per provider at [Reconcile File Formats](/reference/reconcile-formats).
 
-## Syntax
+## Usage
 
 ```bash
 voicegw reconcile --provider <name> --start <YYYY-MM-DD> --end <YYYY-MM-DD> \
@@ -41,7 +41,7 @@ voicegw reconcile --provider <name> --start <YYYY-MM-DD> --end <YYYY-MM-DD> \
 
 ### Text (default)
 
-An aligned table with one row per model. Columns: model, VG units, provider units, units Δ%, VG cost, provider cost, cost Δ$, cost Δ%. Rows whose absolute cost diff % exceeds `--threshold` are tagged with a trailing ` *` and rendered in ANSI yellow when stdout is a TTY (no color when piped or captured). Models present in only one side carry a `(no vg data)` or `(no provider data)` suffix instead.
+An aligned table with one row per model. Columns: model, VG units, provider units, units delta%, VG cost, provider cost, cost delta$, cost delta%. Rows whose absolute cost diff % exceeds `--threshold` are tagged with a trailing ` *` and rendered in ANSI yellow when stdout is a TTY (no color when piped or captured). Models present in only one side carry a `(no vg data)` or `(no provider data)` suffix instead.
 
 A Total row sums VG cost and provider cost across rows where both sides matched (missing-side rows are excluded so their `$0` placeholders do not skew the total). When any rows are flagged, a footer line `(N flagged row(s) marked with *)` follows.
 
@@ -64,14 +64,16 @@ A nested document matching design §2.2:
   "provider": "openai",
   "period": {"start": "2026-05-01", "end": "2026-05-31"},
   "rows": [
-    {"model": "gpt-4o-mini", "vg_cost": 0.94, "provider_cost": 1.0, "cost_diff_abs": 0.06, "cost_diff_pct": 6.0, "flagged": true, ...}
+    {"model": "gpt-4o-mini", "vg_cost": 0.94, "provider_cost": 1.0, "cost_diff_abs": 0.06, "cost_diff_pct": 6.0, "flagged": true}
   ],
   "total": {"vg_cost": 7.10, "provider_cost": 7.31, "diff_abs": 0.21, "diff_pct": 2.91},
   "flagged_count": 1
 }
 ```
 
+<Note>
 `total` sums only rows where both sides matched (missing-side rows excluded, mirroring the text format). `flagged_count` counts rows where `flagged=True`. Useful for piping into a monitoring or alerting tool.
+</Note>
 
 ## Examples
 
@@ -84,7 +86,7 @@ voicegw reconcile \
   --provider-usage-file openai-may-2026.csv
 ```
 
-### Same window as JSON for piping
+### JSON output for piping
 
 ```bash
 voicegw reconcile \
@@ -94,9 +96,9 @@ voicegw reconcile \
   --format json | jq '.rows[] | select(.cost_diff_pct > 5)'
 ```
 
-Note the `.rows[]` selector: the JSON output is a nested document
-keyed on `rows`, not a top-level array. See the [JSON section
-above](#json) for the full schema.
+<Tip>
+The JSON output is a nested document keyed on `rows`, not a top-level array. Use the `.rows[]` selector as shown above.
+</Tip>
 
 ### Cartesia with the JSON variant of the canonical file
 
@@ -115,12 +117,11 @@ voicegw reconcile \
 | `1` | Cost tracking is not enabled. |
 | `2` | Bad input: unsupported provider, malformed date, missing usage file, parse error, or unknown format. |
 
-## Related commands
+## Related
 
-- [`voicegw export-costs`](/cli/export-costs) -- inspect VG's per-request rows directly.
-- [`voicegw costs`](/cli/costs) -- aggregated summary by provider/model.
+[`voicegw export-costs`](/cli/export-costs) | [`voicegw costs`](/cli/costs)
 
 ## See also
 
-- [Cost Reconciliation](/guide/cost-reconciliation) -- when to reconcile, how to interpret the diff, per-modality drift tolerance.
-- [Reconcile File Formats](/reference/reconcile-formats) -- per-provider schemas this command expects.
+- [Cost Reconciliation](/guide/cost-reconciliation): when to reconcile, how to interpret the diff, per-modality drift tolerance.
+- [Reconcile File Formats](/reference/reconcile-formats): per-provider schemas this command expects.

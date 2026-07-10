@@ -7,11 +7,11 @@ description: Display cost summaries from the gateway's request log, broken down 
 
 Display cost summaries from the gateway's request log.
 
-## Purpose
+## Synopsis
 
-The `costs` command queries the SQLite database to show how much you have spent on voice AI requests. It breaks costs down by provider and by model, and can be filtered by project and time period.
+`voicegw costs` queries the SQLite database to show how much you have spent on voice AI requests. It breaks costs down by provider and by model, and can be filtered by project and time period.
 
-## Syntax
+## Usage
 
 ```bash
 voicegw costs [OPTIONS]
@@ -26,7 +26,9 @@ voicegw costs [OPTIONS]
 | `--week` | | `boolean` | `false` | Show the weekly summary instead of today. |
 | `--month` | | `boolean` | `false` | Show the monthly summary instead of today. |
 
+<Note>
 When both `--week` and `--month` are omitted, the default period is `today`. If both are provided, `--month` takes precedence.
+</Note>
 
 ## Prerequisites
 
@@ -90,15 +92,13 @@ voicegw costs --month
 voicegw costs -c /etc/voicegateway/voicegw.yaml --week
 ```
 
-## Exit Codes
+## Exit codes
 
 | Code | Meaning |
 |---|---|
-| `0` | Success (including when cost tracking is disabled -- prints warning). |
+| `0` | Success (including when cost tracking is disabled; prints warning). |
 | `1` | Config failed to load. |
 
-## Related Commands
+## Related
 
-- [`voicegw status`](/cli/status) -- see which providers are configured
-- [`voicegw logs`](/cli/logs) -- view individual request records
-- [`voicegw projects`](/cli/projects) -- list projects with budget info
+[`voicegw status`](/cli/status) | [`voicegw logs`](/cli/logs) | [`voicegw projects`](/cli/projects)

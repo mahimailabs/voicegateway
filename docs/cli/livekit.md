@@ -7,6 +7,8 @@ description: Diagnostics commands for inspecting agents, measuring end-to-end la
 
 Diagnostics for a running LiveKit deployment. Four subcommands cover agent listing, end-to-end latency measurement, SFU health, and an all-in-one check report.
 
+## Usage
+
 ```bash
 voicegw livekit <subcommand> [OPTIONS]
 ```
@@ -112,11 +114,11 @@ For each probe turn the command:
 
 When the probed agent is instrumented with `voicegateway.attach(session)`, the command also shows the latency split across turn detection, STT, LLM (time-to-first-token), and TTS. The correlation key is the probe room name: `attach` stamps it on every captured row, and the probe reads those rows back by room after the turns finish.
 
-This read-back is **co-located** in this version: the agent and the prober must share the same local VoiceGateway store (`~/.config/voicegateway/voicegw.db`, or `VOICEGW_DB_PATH`). In collector mode (`VOICEGW_COLLECTOR_URL` set) the rows go to the collector rather than this host, so the split is not shown from the CLI. When no split is available, the command prints a one-line note explaining what is needed.
+This read-back is co-located in this version: the agent and the prober must share the same local VoiceGateway store (`~/.config/voicegateway/voicegw.db`, or `VOICEGW_DB_PATH`). In collector mode (`VOICEGW_COLLECTOR_URL` set) the rows go to the collector rather than this host, so the split is not shown from the CLI. When no split is available, the command prints a one-line note explaining what is needed.
 
-### Cost warning
-
-**Each probe is a real agent turn.** The agent's STT, LLM, and TTS providers are invoked with live credentials and will incur real provider charges. Run with a low `--trials` value (`1` or `2`) unless you are deliberately benchmarking. Keep `--agent` scoped to avoid probing every agent.
+<Warning>
+Each probe is a real agent turn. The agent's STT, LLM, and TTS providers are invoked with live credentials and will incur real provider charges. Run with a low `--trials` value (`1` or `2`) unless you are deliberately benchmarking. Keep `--agent` scoped to avoid probing every agent.
+</Warning>
 
 ### Options
 
@@ -166,19 +168,23 @@ Load-ramp mode (`--load`):
 
 ### Distributed load (multi-vantage)
 
-A single host only shows what one machine can push. To load the SFU concurrently from several regions, run one **coordinator** and N **probers**:
+A single host only shows what one machine can push. To load the SFU concurrently from several regions, run one coordinator and N probers:
 
-```bash
-# on the coordinator host (needs the [server] extra: pip install 'voicegateway[server]')
+<CodeGroup>
+```bash Coordinator
+# Needs the [server] extra: uv pip install 'voicegateway[server]'
 voicegw livekit sfu --coordinator --expect 3 --ramp 10,25,50 --duration 20s
+```
 
-# on each prober host / region (needs only the base install)
+```bash Probers
+# Each prober needs only the base install
 voicegw livekit sfu --report-to http://<coordinator-host>:8787 --vantage iad
 voicegw livekit sfu --report-to http://<coordinator-host>:8787 --vantage sjc
 voicegw livekit sfu --report-to http://<coordinator-host>:8787 --vantage lhr
 ```
+</CodeGroup>
 
-Each prober registers, waits at a shared barrier so every vantage starts its ramp at the same instant, ramps the **same** room, and reports its per-tier measurements back. The coordinator aggregates: at each tier the SFU sees the sum of all vantages' clients, while rtt / loss / quality report the worst any single vantage saw. It then prints the combined capacity and cleans up the shared rooms.
+Each prober registers, waits at a shared barrier so every vantage starts its ramp at the same instant, ramps the same room, and reports its per-tier measurements back. The coordinator aggregates: at each tier the SFU sees the sum of all vantages' clients, while rtt / loss / quality report the worst any single vantage saw.
 
 ```
 SFU  distributed: 3 vantages
@@ -338,9 +344,6 @@ The following limitations apply across all four subcommands:
 
 ---
 
-## Related commands
+## Related
 
-- [`voicegw smoke-test`](/cli/smoke-test): validate the inference pipeline without a LiveKit server.
-- [`voicegw status`](/cli/status): check provider configuration.
-- [`voicegw logs`](/cli/logs): view per-request cost and latency records.
-- [`voicegw costs`](/cli/costs): aggregated cost view by provider and project.
+[`voicegw smoke-test`](/cli/smoke-test) | [`voicegw status`](/cli/status) | [`voicegw logs`](/cli/logs) | [`voicegw costs`](/cli/costs)
