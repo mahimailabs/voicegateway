@@ -1,6 +1,6 @@
 ---
 title: Middleware Pipeline
-description: The middleware components that sit between attach()/guard() and the storage layer: CostTracker, LatencyMonitor, RateLimiter, BudgetEnforcer, RequestLogger, and InstrumentedProvider.
+description: "The middleware components that sit between attach()/guard() and the storage layer: CostTracker, LatencyMonitor, RateLimiter, BudgetEnforcer, RequestLogger, and InstrumentedProvider."
 ---
 
 The middleware layer provides cross-cutting concerns: cost tracking, latency monitoring, rate limiting, fallback chains, budget enforcement, and request logging. `attach()` feeds completed call events through this pipeline. `guard()` runs the budget and rate checks before a call starts.

@@ -1,6 +1,6 @@
 ---
 title: Core Concepts
-description: The framework-neutral model at the heart of VoiceGateway: two seams (attach observes, guard controls), RequestRecord and Sink, projects, cost via voice-prices, and ContextVars for session and tenant correlation.
+description: "The framework-neutral model at the heart of VoiceGateway: two seams (attach observes, guard controls), RequestRecord and Sink, projects, cost via voice-prices, and ContextVars for session and tenant correlation."
 ---
 
 # Core Concepts
