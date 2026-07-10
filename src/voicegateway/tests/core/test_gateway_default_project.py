@@ -5,6 +5,7 @@ from __future__ import annotations
 import yaml
 
 from voicegateway.core import active_project as project
+from voicegateway.core import gateway_factory as factory
 from voicegateway.core.active_project import get_active_project
 from voicegateway.core.gateway import Gateway
 
@@ -96,6 +97,7 @@ def test_config_falls_through_to_global_key_for_default_project(tmp_path, monkey
         providers={"openai": {"api_key": "global-fallback"}},
     )
     gw = Gateway(config_path=cfg_path)
+    monkeypatch.setattr(factory, "_gateway", gw)
     monkeypatch.delenv("VOICEGW_ACTIVE_PROJECT", raising=False)
     project.reset_project()
 

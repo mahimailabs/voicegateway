@@ -124,6 +124,9 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
                 provider_cfg = (
                     gw.config.get_provider_config_for_project(provider_name, project) or {}
                 )
+                if not provider_cfg.get("api_key"):
+                    add(f"inference.{label}", False, "No API key configured")
+                    continue
                 stub_provider = _stub_create(provider_name, provider_cfg)
                 if modality == "stt":
                     plugin = stub_provider.create_stt(model_name)
