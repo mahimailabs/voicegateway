@@ -1,3 +1,8 @@
+---
+title: "Contributing to VoiceGateway"
+description: "How to report bugs, suggest features, and submit pull requests to the VoiceGateway project."
+---
+
 # Contributing to VoiceGateway
 
 Thank you for your interest in contributing to VoiceGateway. This guide covers everything you need to get started, whether you are reporting a bug, suggesting a feature, or submitting code.
@@ -25,24 +30,46 @@ We follow the [Contributor Covenant Code of Conduct](https://www.contributor-cov
 
 We welcome PRs for bug fixes, new providers, documentation improvements, and new features. Follow this process:
 
-1. **Fork the repository** on GitHub
-2. **Create a branch** from `main` using the naming convention:
-   - `feat/<description>` for features
-   - `fix/<description>` for bug fixes
-   - `docs/<description>` for documentation
-   - `test/<description>` for test-only changes
-3. **Set up your [development environment](/contributing/development-setup)**
-4. **Make your changes** following the [code style guide](/contributing/code-style)
-5. **Write tests** for any new or changed behavior (see [testing guide](/contributing/testing))
-6. **Run the full test suite** -- `pytest` must pass
-7. **Run linters** -- `ruff check` and `mypy` must pass
-8. **Commit with [Conventional Commits](/contributing/code-style#conventional-commits)** format
-9. **Open a PR** against `main` with a clear description of what and why
-10. **Respond to review feedback** -- maintainers aim to review within 48 hours
+<Steps>
+  <Step title="Fork the repository">
+    Fork the repository on GitHub.
+  </Step>
+  <Step title="Create a branch">
+    Use the naming convention:
+    - `feat/<description>` for features
+    - `fix/<description>` for bug fixes
+    - `docs/<description>` for documentation
+    - `test/<description>` for test-only changes
+  </Step>
+  <Step title="Set up your environment">
+    Follow the [development setup guide](/contributing/development-setup).
+  </Step>
+  <Step title="Make your changes">
+    Follow the [code style guide](/contributing/code-style).
+  </Step>
+  <Step title="Write tests">
+    Cover any new or changed behavior. See the [testing guide](/contributing/testing).
+  </Step>
+  <Step title="Run the full test suite">
+    `pytest` must pass.
+  </Step>
+  <Step title="Run linters">
+    `ruff check` and `mypy` must pass.
+  </Step>
+  <Step title="Commit">
+    Use [Conventional Commits](/contributing/code-style) format.
+  </Step>
+  <Step title="Open a PR">
+    Open a PR against `main` with a clear description of what and why.
+  </Step>
+  <Step title="Respond to review feedback">
+    Maintainers aim to review within 48 hours.
+  </Step>
+</Steps>
 
 ### Improve documentation
 
-Documentation source lives in `docs/` and is rendered by `mahimailabs/voicegateway-web` at <https://voicegateway.mahimai.ca/docs>. See [development setup](/contributing/development-setup#documentation-site) for the current preview and rebuild flow. Even small fixes (typos, broken links, clearer examples) are valuable.
+Documentation source lives in `docs/` and is rendered by Mintlify at `https://docs.voicegateway.dev`. Even small fixes (typos, broken links, clearer examples) are valuable.
 
 ## PR checklist
 
@@ -70,11 +97,22 @@ Look for issues labeled [`good first issue`](https://github.com/mahimailabs/voic
 - Open a [GitHub Discussion](https://github.com/mahimailabs/voicegateway/discussions) for questions
 - Tag `@mahimai` on issues if you are blocked
 
-## Related pages
+## Contributing pages
 
-- [Development Setup](/contributing/development-setup)
-- [Adding a Provider](/contributing/adding-a-provider)
-- [Refreshing the Pricing Catalogs](/contributing/refreshing-pricing)
-- [Code Style](/contributing/code-style)
-- [Testing](/contributing/testing)
-- [Troubleshooting](/reference/troubleshooting)
+<CardGroup cols={2}>
+  <Card title="Development Setup" href="/contributing/development-setup">
+    Clone the repo, create a virtual environment, install dev dependencies, and run tests locally.
+  </Card>
+  <Card title="Adding a Provider" href="/contributing/adding-a-provider">
+    Step-by-step guide to implementing a new provider that extends `BaseProvider`.
+  </Card>
+  <Card title="Testing" href="/contributing/testing">
+    pytest setup, shared fixtures, async test patterns, and coverage expectations.
+  </Card>
+  <Card title="Code Style" href="/contributing/code-style">
+    ruff, mypy, docstrings, Conventional Commits, and naming conventions.
+  </Card>
+  <Card title="Refreshing Pricing" href="/contributing/refreshing-pricing">
+    How to update rates in `voice-prices` and bump the pin in VoiceGateway.
+  </Card>
+</CardGroup>

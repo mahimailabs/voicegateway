@@ -1,3 +1,8 @@
+---
+title: "Adding a Provider"
+description: "Step-by-step guide to implementing a new provider that extends BaseProvider and wires into the VoiceGateway registry."
+---
+
 # Adding a Provider
 
 VoiceGateway uses a provider registry pattern that makes adding new providers straightforward. Each provider is a single Python file that extends `BaseProvider`. This guide walks through the full process.
@@ -12,7 +17,7 @@ VoiceGateway uses a provider registry pattern that makes adding new providers st
 
 ### 1. Create the provider file
 
-Create `src/voicegateway/providers/<name>_provider.py`. Use an existing provider as a template (e.g., `deepgram_provider.py` for STT, `cartesia_provider.py` for TTS).
+Create `src/voicegateway/providers/<name>_provider.py`. Use an existing provider as a template (for example, `deepgram_provider.py` for STT, `cartesia_provider.py` for TTS).
 
 ```python
 """<Provider Name> provider implementation."""
@@ -62,7 +67,7 @@ The `BaseProvider` abstract class in `src/voicegateway/providers/base.py` requir
 
 For modalities the provider does not support, call `self._unsupported("modality_name")` to raise a clear error.
 
-Pricing is not a provider-level concern. LLM, STT, and TTS rates all resolve via `voice-prices` (the wrappers live at `src/voicegateway/pricing/{llm,stt,tts}.py`). To add pricing for a new model, see step 4.
+Pricing is not a provider-level concern. LLM, STT, and TTS rates all resolve via `voice-prices` (see step 4). The pricing wrappers live under `src/voicegateway/inference/pricing/`.
 
 ### 3. Register the provider
 
@@ -79,17 +84,11 @@ The registry uses lazy imports -- your provider module is only loaded when a use
 
 ### 4. Add pricing data
 
-Pricing for every modality (LLM, STT, TTS) resolves through `voice-prices`, so there is no VoiceGateway-side catalog entry to add. Confirm the model id resolves with the matching wrapper:
+Pricing for every modality (LLM, STT, TTS) resolves through `voice-prices`, so there is no VoiceGateway-side catalog entry to add.
 
-```python
-from voicegateway.inference.pricing import llm, stt, tts
+If a pricing call returns `None`, the model is not yet in `voice-prices`. Add it upstream in [voice-prices](https://github.com/mahimailabs/voice-prices) (each entry carries `prices_checked` and `pricing_source_url`), publish a new `voice-prices` version, and bump the pin in `pyproject.toml`. Self-hosted models (`local/*`, `ollama/*`) price at `$0` automatically and need no entry.
 
-llm.calculate_llm_cost("<name>/<model>", 1000, 500)   # LLM
-stt.calculate_stt_cost("<name>/<model>", 60)          # STT (audio seconds)
-tts.calculate_tts_cost("<name>/<model>", 1000)        # TTS (characters)
-```
-
-If a call returns `None`, the model is not yet in `voice-prices`. Add it upstream in [voice-prices](https://github.com/mahimailabs/voice-prices) (each entry carries `prices_checked` and `pricing_source_url`), publish a new `voice-prices` version, and bump the pin in `pyproject.toml`. Self-hosted models (`local/*`, `ollama/*`) price at `$0` automatically and need no entry.
+See [Refreshing Pricing](/contributing/refreshing-pricing) for the full workflow.
 
 ### 5. Add optional dependency
 
@@ -154,7 +153,7 @@ async def test_health_check(provider):
 
 def test_pricing_resolves_stt(provider):
     """Pricing for a known STT model resolves to a positive Decimal via the catalog."""
-    from voicegateway.pricing import catalog
+    from voicegateway.inference.pricing import catalog
     cost = catalog.calculate_cost("stt", "<name>/model-name", audio_seconds=60)
     assert cost is not None and cost > 0
 
@@ -205,9 +204,9 @@ Create a PR with:
 
 - **Title:** `feat(providers): add <Provider Name> support`
 - **Description:** what modalities are supported, link to provider docs, pricing source
-- **Checklist:** all items from the [contributing guide](/contributing/#pr-checklist)
+- **Checklist:** all items from the [contributing guide](/contributing/index)
 
-## Example: anatomy of an existing provider
+## Anatomy of an existing provider
 
 Looking at the registry, VoiceGateway ships with these 11 providers:
 
@@ -230,4 +229,4 @@ Looking at the registry, VoiceGateway ships with these 11 providers:
 - [Code Style](/contributing/code-style)
 - [Testing](/contributing/testing)
 - [Development Setup](/contributing/development-setup)
-- [Contributing](/contributing/)
+- [Contributing](/contributing/index)
