@@ -1,12 +1,7 @@
 import { useEffect, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import SourceBadge from '../components/SourceBadge';
-import {
-  fetchJson,
-  fetchProjectGuardrails,
-  updateProjectGuardrails,
-} from '../lib/api';
-import type { GuardrailAction, GuardrailCategory, GuardrailPolicy } from '../lib/types';
+import { fetchJson } from '../lib/api';
 
 interface ProjectBranding {
   logo_url?: string | null;
@@ -39,7 +34,6 @@ export default function Projects() {
   const [stats, setStats] = useState<Record<string, ProjectStats>>({});
   const [showCreate, setShowCreate] = useState(false);
   const [brandingFor, setBrandingFor] = useState<string | null>(null);
-  const [guardrailsFor, setGuardrailsFor] = useState<string | null>(null);
 
   const refresh = () => {
     fetchJson<{ projects: ProjectEntry[]; stats: Record<string, ProjectStats> }>('/api/projects')
@@ -106,14 +100,6 @@ export default function Projects() {
                 >
                   Brand
                 </button>
-                <button
-                  type="button"
-                  className="neo-btn neo-btn--small"
-                  onClick={() => setGuardrailsFor(p.id)}
-                  style={{ marginLeft: '0.5rem' }}
-                >
-                  Guardrails
-                </button>
               </div>
             </div>
           );
@@ -128,15 +114,6 @@ export default function Projects() {
         <BrandingModal
           projectId={brandingFor}
           onClose={() => setBrandingFor(null)}
-        />
-      )}
-      {guardrailsFor && (
-        <GuardrailsModal
-          projectId={guardrailsFor}
-          onClose={() => {
-            setGuardrailsFor(null);
-            refresh();
-          }}
         />
       )}
     </div>
@@ -366,155 +343,3 @@ function BrandingModal({
   );
 }
 
-const GUARDRAIL_CATEGORIES: GuardrailCategory[] = [
-  'pii',
-  'financial',
-  'medical',
-  'prompt_injection',
-  'off_topic',
-];
-
-const GUARDRAIL_ACTIONS: GuardrailAction[] = ['off', 'redact', 'block', 'alert'];
-
-function GuardrailsModal({
-  projectId,
-  onClose,
-}: {
-  projectId: string;
-  onClose: () => void;
-}) {
-  const [policy, setPolicy] = useState<GuardrailPolicy | null>(null);
-  const [descriptions, setDescriptions] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setLoading(true);
-    setPolicy(null);
-    setError(null);
-    fetchProjectGuardrails(projectId)
-      .then((payload) => {
-        setPolicy(payload.policy);
-        setDescriptions(
-          Object.fromEntries(payload.categories.map((c) => [c.id, c.description])),
-        );
-        setLoading(false);
-      })
-      .catch((e) => {
-        setError((e as Error).message || 'Failed to load guardrails');
-        setLoading(false);
-      });
-  }, [projectId]);
-
-  const setCategoryAction = (category: GuardrailCategory, action: GuardrailAction) => {
-    setPolicy((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        categories: { ...current.categories, [category]: action },
-      };
-    });
-  };
-
-  const save = async () => {
-    if (!policy) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await updateProjectGuardrails(projectId, policy);
-      onClose();
-    } catch (e) {
-      setError((e as Error).message || 'Failed to save guardrails');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const reset = () => {
-    setPolicy({
-      enabled: false,
-      categories: {
-        pii: 'off',
-        financial: 'off',
-        medical: 'off',
-        prompt_injection: 'off',
-        off_topic: 'off',
-      },
-    });
-  };
-
-  return (
-    <div className="neo-modal-backdrop" onClick={onClose}>
-      <div className="neo-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '42rem' }}>
-        <h3>Guardrails · {projectId}</h3>
-        {loading ? (
-          <div className="empty-state mt-md">Loading guardrail policy...</div>
-        ) : !policy ? (
-          <div className="empty-state mt-md">Guardrail policy unavailable.</div>
-        ) : (
-          <>
-            <label className="flex-row mt-md" style={{ gap: '0.5rem' }}>
-              <input
-                type="checkbox"
-                checked={policy.enabled}
-                onChange={(e) => setPolicy({ ...policy, enabled: e.target.checked })}
-              />
-              <span>Enable guardrails for new sessions</span>
-            </label>
-
-            <div className="mt-md">
-              {GUARDRAIL_CATEGORIES.map((category) => (
-                <div
-                  key={category}
-                  className="neo-card mt-sm"
-                  style={{ padding: '0.75rem' }}
-                >
-                  <div className="flex-row" style={{ justifyContent: 'space-between', gap: '1rem' }}>
-                    <div>
-                      <strong>{labelGuardrailCategory(category)}</strong>
-                      <div className="label mt-sm">{descriptions[category]}</div>
-                    </div>
-                    <select
-                      className="neo-select"
-                      value={policy.categories[category] ?? 'off'}
-                      onChange={(e) => setCategoryAction(category, e.target.value as GuardrailAction)}
-                    >
-                      {GUARDRAIL_ACTIONS.map((action) => (
-                        <option key={action} value={action}>{action}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {error && (
-          <div className="mt-md" style={{ color: 'var(--accent-pink, #FF3D71)' }}>
-            {error}
-          </div>
-        )}
-
-        <div className="flex-row mt-lg" style={{ justifyContent: 'space-between' }}>
-          <button className="neo-btn" onClick={reset} disabled={saving || !policy}>
-            Reset
-          </button>
-          <div className="flex-row">
-            <button className="neo-btn" onClick={onClose} disabled={saving}>
-              Cancel
-            </button>
-            <button className="neo-btn neo-btn--primary" onClick={save} disabled={saving || !policy}>
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function labelGuardrailCategory(category: GuardrailCategory): string {
-  return category.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
-}

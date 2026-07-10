@@ -97,17 +97,11 @@ export interface SessionRow {
   routed_tts?: string | null;
   budget_ms?: number | null;
   budget_overrun?: boolean | null;
-  // v0.6.0 guardrails. NULL means the session predates guardrails or
-  // never reached an LLM call; false means audited zero/disabled.
-  guardrails_active?: boolean | null;
-  guardrails_bypassed?: boolean | null;
-  guardrail_policy_snapshot?: GuardrailPolicy | null;
 }
 
 export interface SessionDetail extends SessionRow {
   by_modality: Record<string, { cost: number; request_count: number }>;
   providers: string[];
-  guardrail_events?: GuardrailEvent[];
 }
 
 export type SessionOrderBy =
@@ -341,73 +335,4 @@ export interface LogoUploadResponse {
   format: 'PNG' | 'SVG';
 }
 
-// ----------------------------------------------------------------------
-// v0.6.0 LLM-side guardrails (REQ-VG-GUARD-001..004).
-// ----------------------------------------------------------------------
 
-export type GuardrailCategory =
-  | 'pii'
-  | 'financial'
-  | 'medical'
-  | 'prompt_injection'
-  | 'off_topic';
-
-export type GuardrailAction = 'redact' | 'block' | 'alert' | 'off';
-
-export interface GuardrailPolicy {
-  enabled: boolean;
-  categories: Record<GuardrailCategory, GuardrailAction>;
-}
-
-export interface GuardrailCategoryInfo {
-  id: GuardrailCategory;
-  description: string;
-}
-
-export interface ProjectGuardrailsResponse {
-  project_id: string;
-  policy: GuardrailPolicy;
-  categories: GuardrailCategoryInfo[];
-}
-
-export interface GuardrailEvent {
-  id: number;
-  event_type: 'fired' | 'bypassed';
-  session_id: string;
-  tenant_id: string | null;
-  turn_index: number | null;
-  category: GuardrailCategory | null;
-  action: Exclude<GuardrailAction, 'off'> | null;
-  context_excerpt: string | null;
-  created_at: string;
-  project?: string | null;
-}
-
-export interface GuardrailAggregate {
-  category: GuardrailCategory;
-  action: Exclude<GuardrailAction, 'off'>;
-  count: number;
-}
-
-export interface GuardrailTopSession {
-  session_id: string;
-  project: string | null;
-  tenant_id: string | null;
-  count: number;
-  last_event_at: string | null;
-}
-
-export interface GuardrailAggregateResponse {
-  counts: GuardrailAggregate[];
-  top_sessions: GuardrailTopSession[];
-  filter: {
-    days: number;
-    project: string | null;
-    tenant: string | null;
-    category: GuardrailCategory | null;
-  };
-}
-
-export interface GuardrailEventsResponse {
-  events: GuardrailEvent[];
-}
