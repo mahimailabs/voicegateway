@@ -27,7 +27,6 @@ from voicegateway.cli import costs_cli as _costs  # noqa: F401, E402
 from voicegateway.cli import dashboard_cli as _dashboard  # noqa: F401, E402
 from voicegateway.cli import doctor_cli as _doctor  # noqa: F401, E402
 from voicegateway.cli import export_costs_cli as _export_costs  # noqa: F401, E402
-from voicegateway.cli import guardrails_cli as _guardrails  # noqa: F401, E402
 from voicegateway.cli import init_cli as _init  # noqa: F401, E402
 from voicegateway.cli import lifecycle_cli as _lifecycle  # noqa: F401, E402
 from voicegateway.cli import livekit_cli as _livekit  # noqa: F401, E402

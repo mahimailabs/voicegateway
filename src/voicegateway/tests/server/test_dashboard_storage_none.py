@@ -96,23 +96,6 @@ def test_session_dead_air_returns_503_when_storage_disabled(storage_disabled_cli
     assert resp.status_code == 503
 
 
-def test_guardrail_events_returns_empty_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.get("/api/guardrails/events")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["events"] == []
-
-
-def test_guardrail_aggregate_returns_empty_when_storage_disabled(
-    storage_disabled_client,
-):
-    resp = storage_disabled_client.get("/api/guardrails/aggregate")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["counts"] == []
-    assert body["top_sessions"] == []
-
-
 def test_session_replay_returns_503_when_storage_disabled(storage_disabled_client):
     resp = storage_disabled_client.get("/api/sessions/anything/replay")
     assert resp.status_code == 503

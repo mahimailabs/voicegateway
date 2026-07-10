@@ -373,36 +373,6 @@ async def test_api_projects_includes_source_field(client):
         assert p["source"] in {"yaml", "db", "auto"}
 
 
-async def test_api_guardrails_mirror_policy_and_aggregate(client, gateway):
-    from voicegateway.repository import guardrail_events_repository as guardrail_events
-
-    resp = await client.post(
-        "/api/projects/test-project/guardrails",
-        json={"enabled": True, "categories": {"pii": "redact"}},
-    )
-    assert resp.status_code == 200
-    assert resp.json()["policy"]["categories"]["pii"] == "redact"
-
-    await _seed_session_request(gateway.storage, "vg-guard", project="test-project")
-    await gateway.storage._ensure_initialized()
-    async with gateway.storage._conn.session() as db:
-        await guardrail_events.create_event(
-            db,
-            session_id="vg-guard",
-            event_type="fired",
-            category="pii",
-            action="redact",
-            context_excerpt="phone",
-        )
-        await db.commit()
-
-    resp = await client.get("/api/guardrails/aggregate?category=pii")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["counts"] == [{"category": "pii", "action": "redact", "count": 1}]
-    assert data["top_sessions"][0]["session_id"] == "vg-guard"
-
-
 async def test_missing_frontend_fallback(client):
     """When the Vite build doesn't exist, root returns a helpful error."""
     resp = await client.get("/")

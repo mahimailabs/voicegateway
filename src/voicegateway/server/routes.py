@@ -23,7 +23,6 @@ from voicegateway.server.api import (
     api_keys,
     audit_log,
     costs,
-    guardrails,
     ingest,
     latency,
     logs,
@@ -51,9 +50,6 @@ from voicegateway.server.api.dashboard import (
 )
 from voicegateway.server.api.dashboard import (
     costs as dashboard_costs,
-)
-from voicegateway.server.api.dashboard import (
-    guardrails as dashboard_guardrails,
 )
 from voicegateway.server.api.dashboard import (
     health as dashboard_health,
@@ -94,7 +90,6 @@ api_router.include_router(logs.router)
 api_router.include_router(sessions.router)
 api_router.include_router(projects.router)
 api_router.include_router(providers.router)
-api_router.include_router(guardrails.router)
 api_router.include_router(metrics.router)
 api_router.include_router(audit_log.router)
 api_router.include_router(api_keys.router)
@@ -110,7 +105,6 @@ dashboard_router.include_router(dashboard_admin_costs.router)
 dashboard_router.include_router(dashboard_projects.router)
 dashboard_router.include_router(dashboard_sessions.router)
 dashboard_router.include_router(dashboard_metrics.router)
-dashboard_router.include_router(dashboard_guardrails.router)
 dashboard_router.include_router(dashboard_replay.router)
 dashboard_router.include_router(dashboard_providers_by_project.router)
 dashboard_router.include_router(dashboard_tenants.router)

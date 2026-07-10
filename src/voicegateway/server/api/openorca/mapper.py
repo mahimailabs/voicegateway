@@ -2,8 +2,8 @@
 
 The OpenOrca UI consumes a ``ClawOrchestratorData`` snapshot: a set of logical
 agents (nodes), plus a fleet-health rollup and a small envelope of empty
-collections the frontend still expects (tasks, action log, interventions,
-swarms, machines). Each node here is a logical agent keyed by ``agent_name``:
+collections the frontend still expects (tasks, action log, swarms, machines).
+Each node here is a logical agent keyed by ``agent_name``:
 every worker that reports the same ``agent_name`` collapses into one node whose
 status and session count aggregate its workers. A worker whose heartbeat has
 aged past the roster TTL already arrives with ``status == "offline"`` (see
@@ -62,7 +62,7 @@ def _build_agent(agent_name: str, group: list[RosterRow]) -> dict[str, Any]:
 
 
 def _field(obj: Any, key: str, default: Any = None) -> Any:
-    """Read ``key`` from a dict (session rows) or an object (GuardrailEvent)."""
+    """Read ``key`` from a dict or an object attribute."""
     if isinstance(obj, dict):
         return obj.get(key, default)
     return getattr(obj, key, default)
@@ -127,75 +127,20 @@ def _build_tasks(sessions: list[Any]) -> list[dict[str, Any]]:
     return tasks
 
 
-# Guardrail action -> OpenOrca intervention type: a blocked turn needs a
-# permission decision; a held/flagged one needs approval.
-_GUARDRAIL_TYPE = {
-    "blocked": "permission",
-    "held": "approval_needed",
-    "flagged": "approval_needed",
-}
-
-
-def _build_interventions(events: list[Any]) -> list[dict[str, Any]]:
-    """One OpenOrca Intervention per guardrail event needing a human.
-
-    Duck-typed over GuardrailEvent (``id``, ``session_id``, ``project``,
-    ``category``, ``action``, ``context_excerpt``, ``created_at``). The agent is
-    attributed by ``project`` (guardrail events know the project, not the
-    agent_name), which the snapshot folds back onto the matching node.
-    """
-    interventions: list[dict[str, Any]] = []
-    for e in events:
-        action = (_field(e, "action", None) or "").lower()
-        category = _field(e, "category", None) or "policy"
-        project = _field(e, "project", None) or ""
-        interventions.append(
-            {
-                "id": f"guardrail-{_field(e, 'id', '')}",
-                "agentId": str(project),
-                "agentName": str(project),
-                "type": _GUARDRAIL_TYPE.get(action, "approval_needed"),
-                "question": (
-                    f"Guardrail '{category}' {action or 'flagged'} a turn. "
-                    "Approve or deny?"
-                ),
-                "context": (
-                    _field(e, "context_excerpt", None)
-                    or f"session {_field(e, 'session_id', '')}"
-                ),
-                "timestamp": _field(e, "created_at", "") or "",
-                "priority": "high" if action == "blocked" else "medium",
-            }
-        )
-    return interventions
-
-
 def build_snapshot(
     rosters: list[RosterRow],
     *,
     sessions: list[Any] | None = None,
-    interventions: list[Any] | None = None,
     generated_at: str,
 ) -> dict[str, Any]:
     """Build the OpenOrca snapshot from the roster, plus recent sessions (mapped
-    to tasks) and unresolved guardrail events (mapped to interventions)."""
+    to tasks)."""
     groups: dict[str, list[RosterRow]] = {}
     for row in rosters:
         groups.setdefault(row.agent_name, []).append(row)
 
     agents = [_build_agent(name, group) for name, group in groups.items()]
     tasks = _build_tasks(sessions or [])
-    intervention_nodes = _build_interventions(interventions or [])
-
-    # Fold interventionRequired back onto agent nodes: guardrail events carry the
-    # project, and an agent node's ``domain`` is its project, so match on that (or
-    # on the node id). A flagged, non-offline agent flips to intervention_required.
-    flagged = {i["agentId"] for i in intervention_nodes}
-    for a in agents:
-        if a["domain"] in flagged or a["id"] in flagged:
-            a["interventionRequired"] = True
-            if a["status"] != "offline":
-                a["status"] = "intervention_required"
 
     active_agents = sum(1 for a in agents if a["status"] == "active")
     offline_agents = sum(1 for a in agents if a["status"] == "offline")
@@ -204,18 +149,18 @@ def build_snapshot(
         "totalAgents": len(agents),
         "activeAgents": active_agents,
         "offlineAgents": offline_agents,
-        "interventionsRequired": len(intervention_nodes),
+        "interventionsRequired": 0,
         "tasksInProgress": sum(a["activeSessions"] for a in agents),
         "tasksCompletedToday": sum(1 for t in tasks if t["status"] == "completed"),
         "swarmsActive": 0,
-        "overallHealth": "degraded" if intervention_nodes else "healthy",
+        "overallHealth": "healthy",
     }
 
     return {
         "agents": agents,
         "tasks": tasks,
         "actionLog": [],
-        "interventions": intervention_nodes,
+        "interventions": [],
         "swarms": [],
         "machines": [],
         "fleetHealth": fleet_health,

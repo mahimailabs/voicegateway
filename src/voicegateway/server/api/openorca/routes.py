@@ -24,7 +24,6 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from voicegateway.repository import (
-    guardrail_events_repository,
     session_repository,
     workers_repository,
 )
@@ -118,21 +117,11 @@ async def _current_snapshot(gateway: Gateway, tenant_id: str | None) -> dict[str
             now=time.time(),
             ttl_seconds=DEFAULT_TTL_SECONDS,
         )
-        # Recent sessions -> tasks; guardrail events -> interventions. Both are
-        # tenant-scoped exactly like the roster above.
+        # Recent sessions -> tasks, tenant-scoped exactly like the roster above.
         sessions = await session_repository.list_sessions(
             db, tenant=tenant_id, limit=100
         )
-        events = await guardrail_events_repository.list_events(
-            db, tenant=tenant_id, limit=50
-        )
-    # Drop interventions the operator has already resolved so they do not
-    # reappear on the next snapshot (their id is ``guardrail-{event.id}``).
-    resolved = _resolved_ids(tenant_id)
-    events = [e for e in events if f"guardrail-{e.id}" not in resolved]
-    return build_snapshot(
-        rows, sessions=sessions, interventions=events, generated_at=generated_at
-    )
+    return build_snapshot(rows, sessions=sessions, generated_at=generated_at)
 
 
 @router.get("/runtime-info")
