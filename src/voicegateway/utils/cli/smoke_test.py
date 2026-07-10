@@ -11,16 +11,11 @@ from voicegateway.core import active_project as project_module
 from voicegateway.core import gateway_factory as factory
 from voicegateway.core import registry as _registry
 from voicegateway.core.constants import SMOKE_MODALITIES
-from voicegateway.inference import (
-    llm_inference as llm,
+from voicegateway.inference.session.context import (
+    get_or_create_session_id,
+    get_session_id,
 )
-from voicegateway.inference import (
-    stt_inference as stt,
-)
-from voicegateway.inference import (
-    tts_inference as tts,
-)
-from voicegateway.inference.session.context import get_session_id
+from voicegateway.middleware.instrumented_provider_middleware import wrap_provider
 
 
 def _smoke_active_project(gw: Any) -> str | None:
@@ -111,6 +106,8 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
 
     session_id_holder: dict[str, str | None] = {"sid": None}
 
+    get_or_create_session_id()
+
     try:
         for modality, label in SMOKE_MODALITIES:
             model_id = models.get(modality)
@@ -123,12 +120,30 @@ async def _run_smoke_pipeline_checks(gw: Any, project: str, add) -> None:
                 continue
             instance: Any
             try:
+                provider_name, model_name = model_id.split("/", 1)
+                provider_cfg = (
+                    gw.config.get_provider_config_for_project(provider_name, project) or {}
+                )
+                if not provider_cfg.get("api_key"):
+                    add(f"inference.{label}", False, "No API key configured")
+                    continue
+                stub_provider = _stub_create(provider_name, provider_cfg)
                 if modality == "stt":
-                    instance = stt.STT(model_id)
+                    plugin = stub_provider.create_stt(model_name)
                 elif modality == "llm":
-                    instance = llm.LLM(model_id)
+                    plugin = stub_provider.create_llm(model_name)
                 else:
-                    instance = tts.TTS(model_id)
+                    plugin = stub_provider.create_tts(model_name)
+                instance = wrap_provider(
+                    instance=plugin,
+                    modality=modality,
+                    model_id=model_id,
+                    provider=provider_name,
+                    project=project,
+                    cost_tracker=gw._cost_tracker,
+                    storage=gw._storage,
+                    metering=True,
+                )
             except Exception as exc:  # noqa: BLE001
                 add(
                     f"inference.{label}",
@@ -258,6 +273,6 @@ def _print_smoke_report(rows: list[tuple[str, bool, str]]) -> None:
     else:
         console.print(
             "\n[green]All structural checks passed.[/green] For an "
-            "actual end-to-end run, wire [bold]voicegateway.inference[/bold] "
+            "actual end-to-end run, wire [bold]voicegateway.attach()[/bold] "
             "into a LiveKit AgentSession and connect to a dev server."
         )

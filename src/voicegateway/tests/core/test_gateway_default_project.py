@@ -8,7 +8,6 @@ from voicegateway.core import active_project as project
 from voicegateway.core import gateway_factory as factory
 from voicegateway.core.active_project import get_active_project
 from voicegateway.core.gateway import Gateway
-from voicegateway.inference import stt_inference as stt
 
 
 def _write_config(tmp_path, **overrides):
@@ -82,8 +81,11 @@ def test_yaml_projects_without_default_project_still_get_default(tmp_path):
     assert gw.config.projects["default"].source == "auto"
 
 
-def test_inference_falls_through_to_default_with_named_projects(tmp_path, monkeypatch):
-    """End-to-end check: with ``projects: {tony}`` and no override,"""
+def test_config_falls_through_to_global_key_for_default_project(tmp_path, monkeypatch):
+    """Config resolution: with ``projects: {tony}`` and no per-project key for
+    ``default``, ``get_provider_config_for_project`` on the default project falls
+    through to the global provider key.
+    """
     cfg_path = _write_config(
         tmp_path,
         projects={
@@ -99,52 +101,10 @@ def test_inference_falls_through_to_default_with_named_projects(tmp_path, monkey
     monkeypatch.delenv("VOICEGW_ACTIVE_PROJECT", raising=False)
     project.reset_project()
 
-    captured: dict = {}
-
-    # InstrumentedSTT/LLM/TTS subclass the LK base classes and forward
-    # ``capabilities`` (plus sample_rate/num_channels for TTS) through
-    # ``super().__init__``. The stub returned here therefore needs the
-    # LK-side surface so the wrapper can be constructed without
-    # raising AttributeError.
-    from livekit.agents.stt import STTCapabilities
-    from livekit.agents.tts import TTSCapabilities
-
-    class _LkStub:
-        def __init__(self) -> None:
-            self.capabilities = STTCapabilities(streaming=False, interim_results=False)
-            self._tts_capabilities = TTSCapabilities(streaming=False)
-            self.sample_rate = 24000
-            self.num_channels = 1
-
-        def on(self, _event, _cb):
-            pass
-
-    class _FakeProvider:
-        def __init__(self, config):
-            captured.update(config)
-
-        def create_stt(self, model, **kwargs):
-            return _LkStub()
-
-        def create_llm(self, model, **kwargs):
-            return _LkStub()
-
-        def create_tts(self, model, voice=None, **kwargs):
-            stub = _LkStub()
-            stub.capabilities = stub._tts_capabilities
-            return stub
-
-        async def health_check(self):
-            return True
-
-    monkeypatch.setattr(
-        "voicegateway.core.registry.create_provider",
-        lambda _name, config: _FakeProvider(config),
-    )
-
     assert get_active_project() == "default"
-    stt.STT("openai/whisper-1")
-    assert captured["api_key"] == "global-fallback"
+    resolved = gw.config.get_provider_config_for_project("openai", "default")
+    assert resolved is not None
+    assert resolved.get("api_key") == "global-fallback"
 
 
 # ---------------------------------------------------------------------------
