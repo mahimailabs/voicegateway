@@ -20,13 +20,14 @@ A stable 1.0 release is the goal once the API surface has been validated by the 
 
 ## Can I use VoiceGateway with LangGraph or CrewAI?
 
-Yes, but with a caveat. `Gateway.llm(...)` returns a `livekit.plugins.<provider>.LLM` instance designed for LiveKit agent pipelines. If you want to use VoiceGateway's cost tracking and routing with LangGraph or CrewAI:
+Not as a wrapper. `attach()` and `guard()` target voice-agent runtimes: a LiveKit `AgentSession` or a Pipecat `PipelineTask`. LangGraph and CrewAI are text-LLM orchestration frameworks, so VoiceGateway does not sit inside their call path.
 
-1. **Use the HTTP API** -- query `/v1/costs` and `/v1/logs` from your framework while pointing it at the providers directly.
-2. **Wrap the Gateway instance** -- call `Gateway.llm(...)` to get a configured LK plugin instance, then extract the underlying provider client for your framework.
-3. **Use cost tracking only** -- point LangGraph / CrewAI at the providers directly, and use VoiceGateway's MCP server to track costs separately.
+You can still track spend alongside them:
 
-The MCP server's 17 tools work with any agent framework that supports MCP (Claude Code, Cursor, Codex, Cline, etc.).
+1. **Point the framework at providers directly** and read costs out of band from the [HTTP API](/api/http-api) (`/v1/costs`, `/v1/logs`) or the [MCP server](/mcp/index).
+2. **For a voice agent**, build it on LiveKit or Pipecat and meter it with `attach()` as shown in the [quick start](/guide/quick-start).
+
+See the [decision tree](/guide/decision-tree) for when VoiceGateway is the right fit. The MCP server's tools work with any agent framework that supports MCP (Claude Code, Cursor, Codex, Cline, etc.).
 
 ---
 
@@ -121,15 +122,16 @@ For Grafana, point it at Prometheus and query `voicegw_cost_usd_total` or `voice
 Not directly. VoiceGateway routes STT, LLM, and TTS as separate modalities. For a speech-to-speech pipeline, you compose all three:
 
 ```python
-from voicegateway import Gateway
+from livekit.agents import AgentSession
+from livekit.plugins import deepgram, openai, cartesia
+from voicegateway import attach
 
-gw = Gateway.from_config()
-stt = gw.stt("deepgram/nova-3")
-llm = gw.llm("openai/gpt-4o-mini")
-tts = gw.tts("cartesia/sonic-3")
-
-# Use in a LiveKit AgentSession for real-time S2S
-session = AgentSession(stt=stt, llm=llm, tts=tts)
+session = AgentSession(
+    stt=deepgram.STT(model="nova-3"),
+    llm=openai.LLM(model="gpt-4o-mini"),
+    tts=cartesia.TTS(model="sonic-3"),
+)
+attach(session, project="my-agent")  # meters STT, LLM, and TTS separately
 ```
 
 This gives you full control over each stage, independent fallbacks, and per-modality cost tracking. Native S2S model support (e.g., GPT-4o audio) may be added in a future release.
@@ -156,12 +158,13 @@ Use VoiceGateway's MCP server to **manage** the gateway. Use function calling wi
 Yes, through the provider's native voice configuration. Pass the voice id either as a `:suffix` on the model string or via the `voice` kwarg:
 
 ```python
-from voicegateway import Gateway
+from livekit.plugins import cartesia, elevenlabs, openai
 
-gw = Gateway.from_config()
-tts = gw.tts("cartesia/sonic-3:your-voice-id")
-tts = gw.tts("cartesia/sonic-3", voice="your-voice-id")
-tts = gw.tts("elevenlabs/eleven_turbo_v2_5", voice="custom-voice-id")
+# The voice id is native provider config. Pass the plugin into your
+# AgentSession, then call attach(session) to meter it.
+tts = cartesia.TTS(model="sonic-3", voice="your-voice-id")
+tts = elevenlabs.TTS(voice="custom-voice-id")
+tts = openai.TTS(voice="alloy")
 ```
 
 Voice IDs are provider-specific:
