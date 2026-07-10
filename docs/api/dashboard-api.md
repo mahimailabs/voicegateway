@@ -1,15 +1,19 @@
-# Dashboard API reference
+---
+title: Dashboard API Reference
+description: Read-only `/api/*` endpoints served by the daemon alongside the HTTP API and the React SPA. Consumed automatically by the built-in web dashboard.
+---
 
-The dashboard API is mounted by the daemon (`voicegw serve`) under
-the `/api/` prefix on the same port as the public HTTP API
-(`/v1/*`) and the React SPA (`/`). The default port is 8080; the
-`serve.port` key in `voicegw.yaml` overrides it.
+The dashboard API is mounted by the daemon (`voicegw serve`) under the `/api/` prefix on the same port as the public HTTP API (`/v1/*`) and the React SPA (`/`). The default port is 8080; the `serve.port` key in `voicegw.yaml` overrides it.
 
 Start the daemon (the dashboard API ships with it):
 
 ```bash
 voicegw serve
 ```
+
+<Note>
+These endpoints are optimized for the dashboard UI and aggregate data slightly differently from the HTTP API (`/v1/*`). For example, `/api/overview` combines multiple queries into one response. If you are building external tooling, prefer the [HTTP API](/api/http-api).
+</Note>
 
 ## GET /api/status
 
@@ -40,6 +44,35 @@ Returns the configuration status of all providers, registered models, and fallba
 
 ```bash
 curl http://localhost:8080/api/status
+```
+
+## GET /api/overview
+
+Return aggregated dashboard overview statistics. This endpoint combines multiple queries into a single response for the dashboard's summary cards.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `project` | `string` | `null` | Filter all stats by project ID. |
+
+**Response:**
+
+```json
+{
+  "total_requests": 12450,
+  "total_cost_today": 15.23,
+  "total_cost_all": 342.87,
+  "active_models": 8,
+  "providers_configured": 5
+}
+```
+
+**Example:**
+
+```bash
+curl http://localhost:8080/api/overview
+curl "http://localhost:8080/api/overview?project=tonys-pizza"
 ```
 
 ## GET /api/costs
@@ -122,35 +155,6 @@ curl "http://localhost:8080/api/logs?limit=50&modality=stt"
 curl "http://localhost:8080/api/logs?project=tonys-pizza"
 ```
 
-## GET /api/overview
-
-Return aggregated dashboard overview statistics. This endpoint combines multiple queries into a single response for the dashboard's summary cards.
-
-**Query parameters:**
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `project` | `string` | `null` | Filter all stats by project ID. |
-
-**Response:**
-
-```json
-{
-  "total_requests": 12450,
-  "total_cost_today": 15.23,
-  "total_cost_all": 342.87,
-  "active_models": 8,
-  "providers_configured": 5
-}
-```
-
-**Example:**
-
-```bash
-curl http://localhost:8080/api/overview
-curl "http://localhost:8080/api/overview?project=tonys-pizza"
-```
-
 ## GET /api/projects
 
 List all configured projects with today's stats.
@@ -187,7 +191,7 @@ curl http://localhost:8080/api/projects
 
 ## Static File Serving
 
-The dashboard also serves the React frontend's built assets. If the frontend has been built (`src/dashboard/frontend/dist/` exists), the dashboard serves:
+The dashboard also serves the React frontend's built assets. If the frontend has been built (`src/dashboard/frontend/dist/` exists), the daemon serves:
 
 - `GET /` -- the React app's `index.html`
 - `GET /assets/*` -- bundled JavaScript, CSS, and other static files
