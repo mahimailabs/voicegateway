@@ -27,7 +27,7 @@ const MODALITY_ORDER: Record<string, number> = { stt: 0, llm: 1, tts: 2 };
 const MODALITY_BADGE: Record<string, string> = {
   stt: 'neo-badge--blue',
   llm: 'neo-badge--green',
-  tts: 'neo-badge--pink',
+  tts: 'neo-badge--warning',
 };
 
 const REFRESH_INTERVAL_MS = 60 * 60 * 1000; // OQ2 lock: at least hourly.
@@ -128,17 +128,25 @@ export default function Routing() {
 
       <FilterBar showTenant={false} showAgent={false} />
 
-      <div className="neo-card mt-md">
+      <div className="vg-card mt-md" style={{ padding: 0, overflow: 'hidden' }}>
         {refreshedAt && (
-          <div className="label" style={{ marginBottom: '0.5rem' }}>
-            Last refreshed {formatRelative(refreshedAt)}. Auto-refresh every hour.
+          <div
+            className="vg-card__label"
+            style={{ padding: '12px 16px', borderBottom: '1px solid var(--vg-hairline-2)', textTransform: 'none', letterSpacing: 0 }}
+          >
+            Last refreshed {formatRelative(refreshedAt)}.{' '}
+            <span style={{ color: 'var(--vg-muted-2)' }}>Auto-refresh every hour.</span>
           </div>
         )}
 
-        {loading && !data && <div className="empty-state">Loading observations...</div>}
+        {loading && !data && (
+          <div className="empty-state" style={{ margin: 24 }}>
+            Loading observations...
+          </div>
+        )}
 
         {!loading && rows.length === 0 && (
-          <div className="empty-state">
+          <div className="empty-state" style={{ margin: 24 }}>
             No latency observations yet. The roll-up worker refreshes every 15
             minutes; once a few sessions complete the table will populate.
           </div>
@@ -181,27 +189,33 @@ export default function Routing() {
                   <td>
                     <span
                       className={`neo-badge ${
-                        MODALITY_BADGE[row.modality] ?? 'neo-badge--black'
+                        MODALITY_BADGE[row.modality] ?? 'neo-badge--info'
                       }`}
                     >
                       {row.modality}
                     </span>
                   </td>
-                  <td className="mono">{row.provider}</td>
+                  <td className="mono" style={{ fontWeight: 600 }}>{row.provider}</td>
                   <td className="mono" style={{ textAlign: 'right' }}>
                     {row.p50_ms === null ? (
-                      <span className="label">no observations yet</span>
+                      <span className="vg-card__label">no data</span>
                     ) : (
                       row.p50_ms
                     )}
                   </td>
                   <td className="mono" style={{ textAlign: 'right' }}>
-                    {row.p95_ms === null ? '-' : row.p95_ms}
+                    {row.p95_ms === null ? (
+                      <span className="vg-card__label">-</span>
+                    ) : (
+                      row.p95_ms
+                    )}
                   </td>
                   <td className="mono" style={{ textAlign: 'right' }}>
                     {row.sample_count}
                   </td>
-                  <td>{row.project_id}</td>
+                  <td style={{ color: 'var(--vg-muted)', fontSize: 13 }}>
+                    {row.project_id}
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -145,79 +145,95 @@ export default function Providers() {
         {projects.map((p) => {
           const rows = byProject[p.id] ?? [];
           return (
-            <div key={p.id} className="neo-card neo-card--strip-pink">
-              <div className="flex-row" style={{ justifyContent: 'space-between' }}>
-                <strong>{p.name}</strong>
-                <span className="label">{rows.length} provider{rows.length === 1 ? '' : 's'}</span>
+            <div key={p.id} className="vg-card">
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0, left: 0, right: 0, height: 3,
+                  borderRadius: 'var(--vg-radius-sm) var(--vg-radius-sm) 0 0',
+                  background: 'linear-gradient(90deg, var(--vg-teal), var(--vg-teal-bright))',
+                }}
+              />
+              <div className="flex-row" style={{ justifyContent: 'space-between', paddingTop: 4 }}>
+                <strong style={{ color: 'var(--vg-ink)', fontWeight: 700 }}>{p.name}</strong>
+                <span className="neo-badge neo-badge--info">
+                  {rows.length} provider{rows.length === 1 ? '' : 's'}
+                </span>
               </div>
-              <div className="label mt-sm">{p.description || p.id}</div>
+              <div className="vg-card__label mt-sm" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 500 }}>
+                {p.description || p.id}
+              </div>
 
               {rows.length === 0 ? (
                 <div className="empty-state mt-md">
                   No per-project keys yet. Click <strong>+ Add Provider</strong> to scope a key to this project.
                 </div>
               ) : (
-                <table className="neo-table mt-md">
-                  <thead>
-                    <tr>
-                      <th>Provider</th>
-                      <th>Key</th>
-                      <th>Source</th>
-                      <th>Status</th>
-                      <th style={{ textAlign: 'right' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row) => {
-                      const test = testResults[row.provider_id] ?? { kind: 'unknown' };
-                      const isDb = row.source === 'db';
-                      return (
-                        <tr key={row.provider_id}>
-                          <td className="mono">{row.provider}</td>
-                          <td className="mono">{row.api_key_masked ?? '—'}</td>
-                          <td><SourceBadge source={row.source} /></td>
-                          <td><TestDot status={test} /></td>
-                          <td style={{ textAlign: 'right' }}>
-                            <button
-                              className="neo-btn neo-btn--small"
-                              type="button"
-                              onClick={() => handleTestRow(row)}
-                              disabled={test.kind === 'testing'}
-                            >
-                              {test.kind === 'testing' ? 'Testing…' : 'Test'}
-                            </button>
-                            {' '}
-                            <button
-                              className="neo-btn neo-btn--small"
-                              type="button"
-                              onClick={() => setRotateTarget(row)}
-                              disabled={!isDb}
-                              title={isDb ? 'Rotate the api key' : 'YAML-defined keys: edit voicegw.yaml'}
-                            >
-                              Rotate
-                            </button>
-                            {' '}
-                            <button
-                              className="neo-btn neo-btn--small neo-btn--danger"
-                              type="button"
-                              onClick={() => handleDeleteRow(row)}
-                              disabled={!isDb}
-                              title={isDb ? 'Delete this key' : 'YAML-defined keys: edit voicegw.yaml'}
-                            >
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <div style={{ marginTop: 16, borderRadius: 'var(--vg-radius-xs)', overflow: 'hidden', border: '1px solid var(--vg-hairline)' }}>
+                  <table className="neo-table">
+                    <thead>
+                      <tr>
+                        <th>Provider</th>
+                        <th>Key</th>
+                        <th>Source</th>
+                        <th>Status</th>
+                        <th style={{ textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row) => {
+                        const test = testResults[row.provider_id] ?? { kind: 'unknown' };
+                        const isDb = row.source === 'db';
+                        return (
+                          <tr key={row.provider_id}>
+                            <td className="mono" style={{ fontWeight: 600 }}>{row.provider}</td>
+                            <td className="mono" style={{ color: 'var(--vg-muted)', fontSize: 12 }}>
+                              {row.api_key_masked ?? '—'}
+                            </td>
+                            <td><SourceBadge source={row.source} /></td>
+                            <td><TestDot status={test} /></td>
+                            <td style={{ textAlign: 'right' }}>
+                              <div className="flex-row" style={{ justifyContent: 'flex-end', gap: 6 }}>
+                                <button
+                                  className="neo-btn neo-btn--sm"
+                                  type="button"
+                                  onClick={() => handleTestRow(row)}
+                                  disabled={test.kind === 'testing'}
+                                >
+                                  {test.kind === 'testing' ? 'Testing...' : 'Test'}
+                                </button>
+                                <button
+                                  className="neo-btn neo-btn--sm"
+                                  type="button"
+                                  onClick={() => setRotateTarget(row)}
+                                  disabled={!isDb}
+                                  title={isDb ? 'Rotate the api key' : 'YAML-defined keys: edit voicegw.yaml'}
+                                >
+                                  Rotate
+                                </button>
+                                <button
+                                  className="neo-btn neo-btn--sm neo-btn--danger"
+                                  type="button"
+                                  onClick={() => handleDeleteRow(row)}
+                                  disabled={!isDb}
+                                  title={isDb ? 'Delete this key' : 'YAML-defined keys: edit voicegw.yaml'}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           );
         })}
         {projects.length === 0 && (
-          <div className="neo-card">
+          <div className="vg-card">
             <div className="empty-state">
               No projects configured. Add a project under the Projects page first; per-project provider keys live within projects.
             </div>
@@ -242,36 +258,27 @@ export default function Providers() {
 }
 
 function TestDot({ status }: { status: RowTestStatus }) {
-  let color = '#888';
+  let badgeClass = 'neo-badge';
   let label = 'untested';
   let title = 'Click Test to verify the key';
+
   if (status.kind === 'testing') {
-    color = '#FFD166';
+    badgeClass = 'neo-badge neo-badge--warning';
     label = 'testing';
     title = 'Health check in flight';
   } else if (status.kind === 'ok') {
-    color = '#8AC926';
+    badgeClass = 'neo-badge neo-badge--online';
     label = `ok ${status.latency_ms}ms`;
     title = `Last test ok in ${status.latency_ms}ms`;
   } else if (status.kind === 'failed') {
-    color = '#FF006E';
+    badgeClass = 'neo-badge neo-badge--offline';
     label = 'failed';
     title = status.message;
   }
+
   return (
-    <span title={title} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-      <span
-        aria-hidden="true"
-        style={{
-          display: 'inline-block',
-          width: 10,
-          height: 10,
-          borderRadius: '50%',
-          background: color,
-          border: '1px solid var(--ink, #000)',
-        }}
-      />
-      <span className="label" style={{ fontSize: 11 }}>{label}</span>
+    <span title={title} className={badgeClass}>
+      {label}
     </span>
   );
 }
@@ -312,50 +319,67 @@ function RotateProviderModal({
   return (
     <div className="neo-modal-backdrop" onClick={onClose}>
       <div className="neo-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Rotate Provider Key</h3>
-        <p className="label">
-          {row.project} / <span className="mono">{row.provider}</span>
-        </p>
-
-        <label className="label mt-md">New API Key</label>
-        <div className="flex-row" style={{ gap: '8px' }}>
-          <input
-            className="neo-input"
-            type={revealKey ? 'text' : 'password'}
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="sk-..."
-            autoComplete="off"
-            spellCheck={false}
-            disabled={saving}
-            style={{ flex: 1 }}
-          />
-          <button
-            className="neo-btn"
-            type="button"
-            onClick={() => setRevealKey((r) => !r)}
-            disabled={saving}
-          >
-            {revealKey ? 'Hide' : 'Show'}
-          </button>
+        <h3 style={{ marginBottom: 6, color: 'var(--vg-ink)' }}>Rotate Provider Key</h3>
+        <div style={{ fontSize: 13, color: 'var(--vg-muted)', marginBottom: 20 }}>
+          {row.project} / <span className="mono" style={{ color: 'var(--vg-teal-deep)' }}>{row.provider}</span>
         </div>
 
-        <label className="label mt-md">Base URL (optional)</label>
-        <input
-          className="neo-input"
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          placeholder="https://api.openai.com/v1"
-          disabled={saving}
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label className="vg-card__label" style={{ display: 'block', marginBottom: 6 }}>New API Key</label>
+            <div className="flex-row" style={{ gap: '8px' }}>
+              <input
+                className="neo-input"
+                type={revealKey ? 'text' : 'password'}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="sk-..."
+                autoComplete="off"
+                spellCheck={false}
+                disabled={saving}
+                style={{ flex: 1 }}
+              />
+              <button
+                className="neo-btn"
+                type="button"
+                onClick={() => setRevealKey((r) => !r)}
+                disabled={saving}
+              >
+                {revealKey ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="vg-card__label" style={{ display: 'block', marginBottom: 6 }}>Base URL (optional)</label>
+            <input
+              className="neo-input"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://api.openai.com/v1"
+              disabled={saving}
+              style={{ width: '100%' }}
+            />
+          </div>
+        </div>
 
         {error && (
-          <div className="empty-state mt-md" style={{ color: 'var(--accent-pink)' }}>
+          <div
+            className="mt-md"
+            style={{
+              background: 'var(--vg-red-tint)',
+              color: 'var(--vg-red)',
+              padding: '10px 14px',
+              borderRadius: 'var(--vg-radius-xs)',
+              fontSize: 13,
+              fontWeight: 500,
+            }}
+          >
             {error}
           </div>
         )}
 
-        <div className="flex-row mt-lg">
+        <div className="flex-row mt-lg" style={{ justifyContent: 'flex-end' }}>
           <button className="neo-btn" onClick={onClose} disabled={saving}>Cancel</button>
           <button
             className="neo-btn neo-btn--primary"
@@ -473,68 +497,81 @@ function AddProviderModal({
   return (
     <div className="neo-modal-backdrop" onClick={onClose}>
       <div className="neo-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Add Provider Key</h3>
+        <h3 style={{ marginBottom: 20, color: 'var(--vg-ink)' }}>Add Provider Key</h3>
 
-        <label className="label">Project</label>
-        <select
-          className="neo-select"
-          value={project}
-          onChange={(e) => setProject(e.target.value)}
-          disabled={saving}
-        >
-          {projects.length === 0 ? (
-            <option value="">No projects configured</option>
-          ) : null}
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
-          ))}
-        </select>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label className="vg-card__label" style={{ display: 'block', marginBottom: 6 }}>Project</label>
+            <select
+              className="neo-select"
+              value={project}
+              onChange={(e) => setProject(e.target.value)}
+              disabled={saving}
+              style={{ width: '100%' }}
+            >
+              {projects.length === 0 ? (
+                <option value="">No projects configured</option>
+              ) : null}
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
+              ))}
+            </select>
+          </div>
 
-        <label className="label mt-md">Provider</label>
-        <select
-          className="neo-select"
-          value={provider}
-          onChange={(e) => setProvider(e.target.value)}
-          disabled={saving}
-        >
-          {SUPPORTED_PROVIDERS.map((p) => (
-            <option key={p} value={p}>{p}</option>
-          ))}
-        </select>
+          <div>
+            <label className="vg-card__label" style={{ display: 'block', marginBottom: 6 }}>Provider</label>
+            <select
+              className="neo-select"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              disabled={saving}
+              style={{ width: '100%' }}
+            >
+              {SUPPORTED_PROVIDERS.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </div>
 
-        <label className="label mt-md">API Key</label>
-        <div className="flex-row" style={{ gap: '8px' }}>
-          <input
-            className="neo-input"
-            type={revealKey ? 'text' : 'password'}
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="sk-..."
-            autoComplete="off"
-            spellCheck={false}
-            disabled={saving}
-            style={{ flex: 1 }}
-          />
-          <button
-            className="neo-btn"
-            type="button"
-            onClick={() => setRevealKey((r) => !r)}
-            disabled={saving}
-          >
-            {revealKey ? 'Hide' : 'Show'}
-          </button>
+          <div>
+            <label className="vg-card__label" style={{ display: 'block', marginBottom: 6 }}>API Key</label>
+            <div className="flex-row" style={{ gap: '8px' }}>
+              <input
+                className="neo-input"
+                type={revealKey ? 'text' : 'password'}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="sk-..."
+                autoComplete="off"
+                spellCheck={false}
+                disabled={saving}
+                style={{ flex: 1 }}
+              />
+              <button
+                className="neo-btn"
+                type="button"
+                onClick={() => setRevealKey((r) => !r)}
+                disabled={saving}
+              >
+                {revealKey ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="vg-card__label" style={{ display: 'block', marginBottom: 6 }}>Base URL (optional)</label>
+            <input
+              className="neo-input"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://api.openai.com/v1"
+              disabled={saving}
+              style={{ width: '100%' }}
+            />
+          </div>
         </div>
 
-        <label className="label mt-md">Base URL (optional)</label>
-        <input
-          className="neo-input"
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          placeholder="https://api.openai.com/v1"
-          disabled={saving}
-        />
-
-        <div className="mt-md">
+        <div className="flex-row mt-md" style={{ alignItems: 'center', gap: 12 }}>
           <button
             className="neo-btn"
             type="button"
@@ -544,24 +581,34 @@ function AddProviderModal({
             {testState.kind === 'testing' ? 'Testing...' : 'Test connection'}
           </button>
           {testState.kind === 'ok' && (
-            <span className="neo-badge neo-badge--online" style={{ marginLeft: 12 }}>
+            <span className="neo-badge neo-badge--online">
               OK ({testState.latency_ms}ms)
             </span>
           )}
           {testState.kind === 'failed' && (
-            <span className="neo-badge neo-badge--offline" style={{ marginLeft: 12 }}>
+            <span className="neo-badge neo-badge--offline">
               {testState.message}
             </span>
           )}
         </div>
 
         {error && (
-          <div className="empty-state mt-md" style={{ color: 'var(--accent-pink)' }}>
+          <div
+            className="mt-md"
+            style={{
+              background: 'var(--vg-red-tint)',
+              color: 'var(--vg-red)',
+              padding: '10px 14px',
+              borderRadius: 'var(--vg-radius-xs)',
+              fontSize: 13,
+              fontWeight: 500,
+            }}
+          >
             {error}
           </div>
         )}
 
-        <div className="flex-row mt-lg">
+        <div className="flex-row mt-lg" style={{ justifyContent: 'flex-end' }}>
           <button className="neo-btn" onClick={onClose} disabled={saving}>Cancel</button>
           <button
             className="neo-btn neo-btn--primary"
