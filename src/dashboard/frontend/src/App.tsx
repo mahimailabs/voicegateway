@@ -181,16 +181,7 @@ function Sidebar({
                 display: 'grid', placeItems: 'center',
               }}
             />
-            <img
-              src="/static/branding/wordings.svg"
-              alt="VoiceGateway"
-              className="sidebar__wordmark sidebar__wordmark--light"
-            />
-            <img
-              src="/static/branding/wordings-dark.svg"
-              alt="VoiceGateway"
-              className="sidebar__wordmark sidebar__wordmark--dark"
-            />
+            <span className="sidebar__brandname">VoiceGateway</span>
           </div>
         )}
         <button

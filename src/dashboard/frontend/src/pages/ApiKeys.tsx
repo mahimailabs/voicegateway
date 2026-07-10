@@ -134,11 +134,11 @@ export default function ApiKeys() {
                       {revoked ? (
                         <span className="neo-badge neo-badge--black">revoked</span>
                       ) : stale ? (
-                        <span className="neo-badge" style={{ background: '#FFD166' }}>
+                        <span className="neo-badge neo-badge--warning">
                           stale
                         </span>
                       ) : (
-                        <span className="neo-badge" style={{ background: 'var(--accent-green)' }}>
+                        <span className="neo-badge neo-badge--green">
                           active
                         </span>
                       )}
@@ -302,9 +302,9 @@ function ShowKeyOnceModal({
         </p>
         <div
           className="neo-card mt-md"
-          style={{ background: '#FFF9C2', padding: '1rem' }}
+          style={{ background: 'var(--vg-amber-tint)', padding: '1rem', border: '1px solid var(--vg-hairline)' }}
         >
-          <code style={{ wordBreak: 'break-all', fontSize: '0.95rem' }}>
+          <code style={{ wordBreak: 'break-all', fontSize: '0.95rem', fontFamily: 'var(--vg-font-mono)', color: 'var(--vg-ink)' }}>
             {response.plaintext}
           </code>
         </div>
