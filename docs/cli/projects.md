@@ -27,7 +27,7 @@ voicegw project <PROJECT_ID> [OPTIONS]
 |---|---|---|---|---|
 | `--config` | `-c` | `string` | `null` | Path to `voicegw.yaml`. Auto-discovered if omitted. |
 
-## Options (project) {#project-detail}
+## Options (project)
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
