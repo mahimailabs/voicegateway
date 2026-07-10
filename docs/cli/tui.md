@@ -7,7 +7,7 @@ description: Launch the four-tab terminal UI for live monitoring of sessions, co
 
 Launch the four-tab terminal UI for live monitoring of sessions, costs, logs, and providers.
 
-## Purpose
+## Synopsis
 
 The `tui` command opens a Textual-based terminal interface that mirrors the web dashboard's read paths in a vim-friendly layout. Use it during local development for at-a-glance feedback on conversations and costs, during incident response when the daemon is partially degraded, or for postmortem inspection of the SQLite call DB after the daemon has been stopped.
 
@@ -16,7 +16,7 @@ Two modes are supported:
 - **Gateway mode** (default): polls the running daemon at 1 s cadence. Read paths and the Providers `t` test shortcut are available.
 - **Local mode** (`--local`): reads SQLite directly at 5 s cadence. Read paths only; write attempts raise `LocalModeUnsupportedError` and surface as a visible warning. A persistent `[Local mode]` chip is rendered in the header.
 
-## Syntax
+## Usage
 
 ```bash
 voicegw tui [OPTIONS]
@@ -24,15 +24,15 @@ voicegw tui [OPTIONS]
 
 ## Options
 
-| Flag | Type | Default | Description |
-|---|---|---|---|
-| `--local` | flag | off | Read SQLite directly; bypass the daemon regardless of its state. |
-| `--url` | `string` | from `voicegw.yaml` | Daemon URL. `0.0.0.0` from `serve.host` is rewritten to `127.0.0.1`. |
-| `--token` | `string` | `null` | Bearer token for daemon write paths. Required for the Providers `t` shortcut. |
-| `--history-limit` | `integer` | `100` | Initial row count for the Sessions and Logs tabs. |
-| `--theme` | `string` | `brand` | Color theme. `brand` is the default. |
-| `--poll` | `float` | mode-dependent | Polling cadence in seconds. Defaults: `1.0` (Gateway), `5.0` (Local). |
-| `--config` / `-c` | `string` | `null` | Path to `voicegw.yaml`. Auto-discovered if omitted. |
+| Flag | Short | Type | Default | Description |
+|---|---|---|---|---|
+| `--local` | | `flag` | off | Read SQLite directly; bypass the daemon regardless of its state. |
+| `--url` | | `string` | from `voicegw.yaml` | Daemon URL. `0.0.0.0` from `serve.host` is rewritten to `127.0.0.1`. |
+| `--token` | | `string` | `null` | Bearer token for daemon write paths. Required for the Providers `t` shortcut. |
+| `--history-limit` | | `integer` | `100` | Initial row count for the Sessions and Logs tabs. |
+| `--theme` | | `string` | `brand` | Color theme. |
+| `--poll` | | `float` | mode-dependent | Polling cadence in seconds. Defaults: `1.0` (Gateway), `5.0` (Local). |
+| `--config` | `-c` | `string` | `null` | Path to `voicegw.yaml`. Auto-discovered if omitted. |
 
 ## Prerequisites
 
@@ -40,6 +40,8 @@ The `tui` extra must be installed:
 
 ```bash
 pip install "voicegateway[tui]"
+# or with uv
+uv pip install "voicegateway[tui]"
 ```
 
 `pipx` users on a system install can inject it without reinstalling:
@@ -48,7 +50,7 @@ pip install "voicegateway[tui]"
 pipx inject voicegateway "voicegateway[tui]"
 ```
 
-For Gateway mode, the daemon must be reachable at the resolved URL. A 2 s preflight probe hits `GET /health` before Textual takes over the terminal; an unreachable daemon prints a one-line pointer and exits with code 1.
+For Gateway mode, the daemon must be reachable at the resolved URL. A 2 s preflight probe hits `GET /health` before Textual takes over the terminal. An unreachable daemon prints a one-line pointer and exits with code 1.
 
 ## Tabs
 
@@ -60,11 +62,11 @@ Recent voice conversations sorted by start time or total cost. Each row shows st
 
 ### Costs (`2`)
 
-Today's total as a single dollar number, with a per-modality breakdown (STT, LLM, TTS) beneath. Press `r` to cycle the active range between today, this week, and this month. Pricing is sourced from `voice-prices`, which version-stamps each source (`voice-prices@<version>`).
+Today's total as a single dollar number, with a per-modality breakdown (STT, LLM, TTS) beneath. Press `r` to cycle the active range between today, this week, and this month. Pricing is sourced from `voice-prices`, which version-stamps each source.
 
 ### Logs (`3`)
 
-Recent request logs in a `RichLog`-based tail viewer. New lines appear at the bottom in real time (polling-based; SSE is a future enhancement). Press `/` to filter to a substring; press `Escape` to clear the filter. Scrolling up disables auto-scroll until you return to the bottom.
+Recent request logs in a `RichLog`-based tail viewer. New lines appear at the bottom in real time (polling-based). Press `/` to filter to a substring; press `Escape` to clear the filter. Scrolling up disables auto-scroll until you return to the bottom.
 
 ### Providers (`4`)
 
@@ -72,7 +74,7 @@ Configured providers with a one-character indicator: `[ok]`, `[fail]`, or `[?]`.
 
 In Local mode, `t` raises `LocalModeUnsupportedError(feature='test_provider')`; the row's status stays unchanged and a warning notification (title: `Action requires the daemon`) surfaces so the failure is visible, not silent.
 
-## Vim Keybindings
+## Keybindings
 
 Vim navigation is consistent across all four tabs.
 
@@ -90,14 +92,14 @@ Vim navigation is consistent across all four tabs.
 | Key | Action |
 |---|---|
 | `j` / `k` | Focus next / previous row |
-| `h` / `l` | Alias for `k` / `j` (hidden in the footer hint) |
+| `h` / `l` | Alias for `k` / `j` |
 | `g` / `G` | Focus first / last row |
 
 ### Sessions extras
 
 | Key | Action |
 |---|---|
-| `s` | Toggle sort column (cost ↔ start time) |
+| `s` | Toggle sort column (cost vs start time) |
 | `Enter` | Open per-turn detail modal |
 | `Escape` / `q` | Close detail modal |
 
@@ -105,7 +107,7 @@ Vim navigation is consistent across all four tabs.
 
 | Key | Action |
 |---|---|
-| `r` | Cycle range (today → this week → this month) |
+| `r` | Cycle range (today / this week / this month) |
 
 ### Logs extras
 
@@ -122,7 +124,7 @@ Vim navigation is consistent across all four tabs.
 |---|---|
 | `t` | Run `test_provider` against the focused row |
 
-## Mode Comparison
+## Mode comparison
 
 | Aspect | Gateway mode | Local mode (`--local`) |
 |---|---|---|
@@ -132,74 +134,49 @@ Vim navigation is consistent across all four tabs.
 | Footer staleness suffix | live, no suffix | `(as of X ago)` from SQLite mtime |
 | Write actions (`t` shortcut) | live test against upstream | surfaces `LocalModeUnsupportedError` as warning notification |
 | Daemon required | yes (preflight enforced) | no (works when the daemon is down) |
-| Typical use | daily monitoring during development | postmortem after a daemon crash, audit on a stranger's machine |
+| Typical use | daily monitoring during development | postmortem after a daemon crash |
 
 ## Examples
 
-### Launch against the running daemon
-
 ```bash
+# Launch against the running daemon
 voicegw tui
 ```
 
-Resolves the daemon URL from `voicegw.yaml`, runs a 2 s health preflight, and opens the Sessions tab.
-
-### Launch in Local mode
-
 ```bash
+# Launch in Local mode (no daemon needed)
 voicegw tui --local
 ```
 
-Bypasses the daemon and reads the SQLite call DB directly. The `[Local mode]` chip stays visible in the header for the entire session.
-
-### Connect to a remote daemon
-
 ```bash
+# Connect to a remote daemon with authentication
 voicegw tui --url https://gateway.internal:8080 --token "$VG_TOKEN"
 ```
 
-Bearer token is sent on the health preflight and on every API call, including the Providers `t` shortcut.
-
-### Slower polling for shared environments
-
 ```bash
+# Slower polling for shared environments
 voicegw tui --poll 5.0
 ```
 
-Useful when running against a daemon that is also serving production traffic and you do not want the TUI's polling to register as a noticeable load.
-
 ## Troubleshooting
 
-### Terminal too small
+**Terminal too small:** The TUI assumes at least 80 cols x 24 rows. On smaller terminals, row content truncates and the help overlay may not render fully. Resize the terminal or open it in a fresh window.
 
-The TUI assumes at least 80 cols × 24 rows. On smaller terminals, row content truncates and the help overlay may not render fully. Resize the terminal or open it in a fresh window.
+**Colors look wrong:** Textual's `Color.downgrade()` auto-maps the brand-orange `#D85A30` to xterm color 166 on 256-color terminals. If colors look off, verify `TERM` is `xterm-256color` (or similar).
 
-### Colors look wrong on 256-color terminals
+**Local mode write attempts:** The `t` shortcut on Providers raises `LocalModeUnsupportedError` in Local mode. This is by design. To run a real test, start the daemon (`voicegw start`) and relaunch the TUI without `--local`.
 
-Textual's `Color.downgrade()` auto-maps the brand-orange `#D85A30` to xterm color 166 on 256-color terminals and to color 3 (yellow) or 1 (red) on 16-color terminals. If colors look off, verify `TERM` is `xterm-256color` (or similar). No code change is needed.
+**Daemon unreachable:** If `voicegw tui` exits with `Daemon at <url> is not reachable`, the 2 s health preflight failed. Verify the daemon is running (`voicegw status`) and that the `--url` is correct. For read-only inspection without the daemon, use `voicegw tui --local`.
 
-### Local mode write attempts
+**Reconnection:** If the daemon stops responding mid-session, the footer flips to `Reconnecting to daemon...`. The next successful poll cycle restores it.
 
-The `t` shortcut on Providers raises `LocalModeUnsupportedError` in Local mode. This is by design: the daemon is the only path that holds the upstream provider sessions and rate-limit budget. The warning notification names the unsupported feature (`test_provider`). To run a real test, start the daemon (`voicegw start`) and relaunch the TUI without `--local`.
-
-### Daemon unreachable
-
-If `voicegw tui` exits with `Daemon at <url> is not reachable`, the 2 s health preflight failed. Verify the daemon is running (`voicegw status`) and that the `--url` is correct. For read-only inspection of the SQLite call DB without the daemon, use `voicegw tui --local`.
-
-### Reconnection
-
-If the daemon stops responding mid-session, the footer flips to `Reconnecting to daemon...`. The next successful poll cycle replaces it with the live counter. The polling cadence (1 s default in Gateway mode) is the retry interval; exponential backoff is deferred to a future milestone.
-
-## Exit Codes
+## Exit codes
 
 | Code | Meaning |
 |---|---|
-| `0` | Clean exit (user pressed `q` or `Ctrl+C`). |
+| `0` | Clean exit (user pressed `q` or Ctrl+C). |
 | `1` | Daemon unreachable in Gateway mode, or any launch-time failure (corrupt SQLite in Local mode, missing `[tui]` extra, etc.). |
 
-## Related Commands
+## Related
 
-- [`voicegw status`](/cli/status) -- quick non-interactive provider status
-- [`voicegw dashboard`](/cli/dashboard) -- the web counterpart to the TUI
-- [`voicegw costs`](/cli/costs) -- non-interactive cost summary
-- [`voicegw logs`](/cli/logs) -- non-interactive log tail
+[`voicegw status`](/cli/status) | [`voicegw dashboard`](/cli/dashboard) | [`voicegw costs`](/cli/costs) | [`voicegw logs`](/cli/logs)
