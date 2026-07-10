@@ -944,6 +944,12 @@ a:hover { color: var(--vg-teal-deep); }
 .info-table td { padding: 9px 0; border-bottom: 1px solid var(--vg-hairline-2); }
 .info-table td:first-child { width: 180px; font-weight: 600; color: var(--vg-muted); }
 
+/* Filter bar (settings audit-log and similar filter rows) */
+.filter-bar {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 16px; flex-wrap: wrap;
+}
+
 /* ============================================================
    Segmented time-range control (D1: cloud tokens)
    ============================================================ */

@@ -126,7 +126,7 @@ function GeneralTab() {
 
   return (
     <div className="mt-lg">
-      <div className="neo-card neo-card--strip-pink">
+      <div className="neo-card">
         <div className="label">Gateway Info</div>
         <table className="info-table mt-md">
           <tbody>
