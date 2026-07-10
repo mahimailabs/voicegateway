@@ -203,11 +203,12 @@ voicegw serve
 
 **Fix:**
 
-1. The `voicegateway.inference.STT/LLM/TTS` factories are **synchronous** and handle event loop bridging internally on first construction (loading the merged config). This usually works fine inside a running event loop (Jupyter, FastAPI handlers, etc.):
+1. `Gateway.stt()`, `Gateway.llm()`, and `Gateway.tts()` are **synchronous** and handle event loop bridging internally on first construction (loading the merged config). This usually works fine inside a running event loop (Jupyter, FastAPI handlers, etc.):
    ```python
-   from voicegateway import inference
+   from voicegateway import Gateway
 
-   stt = inference.STT("deepgram/nova-3")
+   gw = Gateway.from_config()
+   stt = gw.stt("deepgram/nova-3")
    ```
    If you see "already running event loop" errors during the first factory call (rare), isolate the setup in a separate thread or apply `nest_asyncio` (see below).
 2. If running in a script (not an async framework), use `asyncio.run()`:
@@ -330,5 +331,5 @@ pip list | grep livekit
 - [FAQ](/reference/faq)
 - [Installation](/guide/installation)
 - [Quick Start](/guide/quick-start)
-- [Contributing](/contributing/)
+- [Contributing](/contributing/index)
 - [Changelog](https://github.com/mahimailabs/voicegateway/blob/main/CHANGELOG.md)
