@@ -14,6 +14,11 @@ hard line, and control lives in [`guard()`](/guide/guard).
 Because `attach()` is the *single* meter, pairing it with `guard()` never
 double-counts. `guard()` writes no metrics of its own.
 
+<Note>
+For the conceptual model behind these two seams (attach observes, guard controls,
+RequestRecord, Sink, projects, voice-prices), read [Core Concepts](/guide/core-concepts) first.
+</Note>
+
 ## Signature
 
 ```python
@@ -34,92 +39,93 @@ voicegateway.attach(
 observer. The return value is the session id that ties every captured row
 together, so you can echo it into your own logs.
 
-## LiveKit: attach(session)
+## Wiring
 
-Construct your `AgentSession` with native `livekit.plugins` providers, then
-attach before you start it:
+<Tabs>
+  <Tab title="LiveKit">
+    Construct your `AgentSession` with native `livekit.plugins` providers, then
+    attach before you start it:
 
-```python
-from livekit.agents import Agent, AgentSession
-from livekit.plugins import deepgram, openai, cartesia
+    ```python
+    from livekit.agents import Agent, AgentSession
+    from livekit.plugins import deepgram, openai, cartesia
 
-import voicegateway
+    import voicegateway
 
 
-async def entrypoint(ctx):
-    await ctx.connect()
+    async def entrypoint(ctx):
+        await ctx.connect()
 
-    session = AgentSession(
-        stt=deepgram.STT(model="nova-3"),
-        llm=openai.LLM(model="gpt-4o-mini"),
-        tts=cartesia.TTS(model="sonic-3"),
+        session = AgentSession(
+            stt=deepgram.STT(model="nova-3"),
+            llm=openai.LLM(model="gpt-4o-mini"),
+            tts=cartesia.TTS(model="sonic-3"),
+        )
+
+        # One call. Every STT / LLM / TTS metric is metered from here on.
+        voicegateway.attach(session, project="my-agent")
+
+        await session.start(agent=Agent(instructions="Be helpful."), room=ctx.room)
+    ```
+
+    On the LiveKit path `attach()` subscribes to the per-component
+    `metrics_collected` events, so it works with any plugin without wrapping it.
+    The session's `close` event finalizes the meter (drains in-flight writes and
+    flushes the sink), so a graceful shutdown loses nothing.
+  </Tab>
+  <Tab title="Pipecat">
+    Pipecat has no cumulative usage aggregate, so `attach()` sums the metrics it
+    observes. Enable Pipecat's metrics on the task, then either call `attach(task)`
+    or pass an exported `Observer` to the task constructor. Both do the same thing.
+
+    <Warning>
+    Pipecat metrics must be explicitly enabled. Without `enable_metrics` and
+    `enable_usage_metrics`, Pipecat emits no usage frames and there is nothing for
+    `attach()` to record.
+    </Warning>
+
+    **Option A: attach(task).**
+
+    ```python
+    from pipecat.pipeline.pipeline import Pipeline
+    from pipecat.pipeline.task import PipelineParams, PipelineTask
+    from pipecat.services.deepgram.stt import DeepgramSTTService
+    from pipecat.services.openai.llm import OpenAILLMService
+    from pipecat.services.cartesia.tts import CartesiaTTSService
+
+    import voicegateway
+
+    stt = DeepgramSTTService(api_key=DEEPGRAM_API_KEY)
+    llm = OpenAILLMService(api_key=OPENAI_API_KEY, model="gpt-4o-mini")
+    tts = CartesiaTTSService(api_key=CARTESIA_API_KEY, voice_id=VOICE_ID)
+
+    pipeline = Pipeline([transport.input(), stt, llm, tts, transport.output()])
+    task = PipelineTask(
+        pipeline,
+        params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
     )
 
-    # One call. Every STT / LLM / TTS metric is metered from here on.
-    voicegateway.attach(session, project="my-agent")
+    voicegateway.attach(task, project="my-agent")
+    ```
 
-    await session.start(agent=Agent(instructions="Be helpful."), room=ctx.room)
-```
+    **Option B: Observer in the constructor.**
 
-On the LiveKit path `attach()` subscribes to the per-component
-`metrics_collected` events, so it works with any plugin without wrapping it. The
-session's `close` event finalizes the meter (drains in-flight writes and flushes
-the sink), so a graceful shutdown loses nothing.
+    ```python
+    import voicegateway
 
-## Pipecat: attach(task) or Observer
+    task = PipelineTask(
+        pipeline,
+        params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
+        observers=[voicegateway.Observer(project="my-agent")],
+    )
+    ```
 
-Pipecat has no cumulative usage aggregate, so `attach()` sums the metrics it
-observes. Enable Pipecat's metrics on the task, then either call `attach(task)`
-or pass an exported `Observer` to the task constructor. Both do the same thing.
-
-**Enable Pipecat metrics.** The observer meters `MetricsFrame`s, so the pipeline
-must emit them:
-
-```python
-from pipecat.pipeline.task import PipelineParams, PipelineTask
-
-params = PipelineParams(enable_metrics=True, enable_usage_metrics=True)
-```
-
-Without `enable_metrics` / `enable_usage_metrics`, Pipecat emits no usage frames
-and there is nothing for `attach()` to record.
-
-**Option A: attach(task).**
-
-```python
-from pipecat.pipeline.pipeline import Pipeline
-from pipecat.pipeline.task import PipelineParams, PipelineTask
-from pipecat.services.deepgram.stt import DeepgramSTTService
-from pipecat.services.openai.llm import OpenAILLMService
-from pipecat.services.cartesia.tts import CartesiaTTSService
-
-import voicegateway
-
-pipeline = Pipeline([transport.input(), stt, llm, tts, transport.output()])
-task = PipelineTask(
-    pipeline,
-    params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
-)
-
-voicegateway.attach(task, project="my-agent")
-```
-
-**Option B: Observer in the constructor.**
-
-```python
-import voicegateway
-
-task = PipelineTask(
-    pipeline,
-    params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
-    observers=[voicegateway.Observer(project="my-agent")],
-)
-```
-
-`voicegateway.Observer` takes the same keyword arguments as `attach()`
-(`project`, `agent_id`, `tenant_id`, `channel`, `collector_url`, `api_key`,
-`sink`). The observer finalizes itself on the pipeline end (`EndFrame`): it drains
-any pending STT audio into a final record and flushes the sink.
+    `voicegateway.Observer` takes the same keyword arguments as `attach()`
+    (`project`, `agent_id`, `tenant_id`, `channel`, `collector_url`, `api_key`,
+    `sink`). The observer finalizes itself on the pipeline end (`EndFrame`): it
+    drains any pending STT audio into a final record and flushes the sink.
+  </Tab>
+</Tabs>
 
 ## What it records
 
@@ -157,13 +163,19 @@ telephony, while a Daily / WebRTC / websocket transport means web. Pass
 **Session** correlation is automatic. Every row from one attached session (or
 pipeline) shares the returned session id, which the dashboard uses to group a
 conversation and its per-turn timeline. On LiveKit the id is created when the
-session context opens; on Pipecat it is created when you attach. Multi-tenant
-operators pass `tenant_id=` to slice costs per customer.
+session context opens; on Pipecat it is created when you attach.
+
+<Tip>
+Multi-tenant operators pass `tenant_id=` to slice costs per customer. Each row
+is labelled so the dashboard and API can filter or group by tenant. See
+[Multi-tenant quickstart](/guide/multi-tenant-quickstart) for a worked example.
+</Tip>
 
 ## See also
 
+- [Core Concepts](/guide/core-concepts): the two-seam model, RequestRecord, Sink, projects, and voice-prices.
 - [guard()](/guide/guard): the active control seam that composes with `attach()`.
 - [Frameworks and extras](/guide/frameworks): install `voicegateway[livekit]` vs
   `voicegateway[pipecat]`.
 - [Migration guide](/guide/migration-attach-guard): moving off the deprecated
-  `voicegateway.LLM/STT/TTS` factories.
+  `voicegateway.LLM/STT/TTS` factories to native + attach + guard.

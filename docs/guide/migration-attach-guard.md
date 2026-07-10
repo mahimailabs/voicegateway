@@ -11,6 +11,12 @@ The `voicegateway.LLM("openai/gpt-4o")` / `STT(...)` / `TTS(...)` factories are
 to the framework-neutral shape: **native providers + `attach()`**, plus
 [`guard()`](/guide/guard) where you had fallback or limits.
 
+<Note>
+The deprecated factories were part of the old `voicegateway.inference` module.
+If you imported from there, the same migration applies: replace factory calls
+with native providers and wire `attach()` once per session.
+</Note>
+
 ## Why the change
 
 - **No more double-count.** The old factories and `attach()` both subscribed to
@@ -40,9 +46,9 @@ you guard.
 
 ## LiveKit
 
-Before:
+<CodeGroup>
 
-```python
+```python Before
 from livekit.agents import Agent, AgentSession
 from voicegateway import LLM, STT, TTS  # deprecated
 
@@ -54,9 +60,7 @@ session = AgentSession(
 await session.start(agent=Agent(instructions="Be helpful."), room=ctx.room)
 ```
 
-After:
-
-```python
+```python After
 from livekit.agents import Agent, AgentSession
 from livekit.plugins import deepgram, openai, cartesia
 
@@ -74,7 +78,9 @@ voicegateway.attach(session, project="my-agent")
 await session.start(agent=Agent(instructions="Be helpful."), room=ctx.room)
 ```
 
-If a modality had fallback or limits, wrap just that provider:
+</CodeGroup>
+
+If a modality had fallback or limits, wrap just that provider with `guard()`:
 
 ```python
 llm=voicegateway.guard(
@@ -91,7 +97,14 @@ The old factories were LiveKit-only. On Pipecat you construct native
 `pipecat.services.*` and observe them the same way. Enable Pipecat's metrics so
 there is usage for `attach()` to record:
 
-```python
+<CodeGroup>
+
+```python Before (no native Pipecat support existed)
+# The old factories did not support Pipecat. You had no VoiceGateway metering
+# unless you imported from voicegateway.inference and ran LiveKit-only code.
+```
+
+```python After
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.services.deepgram.stt import DeepgramSTTService
@@ -117,6 +130,8 @@ task = PipelineTask(
 voicegateway.attach(task, project="my-agent")
 ```
 
+</CodeGroup>
+
 ## Install the right extra
 
 The factories pulled `livekit` implicitly. Now install the extra for the
@@ -141,8 +156,14 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="voicegateway")
 ```
 
+<Tip>
+Remove the filter as soon as you have migrated all call sites. The filter hides
+real warnings if you leave it in.
+</Tip>
+
 ## See also
 
+- [Core Concepts](/guide/core-concepts): the two-seam model and why metering and control are separate.
 - [attach()](/guide/attach): the single meter.
 - [guard()](/guide/guard): fallback, rate limits, and spend caps.
 - [Frameworks and extras](/guide/frameworks): the framework-neutral core and
