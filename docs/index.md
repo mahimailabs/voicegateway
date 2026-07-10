@@ -1,75 +1,79 @@
 ---
-layout: home
-
-hero:
-  name: VoiceGateway
-  text: Cost tracking and reconciliation for LiveKit voice agents
-  tagline: Modality-aware unit accounting. LLM, STT, and TTS prices from voice-prices. Verify against provider invoices with voicegw reconcile.
-  image:
-    src: /logo.svg
-    alt: VoiceGateway
-  actions:
-    - theme: brand
-      text: Get Started
-      link: /guide/quick-start
-    - theme: alt
-      text: View on GitHub
-      link: https://github.com/mahimailabs/voicegateway
-
-features:
-  - icon: "\U0001F50C"
-    title: One-line drop-in for livekit.agents.inference
-    details: "voicegateway.inference.STT, LLM, TTS mirror LiveKit's inference module signature. Swap the import line; the rest of your agent code keeps working. Cost tracking, latency monitoring, and session correlation happen transparently."
-    link: /guide/quick-start
-    linkText: See the integration
-
-  - icon: "\U0001F4B0"
-    title: Modality-aware unit accounting
-    details: "LLM cost per-1k-token, STT cost per-audio-minute, TTS cost per-character. Prices for all three modalities come from voice-prices (a fork of pydantic/genai-prices that covers LLM, STT, and TTS)."
-    link: /configuration/observability
-    linkText: How it works
-
-  - icon: "\U0001F9FE"
-    title: Reconciliation tooling
-    details: "voicegw export-costs and voicegw reconcile compare logged costs against your provider's usage export. Per-request line items carry pricing_source attribution. LLM costs may drift up to ~5%; reconciliation is the verification path."
-    link: /guide/cost-reconciliation
-    linkText: Walk through reconcile
-
-  - icon: "\U0001F916"
-    title: MCP server for agent-managed config
-    details: "17 tools (configure providers, create projects with daily budgets, query costs, tail logs, run health checks) over stdio and HTTP/SSE. Claude Code, Cursor, Codex, and Cline can all manage the gateway conversationally."
-    link: /mcp/
-    linkText: Explore MCP
+title: VoiceGateway
+description: Cost tracking, observability, and control for LiveKit and Pipecat voice agents. Attach one line to your existing agent and see per-modality spend land in the dashboard.
 ---
 
-## Where VoiceGateway fits
+VoiceGateway meters what your voice agents actually cost. It attaches to an agent you
+already run on **LiveKit Agents** or **Pipecat**, records LLM tokens, STT audio-minutes,
+and TTS characters per request, prices them through `voice-prices`, and reconciles the
+totals against your provider invoices.
 
-VoiceGateway is purpose-built for LiveKit voice agents that want cost visibility per modality (audio-minutes for STT, tokens for LLM, characters for TTS) and reconciliation against actual provider invoices. For a longer breakdown of which tool fits which workload, see the [decision tree](/guide/decision-tree).
+The core is framework-neutral: `import voicegateway` pulls neither framework. Two seams do
+the work. [`attach()`](/guide/attach) observes (passive: cost and latency).
+[`guard()`](/guide/guard) controls (active: fallback, rate limits, budgets).
+
+<CardGroup cols={2}>
+  <Card title="What is VoiceGateway" icon="circle-question" href="/guide/what-is-voicegateway">
+    The problem it solves and where it fits in a voice stack.
+  </Card>
+  <Card title="Self-host quickstart" icon="rocket" href="/guide/quick-start">
+    Install, attach to your LiveKit or Pipecat agent, see costs in minutes.
+  </Card>
+  <Card title="Hosted Cloud" icon="cloud" href="/hosted/quickstart">
+    Skip the daemon. Point your agent at the hosted collector.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/cli/index">
+    Every `voicegw` command: serve, dashboard, costs, reconcile.
+  </Card>
+  <Card title="API reference" icon="code" href="/api/index">
+    Python SDK, HTTP API, MCP server, dashboard API, architecture.
+  </Card>
+  <Card title="Decision tree" icon="signs-post" href="/guide/decision-tree">
+    Self-host or Cloud, attach or guard: pick the right path.
+  </Card>
+</CardGroup>
 
 ## Install
 
+Install the extra for the framework you run. Provider plugin extras imply the framework, so
+one line pulls the runtime and the plugins you name.
+
 <CodeGroup>
 
-```bash pip
-pip install voicegateway[all]
+```bash uv
+uv pip install "voicegateway[livekit]"     # or [pipecat]
 ```
 
-```bash docker
-git clone https://github.com/mahimailabs/voicegateway
-cd voicegateway
-docker compose up -d
+```bash pip
+pip install "voicegateway[livekit]"        # or [pipecat]
 ```
 
 </CodeGroup>
 
-## Use from Claude Code
+## Attach in one line
 
-```bash
-claude mcp add voicegateway --command "voicegw mcp --transport stdio"
-```
+Build your agent exactly as you do today, then hand the session (LiveKit) or task
+(Pipecat) to `attach()`. It detects the framework, meters every request, and writes the
+records. Nothing else in your agent changes.
 
-Now ask Claude Code:
+<Tabs>
+  <Tab title="LiveKit">
+    ```python
+    from voicegateway import attach
 
-> "Add Deepgram with this API key. Register nova-3 for STT. Create a project for Tony's Pizza with a five dollar daily budget using premium stack."
+    session = AgentSession(stt=stt, llm=llm, tts=tts)
+    attach(session, project="my-agent")   # meters cost + latency
+    ```
+  </Tab>
+  <Tab title="Pipecat">
+    ```python
+    from voicegateway import attach
 
-Done in 30 seconds. No YAML editing, no dashboard clicking.
+    task = PipelineTask(pipeline)
+    attach(task, project="my-agent")      # meters cost + latency
+    ```
+  </Tab>
+</Tabs>
+
+Ready to go deeper? Start with [Self-host quickstart](/guide/quick-start), or read how
+[`attach()`](/guide/attach) and [`guard()`](/guide/guard) split observe from control.
