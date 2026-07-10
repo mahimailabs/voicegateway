@@ -73,9 +73,14 @@ async def entrypoint(ctx):
 ```python
 import voicegateway
 from pipecat.pipeline.pipeline import Pipeline
+from pipecat.pipeline.task import PipelineParams, PipelineTask
 
 pipeline = Pipeline([...])
-voicegateway.attach(pipeline, project="my-agent")
+task = PipelineTask(
+    pipeline,
+    params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
+)
+voicegateway.attach(task, project="my-agent")
 ```
 
   </Tab>
