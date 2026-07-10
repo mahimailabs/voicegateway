@@ -1,17 +1,29 @@
 ---
 title: Voice-specific guardrails
-description: Project-scoped, LLM-side guardrails for voice agents, injected through the inference.LLM(...) drop-in path.
+description: Project-scoped, LLM-side guardrails for voice agents. Configure categories and actions per project in voicegw.yaml; VoiceGateway injects a versioned guardrail block into the LLM chat context at runtime.
 ---
 
 # Voice-specific guardrails
 
-VoiceGateway provides project-scoped, LLM-side guardrails for voice agents. Guardrails are injected through the existing `voicegateway.inference.LLM(...)` drop-in path, so agent code keeps the same LiveKit construction pattern.
+VoiceGateway provides project-scoped, LLM-side guardrails for voice agents. A
+guardrail policy appends a versioned system-prompt block to the chat context and
+registers one reserved function tool named `report_guardrail_action`, so the
+model can flag when a category fires.
 
-Guardrails do not create a proxy session service, do not inspect raw audio, and do not intercept arbitrary tool calls. They append a versioned system prompt block to the LiveKit chat context and register one reserved LiveKit function tool named `report_guardrail_action`.
+Guardrails do not create a proxy session service, do not inspect raw audio, and
+do not intercept arbitrary tool calls. They are prompt-side controls.
+
+<Note>
+Guardrails are prompt-side controls, not a deterministic safety classifier. They
+depend on the selected LLM following instructions and calling the reserved tool.
+Use provider-native moderation, contractual compliance review, and reconciliation
+for higher-assurance workflows.
+</Note>
 
 ## Policy model
 
-Guardrail policies live per project. The default is disabled, with every category set to `off`.
+Guardrail policies live per project in `voicegw.yaml`. The default is disabled,
+with every category set to `off`.
 
 ```yaml
 projects:
@@ -27,29 +39,54 @@ projects:
         off_topic: off
 ```
 
-Categories:
+### Categories
 
-- `pii`
-- `financial`
-- `medical`
-- `prompt_injection`
-- `off_topic`
+- `pii`: personally identifiable information (names, phone numbers, account numbers).
+- `financial`: financial advice, account balances, transaction details.
+- `medical`: medical advice or diagnoses.
+- `prompt_injection`: attempts to override or escape the system prompt.
+- `off_topic`: requests outside the agent's declared scope.
 
-Actions:
+### Actions
 
 - `redact`: answer without repeating the sensitive detail.
 - `block`: decline the current turn with a brief, neutral response.
 - `alert`: continue normally and write an audit event.
-- `off`: disable that category.
+- `off`: disable that category entirely.
+
+## How guardrails are applied
+
+Guardrail injection happens inside VoiceGateway's instrumented LLM wrapper. When a
+project has an enabled policy, that wrapper rewrites the chat context on the first
+guarded LLM turn: it appends the guardrail block and registers the reserved tool
+before delegating to the underlying provider.
+
+<Warning>
+Guardrail injection runs through the instrumented LLM path (the
+`voicegateway.LLM(...)` provider wrapper). The passive [`attach()`](/guide/attach)
+seam meters cost and latency but does not modify prompts, so `attach()` alone does
+not inject guardrails. [`guard()`](/guide/guard) is control-only (fallback, rate
+limiting, budgets) and does not inject them either. Route your LLM through the
+gateway's LLM wrapper for the policy to take effect. If your agent uses only
+native providers plus `attach()`, the policy is recorded as active but no block is
+injected.
+</Warning>
+
+This is a known gap: guardrail injection is not yet wired into the `attach()` /
+`guard()` seams. See [the migration guide](/guide/migration-attach-guard) for how
+the instrumented wrapper relates to the current API.
 
 ## Runtime behavior
 
-On the first guarded LLM chat in a session, VoiceGateway freezes the active project policy. Later dashboard or API edits affect new sessions only.
+On the first guarded LLM chat in a session, VoiceGateway freezes the active
+project policy. Later dashboard or API edits affect new sessions only.
 
 When guardrails are active:
 
-- VoiceGateway appends a `<voicegateway_guardrails version="v0.6.0">` block after existing system/developer instructions.
-- VoiceGateway registers `report_guardrail_action(category, action, context_excerpt)`.
+- VoiceGateway appends a `voicegateway_guardrails` block (version `v0.6.0`) after
+  existing system or developer instructions.
+- VoiceGateway registers `report_guardrail_action(category, action, context_excerpt)`
+  as a reserved function tool.
 - A user-defined tool with the same name is rejected for that session.
 - Audit rows are written to `guardrail_events` with `event_type = fired`.
 
@@ -60,22 +97,19 @@ Session detail responses include:
 - `guardrail_policy_snapshot`
 - `guardrail_events`
 
-This lets the dashboard distinguish "active policy, zero events" from "no guardrail audit".
+This lets the dashboard distinguish "active policy, zero events" from "no
+guardrail audit".
 
-## Bypass
+## Disabling and bypass
 
-Use bypass only for trusted internal sessions where the operator intentionally wants no injection. VoiceGateway records a bypass audit event when the frozen policy would otherwise be active.
+To turn a policy off, set `enabled: false` for the project, or set individual
+categories to `off`. Both take effect for new sessions (the policy is frozen per
+session at the first guarded turn).
 
-```python
-from voicegateway import inference
-
-session_id = inference.start_session(bypass_guardrails=True)
-
-# Or, when binding a custom LiveKit AgentSession:
-inference.attach_session(agent_session, bypass_guardrails=True)
-```
-
-Bypass skips prompt/tool injection for the session. The bypass row has `event_type = bypassed`; `category` and `action` are `NULL`.
+A per-session bypass path exists internally for trusted sessions and writes a
+`bypassed` audit event when the frozen policy would otherwise be active. It is not
+part of the public `attach()` / `guard()` surface; use the policy config above to
+control guardrails from your agent.
 
 ## CLI
 
@@ -88,21 +122,33 @@ voicegw guardrails clear --project support
 voicegw guardrails dry-run --project support
 ```
 
-Use `VOICEGW_API_KEY` when your dashboard API requires auth.
+Set `VOICEGW_API_KEY` when your dashboard API requires auth.
 
-## API
-
-Server API:
+## HTTP API
 
 - `GET /v1/projects/{id}/guardrails`
 - `POST /v1/projects/{id}/guardrails`
 - `GET /v1/guardrails/events`
 - `GET /v1/guardrails/aggregate`
 
-Dashboard API mirrors these under `/api/...`.
+The dashboard API mirrors these under `/api/...`.
 
-Aggregates count only `fired` rows. Event listings can include both `fired` and `bypassed`.
+Aggregates count only `fired` rows. Event listings can include both `fired` and
+`bypassed`.
 
-## Caveats
+## See also
 
-These guardrails are prompt-side controls, not a deterministic safety classifier. They depend on the selected LLM following instructions and calling the reserved tool. Use provider-native moderation, contractual compliance review, and invoice/log reconciliation for higher-assurance workflows.
+<CardGroup>
+  <Card title="Guardrail prompts reference" href="/reference/guardrail-prompts">
+    The exact prompt blocks VoiceGateway injects per category and action.
+  </Card>
+  <Card title="Configuration: projects" href="/configuration/projects">
+    Set guardrail policies per project in voicegw.yaml.
+  </Card>
+  <Card title="attach()" href="/guide/attach">
+    The passive metering seam (does not inject guardrails).
+  </Card>
+  <Card title="Migration guide" href="/guide/migration-attach-guard">
+    How the instrumented LLM wrapper relates to the current API.
+  </Card>
+</CardGroup>
