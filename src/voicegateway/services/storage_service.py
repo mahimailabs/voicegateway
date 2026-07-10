@@ -10,6 +10,7 @@ from typing import Any
 from voicegateway.core.config import GatewayConfig
 from voicegateway.core.database import Database
 from voicegateway.models.request_model import RequestRecord
+from voicegateway.services.billing_service import BillingService
 from voicegateway.services.cost_service import CostService
 from voicegateway.services.latency_service import LatencyService
 from voicegateway.services.managed_config_service import ManagedConfigService
@@ -51,6 +52,7 @@ class StorageService:
         self._init_lock = asyncio.Lock()
         self._request_log_service = RequestLogService(self._conn)
         self._cost_service = CostService(self._conn)
+        self._billing_service = BillingService(self._conn)
         self._latency_service = LatencyService(self._conn)
         self._session_service = SessionService(self._conn)
         self._managed_config_service = ManagedConfigService(self._conn)
@@ -183,6 +185,42 @@ class StorageService:
         await self._ensure_initialized()
         return await self._cost_service.get_by_modality(
             period=period, project=project, start_ts=start_ts, end_ts=end_ts
+        )
+
+    async def get_billable_usage(
+        self,
+        period: str = "month",
+        start_ts: float | None = None,
+        end_ts: float | None = None,
+        project: str | None = None,
+        tenant: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Delegate to BillingService.get_billable_usage."""
+        await self._ensure_initialized()
+        return await self._billing_service.get_billable_usage(
+            period=period,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            project=project,
+            tenant=tenant,
+        )
+
+    async def get_tenant_line_items(
+        self,
+        tenant: str,
+        period: str = "month",
+        start_ts: float | None = None,
+        end_ts: float | None = None,
+        project: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Delegate to BillingService.get_tenant_line_items."""
+        await self._ensure_initialized()
+        return await self._billing_service.get_tenant_line_items(
+            tenant=tenant,
+            period=period,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            project=project,
         )
 
     async def get_latency_stats(
@@ -422,4 +460,3 @@ class StorageService:
         """Delegate to ManagedConfigService.delete_project."""
         await self._ensure_initialized()
         return await self._managed_config_service.delete_project(project_id)
-
