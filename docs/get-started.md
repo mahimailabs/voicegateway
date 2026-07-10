@@ -1,157 +1,143 @@
 ---
-title: Get started
-description: Install VoiceGateway, run the onboarding wizard, see your first provider call land in the dashboard. 60 seconds, excluding the time it takes to fetch your provider API key.
+title: Get started (Self-Host)
+description: Install VoiceGateway alongside your existing LiveKit or Pipecat agent, call attach() once, and see per-call costs in the dashboard in under five minutes.
 ---
 
 # Get started
 
-VoiceGateway runs as a long-lived background daemon that serves both
-the HTTP API and the dashboard on a single port. From a fresh machine
-to your first inference call: one curl, one wizard. The 60-second
-clock starts when you paste the install command and stops when your
-first call shows up in the dashboard, excluding the time spent
-fetching your provider API key.
+VoiceGateway plugs into a LiveKit or Pipecat agent you already have. You keep
+your native provider plugins. VoiceGateway adds one `attach()` call that meters
+every STT, LLM, and TTS request and writes the costs to a local dashboard.
 
-## 1. Install
+<Steps>
+  <Step title="Install the extra for your framework">
+    <CodeGroup>
+    ```bash uv
+    # LiveKit Agents
+    uv pip install "voicegateway[livekit]"
 
-```bash
-curl -fsSL https://voicegateway.mahimai.ca/install.sh | bash
-```
+    # Pipecat
+    uv pip install "voicegateway[pipecat]"
+    ```
+    ```bash pip
+    # LiveKit Agents
+    pip install "voicegateway[livekit]"
 
-What the installer does:
+    # Pipecat
+    pip install "voicegateway[pipecat]"
+    ```
+    </CodeGroup>
 
-- Detects macOS, Linux, or WSL on Windows. Refuses cleanly on
-  anything else.
-- Verifies Python 3.11 or newer is installed. Refuses with package
-  manager pointers if not (does not auto-install Python).
-- Picks `uv tool install` when uv is on PATH, otherwise installs
-  pipx if missing and runs `pipx install voicegateway[cloud,dashboard]`.
-- Asks before any privileged step.
-- Prints the next-step command.
+    Python 3.11 or later is required. See [Installation](/guide/installation) for
+    provider extras and Docker options.
+  </Step>
 
-If you prefer not to pipe a remote script:
+  <Step title="Attach to your existing agent">
+    Add `import voicegateway` and one `attach()` call. Keep every native provider
+    plugin exactly as it is.
 
-```bash
-pipx install 'voicegateway[cloud,dashboard]'
-```
+    <Tabs>
+      <Tab title="LiveKit">
+        ```python
+        from livekit.agents import Agent, AgentSession
+        from livekit.plugins import deepgram, openai, cartesia
 
-```bash
-uv tool install 'voicegateway[cloud,dashboard]'
-```
+        import voicegateway
 
-## 2. Run the wizard
 
-```bash
-voicegw onboard
-```
+        async def entrypoint(ctx):
+            await ctx.connect()
 
-Five questions, four with working defaults (press Enter to accept):
+            session = AgentSession(
+                stt=deepgram.STT(model="nova-3"),
+                llm=openai.LLM(model="gpt-4o-mini"),
+                tts=cartesia.TTS(model="sonic-3"),
+            )
 
-1. **Project name** (default: `default`).
-2. **Provider** (default: `openai`).
-3. **API key** (no default; paste yours).
-4. **Port** (default: `8080`).
-5. **Install daemon?** (default: yes).
+            # One call. Every STT / LLM / TTS request is metered from here.
+            voicegateway.attach(session, project="my-agent")
 
-The wizard then:
+            await session.start(agent=Agent(instructions="Be helpful."), room=ctx.room)
+        ```
+      </Tab>
+      <Tab title="Pipecat">
+        ```python
+        from pipecat.pipeline.pipeline import Pipeline
+        from pipecat.pipeline.task import PipelineParams, PipelineTask
+        from pipecat.services.deepgram.stt import DeepgramSTTService
+        from pipecat.services.openai.llm import OpenAILLMService
+        from pipecat.services.cartesia.tts import CartesiaTTSService
 
-- Validates your API key against the provider with a 5-second
-  timeout. On timeout, the wizard continues with a warning instead
-  of failing.
-- Registers a user-scoped daemon (LaunchAgent on macOS, `systemd
-  --user` unit on Linux, Scheduled Task on Windows) and starts it.
-- Optionally runs `voicegw smoke-test` and confirms the pipeline.
-- Prints the dashboard URL (default `http://127.0.0.1:8080`) and
-  the next-step commands.
+        import voicegateway
 
-Pressing Ctrl+C at any point cleans up partial state. Re-running
-the wizard is always safe.
+        stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"])
+        llm = OpenAILLMService(api_key=os.environ["OPENAI_API_KEY"], model="gpt-4o-mini")
+        tts = CartesiaTTSService(api_key=os.environ["CARTESIA_API_KEY"], voice_id="your-voice-id")
 
-## 3. Open the dashboard
+        pipeline = Pipeline([transport.input(), stt, llm, tts, transport.output()])
+        task = PipelineTask(
+            pipeline,
+            params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
+        )
 
-```bash
-voicegw dashboard
-```
+        # One call. Every STT / LLM / TTS request is metered from here.
+        voicegateway.attach(task, project="my-agent")
+        ```
 
-That opens your browser at the daemon URL. The daemon already serves
-the dashboard at `/`, the dashboard API at `/api/*`, and the public
-HTTP API at `/v1/*`, all on the port the wizard collected. Use
-`voicegw dashboard --no-open` to print the URL without launching a
-browser (useful over SSH).
+        <Note>
+          Pipecat requires `enable_metrics=True` and `enable_usage_metrics=True` on
+          `PipelineParams`. Without these flags, Pipecat emits no usage frames and
+          `attach()` has nothing to record.
+        </Note>
+      </Tab>
+    </Tabs>
+  </Step>
 
-Other lifecycle commands:
+  <Step title="Run the dashboard">
+    ```bash
+    voicegw dashboard
+    ```
 
-```bash
-voicegw status        # daemon + provider status
-voicegw doctor        # numbered punch list with fix steps
-voicegw logs          # tail recent activity
-voicegw stop          # bring the daemon down
-voicegw restart       # restart the daemon
-```
+    That opens your browser at `http://127.0.0.1:9090`. The dashboard shows live
+    cost rows the moment your first call completes. Use `--no-open` to print the
+    URL without launching a browser (useful over SSH).
+  </Step>
 
-## 4. Wire it into your LiveKit agent
+  <Step title="See the first call">
+    Run your agent as normal, place a call, and refresh the dashboard. Each row
+    shows the modality (STT / LLM / TTS), provider, model, usage units, and the
+    cost in USD.
 
-Swap one import line:
+    In the terminal:
 
-```python
-from voicegateway.inference import STT, LLM, TTS
+    ```bash
+    voicegw costs    # tabular cost summary
+    voicegw status   # daemon and provider health
+    voicegw logs     # recent request stream
+    ```
+  </Step>
+</Steps>
 
-stt = STT("deepgram/nova-3")
-llm = LLM("openai/gpt-4.1-mini")
-tts = TTS("openai/tts-1")
-```
+<Tip>
+  Want to add fallback providers or enforce a daily spend cap? `guard()` wraps any
+  native provider and returns a drop-in replacement. See [guard()](/guide/guard).
+</Tip>
 
-Pass each to `AgentSession` exactly as you would the upstream
-`livekit.agents.inference` equivalents. Cost tracking, latency
-monitoring, and per-session correlation happen behind the scenes.
-See [Quick start](/guide/quick-start) for the full integration
-walkthrough.
+---
 
-## Troubleshooting
+## What's next
 
-`voicegw doctor` is the first place to look for first-call issues.
-It prints a numbered punch list with concrete fix steps for each
-failed check. No stack traces. No bare "see docs" pointers.
-
-The three most common things that block first-call:
-
-### Python 3.11+ is missing
-
-install.sh refuses on Python below 3.11 because the cloud provider
-SDKs have already moved past 3.10. Install Python first, then
-re-run install.sh.
-
-VoiceGateway will not auto-install Python. That choice is left to
-your OS package manager so we never silently shadow a system
-Python or break a virtualenv you cared about.
-
-### pipx is missing or not on PATH
-
-install.sh installs pipx automatically when it can (or uses uv if
-available). Two failure modes are common:
-
-1. pipx installed but `pipx` is not on your PATH yet. Open a fresh
-   shell and try again, or add `~/.local/bin` to your PATH:
-
-   ```bash
-   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-   exec $SHELL
-   ```
-
-2. The installer printed `pipx ensurepath` and exited cleanly.
-   Your installed-as-user directory is registered but the current
-   shell did not pick it up yet. Open a new terminal tab and
-   re-run `voicegw onboard`.
-
-### Provider key is invalid
-
-The wizard validates your key against the provider with a 5-second
-timeout. If validation returns `401 unauthorized` or similar:
-
-1. Double-check the key in your provider dashboard. The most
-   common cause is a missing character, a stray newline, or the
-   wrong project selected when you generated the key.
-2. Re-run the wizard. It is idempotent: any partial state from a
-   previous attempt is overwritten cleanly.
-3. Run `voicegw doctor`. The provider-key validation check prints
-   exactly which key was rejected and what to verify.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/guide/installation">
+    Full install matrix: uv, pip, framework extras, provider extras, Docker.
+  </Card>
+  <Card title="Quick start" icon="bolt" href="/guide/quick-start">
+    Five-minute path from install to reading your first per-call cost row.
+  </Card>
+  <Card title="First agent" icon="code" href="/guide/first-agent">
+    A complete worked agent file with attach() and a guard() fallback example.
+  </Card>
+  <Card title="Core concepts" icon="book" href="/guide/core-concepts">
+    attach(), guard(), projects, sinks, and how the pieces fit together.
+  </Card>
+</CardGroup>

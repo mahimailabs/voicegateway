@@ -1,83 +1,113 @@
 ---
 title: Installation
-description: Every install path for VoiceGateway. curl-bash recommended for first-run; pipx / uv / Docker for everything else.
+description: Install VoiceGateway with uv or pip. Pick the framework extra for LiveKit or Pipecat, then add provider extras for the SDKs you need. Python 3.11+ required.
 ---
 
 # Installation
 
-## System requirements
+## Requirements
 
-- **Python 3.11** or later
-- **SQLite 3.35+** (ships with Python; used for cost tracking and
-  request logs)
-- **macOS, Linux, or WSL on Windows.** Native Windows is supported
-  via Scheduled Tasks for the daemon; the rest of the docs assume a
-  POSIX shell.
-- **Docker** (optional, for containerised deployments)
+- Python 3.11 or later
+- macOS, Linux, or WSL on Windows
 
-## Recommended: curl-bash one-liner
+## Framework extras
 
-```bash
-curl -fsSL https://voicegateway.mahimai.ca/install.sh | bash
+Install the extra that matches your agent framework. The core package is
+framework-neutral: `import voicegateway` imports neither LiveKit Agents nor
+Pipecat.
+
+<CodeGroup>
+```bash uv
+# LiveKit Agents
+uv pip install "voicegateway[livekit]"
+
+# Pipecat
+uv pip install "voicegateway[pipecat]"
 ```
+```bash pip
+# LiveKit Agents
+pip install "voicegateway[livekit]"
 
-The installer:
-
-- Detects your OS (macOS / Linux / WSL).
-- Verifies Python 3.11+ is installed (refuses with package-manager
-  pointers if not; does not auto-install Python).
-- Picks `uv tool install` if uv is on PATH, otherwise installs pipx
-  and runs `pipx install voicegateway[cloud,dashboard]`.
-- Asks before any privileged step.
-
-After install, run `voicegw onboard`. See [Get started](/get-started)
-for the 60-second walkthrough.
-
-## pipx (manual)
-
-```bash
-pipx install 'voicegateway[cloud,dashboard]'
+# Pipecat
+pip install "voicegateway[pipecat]"
 ```
+</CodeGroup>
 
-`pipx` installs VoiceGateway into its own virtualenv so the `voicegw`
-binary lands on your PATH without polluting your system Python.
+## Provider extras (LiveKit)
 
-## uv (manual)
+Provider extras imply `livekit`. A single line pulls the core, the LiveKit
+adapter, and the provider SDK you name.
 
-```bash
-uv tool install 'voicegateway[cloud,dashboard]'
+<CodeGroup>
+```bash uv
+# One provider
+uv pip install "voicegateway[openai]"
+
+# Several at once
+uv pip install "voicegateway[openai,deepgram,cartesia]"
 ```
+```bash pip
+pip install "voicegateway[openai]"
 
-`uv tool install` is faster than pipx and uses the same per-tool-venv
-model. If you have uv already, prefer this.
+pip install "voicegateway[openai,deepgram,cartesia]"
+```
+</CodeGroup>
 
-## Install extras
-
-VoiceGateway uses optional extras to keep the install lightweight.
-Only the provider SDKs you need are installed.
-
-| Extra | What it installs |
+| Extra | Provider SDK installed |
 |---|---|
-| `cloud` | All cloud provider SDKs (Deepgram, OpenAI, Anthropic, Groq, Cartesia, ElevenLabs, AssemblyAI) |
-| `local` | Local model dependencies (Whisper, Kokoro, Piper, Ollama) |
-| `dashboard` | Web dashboard (React bundle + Pillow for logo validation) |
+| `openai` | `livekit-plugins-openai` |
+| `deepgram` | `livekit-plugins-deepgram` |
+| `anthropic` | `livekit-plugins-anthropic` |
+| `groq` | `livekit-plugins-groq` |
+| `cartesia` | `livekit-plugins-cartesia` |
+| `elevenlabs` | `livekit-plugins-elevenlabs` |
+| `assemblyai` | `livekit-plugins-assemblyai` |
+| `whisper` | `livekit-plugins-silero` + `openai-whisper` |
+
+<Note>
+  Each of the provider extras above implies `livekit`. You do not need to install
+  `voicegateway[livekit]` separately when you install a provider extra.
+</Note>
+
+## Provider extras (Pipecat)
+
+For Pipecat, install `voicegateway[pipecat]` and then install provider service
+extras directly from Pipecat. VoiceGateway wraps the native Pipecat services you
+already configure.
+
+<CodeGroup>
+```bash uv
+uv pip install "voicegateway[pipecat]"
+uv pip install "pipecat-ai[openai,deepgram,cartesia]"
+```
+```bash pip
+pip install "voicegateway[pipecat]"
+pip install "pipecat-ai[openai,deepgram,cartesia]"
+```
+</CodeGroup>
+
+## Additional extras
+
+| Extra | What it adds |
+|---|---|
+| `dashboard` | Prebuilt React dashboard bundle (served by `voicegw dashboard`) |
+| `local` | Local model support: Whisper, Kokoro, Piper, Ollama |
 | `mcp` | MCP server for IDE integration |
 | `tui` | Terminal UI (Textual-based status / costs / sessions views) |
 | `all` | Everything above |
 
-You can combine extras:
+You can combine any extras:
 
-```bash
-pipx install 'voicegateway[cloud,dashboard,mcp]'
+<CodeGroup>
+```bash uv
+uv pip install "voicegateway[livekit,dashboard,openai,deepgram]"
 ```
-
-Or install individual provider SDKs:
-
-```bash
-pipx install 'voicegateway[openai,deepgram]'
+```bash pip
+pip install "voicegateway[livekit,dashboard,openai,deepgram]"
 ```
+</CodeGroup>
 
-## From source
+## Install from source
 
 ```bash
 git clone https://github.com/mahimailabs/voicegateway.git
@@ -85,10 +115,8 @@ cd voicegateway
 pip install -e ".[dev]"
 ```
 
-The `dev` extra includes test dependencies (pytest, pytest-asyncio,
-pytest-cov, ruff, mypy).
-
-Running from source ships the React frontend as source. Build it:
+The `dev` extra includes pytest, ruff, and mypy. To build the dashboard
+frontend from source:
 
 ```bash
 cd src/dashboard/frontend
@@ -96,25 +124,17 @@ npm install
 npm run build
 ```
 
-The daemon mounts `src/dashboard/frontend/dist/` at `/` once that
-exists.
-
 ## Docker
 
-VoiceGateway ships a `docker-compose.yml` for running the daemon
-(serving both the HTTP API and the dashboard):
-
 ```bash
-# Daemon (HTTP API + dashboard on one port)
+# HTTP API + dashboard on port 8080
 docker compose up -d
 
-# Plus Ollama (for local LLM)
+# Plus Ollama for local LLM
 docker compose --profile local up -d
 ```
 
-The default Docker setup exposes port **8080**: the daemon serves
-`/v1/*` (HTTP API), `/api/*` (dashboard API), and `/` (React UI)
-on that port. Mount your config and set environment variables:
+Mount your config and pass provider keys as environment variables:
 
 ```bash
 docker compose up -d \
@@ -123,32 +143,26 @@ docker compose up -d \
   -v ./voicegw.yaml:/app/voicegw.yaml
 ```
 
-## Verify the install
+## Verify
 
 ```bash
 voicegw --version
 voicegw status
 ```
 
-If `voicegw` is not on your PATH, run:
-
-```bash
-python -m voicegateway.cli --version
-```
-
-For pipx, you may need `pipx ensurepath && exec $SHELL`.
+If `voicegw` is not on your PATH after a `uv pip install`, activate the
+environment or use `python -m voicegateway.cli --version`.
 
 ## Upgrading
 
-```bash
-pipx upgrade voicegateway
+<CodeGroup>
+```bash uv
+uv pip install --upgrade voicegateway
 ```
-
-Or with uv:
-
-```bash
-uv tool upgrade voicegateway
+```bash pip
+pip install --upgrade voicegateway
 ```
+</CodeGroup>
 
 After upgrading, check for config schema changes:
 
@@ -160,30 +174,25 @@ voicegw init --diff
 
 **`ModuleNotFoundError: No module named 'deepgram'`**
 
-You installed the base package without the provider extra. Install
-the extra you need:
+You installed without the `deepgram` extra. Add it:
 
 ```bash
-pipx install 'voicegateway[deepgram]'
+pip install "voicegateway[deepgram]"
 ```
 
 **`ConfigError: No voicegw.yaml found`**
 
-VoiceGateway searches for config in this order:
+VoiceGateway searches in this order:
 
 1. `./voicegw.yaml` (current directory)
 2. `~/.config/voicegateway/voicegw.yaml`
 3. `/etc/voicegateway/voicegw.yaml`
 
-You can also set the `VOICEGW_CONFIG` environment variable to an
-explicit path. Run `voicegw init` to generate a starter config or
-`voicegw onboard` to be walked through it.
+Set `VOICEGW_CONFIG` to an explicit path, or run `voicegw init` to generate a
+starter config.
 
 ## Next steps
 
-- [Get started](/get-started): 60-second walkthrough.
-- [Quick start](/guide/quick-start): the 5-minute version that
-  exercises the inference factories.
-- [First agent](/guide/first-agent): build a working agent.
-- [Environment variables](/configuration/environment-variables):
-  all supported env vars.
+- [Quick start](/guide/quick-start): five-minute path from install to first cost row.
+- [First agent](/guide/first-agent): a complete worked agent with `attach()` and `guard()`.
+- [Frameworks and extras](/guide/frameworks): framework-neutral core explained.
