@@ -64,42 +64,6 @@ def upgrade() -> None:
         batch_op.create_index("idx_dead_air_session_id", ["session_id"], unique=False)
 
     op.create_table(
-        "guardrail_events",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("event_type", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("session_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("tenant_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("turn_index", sa.Integer(), nullable=True),
-        sa.Column("category", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("action", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("context_excerpt", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column(
-            "created_at",
-            sqlmodel.sql.sqltypes.AutoString(),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
-            nullable=False,
-        ),
-        sa.CheckConstraint(
-            "event_type IN ('fired', 'bypassed')", name="ck_guardrail_events_event_type"
-        ),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    with op.batch_alter_table("guardrail_events", schema=None) as batch_op:
-        batch_op.create_index("idx_guardrail_events_action", ["action"], unique=False)
-        batch_op.create_index(
-            "idx_guardrail_events_category", ["category"], unique=False
-        )
-        batch_op.create_index(
-            "idx_guardrail_events_created_at", ["created_at"], unique=False
-        )
-        batch_op.create_index(
-            "idx_guardrail_events_session_id", ["session_id"], unique=False
-        )
-        batch_op.create_index(
-            "idx_guardrail_events_tenant_id", ["tenant_id"], unique=False
-        )
-
-    op.create_table(
         "latency_observations",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("project_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
@@ -183,9 +147,6 @@ def upgrade() -> None:
         sa.Column("created_at", sa.Float(), nullable=False),
         sa.Column("updated_at", sa.Float(), nullable=False),
         sa.Column("branding_json", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column(
-            "guardrail_policy_json", sqlmodel.sql.sqltypes.AutoString(), nullable=True
-        ),
         sa.PrimaryKeyConstraint("project_id"),
     )
     op.create_table(
@@ -387,13 +348,6 @@ def upgrade() -> None:
         sa.Column("budget_overrun", sa.Integer(), nullable=True),
         sa.Column("routed_llm", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
         sa.Column("routed_tts", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("guardrails_active", sa.Integer(), nullable=True),
-        sa.Column("guardrails_bypassed", sa.Integer(), nullable=True),
-        sa.Column(
-            "guardrail_policy_snapshot_json",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=True,
-        ),
         sa.PrimaryKeyConstraint("id"),
     )
     with op.batch_alter_table("sessions", schema=None) as batch_op:

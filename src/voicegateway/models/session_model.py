@@ -15,7 +15,7 @@ class Session(SQLModel, table=True):
     total_cost_usd and request_count accumulate per request. ended_at
     stays NULL until the session closes. Aggregate columns
     (talk_time_seconds, response_speed_*, replay_size_bytes,
-    budget_*, routed_*, guardrails_*) land via session-finalize hooks.
+    budget_*, routed_*) land via session-finalize hooks.
     """
 
     __tablename__: ClassVar[str] = "sessions"
@@ -56,7 +56,3 @@ class Session(SQLModel, table=True):
     routed_llm: str | None = None
     routed_tts: str | None = None
 
-    # 0007: guardrails
-    guardrails_active: int | None = None
-    guardrails_bypassed: int | None = None
-    guardrail_policy_snapshot_json: str | None = None

@@ -1,3 +1,3 @@
-"""Curated guardrail prompt assets."""
+"""Prompt assets."""
 
 __all__: list[str] = []

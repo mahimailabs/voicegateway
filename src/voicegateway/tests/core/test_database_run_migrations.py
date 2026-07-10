@@ -55,7 +55,6 @@ async def test_run_migrations_on_fresh_db_builds_baseline(tmp_path: Path) -> Non
         "alembic_version_voicegateway",
         "config_audit_log",
         "dead_air_events",
-        "guardrail_events",
         "latency_observations",
         "managed_models",
         "managed_projects",

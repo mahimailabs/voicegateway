@@ -127,7 +127,6 @@ class ManagedConfigService:
         tts_model: str | None = None,
         tags: list[str] | None = None,
         branding: dict[str, Any] | None = None,
-        guardrail_policy: dict[str, Any] | None = None,
     ) -> None:
         async with self._db.session() as s:
             await project_repo.upsert_project(
@@ -143,7 +142,6 @@ class ManagedConfigService:
                 tts_model=tts_model,
                 tags=tags,
                 branding=branding,
-                guardrail_policy=guardrail_policy,
             )
 
     async def delete_project(self, project_id: str) -> bool:

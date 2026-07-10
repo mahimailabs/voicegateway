@@ -1,8 +1,8 @@
 """Phase 3, Step 3: retention prunes requests, sessions, and dependents.
 
 Extends the replay-only RetentionWorker: aged sessions and their dependent
-rows (replay, turns, dead-air, guardrail) prune by ``ended_at``; requests
-prune independently by ``timestamp`` (a request may have no session).
+rows (replay, turns, dead-air) prune by ``ended_at``; requests prune
+independently by ``timestamp`` (a request may have no session).
 """
 
 from __future__ import annotations
@@ -128,15 +128,9 @@ async def test_prune_deletes_session_dependents(storage) -> None:
                 "VALUES ('s-old', 0, 100, 3000)"
             )
         )
-        await db.execute(
-            text(
-                "INSERT INTO guardrail_events (event_type, session_id) "
-                "VALUES ('fired', 's-old')"
-            )
-        )
         await db.commit()
     await RetentionWorker(storage, retention_provider=_provider("acme", 5)).tick_now()
-    for table in ("turns", "dead_air_events", "guardrail_events"):
+    for table in ("turns", "dead_air_events"):
         assert await _count(storage, table, "session_id = :s", {"s": "s-old"}) == 0
 
 

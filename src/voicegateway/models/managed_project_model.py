@@ -8,7 +8,7 @@ from sqlmodel import Field, SQLModel
 
 
 class ManagedProject(SQLModel, table=True):
-    """A configured project: cost budgets, default stack, branding, guardrails."""
+    """A configured project: cost budgets, default stack, and branding."""
 
     __tablename__: ClassVar[str] = "managed_projects"
 
@@ -29,6 +29,3 @@ class ManagedProject(SQLModel, table=True):
 
     # 0006: branding payload (JSON-encoded)
     branding_json: str | None = None
-
-    # 0007: guardrail policy overlay (JSON-encoded)
-    guardrail_policy_json: str | None = None

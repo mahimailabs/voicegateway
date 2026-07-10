@@ -13,7 +13,6 @@ _EXPECTED_TABLES: frozenset[str] = frozenset(
     {
         "config_audit_log",
         "dead_air_events",
-        "guardrail_events",
         "latency_observations",
         "managed_models",
         "managed_projects",
@@ -63,10 +62,6 @@ def test_request_record_dataclass_preserved() -> None:
             "config_audit_log",
         ),
         ("voicegateway.models.dead_air_event_model:DeadAirEvent", "dead_air_events"),
-        (
-            "voicegateway.models.guardrail_event_model:GuardrailEvent",
-            "guardrail_events",
-        ),
         (
             "voicegateway.models.latency_observation_model:LatencyObservation",
             "latency_observations",

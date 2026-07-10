@@ -29,11 +29,11 @@ _PROJECT_UPSERT = text(
     INSERT INTO managed_projects (
         project_id, name, description, daily_budget, budget_action,
         default_stack, stt_model, llm_model, tts_model, tags,
-        created_at, updated_at, branding_json, guardrail_policy_json
+        created_at, updated_at, branding_json
     ) VALUES (
         :project_id, :name, :description, :daily_budget, :budget_action,
         :default_stack, :stt_model, :llm_model, :tts_model, :tags,
-        :now, :now, :branding_json, :guardrail_json
+        :now, :now, :branding_json
     )
     ON CONFLICT(project_id) DO UPDATE SET
         name=excluded.name,
@@ -48,27 +48,6 @@ _PROJECT_UPSERT = text(
         branding_json=COALESCE(
             excluded.branding_json, managed_projects.branding_json
         ),
-        guardrail_policy_json=COALESCE(
-            excluded.guardrail_policy_json, managed_projects.guardrail_policy_json
-        ),
-        updated_at=excluded.updated_at
-    """
-)
-
-
-_GUARDRAILS_UPSERT = text(
-    """
-    INSERT INTO managed_projects (
-        project_id, name, description, daily_budget, budget_action,
-        default_stack, stt_model, llm_model, tts_model, tags,
-        created_at, updated_at, guardrail_policy_json
-    ) VALUES (
-        :project_id, :name, :description, :daily_budget, :budget_action,
-        :default_stack, :stt_model, :llm_model, :tts_model, :tags,
-        :now, :now, :guardrail_json
-    )
-    ON CONFLICT(project_id) DO UPDATE SET
-        guardrail_policy_json=excluded.guardrail_policy_json,
         updated_at=excluded.updated_at
     """
 )
@@ -122,12 +101,6 @@ def _row_to_dict(p: ManagedProject) -> dict[str, Any]:
             branding = json.loads(p.branding_json)
         except (ValueError, TypeError):
             branding = None
-    guardrail_policy = None
-    if p.guardrail_policy_json:
-        try:
-            guardrail_policy = json.loads(p.guardrail_policy_json)
-        except (ValueError, TypeError):
-            guardrail_policy = None
     return {
         "project_id": p.project_id,
         "name": p.name,
@@ -142,12 +115,11 @@ def _row_to_dict(p: ManagedProject) -> dict[str, Any]:
         "created_at": p.created_at,
         "updated_at": p.updated_at,
         "branding": branding,
-        "guardrail_policy": guardrail_policy,
     }
 
 
 async def list_projects(session: AsyncSession) -> list[dict[str, Any]]:
-    """Return every managed_projects row with branding + guardrail parsed."""
+    """Return every managed_projects row with branding parsed."""
     result = await session.execute(
         select(ManagedProject).order_by(ManagedProject.created_at.asc())  # type: ignore[attr-defined]
     )
@@ -173,20 +145,14 @@ async def upsert_project(
     tts_model: str | None = None,
     tags: list[str] | None = None,
     branding: dict[str, Any] | None = None,
-    guardrail_policy: dict[str, Any] | None = None,
 ) -> None:
     """Insert or update one managed_projects row.
 
-    ``branding=None`` and ``guardrail_policy=None`` preserve the
-    existing column values via SQLite ``COALESCE(excluded.x, x)``.
+    ``branding=None`` preserves the existing column value via
+    SQLite ``COALESCE(excluded.branding_json, managed_projects.branding_json)``.
     """
     validated_branding = validate_branding(branding)
     branding_json = json.dumps(validated_branding) if validated_branding else None
-    guardrail_json = (
-        json.dumps(guardrail_policy, sort_keys=True)
-        if guardrail_policy is not None
-        else None
-    )
     await session.execute(
         _PROJECT_UPSERT,
         {
@@ -202,46 +168,6 @@ async def upsert_project(
             "tags": json.dumps(tags or []),
             "now": time.time(),
             "branding_json": branding_json,
-            "guardrail_json": guardrail_json,
-        },
-    )
-    await session.commit()
-
-
-async def set_project_guardrails(
-    session: AsyncSession,
-    *,
-    project_id: str,
-    policy: dict[str, Any] | None,
-    name: str,
-    description: str = "",
-    daily_budget: float = 0.0,
-    budget_action: str = "warn",
-    default_stack: str | None = None,
-    stt_model: str | None = None,
-    llm_model: str | None = None,
-    tts_model: str | None = None,
-    tags: list[str] | None = None,
-) -> None:
-    """Set or clear a project's guardrail policy overlay."""
-    guardrail_json = None
-    if policy is not None:
-        guardrail_json = json.dumps(policy, sort_keys=True)
-    await session.execute(
-        _GUARDRAILS_UPSERT,
-        {
-            "project_id": project_id,
-            "name": name,
-            "description": description,
-            "daily_budget": daily_budget,
-            "budget_action": budget_action,
-            "default_stack": default_stack,
-            "stt_model": stt_model,
-            "llm_model": llm_model,
-            "tts_model": tts_model,
-            "tags": json.dumps(tags or []),
-            "now": time.time(),
-            "guardrail_json": guardrail_json,
         },
     )
     await session.commit()
@@ -260,7 +186,6 @@ __all__ = [
     "delete_project",
     "get_project",
     "list_projects",
-    "set_project_guardrails",
     "upsert_project",
     "validate_branding",
 ]

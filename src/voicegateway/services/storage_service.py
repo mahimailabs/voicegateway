@@ -401,7 +401,6 @@ class StorageService:
         tts_model: str | None = None,
         tags: list[str] | None = None,
         branding: dict[str, Any] | None = None,
-        guardrail_policy: dict[str, Any] | None = None,
     ) -> None:
         """Delegate to ManagedConfigService.upsert_project."""
         await self._ensure_initialized()
@@ -417,103 +416,10 @@ class StorageService:
             tts_model=tts_model,
             tags=tags,
             branding=branding,
-            guardrail_policy=guardrail_policy,
         )
-
-    async def set_managed_project_guardrails(
-        self,
-        *,
-        project_id: str,
-        policy: dict[str, Any] | None,
-        name: str,
-        description: str = "",
-        daily_budget: float = 0.0,
-        budget_action: str = "warn",
-        default_stack: str | None = None,
-        stt_model: str | None = None,
-        llm_model: str | None = None,
-        tts_model: str | None = None,
-        tags: list[str] | None = None,
-    ) -> None:
-        """Write or update the guardrail policy on one managed project."""
-        from voicegateway.repository import managed_project_repository as project_repo
-
-        await self._ensure_initialized()
-        async with self._conn.session() as s:
-            await project_repo.set_project_guardrails(
-                s,
-                project_id=project_id,
-                policy=policy,
-                name=name,
-                description=description,
-                daily_budget=daily_budget,
-                budget_action=budget_action,
-                default_stack=default_stack,
-                stt_model=stt_model,
-                llm_model=llm_model,
-                tts_model=tts_model,
-                tags=tags,
-            )
 
     async def delete_managed_project(self, project_id: str) -> bool:
         """Delegate to ManagedConfigService.delete_project."""
         await self._ensure_initialized()
         return await self._managed_config_service.delete_project(project_id)
 
-    # ------------------------------------------------------------------
-    # Guardrail event logging
-    # ------------------------------------------------------------------
-
-    async def log_guardrail_fired(
-        self,
-        *,
-        session_id: str,
-        tenant_id: str | None,
-        category: str,
-        action: str,
-        context_excerpt: str,
-    ) -> None:
-        """Record one guardrail-fired audit row."""
-        from voicegateway.repository import guardrail_events_repository as events_repo
-
-        await self._ensure_initialized()
-        async with self._conn.session() as s:
-            await events_repo.create_event(
-                s,
-                session_id=session_id,
-                tenant_id=tenant_id,
-                event_type="fired",
-                category=category,
-                action=action,
-                context_excerpt=context_excerpt,
-            )
-            await s.commit()
-
-    async def log_guardrail_bypassed(
-        self,
-        *,
-        session_id: str,
-        tenant_id: str | None,
-        context_excerpt: str = "guardrail injection bypassed for this session",
-    ) -> None:
-        """Best-effort guardrail-bypassed audit row. Never raises."""
-        from voicegateway.repository import guardrail_events_repository as events_repo
-
-        try:
-            await self._ensure_initialized()
-            async with self._conn.session() as s:
-                await events_repo.create_event(
-                    s,
-                    session_id=session_id,
-                    tenant_id=tenant_id,
-                    event_type="bypassed",
-                    context_excerpt=context_excerpt,
-                )
-                await s.commit()
-        except Exception:
-            _logger.warning(
-                "failed to record guardrail bypass event session_id=%s tenant_id=%s",
-                session_id,
-                tenant_id,
-                exc_info=True,
-            )

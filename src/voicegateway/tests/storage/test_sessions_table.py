@@ -107,10 +107,6 @@ async def test_sessions_columns_match_design(tmp_path):
         "budget_overrun",
         "routed_llm",
         "routed_tts",
-        # v0.6.0 guardrail session audit columns (added by migration 0007).
-        "guardrails_active",
-        "guardrails_bypassed",
-        "guardrail_policy_snapshot_json",
     }
 
     # Required keys (NOT NULL).
