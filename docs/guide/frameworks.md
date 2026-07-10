@@ -3,8 +3,6 @@ title: Frameworks and extras
 description: VoiceGateway's core is framework-neutral. Pick the extra for the agent framework you run (LiveKit or Pipecat); import voicegateway pulls neither.
 ---
 
-# Frameworks and extras
-
 VoiceGateway's engine core is framework-neutral. A bare `import voicegateway`
 imports neither [LiveKit Agents](https://docs.livekit.io/agents/) nor
 [Pipecat](https://docs.pipecat.ai/). The record model, pricing (via
@@ -17,20 +15,34 @@ That means you install exactly the framework you run, and nothing else.
 
 ## Install the extra you use
 
-```bash
+<CodeGroup>
+```bash uv
+# LiveKit Agents
+uv pip install "voicegateway[livekit]"
+
+# Pipecat
+uv pip install "voicegateway[pipecat]"
+```
+```bash pip
 # LiveKit Agents
 pip install "voicegateway[livekit]"
 
 # Pipecat
 pip install "voicegateway[pipecat]"
 ```
+</CodeGroup>
 
 The provider wheels for LiveKit are their own extras and imply the `livekit`
-extra, so a single line pulls the runtime plus the plugin you name:
+extra, so a single line pulls the runtime plus the plugins you name:
 
-```bash
+<CodeGroup>
+```bash uv
+uv pip install "voicegateway[openai,deepgram,cartesia]"
+```
+```bash pip
 pip install "voicegateway[openai,deepgram,cartesia]"
 ```
+</CodeGroup>
 
 For Pipecat, install the Pipecat service extras you need directly from Pipecat
 (for example `pip install "pipecat-ai[openai,deepgram,cartesia]"`) alongside
