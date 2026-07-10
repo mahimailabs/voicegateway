@@ -1,21 +1,27 @@
 ---
 title: Agency quickstart
-description: Provision a downstream customer project end-to-end with cross-modality routing and per-project white-label branding.
+description: Run one VoiceGateway deployment for many downstream clients, each with its own project, routing roster, budget, and white-label dashboard.
 ---
 
 # Agency quickstart
 
-VoiceGateway supports the agency rung of the buyer ladder: cross-modality routing and per-project white-label branding. This guide walks an agency operator through provisioning a downstream customer project end-to-end.
+An agency runs one VoiceGateway deployment and provisions a separate project for each downstream client. Each project gets its own routing roster, latency budget, spend cap, and white-label dashboard branding. Cost data stays separated by project, so you can pull a per-client cost report without manual filtering.
+
+This guide walks the end-to-end provisioning flow for one new client.
+
+<Note>
+Projects separate cost and routing at the client level. Tenants (covered in [Multi-tenant quickstart](/guide/multi-tenant-quickstart)) separate cost within a project at the end-user level. The two are composable: pass `project=` and `tenant_id=` together in `attach()` when you need both levels.
+</Note>
 
 ## Prerequisites
 
 - VoiceGateway installed (`voicegw --version`).
-- Daemon running (started by `voicegw onboard` or `voicegw serve`). The daemon serves the dashboard at the daemon URL (default `http://127.0.0.1:8080`).
-- `voicegw.yaml` configured with at least one project (operators usually have a `default` plus one per customer).
+- Daemon running (`voicegw serve` or `voicegw onboard`).
+- `voicegw.yaml` with at least one project configured. See [Configuration: projects](/configuration/projects) for the full schema.
 
-## 1. Configure routing rosters and budget
+## Step 1: add the client project to voicegw.yaml
 
-Open `voicegw.yaml` and add a `routing:` block under the customer's project. The router will only pick providers that appear in the rosters; order is preference (earlier first when two candidates tie on predicted latency).
+Open `voicegw.yaml` and add a `projects` entry for the client. Set a `daily_budget` to cap spend automatically and a `routing` block to constrain which providers the router may choose.
 
 ```yaml
 projects:
@@ -23,8 +29,7 @@ projects:
     name: Acme Voice
     daily_budget: 25.0
     routing:
-      # 1500 ms is the typical conversational target.
-      budget_ms: 1200          # Agency wants tighter than default.
+      budget_ms: 1200
       fallback_to_fastest: true
       rosters:
         stt: [deepgram, assemblyai]
@@ -32,15 +37,15 @@ projects:
         tts: [cartesia, elevenlabs]
 ```
 
-After editing, restart the gateway. The next session start picks providers from the new rosters; in-flight sessions keep their pre-existing triple.
+Provider order within each roster is preference: the router picks the first provider that fits the latency budget. Restart the daemon after saving. In-flight sessions keep their original provider triple; the new roster applies from the next session start.
 
-### Pick a budget
+<Tip>
+The default `budget_ms` is 1500 ms (a typical conversational target). Tighten to 800-1000 ms for high-energy customer-service scenarios. The Routing view in the dashboard shows observed p50 per provider so you can right-size after a few hundred sessions.
+</Tip>
 
-The default 1500 ms covers a typical conversational voice agent: caller stops talking, agent's first audible reply lands in ≈1.5 seconds. Agencies serving high-energy customer-service scenarios often tighten to 800–1000 ms; agencies serving deliberative legal or medical scenarios may relax to 2000 ms. The dashboard's Routing view shows actual observed latency per provider so an operator can right-size after a few hundred sessions.
+## Step 2: verify the router before traffic lands
 
-## 2. Verify the router will pick what you expect
-
-The CLI's `route` subgroup is read-only and useful for sanity-checking before traffic lands.
+The `route` CLI subgroup is read-only. Use it to confirm the config is correct before the first real call.
 
 ```bash
 voicegw route show acme
@@ -50,8 +55,6 @@ voicegw route show acme
 #   stt   deepgram, assemblyai
 #   llm   groq, openai
 #   tts   cartesia, elevenlabs
-#
-# (no observations yet; router will fall back to provider_baselines.json)
 ```
 
 ```bash
@@ -65,22 +68,89 @@ voicegw route simulate acme
 ```
 
 ```bash
-voicegw route simulate acme --llm openai  # Override LLM specifically.
+# Override one modality to compare.
+voicegw route simulate acme --llm openai
 # LLM: openai (300 ms baseline)
 # Predicted total: 700 ms
 ```
 
-After production traffic accrues, the rollup worker (every 15 minutes) populates `latency_observations` and the router prefers observed p50 over the curated baselines. `voicegw route show acme` then prints the live observations table.
+After production traffic accrues, the rollup worker (runs every 15 minutes) fills `latency_observations` and the router prefers observed p50 over the curated baselines.
 
-## 3. Upload the customer's logo and brand
+## Step 3: wire the agent to the project
 
-Open the dashboard at `http://127.0.0.1:8080/projects` (the daemon's serve port), find the `acme` card, click **Brand**, and fill the modal:
+In the agent code, pass `project="acme"` to `attach()`. Every record written during that session is tagged with the project id.
 
-- **Product name**: e.g. `AcmeVoice` (up to 64 chars; appears in the sidebar in place of "VoiceGateway").
-- **Accent color**: `#FF6633` or any valid hex (the dashboard offers a native color picker too).
-- **Logo**: a PNG or SVG file. Maximum 256 KB, max dimensions 512x512 px for PNG (SVG is vector, no dimension check). Saved under `src/dashboard/api/static/branding/acme.{png,svg}` and served at `/static/branding/acme.png`.
+<Tabs>
+  <Tab title="LiveKit">
+    ```python
+    from livekit.agents import Agent, AgentSession, JobContext
+    from livekit.plugins import deepgram, openai, cartesia
 
-For scripted provisioning, the CLI's `brand` subgroup hits the same endpoints:
+    from voicegateway import attach
+
+
+    async def entrypoint(ctx: JobContext):
+        await ctx.connect()
+
+        session = AgentSession(
+            stt=deepgram.STT(model="nova-3"),
+            llm=openai.LLM(model="gpt-4o-mini"),
+            tts=cartesia.TTS(model="sonic-3"),
+        )
+
+        attach(session, project="acme")
+
+        await session.start(
+            agent=Agent(instructions="Be the Acme support agent."),
+            room=ctx.room,
+        )
+    ```
+  </Tab>
+  <Tab title="Pipecat">
+    ```python
+    from pipecat.pipeline.pipeline import Pipeline
+    from pipecat.pipeline.task import PipelineParams, PipelineTask
+    from pipecat.services.deepgram.stt import DeepgramSTTService
+    from pipecat.services.openai.llm import OpenAILLMService
+    from pipecat.services.cartesia.tts import CartesiaTTSService
+
+    from voicegateway import attach
+
+
+    async def run_acme_agent():
+        stt = DeepgramSTTService(api_key=DEEPGRAM_API_KEY)
+        llm = OpenAILLMService(api_key=OPENAI_API_KEY, model="gpt-4o-mini")
+        tts = CartesiaTTSService(api_key=CARTESIA_API_KEY, voice_id=VOICE_ID)
+
+        pipeline = Pipeline([transport.input(), stt, llm, tts, transport.output()])
+        task = PipelineTask(
+            pipeline,
+            params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
+        )
+
+        attach(task, project="acme")
+
+        runner = PipelineRunner()
+        await runner.run(task)
+    ```
+  </Tab>
+</Tabs>
+
+If you also need per-end-user attribution within the Acme project, add `tenant_id=` as well:
+
+```python
+attach(session, project="acme", tenant_id=caller_id)
+```
+
+## Step 4: upload client branding
+
+Open the dashboard at `http://127.0.0.1:8080/projects`, find the `acme` card, click **Brand**, and fill the modal:
+
+- **Product name**: e.g. `AcmeVoice` (up to 64 characters; replaces "VoiceGateway" in the sidebar).
+- **Accent color**: any valid hex, e.g. `#FF6633`.
+- **Logo**: PNG or SVG, max 256 KB. PNG max 512x512 px.
+
+For scripted provisioning, the `brand` CLI subgroup hits the same endpoint:
 
 ```bash
 voicegw brand set \
@@ -94,51 +164,44 @@ voicegw brand set \
 #   Product name: AcmeVoice
 ```
 
-Set `VOICEGW_API_KEY=...` to pass the static-key Bearer header when the dashboard requires auth.
+Set `VOICEGW_API_KEY` when your dashboard requires auth.
 
-## 4. Send the customer a branded link
+## Step 5: share a branded dashboard link
 
-Branding is per-project; the dashboard picks up the active project from the URL query parameter. Share `https://your-gateway/sessions?project=acme` with the customer and they see the AcmeVoice brand: sidebar logo, accent color on interactive elements, page title and favicon. Without `?project=acme` the default VoiceGateway brand renders.
+Branding is per-project. Share `https://your-gateway/sessions?project=acme` with the client and they see the AcmeVoice brand: sidebar logo, accent color on interactive elements, page title and favicon. Without `?project=acme` the default VoiceGateway brand renders.
 
-The branding cache is per-mount: a customer who has the dashboard open during a brand change sees the new look on next page navigation, not in real time.
+## Step 6: monitor per-client cost and routing
 
-## 5. Watch the Routing view as traffic lands
+Open `/routing` in the dashboard. The page shows per-provider p50/p95 and sample count per project. Sort by p50 ascending to find the fastest provider in each modality, or by sample count to gauge confidence.
 
-Open `/routing` in the dashboard. The page shows per-provider p50/p95 and sample count for every project the gateway has seen sessions for. Use the column headers to sort by p50 ascending to spot the fastest provider in each modality, or by sample count to gauge confidence.
+From the Sessions page, click any row to open the SessionDetail modal. The routing strip shows:
 
-The page auto-refreshes every hour. The rollup worker behind the scenes refreshes every 15 minutes; the FE cadence is the page-side refresh, not the data freshness.
-
-NULL p50 renders as "no observations yet" rather than zero so it's obvious which entries the router is still relying on baselines for.
-
-## 6. Inspect the routing decision per session
-
-From the Sessions page, click any row to open the SessionDetail modal. The new routing strip shows:
-
-- **STT / LLM / TTS** picked for the session.
-- **Budget** that was in effect when the session started.
-- **Actual end-to-end latency** when the close-session hook populated `budget_ms_used` (otherwise omitted).
-- **budget_overrun chip** (yellow) when the router fell back to fastest because nothing fit the budget.
+- STT, LLM, and TTS picked for that session.
+- The latency budget in effect at session start.
+- Actual end-to-end latency when the close-session hook has populated `budget_ms_used`.
+- A yellow `budget_overrun` chip when the router fell back to fastest because nothing fit the budget.
 
 ## Known limitations
 
-A few capabilities are deliberately out of scope. Plan accordingly.
-
-- **No mid-call routing.** Pick-at-start only. If a provider degrades mid-call, the session keeps that provider until close.
-- **No adaptive learning.** The roll-up is static aggregation; there's no ML on in-call telemetry feeding back into pick scores.
-- **No custom-domain dashboard hosting.** White-label sits at the gateway's own host; agencies pointing `dashboard.theirfirm.com` at the gateway with their own TLS cert is future scope.
-- **No per-tenant branding inside one project.** White-label is per-project. An agency running multiple downstream tenants in one project shares one brand.
-- **No email or exported-report branding.** Dashboard chrome only.
-- **No cost-aware routing.** The router picks on latency; cost is observed via the existing per-modality dashboards but doesn't feed back into the picker.
+- **No mid-call routing.** Provider is chosen at session start. Mid-call degradation keeps the original provider.
+- **No per-tenant branding inside one project.** White-label is per-project only.
+- **No cost-aware routing.** The router picks on latency; cost is tracked but does not feed back into the picker.
 - **No multi-region routing.**
-- **No latency-budget enforcement in flight.** The budget is a router input at start, not a runtime kill switch.
-- **No performance SLAs from the gateway to the operator.** Best-effort prediction; the gap between prediction and reality is visible in the Routing view so operators can tune.
+- **No custom-domain dashboard hosting.** White-label sits at the gateway's own host.
 
-## Where the design lives
+## See also
 
-- **Migration**: `src/voicegateway/storage/migrations/0006_routing_and_branding.py`.
-- **Router**: `src/voicegateway/middleware/router.py` + `latency_observations_worker.py`.
-- **Baselines**: `src/voicegateway/core/provider_baselines.json`.
-- **Storage**: `src/voicegateway/storage/latency_observations_repo.py`.
-- **Dashboard API**: `src/dashboard/api/main.py` (search for `/api/routing` and `/api/projects/{id}/branding`).
-- **Frontend**: `src/dashboard/frontend/src/pages/Routing.tsx`, `lib/branding.ts`, `pages/Sessions.tsx` (`RoutingStrip`), `pages/Projects.tsx` (`BrandingModal`).
-- **CLI**: `src/voicegateway/cli/route.py`, `src/voicegateway/cli/brand.py`.
+<CardGroup>
+  <Card title="Configuration: projects" href="/configuration/projects">
+    Full projects schema: budgets, rosters, guardrails, and stale-key settings.
+  </Card>
+  <Card title="Multi-tenant quickstart" href="/guide/multi-tenant-quickstart">
+    Add per-end-user cost attribution within a project.
+  </Card>
+  <Card title="Budget enforcement example" href="/examples/budget-enforcement">
+    Code example for daily_budget enforcement with guard().
+  </Card>
+  <Card title="Cost reconciliation" href="/guide/cost-reconciliation">
+    Verify recorded per-project totals against provider invoices.
+  </Card>
+</CardGroup>

@@ -1,114 +1,121 @@
 ---
 title: Multi-tenant quickstart
-description: Tag voice sessions with a tenant id, issue scoped virtual API keys, and view or export per-tenant costs from a single deployment.
+description: Tag every voice session with a tenant id so a single deployment can attribute cost to each customer separately.
 ---
 
 # Multi-tenant quickstart
 
-VoiceGateway tags every voice session with an optional `tenant_id` so a single deployment can serve many customers and account for each one separately. This guide walks an operator through the four moves the multi-tenant surface enables:
+One VoiceGateway deployment can serve many customers. Pass `tenant_id` to `attach()` and every STT, LLM, and TTS record is stamped with that customer's identifier. The dashboard and API can then filter, group, and export by tenant so you see per-customer cost without running separate deployments.
 
-1. Tag a session with a tenant at session-create.
-2. Issue a virtual API key scoped to that tenant.
-3. View per-tenant costs, metrics, and replay in the dashboard.
-4. Export per-tenant data for billing or analysis.
-
-If you only need to filter the dashboard, jump straight to [Step 3](#3-view-per-tenant-costs-and-metrics).
+<Note>
+This page covers the agent-side wiring. For project-level grouping (one project per agency client), see [Agency quickstart](/guide/agency-quickstart). The two are composable: you can pass both `project=` and `tenant_id=` to `attach()`.
+</Note>
 
 ## Prerequisites
 
 - VoiceGateway installed (`voicegw --version` to confirm).
-- Daemon running (started by `voicegw onboard` or `voicegw serve`). The daemon serves the dashboard at the daemon URL (default `http://127.0.0.1:8080`).
-- A `voicegw.yaml` with `cost_tracking.db_path` set (the dashboard reads the same SQLite database the gateway writes to).
+- A running gateway daemon (`voicegw serve` or `voicegw onboard`).
+- `voicegw.yaml` with `storage.path` pointing to your SQLite database.
 
-## 1. Tag a session with a tenant
+## How tenant attribution works
 
-Three independent surfaces, listed in order of "least to most operator coupling." Pick whichever fits your deployment.
+`attach()` accepts a `tenant_id` keyword argument. Every cost and latency record written during that session carries the value you pass. Sub-tenants or per-call overrides can be stamped via `metadata.tenant_id` on the record after it is created.
 
-### Option A: pass `tenant_id` to `attach_session`
+The tenant id is bounded at 128 UTF-8 characters. Unicode is allowed.
 
-The cleanest path when your worker code knows the tenant. Refer to the [Python SDK reference](/api/python-sdk#1-attach_session-tenant_id) for the full signature.
+Sessions where `tenant_id` is not set store `NULL` and appear as "unattributed" in the dashboard.
+
+## Step 1: wire attach() with a tenant id
+
+Your agent code knows the caller's tenant at connection time (from room metadata, a custom JWT claim, or a header). Pass it straight into `attach()`.
+
+<Tabs>
+  <Tab title="LiveKit">
+    ```python
+    from livekit.agents import Agent, AgentSession, JobContext
+    from livekit.plugins import deepgram, openai, cartesia
+
+    from voicegateway import attach
+
+
+    async def entrypoint(ctx: JobContext):
+        await ctx.connect()
+
+        # Resolve the tenant from room metadata or a JWT claim.
+        tenant_id = ctx.room.metadata  # e.g. "acme"
+
+        session = AgentSession(
+            stt=deepgram.STT(model="nova-3"),
+            llm=openai.LLM(model="gpt-4o-mini"),
+            tts=cartesia.TTS(model="sonic-3"),
+        )
+
+        # Every record from this session is stamped with tenant_id.
+        attach(session, project="support", tenant_id=tenant_id)
+
+        await session.start(
+            agent=Agent(instructions="Be helpful."),
+            room=ctx.room,
+        )
+    ```
+  </Tab>
+  <Tab title="Pipecat">
+    ```python
+    from pipecat.pipeline.pipeline import Pipeline
+    from pipecat.pipeline.task import PipelineParams, PipelineTask
+    from pipecat.services.deepgram.stt import DeepgramSTTService
+    from pipecat.services.openai.llm import OpenAILLMService
+    from pipecat.services.cartesia.tts import CartesiaTTSService
+
+    from voicegateway import attach
+
+
+    async def run_agent(tenant_id: str):
+        stt = DeepgramSTTService(api_key=DEEPGRAM_API_KEY)
+        llm = OpenAILLMService(api_key=OPENAI_API_KEY, model="gpt-4o-mini")
+        tts = CartesiaTTSService(api_key=CARTESIA_API_KEY, voice_id=VOICE_ID)
+
+        pipeline = Pipeline([transport.input(), stt, llm, tts, transport.output()])
+        task = PipelineTask(
+            pipeline,
+            params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
+        )
+
+        # Every record from this pipeline is stamped with tenant_id.
+        attach(task, project="support", tenant_id=tenant_id)
+
+        runner = PipelineRunner()
+        await runner.run(task)
+    ```
+  </Tab>
+</Tabs>
+
+## Step 2: carry a sub-tenant via metadata
+
+Some deployments nest sub-tenants below the top-level tenant (for example, a platform serving agencies that each have end clients). The record's `metadata` field lets you attach an additional `tenant_id` for downstream analysis without changing the top-level attribution.
 
 ```python
-from voicegateway import inference
-
-async def handle_call(tenant_id: str):
-    agent_session = AgentSession(...)
-    inference.attach_session(agent_session, tenant_id=tenant_id)
-    await agent_session.start(...)
+# After attach(), stamp sub-tenant data in metadata before the session starts.
+session_id = attach(session, project="platform", tenant_id="agency-acme")
+# The sub-tenant is carried on the wire via record metadata.
+# See the Fleet Collector ingest flow for how metadata.tenant_id is routed.
 ```
 
-Use this when the LiveKit dispatcher hands your worker a context that already names the tenant (room metadata, a custom claim, a header passed through to the worker, etc.).
+<Tip>
+If you are sending data to the VoiceGateway Cloud collector, pass `metadata.tenant_id` in the ingest payload. The collector routes it alongside the top-level `tenant_id` so both levels appear in the dashboard. See [Hosted quickstart](/hosted/quickstart) for the collector env vars.
+</Tip>
 
-### Option B: `inference.set_tenant("…")`
+## Step 3: view per-tenant costs in the dashboard
 
-The ContextVar escape hatch for code that does not own the `AgentSession` construction. Sets `tenant_id_ctx` for the rest of the async context; subsequent factory calls inherit the scope.
+Open the dashboard at `http://127.0.0.1:8080` (your daemon's serve port).
 
-```python
-from voicegateway import inference
+Every cost, session, and metrics page respects the **Tenant** filter in the top-right filter strip. Type a tenant id to scope the page, or choose **Unattributed** to audit sessions with no `tenant_id`. The filter value lives in the URL so it persists across navigation.
 
-inference.set_tenant("acme")
-stt = inference.STT("deepgram/nova-3")
-llm = inference.LLM("openai/gpt-4o-mini")
-# Every request from this point in the async context tags 'acme'.
-```
+The Sessions page shows a **Tenant** column. Clicking the tenant pill on any row scopes the whole page to that tenant immediately.
 
-Tenant ids are bounded at 128 UTF-8 characters. Unicode is allowed. Pass `None` to leave the ContextVar untouched (it does **not** clear a previously-set tenant). Use `inference.reset_tenant_id()` to clear it explicitly between sessions in long-lived tasks.
+## Step 4: export per-tenant data
 
-### Option C: scoped virtual API keys
-
-When the caller is not your own agent code (a partner integration, a third-party voicebot) but you can give them a unique API key, issue a virtual key scoped to their tenant. The auth middleware auto-tags every session that arrives bearing that key. See [Step 2](#2-issue-a-virtual-api-key) for the workflow.
-
-### Sessions without a tenant: the "unattributed" bucket
-
-Sessions where none of the three surfaces set a tenant get `tenant_id = NULL` in storage. The dashboard renders these as a muted **unattributed** pill. The dashboard's tenant filter has a dedicated entry for the unattributed bucket so you can audit which sessions slipped through.
-
-## 2. Issue a virtual API key
-
-The dashboard is the only surface that issues virtual keys. The CLI is read-only by design: a CLI that printed the plaintext key would leak it via shell history and scrollback.
-
-1. Open the dashboard at `http://127.0.0.1:8080/api-keys` (the daemon's serve port).
-2. Click **+ Issue Key**.
-3. Fill in:
-    - **Name** (required): a human label, e.g. `acme-prod`.
-    - **Tenant scope** (optional): the tenant id you want auto-attached. Leave blank for an unscoped key.
-    - **Issued by** (optional): free-form audit string.
-4. Hit **Issue Key**. The next modal shows the full key **exactly once**. Copy it into your secret store before closing.
-
-The key looks like `vk_AABBCCDDEEFFGGHHIIJJKKLLMMNNOOPP` (35 characters: `vk_` + 32 base32). The first 8 characters (`vk_AABBC`) persist as the visible prefix so you can identify a key in the list without exposing the secret; the whole key is bcrypt-hashed before storage.
-
-Ship the key to the caller as `Authorization: Bearer vk_…`. From that point:
-
-- Scoped keys auto-tag every session. A body-level `tenant_id` that disagrees with the key's scope returns `403`.
-- Unscoped keys allow the body to declare any tenant.
-- Static API keys (the `auth.api_keys` block in `voicegw.yaml`) never set a tenant.
-
-### Revoke
-
-The same API Keys page exposes a **Revoke** action per row. Revocation is soft: the row stays for audit and the stale-key surface, but verification rejects further requests bearing the key within ~30 seconds.
-
-### Stale-key detection
-
-Keys whose `last_used_at` (or `issued_at`, for never-used keys) is older than `api_key_stale_days` (default 90, per-project overridable in `voicegw.yaml`) surface with a yellow **stale** badge. Hide revoked rows with the toggle at the top of the page when triaging.
-
-## 3. View per-tenant costs and metrics
-
-Every cost, log, sessions, metrics, and replay page in the dashboard now respects the `tenant` URL parameter.
-
-- Use the **Tenant** typeahead in the filter strip (top-right of each page) to scope to one tenant, or pick **Unattributed** to see only sessions without attribution.
-- The filter persists across navigation: switching from Costs to Sessions to Metrics keeps the same tenant in scope because the value lives in the URL.
-- Selecting **All tenants** clears the filter without losing project or time-range scope.
-
-### The Tenants tab
-
-`GET /api/tenants` (consumed by the typeahead) returns the index of every tenant the gateway has seen, ordered by most recent activity. Each entry carries the session count, total cost, and first/last-seen timestamps. The unattributed bucket appears as a separate entry below the list.
-
-### Per-session attribution
-
-The Sessions page has a **Tenant** column that renders the row's `tenant_id` as a clickable pill: clicking it scopes the page to that tenant immediately. The SessionDetail modal also shows the tenant pill next to the session id so you can verify attribution without leaving the row.
-
-## 4. Export per-tenant data
-
-For billing exports or third-party analysis, two paths.
+For billing exports or downstream analysis, use the CLI or direct SQL.
 
 ### CLI
 
@@ -117,40 +124,48 @@ voicegw tenant list --json
 voicegw tenant show acme --json
 ```
 
-Both commands emit JSON with the same shape `/api/tenants` returns. `tenant show` exits 1 when the tenant has no sessions so CI scripts can branch.
+`tenant show` exits 1 when the tenant has no sessions, so CI scripts can branch on it.
 
-The `voicegw costs` command does **not** accept a `--tenant` flag. The dashboard's `/api/costs?tenant=…` endpoint is the canonical per-tenant cost source.
-
-### Direct SQL
+### SQL
 
 The `sessions` table carries `tenant_id`. For ad-hoc analysis:
 
 ```sql
-SELECT tenant_id,
-       COUNT(*) AS session_count,
-       SUM(total_cost_usd) AS total_cost
+SELECT
+    tenant_id,
+    COUNT(*)             AS session_count,
+    SUM(total_cost_usd)  AS total_cost
 FROM sessions
 WHERE started_at >= '2026-05-01'
 GROUP BY tenant_id
 ORDER BY total_cost DESC;
 ```
 
-The `requests`, `turns`, `dead_air_events`, and `replay_*` tables all carry the column too, so any join-and-aggregate workflow can add `tenant_id` to the GROUP BY without schema gymnastics.
+The `requests`, `turns`, and `guardrail_events` tables also carry `tenant_id`, so any join-and-aggregate query can group by tenant without schema changes.
 
 ## Known limitations
 
-A few operator workflows are deliberately out of scope. Plan accordingly.
+<Note>
+These are deliberate scope decisions, not bugs.
+</Note>
 
-- **No CLI issuance of virtual keys.** The plaintext surface is the dashboard's "show key once" modal; a CLI flow would leak via shell history.
-- **No `voicegw costs --tenant`.** The dashboard's `/api/costs?tenant=…` is the canonical per-tenant cost source.
-- **No re-tag affordance for already-attributed sessions.** Once a session has a non-NULL `tenant_id`, the dashboard cannot change it; the COALESCE rule in `log_request` only fills NULL slots.
-- **Virtual keys do not carry RBAC scopes.** A verified vk grants the same access a wildcard static key would.
+- **No `voicegw costs --tenant` flag.** Use the dashboard's `/api/costs?tenant=` endpoint for per-tenant cost totals.
+- **No re-tag affordance.** Once a session has a non-NULL `tenant_id`, it cannot be changed after the fact.
+- **Virtual keys do not carry RBAC scopes.** A verified virtual key grants the same access as a wildcard static key.
 
-## Where the design lives
+## See also
 
-- **Migration**: `src/voicegateway/storage/migrations/0005_tenant_attribution.py`.
-- **ContextVar**: `src/voicegateway/inference/_session_context.py`.
-- **Auth middleware**: `src/voicegateway/server/main.py::build_app` + `src/voicegateway/core/auth.py`.
-- **Repos**: `src/voicegateway/storage/api_keys_repo.py`, `src/voicegateway/storage/tenants_repo.py`.
-- **Dashboard API**: `src/dashboard/api/main.py` (search for `/api/tenants` and `/api/api_keys`).
-- **Frontend primitives**: `src/dashboard/frontend/src/components/{FilterBar,TenantFilter,TenantPill}.tsx`.
+<CardGroup>
+  <Card title="attach()" href="/guide/attach">
+    Full signature and wiring reference for LiveKit and Pipecat.
+  </Card>
+  <Card title="Agency quickstart" href="/guide/agency-quickstart">
+    One agency running many client projects, with per-client budgets.
+  </Card>
+  <Card title="Multi-project example" href="/examples/multi-project">
+    Code example using multiple projects and tenants side by side.
+  </Card>
+  <Card title="Configuration: projects" href="/configuration/projects">
+    Set daily budgets and routing rosters per project in voicegw.yaml.
+  </Card>
+</CardGroup>
