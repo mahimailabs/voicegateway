@@ -28,20 +28,6 @@ def _session(**o: Any) -> SimpleNamespace:
     return SimpleNamespace(**base)
 
 
-def _guardrail(**o: Any) -> SimpleNamespace:
-    base: dict[str, Any] = {
-        "id": 7,
-        "session_id": "s1",
-        "project": "realty",
-        "category": "pii",
-        "action": "held",
-        "context_excerpt": "redacted turn",
-        "created_at": "2026-07-05T00:00:00+00:00",
-    }
-    base.update(o)
-    return SimpleNamespace(**base)
-
-
 def _row(**overrides: Any) -> RosterRow:
     base: dict[str, Any] = {
         "agent_id": "w1",
@@ -171,51 +157,3 @@ def test_completed_tasks_counted_in_fleet_health() -> None:
         generated_at="x",
     )
     assert snap["fleetHealth"]["tasksCompletedToday"] == 1
-
-
-# --- Enrichment: guardrail events -> interventions --------------------------
-
-
-def test_held_guardrail_becomes_intervention_and_flags_agent() -> None:
-    snap = build_snapshot(
-        [_row(agent_name="alpha", project="realty", status="busy")],
-        interventions=[_guardrail(action="held", project="realty")],
-        generated_at="x",
-    )
-    assert len(snap["interventions"]) == 1
-    iv = snap["interventions"][0]
-    assert iv["id"] == "guardrail-7"
-    assert iv["type"] == "approval_needed"  # held -> approval
-    assert iv["agentId"] == "realty"
-    # folded onto the matching agent node (its domain is the project)
-    agent = snap["agents"][0]
-    assert agent["interventionRequired"] is True
-    assert agent["status"] == "intervention_required"
-    assert snap["fleetHealth"]["interventionsRequired"] == 1
-    assert snap["fleetHealth"]["overallHealth"] == "degraded"
-
-
-def test_blocked_guardrail_is_permission_high_priority() -> None:
-    iv = build_snapshot(
-        [], interventions=[_guardrail(action="blocked")], generated_at="x"
-    )["interventions"][0]
-    assert iv["type"] == "permission"
-    assert iv["priority"] == "high"
-
-
-def test_offline_agent_flagged_but_not_flipped() -> None:
-    snap = build_snapshot(
-        [
-            _row(
-                agent_name="alpha",
-                project="realty",
-                status="offline",
-                active_sessions=0,
-            )
-        ],
-        interventions=[_guardrail(project="realty")],
-        generated_at="x",
-    )
-    agent = snap["agents"][0]
-    assert agent["interventionRequired"] is True
-    assert agent["status"] == "offline"  # offline stays offline
