@@ -1,23 +1,26 @@
-# Gateway Core
+---
+title: Gateway Core
+description: How the internal Gateway class wires configuration, storage, middleware, and the provider registry together as the single source of truth for all VoiceGateway operations.
+---
 
-The core layer wires configuration, storage, and middleware together so the `voicegateway.inference` factories and the operations endpoints (CLI, HTTP, MCP, dashboard) all share one source of truth.
+The core layer connects configuration, storage, and middleware so the public `attach()` and `guard()` helpers, the CLI, the HTTP server, and the MCP runtime all share one source of truth.
 
-## Gateway Class
+## Gateway class
 
 **File:** `src/voicegateway/core/gateway.py`
 
-`Gateway` is an internal container; it is not part of the public Python SDK. The inference module holds a process-wide singleton via `voicegateway.inference._factory.get_gateway()`. The CLI, HTTP server, and MCP runtime each instantiate it directly because they own their own process lifecycle.
+`Gateway` is an internal container. It is not part of the public Python SDK. The `attach()` and `guard()` helpers hold a process-wide singleton, obtained via an internal factory. The CLI, HTTP server, and MCP runtime each instantiate it directly because they own their own process lifecycle.
 
 ### Initialization
 
 ```python
-# Internal use only. Not on the public SDK surface.
+# Internal use only -- not on the public SDK surface.
 from voicegateway.core.gateway import Gateway
 
-# Auto-discovers voicegw.yaml from standard locations
+# Auto-discovers voicegw.yaml from standard locations.
 gw = Gateway()
 
-# Or specify a config path explicitly
+# Or specify a config path explicitly.
 gw = Gateway(config_path="/path/to/voicegw.yaml")
 ```
 
@@ -28,7 +31,7 @@ Config file search order (when no path is given):
 3. `~/.config/voicegateway/voicegw.yaml`
 4. `/etc/voicegateway/voicegw.yaml`
 
-### What happens at `Gateway.__init__`
+### Startup sequence
 
 ```mermaid
 graph TD
@@ -43,25 +46,22 @@ graph TD
     J --> K["Init BudgetEnforcer, wire into CostTracker"]
 ```
 
-The database path is resolved as: `VOICEGW_DB_PATH` env > `cost_tracking.db_path` in YAML > default `~/.config/voicegateway/voicegw.db`.
+The database path resolves as: `VOICEGW_DB_PATH` env > `cost_tracking.db_path` in YAML > default `~/.config/voicegateway/voicegw.db`.
 
-### What `Gateway` exposes
+### What Gateway exposes internally
 
 | Surface | Purpose |
 |---|---|
 | `gw.config` | The merged `GatewayConfig` object (read-only). |
 | `gw.storage` | `SQLiteStorage` or `None` when cost tracking is disabled. |
-| `gw.cost_tracker` | The `CostTracker` middleware used by the inference wrappers. |
+| `gw.cost_tracker` | The `CostTracker` middleware used by attach(). |
 | `gw.costs(period, project=...)` | Cost summary helper used by the CLI and HTTP API. |
-| `gw.list_projects()` | Project list for the CLI / dashboard / MCP. |
+| `gw.list_projects()` | Project list for the CLI, dashboard, and MCP. |
 | `await gw.refresh_config()` | Re-merges YAML and SQLite after a managed_* write. |
 
-The public inference surface is `voicegateway.inference.STT/LLM/TTS`,
-which constructs the Gateway singleton internally and reads the same
-merged config. There is no separate `Gateway.stt()` / `llm()` /
-`tts()` method on the Gateway object.
+The public surface is `from voicegateway import attach, guard`. Both functions call the internal singleton and read the same merged config.
 
-### Config Refresh
+### Config refresh
 
 After the dashboard or MCP server writes to managed tables, the Gateway reloads its merged config:
 
@@ -69,40 +69,39 @@ After the dashboard or MCP server writes to managed tables, the Gateway reloads 
 await gw.refresh_config()
 ```
 
-This re-runs `ConfigManager.load_merged()` and rebuilds the `BudgetEnforcer` so it sees newly-added projects.
+This re-runs `ConfigManager.load_merged()` and rebuilds `BudgetEnforcer` so it sees newly added projects.
 
 ## ConfigManager
 
 **File:** `src/voicegateway/core/config_manager.py`
 
-`ConfigManager.load_merged()` deep-copies the YAML config and layers in `managed_providers`, `managed_models`, and `managed_projects` rows from SQLite. Per-project provider rows (those with a non-null `project` column) merge into `merged.projects[<id>].providers[<provider_type>]` so the inference resolver finds them via `GatewayConfig.get_provider_config_for_project`. YAML always wins on conflict.
+`ConfigManager.load_merged()` deep-copies the YAML config and layers in `managed_providers`, `managed_models`, and `managed_projects` rows from SQLite. Per-project provider rows (those with a non-null `project` column) merge into `merged.projects[<id>].providers[<provider_type>]` so the resolver finds them via `GatewayConfig.get_provider_config_for_project`. YAML always wins on conflict.
 
-## inference resolution
+See [Config Layers](/architecture/config-layers) for the full merge rules.
 
-**File:** `src/voicegateway/inference/_resolution.py`
+## Model ID resolution
 
-The inference factories parse `"provider/model"` strings inline and validate the provider against the registry. The variant suffix (language for STT, voice for TTS) is parsed in the modality-specific factory file (`_stt.py`, `_tts.py`) before resolution; LLM strings keep their trailing colon segments verbatim so Ollama tags survive.
+**File:** `src/voicegateway/core/registry.py` (via an inline parser in the provider layer)
+
+The `attach()` and `guard()` helpers parse `"provider/model"` strings and validate the provider against the registry. The variant suffix (language for STT, voice for TTS) is parsed before resolution; LLM strings keep their trailing colon segments verbatim so Ollama tags survive.
 
 ```python
-from voicegateway.inference._resolution import resolve_model
-
-resolve_model("deepgram/nova-3")      # ("deepgram", "nova-3")
-resolve_model("ollama/qwen2.5:3b")    # ("ollama", "qwen2.5:3b")
+# Examples of model strings VoiceGateway accepts
+"deepgram/nova-3"           # STT
+"openai/gpt-4.1-mini"       # LLM
+"cartesia/sonic-3"          # TTS
+"ollama/qwen2.5:3b"         # local LLM with tag
 ```
-
-Errors:
 
 | Exception | When |
 |---|---|
 | `ModelResolutionError` | Empty string, missing slash, empty halves, or unknown provider name. |
 
-The factories then call `voicegateway.core.registry.create_provider(provider_name, config)` to instantiate the matching `livekit.plugins.<provider>` wrapper.
-
 ## Registry
 
 **File:** `src/voicegateway/core/registry.py`
 
-The Registry maps provider names to their implementation classes via lazy import. No provider module is imported until it is actually needed.
+The Registry maps provider names to their implementation classes via lazy import. No provider module is imported until it is needed.
 
 ```python
 _PROVIDER_REGISTRY = {
@@ -126,3 +125,7 @@ _PROVIDER_REGISTRY = {
 Could not import provider 'deepgram': No module named 'deepgram'.
 Install with: pip install voicegateway[deepgram]
 ```
+
+<Note>
+The Registry is an internal detail. You never call `create_provider` directly. Use `from voicegateway import attach, guard` and pass `"provider/model"` strings; the registry is invoked automatically.
+</Note>
