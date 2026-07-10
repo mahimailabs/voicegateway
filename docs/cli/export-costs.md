@@ -7,11 +7,11 @@ description: Export per-request cost line items for a date window in CSV or JSON
 
 Export per-request cost line items for a date window in CSV or JSON.
 
-## Purpose
+## Synopsis
 
-The `export-costs` command writes one row per recorded request, suitable for spreadsheet review or as the input to a downstream reconciliation step. Pair with [`voicegw reconcile`](/cli/reconcile) to compare the exported numbers against a provider's invoice. The full reconciliation workflow lives at [Cost Reconciliation](/guide/cost-reconciliation).
+`voicegw export-costs` writes one row per recorded request, suitable for spreadsheet review or as the input to a downstream reconciliation step. Pair with [`voicegw reconcile`](/cli/reconcile) to compare the exported numbers against a provider's invoice. The full reconciliation workflow lives at [Cost Reconciliation](/guide/cost-reconciliation).
 
-## Syntax
+## Usage
 
 ```bash
 voicegw export-costs --start <YYYY-MM-DD> --end <YYYY-MM-DD> [OPTIONS]
@@ -28,9 +28,9 @@ voicegw export-costs --start <YYYY-MM-DD> --end <YYYY-MM-DD> [OPTIONS]
 | `--output` | `-o` | `string` | `-` | Output path; `-` writes to stdout. |
 | `--config` | `-c` | `string` | `null` | Path to `voicegw.yaml`. Auto-discovered if omitted. |
 
-## Prerequisites
-
+<Note>
 Cost tracking must be enabled in `voicegw.yaml`. If storage is not configured, the command prints a warning and exits with code 1.
+</Note>
 
 ## Output columns
 
@@ -53,10 +53,7 @@ Rows are ordered by timestamp ascending.
 
 ### JSON format (JSONL)
 
-`--format json` emits **JSONL**: one JSON object per line, no
-outer array, no indent. Streamable; downstream consumers iterate
-`for line in f: row = json.loads(line)`. The schema matches the
-CSV column set 1:1.
+`--format json` emits JSONL: one JSON object per line, no outer array, no indent. Streamable; downstream consumers iterate `for line in f: row = json.loads(line)`. The schema matches the CSV column set 1:1.
 
 ## Examples
 
@@ -92,13 +89,11 @@ voicegw export-costs \
 | `1` | Cost tracking is not enabled. |
 | `2` | Bad input: malformed date or unknown format. |
 
-## Related commands
+## Related
 
-- [`voicegw reconcile`](/cli/reconcile) -- diff the exported numbers against a provider's usage file.
-- [`voicegw costs`](/cli/costs) -- aggregated summary instead of per-request rows.
-- [`voicegw logs`](/cli/logs) -- recent rows for terminal display.
+[`voicegw reconcile`](/cli/reconcile) | [`voicegw costs`](/cli/costs) | [`voicegw logs`](/cli/logs)
 
 ## See also
 
-- [Cost Reconciliation](/guide/cost-reconciliation) -- the full reconciliation workflow.
-- [Reconcile File Formats](/reference/reconcile-formats) -- per-provider schemas the reconcile step expects.
+- [Cost Reconciliation](/guide/cost-reconciliation): the full reconciliation workflow.
+- [Reconcile File Formats](/reference/reconcile-formats): per-provider schemas the reconcile step expects.
