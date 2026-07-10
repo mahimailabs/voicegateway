@@ -1,15 +1,15 @@
 ---
 title: Projects
-description: Per-project cost tracking, budget enforcement, guardrails, and organizational grouping for attributing VoiceGateway costs to specific agents, teams, or customers.
+description: Per-project cost tracking, budget enforcement, provider key overrides, tags, and guardrail policies for attributing VoiceGateway costs to specific agents, teams, or customers.
 ---
 
 # Projects
 
-Projects provide per-project cost tracking, budget enforcement, and organizational grouping. They are the primary mechanism for attributing costs to specific agents, teams, or customers.
+Projects are the primary mechanism for attributing costs to specific agents, teams, or customers. Each project can carry a daily budget, override provider keys, and define guardrail policies.
 
 ## Defining projects
 
-Projects are defined in `voicegw.yaml` under the `projects` section. The key is the project ID used in code.
+Projects live under `projects:` in `voicegw.yaml`. The key is the project ID used everywhere (CLI, API, dashboard).
 
 ```yaml
 projects:
@@ -44,21 +44,21 @@ default_project: customer-support
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `name` | string | required | Human-readable project name |
-| `description` | string | `""` | Description of the project's purpose |
+| `description` | string | `""` | Free-text description |
 | `daily_budget` | float | `0.0` | Daily spending limit in USD. `0.0` means no limit. |
-| `budget_action` | string | `"warn"` | What to do when budget is exceeded: `warn`, `throttle`, or `block` |
+| `budget_action` | string | `"warn"` | Action when budget is exceeded: `warn`, `throttle`, or `block` |
 | `tags` | list of strings | `[]` | Arbitrary tags for filtering and dashboard display |
-| `providers` | mapping | `{}` | Per-project provider keys. Wins over the top-level `providers:` block when set. |
-| `default_stack` | string | `""` | Optional dashboard / display hint. Not used by the inference module. |
-| `guardrails` | mapping | all categories `off` | Optional LLM-side guardrail policy. |
+| `providers` | mapping | `{}` | Per-project provider keys. Overrides the top-level `providers:` block for this project. |
+| `default_stack` | string | `""` | Dashboard display hint. See [Stacks](/configuration/stacks). |
+| `guardrails` | mapping | all off | Optional per-project LLM guardrail policy. |
 
 ## Budget actions
 
-The `budget_action` field controls what happens when a project's daily spend exceeds its `daily_budget`:
+The `budget_action` field controls what happens when a project's daily spend exceeds `daily_budget`:
 
-- **`warn`** -- a warning is logged but requests continue normally. Use this for development and low-risk projects where you want visibility without disruption.
-- **`throttle`** -- requests are artificially slowed down to reduce consumption rate. Use this when you want to discourage overuse without hard-blocking.
-- **`block`** -- requests are rejected entirely until the next day when the budget resets. Use this for strict cost controls on production projects.
+- `warn`: a warning is logged but requests continue. Use for development or low-risk projects.
+- `throttle`: requests are artificially slowed to reduce the consumption rate.
+- `block`: requests are rejected until the next calendar day when the budget resets.
 
 ```yaml
 projects:
@@ -68,32 +68,24 @@ projects:
     budget_action: block
 ```
 
-## Selecting a project from code
+<Warning>
+Budget enforcement requires `cost_tracking: true` in the `observability` block. If cost tracking is disabled, `budget_action` never triggers because there is no spend data to compare against.
+</Warning>
 
-The active project resolves in this order:
+## Active project resolution
 
-1. `inference.set_project(name)` in the current async context.
+The active project for a call resolves in this order:
+
+1. The `tenant_id` carried in the `attach()` call or agent metadata.
 2. `VOICEGW_ACTIVE_PROJECT` environment variable.
-3. `default_project` field in `voicegw.yaml`.
+3. `default_project` in `voicegw.yaml`.
 4. The literal `"default"` (auto-created on first run).
 
-```python
-from voicegateway import inference
-
-# Either rely on default_project: customer-support in voicegw.yaml,
-# or pick the project explicitly per call context:
-inference.set_project("customer-support")
-
-stt = inference.STT("deepgram/nova-3")
-llm = inference.LLM("anthropic/claude-sonnet-4-20250514")
-tts = inference.TTS("cartesia/sonic-3")
-```
-
-`inference.set_project` is scoped to the current `asyncio` context; sibling tasks each manage their own project state without leaking.
+See [attach()](/guide/attach) for how to bind a tenant to a call.
 
 ## Guardrails
 
-Guardrails are optional per-project policies injected into `voicegateway.inference.LLM.chat(...)`.
+Per-project guardrails are optional policies applied to LLM calls.
 
 ```yaml
 projects:
@@ -109,7 +101,10 @@ projects:
         off_topic: off
 ```
 
-Supported categories are `pii`, `financial`, `medical`, `prompt_injection`, and `off_topic`. Supported actions are `redact`, `block`, `alert`, and `off`. See [Voice-specific guardrails](/guide/guardrails) for runtime behavior, bypass, and audit events.
+Supported categories: `pii`, `financial`, `medical`, `prompt_injection`, `off_topic`.
+Supported actions: `redact`, `block`, `alert`, `off`.
+
+Use `guard()` in agent code to enforce these policies at the call layer. See [guard()](/guide/guard) for runtime behavior and audit events.
 
 ## Querying project data
 
@@ -118,8 +113,8 @@ Supported categories are `pii`, `financial`, `medical`, `prompt_injection`, and 
 ```bash
 voicegw projects                         # list all projects
 voicegw project customer-support         # project details
-voicegw costs --project customer-support # project costs today
-voicegw logs --project customer-support  # recent requests for the project
+voicegw costs --project customer-support # costs today
+voicegw logs --project customer-support  # recent requests
 ```
 
 ### From the HTTP API
@@ -135,29 +130,19 @@ The web dashboard (`voicegw dashboard`) shows per-project cost breakdowns, daily
 
 ## Tags
 
-Tags are arbitrary strings used for filtering and visual organization. The dashboard uses the first tag to determine accent colors:
+Tags are arbitrary strings for filtering and visual organization. The dashboard uses the first tag to choose an accent color:
 
-- Tags containing `prod` render with a green accent
-- Tags containing `stag` render with a yellow accent
-- Tags containing `dev` or `test` render with a blue accent
-- All other tags render with a pink accent
-
-```yaml
-projects:
-  staging-bot:
-    name: Staging Bot
-    tags: [staging, v2]
-    # Renders with yellow accent in dashboard
-```
+- Tags containing `prod`: green accent
+- Tags containing `stag`: yellow accent
+- Tags containing `dev` or `test`: blue accent
+- All other tags: pink accent
 
 ## Runtime project management
 
-Projects can also be created and managed at runtime through:
+Projects can also be created at runtime through the dashboard, the MCP server (`voicegw mcp`), or the HTTP API (`/v1/projects`). Runtime-created projects are persisted in SQLite and merged with YAML-defined projects on startup. YAML-defined projects take precedence on conflicts.
 
-- The **dashboard** web UI
-- The **MCP server** (`voicegw mcp`)
-- The **HTTP API** (`/v1/projects`)
+---
 
-Projects created at runtime are persisted in the SQLite database and merged with YAML-defined projects on startup. YAML-defined projects take precedence if there is a conflict.
-
-See: [Stacks](/configuration/stacks), [Observability](/configuration/observability), [voicegw.yaml Reference](/configuration/voicegw-yaml)
+See [Stacks](/configuration/stacks) for the `default_stack` field.
+See [Observability](/configuration/observability) for `cost_tracking` and budget enforcement.
+See [voicegw.yaml reference](/configuration/voicegw-yaml) for the full config file shape.

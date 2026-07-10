@@ -1,11 +1,15 @@
 ---
 title: Stacks
-description: Named YAML bundles that map a single name to one STT, one LLM, and one TTS model, used as a documentation and dashboard hint for VoiceGateway projects.
+description: Named YAML bundles that map one name to an STT, LLM, and TTS model ID, used as quality-tier presets for the dashboard and team documentation.
 ---
 
 # Stacks
 
-Stacks are named YAML bundles that map a single name to one STT model, one LLM model, and one TTS model. They are a documentation and dashboard hint only: the `voicegateway.inference` module does not consume them. The dashboard uses `default_stack` on a project to render a recommended-stack badge; the rest of the gateway ignores the field.
+Stacks are named YAML bundles that map one name to an STT model ID, one LLM model ID, and one TTS model ID. They serve as quality-tier presets: you reference a stack name on a project, and the dashboard renders it as a recommended-configuration badge.
+
+<Note>
+Stacks are a dashboard and documentation hint. Wire your native LiveKit or Pipecat providers directly using `attach()` and pass the model ID you want. No code reads `default_stack` at runtime to construct providers.
+</Note>
 
 ## Defining stacks
 
@@ -25,9 +29,19 @@ stacks:
     tts: local/kokoro
 ```
 
-A project can carry an optional `default_stack` that points at one of these names:
+Each stack entry has exactly three keys: `stt`, `llm`, and `tts`. Values are `provider/model` strings in the standard format.
+
+## Referencing a stack from a project
+
+Add `default_stack` to any project. The value must match a key under `stacks:`.
 
 ```yaml
+stacks:
+  premium:
+    stt: deepgram/nova-3
+    llm: anthropic/claude-sonnet-4-5
+    tts: cartesia/sonic-3
+
 projects:
   production:
     name: Production
@@ -36,24 +50,44 @@ projects:
     budget_action: throttle
 ```
 
-The dashboard's project page renders the stack name next to the project. No code reads the stack to construct factories: pick the model id you want and pass it to `inference.STT/LLM/TTS` directly.
+The dashboard project page renders the stack name alongside the project. No additional runtime behavior is attached to this field.
 
-## Using stacks from code
+## Wiring providers in agent code
 
+Pick the model IDs from your chosen stack and pass them to your framework's native provider constructors. Wrap with `attach()` to meter cost.
+
+<Tabs>
+  <Tab title="LiveKit">
 ```python
-from voicegateway.inference import STT, LLM, TTS
+from livekit.agents import Agent, AgentSession
+from livekit.plugins import deepgram, anthropic, cartesia
+from voicegateway import attach
 
-# Construct each modality explicitly with the model id from the
-# stack you want. There is no Gateway.stack(...) helper.
-stt = STT("deepgram/nova-3")
-llm = LLM("anthropic/claude-sonnet-4-5")
-tts = TTS("cartesia/sonic-3")
+session = AgentSession(
+    stt=attach(deepgram.STT(model="nova-3")),
+    llm=attach(anthropic.LLM(model="claude-sonnet-4-5")),
+    tts=attach(cartesia.TTS(model="sonic-3")),
+)
 ```
+  </Tab>
+  <Tab title="Pipecat">
+```python
+from pipecat.services.deepgram import DeepgramSTTService
+from pipecat.services.anthropic import AnthropicLLMService
+from pipecat.services.cartesia import CartesiaTTSService
+from voicegateway import attach
 
-If you find yourself repeating the same triple across agents, define a small Python helper in your own code that returns the three calls. The gateway does not need a built-in for it.
+stt = attach(DeepgramSTTService(model="nova-3"))
+llm = attach(AnthropicLLMService(model="claude-sonnet-4-5"))
+tts = attach(CartesiaTTSService(model="sonic-3"))
+```
+  </Tab>
+</Tabs>
 
-## Roadmap
+If you find yourself repeating the same triple across agents, define a small helper in your own code that returns the three attached providers. See [attach()](/guide/attach) for the full API.
 
-A future release may bring back a one-line `inference.stack("premium")` shortcut once the trade-offs (per-project key resolution, fallback chains, model-id validation) are sorted. For now stacks live in YAML for dashboard display and team-internal documentation.
+---
 
-See: [Projects](/configuration/projects), [Models](/configuration/models), [voicegw.yaml Reference](/configuration/voicegw-yaml)
+See [Projects](/configuration/projects) for the `default_stack` field and budget configuration.
+See [Models](/configuration/models) for the `provider/model` string format.
+See [voicegw.yaml reference](/configuration/voicegw-yaml) for the full config file shape.

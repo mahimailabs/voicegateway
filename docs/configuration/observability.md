@@ -1,11 +1,11 @@
 ---
 title: Observability
-description: VoiceGateway's three built-in observability features (latency tracking, cost tracking, and request logging) that run as middleware around every provider call, and how to toggle each one.
+description: VoiceGateway's three built-in observability middleware flags (latency tracking, cost tracking, request logging) and the storage and latency tuning knobs that back them.
 ---
 
 # Observability
 
-VoiceGateway includes three built-in observability features that run as middleware around every provider call. All three are enabled by default and can be toggled independently.
+VoiceGateway runs three middleware features around every provider call. All three are enabled by default and can be toggled independently.
 
 ## Configuration
 
@@ -16,17 +16,17 @@ observability:
   request_logging: true
 ```
 
-## The three flags
+---
 
-### `latency_tracking`
+## `latency_tracking`
 
 **Default:** `true`
 
-When enabled, VoiceGateway measures time-to-first-byte (TTFB) and total latency for every provider call. Latency data is stored in SQLite and available through the dashboard, CLI (`voicegw status`), and HTTP API (`/v1/metrics`).
+When enabled, VoiceGateway measures time-to-first-byte (TTFB) and total latency for every provider call. Latency data is stored in SQLite and available through the dashboard, `voicegw status`, and the HTTP API at `/v1/metrics`.
 
-When disabled, provider instances are returned without the latency monitoring wrapper. This reduces overhead slightly but removes all latency visibility.
+When disabled, providers are returned without the latency monitoring wrapper. This reduces overhead slightly but removes all latency visibility.
 
-Related config:
+### Latency thresholds
 
 ```yaml
 latency:
@@ -34,22 +34,24 @@ latency:
   percentiles: [50.0, 95.0, 99.0]
 ```
 
-- `ttfb_warning_ms` -- a warning is logged when TTFB exceeds this threshold
-- `percentiles` -- which percentiles to compute and report
+- `ttfb_warning_ms`: a warning is logged when TTFB exceeds this threshold (default `500.0` ms).
+- `percentiles`: which percentiles to compute and report.
 
-### `cost_tracking`
+---
+
+## `cost_tracking`
 
 **Default:** `true`
 
-When enabled, VoiceGateway estimates the cost of each provider call based on usage (tokens, characters, audio seconds) and records it in the SQLite database. Cost data powers the dashboard cost views, the `voicegw costs` CLI command, and per-project budget enforcement.
+When enabled, VoiceGateway estimates the cost of each provider call based on usage (tokens for LLM, characters for TTS, audio seconds for STT) and records it in SQLite. Cost data powers the dashboard cost views, the `voicegw costs` CLI command, and per-project budget enforcement.
 
-When disabled, no cost records are written. Budget enforcement (`budget_action`) will not trigger because there is no spend data to compare against.
+When disabled, no cost records are written and budget enforcement (`budget_action`) will not trigger.
 
 <Warning>
-Disabling `cost_tracking` also effectively disables budget enforcement for all projects, regardless of their `budget_action` setting.
+Disabling `cost_tracking` effectively disables budget enforcement for all projects, regardless of their `budget_action` setting.
 </Warning>
 
-Related config:
+### Storage settings
 
 ```yaml
 cost_tracking:
@@ -58,17 +60,35 @@ cost_tracking:
   daily_budget_alert: 100.00
 ```
 
-### `request_logging`
+- `enabled`: enable cost persistence (default `false`; also enabled when `VOICEGW_DB_PATH` is set).
+- `db_path`: path to the SQLite database file.
+- `daily_budget_alert`: global daily budget alert threshold in USD (optional).
+
+### Cost units per modality
+
+| Modality | Billing unit | Example |
+|---|---|---|
+| STT | Audio seconds | `deepgram/nova-3` billed per second |
+| LLM | Input + output tokens | `anthropic/claude-sonnet-4-5` per million tokens |
+| TTS | Characters | `cartesia/sonic-3` per character |
+
+Prices are looked up from `voice-prices` (a fork of `pydantic/genai-prices`) at request time. No manual price configuration is needed.
+
+---
+
+## `request_logging`
 
 **Default:** `true`
 
-When enabled, VoiceGateway logs metadata about each provider call: timestamp, provider, model, modality, project, latency, and cost. Logs are stored in SQLite and visible in the dashboard request log view and through the `voicegw logs` CLI command.
+When enabled, VoiceGateway logs metadata for each provider call: timestamp, provider, model, modality, project, latency, and cost. Logs are stored in SQLite and visible in the dashboard request log view and through the `voicegw logs` CLI command.
 
-When disabled, no request log entries are written. The dashboard log view will be empty.
+When disabled, no request log entries are written and the dashboard log view will be empty.
+
+---
 
 ## Disabling all observability
 
-To run VoiceGateway with zero overhead from observability middleware:
+To run VoiceGateway with zero middleware overhead (useful for benchmarking raw provider performance):
 
 ```yaml
 observability:
@@ -77,7 +97,7 @@ observability:
   request_logging: false
 ```
 
-This is useful for benchmarking raw provider performance or in environments where you handle monitoring externally.
+---
 
 ## Checking current settings
 
@@ -85,6 +105,10 @@ This is useful for benchmarking raw provider performance or in environments wher
 voicegw status
 ```
 
-The status output includes which observability features are enabled.
+The status output shows which observability features are currently enabled.
 
-See: [voicegw.yaml Reference](/configuration/voicegw-yaml), [Projects](/configuration/projects), [Environment Variables](/configuration/environment-variables)
+---
+
+See [voicegw.yaml reference](/configuration/voicegw-yaml) for the full config file shape.
+See [Projects](/configuration/projects) for `budget_action` and per-project budget configuration.
+See [Environment variables](/configuration/environment-variables) for `VOICEGW_DB_PATH`.

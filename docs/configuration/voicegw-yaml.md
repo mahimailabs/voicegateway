@@ -1,37 +1,39 @@
 ---
 title: voicegw.yaml reference
-description: Every top-level section and key in the VoiceGateway config file. Validated with pydantic extra=forbid so typos fail fast at startup.
+description: Every top-level section and key in the VoiceGateway config file, validated with pydantic extra=forbid so typos fail fast at startup.
 ---
 
 # voicegw.yaml reference
 
-The `voicegw.yaml` file is the central configuration for
-VoiceGateway. It is validated at startup using a Pydantic schema
-with `extra="forbid"`, which means any typo or unknown key produces
-a clear error message before your gateway starts.
+`voicegw.yaml` is the central config file for VoiceGateway. It is validated at startup using a Pydantic schema with `extra="forbid"`, so any typo or unknown key produces a clear error before your gateway starts.
 
-VoiceGateway searches for the config file in this order:
+## Discovery order
+
+VoiceGateway searches for the file in this order:
 
 1. `./voicegw.yaml` (current directory)
 2. `~/.config/voicegateway/voicegw.yaml`
 3. `/etc/voicegateway/voicegw.yaml`
 
-You can override this with the `VOICEGW_CONFIG` environment
-variable. See [Environment variables](/configuration/environment-variables).
+Override this entirely by setting `VOICEGW_CONFIG` to an absolute path. See [Environment variables](/configuration/environment-variables).
+
+<Tip>
+Run `voicegw init` to write a starter config to `~/.config/voicegateway/voicegw.yaml` with every section commented in.
+</Tip>
 
 ## Top-level sections
 
-The config file has thirteen top-level sections. All are optional.
+All sections are optional. Omitted sections use defaults.
 
 | Section | Purpose |
 |---|---|
 | `providers` | API keys and settings for each provider |
-| `models` | Register custom model aliases |
-| `stacks` | Named bundles of STT + LLM + TTS models |
+| `models` | Register custom model aliases by modality |
+| `stacks` | Named STT + LLM + TTS bundles |
 | `projects` | Per-project tracking and budgets |
 | `fallbacks` | Ordered fallback chains per modality |
 | `observability` | Toggle latency, cost, and logging middleware |
-| `cost_tracking` | SQLite database settings for cost persistence |
+| `cost_tracking` | SQLite storage settings |
 | `latency` | TTFB warning thresholds and percentile config |
 | `rate_limits` | Per-provider request rate limits |
 | `ingest` | Rate limits for the fleet collector ingest endpoint |
@@ -43,9 +45,7 @@ The config file has thirteen top-level sections. All are optional.
 
 ## `providers`
 
-Configure credentials and settings for each provider. Keys are
-provider names matching VoiceGateway's built-in provider
-identifiers.
+Configure credentials for each provider. String values support `${ENV_VAR}` substitution.
 
 ```yaml
 providers:
@@ -73,23 +73,13 @@ providers:
     enabled: true
 ```
 
-Each provider supports at minimum:
-
-- `api_key` (string): API key, typically via `${ENV_VAR}` substitution.
-- `base_url` (string): override the default API endpoint.
-- `enabled` (bool, default `true`): disable a provider without
-  removing its config.
-
-See [Providers](/configuration/providers) for per-provider
-details.
+All providers support `api_key`, `base_url`, and `enabled` (bool, default `true`). See [Providers](/configuration/providers).
 
 ---
 
 ## `models`
 
-Register custom model aliases organised by modality. Each entry
-maps an alias to a `provider` and `model` name, with optional
-defaults.
+Register named aliases per modality. Each alias maps to a `provider` and `model`.
 
 ```yaml
 models:
@@ -117,8 +107,7 @@ See [Models](/configuration/models).
 
 ## `stacks`
 
-Named bundles that map to one STT, one LLM, and one TTS model. Use
-stacks to define preset quality / cost tiers.
+Named bundles that map one name to an STT, LLM, and TTS model ID. Reference a stack from a project with `default_stack`.
 
 ```yaml
 stacks:
@@ -142,8 +131,7 @@ See [Stacks](/configuration/stacks).
 
 ## `projects`
 
-Define projects for cost attribution and budget enforcement. Each
-project can override providers per-key.
+Define projects for cost attribution and budget enforcement.
 
 ```yaml
 projects:
@@ -161,7 +149,6 @@ projects:
         api_key: ${SUPPORT_ANTHROPIC_KEY}
   internal-qa:
     name: Internal QA Bot
-    description: Testing and QA agent
     default_stack: budget
     daily_budget: 10.00
     budget_action: warn
@@ -170,19 +157,13 @@ projects:
 default_project: customer-support
 ```
 
-`budget_action` is one of `warn`, `throttle`, or `block`. Project-
-scoped `providers` override the top-level `providers` for that
-project; otherwise the top-level keys apply.
-
-See [Projects](/configuration/projects).
+`budget_action` is one of `warn`, `throttle`, or `block`. Project-level `providers` override the top-level block for that project. See [Projects](/configuration/projects).
 
 ---
 
 ## `fallbacks`
 
-Ordered lists of model ids per modality. Used as a resolver-time
-hint: walk the list at startup and pick the first model whose
-provider plugin imports cleanly.
+Ordered model IDs per modality. The router walks the list at startup and picks the first model whose provider imports cleanly.
 
 ```yaml
 fallbacks:
@@ -204,8 +185,7 @@ fallbacks:
 
 ## `observability`
 
-Three boolean flags that control which middleware runs. All default
-to `true`.
+Three boolean flags that control which middleware runs. All default to `true`.
 
 ```yaml
 observability:
@@ -229,11 +209,9 @@ cost_tracking:
   daily_budget_alert: 100.00
 ```
 
-- `enabled` (bool, default `false`): enable cost persistence. Also
-  enabled automatically if `VOICEGW_DB_PATH` is set.
+- `enabled` (bool, default `false`): enable cost persistence. Also enabled automatically when `VOICEGW_DB_PATH` is set.
 - `db_path` (string): path to the SQLite database file.
-- `daily_budget_alert` (float, optional): global daily budget alert
-  threshold.
+- `daily_budget_alert` (float, optional): global daily budget alert threshold in USD.
 
 ---
 
@@ -247,10 +225,8 @@ latency:
   percentiles: [50.0, 95.0, 99.0]
 ```
 
-- `ttfb_warning_ms` (float, default `500.0`): time-to-first-byte
-  warning threshold in milliseconds.
-- `percentiles` (list of floats): which percentiles to track and
-  report.
+- `ttfb_warning_ms` (float, default `500.0`): time-to-first-byte warning threshold in milliseconds.
+- `percentiles` (list of floats): which percentiles to track and report.
 
 ---
 
@@ -266,16 +242,13 @@ rate_limits:
     requests_per_minute: 60
 ```
 
-- `requests_per_minute` (int): maximum requests per minute for the
-  given provider.
+- `requests_per_minute` (int): maximum requests per minute for the provider.
 
 ---
 
 ## `ingest`
 
-Rate limiting for the fleet collector ingest endpoint (`POST /v1/ingest`),
-where remote agents push telemetry. Limiting is a per-caller token bucket
-keyed by virtual key (then static API key, then client IP).
+Rate limiting for the fleet collector ingest endpoint (`POST /v1/ingest`). Limiting uses a per-caller token bucket keyed by virtual key, then static API key, then client IP.
 
 ```yaml
 ingest:
@@ -286,24 +259,17 @@ ingest:
 ```
 
 - `enabled` (bool, default `true`): turn ingest rate limiting on or off.
-- `requests_per_minute` (int, default `120`): sustained per-caller request
-  rate. Set to `0` to disable limiting (unlimited).
-- `burst` (int, default `240`): token-bucket ceiling, the largest burst a
-  caller can send before being throttled.
-- `max_batch_size` (int, default `1000`): maximum records in one POST. A
-  larger batch is rejected with `413` before any database write.
+- `requests_per_minute` (int, default `120`): sustained per-caller rate. Set to `0` to disable.
+- `burst` (int, default `240`): token-bucket ceiling.
+- `max_batch_size` (int, default `1000`): maximum records per POST. Larger batches are rejected with `413`.
 
-Over-limit requests get `429` with a `Retry-After` header (integer seconds).
-The library's remote sink honors `Retry-After` and retries without dropping the
-batch, so transient throttling never loses telemetry.
+Over-limit requests receive `429` with a `Retry-After` header. The remote sink honors `Retry-After` and retries without dropping data.
 
 ---
 
 ## `retention`
 
-Hard-delete aged rows from the collector database. A background worker prunes,
-per project, sessions and their dependent rows (replay, turns, dead-air,
-guardrail) by `ended_at`, and requests by `timestamp`, in batches.
+Hard-delete aged rows from the collector database. A background worker prunes sessions and their dependent rows by `ended_at`, and requests by `timestamp`, in batches.
 
 ```yaml
 retention:
@@ -312,18 +278,13 @@ retention:
 ```
 
 - `enabled` (bool, default `true`): turn retention pruning on or off.
-- `default_days` (int, default `90`): age after which a project's rows are
-  deleted. Applies to every project that has data.
+- `default_days` (int, default `90`): age in days after which rows are deleted.
 
 ---
 
 ## `workers`
 
-Cadence for the collector's background workers: the latency and agent rollups,
-and the retention prune. Workers run in-process and are started by the server.
-In a multi-replica deployment, set `enabled: false` on every replica except the
-one chosen to run them (rollups and prunes are idempotent, but running them on
-every replica is wasteful).
+Cadence for background workers: latency and agent rollups, and the retention prune. Workers run in-process and are started by the server. In a multi-replica deployment, set `enabled: false` on every replica except one.
 
 ```yaml
 workers:
@@ -332,19 +293,15 @@ workers:
   retention_interval_seconds: 3600
 ```
 
-- `enabled` (bool, default `true`): start the background workers. When `false`,
-  no workers run (the rollup tables stay stale and retention does not prune).
-- `rollup_interval_seconds` (int, default `900`): how often the latency and
-  agent rollups refresh. The Agents dashboard list serves this 24h rollup.
+- `enabled` (bool, default `true`): start the background workers.
+- `rollup_interval_seconds` (int, default `900`): how often the latency and agent rollups refresh.
 - `retention_interval_seconds` (int, default `3600`): how often retention runs.
 
 ---
 
 ## `serve`
 
-Bind host and port for the daemon. The daemon serves the HTTP API
-(`/v1/*`), the dashboard API (`/api/*`), and the React SPA (`/`)
-all on this single port.
+Bind host and port for the daemon. The daemon serves the HTTP API (`/v1/*`), dashboard API (`/api/*`), and the React SPA (`/`) on this single port.
 
 ```yaml
 serve:
@@ -352,25 +309,36 @@ serve:
   port: 8080
 ```
 
-- `host` (string, default `0.0.0.0`): bind address. Use `127.0.0.1`
-  to restrict to localhost.
-- `port` (int, default `8080`): port number. The wizard collects
-  this as question 4 of [`voicegw onboard`](/cli/onboard).
+- `host` (string, default `0.0.0.0`): bind address. Use `127.0.0.1` to restrict to localhost.
+- `port` (int, default `8080`): port number.
 
 ---
 
 ## Environment variable substitution
 
-Any string value in the config can use `${ENV_VAR}` syntax.
-VoiceGateway substitutes these at load time using `os.environ`.
+Any string value in the config can use `${VAR_NAME}` syntax. VoiceGateway substitutes these at load time from `os.environ`. If the variable is not set, the value resolves to an empty string. See [Environment variables](/configuration/environment-variables).
 
-```yaml
-providers:
-  deepgram:
-    api_key: ${DEEPGRAM_API_KEY}
-```
+---
 
-If the environment variable is not set, it resolves to an empty
-string.
+## Explore each section
 
-See [Environment variables](/configuration/environment-variables).
+<CardGroup cols={3}>
+  <Card title="Providers" href="/configuration/providers">
+    API keys, base URL overrides, and per-project provider blocks for all 11 providers.
+  </Card>
+  <Card title="Models" href="/configuration/models">
+    Model ID format, language and voice suffixes, and custom alias registration.
+  </Card>
+  <Card title="Stacks" href="/configuration/stacks">
+    Named STT + LLM + TTS bundles for quality tiers.
+  </Card>
+  <Card title="Projects" href="/configuration/projects">
+    Cost attribution, budget enforcement, and per-project provider keys.
+  </Card>
+  <Card title="Environment variables" href="/configuration/environment-variables">
+    All VOICEGW_ and provider API key variables, plus substitution rules.
+  </Card>
+  <Card title="Observability" href="/configuration/observability">
+    Latency tracking, cost recording, and request logging middleware.
+  </Card>
+</CardGroup>
