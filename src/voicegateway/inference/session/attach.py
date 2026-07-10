@@ -299,7 +299,7 @@ def _on_close_task_done(task: Any) -> None:
 def attach(
     session: Any,
     *,
-    project: str = "default",
+    project: str | None = None,
     agent_id: str | None = None,
     tenant_id: str | None = None,
     channel: str | None = None,
@@ -326,7 +326,9 @@ def attach(
 
     Args:
         session: the ``AgentSession`` (LiveKit) or ``PipelineTask`` (Pipecat).
-        project: project id to tag rows with.
+        project: project id to tag rows with. Resolution order: explicit
+            ``project=`` argument, then the ``VOICEGW_PROJECT`` environment
+            variable, then ``"default"``.
         agent_id: fleet label; defaults to ``VOICEGW_AGENT_ID`` or hostname.
         tenant_id: optional tenant attribution.
         channel: ``"telephony"`` | ``"web"``; auto-detected from the transport
@@ -340,12 +342,14 @@ def attach(
     Returns:
         The correlation session id stamped on every captured row.
     """
+    resolved_project = project or os.environ.get("VOICEGW_PROJECT") or "default"
+
     from voicegateway._frameworks import detect_framework
 
     if detect_framework(session) == "pipecat":
         return _attach_pipecat(
             session,
-            project=project,
+            project=resolved_project,
             agent_id=agent_id,
             tenant_id=tenant_id,
             channel=channel,
@@ -355,7 +359,7 @@ def attach(
         )
     return _attach_livekit(
         session,
-        project=project,
+        project=resolved_project,
         agent_id=agent_id,
         tenant_id=tenant_id,
         collector_url=collector_url,
