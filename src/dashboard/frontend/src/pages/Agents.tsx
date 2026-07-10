@@ -77,67 +77,71 @@ export default function Agents() {
         accent="blue"
       />
 
-      <div className="filter-bar">
-        <span className="label">Search</span>
-        <input
-          className="neo-input"
-          placeholder="Filter by agent id…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ maxWidth: '20rem' }}
-        />
+      <div className="vg-card mb-md" style={{ padding: '14px 20px' }}>
+        <div className="flex-row gap-sm">
+          <span className="vg-card__label" style={{ alignSelf: 'center' }}>Search</span>
+          <input
+            className="neo-input"
+            placeholder="Filter by agent id..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ maxWidth: '20rem' }}
+          />
+        </div>
       </div>
 
       {sorted.length === 0 ? (
-        <div className="empty-state mt-lg">
+        <div className="empty-state mt-md">
           No agents yet. Agents appear here once they push telemetry to the
           collector (via <span className="mono">voicegateway.attach()</span> or a
           remote sink).
         </div>
       ) : (
-        <table className="neo-table neo-table--blue mt-lg">
-          <thead>
-            <tr>
-              <th>Status</th>
-              {COLUMNS.map((c) => (
-                <th
-                  key={c.key}
-                  onClick={() => onSort(c.key)}
-                  style={{ cursor: 'pointer', userSelect: 'none' }}
-                >
-                  {c.label}
-                  {sortKey === c.key ? (sortAsc ? ' ▲' : ' ▼') : ''}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((a) => {
-              const status = agentStatus(a.last_seen);
-              return (
-                <tr key={a.agent_id}>
-                  <td>
-                    <span className={`neo-badge ${agentStatusBadgeClass(status)}`}>
-                      {status}
-                    </span>
-                  </td>
-                  <td className="mono">
-                    <Link to={`/costs?agent=${encodeURIComponent(a.agent_id)}`}>
-                      {a.agent_id}
-                    </Link>
-                  </td>
-                  <td>{formatRelativeTime(a.last_seen)}</td>
-                  <td className="mono">{formatCost(a.total_cost_usd, 4)}</td>
-                  <td>
-                    <span className="neo-badge neo-badge--black">{a.request_count}</span>
-                  </td>
-                  <td className="mono">{formatMs(a.p95_latency_ms)}</td>
-                  <td className="mono">{(a.error_rate * 100).toFixed(1)}%</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="vg-card" style={{ padding: 0, overflow: 'hidden' }}>
+          <table className="neo-table neo-table--blue">
+            <thead>
+              <tr>
+                <th>Status</th>
+                {COLUMNS.map((c) => (
+                  <th
+                    key={c.key}
+                    onClick={() => onSort(c.key)}
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    {c.label}
+                    {sortKey === c.key ? (sortAsc ? ' ▲' : ' ▼') : ''}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((a) => {
+                const status = agentStatus(a.last_seen);
+                return (
+                  <tr key={a.agent_id}>
+                    <td>
+                      <span className={`neo-badge ${agentStatusBadgeClass(status)}`}>
+                        {status}
+                      </span>
+                    </td>
+                    <td className="mono">
+                      <Link to={`/costs?agent=${encodeURIComponent(a.agent_id)}`}>
+                        {a.agent_id}
+                      </Link>
+                    </td>
+                    <td>{formatRelativeTime(a.last_seen)}</td>
+                    <td className="mono">{formatCost(a.total_cost_usd, 4)}</td>
+                    <td>
+                      <span className="neo-badge neo-badge--black">{a.request_count}</span>
+                    </td>
+                    <td className="mono">{formatMs(a.p95_latency_ms)}</td>
+                    <td className="mono">{(a.error_rate * 100).toFixed(1)}%</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
