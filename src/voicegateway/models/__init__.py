@@ -12,7 +12,6 @@ from voicegateway.models.api_key_model import ApiKey
 from voicegateway.models.base_model import BaseModel, BaseUUIDModel
 from voicegateway.models.config_audit_log_model import ConfigAuditLog
 from voicegateway.models.dead_air_event_model import DeadAirEvent
-from voicegateway.models.guardrail_event_model import GuardrailEvent
 from voicegateway.models.latency_observation_model import LatencyObservation
 from voicegateway.models.managed_model_model import ManagedModel
 from voicegateway.models.managed_project_model import ManagedProject
@@ -35,7 +34,6 @@ __all__ = [
     "BaseUUIDModel",
     "ConfigAuditLog",
     "DeadAirEvent",
-    "GuardrailEvent",
     "LatencyObservation",
     "ManagedModel",
     "ManagedProject",

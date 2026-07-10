@@ -2,15 +2,10 @@
 
 from __future__ import annotations
 
-import dataclasses
-import json
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 
-from voicegateway.repository import (
-    guardrail_events_repository as guardrail_events,
-)
 from voicegateway.repository import (
     replay_repository as replay,
 )
@@ -31,7 +26,7 @@ _SESSION_ORDER_CLAUSES: dict[str, str] = {
 
 
 def row_to_session(row: Any) -> dict[str, Any]:
-    """Map a fifteen-column session row to the dict shape callers expect."""
+    """Map a session row to the dict shape callers expect."""
     out = {
         "id": row[0],
         "project": row[1],
@@ -57,30 +52,13 @@ def row_to_session(row: Any) -> dict[str, Any]:
         out["budget_overrun"] = None if budget_overrun is None else bool(budget_overrun)
     except (IndexError, KeyError):
         pass
-    try:
-        guardrails_active = row[12]
-        guardrails_bypassed = row[13]
-        policy_snapshot = row[14]
-        out["guardrails_active"] = (
-            None if guardrails_active is None else bool(guardrails_active)
-        )
-        out["guardrails_bypassed"] = (
-            None if guardrails_bypassed is None else bool(guardrails_bypassed)
-        )
-        out["guardrail_policy_snapshot"] = (
-            json.loads(policy_snapshot) if policy_snapshot else None
-        )
-    except (IndexError, KeyError, TypeError, ValueError):
-        pass
     return out
 
 
 _BASE_SELECT = (
     "SELECT id, project, started_at, ended_at, modalities, "
     "       total_cost_usd, request_count, tenant_id, "
-    "       routed_llm, routed_tts, budget_ms, budget_overrun, "
-    "       guardrails_active, guardrails_bypassed, "
-    "       guardrail_policy_snapshot_json "
+    "       routed_llm, routed_tts, budget_ms, budget_overrun "
     "FROM sessions"
 )
 
@@ -124,7 +102,7 @@ async def list_sessions(
 
 
 async def get_session(session: AsyncSession, session_id: str) -> dict[str, Any] | None:
-    """Return one session by id + per-modality / provider / guardrail breakdowns."""
+    """Return one session by id + per-modality / provider breakdowns."""
     result = await session.execute(
         text(f"{_BASE_SELECT} WHERE id = :session_id"),
         {"session_id": session_id},
@@ -158,8 +136,6 @@ async def get_session(session: AsyncSession, session_id: str) -> dict[str, Any] 
         {"session_id": session_id},
     )
     out["providers"] = [prov_row[0] for prov_row in prov_result]
-    events = await guardrail_events.list_events_by_session(session, session_id)
-    out["guardrail_events"] = [dataclasses.asdict(event) for event in events]
     return out
 
 

@@ -47,7 +47,6 @@ def test_init_writes_minimal_template_by_default(tmp_path, monkeypatch):
     # Small enough to read at a glance, and free of advanced blocks.
     assert content.count("\n") < 50
     assert "stacks:" not in content
-    assert "guardrails:" not in content
     # Still a working voice stack: provider + model blocks present.
     assert "providers:" in content
     assert "models:" in content

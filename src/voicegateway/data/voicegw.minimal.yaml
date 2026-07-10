@@ -3,7 +3,7 @@
 # variables (e.g. DEEPGRAM_API_KEY) or paste them inline below.
 #
 # This is the short template. For every option (fallbacks, routing, budgets,
-# auth, retention, guardrails, ...) generate the annotated reference with:
+# auth, retention, ...) generate the annotated reference with:
 #     voicegw init --full
 # Docs: https://docs.voicegateway.dev
 

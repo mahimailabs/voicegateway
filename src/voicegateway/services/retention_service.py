@@ -1,7 +1,7 @@
 """Hourly retention worker: ages out requests, sessions, and their rows.
 
 Per project, sessions older than the cutoff (by ``ended_at``) and their
-dependent rows (replay, turns, dead-air, guardrail) are deleted child-first;
+dependent rows (replay, turns, dead-air) are deleted child-first;
 requests are pruned independently by ``timestamp`` (a request may have no
 session). Deletes are hard and batched so a large backlog does not hold a
 long write lock, which keeps the pass friendly to both SQLite and Postgres.
@@ -33,7 +33,6 @@ _DEFAULT_BATCH_SIZE: Final[int] = 500
 _SESSION_CHILD_TABLES: Final[tuple[str, ...]] = (
     "turns",
     "dead_air_events",
-    "guardrail_events",
 )
 
 
@@ -60,7 +59,7 @@ async def _default_provider() -> list[tuple[str, int]]:
 class RetentionWorker:
     """Background worker that hard-deletes aged rows per project.
 
-    Sessions and their dependent rows (replay, turns, dead-air, guardrail) prune
+    Sessions and their dependent rows (replay, turns, dead-air) prune
     by ``ended_at``; requests prune independently by ``timestamp``. Deletes run
     child-first in batches on a periodic loop.
     """
@@ -166,9 +165,9 @@ class RetentionWorker:
     ) -> int:
         """Hard-delete one project's aged rows; return the total row count.
 
-        Children first (replay, turns, dead-air, guardrail), then the session
-        rows, then requests independently by timestamp. Each chunk commits so a
-        large backlog never holds one long write lock.
+        Children first (replay, turns, dead-air), then the session rows, then
+        requests independently by timestamp. Each chunk commits so a large
+        backlog never holds one long write lock.
         """
         deleted = 0
 

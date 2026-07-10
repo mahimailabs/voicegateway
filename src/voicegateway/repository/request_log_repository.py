@@ -3,9 +3,9 @@
 The sessions UPSERT stays as a ``text()`` clause: it carries the
 INSTR-based modality CSV union, the started_at/ended_at min/max
 preservation, and the COALESCE-vs-null preservation for the routing
-and guardrail aggregate columns. These semantics are the algorithm;
-converting to ORM ``on_conflict_do_update`` with chained CASE / INSTR
-expressions would only obscure the intent.
+aggregate columns. These semantics are the algorithm; converting to ORM
+``on_conflict_do_update`` with chained CASE / INSTR expressions would
+only obscure the intent.
 """
 
 from __future__ import annotations
@@ -48,21 +48,17 @@ _INSERT_REQUEST = text(
 
 # Sessions UPSERT — preserved byte-for-byte from the legacy aiosqlite form.
 # Carries the INSTR-based modality CSV union, the started_at/ended_at min/max
-# preservation, and the COALESCE-vs-null preservation on the routing and
-# guardrail aggregate columns. Translating to on_conflict_do_update would
-# obscure these three invariants.
+# preservation, and the COALESCE-vs-null preservation on the routing
+# aggregate columns. Translating to on_conflict_do_update would
+# obscure these invariants.
 _UPSERT_SESSION = text(
     """INSERT INTO sessions
        (id, project, started_at, ended_at, modalities,
         total_cost_usd, request_count, tenant_id, agent_id,
-        routed_llm, routed_tts, budget_ms, budget_overrun,
-        guardrails_active, guardrails_bypassed,
-        guardrail_policy_snapshot_json)
+        routed_llm, routed_tts, budget_ms, budget_overrun)
        VALUES (:id, :project, :started_at, :ended_at, :modalities,
                :cost, 1, :tenant_id, :agent_id,
-               :routed_llm, :routed_tts, :budget_ms, :budget_overrun,
-               :guardrails_active, :guardrails_bypassed,
-               :guardrail_snapshot_json)
+               :routed_llm, :routed_tts, :budget_ms, :budget_overrun)
        ON CONFLICT(id) DO UPDATE SET
            total_cost_usd = sessions.total_cost_usd + excluded.total_cost_usd,
            request_count = sessions.request_count + 1,
@@ -73,16 +69,6 @@ _UPSERT_SESSION = text(
            budget_ms = COALESCE(sessions.budget_ms, excluded.budget_ms),
            budget_overrun = COALESCE(
                sessions.budget_overrun, excluded.budget_overrun
-           ),
-           guardrails_active = COALESCE(
-               sessions.guardrails_active, excluded.guardrails_active
-           ),
-           guardrails_bypassed = COALESCE(
-               sessions.guardrails_bypassed, excluded.guardrails_bypassed
-           ),
-           guardrail_policy_snapshot_json = COALESCE(
-               sessions.guardrail_policy_snapshot_json,
-               excluded.guardrail_policy_snapshot_json
            ),
            started_at = CASE
                WHEN sessions.started_at IS NULL THEN excluded.started_at
@@ -184,9 +170,6 @@ async def log_request(session: AsyncSession, record: RequestRecord) -> None:
                 "routed_tts": r_tts,
                 "budget_ms": r_budget,
                 "budget_overrun": r_overrun,
-                "guardrails_active": None,
-                "guardrails_bypassed": None,
-                "guardrail_snapshot_json": None,
             },
         )
     await session.commit()
