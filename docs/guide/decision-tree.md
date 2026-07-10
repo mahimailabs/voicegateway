@@ -15,7 +15,7 @@ This page helps you pick the right combination before you write any code. Two de
 | Storage | SQLite, single process | ClickHouse, multi-tenant |
 | Ingest | local sink (no network hop) | push to `VOICEGW_COLLECTOR_URL` |
 | Dashboard | `voicegw dashboard` (port 9090) | `dash.voicegateway.dev` |
-| Setup | `pip install voicegateway` + `voicegw.yaml` | 3 env vars (`VOICEGW_COLLECTOR_URL`, `VOICEGW_API_KEY`, `VOICEGW_PROJECT`) |
+| Setup | `pip install voicegateway` + `voicegw.yaml` | 2 env vars (`VOICEGW_COLLECTOR_URL`, `VOICEGW_API_KEY`) + `project=` in your `attach()` call |
 | Horizontal scale | single instance | managed, no ops |
 | Right for | local dev, small teams, self-managed infra | multi-agent fleets, SaaS products, agency work |
 
@@ -81,7 +81,7 @@ flowchart TD
     Install the OSS package, write a voicegw.yaml, and attach to your first agent.
   </Card>
   <Card title="Hosted Cloud" icon="cloud" href="/hosted/quickstart">
-    Three env vars and your agent is sending data to the cloud dashboard.
+    Two env vars plus one `attach()` call and your agent is sending data to the cloud dashboard.
   </Card>
   <Card title="attach() reference" icon="eye" href="/guide/attach">
     Full signature, options, and LiveKit / Pipecat examples.

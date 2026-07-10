@@ -1,13 +1,13 @@
 ---
 title: Models
-description: How VoiceGateway identifies every model with a provider/model string, including language and voice suffixes, custom aliases, and example STT, LLM, and TTS model IDs.
+description: How VoiceGateway identifies every model with a provider/model string, including language and voice suffixes, custom alias registration, and example model IDs for STT, LLM, and TTS.
 ---
 
 # Models
 
 ## Model ID format
 
-Every model in VoiceGateway is identified by a string in `provider/model` format.
+Every model in VoiceGateway is identified by a `provider/model` string:
 
 ```
 deepgram/nova-3
@@ -15,48 +15,42 @@ openai/gpt-4.1-mini
 cartesia/sonic-3
 ```
 
-### Language and voice suffixes
+### Language suffixes (STT)
 
-STT model IDs can include a language suffix separated by a colon:
+STT model IDs accept an optional language code after a colon:
 
 ```
 deepgram/nova-3:en
 deepgram/nova-3:es
 ```
 
-TTS model IDs can include a voice suffix:
+### Voice suffixes (TTS)
+
+TTS model IDs accept an optional voice ID after a colon:
 
 ```
 cartesia/sonic-3:narrator-male
 openai/tts-1:nova
 ```
 
-LLM model IDs preserve trailing colons verbatim, so Ollama tags survive:
+### Ollama tags (LLM)
+
+LLM model IDs preserve trailing colons verbatim, so Ollama version tags pass through intact:
 
 ```
 ollama/qwen2.5:3b
 ollama/llama3.2:3b
 ```
 
-This asymmetry mirrors `livekit.agents.inference`: STT and TTS strip the last colon segment, LLM does not.
+<Note>
+STT and TTS strip the last colon segment at parse time. LLM does not. This asymmetry mirrors how LiveKit agents handle the model string.
+</Note>
 
-### Using model IDs in code
+---
 
-```python
-from voicegateway import inference
+## Registering custom model aliases
 
-# Pass model ID strings directly to inference factories.
-stt = inference.STT("deepgram/nova-3:en")          # :en parsed as language
-llm = inference.LLM("openai/gpt-4.1-mini")
-tts = inference.TTS("cartesia/sonic-3:narrator-male")  # :voice-id parsed as voice
-llm_local = inference.LLM("ollama/qwen2.5:3b")     # :3b kept as part of model name
-```
-
-## Registering custom models
-
-You can register model aliases in `voicegw.yaml` under the `models` section. The aliases surface in the dashboard and CLI for display purposes; the `voicegateway.inference` module parses `provider/model` strings directly from the factory call, so an alias does not change runtime behaviour. Aliases are organised by modality (stt, llm, tts).
-
-### Via YAML
+Register aliases under `models` in `voicegw.yaml`. Aliases surface in the dashboard and CLI. They group models by modality with an optional `default_voice` for TTS entries.
 
 ```yaml
 models:
@@ -66,7 +60,7 @@ models:
       model: nova-3
     accurate-stt:
       provider: assemblyai
-      model: best
+      model: universal-2
   llm:
     reasoning:
       provider: anthropic
@@ -84,21 +78,25 @@ models:
       model: en_US-lessac-medium
 ```
 
-Each model entry supports:
+Each entry supports:
 
-- `provider` (string, required) -- the provider identifier
-- `model` (string) -- the model name at the provider
-- `default_voice` (string, optional) -- default voice for TTS models
+| Field | Required | Description |
+|---|---|---|
+| `provider` | yes | Provider identifier (e.g. `deepgram`, `anthropic`) |
+| `model` | yes | Model name at the provider |
+| `default_voice` | no | Default voice for TTS model aliases |
 
 ### Via the dashboard
 
-Models can also be registered through the web dashboard at the daemon URL (default `http://localhost:8080`). Models added through the dashboard are persisted in the SQLite database and merged with the YAML config at startup.
+Models can also be registered through the web dashboard at the daemon URL (default `http://localhost:8080`). Dashboard-registered models are persisted in SQLite and merged with YAML config at startup.
 
 ### Via MCP
 
-If you have the MCP server running (`voicegw mcp`), you can register models through MCP tool calls from your IDE. See the MCP documentation for details.
+If the MCP server is running (`voicegw mcp`), you can register models through MCP tool calls from your IDE.
 
-## Model examples
+---
+
+## Model reference
 
 ### STT models
 
@@ -136,6 +134,10 @@ If you have the MCP server running (`voicegw mcp`), you can register models thro
 | `elevenlabs/eleven_turbo_v2` | ElevenLabs | Faster, English-focused |
 | `deepgram/aura-asteria-en` | Deepgram | Deepgram TTS |
 | `local/kokoro` | Kokoro (local) | Lightweight local TTS |
-| `local/piper:en_US-lessac-medium` | Piper (local) | Fast offline TTS (voice ID after `:`) |
+| `local/piper:en_US-lessac-medium` | Piper (local) | Fast offline TTS; voice ID after `:` |
 
-See: [Providers](/configuration/providers), [Stacks](/configuration/stacks), [voicegw.yaml Reference](/configuration/voicegw-yaml)
+---
+
+See [Providers](/configuration/providers) for which providers support each modality.
+See [Stacks](/configuration/stacks) for bundling model IDs into named tiers.
+See [voicegw.yaml reference](/configuration/voicegw-yaml) for the full config file shape.
