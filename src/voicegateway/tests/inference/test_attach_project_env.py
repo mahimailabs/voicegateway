@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Minimal fakes (mirroring the pattern in test_attach_capture.py)
 # ---------------------------------------------------------------------------
