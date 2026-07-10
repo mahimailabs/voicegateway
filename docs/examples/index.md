@@ -1,21 +1,23 @@
+---
+title: Examples
+description: Runnable examples showing how to use VoiceGateway with LiveKit, Pipecat, Docker, and more.
+---
+
 # Examples
 
-Practical examples showing how to use VoiceGateway in real-world scenarios. Each example includes runnable code and a complete `voicegw.yaml` configuration.
-
-## Getting Started
+Practical, runnable examples for common VoiceGateway use cases. Each example includes working code and the configuration it needs.
 
 Before running any example, install VoiceGateway with the providers you need:
 
-```bash
-# Install with cloud providers
-pip install voicegateway[openai,deepgram,cartesia]
-
-# Install with local providers
-pip install voicegateway[whisper,kokoro]
-
-# Install everything
-pip install voicegateway[all,dev]
+<CodeGroup>
+```bash uv
+uv add "voicegateway[openai,deepgram,cartesia]"
 ```
+
+```bash pip
+pip install "voicegateway[openai,deepgram,cartesia]"
+```
+</CodeGroup>
 
 Then create a config file:
 
@@ -23,40 +25,38 @@ Then create a config file:
 voicegw init
 ```
 
-## Examples
-
-### [Basic Voice Agent](./basic-voice-agent)
-
-Build a simple voice agent using LiveKit Agents with VoiceGateway routing STT, LLM, and TTS requests. The minimal setup to get a working voice pipeline.
-
-### [LiveKit: attach() + guard()](./livekit-attach-guard)
-
-The framework-neutral shape on LiveKit: native `livekit.plugins` providers, metered by `attach(session)` (the single passive meter), with one `guard()` wrapper adding fallback, rate limit, and a daily spend cap.
-
-### [Pipecat: attach() + guard()](./pipecat-attach-guard)
-
-The same public surface on Pipecat: native `pipecat.services`, metered by an `Observer` (or `attach(task)`), with one `guard()` wrapper for fallback and a spend cap. Includes enabling Pipecat metrics and the fallback scope note.
-
-### [Multi-Project Setup](./multi-project)
-
-Configure three separate projects (production, staging, dev) with different model stacks, budgets, and tags. Shows how to isolate cost tracking across teams and environments.
-
-### [Budget Enforcement](./budget-enforcement)
-
-Demonstrate all three budget modes: `warn` (log and continue), `throttle` (fall back to local models), and `block` (reject requests). Includes handling `BudgetExceededError` and `BudgetThrottleSignal`.
-
-### [Fallback Chains](./fallback-chains)
-
-Configure primary/backup model chains so that if Deepgram's STT is down, traffic automatically falls back to OpenAI Whisper, then to local Whisper. Includes monitoring fallback events.
-
-### [Local-Only Deployment](./local-only)
-
-Run VoiceGateway with zero cloud dependencies using Ollama for LLM, Whisper for STT, and Kokoro for TTS. Useful for air-gapped environments or development without API keys.
-
-### [Claude Code Integration](./claude-code-integration)
-
-Use VoiceGateway's MCP server with Claude Code to manage providers, models, projects, and monitor costs through natural language. Includes 5+ end-to-end prompt examples.
-
-### [Docker Deployment](./docker-deployment)
-
-Production-ready `docker-compose.yml` with the API server, dashboard, persistent storage, health checks, and optional Ollama sidecar.
+<CardGroup cols={2}>
+  <Card title="Basic Voice Agent" icon="microphone" href="/examples/basic-voice-agent">
+    Minimal metered agent using LiveKit and Pipecat side by side.
+  </Card>
+  <Card title="LiveKit: attach + guard" icon="shield-check" href="/examples/livekit-attach-guard">
+    Native LiveKit plugins metered by `attach(session)` with a guarded LLM.
+  </Card>
+  <Card title="Pipecat: attach + guard" icon="shield-check" href="/examples/pipecat-attach-guard">
+    Native Pipecat services metered by an Observer with a guarded LLM.
+  </Card>
+  <Card title="Budget Enforcement" icon="dollar-sign" href="/examples/budget-enforcement">
+    Enforce a daily spend cap with `guard(llm, budget="$5.00/day")`.
+  </Card>
+  <Card title="Fallback Chains" icon="arrow-right-arrow-left" href="/examples/fallback-chains">
+    Startup-time provider selection: walk a chain and pick the first that builds.
+  </Card>
+  <Card title="LiveKit FallbackAdapter" icon="rotate" href="/examples/livekit-fallback-adapter">
+    Runtime error-driven failover using LiveKit's built-in FallbackAdapter.
+  </Card>
+  <Card title="Local-Only Deployment" icon="server" href="/examples/local-only">
+    Zero cloud dependencies: Whisper + Ollama + Kokoro, no API keys.
+  </Card>
+  <Card title="Multi-Project" icon="folder-open" href="/examples/multi-project">
+    Per-project cost attribution with `attach(..., project=...)`.
+  </Card>
+  <Card title="Docker Deployment" icon="docker" href="/examples/docker-deployment">
+    Production-ready Docker Compose with health checks and optional Ollama.
+  </Card>
+  <Card title="Claude Code Integration" icon="robot" href="/examples/claude-code-integration">
+    Manage providers, projects, and costs from Claude Code via the MCP server.
+  </Card>
+  <Card title="OpenRTC Multi-Agent" icon="users" href="/examples/openrtc-multi-agent">
+    Track every agent in one worker with the OpenRTC SessionObserver seam.
+  </Card>
+</CardGroup>

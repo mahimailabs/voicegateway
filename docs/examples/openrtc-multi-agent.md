@@ -1,4 +1,9 @@
-# OpenRTC: track every agent in one worker
+---
+title: OpenRTC Multi-Agent
+description: Track every agent in one OpenRTC worker with VoiceGateway's SessionObserver seam for per-call cost attribution.
+---
+
+# OpenRTC Multi-Agent
 
 [OpenRTC](https://github.com/mahimailabs/openrtc-runtime) runs N LiveKit voice
 agents in one worker. VoiceGateway plugs into its `SessionObserver` seam, so a
@@ -7,9 +12,15 @@ and per tenant.
 
 ## Install
 
-```bash
+<CodeGroup>
+```bash uv
 uv add "voicegateway[openrtc]"
 ```
+
+```bash pip
+pip install "voicegateway[openrtc]"
+```
+</CodeGroup>
 
 ## One line: hand the pool an observer
 
@@ -68,3 +79,8 @@ worker's life. It holds only configuration, so it is safe to use with OpenRTC
 `process` isolation (it pickles cleanly and rebuilds its sink in the worker).
 `attach()` flushes the shared sink when each session closes but never closes it,
 so one session ending never disrupts the others.
+
+## Related
+
+- [Multi-Project Setup](/examples/multi-project): explicit per-project attribution using `attach(..., project=...)`.
+- [Hosted quickstart](/hosted/quickstart): the hosted fleet collector you can push to from any worker.

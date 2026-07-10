@@ -1,13 +1,17 @@
+---
+title: Fallback Chains
+description: Startup-time provider selection using guard() with fallback= so the first available provider wins.
+---
+
 # Fallback Chains
 
-Resolver-time fallback at agent startup: walk a chain of model ids and pass the first one whose `inference.STT/LLM/TTS` factory builds cleanly into `AgentSession`. Useful when a primary provider's credentials are temporarily wrong, its plugin SDK is missing, or its initialization handshake fails.
+Use `guard(primary, fallback=[backup1, backup2])` to wire a chain of providers at startup. If the primary is unavailable or fails, `guard()` advances to the next provider in the list.
 
-Once a model is wired into a LiveKit `AgentSession`, that resolved model is used for the entire call. VoiceGateway does not swap providers mid-call. For runtime failover when a provider degrades during an active call, compose LiveKit's `FallbackAdapter` around VG `inference.*` instances; see [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter).
-
-VoiceGateway does not run an automatic fallback middleware. The
-chain in `voicegw.yaml` (under `fallbacks:`) is a documentation +
-walk-pattern convention: enumerate the chain at startup and pick
-the first model whose factory builds.
+<Note>
+Resolver-time fallback handles startup selection. Once a session is live,
+providers are not swapped mid-call. For runtime failover during an active call,
+see [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter).
+</Note>
 
 ## Configuration
 
@@ -31,113 +35,85 @@ projects:
 
 default_project: prod
 
-# Fallback chains: first model is primary, rest are backups. The
-# YAML chain is documentation; the manual walk below picks the
-# first model whose factory builds.
-fallbacks:
-  stt:
-    - deepgram/nova-3              # Primary: fastest, best accuracy
-    - openai/whisper-1             # Backup: good accuracy, higher latency
-    - local/whisper-large-v3       # Last resort: local, no API dependency
-  llm:
-    - openai/gpt-4.1-mini          # Primary: best quality
-    - groq/llama-3.3-70b-versatile # Backup: fast, good quality
-    - ollama/qwen2.5:3b            # Last resort: local
-  tts:
-    - cartesia/sonic-3             # Primary: lowest latency
-    - elevenlabs/turbo-v2.5        # Backup: highest quality
-    - local/kokoro                 # Last resort: local
-
 cost_tracking:
   enabled: true
 ```
 
-## Using Fallback Chains
+## Wiring chains with guard()
 
 ```python
-from voicegateway import inference
+from livekit.plugins import cartesia, deepgram, elevenlabs, openai
+from livekit.plugins import groq as groq_plugin
+from voicegateway import attach, guard
 
 
-def first_resolvable(modality: str, chain: list[str]):
-    """Walk the chain, return the first inference instance that builds.
+def build_session():
+    from livekit.agents import AgentSession
+    from livekit.plugins import silero
 
-    Raises the last error if every model fails.
-    """
-    factory = {
-        "stt": inference.STT,
-        "llm": inference.LLM,
-        "tts": inference.TTS,
-    }[modality]
-    last_error: Exception | None = None
-    for model_id in chain:
-        try:
-            return factory(model_id)
-        except Exception as exc:  # noqa: BLE001
-            last_error = exc
-    assert last_error is not None
-    raise last_error
-
-
-STT_CHAIN = ["deepgram/nova-3", "openai/whisper-1", "local/whisper-large-v3"]
-LLM_CHAIN = [
-    "openai/gpt-4.1-mini",
-    "groq/llama-3.3-70b-versatile",
-    "ollama/qwen2.5:3b",
-]
-TTS_CHAIN = ["cartesia/sonic-3", "elevenlabs/turbo-v2.5", "local/kokoro"]
-
-stt = first_resolvable("stt", STT_CHAIN)
-llm = first_resolvable("llm", LLM_CHAIN)
-tts = first_resolvable("tts", TTS_CHAIN)
+    return AgentSession(
+        vad=silero.VAD.load(),
+        stt=guard(
+            deepgram.STT(model="nova-3"),
+            fallback=[
+                openai.STT(model="whisper-1"),
+            ],
+            project="prod",
+        ),
+        llm=guard(
+            openai.LLM(model="gpt-4o-mini"),
+            fallback=[
+                groq_plugin.LLM(model="llama-3.3-70b-versatile"),
+            ],
+            project="prod",
+        ),
+        tts=guard(
+            cartesia.TTS(model="sonic-3"),
+            fallback=[
+                elevenlabs.TTS(model="turbo-v2.5"),
+            ],
+            project="prod",
+        ),
+    )
 ```
 
-## How Fallback Works
+`guard()` returns the same type as the primary, so it is a drop-in replacement
+anywhere you would use the provider directly.
 
-The factory walk runs once at construction time:
-
-```mermaid
-graph TD
-    A["first_resolvable('stt', chain)"] --> B["inference.STT('deepgram/nova-3')"]
-    B -->|Success| C["Return DeepgramSTT instance"]
-    B -->|ImportError / init error| D["Catch and continue"]
-    D --> E["inference.STT('openai/whisper-1')"]
-    E -->|Success| F["Return OpenAI Whisper instance"]
-    E -->|Init error| G["inference.STT('local/whisper-large-v3')"]
-    G -->|Success| H["Return local Whisper instance"]
-    G -->|Init error| I["raise (last error)"]
-```
-
-Errors during an `AgentSession` are not in this picture; they propagate to the caller.
-
-## LiveKit Agent with Fallback
+## Full LiveKit agent with fallback
 
 ```python
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
-from livekit.plugins import silero
-from voicegateway import inference
+from livekit.plugins import cartesia, deepgram, elevenlabs, openai, silero
+from livekit.plugins import groq as groq_plugin
+from voicegateway import attach, guard
 
-
-# (paste first_resolvable / STT_CHAIN / LLM_CHAIN / TTS_CHAIN from above)
+PROJECT = "prod"
 
 
 async def entrypoint(ctx: JobContext):
     await ctx.connect()
 
-    try:
-        stt = first_resolvable("stt", STT_CHAIN)
-        llm = first_resolvable("llm", LLM_CHAIN)
-        tts = first_resolvable("tts", TTS_CHAIN)
-    except Exception as e:
-        # Every model in every chain failed to resolve at startup.
-        print(f"Cannot start voice agent: {e}")
-        return
-
     session = AgentSession(
         vad=silero.VAD.load(),
-        stt=stt,
-        llm=llm,
-        tts=tts,
+        stt=guard(
+            deepgram.STT(model="nova-3"),
+            fallback=[openai.STT(model="whisper-1")],
+            project=PROJECT,
+        ),
+        llm=guard(
+            openai.LLM(model="gpt-4o-mini"),
+            fallback=[groq_plugin.LLM(model="llama-3.3-70b-versatile")],
+            project=PROJECT,
+        ),
+        tts=guard(
+            cartesia.TTS(model="sonic-3"),
+            fallback=[elevenlabs.TTS(model="turbo-v2.5")],
+            project=PROJECT,
+        ),
     )
+
+    attach(session, project=PROJECT)
 
     await session.start(
         agent=Agent(instructions="You are a helpful voice assistant."),
@@ -149,21 +125,47 @@ if __name__ == "__main__":
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
 ```
 
-## Cloud-to-Local Fallback Strategy
+## Cloud-to-local fallback strategy
 
-A common pattern is cloud models as primaries with local models as the final fallback. This guarantees an agent can come up even when every cloud provider is unreachable:
+A common pattern is cloud models as primaries with local models as the final fallback. This keeps the agent alive even if every cloud provider is unreachable:
+
+```python
+from livekit.plugins import cartesia, deepgram, openai
+from voicegateway import guard
+
+# Local fallback imports come from the voicegateway providers, not livekit.plugins.
+# Use a guard() chain ending in whichever local provider you have configured.
+stt = guard(
+    deepgram.STT(model="nova-3"),
+    fallback=[openai.STT(model="whisper-1")],
+    project="prod",
+)
+```
 
 ```yaml
+# voicegw.yaml: document your fallback intention alongside the config
 fallbacks:
   stt:
     - deepgram/nova-3
+    - openai/whisper-1
     - local/whisper-large-v3
   llm:
-    - openai/gpt-4.1-mini
+    - openai/gpt-4o-mini
+    - groq/llama-3.3-70b-versatile
     - ollama/qwen2.5:3b
   tts:
     - cartesia/sonic-3
+    - elevenlabs/turbo-v2.5
     - local/kokoro
 ```
 
-This handles the cold-start case: every cloud provider unreachable when the agent starts means the local model is selected and the agent comes up. It does not handle the warm-failure case: if Deepgram is healthy at startup and starts returning 500s mid-call, VG keeps the Deepgram instance for the rest of the call. For warm failover, see [LiveKit FallbackAdapter integration](/examples/livekit-fallback-adapter).
+<Tip>
+Anchor every chain with a local model as the last entry. A single local fallback
+gives you true outage coverage at the cost of degraded quality during the
+outage.
+</Tip>
+
+This handles the cold-start case: every cloud provider unreachable when the agent
+starts means the local model is selected and the agent comes up. For warm failover
+(a provider that starts returning errors mid-call), see [LiveKit FallbackAdapter
+integration](/examples/livekit-fallback-adapter).
