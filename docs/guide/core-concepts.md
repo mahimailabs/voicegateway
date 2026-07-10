@@ -1,77 +1,122 @@
 ---
 title: Core Concepts
-description: Definitions of the key abstractions in VoiceGateway, from the inference module to providers, modalities, projects, and middleware.
+description: The framework-neutral model at the heart of VoiceGateway: two seams (attach observes, guard controls), RequestRecord and Sink, projects, cost via voice-prices, and ContextVars for session and tenant correlation.
 ---
 
 # Core Concepts
 
-This page defines the key abstractions in VoiceGateway. Understanding these concepts will help you navigate the configuration and API.
+VoiceGateway sits beside your framework, not between you and it. You keep native LiveKit or Pipecat providers; VoiceGateway adds two thin seams that observe and control those providers. This page explains the model behind those seams and the shared vocabulary the rest of the docs use.
 
-## Inference module
+## The two seams
 
-The public Python surface. `voicegateway.inference` mirrors `livekit.agents.inference` so an agent written for LiveKit Cloud Inference moves to VoiceGateway with one import-line change. Each factory call (`STT`, `LLM`, `TTS`) constructs the matching LiveKit plugin and wraps it with VG's middleware.
+VoiceGateway exposes exactly two public entry points for wiring into an agent:
+
+| Seam | Role | Effect on calls |
+|---|---|---|
+| `attach(session)` | observe (passive) | none; measures only |
+| `guard(provider)` | control (active) | reroutes, throttles, or blocks |
+
+The rule is hard: **observability is `attach`, control is `guard`**. The two seams never call each other. They coordinate through the shared core (spend state, routing ContextVars). Because `attach` is the sole meter, pairing it with `guard` never double-counts.
+
+## attach()
+
+`attach()` takes a LiveKit `AgentSession` or a Pipecat `PipelineTask`, subscribes to its per-component metric events, and writes one `RequestRecord` row per STT, LLM, and TTS call. It returns a session id that ties every row from that conversation together.
 
 ```python
-from voicegateway import inference
-stt = inference.STT("deepgram/nova-3")
+from voicegateway import attach
+
+session_id = attach(session, project="my-agent", tenant_id=ctx.room.name)
 ```
 
-See: [Quick Start](/guide/quick-start), [First Agent](/guide/first-agent), [Python SDK Reference](/api/python-sdk)
+The full signature is documented in [attach()](/guide/attach). The key points here:
 
-## Provider
+- `attach()` is the **single meter**. There is no other path that writes cost or latency rows.
+- It is framework-neutral: the same function detects the target type and installs the right observer.
+- It is passive: it cannot reroute, throttle, or block.
 
-A backend service that performs inference. VoiceGateway supports 11 providers: 7 cloud (Deepgram, OpenAI, Anthropic, Groq, Cartesia, ElevenLabs, AssemblyAI) and 4 local (Whisper, Ollama, Kokoro, Piper). Each provider wraps a corresponding `livekit.plugins.<name>` package and is instantiated lazily on first inference call.
+## guard()
 
-See: [Providers](/configuration/providers)
+`guard()` wraps a native provider and returns a drop-in replacement of the same type. It adds three controls around the underlying call: fallback chains, rate limiting, and spend caps.
 
-## Model ID
+```python
+from voicegateway import guard
 
-A string in `"provider/model"` format that uniquely identifies a model. For example, `deepgram/nova-3`, `openai/gpt-4.1-mini`, or `cartesia/sonic-3`. STT model IDs can include a language suffix (`deepgram/nova-3:en`), and TTS model IDs can include a voice suffix (`cartesia/sonic-3:narrator`). LLM model IDs preserve trailing colons verbatim, so Ollama tags like `ollama/qwen2.5:3b` work as expected.
+llm = guard(
+    openai.LLM(model="gpt-4o-mini"),
+    fallback=[openai.LLM(model="gpt-4o")],
+    rate_limit="60/min",
+    budget="$5.00/day",
+)
+```
 
-See: [Models](/configuration/models)
+`guard()` writes **no** metrics. Budget enforcement reads the accumulated spend that `attach()` has already written, closing the measure-then-enforce loop. The full signature and DSL are in [guard()](/guide/guard).
 
-## Modality
+## RequestRecord and Sink
 
-The type of inference operation: **STT** (speech-to-text), **LLM** (large language model), or **TTS** (text-to-speech). Each provider supports one or more modalities. The factory classes `inference.STT`, `inference.LLM`, and `inference.TTS` correspond directly to these three modalities.
+Every row written by `attach()` is a `RequestRecord`: a flat dataclass carrying modality, provider, model, usage units (tokens, characters, audio seconds), priced cost, latency, and the correlation fields (session id, project, agent id, tenant id, channel).
 
-See: [Providers](/configuration/providers) for a modality support matrix
+A `Sink` is the destination for those records. Two sinks ship with VoiceGateway:
 
-## Project
+- **LocalSQLiteSink** (default): writes to a SQLite file on disk, readable by the dashboard and CLI.
+- **RemoteCollectorSink**: POSTs records to a hosted ingest endpoint when you set `VOICEGW_COLLECTOR_URL` and `VOICEGW_API_KEY`. Use this for fleet deployments where each agent pushes metrics to a central store.
 
-A logical grouping for per-project provider keys, cost tracking, and budget enforcement. Each project has a name, optional `daily_budget`, a `budget_action` (warn, throttle, or block), and an optional `providers:` block carrying its own API keys. The active project is set via `inference.set_project(...)`, the `VOICEGW_ACTIVE_PROJECT` env var, the `default_project` field in YAML, or the auto-created `default` fallback.
+You can pass a custom `sink=` to `attach()` for testing or alternative backends. The architecture details are in [Storage](/architecture/storage).
 
-See: [Projects](/configuration/projects)
+## Projects
 
-## Session
+A project is a named cost and budget scope. Every `RequestRecord` carries a project label. You assign a project at attach time:
 
-A logical voice conversation: one caller turn through STT, LLM, and TTS. VoiceGateway tags every request from the same async context with a shared `session_id` (`"vg-<uuid>"`), accumulating cost and modality data into the `sessions` table.
+```python
+attach(session, project="customer-support")
+```
 
-See: [Python SDK Reference](/api/python-sdk#session-correlation)
+Projects are created automatically if they do not already exist. You can pre-configure a project with a daily budget in `voicegw.yaml`:
 
-## Fallback Chain
+```yaml
+projects:
+  customer-support:
+    daily_budget: "$20.00"
+    budget_action: warn   # warn | throttle | block
+```
 
-An ordered list of model IDs in `voicegw.yaml` for resolver-time fallback. Walk the chain at agent startup using the inference factories; the first model whose provider plugin imports cleanly and whose key resolves wins. Once `AgentSession` starts, that model is used for the whole call.
+The budget action is enforced by `guard()` when it checks accumulated spend, not by `attach()`. See [Projects](/configuration/projects) for the full options.
 
-See: [voicegw.yaml Reference](/configuration/voicegw-yaml)
+## Cost via voice-prices
 
-## Budget Action
+VoiceGateway prices every request through `voice-prices`, a fork of `pydantic/genai-prices` extended to cover STT audio minutes and TTS characters in addition to LLM tokens. The cost field in `RequestRecord` is computed from the usage units the provider metric reports:
 
-The enforcement behavior when a project exceeds its `daily_budget`. Three options:
+- **LLM**: prompt tokens, completion tokens, cached tokens priced per provider rate table.
+- **TTS**: character count priced per provider per-character rate.
+- **STT**: audio duration in seconds priced per provider per-minute rate.
 
-- **warn** -- log a warning but allow requests to continue.
-- **throttle** -- add artificial delay to requests to slow down consumption.
-- **block** -- reject requests entirely until the budget resets.
+Price tables ship with the library and can be refreshed without a code change. See [Cost Tracking](/architecture/cost-tracking) for the lookup path.
 
-See: [Projects](/configuration/projects)
+## ContextVars for session and tenant correlation
 
-## Middleware
+VoiceGateway uses Python `contextvars.ContextVar` to carry the active session id and tenant id across async tasks without passing them explicitly. When `attach()` runs, it sets the session id in the current context. Every `RequestRecord` written in that context inherits it automatically.
 
-Processing layers that wrap every inference call. VoiceGateway includes four built-in middleware components: cost tracking, latency monitoring, rate limiting, and request logging. Middleware runs transparently around each provider invocation. You control which middleware is active via the `observability` config section.
+This matters in two situations:
 
-See: [Observability](/configuration/observability)
+1. **Multi-tenant agents.** Pass `tenant_id=` to `attach()` when one agent instance serves multiple end-users. Each call's record is labelled with the tenant so the dashboard and API can slice costs per customer.
+2. **Sub-task correlation.** If your agent spawns helper tasks inside the same async context, their provider calls are automatically tagged with the same session id.
 
-## Config Layer
+See [Multi-tenant quickstart](/guide/multi-tenant-quickstart) for a worked example.
 
-VoiceGateway manages configuration from two sources: the `voicegw.yaml` file and a SQLite database (for models and projects created at runtime via the dashboard or MCP). At startup, the `ConfigManager` merges both sources. Changes made through the API or MCP are persisted to SQLite and merged on next `refresh_config()`.
+## What this page is not
 
-See: [voicegw.yaml Reference](/configuration/voicegw-yaml), [Environment Variables](/configuration/environment-variables)
+This page covers the framework-neutral core. For wiring, go to the seam pages. For limits and budget DSL, go to `guard()`. For config, go to the Configure section.
+
+<CardGroup cols={2}>
+  <Card title="attach() (observability)" icon="eye" href="/guide/attach">
+    Full signature, options, LiveKit and Pipecat wiring examples, and what each row records.
+  </Card>
+  <Card title="guard() (control)" icon="shield" href="/guide/guard">
+    Fallback chains, rate limiting, and spend caps with LiveKit and Pipecat examples.
+  </Card>
+  <Card title="Migrate to attach() + guard()" icon="arrow-right" href="/guide/migration-attach-guard">
+    Move off the deprecated factories to native providers plus the two seams.
+  </Card>
+  <Card title="Architecture overview" icon="building" href="/architecture/index">
+    How the seams, core, and sink layer fit together end-to-end.
+  </Card>
+</CardGroup>
