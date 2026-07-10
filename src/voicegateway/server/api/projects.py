@@ -1,16 +1,11 @@
-"""Project endpoints under /v1/projects (list, detail, CRUD, guardrails)."""
+"""Project endpoints under /v1/projects (list, detail, CRUD)."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import ValidationError
 
-from voicegateway.schemas.guardrail_policy_schema import (
-    GUARDRAIL_CATEGORY_DESCRIPTIONS,
-    GuardrailPolicy,
-)
 from voicegateway.server.api._deps import get_gateway, require_scope
 
 if TYPE_CHECKING:
@@ -63,67 +58,6 @@ async def project_detail(
         enforcer = gateway._budget_enforcer
         data["budget_status"] = enforcer.get_budget_status(project_id, today_spend)
     return data
-
-
-@router.get("/{project_id}/guardrails")
-async def project_guardrails(
-    project_id: str,
-    gateway: Gateway = Depends(get_gateway),
-) -> dict[str, Any]:
-    pcfg = gateway.config.get_project(project_id)
-    if pcfg is None:
-        raise HTTPException(404, f"project not found: {project_id}")
-    return {
-        "project_id": project_id,
-        "policy": pcfg.guardrails.to_storage_dict(),
-        "categories": [
-            {
-                "id": category,
-                "description": GUARDRAIL_CATEGORY_DESCRIPTIONS[category],
-            }
-            for category in GUARDRAIL_CATEGORY_DESCRIPTIONS
-        ],
-    }
-
-
-@router.post("/{project_id}/guardrails", dependencies=[write_dep])
-async def update_project_guardrails(
-    project_id: str,
-    body: dict[str, Any],
-    gateway: Gateway = Depends(get_gateway),
-) -> dict[str, Any]:
-    if gateway.storage is None:
-        raise HTTPException(400, "Storage not enabled")
-    pcfg = gateway.config.get_project(project_id)
-    if pcfg is None:
-        raise HTTPException(404, f"project not found: {project_id}")
-    try:
-        policy = GuardrailPolicy.from_raw(body)
-    except (ValidationError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    await gateway.storage.set_managed_project_guardrails(
-        project_id=project_id,
-        policy=policy.to_storage_dict(),
-        name=pcfg.name,
-        description=pcfg.description,
-        daily_budget=pcfg.daily_budget,
-        budget_action=pcfg.budget_action,
-        default_stack=pcfg.default_stack,
-        tags=list(pcfg.tags),
-    )
-    await gateway.storage.log_audit_event(
-        "project", project_id, "guardrails_update", policy.to_storage_dict(), "api"
-    )
-    await gateway.refresh_config()
-    refreshed = gateway.config.get_project(project_id)
-    return {
-        "project_id": project_id,
-        "policy": (
-            refreshed.guardrails.to_storage_dict()
-            if refreshed is not None
-            else policy.to_storage_dict()
-        ),
-    }
 
 
 @router.post("", dependencies=[write_dep])
