@@ -28,8 +28,9 @@ These variables configure the agent-side remote sink that pushes telemetry to Vo
 |---|---|
 | `VOICEGW_COLLECTOR_URL` | Full URL of the ingest endpoint, e.g. `https://collect.voicegateway.dev/v1/ingest` |
 | `VOICEGW_API_KEY` | Virtual API key (`vk_...`) that authenticates the agent to the collector |
+| `VOICEGW_PROJECT` | Default project name for `attach()` calls. Resolution order: `project=` argument, then this env var, then `"default"`. |
 
-Set both in the agent's environment. `attach()` reads them automatically. Pass the project name in your `attach(target, project="...")` call (there is no project env var for `attach()`). See [Hosted quickstart](/hosted/quickstart) for the full setup flow.
+Set all three in the agent's environment. `attach()` reads them automatically. The `project=` argument in your `attach(target, project="...")` call always takes precedence over `VOICEGW_PROJECT`. See [Hosted quickstart](/hosted/quickstart) for the full setup flow.
 
 ## Provider API keys
 

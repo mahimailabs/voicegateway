@@ -141,7 +141,7 @@ GROUP BY tenant_id
 ORDER BY total_cost DESC;
 ```
 
-The `requests`, `turns`, and `guardrail_events` tables also carry `tenant_id`, so any join-and-aggregate query can group by tenant without schema changes.
+The `requests` and `turns` tables also carry `tenant_id`, so any join-and-aggregate query can group by tenant without schema changes.
 
 ## Known limitations
 

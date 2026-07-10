@@ -193,7 +193,7 @@ From the Sessions page, click any row to open the SessionDetail modal. The routi
 
 <CardGroup>
   <Card title="Configuration: projects" href="/configuration/projects">
-    Full projects schema: budgets, rosters, guardrails, and stale-key settings.
+    Full projects schema: budgets, rosters, and stale-key settings.
   </Card>
   <Card title="Multi-tenant quickstart" href="/guide/multi-tenant-quickstart">
     Add per-end-user cost attribution within a project.

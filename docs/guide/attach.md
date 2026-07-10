@@ -177,5 +177,3 @@ is labelled so the dashboard and API can filter or group by tenant. See
 - [guard()](/guide/guard): the active control seam that composes with `attach()`.
 - [Frameworks and extras](/guide/frameworks): install `voicegateway[livekit]` vs
   `voicegateway[pipecat]`.
-- [Migration guide](/guide/migration-attach-guard): moving off the deprecated
-  `voicegateway.LLM/STT/TTS` factories to native + attach + guard.
