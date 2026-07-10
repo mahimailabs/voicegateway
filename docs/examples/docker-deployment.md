@@ -1,16 +1,18 @@
+---
+title: Docker Deployment
+description: Production-ready Docker Compose configuration with health checks, persistent storage, and an optional Ollama sidecar.
+---
+
 # Docker Deployment
 
 Deploy VoiceGateway in production with Docker Compose. The
 daemon serves the HTTP API and the web dashboard on the same port,
-so one service is enough; the optional dashboard service in the
-compose file below is a convenience for operators who want the
-dashboard reachable on a different external port. Includes
-persistent storage, health checks, and an optional Ollama sidecar
-for local LLM inference.
+so one service is enough. Includes persistent storage, health checks,
+and an optional Ollama sidecar for local LLM inference.
 
-For hosting the collector on a VPS, Railway, or Fly.io, see [Deployment](/deployment).
+For hosting the collector on a VPS, Railway, or Fly.io, see [Deployment](/deployment/index).
 
-## Project Structure
+## Project structure
 
 ```
 your-project/
@@ -19,7 +21,7 @@ your-project/
   .env
 ```
 
-## Environment Variables
+## Environment variables
 
 Create a `.env` file with your provider API keys:
 
@@ -41,7 +43,7 @@ VOICEGW_SECRET=your-base64-fernet-key
 Never commit `.env` files to version control. Add `.env` to your `.gitignore`.
 </Warning>
 
-### Generating a Fernet Key
+### Generating a Fernet key
 
 If you do not set `VOICEGW_SECRET`, VoiceGateway auto-generates one on first run and stores it in the container. Since containers are ephemeral, set this explicitly for production:
 
@@ -68,46 +70,11 @@ providers:
   elevenlabs:
     api_key: ${ELEVENLABS_API_KEY}
 
-models:
-  stt:
-    deepgram/nova-3:
-      provider: deepgram
-      model: nova-3
-  llm:
-    openai/gpt-4.1-mini:
-      provider: openai
-      model: gpt-4.1-mini
-    anthropic/claude-sonnet-4-20250514:
-      provider: anthropic
-      model: claude-sonnet-4-20250514
-  tts:
-    cartesia/sonic-3:
-      provider: cartesia
-      model: sonic-3
-      default_voice: 794f9389-aac1-45b6-b726-9d9369183238
-
-stacks:
-  premium:
-    stt: deepgram/nova-3
-    llm: openai/gpt-4.1-mini
-    tts: cartesia/sonic-3
-
-fallbacks:
-  stt:
-    - deepgram/nova-3
-  llm:
-    - openai/gpt-4.1-mini
-    - anthropic/claude-sonnet-4-20250514
-  tts:
-    - cartesia/sonic-3
-    - elevenlabs/turbo-v2.5
-
 projects:
   prod:
     name: Production
     daily_budget: 100.00
     budget_action: throttle
-    default_stack: premium
     tags: [production]
 
 cost_tracking:
@@ -157,10 +124,6 @@ services:
     networks:
       - voicegw-net
 
-  # The dashboard runs inside the voicegateway service: the daemon
-  # mounts the React SPA at / and the dashboard API at /api/* on
-  # the same port as the public HTTP API. No second service needed.
-
   # Optional: local LLM via Ollama
   ollama:
     image: ollama/ollama:latest
@@ -186,7 +149,7 @@ networks:
     driver: bridge
 ```
 
-## Starting the Services
+## Starting the services
 
 ### Cloud-only (API + Dashboard)
 
@@ -194,11 +157,10 @@ networks:
 docker compose up -d
 ```
 
-This starts:
-- **voicegateway** on port 8080 (HTTP API)
-- **dashboard** on port 9090 (Web UI)
+This starts the **voicegateway** service on port 8080. The daemon serves both
+the HTTP API and the React dashboard SPA on the same port.
 
-### With Local Ollama
+### With local Ollama
 
 ```bash
 docker compose --profile local up -d
@@ -206,9 +168,6 @@ docker compose --profile local up -d
 # Pull a model into Ollama
 docker exec voicegateway-ollama ollama pull qwen2.5:3b
 ```
-
-This adds:
-- **ollama** on port 11434
 
 Update `voicegw.yaml` to use the container hostname:
 
@@ -221,22 +180,16 @@ providers:
 ### Fleet collector (Postgres)
 
 To run the self-hosted collector that many LiveKit agents push telemetry to,
-use the Postgres-backed stack. The same container serves `POST /v1/ingest`, the
-dashboard API, and the SPA on port 8080.
+use the Postgres-backed stack:
 
 ```bash
 docker compose -f docker-compose.collector.yml up -d
 ```
 
 This starts a `postgres` service and a `collector` service. The collector reads
-its database from `VOICEGW_DB_URL`; setting that enables storage automatically,
-so `cost_tracking` does not need to be turned on by hand. The image ships the
-`postgres` extra (asyncpg) and the migrations, so it builds its schema on first
-start. Provide a `voicegw.yaml` next to the compose file (the collector mainly
-needs `auth.api_keys` for the agents' virtual keys), and set
-`VOICEGW_PG_PASSWORD` for anything beyond a local trial.
-
-Point the official image at any Postgres directly without compose:
+its database from `VOICEGW_DB_URL` and builds its schema on first start.
+Set `VOICEGW_PG_PASSWORD` for anything beyond a local trial. Point the official
+image at any Postgres directly without compose:
 
 ```bash
 docker run -p 8080:8080 \
@@ -246,11 +199,10 @@ docker run -p 8080:8080 \
   mahimairaja/voicegateway:latest
 ```
 
-## Verifying the Deployment
-
-### Health Check
+## Verifying the deployment
 
 ```bash
+# Health check
 curl http://localhost:8080/health
 ```
 
@@ -262,38 +214,29 @@ curl http://localhost:8080/health
 }
 ```
 
-### Provider Status
-
 ```bash
+# Provider status
 curl http://localhost:8080/v1/status
+
+# Open the dashboard
+open http://localhost:8080
 ```
 
-### Dashboard
+## Production considerations
 
-Open http://localhost:8080 in your browser to see the dashboard with cost charts, latency metrics, and request logs. The daemon serves both the React UI and the dashboard API at this port.
+### Persistent storage
 
-## Production Considerations
-
-### Persistent Storage
-
-The `voicegw-data` volume stores the SQLite database. This persists across container restarts and rebuilds. To back up:
+The `voicegw-data` volume stores the SQLite database. To back up:
 
 ```bash
-# Copy the database out of the volume
 docker cp voicegateway:/data/voicegw.db ./backup-$(date +%Y%m%d).db
 ```
 
-### Encryption Key Persistence
+### Encryption key persistence
 
-If you do not set `VOICEGW_SECRET`, a new Fernet key is generated on first run and stored in the container filesystem (not the volume). This means:
+**Always set `VOICEGW_SECRET` in production.** If you do not set it, a new Fernet key is generated on first run and stored in the container filesystem. Rebuilding the container loses the key, making encrypted API keys in the database unreadable.
 
-- Rebuilding the container loses the key
-- Encrypted API keys in the database become undecryptable
-- You will need to re-add managed providers
-
-**Always set `VOICEGW_SECRET` in production** via the `.env` file or a secrets manager.
-
-### Reverse Proxy
+### Reverse proxy
 
 For TLS termination, put Nginx or Caddy in front:
 
@@ -307,14 +250,11 @@ For TLS termination, put Nginx or Caddy in front:
       - ./certs:/etc/nginx/certs:ro
     depends_on:
       - voicegateway
-      - dashboard
     networks:
       - voicegw-net
 ```
 
-### Resource Limits
-
-For production deployments, add resource constraints:
+### Resource limits
 
 ```yaml
   voicegateway:
@@ -330,8 +270,6 @@ For production deployments, add resource constraints:
 
 ### Logging
 
-VoiceGateway logs to stdout. Use Docker's logging driver to ship logs:
-
 ```yaml
   voicegateway:
     logging:
@@ -341,41 +279,11 @@ VoiceGateway logs to stdout. Use Docker's logging driver to ship logs:
         max-file: "3"
 ```
 
-## Connecting Your Application
-
-From your voice agent application, point inference factories at the deployed VoiceGateway by sharing the same `voicegw.yaml`:
-
-```python
-import os
-os.environ["VOICEGW_CONFIG"] = "/path/to/voicegw.yaml"
-
-from voicegateway import inference
-
-stt = inference.STT("deepgram/nova-3")
-```
-
-For pure observability calls (status, costs, logs), hit the HTTP API:
-
-```python
-import httpx
-resp = httpx.get("http://localhost:8080/v1/status")
-```
-
-If your application runs in a separate container on the same Docker network, use the service name:
-
-```python
-# From another container on voicegw-net
-resp = httpx.get("http://voicegateway:8080/v1/status")
-```
-
 ## Updating
 
 ```bash
-# Pull latest code and rebuild
 git pull
 docker compose build
 docker compose up -d
-
-# The SQLite database auto-migrates on startup
-# No manual migration steps needed
+# The SQLite database auto-migrates on startup.
 ```

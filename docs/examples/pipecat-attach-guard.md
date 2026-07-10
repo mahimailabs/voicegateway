@@ -1,8 +1,13 @@
-# Pipecat: attach() + guard()
+---
+title: "Pipecat: attach + guard"
+description: Native Pipecat services metered by an Observer with a guarded LLM providing fallback and a daily spend cap.
+---
+
+# Pipecat: attach + guard
 
 A minimal Pipecat pipeline built from native `pipecat.services`, metered by an
 [`Observer`](/guide/attach) (the single passive meter) and controlled by one
-[`voicegateway.guard(...)`](/guide/guard) wrapper around the LLM (fallback and a
+[`guard()`](/guide/guard) wrapper around the LLM (fallback and a
 daily spend cap). The public surface is identical to the
 [LiveKit example](/examples/livekit-attach-guard); only the providers differ.
 
@@ -11,8 +16,17 @@ The full runnable file lives at
 
 ## Install
 
-```bash
+<CodeGroup>
+```bash uv
+uv add "voicegateway[pipecat]" "pipecat-ai[openai,deepgram,cartesia,silero]"
+```
+
+```bash pip
 pip install "voicegateway[pipecat]" "pipecat-ai[openai,deepgram,cartesia,silero]"
+```
+</CodeGroup>
+
+```bash
 export OPENAI_API_KEY=... DEEPGRAM_API_KEY=... CARTESIA_API_KEY=...
 ```
 
@@ -52,7 +66,7 @@ def build_task(transport_input, transport_output):
         # Pipecat emits the usage MetricsFrames the meter reads only when these
         # are on; without them there is nothing for attach() to record.
         params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
-        # attach the single meter via the exported Observer. Equivalent to
+        # Attach the single meter via the exported Observer. Equivalent to
         # voicegateway.attach(task, project=PROJECT) after construction.
         observers=[voicegateway.Observer(project=PROJECT)],
     )

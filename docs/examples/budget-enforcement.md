@@ -1,8 +1,49 @@
+---
+title: Budget Enforcement
+description: Enforce a daily spend cap using guard(llm, budget="$5.00/day") with warn, throttle, and block modes.
+---
+
 # Budget Enforcement
 
-VoiceGateway supports per-project daily budgets with three enforcement modes: `warn`, `throttle`, and `block`. Budgets are enforced at request-completion time inside the cost tracker; the `inference` factories themselves never raise on budget. The `BudgetThrottleSignal` and `BudgetExceededError` types are available for callers that want to wire their own pre-request check (CLI / HTTP / dashboard).
+Use `guard()` to attach a daily budget to any provider. When the budget is exceeded, `guard()` can warn and continue, throttle to a cheaper fallback, or block the request outright.
+
+## The three modes
+
+```python
+from livekit.plugins import openai
+from voicegateway import guard
+
+# warn: log and continue (default when you pass budget= without budget_action)
+llm_warn = guard(
+    openai.LLM(model="gpt-4o-mini"),
+    budget="$5.00/day",
+    project="warn-demo",
+)
+
+# throttle: fall back to a cheaper provider when the budget is exceeded
+llm_throttle = guard(
+    openai.LLM(model="gpt-4o-mini"),
+    fallback=[openai.LLM(model="gpt-4o-mini")],   # swap in a local/cheaper model
+    budget="$5.00/day",
+    project="throttle-demo",
+)
+
+# block: raise BudgetExceededError when the budget is exceeded
+llm_block = guard(
+    openai.LLM(model="gpt-4o-mini"),
+    budget="$5.00/day",
+    project="block-demo",
+)
+```
+
+<Note>
+`guard()` returns the same type as the provider you pass in, so it is a
+drop-in replacement anywhere you use the provider directly.
+</Note>
 
 ## Configuration
+
+Set the budget and action per project in `voicegw.yaml`:
 
 ```yaml
 projects:
@@ -51,21 +92,9 @@ cost_tracking:
   enabled: true
 ```
 
-## Mode 1: Warn
+## Mode 1: warn
 
 The `warn` mode logs a warning when the budget is exceeded but allows all requests to proceed. Use this for visibility without disrupting service.
-
-```python
-from voicegateway.core.active_project import set_project
-from voicegateway.inference import STT, LLM, TTS
-
-set_project("warn-demo")
-# Requests proceed even after budget is exceeded.
-# Check your logs for: "Project 'warn-demo' exceeded daily budget: $X.XX / $1.00"
-stt = STT("deepgram/nova-3")
-llm = LLM("openai/gpt-4.1-mini")
-tts = TTS("cartesia/sonic-3")
-```
 
 **Log output when budget is exceeded:**
 
@@ -73,53 +102,64 @@ tts = TTS("cartesia/sonic-3")
 WARNING - Project 'warn-demo' exceeded daily budget: $1.23 / $1.00
 ```
 
-## Mode 2: Throttle (caller-driven)
+## Mode 2: throttle
 
-The inference factories do not raise `BudgetThrottleSignal` themselves. Wire a pre-flight check in your worker if you want the throttle path:
+With `fallback=` set, `guard()` switches to the fallback provider when the budget is exceeded instead of raising:
 
 ```python
-from voicegateway import inference
-from voicegateway.inference._factory import get_gateway
-from voicegateway.middleware.budget_enforcer import BudgetThrottleSignal
+from livekit.plugins import openai
+from livekit.plugins import silero
+from voicegateway import attach, guard
 
 
-async def stt_for(project: str):
-    gw = get_gateway()
-    try:
-        await gw._budget_enforcer.check_budget(project)
-    except BudgetThrottleSignal:
-        # Budget exceeded -- fall back to local Whisper.
-        inference.set_project(project)
-        return inference.STT("local/whisper-large-v3")
-    inference.set_project(project)
-    return inference.STT("deepgram/nova-3")
+async def entrypoint(ctx):
+    from livekit.agents import Agent, AgentSession
+
+    await ctx.connect()
+
+    session = AgentSession(
+        vad=silero.VAD.load(),
+        stt=...,
+        llm=guard(
+            openai.LLM(model="gpt-4o-mini"),
+            fallback=[openai.LLM(model="gpt-4o-mini")],  # local or cheaper model
+            budget="$1.00/day",
+            project="throttle-demo",
+        ),
+        tts=...,
+    )
+
+    attach(session, project="throttle-demo")
+    await session.start(agent=Agent(instructions="Be concise."), room=ctx.room)
 ```
 
-The `_budget_enforcer` reference is an internal handle today; a public `inference.check_budget()` helper is planned so callers no longer reach into a private attribute.
+## Mode 3: block
 
-## Mode 3: Block (caller-driven)
+When the budget is exhausted, `guard()` raises `BudgetExceededError`. Catch it in your worker:
 
 ```python
 import asyncio
 
-from voicegateway import inference
-from voicegateway.inference._factory import get_gateway
+from livekit.plugins import openai
+from voicegateway import attach, guard
 from voicegateway.middleware.budget_enforcer import BudgetExceededError
 
 
 async def main():
-    gw = get_gateway()
+    guarded_llm = guard(
+        openai.LLM(model="gpt-4o-mini"),
+        budget="$1.00/day",
+        project="block-demo",
+    )
     try:
-        await gw._budget_enforcer.check_budget("block-demo")
+        # guard() raises BudgetExceededError when the cap is hit.
+        result = await guarded_llm.chat(...)
     except BudgetExceededError as e:
         print(f"Request blocked: {e}")
         print(f"  Project: {e.project}")
         print(f"  Spent today: ${e.spent_usd:.2f}")
         print(f"  Daily budget: ${e.budget_usd:.2f}")
-        # Handle gracefully -- show user a message, queue for later, etc.
-    else:
-        inference.set_project("block-demo")
-        stt = inference.STT("deepgram/nova-3")
+        # Handle gracefully: show user a message, queue for later, etc.
 
 
 asyncio.run(main())
@@ -134,12 +174,11 @@ Request blocked: Project 'block-demo' exceeded daily budget: $1.23 / $1.00
   Daily budget: $1.00
 ```
 
-## Budget Status API
+## Budget status via the HTTP API
 
 Check budget status before making a request:
 
 ```python
-# Via the HTTP API
 import httpx
 
 resp = httpx.get("http://localhost:8080/v1/projects")
@@ -148,55 +187,31 @@ for project in resp.json()["projects"]:
     # "ok", "warning" (>80% spent), or "exceeded"
 ```
 
-The `BudgetEnforcer.get_budget_status()` method returns:
-
 | Status | Condition |
 |--------|-----------|
 | `"ok"` | Under 80% of budget |
 | `"warning"` | Between 80% and 100% of budget |
 | `"exceeded"` | At or over 100% of budget |
 
-## Cache Behavior
+## Cache behavior
 
-Budget checks are cached in memory with a **30-second TTL** to avoid hitting SQLite on every single request. This means:
+Budget checks are cached in memory with a **30-second TTL** to avoid hitting SQLite on every single request. A budget may be briefly exceeded before the cache refreshes. For high-throughput scenarios this tradeoff is usually acceptable.
 
-- A budget may be briefly exceeded before the cache refreshes
-- The maximum over-spend window is 30 seconds of requests
-- The TTL is configurable via `BudgetEnforcer(cache_ttl_seconds=30.0)`
+## Combining with fallback chains
 
-For high-throughput scenarios, this tradeoff between precision and performance is usually acceptable. If you need tighter enforcement, reduce the TTL:
-
-```python
-# In a custom Gateway subclass or direct instantiation
-enforcer = BudgetEnforcer(config, storage, cache_ttl_seconds=5.0)
-```
-
-## Combining with Fallback Chains
-
-The throttle path can be paired with the manual chain walk pattern from [Fallback Chains](/examples/fallback-chains): on `BudgetThrottleSignal`, walk a chain that ends in a local model.
+The throttle path pairs naturally with the chain walk pattern from [Fallback Chains](/examples/fallback-chains). Pass a local or cheaper model as the `fallback=` to `guard()` so throttled calls still resolve:
 
 ```yaml
+providers:
+  deepgram:
+    api_key: ${DEEPGRAM_API_KEY}
+  ollama:
+    base_url: http://localhost:11434
+  whisper: {}
+  kokoro: {}
+
 projects:
   prod:
     daily_budget: 50.00
     budget_action: throttle
-    providers:
-      deepgram:
-        api_key: ${DEEPGRAM_API_KEY}
-
-fallbacks:
-  stt:
-    - deepgram/nova-3
-    - local/whisper-large-v3
-```
-
-```python
-async def stt_for(project: str):
-    gw = get_gateway()
-    try:
-        await gw._budget_enforcer.check_budget(project)
-    except BudgetThrottleSignal:
-        # Walk the chain to land on the cheaper / local backup.
-        return first_resolvable("stt", ["deepgram/nova-3", "local/whisper-large-v3"])
-    return inference.STT("deepgram/nova-3")
 ```

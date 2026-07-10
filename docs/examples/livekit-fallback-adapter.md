@@ -1,6 +1,11 @@
+---
+title: LiveKit FallbackAdapter Integration
+description: Compose VoiceGateway's attach() with LiveKit's built-in FallbackAdapter for runtime, error-driven provider failover during an active call.
+---
+
 # LiveKit FallbackAdapter Integration
 
-This page shows how to compose VoiceGateway's `inference` factories with LiveKit's `FallbackAdapter` to get runtime, error-driven failover during an active call. VoiceGateway's own resolver-time fallback (see [Fallback Chains](/examples/fallback-chains)) handles startup selection; the LiveKit Agents framework supplies the runtime piece.
+This page shows how to compose VoiceGateway's `attach()` with LiveKit's `FallbackAdapter` to get runtime, error-driven failover during an active call. VoiceGateway's own `guard()` fallback (see [Fallback Chains](/examples/fallback-chains)) handles startup selection; the LiveKit Agents framework supplies the runtime piece.
 
 ## Why LiveKit FallbackAdapter, not VG's own
 
@@ -10,14 +15,18 @@ LiveKit Agents ships `stt.FallbackAdapter`, `llm.FallbackAdapter`, and `tts.Fall
 2. The LiveKit team maintains and tests it alongside the rest of the agents framework.
 3. The adapter integrates with `AgentSession`'s `ErrorEvent` flow, which is the canonical way to surface a chain-exhausted state to the agent.
 
-The composition pattern below is the recommended way to deliver "primary provider down, fall back to a backup, keep the call alive" for a VG-routed agent.
+The composition pattern below is the recommended way to deliver "primary provider down, fall back to a backup, keep the call alive" for a VG-tracked agent.
 
 ## The composition
 
 ```python
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli, llm, stt, tts
-from livekit.plugins import silero
-from voicegateway import inference
+from livekit.plugins import cartesia, deepgram, elevenlabs, openai, silero
+from voicegateway import attach
+
+# Assumes voicegateway providers are wired for local fallback in voicegw.yaml.
+# Replace local/... with whatever local or secondary provider you configure.
+from livekit.plugins import openai as lk_openai
 
 
 async def entrypoint(ctx: JobContext):
@@ -26,21 +35,21 @@ async def entrypoint(ctx: JobContext):
     session = AgentSession(
         vad=silero.VAD.load(),
         stt=stt.FallbackAdapter([
-            inference.STT("deepgram/nova-3"),         # primary
-            inference.STT("groq/whisper-large-v3"),   # secondary cloud
-            inference.STT("local/whisper-large-v3"),  # local fallback
+            deepgram.STT(model="nova-3"),          # primary
+            openai.STT(model="whisper-1"),          # secondary cloud
         ]),
         llm=llm.FallbackAdapter([
-            inference.LLM("openai/gpt-4.1-mini"),
-            inference.LLM("anthropic/claude-sonnet-4-20250514"),
-            inference.LLM("ollama/qwen2.5:3b"),
+            openai.LLM(model="gpt-4o-mini"),
+            lk_openai.LLM(model="gpt-4o"),
         ]),
         tts=tts.FallbackAdapter([
-            inference.TTS("cartesia/sonic-3"),
-            inference.TTS("elevenlabs/eleven_turbo_v2_5"),
-            inference.TTS("local/kokoro"),
+            cartesia.TTS(model="sonic-3"),
+            elevenlabs.TTS(model="turbo-v2.5"),
         ]),
     )
+
+    # One meter for the whole session across all providers in each chain.
+    attach(session, project="prod")
 
     await session.start(
         agent=Agent(instructions="You are a helpful voice assistant."),
@@ -52,7 +61,7 @@ if __name__ == "__main__":
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
 ```
 
-Each `inference.STT / LLM / TTS` call returns a native LiveKit plugin instance wrapped by VoiceGateway's instrumentation. `FallbackAdapter` accepts those instances directly: no extra adapter layer, no plugin shim. The active project resolves the same way it does for any other inference call (`set_project`, env var, or `default_project` in YAML).
+`FallbackAdapter` accepts native LiveKit plugin instances directly. `attach()` meters the session as a whole, not per-provider, so the single `attach()` call covers all providers in each chain.
 
 ## What triggers fallback
 
@@ -73,7 +82,7 @@ For voice agents specifically:
 - **Match modality strengths.** STT chains should put the lowest-latency provider first (Deepgram Nova for English-heavy voice agents). TTS chains should also put the lowest-latency provider first (Cartesia Sonic). LLM chains can prioritize quality over latency since reasoning latency is a smaller share of total turn time.
 - **Anchor with a local model.** Avoid all-cloud chains where a regional outage could take down every provider in the list. A single local fallback at the end of the chain gives you true outage coverage at the cost of degraded quality during the outage.
 
-## How VoiceGateway's cost tracking interacts
+## How VoiceGateway cost tracking interacts
 
 Each attempt VoiceGateway sees is logged as a separate `RequestRecord` in SQLite. If `FallbackAdapter` calls the primary and that call fails:
 
@@ -81,8 +90,6 @@ Each attempt VoiceGateway sees is logged as a separate `RequestRecord` in SQLite
 - When `FallbackAdapter` retries with the secondary, that call is logged separately with `status = "success"` (or another `error` if the secondary also fails).
 
 You can correlate the two records by timestamp clustering and project tag. The dashboard's request log view shows the status next to each row.
-
-The `fallback_from` field on `RequestRecord` is reserved for a future resolver-time fallback parameter on the inference factories, not for LiveKit's runtime `FallbackAdapter`: VG sees each attempt as an independent provider call. To trace runtime fallback events today, filter the request log by project and look for adjacent records with `status = "error"` followed by `status = "success"`.
 
 For project budget enforcement, every attempt counts against the project budget independently. A primary that fails and a secondary that succeeds will both be billed (the primary because the provider counts the failed request, the secondary because it served the actual response). This matches what your provider invoices will show.
 
@@ -99,16 +106,16 @@ def on_error(event):
         ...
 ```
 
-If `event.error.recoverable` is `True`, the chain advanced to the next provider successfully and the session continues. The event is informational; you can log it for later analysis but no intervention is required.
+If `event.error.recoverable` is `True`, the chain advanced to the next provider successfully and the session continues. The event is informational; log it for later analysis but no intervention is required.
 
 ## When this is not what you need
 
-- **You only want startup-time provider selection.** Use the manual chain walk pattern in [Fallback Chains](/examples/fallback-chains).
+- **You only want startup-time provider selection.** Use `guard()` with `fallback=` as shown in [Fallback Chains](/examples/fallback-chains).
 - **You only have one cloud provider configured.** `FallbackAdapter` is overkill. A single-provider config plus a circuit breaker outside the agent is simpler.
 - **You are on Node.js.** `stt.FallbackAdapter` is Python-only. `llm.FallbackAdapter` and `tts.FallbackAdapter` are available on Node.js per the [LiveKit reference](https://docs.livekit.io/reference/agents/events/); for STT failover on Node.js you need a different approach.
 
 ## Related
 
-- [Fallback Chains](/examples/fallback-chains): VoiceGateway's resolver-time fallback. Complementary to `FallbackAdapter`. Resolver-time picks the first available provider at agent startup; runtime fallback handles failures during a call.
+- [Fallback Chains](/examples/fallback-chains): `guard()` resolver-time fallback. Complementary to `FallbackAdapter`. Resolver-time picks the first available provider at agent startup; runtime fallback handles failures during a call.
 - [Quick Start](/guide/quick-start)
 - [LiveKit Agents events reference](https://docs.livekit.io/reference/agents/events/)

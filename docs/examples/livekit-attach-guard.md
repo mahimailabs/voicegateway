@@ -1,8 +1,13 @@
-# LiveKit: attach() + guard()
+---
+title: "LiveKit: attach + guard"
+description: Native LiveKit plugins metered by attach(session) with a guarded LLM providing fallback, rate limiting, and a daily spend cap.
+---
+
+# LiveKit: attach + guard
 
 A minimal LiveKit agent built from native `livekit.plugins` providers, metered
-by [`voicegateway.attach(session)`](/guide/attach) (the single passive meter) and
-controlled by one [`voicegateway.guard(...)`](/guide/guard) wrapper around the
+by [`attach(session)`](/guide/attach) (the single passive meter) and
+controlled by one [`guard()`](/guide/guard) wrapper around the
 LLM (fallback, rate limit, and a daily spend cap).
 
 The full runnable file lives at
@@ -10,8 +15,17 @@ The full runnable file lives at
 
 ## Install
 
-```bash
+<CodeGroup>
+```bash uv
+uv add "voicegateway[livekit,openai,deepgram,cartesia]"
+```
+
+```bash pip
 pip install "voicegateway[livekit,openai,deepgram,cartesia]"
+```
+</CodeGroup>
+
+```bash
 export OPENAI_API_KEY=... DEEPGRAM_API_KEY=... CARTESIA_API_KEY=...
 export LIVEKIT_URL=... LIVEKIT_API_KEY=... LIVEKIT_API_SECRET=...
 ```
@@ -76,4 +90,4 @@ the `livekit-demo` project.
 - The `livekit.plugins` imports are inside `build_session()` so importing the
   module never requires the plugin wheels; only running the agent does.
 - For the Pipecat version, see
-  [Pipecat: attach() + guard()](/examples/pipecat-attach-guard).
+  [Pipecat: attach + guard](/examples/pipecat-attach-guard).

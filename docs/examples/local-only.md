@@ -1,11 +1,16 @@
+---
+title: Local-Only Deployment
+description: Run a voice agent with zero cloud dependencies using Whisper for STT, Ollama for LLM, and Kokoro for TTS.
+---
+
 # Local-Only Deployment
 
 Run VoiceGateway entirely on local hardware with zero cloud dependencies. Uses Ollama for LLM, Whisper for STT, and Kokoro for TTS. Ideal for air-gapped environments, development without API keys, or privacy-sensitive deployments.
 
 ## Prerequisites
 
-### Install Ollama
-
+<Steps>
+  <Step title="Install Ollama">
 ```bash
 # macOS / Linux
 curl -fsSL https://ollama.com/install.sh | sh
@@ -13,19 +18,21 @@ curl -fsSL https://ollama.com/install.sh | sh
 # Pull a model
 ollama pull qwen2.5:3b
 ```
-
-### Install VoiceGateway with Local Providers
-
-```bash
-pip install voicegateway[whisper,kokoro]
+  </Step>
+  <Step title="Install VoiceGateway with local providers">
+<CodeGroup>
+```bash uv
+uv add "voicegateway[whisper,kokoro]"
 ```
 
-Whisper requires `torch` and will download model weights on first use. Kokoro requires the `kokoro` package.
+```bash pip
+pip install "voicegateway[whisper,kokoro]"
+```
+</CodeGroup>
 
-## Configuration
-
-Create `voicegw.yaml`:
-
+Whisper requires `torch` and downloads model weights on first use. Kokoro requires the `kokoro` package.
+  </Step>
+  <Step title="Create voicegw.yaml">
 ```yaml
 providers:
   ollama:
@@ -33,76 +40,38 @@ providers:
   whisper: {}
   kokoro: {}
 
-models:
-  stt:
-    local/whisper-large-v3:
-      provider: whisper
-      model: large-v3
-    local/whisper-base:
-      provider: whisper
-      model: base
-  llm:
-    ollama/qwen2.5:3b:
-      provider: ollama
-      model: qwen2.5:3b
-    ollama/llama3.2:1b:
-      provider: ollama
-      model: llama3.2:1b
-  tts:
-    local/kokoro:
-      provider: kokoro
-
-stacks:
-  local:
-    stt: local/whisper-large-v3
-    llm: ollama/qwen2.5:3b
-    tts: local/kokoro
-  fast:
-    stt: local/whisper-base
-    llm: ollama/llama3.2:1b
-    tts: local/kokoro
-
-fallbacks:
-  stt:
-    - local/whisper-large-v3
-    - local/whisper-base
-  llm:
-    - ollama/qwen2.5:3b
-    - ollama/llama3.2:1b
-
 projects:
   local-dev:
     name: Local Development
-    daily_budget: 0  # Unlimited (local models are free)
+    daily_budget: 0   # local models are free
     tags: [development, local]
 
 default_project: local-dev
 
 cost_tracking:
-  enabled: true  # Still tracks requests, costs will be $0.00
+  enabled: true   # still records requests; costs will be $0.00
 
 observability:
   latency_tracking: true
 ```
+  </Step>
+</Steps>
 
-## Basic Usage
+## Agent code
 
-```python
-from voicegateway import inference
-
-# default_project: local-dev in voicegw.yaml means the inference
-# factories pick up local-dev automatically. All local, no API keys.
-stt = inference.STT("local/whisper-large-v3")
-llm = inference.LLM("ollama/qwen2.5:3b")
-tts = inference.TTS("local/kokoro")
-```
-
-## LiveKit Agent with Local Models
-
+<Tabs>
+  <Tab title="LiveKit">
 ```python
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
 from livekit.plugins import silero
-from voicegateway import inference
+from voicegateway import attach
+
+# Assumes voicegateway local providers are wired in voicegw.yaml.
+# The local Whisper and Kokoro providers expose the same plugin interface
+# as their cloud counterparts.
+from voicegateway.providers.whisper import WhisperSTT
+from voicegateway.providers.kokoro import KokoroTTS
+from voicegateway.providers.ollama import OllamaLLM
 
 
 async def entrypoint(ctx: JobContext):
@@ -110,15 +79,17 @@ async def entrypoint(ctx: JobContext):
 
     session = AgentSession(
         vad=silero.VAD.load(),
-        stt=inference.STT("local/whisper-large-v3"),
-        llm=inference.LLM("ollama/qwen2.5:3b"),
-        tts=inference.TTS("local/kokoro"),
+        stt=WhisperSTT(model="large-v3"),
+        llm=OllamaLLM(model="qwen2.5:3b"),
+        tts=KokoroTTS(),
     )
+
+    attach(session, project="local-dev")
 
     await session.start(
         agent=Agent(
             instructions=(
-                "You are a helpful voice assistant running entirely on local hardware. "
+                "You are a helpful voice assistant running on local hardware. "
                 "Be concise: local models work best with shorter responses."
             ),
         ),
@@ -129,6 +100,34 @@ async def entrypoint(ctx: JobContext):
 if __name__ == "__main__":
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
 ```
+  </Tab>
+  <Tab title="Pipecat">
+```python
+import voicegateway
+from pipecat.pipeline.pipeline import Pipeline
+from pipecat.pipeline.task import PipelineParams, PipelineTask
+
+# Import local provider services (registered via voicegateway providers).
+from voicegateway.providers.whisper import WhisperSTTService
+from voicegateway.providers.kokoro import KokoroTTSService
+from voicegateway.providers.ollama import OllamaLLMService
+
+
+def build_task(transport_input, transport_output):
+    stt = WhisperSTTService(model="large-v3")
+    llm = OllamaLLMService(model="qwen2.5:3b")
+    tts = KokoroTTSService()
+
+    pipeline = Pipeline([transport_input, stt, llm, tts, transport_output])
+
+    return PipelineTask(
+        pipeline,
+        params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
+        observers=[voicegateway.Observer(project="local-dev")],
+    )
+```
+  </Tab>
+</Tabs>
 
 ## Docker Compose with Ollama
 
@@ -166,10 +165,6 @@ services:
     networks:
       - voicegw-net
 
-  # The dashboard runs inside the voicegateway service: the daemon
-  # mounts the React SPA at / and the dashboard API at /api/* on
-  # the same port as the public HTTP API. No second service needed.
-
 volumes:
   voicegw-data:
   ollama-models:
@@ -193,26 +188,26 @@ docker compose up -d
 docker exec voicegateway-ollama ollama pull qwen2.5:3b
 ```
 
-## Using Piper TTS as an Alternative
+## Using Piper TTS as an alternative
 
 If Kokoro is not available, Piper is another local TTS option:
+
+<CodeGroup>
+```bash uv
+uv add "voicegateway[piper]"
+```
+
+```bash pip
+pip install "voicegateway[piper]"
+```
+</CodeGroup>
 
 ```yaml
 providers:
   piper: {}
-
-models:
-  tts:
-    local/piper:
-      provider: piper
-      default_voice: en_US-lessac-medium
 ```
 
-```bash
-pip install voicegateway[piper]
-```
-
-## Performance Considerations
+## Performance considerations
 
 Local models have different performance characteristics than cloud APIs:
 
@@ -225,31 +220,25 @@ Local models have different performance characteristics than cloud APIs:
 
 Tips for optimizing local performance:
 
-- **GPU acceleration:** ensure CUDA/Metal is available for Whisper and Ollama
-- **Smaller models:** use `local/whisper-base` instead of `local/whisper-large-v3` for faster STT
-- **Quantized LLMs:** Ollama automatically uses quantized models (Q4_0, Q4_K_M)
-- **Keep models warm:** Ollama keeps the most recent model in memory; avoid switching frequently
+- **GPU acceleration:** ensure CUDA/Metal is available for Whisper and Ollama.
+- **Smaller models:** use `whisper-base` instead of `large-v3` for faster STT.
+- **Quantized LLMs:** Ollama automatically uses quantized models (Q4_0, Q4_K_M).
+- **Keep models warm:** Ollama keeps the most recent model in memory; avoid switching frequently.
 
-## Hybrid: Local Fallback for Cloud
+## Hybrid: local fallback for cloud
 
-A common pattern is to use cloud providers normally but fall back to local models when they are unavailable or the budget is exceeded:
+A common pattern is cloud providers as primaries, local as the final fallback:
 
-```yaml
-fallbacks:
-  stt:
-    - deepgram/nova-3
-    - local/whisper-large-v3
-  llm:
-    - openai/gpt-4.1-mini
-    - ollama/qwen2.5:3b
-  tts:
-    - cartesia/sonic-3
-    - local/kokoro
+```python
+from livekit.plugins import deepgram, openai
+from voicegateway import guard
+from voicegateway.providers.whisper import WhisperSTT
 
-projects:
-  prod:
-    daily_budget: 50.00
-    budget_action: throttle  # Falls back to local on exceed
+stt = guard(
+    deepgram.STT(model="nova-3"),
+    fallback=[WhisperSTT(model="large-v3")],
+    project="prod",
+)
 ```
 
-See [Fallback Chains](./fallback-chains) and [Budget Enforcement](./budget-enforcement) for more details.
+See [Fallback Chains](/examples/fallback-chains) and [Budget Enforcement](/examples/budget-enforcement) for more details.

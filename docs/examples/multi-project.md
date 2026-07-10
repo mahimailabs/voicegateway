@@ -1,6 +1,13 @@
+---
+title: Multi-Project Setup
+description: Attribute costs across multiple projects by passing project= to attach() for per-project isolation.
+---
+
 # Multi-Project Setup
 
-Configure multiple projects with different model stacks, budgets, and tracking. This is useful when you have separate teams, environments, or products sharing a single VoiceGateway instance.
+Configure multiple projects with different model stacks, budgets, and tracking. Useful when separate teams, environments, or products share a single VoiceGateway instance.
+
+Pass `project=` to `attach()` (and optionally to `guard()`) to isolate cost tracking per session.
 
 ## Configuration
 
@@ -53,43 +60,97 @@ cost_tracking:
   enabled: true
 ```
 
-## Using Projects in Code
+## Using projects in code
 
+Pass `project=` directly to `attach()` so the active project is explicit on every session:
+
+<Tabs>
+  <Tab title="LiveKit">
 ```python
-from voicegateway import inference
+from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
+from livekit.plugins import cartesia, deepgram, openai, silero
+from voicegateway import attach
 
-# Production: pass the project explicitly per call context.
-inference.set_project("prod")
-stt = inference.STT("deepgram/nova-3")
-llm = inference.LLM("openai/gpt-4.1-mini")
-tts = inference.TTS("cartesia/sonic-3")
+
+async def production_entrypoint(ctx: JobContext):
+    await ctx.connect()
+
+    session = AgentSession(
+        vad=silero.VAD.load(),
+        stt=deepgram.STT(model="nova-3"),
+        llm=openai.LLM(model="gpt-4o-mini"),
+        tts=cartesia.TTS(model="sonic-3"),
+    )
+
+    # project= is explicit; no global state, no leakage between concurrent tasks.
+    attach(session, project="prod")
+
+    await session.start(
+        agent=Agent(instructions="You are a helpful voice assistant."),
+        room=ctx.room,
+    )
+
+
+async def staging_entrypoint(ctx: JobContext):
+    await ctx.connect()
+
+    session = AgentSession(
+        vad=silero.VAD.load(),
+        stt=deepgram.STT(model="nova-3"),
+        llm=openai.LLM(model="gpt-4o-mini"),
+        tts=cartesia.TTS(model="sonic-3"),
+    )
+
+    attach(session, project="staging")
+
+    await session.start(
+        agent=Agent(instructions="You are a helpful voice assistant."),
+        room=ctx.room,
+    )
 ```
-
-The active project is scoped to the current async context, so different
-asyncio tasks within the same process can each pick a different
-project without interfering:
-
+  </Tab>
+  <Tab title="Pipecat">
 ```python
-async def production_handler(ctx):
-    inference.set_project("prod")
-    # all inference factories below charge prod
-    ...
+import os
 
-async def staging_handler(ctx):
-    inference.set_project("staging")
-    # sibling task: no leakage
-    ...
+import voicegateway
+from pipecat.pipeline.pipeline import Pipeline
+from pipecat.pipeline.task import PipelineParams, PipelineTask
+from pipecat.services.cartesia.tts import CartesiaTTSService
+from pipecat.services.deepgram.stt import DeepgramSTTService
+from pipecat.services.openai.llm import OpenAILLMService
 
-async def dev_handler(ctx):
-    inference.set_project("dev")
-    stt = inference.STT("local/whisper-large-v3")
-    llm = inference.LLM("ollama/qwen2.5:3b")
-    tts = inference.TTS("local/kokoro")
+
+def build_task(transport_input, transport_output, *, project: str):
+    stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"])
+    llm = OpenAILLMService(api_key=os.environ["OPENAI_API_KEY"], model="gpt-4o-mini")
+    tts = CartesiaTTSService(api_key=os.environ["CARTESIA_API_KEY"])
+
+    pipeline = Pipeline([transport_input, stt, llm, tts, transport_output])
+
+    # project= passed through; each pipeline task charges its own project.
+    return PipelineTask(
+        pipeline,
+        params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
+        observers=[voicegateway.Observer(project=project)],
+    )
+
+
+# Production pipeline
+prod_task = build_task(transport_in, transport_out, project="prod")
+
+# Staging pipeline
+staging_task = build_task(transport_in, transport_out, project="staging")
 ```
+  </Tab>
+</Tabs>
 
-For workers that always serve one project, set `default_project: prod` (or whichever) in `voicegw.yaml` and skip the `set_project` call entirely.
+<Note>
+There is no `VOICEGW_PROJECT` env var. Pass `project=` explicitly to `attach()`
+or `guard()` so the attribution is always unambiguous in code.
+</Note>
 
-## Querying Per-Project Costs
+## Querying per-project costs
 
 ### Via the CLI
 
@@ -103,42 +164,28 @@ voicegw projects   # shows budget + recent spend per project
 
 ```bash
 # Per-project cost breakdown
-curl http://localhost:8080/v1/costs?period=today&project=prod
+curl 'http://localhost:8080/v1/costs?period=today&project=prod'
 
 # All projects
 curl http://localhost:8080/v1/projects
 
 # Project-level request logs
-curl http://localhost:8080/v1/logs?project=prod&limit=50
+curl 'http://localhost:8080/v1/logs?project=prod&limit=50'
 ```
 
-## Project Accent Colors
+## Budget behavior by project
 
-The dashboard assigns accent colors based on the project's first tag:
-
-| Tag Contains | Color |
-|-------------|-------|
-| `prod` | Green |
-| `stag` | Yellow |
-| `dev` or `test` | Blue |
-| (anything else) | Pink |
-
-This makes it easy to visually distinguish environments at a glance.
-
-## Budget Behavior by Project
-
-| Project | Budget | Action | What Happens When Exceeded |
+| Project | Budget | Action | What happens when exceeded |
 |---------|--------|--------|---------------------------|
-| prod | $50/day | `throttle` | Raises `BudgetThrottleSignal` -- app falls back to local models |
+| prod | $50/day | `throttle` | `guard()` falls back to cheaper model |
 | staging | $10/day | `warn` | Logs a warning, request proceeds normally |
-| dev | $5/day | `block` | Raises `BudgetExceededError` -- request is rejected |
+| dev | $5/day | `block` | `guard()` raises `BudgetExceededError` |
 
-## Dynamic Project Management
+## Dynamic project management
 
 Projects can also be created and updated at runtime through the dashboard or MCP server, without editing `voicegw.yaml`:
 
 ```bash
-# Via the HTTP API
 curl -X POST http://localhost:8080/v1/projects \
   -H "Content-Type: application/json" \
   -d '{
@@ -152,7 +199,7 @@ curl -X POST http://localhost:8080/v1/projects \
 
 These dynamically created projects are stored in the `managed_projects` SQLite table and merged with YAML-defined projects at startup and after each write.
 
-## SQL Views for Reporting
+## SQL views for reporting
 
 The `project_daily_costs` view aggregates costs by project and day:
 

@@ -1,13 +1,25 @@
+---
+title: Basic Voice Agent
+description: Build a minimal metered voice agent using LiveKit or Pipecat with VoiceGateway cost tracking.
+---
+
 # Basic Voice Agent
 
-Build a voice agent with LiveKit Agents using VoiceGateway to route STT, LLM, and TTS requests.
+The minimal setup to get a working, metered voice pipeline. Use `attach(session)` to add cost tracking to a session you build yourself with native provider plugins.
 
-## Prerequisites
+## Install
 
-```bash
-pip install voicegateway[openai,deepgram,cartesia]
+<CodeGroup>
+```bash uv
+uv add "voicegateway[openai,deepgram,cartesia]"
+uv add livekit-agents livekit-plugins-deepgram livekit-plugins-openai livekit-plugins-cartesia
+```
+
+```bash pip
+pip install "voicegateway[openai,deepgram,cartesia]"
 pip install livekit-agents livekit-plugins-deepgram livekit-plugins-openai livekit-plugins-cartesia
 ```
+</CodeGroup>
 
 ## Configuration
 
@@ -36,33 +48,14 @@ observability:
   latency_tracking: true
 ```
 
-## Basic Usage
+## Agent code
 
-```python
-from voicegateway import inference
-
-# Each factory returns a wrapped LiveKit plugin instance, ready to drop
-# into AgentSession. Cost, latency, and session correlation happen
-# transparently in the middleware.
-stt = inference.STT("deepgram/nova-3")
-llm = inference.LLM("openai/gpt-4.1-mini")
-tts = inference.TTS("cartesia/sonic-3")
-```
-
-If you already build your own LiveKit plugins, use the session observer instead:
-
-```python
-from voicegateway import attach
-
-session_id = attach(session)
-```
-
-## LiveKit Agent Integration
-
+<Tabs>
+  <Tab title="LiveKit">
 ```python
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
-from livekit.plugins import silero
-from voicegateway import inference
+from livekit.plugins import cartesia, deepgram, openai, silero
+from voicegateway import attach
 
 
 async def entrypoint(ctx: JobContext):
@@ -70,14 +63,17 @@ async def entrypoint(ctx: JobContext):
 
     session = AgentSession(
         vad=silero.VAD.load(),
-        stt=inference.STT("deepgram/nova-3"),
-        llm=inference.LLM("openai/gpt-4.1-mini"),
-        tts=inference.TTS("cartesia/sonic-3"),
+        stt=deepgram.STT(model="nova-3"),
+        llm=openai.LLM(model="gpt-4o-mini"),
+        tts=cartesia.TTS(model="sonic-3"),
     )
+
+    # Single passive meter: records cost, latency, and session id.
+    attach(session, project="voice-agent")
 
     await session.start(
         agent=Agent(
-            instructions="You are a helpful voice assistant. Be concise in your responses.",
+            instructions="You are a helpful voice assistant. Be concise.",
         ),
         room=ctx.room,
     )
@@ -86,61 +82,63 @@ async def entrypoint(ctx: JobContext):
 if __name__ == "__main__":
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
 ```
-
-## Multiple agents in one process
-
-When one process serves multiple agents (e.g., one worker handling several entrypoints), set the active project per call context:
-
+  </Tab>
+  <Tab title="Pipecat">
 ```python
-from voicegateway import inference
+import os
 
-async def restaurant_entrypoint(ctx):
-    inference.set_project("restaurant-agent")
-    # all inference factories below charge the restaurant-agent project
-    ...
+from pipecat.pipeline.pipeline import Pipeline
+from pipecat.pipeline.task import PipelineParams, PipelineTask
+from pipecat.services.cartesia.tts import CartesiaTTSService
+from pipecat.services.deepgram.stt import DeepgramSTTService
+from pipecat.services.openai.llm import OpenAILLMService
+from voicegateway import attach
 
-async def support_entrypoint(ctx):
-    inference.set_project("support-agent")
-    # sibling tasks each have their own ContextVar; no leakage
-    ...
+
+def build_task(transport_input, transport_output):
+    stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"])
+    llm = OpenAILLMService(api_key=os.environ["OPENAI_API_KEY"], model="gpt-4o-mini")
+    tts = CartesiaTTSService(api_key=os.environ["CARTESIA_API_KEY"])
+
+    pipeline = Pipeline([transport_input, stt, llm, tts, transport_output])
+
+    task = PipelineTask(
+        pipeline,
+        # Pipecat must emit usage frames for attach() to record them.
+        params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
+    )
+
+    # Attach the single passive meter after task construction.
+    attach(task, project="voice-agent")
+    return task
+```
+  </Tab>
+</Tabs>
+
+## Run
+
+```bash
+python agent.py start
 ```
 
-## Checking Costs
+The standard `livekit-agents` worker CLI connects to your LiveKit server. Costs and latency land in the dashboard under the `voice-agent` project.
+
+## Check costs
 
 ```bash
 voicegw costs --project voice-agent
-voicegw logs --project voice-agent
-
-# Or open the dashboard in your browser (the daemon already serves it):
+voicegw logs  --project voice-agent
 voicegw dashboard
-# Default URL: http://localhost:8080
 ```
 
+Or via the HTTP API:
+
 ```bash
-# From the HTTP API:
 curl 'http://localhost:8080/v1/costs?period=today&project=voice-agent'
 ```
 
-## Monitoring Latency
+## Notes
 
-VoiceGateway automatically records TTFB and total latency for every request. View these metrics through the dashboard or the HTTP API:
-
-```bash
-curl http://localhost:8080/v1/metrics?period=today
-```
-
-The `latency.ttfb_warning_ms` config value (default 500ms) triggers a log warning when TTFB exceeds the threshold, useful for catching provider degradation early.
-
-## What Happens Under the Hood
-
-When you call `inference.STT("deepgram/nova-3")`:
-
-1. The factory parses `"deepgram/nova-3"` into provider `"deepgram"` and model `"nova-3"`.
-2. The active project is resolved (set_project / env / yaml default / `"default"`).
-3. The provider's API key is looked up: per-project entry first, then top-level `providers:`.
-4. The Registry lazily imports and instantiates `DeepgramProvider`.
-5. The provider creates a `livekit.plugins.deepgram.STT` instance.
-6. The instance is wrapped in `InstrumentedSTT` to track cost, latency, and the session id.
-7. You get back an object that behaves exactly like the underlying LK plugin instance.
-
-All of this is transparent: your LiveKit Agent code sees the same API surface whether it uses `voicegateway.inference` or direct plugin imports.
+- `attach()` is passive: it measures but never reroutes traffic.
+- To add fallback or a spend cap, wrap the LLM with [`guard()`](/guide/guard) before passing it to `AgentSession`.
+- For the full `attach` + `guard` worked example, see [LiveKit: attach + guard](/examples/livekit-attach-guard).
