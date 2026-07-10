@@ -1,45 +1,46 @@
-# Model Tools
+---
+title: Model Tools
+description: MCP tools for listing, registering, and deleting model entries on the VoiceGateway (list_models, register_model, delete_model).
+---
 
-These three tools manage model registrations on the gateway. Models represent specific AI models from a provider (e.g., `deepgram/nova-3`, `openai/gpt-4o-mini`) that the gateway can route requests to.
+These three tools manage model registrations on the gateway. A model represents a specific AI model from a provider (for example `deepgram/nova-3` or `openai/gpt-4o-mini`) that the gateway can route requests to.
 
 ## list_models
 
-List every registered model on the gateway, including YAML-defined and GUI-managed models.
+List every registered model on the gateway, including YAML-defined and database-managed models.
 
 **Destructive:** No
 
-### Input Schema
+### Input schema
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `modality` | `string \| null` | No | `null` | Filter by `"stt"`, `"llm"`, or `"tts"`. |
-| `provider_id` | `string \| null` | No | `null` | Filter by provider (e.g., `"openai"`). |
-| `enabled_only` | `boolean` | No | `true` | If `true`, exclude disabled models. |
+| `modality` | `string` or `null` | No | `null` | Filter by `"stt"`, `"llm"`, or `"tts"`. |
+| `provider_id` | `string` or `null` | No | `null` | Filter by provider (e.g. `"openai"`). |
+| `enabled_only` | `boolean` | No | `true` | When `true`, excludes disabled models. |
 
 ### Output
 
 | Field | Type | Description |
 |---|---|---|
-| `models` | `array` | List of model objects. |
-| `count` | `integer` | Total matching models. |
+| `models` | array | List of model objects. |
+| `count` | integer | Total matching models. |
 
 Each model object:
 
 | Field | Type | Description |
 |---|---|---|
-| `model_id` | `string` | Full model identifier (e.g., `"deepgram/nova-3"`). |
-| `modality` | `string` | `"stt"`, `"llm"`, or `"tts"`. |
-| `provider_id` | `string` | Provider this model belongs to. |
-| `model_name` | `string` | Provider-specific model name (e.g., `"nova-3"`). |
-| `default_voice` | `string \| null` | Default voice ID (TTS models only). |
-| `display_name` | `string \| null` | Human-readable name (managed models only). |
-| `default_language` | `string \| null` | Default language code (managed models only). |
-| `source` | `string` | `"yaml"` or `"db"`. |
-| `enabled` | `boolean` | Whether the model is active. |
+| `model_id` | string | Full model identifier (e.g. `"deepgram/nova-3"`). |
+| `modality` | string | `"stt"`, `"llm"`, or `"tts"`. |
+| `provider_id` | string | Provider this model belongs to. |
+| `model_name` | string | Provider-specific model name. |
+| `default_voice` | string or `null` | Default voice ID (TTS models only). |
+| `display_name` | string or `null` | Human-readable name (managed models only). |
+| `default_language` | string or `null` | Default language code (managed models only). |
+| `source` | string | `"yaml"` or `"db"`. |
+| `enabled` | boolean | Whether the model is active. |
 
-### Example: All models
-
-**Invocation:**
+### Example: all models
 
 ```json
 {
@@ -48,7 +49,7 @@ Each model object:
 }
 ```
 
-**Response:**
+Response:
 
 ```json
 {
@@ -85,9 +86,7 @@ Each model object:
 }
 ```
 
-### Example: Filter by modality and provider
-
-**Invocation:**
+### Example: filter by modality and provider
 
 ```json
 {
@@ -96,7 +95,7 @@ Each model object:
 }
 ```
 
-**Response:**
+Response:
 
 ```json
 {
@@ -123,33 +122,33 @@ Register a new model from an existing provider. The provider must already be con
 
 **Destructive:** No (creates a new resource)
 
-### Input Schema
+### Input schema
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `modality` | `string` | Yes | | `"stt"`, `"llm"`, or `"tts"`. |
-| `provider_id` | `string` | Yes | | Must match an existing provider. |
-| `model_name` | `string` | Yes | | Provider-specific model name (e.g., `"nova-3"`, `"gpt-4o-mini"`). |
-| `display_name` | `string \| null` | No | `null` | Human-readable name for dashboards. |
-| `default_language` | `string \| null` | No | `null` | Default language code (STT models). |
-| `default_voice` | `string \| null` | No | `null` | Default voice ID (TTS models). |
-| `config` | `object \| null` | No | `null` | Extra provider-specific options. |
+| `modality` | string | Yes | | `"stt"`, `"llm"`, or `"tts"`. |
+| `provider_id` | string | Yes | | Must match an existing provider. |
+| `model_name` | string | Yes | | Provider-specific model name (e.g. `"nova-3"`). |
+| `display_name` | string or `null` | No | `null` | Human-readable name for dashboards. |
+| `default_language` | string or `null` | No | `null` | Default language code (STT models). |
+| `default_voice` | string or `null` | No | `null` | Default voice ID (TTS models). |
+| `config` | object or `null` | No | `null` | Extra provider-specific options. |
 
 ### Output
 
 | Field | Type | Description |
 |---|---|---|
-| `model_id` | `string` | The generated model ID (e.g., `"deepgram/nova-3"`). |
-| `modality` | `string` | The model's modality. |
-| `provider_id` | `string` | The provider. |
-| `model_name` | `string` | The provider-specific name. |
-| `display_name` | `string \| null` | Human-readable name. |
-| `default_voice` | `string \| null` | Default voice. |
-| `default_language` | `string \| null` | Default language. |
-| `source` | `string` | Always `"db"`. |
-| `created` | `boolean` | Always `true`. |
+| `model_id` | string | The generated model ID. |
+| `modality` | string | The model's modality. |
+| `provider_id` | string | The provider. |
+| `model_name` | string | The provider-specific name. |
+| `display_name` | string or `null` | Human-readable name. |
+| `default_voice` | string or `null` | Default voice. |
+| `default_language` | string or `null` | Default language. |
+| `source` | string | Always `"db"`. |
+| `created` | boolean | Always `true`. |
 
-### Errors
+### Error codes
 
 | Code | When |
 |---|---|
@@ -158,8 +157,6 @@ Register a new model from an existing provider. The provider must already be con
 | `VALIDATION_ERROR` | Storage is not enabled. |
 
 ### Example
-
-**Invocation:**
 
 ```json
 {
@@ -174,7 +171,7 @@ Register a new model from an existing provider. The provider must already be con
 }
 ```
 
-**Response:**
+Response:
 
 ```json
 {
@@ -194,35 +191,35 @@ Register a new model from an existing provider. The provider must already be con
 
 ## delete_model
 
-Delete a GUI-registered model. This is a destructive operation that uses the two-phase confirmation pattern. Only models added via `register_model` (source `"db"`) can be deleted; YAML-defined models must be removed from the config file.
+Delete a database-registered model. This is a destructive operation that uses the two-phase confirmation pattern. Only models added via `register_model` (source `"db"`) can be deleted; YAML-defined models must be removed from the config file.
 
 **Destructive:** Yes
 
-### Input Schema
+### Input schema
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `model_id` | `string` | Yes | | The model ID to delete (e.g., `"openai/gpt-4o-mini"`). |
-| `confirm` | `boolean` | No | `false` | Must be `true` to delete. Default returns a preview. |
+| `model_id` | string | Yes | | The model ID to delete (e.g. `"openai/gpt-4o-mini"`). |
+| `confirm` | boolean | No | `false` | Must be `true` to delete. Default returns a preview. |
 
-### Output (preview, confirm=false)
+### Output: preview (confirm=false)
 
 The tool raises a `CONFIRMATION_REQUIRED` error containing:
 
 | Field | Type | Description |
 |---|---|---|
-| `model_id` | `string` | The model to be deleted. |
-| `projects_affected` | `array` | Projects whose stacks reference this model. |
+| `model_id` | string | The model to be deleted. |
+| `projects_affected` | array | Projects whose stacks reference this model. |
 
-### Output (confirmed, confirm=true)
+### Output: confirmed (confirm=true)
 
 | Field | Type | Description |
 |---|---|---|
-| `action` | `string` | `"deleted"`. |
-| `model_id` | `string` | The deleted model ID. |
-| `projects_affected` | `array` | Projects that were affected. |
+| `action` | string | `"deleted"`. |
+| `model_id` | string | The deleted model ID. |
+| `projects_affected` | array | Projects that were affected. |
 
-### Errors
+### Error codes
 
 | Code | When |
 |---|---|
@@ -230,9 +227,7 @@ The tool raises a `CONFIRMATION_REQUIRED` error containing:
 | `READ_ONLY_RESOURCE` | The model is defined in YAML (cannot delete via MCP). |
 | `CONFIRMATION_REQUIRED` | Called without `confirm=true` (returns preview). |
 
-### Example: Preview
-
-**Invocation:**
+### Example: preview
 
 ```json
 {
@@ -241,7 +236,7 @@ The tool raises a `CONFIRMATION_REQUIRED` error containing:
 }
 ```
 
-**Response (error envelope):**
+Response (error envelope):
 
 ```json
 {
@@ -256,9 +251,7 @@ The tool raises a `CONFIRMATION_REQUIRED` error containing:
 }
 ```
 
-### Example: Confirm
-
-**Invocation:**
+### Example: confirm
 
 ```json
 {
@@ -267,7 +260,7 @@ The tool raises a `CONFIRMATION_REQUIRED` error containing:
 }
 ```
 
-**Response:**
+Response:
 
 ```json
 {
@@ -276,3 +269,7 @@ The tool raises a `CONFIRMATION_REQUIRED` error containing:
   "projects_affected": ["tonys-pizza"]
 }
 ```
+
+<Note>
+YAML-defined models return `READ_ONLY_RESOURCE`. Remove them from `voicegw.yaml` instead. See [Models configuration](/configuration/models).
+</Note>

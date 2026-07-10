@@ -1,26 +1,47 @@
-# Agent Setup
+---
+title: Agent Setup
+description: Connect Claude Code, Cursor, Codex, or any MCP-compatible agent to VoiceGateway's MCP server using stdio or HTTP/SSE.
+---
 
-This guide covers how to connect different AI coding agents to VoiceGateway's MCP server.
+This page shows how to register VoiceGateway's MCP server in popular AI coding agents.
 
 ## Prerequisites
 
-Install the MCP dependencies:
+Install the MCP extra:
 
-```bash
+<CodeGroup>
+```bash pip
 pip install "voicegateway[mcp]"
 ```
 
-For the HTTP transport, also install the dashboard extra:
+```bash uv
+uv add "voicegateway[mcp]"
+```
+</CodeGroup>
 
-```bash
+For the HTTP/SSE transport, also install the dashboard extra:
+
+<CodeGroup>
+```bash pip
 pip install "voicegateway[mcp,dashboard]"
 ```
 
+```bash uv
+uv add "voicegateway[mcp,dashboard]"
+```
+</CodeGroup>
+
 ## Claude Code
 
-Claude Code connects via stdio transport. Add VoiceGateway to your project's `.mcp.json` or global config.
+Claude Code reads MCP server definitions from `.mcp.json` in the project root (project-scoped) or from your global Claude config (user-scoped).
 
-### Project-level configuration
+### Via the CLI
+
+```bash
+claude mcp add voicegateway --command "voicegw mcp --transport stdio"
+```
+
+### Via .mcp.json
 
 Create or edit `.mcp.json` in your project root:
 
@@ -50,7 +71,7 @@ Create or edit `.mcp.json` in your project root:
 
 ### Using a virtual environment
 
-If VoiceGateway is installed in a virtual environment, use the full path:
+If VoiceGateway is installed in a virtual environment, use the full binary path:
 
 ```json
 {
@@ -63,15 +84,13 @@ If VoiceGateway is installed in a virtual environment, use the full path:
 }
 ```
 
-After adding the config, restart Claude Code. The agent will automatically discover the 17 VoiceGateway tools.
+Restart Claude Code after saving. It will discover all 17 VoiceGateway tools automatically.
 
 ## Cursor
 
-Cursor supports MCP servers via its settings. Add VoiceGateway to your Cursor MCP configuration:
+Add VoiceGateway to `.cursor/mcp.json` (project) or the global Cursor MCP settings.
 
 ### stdio transport
-
-In your Cursor MCP config (`.cursor/mcp.json` or global settings):
 
 ```json
 {
@@ -84,9 +103,9 @@ In your Cursor MCP config (`.cursor/mcp.json` or global settings):
 }
 ```
 
-### HTTP transport
+### HTTP/SSE transport
 
-If you are running the MCP server remotely:
+If the gateway runs on a remote host:
 
 ```json
 {
@@ -103,7 +122,7 @@ If you are running the MCP server remotely:
 
 ## Codex (OpenAI CLI)
 
-Codex supports MCP via stdio. Configure it in your project:
+Codex supports MCP via stdio. Add VoiceGateway to its MCP config:
 
 ```json
 {
@@ -116,11 +135,11 @@ Codex supports MCP via stdio. Configure it in your project:
 }
 ```
 
-## Remote / Team Setup
+## Remote / team setup
 
-For shared team gateways, run the MCP server over HTTP/SSE so multiple agents can connect:
+Run the MCP server over HTTP/SSE so multiple developers can share one gateway instance.
 
-### 1. Start the server
+### 1. Generate a token and start the server
 
 ```bash
 export VOICEGW_MCP_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
@@ -129,9 +148,7 @@ echo "Token: $VOICEGW_MCP_TOKEN"
 voicegw mcp --transport http --host 0.0.0.0 --port 8090
 ```
 
-### 2. Connect agents
-
-Each team member configures their agent to connect to the shared URL:
+### 2. Point agents at the shared URL
 
 ```json
 {
@@ -146,9 +163,9 @@ Each team member configures their agent to connect to the shared URL:
 }
 ```
 
-### 3. Secure with HTTPS
+### 3. Add TLS in production
 
-In production, put the MCP server behind a reverse proxy with TLS:
+Put the MCP server behind a reverse proxy with TLS termination:
 
 ```nginx
 server {
@@ -166,15 +183,25 @@ server {
 }
 ```
 
-## Verifying the Connection
+<Warning>
+Never expose the HTTP transport on a public network without setting `VOICEGW_MCP_TOKEN` and enabling TLS. See [Authentication](/mcp/authentication) for details.
+</Warning>
 
-Once connected, ask the agent to check the gateway health:
+## Verify the connection
+
+Once connected, ask your agent to check the gateway:
 
 > "Check VoiceGateway health"
 
-The agent should call `get_health` and return something like:
+The agent calls `get_health` and returns something like:
 
 ```
 Gateway is running (uptime 1234.5s).
 3 providers configured, 2 projects, cost tracking enabled.
 ```
+
+## Next steps
+
+- [Transports](/mcp/transports): stdio vs HTTP/SSE comparison.
+- [Authentication](/mcp/authentication): securing the HTTP transport.
+- [CLI reference: mcp](/cli/mcp): all flags for `voicegw mcp`.

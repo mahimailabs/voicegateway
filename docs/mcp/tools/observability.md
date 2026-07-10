@@ -1,14 +1,17 @@
-# Observability Tools
+---
+title: Observability Tools
+description: Read-only MCP tools for querying VoiceGateway health, provider status, cost summaries, latency stats, and request logs (get_health, get_provider_status, get_costs, get_latency_stats, get_logs).
+---
 
-These five read-only tools provide visibility into the gateway's health, provider status, costs, latency, and request logs. They never modify state and are safe to call at any time.
+These five tools provide read-only visibility into the gateway's health, provider status, costs, latency, and request logs. They never modify state and are safe to call at any time.
 
 ## get_health
 
-Return the overall health and identity of the VoiceGateway instance. Use this as a cheap first call to verify the gateway is running before using other tools.
+Return the overall health and identity of the VoiceGateway instance. Use this as a cheap first call to verify the gateway is running before invoking other tools.
 
 **Destructive:** No
 
-### Input Schema
+### Input schema
 
 No parameters required.
 
@@ -20,17 +23,15 @@ No parameters required.
 
 | Field | Type | Description |
 |---|---|---|
-| `version` | `string` | VoiceGateway version (e.g., `"0.1.0"`). |
-| `uptime_seconds` | `float` | Seconds since the MCP server started. |
-| `status` | `string` | Always `"ok"`. |
-| `db_configured` | `boolean` | Whether SQLite storage is enabled. |
-| `project_count` | `integer` | Number of configured projects. |
-| `provider_count` | `integer` | Number of configured providers. |
-| `observability` | `object` | Flags: `latency_tracking`, `cost_tracking`, `request_logging`. |
+| `version` | string | VoiceGateway version (e.g. `"0.1.0"`). |
+| `uptime_seconds` | float | Seconds since the MCP server started. |
+| `status` | string | Always `"ok"`. |
+| `db_configured` | boolean | Whether SQLite storage is enabled. |
+| `project_count` | integer | Number of configured projects. |
+| `provider_count` | integer | Number of configured providers. |
+| `observability` | object | Flags: `latency_tracking`, `cost_tracking`, `request_logging`. |
 
 ### Example
-
-**Invocation:**
 
 ```json
 {
@@ -39,7 +40,7 @@ No parameters required.
 }
 ```
 
-**Response:**
+Response:
 
 ```json
 {
@@ -61,31 +62,29 @@ No parameters required.
 
 ## get_provider_status
 
-Return the configuration status of providers. Reports whether each provider has credentials, its type (cloud/local), and model count. Does NOT make live network calls -- use `test_provider` for a connectivity check.
+Return the configuration status of providers. Reports whether each provider has credentials, its type (cloud/local), and model count. This does NOT make live network calls; use `test_provider` (in [Provider tools](/mcp/tools/providers)) for a connectivity check.
 
 **Destructive:** No
 
-### Input Schema
+### Input schema
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `provider_id` | `string \| null` | No | `null` | If set, returns only that provider. Otherwise returns all. |
+| `provider_id` | string or `null` | No | `null` | If set, returns only that provider. Otherwise returns all. |
 
 ### Output
 
 | Field | Type | Description |
 |---|---|---|
-| `providers` | `object` | Map of provider ID to status object. |
-| `providers[id].configured` | `boolean` | Whether the provider has credentials or is local. |
-| `providers[id].type` | `string` | `"cloud"` or `"local"`. |
-| `providers[id].model_count` | `integer` | Number of models registered for this provider. |
-| `providers[id].has_api_key` | `boolean` | Whether an API key is set. |
+| `providers` | object | Map of provider ID to status object. |
+| `providers[id].configured` | boolean | Whether the provider has credentials or is local. |
+| `providers[id].type` | string | `"cloud"` or `"local"`. |
+| `providers[id].model_count` | integer | Number of models registered for this provider. |
+| `providers[id].has_api_key` | boolean | Whether an API key is set. |
 
 If `provider_id` is specified and not found, `providers` is empty and `missing` contains the requested ID.
 
-### Example: All providers
-
-**Invocation:**
+### Example: all providers
 
 ```json
 {
@@ -94,7 +93,7 @@ If `provider_id` is specified and not found, `providers` is empty and `missing` 
 }
 ```
 
-**Response:**
+Response:
 
 ```json
 {
@@ -115,9 +114,7 @@ If `provider_id` is specified and not found, `providers` is empty and `missing` 
 }
 ```
 
-### Example: Single provider
-
-**Invocation:**
+### Example: single provider
 
 ```json
 {
@@ -126,7 +123,7 @@ If `provider_id` is specified and not found, `providers` is empty and `missing` 
 }
 ```
 
-**Response:**
+Response:
 
 ```json
 {
@@ -149,29 +146,29 @@ Return cost data for a period, optionally filtered by project. Reflects actual i
 
 **Destructive:** No
 
-### Input Schema
+### Input schema
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `period` | `string` | No | `"today"` | One of: `"today"`, `"week"`, `"month"`, `"all"`. |
-| `project` | `string \| null` | No | `null` | Filter to a specific project. |
+| `period` | string | No | `"today"` | One of: `"today"`, `"week"`, `"month"`, `"all"`. |
+| `project` | string or `null` | No | `null` | Filter to a specific project. |
 
 ### Output
 
 | Field | Type | Description |
 |---|---|---|
-| `period` | `string` | The requested period. |
-| `project` | `string \| null` | The project filter, if any. |
-| `total_usd` | `float` | Total cost in USD. |
-| `by_provider` | `object` | Cost and request count per provider. |
-| `by_model` | `object` | Cost and request count per model. |
-| `by_project` | `object` | Cost and request count per project (when unfiltered). |
+| `period` | string | The requested period. |
+| `project` | string or `null` | The project filter, if any. |
+| `total_usd` | float | Total cost in USD. |
+| `by_provider` | object | Cost and request count per provider. |
+| `by_model` | object | Cost and request count per model. |
+| `by_project` | object | Cost and request count per project (when unfiltered). |
 
+<Note>
 If the database is not enabled, all values are zero.
+</Note>
 
 ### Example
-
-**Invocation:**
 
 ```json
 {
@@ -180,7 +177,7 @@ If the database is not enabled, all values are zero.
 }
 ```
 
-**Response:**
+Response:
 
 ```json
 {
@@ -207,27 +204,25 @@ Return latency statistics computed from the request log. Provides overall percen
 
 **Destructive:** No
 
-### Input Schema
+### Input schema
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `period` | `string` | No | `"today"` | One of: `"today"`, `"week"`, `"month"`. |
-| `project` | `string \| null` | No | `null` | Filter by project. |
-| `modality` | `string \| null` | No | `null` | Filter by `"stt"`, `"llm"`, or `"tts"`. |
+| `period` | string | No | `"today"` | One of: `"today"`, `"week"`, `"month"`. |
+| `project` | string or `null` | No | `null` | Filter by project. |
+| `modality` | string or `null` | No | `null` | Filter by `"stt"`, `"llm"`, or `"tts"`. |
 
 ### Output
 
 | Field | Type | Description |
 |---|---|---|
-| `period` | `string` | The requested period. |
-| `project` | `string \| null` | The project filter. |
-| `modality` | `string \| null` | The modality filter. |
-| `overall` | `object` | `p50_ms`, `p95_ms`, `p99_ms`, `avg_ms`, `request_count`. |
-| `by_model` | `object` | Per-model stats: `avg_ttfb_ms`, `avg_latency_ms`, `request_count`. |
+| `period` | string | The requested period. |
+| `project` | string or `null` | The project filter. |
+| `modality` | string or `null` | The modality filter. |
+| `overall` | object | `p50_ms`, `p95_ms`, `p99_ms`, `avg_ms`, `request_count`. |
+| `by_model` | object | Per-model stats: `avg_ttfb_ms`, `avg_latency_ms`, `request_count`. |
 
 ### Example
-
-**Invocation:**
 
 ```json
 {
@@ -236,7 +231,7 @@ Return latency statistics computed from the request log. Provides overall percen
 }
 ```
 
-**Response:**
+Response:
 
 ```json
 {
@@ -273,37 +268,35 @@ Return recent request logs with optional filters. Each row is a record from the 
 
 **Destructive:** No
 
-### Input Schema
+### Input schema
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `project` | `string \| null` | No | `null` | Filter by project ID. |
-| `modality` | `string \| null` | No | `null` | Filter by `"stt"`, `"llm"`, or `"tts"`. |
-| `model_id` | `string \| null` | No | `null` | Filter by exact model ID (e.g., `"openai/gpt-4o-mini"`). |
-| `status` | `string \| null` | No | `null` | Filter by `"success"`, `"error"`, or `"fallback"`. |
-| `limit` | `integer` | No | `50` | Max rows to return (1--1000). |
+| `project` | string or `null` | No | `null` | Filter by project ID. |
+| `modality` | string or `null` | No | `null` | Filter by `"stt"`, `"llm"`, or `"tts"`. |
+| `model_id` | string or `null` | No | `null` | Filter by exact model ID (e.g. `"openai/gpt-4o-mini"`). |
+| `status` | string or `null` | No | `null` | Filter by `"success"`, `"error"`, or `"fallback"`. |
+| `limit` | integer | No | `50` | Max rows to return (1 to 1000). |
 
 ### Output
 
-A list of log record dicts, each containing:
+A list of log record objects, each containing:
 
 | Field | Type | Description |
 |---|---|---|
-| `timestamp` | `float` | Unix timestamp. |
-| `project` | `string` | Project ID. |
-| `modality` | `string` | `"stt"`, `"llm"`, or `"tts"`. |
-| `model_id` | `string` | Full model identifier. |
-| `provider` | `string` | Provider name. |
-| `cost_usd` | `float` | Cost of this request. |
-| `pricing_source` | `string \| null` | Source that priced this row (e.g. `"voice-prices@0.0.8"` for cloud models or `"voicegateway-local"` for self-hosted). Empty string when the model is unknown (unpriced). Persisted on the `requests` table; see `src/voicegateway/storage/sqlite.py`. |
-| `ttfb_ms` | `float` | Time to first byte in milliseconds. |
-| `total_latency_ms` | `float` | Total latency in milliseconds. |
-| `status` | `string` | `"success"`, `"error"`, or `"fallback"`. |
-| `error_message` | `string \| null` | Error details if status is `"error"`. |
+| `timestamp` | float | Unix timestamp. |
+| `project` | string | Project ID. |
+| `modality` | string | `"stt"`, `"llm"`, or `"tts"`. |
+| `model_id` | string | Full model identifier. |
+| `provider` | string | Provider name. |
+| `cost_usd` | float | Cost of this request. |
+| `pricing_source` | string or `null` | Source that priced this row (e.g. `"voice-prices@0.0.8"` for cloud models or `"voicegateway-local"` for self-hosted). Empty when the model is unknown (unpriced). |
+| `ttfb_ms` | float | Time to first byte in milliseconds. |
+| `total_latency_ms` | float | Total latency in milliseconds. |
+| `status` | string | `"success"`, `"error"`, or `"fallback"`. |
+| `error_message` | string or `null` | Error details if status is `"error"`. |
 
 ### Example
-
-**Invocation:**
 
 ```json
 {
@@ -317,7 +310,7 @@ A list of log record dicts, each containing:
 }
 ```
 
-**Response:**
+Response:
 
 ```json
 [
@@ -336,3 +329,7 @@ A list of log record dicts, each containing:
   }
 ]
 ```
+
+<Tip>
+For bulk log exports or scheduled reports, use `voicegw export-costs` from the CLI instead. See [CLI reference: export-costs](/cli/export-costs).
+</Tip>

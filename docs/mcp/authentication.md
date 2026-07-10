@@ -1,28 +1,31 @@
-# Authentication
+---
+title: Authentication
+description: Secure the VoiceGateway MCP HTTP/SSE transport with the VOICEGW_MCP_TOKEN bearer token environment variable.
+---
 
-The MCP server supports optional Bearer token authentication for the HTTP/SSE transport. The stdio transport never checks authentication since it is only accessible to the local process that launched it.
+The MCP server supports optional bearer token authentication for the HTTP/SSE transport. The stdio transport never checks authentication because it is only accessible to the local process that launched it.
 
-## Overview
+## How it works
 
-Authentication is controlled by the `VOICEGW_MCP_TOKEN` environment variable:
+Authentication is controlled by the `VOICEGW_MCP_TOKEN` environment variable.
 
-- **Set** -- all HTTP requests must include a matching `Authorization: Bearer <token>` header.
-- **Not set** -- authentication is disabled and all requests are accepted.
+| State | Behavior |
+|---|---|
+| `VOICEGW_MCP_TOKEN` is set | All HTTP requests must include a matching `Authorization: Bearer <token>` header. |
+| `VOICEGW_MCP_TOKEN` is not set | Authentication is disabled; all requests pass through. |
 
-## Setting Up Authentication
+The check runs on both the SSE connection endpoint (`GET /sse`) and the message endpoint (`POST /messages/`). It uses `hmac.compare_digest` for constant-time comparison to prevent timing attacks.
+
+## Setting up authentication
 
 ### 1. Generate a token
 
-Use any secure random generator:
-
 ```bash
-# Python
+# Python (recommended)
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 # OpenSSL
 openssl rand -base64 32
-
-# Example output: dGhpcyBpcyBhIHNlY3JldCB0b2tlbg
 ```
 
 ### 2. Start the server with the token
@@ -34,7 +37,7 @@ voicegw mcp --transport http --port 8090
 
 ### 3. Configure agents to send the token
 
-In your agent's MCP configuration:
+In your agent's MCP config:
 
 ```json
 {
@@ -49,61 +52,37 @@ In your agent's MCP configuration:
 }
 ```
 
-## How It Works
+## HTTP response codes
 
-The authentication middleware checks the `Authorization` header on both the SSE connection (`GET /sse`) and the message endpoint (`POST /messages/`). The check uses `hmac.compare_digest` for constant-time comparison to prevent timing attacks.
+| Scenario | Response |
+|---|---|
+| Valid token present | Request proceeds normally. |
+| Token missing | `401 Unauthorized` with body `Missing bearer token`. |
+| Token incorrect | `401 Unauthorized` with body `Invalid token`. |
+| Wrong auth scheme (e.g. `Basic`) | `401 Unauthorized` with body `Missing bearer token`. |
 
-### Valid request
+Only the `Bearer` scheme is accepted.
 
-```
-GET /sse HTTP/1.1
-Authorization: Bearer dGhpcyBpcyBhIHNlY3JldCB0b2tlbg
-```
+## When to disable authentication
 
-### Missing token
+Leaving `VOICEGW_MCP_TOKEN` unset is appropriate when:
 
-```
-GET /sse HTTP/1.1
-```
-
-Returns `401 Unauthorized` with body: `Missing bearer token`.
-
-### Invalid token
-
-```
-GET /sse HTTP/1.1
-Authorization: Bearer wrong-token
-```
-
-Returns `401 Unauthorized` with body: `Invalid token`.
-
-### Malformed header
-
-```
-GET /sse HTTP/1.1
-Authorization: Basic dXNlcjpwYXNz
-```
-
-Returns `401 Unauthorized` with body: `Missing bearer token` (only `Bearer` scheme is accepted).
-
-## When Authentication is Disabled
-
-If `VOICEGW_MCP_TOKEN` is not set (or is an empty string), all requests pass through without any authentication check. This is the default and is appropriate for:
-
-- Local development.
-- Internal networks behind a VPN.
-- Environments where authentication is handled by a reverse proxy.
+- Running locally during development.
+- The server is on an internal network protected by a VPN.
+- Authentication is handled upstream by a reverse proxy.
 
 <Warning>
-When running the HTTP transport on a publicly accessible network, always set `VOICEGW_MCP_TOKEN` and use HTTPS (via a reverse proxy).
+When the HTTP transport is accessible from a public network, always set `VOICEGW_MCP_TOKEN` and terminate TLS at a reverse proxy. See the [Setup guide](/mcp/setup) for a sample Nginx config.
 </Warning>
 
-## stdio Transport
+## stdio transport
 
-The stdio transport bypasses authentication entirely. Since the agent launches the MCP server as a subprocess, there is no network boundary to protect. The `VOICEGW_MCP_TOKEN` variable is ignored for stdio connections.
+The stdio transport bypasses authentication entirely. The agent launches the MCP server as a subprocess, so there is no network boundary to protect. `VOICEGW_MCP_TOKEN` is ignored for stdio connections.
 
-## Environment Variable Reference
+## Environment variable reference
 
 | Variable | Required | Description |
 |---|---|---|
 | `VOICEGW_MCP_TOKEN` | No | Bearer token for HTTP/SSE authentication. If unset, auth is disabled. |
+
+See [Environment variables](/configuration/environment-variables) for the full list of VoiceGateway env vars.
