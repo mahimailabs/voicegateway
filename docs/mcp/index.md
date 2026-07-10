@@ -1,77 +1,76 @@
-# MCP Server
+---
+title: MCP Server
+description: VoiceGateway's built-in Model Context Protocol server lets AI coding agents configure providers, manage projects, and query costs without leaving their workflow.
+---
 
-VoiceGateway includes a built-in [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that lets AI coding agents inspect, configure, and manage your voice AI gateway without leaving their workflow.
+VoiceGateway ships a built-in [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server. Connect Claude Code, Cursor, Codex, or Cline to the gateway and manage it conversationally. No dashboard required.
 
-## What is MCP?
+## What the MCP server does
 
-MCP is an open protocol that allows AI agents to use tools provided by external servers. When you connect an agent like Claude Code or Cursor to VoiceGateway's MCP server, the agent gains access to 17 tools for querying gateway state and performing administrative operations.
+The server exposes 17 tools across four categories. Your AI editor can:
 
-## Tools Overview
+- Check gateway health and provider connectivity.
+- Register new providers and models.
+- Create projects with budgets and routing rules.
+- Query cost summaries and request logs.
 
-The MCP server exposes tools in four categories:
+All destructive tools (`delete_provider`, `delete_model`, `delete_project`) use a two-phase confirmation pattern. The agent always shows you the impact before applying the change.
 
-### Observability (read-only)
+## Tool categories
 
-| Tool | Description |
-|---|---|
-| `get_health` | Gateway health, uptime, version |
-| `get_provider_status` | Provider configuration status |
-| `get_costs` | Cost summary by period/project |
-| `get_latency_stats` | Latency percentiles and per-model stats |
-| `get_logs` | Recent request logs with filters |
+| Category | Tools | Purpose |
+|---|---|---|
+| Observability | `get_health`, `get_provider_status`, `get_costs`, `get_latency_stats`, `get_logs` | Read-only health, cost, and log queries |
+| Providers | `list_providers`, `get_provider`, `test_provider`, `add_provider`, `delete_provider` | Configure and test voice AI providers |
+| Models | `list_models`, `register_model`, `delete_model` | Manage model registrations |
+| Projects | `list_projects`, `get_project`, `create_project`, `delete_project` | Create and track projects with budgets |
 
-### Provider Management
+## Quick start
 
-| Tool | Description |
-|---|---|
-| `list_providers` | List all configured providers |
-| `get_provider` | Details for one provider |
-| `test_provider` | Live connectivity test |
-| `add_provider` | Register a new provider |
-| `delete_provider` | Remove a managed provider (destructive) |
-
-### Model Management
-
-| Tool | Description |
-|---|---|
-| `list_models` | List all registered models |
-| `register_model` | Register a new model |
-| `delete_model` | Remove a managed model (destructive) |
-
-### Project Management
-
-| Tool | Description |
-|---|---|
-| `list_projects` | List projects with today's stats |
-| `get_project` | Full project details and cost trends |
-| `create_project` | Create a new project |
-| `delete_project` | Remove a managed project (destructive) |
-
-## Safety Features
-
-Destructive tools (`delete_provider`, `delete_model`, `delete_project`) implement a two-phase confirmation pattern:
-
-1. **Preview phase**: Called without `confirm=True`, the tool returns a preview of the impact (affected models, projects, total spend, etc.).
-2. **Confirm phase**: Called with `confirm=True`, the deletion is performed.
-
-This ensures agents always show the user what will happen before making irreversible changes.
-
-## Quick Start
-
-```bash
-# Install MCP dependencies
+<CodeGroup>
+```bash pip
 pip install "voicegateway[mcp]"
-
-# Start with stdio (for local agents)
-voicegw mcp
-
-# Start with HTTP/SSE (for remote agents)
-VOICEGW_MCP_TOKEN=my-token voicegw mcp --transport http --port 8090
+voicegw mcp --transport stdio
 ```
 
-## Next Steps
+```bash uv
+uv add "voicegateway[mcp]"
+voicegw mcp --transport stdio
+```
+</CodeGroup>
 
-- [Setup guide](/mcp/setup) -- configure Claude Code, Cursor, or Codex
-- [Transports](/mcp/transports) -- stdio vs HTTP/SSE
-- [Authentication](/mcp/authentication) -- securing the HTTP transport
-- Tool references: [Observability](/mcp/tools/observability), [Providers](/mcp/tools/providers), [Models](/mcp/tools/models), [Projects](/mcp/tools/projects)
+For HTTP/SSE (team or remote setup):
+
+```bash
+export VOICEGW_MCP_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+voicegw mcp --transport http --host 0.0.0.0 --port 8090
+```
+
+## Explore further
+
+<CardGroup cols={2}>
+  <Card title="Setup" href="/mcp/setup">
+    Register the server in Claude Code, Cursor, or Codex.
+  </Card>
+  <Card title="Transports" href="/mcp/transports">
+    Choose between stdio (local) and HTTP/SSE (remote).
+  </Card>
+  <Card title="Authentication" href="/mcp/authentication">
+    Secure the HTTP transport with a bearer token.
+  </Card>
+  <Card title="Observability tools" href="/mcp/tools/observability">
+    Health, cost, latency, and log query tools.
+  </Card>
+  <Card title="Provider tools" href="/mcp/tools/providers">
+    Add, test, and remove provider configurations.
+  </Card>
+  <Card title="Model tools" href="/mcp/tools/models">
+    Register and delete model entries.
+  </Card>
+  <Card title="Project tools" href="/mcp/tools/projects">
+    Create projects with budgets and routing stacks.
+  </Card>
+  <Card title="Claude Code example" href="/examples/claude-code-integration">
+    Full walkthrough with Claude Code.
+  </Card>
+</CardGroup>

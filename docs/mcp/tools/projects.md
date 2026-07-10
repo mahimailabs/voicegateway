@@ -1,6 +1,9 @@
-# Project Tools
+---
+title: Project Tools
+description: MCP tools for listing, inspecting, creating, and deleting VoiceGateway projects with budgets and routing stacks (list_projects, get_project, create_project, delete_project).
+---
 
-These four tools manage projects on the gateway. Projects group requests for cost tracking, budget enforcement, and routing (via default stacks or explicit model assignments).
+These four tools manage projects on the gateway. Projects group requests for cost tracking, budget enforcement, and routing (via named stacks or explicit model assignments).
 
 ## list_projects
 
@@ -8,7 +11,7 @@ List every project on the gateway with today's stats, including spend, request c
 
 **Destructive:** No
 
-### Input Schema
+### Input schema
 
 No parameters required.
 
@@ -20,28 +23,26 @@ No parameters required.
 
 | Field | Type | Description |
 |---|---|---|
-| `projects` | `array` | List of project objects. |
-| `count` | `integer` | Total number of projects. |
+| `projects` | array | List of project objects. |
+| `count` | integer | Total number of projects. |
 
 Each project object:
 
 | Field | Type | Description |
 |---|---|---|
-| `id` | `string` | Project identifier. |
-| `name` | `string` | Human-readable name. |
-| `description` | `string` | Project description. |
-| `daily_budget` | `float` | Daily budget in USD (0 = unlimited). |
-| `budget_action` | `string` | `"warn"`, `"throttle"`, or `"block"`. |
-| `budget_status` | `string` | `"ok"`, `"warning"`, or `"exceeded"`. |
-| `today_spend` | `float` | Today's spend in USD. |
-| `today_requests` | `integer` | Today's request count. |
-| `tags` | `array` | List of tag strings. |
-| `default_stack` | `string \| null` | Named stack from config, if set. |
-| `source` | `string` | `"yaml"` or `"db"`. |
+| `id` | string | Project identifier. |
+| `name` | string | Human-readable name. |
+| `description` | string | Project description. |
+| `daily_budget` | float | Daily budget in USD (0 = unlimited). |
+| `budget_action` | string | `"warn"`, `"throttle"`, or `"block"`. |
+| `budget_status` | string | `"ok"`, `"warning"`, or `"exceeded"`. |
+| `today_spend` | float | Today's spend in USD. |
+| `today_requests` | integer | Today's request count. |
+| `tags` | array | List of tag strings. |
+| `default_stack` | string or `null` | Named stack from config, if set. |
+| `source` | string | `"yaml"` or `"db"`. |
 
 ### Example
-
-**Invocation:**
 
 ```json
 {
@@ -50,7 +51,7 @@ Each project object:
 }
 ```
 
-**Response:**
+Response:
 
 ```json
 {
@@ -90,46 +91,44 @@ Each project object:
 
 ## get_project
 
-Return full details for one project including cost trends and model assignments.
+Return full details for one project including weekly cost trends and per-modality model assignments.
 
 **Destructive:** No
 
-### Input Schema
+### Input schema
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `project_id` | `string` | Yes | The ID of the project to fetch. |
+| `project_id` | string | Yes | The ID of the project to fetch. |
 
 ### Output
 
 | Field | Type | Description |
 |---|---|---|
-| `id` | `string` | Project identifier. |
-| `name` | `string` | Human-readable name. |
-| `description` | `string` | Project description. |
-| `daily_budget` | `float` | Daily budget in USD. |
-| `budget_action` | `string` | `"warn"`, `"throttle"`, or `"block"`. |
-| `budget_status` | `string` | `"ok"`, `"warning"`, or `"exceeded"`. |
-| `today_spend` | `float` | Today's spend in USD. |
-| `today_requests` | `integer` | Today's request count. |
-| `week_spend` | `float` | This week's total spend. |
-| `week_requests` | `integer` | This week's total requests. |
-| `tags` | `array` | List of tag strings. |
-| `default_stack` | `string \| null` | Named stack. |
-| `stt_model` | `string \| null` | Explicit STT model (managed projects). |
-| `llm_model` | `string \| null` | Explicit LLM model (managed projects). |
-| `tts_model` | `string \| null` | Explicit TTS model (managed projects). |
-| `source` | `string` | `"yaml"` or `"db"`. |
+| `id` | string | Project identifier. |
+| `name` | string | Human-readable name. |
+| `description` | string | Project description. |
+| `daily_budget` | float | Daily budget in USD. |
+| `budget_action` | string | `"warn"`, `"throttle"`, or `"block"`. |
+| `budget_status` | string | `"ok"`, `"warning"`, or `"exceeded"`. |
+| `today_spend` | float | Today's spend in USD. |
+| `today_requests` | integer | Today's request count. |
+| `week_spend` | float | This week's total spend. |
+| `week_requests` | integer | This week's total requests. |
+| `tags` | array | List of tag strings. |
+| `default_stack` | string or `null` | Named stack. |
+| `stt_model` | string or `null` | Explicit STT model (managed projects). |
+| `llm_model` | string or `null` | Explicit LLM model (managed projects). |
+| `tts_model` | string or `null` | Explicit TTS model (managed projects). |
+| `source` | string | `"yaml"` or `"db"`. |
 
-### Errors
+### Error codes
 
 | Code | When |
 |---|---|
 | `PROJECT_NOT_FOUND` | No project with the given ID exists. |
 
 ### Example
-
-**Invocation:**
 
 ```json
 {
@@ -138,7 +137,7 @@ Return full details for one project including cost trends and model assignments.
 }
 ```
 
-**Response:**
+Response:
 
 ```json
 {
@@ -165,54 +164,52 @@ Return full details for one project including cost trends and model assignments.
 
 ## create_project
 
-Create a new project for cost tracking and routing. You can either set `default_stack` (referencing a named stack from `voicegw.yaml`) or individual `stt_model`/`llm_model`/`tts_model` fields, but not both.
+Create a new project for cost tracking and routing. You can set `default_stack` (a named stack from `voicegw.yaml`) or individual `stt_model`/`llm_model`/`tts_model` fields, but not both at the same time.
 
 **Destructive:** No (creates a new resource)
 
-### Input Schema
+### Input schema
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `project_id` | `string` | Yes | | Unique identifier (kebab-case recommended). |
-| `name` | `string` | Yes | | Human-readable name. |
-| `description` | `string` | No | `""` | Long description. |
-| `daily_budget` | `float` | No | `0.0` | USD limit per day (0 = unlimited). Must be >= 0. |
-| `budget_action` | `string` | No | `"warn"` | `"warn"` logs when exceeded, `"throttle"` falls back to local stack, `"block"` raises an error. |
-| `stt_model` | `string \| null` | No | `null` | Explicit STT model ID (must be registered). |
-| `llm_model` | `string \| null` | No | `null` | Explicit LLM model ID (must be registered). |
-| `tts_model` | `string \| null` | No | `null` | Explicit TTS model ID (must be registered). |
-| `default_stack` | `string \| null` | No | `null` | Named stack from `voicegw.yaml` (e.g., `"premium"`). |
-| `tags` | `array \| null` | No | `null` | Labels for grouping. |
+| `project_id` | string | Yes | | Unique identifier (kebab-case recommended). |
+| `name` | string | Yes | | Human-readable name. |
+| `description` | string | No | `""` | Long description. |
+| `daily_budget` | float | No | `0.0` | USD limit per day (0 = unlimited, must be >= 0). |
+| `budget_action` | string | No | `"warn"` | `"warn"` logs on excess; `"throttle"` falls back to local stack; `"block"` raises an error. |
+| `stt_model` | string or `null` | No | `null` | Explicit STT model ID (must be registered). |
+| `llm_model` | string or `null` | No | `null` | Explicit LLM model ID (must be registered). |
+| `tts_model` | string or `null` | No | `null` | Explicit TTS model ID (must be registered). |
+| `default_stack` | string or `null` | No | `null` | Named stack from `voicegw.yaml` (e.g. `"premium"`). |
+| `tags` | array or `null` | No | `null` | Labels for grouping in the dashboard. |
 
 ### Output
 
 | Field | Type | Description |
 |---|---|---|
-| `project_id` | `string` | The created project ID. |
-| `name` | `string` | Project name. |
-| `description` | `string` | Project description. |
-| `daily_budget` | `float` | Daily budget. |
-| `budget_action` | `string` | Budget enforcement action. |
-| `default_stack` | `string \| null` | Stack name. |
-| `stt_model` | `string \| null` | STT model. |
-| `llm_model` | `string \| null` | LLM model. |
-| `tts_model` | `string \| null` | TTS model. |
-| `tags` | `array` | Tags. |
-| `source` | `string` | Always `"db"`. |
-| `created` | `boolean` | Always `true`. |
-| `created_at` | `float` | Unix timestamp of creation. |
+| `project_id` | string | The created project ID. |
+| `name` | string | Project name. |
+| `description` | string | Project description. |
+| `daily_budget` | float | Daily budget. |
+| `budget_action` | string | Budget enforcement action. |
+| `default_stack` | string or `null` | Stack name. |
+| `stt_model` | string or `null` | STT model. |
+| `llm_model` | string or `null` | LLM model. |
+| `tts_model` | string or `null` | TTS model. |
+| `tags` | array | Tags. |
+| `source` | string | Always `"db"`. |
+| `created` | boolean | Always `true`. |
+| `created_at` | float | Unix timestamp of creation. |
 
-### Errors
+### Error codes
 
 | Code | When |
 |---|---|
 | `PROJECT_ALREADY_EXISTS` | A project with the same ID already exists. |
-| `MODEL_NOT_FOUND` | A referenced `stt_model`, `llm_model`, or `tts_model` is not registered. |
-| `VALIDATION_ERROR` | Both `default_stack` and explicit models are set, or the stack name does not exist, or storage is disabled. |
+| `MODEL_NOT_FOUND` | A referenced model is not registered. |
+| `VALIDATION_ERROR` | Both `default_stack` and explicit models are set; the stack name does not exist; or storage is disabled. |
 
-### Example: With default stack
-
-**Invocation:**
+### Example: with a named stack
 
 ```json
 {
@@ -229,7 +226,7 @@ Create a new project for cost tracking and routing. You can either set `default_
 }
 ```
 
-**Response:**
+Response:
 
 ```json
 {
@@ -249,9 +246,7 @@ Create a new project for cost tracking and routing. You can either set `default_
 }
 ```
 
-### Example: With explicit models
-
-**Invocation:**
+### Example: with explicit models
 
 ```json
 {
@@ -272,38 +267,38 @@ Create a new project for cost tracking and routing. You can either set `default_
 
 ## delete_project
 
-Delete a managed project. This is a destructive operation that uses the two-phase confirmation pattern. Only projects added via `create_project` (source `"db"`) can be deleted; YAML-defined projects must be removed from the config file. Request logs are NOT deleted -- only the project configuration is removed.
+Delete a managed project. This is a destructive operation that uses the two-phase confirmation pattern. Only projects added via `create_project` (source `"db"`) can be deleted; YAML-defined projects must be removed from the config file. Request logs are NOT deleted when a project is removed.
 
 **Destructive:** Yes
 
-### Input Schema
+### Input schema
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `project_id` | `string` | Yes | | The ID of the project to delete. |
-| `confirm` | `boolean` | No | `false` | Must be `true` to delete. Default returns a preview. |
+| `project_id` | string | Yes | | The ID of the project to delete. |
+| `confirm` | boolean | No | `false` | Must be `true` to delete. Default returns a preview. |
 
-### Output (preview, confirm=false)
+### Output: preview (confirm=false)
 
 The tool raises a `CONFIRMATION_REQUIRED` error containing:
 
 | Field | Type | Description |
 |---|---|---|
-| `project_id` | `string` | The project to be deleted. |
-| `total_spend_usd` | `float` | All-time spend for this project. |
-| `total_requests` | `integer` | All-time request count. |
-| `last_activity` | `float \| null` | Unix timestamp of the most recent request. |
+| `project_id` | string | The project to be deleted. |
+| `total_spend_usd` | float | All-time spend for this project. |
+| `total_requests` | integer | All-time request count. |
+| `last_activity` | float or `null` | Unix timestamp of the most recent request. |
 
-### Output (confirmed, confirm=true)
+### Output: confirmed (confirm=true)
 
 | Field | Type | Description |
 |---|---|---|
-| `action` | `string` | `"deleted"`. |
-| `project_id` | `string` | The deleted project ID. |
-| `total_spend_usd` | `float` | All-time spend. |
-| `total_requests` | `integer` | All-time request count. |
+| `action` | string | `"deleted"`. |
+| `project_id` | string | The deleted project ID. |
+| `total_spend_usd` | float | All-time spend. |
+| `total_requests` | integer | All-time request count. |
 
-### Errors
+### Error codes
 
 | Code | When |
 |---|---|
@@ -311,9 +306,7 @@ The tool raises a `CONFIRMATION_REQUIRED` error containing:
 | `READ_ONLY_RESOURCE` | The project is defined in YAML, or storage is disabled. |
 | `CONFIRMATION_REQUIRED` | Called without `confirm=true` (returns preview). |
 
-### Example: Preview
-
-**Invocation:**
+### Example: preview
 
 ```json
 {
@@ -322,7 +315,7 @@ The tool raises a `CONFIRMATION_REQUIRED` error containing:
 }
 ```
 
-**Response (error envelope):**
+Response (error envelope):
 
 ```json
 {
@@ -339,9 +332,7 @@ The tool raises a `CONFIRMATION_REQUIRED` error containing:
 }
 ```
 
-### Example: Confirm
-
-**Invocation:**
+### Example: confirm
 
 ```json
 {
@@ -350,7 +341,7 @@ The tool raises a `CONFIRMATION_REQUIRED` error containing:
 }
 ```
 
-**Response:**
+Response:
 
 ```json
 {
@@ -360,3 +351,7 @@ The tool raises a `CONFIRMATION_REQUIRED` error containing:
   "total_requests": 567
 }
 ```
+
+<Note>
+YAML-defined projects return `READ_ONLY_RESOURCE`. Remove them from `voicegw.yaml` instead. See [Projects configuration](/configuration/projects).
+</Note>
