@@ -58,6 +58,70 @@
   --radius-pill: 999px;
 
   color-scheme: light;
+
+  /* ============================================================
+     VG cloud design tokens (D0): canonical aliases mirroring
+     voicegateway-cloud/web/app/globals.css "Refined Teal Light".
+     D1-D6 migrate pages to use these; existing --bg-* / --border
+     vars stay in place until their pages are restyled.
+     ============================================================ */
+
+  /* Brand palette */
+  --vg-teal:         #1f96aa;
+  --vg-teal-deep:    #15788a;
+  --vg-teal-bright:  #14b8c4;
+  --vg-teal-tint:    #e6f6f8;
+  --vg-teal-tint-2:  #f1fafb;
+
+  /* Ink / text */
+  --vg-ink:    #11161c;
+  --vg-ink-2:  #26333c;
+  --vg-muted:  #5c6b76;
+  --vg-muted-2: #8494a0;
+
+  /* Surfaces */
+  --vg-paper:    #f4fafb;
+  --vg-paper-2:  #eef6f8;
+  --vg-card:     #ffffff;
+
+  /* Borders */
+  --vg-hairline:   #dbe7ea;
+  --vg-hairline-2: #e9f1f3;
+
+  /* Semantic */
+  --vg-green:      #16a34a;
+  --vg-green-tint: #e7f6ec;
+  --vg-amber:      #d97706;
+  --vg-amber-tint: #fdf0dd;
+  --vg-red:        #dc2626;
+  --vg-red-tint:   #fbe5e5;
+
+  /* Elevation */
+  --vg-shadow-sm: 0 1px 2px rgba(17,22,28,0.04), 0 1px 3px rgba(17,22,28,0.04);
+  --vg-shadow-md: 0 1px 2px rgba(17,22,28,0.04), 0 8px 24px -12px rgba(21,120,138,0.18), 0 2px 6px rgba(17,22,28,0.03);
+  --vg-shadow-lg: 0 2px 4px rgba(17,22,28,0.04), 0 24px 48px -20px rgba(21,120,138,0.3), 0 8px 16px -12px rgba(17,22,28,0.08);
+
+  /* Radii */
+  --vg-radius:      16px;
+  --vg-radius-sm:   12px;
+  --vg-radius-xs:   9px;
+  --vg-radius-pill: 999px;
+
+  /* Spacing scale (4 -> 64 px) */
+  --vg-s1: 4px;  --vg-s2: 8px;  --vg-s3: 12px; --vg-s4: 16px;
+  --vg-s5: 20px; --vg-s6: 24px; --vg-s7: 32px; --vg-s8: 48px; --vg-s9: 64px;
+
+  /* Typography */
+  --vg-font-sans:    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --vg-font-mono:    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --vg-font-display: 'Bricolage Grotesque', var(--vg-font-sans);
+
+  /* Motion */
+  --vg-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --vg-dur:  0.2s;
+
+  /* Layout */
+  --vg-sidebar-w: 236px;
 }
 
 :root[data-theme="dark"] {

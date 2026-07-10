@@ -91,15 +91,10 @@ import type {
   ApiKey,
   CreatedApiKey,
   DeadAirEvent,
-  GuardrailAggregateResponse,
-  GuardrailCategory,
-  GuardrailEventsResponse,
-  GuardrailPolicy,
   LogoUploadResponse,
   MetricsAggregate,
   ProjectBranding,
   ProjectBrandingResponse,
-  ProjectGuardrailsResponse,
   ReplayResponse,
   RetentionWindow,
   RoutingObservationsResponse,
@@ -339,67 +334,3 @@ export async function uploadBrandingLogo(
   return (await res.json()) as LogoUploadResponse;
 }
 
-// ----------------------------------------------------------------------
-// v0.6.0 guardrails typed fetchers.
-// ----------------------------------------------------------------------
-
-export function fetchProjectGuardrails(
-  projectId: string,
-): Promise<ProjectGuardrailsResponse> {
-  return fetchJson<ProjectGuardrailsResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/guardrails`,
-  );
-}
-
-export function updateProjectGuardrails(
-  projectId: string,
-  policy: GuardrailPolicy,
-): Promise<{ project_id: string; policy: GuardrailPolicy }> {
-  return fetchJson<{ project_id: string; policy: GuardrailPolicy }>(
-    `/api/projects/${encodeURIComponent(projectId)}/guardrails`,
-    {
-      method: 'POST',
-      body: JSON.stringify(policy),
-    },
-  );
-}
-
-export function fetchGuardrailAggregate(
-  options: {
-    days?: number;
-    project?: string;
-    tenant?: TenantFilter;
-    category?: GuardrailCategory | '';
-  } = {},
-): Promise<GuardrailAggregateResponse> {
-  const params = new URLSearchParams();
-  if (options.days !== undefined) params.set('days', String(options.days));
-  if (options.project) params.set('project', options.project);
-  if (options.category) params.set('category', options.category);
-  appendTenantParam(params, options.tenant);
-  const qs = params.toString();
-  return fetchJson<GuardrailAggregateResponse>(
-    qs ? `/api/guardrails/aggregate?${qs}` : '/api/guardrails/aggregate',
-  );
-}
-
-export function fetchGuardrailEvents(
-  options: {
-    days?: number;
-    project?: string;
-    tenant?: TenantFilter;
-    category?: GuardrailCategory | '';
-    limit?: number;
-  } = {},
-): Promise<GuardrailEventsResponse> {
-  const params = new URLSearchParams();
-  if (options.days !== undefined) params.set('days', String(options.days));
-  if (options.project) params.set('project', options.project);
-  if (options.category) params.set('category', options.category);
-  if (options.limit !== undefined) params.set('limit', String(options.limit));
-  appendTenantParam(params, options.tenant);
-  const qs = params.toString();
-  return fetchJson<GuardrailEventsResponse>(
-    qs ? `/api/guardrails/events?${qs}` : '/api/guardrails/events',
-  );
-}

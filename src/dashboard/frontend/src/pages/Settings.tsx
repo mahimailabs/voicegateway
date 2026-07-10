@@ -5,7 +5,6 @@ import { fetchJson } from '../lib/api';
 import Projects from './Projects';
 import Providers from './Providers';
 import Routing from './Routing';
-import Guardrails from './Guardrails';
 import ApiKeys from './ApiKeys';
 
 interface AuditEntry {
@@ -18,7 +17,7 @@ interface AuditEntry {
   source: string;
 }
 
-const TABS = ['Providers', 'API Keys', 'Projects', 'Routing', 'Guardrails', 'Models', 'General', 'Audit Log'] as const;
+const TABS = ['Providers', 'API Keys', 'Projects', 'Routing', 'Models', 'General', 'Audit Log'] as const;
 type Tab = (typeof TABS)[number];
 
 export default function Settings({ tab: initialTab }: { tab?: string }) {
@@ -46,7 +45,6 @@ export default function Settings({ tab: initialTab }: { tab?: string }) {
       {activeTab === 'API Keys' && <ApiKeys />}
       {activeTab === 'Projects' && <Projects />}
       {activeTab === 'Routing' && <Routing />}
-      {activeTab === 'Guardrails' && <Guardrails />}
       {activeTab === 'Models' && <ModelsTab />}
       {activeTab === 'General' && <GeneralTab />}
       {activeTab === 'Audit Log' && <AuditLogTab />}

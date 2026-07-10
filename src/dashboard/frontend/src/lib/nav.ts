@@ -28,7 +28,6 @@ export const NAV: NavEntry[] = [
       { to: '/providers', label: 'Providers', id: 'providers' },
       { to: '/models', label: 'Models', id: 'models' },
       { to: '/routing', label: 'Routing', id: 'routing' },
-      { to: '/guardrails', label: 'Guardrails', id: 'guardrails' },
       { to: '/projects', label: 'Projects', id: 'projects' },
     ],
   },

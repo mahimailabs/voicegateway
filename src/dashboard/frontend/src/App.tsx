@@ -13,7 +13,6 @@ import Metrics from './pages/Metrics';
 import Models from './pages/Models';
 import Providers from './pages/Providers';
 import Routing from './pages/Routing';
-import Guardrails from './pages/Guardrails';
 import Projects from './pages/Projects';
 import ApiKeys from './pages/ApiKeys';
 import type { StatusResponse } from './lib/types';
@@ -98,7 +97,6 @@ export default function App() {
             <Route path="/providers" element={<Providers />} />
             <Route path="/models" element={<Models />} />
             <Route path="/routing" element={<Routing />} />
-            <Route path="/guardrails" element={<Guardrails />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/api-keys" element={<ApiKeys />} />
             <Route path="/settings" element={<Settings />} />
