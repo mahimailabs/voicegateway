@@ -8,14 +8,14 @@ interface Props {
   actions?: ReactNode;
 }
 
-export default function PageHeader({ title, subtitle, accent, actions }: Props) {
+export default function PageHeader({ title, subtitle, actions }: Props) {
   return (
-    <div className={`main__header main__header--${accent}`}>
-      <div>
-        <h1 className="page-title">{title}</h1>
-        {subtitle && <div className="main__subtitle">{subtitle}</div>}
+    <div className="page-head">
+      <div className="page-head__title">
+        <h1>{title}</h1>
+        {subtitle && <div style={{ fontSize: 14, color: 'var(--vg-muted)', marginTop: 2 }}>{subtitle}</div>}
       </div>
-      {actions && <div className="flex-row flex-wrap">{actions}</div>}
+      {actions && <div className="flex-row flex-wrap" style={{ gap: 8 }}>{actions}</div>}
     </div>
   );
 }

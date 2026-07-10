@@ -36,11 +36,11 @@ export default function Overview() {
           <StatCardSkeleton />
         </div>
         <div className="mt-lg grid grid-cols-2">
-          <div className="neo-card">
+          <div className="vg-card">
             <Skeleton width={120} height={13} />
             <Skeleton height={88} style={{ marginTop: 16 }} />
           </div>
-          <div className="neo-card">
+          <div className="vg-card">
             <Skeleton width={120} height={13} />
             <Skeleton height={88} style={{ marginTop: 16 }} />
           </div>
@@ -84,44 +84,38 @@ export default function Overview() {
       </div>
 
       {agents.length > 0 && (
-        <div className="mt-lg neo-card neo-card--strip-blue">
-          <div
-            className="flex-row"
-            style={{ justifyContent: 'space-between', alignItems: 'baseline' }}
-          >
-            <div className="label">Fleet</div>
-            <Link className="neo-btn" to="/agents">
-              View all agents →
+        <div className="mt-lg vg-card">
+          <div className="vg-card__head">
+            <div className="vg-card__label">Fleet</div>
+            <Link className="neo-btn" to="/agents" style={{ fontSize: 12, padding: '5px 12px' }}>
+              View all agents &rarr;
             </Link>
           </div>
           <div className="flex-row flex-wrap mt-md" style={{ gap: '2.5rem' }}>
             <div>
-              <div className="stat-value">{agents.length}</div>
-              <div className="label">Agents</div>
+              <div className="vg-stat">{agents.length}</div>
+              <div className="vg-card__label" style={{ marginTop: 4 }}>Agents</div>
             </div>
             <div>
-              <div className="stat-value">{activeCount}</div>
-              <div className="label">Active now</div>
+              <div className="vg-stat">{activeCount}</div>
+              <div className="vg-card__label" style={{ marginTop: 4 }}>Active now</div>
             </div>
           </div>
           {topAgents.length > 0 && (
             <div className="mt-md">
-              <div
-                className="label"
-                style={{ fontSize: '0.7rem', textTransform: 'uppercase', marginBottom: '0.25rem' }}
-              >
+              <div className="vg-card__label" style={{ marginBottom: 6 }}>
                 Top by cost (24h)
               </div>
               {topAgents.map((a) => (
                 <div
                   key={a.agent_id}
                   className="flex-row mt-sm"
-                  style={{ justifyContent: 'space-between' }}
+                  style={{ justifyContent: 'space-between', borderBottom: '1px solid var(--vg-hairline-2)', paddingBottom: 8 }}
                 >
-                  <Link className="mono" to={`/costs?agent=${encodeURIComponent(a.agent_id)}`}>
+                  <Link className="mono" to={`/costs?agent=${encodeURIComponent(a.agent_id)}`} style={{ color: 'var(--vg-teal-deep)', fontSize: 13 }}>
                     {a.agent_id}
                   </Link>
-                  <span className="mono">{formatCost(a.total_cost_usd, 4)}</span>
+                  <span className="mono" style={{ color: 'var(--vg-ink)', fontWeight: 700 }}>{formatCost(a.total_cost_usd, 4)}</span>
                 </div>
               ))}
             </div>
@@ -130,14 +124,14 @@ export default function Overview() {
       )}
 
       <div className="mt-lg grid grid-cols-2">
-        <div className="neo-card neo-card--strip-yellow">
-          <div className="label">Providers Configured</div>
-          <div className="stat-value mt-md">{data.providers_configured ?? 0}</div>
-          <div className="label mt-md">This dashboard is served by the gateway itself.</div>
+        <div className="vg-card">
+          <div className="vg-card__label">Providers Configured</div>
+          <div className="vg-stat" style={{ marginTop: 6 }}>{data.providers_configured ?? 0}</div>
+          <div style={{ marginTop: 10, fontSize: 13, color: 'var(--vg-muted)' }}>This dashboard is served by the gateway itself.</div>
         </div>
-        <div className="neo-card neo-card--strip-blue">
-          <div className="label">Quick Actions</div>
-          <div className="flex-row flex-wrap mt-md">
+        <div className="vg-card">
+          <div className="vg-card__label" style={{ marginBottom: 12 }}>Quick Actions</div>
+          <div className="flex-row flex-wrap" style={{ gap: 8 }}>
             <Link className="neo-btn neo-btn--primary" to="/costs">View Costs</Link>
             <Link className="neo-btn" to="/models">View Models</Link>
             <Link className="neo-btn" to="/agents">View Agents</Link>

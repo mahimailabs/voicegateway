@@ -84,25 +84,27 @@ export default function App() {
     <BrowserRouter>
       <div className="app-shell">
         <Sidebar status={status} onSignOut={signOut} branding={branding} />
-        <main className="main">
-          <Routes>
-            <Route path="/" element={<Overview />} />
-            <Route path="/sessions" element={<Sessions />} />
-            <Route path="/sessions/:sessionId/replay" element={<Replay />} />
-            <Route path="/costs" element={<Costs />} />
-            <Route path="/latency" element={<Latency />} />
-            <Route path="/metrics" element={<Metrics />} />
-            <Route path="/logs" element={<Logs />} />
-            <Route path="/agents" element={<Agents />} />
-            <Route path="/providers" element={<Providers />} />
-            <Route path="/models" element={<Models />} />
-            <Route path="/routing" element={<Routing />} />
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/api-keys" element={<ApiKeys />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/settings/audit-log" element={<Settings tab="audit" />} />
-          </Routes>
-        </main>
+        <div className="main">
+          <main className="main-content">
+            <Routes>
+              <Route path="/" element={<Overview />} />
+              <Route path="/sessions" element={<Sessions />} />
+              <Route path="/sessions/:sessionId/replay" element={<Replay />} />
+              <Route path="/costs" element={<Costs />} />
+              <Route path="/latency" element={<Latency />} />
+              <Route path="/metrics" element={<Metrics />} />
+              <Route path="/logs" element={<Logs />} />
+              <Route path="/agents" element={<Agents />} />
+              <Route path="/providers" element={<Providers />} />
+              <Route path="/models" element={<Models />} />
+              <Route path="/routing" element={<Routing />} />
+              <Route path="/projects" element={<Projects />} />
+              <Route path="/api-keys" element={<ApiKeys />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/settings/audit-log" element={<Settings tab="audit" />} />
+            </Routes>
+          </main>
+        </div>
       </div>
       <CommandPalette />
     </BrowserRouter>
@@ -129,7 +131,7 @@ function Sidebar({
   );
 
   useEffect(() => {
-    document.documentElement.style.setProperty('--sidebar-width', collapsed ? '60px' : '224px');
+    document.documentElement.style.setProperty('--sidebar-width', collapsed ? '60px' : 'var(--vg-sidebar-w)');
     localStorage.setItem('vg-sidebar-collapsed', collapsed ? '1' : '0');
   }, [collapsed]);
 
@@ -147,16 +149,38 @@ function Sidebar({
 
   return (
     <aside className={`sidebar${collapsed ? ' sidebar--collapsed' : ''}`}>
+      {/* Brand header */}
       <div className="sidebar__header">
         {collapsed ? (
-          <img className="sidebar__mark" src="/static/branding/logo-light.svg" alt={productName} />
+          /* Collapsed: show a teal brand-mark square */
+          <span
+            className="brand-mark"
+            aria-label={productName}
+            style={{
+              width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+              background: 'linear-gradient(135deg, var(--vg-teal-bright), var(--vg-teal-deep))',
+              boxShadow: '0 2px 6px -1px rgba(21,120,138,0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
+              display: 'grid', placeItems: 'center',
+            }}
+          />
         ) : isWhiteLabel ? (
           <div className="sidebar__brand">
             {branding?.logo_url && <img src={branding.logo_url} alt={`${productName} logo`} className="sidebar__mark" />}
             <span className="sidebar__brandname">{productName}</span>
           </div>
         ) : (
-          <>
+          <div className="sidebar__brand" style={{ gap: 10 }}>
+            {/* Teal gradient brand-mark */}
+            <span
+              className="brand-mark"
+              aria-hidden="true"
+              style={{
+                width: 26, height: 26, borderRadius: 8, flexShrink: 0,
+                background: 'linear-gradient(135deg, var(--vg-teal-bright), var(--vg-teal-deep))',
+                boxShadow: '0 2px 6px -1px rgba(21,120,138,0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
+                display: 'grid', placeItems: 'center',
+              }}
+            />
             <img
               src="/static/branding/wordings.svg"
               alt="VoiceGateway"
@@ -167,7 +191,7 @@ function Sidebar({
               alt="VoiceGateway"
               className="sidebar__wordmark sidebar__wordmark--dark"
             />
-          </>
+          </div>
         )}
         <button
           type="button"
@@ -200,7 +224,7 @@ function Sidebar({
 
       <div className="sidebar__footer">
         {!collapsed && (
-          <a className="nav-item nav-item--util" href="https://docs.voicegateway.dev" target="_blank" rel="noreferrer">
+          <a className="nav-item nav-item--util" href="https://docs.voicegateway.dev" target="_blank" rel="noreferrer" style={{ color: 'var(--vg-muted)' }}>
             <NavIcon id="docs" />
             <span className="nav-item__label">Docs</span>
             <span className="nav-item__ext" aria-hidden="true">&#8599;</span>

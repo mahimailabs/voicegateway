@@ -67,9 +67,9 @@ export default function TrendChart({ reloadKey = 0 }: { reloadKey?: number }) {
   );
 
   return (
-    <div className="neo-card neo-card--strip-blue">
+    <div className="vg-card">
       <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-        <div className="label">{metric === 'cost' ? 'Spend' : 'Requests'} (last 7 days)</div>
+        <div className="vg-card__label">{metric === 'cost' ? 'Spend' : 'Requests'} (last 7 days)</div>
         <div className="seg" role="tablist" aria-label="Trend metric">
           {(['cost', 'requests'] as const).map((m) => (
             <button
@@ -90,7 +90,7 @@ export default function TrendChart({ reloadKey = 0 }: { reloadKey?: number }) {
         {series === null ? (
           <Skeleton height={224} />
         ) : data.length === 0 ? (
-          <div className="empty-state">No activity in the last 7 days</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 224, color: 'var(--vg-muted)', fontSize: 14 }}>No activity in the last 7 days</div>
         ) : (
           <ResponsiveContainer>
             <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
@@ -100,7 +100,7 @@ export default function TrendChart({ reloadKey = 0 }: { reloadKey?: number }) {
                   <stop offset="100%" stopColor={TEAL} stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="4 4" stroke="var(--border)" strokeOpacity={0.3} />
+              <CartesianGrid strokeDasharray="4 4" stroke="var(--vg-hairline-2)" strokeOpacity={0.8} />
               <XAxis dataKey="label" tick={{ fontSize: 11, fontWeight: 600 }} />
               <YAxis
                 tick={{ fontSize: 11, fontWeight: 600 }}
