@@ -18,19 +18,18 @@ VoiceGateway reads environment variables for configuration overrides, secret mat
 | `VOICEGW_SECRET` | Fernet key for encrypting managed-provider API keys before they land in SQLite. Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. | (44-char base64 string) |
 | `VOICEGW_SECRET_FALLBACK` | Comma-separated previous Fernet keys for rotation. Lets `voicegw rotate-secret` re-encrypt rows stored under an older key. | (44-char base64 string) |
 | `VOICEGW_MCP_TOKEN` | Bearer token for authenticating MCP server requests when running over HTTP/SSE. | `mcp-secret-token` |
-| `VOICEGW_ACTIVE_PROJECT` | Override the active project for the current process. Lower precedence than `attach()` metadata, higher than `default_project`. | `customer-support` |
+| `VOICEGW_ACTIVE_PROJECT` | Active project for the deprecated `voicegateway.LLM/STT/TTS` factories only (resolution: ContextVar, then this env var, then `default_project`). `attach()` takes its project from the `project=` argument, not this variable. | `customer-support` |
 
 ## Cloud ingest variables
 
-These three variables configure the agent-side remote sink that pushes telemetry to VoiceGateway Cloud (or a self-hosted collector):
+These variables configure the agent-side remote sink that pushes telemetry to VoiceGateway Cloud (or a self-hosted collector):
 
 | Variable | Purpose |
 |---|---|
 | `VOICEGW_COLLECTOR_URL` | Full URL of the ingest endpoint, e.g. `https://collect.voicegateway.dev/v1/ingest` |
 | `VOICEGW_API_KEY` | Virtual API key (`vk_...`) that authenticates the agent to the collector |
-| `VOICEGW_PROJECT` | Project slug to attribute telemetry to (e.g. `customer-support`) |
 
-Set all three in the agent's environment. The SDK's remote sink reads them automatically and requires no additional config. See [Hosted quickstart](/hosted/quickstart) for the full setup flow.
+Set both in the agent's environment. `attach()` reads them automatically. Pass the project name in your `attach(target, project="...")` call (there is no project env var for `attach()`). See [Hosted quickstart](/hosted/quickstart) for the full setup flow.
 
 ## Provider API keys
 
