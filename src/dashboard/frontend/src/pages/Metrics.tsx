@@ -66,10 +66,10 @@ export default function Metrics() {
 
       <FilterBar />
 
-      <div className="neo-card mb-lg">
-        <div className="flex flex-row gap-md items-end">
+      <div className="vg-card mb-lg">
+        <div className="flex-row flex-wrap" style={{ gap: 20, alignItems: 'flex-end' }}>
           <div>
-            <div className="label">Project</div>
+            <div className="vg-card__label" style={{ marginBottom: 6 }}>Project</div>
             <input
               type="text"
               className="neo-input"
@@ -79,9 +79,9 @@ export default function Metrics() {
             />
           </div>
           <div>
-            <div className="label">Window</div>
+            <div className="vg-card__label" style={{ marginBottom: 6 }}>Window</div>
             <select
-              className="neo-input"
+              className="neo-select"
               value={days}
               onChange={(e) => setDays(Number(e.target.value))}
             >
@@ -93,11 +93,11 @@ export default function Metrics() {
             </select>
           </div>
           {data && (
-            <div className="ml-auto">
-              <div className="label">Sessions</div>
-              <div className="stat-value">
+            <div style={{ marginLeft: 'auto' }}>
+              <div className="vg-card__label" style={{ marginBottom: 4 }}>Sessions</div>
+              <div className="vg-stat" style={{ fontSize: 22, letterSpacing: '-0.5px' }}>
                 {data.measured_session_count} / {data.session_count}
-                <span className="label ml-sm">measured</span>
+                <span className="vg-card__label" style={{ marginLeft: 6 }}>measured</span>
               </div>
             </div>
           )}

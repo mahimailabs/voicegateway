@@ -14,16 +14,16 @@ interface Props {
 
 export default function PerMinuteCostCard({ value, measuredSessionCount }: Props) {
   return (
-    <div className="neo-card neo-card--strip-green">
-      <div className="label">Per-minute cost</div>
-      <div className="stat-value stat-value--xl mt-md">
+    <div className="vg-card">
+      <div className="vg-card__label">Per-minute cost</div>
+      <div className="vg-stat mt-md">
         {value !== null ? (
           `$${value.toFixed(4)}`
         ) : (
-          <span className="empty-state-inline">not measured</span>
+          <span style={{ fontSize: 14, color: 'var(--vg-muted)' }}>not measured</span>
         )}
       </div>
-      <div className="label mt-sm" style={{ opacity: 0.7 }}>
+      <div className="vg-card__label mt-sm" style={{ opacity: 0.7 }}>
         Avg across {measuredSessionCount} session
         {measuredSessionCount === 1 ? '' : 's'}
       </div>

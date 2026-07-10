@@ -8,9 +8,7 @@ interface Props {
 export default function LogTable({ logs }: Props) {
   if (!logs || logs.length === 0) {
     return (
-      <div className="neo-card">
-        <div className="empty-state">No requests logged yet</div>
-      </div>
+      <div className="empty-state">No requests logged yet</div>
     );
   }
   return (
@@ -32,7 +30,7 @@ export default function LogTable({ logs }: Props) {
             <td className="mono">{new Date(log.timestamp * 1000).toLocaleTimeString()}</td>
             <td className="mono">{log.model_id}</td>
             <td>
-              <span className="neo-badge neo-badge--black">{(log.modality || '').toUpperCase()}</span>
+              <span className="neo-badge neo-badge--info">{(log.modality || '').toUpperCase()}</span>
             </td>
             <td className="mono">{formatCost(log.cost_usd, 6)}</td>
             <td className="mono">{log.pricing_source || ''}</td>

@@ -65,46 +65,49 @@ function LatencyContent() {
       </div>
 
       {entries.length > 0 && (
-        <table className="neo-table neo-table--pink">
-          <thead>
-            <tr>
-              <th>Model</th>
-              <th>Avg TTFB</th>
-              <th>P95 TTFB</th>
-              <th>P95 Total</th>
-              <th>Requests</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map(([model, stats]) => {
-              const ttfbP95 = stats.ttfb_percentiles?.p95;
-              const latP95 = stats.latency_percentiles?.p95;
-              return (
-                <tr key={model}>
-                  <td className="mono">{model}</td>
-                  <td>
-                    <span className={`neo-badge ${latencyBadgeClass(stats.avg_ttfb_ms)}`}>
-                      {formatMs(stats.avg_ttfb_ms)}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`neo-badge ${badgeFor(ttfbP95)}`}>
-                      {fmtP(ttfbP95)}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`neo-badge ${badgeFor(latP95)}`}>
-                      {fmtP(latP95)}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="neo-badge neo-badge--black">{stats.request_count}</span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="vg-card">
+          <div className="vg-card__label" style={{ marginBottom: 12 }}>Latency by model</div>
+          <table className="neo-table neo-table--pink">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Avg TTFB</th>
+                <th>P95 TTFB</th>
+                <th>P95 Total</th>
+                <th>Requests</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map(([model, stats]) => {
+                const ttfbP95 = stats.ttfb_percentiles?.p95;
+                const latP95 = stats.latency_percentiles?.p95;
+                return (
+                  <tr key={model}>
+                    <td className="mono">{model}</td>
+                    <td>
+                      <span className={`neo-badge ${latencyBadgeClass(stats.avg_ttfb_ms)}`}>
+                        {formatMs(stats.avg_ttfb_ms)}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`neo-badge ${badgeFor(ttfbP95)}`}>
+                        {fmtP(ttfbP95)}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`neo-badge ${badgeFor(latP95)}`}>
+                        {fmtP(latP95)}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="neo-badge neo-badge--black">{stats.request_count}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -157,9 +160,9 @@ function CostsContent() {
         <div className="empty-state">Loading costs...</div>
       ) : (
         <>
-          <div className="neo-card neo-card--strip-green mb-lg">
-            <div className="label">Total Spend</div>
-            <div className="stat-value-xl mt-sm">{formatCost(data.total)}</div>
+          <div className="vg-card mb-lg">
+            <div className="vg-card__label">Total Spend</div>
+            <div className="vg-stat" style={{ fontSize: 42, letterSpacing: '-0.025em', marginTop: 6 }}>{formatCost(data.total)}</div>
           </div>
 
       <div className="grid grid-cols-2">
@@ -168,7 +171,8 @@ function CostsContent() {
       </div>
 
       {models.length > 0 && (
-        <div className="mt-lg">
+        <div className="vg-card mt-lg">
+          <div className="vg-card__label" style={{ marginBottom: 12 }}>Cost by model</div>
           <table className="neo-table neo-table--green">
             <thead>
               <tr>
@@ -194,8 +198,8 @@ function CostsContent() {
             </tbody>
           </table>
           <div
-            className="label mt-md"
-            style={{ fontStyle: 'italic', opacity: 0.8 }}
+            className="vg-card__label mt-md"
+            style={{ fontStyle: 'italic', opacity: 0.8, textTransform: 'none', letterSpacing: 0, fontWeight: 500 }}
           >
             Costs are estimates from the pricing sources above. Run{' '}
             <span className="mono">

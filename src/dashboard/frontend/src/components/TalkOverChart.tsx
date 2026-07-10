@@ -14,16 +14,16 @@ interface Props {
 
 export default function TalkOverChart({ rate, thresholdMs }: Props) {
   return (
-    <div className="neo-card neo-card--strip-orange">
-      <div className="label">Talk-over rate</div>
-      <div className="stat-value stat-value--xl mt-md">
+    <div className="vg-card">
+      <div className="vg-card__label">Talk-over rate</div>
+      <div className="vg-stat mt-md">
         {rate !== null ? (
           `${(rate * 100).toFixed(1)}%`
         ) : (
-          <span className="empty-state-inline">not measured</span>
+          <span style={{ fontSize: 14, color: 'var(--vg-muted)' }}>not measured</span>
         )}
       </div>
-      <div className="label mt-sm" style={{ opacity: 0.7 }}>
+      <div className="vg-card__label mt-sm" style={{ opacity: 0.7 }}>
         Counts a turn as overlap when caller speech starts within
         {' '}{thresholdMs}ms of the prior agent speech finishing.
         Lower is better.

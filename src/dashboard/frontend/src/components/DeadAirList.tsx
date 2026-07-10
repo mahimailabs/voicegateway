@@ -14,12 +14,12 @@ interface Props {
 
 export default function DeadAirList({ count, thresholdSeconds }: Props) {
   return (
-    <div className="neo-card neo-card--strip-red">
-      <div className="label">Dead-air events</div>
-      <div className="stat-value stat-value--xl mt-md">
+    <div className="vg-card">
+      <div className="vg-card__label">Dead-air events</div>
+      <div className="vg-stat mt-md">
         {count}
       </div>
-      <div className="label mt-sm" style={{ opacity: 0.7 }}>
+      <div className="vg-card__label mt-sm" style={{ opacity: 0.7 }}>
         Silences longer than {thresholdSeconds}s that the caller did not
         initiate. Drill into a session to see per-event timestamps.
       </div>
