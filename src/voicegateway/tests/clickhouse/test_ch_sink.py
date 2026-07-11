@@ -126,6 +126,8 @@ class TestClickHouseSinkRowShape:
             "cached_input_units",
             "cost_usd",
             "pricing_source",
+            "rated_price_usd",
+            "rate_rule",
             "ttfb_ms",
             "total_latency_ms",
             "status",
@@ -248,6 +250,36 @@ class TestClickHouseSinkRowShape:
         )
         assert "chdb-row-1" in result
         assert "0.05" in result
+
+    def test_chdb_rated_columns_round_trip(self, ch_session_unit):
+        """Migration 0004 adds rated_price_usd + rate_rule; they store and read back."""
+        sink = _sink_instance()
+        record, tenant_id = _make_record("chdb-rated-1", cost_usd=0.010)
+        record.rated_price_usd = 0.015
+        record.rate_rule = "cost_plus:1.5"
+        row = sink._build_row(record, tenant_id)
+
+        ts_str = row["timestamp"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        ch_session_unit.query(
+            f"""
+            INSERT INTO telemetry.requests
+              (tenant_id, id, timestamp, project, modality, provider, model_id,
+               cost_usd, rated_price_usd, rate_rule)
+            VALUES
+              ('{row["tenant_id"]}', '{row["id"]}', '{ts_str}',
+               '{row["project"]}', '{row["modality"]}', '{row["provider"]}',
+               '{row["model_id"]}', {row["cost_usd"]},
+               {row["rated_price_usd"]}, '{row["rate_rule"]}')
+            """,
+            "CSV",
+        )
+        result = _chdb_query(
+            ch_session_unit,
+            "SELECT rated_price_usd, rate_rule FROM telemetry.requests "
+            "WHERE id='chdb-rated-1'",
+        )
+        assert "0.015" in result
+        assert "cost_plus:1.5" in result
 
 
 # ---------------------------------------------------------------------------
