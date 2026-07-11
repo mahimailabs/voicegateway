@@ -291,7 +291,7 @@ A rule that sets both `markup` and `fixed`, or a fixed rule with a missing/inval
 Delete a DB override by its `rule_id` (from `GET /rate-card/rules`). Requires the `write` scope. Returns `404` when no rule has that id.
 
 <Note>
-The rate card is one store with two surfaces: the `rate_card:` seed in `voicegw.yaml` plus these DB overrides, which `voicegw prices set` / `rm` edit from the CLI. A dashboard editor rides on the same endpoints. See [Rating](/architecture/rating).
+The rate card is one store, edited three ways: the `rate_card:` seed in `voicegw.yaml`, the CLI (`voicegw prices set` / `rm`), and these HTTP endpoints (which the dashboard Rate card page under Configure also uses). See [Rating](/architecture/rating).
 </Note>
 
 ---
