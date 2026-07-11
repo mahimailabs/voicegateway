@@ -14,6 +14,7 @@ import Models from './pages/Models';
 import Providers from './pages/Providers';
 import Routing from './pages/Routing';
 import Projects from './pages/Projects';
+import RateCard from './pages/RateCard';
 import ApiKeys from './pages/ApiKeys';
 import type { StatusResponse } from './lib/types';
 import { AUTH_REQUIRED_EVENT, clearToken, fetchJson, getToken } from './lib/api';
@@ -99,6 +100,7 @@ export default function App() {
               <Route path="/models" element={<Models />} />
               <Route path="/routing" element={<Routing />} />
               <Route path="/projects" element={<Projects />} />
+              <Route path="/rate-card" element={<RateCard />} />
               <Route path="/api-keys" element={<ApiKeys />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/settings/audit-log" element={<Settings tab="audit" />} />
