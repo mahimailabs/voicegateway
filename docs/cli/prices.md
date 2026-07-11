@@ -156,7 +156,7 @@ voicegw prices sync --threshold 20
 | `2` | Bad input: an invalid rule (`set` with both `--markup` and `--fixed`, a fixed rule missing a valid `--unit`, or neither), or `rm` for a scope with no override. |
 
 <Note>
-The gateway rebuilds the effective card (seed plus DB overrides) on startup and on config refresh, so a running server picks up `set` / `rm` changes the next time its config refreshes. Editing the rate card from the dashboard is a follow-up on top of the same DB store.
+The gateway rebuilds the effective card (seed plus DB overrides) on startup and on config refresh, so a running server picks up `set` / `rm` changes the next time its config refreshes. The same DB overrides can also be edited over HTTP (`POST` / `DELETE /v1/billing/rate-card/rules`) or from the dashboard (Configure -> Rate card).
 </Note>
 
 ## Related
