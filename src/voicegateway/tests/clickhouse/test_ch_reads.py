@@ -1038,3 +1038,150 @@ class TestGetSessionRequests:
         assert rows[0]["metadata"]["channel"] == "telephony"
         # beta's identically-named session never leaks into acme's drill-down.
         assert all(r["tenant_id"] == "acme" for r in rows)
+
+
+# ---------------------------------------------------------------------------
+# Billing reads (rated revenue + margin) over ClickHouse
+# ---------------------------------------------------------------------------
+
+
+def _insert_rated(sess, rows: list[dict]) -> None:
+    """Insert rows carrying rated_price_usd + rate_rule (billing columns)."""
+    for row in rows:
+        sess.query(
+            f"""
+            INSERT INTO telemetry.requests
+              (tenant_id, id, timestamp, modality, provider, model_id,
+               input_units, output_units, cost_usd, rated_price_usd, rate_rule)
+            VALUES
+              ('{row["tenant_id"]}', '{row["id"]}', '{_ts(row.get("ts", _DAY1))}',
+               '{row["modality"]}', '{row["provider"]}', '{row["model_id"]}',
+               {row.get("input_units", 100)}, {row.get("output_units", 50)},
+               {row["cost_usd"]}, {row["rated_price_usd"]}, '{row["rate_rule"]}')
+            """,
+            "CSV",
+        )
+
+
+_BILLING_ROWS = [
+    # acme: 2 stt rows, cost 0.01 each, rated 0.015 each
+    {
+        "tenant_id": "acme",
+        "id": "b-acme-1",
+        "modality": "stt",
+        "provider": "deepgram",
+        "model_id": "deepgram/nova-3",
+        "cost_usd": 0.01,
+        "rated_price_usd": 0.015,
+        "rate_rule": "cost_plus:1.5",
+    },
+    {
+        "tenant_id": "acme",
+        "id": "b-acme-2",
+        "modality": "stt",
+        "provider": "deepgram",
+        "model_id": "deepgram/nova-3",
+        "cost_usd": 0.01,
+        "rated_price_usd": 0.015,
+        "rate_rule": "cost_plus:1.5",
+    },
+    # beta: 1 llm row, cost 0.02, rated 0.021 (thin margin)
+    {
+        "tenant_id": "beta",
+        "id": "b-beta-1",
+        "modality": "llm",
+        "provider": "openai",
+        "model_id": "openai/gpt-4o",
+        "cost_usd": 0.02,
+        "rated_price_usd": 0.021,
+        "rate_rule": "cost_plus:1.05",
+    },
+]
+
+
+@pytest.mark.skipif(not CHDB_AVAILABLE, reason="chdb not installed")
+class TestBillableUsageCH:
+    """get_billable_usage / get_tenant_line_items against chDB."""
+
+    async def test_usage_rolls_up_per_tenant(self, ch_session_reads):
+        from voicegateway.clickhouse.read_repository import get_billable_usage
+
+        _insert_rated(ch_session_reads, _BILLING_ROWS)
+        client = ChdbAdapter(ch_session_reads)
+        rows = await get_billable_usage(client, since=0.0, until=None)
+
+        by_tenant = {r["tenant_id"]: r for r in rows}
+        assert set(by_tenant) == {"acme", "beta"}
+        acme = by_tenant["acme"]
+        assert acme["requests"] == 2
+        assert acme["cost_usd"] == pytest.approx(0.02)
+        assert acme["rated_usd"] == pytest.approx(0.03)
+        assert acme["margin_usd"] == pytest.approx(0.01)
+        assert acme["margin_pct"] == pytest.approx(100.0 / 3.0)
+        # Ordered by rated revenue descending.
+        assert rows[0]["tenant_id"] == "acme"
+
+    async def test_usage_filters_by_tenant(self, ch_session_reads):
+        from voicegateway.clickhouse.read_repository import get_billable_usage
+
+        _insert_rated(ch_session_reads, _BILLING_ROWS)
+        client = ChdbAdapter(ch_session_reads)
+        rows = await get_billable_usage(client, since=0.0, until=None, tenant="beta")
+        assert len(rows) == 1
+        assert rows[0]["tenant_id"] == "beta"
+        assert rows[0]["rated_usd"] == pytest.approx(0.021)
+
+    async def test_line_items_break_down_by_model(self, ch_session_reads):
+        from voicegateway.clickhouse.read_repository import get_tenant_line_items
+
+        _insert_rated(ch_session_reads, _BILLING_ROWS)
+        client = ChdbAdapter(ch_session_reads)
+        items = await get_tenant_line_items(
+            client, tenant="acme", since=0.0, until=None
+        )
+        assert len(items) == 1
+        item = items[0]
+        assert item["model_id"] == "deepgram/nova-3"
+        assert item["requests"] == 2
+        assert item["rated_usd"] == pytest.approx(0.03)
+        assert item["margin_usd"] == pytest.approx(0.01)
+
+
+@pytest.mark.skipif(not CHDB_AVAILABLE, reason="chdb not installed")
+class TestBillingUsageEndpointCH:
+    """GET /v1/billing/usage reads from ClickHouse when ch_client is set."""
+
+    async def test_endpoint_reads_from_clickhouse(
+        self, ch_session_reads, tmp_path, monkeypatch
+    ):
+        import yaml
+        from httpx import ASGITransport, AsyncClient
+
+        from voicegateway.core.gateway import Gateway
+        from voicegateway.server import build_app
+
+        _insert_rated(ch_session_reads, _BILLING_ROWS)
+        monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "ep.db"))
+        monkeypatch.delenv("VOICEGW_API_KEY", raising=False)
+        cfg = {
+            "cost_tracking": {"enabled": True},
+            "models": {"stt": {}, "llm": {}, "tts": {}},
+            "fallbacks": {"stt": [], "llm": [], "tts": []},
+        }
+        p = tmp_path / "voicegw.yaml"
+        p.write_text(yaml.dump(cfg))
+        gw = Gateway(config_path=str(p))
+        app = build_app(gw, enable_mcp_sse=False, enable_dashboard=False)
+        # ASGITransport does not run lifespan, so this manual client persists.
+        app.state.ch_client = ChdbAdapter(ch_session_reads)
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as c:
+            resp = await c.get("/v1/billing/usage?period=month")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        by_tenant = {r["tenant_id"]: r for r in body["tenants"]}
+        assert by_tenant["acme"]["rated_usd"] == pytest.approx(0.03)
+        assert body["totals"]["rated_usd"] == pytest.approx(0.051)

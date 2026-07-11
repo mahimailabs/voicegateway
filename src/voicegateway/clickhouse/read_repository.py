@@ -199,6 +199,43 @@ WHERE timestamp >= fromUnixTimestamp64Milli({since_ms:Int64})
 GROUP BY tenant_id
 """
 
+# Billing rollup per tenant: recorded cost + rated revenue over a window.
+# __TENANT__ is optional (omitted = all tenants, the cross-tenant billing view).
+_SQL_BILLABLE_USAGE = """\
+SELECT
+    tenant_id,
+    count()              AS request_count,
+    sum(cost_usd)        AS cost,
+    sum(rated_price_usd) AS rated
+FROM telemetry.requests
+WHERE timestamp >= fromUnixTimestamp64Milli({since_ms:Int64})
+  __UNTIL__
+  __TENANT__
+  __PROJECT__
+GROUP BY tenant_id
+ORDER BY rated DESC
+"""
+
+# Per-(modality, model) invoice detail for one tenant.
+_SQL_TENANT_LINE_ITEMS = """\
+SELECT
+    modality,
+    model_id,
+    provider,
+    count()              AS request_count,
+    sum(input_units)     AS input_units,
+    sum(output_units)    AS output_units,
+    sum(cost_usd)        AS cost,
+    sum(rated_price_usd) AS rated
+FROM telemetry.requests
+WHERE timestamp >= fromUnixTimestamp64Milli({since_ms:Int64})
+  __UNTIL__
+  AND tenant_id = {tenant:String}
+  __PROJECT__
+GROUP BY modality, model_id, provider
+ORDER BY rated DESC
+"""
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -590,11 +627,109 @@ async def get_cost_by_tenant_admin(
     }
 
 
+def _margin_pct(margin: float, rated: float) -> float:
+    """Margin as a percentage of rated revenue (0 when nothing is billable)."""
+    if rated == 0:
+        return 0.0
+    return (margin / rated) * 100.0
+
+
+async def get_billable_usage(
+    client: Any,
+    *,
+    since: float,
+    until: float | None,
+    tenant: str | None = None,
+    project: str | None = None,
+) -> list[dict[str, Any]]:
+    """Rated revenue, cost, and margin per tenant over a window (ClickHouse).
+
+    Mirrors :func:`voicegateway.repository.billing_repository.get_billable_usage`
+    row-for-row so the billing endpoint returns the same shape on either store.
+    ``tenant=None`` is the cross-tenant view (all tenants).
+    """
+    params: dict[str, Any] = {"since_ms": _since_ms(since)}
+    if until is not None:
+        params["until_ms"] = int(until * 1000)
+    tenant_frag = ""
+    if tenant is not None:
+        tenant_frag = "AND tenant_id = {tenant:String}"
+        params["tenant"] = tenant
+    project_frag = ""
+    if project is not None:
+        project_frag = "AND project = {project:String}"
+        params["project"] = project
+    sql = (
+        _SQL_BILLABLE_USAGE.replace("__UNTIL__", _until_clause(until))
+        .replace("__TENANT__", tenant_frag)
+        .replace("__PROJECT__", project_frag)
+    )
+    result = await client.query(sql, parameters=params)
+    rows: list[dict[str, Any]] = []
+    for row in result.result_rows:
+        cost = float(row[2] or 0.0)
+        rated = float(row[3] or 0.0)
+        margin = rated - cost
+        rows.append(
+            {
+                "tenant_id": row[0],
+                "requests": int(row[1] or 0),
+                "cost_usd": cost,
+                "rated_usd": rated,
+                "margin_usd": margin,
+                "margin_pct": _margin_pct(margin, rated),
+            }
+        )
+    return rows
+
+
+async def get_tenant_line_items(
+    client: Any,
+    *,
+    tenant: str,
+    since: float,
+    until: float | None,
+    project: str | None = None,
+) -> list[dict[str, Any]]:
+    """Per-(modality, model) invoice detail for one tenant (ClickHouse)."""
+    params: dict[str, Any] = {"since_ms": _since_ms(since), "tenant": tenant}
+    if until is not None:
+        params["until_ms"] = int(until * 1000)
+    project_frag = ""
+    if project is not None:
+        project_frag = "AND project = {project:String}"
+        params["project"] = project
+    sql = _SQL_TENANT_LINE_ITEMS.replace("__UNTIL__", _until_clause(until)).replace(
+        "__PROJECT__", project_frag
+    )
+    result = await client.query(sql, parameters=params)
+    rows: list[dict[str, Any]] = []
+    for row in result.result_rows:
+        cost = float(row[6] or 0.0)
+        rated = float(row[7] or 0.0)
+        rows.append(
+            {
+                "modality": row[0],
+                "model_id": row[1],
+                "provider": row[2],
+                "requests": int(row[3] or 0),
+                "input_units": float(row[4] or 0.0),
+                "output_units": float(row[5] or 0.0),
+                "cost_usd": cost,
+                "rated_usd": rated,
+                "margin_usd": rated - cost,
+            }
+        )
+    return rows
+
+
 __all__ = [
+    "get_billable_usage",
     "get_cost_by_day",
     "get_cost_by_tenant_admin",
     "get_cost_summary",
     "get_latency_stats",
     "get_recent_requests",
+    "get_tenant_line_items",
     "list_sessions",
 ]
