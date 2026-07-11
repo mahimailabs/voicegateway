@@ -56,6 +56,7 @@ After installation, the `voicegw` command is available globally. See
 | Command | Description |
 |---|---|
 | [`reconcile`](/cli/reconcile) | Diff logged costs against a provider invoice. |
+| [`prices`](/cli/prices) | Inspect the billing rate card and reconcile rated revenue against cost per tenant. |
 | [`export-costs`](/cli/export-costs) | Export per-request cost rows to CSV / JSONL. |
 
 ### MCP server

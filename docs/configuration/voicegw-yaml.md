@@ -34,6 +34,7 @@ All sections are optional. Omitted sections use defaults.
 | `fallbacks` | Ordered fallback chains per modality |
 | `observability` | Toggle latency, cost, and logging middleware |
 | `cost_tracking` | SQLite storage settings |
+| `rate_card` | Rating rules that turn recorded cost into a billable price |
 | `latency` | TTFB warning thresholds and percentile config |
 | `rate_limits` | Per-provider request rate limits |
 | `ingest` | Rate limits for the fleet collector ingest endpoint |
@@ -212,6 +213,49 @@ cost_tracking:
 - `enabled` (bool, default `false`): enable cost persistence. Also enabled automatically when `VOICEGW_DB_PATH` is set.
 - `db_path` (string): path to the SQLite database file.
 - `daily_budget_alert` (float, optional): global daily budget alert threshold in USD.
+
+---
+
+## `rate_card`
+
+The rating layer's price book. VoiceGateway turns each request's recorded provider cost into a billable price and stamps that price immutably onto the request row (`rated_price_usd` + `rate_rule`). The card is a global `default_markup` fallback plus an ordered list of `rules`. For the full model see [Rating](/architecture/rating).
+
+```yaml
+rate_card:
+  default_markup: 1.30   # optional, default 1.0; global cost-plus fallback
+  rules:
+    - {provider: openai, markup: 1.5}                                                 # cost_plus: cost x 1.5
+    - {modality: stt, provider: deepgram, model: nova-3, fixed: 0.0060, unit: minute} # fixed $/unit
+    - {tenant: acme, markup: 1.1}                                                      # per-tenant override
+```
+
+- `default_markup` (float, default `1.0`): cost-plus multiplier applied when no rule matches a request.
+- `rules` (list): ordered rate rules. Each rule is scoped, and carries exactly one kind of arithmetic.
+
+### Scope fields
+
+Every scope field is optional and defaults to "any":
+
+- `modality`: `stt`, `llm`, or `tts`.
+- `provider`: a provider name such as `openai` or `deepgram`.
+- `model`: a model name, bare (`nova-3`) or fully qualified (`deepgram/nova-3`).
+- `tenant`: a tenant ID, for a per-tenant override.
+- `plan`: a plan name.
+
+### Rule kind: cost-plus or fixed
+
+A rule is either cost-plus or fixed:
+
+- **cost-plus** (`markup`): billable price is the recorded cost times `markup`. Because it multiplies the recorded cost, it auto-follows voice-prices base movement (change the base price, the rated price tracks it).
+- **fixed** (`fixed` + `unit`): billable price is an advertised `$/unit` (the `fixed` value) times the request's billable quantity in `unit`. Decoupled from base cost, so it advertises a stable price as the base moves. Valid units: `minute`, `second`, `char`, `1k_char`, `token`, `1k_token`, `1m_token`, `request`.
+
+### Resolution
+
+The single most specific matching rule wins. Precedence is `tenant > plan > global`, and within that `model > provider > modality-only`. A later rule wins a specificity tie, so a rule layered after the seed takes precedence. When no rule matches, the request falls back to the `default_markup` cost-plus pass-through.
+
+### Write-time and immutable
+
+Rating happens once, at write time, on the server (`voicegw serve`). The `rated_price_usd` and `rate_rule` audit token (for example `cost_plus:1.3`, `fixed:0.006/minute`, or `default:1`) are stamped onto the row and never rewritten: editing the card later never changes historical rows. Inspect and reconcile the card with the [`voicegw prices`](/cli/prices) commands.
 
 ---
 
