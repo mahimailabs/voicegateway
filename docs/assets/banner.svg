@@ -1,85 +1,60 @@
-<svg width="1280" height="300" viewBox="0 0 1280 300" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="VoiceGateway — cost and quality observability for voice agents, self-hosted">
+<svg width="1100" height="258" viewBox="0 0 1100 258" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="VoiceGateway — voice AI cost and quality observability, self-hosted">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="300" gradientUnits="userSpaceOnUse">
+    <linearGradient id="bg" x1="0" y1="0" x2="1100" y2="258" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#0A1417"/>
       <stop offset="0.55" stop-color="#0C1B20"/>
       <stop offset="1" stop-color="#0E2329"/>
     </linearGradient>
-    <radialGradient id="glowTeal" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1010 26) scale(430)">
-      <stop offset="0" stop-color="#14B8C4" stop-opacity="0.34"/>
+    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1000 -10) scale(300)">
+      <stop offset="0" stop-color="#14B8C4" stop-opacity="0.22"/>
       <stop offset="1" stop-color="#14B8C4" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="glowDeep" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(110 300) scale(360)">
-      <stop offset="0" stop-color="#1F96AA" stop-opacity="0.16"/>
+    <radialGradient id="glowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(90 258) scale(260)">
+      <stop offset="0" stop-color="#1F96AA" stop-opacity="0.14"/>
       <stop offset="1" stop-color="#1F96AA" stop-opacity="0"/>
     </radialGradient>
-    <linearGradient id="areaFill" x1="0" y1="80" x2="0" y2="252" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#14B8C4" stop-opacity="0.42"/>
-      <stop offset="0.7" stop-color="#1F96AA" stop-opacity="0.10"/>
-      <stop offset="1" stop-color="#1F96AA" stop-opacity="0"/>
-    </linearGradient>
-    <linearGradient id="lineGrad" x1="735" y1="0" x2="1180" y2="0" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#1F96AA"/>
-      <stop offset="1" stop-color="#2DD4DF"/>
-    </linearGradient>
-    <radialGradient id="node" cx="0.5" cy="0.4" r="0.6">
-      <stop offset="0" stop-color="#5AE6EF"/>
-      <stop offset="1" stop-color="#14B8C4"/>
-    </radialGradient>
-    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="7"/>
-    </filter>
   </defs>
 
-  <!-- background + aurora glow -->
-  <rect width="1280" height="300" fill="url(#bg)"/>
-  <rect width="1280" height="300" fill="url(#glowTeal)"/>
-  <rect width="1280" height="300" fill="url(#glowDeep)"/>
+  <rect width="1100" height="258" fill="url(#bg)"/>
+  <rect width="1100" height="258" fill="url(#glowA)"/>
+  <rect width="1100" height="258" fill="url(#glowB)"/>
 
-  <!-- faint dashboard gridlines behind the chart -->
-  <g stroke="#9FD9DF" stroke-opacity="0.06">
-    <line x1="700" y1="118" x2="1212" y2="118"/>
-    <line x1="700" y1="158" x2="1212" y2="158"/>
-    <line x1="700" y1="198" x2="1212" y2="198"/>
-    <line x1="700" y1="238" x2="1212" y2="238"/>
-  </g>
-
-  <!-- the signature gradient area chart: spend climbing through a call -->
-  <path d="M735 176 C792 170 818 156 868 152 C918 148 944 166 994 158 C1048 149 1084 120 1134 108 C1156 103 1168 100 1180 98 L1180 252 L735 252 Z" fill="url(#areaFill)"/>
-  <path d="M735 176 C792 170 818 156 868 152 C918 148 944 166 994 158 C1048 149 1084 120 1134 108 C1156 103 1168 100 1180 98" fill="none" stroke="#2DD4DF" stroke-width="6" stroke-linecap="round" opacity="0.22" filter="url(#soft)"/>
-  <path d="M735 176 C792 170 818 156 868 152 C918 148 944 166 994 158 C1048 149 1084 120 1134 108 C1156 103 1168 100 1180 98" fill="none" stroke="url(#lineGrad)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="868" cy="152" r="3.2" fill="#7FE3EC"/>
-  <circle cx="994" cy="158" r="3.2" fill="#7FE3EC"/>
-  <circle cx="1134" cy="108" r="3.2" fill="#7FE3EC"/>
-
-  <!-- live $ total at the peak -->
-  <circle cx="1180" cy="98" r="20" fill="#14B8C4" opacity="0.30" filter="url(#soft)"/>
-  <circle cx="1180" cy="98" r="14" fill="none" stroke="#2DD4DF" stroke-opacity="0.45" stroke-width="1.5">
-    <animate attributeName="r" values="12;17;12" dur="3s" repeatCount="indefinite"/>
-    <animate attributeName="stroke-opacity" values="0.5;0.08;0.5" dur="3s" repeatCount="indefinite"/>
-  </circle>
-  <circle cx="1180" cy="98" r="10" fill="url(#node)"/>
-  <text x="1180" y="102.5" text-anchor="middle" font-family="Inter, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="800" fill="#06222A">$</text>
-
-  <!-- voice waveform: the live call feeding the curve -->
-  <g fill="#2DD4DF">
-    <rect x="694" y="146" width="4.6" height="14" rx="2.3"><animate attributeName="height" values="14;26;14" dur="1.1s" repeatCount="indefinite"/><animate attributeName="y" values="146;140;146" dur="1.1s" repeatCount="indefinite"/></rect>
-    <rect x="703.4" y="138" width="4.6" height="30" rx="2.3"><animate attributeName="height" values="30;16;30" dur="1.1s" begin="0.15s" repeatCount="indefinite"/><animate attributeName="y" values="138;145;138" dur="1.1s" begin="0.15s" repeatCount="indefinite"/></rect>
-    <rect x="712.8" y="130" width="4.6" height="44" rx="2.3"><animate attributeName="height" values="44;22;44" dur="1.1s" begin="0.3s" repeatCount="indefinite"/><animate attributeName="y" values="130;141;130" dur="1.1s" begin="0.3s" repeatCount="indefinite"/></rect>
-    <rect x="722.2" y="140" width="4.6" height="26" rx="2.3"><animate attributeName="height" values="26;38;26" dur="1.1s" begin="0.2s" repeatCount="indefinite"/><animate attributeName="y" values="140;134;140" dur="1.1s" begin="0.2s" repeatCount="indefinite"/></rect>
-  </g>
+  <!-- hero gauge -->
+  <svg x="820" y="61" width="212" height="135" viewBox="104 176 472 300" fill="none">
+    <path d="M140 420 A200 200 0 0 1 540 420" stroke="#ffffff" stroke-opacity="0.10" stroke-width="32" stroke-linecap="round"/>
+    <path d="M140 420 A200 200 0 0 1 283 198" stroke="#22C1D0" stroke-width="32" stroke-linecap="round"/>
+    <path d="M140 420 A200 200 0 0 1 220 248" stroke="#7FE3EC" stroke-width="32" stroke-linecap="round" opacity="0.35"/>
+    <line x1="340" y1="420" x2="240" y2="210" stroke="#BFF4FA" stroke-width="14" stroke-linecap="round"/>
+    <circle cx="340" cy="420" r="28" fill="#22C1D0"/>
+    <circle cx="340" cy="420" r="14" fill="#0E2329"/>
+    <g fill="#22C1D0">
+      <circle cx="160" cy="430" r="10" opacity="0.4"/>
+      <circle cx="200" cy="310" r="10" opacity="0.5"/>
+      <circle cx="280" cy="220" r="10" opacity="0.7"/>
+      <circle cx="400" cy="210" r="10" opacity="0.8"/>
+      <circle cx="490" cy="285" r="10" opacity="0.5"/>
+      <circle cx="530" cy="400" r="10" opacity="0.4"/>
+    </g>
+  </svg>
 
   <!-- eyebrow -->
-  <rect x="72" y="62" width="256" height="26" rx="13" fill="#14B8C4" fill-opacity="0.10" stroke="#2DD4DF" stroke-opacity="0.35"/>
-  <circle cx="89" cy="75" r="3.5" fill="#2DD4DF"/>
-  <text x="101" y="79.5" font-family="Inter, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="11.5" font-weight="700" letter-spacing="1.5" fill="#7FE3EC">OPEN SOURCE · SELF-HOSTED</text>
+  <text x="56" y="62" font-family="Inter, -apple-system, 'Segoe UI', sans-serif" font-size="11.5" font-weight="700" letter-spacing="1.6" fill="#7FE3EC">OPEN SOURCE · SELF-HOSTED</text>
 
-  <!-- wordmark -->
-  <text x="70" y="162" font-family="Inter, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="62" font-weight="800" letter-spacing="-2.2" fill="#F4FAFB">Voice<tspan fill="#2DD4DF">Gateway</tspan></text>
+  <!-- lockup: mark + wordmark -->
+  <svg x="56" y="80" width="40" height="40" viewBox="104 176 472 300" fill="none">
+    <path d="M140 420 A200 200 0 0 1 540 420" stroke="#ffffff" stroke-opacity="0.14" stroke-width="44" stroke-linecap="round"/>
+    <path d="M140 420 A200 200 0 0 1 283 198" stroke="#22C1D0" stroke-width="44" stroke-linecap="round"/>
+    <line x1="340" y1="420" x2="238" y2="206" stroke="#BFF4FA" stroke-width="22" stroke-linecap="round"/>
+    <circle cx="340" cy="420" r="34" fill="#22C1D0"/>
+    <circle cx="340" cy="420" r="16" fill="#0E2329"/>
+  </svg>
+  <text x="108" y="112" font-family="Inter, -apple-system, 'Segoe UI', sans-serif" font-size="44" font-weight="700" letter-spacing="-1">
+    <tspan fill="#ffffff">Voice</tspan><tspan fill="#22C1D0">Gateway</tspan>
+  </text>
 
   <!-- tagline -->
-  <text x="72" y="200" font-family="Inter, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="500" fill="#A6BEC4">Voice AI cost and quality observability. Self-hosted, on your keys.</text>
+  <text x="56" y="156" font-family="Inter, -apple-system, 'Segoe UI', sans-serif" font-size="18" font-weight="500" fill="#A6BEC4">Voice AI cost and quality observability. Self-hosted, on your keys.</text>
 
-  <!-- providers -->
-  <text x="72" y="268" font-family="Inter, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="12.5" font-weight="600" letter-spacing="2" fill="#5FA7B0">LIVEKIT AGENTS · ANY PROVIDERS · TRANSPARENT · SELF HOSTING</text>
+  <!-- footer chips -->
+  <text x="56" y="196" font-family="Inter, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" letter-spacing="2" fill="#5FA7B0">LIVEKIT AGENTS · ANY PROVIDERS · TRANSPARENT · SELF HOSTING</text>
 </svg>
