@@ -202,6 +202,56 @@ class ClickHouseConfig(_StrictBase):
     database: str = "telemetry"
 
 
+class RateRuleConfig(_StrictBase):
+    """One rate-card rule. Scope defaults to "any" (``*`` / null).
+
+    A rule is either cost-plus (``markup``) or fixed (``fixed`` + ``unit``);
+    :meth:`voicegateway.billing.rate_card.RateCard.from_config` picks the kind
+    from the same fields at wiring time.
+    """
+
+    modality: str = "*"
+    provider: str = "*"
+    model: str = "*"
+    tenant: str | None = None
+    plan: str | None = None
+    markup: float | None = Field(default=None, gt=0)
+    fixed: float | None = Field(default=None, ge=0)
+    unit: str | None = None
+
+    @model_validator(mode="after")
+    def _check_kind(self) -> RateRuleConfig:
+        """Reject ambiguous or incomplete rules at config-load time.
+
+        Without this the errors only surface later as a raw ``ValueError``
+        inside ``RateCard.from_config`` (at gateway construction or on
+        ``GET /v1/billing/rate-card``), bypassing the friendly ``ConfigError``.
+        """
+        from voicegateway.billing.rate_card import VALID_UNITS
+
+        if self.fixed is not None:
+            if self.markup is not None:
+                raise ValueError(
+                    "a rate rule sets either 'markup' (cost-plus) or 'fixed' "
+                    "($/unit), not both"
+                )
+            if self.unit not in VALID_UNITS:
+                raise ValueError(
+                    "a fixed rate rule needs a valid 'unit' (one of "
+                    f"{sorted(VALID_UNITS)})"
+                )
+        elif self.unit is not None:
+            raise ValueError("'unit' is only valid on a fixed rule (set 'fixed')")
+        return self
+
+
+class RateCardConfig(_StrictBase):
+    """The ``rate_card:`` block: a global default markup plus override rules."""
+
+    default_markup: float = Field(default=1.0, gt=0)
+    rules: list[RateRuleConfig] = Field(default_factory=list)
+
+
 _VALID_TOP_LEVEL_KEYS = {
     "providers",
     "models",
@@ -220,6 +270,7 @@ _VALID_TOP_LEVEL_KEYS = {
     "retention",
     "workers",
     "clickhouse",
+    "rate_card",
 }
 
 
@@ -245,6 +296,7 @@ class VoiceGatewayConfig(BaseModel):
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
     workers: WorkersConfig = Field(default_factory=WorkersConfig)
     clickhouse: ClickHouseConfig = Field(default_factory=ClickHouseConfig)
+    rate_card: RateCardConfig = Field(default_factory=RateCardConfig)
 
     @model_validator(mode="before")
     @classmethod

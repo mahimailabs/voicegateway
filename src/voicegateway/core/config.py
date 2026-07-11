@@ -167,6 +167,9 @@ class GatewayConfig:
     retention: RetentionConfig = field(default_factory=RetentionConfig)
     workers: WorkersConfig = field(default_factory=WorkersConfig)
     clickhouse: ClickHouseConfig = field(default_factory=ClickHouseConfig)
+    # Billing: the ``rate_card:`` seed (default_markup + rules). Kept as a raw
+    # dict; the gateway builds a RateCard via RateCard.from_config at wiring.
+    rate_card: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def load(cls, config_path: str | Path | None = None) -> GatewayConfig:
@@ -346,6 +349,7 @@ class GatewayConfig:
             retention=RetentionConfig.model_validate(raw.get("retention") or {}),
             workers=WorkersConfig.model_validate(raw.get("workers") or {}),
             clickhouse=ClickHouseConfig.model_validate(raw.get("clickhouse") or {}),
+            rate_card=raw.get("rate_card", {}) or {},
         )
 
     def get_provider_config(self, provider_name: str) -> dict[str, Any]:

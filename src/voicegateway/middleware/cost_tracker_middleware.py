@@ -8,7 +8,10 @@ import uuid
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
+from voicegateway.billing import rating
+from voicegateway.billing.rate_card import RateCard
 from voicegateway.inference.pricing import catalog
+from voicegateway.inference.session.context import current_tenant
 from voicegateway.models.request_model import RequestRecord
 
 if TYPE_CHECKING:
@@ -16,17 +19,60 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# When no rate card is wired in, rate every request as a cost pass-through
+# (default_markup 1.0 -> rated == cost, rule "default:1").
+_PASSTHROUGH_CARD = RateCard()
+
 
 class CostTracker:
     """Tracks per-request costs based on provider pricing."""
 
-    def __init__(self, storage: Any = None):
+    def __init__(self, storage: Any = None, rate_card: RateCard | None = None):
         self._storage = storage
         self._budget_enforcer: BudgetEnforcer | None = None
+        self._rate_card = rate_card
 
     def set_budget_enforcer(self, enforcer: BudgetEnforcer | None) -> None:
         """Wire in a BudgetEnforcer so cost writes update its spend cache."""
         self._budget_enforcer = enforcer
+
+    def set_rate_card(self, card: RateCard | None) -> None:
+        """Wire in the rate card used to stamp billable prices at write time."""
+        self._rate_card = card
+
+    def _rate(
+        self,
+        model_id: str,
+        modality: str,
+        provider: str,
+        cost_usd: float,
+        input_units: float,
+        output_units: float,
+    ) -> rating.RatedResult:
+        """Rate a request against the active card, resolving the current tenant.
+
+        Rating never breaks a request write: any failure falls back to a
+        cost pass-through so the row is still recorded with a billable price.
+        """
+        card = self._rate_card if self._rate_card is not None else _PASSTHROUGH_CARD
+        try:
+            return rating.price(
+                card,
+                modality=modality,
+                provider=provider,
+                model_id=model_id,
+                cost_usd=cost_usd,
+                input_units=input_units,
+                output_units=output_units,
+                tenant=current_tenant(),
+            )
+        except Exception:
+            logger.warning(
+                "Rating failed for %s; passing recorded cost through",
+                model_id,
+                exc_info=True,
+            )
+            return rating.RatedResult(rated_price_usd=cost_usd, rate_rule="default:1")
 
     def _catalog_cost(
         self,
@@ -123,6 +169,9 @@ class CostTracker:
                 pricing_source = catalog.SELF_HOSTED_SOURCE
             elif cost_dec is not None:
                 pricing_source = catalog.pricing_source(modality)
+        rated = self._rate(
+            model_id, modality, provider, cost, input_units, output_units
+        )
         return RequestRecord(
             id=str(uuid.uuid4()),
             timestamp=time.time(),
@@ -135,6 +184,8 @@ class CostTracker:
             cached_input_units=cached_input_units,
             cost_usd=cost,
             pricing_source=pricing_source,
+            rated_price_usd=rated.rated_price_usd,
+            rate_rule=rated.rate_rule,
             ttfb_ms=ttfb_ms,
             total_latency_ms=total_latency_ms,
             status=status,

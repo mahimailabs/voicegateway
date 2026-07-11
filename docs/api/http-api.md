@@ -1,6 +1,6 @@
 ---
 title: HTTP API Reference
-description: REST endpoints served by `voicegw serve`. Covers health, status, models, costs, projects, providers, logs, metrics, and audit log.
+description: REST endpoints served by `voicegw serve`. Covers health, status, models, costs, billing, projects, providers, logs, metrics, and audit log.
 ---
 
 The VoiceGateway HTTP API runs via `voicegw serve` (default port 8080). It provides read-only observability endpoints and full CRUD for managing providers, models, and projects.
@@ -159,6 +159,116 @@ Return latency statistics for the given period.
 curl "http://localhost:8080/v1/latency?period=today"
 curl "http://localhost:8080/v1/latency?period=week&project=my-app"
 ```
+
+---
+
+## Billing
+
+The rating layer's read surface. VoiceGateway rates each recorded request at write time (`rated_price_usd` + `rate_rule`); these endpoints roll that up per tenant and expose the rate card in effect. See [Rating](/architecture/rating) for the model.
+
+### GET /v1/billing/usage
+
+Return rated revenue, recorded cost, and margin per tenant for a window.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `period` | `string` | `"month"` | One of: `today`, `week`, `month`. |
+| `start` | `string` | `null` | Start date in `YYYY-MM-DD`. |
+| `end` | `string` | `null` | End date in `YYYY-MM-DD` (inclusive day). |
+| `project` | `string` | `null` | Filter by project ID. |
+| `tenant` | `string` | `null` | Filter to a single tenant. When set, the response also includes `line_items`. |
+
+**Response:**
+
+```json
+{
+  "period": "month",
+  "start": null,
+  "end": null,
+  "tenant": null,
+  "tenants": [
+    {
+      "tenant_id": "acme",
+      "requests": 120,
+      "cost_usd": 0.48,
+      "rated_usd": 0.72,
+      "margin_usd": 0.24,
+      "margin_pct": 33.3
+    }
+  ],
+  "totals": {
+    "requests": 120,
+    "cost_usd": 0.48,
+    "rated_usd": 0.72,
+    "margin_usd": 0.24
+  }
+}
+```
+
+When `tenant` is passed, the response also carries that tenant's per-(modality, model) line items for invoice detail:
+
+```json
+{
+  "line_items": [
+    {
+      "modality": "stt",
+      "model_id": "deepgram/nova-3",
+      "provider": "deepgram",
+      "requests": 120,
+      "input_units": 45.0,
+      "output_units": 0.0,
+      "cost_usd": 0.48,
+      "rated_usd": 0.72,
+      "margin_usd": 0.24
+    }
+  ]
+}
+```
+
+**Example:**
+
+```bash
+curl "http://localhost:8080/v1/billing/usage?period=month"
+curl "http://localhost:8080/v1/billing/usage?tenant=acme&start=2026-06-01&end=2026-06-30"
+```
+
+### GET /v1/billing/rate-card
+
+Return the rate card in effect: the global default markup plus every rule. The `rule` field on each rule is the audit token stamped onto matching requests (for example `cost_plus:1.3` or `fixed:0.006/minute`).
+
+**Response:**
+
+```json
+{
+  "default_markup": 1.0,
+  "rules": [
+    {
+      "modality": "stt",
+      "provider": "deepgram",
+      "model": "nova-3",
+      "tenant": null,
+      "plan": null,
+      "kind": "fixed",
+      "markup": null,
+      "unit_price_usd": 0.006,
+      "unit": "minute",
+      "rule": "fixed:0.006/minute"
+    }
+  ]
+}
+```
+
+**Example:**
+
+```bash
+curl http://localhost:8080/v1/billing/rate-card
+```
+
+<Note>
+Rate-card editing (a `PUT` on this endpoint) is a planned follow-up tied to a DB override store that has not shipped yet. Today the card is the YAML seed in `voicegw.yaml`; edit the file and reload the gateway to change rates. See [Rating](/architecture/rating).
+</Note>
 
 ---
 

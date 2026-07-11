@@ -35,11 +35,13 @@ _INSERT_REQUEST = text(
     """INSERT INTO requests
        (id, timestamp, project, modality, model_id, provider,
         input_units, output_units, cached_input_units, cost_usd, pricing_source,
+        rated_price_usd, rate_rule,
         ttfb_ms, total_latency_ms, status,
         fallback_from, error_message, metadata, session_id,
         tenant_id, agent_id)
        VALUES (:id, :timestamp, :project, :modality, :model_id, :provider,
                :input_units, :output_units, :cached_input_units, :cost_usd, :pricing_source,
+               :rated_price_usd, :rate_rule,
                :ttfb_ms, :total_latency_ms, :status,
                :fallback_from, :error_message, :metadata, :session_id,
                :tenant_id, :agent_id)"""
@@ -129,6 +131,8 @@ async def log_request(session: AsyncSession, record: RequestRecord) -> None:
             "cached_input_units": record.cached_input_units,
             "cost_usd": record.cost_usd,
             "pricing_source": record.pricing_source,
+            "rated_price_usd": record.rated_price_usd,
+            "rate_rule": record.rate_rule,
             "ttfb_ms": record.ttfb_ms,
             "total_latency_ms": record.total_latency_ms,
             "status": record.status,
@@ -267,6 +271,8 @@ _REQUEST_COLUMNS = (
     "cached_input_units",
     "cost_usd",
     "pricing_source",
+    "rated_price_usd",
+    "rate_rule",
     "ttfb_ms",
     "total_latency_ms",
     "status",

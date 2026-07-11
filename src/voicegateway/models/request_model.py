@@ -48,6 +48,10 @@ class RequestRecord:
     metadata: dict[str, Any] = field(default_factory=dict)
     session_id: str | None = None  # ContextVar-derived session correlation
     agent_id: str | None = None  # fleet: self-reported agent/instance label
+    # Billing: the rate card in effect stamps a billable price + audit token
+    # at write time. Immutable once written; defaults are a cost pass-through.
+    rated_price_usd: float = 0.0
+    rate_rule: str = ""  # e.g. "cost_plus:1.3", "fixed:0.006/minute", "default:1"
 
 
 class Request(SQLModel, table=True):
@@ -86,6 +90,11 @@ class Request(SQLModel, table=True):
     )
     cost_usd: float | None = Field(default=0.0)
     pricing_source: str = Field(default="", sa_column_kwargs={"server_default": ""})
+    # Billing: rated (billable) price + the audit token for the applied rule.
+    rated_price_usd: float | None = Field(
+        default=0.0, sa_column_kwargs={"server_default": "0"}
+    )
+    rate_rule: str = Field(default="", sa_column_kwargs={"server_default": ""})
     ttfb_ms: float | None = None
     total_latency_ms: float | None = None
     status: str | None = Field(default="success")
