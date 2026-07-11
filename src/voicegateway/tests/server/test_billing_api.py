@@ -96,3 +96,54 @@ async def test_rate_card_endpoint_returns_effective_card(gateway):
     assert rule["kind"] == "cost_plus"
     assert rule["markup"] == 1.5
     assert rule["rule"] == "cost_plus:1.5"
+
+
+async def test_upsert_list_and_delete_rule(gateway):
+    client = await _client(gateway)
+    async with client as c:
+        # upsert a DB override
+        r = await c.post(
+            "/v1/billing/rate-card/rules",
+            json={"provider": "openai", "markup": 1.4},
+        )
+        assert r.status_code == 200, r.text
+        rule_id = r.json()["rule_id"]
+        assert rule_id == "*|*|*|openai|*"
+
+        # it appears in the editable DB rules list
+        r = await c.get("/v1/billing/rate-card/rules")
+        assert rule_id in [x["rule_id"] for x in r.json()["rules"]]
+
+        # and in the effective card alongside the seed rule
+        r = await c.get("/v1/billing/rate-card")
+        rules = r.json()["rules"]
+        assert any(x["provider"] == "openai" and x["markup"] == 1.4 for x in rules)
+        assert any(x["provider"] == "deepgram" for x in rules)  # seed still there
+
+        # delete by rule_id
+        r = await c.delete(f"/v1/billing/rate-card/rules/{rule_id}")
+        assert r.status_code == 200
+        r = await c.get("/v1/billing/rate-card/rules")
+        assert r.json()["rules"] == []
+
+
+async def test_upsert_rule_rejects_markup_and_fixed(gateway):
+    client = await _client(gateway)
+    async with client as c:
+        r = await c.post(
+            "/v1/billing/rate-card/rules",
+            json={
+                "provider": "openai",
+                "markup": 1.4,
+                "fixed": 0.006,
+                "unit": "minute",
+            },
+        )
+    assert r.status_code == 400
+
+
+async def test_delete_missing_rule_returns_404(gateway):
+    client = await _client(gateway)
+    async with client as c:
+        r = await c.delete("/v1/billing/rate-card/rules/does-not-exist")
+    assert r.status_code == 404
