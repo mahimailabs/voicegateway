@@ -16,6 +16,7 @@ from voicegateway.models.latency_observation_model import LatencyObservation
 from voicegateway.models.managed_model_model import ManagedModel
 from voicegateway.models.managed_project_model import ManagedProject
 from voicegateway.models.managed_provider_model import ManagedProvider
+from voicegateway.models.managed_rate_rule_model import ManagedRateRule
 from voicegateway.models.replay_event_model import (
     ReplayLlmToken,
     ReplayStateSnapshot,
@@ -38,6 +39,7 @@ __all__ = [
     "ManagedModel",
     "ManagedProject",
     "ManagedProvider",
+    "ManagedRateRule",
     "ReplayLlmToken",
     "ReplaySttEvent",
     "ReplayStateSnapshot",
