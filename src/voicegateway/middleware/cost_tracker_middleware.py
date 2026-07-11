@@ -74,6 +74,27 @@ class CostTracker:
             )
             return rating.RatedResult(rated_price_usd=cost_usd, rate_rule="default:1")
 
+    def rate_record(self, record: RequestRecord) -> None:
+        """Re-rate an existing record in place against the active card.
+
+        The collector's ingest path uses this to rate fleet rows with its own
+        rate card: agents record raw cost and rate at pass-through (no card
+        client-side), so the collector is the source of truth for margins and
+        must not trust an agent-supplied ``rated_price_usd``. The tenant is
+        resolved from the context var (ingest sets it from the verified key),
+        matching the ``tenant_id`` stamped at write time.
+        """
+        rated = self._rate(
+            record.model_id,
+            record.modality,
+            record.provider,
+            record.cost_usd,
+            record.input_units,
+            record.output_units,
+        )
+        record.rated_price_usd = rated.rated_price_usd
+        record.rate_rule = rated.rate_rule
+
     def _catalog_cost(
         self,
         model_id: str,
