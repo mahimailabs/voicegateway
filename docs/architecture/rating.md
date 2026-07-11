@@ -44,7 +44,7 @@ Rating runs server-side, in the gateway's cost-tracking middleware, when you run
 The agent-side `attach()` path stays a cost pass-through by design. Margins are a server-side concern: an agent process records raw cost, and the server (or a hosted cloud that rates on ingest) applies the card. The rating logic lives in the pure `voicegateway.billing` module, so a hosted cloud can import it and rate on ingest without pulling in the rest of the gateway.
 
 <Note>
-A self-hosted collector re-rates fleet rows on ingest. Rows pushed to `POST /v1/ingest` arrive unrated (agents rate at pass-through), so the collector rates each one against its own card, using the tenant resolved from the verified `vk_` key, and overwrites any agent-supplied rated price (agents are not trusted with margins). The SQLite-backed collector persists the rated fields; a ClickHouse-backed collector computes them but does not yet store `rated_price_usd` / `rate_rule` (its column set predates them), so those columns are a follow-up before `GET /v1/billing/usage` is accurate on a ClickHouse deployment.
+A self-hosted collector re-rates fleet rows on ingest. Rows pushed to `POST /v1/ingest` arrive unrated (agents rate at pass-through), so the collector rates each one against its own card, using the tenant resolved from the verified `vk_` key, and overwrites any agent-supplied rated price (agents are not trusted with margins). Both the SQLite and ClickHouse sinks store `rated_price_usd` / `rate_rule`. `GET /v1/billing/usage` and `voicegw prices reconcile` read from the SQL store, so on a ClickHouse-backed collector the rated data lands in ClickHouse but a ClickHouse-backed billing read is still a follow-up before those surfaces reflect it.
 </Note>
 
 ## How rated usage is consumed

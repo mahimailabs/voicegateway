@@ -109,10 +109,8 @@ async def ingest(
             if record is None:
                 rejected += 1
                 continue
-            # Re-rate uniformly. Note: the ClickHouse sink does not yet persist
-            # rated_price_usd / rate_rule (its column set predates them), so on
-            # a ClickHouse collector the rated value is computed but dropped
-            # until those columns are added. The SQLite path persists them.
+            # Re-rate against the collector's card before persisting. Both the
+            # SQLite and ClickHouse sinks store rated_price_usd / rate_rule.
             gateway.cost_tracker.rate_record(record)
             await sink.log_request(record)
             accepted += 1
