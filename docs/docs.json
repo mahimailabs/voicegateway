@@ -11,7 +11,7 @@
     "light": "/assets/logo.svg",
     "dark": "/assets/logo.svg"
   },
-  "favicon": "/assets/logo.svg",
+  "favicon": "/assets/favicon.svg",
   "contextual": {
     "options": [
       "copy",

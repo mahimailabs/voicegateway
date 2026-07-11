@@ -1,0 +1,9 @@
+<svg viewBox="104 176 472 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="VoiceGateway">
+  <title>VoiceGateway</title>
+  <!-- Simplified for small sizes: bolder strokes, no orbit dots. -->
+  <path d="M140 420 A200 200 0 0 1 540 420" fill="none" stroke="#E5EAEC" stroke-width="44" stroke-linecap="round"/>
+  <path d="M140 420 A200 200 0 0 1 283 198" fill="none" stroke="#1F96AA" stroke-width="44" stroke-linecap="round"/>
+  <line x1="340" y1="420" x2="238" y2="206" stroke="#15788A" stroke-width="22" stroke-linecap="round"/>
+  <circle cx="340" cy="420" r="34" fill="#1F96AA"/>
+  <circle cx="340" cy="420" r="16" fill="#15788A"/>
+</svg>

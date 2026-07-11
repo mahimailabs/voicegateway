@@ -20,6 +20,7 @@ import type { StatusResponse } from './lib/types';
 import { AUTH_REQUIRED_EVENT, clearToken, fetchJson, getToken } from './lib/api';
 import { applyBrandingForProject } from './lib/branding';
 import NavIcon from './components/NavIcon';
+import BrandMark from './components/BrandMark';
 import AccountMenu from './components/AccountMenu';
 import CommandPalette from './components/CommandPalette';
 import { NAV, type NavLeaf } from './lib/nav';
@@ -154,17 +155,8 @@ function Sidebar({
       {/* Brand header */}
       <div className="sidebar__header">
         {collapsed ? (
-          /* Collapsed: show a teal brand-mark square */
-          <span
-            className="brand-mark"
-            aria-label={productName}
-            style={{
-              width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-              background: 'linear-gradient(135deg, var(--vg-teal-bright), var(--vg-teal-deep))',
-              boxShadow: '0 2px 6px -1px rgba(21,120,138,0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
-              display: 'grid', placeItems: 'center',
-            }}
-          />
+          /* Collapsed: the gauge brand-mark square */
+          <BrandMark size={28} label={productName} />
         ) : isWhiteLabel ? (
           <div className="sidebar__brand">
             {branding?.logo_url && <img src={branding.logo_url} alt={`${productName} logo`} className="sidebar__mark" />}
@@ -172,17 +164,7 @@ function Sidebar({
           </div>
         ) : (
           <div className="sidebar__brand" style={{ gap: 10 }}>
-            {/* Teal gradient brand-mark */}
-            <span
-              className="brand-mark"
-              aria-hidden="true"
-              style={{
-                width: 26, height: 26, borderRadius: 8, flexShrink: 0,
-                background: 'linear-gradient(135deg, var(--vg-teal-bright), var(--vg-teal-deep))',
-                boxShadow: '0 2px 6px -1px rgba(21,120,138,0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
-                display: 'grid', placeItems: 'center',
-              }}
-            />
+            <BrandMark size={26} />
             <span className="sidebar__brandname">VoiceGateway</span>
           </div>
         )}
