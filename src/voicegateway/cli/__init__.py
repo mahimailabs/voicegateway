@@ -34,6 +34,7 @@ from voicegateway.cli import logs_cli as _logs  # noqa: F401, E402
 from voicegateway.cli import mcp_cli as _mcp  # noqa: F401, E402
 from voicegateway.cli import migrate_cli as _migrate  # noqa: F401, E402
 from voicegateway.cli import onboard_cli as _onboard  # noqa: F401, E402
+from voicegateway.cli import prices_cli as _prices  # noqa: F401, E402
 from voicegateway.cli import projects_cli as _projects  # noqa: F401, E402
 from voicegateway.cli import reconcile_cli as _reconcile  # noqa: F401, E402
 from voicegateway.cli import replay_cli as _replay  # noqa: F401, E402
