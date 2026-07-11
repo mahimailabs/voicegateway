@@ -133,3 +133,30 @@ def test_gateway_wires_rate_card_into_cost_tracker(tmp_path) -> None:
     assert record.cost_usd == pytest.approx(0.0048)
     assert record.rated_price_usd == pytest.approx(0.0072)
     assert record.rate_rule == "cost_plus:1.5"
+
+
+async def test_gateway_merges_db_override_over_seed(tmp_path, monkeypatch) -> None:
+    """A DB rate rule overrides the YAML seed at the same scope after refresh."""
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "gw-override.db"))
+    monkeypatch.delenv("VOICEGW_API_KEY", raising=False)
+    cfg_path = _write(
+        tmp_path,
+        {
+            "providers": {"deepgram": {"api_key": "k"}},
+            "cost_tracking": {"enabled": True},
+            "rate_card": {"rules": [{"provider": "deepgram", "markup": 1.5}]},
+        },
+    )
+    gw = Gateway(config_path=cfg_path)
+    # DB override for the same scope with a higher markup.
+    await gw.storage.upsert_rate_rule(provider="deepgram", markup=1.9)
+    await gw.refresh_config()
+
+    record = gw.cost_tracker.create_record(
+        model_id="deepgram/nova-3",
+        modality="stt",
+        provider="deepgram",
+        input_units=1.0,
+    )
+    assert record.rate_rule == "cost_plus:1.9"  # DB override wins over seed 1.5
+    assert record.rated_price_usd == pytest.approx(0.0048 * 1.9)

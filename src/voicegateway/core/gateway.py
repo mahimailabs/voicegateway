@@ -76,7 +76,12 @@ class Gateway:
             LocalSqliteSink(self._storage) if self._storage is not None else None
         )
         self._cost_tracker = CostTracker(cost_sink)
-        self._cost_tracker.set_rate_card(RateCard.from_config(self._config.rate_card))
+        db_rate_rules = (
+            _run_async(self._storage.list_rate_rules())
+            if self._storage is not None
+            else []
+        )
+        self._cost_tracker.set_rate_card(self._effective_rate_card(db_rate_rules))
         self._latency_monitor = LatencyMonitor(
             ttfb_warning_ms=self._config.latency.get("ttfb_warning_ms", 500.0)
         )
@@ -104,12 +109,23 @@ class Gateway:
         """Return the cost tracker."""
         return self._cost_tracker
 
+    def _effective_rate_card(self, db_rows: list[dict[str, Any]]) -> RateCard:
+        """Build the rate card in effect: YAML seed rules + DB overrides.
+
+        DB rows are appended after the seed rules so a DB override wins a
+        specificity tie against a seed rule at the same scope.
+        """
+        return RateCard.from_config(self._config.rate_card).with_overrides(db_rows)
+
     async def refresh_config(self) -> None:
         """Reload config from YAML + SQLite. Called after any managed_* write."""
         self._config = await self._config_manager.refresh()
         self._budget_enforcer = BudgetEnforcer(self._config, self._storage)
         self._cost_tracker.set_budget_enforcer(self._budget_enforcer)
-        self._cost_tracker.set_rate_card(RateCard.from_config(self._config.rate_card))
+        db_rate_rules = (
+            await self._storage.list_rate_rules() if self._storage is not None else []
+        )
+        self._cost_tracker.set_rate_card(self._effective_rate_card(db_rate_rules))
 
     def costs(self, period: str = "today", project: str | None = None) -> dict:
         """Return cost summary for the given period, optionally filtered by project."""

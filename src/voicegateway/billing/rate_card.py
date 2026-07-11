@@ -128,6 +128,25 @@ def _fmt(value: float | None) -> str:
     return f"{value:g}"
 
 
+def rate_rule_from_row(row: dict) -> RateRule:
+    """Build a :class:`RateRule` from a managed_rate_rules DB row dict.
+
+    The DB row's fields map 1:1 to :class:`RateRule`, so this is a direct lift
+    (used when merging DB overrides onto the YAML seed).
+    """
+    return RateRule(
+        modality=row.get("modality", WILDCARD),
+        provider=row.get("provider", WILDCARD),
+        model=row.get("model", WILDCARD),
+        tenant=row.get("tenant"),
+        plan=row.get("plan"),
+        kind=row.get("kind", "cost_plus"),
+        markup=row.get("markup"),
+        unit_price_usd=row.get("unit_price_usd"),
+        unit=row.get("unit"),
+    )
+
+
 @dataclass
 class RateCard:
     """An ordered list of rules plus a global default markup fallback."""
@@ -195,6 +214,17 @@ class RateCard:
             markup=markup,
         )
 
+    def with_overrides(self, rows: list[dict]) -> RateCard:
+        """Return a new card with DB override rules appended after the seed.
+
+        Overrides go last so a DB rule wins a specificity tie against a seed
+        rule at the same scope (matching :meth:`resolve`'s later-wins rule).
+        """
+        return RateCard(
+            rules=[*self.rules, *(rate_rule_from_row(r) for r in rows)],
+            default_markup=self.default_markup,
+        )
+
     def resolve(
         self,
         *,
@@ -227,4 +257,10 @@ class RateCard:
         return best
 
 
-__all__ = ["WILDCARD", "VALID_UNITS", "RateRule", "RateCard"]
+__all__ = [
+    "WILDCARD",
+    "VALID_UNITS",
+    "RateRule",
+    "RateCard",
+    "rate_rule_from_row",
+]

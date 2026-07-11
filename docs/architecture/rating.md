@@ -39,7 +39,7 @@ The `rate_rule` token is human-readable and self-documenting: `cost_plus:1.3` (r
 
 ## Where rating runs
 
-Rating runs server-side, in the gateway's cost-tracking middleware, when you run `voicegw serve`. The active card is loaded from `rate_card:` and applied as each request row is written. If rating ever fails, it falls back to a cost pass-through so the row is still recorded with a billable price.
+Rating runs server-side, in the gateway's cost-tracking middleware, when you run `voicegw serve`. The active card is the `rate_card:` seed plus any DB overrides, merged at startup and on every config refresh, and applied as each request row is written. If rating ever fails, it falls back to a cost pass-through so the row is still recorded with a billable price.
 
 The agent-side `attach()` path stays a cost pass-through by design. Margins are a server-side concern: an agent process records raw cost, and the server (or a hosted cloud that rates on ingest) applies the card. The rating logic lives in the pure `voicegateway.billing` module, so a hosted cloud can import it and rate on ingest without pulling in the rest of the gateway.
 
@@ -52,10 +52,10 @@ A self-hosted collector re-rates fleet rows on ingest. Rows pushed to `POST /v1/
 Once every row carries `rated_price_usd`, two surfaces read it:
 
 - **Billing API.** `GET /v1/billing/usage` rolls rated revenue, recorded cost, and margin up per tenant for a window; passing `tenant` adds per-(modality, model) line items for invoice detail. `GET /v1/billing/rate-card` returns the card in effect. See the [HTTP API reference](/api/http-api).
-- **`voicegw prices` commands.** `voicegw prices ls` prints the card, `voicegw prices reconcile` flags tenants with thin or negative margins over a window, and `voicegw prices sync` checks fixed rules against the current base cost. See [voicegw prices](/cli/prices).
+- **`voicegw prices` commands.** `voicegw prices ls` prints the effective card, `voicegw prices reconcile` flags tenants with thin or negative margins over a window, `voicegw prices sync` checks fixed rules against the current base cost, and `voicegw prices set` / `rm` edit the DB overrides. See [voicegw prices](/cli/prices).
 
 <Note>
-Rate-card editing at runtime (a PUT on `/v1/billing/rate-card`, and `voicegw prices set`) is a planned follow-up tied to a DB override store that has not shipped yet. Today the card is the YAML seed; edit `voicegw.yaml` and reload to change rates.
+The rate card is one store with two surfaces: the `rate_card:` seed in `voicegw.yaml` plus DB overrides. `voicegw prices set` / `rm` edit the DB overrides (one rule per scope, keyed by `tenant|plan|modality|provider|model`), and a DB override wins a specificity tie against the seed rule it shadows. A PUT on `/v1/billing/rate-card` and a dashboard editor over the same store are follow-ups.
 </Note>
 
 ## Where to find each piece

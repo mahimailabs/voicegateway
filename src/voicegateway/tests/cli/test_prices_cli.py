@@ -68,3 +68,59 @@ def test_prices_ls_empty_card(tmp_path) -> None:
     result = runner.invoke(app, ["prices", "ls", "--config", str(p)])
     assert result.exit_code == 0, result.output
     assert "default markup" in result.output
+
+
+def test_prices_set_ls_rm_roundtrip(tmp_path, monkeypatch) -> None:
+    # chdir so alembic env.py + the CLI resolve the same tmp config (no stray).
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("VOICEGW_API_KEY", raising=False)
+    cfg = {
+        "cost_tracking": {"enabled": True, "db_path": "prices.db"},
+        "models": {"stt": {}, "llm": {}, "tts": {}},
+        "fallbacks": {"stt": [], "llm": [], "tts": []},
+    }
+    (tmp_path / "voicegw.yaml").write_text(yaml.dump(cfg))
+
+    # set a DB override
+    r = runner.invoke(app, ["prices", "set", "--provider", "openai", "--markup", "1.5"])
+    assert r.exit_code == 0, r.output
+    assert "openai" in r.output  # the printed rule_id (*|*|*|openai|*)
+
+    # ls now runs against the effective card (exercises the DB read path)
+    r = runner.invoke(app, ["prices", "ls"])
+    assert r.exit_code == 0, r.output
+
+    # rm removes it
+    r = runner.invoke(app, ["prices", "rm", "--provider", "openai"])
+    assert r.exit_code == 0, r.output
+
+    # rm again: nothing to remove
+    r = runner.invoke(app, ["prices", "rm", "--provider", "openai"])
+    assert r.exit_code != 0
+
+
+def test_prices_set_rejects_markup_and_fixed(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("VOICEGW_API_KEY", raising=False)
+    cfg = {
+        "cost_tracking": {"enabled": True, "db_path": "prices2.db"},
+        "models": {"stt": {}, "llm": {}, "tts": {}},
+        "fallbacks": {"stt": [], "llm": [], "tts": []},
+    }
+    (tmp_path / "voicegw.yaml").write_text(yaml.dump(cfg))
+    r = runner.invoke(
+        app,
+        [
+            "prices",
+            "set",
+            "--provider",
+            "openai",
+            "--markup",
+            "1.5",
+            "--fixed",
+            "0.006",
+            "--unit",
+            "minute",
+        ],
+    )
+    assert r.exit_code == 2

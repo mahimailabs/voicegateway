@@ -9,7 +9,7 @@ Inspect and reconcile the billing rate card that turns recorded provider cost in
 
 ## Synopsis
 
-`voicegw prices` is the command group for VoiceGateway's rating layer. The rate card in `voicegw.yaml` maps recorded cost to a billable price and stamps that price immutably onto every request row (`rated_price_usd` + `rate_rule`). These subcommands read that card: `ls` prints it, `reconcile` rolls up rated revenue against recorded cost per tenant, and `sync` checks fixed-price rules against the current base cost. The full model (cost-plus vs fixed, tenant->plan->global resolution, write-time immutability) lives at [Rating](/architecture/rating).
+`voicegw prices` is the command group for VoiceGateway's rating layer. The rate card maps recorded cost to a billable price and stamps that price immutably onto every request row (`rated_price_usd` + `rate_rule`). The card has two layers: the `rate_card:` seed in `voicegw.yaml` plus DB overrides you set at runtime with `set` (one store, both surfaces). `ls` prints the effective card (seed + overrides), `reconcile` rolls up rated revenue against recorded cost per tenant, `sync` checks fixed-price rules against the current base cost, and `set` / `rm` edit the DB overrides. The full model (cost-plus vs fixed, tenant->plan->global resolution, write-time immutability) lives at [Rating](/architecture/rating).
 
 ## Usage
 
@@ -17,6 +17,8 @@ Inspect and reconcile the billing rate card that turns recorded provider cost in
 voicegw prices ls [-c PATH]
 voicegw prices reconcile [-c PATH] [--period today|week|month] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--threshold FLOAT]
 voicegw prices sync [-c PATH] [--threshold FLOAT]
+voicegw prices set [-c PATH] [--modality M] [--provider P] [--model M] [--tenant T] [--plan PL] (--markup FLOAT | --fixed FLOAT --unit U)
+voicegw prices rm  [-c PATH] [--modality M] [--provider P] [--model M] [--tenant T] [--plan PL]
 ```
 
 ## `voicegw prices ls`
@@ -92,6 +94,44 @@ voicegw prices sync
 voicegw prices sync --threshold 25
 ```
 
+## `voicegw prices set`
+
+Upsert a DB rate-card override for a scope. Overrides layer on top of the `rate_card:` seed in `voicegw.yaml`, and a DB override wins a tie against a seed rule at the same scope. One rule per scope: setting the same scope again updates it in place (the scope is `tenant|plan|modality|provider|model`). Requires cost tracking enabled. A rule is either cost-plus (`--markup`) or fixed (`--fixed` + `--unit`), never both.
+
+### Options
+
+| Flag | Short | Type | Default | Description |
+|---|---|---|---|---|
+| `--config` | `-c` | `string` | `null` | Path to `voicegw.yaml`. Auto-discovered if omitted. |
+| `--modality` | | `string` | `*` | Scope: `stt`, `llm`, `tts`, or `*`. |
+| `--provider` | | `string` | `*` | Provider scope, or `*`. |
+| `--model` | | `string` | `*` | Model scope (bare or `provider/model`), or `*`. |
+| `--tenant` | | `string` | `null` | Tenant scope. |
+| `--plan` | | `string` | `null` | Plan scope. |
+| `--markup` | | `float` | `null` | Cost-plus markup (e.g. `1.3`). Mutually exclusive with `--fixed`. |
+| `--fixed` | | `float` | `null` | Fixed price per unit. Requires `--unit`. |
+| `--unit` | | `string` | `null` | Unit for a fixed rule: `minute`, `second`, `char`, `1k_char`, `token`, `1k_token`, `1m_token`, or `request`. |
+
+### Example
+
+```bash
+# A thinner markup for one tenant
+voicegw prices set --tenant acme --provider deepgram --markup 1.1
+
+# An advertised fixed price for a specific model
+voicegw prices set --modality tts --provider cartesia --model sonic --fixed 0.00005 --unit char
+```
+
+## `voicegw prices rm`
+
+Remove the DB override for a scope, using the same scope flags as `set`. Exits non-zero if there is no override at that scope.
+
+### Example
+
+```bash
+voicegw prices rm --tenant acme --provider deepgram
+```
+
 ## Examples
 
 ### Print the card, then check margins for last month
@@ -113,9 +153,10 @@ voicegw prices sync --threshold 20
 |---|---|
 | `0` | Success. |
 | `1` | Config could not be loaded, or (for `reconcile`) cost tracking is not enabled. |
+| `2` | Bad input: an invalid rule (`set` with both `--markup` and `--fixed`, a fixed rule missing a valid `--unit`, or neither), or `rm` for a scope with no override. |
 
 <Note>
-Editing the rate card at runtime (`voicegw prices set`) is a planned follow-up, tracked with the DB override store. Today the card is the YAML seed in `voicegw.yaml`; edit the file and reload the gateway to change rates.
+The gateway rebuilds the effective card (seed plus DB overrides) on startup and on config refresh, so a running server picks up `set` / `rm` changes the next time its config refreshes. Editing the rate card from the dashboard is a follow-up on top of the same DB store.
 </Note>
 
 ## Related

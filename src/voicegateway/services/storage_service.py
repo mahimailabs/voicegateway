@@ -460,3 +460,39 @@ class StorageService:
         """Delegate to ManagedConfigService.delete_project."""
         await self._ensure_initialized()
         return await self._managed_config_service.delete_project(project_id)
+
+    # Rate rules (DB rate-card overrides)
+    async def list_rate_rules(self) -> list[dict[str, Any]]:
+        """Delegate to ManagedConfigService.list_rate_rules."""
+        await self._ensure_initialized()
+        return await self._managed_config_service.list_rate_rules()
+
+    async def upsert_rate_rule(
+        self,
+        *,
+        modality: str = "*",
+        provider: str = "*",
+        model: str = "*",
+        tenant: str | None = None,
+        plan: str | None = None,
+        markup: float | None = None,
+        fixed: float | None = None,
+        unit: str | None = None,
+    ) -> str:
+        """Delegate to ManagedConfigService.upsert_rate_rule."""
+        await self._ensure_initialized()
+        return await self._managed_config_service.upsert_rate_rule(
+            modality=modality,
+            provider=provider,
+            model=model,
+            tenant=tenant,
+            plan=plan,
+            markup=markup,
+            fixed=fixed,
+            unit=unit,
+        )
+
+    async def delete_rate_rule(self, rule_id: str) -> bool:
+        """Delegate to ManagedConfigService.delete_rate_rule."""
+        await self._ensure_initialized()
+        return await self._managed_config_service.delete_rate_rule(rule_id)

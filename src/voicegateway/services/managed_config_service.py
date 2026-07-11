@@ -13,6 +13,9 @@ from voicegateway.repository import (
 from voicegateway.repository import (
     managed_provider_repository as provider_repo,
 )
+from voicegateway.repository import (
+    managed_rate_rule_repository as rate_rule_repo,
+)
 
 if TYPE_CHECKING:
     from voicegateway.core.database import Database
@@ -147,6 +150,41 @@ class ManagedConfigService:
     async def delete_project(self, project_id: str) -> bool:
         async with self._db.session() as s:
             return await project_repo.delete_project(s, project_id)
+
+    # --- rate rules (DB rate-card overrides) -------------------------
+
+    async def list_rate_rules(self) -> list[dict[str, Any]]:
+        async with self._db.session() as s:
+            return await rate_rule_repo.list_rules(s)
+
+    async def upsert_rate_rule(
+        self,
+        *,
+        modality: str = "*",
+        provider: str = "*",
+        model: str = "*",
+        tenant: str | None = None,
+        plan: str | None = None,
+        markup: float | None = None,
+        fixed: float | None = None,
+        unit: str | None = None,
+    ) -> str:
+        async with self._db.session() as s:
+            return await rate_rule_repo.upsert_rule(
+                s,
+                modality=modality,
+                provider=provider,
+                model=model,
+                tenant=tenant,
+                plan=plan,
+                markup=markup,
+                fixed=fixed,
+                unit=unit,
+            )
+
+    async def delete_rate_rule(self, rule_id: str) -> bool:
+        async with self._db.session() as s:
+            return await rate_rule_repo.delete_rule(s, rule_id)
 
 
 __all__ = ["ManagedConfigService"]

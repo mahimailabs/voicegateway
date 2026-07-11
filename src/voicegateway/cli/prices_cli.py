@@ -19,6 +19,7 @@ from voicegateway.billing.reconcile import margin_reconcile, sync_fixed_rules
 from voicegateway.cli._app import app, console
 from voicegateway.cli.base_cli import BaseCli
 from voicegateway.inference.pricing import catalog
+from voicegateway.repository.managed_rate_rule_repository import scope_key
 from voicegateway.utils.cli._shared import _parse_iso_date_arg
 
 _cli = BaseCli()
@@ -32,8 +33,13 @@ app.add_typer(prices_app, name="prices")
 
 
 def _load_card(config: str | None) -> RateCard:
+    """The effective card: YAML seed rules plus DB overrides."""
     gw = _cli.require_gateway(config)
-    return RateCard.from_config(gw.config.rate_card)
+    seed = RateCard.from_config(gw.config.rate_card)
+    if gw.storage is not None:
+        rows = _cli.async_run(gw.storage.list_rate_rules())
+        return seed.with_overrides(rows)
+    return seed
 
 
 @prices_app.command("ls")
@@ -175,3 +181,74 @@ def sync_cmd(
             _mark(ln.flag),
         )
     console.print(table)
+
+
+@prices_app.command("set")
+def set_cmd(
+    config: str | None = typer.Option(
+        None, "--config", "-c", help="Path to voicegw.yaml."
+    ),
+    modality: str = typer.Option("*", "--modality", help="stt | llm | tts | * scope."),
+    provider: str = typer.Option("*", "--provider", help="Provider scope, or *."),
+    model: str = typer.Option(
+        "*", "--model", help="Model scope (bare or provider/model), or *."
+    ),
+    tenant: str | None = typer.Option(None, "--tenant", help="Tenant scope."),
+    plan: str | None = typer.Option(None, "--plan", help="Plan scope."),
+    markup: float | None = typer.Option(
+        None,
+        "--markup",
+        help="Cost-plus markup, e.g. 1.3 (mutually exclusive with --fixed).",
+    ),
+    fixed: float | None = typer.Option(
+        None, "--fixed", help="Fixed price per unit (requires --unit)."
+    ),
+    unit: str | None = typer.Option(
+        None,
+        "--unit",
+        help="Unit for a fixed rule: minute | second | char | 1k_char | token | 1k_token | 1m_token | request.",
+    ),
+) -> None:
+    """Upsert a DB rate-card override for a scope (one rule per scope)."""
+    gw = _cli.require_gateway(config)
+    storage = _cli.require_storage(gw)
+    try:
+        rid = _cli.async_run(
+            storage.upsert_rate_rule(
+                modality=modality,
+                provider=provider,
+                model=model,
+                tenant=tenant,
+                plan=plan,
+                markup=markup,
+                fixed=fixed,
+                unit=unit,
+            )
+        )
+    except ValueError as exc:
+        _cli.fail(str(exc), code=2)
+    console.print(f"[green]set[/green] rule [bold]{rid}[/bold]")
+
+
+@prices_app.command("rm")
+def rm_cmd(
+    config: str | None = typer.Option(
+        None, "--config", "-c", help="Path to voicegw.yaml."
+    ),
+    modality: str = typer.Option("*", "--modality", help="stt | llm | tts | * scope."),
+    provider: str = typer.Option("*", "--provider", help="Provider scope, or *."),
+    model: str = typer.Option("*", "--model", help="Model scope, or *."),
+    tenant: str | None = typer.Option(None, "--tenant", help="Tenant scope."),
+    plan: str | None = typer.Option(None, "--plan", help="Plan scope."),
+) -> None:
+    """Remove the DB rate-card override for a scope (same flags as ``set``)."""
+    gw = _cli.require_gateway(config)
+    storage = _cli.require_storage(gw)
+    rid = scope_key(
+        modality=modality, provider=provider, model=model, tenant=tenant, plan=plan
+    )
+    removed = _cli.async_run(storage.delete_rate_rule(rid))
+    if removed:
+        console.print(f"[green]removed[/green] rule [bold]{rid}[/bold]")
+    else:
+        _cli.fail(f"no DB override for scope {rid!r}", code=2)
