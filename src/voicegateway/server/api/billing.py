@@ -1,28 +1,28 @@
-"""Billing endpoints: GET /v1/billing/usage + GET /v1/billing/rate-card.
+"""Billing endpoints under /v1/billing.
 
-The rating layer's read surface. ShipVoice (or any biller) polls
-``/usage`` for rated revenue + margin per tenant over a window, and reads
-``/rate-card`` to see the price book in effect. Rate-card edits (PUT) land
-in a follow-up once the DB-override store ships; today the card is the
-YAML seed.
+The rating layer's HTTP surface. ShipVoice (or any biller) polls ``/usage``
+for rated revenue + margin per tenant over a window, reads ``/rate-card`` to
+see the price book in effect, and edits the DB overrides through
+``/rate-card/rules`` (the same store ``voicegw prices set`` writes to).
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from voicegateway.billing.rate_card import RateCard
 from voicegateway.clickhouse import read_repository as ch_read
 from voicegateway.repository.cost_repository import resolve_window
-from voicegateway.server.api._deps import get_gateway
+from voicegateway.server.api._deps import get_gateway, require_scope
 from voicegateway.server.api._helpers import parse_iso_date
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
 
 router = APIRouter(prefix="/billing", tags=["billing"])
+write_dep = Depends(require_scope("write"))
 
 
 def _totals(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -114,13 +114,79 @@ def _serialize_rule(rule: Any) -> dict[str, Any]:
     }
 
 
+async def _effective_card(gateway: Gateway) -> RateCard:
+    """The card in effect: YAML seed rules plus DB overrides."""
+    seed = RateCard.from_config(gateway.config.rate_card)
+    if gateway.storage is None:
+        return seed
+    rows = await gateway.storage.list_rate_rules()
+    return seed.with_overrides(rows)
+
+
 @router.get("/rate-card")
 async def get_rate_card(
     gateway: Gateway = Depends(get_gateway),
 ) -> dict[str, Any]:
-    """Return the rate card in effect (default markup + rules)."""
-    card = RateCard.from_config(gateway.config.rate_card)
+    """Return the rate card in effect (default markup + seed + DB rules)."""
+    card = await _effective_card(gateway)
     return {
         "default_markup": card.default_markup,
         "rules": [_serialize_rule(r) for r in card.rules],
     }
+
+
+@router.get("/rate-card/rules")
+async def list_rate_card_rules(
+    gateway: Gateway = Depends(get_gateway),
+) -> dict[str, Any]:
+    """Return the editable DB override rules (each with its ``rule_id``)."""
+    if gateway.storage is None:
+        return {"rules": []}
+    return {"rules": await gateway.storage.list_rate_rules()}
+
+
+@router.post("/rate-card/rules", dependencies=[write_dep])
+async def upsert_rate_card_rule(
+    body: dict[str, Any],
+    gateway: Gateway = Depends(get_gateway),
+) -> dict[str, Any]:
+    """Upsert a DB rate-card override for a scope (one rule per scope).
+
+    Body: ``{modality?, provider?, model?, tenant?, plan?}`` scope plus either
+    ``markup`` (cost-plus) or ``fixed`` + ``unit``. Takes effect on the next
+    config refresh, which this triggers.
+    """
+    if gateway.storage is None:
+        raise HTTPException(400, "Storage not enabled")
+    try:
+        rule_id = await gateway.storage.upsert_rate_rule(
+            modality=body.get("modality", "*"),
+            provider=body.get("provider", "*"),
+            model=body.get("model", "*"),
+            tenant=body.get("tenant"),
+            plan=body.get("plan"),
+            markup=body.get("markup"),
+            fixed=body.get("fixed"),
+            unit=body.get("unit"),
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    await gateway.storage.log_audit_event("rate_rule", rule_id, "set", body, "api")
+    await gateway.refresh_config()
+    return {"rule_id": rule_id, "created": True}
+
+
+@router.delete("/rate-card/rules/{rule_id}", dependencies=[write_dep])
+async def delete_rate_card_rule(
+    rule_id: str,
+    gateway: Gateway = Depends(get_gateway),
+) -> dict[str, Any]:
+    """Delete a DB override by ``rule_id`` (from ``GET /rate-card/rules``)."""
+    if gateway.storage is None:
+        raise HTTPException(400, "Storage not enabled")
+    removed = await gateway.storage.delete_rate_rule(rule_id)
+    if not removed:
+        raise HTTPException(404, f"no rate rule with id {rule_id!r}")
+    await gateway.storage.log_audit_event("rate_rule", rule_id, "delete", None, "api")
+    await gateway.refresh_config()
+    return {"rule_id": rule_id, "deleted": True}

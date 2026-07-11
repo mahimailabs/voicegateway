@@ -236,7 +236,7 @@ curl "http://localhost:8080/v1/billing/usage?tenant=acme&start=2026-06-01&end=20
 
 ### GET /v1/billing/rate-card
 
-Return the rate card in effect: the global default markup plus every rule. The `rule` field on each rule is the audit token stamped onto matching requests (for example `cost_plus:1.3` or `fixed:0.006/minute`).
+Return the rate card **in effect**: the global default markup plus every rule, merging the `rate_card:` YAML seed with the DB overrides. The `rule` field on each rule is the audit token stamped onto matching requests (for example `cost_plus:1.3` or `fixed:0.006/minute`).
 
 **Response:**
 
@@ -266,8 +266,32 @@ Return the rate card in effect: the global default markup plus every rule. The `
 curl http://localhost:8080/v1/billing/rate-card
 ```
 
+### GET /v1/billing/rate-card/rules
+
+Return the editable DB override rules, each with its `rule_id`. Use this to drive an editor (the seed rules in `GET /rate-card` have no `rule_id`; only DB overrides are mutable).
+
+### POST /v1/billing/rate-card/rules
+
+Upsert a DB rate-card override for a scope (one rule per scope, keyed by `tenant|plan|modality|provider|model`). Requires the `write` scope. Takes effect on the next config refresh, which the call triggers.
+
+**Body:** a scope (`modality?`, `provider?`, `model?`, `tenant?`, `plan?`) plus either `markup` (cost-plus) or `fixed` + `unit`.
+
+```bash
+curl -X POST http://localhost:8080/v1/billing/rate-card/rules \
+  -H "Authorization: Bearer $VG_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"tenant": "acme", "provider": "deepgram", "markup": 1.1}'
+# -> {"rule_id": "acme|*|*|deepgram|*", "created": true}
+```
+
+A rule that sets both `markup` and `fixed`, or a fixed rule with a missing/invalid `unit`, returns `400`.
+
+### DELETE /v1/billing/rate-card/rules/{rule_id}
+
+Delete a DB override by its `rule_id` (from `GET /rate-card/rules`). Requires the `write` scope. Returns `404` when no rule has that id.
+
 <Note>
-Rate-card editing (a `PUT` on this endpoint) is a planned follow-up tied to a DB override store that has not shipped yet. Today the card is the YAML seed in `voicegw.yaml`; edit the file and reload the gateway to change rates. See [Rating](/architecture/rating).
+The rate card is one store with two surfaces: the `rate_card:` seed in `voicegw.yaml` plus these DB overrides, which `voicegw prices set` / `rm` edit from the CLI. A dashboard editor rides on the same endpoints. See [Rating](/architecture/rating).
 </Note>
 
 ---
