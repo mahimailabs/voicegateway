@@ -207,7 +207,7 @@ class RateRuleConfig(_StrictBase):
 
     A rule is either cost-plus (``markup``) or fixed (``fixed`` + ``unit``);
     :meth:`voicegateway.billing.rate_card.RateCard.from_config` picks the kind
-    and validates the unit.
+    from the same fields at wiring time.
     """
 
     modality: str = "*"
@@ -218,6 +218,31 @@ class RateRuleConfig(_StrictBase):
     markup: float | None = Field(default=None, gt=0)
     fixed: float | None = Field(default=None, ge=0)
     unit: str | None = None
+
+    @model_validator(mode="after")
+    def _check_kind(self) -> RateRuleConfig:
+        """Reject ambiguous or incomplete rules at config-load time.
+
+        Without this the errors only surface later as a raw ``ValueError``
+        inside ``RateCard.from_config`` (at gateway construction or on
+        ``GET /v1/billing/rate-card``), bypassing the friendly ``ConfigError``.
+        """
+        from voicegateway.billing.rate_card import VALID_UNITS
+
+        if self.fixed is not None:
+            if self.markup is not None:
+                raise ValueError(
+                    "a rate rule sets either 'markup' (cost-plus) or 'fixed' "
+                    "($/unit), not both"
+                )
+            if self.unit not in VALID_UNITS:
+                raise ValueError(
+                    "a fixed rate rule needs a valid 'unit' (one of "
+                    f"{sorted(VALID_UNITS)})"
+                )
+        elif self.unit is not None:
+            raise ValueError("'unit' is only valid on a fixed rule (set 'fixed')")
+        return self
 
 
 class RateCardConfig(_StrictBase):

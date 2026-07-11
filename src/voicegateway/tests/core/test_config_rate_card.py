@@ -66,6 +66,53 @@ def test_rate_card_rule_with_unknown_key_is_rejected(tmp_path) -> None:
         GatewayConfig.load(cfg_path)
 
 
+def test_fixed_rule_without_valid_unit_is_rejected(tmp_path) -> None:
+    # A fixed rule with a missing/invalid unit must fail at config load as a
+    # ConfigError, not crash later inside RateCard.from_config.
+    cfg_path = _write(
+        tmp_path,
+        {
+            "cost_tracking": {"enabled": False},
+            "rate_card": {"rules": [{"provider": "deepgram", "fixed": 0.006}]},
+        },
+    )
+    with pytest.raises(ConfigError):
+        GatewayConfig.load(cfg_path)
+
+    bad_unit = _write(
+        tmp_path,
+        {
+            "cost_tracking": {"enabled": False},
+            "rate_card": {
+                "rules": [{"provider": "deepgram", "fixed": 0.006, "unit": "furlong"}]
+            },
+        },
+    )
+    with pytest.raises(ConfigError):
+        GatewayConfig.load(bad_unit)
+
+
+def test_rule_with_both_markup_and_fixed_is_rejected(tmp_path) -> None:
+    cfg_path = _write(
+        tmp_path,
+        {
+            "cost_tracking": {"enabled": False},
+            "rate_card": {
+                "rules": [
+                    {
+                        "provider": "deepgram",
+                        "markup": 1.5,
+                        "fixed": 0.006,
+                        "unit": "minute",
+                    }
+                ]
+            },
+        },
+    )
+    with pytest.raises(ConfigError):
+        GatewayConfig.load(cfg_path)
+
+
 def test_gateway_wires_rate_card_into_cost_tracker(tmp_path) -> None:
     """A gateway built with a rate_card rates each record with that card."""
     cfg_path = _write(
