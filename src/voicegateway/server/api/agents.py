@@ -31,6 +31,13 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 logger = logging.getLogger(__name__)
 
 
+def _memory_pct(rss: int | None, total: int | None) -> float | None:
+    """RSS as a percentage of the memory ceiling (None when unavailable)."""
+    if not rss or not total:
+        return None
+    return round(rss / total * 100, 1)
+
+
 @router.post(
     "/heartbeat",
     status_code=202,
@@ -139,6 +146,9 @@ async def list_agents(
                 "status": row.status,
                 "started_at": row.started_at,
                 "last_seen": row.last_seen,
+                "memory_rss_bytes": row.memory_rss_bytes,
+                "memory_total_bytes": row.memory_total_bytes,
+                "memory_pct": _memory_pct(row.memory_rss_bytes, row.memory_total_bytes),
             }
             for row in roster
         ]

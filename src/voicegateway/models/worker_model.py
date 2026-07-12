@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import BigInteger, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -34,3 +34,5 @@ class Worker(SQLModel, table=True):
     status: str = "idle"
     started_at: float | None
     last_seen: float
+    memory_rss_bytes: int | None = Field(default=None, sa_type=BigInteger)
+    memory_total_bytes: int | None = Field(default=None, sa_type=BigInteger)

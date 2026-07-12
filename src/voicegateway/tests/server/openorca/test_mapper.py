@@ -41,6 +41,8 @@ def _row(**overrides: Any) -> RosterRow:
         "status": "busy",
         "started_at": None,
         "last_seen": 1000.0,
+        "memory_rss_bytes": None,
+        "memory_total_bytes": None,
     }
     base.update(overrides)
     return RosterRow(**base)

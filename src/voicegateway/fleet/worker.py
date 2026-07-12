@@ -48,6 +48,9 @@ class _Worker:
         return "busy" if self.active_sessions > 0 else "idle"
 
     def presence(self) -> dict[str, Any]:
+        from voicegateway.fleet.resource import sample_memory
+
+        rss, total = sample_memory()
         return {
             "agent_id": self.agent_id,
             "agent_name": self.agent_name,
@@ -59,6 +62,8 @@ class _Worker:
             "region": self.region,
             "host": self.host,
             "started_at": self.started_at,
+            "memory_rss_bytes": rss,
+            "memory_total_bytes": total,
             "ts": time.time(),
         }
 
