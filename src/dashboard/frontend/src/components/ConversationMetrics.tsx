@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import DeadAirList from './DeadAirList';
-import FilterBar, { useTenantFilter, useAgentFilter } from './FilterBar';
+import { useTenantFilter, useAgentFilter } from './FilterBar';
 import PerMinuteCostCard from './PerMinuteCostCard';
 import ResponseSpeedChart from './ResponseSpeedChart';
 import TalkOverChart from './TalkOverChart';
@@ -41,8 +41,6 @@ export default function ConversationMetrics() {
 
   return (
     <div>
-      <FilterBar />
-
       <div className="vg-card mb-lg">
         <div className="flex-row flex-wrap" style={{ gap: 20, alignItems: 'flex-end' }}>
           <div>

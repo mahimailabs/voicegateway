@@ -268,10 +268,10 @@ function SessionDetailModal({
         className="neo-modal"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="session-detail-title"
+        aria-labelledby="call-detail-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 id="session-detail-title">Session detail</h3>
+        <h3 id="call-detail-title">Call detail</h3>
         <div className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
           <span className="mono" style={{ fontSize: 13 }}>{session.id}</span>
           <button

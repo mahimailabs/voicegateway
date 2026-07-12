@@ -24,9 +24,8 @@ interface Props {
  *   - any other string   → that tenant
  *
  * Pages read the same param to scope their data fetches. This is how
- * the per-tenant view persists across navigation (Costs → Sessions →
- * Metrics → Replay all see the same scope as long as the URL carries
- * the param).
+ * the per-tenant view persists across navigation (Costs / Calls / Replay
+ * all see the same scope as long as the URL carries the param).
  *
  * Project + time-range filters are intentionally page-owned slots:
  * the Costs page wants today/week/month/all, Sessions has a different
