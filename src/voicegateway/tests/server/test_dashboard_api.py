@@ -331,17 +331,6 @@ async def test_api_latency(client):
     assert resp.status_code == 200
 
 
-async def test_api_logs(client):
-    resp = await client.get("/api/logs")
-    assert resp.status_code == 200
-    assert resp.json() == []
-
-
-async def test_api_logs_with_modality(client):
-    resp = await client.get("/api/logs?modality=stt")
-    assert resp.status_code == 200
-
-
 async def test_api_overview(client):
     resp = await client.get("/api/overview")
     assert resp.status_code == 200

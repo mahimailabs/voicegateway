@@ -55,12 +55,6 @@ def test_latency_returns_empty_dict_when_storage_disabled(storage_disabled_clien
     assert resp.json() == {}
 
 
-def test_logs_returns_empty_list_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.get("/api/logs")
-    assert resp.status_code == 200
-    assert resp.json() == []
-
-
 def test_overview_returns_zero_counts_when_storage_disabled(storage_disabled_client):
     resp = storage_disabled_client.get("/api/overview")
     assert resp.status_code == 200

@@ -108,7 +108,7 @@ import type {
  * convention. ``null`` is "no filter" (param not set); ``""`` is the
  * unattributed bucket (param set to empty string); any other value is
  * that exact tenant. Matches the backend's ``tenant`` query parsing on
- * /api/costs, /api/latency, /api/logs, /api/sessions, and /api/metrics.
+ * /api/costs, /api/latency, /api/sessions, and /api/metrics.
  */
 export function appendTenantParam(
   params: URLSearchParams,

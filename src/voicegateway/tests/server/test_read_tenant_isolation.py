@@ -35,7 +35,6 @@ _READ_PATHS = [
     "/api/sessions",
     "/api/costs",
     "/api/latency",
-    "/api/logs",
     "/api/metrics",
 ]
 
@@ -166,17 +165,6 @@ async def test_omitted_param_scopes_to_own_tenant_sessions(harness):
     ids = {r["id"] for r in resp.json()}
     assert ids == {"s-acme-1", "s-acme-2"}
     assert "s-beta-1" not in ids
-
-
-async def test_omitted_param_scopes_to_own_tenant_logs(harness):
-    """No tenant param -> acme key sees only acme request logs, never beta."""
-    token = await _make_key(harness.gateway, tenant_id="acme")
-    async with harness.client() as c:
-        resp = await c.get("/api/logs", headers={"Authorization": f"Bearer {token}"})
-    assert resp.status_code == 200, resp.text
-    sessions = {r["session_id"] for r in resp.json()}
-    assert sessions == {"s-acme-1", "s-acme-2"}
-    assert "s-beta-1" not in sessions
 
 
 async def test_no_credential_operator_sees_all(harness):
