@@ -104,7 +104,8 @@ async def list_agents_endpoint(
     }
     return {
         "agents": [
-            _agent_entry(r, memory_by_agent.get(r.agent_id)) for r in rows
+            _agent_entry(r, memory_by_agent.get(r.agent_id) if r.agent_id else None)
+            for r in rows
         ],
         "unattributed": _unattributed_entry(unattributed),
     }
