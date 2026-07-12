@@ -62,13 +62,7 @@ from voicegateway.server.api.dashboard import (
     projects as dashboard_projects,
 )
 from voicegateway.server.api.dashboard import (
-    providers_by_project as dashboard_providers_by_project,
-)
-from voicegateway.server.api.dashboard import (
     replay as dashboard_replay,
-)
-from voicegateway.server.api.dashboard import (
-    routing as dashboard_routing,
 )
 from voicegateway.server.api.dashboard import (
     sessions as dashboard_sessions,
@@ -108,11 +102,9 @@ dashboard_router.include_router(dashboard_projects.router)
 dashboard_router.include_router(dashboard_sessions.router)
 dashboard_router.include_router(dashboard_metrics.router)
 dashboard_router.include_router(dashboard_replay.router)
-dashboard_router.include_router(dashboard_providers_by_project.router)
 dashboard_router.include_router(dashboard_tenants.router)
 dashboard_router.include_router(dashboard_agents.router)
 dashboard_router.include_router(dashboard_api_keys.router)
-dashboard_router.include_router(dashboard_routing.router)
 dashboard_router.include_router(dashboard_branding.router)
 
 

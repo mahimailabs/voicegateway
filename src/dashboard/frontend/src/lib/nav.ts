@@ -25,9 +25,6 @@ export const NAV: NavEntry[] = [
   {
     group: 'Configure',
     items: [
-      { to: '/providers', label: 'Providers', id: 'providers' },
-      { to: '/models', label: 'Models', id: 'models' },
-      { to: '/routing', label: 'Routing', id: 'routing' },
       { to: '/projects', label: 'Projects', id: 'projects' },
       { to: '/rate-card', label: 'Rate card', id: 'ratecard' },
     ],

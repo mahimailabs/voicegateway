@@ -237,6 +237,8 @@ export interface AgentRow {
   /** RSS as a percent of the worker's memory ceiling, merged from the live
    * roster; null when the agent is not a heartbeating worker or sent no sample. */
   memory_pct?: number | null;
+  /** Last-seen model per modality, from /api/agents; a modality is null when unseen. */
+  models?: { stt: string | null; llm: string | null; tts: string | null };
 }
 
 /** Aggregates for the implicit `agent_id IS NULL` bucket. */
@@ -296,25 +298,6 @@ export interface RoutedTriple {
   tts: string;
   predicted_ms: number;
   budget_overrun: boolean;
-}
-
-/** One row from the ``latency_observations`` rollup. */
-export interface LatencyObservation {
-  project_id: string;
-  provider: string;
-  modality: 'stt' | 'llm' | 'tts';
-  p50_ms: number | null;
-  p95_ms: number | null;
-  sample_count: number;
-  window_start: string;
-  window_end: string;
-  refreshed_at: string;
-}
-
-/** ``GET /api/routing/observations`` response. */
-export interface RoutingObservationsResponse {
-  observations: LatencyObservation[];
-  filter: { project: string | null };
 }
 
 /** White-label branding payload (REQ-VG-ROUTE-004). All fields optional. */

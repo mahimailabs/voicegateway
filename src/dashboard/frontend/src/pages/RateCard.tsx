@@ -25,6 +25,20 @@ interface DbRule extends EffectiveRule {
   updated_at: number;
 }
 
+interface ModelRow {
+  modality: string;
+  provider: string;
+  model: string;
+  unit: string | null;
+  voice_price_usd: number | null;
+  effective: {
+    kind: string;
+    markup: number | null;
+    unit_price_usd: number | null;
+    unit: string | null;
+  } | null;
+}
+
 function scopeLabel(r: {
   tenant: string | null;
   plan: string | null;
@@ -56,7 +70,13 @@ export default function RateCard() {
   const [defaultMarkup, setDefaultMarkup] = useState<number | null>(null);
   const [effective, setEffective] = useState<EffectiveRule[]>([]);
   const [dbRules, setDbRules] = useState<DbRule[]>([]);
+  const [models, setModels] = useState<ModelRow[]>([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [overrideTarget, setOverrideTarget] = useState<{
+    modality: string;
+    provider: string;
+    model: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = () => {
@@ -72,6 +92,9 @@ export default function RateCard() {
     fetchJson<{ rules: DbRule[] }>('/v1/billing/rate-card/rules')
       .then((d) => setDbRules(d.rules))
       .catch(() => setDbRules([]));
+    fetchJson<{ models: ModelRow[] }>('/v1/billing/rate-card/models')
+      .then((d) => setModels(d.models))
+      .catch(() => setModels([]));
   };
 
   useEffect(refresh, []);
@@ -88,6 +111,17 @@ export default function RateCard() {
     }
   };
 
+  const handleOpenOverride = (row: ModelRow) => {
+    setOverrideTarget({ modality: row.modality, provider: row.provider, model: row.model });
+    setShowAdd(true);
+  };
+
+  const handleModalClose = () => {
+    setShowAdd(false);
+    setOverrideTarget(null);
+    refresh();
+  };
+
   return (
     <div>
       <PageHeader
@@ -101,7 +135,13 @@ export default function RateCard() {
         }
         accent="orange"
         actions={
-          <button className="neo-btn neo-btn--primary" onClick={() => setShowAdd(true)}>
+          <button
+            className="neo-btn neo-btn--primary"
+            onClick={() => {
+              setOverrideTarget(null);
+              setShowAdd(true);
+            }}
+          >
             + Add override
           </button>
         }
@@ -116,91 +156,65 @@ export default function RateCard() {
         </div>
       )}
 
+      {/* Models in use - default view */}
       <section className="vg-card mt-md">
-        <h3 style={{ color: 'var(--vg-ink)', marginBottom: 4 }}>Effective rate card</h3>
+        <h3 style={{ color: 'var(--vg-ink)', marginBottom: 4 }}>Models in use</h3>
         <p style={{ fontSize: 13, color: 'var(--vg-muted)', marginBottom: 16 }}>
-          The rules in effect right now: the <code>rate_card:</code> seed in{' '}
-          <code>voicegw.yaml</code> merged with the DB overrides below. A DB override
-          wins a tie against the seed rule at the same scope.
+          Every model seen in recorded calls. Click Override to set a fixed per-unit price
+          for a specific model without editing YAML.
         </p>
-        {effective.length === 0 ? (
+        {models.length === 0 ? (
           <div className="empty-state">
-            No rules. Every request bills at the default markup.
+            No call records yet. Models appear here once requests are recorded.
           </div>
         ) : (
           <table className="neo-table">
             <thead>
               <tr>
-                <th>Scope</th>
-                <th>Kind</th>
-                <th>Price</th>
-                <th>Rule</th>
+                <th>Modality</th>
+                <th>Model</th>
+                <th>voice-prices rate</th>
+                <th>Effective</th>
+                <th style={{ textAlign: 'right' }}>Action</th>
               </tr>
             </thead>
             <tbody>
-              {effective.map((r, i) => (
+              {models.map((row, i) => (
                 <tr key={i}>
-                  <td>{scopeLabel(r)}</td>
                   <td>
-                    <span
-                      className={`neo-badge ${
-                        r.kind === 'fixed' ? 'neo-badge--blue' : 'neo-badge--green'
-                      }`}
-                    >
-                      {r.kind}
-                    </span>
+                    <span className="neo-badge neo-badge--blue">{row.modality}</span>
                   </td>
-                  <td>{valueLabel(r)}</td>
-                  <td className="mono" style={{ fontSize: 12, color: 'var(--vg-muted)' }}>
-                    {r.rule}
+                  <td className="mono" style={{ fontSize: 13 }}>
+                    {row.model}
                   </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section className="vg-card mt-md">
-        <h3 style={{ color: 'var(--vg-ink)', marginBottom: 4 }}>DB overrides</h3>
-        <p style={{ fontSize: 13, color: 'var(--vg-muted)', marginBottom: 16 }}>
-          Database-persisted rules you can edit here. One rule per scope. Changes take
-          effect on the next config refresh.
-        </p>
-        {dbRules.length === 0 ? (
-          <div className="empty-state">
-            No overrides yet. Add one to change rates without editing YAML.
-          </div>
-        ) : (
-          <table className="neo-table">
-            <thead>
-              <tr>
-                <th>Scope</th>
-                <th>Kind</th>
-                <th>Price</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dbRules.map((r) => (
-                <tr key={r.rule_id}>
-                  <td>{scopeLabel(r)}</td>
-                  <td>
-                    <span
-                      className={`neo-badge ${
-                        r.kind === 'fixed' ? 'neo-badge--blue' : 'neo-badge--green'
-                      }`}
-                    >
-                      {r.kind}
-                    </span>
+                  <td style={{ fontSize: 13 }}>
+                    {row.voice_price_usd === null
+                      ? 'not in catalog'
+                      : `$${row.voice_price_usd.toLocaleString(undefined, {
+                          maximumFractionDigits: 6,
+                        })} / ${row.unit}`}
                   </td>
-                  <td>{valueLabel(r)}</td>
+                  <td style={{ fontSize: 13 }}>
+                    {row.effective === null ? (
+                      <span style={{ color: 'var(--vg-muted)' }}>default markup</span>
+                    ) : (
+                      <span
+                        className={`neo-badge ${
+                          row.effective.kind === 'fixed'
+                            ? 'neo-badge--blue'
+                            : 'neo-badge--green'
+                        }`}
+                      >
+                        {valueLabel(row.effective)}
+                      </span>
+                    )}
+                  </td>
                   <td style={{ textAlign: 'right' }}>
                     <button
-                      className="neo-btn neo-btn--sm neo-btn--danger"
-                      onClick={() => handleDelete(r)}
+                      className="neo-btn neo-btn--sm"
+                      onClick={() => handleOpenOverride(row)}
                     >
-                      Delete
+                      Override
                     </button>
                   </td>
                 </tr>
@@ -210,12 +224,123 @@ export default function RateCard() {
         )}
       </section>
 
+      {/* Advanced: existing rule tables */}
+      <details style={{ marginTop: 24 }}>
+        <summary
+          style={{
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontSize: 14,
+            color: 'var(--vg-muted)',
+            userSelect: 'none',
+            marginBottom: 8,
+          }}
+        >
+          Advanced
+        </summary>
+
+        <section className="vg-card mt-md">
+          <h3 style={{ color: 'var(--vg-ink)', marginBottom: 4 }}>Effective rate card</h3>
+          <p style={{ fontSize: 13, color: 'var(--vg-muted)', marginBottom: 16 }}>
+            The rules in effect right now: the <code>rate_card:</code> seed in{' '}
+            <code>voicegw.yaml</code> merged with the DB overrides below. A DB override
+            wins a tie against the seed rule at the same scope.
+          </p>
+          {effective.length === 0 ? (
+            <div className="empty-state">
+              No rules. Every request bills at the default markup.
+            </div>
+          ) : (
+            <table className="neo-table">
+              <thead>
+                <tr>
+                  <th>Scope</th>
+                  <th>Kind</th>
+                  <th>Price</th>
+                  <th>Rule</th>
+                </tr>
+              </thead>
+              <tbody>
+                {effective.map((r, i) => (
+                  <tr key={i}>
+                    <td>{scopeLabel(r)}</td>
+                    <td>
+                      <span
+                        className={`neo-badge ${
+                          r.kind === 'fixed' ? 'neo-badge--blue' : 'neo-badge--green'
+                        }`}
+                      >
+                        {r.kind}
+                      </span>
+                    </td>
+                    <td>{valueLabel(r)}</td>
+                    <td className="mono" style={{ fontSize: 12, color: 'var(--vg-muted)' }}>
+                      {r.rule}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+
+        <section className="vg-card mt-md">
+          <h3 style={{ color: 'var(--vg-ink)', marginBottom: 4 }}>DB overrides</h3>
+          <p style={{ fontSize: 13, color: 'var(--vg-muted)', marginBottom: 16 }}>
+            Database-persisted rules you can edit here. One rule per scope. Changes take
+            effect on the next config refresh.
+          </p>
+          {dbRules.length === 0 ? (
+            <div className="empty-state">
+              No overrides yet. Add one to change rates without editing YAML.
+            </div>
+          ) : (
+            <table className="neo-table">
+              <thead>
+                <tr>
+                  <th>Scope</th>
+                  <th>Kind</th>
+                  <th>Price</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dbRules.map((r) => (
+                  <tr key={r.rule_id}>
+                    <td>{scopeLabel(r)}</td>
+                    <td>
+                      <span
+                        className={`neo-badge ${
+                          r.kind === 'fixed' ? 'neo-badge--blue' : 'neo-badge--green'
+                        }`}
+                      >
+                        {r.kind}
+                      </span>
+                    </td>
+                    <td>{valueLabel(r)}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <button
+                        className="neo-btn neo-btn--sm neo-btn--danger"
+                        onClick={() => handleDelete(r)}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      </details>
+
       {showAdd && (
         <AddOverrideModal
-          onClose={() => {
-            setShowAdd(false);
-            refresh();
-          }}
+          onClose={handleModalClose}
+          initialModality={overrideTarget?.modality}
+          initialProvider={overrideTarget?.provider}
+          initialModel={overrideTarget?.model}
+          initialKind={overrideTarget ? 'fixed' : undefined}
         />
       )}
     </div>
@@ -233,11 +358,25 @@ const UNITS = [
   'request',
 ];
 
-function AddOverrideModal({ onClose }: { onClose: () => void }) {
-  const [kind, setKind] = useState<'cost_plus' | 'fixed'>('cost_plus');
-  const [modality, setModality] = useState('*');
-  const [provider, setProvider] = useState('*');
-  const [model, setModel] = useState('*');
+interface AddOverrideModalProps {
+  onClose: () => void;
+  initialModality?: string;
+  initialProvider?: string;
+  initialModel?: string;
+  initialKind?: 'cost_plus' | 'fixed';
+}
+
+function AddOverrideModal({
+  onClose,
+  initialModality,
+  initialProvider,
+  initialModel,
+  initialKind,
+}: AddOverrideModalProps) {
+  const [kind, setKind] = useState<'cost_plus' | 'fixed'>(initialKind ?? 'cost_plus');
+  const [modality, setModality] = useState(initialModality ?? '*');
+  const [provider, setProvider] = useState(initialProvider ?? '*');
+  const [model, setModel] = useState(initialModel ?? '*');
   const [tenant, setTenant] = useState('');
   const [plan, setPlan] = useState('');
   const [markup, setMarkup] = useState('1.3');
@@ -437,7 +576,7 @@ function AddOverrideModal({ onClose }: { onClose: () => void }) {
             Cancel
           </button>
           <button className="neo-btn neo-btn--primary" onClick={save} disabled={saving}>
-            {saving ? 'Saving…' : 'Add override'}
+            {saving ? 'Saving...' : 'Add override'}
           </button>
         </div>
       </div>

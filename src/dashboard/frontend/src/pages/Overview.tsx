@@ -133,7 +133,6 @@ export default function Overview() {
           <div className="vg-card__label" style={{ marginBottom: 12 }}>Quick Actions</div>
           <div className="flex-row flex-wrap" style={{ gap: 8 }}>
             <Link className="neo-btn neo-btn--primary" to="/costs">View Costs</Link>
-            <Link className="neo-btn" to="/models">View Models</Link>
             <Link className="neo-btn" to="/agents">View Agents</Link>
           </div>
         </div>

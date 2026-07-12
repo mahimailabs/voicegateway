@@ -111,7 +111,18 @@ export default function Agents() {
             <thead>
               <tr>
                 <th>Status</th>
-                {COLUMNS.map((c) => (
+                {COLUMNS.slice(0, 1).map((c) => (
+                  <th
+                    key={c.key}
+                    onClick={() => onSort(c.key)}
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    {c.label}
+                    {sortKey === c.key ? (sortAsc ? ' ▲' : ' ▼') : ''}
+                  </th>
+                ))}
+                <th>Stack</th>
+                {COLUMNS.slice(1).map((c) => (
                   <th
                     key={c.key}
                     onClick={() => onSort(c.key)}
@@ -137,6 +148,20 @@ export default function Agents() {
                       <Link to={`/costs?agent=${encodeURIComponent(a.agent_id)}`}>
                         {a.agent_id}
                       </Link>
+                    </td>
+                    <td>
+                      <div className="flex-row gap-sm" style={{ flexWrap: 'wrap' }}>
+                        {(['stt', 'llm', 'tts'] as const).map((m) => {
+                          const model = a.models?.[m] ?? null;
+                          return (
+                            <span key={m} className="neo-badge neo-badge--black"
+                                  title={model ? `${m.toUpperCase()}: ${model}` : `${m.toUpperCase()}: unknown`}
+                                  style={{ opacity: model ? 1 : 0.4 }}>
+                              {model ? model.split('/').pop() : '-'}
+                            </span>
+                          );
+                        })}
+                      </div>
                     </td>
                     <td>{formatRelativeTime(a.last_seen)}</td>
                     <td className="mono">{formatCost(a.total_cost_usd, 4)}</td>

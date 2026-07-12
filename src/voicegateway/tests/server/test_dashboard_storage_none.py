@@ -155,15 +155,6 @@ def test_api_keys_revoke_returns_503_when_storage_disabled(storage_disabled_clie
     assert resp.status_code == 503
 
 
-def test_routing_observations_returns_empty_when_storage_disabled(
-    storage_disabled_client,
-):
-    resp = storage_disabled_client.get("/api/routing/observations")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["observations"] == []
-
-
 def test_branding_get_returns_503_when_storage_disabled(storage_disabled_client):
     resp = storage_disabled_client.get("/api/projects/anything/branding")
     assert resp.status_code == 503
