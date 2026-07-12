@@ -321,4 +321,34 @@ export interface LogoUploadResponse {
   format: 'PNG' | 'SVG';
 }
 
+// ---------------------------------------------------------------------------
+// Diagnostics: LiveKit probe types (REQ-VG-DIAG-001).
+// ---------------------------------------------------------------------------
+
+/** Connection status from GET /api/diagnostics/creds. */
+export interface DiagnosticsCreds {
+  configured: boolean;
+  url: string | null;
+}
+
+/** Per-check result inside a DiagnosticRun's results map. */
+export interface DiagnosticCheckResult {
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+}
+
+/** One diagnostic run record from the backend. */
+export interface DiagnosticRun {
+  run_id: string;
+  status: 'queued' | 'running' | 'done' | 'failed';
+  checks: string[];
+  config: Record<string, unknown>;
+  results: { checks: Record<string, DiagnosticCheckResult>; verdict: string } | null;
+  verdict: string | null;
+  error: string | null;
+  created_at: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+}
 

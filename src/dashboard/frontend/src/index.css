@@ -461,6 +461,7 @@ a:hover { color: var(--vg-teal-deep); }
 .neo-badge--latency-fast { background: var(--vg-green-tint); color: var(--vg-green); }
 .neo-badge--offline,
 .neo-badge--pink,
+.neo-badge--red,
 .neo-badge--latency-slow { background: var(--vg-red-tint); color: var(--vg-red); }
 .neo-badge--warning,
 .neo-badge--yellow,
