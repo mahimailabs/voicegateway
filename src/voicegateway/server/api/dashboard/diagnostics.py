@@ -5,6 +5,11 @@ Single local vantage: creds come from env / voicegw.yaml via resolve_creds
 runs live in a process-local dict (ephemeral, lost on restart). The engine
 probes are imported lazily inside livekit_diag.service so a missing livekit
 dependency degrades to a failed check, never a dead dashboard.
+
+Every endpoint is gated behind require_scope(ADMIN_SCOPE): a run can place
+billed calls and touch shared LiveKit infrastructure, so it needs the admin
+role. That gate is a no-op when no API keys are configured (the local
+single-operator default), and enforces the admin scope once auth is enabled.
 """
 
 from __future__ import annotations
@@ -18,9 +23,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from voicegateway.core.auth import ADMIN_SCOPE
 from voicegateway.livekit_diag import service
 from voicegateway.livekit_diag.config import CredsError, resolve_creds
-from voicegateway.server.api._deps import get_gateway
+from voicegateway.server.api._deps import require_scope
 
 router = APIRouter(prefix="/diagnostics", tags=["dashboard"])
 
@@ -120,7 +126,7 @@ class _RunRequest(BaseModel):
 
 @router.get("/creds")
 async def get_creds(
-    _gw: Any = Depends(get_gateway),
+    _auth: None = Depends(require_scope(ADMIN_SCOPE)),
 ) -> dict[str, Any]:
     """Return whether LiveKit credentials are configured and the server URL."""
     try:
@@ -133,7 +139,7 @@ async def get_creds(
 @router.post("/runs")
 async def create_run(
     body: _RunRequest,
-    _gw: Any = Depends(get_gateway),
+    _auth: None = Depends(require_scope(ADMIN_SCOPE)),
 ) -> dict[str, Any]:
     """Start a new diagnostics run. Returns 400 when not configured or checks invalid,
     409 when another run is already active."""
@@ -185,7 +191,7 @@ async def create_run(
 @router.get("/runs/{run_id}")
 async def get_run(
     run_id: str,
-    _gw: Any = Depends(get_gateway),
+    _auth: None = Depends(require_scope(ADMIN_SCOPE)),
 ) -> dict[str, Any]:
     """Return a single run record by id, or 404."""
     run = _RUNS.get(run_id)
@@ -196,7 +202,7 @@ async def get_run(
 
 @router.get("/runs")
 async def list_runs(
-    _gw: Any = Depends(get_gateway),
+    _auth: None = Depends(require_scope(ADMIN_SCOPE)),
 ) -> list[dict[str, Any]]:
     """Return the run history, newest first, capped at 20."""
     return [_as_dict(_RUNS[r]) for r in reversed(_ORDER)]
