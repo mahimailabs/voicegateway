@@ -25,9 +25,11 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column("workers", sa.Column("memory_rss_bytes", sa.Integer(), nullable=True))
     op.add_column(
-        "workers", sa.Column("memory_total_bytes", sa.Integer(), nullable=True)
+        "workers", sa.Column("memory_rss_bytes", sa.BigInteger(), nullable=True)
+    )
+    op.add_column(
+        "workers", sa.Column("memory_total_bytes", sa.BigInteger(), nullable=True)
     )
 
 
