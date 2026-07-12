@@ -3,8 +3,6 @@ import PageHeader from '../components/PageHeader';
 import SourceBadge from '../components/SourceBadge';
 import { fetchJson } from '../lib/api';
 import Projects from './Projects';
-import Providers from './Providers';
-import Routing from './Routing';
 import ApiKeys from './ApiKeys';
 
 interface AuditEntry {
@@ -17,17 +15,17 @@ interface AuditEntry {
   source: string;
 }
 
-const TABS = ['Providers', 'API Keys', 'Projects', 'Routing', 'Models', 'General', 'Audit Log'] as const;
+const TABS = ['API Keys', 'Projects', 'General', 'Audit Log'] as const;
 type Tab = (typeof TABS)[number];
 
 export default function Settings({ tab: initialTab }: { tab?: string }) {
   const [activeTab, setActiveTab] = useState<Tab>(
-    initialTab === 'audit' ? 'Audit Log' : 'Providers'
+    initialTab === 'audit' ? 'Audit Log' : 'API Keys'
   );
 
   return (
     <div>
-      <PageHeader title="Settings" subtitle="Manage providers, models, and configuration" accent="pink" />
+      <PageHeader title="Settings" subtitle="Manage projects and configuration" accent="pink" />
 
       <div className="neo-tabs">
         {TABS.map((t) => (
@@ -41,64 +39,10 @@ export default function Settings({ tab: initialTab }: { tab?: string }) {
         ))}
       </div>
 
-      {activeTab === 'Providers' && <Providers />}
       {activeTab === 'API Keys' && <ApiKeys />}
       {activeTab === 'Projects' && <Projects />}
-      {activeTab === 'Routing' && <Routing />}
-      {activeTab === 'Models' && <ModelsTab />}
       {activeTab === 'General' && <GeneralTab />}
       {activeTab === 'Audit Log' && <AuditLogTab />}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Models Tab
-// ---------------------------------------------------------------------------
-
-interface ModelRow {
-  model_id: string;
-  modality: string;
-  provider: string;
-}
-
-function ModelsTab() {
-  const [models, setModels] = useState<Record<string, ModelRow>>({});
-
-  useEffect(() => {
-    fetchJson<{ providers: Record<string, unknown>; models: Record<string, ModelRow> }>('/api/status')
-      .then(d => setModels(d.models));
-  }, []);
-
-  const byModality: Record<string, [string, ModelRow][]> = {};
-  for (const [id, m] of Object.entries(models)) {
-    (byModality[m.modality] ??= []).push([id, m]);
-  }
-
-  return (
-    <div className="mt-lg">
-      {['stt', 'llm', 'tts'].map((mod) => (
-        <div key={mod} className="mb-lg">
-          <h3>{mod.toUpperCase()} Models</h3>
-          <table className="neo-table neo-table--pink">
-            <thead>
-              <tr><th>Model ID</th><th>Provider</th><th>Status</th></tr>
-            </thead>
-            <tbody>
-              {(byModality[mod] || []).map(([id, m]) => (
-                <tr key={id}>
-                  <td className="mono">{id}</td>
-                  <td><span className="neo-badge neo-badge--blue">{m.provider}</span></td>
-                  <td><span className="neo-badge neo-badge--online">Active</span></td>
-                </tr>
-              ))}
-              {(!byModality[mod] || byModality[mod].length === 0) && (
-                <tr><td colSpan={3} className="empty-state">No {mod.toUpperCase()} models</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      ))}
     </div>
   );
 }
