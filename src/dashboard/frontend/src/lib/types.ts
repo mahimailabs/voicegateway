@@ -237,6 +237,8 @@ export interface AgentRow {
   /** RSS as a percent of the worker's memory ceiling, merged from the live
    * roster; null when the agent is not a heartbeating worker or sent no sample. */
   memory_pct?: number | null;
+  /** Last-seen model per modality, from /api/agents; a modality is null when unseen. */
+  models?: { stt: string | null; llm: string | null; tts: string | null };
 }
 
 /** Aggregates for the implicit `agent_id IS NULL` bucket. */
