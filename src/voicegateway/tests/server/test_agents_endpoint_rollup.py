@@ -128,3 +128,61 @@ async def test_detail_is_all_time_from_requests(tmp_path, monkeypatch) -> None:
     async with _client(gw) as c:
         detail = (await c.get("/api/agents/agent-a")).json()
     assert detail["request_count"] == 2  # from requests, not the rollup's 99
+
+
+async def _insert_worker(gw: Gateway, **cols) -> None:
+    await gw.storage._ensure_initialized()
+    keys = ", ".join(cols)
+    vals = ", ".join(f":{k}" for k in cols)
+    async with gw.storage._conn.session() as db:
+        await db.execute(
+            text(f"INSERT INTO workers ({keys}) VALUES ({vals})"), cols
+        )
+        await db.commit()
+
+
+async def test_list_merges_worker_memory_pct(tmp_path, monkeypatch) -> None:
+    gw = _gateway(tmp_path, monkeypatch)
+    await _insert_obs(
+        gw,
+        agent_id="mem-agent",
+        request_count=1,
+        total_cost_usd=0.0,
+        error_count=0,
+        last_seen=1000.0,
+        window_start="ws",
+        window_end="we",
+    )
+    # A live worker row: RSS 1 GiB of a 4 GiB ceiling -> 25.0%.
+    await _insert_worker(
+        gw,
+        agent_id="mem-agent",
+        agent_name="mem-agent",
+        last_seen=1000.0,
+        memory_rss_bytes=1073741824,
+        memory_total_bytes=4294967296,
+    )
+    async with _client(gw) as c:
+        data = (await c.get("/api/agents")).json()
+    entry = next(x for x in data["agents"] if x["agent_id"] == "mem-agent")
+    assert entry["memory_pct"] == 25.0
+
+
+async def test_list_memory_pct_null_when_no_worker(tmp_path, monkeypatch) -> None:
+    gw = _gateway(tmp_path, monkeypatch)
+    # An agent seen in telemetry but with no heartbeating worker row: the field
+    # is present and null, never absent.
+    await _insert_obs(
+        gw,
+        agent_id="rollup-only",
+        request_count=1,
+        total_cost_usd=0.0,
+        error_count=0,
+        last_seen=1000.0,
+        window_start="ws",
+        window_end="we",
+    )
+    async with _client(gw) as c:
+        data = (await c.get("/api/agents")).json()
+    entry = next(x for x in data["agents"] if x["agent_id"] == "rollup-only")
+    assert entry["memory_pct"] is None

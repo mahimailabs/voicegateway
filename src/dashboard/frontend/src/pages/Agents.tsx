@@ -17,7 +17,8 @@ type SortKey =
   | 'total_cost_usd'
   | 'request_count'
   | 'p95_latency_ms'
-  | 'error_rate';
+  | 'error_rate'
+  | 'memory_pct';
 
 const COLUMNS: { key: SortKey; label: string }[] = [
   { key: 'agent_id', label: 'Agent' },
@@ -26,7 +27,15 @@ const COLUMNS: { key: SortKey; label: string }[] = [
   { key: 'request_count', label: 'Requests (24h)' },
   { key: 'p95_latency_ms', label: 'p95 (24h)' },
   { key: 'error_rate', label: 'Error rate (24h)' },
+  { key: 'memory_pct', label: 'Memory' },
 ];
+
+/** Bar color for a memory-headroom reading: teal healthy, amber warm, red tight. */
+function memoryBarColor(pct: number): string {
+  if (pct >= 90) return '#dc2626';
+  if (pct >= 75) return '#f59e0b';
+  return 'var(--vg-teal, #1F96AA)';
+}
 
 export default function Agents() {
   const [agents, setAgents] = useState<AgentRow[]>([]);
@@ -136,6 +145,42 @@ export default function Agents() {
                     </td>
                     <td className="mono">{formatMs(a.p95_latency_ms)}</td>
                     <td className="mono">{(a.error_rate * 100).toFixed(1)}%</td>
+                    <td>
+                      {a.memory_pct == null ? (
+                        <span className="mono" style={{ color: 'var(--vg-muted)' }}>
+                          -
+                        </span>
+                      ) : (
+                        <div
+                          className="flex-row gap-sm"
+                          style={{ alignItems: 'center' }}
+                          title={`RSS is ${a.memory_pct}% of this worker's memory ceiling`}
+                        >
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              width: 60,
+                              height: 6,
+                              borderRadius: 999,
+                              background: 'rgba(31,150,170,0.15)',
+                              overflow: 'hidden',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <span
+                              style={{
+                                display: 'block',
+                                width: `${Math.min(100, a.memory_pct)}%`,
+                                height: '100%',
+                                borderRadius: 999,
+                                background: memoryBarColor(a.memory_pct),
+                              }}
+                            />
+                          </span>
+                          <span className="mono">{a.memory_pct}%</span>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
