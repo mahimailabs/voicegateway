@@ -27,7 +27,7 @@ export default function TenantPill({ tenantId, asLink = false, onClick }: Props)
   if (asLink) {
     const search = new URLSearchParams({ tenant: tenantId ?? '' }).toString();
     return (
-      <Link className={cls} style={style} to={`/sessions?${search}`}>
+      <Link className={cls} style={style} to={`/calls?${search}`}>
         {label}
       </Link>
     );

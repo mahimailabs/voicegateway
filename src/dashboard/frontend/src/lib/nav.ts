@@ -17,9 +17,7 @@ export const NAV: NavEntry[] = [
       { to: '/agents', label: 'Agents', id: 'agents' },
       { to: '/costs', label: 'Costs', id: 'costs' },
       { to: '/latency', label: 'Latency', id: 'latency' },
-      { to: '/sessions', label: 'Sessions', id: 'sessions' },
-      { to: '/logs', label: 'Logs', id: 'logs' },
-      { to: '/metrics', label: 'Metrics', id: 'metrics' },
+      { to: '/calls', label: 'Calls', id: 'calls' },
     ],
   },
   {

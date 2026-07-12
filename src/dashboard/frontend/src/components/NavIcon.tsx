@@ -3,7 +3,7 @@
 
 const PATHS: Record<string, JSX.Element> = {
   overview: <><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></>,
-  sessions: <><path d="M3 5h18M3 12h18M3 19h18" /><circle cx="7" cy="5" r="0.5" /></>,
+  calls: <><path d="M3 5h18M3 12h18M3 19h18" /><circle cx="7" cy="5" r="0.5" /></>,
   logs: <><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" /></>,
   costs: <><circle cx="12" cy="12" r="9" /><path d="M12 7v10M9.5 9.5a2.5 2 0 0 1 5 0c0 1.4-5 1-5 2.8a2.5 2 0 0 0 5 0" /></>,
   latency: <><circle cx="12" cy="13" r="8" /><path d="M12 13V9M12 5V3M9 3h6" /></>,

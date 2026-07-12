@@ -21,7 +21,7 @@ export default function PreV030Banner({ sessionId }: Props) {
         This session predates v0.3.0 conversation-replay capture, so no
         event timeline is available. Cost, duration, and per-modality
         breakdown are still on the{' '}
-        <Link to={`/sessions/${encodeURIComponent(sessionId)}`}>
+        <Link to={`/calls/${encodeURIComponent(sessionId)}`}>
           session detail page
         </Link>
         .
