@@ -8,12 +8,15 @@ see the price book in effect, and edits the DB overrides through
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from voicegateway.billing.rate_card import RateCard
 from voicegateway.clickhouse import read_repository as ch_read
+from voicegateway.inference.pricing.catalog import calculate_cost
+from voicegateway.repository import request_log_repository
 from voicegateway.repository.cost_repository import resolve_window
 from voicegateway.server.api._deps import get_gateway, require_scope
 from voicegateway.server.api._helpers import parse_iso_date
@@ -190,3 +193,61 @@ async def delete_rate_card_rule(
     await gateway.storage.log_audit_event("rate_rule", rule_id, "delete", None, "api")
     await gateway.refresh_config()
     return {"rule_id": rule_id, "deleted": True}
+
+
+# Canonical unit and cost-calculation kwargs per modality for voice-prices display.
+# Each entry maps modality -> (unit_label, kwargs_for_one_unit_of_that_measure).
+_UNIT_QTY: dict[str, tuple[str, dict[str, Any]]] = {
+    "stt": ("minute", {"audio_seconds": 60.0}),
+    "tts": ("1k_char", {"character_count": 1000}),
+    "llm": ("1m_token", {"input_tokens": 1_000_000}),
+}
+
+
+def _voice_price(modality: str, model: str) -> float | None:
+    """Return the voice-prices unit cost for one canonical unit, or None."""
+    spec = _UNIT_QTY.get(modality)
+    if spec is None:
+        return None
+    cost: Decimal | None = calculate_cost(modality, model, **spec[1])
+    return float(cost) if cost is not None else None
+
+
+@router.get("/rate-card/models")
+async def rate_card_models(
+    gateway: Gateway = Depends(get_gateway),
+) -> dict[str, Any]:
+    """Distinct models seen in telemetry, each with voice-prices unit cost and effective rule.
+
+    Lets the operator spot stale prices and see which rate rule applies per model.
+    ``voice_price_usd`` is null when the model is not in the voice-prices catalog.
+    ``effective`` is the matching rate rule, or null when no explicit rule matches
+    (the default markup applies).
+    """
+    if gateway.storage is None:
+        return {"models": []}
+    await gateway.storage._ensure_initialized()
+    card = await _effective_card(gateway)
+    async with gateway.storage._conn.session() as db:
+        used = await request_log_repository.read_models_in_use(db)
+    out: list[dict[str, Any]] = []
+    for m in used:
+        rule = card.resolve(
+            modality=m["modality"],
+            provider=m["provider"],
+            model_id=m["model"],
+            tenant=None,
+            plan=None,
+        )
+        unit_label: str | None = _UNIT_QTY.get(m["modality"], (None, {}))[0]
+        out.append(
+            {
+                "modality": m["modality"],
+                "provider": m["provider"],
+                "model": m["model"],
+                "unit": unit_label,
+                "voice_price_usd": _voice_price(m["modality"], m["model"]),
+                "effective": _serialize_rule(rule) if rule is not None else None,
+            }
+        )
+    return {"models": out}

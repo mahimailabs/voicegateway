@@ -429,6 +429,30 @@ async def read_last_seen_models(
     return out
 
 
+async def read_models_in_use(session: AsyncSession) -> list[dict[str, str]]:
+    """Distinct (modality, provider, model_id) seen in requests, newest first."""
+    sql = text("""
+        SELECT modality, provider, model_id, MAX(timestamp) AS last_seen
+        FROM requests
+        GROUP BY modality, provider, model_id
+        ORDER BY last_seen DESC
+    """)
+    result = await session.execute(sql)
+    rows = []
+    for r in result.mappings():
+        model = r["model_id"]
+        if r["provider"] and "/" not in model:
+            model = f"{r['provider']}/{model}"
+        rows.append(
+            {
+                "modality": r["modality"],
+                "provider": r["provider"] or "",
+                "model": model,
+            }
+        )
+    return rows
+
+
 __all__ = [
     "get_audit_log",
     "get_recent_requests",
@@ -437,4 +461,5 @@ __all__ = [
     "log_audit_event",
     "log_request",
     "read_last_seen_models",
+    "read_models_in_use",
 ]

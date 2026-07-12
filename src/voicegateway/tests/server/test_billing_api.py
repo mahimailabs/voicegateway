@@ -8,6 +8,7 @@ from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
 from voicegateway.inference.session.context import reset_tenant_id, set_tenant
+from voicegateway.models.request_model import RequestRecord
 from voicegateway.server import build_app
 
 _CFG = {
@@ -147,3 +148,38 @@ async def test_delete_missing_rule_returns_404(gateway):
     async with client as c:
         r = await c.delete("/v1/billing/rate-card/rules/does-not-exist")
     assert r.status_code == 404
+
+
+async def test_rate_card_models_lists_price_and_override(gateway) -> None:
+    await gateway.storage._ensure_initialized()
+    async with gateway.storage._conn.session() as db:
+        from voicegateway.repository import request_log_repository as rlr
+        await rlr.log_request(
+            db,
+            RequestRecord(
+                id="r1",
+                timestamp=1.0,
+                modality="stt",
+                model_id="nova-3",
+                provider="deepgram",
+                project="default",
+                agent_id="a",
+            ),
+        )
+    client = await _client(gateway)
+    async with client as c:
+        await c.post(
+            "/v1/billing/rate-card/rules",
+            json={
+                "modality": "stt",
+                "provider": "deepgram",
+                "model": "deepgram/nova-3",
+                "fixed": 0.005,
+                "unit": "minute",
+            },
+        )
+        data = (await c.get("/v1/billing/rate-card/models")).json()
+    row = next(m for m in data["models"] if m["model"] == "deepgram/nova-3")
+    assert row["modality"] == "stt"
+    assert "voice_price_usd" in row
+    assert row["effective"]["kind"] == "fixed"
