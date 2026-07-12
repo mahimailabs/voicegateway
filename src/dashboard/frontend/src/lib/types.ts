@@ -300,25 +300,6 @@ export interface RoutedTriple {
   budget_overrun: boolean;
 }
 
-/** One row from the ``latency_observations`` rollup. */
-export interface LatencyObservation {
-  project_id: string;
-  provider: string;
-  modality: 'stt' | 'llm' | 'tts';
-  p50_ms: number | null;
-  p95_ms: number | null;
-  sample_count: number;
-  window_start: string;
-  window_end: string;
-  refreshed_at: string;
-}
-
-/** ``GET /api/routing/observations`` response. */
-export interface RoutingObservationsResponse {
-  observations: LatencyObservation[];
-  filter: { project: string | null };
-}
-
 /** White-label branding payload (REQ-VG-ROUTE-004). All fields optional. */
 export interface ProjectBranding {
   logo_url?: string | null;

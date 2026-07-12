@@ -97,7 +97,6 @@ import type {
   ProjectBrandingResponse,
   ReplayResponse,
   RetentionWindow,
-  RoutingObservationsResponse,
   TenantFilter,
   TenantRow,
   TenantsResponse,
@@ -260,17 +259,6 @@ export function revokeApiKey(
 // v0.5.0 cross-modality routing + white-label branding typed fetchers
 // (REQ-VG-ROUTE-001..004).
 // ----------------------------------------------------------------------
-
-export function fetchRoutingObservations(
-  options: { project?: string } = {},
-): Promise<RoutingObservationsResponse> {
-  const params = new URLSearchParams();
-  if (options.project) params.set('project', options.project);
-  const qs = params.toString();
-  return fetchJson<RoutingObservationsResponse>(
-    qs ? `/api/routing/observations?${qs}` : '/api/routing/observations',
-  );
-}
 
 export function fetchProjectBranding(
   projectId: string,
