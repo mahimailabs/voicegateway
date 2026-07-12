@@ -53,6 +53,9 @@ from voicegateway.server.api.dashboard import (
     costs as dashboard_costs,
 )
 from voicegateway.server.api.dashboard import (
+    diagnostics as dashboard_diagnostics,
+)
+from voicegateway.server.api.dashboard import (
     health as dashboard_health,
 )
 from voicegateway.server.api.dashboard import (
@@ -104,6 +107,7 @@ dashboard_router.include_router(dashboard_metrics.router)
 dashboard_router.include_router(dashboard_replay.router)
 dashboard_router.include_router(dashboard_tenants.router)
 dashboard_router.include_router(dashboard_agents.router)
+dashboard_router.include_router(dashboard_diagnostics.router)
 dashboard_router.include_router(dashboard_api_keys.router)
 dashboard_router.include_router(dashboard_branding.router)
 
