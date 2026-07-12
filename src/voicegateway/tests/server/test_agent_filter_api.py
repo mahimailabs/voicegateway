@@ -99,13 +99,3 @@ async def test_api_agents_index(gateway):
     assert "unattributed" in body
 
 
-async def test_api_logs_filters_by_agent(gateway):
-    await gateway.storage.log_request(_rec("agent-x", 0.01))
-    await gateway.storage.log_request(_rec("agent-y", 0.05))
-    client = await _client(gateway)
-    async with client as c:
-        resp = await c.get("/api/logs?agent=agent-x")
-    assert resp.status_code == 200
-    rows = resp.json()
-    assert rows
-    assert all(r["agent_id"] == "agent-x" for r in rows)

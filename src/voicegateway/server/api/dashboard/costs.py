@@ -1,6 +1,6 @@
-"""Dashboard endpoints: GET /api/costs, /api/latency, /api/logs.
+"""Dashboard endpoints: GET /api/costs, /api/latency.
 
-These three handlers share the read-only-aggregation shape (gateway +
+These handlers share the read-only-aggregation shape (gateway +
 storage required, period and project filters, tenant scoping) so they
 sit in one router file. Distinct from ``server/api/costs.py``, which
 serves the public ``/v1/costs`` endpoint with a different query schema
@@ -148,37 +148,3 @@ async def get_latency(
     )
 
 
-@router.get("/logs")
-async def get_logs(
-    request: Request,
-    limit: int = Query(100, ge=1, le=1000),
-    modality: str | None = Query(None, enum=["stt", "llm", "tts"]),
-    period: str = Query("all", enum=["today", "week", "month", "all"]),
-    project: str | None = Query(None),
-    tenant: str | None = Query(None),
-    agent: str | None = Query(None),
-    gateway: Gateway = Depends(get_gateway),
-    principal: Principal = Depends(require_principal),
-) -> list[dict]:
-    """Get recent request logs, scoped to the authenticated principal."""
-    resolved = resolve_read_tenant(principal, tenant)
-    if gateway.storage is None:
-        return []
-    ch_client = getattr(request.app.state, "ch_client", None)
-    if ch_client is not None:
-        if resolved is None:
-            raise HTTPException(status_code=400, detail=_NEEDS_TENANT)
-        # The ClickHouse read repo deduplicates and orders rows but does not
-        # filter by modality; the SQLite path below keeps the modality filter.
-        since, until = resolve_window(period)
-        return await ch_read.get_recent_requests(
-            ch_client,
-            tenant=resolved,
-            since=since,
-            until=until,
-            limit=limit,
-            project=project,
-        )
-    return await gateway.storage.get_recent_requests(
-        limit=limit, modality=modality, project=project, tenant=resolved, agent=agent
-    )
