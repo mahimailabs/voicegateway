@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import CostChart from '../components/CostChart';
+import ConversationMetrics from '../components/ConversationMetrics';
 import FilterBar, { useTenantFilter, useAgentFilter } from '../components/FilterBar';
 import TimeRange, { usePeriod } from '../components/TimeRange';
 import PageHeader from '../components/PageHeader';
@@ -216,7 +217,7 @@ function CostsContent() {
 }
 
 export default function Costs() {
-  const [tab, setTab] = useState<'Costs' | 'Latency'>('Costs');
+  const [tab, setTab] = useState<'Costs' | 'Latency' | 'Conversation'>('Costs');
 
   return (
     <div>
@@ -224,7 +225,7 @@ export default function Costs() {
       <FilterBar />
 
       <div className="neo-tabs">
-        {(['Costs', 'Latency'] as const).map((t) => (
+        {(['Costs', 'Latency', 'Conversation'] as const).map((t) => (
           <button
             key={t}
             className={`neo-tab${tab === t ? ' neo-tab--active' : ''}`}
@@ -237,6 +238,7 @@ export default function Costs() {
 
       {tab === 'Costs' && <CostsContent />}
       {tab === 'Latency' && <LatencyContent />}
+      {tab === 'Conversation' && <ConversationMetrics />}
     </div>
   );
 }

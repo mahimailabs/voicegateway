@@ -25,7 +25,7 @@ export default function AgentPill({ agentId, asLink = false, onClick }: Props) {
   if (asLink) {
     const search = new URLSearchParams({ agent: agentId ?? '' }).toString();
     return (
-      <Link className={cls} style={style} to={`/sessions?${search}`}>
+      <Link className={cls} style={style} to={`/calls?${search}`}>
         {label}
       </Link>
     );

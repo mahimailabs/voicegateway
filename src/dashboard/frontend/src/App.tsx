@@ -2,14 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, useMatch } from 'react-router-dom';
 import Overview from './pages/Overview';
 import Costs from './pages/Costs';
-import Logs from './pages/Logs';
 import Replay from './pages/Replay';
 import Sessions from './pages/Sessions';
 import Agents from './pages/Agents';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Latency from './pages/Latency';
-import Metrics from './pages/Metrics';
 import Projects from './pages/Projects';
 import RateCard from './pages/RateCard';
 import ApiKeys from './pages/ApiKeys';
@@ -87,12 +85,10 @@ export default function App() {
           <main className="main-content">
             <Routes>
               <Route path="/" element={<Overview />} />
-              <Route path="/sessions" element={<Sessions />} />
-              <Route path="/sessions/:sessionId/replay" element={<Replay />} />
+              <Route path="/calls" element={<Sessions />} />
+              <Route path="/calls/:sessionId/replay" element={<Replay />} />
               <Route path="/costs" element={<Costs />} />
               <Route path="/latency" element={<Latency />} />
-              <Route path="/metrics" element={<Metrics />} />
-              <Route path="/logs" element={<Logs />} />
               <Route path="/agents" element={<Agents />} />
               <Route path="/projects" element={<Projects />} />
               <Route path="/rate-card" element={<RateCard />} />

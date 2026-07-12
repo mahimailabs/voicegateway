@@ -1,41 +1,24 @@
+// Shared conversation-quality metrics card grid (lifted from pages/Sessions.tsx).
+// Renders the 4-card aggregate from GET /api/metrics: PerMinuteCostCard,
+// ResponseSpeedChart, TalkOverChart, DeadAirList, plus a Project/Window filter.
+// Used by pages/Costs.tsx (Conversation tab).
+
 import { useEffect, useState } from 'react';
-import DeadAirList from '../components/DeadAirList';
-import FilterBar, { useTenantFilter, useAgentFilter } from '../components/FilterBar';
-import PageHeader from '../components/PageHeader';
-import PerMinuteCostCard from '../components/PerMinuteCostCard';
-import ResponseSpeedChart from '../components/ResponseSpeedChart';
-import TalkOverChart from '../components/TalkOverChart';
+import DeadAirList from './DeadAirList';
+import { useTenantFilter, useAgentFilter } from './FilterBar';
+import PerMinuteCostCard from './PerMinuteCostCard';
+import ResponseSpeedChart from './ResponseSpeedChart';
+import TalkOverChart from './TalkOverChart';
 import { fetchJson } from '../lib/api';
 import type { MetricsAggregate } from '../lib/types';
 
-// Defaults sourced from MetricsConfig (REQ-VG-METRICS in voicegw.yaml).
-// The Metrics page does not yet fetch per-project config so the tooltips
-// on TalkOverChart and DeadAirList read against the Foundry-locked
-// defaults. T17 may wire a /api/config/metrics endpoint if per-project
-// values need to surface; for v0.2.0 the locked defaults match what the
-// runtime captures.
+// Defaults from MetricsConfig (REQ-VG-METRICS in voicegw.yaml).
 const DEFAULT_TALK_OVER_OVERLAP_MS = 100;
 const DEFAULT_DEAD_AIR_THRESHOLD_SECONDS = 3.0;
 
-// v0.2.0 voice-conversation metrics page (REQ-VG-METRICS-005).
-//
-// Layout: PageHeader + StalenessBanner at top, inline filter (project, days),
-// then a 2x2 grid of the four metric components (PerMinuteCostCard,
-// ResponseSpeedChart, TalkOverChart, DeadAirList) on the screen without
-// scrolling on a standard laptop display. T14 ships the four card
-// components; this iteration scaffolds the page with the data fetch +
-// filter bar + grid slots so T14 can drop the cards in without touching
-// layout.
-//
-// REQ-VG-METRICS-006 graceful-handling-of-older-sessions surfaces here as
-// the `measured_session_count` callout below the filter bar: when a window
-// includes pre-v0.2.0 sessions, the count names how many sessions
-// actually contribute to each aggregate so the developer knows the
-// sample size.
-
 const DAYS_OPTIONS = [1, 7, 30, 90] as const;
 
-export default function Metrics() {
+export default function ConversationMetrics() {
   const [project, setProject] = useState<string>('');
   const [days, setDays] = useState<number>(7);
   const [data, setData] = useState<MetricsAggregate | null>(null);
@@ -58,14 +41,6 @@ export default function Metrics() {
 
   return (
     <div>
-      <PageHeader
-        title="Metrics"
-        subtitle="Voice-conversation cost and quality"
-        accent="orange"
-      />
-
-      <FilterBar />
-
       <div className="vg-card mb-lg">
         <div className="flex-row flex-wrap" style={{ gap: 20, alignItems: 'flex-end' }}>
           <div>
@@ -94,7 +69,7 @@ export default function Metrics() {
           </div>
           {data && (
             <div style={{ marginLeft: 'auto' }}>
-              <div className="vg-card__label" style={{ marginBottom: 4 }}>Sessions</div>
+              <div className="vg-card__label" style={{ marginBottom: 4 }}>Calls</div>
               <div className="vg-stat" style={{ fontSize: 22, letterSpacing: '-0.5px' }}>
                 {data.measured_session_count} / {data.session_count}
                 <span className="vg-card__label" style={{ marginLeft: 6 }}>measured</span>

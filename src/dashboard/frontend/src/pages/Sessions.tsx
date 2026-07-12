@@ -1,4 +1,4 @@
-// v0.0.5 Sessions page — solves AC-VG-INFER-002.3.
+// Calls page (formerly Sessions) — solves AC-VG-INFER-002.3.
 //
 // Lists recent voice conversations with project + sort filters. Each
 // row click opens a detail modal with the per-modality cost
@@ -7,17 +7,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import DeadAirList from '../components/DeadAirList';
 import FilterBar, { useTenantFilter, useAgentFilter } from '../components/FilterBar';
 import PageHeader from '../components/PageHeader';
-import PerMinuteCostCard from '../components/PerMinuteCostCard';
-import ResponseSpeedChart from '../components/ResponseSpeedChart';
-import TalkOverChart from '../components/TalkOverChart';
 import TenantPill from '../components/TenantPill';
 import { fetchJson } from '../lib/api';
 import { formatCost } from '../lib/ui';
 import type {
-  MetricsAggregate,
   SessionDetail,
   SessionOrderBy,
   SessionRow,
@@ -26,100 +21,6 @@ import type {
 interface ProjectEntry {
   id: string;
   name: string;
-}
-
-// Defaults from MetricsConfig (REQ-VG-METRICS in voicegw.yaml).
-const DEFAULT_TALK_OVER_OVERLAP_MS = 100;
-const DEFAULT_DEAD_AIR_THRESHOLD_SECONDS = 3.0;
-const DAYS_OPTIONS = [1, 7, 30, 90] as const;
-
-function MetricsContent() {
-  const [project, setProject] = useState<string>('');
-  const [days, setDays] = useState<number>(7);
-  const [data, setData] = useState<MetricsAggregate | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const tenant = useTenantFilter();
-  const agent = useAgentFilter();
-
-  useEffect(() => {
-    const params = new URLSearchParams();
-    if (project) params.set('project', project);
-    params.set('days', String(days));
-    if (tenant !== null) params.set('tenant', tenant);
-    if (agent !== null) params.set('agent', agent);
-    setLoading(true);
-    fetchJson<MetricsAggregate>(`/api/metrics?${params.toString()}`)
-      .then((d) => setData(d))
-      .catch(() => setData(null))
-      .finally(() => setLoading(false));
-  }, [project, days, tenant, agent]);
-
-  return (
-    <div>
-      <div className="vg-card mb-lg">
-        <div className="flex-row flex-wrap" style={{ gap: 20, alignItems: 'flex-end' }}>
-          <div>
-            <div className="vg-card__label" style={{ marginBottom: 6 }}>Project</div>
-            <input
-              type="text"
-              className="neo-input"
-              placeholder="(all)"
-              value={project}
-              onChange={(e) => setProject(e.target.value)}
-            />
-          </div>
-          <div>
-            <div className="vg-card__label" style={{ marginBottom: 6 }}>Window</div>
-            <select
-              className="neo-select"
-              value={days}
-              onChange={(e) => setDays(Number(e.target.value))}
-            >
-              {DAYS_OPTIONS.map((d) => (
-                <option key={d} value={d}>
-                  Last {d} day{d === 1 ? '' : 's'}
-                </option>
-              ))}
-            </select>
-          </div>
-          {data && (
-            <div style={{ marginLeft: 'auto' }}>
-              <div className="vg-card__label" style={{ marginBottom: 4 }}>Sessions</div>
-              <div className="vg-stat" style={{ fontSize: 22, letterSpacing: '-0.5px' }}>
-                {data.measured_session_count} / {data.session_count}
-                <span className="vg-card__label" style={{ marginLeft: 6 }}>measured</span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {loading && !data && (
-        <div className="empty-state">Loading metrics...</div>
-      )}
-
-      {data && (
-        <div className="grid grid-cols-2 gap-lg">
-          <PerMinuteCostCard
-            value={data.per_minute_cost_usd_avg}
-            measuredSessionCount={data.measured_session_count}
-          />
-          <ResponseSpeedChart
-            p50={data.response_speed_ms.p50}
-            p95={data.response_speed_ms.p95}
-          />
-          <TalkOverChart
-            rate={data.talk_over_rate}
-            thresholdMs={DEFAULT_TALK_OVER_OVERLAP_MS}
-          />
-          <DeadAirList
-            count={data.dead_air_event_count}
-            thresholdSeconds={DEFAULT_DEAD_AIR_THRESHOLD_SECONDS}
-          />
-        </div>
-      )}
-    </div>
-  );
 }
 
 const ORDER_OPTIONS: { value: SessionOrderBy; label: string }[] = [
@@ -136,7 +37,6 @@ const MODALITY_BADGE_CLASS: Record<string, string> = {
 };
 
 export default function Sessions() {
-  const [tab, setTab] = useState<'Sessions' | 'Metrics'>('Sessions');
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
   const [project, setProject] = useState<string>('');
@@ -198,143 +98,122 @@ export default function Sessions() {
   return (
     <div>
       <PageHeader
-        title="Sessions"
+        title="Calls"
         subtitle={`${rows.length} voice conversation${rows.length === 1 ? '' : 's'}`}
         accent="blue"
       />
 
-      <div className="neo-tabs">
-        {(['Sessions', 'Metrics'] as const).map((t) => (
-          <button
-            key={t}
-            className={`neo-tab${tab === t ? ' neo-tab--active' : ''}`}
-            onClick={() => setTab(t)}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
+      <FilterBar
+        projectSlot={
+          <>
+            <span className="label">Project</span>
+            <select
+              className="neo-select"
+              value={project}
+              onChange={(e) => setProject(e.target.value)}
+            >
+              <option value="">All projects</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </>
+        }
+        extra={
+          <>
+            <span className="label">Sort</span>
+            <select
+              className="neo-select"
+              value={orderBy}
+              onChange={(e) => setOrderBy(e.target.value as SessionOrderBy)}
+            >
+              {ORDER_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </>
+        }
+      />
 
-      {tab === 'Metrics' && (
-        <FilterBar />
-      )}
-      {tab === 'Metrics' && <MetricsContent />}
-
-      {tab === 'Sessions' && (
-        <>
-          <FilterBar
-            projectSlot={
-              <>
-                <span className="label">Project</span>
-                <select
-                  className="neo-select"
-                  value={project}
-                  onChange={(e) => setProject(e.target.value)}
+      {loading ? (
+        <div className="empty-state">Loading calls...</div>
+      ) : rows.length === 0 ? (
+        <div className="empty-state">
+          No voice calls yet. Once an agent runs through{' '}
+          <span className="mono">voicegateway.inference</span>, conversations
+          show up here grouped by their <span className="mono">session_id</span>.
+        </div>
+      ) : (
+        <div className="vg-card" style={{ padding: 0, overflow: 'hidden' }}>
+          <table className="neo-table neo-table--blue">
+            <thead>
+              <tr>
+                <th>Started</th>
+                <th>Duration</th>
+                <th>Project</th>
+                <th>Tenant</th>
+                <th>Modalities</th>
+                <th>Requests</th>
+                <th style={{ textAlign: 'right' }}>Cost</th>
+                <th style={{ width: 110 }}>Replay</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr
+                  key={row.id}
+                  onClick={() => handleRowClick(row.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleRowClick(row.id);
+                    }
+                  }}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Open call ${row.id}`}
+                  style={{ cursor: 'pointer' }}
                 >
-                  <option value="">All projects</option>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </>
-            }
-            extra={
-              <>
-                <span className="label">Sort</span>
-                <select
-                  className="neo-select"
-                  value={orderBy}
-                  onChange={(e) => setOrderBy(e.target.value as SessionOrderBy)}
-                >
-                  {ORDER_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </>
-            }
-          />
-
-          {loading ? (
-            <div className="empty-state">Loading sessions…</div>
-          ) : rows.length === 0 ? (
-            <div className="empty-state">
-              No voice sessions yet. Once an agent runs through{' '}
-              <span className="mono">voicegateway.inference</span>, conversations
-              show up here grouped by their <span className="mono">session_id</span>.
-            </div>
-          ) : (
-            <div className="vg-card" style={{ padding: 0, overflow: 'hidden' }}>
-              <table className="neo-table neo-table--blue">
-                <thead>
-                  <tr>
-                    <th>Started</th>
-                    <th>Duration</th>
-                    <th>Project</th>
-                    <th>Tenant</th>
-                    <th>Modalities</th>
-                    <th>Requests</th>
-                    <th style={{ textAlign: 'right' }}>Cost</th>
-                    <th style={{ width: 110 }}>Replay</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr
-                      key={row.id}
-                      onClick={() => handleRowClick(row.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handleRowClick(row.id);
-                        }
-                      }}
-                      tabIndex={0}
-                      role="button"
-                      aria-label={`Open session ${row.id}`}
-                      style={{ cursor: 'pointer' }}
+                  <td className="mono">{formatRelative(row.started_at)}</td>
+                  <td className="mono">
+                    {formatDuration(row.started_at, row.ended_at)}
+                  </td>
+                  <td>{row.project}</td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <TenantPill tenantId={row.tenant_id ?? null} asLink />
+                  </td>
+                  <td>
+                    <ModalityBadges modalities={row.modalities} />
+                  </td>
+                  <td>
+                    <span className="neo-badge neo-badge--black">
+                      {row.request_count}
+                    </span>
+                  </td>
+                  <td className="mono" style={{ textAlign: 'right' }}>
+                    {formatCost(row.total_cost_usd, 6)}
+                  </td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <Link
+                      to={`/calls/${encodeURIComponent(row.id)}/replay`}
+                      className="neo-btn neo-btn--small"
+                      aria-label={`Open replay for call ${row.id}`}
                     >
-                      <td className="mono">{formatRelative(row.started_at)}</td>
-                      <td className="mono">
-                        {formatDuration(row.started_at, row.ended_at)}
-                      </td>
-                      <td>{row.project}</td>
-                      <td onClick={(e) => e.stopPropagation()}>
-                        <TenantPill tenantId={row.tenant_id ?? null} asLink />
-                      </td>
-                      <td>
-                        <ModalityBadges modalities={row.modalities} />
-                      </td>
-                      <td>
-                        <span className="neo-badge neo-badge--black">
-                          {row.request_count}
-                        </span>
-                      </td>
-                      <td className="mono" style={{ textAlign: 'right' }}>
-                        {formatCost(row.total_cost_usd, 6)}
-                      </td>
-                      <td onClick={(e) => e.stopPropagation()}>
-                        <Link
-                          to={`/sessions/${encodeURIComponent(row.id)}/replay`}
-                          className="neo-btn neo-btn--small"
-                          aria-label={`Open replay for session ${row.id}`}
-                        >
-                          Open replay
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                      Open replay
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-          {detail && (
-            <SessionDetailModal
-              session={detail}
-              onClose={() => setDetail(null)}
-            />
-          )}
-        </>
+      {detail && (
+        <SessionDetailModal
+          session={detail}
+          onClose={() => setDetail(null)}
+        />
       )}
     </div>
   );
@@ -389,10 +268,10 @@ function SessionDetailModal({
         className="neo-modal"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="session-detail-title"
+        aria-labelledby="call-detail-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 id="session-detail-title">Session detail</h3>
+        <h3 id="call-detail-title">Call detail</h3>
         <div className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
           <span className="mono" style={{ fontSize: 13 }}>{session.id}</span>
           <button
