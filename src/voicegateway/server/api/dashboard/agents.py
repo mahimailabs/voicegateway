@@ -9,12 +9,15 @@ stays O(1) queries.
 from __future__ import annotations
 
 import dataclasses
+import time
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from voicegateway.repository import agent_observations_repository as agent_obs
 from voicegateway.repository import agents_repository as agents
+from voicegateway.repository import workers_repository
+from voicegateway.repository.workers_repository import DEFAULT_TTL_SECONDS
 from voicegateway.server.api._deps import get_gateway
 
 if TYPE_CHECKING:
@@ -39,7 +42,16 @@ def _error_rate(error_count: int, request_count: int) -> float:
     return (error_count / request_count) if request_count else 0.0
 
 
-def _agent_entry(row: AgentObservationRow) -> dict[str, Any]:
+def _memory_pct(rss: int | None, total: int | None) -> float | None:
+    """RSS as a percentage of the memory ceiling (None when unavailable)."""
+    if not rss or not total:
+        return None
+    return round(rss / total * 100, 1)
+
+
+def _agent_entry(
+    row: AgentObservationRow, memory_pct: float | None
+) -> dict[str, Any]:
     return {
         "agent_id": row.agent_id,
         "request_count": row.request_count,
@@ -47,6 +59,7 @@ def _agent_entry(row: AgentObservationRow) -> dict[str, Any]:
         "last_seen": row.last_seen,
         "error_rate": _error_rate(row.error_count, row.request_count),
         "p95_latency_ms": row.p95_ms,
+        "memory_pct": memory_pct,
     }
 
 
@@ -80,8 +93,20 @@ async def list_agents_endpoint(
     async with gateway.storage._conn.session() as db:
         rows = await agent_obs.read_agents(db, limit=limit, query=q)
         unattributed = await agent_obs.read_unattributed(db)
+        # Live worker roster carries per-agent memory headroom. tenant_id=None
+        # returns the full fleet, which is what the self-hosted dashboard wants.
+        roster = await workers_repository.read_roster(
+            db, tenant_id=None, now=time.time(), ttl_seconds=DEFAULT_TTL_SECONDS
+        )
+    memory_by_agent = {
+        r.agent_id: _memory_pct(r.memory_rss_bytes, r.memory_total_bytes)
+        for r in roster
+    }
     return {
-        "agents": [_agent_entry(r) for r in rows],
+        "agents": [
+            _agent_entry(r, memory_by_agent.get(r.agent_id) if r.agent_id else None)
+            for r in rows
+        ],
         "unattributed": _unattributed_entry(unattributed),
     }
 

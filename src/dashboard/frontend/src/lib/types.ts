@@ -234,6 +234,9 @@ export interface AgentRow {
   error_rate: number;
   /** p95 total-latency ms, merged in by /api/agents; null when no samples. */
   p95_latency_ms?: number | null;
+  /** RSS as a percent of the worker's memory ceiling, merged from the live
+   * roster; null when the agent is not a heartbeating worker or sent no sample. */
+  memory_pct?: number | null;
 }
 
 /** Aggregates for the implicit `agent_id IS NULL` bucket. */
