@@ -8,6 +8,7 @@ import Agents from './pages/Agents';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Latency from './pages/Latency';
+import Diagnostics from './pages/Diagnostics';
 import Projects from './pages/Projects';
 import RateCard from './pages/RateCard';
 import ApiKeys from './pages/ApiKeys';
@@ -89,6 +90,7 @@ export default function App() {
               <Route path="/calls/:sessionId/replay" element={<Replay />} />
               <Route path="/costs" element={<Costs />} />
               <Route path="/latency" element={<Latency />} />
+              <Route path="/diagnostics" element={<Diagnostics />} />
               <Route path="/agents" element={<Agents />} />
               <Route path="/projects" element={<Projects />} />
               <Route path="/rate-card" element={<RateCard />} />

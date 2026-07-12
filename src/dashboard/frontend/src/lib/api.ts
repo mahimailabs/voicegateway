@@ -91,6 +91,8 @@ import type {
   ApiKey,
   CreatedApiKey,
   DeadAirEvent,
+  DiagnosticRun,
+  DiagnosticsCreds,
   LogoUploadResponse,
   MetricsAggregate,
   ProjectBranding,
@@ -279,6 +281,32 @@ export function updateProjectBranding(
       body: JSON.stringify(branding),
     },
   );
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostics typed fetchers (REQ-VG-DIAG-001).
+// ---------------------------------------------------------------------------
+
+export function fetchDiagnosticsCreds(): Promise<DiagnosticsCreds> {
+  return fetchJson<DiagnosticsCreds>('/api/diagnostics/creds');
+}
+
+export function fetchDiagnosticsRuns(): Promise<DiagnosticRun[]> {
+  return fetchJson<DiagnosticRun[]>('/api/diagnostics/runs');
+}
+
+export function fetchDiagnosticsRun(runId: string): Promise<DiagnosticRun> {
+  return fetchJson<DiagnosticRun>(`/api/diagnostics/runs/${encodeURIComponent(runId)}`);
+}
+
+export function createDiagnosticsRun(body: {
+  checks: string[];
+  config?: Record<string, unknown>;
+}): Promise<{ run_id: string; status: string }> {
+  return fetchJson<{ run_id: string; status: string }>('/api/diagnostics/runs', {
+    method: 'POST',
+    body: JSON.stringify({ checks: body.checks, config: body.config ?? {} }),
+  });
 }
 
 /**
