@@ -34,3 +34,5 @@ class Worker(SQLModel, table=True):
     status: str = "idle"
     started_at: float | None
     last_seen: float
+    memory_rss_bytes: int | None = None
+    memory_total_bytes: int | None = None

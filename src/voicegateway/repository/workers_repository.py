@@ -42,6 +42,8 @@ class RosterRow:
     status: str
     started_at: float | None
     last_seen: float
+    memory_rss_bytes: int | None
+    memory_total_bytes: int | None
 
 
 def _fields_from_presence(presence: dict[str, Any]) -> dict[str, Any]:
@@ -56,6 +58,8 @@ def _fields_from_presence(presence: dict[str, Any]) -> dict[str, Any]:
         "host": presence.get("host"),
         "active_sessions": int(presence.get("active_sessions", 0)),
         "status": presence.get("status", "idle"),
+        "memory_rss_bytes": presence.get("memory_rss_bytes"),
+        "memory_total_bytes": presence.get("memory_total_bytes"),
         "started_at": presence.get("started_at"),
         "last_seen": float(presence["ts"]),
     }
@@ -125,6 +129,8 @@ async def read_roster(
                 status=status,
                 started_at=w.started_at,
                 last_seen=w.last_seen,
+                memory_rss_bytes=w.memory_rss_bytes,
+                memory_total_bytes=w.memory_total_bytes,
             )
         )
     return rows
