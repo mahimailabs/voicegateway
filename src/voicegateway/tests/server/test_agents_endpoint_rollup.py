@@ -186,3 +186,30 @@ async def test_list_memory_pct_null_when_no_worker(tmp_path, monkeypatch) -> Non
         data = (await c.get("/api/agents")).json()
     entry = next(x for x in data["agents"] if x["agent_id"] == "rollup-only")
     assert entry["memory_pct"] is None
+
+
+async def test_list_attaches_last_seen_model_cascade(tmp_path, monkeypatch) -> None:
+    gw = _gateway(tmp_path, monkeypatch)
+    await _insert_obs(
+        gw, agent_id="cascade-agent", request_count=3, total_cost_usd=0.0,
+        error_count=0, last_seen=1000.0, window_start="ws", window_end="we",
+    )
+    # two llm requests: the later timestamp wins
+    for i, (mod, model, ts) in enumerate([
+        ("stt", "deepgram/nova-3", 100.0),
+        ("llm", "openai/gpt-4o-mini", 100.0),
+        ("llm", "openai/gpt-4o", 200.0),
+        ("tts", "cartesia/sonic", 100.0),
+    ]):
+        await gw.storage.log_request(RequestRecord(
+            id=f"r{i}", timestamp=ts, modality=mod, model_id=model,
+            provider=model.split("/")[0], project="default", agent_id="cascade-agent",
+        ))
+    async with _client(gw) as c:
+        data = (await c.get("/api/agents")).json()
+    entry = next(x for x in data["agents"] if x["agent_id"] == "cascade-agent")
+    assert entry["models"] == {
+        "stt": "deepgram/nova-3",
+        "llm": "openai/gpt-4o",   # last-seen (ts 200 > 100)
+        "tts": "cartesia/sonic",
+    }

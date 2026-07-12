@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from voicegateway.repository import agent_observations_repository as agent_obs
 from voicegateway.repository import agents_repository as agents
-from voicegateway.repository import workers_repository
+from voicegateway.repository import request_log_repository, workers_repository
 from voicegateway.repository.workers_repository import DEFAULT_TTL_SECONDS
 from voicegateway.server.api._deps import get_gateway
 
@@ -50,7 +50,7 @@ def _memory_pct(rss: int | None, total: int | None) -> float | None:
 
 
 def _agent_entry(
-    row: AgentObservationRow, memory_pct: float | None
+    row: AgentObservationRow, memory_pct: float | None, models: dict[str, str]
 ) -> dict[str, Any]:
     return {
         "agent_id": row.agent_id,
@@ -60,6 +60,11 @@ def _agent_entry(
         "error_rate": _error_rate(row.error_count, row.request_count),
         "p95_latency_ms": row.p95_ms,
         "memory_pct": memory_pct,
+        "models": {
+            "stt": models.get("stt"),
+            "llm": models.get("llm"),
+            "tts": models.get("tts"),
+        },
     }
 
 
@@ -98,13 +103,19 @@ async def list_agents_endpoint(
         roster = await workers_repository.read_roster(
             db, tenant_id=None, now=time.time(), ttl_seconds=DEFAULT_TTL_SECONDS
         )
+        agent_ids = [r.agent_id for r in rows if r.agent_id]
+        cascade = await request_log_repository.read_last_seen_models(db, agent_ids)
     memory_by_agent = {
         r.agent_id: _memory_pct(r.memory_rss_bytes, r.memory_total_bytes)
         for r in roster
     }
     return {
         "agents": [
-            _agent_entry(r, memory_by_agent.get(r.agent_id) if r.agent_id else None)
+            _agent_entry(
+                r,
+                memory_by_agent.get(r.agent_id) if r.agent_id else None,
+                cascade.get(r.agent_id, {}) if r.agent_id else {},
+            )
             for r in rows
         ],
         "unattributed": _unattributed_entry(unattributed),
