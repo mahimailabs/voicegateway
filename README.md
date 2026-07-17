@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/banner.png" alt="VoiceGateway" width="100%" />
+<img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/banner.gif" alt="VoiceGateway" width="100%" />
 
 <p>
   <a href="https://docs.voicegateway.dev"><img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/badges/docs.svg" height="30" alt="Docs"/></a>
