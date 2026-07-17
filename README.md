@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/banner.gif" alt="VoiceGateway" width="100%" />
+<img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/banner.png" alt="VoiceGateway" width="100%" />
 
 <p>
   <a href="https://docs.voicegateway.dev"><img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/badges/docs.svg" height="30" alt="Docs"/></a>
@@ -98,9 +98,9 @@ Add the one `voicegateway.attach(session)` line from the snippet above to your a
 A self-hosted web UI at `http://localhost:8080`. Bundled. No SaaS account. No data leaves your stack.
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/dashboard-tour.gif" alt="VoiceGateway dashboard tour" width="100%" />
+  <img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/dashboard.png" alt="VoiceGateway dashboard: cost by provider and model" width="100%" />
   <br/>
-  <sub>A 7-day spend / requests trend, per-provider cost breakdowns, conversation replay, and one-key light/dark.</sub>
+  <sub>Total spend, cost by provider and model, latency p50/p95, per-call replay, and one-key light/dark.</sub>
 </div>
 
 Overview with a 7-day spend and requests trend, Agents (per-agent cost, model stack, worker memory), Costs (per provider / model / project / tenant, plus latency p50/p95), Calls (replay any conversation), Latency, and Diagnostics (probe your LiveKit deployment). Configure projects and a rate card for billing reconciliation. One-key light/dark theme. White-label it per project: upload a logo, set an accent color and product name, and the whole UI re-skins.
