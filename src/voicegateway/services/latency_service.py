@@ -1,13 +1,24 @@
-"""Service wrapping the latency-aggregation repo."""
+"""Service wrapping the latency-aggregation repo.
+
+When ``cost_tracking.read_engine == "duckdb"`` (SQLite backend, duckdb
+installed), ``get_stats`` computes percentiles in-DB via
+:mod:`voicegateway.analytics.duckdb_reader` instead of pulling every raw sample
+into Python, with a fallback to the SQLite path on any error.
+"""
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import TYPE_CHECKING, Any
 
+from voicegateway.analytics import duckdb_reader
 from voicegateway.repository import latency_repository as repo
 
 if TYPE_CHECKING:
     from voicegateway.core.database import Database
+
+logger = logging.getLogger(__name__)
 
 
 class LatencyService:
@@ -15,6 +26,14 @@ class LatencyService:
 
     def __init__(self, database: Database) -> None:
         self._db = database
+
+    def _use_duckdb(self) -> bool:
+        ct = self._db.config.cost_tracking or {}
+        return (
+            ct.get("read_engine") == "duckdb"
+            and self._db.is_sqlite
+            and duckdb_reader.available()
+        )
 
     async def get_stats(
         self,
@@ -25,6 +44,21 @@ class LatencyService:
         agent: str | None = None,
     ) -> dict[str, Any]:
         """Per-model latency rollup with percentiles."""
+        if self._use_duckdb():
+            try:
+                return await asyncio.to_thread(
+                    duckdb_reader.latency_stats,
+                    self._db.db_file_path,
+                    period=period,
+                    project=project,
+                    percentiles=percentiles,
+                    tenant=tenant,
+                    agent=agent,
+                )
+            except Exception:
+                logger.warning(
+                    "duckdb latency stats failed; using sqlite", exc_info=True
+                )
         async with self._db.session() as s:
             return await repo.get_latency_stats(
                 s,

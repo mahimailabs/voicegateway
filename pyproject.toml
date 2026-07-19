@@ -124,6 +124,13 @@ mcp = ["mcp>=1.2.0"]
 # is set; embedded single-node mode still uses bundled SQLite.
 postgres = ["asyncpg>=0.29"]
 
+# Faster local (SQLite) dashboard analytics. Opt-in via
+# cost_tracking.read_engine = "duckdb": the read path attaches the live SQLite
+# file read-only and runs the cost + latency aggregations columnar-fast, with a
+# fallback to the SQLite ORM path. Writes stay on SQLite; the cloud collector
+# stays on ClickHouse.
+duckdb = ["duckdb>=1.0,<2.0"]
+
 # Terminal UI (`voicegw tui`, v0.1.1). Textual ships breaking changes
 # between minor versions, so the upper bound is tight per design.md
 # section 8.1; revisit at v0.1.2. httpx is already a base dependency
@@ -154,6 +161,7 @@ dev = [
     # ".[dev]"` yields a livekit-enabled test environment as before.
     "voicegateway[livekit]",
     "chdb>=3.0",
+    "duckdb>=1.0,<2.0",
     "testcontainers[clickhouse]>=4.0",
     # Server stack so tests covering core/container, repository/, etc. can
     # import them without `pip install -e .[server]` first. SQLAlchemy,

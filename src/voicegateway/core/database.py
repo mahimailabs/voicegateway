@@ -107,6 +107,11 @@ class Database:
         """The on-disk SQLite path."""
         return self._db_file_path
 
+    @property
+    def is_sqlite(self) -> bool:
+        """Whether the backend is SQLite (has a local file to attach)."""
+        return self._engine.url.get_backend_name() == "sqlite"
+
     async def create_all(self) -> None:
         """Create every SQLModel-registered table."""
         import voicegateway.models  # noqa: F401
