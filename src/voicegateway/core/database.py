@@ -10,7 +10,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
@@ -81,6 +83,29 @@ def _engine_kwargs(url: str) -> dict[str, Any]:
     return {"echo": False, "poolclass": NullPool}
 
 
+def _enable_sqlite_wal(engine: AsyncEngine) -> None:
+    """Put the SQLite file in WAL mode on every new connection.
+
+    WAL lets one writer (the agent's live cost writes) and many readers
+    (dashboard queries, and the read-only DuckDB attach in
+    :mod:`voicegateway.analytics.duckdb_reader`) proceed concurrently without
+    the reader hitting ``database is locked``. ``busy_timeout`` makes any
+    residual contention wait briefly rather than erroring immediately. The
+    pragma is issued via the sync-engine ``connect`` event, which aiosqlite's
+    adapter services synchronously. WAL is a no-op on non-file databases, but
+    this is only wired for the SQLite backend.
+    """
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragmas(dbapi_conn: Any, _record: Any) -> None:
+        cursor = dbapi_conn.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
+        finally:
+            cursor.close()
+
+
 class Database:
     """Async SQLAlchemy engine + session factory bound to a config."""
 
@@ -93,6 +118,8 @@ class Database:
             # collector URL must not touch the filesystem.
             self._db_file_path.parent.mkdir(parents=True, exist_ok=True)
         self._engine = create_async_engine(url, **_engine_kwargs(url))
+        if url.startswith("sqlite"):
+            _enable_sqlite_wal(self._engine)
         self._session_factory = async_sessionmaker(
             bind=self._engine,
             class_=AsyncSession,
@@ -106,6 +133,11 @@ class Database:
     def db_file_path(self) -> Path:
         """The on-disk SQLite path."""
         return self._db_file_path
+
+    @property
+    def is_sqlite(self) -> bool:
+        """Whether the backend is SQLite (has a local file to attach)."""
+        return self._engine.url.get_backend_name() == "sqlite"
 
     async def create_all(self) -> None:
         """Create every SQLModel-registered table."""

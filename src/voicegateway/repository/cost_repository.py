@@ -18,6 +18,20 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 
+def sorted_pricing_sources(raw: str | None) -> str:
+    """Canonicalize a ``GROUP_CONCAT`` / ``STRING_AGG`` result to a stable order.
+
+    Neither aggregate specifies an order for its ``DISTINCT`` values, so the
+    same set of pricing sources can concatenate differently across engines
+    (SQLite vs Postgres vs the DuckDB read path). Splitting on ``,`` and
+    sorting yields one deterministic string, so every backend returns an
+    identical ``pricing_source`` value.
+    """
+    if not raw:
+        return ""
+    return ",".join(sorted(raw.split(",")))
+
+
 def period_since(period: str) -> float:
     """Return a UTC timestamp N days before now for the named period."""
     now = time.time()
@@ -131,7 +145,7 @@ async def get_cost_summary(
             r[0]: {
                 "cost": r[1],
                 "requests": r[2],
-                "pricing_source": r[3] or "",
+                "pricing_source": sorted_pricing_sources(r[3]),
             }
             for r in result
         }
@@ -295,4 +309,5 @@ __all__ = [
     "get_project_stats",
     "period_since",
     "resolve_window",
+    "sorted_pricing_sources",
 ]
