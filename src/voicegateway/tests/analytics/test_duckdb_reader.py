@@ -56,9 +56,11 @@ async def seeded_db_path(tmp_path):
             provider="deepgram",
             project="prod",
             cost_usd=0.0043,
+            pricing_source="voice-prices@0.0.9",
             ttfb_ms=120.0,
             total_latency_ms=250.0,
             agent_id="a1",
+            tenant_id="t1",
         ),
         Request(
             id=str(uuid.uuid4()),
@@ -116,6 +118,7 @@ async def seeded_db_path(tmp_path):
             provider="deepgram",
             project="prod",
             cost_usd=0.0051,
+            pricing_source="voice-prices@0.0.8",
             ttfb_ms=140.0,
             total_latency_ms=300.0,
             agent_id="a2",
@@ -207,3 +210,68 @@ async def test_falls_back_to_sqlite_on_error(seeded_db_path, monkeypatch):
     monkeypatch.setattr(duckdb_reader, "cost_summary", boom)
     out = await _cost(seeded_db_path, "duckdb").get_summary(period="month")
     assert out["total"] > 0  # fell back to sqlite and still returned real data
+
+
+async def test_duckdb_path_actually_executes(seeded_db_path, monkeypatch):
+    """Prove DuckDB served the result (not a silent fallback): breaking the
+    SQLite repo must NOT break the query when the engine is on."""
+    from voicegateway.services import cost_service
+
+    async def boom(*a, **k):
+        raise AssertionError("sqlite path must not run when duckdb serves it")
+
+    monkeypatch.setattr(cost_service.repo, "get_cost_summary", boom)
+    out = await _cost(seeded_db_path, "duckdb").get_summary(period="month")
+    assert out["total"] > 0
+
+
+async def test_cost_where_branches_match_sqlite(seeded_db_path):
+    """The tenant / agent / explicit-window WHERE branches match SQLite too."""
+    duck, lite = _cost(seeded_db_path, "duckdb"), _cost(seeded_db_path, None)
+    now = time.time()
+    branches: tuple[dict[str, Any], ...] = (
+        {"period": "month", "agent": "a1"},  # agent value branch
+        {"period": "month", "agent": ""},  # agent IS NULL branch
+        {"period": "month", "tenant": "t1"},  # tenant value branch
+        {"period": "month", "tenant": ""},  # tenant IS NULL branch
+        {"start_ts": now - 4 * 86400, "end_ts": now - 1800},  # explicit until window
+    )
+    for kw in branches:
+        assert _approx_eq(await duck.get_summary(**kw), await lite.get_summary(**kw))
+        assert _approx_eq(await duck.get_by_day(**kw), await lite.get_by_day(**kw))
+        assert _approx_eq(
+            await duck.get_by_project(**kw), await lite.get_by_project(**kw)
+        )
+
+
+async def test_pricing_source_multi_source_sorted(seeded_db_path):
+    """Two distinct sources on one model concatenate in a stable, engine-
+    identical order (the sorted-tokens fix)."""
+    duck, lite = _cost(seeded_db_path, "duckdb"), _cost(seeded_db_path, None)
+    d = await duck.get_summary(period="month", include_pricing_source=True)
+    s = await lite.get_summary(period="month", include_pricing_source=True)
+    assert _approx_eq(d, s)
+    assert (
+        d["by_model"]["deepgram/nova-3"]["pricing_source"]
+        == "voice-prices@0.0.8,voice-prices@0.0.9"
+    )
+
+
+async def test_latency_falls_back_to_sqlite_on_error(seeded_db_path, monkeypatch):
+    from voicegateway.analytics import duckdb_reader
+
+    def boom(*a, **k):
+        raise RuntimeError("duckdb unavailable")
+
+    monkeypatch.setattr(duckdb_reader, "latency_stats", boom)
+    out = await _lat(seeded_db_path, "duckdb").get_stats(period="month")
+    assert any(v["latency_percentiles"]["p95"] is not None for v in out.values())
+
+
+async def test_duplicate_percentiles_raise_on_both(seeded_db_path):
+    """A colliding percentile list raises identically on both engines."""
+    duck, lite = _lat(seeded_db_path, "duckdb"), _lat(seeded_db_path, None)
+    with pytest.raises(ValueError):
+        await duck.get_stats(period="month", percentiles=[50.0, 50.0])
+    with pytest.raises(ValueError):
+        await lite.get_stats(period="month", percentiles=[50.0, 50.0])

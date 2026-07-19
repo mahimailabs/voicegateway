@@ -9,8 +9,10 @@ It is opt-in (``cost_tracking.read_engine = "duckdb"``) and the service layer
 falls back to the SQLite path if DuckDB is unavailable or a query raises, so
 this module never changes results, only how fast they come back. Percentiles
 use ``quantile_cont`` (linear interpolation), matching
-:func:`voicegateway.utils.percentiles.compute_percentiles`. Read-only ATTACH
-coexists with the agent's live writes via SQLite's own WAL locking.
+:func:`voicegateway.utils.percentiles.compute_percentiles`. The read-only
+ATTACH coexists with the agent's live writes because the engine runs SQLite in
+WAL mode (enabled in :mod:`voicegateway.core.database`), so a reader and the
+single writer do not block each other.
 """
 
 from __future__ import annotations
@@ -20,7 +22,11 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from voicegateway.repository.cost_repository import period_since, resolve_window
+from voicegateway.repository.cost_repository import (
+    period_since,
+    resolve_window,
+    sorted_pricing_sources,
+)
 
 if TYPE_CHECKING:
     import duckdb
@@ -140,7 +146,11 @@ def cost_summary(
         }
         if include_pricing_source:
             by_model = {
-                r[0]: {"cost": r[1], "requests": r[2], "pricing_source": r[3] or ""}
+                r[0]: {
+                    "cost": r[1],
+                    "requests": r[2],
+                    "pricing_source": sorted_pricing_sources(r[3]),
+                }
                 for r in con.execute(
                     f"SELECT model_id, SUM(cost_usd), COUNT(*), "
                     f"string_agg(DISTINCT pricing_source, ',') "
@@ -265,6 +275,17 @@ def latency_stats(
     of pulling every raw sample into Python.
     """
     pcts = percentiles or _PCTS
+    # Match compute_percentiles: colliding keys are a caller error on BOTH
+    # paths, so the DuckDB path raises identically instead of silently
+    # overwriting the collision in _pcts.
+    seen: set[str] = set()
+    for p in pcts:
+        key = _pct_key(p)
+        if key in seen:
+            raise ValueError(
+                f"Duplicate percentile key '{key}' for p={p}; inputs collide."
+            )
+        seen.add(key)
     since = period_since(period)
     where, params = _where(
         since=since,

@@ -7,10 +7,13 @@ Reproduces the decision behind the opt-in DuckDB read path
     uv run --with duckdb --with pytz python benchmarks/local_analytics_duckdb.py
 
 Audited headline (7-day window, warm, median of 5; DuckDB attached to the live
-SQLite, no write-path change): a full dashboard load drops from ~0.5s to ~0.1s
-at 300k rows (~6x) and ~2.0s to ~0.17s at 1M rows (~12x), widening with data.
-DuckDB-over-Parquet is faster still but needs a periodic export and trades
-freshness, so it is a later tier, not the default.
+SQLite, no write-path change). A full dashboard load (4 queries) drops from
+~0.55s to ~0.15s at 300k rows (~3.6x) and ~2.0s to ~0.23s at 1M rows (~8.6x),
+widening with data. These are the SHIPPED shape: the read path opens a fresh
+DuckDB connection + ATTACH per query (duckdb_reader._attached). Caching one
+connection would reach ~6x / ~12x (the "single-attach" line below), a possible
+later optimization. DuckDB-over-Parquet is faster still but needs a periodic
+export and trades freshness, so it is a later tier, not the default.
 
 Fairness rules:
 - SQLite gets the SAME 8 indexes the production model declares, plus ANALYZE.
@@ -308,22 +311,46 @@ def run(n):
         f"p95 latency agreement (model {m}): sqlite={sq_p95:.1f} duckdb={dk_p95:.1f} within 1%: {abs(sq_p95 - dk_p95) / dk_p95 < 0.01}"
     )
 
-    # realistic user metric: full dashboard load = all 4 queries in sequence
+    # Realistic user metric: full dashboard load = all 4 queries in sequence.
     def sq_all():
         sq_cost_provider(con)
         sq_cost_day(con)
         sq_cost_model(con)
         sq_latency_pcts(con)
 
-    def dk_all():
+    # Per-call connect + ATTACH READ_ONLY, mirroring duckdb_reader._attached:
+    # the SHIPPED read path opens a fresh DuckDB connection for EVERY query, so
+    # this (not the amortized single-attach below) is the honest headline.
+    def _fresh(dkf):
+        c = duckdb.connect()
+        _load_sqlite(c)
+        c.execute(f"ATTACH '{DB}' AS vg (TYPE sqlite, READ_ONLY)")
+        try:
+            dkf(c, "vg.requests")
+        finally:
+            c.close()
+
+    def dk_all_percall():
+        _fresh(dk_cost_provider)
+        _fresh(dk_cost_day)
+        _fresh(dk_cost_model)
+        _fresh(dk_latency_pcts)
+
+    # Single persistent ATTACH: theoretical best if the reader cached a
+    # connection. NOT what the shipped code does; shown for reference.
+    def dk_all_persistent():
         dk_cost_provider(d, "vg.requests")
         dk_cost_day(d, "vg.requests")
         dk_cost_model(d, "vg.requests")
         dk_latency_pcts(d, "vg.requests")
 
-    sqt, dkt = timed(sq_all), timed(dk_all)
+    sqt = timed(sq_all)
+    dkt_percall = timed(dk_all_percall)
+    dkt_persist = timed(dk_all_persistent)
     print(
-        f"FULL DASHBOARD LOAD (4 queries, sequential): sqlite={sqt:.0f}ms  duckdb-attach={dkt:.0f}ms  ({sqt / dkt:.1f}x)"
+        f"FULL DASHBOARD LOAD (4 queries): sqlite={sqt:.0f}ms  "
+        f"duckdb per-call-attach={dkt_percall:.0f}ms ({sqt / dkt_percall:.1f}x, shipped shape)  "
+        f"single-attach={dkt_persist:.0f}ms ({sqt / dkt_persist:.1f}x, amortized)"
     )
     con.close()
     d.close()
