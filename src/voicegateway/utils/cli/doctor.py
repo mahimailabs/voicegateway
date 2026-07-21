@@ -256,11 +256,12 @@ def _check_recent_error_count(ctx: _Context) -> CheckResult:
             "skip",
             f"(could not read storage: {exc})",
         )
-    # Success sentinels: a request is only "failed" if it is none of these.
-    # The stored success status is "success" (not "ok"); "fallback" succeeded via
-    # a fallback provider. Counting anything != "ok" would flag every real
-    # successful request as an error.
-    ok_statuses = {"ok", "success", "fallback"}
+    # Non-error sentinels: a request only counts as "failed" if it is none of
+    # these. The stored success status is "success" (not "ok"); "fallback"
+    # succeeded via a fallback provider; "cancelled" is a normal voice-agent
+    # interruption (barge-in / the caller hangs up), not an error. Counting
+    # anything != "ok" would flag every successful and every interrupted request.
+    ok_statuses = {"ok", "success", "fallback", "cancelled", "canceled"}
     failed = sum(
         1 for r in rows if str(r.get("status", "success")).lower() not in ok_statuses
     )
