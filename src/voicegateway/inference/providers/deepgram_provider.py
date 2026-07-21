@@ -19,7 +19,7 @@ class DeepgramProvider(BaseProvider):
             return deepgram
         except ImportError as e:
             raise ImportError(
-                "Deepgram plugin not installed. Run: pip install voicegateway[deepgram]"
+                "Deepgram plugin not installed. Run: pip install livekit-plugins-deepgram"
             ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:

@@ -4,6 +4,31 @@ All notable changes to VoiceGateway are documented here. This project
 follows [Semantic Versioning](https://semver.org/) and
 [Conventional Commits](https://www.conventionalcommits.org/).
 
+## Unreleased
+
+### Changed
+
+- **Extras reduced to five.** The optional-dependency groups collapse to
+  `livekit`, `pipecat`, `dashboard`, `mcp`, and `collector`. The per-provider
+  extras (`openai`, `deepgram`, `anthropic`, `groq`, `cartesia`, `elevenlabs`,
+  `assemblyai`), the local-model extras (`whisper`, `kokoro`, `piper`), and the
+  `server` / `tui` / `cloud` / `local` / `all` / `openrtc` groups are removed.
+  VoiceGateway is framework-agnostic and no longer bundles provider or
+  local-model wheels: it meters the native instances you build by `model_id`
+  through voice-prices, so you install those plugins and runtimes in your own
+  agent. `server` folds into `dashboard` (which now also carries `textual` for
+  the TUI); `postgres` and `duckdb` fold into `collector`. The `attach()` /
+  `guard()` and provider-registry "not installed" errors now point at the
+  upstream wheel (e.g. `livekit-plugins-openai`) instead of a VoiceGateway extra.
+
+### Fixed
+
+- **`voicegw` no longer crashes when the `dashboard` extra is absent.** The CLI
+  eager-imported `serve_cli`, which imported FastAPI at module load, so any
+  command (`onboard`, `doctor`, ...) failed with `ModuleNotFoundError: No module
+  named 'fastapi'` on a non-server install. The server import is now lazy inside
+  the `serve` command, which prints an install hint if the extra is missing.
+
 ## v0.15.0: OpenOrca fleet console + runtime intervention resolve
 
 The `/openorca/*` runtime contract gains the pieces a live fleet console needs,

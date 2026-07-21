@@ -23,7 +23,7 @@ class OpenAIProvider(BaseProvider):
             return openai
         except ImportError as e:
             raise ImportError(
-                "OpenAI plugin not installed. Run: pip install voicegateway[openai]"
+                "OpenAI plugin not installed. Run: pip install livekit-plugins-openai"
             ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:

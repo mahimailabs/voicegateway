@@ -209,7 +209,7 @@ For production, the [fleet collector installer](#fleet-collector) handles secret
 ```bash
 git clone https://github.com/mahimailabs/voicegateway
 cd voicegateway
-pip install -e ".[all,dashboard,mcp,dev]"
+pip install -e ".[dev,mcp]"
 pytest
 ```
 

@@ -90,16 +90,15 @@ If a pricing call returns `None`, the model is not yet in `voice-prices`. Add it
 
 See [Refreshing Pricing](/contributing/refreshing-pricing) for the full workflow.
 
-### 5. Add optional dependency
+### 5. Point the install hint at the upstream wheel
 
-Add a new extra in `pyproject.toml`:
+There is no per-provider extra to add. VoiceGateway is framework-agnostic and does not bundle provider or local-model wheels: the user installs the plugin wheel in their own agent (for example `pip install livekit-plugins-<name>`), and VoiceGateway meters that instance by `model_id` via voice-prices. The five VoiceGateway extras (`livekit`, `pipecat`, `dashboard`, `mcp`, `collector`) are framework hooks and surfaces, not provider SDKs.
 
-```toml
-[project.optional-dependencies]
-<name> = ["<sdk-package>>=1.0.0"]
+Instead, make sure the `create_*` method's lazy import raises an `ImportError` whose message points at the upstream wheel, not a VoiceGateway extra:
 
-# Update the cloud or local group as appropriate
-cloud = ["voicegateway[deepgram,openai,...,<name>]"]
+```
+Could not import provider '<name>': No module named '<sdk-package>'.
+Install with: pip install livekit-plugins-<name>
 ```
 
 ### 6. Add fake API key to test fixtures

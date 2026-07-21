@@ -19,7 +19,7 @@ class AssemblyAIProvider(BaseProvider):
             return assemblyai
         except ImportError as e:
             raise ImportError(
-                "AssemblyAI plugin not installed. Run: pip install voicegateway[assemblyai]"
+                "AssemblyAI plugin not installed. Run: pip install livekit-plugins-assemblyai"
             ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:

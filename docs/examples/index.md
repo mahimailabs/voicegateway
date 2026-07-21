@@ -7,17 +7,19 @@ description: Runnable examples showing how to use VoiceGateway with LiveKit, Pip
 
 Practical, runnable examples for common VoiceGateway use cases. Each example includes working code and the configuration it needs.
 
-Before running any example, install VoiceGateway with the providers you need:
+Before running any example, install VoiceGateway for your framework:
 
 <CodeGroup>
 ```bash uv
-uv add "voicegateway[openai,deepgram,cartesia]"
+uv add "voicegateway[livekit]"
 ```
 
 ```bash pip
-pip install "voicegateway[openai,deepgram,cartesia]"
+pip install "voicegateway[livekit]"
 ```
 </CodeGroup>
+
+VoiceGateway is framework-agnostic and no longer bundles provider wheels. Install the provider plugins your agent uses, for example `pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia`, and VoiceGateway meters them by model_id via voice-prices.
 
 Then create a config file:
 

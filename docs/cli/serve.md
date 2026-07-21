@@ -103,12 +103,14 @@ The command prints what was removed and what was preserved, plus the manual `rm 
 The `dashboard` extra must be installed so `uvicorn` is on the import path:
 
 ```bash
-pipx install 'voicegateway[cloud,dashboard]'
+pipx install 'voicegateway[dashboard]'
 # or
-pip install 'voicegateway[cloud,dashboard]'
+pip install 'voicegateway[dashboard]'
 ```
 
 If `uvicorn` is missing, `voicegw serve` exits with an error message pointing at this install command.
+
+VoiceGateway is framework-agnostic and does not bundle provider or local-model wheels. Install the provider plugins your agent uses in your own agent environment (you likely already have them), for example `pip install livekit-plugins-openai livekit-plugins-deepgram`. VoiceGateway meters those instances by model_id via voice-prices.
 
 ## Docker
 

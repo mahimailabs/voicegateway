@@ -21,14 +21,20 @@ the file for your framework, set your environment variables, and run it.
 
     <CodeGroup>
     ```bash uv
-    uv pip install "voicegateway[openai,deepgram,cartesia]"
+    uv pip install "voicegateway[livekit]"
     pip install "livekit-agents[silero]"
+    pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
     ```
     ```bash pip
-    pip install "voicegateway[openai,deepgram,cartesia]"
+    pip install "voicegateway[livekit]"
     pip install "livekit-agents[silero]"
+    pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
     ```
     </CodeGroup>
+
+    VoiceGateway is framework-agnostic and no longer bundles provider wheels. You
+    install the LiveKit plugins your agent uses (you likely already have them), and
+    VoiceGateway meters them by model_id via voice-prices.
 
     ### Set environment variables
 

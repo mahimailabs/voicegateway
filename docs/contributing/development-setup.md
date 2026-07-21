@@ -32,14 +32,14 @@ This guide walks you through setting up a local development environment for Voic
     source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
     # Install with all development extras
-    uv pip install -e ".[all,dashboard,mcp,dev]"
+    uv pip install -e ".[dev,mcp]"
     ```
 
     ```bash pip (alternate)
     python -m venv .venv
     source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-    pip install -e ".[all,dashboard,mcp,dev]"
+    pip install -e ".[dev,mcp]"
     ```
     </CodeGroup>
 

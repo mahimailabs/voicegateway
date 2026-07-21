@@ -21,7 +21,7 @@ class GroqProvider(BaseProvider):
         except ImportError as e:
             raise ImportError(
                 "OpenAI plugin not installed (required for Groq). "
-                "Run: pip install voicegateway[groq]"
+                "Run: pip install livekit-plugins-openai"
             ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:

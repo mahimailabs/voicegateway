@@ -24,7 +24,7 @@ class KokoroProvider(BaseProvider):
             return kokoro_onnx
         except ImportError as e:
             raise ImportError(
-                "kokoro-onnx not installed. Run: pip install voicegateway[kokoro]"
+                "kokoro-onnx not installed. Run: pip install kokoro-onnx onnxruntime"
             ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:

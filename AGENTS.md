@@ -59,7 +59,7 @@ docker compose --profile local up -d     # + Ollama
 ## Key Patterns
 
 - **Async throughout** — all DB, HTTP, and provider operations use async/await
-- **Modular provider installs** — `pip install -e ".[openai,deepgram]"` installs only needed providers
+- **Framework-agnostic**: install provider plugins in your own agent (livekit.plugins.* / pipecat.services.*), not as VoiceGateway extras. VG meters the native instances you pass to attach()/guard() and prices by model_id via voice-prices.
 - **Config format** — YAML at `voicegw.yaml`, env vars via `${VAR_NAME}` syntax
 - **pytest-asyncio** — `asyncio_mode = "auto"` in pyproject.toml, no manual `@pytest.mark.asyncio` needed
 - **Test fixtures** in `src/voicegateway/tests/conftest.py` set fake API keys for all providers
