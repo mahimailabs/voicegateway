@@ -35,7 +35,7 @@ def mcp_cmd(
         from voicegateway.server.mcp.server import serve_http, serve_stdio
     except ImportError:
         _cli.fail(
-            "MCP dependencies not installed. Run: pip install 'voicegateway[mcp]'"
+            "MCP dependencies not installed. Run: pip install 'voicegateway[dashboard]'"
         )
 
     gw = _cli.require_gateway(config)

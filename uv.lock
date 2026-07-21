@@ -3931,6 +3931,7 @@ collector = [
     { name = "duckdb" },
     { name = "fastapi" },
     { name = "loguru" },
+    { name = "mcp" },
     { name = "pydantic-settings" },
     { name = "python-multipart" },
     { name = "textual" },
@@ -3941,6 +3942,7 @@ dashboard = [
     { name = "dependency-injector" },
     { name = "fastapi" },
     { name = "loguru" },
+    { name = "mcp" },
     { name = "pydantic-settings" },
     { name = "python-multipart" },
     { name = "textual" },
@@ -3956,6 +3958,7 @@ dev = [
     { name = "livekit-agents" },
     { name = "livekit-api" },
     { name = "loguru" },
+    { name = "mcp" },
     { name = "platformdirs" },
     { name = "psutil" },
     { name = "pydantic-settings" },
@@ -3972,9 +3975,6 @@ livekit = [
     { name = "livekit" },
     { name = "livekit-agents" },
     { name = "livekit-api" },
-]
-mcp = [
-    { name = "mcp" },
 ]
 pipecat = [
     { name = "pipecat-ai" },
@@ -4010,7 +4010,9 @@ requires-dist = [
     { name = "loguru", marker = "extra == 'collector'", specifier = ">=0.7" },
     { name = "loguru", marker = "extra == 'dashboard'", specifier = ">=0.7" },
     { name = "loguru", marker = "extra == 'dev'", specifier = ">=0.7" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.2.0" },
+    { name = "mcp", marker = "extra == 'collector'", specifier = ">=1.2.0" },
+    { name = "mcp", marker = "extra == 'dashboard'", specifier = ">=1.2.0" },
+    { name = "mcp", marker = "extra == 'dev'", specifier = ">=1.2.0" },
     { name = "pillow", specifier = ">=10.0" },
     { name = "pipecat-ai", marker = "extra == 'pipecat'", specifier = ">=1.5.0,<2.0" },
     { name = "platformdirs", marker = "extra == 'dev'", specifier = ">=4.0" },
@@ -4041,7 +4043,7 @@ requires-dist = [
     { name = "uvicorn", marker = "extra == 'dev'", specifier = ">=0.32.0" },
     { name = "voice-prices", specifier = ">=0.0.8,<0.1" },
 ]
-provides-extras = ["collector", "dashboard", "dev", "livekit", "mcp", "pipecat"]
+provides-extras = ["collector", "dashboard", "dev", "livekit", "pipecat"]
 
 [[package]]
 name = "wait-for2"

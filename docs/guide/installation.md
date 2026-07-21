@@ -116,10 +116,10 @@ You can combine any extras. To install the everything set:
 
 <CodeGroup>
 ```bash uv
-uv pip install "voicegateway[collector,mcp,livekit,pipecat]"
+uv pip install "voicegateway[collector,livekit,pipecat]"
 ```
 ```bash pip
-pip install "voicegateway[collector,mcp,livekit,pipecat]"
+pip install "voicegateway[collector,livekit,pipecat]"
 ```
 </CodeGroup>
 

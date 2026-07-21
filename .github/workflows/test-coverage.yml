@@ -51,7 +51,7 @@ jobs:
       - name: Install the project
         run: |
           uv venv --clear --seed
-          uv pip install -e ".[dev,dashboard,mcp]"
+          uv pip install -e ".[dev,dashboard]"
 
       - name: Run tests with coverage.py
         run: |

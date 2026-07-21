@@ -57,10 +57,12 @@ livekit = [
 # next major so minor releases resolve.
 pipecat = ["pipecat-ai>=1.5.0,<2.0"]
 
-# HTTP API + web dashboard + terminal UI. FastAPI/uvicorn serve /v1/* and the
-# React SPA; python-multipart backs the logo upload; the DI/settings/logging
-# stack backs the layered server; textual powers `voicegw tui`. SQLAlchemy 2.x
-# async + SQLModel + Alembic are core (base) deps, so they are not relisted.
+# The self-host tool surface: HTTP API + web dashboard + terminal UI + MCP
+# server. FastAPI/uvicorn serve /v1/* and the React SPA; python-multipart backs
+# the logo upload; the DI/settings/logging stack backs the layered server;
+# textual powers `voicegw tui`; mcp powers `voicegw mcp` (manage the gateway
+# from coding agents). SQLAlchemy 2.x async + SQLModel + Alembic are core (base)
+# deps, so they are not relisted.
 dashboard = [
     "fastapi>=0.115.0",
     "uvicorn>=0.32.0",
@@ -70,10 +72,8 @@ dashboard = [
     "asgi-correlation-id>=4.3",
     "loguru>=0.7",
     "textual>=0.85,<0.90",
+    "mcp>=1.2.0",
 ]
-
-# MCP server (manage the gateway from coding agents).
-mcp = ["mcp>=1.2.0"]
 
 # Self-host the shared fleet collector: the dashboard/server plus the Postgres
 # backend (asyncpg, targeted by VOICEGW_DB_URL=postgresql+asyncpg://...) and the

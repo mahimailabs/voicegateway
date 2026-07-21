@@ -37,7 +37,7 @@ jobs:
         run: |
           uv python install 3.12
           uv venv --seed --python 3.12
-          uv pip install -e ".[dev,collector,mcp]"
+          uv pip install -e ".[dev,collector]"
       - name: Run the Postgres collector integration test
         run: uv run pytest src/voicegateway/tests/integration/test_postgres_collector.py -v
 
