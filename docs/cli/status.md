@@ -81,4 +81,4 @@ voicegw doctor
 
 ## Related
 
-[`voicegw init`](/cli/init) | [`voicegw onboard`](/cli/onboard) | [`voicegw costs`](/cli/costs) | [`voicegw projects`](/cli/projects) | [`voicegw smoke-test`](/cli/smoke-test)
+[`voicegw init`](/cli/init) | [`voicegw onboard`](/cli/onboard) | [`voicegw costs`](/cli/costs) | [`voicegw projects`](/cli/projects) | [`voicegw check`](/cli/check)

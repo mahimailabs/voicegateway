@@ -141,7 +141,7 @@
               "cli/prices",
               "cli/replay",
               "cli/mcp",
-              "cli/smoke-test",
+              "cli/check",
               "cli/livekit"
             ]
           }

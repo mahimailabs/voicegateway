@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 import sys
 from dataclasses import dataclass, field
 from typing import Any
 
 import typer
+
+from voicegateway.core.constants import VALIDATION_TIMEOUT_S
 
 
 @dataclass
@@ -172,13 +175,9 @@ def _check_provider_key_valid(ctx: _Context) -> CheckResult:
         return CheckResult(
             "Provider key valid",
             "fail",
-            f"Provider '{name}' has no api_key set. Run `voicegw onboard` "
-            "to add one, or set it directly in voicegw.yaml.",
+            f"Provider '{name}' has no api_key set. Set it directly in "
+            "voicegw.yaml under providers.",
         )
-
-    import asyncio
-
-    from voicegateway.utils.cli.onboard import _validate_provider_key
 
     status, message = asyncio.run(_validate_provider_key(name, api_key))
     if status == "ok":
@@ -195,8 +194,41 @@ def _check_provider_key_valid(ctx: _Context) -> CheckResult:
         "Provider key valid",
         "fail",
         f"{name} key was rejected ({message}). Re-check the value in your "
-        "provider dashboard, then run `voicegw onboard` to update.",
+        "provider dashboard, then update it in voicegw.yaml.",
     )
+
+
+async def _validate_provider_key(provider: str, api_key: str) -> tuple[str, str | None]:
+    """Drive a configured provider's ``health_check`` under a short timeout.
+
+    Legacy provider-validation path used by the doctor "Provider key valid"
+    check. In the framework-agnostic model most configs carry no ``providers:``
+    block, so this only runs when the operator has set one explicitly.
+    """
+    from voicegateway.core.registry import _PROVIDER_REGISTRY, create_provider
+
+    if provider not in _PROVIDER_REGISTRY:
+        return "skipped", f"unknown provider name '{provider}'"
+
+    try:
+        instance = create_provider(provider, {"api_key": api_key})
+    except ImportError as exc:
+        return "skipped", f"plugin not installed ({exc})"
+    except Exception as exc:  # noqa: BLE001
+        return "failed", f"{type(exc).__name__}: {exc}"
+
+    try:
+        ok = await asyncio.wait_for(
+            instance.health_check(), timeout=VALIDATION_TIMEOUT_S
+        )
+    except TimeoutError:
+        return "timeout", None
+    except Exception as exc:  # noqa: BLE001
+        return "failed", f"{type(exc).__name__}: {exc}"
+
+    if ok:
+        return "ok", None
+    return "failed", "authentication declined"
 
 
 def _check_recent_error_count(ctx: _Context) -> CheckResult:

@@ -6,14 +6,12 @@ import typer
 
 from voicegateway.cli._app import app, console
 from voicegateway.cli.base_cli import BaseCli
-from voicegateway.core.constants import KNOWN_PROVIDERS
 from voicegateway.utils.cli.onboard import (
     _install_daemon,
     _print_summary,
-    _report_validation,
     _resolve_config_path,
     _rollback_partial,
-    _run_smoke_test,
+    _run_check,
     _write_config,
 )
 
@@ -40,7 +38,12 @@ def onboard(
         ),
     ),
 ) -> None:
-    """Five-question wizard: project, provider, API key, port, daemon."""
+    """Four-question wizard: project, storage, port, daemon.
+
+    VoiceGateway is framework-agnostic: it meters the native provider instances
+    you build in your agent (via ``attach()``), so onboarding configures storage
+    and the daemon, not a provider or key.
+    """
     config_path = _resolve_config_path(config)
 
     pre_existing_bytes: bytes | None = (
@@ -49,29 +52,22 @@ def onboard(
 
     try:
         console.print("[bold]VoiceGateway onboarding[/bold]")
-        console.print("Five questions. Press Ctrl+C any time to cancel.\n")
+        console.print("Four questions. Press Ctrl+C any time to cancel.\n")
 
         # 1. Project name (default: default).
         project_name = typer.prompt("Project name", default="default")
 
-        # 2. Provider (default: openai).
-        provider = typer.prompt(
-            f"Provider (one of: {', '.join(KNOWN_PROVIDERS)})",
-            default="openai",
-        )
-        if provider not in KNOWN_PROVIDERS:
-            _cli.warn(
-                f"Unknown provider '{provider}'. Continuing; the YAML "
-                "validator will catch typos at gateway construction time."
-            )
+        # 2. Storage: SQLite db path (blank uses the default path).
+        db_path = typer.prompt(
+            "Storage: SQLite db path (blank = ~/.config/voicegateway/voicegw.db)",
+            default="",
+            show_default=False,
+        ).strip()
 
-        api_key = typer.prompt(f"{provider} API key", hide_input=True)
-        _report_validation(provider, api_key)
-
-        # 4. Port (default: 8080).
+        # 3. Port (default: 8080).
         port = typer.prompt("Port for voicegw serve", default=8080, type=int)
 
-        # 5. Install daemon (default: yes if the flag was omitted).
+        # 4. Install daemon (default: yes if the flag was omitted).
         if install_daemon is None:
             install_daemon = typer.confirm(
                 "Install the background daemon?", default=True
@@ -80,9 +76,8 @@ def onboard(
         _write_config(
             config_path,
             project_name=project_name,
-            provider=provider,
-            api_key=api_key,
             port=port,
+            db_path=db_path or None,
         )
 
         _cli.success(f"\nWrote {config_path}")
@@ -93,13 +88,12 @@ def onboard(
         _print_summary(
             config_path=config_path,
             project_name=project_name,
-            provider=provider,
             port=port,
             daemon_installed=bool(install_daemon),
         )
 
-        if typer.confirm("\nRun a smoke test now?", default=True):
-            _run_smoke_test(config_path)
+        if typer.confirm("\nRun a check now?", default=True):
+            _run_check(config_path)
 
     except KeyboardInterrupt:
         _rollback_partial(config_path, pre_existing_bytes)

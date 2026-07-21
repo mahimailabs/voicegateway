@@ -64,7 +64,7 @@ def all_pass(monkeypatch):
         return "ok", None
 
     monkeypatch.setattr(
-        "voicegateway.utils.cli.onboard._validate_provider_key", _stub_validate
+        "voicegateway.utils.cli.doctor._validate_provider_key", _stub_validate
     )
 
     # Dashboard reachable: 200 OK.

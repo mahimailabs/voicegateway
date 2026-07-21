@@ -4,7 +4,32 @@ All notable changes to VoiceGateway are documented here. This project
 follows [Semantic Versioning](https://semver.org/) and
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-## v0.15.0: OpenOrca fleet console + runtime intervention resolve
+## Unreleased
+
+### Changed
+
+- **`onboard` and `smoke-test` are framework-agnostic now.** Both commands still
+  assumed the removed config-driven provider/model pipeline. `onboard` asked you
+  to pick a cloud provider and wrote its API key to `voicegw.yaml` in plaintext
+  with no `models:` block; the old `smoke-test` then tried to exercise that
+  pipeline, skipped everything (no models), and false-failed its session check.
+  - **`onboard`** is now a four-question wizard (project, storage, port, daemon).
+    It writes no `providers:` block and no key, prints the one line to add to
+    your agent (`voicegateway.attach(session, project=...)`) plus the fleet
+    collector env vars, and ends by running `check`.
+  - **`smoke-test` is renamed to `check`** (the old name stays as a hidden,
+    deprecated alias). `check` verifies the path that matters in the
+    framework-agnostic model: it drives one synthetic instrumented request and
+    asserts a request row + a session row land in storage. No providers, no
+    network. It passes on a provider-less config, the case the old command got
+    wrong.
+
+### Fixed
+
+- **The CLI no longer requires the livekit runtime to import.** The old
+  `smoke_test` helper imported the instrumented middleware (which pulls livekit)
+  at module load, so `voicegw` required livekit even for commands that do not use
+  it. `check` imports that middleware lazily.
 
 The `/openorca/*` runtime contract gains the pieces a live fleet console needs,
 and the engine now serves that console itself at `/console`.

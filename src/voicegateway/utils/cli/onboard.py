@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import shutil
 import subprocess
 from pathlib import Path
@@ -12,10 +11,7 @@ import yaml
 from rich.table import Table
 
 from voicegateway.cli._app import console
-from voicegateway.core.constants import (
-    SMOKE_TEST_TIMEOUT_S,
-    VALIDATION_TIMEOUT_S,
-)
+from voicegateway.core.constants import SMOKE_TEST_TIMEOUT_S
 
 
 def _resolve_config_path(explicit: str | None) -> Path:
@@ -29,11 +25,14 @@ def _write_config(
     path: Path,
     *,
     project_name: str,
-    provider: str,
-    api_key: str,
     port: int,
+    db_path: str | None = None,
 ) -> None:
-    """Merge wizard input into the target voicegw.yaml."""
+    """Merge wizard input into the target voicegw.yaml.
+
+    Framework-agnostic: VoiceGateway meters the native provider instances you
+    attach() in your agent, so no provider or API key is written here.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
 
     existing: dict[str, Any] = {}
@@ -42,18 +41,18 @@ def _write_config(
         if isinstance(loaded, dict):
             existing = loaded
 
-    providers = existing.setdefault("providers", {})
-    providers[provider] = {"api_key": api_key}
-
     projects = existing.setdefault("projects", {})
     projects.setdefault(project_name, {})
     if "name" not in projects[project_name]:
         projects[project_name]["name"] = project_name.replace("-", " ").title()
 
+    # The gateway resolves the active project from this top-level key.
     existing["default_project"] = project_name
 
     cost_tracking = existing.setdefault("cost_tracking", {})
     cost_tracking["enabled"] = True
+    if db_path:
+        cost_tracking["db_path"] = db_path
 
     serve_section = existing.setdefault("serve", {})
     serve_section["port"] = port
@@ -74,17 +73,15 @@ def _print_summary(
     *,
     config_path: Path,
     project_name: str,
-    provider: str,
     port: int,
     daemon_installed: bool,
 ) -> None:
-    """Render the documented end-of-wizard summary."""
+    """Render the end-of-wizard summary + the agent integration snippet."""
     table = Table(title="Onboarding complete", show_header=False, box=None)
     table.add_column(style="dim")
     table.add_column()
 
     table.add_row("Project", project_name)
-    table.add_row("Provider", provider)
     table.add_row("Serve port", str(port))
     table.add_row(
         "Daemon",
@@ -97,6 +94,18 @@ def _print_summary(
     console.print(table)
     console.print(f"\n[dim]Config:[/dim] {config_path}", soft_wrap=True)
 
+    # The integration snippet is what actually meters your agent.
+    console.print("\n[bold]Add one line to your agent:[/bold]")
+    console.print(
+        "    [cyan]import voicegateway[/cyan]\n"
+        f'    [cyan]voicegateway.attach(session, project="{project_name}")[/cyan]'
+    )
+    console.print(
+        "\n[dim]Fleet mode (optional): point agents at a shared collector with[/dim]\n"
+        "[dim]    VOICEGW_COLLECTOR_URL=<collector>/v1/ingest[/dim]\n"
+        "[dim]    VOICEGW_API_KEY=<ingest key>[/dim]"
+    )
+
     dashboard_url = f"http://127.0.0.1:{port}"
     console.print(f"\n[bold]Dashboard:[/bold] {dashboard_url}")
     console.print(
@@ -107,24 +116,27 @@ def _print_summary(
     )
 
 
-def _run_smoke_test(config_path: Path) -> None:
-    """Spawn ``voicegw smoke-test --config <path>`` and report."""
+def _run_check(config_path: Path) -> None:
+    """Spawn ``voicegw check --config <path>`` and report.
 
+    Subprocess (not in-process) so the check runs with a fresh session ContextVar
+    and no gateway-singleton bleed.
+    """
     voicegw = shutil.which("voicegw")
     if voicegw is None:
         console.print(
-            "[yellow]Could not find 'voicegw' on PATH; skipping smoke test. "
-            "Run `voicegw smoke-test` once your shell sees the binary.[/yellow]"
+            "[yellow]Could not find 'voicegw' on PATH; skipping check. "
+            "Run `voicegw check` once your shell sees the binary.[/yellow]"
         )
         return
 
     console.print(
-        f"\n[bold]Running smoke test...[/bold] (cap: {int(SMOKE_TEST_TIMEOUT_S)}s)"
+        f"\n[bold]Running check...[/bold] (cap: {int(SMOKE_TEST_TIMEOUT_S)}s)"
     )
 
     try:
         result = subprocess.run(
-            [voicegw, "smoke-test", "--config", str(config_path)],
+            [voicegw, "check", "--config", str(config_path)],
             capture_output=True,
             text=True,
             timeout=SMOKE_TEST_TIMEOUT_S,
@@ -132,24 +144,26 @@ def _run_smoke_test(config_path: Path) -> None:
         )
     except subprocess.TimeoutExpired:
         console.print(
-            f"[yellow]Smoke test timed out after {int(SMOKE_TEST_TIMEOUT_S)}s. "
-            f"Run `voicegw smoke-test --config {config_path}` manually to "
-            "see how far it got.[/yellow]"
+            f"[yellow]Check timed out after {int(SMOKE_TEST_TIMEOUT_S)}s. "
+            f"Run `voicegw check --config {config_path}` manually to see how "
+            "far it got.[/yellow]"
         )
         return
 
     if result.returncode == 0:
-        console.print("[green]Smoke test passed.[/green] First call landed in storage.")
+        console.print(
+            "[green]Check passed.[/green] A synthetic request landed in storage."
+        )
         return
 
     console.print(
-        f"[yellow]Smoke test failed (exit {result.returncode}). "
-        f"Run `voicegw smoke-test --config {config_path}` to see the "
-        "full report.[/yellow]"
+        f"[yellow]Check failed (exit {result.returncode}). "
+        f"Run `voicegw check --config {config_path}` to see the full "
+        "report.[/yellow]"
     )
-    # Last few lines of stderr are usually the actionable bit.
-    if result.stderr:
-        tail = "\n".join(result.stderr.strip().splitlines()[-5:])
+    # `check` prints its report table to stdout; the tail is the actionable bit.
+    if result.stdout:
+        tail = "\n".join(result.stdout.strip().splitlines()[-6:])
         if tail:
             console.print(f"[dim]{tail}[/dim]")
 
@@ -167,50 +181,3 @@ def _rollback_partial(config_path: Path, pre_existing_bytes: bytes | None) -> No
         console.print(
             f"[dim]Could not roll back {config_path}: {exc}. Inspect manually.[/dim]"
         )
-
-
-def _report_validation(provider: str, api_key: str) -> None:
-    """Run the provider key validation and surface the result."""
-    status, message = asyncio.run(_validate_provider_key(provider, api_key))
-    if status == "ok":
-        console.print("[green]Provider key validated.[/green]")
-    elif status == "skipped":
-        console.print(f"[dim]Skipping live validation: {message}[/dim]")
-    elif status == "timeout":
-        console.print(
-            "[yellow]Provider validation timed out: your key may still "
-            "be correct; continuing.[/yellow]"
-        )
-    else:  # "failed"
-        console.print(
-            f"[yellow]Provider validation failed ({message}). "
-            "Continuing; run `voicegw doctor` to inspect.[/yellow]"
-        )
-
-
-async def _validate_provider_key(provider: str, api_key: str) -> tuple[str, str | None]:
-    """Drive the provider ``health_check`` path under a 5-second timeout."""
-    from voicegateway.core.registry import _PROVIDER_REGISTRY, create_provider
-
-    if provider not in _PROVIDER_REGISTRY:
-        return "skipped", f"unknown provider name '{provider}'"
-
-    try:
-        instance = create_provider(provider, {"api_key": api_key})
-    except ImportError as exc:
-        return "skipped", f"plugin not installed ({exc})"
-    except Exception as exc:  # noqa: BLE001
-        return "failed", f"{type(exc).__name__}: {exc}"
-
-    try:
-        ok = await asyncio.wait_for(
-            instance.health_check(), timeout=VALIDATION_TIMEOUT_S
-        )
-    except TimeoutError:
-        return "timeout", None
-    except Exception as exc:  # noqa: BLE001
-        return "failed", f"{type(exc).__name__}: {exc}"
-
-    if ok:
-        return "ok", None
-    return "failed", "authentication declined"

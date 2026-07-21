@@ -130,6 +130,10 @@ _V011_COMMAND_NAMES: frozenset[str] = frozenset({"tui"})
 # Commands the v0.3.0 release adds (replay signpost, T15).
 _V030_COMMAND_NAMES: frozenset[str] = frozenset({"replay"})
 
+# The framework-agnostic onboard/check reframe adds `check` (the `smoke-test`
+# name lives on as a hidden alias, so it stays in the _V005 set above).
+_FRAMEWORK_AGNOSTIC_COMMAND_NAMES: frozenset[str] = frozenset({"check"})
+
 
 def _registered_command_names() -> set[str]:
     """Names every Typer command registered on ``app`` answers to."""
@@ -172,6 +176,7 @@ def test_command_count_matches_documented_surface() -> None:
         | _V010_COMMAND_NAMES
         | _V011_COMMAND_NAMES
         | _V030_COMMAND_NAMES
+        | _FRAMEWORK_AGNOSTIC_COMMAND_NAMES
     )
     registered = _registered_command_names()
     assert registered == expected, (

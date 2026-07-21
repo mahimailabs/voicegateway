@@ -42,7 +42,7 @@ After installation, the `voicegw` command is available globally. See
 |---|---|
 | [`status`](/cli/status) | Provider configuration status. |
 | [`doctor`](/cli/status#voicegw-doctor) | Numbered punch list with fix steps. |
-| [`smoke-test`](/cli/smoke-test) | Verify the inference pipeline end-to-end without LiveKit. |
+| [`check`](/cli/check) | Verify metering and storage end to end (drives one synthetic request). |
 | [`livekit`](/cli/livekit) | Diagnostics against a LiveKit server: agents, latency, SFU health, combined check. |
 | [`logs`](/cli/logs) | Recent request logs. |
 | [`costs`](/cli/costs) | Cost summaries per provider, project, and period. |
