@@ -468,7 +468,7 @@ function AddOverrideModal({
           </div>
 
           <div className="flex-row" style={{ gap: 12 }}>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <label className="vg-card__label" style={labelStyle}>
                 Model
               </label>
@@ -481,7 +481,7 @@ function AddOverrideModal({
                 disabled={saving}
               />
             </div>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <label className="vg-card__label" style={labelStyle}>
                 Tenant
               </label>
@@ -494,7 +494,7 @@ function AddOverrideModal({
                 disabled={saving}
               />
             </div>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <label className="vg-card__label" style={labelStyle}>
                 Plan
               </label>
