@@ -204,13 +204,6 @@ def _check_modules_with_fail_paths():
     )
 
     yield (
-        "no_provider_configured",
-        d._check_provider_configured,
-        _build_no_providers_ctx,
-        None,
-    )
-
-    yield (
         "provider_key_missing",
         d._check_provider_key_valid,
         _build_empty_key_ctx,
@@ -293,6 +286,27 @@ def test_each_check_fail_path_carries_specific_fix_action(
     assert "see docs" not in result.detail.lower(), (
         f"{name}: detail uses bare 'see docs' pointer. Detail: {result.detail!r}"
     )
+
+
+def test_provider_configured_skips_when_no_provider():
+    """Framework-agnostic: no provider configured is a SKIP, not a FAIL."""
+    from voicegateway.utils.cli import doctor as d
+
+    result = d._check_provider_configured(_build_no_providers_ctx())
+    assert result.status == "skip"
+    assert "not required" in result.detail
+
+
+def test_pipx_skips_when_uv_present(monkeypatch):
+    """pipx not installed but uv present: SKIP, not FAIL."""
+    from voicegateway.utils.cli import doctor as d
+
+    monkeypatch.setattr(
+        d.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None
+    )
+    result = d._check_pipx(d._Context(config_path=None))
+    assert result.status == "skip"
+    assert "uv" in result.detail
 
 
 # ---------------------------------------------------------------------------

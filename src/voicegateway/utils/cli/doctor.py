@@ -55,11 +55,16 @@ def _check_pipx(ctx: _Context) -> CheckResult:
     pipx = shutil.which("pipx")
     if pipx is not None:
         return CheckResult("pipx installed", "ok", pipx)
+    uv = shutil.which("uv")
+    if uv is not None:
+        return CheckResult(
+            "pipx installed", "skip", f"(not needed: installed via uv at {uv})"
+        )
     return CheckResult(
         "pipx installed",
         "fail",
         "Install pipx with `python3 -m pip install --user pipx && python3 -m pipx ensurepath`, "
-        "then open a new shell so ~/.local/bin lands on PATH.",
+        "then open a new shell so ~/.local/bin lands on PATH. (Or use uv.)",
     )
 
 
@@ -145,11 +150,13 @@ def _check_provider_configured(ctx: _Context) -> CheckResult:
     providers = list(ctx.gateway.config.providers.keys())
     if providers:
         return CheckResult("Provider configured", "ok", ", ".join(sorted(providers)))
+    # Framework-agnostic: no provider is required. VoiceGateway meters the
+    # native instances you build in your agent and pass to attach() / guard().
     return CheckResult(
         "Provider configured",
-        "fail",
-        "voicegw.yaml has no providers configured. Run `voicegw onboard` "
-        "to add one (you'll need an API key from your provider's dashboard).",
+        "skip",
+        "no provider configured (not required): VoiceGateway meters the native "
+        "instances you attach() in your agent.",
     )
 
 
@@ -249,7 +256,14 @@ def _check_recent_error_count(ctx: _Context) -> CheckResult:
             "skip",
             f"(could not read storage: {exc})",
         )
-    failed = sum(1 for r in rows if str(r.get("status", "ok")).lower() != "ok")
+    # Success sentinels: a request is only "failed" if it is none of these.
+    # The stored success status is "success" (not "ok"); "fallback" succeeded via
+    # a fallback provider. Counting anything != "ok" would flag every real
+    # successful request as an error.
+    ok_statuses = {"ok", "success", "fallback"}
+    failed = sum(
+        1 for r in rows if str(r.get("status", "success")).lower() not in ok_statuses
+    )
     if failed == 0:
         return CheckResult(
             "Recent error count", "ok", f"0 errors in the last {len(rows)} requests"
@@ -264,7 +278,9 @@ def _check_recent_error_count(ctx: _Context) -> CheckResult:
 
 
 def _check_dashboard_reachable(ctx: _Context) -> CheckResult:
-    port = _resolve_dashboard_port(ctx)
+    # The server (daemon or `voicegw serve`) serves the dashboard at the serve
+    # port; fall back to a separate dashboard.port / 9090 only if serve is unset.
+    port = _resolve_serve_port(ctx) or _resolve_dashboard_port(ctx)
     url = f"http://127.0.0.1:{port}/health"
     try:
         import httpx
