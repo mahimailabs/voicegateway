@@ -108,12 +108,20 @@ def _print_summary(
 
     dashboard_url = f"http://127.0.0.1:{port}"
     console.print(f"\n[bold]Dashboard:[/bold] {dashboard_url}")
-    console.print(
-        "Open with [cyan]voicegw dashboard[/cyan] (launches your browser), "
-        "or visit the URL directly. Use [cyan]voicegw status[/cyan] / "
-        "[cyan]voicegw doctor[/cyan] for diagnostics, "
-        "[cyan]voicegw stop[/cyan] to bring the daemon down."
-    )
+    if daemon_installed:
+        console.print(
+            "The daemon is serving it. Open with [cyan]voicegw dashboard[/cyan] "
+            "(launches your browser), or visit the URL directly. Use "
+            "[cyan]voicegw status[/cyan] / [cyan]voicegw doctor[/cyan] for "
+            "diagnostics, [cyan]voicegw stop[/cyan] to bring the daemon down."
+        )
+    else:
+        console.print(
+            "Nothing is serving it yet. Start the server with "
+            "[cyan]voicegw serve[/cyan] (runs in the foreground), then open "
+            "[cyan]voicegw dashboard[/cyan] or visit the URL. Use "
+            "[cyan]voicegw doctor[/cyan] for diagnostics."
+        )
 
 
 def _run_check(config_path: Path) -> None:

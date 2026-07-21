@@ -224,6 +224,8 @@ def test_summary_daemon_not_installed_marker(tmp_path):
     assert result.exit_code == 0, result.output
     assert "not installed" in result.output
     assert "voicegw onboard --install-daemon" in result.output
+    # With no daemon, the summary points at `serve` (nothing is serving yet).
+    assert "voicegw serve" in result.output
 
 
 # ---------------------------------------------------------------------------
