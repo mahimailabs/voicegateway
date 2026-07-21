@@ -127,6 +127,30 @@ def test_onboard_install_daemon_path_invokes_manager(tmp_path, monkeypatch):
     fake_manager.install.assert_called_once_with()
 
 
+def test_onboard_daemon_install_failure_warns_and_continues(tmp_path, monkeypatch):
+    """A daemon-install failure must not abort onboarding: warn and continue.
+
+    The config is already written, so the wizard reaches its summary and exits 0
+    with the daemon marked not-installed, instead of crashing with a traceback.
+    """
+    from unittest.mock import MagicMock
+
+    fake_manager = MagicMock()
+    fake_manager.install.side_effect = RuntimeError("launchctl bootstrap failed (5)")
+    monkeypatch.setattr(
+        "voicegateway.cli.daemon.DaemonManager", MagicMock(return_value=fake_manager)
+    )
+    cfg = tmp_path / "voicegw.yaml"
+    result = runner.invoke(
+        app, ["onboard", "--install-daemon", "--config", str(cfg)], input="\n\n\nn\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert cfg.exists()  # config was still written
+    out = _plain(result.output)
+    assert "Daemon install failed" in out
+    assert "not installed" in out  # summary reflects the failure
+
+
 def test_onboard_help_renders():
     result = runner.invoke(app, ["onboard", "--help"])
     assert result.exit_code == 0

@@ -82,14 +82,27 @@ def onboard(
 
         _cli.success(f"\nWrote {config_path}")
 
+        daemon_installed = False
         if install_daemon:
-            _install_daemon()
+            # A daemon-install failure (e.g. launchctl bootstrap in a terminal
+            # without a usable GUI session) must not abort onboarding: the
+            # config is already written. Warn and continue. KeyboardInterrupt is
+            # a BaseException, so it still propagates to the rollback handler.
+            try:
+                _install_daemon()
+                daemon_installed = True
+            except Exception as exc:  # noqa: BLE001
+                _cli.warn(
+                    f"\nDaemon install failed: {exc}\n"
+                    "Your config was written. Start the daemon later with "
+                    "`voicegw start`, or re-run with --no-install-daemon to skip it."
+                )
 
         _print_summary(
             config_path=config_path,
             project_name=project_name,
             port=port,
-            daemon_installed=bool(install_daemon),
+            daemon_installed=daemon_installed,
         )
 
         if typer.confirm("\nRun a check now?", default=True):
