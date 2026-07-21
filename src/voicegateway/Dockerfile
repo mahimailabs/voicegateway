@@ -55,9 +55,11 @@ COPY alembic/ ./alembic/
 ARG VERSION=0.5.0
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 
-# Include the `postgres` extra (asyncpg) so the image can run as a Postgres
-# fleet collector via VOICEGW_DB_URL, not just embedded SQLite.
-RUN pip install --prefix=/install ".[cloud,mcp,dashboard,tui,postgres]"
+# The `collector` extra bundles the dashboard/server stack plus asyncpg (so the
+# image can run as a Postgres fleet collector via VOICEGW_DB_URL, not just
+# embedded SQLite) and duckdb; `mcp` adds the MCP server. No provider wheels:
+# the collector meters by model_id via voice-prices, it does not build providers.
+RUN pip install --prefix=/install ".[collector,mcp]"
 
 # -------- Stage 3: Runtime --------
 FROM python:3.12-slim AS runtime
