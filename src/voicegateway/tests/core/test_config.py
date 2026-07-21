@@ -58,6 +58,22 @@ def test_unknown_top_level_key_suggests_correction(tmp_path):
         GatewayConfig.load(str(path))
 
 
+def test_livekit_block_is_accepted(tmp_path):
+    """A ``livekit:`` block must load, not trip the strict top-level schema.
+
+    The dashboard Diagnostics page tells operators to add this block, and the
+    diagnostics resolver reads it, so ``voicegw serve`` must accept it instead
+    of crashing with "Extra inputs are not permitted".
+    """
+    path = tmp_path / "voicegw.yaml"
+    with open(path, "w") as f:
+        yaml.dump(
+            {"livekit": {"url": "wss://x", "api_key": "k", "api_secret": "s"}}, f
+        )
+    # Must not raise ConfigError.
+    GatewayConfig.load(str(path))
+
+
 def test_negative_daily_budget_raises_error(tmp_path):
     path = tmp_path / "bad.yaml"
     cfg = {
