@@ -269,8 +269,14 @@ class InstrumentationMixin:
         cached_input_units: float = 0.0,
         status: str = "success",
         error_message: str | None = None,
+        agent_id: str | None = None,
     ) -> None:
-        """Log the request to storage. Idempotent: subsequent calls no-op."""
+        """Log the request to storage. Idempotent: subsequent calls no-op.
+
+        ``agent_id`` is optional; the metrics/error-driven callers leave it
+        ``None`` (real traffic is attributed elsewhere). It exists so callers
+        like ``voicegw check`` can stamp a distinct marker on a synthetic row.
+        """
         if self._logged:
             return
         self._logged = True
@@ -302,6 +308,7 @@ class InstrumentationMixin:
             status=status,
             error_message=error_message,
             session_id=get_session_id(),
+            agent_id=agent_id,
         )
 
         if self._storage is not None:
