@@ -60,12 +60,12 @@ def _write_config(
     path.write_text(yaml.dump(existing, default_flow_style=False, sort_keys=False))
 
 
-def _install_daemon() -> None:
-    """Register the daemon."""
+def _install_daemon(config_path: Path) -> None:
+    """Register the daemon so it serves ``config_path``."""
     from voicegateway.cli.daemon import DaemonManager
 
     console.print("\nInstalling background daemon...")
-    DaemonManager().install()
+    DaemonManager().install(config_path=str(config_path))
     console.print("[green]Daemon installed and started.[/green]")
 
 

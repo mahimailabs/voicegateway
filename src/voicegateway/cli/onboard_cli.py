@@ -89,7 +89,7 @@ def onboard(
             # config is already written. Warn and continue. KeyboardInterrupt is
             # a BaseException, so it still propagates to the rollback handler.
             try:
-                _install_daemon()
+                _install_daemon(config_path)
                 daemon_installed = True
             except Exception as exc:  # noqa: BLE001
                 _cli.warn(

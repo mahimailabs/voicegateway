@@ -41,8 +41,13 @@ class MacOSBackend:
 
     # ---- DaemonBackend Protocol -------------------------------------------
 
-    def install(self) -> None:
-        """Render plist, write it, bootstrap. Idempotent on re-run."""
+    def install(self, config_path: str | None = None) -> None:
+        """Render plist, write it, bootstrap. Idempotent on re-run.
+
+        When ``config_path`` is given the daemon runs ``voicegw serve -c
+        <config_path>`` so it serves the exact file the operator onboarded
+        against; otherwise ``serve`` falls back to the config search path.
+        """
         executable = shutil.which("voicegw")
         if executable is None:
             raise RuntimeError(
@@ -54,9 +59,19 @@ class MacOSBackend:
         self._launch_agents_dir.mkdir(parents=True, exist_ok=True)
         self._log_dir.mkdir(parents=True, exist_ok=True)
 
-        rendered = self._render_plist(executable_path=executable)
+        rendered = self._render_plist(
+            executable_path=executable, config_path=config_path
+        )
         self._plist_path.write_text(rendered, encoding="utf-8")
         self._plist_path.chmod(0o644)
+
+        # Idempotent re-install: bootstrap refuses (EIO) when a service with
+        # this label is already loaded, and a crash-looping daemon can be stuck
+        # in launchd's throttle ("spawn scheduled") state. Boot out any prior
+        # registration first so bootstrap always lands the refreshed plist on a
+        # clean slate. bootout is best-effort here; its return code is ignored.
+        if self._is_registered():
+            self._run_launchctl("bootout", self._service_target)
 
         result = self._run_launchctl(
             "bootstrap", self._domain_target, str(self._plist_path)
@@ -141,15 +156,29 @@ class MacOSBackend:
 
     # ---- Internals ---------------------------------------------------------
 
-    def _render_plist(self, *, executable_path: str) -> str:
+    def _render_plist(
+        self, *, executable_path: str, config_path: str | None = None
+    ) -> str:
         tmpl = Template(_TEMPLATE_PATH.read_text())
         return tmpl.substitute(
             service_name=self._service_name,
-            executable_path=executable_path,
+            program_arguments=self._program_arguments_xml(
+                executable_path, config_path
+            ),
             stdout_log_path=str(self._stdout_log),
             stderr_log_path=str(self._stderr_log),
             working_directory=str(self._home),
         )
+
+    @staticmethod
+    def _program_arguments_xml(executable_path: str, config_path: str | None) -> str:
+        """Render the ProgramArguments ``<string>`` elements (XML-escaped)."""
+        from xml.sax.saxutils import escape
+
+        args = [executable_path, "serve"]
+        if config_path:
+            args += ["-c", str(config_path)]
+        return "\n".join(f"        <string>{escape(a)}</string>" for a in args)
 
     def _run_launchctl(self, *args: str) -> subprocess.CompletedProcess[str]:
         """Single subprocess seam. Tests monkeypatch this module's"""

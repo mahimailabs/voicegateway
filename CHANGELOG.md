@@ -30,6 +30,19 @@ follows [Semantic Versioning](https://semver.org/) and
   `smoke_test` helper imported the instrumented middleware (which pulls livekit)
   at module load, so `voicegw` required livekit even for commands that do not use
   it. `check` imports that middleware lazily.
+- **The daemon now serves the config you onboarded with.** The installed service
+  ran `voicegw serve` with no `-c`, so it fell back to the config search path;
+  when you onboarded to `~/.config/voicegateway/voicegw.yaml` (or an explicit
+  path) the daemon could not find it, crash-looped under KeepAlive, and left
+  nothing on the serve port (`doctor` reported "Daemon running: FAIL"). The
+  daemon install now threads the onboarded config path into the launch command
+  (`serve -c <path>`) across the macOS, Linux, and Windows backends.
+- **Re-installing the daemon is idempotent.** On macOS a second
+  `onboard --install-daemon` hit `launchctl bootstrap`'s EIO ("already loaded")
+  and aborted, and a crash-looping daemon could be wedged in launchd's throttle
+  state. Install now boots out any prior registration before bootstrapping the
+  refreshed plist, so re-running onboard always lands the new config on a clean
+  slate.
 
 The `/openorca/*` runtime contract gains the pieces a live fleet console needs,
 and the engine now serves that console itself at `/console`.

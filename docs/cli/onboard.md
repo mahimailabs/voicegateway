@@ -41,7 +41,7 @@ No provider or key: VoiceGateway never writes a secret to `voicegw.yaml`. You in
 2. Reads the existing config if present so the wizard merges without clobbering hand-edited keys.
 3. Prompts the questions (or three if a `--install-daemon` flag was already passed).
 4. Writes the merged config: `projects.<name>`, top-level `default_project`, `cost_tracking.enabled: true` (plus `db_path` if you set one), and `serve.port`. No `providers:` block, no key.
-5. If `install_daemon` is yes: registers the OS-specific service and starts the daemon.
+5. If `install_daemon` is yes: registers the OS-specific service (launchd / systemd / Scheduled Task) to run `voicegw serve -c <config path>` against the config just written, and starts the daemon. Re-running onboard replaces any prior registration cleanly.
 6. Prints a summary plus the integration snippet:
 
    ```python

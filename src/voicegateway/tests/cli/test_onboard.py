@@ -124,7 +124,8 @@ def test_onboard_install_daemon_path_invokes_manager(tmp_path, monkeypatch):
         app, ["onboard", "--install-daemon", "--config", str(cfg)], input="\n\n\nn\n"
     )
     assert result.exit_code == 0, result.output
-    fake_manager.install.assert_called_once_with()
+    # The daemon is installed to serve the exact config that was onboarded.
+    fake_manager.install.assert_called_once_with(config_path=str(cfg))
 
 
 def test_onboard_daemon_install_failure_warns_and_continues(tmp_path, monkeypatch):

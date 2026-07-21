@@ -8,8 +8,12 @@ from typing import Any, Protocol
 class DaemonBackend(Protocol):
     """Common interface every OS-specific daemon backend implements."""
 
-    def install(self) -> None:
-        """Register the daemon with the OS service manager."""
+    def install(self, config_path: str | None = None) -> None:
+        """Register the daemon with the OS service manager.
+
+        ``config_path`` (when given) is threaded into the launch command as
+        ``serve -c <config_path>`` so the daemon serves that exact config.
+        """
         ...
 
     def uninstall(self) -> None:

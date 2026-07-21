@@ -44,7 +44,13 @@ def test_select_backend_name_routes_correctly(monkeypatch, platform, expected):
 def test_install_delegates() -> None:
     backend = Mock()
     DaemonManager(backend=backend).install()
-    backend.install.assert_called_once_with()
+    backend.install.assert_called_once_with(config_path=None)
+
+
+def test_install_forwards_config_path() -> None:
+    backend = Mock()
+    DaemonManager(backend=backend).install(config_path="/tmp/voicegw.yaml")
+    backend.install.assert_called_once_with(config_path="/tmp/voicegw.yaml")
 
 
 def test_uninstall_delegates() -> None:
