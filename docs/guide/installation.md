@@ -94,14 +94,13 @@ pip install "pipecat-ai[openai,deepgram,cartesia]"
 
 ## Additional extras
 
-VoiceGateway ships exactly five extras. `dashboard` also carries the Textual
-terminal UI, so `voicegw tui` needs `voicegateway[dashboard]`.
+VoiceGateway ships exactly five extras.
 
 | Extra | What it adds |
 |---|---|
 | `livekit` | LiveKit Agents seam for `attach()` / `guard()` |
 | `pipecat` | Pipecat seam for `attach()` / `guard()` |
-| `dashboard` | Prebuilt React dashboard bundle (`voicegw dashboard`) plus the Textual terminal UI (`voicegw tui`) |
+| `dashboard` | Prebuilt React dashboard bundle (`voicegw dashboard`) plus the HTTP API server |
 | `mcp` | MCP server for IDE integration |
 | `collector` | Self-hosted fleet collector (Postgres + DuckDB backend) |
 

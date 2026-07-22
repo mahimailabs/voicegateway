@@ -72,4 +72,4 @@ voicegw dashboard --config /etc/voicegateway/voicegw.yaml
 
 ## Related
 
-[`voicegw serve`](/cli/serve) | [`voicegw start`](/cli/serve) | [`voicegw status`](/cli/status) | [`voicegw onboard`](/cli/onboard) | [`voicegw tui`](/cli/tui)
+[`voicegw serve`](/cli/serve) | [`voicegw start`](/cli/serve) | [`voicegw status`](/cli/status) | [`voicegw onboard`](/cli/onboard)

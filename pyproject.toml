@@ -57,12 +57,11 @@ livekit = [
 # next major so minor releases resolve.
 pipecat = ["pipecat-ai>=1.5.0,<2.0"]
 
-# The self-host tool surface: HTTP API + web dashboard + terminal UI + MCP
-# server. FastAPI/uvicorn serve /v1/* and the React SPA; python-multipart backs
-# the logo upload; the DI/settings/logging stack backs the layered server;
-# textual powers `voicegw tui`; mcp powers `voicegw mcp` (manage the gateway
-# from coding agents). SQLAlchemy 2.x async + SQLModel + Alembic are core (base)
-# deps, so they are not relisted.
+# The self-host tool surface: HTTP API + web dashboard + MCP server.
+# FastAPI/uvicorn serve /v1/* and the React SPA; python-multipart backs the
+# logo upload; the DI/settings/logging stack backs the layered server; mcp
+# powers `voicegw mcp` (manage the gateway from coding agents). SQLAlchemy 2.x
+# async + SQLModel + Alembic are core (base) deps, so they are not relisted.
 dashboard = [
     "fastapi>=0.115.0",
     "uvicorn>=0.32.0",
@@ -71,7 +70,6 @@ dashboard = [
     "pydantic-settings>=2.0",
     "asgi-correlation-id>=4.3",
     "loguru>=0.7",
-    "textual>=0.85,<0.90",
     "mcp>=1.2.0",
 ]
 
@@ -85,9 +83,9 @@ collector = [
     "duckdb>=1.0,<2.0",
 ]
 
-# Dev. Pulls the livekit seam + the full dashboard stack (fastapi/uvicorn/DI/
-# textual, via the extra) so the server, TUI, and daemon-backend/doctor tests
-# import cleanly; plus duckdb + clickhouse test tooling (chdb, testcontainers)
+# Dev. Pulls the livekit seam + the full dashboard stack (fastapi/uvicorn/DI,
+# via the extra) so the server and daemon-backend/doctor tests import cleanly;
+# plus duckdb + clickhouse test tooling (chdb, testcontainers)
 # and the daemon-control deps (psutil, platformdirs). Real users get these via
 # the extras above.
 dev = [

@@ -230,7 +230,7 @@ The codebase converged on a small set of patterns. New code should follow them u
 
 ### `typing.Protocol` vs ABC
 
-Prefer `typing.Protocol` for structural typing where multiple implementations need to satisfy an interface without sharing helper code (see `src/voicegateway/cli/tui/data` for a real example -- the `DataClient` Protocol is satisfied by both `HttpClient` and `LocalClient` without inheritance). Use an abstract base class only when the base genuinely supplies shared behaviour (`src/voicegateway/providers/base.py`'s `BaseProvider` is the canonical example: every concrete provider inherits real helper methods).
+Prefer `typing.Protocol` for structural typing where multiple implementations need to satisfy an interface without sharing helper code (see `src/voicegateway/cli/daemon/base_daemon.py` for a real example -- the `DaemonBackend` Protocol is satisfied by `MacOSBackend`, `LinuxBackend`, and `WindowsBackend` without inheritance). Use an abstract base class only when the base genuinely supplies shared behaviour (`src/voicegateway/providers/base.py`'s `BaseProvider` is the canonical example: every concrete provider inherits real helper methods).
 
 ### Pydantic for config
 

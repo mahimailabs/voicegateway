@@ -6,6 +6,22 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ## Unreleased
 
+### Removed
+
+- **The `voicegw tui` terminal UI is gone.** The four-tab Textual UI (~4,900 LOC
+  under `cli/tui/`, its 8 pilot tests, and the `textual` dependency) is removed.
+  Its read paths are covered by the web dashboard (served by `voicegw serve`) and
+  the `costs` / `logs` / `reconcile` CLI commands, which read local storage
+  directly and so work even while the daemon is down. `voicegateway[dashboard]`
+  no longer pulls `textual`.
+
+### Fixed
+
+- **`VOICEGW_COLLECTOR_URL` no longer double-appends `/v1/ingest`.** The value is
+  the collector's base host; the engine appends `/v1/ingest` (and a full
+  `.../v1/ingest` URL is now accepted too), fixing a silent 404 for anyone who
+  followed the older docs that included the path.
+
 ### Changed
 
 - **`onboard` and `smoke-test` are framework-agnostic now.** Both commands still
