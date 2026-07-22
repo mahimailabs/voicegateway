@@ -38,12 +38,47 @@ _RECONCILE_EPSILON = 1e-9
 
 
 def _ttfb_ms(metric: object) -> float | None:
-    """Return first-byte latency in ms from a metric's ttft/ttfb, if present."""
+    """First-response latency in ms from a metric's ttft/ttfb, if present.
+
+    This is the modality's time-to-first-*: ``ttft`` (time to first token) on an
+    LLM metric, ``ttfb`` (time to first audio byte) on a TTS metric. LiveKit STT
+    metrics expose neither (a transcript is not streamed token-by-token), so STT
+    records ``None`` here and carries its latency in ``total_latency_ms``.
+    """
     value = getattr(metric, "ttft", None)
     if value is None:
         value = getattr(metric, "ttfb", None)
     # ``is not None`` so a genuine 0.0 latency records as 0.0, not None.
     return float(value) * 1000.0 if value is not None else None
+
+
+def _duration_ms(metric: object) -> float | None:
+    """Total request latency in ms from a metric's ``duration`` (seconds).
+
+    Every LiveKit STT/LLM/TTS metric carries ``duration`` (the full processing
+    time for that call). It is the STT latency (STT has no first-byte) and the
+    total-latency complement to ttft/ttfb on LLM/TTS.
+    """
+    value = getattr(metric, "duration", None)
+    return float(value) * 1000.0 if value is not None else None
+
+
+def _network_meta(metric: object) -> dict[str, Any]:
+    """Connection-hop latency from ``acquire_time`` (seconds) + reuse flag.
+
+    LiveKit STT/TTS metrics expose ``acquire_time`` (time to acquire the
+    provider connection) and ``connection_reused`` — the network/setup hop,
+    distinct from processing latency. Neither has a RequestRecord column, so
+    they ride in ``metadata`` like ``room`` / ``channel``.
+    """
+    acquire = getattr(metric, "acquire_time", None)
+    if acquire is None:
+        return {}
+    meta: dict[str, Any] = {"acquire_ms": float(acquire) * 1000.0}
+    reused = getattr(metric, "connection_reused", None)
+    if reused is not None:
+        meta["connection_reused"] = bool(reused)
+    return meta
 
 
 def units_from_metric(
@@ -250,6 +285,7 @@ class MetricCapture:
             input_units, output_units, cached, ttfb_ms = units_from_metric(
                 metric, modality
             )
+            total_latency_ms = _duration_ms(metric)
             status = (
                 "cancelled" if bool(getattr(metric, "cancelled", False)) else "success"
             )
@@ -275,11 +311,15 @@ class MetricCapture:
                 output_units=output_units,
                 cached_input_units=cached,
                 ttfb_ms=ttfb_ms,
+                total_latency_ms=total_latency_ms,
                 status=status,
                 fallback_from=fallback_from,
                 session_id=self._session_id,
                 agent_id=self._agent_id,
             )
+            network = _network_meta(metric)
+            if network:
+                record.metadata = {**record.metadata, **network}
             self._stamp_context(record)
             tally = self._recorded.setdefault(
                 (provider, model_id), {"input": 0.0, "output": 0.0, "cached": 0.0}
