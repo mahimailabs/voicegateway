@@ -232,3 +232,143 @@ async def test_remote_sink_starts_periodic_flusher_and_aclose_cancels_it():
     assert sink._flusher is not None  # periodic flusher started
     await sink.aclose()  # cancels the flusher and flushes the buffer
     assert len(client.calls) >= 1
+
+
+# --- RemoteCollectorSink durable outbox (spool_path) ---------------------
+
+
+async def test_spool_durability_survives_restart(tmp_path):
+    """Un-acked rows persist across a process restart on the same spool_path.
+
+    Enqueue without a successful flush, drop the sink, construct a NEW sink on
+    the same spool file, and confirm the rows reload and a later flush delivers
+    them. This is the property that makes reconcile-against-fleet trustworthy.
+    """
+    spool = str(tmp_path / "outbox.db")
+    # First sink: enqueue three rows but never let a flush succeed.
+    sink1 = RemoteCollectorSink(
+        "http://c",
+        "vk",
+        batch_size=100,  # never auto-flushes
+        flush_interval=None,
+        spool_path=spool,
+    )
+    await sink1.log_request(_record(id="r1"))
+    await sink1.log_request(_record(id="r2"))
+    await sink1.log_request(_record(id="r3"))
+    assert (await sink1.completeness())["pending"] == 3
+    await sink1.aclose_spool()  # release the spool without flushing
+
+    # Second sink: same spool, fresh in-memory state -> must reload the outbox.
+    client = _RecordingClient(status_code=200)
+    sink2 = RemoteCollectorSink(
+        "http://c",
+        "vk",
+        batch_size=100,
+        flush_interval=None,
+        spool_path=spool,
+        client=client,
+    )
+    assert (await sink2.completeness())["pending"] == 3
+    await sink2.flush()
+    posted = [r["id"] for call in client.calls for r in call["json"]]
+    assert sorted(posted) == ["r1", "r2", "r3"]
+    done = await sink2.completeness()
+    assert done["pending"] == 0
+    assert done["sent"] == 3
+    assert done["dropped"] == 0
+    await sink2.aclose()
+
+
+async def test_spool_ack_deletes_rows(tmp_path):
+    """A 2xx ack removes exactly those rows from the outbox and counts them sent."""
+    spool = str(tmp_path / "outbox.db")
+    client = _RecordingClient(status_code=200)
+    sink = RemoteCollectorSink(
+        "http://c",
+        "vk",
+        batch_size=100,
+        flush_interval=None,
+        spool_path=spool,
+        client=client,
+    )
+    for i in range(3):
+        await sink.log_request(_record(id=f"r{i}"))
+    assert (await sink.completeness())["pending"] == 3
+    await sink.flush()
+    stats = await sink.completeness()
+    assert stats["pending"] == 0
+    assert stats["sent"] == 3
+    posted = [r["id"] for r in client.calls[0]["json"]]
+    assert posted == ["r0", "r1", "r2"]
+    await sink.aclose()
+
+
+async def test_spool_retry_persistence_keeps_rows_on_failure(tmp_path):
+    """A batch that fails after retries STAYS in the outbox (not dropped)."""
+    spool = str(tmp_path / "outbox.db")
+    client = _RecordingClient(status_code=500)  # always fails
+    sink = RemoteCollectorSink(
+        "http://c",
+        "vk",
+        batch_size=100,
+        flush_interval=None,
+        max_retries=0,
+        backoff=0.001,
+        spool_path=spool,
+        client=client,
+    )
+    for i in range(3):
+        await sink.log_request(_record(id=f"r{i}"))
+    await sink.flush()  # 500 -> exhausts retries -> must not lose the rows
+    stats = await sink.completeness()
+    assert stats["pending"] == 3  # still durably queued
+    assert stats["sent"] == 0
+    assert stats["dropped"] == 0  # durable spool never drops
+    await sink.aclose()
+
+
+async def test_spool_no_loss_transient_failure_then_success(tmp_path):
+    """First flush fails (500), a later flush with a 200 client drains to zero."""
+    spool = str(tmp_path / "outbox.db")
+    fail = _RecordingClient(status_code=500)
+    sink = RemoteCollectorSink(
+        "http://c",
+        "vk",
+        batch_size=100,
+        flush_interval=None,
+        max_retries=0,
+        backoff=0.001,
+        spool_path=spool,
+        client=fail,
+    )
+    for i in range(3):
+        await sink.log_request(_record(id=f"r{i}"))
+    await sink.flush()  # transient failure
+    assert (await sink.completeness())["pending"] == 3
+
+    # Swap in a healthy client and flush again: outbox drains, nothing lost.
+    ok = _RecordingClient(status_code=200)
+    sink._client = ok
+    await sink.flush()
+    stats = await sink.completeness()
+    assert stats["pending"] == 0
+    assert stats["sent"] == 3
+    assert stats["dropped"] == 0
+    posted = [r["id"] for r in ok.calls[0]["json"]]
+    assert posted == ["r0", "r1", "r2"]
+    await sink.aclose()
+
+
+async def test_spool_completeness_shape_and_no_spool_default():
+    """completeness() reports the invoice-grade shape; no-spool default is inert."""
+    client = _RecordingClient(status_code=200)
+    sink = RemoteCollectorSink(
+        "http://c", "vk", batch_size=1, flush_interval=None, client=client
+    )
+    # No spool configured: completeness still answers, pending is always 0.
+    await sink.log_request(_record(id="r1"))  # batch_size=1 -> immediate flush
+    stats = await sink.completeness()
+    assert set(stats) >= {"sent", "pending", "dropped"}
+    assert stats["pending"] == 0
+    await sink.aclose()
