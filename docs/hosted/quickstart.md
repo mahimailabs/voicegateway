@@ -38,7 +38,7 @@ Copy that URL too. You will need both values in the next step.
 `attach()` reads three variables. Set them in your agent's runtime environment (your shell, Dockerfile, Railway/Fly secret store, or `.env` file):
 
 ```bash
-export VOICEGW_COLLECTOR_URL="https://<your-cloud-api-host>/v1/ingest"
+export VOICEGW_COLLECTOR_URL="https://<your-cloud-api-host>"
 export VOICEGW_API_KEY="vk_your_ingest_key"
 export VOICEGW_PROJECT="my-agent"
 ```

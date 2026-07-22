@@ -46,6 +46,31 @@ def _record(**overrides) -> RequestRecord:
     return RequestRecord(**base)
 
 
+def test_remote_sink_url_base_gets_ingest_path():
+    sink = RemoteCollectorSink("https://collector.example.com", "k")
+    assert sink._ingest_url == "https://collector.example.com/v1/ingest"
+
+
+def test_remote_sink_url_trailing_slash_normalized():
+    sink = RemoteCollectorSink("https://collector.example.com/", "k")
+    assert sink._ingest_url == "https://collector.example.com/v1/ingest"
+
+
+def test_remote_sink_url_full_ingest_path_not_doubled():
+    """Docs long told users to include /v1/ingest; accept it without doubling.
+
+    Regression: url + "/v1/ingest" produced ".../v1/ingest/v1/ingest" -> 404,
+    silently breaking fleet ingest for anyone who followed the docs.
+    """
+    sink = RemoteCollectorSink("https://collector.example.com/v1/ingest", "k")
+    assert sink._ingest_url == "https://collector.example.com/v1/ingest"
+
+
+def test_remote_sink_url_full_ingest_path_trailing_slash():
+    sink = RemoteCollectorSink("https://collector.example.com/v1/ingest/", "k")
+    assert sink._ingest_url == "https://collector.example.com/v1/ingest"
+
+
 async def test_local_sqlite_sink_round_trips_record(tmp_path):
     """LocalSqliteSink.log_request writes through to the wrapped storage."""
     storage = StorageService(str(tmp_path / "sink.db"))

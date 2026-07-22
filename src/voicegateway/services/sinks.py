@@ -75,6 +75,21 @@ class LocalSqliteSink:
         await self._storage.finalize_session_replay(session_id)
 
 
+def _normalize_ingest_url(url: str) -> str:
+    """Resolve a collector base URL to its ``/v1/ingest`` endpoint, idempotently.
+
+    ``VOICEGW_COLLECTOR_URL`` is the collector's base host (the heartbeat path is
+    appended the same way). But older docs told users to include ``/v1/ingest``
+    themselves, and appending it unconditionally produced ``/v1/ingest/v1/ingest``
+    -> a silent 404. Accept both the base host and a full ingest URL so neither
+    foot-guns the caller.
+    """
+    trimmed = url.rstrip("/")
+    if trimmed.endswith("/v1/ingest"):
+        return trimmed
+    return trimmed + "/v1/ingest"
+
+
 class RemoteCollectorSink:
     """Fleet sink: batches records and pushes them to a collector's /v1/ingest.
 
@@ -100,7 +115,7 @@ class RemoteCollectorSink:
         client: Any | None = None,
         sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
-        self._ingest_url = url.rstrip("/") + "/v1/ingest"
+        self._ingest_url = _normalize_ingest_url(url)
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self._batch_size = max(1, batch_size)
         self._flush_interval = flush_interval

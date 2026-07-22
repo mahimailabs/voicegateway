@@ -102,7 +102,7 @@ def _print_summary(
     )
     console.print(
         "\n[dim]Fleet mode (optional): point agents at a shared collector with[/dim]\n"
-        "[dim]    VOICEGW_COLLECTOR_URL=<collector>/v1/ingest[/dim]\n"
+        "[dim]    VOICEGW_COLLECTOR_URL=<collector-base-url>[/dim]\n"
         "[dim]    VOICEGW_API_KEY=<ingest key>[/dim]"
     )
 

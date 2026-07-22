@@ -116,7 +116,7 @@ curl -fsSL https://voicegateway.dev/collector.sh | bash
 The script installs Docker if needed, generates and persists secrets, pins the image version, and health-checks the container before returning. Point your agents at it with three environment variables:
 
 ```bash
-export VOICEGW_COLLECTOR_URL="https://collector.example.com/v1/ingest"
+export VOICEGW_COLLECTOR_URL="https://collector.example.com"
 export VOICEGW_API_KEY="<your-ingest-key>"
 export VOICEGW_PROJECT="my-agent"
 ```
