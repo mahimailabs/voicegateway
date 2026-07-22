@@ -53,16 +53,16 @@ export default function Latency() {
     <div>
       <PageHeader
         title="Latency"
-        subtitle="Worst-model TTFB percentiles across today's requests"
+        subtitle="Worst-model first-response percentiles across today's requests (time to first token for LLM, first audio for TTS)"
         accent="pink"
       />
 
       <FilterBar showTenant={false} />
 
       <div className="grid grid-cols-3 mb-lg">
-        <StatusCard label="P50 TTFB" value={fmtP(p50)} accent="pink" icon="50" />
-        <StatusCard label="P95 TTFB" value={fmtP(p95)} accent="pink" icon="95" />
-        <StatusCard label="P99 TTFB" value={fmtP(p99)} accent="pink" icon="99" />
+        <StatusCard label="P50 first response" value={fmtP(p50)} accent="pink" icon="50" />
+        <StatusCard label="P95 first response" value={fmtP(p95)} accent="pink" icon="95" />
+        <StatusCard label="P99 first response" value={fmtP(p99)} accent="pink" icon="99" />
       </div>
 
       <div className="mb-lg">
@@ -76,8 +76,8 @@ export default function Latency() {
             <thead>
               <tr>
                 <th>Model</th>
-                <th>Avg TTFB</th>
-                <th>P95 TTFB</th>
+                <th>Avg first response</th>
+                <th>P95 first response</th>
                 <th>P95 Total</th>
                 <th>Requests</th>
               </tr>
