@@ -14,13 +14,17 @@ and per tenant.
 
 <CodeGroup>
 ```bash uv
-uv add "voicegateway[openrtc]"
+uv add voicegateway
+uv add openrtc
 ```
 
 ```bash pip
-pip install "voicegateway[openrtc]"
+pip install voicegateway
+pip install openrtc
 ```
 </CodeGroup>
+
+VoiceGateway is framework-agnostic and no longer bundles the OpenRTC runtime. Install `openrtc` yourself. VoiceGateway's OpenRTC observer is duck-typed and needs no openrtc import to instantiate.
 
 ## One line: hand the pool an observer
 

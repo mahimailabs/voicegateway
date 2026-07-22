@@ -32,15 +32,19 @@ pip install "voicegateway[pipecat]"
 ```
 </CodeGroup>
 
-The provider wheels for LiveKit are their own extras and imply the `livekit`
-extra, so a single line pulls the runtime plus the plugins you name:
+VoiceGateway is framework-agnostic and no longer bundles provider or local-model
+wheels. Install the LiveKit plugins your agent uses directly (you likely already
+have them) alongside `voicegateway[livekit]`, and VoiceGateway meters them by
+model_id via voice-prices:
 
 <CodeGroup>
 ```bash uv
-uv pip install "voicegateway[openai,deepgram,cartesia]"
+uv pip install "voicegateway[livekit]"
+uv pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
 ```
 ```bash pip
-pip install "voicegateway[openai,deepgram,cartesia]"
+pip install "voicegateway[livekit]"
+pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
 ```
 </CodeGroup>
 

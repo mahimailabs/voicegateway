@@ -119,11 +119,11 @@ _PROVIDER_REGISTRY = {
 }
 ```
 
-`create_provider(name, config)` calls `importlib.import_module()` to load the module, then instantiates the class with the provider config dict. If the import fails (missing SDK), it raises an `ImportError` with an install hint:
+`create_provider(name, config)` calls `importlib.import_module()` to load the module, then instantiates the class with the provider config dict. If the import fails (the plugin wheel is missing), it raises an `ImportError` that points at the upstream wheel, not a VoiceGateway extra:
 
 ```
 Could not import provider 'deepgram': No module named 'deepgram'.
-Install with: pip install voicegateway[deepgram]
+Install with: pip install livekit-plugins-deepgram
 ```
 
 <Note>

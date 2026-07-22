@@ -13,11 +13,11 @@ VoiceGateway includes an MCP (Model Context Protocol) server that lets you manag
   <Step title="Install the MCP extra">
 <CodeGroup>
 ```bash uv
-uv add "voicegateway[mcp]"
+uv add "voicegateway[dashboard]"
 ```
 
 ```bash pip
-pip install "voicegateway[mcp]"
+pip install "voicegateway[dashboard]"
 ```
 </CodeGroup>
   </Step>

@@ -36,18 +36,18 @@ voicegw tui [OPTIONS]
 
 ## Prerequisites
 
-The `tui` extra must be installed:
+Textual ships inside the `dashboard` extra, so `voicegw tui` needs it installed:
 
 ```bash
-pip install "voicegateway[tui]"
+pip install "voicegateway[dashboard]"
 # or with uv
-uv pip install "voicegateway[tui]"
+uv pip install "voicegateway[dashboard]"
 ```
 
 `pipx` users on a system install can inject it without reinstalling:
 
 ```bash
-pipx inject voicegateway "voicegateway[tui]"
+pipx inject voicegateway "voicegateway[dashboard]"
 ```
 
 For Gateway mode, the daemon must be reachable at the resolved URL. A 2 s preflight probe hits `GET /health` before Textual takes over the terminal. An unreachable daemon prints a one-line pointer and exits with code 1.
@@ -175,7 +175,7 @@ voicegw tui --poll 5.0
 | Code | Meaning |
 |---|---|
 | `0` | Clean exit (user pressed `q` or Ctrl+C). |
-| `1` | Daemon unreachable in Gateway mode, or any launch-time failure (corrupt SQLite in Local mode, missing `[tui]` extra, etc.). |
+| `1` | Daemon unreachable in Gateway mode, or any launch-time failure (corrupt SQLite in Local mode, missing `[dashboard]` extra, etc.). |
 
 ## Related
 

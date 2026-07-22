@@ -31,15 +31,15 @@ voicegw mcp [OPTIONS]
 The `mcp` extra must be installed:
 
 ```bash
-pip install "voicegateway[mcp]"
+pip install "voicegateway[dashboard]"
 # or with uv
-uv pip install "voicegateway[mcp]"
+uv pip install "voicegateway[dashboard]"
 ```
 
 For the HTTP transport, the `dashboard` extra is also needed (for `uvicorn` and `starlette`):
 
 ```bash
-pip install "voicegateway[mcp,dashboard]"
+pip install "voicegateway[dashboard]"
 ```
 
 ## Transport modes

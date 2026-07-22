@@ -19,7 +19,7 @@ class AnthropicProvider(BaseProvider):
             return anthropic
         except ImportError as e:
             raise ImportError(
-                "Anthropic plugin not installed. Run: pip install voicegateway[anthropic]"
+                "Anthropic plugin not installed. Run: pip install livekit-plugins-anthropic"
             ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:

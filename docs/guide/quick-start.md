@@ -16,17 +16,21 @@ minimal agent, and cost rows appearing in the dashboard.
 
 <Steps>
   <Step title="Install">
-    Pick the extra for your framework. Provider extras for LiveKit imply the
-    `livekit` extra, so one line is enough.
+    Pick the extra for your framework, then bring the provider plugins your
+    agent uses. VoiceGateway is framework-agnostic and does not bundle provider
+    wheels: it meters your native instances by `model_id` through
+    `voice-prices`.
 
     <Tabs>
       <Tab title="LiveKit">
         <CodeGroup>
         ```bash uv
-        uv pip install "voicegateway[openai,deepgram,cartesia]"
+        uv pip install "voicegateway[livekit]"
+        uv pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
         ```
         ```bash pip
-        pip install "voicegateway[openai,deepgram,cartesia]"
+        pip install "voicegateway[livekit]"
+        pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
         ```
         </CodeGroup>
       </Tab>

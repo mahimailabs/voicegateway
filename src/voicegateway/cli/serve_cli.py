@@ -7,7 +7,6 @@ import typer
 from voicegateway.cli._app import app
 from voicegateway.cli.base_cli import BaseCli
 from voicegateway.core.auth import describe_auth, load_api_keys
-from voicegateway.server import build_app
 from voicegateway.utils.cli.serve import _resolve_bind
 
 _cli = BaseCli()
@@ -24,13 +23,18 @@ def serve_cmd(
     ),
 ) -> None:
     """Start the VoiceGateway HTTP API server under uvicorn."""
+    # Import the server stack lazily so the CLI as a whole stays importable
+    # without the dashboard extra; only `serve` needs FastAPI/uvicorn.
     try:
         import uvicorn
+
+        from voicegateway.server import build_app
     except ImportError:
         _cli.fail(
             "Dashboard dependencies not installed. "
             "Run: pip install 'voicegateway[dashboard]'"
         )
+        return
 
     gw = _cli.require_gateway(config)
     host, port = _resolve_bind(getattr(gw.config, "serve", None), host, port)

@@ -82,7 +82,7 @@ dashboard/
 
 **Framework neutral.** VoiceGateway does not own the inference path. You keep your own LiveKit plugin instances or Pipecat services; `attach()` observes them, `guard()` gates them.
 
-**Lazy provider loading.** No provider SDK is imported until first use. `pip install voicegateway[openai]` installs only the OpenAI SDK.
+**Framework-agnostic, bring your own wheels.** VoiceGateway no longer bundles provider or local-model SDKs. You install the plugin wheels your agent uses (for example `pip install livekit-plugins-openai`), and VoiceGateway meters those instances by `model_id` via voice-prices. It never imports the provider wheel itself.
 
 **Transparent instrumentation.** `InstrumentedSTT/LLM/TTS` wrappers proxy all attribute access via `__getattr__`, so existing call sites see the identical API as the underlying plugin instance.
 

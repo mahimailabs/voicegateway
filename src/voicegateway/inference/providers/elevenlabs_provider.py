@@ -19,7 +19,7 @@ class ElevenLabsProvider(BaseProvider):
             return elevenlabs
         except ImportError as e:
             raise ImportError(
-                "ElevenLabs plugin not installed. Run: pip install voicegateway[elevenlabs]"
+                "ElevenLabs plugin not installed. Run: pip install livekit-plugins-elevenlabs"
             ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:

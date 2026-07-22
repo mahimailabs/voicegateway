@@ -15,14 +15,14 @@ See the [`voicegw livekit sfu`](/cli/livekit#voicegw-livekit-sfu) reference for 
 2. Each prober (`sfu --report-to <url> --vantage <label>`) registers, waits for the barrier so all vantages start at the same instant, ramps the shared room, and posts its per-tier measurements back.
 3. When every prober has reported, the coordinator aggregates (summing clients per tier, taking the worst rtt / loss / quality), prints the combined capacity, and deletes the shared rooms.
 
-The coordinator needs the `[server]` extra (`pip install 'voicegateway[server]'`) for its HTTP layer. Probers need only the base install.
+The coordinator needs the `[dashboard]` extra (`pip install 'voicegateway[dashboard]'`) for its HTTP layer. Probers need only the base install.
 
 ## Coordinator
 
 Run the coordinator somewhere the probers can reach over HTTP (a bastion host, a small VM, or a Fly machine with an internal address):
 
 ```bash
-pip install 'voicegateway[server]'
+pip install 'voicegateway[dashboard]'
 export LIVEKIT_URL=wss://your.livekit.cloud
 export LIVEKIT_API_KEY=... LIVEKIT_API_SECRET=...
 

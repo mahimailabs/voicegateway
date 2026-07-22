@@ -23,7 +23,7 @@ class PiperProvider(BaseProvider):
             return piper
         except ImportError as e:
             raise ImportError(
-                "piper-tts not installed. Run: pip install voicegateway[piper]"
+                "piper-tts not installed. Run: pip install piper-tts"
             ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:

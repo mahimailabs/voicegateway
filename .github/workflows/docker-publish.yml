@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv venv --clear --seed
-          uv pip install -e ".[dev,dashboard,mcp]"
+          uv pip install -e ".[dev,dashboard]"
 
       - name: Run tests
         # Deselect integration tests (testcontainers ClickHouse, real Postgres):

@@ -29,12 +29,12 @@ All destructive tools (`delete_provider`, `delete_model`, `delete_project`) use 
 
 <CodeGroup>
 ```bash pip
-pip install "voicegateway[mcp]"
+pip install "voicegateway[dashboard]"
 voicegw mcp --transport stdio
 ```
 
 ```bash uv
-uv add "voicegateway[mcp]"
+uv add "voicegateway[dashboard]"
 voicegw mcp --transport stdio
 ```
 </CodeGroup>

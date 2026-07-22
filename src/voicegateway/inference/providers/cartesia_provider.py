@@ -21,7 +21,7 @@ class CartesiaProvider(BaseProvider):
             return cartesia
         except ImportError as e:
             raise ImportError(
-                "Cartesia plugin not installed. Run: pip install voicegateway[cartesia]"
+                "Cartesia plugin not installed. Run: pip install livekit-plugins-cartesia"
             ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:

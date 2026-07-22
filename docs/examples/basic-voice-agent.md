@@ -11,15 +11,17 @@ The minimal setup to get a working, metered voice pipeline. Use `attach(session)
 
 <CodeGroup>
 ```bash uv
-uv add "voicegateway[openai,deepgram,cartesia]"
+uv add "voicegateway[livekit]"
 uv add livekit-agents livekit-plugins-deepgram livekit-plugins-openai livekit-plugins-cartesia
 ```
 
 ```bash pip
-pip install "voicegateway[openai,deepgram,cartesia]"
+pip install "voicegateway[livekit]"
 pip install livekit-agents livekit-plugins-deepgram livekit-plugins-openai livekit-plugins-cartesia
 ```
 </CodeGroup>
+
+VoiceGateway is framework-agnostic and no longer bundles provider wheels. Install the provider plugins your agent uses (you likely already have them), and VoiceGateway meters them by model_id via voice-prices.
 
 ## Configuration
 

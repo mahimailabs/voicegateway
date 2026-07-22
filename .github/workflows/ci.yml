@@ -42,7 +42,7 @@ jobs:
           PYTHON_VERSION: ${{ matrix.python-version }}
         run: |
           uv venv --seed --python "$PYTHON_VERSION"
-          uv pip install -e ".[dev,dashboard,mcp]" ruff mypy types-PyYAML
+          uv pip install -e ".[dev,dashboard]" ruff mypy types-PyYAML
       - name: Ruff
         run: uv run ruff check src
       - name: Mypy
