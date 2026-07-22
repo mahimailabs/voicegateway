@@ -8,6 +8,41 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ### Changed
 
+- **`onboard` and `smoke-test` are framework-agnostic now.** Both commands still
+  assumed the removed config-driven provider/model pipeline. `onboard` asked you
+  to pick a cloud provider and wrote its API key to `voicegw.yaml` in plaintext
+  with no `models:` block; the old `smoke-test` then tried to exercise that
+  pipeline, skipped everything (no models), and false-failed its session check.
+  - **`onboard`** is now a four-question wizard (project, storage, port, daemon).
+    It writes no `providers:` block and no key, prints the one line to add to
+    your agent (`voicegateway.attach(session, project=...)`) plus the fleet
+    collector env vars, and ends by running `check`.
+  - **`smoke-test` is renamed to `check`** (the old name stays as a hidden,
+    deprecated alias). `check` verifies the path that matters in the
+    framework-agnostic model: it drives one synthetic instrumented request and
+    asserts a request row + a session row land in storage. No providers, no
+    network. It passes on a provider-less config, the case the old command got
+    wrong.
+
+### Fixed
+
+- **The CLI no longer requires the livekit runtime to import.** The old
+  `smoke_test` helper imported the instrumented middleware (which pulls livekit)
+  at module load, so `voicegw` required livekit even for commands that do not use
+  it. `check` imports that middleware lazily.
+- **The daemon now serves the config you onboarded with.** The installed service
+  ran `voicegw serve` with no `-c`, so it fell back to the config search path;
+  when you onboarded to `~/.config/voicegateway/voicegw.yaml` (or an explicit
+  path) the daemon could not find it, crash-looped under KeepAlive, and left
+  nothing on the serve port (`doctor` reported "Daemon running: FAIL"). The
+  daemon install now threads the onboarded config path into the launch command
+  (`serve -c <path>`) across the macOS, Linux, and Windows backends.
+- **Re-installing the daemon is idempotent.** On macOS a second
+  `onboard --install-daemon` hit `launchctl bootstrap`'s EIO ("already loaded")
+  and aborted, and a crash-looping daemon could be wedged in launchd's throttle
+  state. Install now boots out any prior registration before bootstrapping the
+  refreshed plist, so re-running onboard always lands the new config on a clean
+  slate.
 - **Extras reduced to four.** The optional-dependency groups collapse to
   `livekit`, `pipecat`, `dashboard`, and `collector`. The per-provider extras
   (`openai`, `deepgram`, `anthropic`, `groq`, `cartesia`, `elevenlabs`,

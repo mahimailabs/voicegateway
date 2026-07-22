@@ -36,6 +36,15 @@ def serve_cmd(
         )
         return
 
+    # Publish the served config path so request-time resolvers that read the
+    # raw YAML directly (e.g. the LiveKit diagnostics creds resolver) find the
+    # same file the daemon serves, not just ``./voicegw.yaml`` relative to the
+    # daemon's working directory.
+    if config:
+        import os
+
+        os.environ.setdefault("VOICEGW_CONFIG", config)
+
     gw = _cli.require_gateway(config)
     host, port = _resolve_bind(getattr(gw.config, "serve", None), host, port)
 

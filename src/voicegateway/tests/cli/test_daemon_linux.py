@@ -61,6 +61,22 @@ def test_render_unit_substitutes_all_variables(backend):
     assert cp.get("Install", "WantedBy") == "default.target"
 
 
+def test_render_unit_threads_config_path(backend):
+    """A config path becomes ``serve -c "<path>"`` in ExecStart."""
+    import configparser
+
+    rendered = backend._render_unit(
+        executable_path="/usr/local/bin/voicegw",
+        config_path="/home/me/.config/voicegateway/voicegw.yaml",
+    )
+    cp = configparser.ConfigParser(strict=False, interpolation=None)
+    cp.read_string(rendered)
+    assert cp.get("Service", "ExecStart") == (
+        '/usr/local/bin/voicegw serve -c "'
+        '/home/me/.config/voicegateway/voicegw.yaml"'
+    )
+
+
 # ---------------------------------------------------------------------------
 # install
 # ---------------------------------------------------------------------------

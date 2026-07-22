@@ -52,8 +52,8 @@ class DaemonManager:
             raise NotImplementedError(f"Unknown backend selector: {name!r}")
         return backend
 
-    def install(self) -> None:
-        self._backend.install()
+    def install(self, config_path: str | None = None) -> None:
+        self._backend.install(config_path=config_path)
 
     def uninstall(self) -> None:
         self._backend.uninstall()

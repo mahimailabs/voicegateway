@@ -37,8 +37,13 @@ class WindowsBackend:
 
     # ---- DaemonBackend Protocol -------------------------------------------
 
-    def install(self) -> None:
-        """Try schtasks first, fall back to Startup-folder shortcut."""
+    def install(self, config_path: str | None = None) -> None:
+        """Try schtasks first, fall back to Startup-folder shortcut.
+
+        When ``config_path`` is given the task runs ``voicegw serve -c
+        <config_path>`` so the daemon serves the exact file the operator
+        onboarded against; otherwise ``serve`` uses the config search path.
+        """
         executable = shutil.which("voicegw") or shutil.which("voicegw.exe")
         if executable is None:
             raise RuntimeError(
@@ -47,6 +52,10 @@ class WindowsBackend:
                 "directory) is on your PATH."
             )
 
+        task_run = f'"{executable}" serve'
+        if config_path:
+            task_run += f' -c "{config_path}"'
+
         result = self._schtasks(
             "/Create",
             "/SC",
@@ -54,7 +63,7 @@ class WindowsBackend:
             "/TN",
             self._task_name,
             "/TR",
-            f'"{executable}" serve',
+            task_run,
             "/RL",
             "LIMITED",
             "/F",
@@ -63,7 +72,7 @@ class WindowsBackend:
             return
 
         try:
-            self._install_startup_shortcut(executable)
+            self._install_startup_shortcut(executable, config_path)
         except RuntimeError as fallback_error:
             raise RuntimeError(
                 "Daemon registration failed via both schtasks "
@@ -136,15 +145,23 @@ class WindowsBackend:
             check=False,
         )
 
-    def _install_startup_shortcut(self, executable: str) -> None:
+    def _install_startup_shortcut(
+        self, executable: str, config_path: str | None = None
+    ) -> None:
         """Fallback path: drop a .lnk into the Startup folder via"""
         self._startup_dir.mkdir(parents=True, exist_ok=True)
+
+        arguments = "serve"
+        if config_path:
+            arguments = f'serve -c "{config_path}"'
+        # Escape embedded quotes for the PowerShell double-quoted string literal.
+        ps_arguments = arguments.replace('"', '`"')
 
         ps_script = (
             "$WshShell = New-Object -ComObject WScript.Shell;"
             f'$Shortcut = $WshShell.CreateShortcut("{self._shortcut_path}");'
             f'$Shortcut.TargetPath = "{executable}";'
-            '$Shortcut.Arguments = "serve";'
+            f'$Shortcut.Arguments = "{ps_arguments}";'
             f'$Shortcut.WorkingDirectory = "{self._home}";'
             "$Shortcut.Save()"
         )

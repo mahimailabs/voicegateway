@@ -346,4 +346,4 @@ The following limitations apply across all four subcommands:
 
 ## Related
 
-[`voicegw smoke-test`](/cli/smoke-test) | [`voicegw status`](/cli/status) | [`voicegw logs`](/cli/logs) | [`voicegw costs`](/cli/costs)
+[`voicegw check`](/cli/check) | [`voicegw status`](/cli/status) | [`voicegw logs`](/cli/logs) | [`voicegw costs`](/cli/costs)

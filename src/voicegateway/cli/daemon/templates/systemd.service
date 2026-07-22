@@ -1,16 +1,19 @@
 # VoiceGateway systemd user unit template.
 #
-# Rendered by voicegateway/cli/daemon/linux.py with Python's
+# Rendered by voicegateway/cli/daemon/linux_daemon.py with Python's
 # string.Template. Substitution variables:
 #
-#   ${executable_path}    Absolute path to the voicegw binary
-#                         installed by pipx (typically
-#                         ~/.local/bin/voicegw).
-#   ${working_directory}  Process working directory. The backend
-#                         sets this to the user's home so any
-#                         relative path resolves predictably and
-#                         so the PATH below picks up
-#                         <home>/.local/bin.
+#   exec_start          The full ExecStart command line: the voicegw
+#                       binary (typically ~/.local/bin/voicegw) plus
+#                       "serve", plus "-c <config_path>" when the
+#                       operator onboarded against an explicit config
+#                       so the daemon serves that file rather than
+#                       relying on the config search-path fallback.
+#   working_directory   Process working directory. The backend
+#                       sets this to the user's home so any
+#                       relative path resolves predictably and
+#                       so the PATH below picks up
+#                       <home>/.local/bin.
 #
 # Behaviour locked by this template (do NOT make these template
 # variables; they are intentional defaults for v0.1.0):
@@ -45,7 +48,7 @@ Wants=network-online.target
 
 [Service]
 Type=exec
-ExecStart=${executable_path} serve
+ExecStart=${exec_start}
 Restart=on-failure
 RestartSec=5
 WorkingDirectory=${working_directory}

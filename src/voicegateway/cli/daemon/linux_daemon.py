@@ -26,8 +26,13 @@ class LinuxBackend:
 
     # ---- DaemonBackend Protocol -------------------------------------------
 
-    def install(self) -> None:
-        """Render unit, write it, daemon-reload, enable, start."""
+    def install(self, config_path: str | None = None) -> None:
+        """Render unit, write it, daemon-reload, enable, start.
+
+        When ``config_path`` is given the unit runs ``voicegw serve -c
+        <config_path>`` so the daemon serves the exact file the operator
+        onboarded against; otherwise ``serve`` uses the config search path.
+        """
         executable = shutil.which("voicegw")
         if executable is None:
             raise RuntimeError(
@@ -37,7 +42,9 @@ class LinuxBackend:
             )
 
         self._unit_dir.mkdir(parents=True, exist_ok=True)
-        rendered = self._render_unit(executable_path=executable)
+        rendered = self._render_unit(
+            executable_path=executable, config_path=config_path
+        )
         self._unit_path.write_text(rendered, encoding="utf-8")
         self._unit_path.chmod(0o644)
 
@@ -126,12 +133,26 @@ class LinuxBackend:
     def _unit_name(self) -> str:
         return f"{self._service_name}.service"
 
-    def _render_unit(self, *, executable_path: str) -> str:
+    def _render_unit(
+        self, *, executable_path: str, config_path: str | None = None
+    ) -> str:
         tmpl = Template(_TEMPLATE_PATH.read_text())
         return tmpl.substitute(
-            executable_path=executable_path,
+            exec_start=self._exec_start(executable_path, config_path),
             working_directory=str(self._home),
         )
+
+    @staticmethod
+    def _exec_start(executable_path: str, config_path: str | None) -> str:
+        """Build the systemd ExecStart command line.
+
+        systemd splits ExecStart on whitespace and honours double-quoted
+        arguments, so the config path is double-quoted to survive spaces.
+        """
+        cmd = f"{executable_path} serve"
+        if config_path:
+            cmd += f' -c "{config_path}"'
+        return cmd
 
     def _systemctl(
         self, *args: str, check: bool = False

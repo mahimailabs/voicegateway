@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 import sys
 from dataclasses import dataclass, field
 from typing import Any
 
 import typer
+
+from voicegateway.core.constants import VALIDATION_TIMEOUT_S
 
 
 @dataclass
@@ -52,11 +55,16 @@ def _check_pipx(ctx: _Context) -> CheckResult:
     pipx = shutil.which("pipx")
     if pipx is not None:
         return CheckResult("pipx installed", "ok", pipx)
+    uv = shutil.which("uv")
+    if uv is not None:
+        return CheckResult(
+            "pipx installed", "skip", f"(not needed: installed via uv at {uv})"
+        )
     return CheckResult(
         "pipx installed",
         "fail",
         "Install pipx with `python3 -m pip install --user pipx && python3 -m pipx ensurepath`, "
-        "then open a new shell so ~/.local/bin lands on PATH.",
+        "then open a new shell so ~/.local/bin lands on PATH. (Or use uv.)",
     )
 
 
@@ -142,11 +150,13 @@ def _check_provider_configured(ctx: _Context) -> CheckResult:
     providers = list(ctx.gateway.config.providers.keys())
     if providers:
         return CheckResult("Provider configured", "ok", ", ".join(sorted(providers)))
+    # Framework-agnostic: no provider is required. VoiceGateway meters the
+    # native instances you build in your agent and pass to attach() / guard().
     return CheckResult(
         "Provider configured",
-        "fail",
-        "voicegw.yaml has no providers configured. Run `voicegw onboard` "
-        "to add one (you'll need an API key from your provider's dashboard).",
+        "skip",
+        "no provider configured (not required): VoiceGateway meters the native "
+        "instances you attach() in your agent.",
     )
 
 
@@ -172,13 +182,9 @@ def _check_provider_key_valid(ctx: _Context) -> CheckResult:
         return CheckResult(
             "Provider key valid",
             "fail",
-            f"Provider '{name}' has no api_key set. Run `voicegw onboard` "
-            "to add one, or set it directly in voicegw.yaml.",
+            f"Provider '{name}' has no api_key set. Set it directly in "
+            "voicegw.yaml under providers.",
         )
-
-    import asyncio
-
-    from voicegateway.utils.cli.onboard import _validate_provider_key
 
     status, message = asyncio.run(_validate_provider_key(name, api_key))
     if status == "ok":
@@ -195,8 +201,41 @@ def _check_provider_key_valid(ctx: _Context) -> CheckResult:
         "Provider key valid",
         "fail",
         f"{name} key was rejected ({message}). Re-check the value in your "
-        "provider dashboard, then run `voicegw onboard` to update.",
+        "provider dashboard, then update it in voicegw.yaml.",
     )
+
+
+async def _validate_provider_key(provider: str, api_key: str) -> tuple[str, str | None]:
+    """Drive a configured provider's ``health_check`` under a short timeout.
+
+    Legacy provider-validation path used by the doctor "Provider key valid"
+    check. In the framework-agnostic model most configs carry no ``providers:``
+    block, so this only runs when the operator has set one explicitly.
+    """
+    from voicegateway.core.registry import _PROVIDER_REGISTRY, create_provider
+
+    if provider not in _PROVIDER_REGISTRY:
+        return "skipped", f"unknown provider name '{provider}'"
+
+    try:
+        instance = create_provider(provider, {"api_key": api_key})
+    except ImportError as exc:
+        return "skipped", f"plugin not installed ({exc})"
+    except Exception as exc:  # noqa: BLE001
+        return "failed", f"{type(exc).__name__}: {exc}"
+
+    try:
+        ok = await asyncio.wait_for(
+            instance.health_check(), timeout=VALIDATION_TIMEOUT_S
+        )
+    except TimeoutError:
+        return "timeout", None
+    except Exception as exc:  # noqa: BLE001
+        return "failed", f"{type(exc).__name__}: {exc}"
+
+    if ok:
+        return "ok", None
+    return "failed", "authentication declined"
 
 
 def _check_recent_error_count(ctx: _Context) -> CheckResult:
@@ -217,7 +256,15 @@ def _check_recent_error_count(ctx: _Context) -> CheckResult:
             "skip",
             f"(could not read storage: {exc})",
         )
-    failed = sum(1 for r in rows if str(r.get("status", "ok")).lower() != "ok")
+    # Non-error sentinels: a request only counts as "failed" if it is none of
+    # these. The stored success status is "success" (not "ok"); "fallback"
+    # succeeded via a fallback provider; "cancelled" is a normal voice-agent
+    # interruption (barge-in / the caller hangs up), not an error. Counting
+    # anything != "ok" would flag every successful and every interrupted request.
+    ok_statuses = {"ok", "success", "fallback", "cancelled", "canceled"}
+    failed = sum(
+        1 for r in rows if str(r.get("status", "success")).lower() not in ok_statuses
+    )
     if failed == 0:
         return CheckResult(
             "Recent error count", "ok", f"0 errors in the last {len(rows)} requests"
@@ -232,7 +279,9 @@ def _check_recent_error_count(ctx: _Context) -> CheckResult:
 
 
 def _check_dashboard_reachable(ctx: _Context) -> CheckResult:
-    port = _resolve_dashboard_port(ctx)
+    # The server (daemon or `voicegw serve`) serves the dashboard at the serve
+    # port; fall back to a separate dashboard.port / 9090 only if serve is unset.
+    port = _resolve_serve_port(ctx) or _resolve_dashboard_port(ctx)
     url = f"http://127.0.0.1:{port}/health"
     try:
         import httpx

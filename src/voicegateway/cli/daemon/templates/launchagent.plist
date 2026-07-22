@@ -3,24 +3,26 @@
 <!--
     VoiceGateway LaunchAgent template.
 
-    Rendered by voicegateway/cli/daemon/macos.py with Python's
+    Rendered by voicegateway/cli/daemon/macos_daemon.py with Python's
     ``string.Template``. Substitution variables:
 
-      ${service_name}       Label for launchctl. The macOS backend
-                            uses "ai.openrtc.voicegateway" by default.
-      ${executable_path}    Absolute path to the ``voicegw`` binary
-                            installed by pipx (typically
-                            ~/.local/bin/voicegw or the homebrew
-                            equivalent).
-      ${stdout_log_path}    Absolute path the daemon's stdout pipes
-                            to. Lives under
-                            ~/Library/Logs/voicegateway/serve.log
-                            by convention.
-      ${stderr_log_path}    Absolute path for stderr. Same dir as
-                            stdout, ``serve.err.log``.
-      ${working_directory}  Process working directory. The backend
-                            sets this to the user's home so any
-                            relative path resolves predictably.
+      service_name        Label for launchctl. The macOS backend
+                          uses "ai.openrtc.voicegateway" by default.
+      program_arguments   The rendered <string> elements of the
+                          launch command. Always "voicegw" + "serve",
+                          plus "-c <config_path>" when the operator
+                          onboarded against an explicit config so the
+                          daemon serves that file rather than relying
+                          on the search-path fallback.
+      stdout_log_path     Absolute path the daemon's stdout pipes
+                          to. Lives under
+                          ~/Library/Logs/voicegateway/serve.log
+                          by convention.
+      stderr_log_path     Absolute path for stderr. Same dir as
+                          stdout, ``serve.err.log``.
+      working_directory   Process working directory. The backend
+                          sets this to the user's home so any
+                          relative path resolves predictably.
 
     Behaviour locked by this template (do NOT make these template
     variables; they are intentional defaults for v0.1.0):
@@ -48,8 +50,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>${executable_path}</string>
-        <string>serve</string>
+${program_arguments}
     </array>
 
     <key>RunAtLoad</key>

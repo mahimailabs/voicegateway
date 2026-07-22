@@ -69,6 +69,27 @@ def test_install_uses_schtasks_first(backend, fake_subprocess, monkeypatch):
     assert _powershell_calls(fake_subprocess) == []
 
 
+def test_install_threads_config_path_into_task_run(backend, fake_subprocess, monkeypatch):
+    """A config path becomes ``serve -c "<path>"`` in the schtasks /TR value."""
+    monkeypatch.setattr(
+        "voicegateway.cli.daemon.windows_daemon.shutil.which",
+        lambda name: (
+            "C:\\Users\\example\\.local\\bin\\voicegw.exe"
+            if name in ("voicegw", "voicegw.exe")
+            else None
+        ),
+    )
+
+    backend.install(config_path="C:\\Users\\example\\voicegw.yaml")
+
+    create = next(c for c in _schtasks_calls(fake_subprocess) if "/Create" in c)
+    tr_value = create[create.index("/TR") + 1]
+    assert tr_value == (
+        '"C:\\Users\\example\\.local\\bin\\voicegw.exe" serve '
+        '-c "C:\\Users\\example\\voicegw.yaml"'
+    )
+
+
 def test_install_falls_back_to_startup_shortcut_when_schtasks_fails(
     backend, fake_subprocess, monkeypatch
 ):

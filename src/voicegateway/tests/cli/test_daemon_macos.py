@@ -68,6 +68,23 @@ def test_render_plist_substitutes_all_variables(backend):
     assert parsed["WorkingDirectory"] == str(backend._home)
 
 
+def test_render_plist_threads_config_path(backend):
+    """A config path becomes ``serve -c <path>`` in ProgramArguments."""
+    import plistlib
+
+    rendered = backend._render_plist(
+        executable_path="/usr/local/bin/voicegw",
+        config_path="/home/me/.config/voicegateway/voicegw.yaml",
+    )
+    parsed = plistlib.loads(rendered.encode())
+    assert parsed["ProgramArguments"] == [
+        "/usr/local/bin/voicegw",
+        "serve",
+        "-c",
+        "/home/me/.config/voicegateway/voicegw.yaml",
+    ]
+
+
 # ---------------------------------------------------------------------------
 # install
 # ---------------------------------------------------------------------------
@@ -119,6 +136,36 @@ def test_install_swallows_already_loaded_returncode(
     fake_launchctl.return_value = _ok(returncode=17)
     # Should NOT raise.
     backend.install()
+
+
+def test_install_boots_out_stale_registration_before_bootstrap(
+    backend, fake_launchctl, monkeypatch
+):
+    """Re-install on an already-registered service boots it out first.
+
+    bootstrap refuses (EIO) when the label is already loaded and a
+    crash-looping daemon can be stuck in launchd's throttle state; booting
+    out first lets bootstrap land the refreshed plist on a clean slate.
+    """
+    monkeypatch.setattr(
+        "voicegateway.cli.daemon.macos_daemon.shutil.which",
+        lambda _: "/usr/local/bin/voicegw",
+    )
+
+    def _by_verb(argv, *args, **kwargs):
+        # `launchctl print` is the registration probe: report registered.
+        if "print" in argv:
+            return _ok(stdout="ai.openrtc.voicegateway = {\n    state = running\n}")
+        return _ok()
+
+    fake_launchctl.side_effect = _by_verb
+
+    backend.install()  # must not raise
+
+    verbs = [c.args[0] for c in fake_launchctl.call_args_list]
+    bootout_idx = next(i for i, v in enumerate(verbs) if "bootout" in v)
+    bootstrap_idx = next(i for i, v in enumerate(verbs) if "bootstrap" in v)
+    assert bootout_idx < bootstrap_idx, "bootout must precede bootstrap on re-install"
 
 
 def test_install_raises_on_other_bootstrap_failure(
