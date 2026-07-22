@@ -172,7 +172,7 @@ A single host only shows what one machine can push. To load the SFU concurrently
 
 <CodeGroup>
 ```bash Coordinator
-# Needs the [server] extra: uv pip install 'voicegateway[server]'
+# Needs the [dashboard] extra: uv pip install 'voicegateway[dashboard]'
 voicegw livekit sfu --coordinator --expect 3 --ramp 10,25,50 --duration 20s
 ```
 
@@ -207,7 +207,7 @@ To deploy probers across regions (for example on Fly.io), see [Distributed SFU p
 | `--load` | flag | off | Enable concurrency ramp mode (single host). |
 | `--ramp` | `string` | `2,10,25,50` | Comma-separated concurrency levels for the ramp. |
 | `--duration` | `string` | `20s` | How long to hold each concurrency level. |
-| `--coordinator` | flag | off | Run as the distributed coordinator (needs `[server]` extra). |
+| `--coordinator` | flag | off | Run as the distributed coordinator (needs `[dashboard]` extra). |
 | `--expect` | `integer` | `0` | Number of probers the coordinator waits for. |
 | `--coordinator-port` | `integer` | `8787` | Port the coordinator listens on. |
 | `--report-to` | `string` | (none) | Run as a prober reporting to this coordinator URL. |

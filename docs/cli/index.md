@@ -14,7 +14,7 @@ and reconcile costs.
 The CLI is installed automatically with the package:
 
 ```bash
-pipx install 'voicegateway[cloud,dashboard]'
+pipx install 'voicegateway[dashboard]'
 ```
 
 After installation, the `voicegw` command is available globally. See

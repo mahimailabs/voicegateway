@@ -55,7 +55,9 @@ def create_provider(provider_name: str, config: dict[str, Any]) -> BaseProvider:
     except ImportError as e:
         raise ImportError(
             f"Could not import provider '{provider_name}': {e}. "
-            f"Install with: pip install voicegateway[{provider_name}]"
+            "VoiceGateway no longer bundles provider wheels; install the "
+            "provider's own plugin/runtime (e.g. livekit-plugins-openai, "
+            "faster-whisper) into your agent environment."
         ) from e
 
     cls = getattr(module, class_name)

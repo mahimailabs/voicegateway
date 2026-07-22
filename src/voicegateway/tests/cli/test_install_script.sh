@@ -9,7 +9,7 @@
 #      gateway") appears in stdout, proving the script ran end-to-end
 #      and reached its final guidance section
 #
-# The voicegateway[cloud,dashboard] PyPI install itself is stubbed via
+# The voicegateway[livekit,dashboard] PyPI install itself is stubbed via
 # tests/cli/_pipx_stub.sh mounted at /usr/local/bin/pipx. This is
 # necessary because v0.1.0 is not yet on PyPI; the test exercises the
 # OS-detection, Python-detection, and end-of-script flow without

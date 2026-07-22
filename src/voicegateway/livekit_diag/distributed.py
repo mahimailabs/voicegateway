@@ -198,7 +198,7 @@ def build_coordinator_app(coordinator: Coordinator) -> Any:
         from fastapi import FastAPI
     except ImportError as exc:  # pragma: no cover - import guard
         raise RuntimeError(
-            "the SFU coordinator needs the server extra: pip install 'voicegateway[server]'"
+            "the SFU coordinator needs the server extra: pip install 'voicegateway[dashboard]'"
         ) from exc
 
     app = FastAPI(title="voicegateway SFU coordinator")
@@ -244,7 +244,7 @@ async def serve_coordinator(
         import uvicorn
     except ImportError as exc:  # pragma: no cover - import guard
         raise RuntimeError(
-            "the SFU coordinator needs the server extra: pip install 'voicegateway[server]'"
+            "the SFU coordinator needs the server extra: pip install 'voicegateway[dashboard]'"
         ) from exc
 
     app = build_coordinator_app(coordinator)

@@ -11,11 +11,11 @@ Install the MCP extra:
 
 <CodeGroup>
 ```bash pip
-pip install "voicegateway[mcp]"
+pip install "voicegateway[dashboard]"
 ```
 
 ```bash uv
-uv add "voicegateway[mcp]"
+uv add "voicegateway[dashboard]"
 ```
 </CodeGroup>
 
@@ -23,11 +23,11 @@ For the HTTP/SSE transport, also install the dashboard extra:
 
 <CodeGroup>
 ```bash pip
-pip install "voicegateway[mcp,dashboard]"
+pip install "voicegateway[dashboard]"
 ```
 
 ```bash uv
-uv add "voicegateway[mcp,dashboard]"
+uv add "voicegateway[dashboard]"
 ```
 </CodeGroup>
 

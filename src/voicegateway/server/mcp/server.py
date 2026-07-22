@@ -41,7 +41,7 @@ def create_server(gateway: Gateway) -> Any:
         from mcp.types import TextContent, Tool
     except ImportError as e:
         raise ImportError(
-            "mcp package not installed. Run: pip install voicegateway[mcp]"
+            "mcp package not installed. Run: pip install voicegateway[dashboard]"
         ) from e
 
     # Lazy: defer importing the tools subpackage until create_server is
@@ -97,7 +97,7 @@ async def serve_stdio(gateway: Gateway) -> None:
         from mcp.server.stdio import stdio_server
     except ImportError as e:
         raise ImportError(
-            "mcp package not installed. Run: pip install voicegateway[mcp]"
+            "mcp package not installed. Run: pip install voicegateway[dashboard]"
         ) from e
 
     server = create_server(gateway)
@@ -117,7 +117,7 @@ async def serve_http(
         from mcp.server.sse import SseServerTransport
     except ImportError as e:
         raise ImportError(
-            "mcp package not installed. Run: pip install voicegateway[mcp]"
+            "mcp package not installed. Run: pip install voicegateway[dashboard]"
         ) from e
 
     try:

@@ -3,7 +3,7 @@ title: Provider Abstraction
 description: How VoiceGateway's BaseProvider ABC unifies 11 cloud and local implementations behind a single interface, and how attach() and guard() sit above that layer as framework-neutral observers and gates.
 ---
 
-VoiceGateway does not replace your LiveKit plugin instances or Pipecat services. You keep creating them directly. `attach()` observes them as a passive hook on the `AgentSession` event stream. `guard()` gates calls before they start. The provider layer underneath exists to support the CLI health-check, the resolver-time fallback walk, and modular installation, not to intercept inference traffic.
+VoiceGateway does not replace your LiveKit plugin instances or Pipecat services. You keep creating them directly. `attach()` observes them as a passive hook on the `AgentSession` event stream. `guard()` gates calls before they start. The provider layer underneath exists to support the CLI health-check and the resolver-time fallback walk, not to intercept inference traffic. VoiceGateway is framework-agnostic: it never bundles the provider wheels itself. You install the plugin wheels your agent uses (you likely already have them), and VoiceGateway meters those instances by `model_id` via voice-prices.
 
 ## BaseProvider ABC
 
@@ -103,19 +103,19 @@ graph LR
 
 ## Modality support matrix
 
-| Provider | STT | LLM | TTS | Install extra |
+| Provider | STT | LLM | TTS | Wheel you install |
 |----------|-----|-----|-----|--------------|
-| OpenAI | Yes | Yes | Yes | `openai` |
-| Deepgram | Yes | -- | -- | `deepgram` |
-| Cartesia | -- | -- | Yes | `cartesia` |
-| Anthropic | -- | Yes | -- | `anthropic` |
-| Groq | Yes | Yes | -- | `groq` |
-| ElevenLabs | -- | -- | Yes | `elevenlabs` |
-| AssemblyAI | Yes | -- | -- | `assemblyai` |
-| Ollama | -- | Yes | -- | `ollama` |
-| Whisper | Yes | -- | -- | `whisper` |
-| Kokoro | -- | -- | Yes | `kokoro` |
-| Piper | -- | -- | Yes | `piper` |
+| OpenAI | Yes | Yes | Yes | `livekit-plugins-openai` |
+| Deepgram | Yes | -- | -- | `livekit-plugins-deepgram` |
+| Cartesia | -- | -- | Yes | `livekit-plugins-cartesia` |
+| Anthropic | -- | Yes | -- | `livekit-plugins-anthropic` |
+| Groq | Yes | Yes | -- | `livekit-plugins-openai` |
+| ElevenLabs | -- | -- | Yes | `livekit-plugins-elevenlabs` |
+| AssemblyAI | Yes | -- | -- | `livekit-plugins-assemblyai` |
+| Ollama | -- | Yes | -- | your Ollama runtime |
+| Whisper | Yes | -- | -- | `faster-whisper` |
+| Kokoro | -- | -- | Yes | `kokoro-onnx onnxruntime` |
+| Piper | -- | -- | Yes | `piper-tts` |
 
 When a provider does not support a modality, its `create_*` method calls `self._unsupported()`, which raises `NotImplementedError`. This propagates cleanly through the resolver and surfaces as a clear error before the call starts.
 
@@ -152,26 +152,25 @@ Key patterns:
 
 3. **Lazy SDK import.** The `from livekit.plugins.deepgram import STT` import happens inside the method, not at module level, so you pay the import cost only when the provider is first used.
 
-## Modular installation
+## Bring your own wheels
 
-Each provider is an optional dependency:
+VoiceGateway no longer bundles provider or local-model wheels. You install the plugin wheels your agent uses in your own project (you likely already have them), and VoiceGateway meters those instances by `model_id` via voice-prices:
 
 ```bash
-# Install only what you need
-pip install voicegateway[openai,deepgram,cartesia]
+# Install the provider plugins your agent uses
+pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
 
-# Install everything
-pip install voicegateway[all]
-
-# Local-only stack (no cloud SDKs needed)
-pip install voicegateway[whisper,kokoro]
+# Local runtimes install the same way (VoiceGateway meters local/* and ollama/* for free by model_id)
+pip install faster-whisper kokoro-onnx onnxruntime
 ```
 
-If a provider's SDK is missing, the Registry raises a clear `ImportError`:
+The five VoiceGateway extras (`livekit`, `pipecat`, `dashboard`, `mcp`, `collector`) select framework hooks and surfaces, not provider SDKs.
+
+If a provider's plugin wheel is missing, the Registry raises a clear `ImportError` that points at the upstream wheel, not a VoiceGateway extra:
 
 ```
 Could not import provider 'deepgram': No module named 'deepgram'.
-Install with: pip install voicegateway[deepgram]
+Install with: pip install livekit-plugins-deepgram
 ```
 
 ## Adding a new provider
@@ -183,4 +182,4 @@ Install with: pip install voicegateway[deepgram]
    "myprovider": ("voicegateway.providers.myprovider_provider", "MyProviderProvider"),
    ```
 4. Add pricing data to `src/voicegateway/pricing/catalog.py`.
-5. Add the optional dependency to `pyproject.toml`.
+5. Point the `ImportError` install hint at the upstream plugin wheel. There is no per-provider extra to add to `pyproject.toml`, since VoiceGateway does not bundle provider wheels.

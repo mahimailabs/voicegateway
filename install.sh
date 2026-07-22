@@ -11,7 +11,7 @@
 #     pip --user fallback). Asks before sudo.
 #  4. Detects an existing voicegateway install. If found, offers
 #     pipx-upgrade plus migrate guidance. Otherwise pipx-installs
-#     voicegateway[cloud,dashboard].
+#     voicegateway[livekit,dashboard].
 #  5. Prints the next step: voicegw onboard --install-daemon (or
 #     voicegw migrate when upgrading from v0.0.5).
 #
@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-VG_PACKAGE_SPEC="voicegateway[cloud,dashboard]"
+VG_PACKAGE_SPEC="voicegateway[livekit,dashboard]"
 VG_PYPI_NAME="voicegateway"
 PYTHON_REQUIRED_MAJOR=3
 PYTHON_REQUIRED_MINOR=11

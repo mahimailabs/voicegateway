@@ -17,17 +17,19 @@ Cost queries, project management, latency stats, and request logs live outside t
 
 ```bash uv
 uv add voicegateway
-# With provider extras:
-uv add "voicegateway[openai,deepgram,cartesia]"
+# For the LiveKit integration path:
+uv add "voicegateway[livekit]"
 ```
 
 ```bash pip
 pip install voicegateway
-# With provider extras:
-pip install "voicegateway[openai,deepgram,cartesia]"
+# For the LiveKit integration path:
+pip install "voicegateway[livekit]"
 ```
 
 </CodeGroup>
+
+VoiceGateway is framework-agnostic and no longer bundles provider or local-model wheels. Install the provider plugins your agent uses in your own agent (you likely already have them), for example `pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia`. For local runtimes, install them yourself: `pip install faster-whisper` (Whisper), `pip install kokoro-onnx onnxruntime` (Kokoro), or `pip install piper-tts` (Piper). VoiceGateway meters all of these instances by model_id via voice-prices, and meters `local/*` and `ollama/*` for free. `attach()`/`guard()` error messages point at the upstream wheel (for example `livekit-plugins-openai`), not a VoiceGateway extra.
 
 ## `attach`
 

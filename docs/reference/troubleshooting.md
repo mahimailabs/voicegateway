@@ -49,7 +49,7 @@ voicegw serve
      openai:
        api_key: ${OPENAI_API_KEY}
    ```
-3. If using a new provider, install the extra: `pip install voicegateway[openai]`
+3. VoiceGateway meters native provider/model instances by model_id and does not need the provider wheel installed itself. Install the plugin your agent uses in your own agent, for example `pip install livekit-plugins-openai`
 
 ---
 
@@ -235,19 +235,23 @@ voicegw serve
 
 **Fix:**
 
-Install the specific provider extra:
+VoiceGateway is framework-agnostic and does not bundle provider wheels. Install the
+plugin your agent uses directly. `attach()` and `guard()` error messages point at the
+upstream wheel, not a VoiceGateway extra:
 
 ```bash
-pip install voicegateway[deepgram]
+pip install livekit-plugins-deepgram
 ```
 
-Or install all cloud providers:
+Install the plugin wheels for every provider your agent uses, for example:
 
 ```bash
-pip install voicegateway[cloud]
+pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
 ```
 
-Available extras: `openai`, `deepgram`, `anthropic`, `groq`, `cartesia`, `elevenlabs`, `assemblyai`, `whisper`, `kokoro`, `piper`.
+VoiceGateway meters local/* and ollama/* for free by model_id. For local runtimes,
+install them yourself: whisper with `pip install faster-whisper`, kokoro with
+`pip install kokoro-onnx onnxruntime`, piper with `pip install piper-tts`.
 
 Check what is installed:
 

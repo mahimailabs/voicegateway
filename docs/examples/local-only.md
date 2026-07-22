@@ -19,18 +19,20 @@ curl -fsSL https://ollama.com/install.sh | sh
 ollama pull qwen2.5:3b
 ```
   </Step>
-  <Step title="Install VoiceGateway with local providers">
+  <Step title="Install VoiceGateway and the local runtimes">
 <CodeGroup>
 ```bash uv
-uv add "voicegateway[whisper,kokoro]"
+uv add "voicegateway[livekit]"
+uv add faster-whisper kokoro-onnx onnxruntime
 ```
 
 ```bash pip
-pip install "voicegateway[whisper,kokoro]"
+pip install "voicegateway[livekit]"
+pip install faster-whisper kokoro-onnx onnxruntime
 ```
 </CodeGroup>
 
-Whisper requires `torch` and downloads model weights on first use. Kokoro requires the `kokoro` package.
+VoiceGateway is framework-agnostic and no longer bundles local-model wheels. Install the runtimes yourself: `faster-whisper` for Whisper STT (downloads model weights on first use) and `kokoro-onnx onnxruntime` for Kokoro TTS. VoiceGateway meters `local/*` and `ollama/*` for free by model_id.
   </Step>
   <Step title="Create voicegw.yaml">
 ```yaml
@@ -190,17 +192,19 @@ docker exec voicegateway-ollama ollama pull qwen2.5:3b
 
 ## Using Piper TTS as an alternative
 
-If Kokoro is not available, Piper is another local TTS option:
+If Kokoro is not available, Piper is another local TTS option. Install the runtime yourself:
 
 <CodeGroup>
 ```bash uv
-uv add "voicegateway[piper]"
+uv add piper-tts
 ```
 
 ```bash pip
-pip install "voicegateway[piper]"
+pip install piper-tts
 ```
 </CodeGroup>
+
+VoiceGateway meters `local/*` for free by model_id, so no extra is needed.
 
 ```yaml
 providers:

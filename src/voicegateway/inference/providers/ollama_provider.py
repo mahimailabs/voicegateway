@@ -25,7 +25,7 @@ class OllamaProvider(BaseProvider):
         except ImportError as e:
             raise ImportError(
                 "OpenAI plugin not installed (required for Ollama). "
-                "Run: pip install voicegateway[openai]"
+                "Run: pip install livekit-plugins-openai"
             ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:

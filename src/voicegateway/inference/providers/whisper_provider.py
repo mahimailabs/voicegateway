@@ -25,7 +25,7 @@ class WhisperProvider(BaseProvider):
             return faster_whisper
         except ImportError as e:
             raise ImportError(
-                "faster-whisper not installed. Run: pip install voicegateway[whisper]"
+                "faster-whisper not installed. Run: pip install faster-whisper"
             ) from e
 
     def create_stt(self, model: str, **kwargs: Any) -> Any:

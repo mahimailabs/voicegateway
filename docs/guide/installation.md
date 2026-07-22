@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Install VoiceGateway with uv or pip. Pick the framework extra for LiveKit or Pipecat, then add provider extras for the SDKs you need. Python 3.11+ required.
+description: Install VoiceGateway with uv or pip. Pick the framework extra for LiveKit or Pipecat, then bring your own provider plugins. Python 3.11+ required.
 ---
 
 # Installation
@@ -33,40 +33,46 @@ pip install "voicegateway[pipecat]"
 ```
 </CodeGroup>
 
-## Provider extras (LiveKit)
+## Provider plugins (LiveKit)
 
-Provider extras imply `livekit`. A single line pulls the core, the LiveKit
-adapter, and the provider SDK you name.
+VoiceGateway is framework-agnostic and does not bundle provider wheels. You
+install the LiveKit provider plugins your agent uses, exactly as you would
+without VoiceGateway (you likely already have them). VoiceGateway meters those
+native instances by `model_id` through `voice-prices`.
 
 <CodeGroup>
 ```bash uv
+uv pip install "voicegateway[livekit]"
+
 # One provider
-uv pip install "voicegateway[openai]"
+uv pip install livekit-plugins-openai
 
 # Several at once
-uv pip install "voicegateway[openai,deepgram,cartesia]"
+uv pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
 ```
 ```bash pip
-pip install "voicegateway[openai]"
+pip install "voicegateway[livekit]"
 
-pip install "voicegateway[openai,deepgram,cartesia]"
+pip install livekit-plugins-openai
+
+pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
 ```
 </CodeGroup>
 
-| Extra | Provider SDK installed |
+| Provider | LiveKit plugin wheel |
 |---|---|
-| `openai` | `livekit-plugins-openai` |
-| `deepgram` | `livekit-plugins-deepgram` |
-| `anthropic` | `livekit-plugins-anthropic` |
-| `groq` | `livekit-plugins-groq` |
-| `cartesia` | `livekit-plugins-cartesia` |
-| `elevenlabs` | `livekit-plugins-elevenlabs` |
-| `assemblyai` | `livekit-plugins-assemblyai` |
-| `whisper` | `livekit-plugins-silero` + `openai-whisper` |
+| OpenAI | `livekit-plugins-openai` |
+| Deepgram | `livekit-plugins-deepgram` |
+| Anthropic | `livekit-plugins-anthropic` |
+| Groq | `livekit-plugins-openai` |
+| Cartesia | `livekit-plugins-cartesia` |
+| ElevenLabs | `livekit-plugins-elevenlabs` |
+| AssemblyAI | `livekit-plugins-assemblyai` |
 
 <Note>
-  Each of the provider extras above implies `livekit`. You do not need to install
-  `voicegateway[livekit]` separately when you install a provider extra.
+  `attach()` and `guard()` error messages point at the upstream wheel (for
+  example `livekit-plugins-openai`), not a VoiceGateway extra. Install the wheel
+  named in the error into your agent environment.
 </Note>
 
 ## Provider extras (Pipecat)
@@ -88,22 +94,32 @@ pip install "pipecat-ai[openai,deepgram,cartesia]"
 
 ## Additional extras
 
+VoiceGateway ships exactly five extras. `dashboard` also carries the Textual
+terminal UI, so `voicegw tui` needs `voicegateway[dashboard]`.
+
 | Extra | What it adds |
 |---|---|
-| `dashboard` | Prebuilt React dashboard bundle (served by `voicegw dashboard`) |
-| `local` | Local model support: Whisper, Kokoro, Piper, Ollama |
+| `livekit` | LiveKit Agents seam for `attach()` / `guard()` |
+| `pipecat` | Pipecat seam for `attach()` / `guard()` |
+| `dashboard` | Prebuilt React dashboard bundle (`voicegw dashboard`) plus the Textual terminal UI (`voicegw tui`) |
 | `mcp` | MCP server for IDE integration |
-| `tui` | Terminal UI (Textual-based status / costs / sessions views) |
-| `all` | Everything above |
+| `collector` | Self-hosted fleet collector (Postgres + DuckDB backend) |
 
-You can combine any extras:
+There are no per-provider or local-model extras. VoiceGateway meters native
+provider instances and `local/*` and `ollama/*` model ids for free by
+`model_id`, so you bring the provider plugins and local runtimes yourself. For
+local models install the runtime directly: Whisper with
+`pip install faster-whisper`, Kokoro with `pip install kokoro-onnx onnxruntime`,
+Piper with `pip install piper-tts`.
+
+You can combine any extras. To install the everything set:
 
 <CodeGroup>
 ```bash uv
-uv pip install "voicegateway[livekit,dashboard,openai,deepgram]"
+uv pip install "voicegateway[collector,livekit,pipecat]"
 ```
 ```bash pip
-pip install "voicegateway[livekit,dashboard,openai,deepgram]"
+pip install "voicegateway[collector,livekit,pipecat]"
 ```
 </CodeGroup>
 
@@ -174,10 +190,11 @@ voicegw init --diff
 
 **`ModuleNotFoundError: No module named 'deepgram'`**
 
-You installed without the `deepgram` extra. Add it:
+Your agent is missing the Deepgram plugin. VoiceGateway does not install provider
+wheels, so install the one your agent uses:
 
 ```bash
-pip install "voicegateway[deepgram]"
+pip install livekit-plugins-deepgram
 ```
 
 **`ConfigError: No voicegw.yaml found`**

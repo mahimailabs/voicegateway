@@ -128,7 +128,7 @@ export VOICEGW_PROJECT="my-agent"
 VoiceGateway ships a first-class [Model Context Protocol](https://modelcontextprotocol.io) server. Claude Code, Cursor, Codex, and Cline create projects, check costs, and inspect calls through natural language.
 
 ```bash
-pipx inject voicegateway "voicegateway[mcp]"
+pipx inject voicegateway "voicegateway[dashboard]"
 claude mcp add voicegateway --command "voicegw mcp --transport stdio"
 ```
 
@@ -209,7 +209,7 @@ For production, the [fleet collector installer](#fleet-collector) handles secret
 ```bash
 git clone https://github.com/mahimailabs/voicegateway
 cd voicegateway
-pip install -e ".[all,dashboard,mcp,dev]"
+pip install -e ".[dev]"
 pytest
 ```
 
