@@ -81,6 +81,16 @@ def _network_meta(metric: object) -> dict[str, Any]:
     return meta
 
 
+def _event_time(event: object) -> float:
+    """Wall-clock time for a session event, preferring its own ``created_at``.
+
+    LiveKit session events (e.g. ``UserInputTranscribedEvent``) stamp
+    ``created_at`` at emit; fall back to receive time when absent.
+    """
+    ts = getattr(event, "created_at", None)
+    return float(ts) if ts else time.time()
+
+
 def units_from_metric(
     metric: object, modality: str
 ) -> tuple[float, float, float, float | None]:
@@ -266,6 +276,13 @@ class MetricCapture:
         # Per-(provider, model_id) running tally of captured units, so the
         # close-time reconcile can diff against cumulative session.usage.
         self._recorded: dict[tuple[str, str], dict[str, float]] = {}
+        # Per-turn latch for time-to-first-partial-transcript (a turn-level STT
+        # responsiveness metric): the moment the user started speaking, and the
+        # first-interim delay relative to it. Stashed onto the EOU row and reset
+        # per turn. Both stay None until an interim actually lands, so streaming
+        # STT that emits no interims never fabricates a number.
+        self._turn_started_at: float | None = None
+        self._first_partial_ms: float | None = None
 
     def bind(self, session: object) -> None:
         """Subscribe to every component's metrics + the session error event."""
@@ -279,6 +296,11 @@ class MetricCapture:
         if callable(on):
             on("error", self._on_error)
             on("metrics_collected", self._on_session_metric)
+            # Turn-level time-to-first-partial-transcript. The interim arrives on
+            # the session's user_input_transcribed stream (STTMetrics carries no
+            # first-partial), anchored to the user_started_speaking onset.
+            on("user_started_speaking", self._on_user_started_speaking)
+            on("user_input_transcribed", self._on_user_transcribed)
 
     def _make_metric_handler(self, modality: str, provider: str, model_id: str) -> Any:
         def handler(metric: object, *_args: Any, **_kwargs: Any) -> None:
@@ -349,6 +371,25 @@ class MetricCapture:
         self._stamp_context(record)
         self._schedule(self._sink.log_request(record))
 
+    def _on_user_started_speaking(self, event: object, *_a: Any, **_k: Any) -> None:
+        """Start a new turn: anchor the onset and clear the first-partial latch."""
+        self._turn_started_at = _event_time(event)
+        self._first_partial_ms = None
+
+    def _on_user_transcribed(self, event: object, *_a: Any, **_k: Any) -> None:
+        """Latch the FIRST interim transcript's delay from the turn onset.
+
+        Interims fire many times per turn, so only the first ``is_final=False``
+        counts, and only once we've seen a turn onset. Later interims and the
+        final transcript are ignored.
+        """
+        if self._turn_started_at is None or self._first_partial_ms is not None:
+            return
+        if getattr(event, "is_final", True):
+            return  # final transcript, not an interim
+        delay_ms = (_event_time(event) - self._turn_started_at) * 1000.0
+        self._first_partial_ms = max(0.0, delay_ms)
+
     def _on_session_metric(self, metric: object, *_a: Any, **_k: Any) -> None:
         metric = getattr(metric, "metrics", metric)
         eou = getattr(metric, "end_of_utterance_delay", None)
@@ -365,14 +406,20 @@ class MetricCapture:
             session_id=self._session_id,
             agent_id=self._agent_id,
         )
-        record.metadata = {
-            "eou": {
-                "end_of_utterance_delay": float(eou),
-                "transcription_delay": float(
-                    getattr(metric, "transcription_delay", 0.0) or 0.0
-                ),
-            }
+        eou_meta: dict[str, Any] = {
+            "end_of_utterance_delay": float(eou),
+            "transcription_delay": float(
+                getattr(metric, "transcription_delay", 0.0) or 0.0
+            ),
         }
+        # Turn-level time-to-first-partial-transcript, if an interim landed this
+        # turn (absent for non-streaming / final-only STT). Reset the latch so
+        # the next turn starts clean.
+        if self._first_partial_ms is not None:
+            eou_meta["time_to_first_partial_ms"] = self._first_partial_ms
+        self._turn_started_at = None
+        self._first_partial_ms = None
+        record.metadata = {"eou": eou_meta}
         self._stamp_context(record)
         self._schedule(self._sink.log_request(record))
 
