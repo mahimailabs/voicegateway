@@ -144,6 +144,7 @@ export default function Projects() {
 
 function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const [projectId, setProjectId] = useState('');
+  const [idEdited, setIdEdited] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [dailyBudget, setDailyBudget] = useState('0');
@@ -184,7 +185,7 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
             <input
               className="neo-input"
               value={name}
-              onChange={(e) => { setName(e.target.value); if (!projectId) setProjectId(slug(e.target.value)); }}
+              onChange={(e) => { setName(e.target.value); if (!idEdited) setProjectId(slug(e.target.value)); }}
               style={{ width: '100%' }}
             />
           </div>
@@ -193,7 +194,7 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
             <input
               className="neo-input"
               value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
+              onChange={(e) => { setIdEdited(true); setProjectId(e.target.value); }}
               style={{ width: '100%' }}
             />
           </div>
@@ -220,7 +221,43 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
             />
           </div>
           <div>
-            <label className="vg-card__label" style={{ display: 'block', marginBottom: 6 }}>Budget Action</label>
+            <label
+              className="vg-card__label"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}
+            >
+              Budget Action
+              <span
+                role="img"
+                aria-label="What each budget action does"
+                title={
+                  'What happens once a project passes its daily budget ' +
+                  '(applies only when Daily Budget is greater than 0):\n\n' +
+                  'Warn (default) — keep serving requests, just log a warning. ' +
+                  'Spend is not capped.\n\n' +
+                  'Throttle — keep serving, but raise a throttle signal so your ' +
+                  'agent (via guard()) can fall back to a cheaper or local model ' +
+                  'instead of the paid provider, so spend stops growing.\n\n' +
+                  'Block — reject further requests for the rest of the day with a ' +
+                  'budget-exceeded error.'
+                }
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 15,
+                  height: 15,
+                  borderRadius: '50%',
+                  border: '1.5px solid var(--vg-muted)',
+                  color: 'var(--vg-muted)',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  lineHeight: 1,
+                  cursor: 'help',
+                }}
+              >
+                ?
+              </span>
+            </label>
             <select
               className="neo-select"
               value={budgetAction}

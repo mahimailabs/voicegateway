@@ -25,6 +25,10 @@ from voicegateway.inference.session.context import (
 # resolution. The pass condition is the rows landing, not a cost threshold.
 _CHECK_MODEL_ID = "openai/gpt-4o-mini"
 
+# Stamped on the synthetic request so the self-test row is identifiable in the
+# dashboard (Calls page agent filter) and not mistaken for real agent traffic.
+_CHECK_AGENT_ID = "voicegw-check"
+
 
 def check_active_project(gw: Any) -> str | None:
     """Pick a project: ``default_project``, else a named project, else ``default``."""
@@ -94,7 +98,7 @@ async def run_check(gw: Any, project: str, add: Any) -> None:
 
     # `_log_request` is best-effort (it swallows storage errors), so we assert on
     # the READ-BACK below, not on this call not raising.
-    await instance._log_request(input_units=1.0)
+    await instance._log_request(input_units=1.0, agent_id=_CHECK_AGENT_ID)
 
     sid = get_session_id()
     if sid is None:

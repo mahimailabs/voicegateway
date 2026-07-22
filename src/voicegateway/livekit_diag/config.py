@@ -22,8 +22,18 @@ class LiveKitCreds:
 
 
 def _from_yaml(config_path: str | None) -> dict:
-    path = config_path or os.environ.get("VOICEGW_CONFIG") or "voicegw.yaml"
-    if not os.path.exists(path):
+    # Precedence: explicit path, then $VOICEGW_CONFIG (the daemon publishes the
+    # served -c path here), then ./voicegw.yaml, then the standard config home
+    # (~/.config/voicegateway/voicegw.yaml) so the resolver still finds creds
+    # when the daemon runs with a home working directory.
+    candidates = [
+        config_path,
+        os.environ.get("VOICEGW_CONFIG"),
+        "voicegw.yaml",
+        os.path.expanduser("~/.config/voicegateway/voicegw.yaml"),
+    ]
+    path = next((c for c in candidates if c and os.path.exists(c)), None)
+    if path is None:
         return {}
     import yaml
 

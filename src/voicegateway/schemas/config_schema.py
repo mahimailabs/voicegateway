@@ -164,6 +164,24 @@ class ServeConfig(BaseModel):
     port: int = 8080
 
 
+class LiveKitConfig(BaseModel):
+    """Optional LiveKit deployment credentials for the diagnostics probes.
+
+    Read by ``voicegw livekit`` and the dashboard Diagnostics page through
+    ``livekit_diag``. All fields are optional; the ``LIVEKIT_URL`` /
+    ``LIVEKIT_API_KEY`` / ``LIVEKIT_API_SECRET`` env vars take precedence when
+    set. Accepting this block here is what lets an operator configure LiveKit
+    in ``voicegw.yaml`` (the config the daemon already serves) instead of the
+    daemon's environment.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    url: str = ""
+    api_key: str = ""
+    api_secret: str = ""
+
+
 class ApiKeyEntry(_StrictBase):
     """One entry under auth.api_keys."""
 
@@ -265,6 +283,7 @@ _VALID_TOP_LEVEL_KEYS = {
     "rate_limits",
     "dashboard",
     "serve",
+    "livekit",
     "auth",
     "ingest",
     "retention",
@@ -291,6 +310,7 @@ class VoiceGatewayConfig(BaseModel):
     rate_limits: dict[str, RateLimitEntry] = Field(default_factory=dict)
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
     serve: ServeConfig = Field(default_factory=ServeConfig)
+    livekit: LiveKitConfig = Field(default_factory=LiveKitConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     ingest: IngestConfig = Field(default_factory=IngestConfig)
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
