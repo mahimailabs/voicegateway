@@ -546,3 +546,34 @@ async def test_delete_project_not_found(gateway):
     tool = _tool("delete_project")
     with pytest.raises(ProjectNotFoundError):
         await tool.handler(gateway, {"project_id": "not-real", "confirm": True})
+
+
+# --- rate-card tools -----------------------------------------------------
+
+
+async def test_rate_card_set_get_delete(gateway):
+    """set_rate_card_override adds a DB override; get shows it; delete removes it."""
+    set_tool = _tool("set_rate_card_override")
+    get_tool = _tool("get_rate_card")
+    del_tool = _tool("delete_rate_card_override")
+
+    res = await set_tool.handler(
+        gateway, {"modality": "llm", "provider": "openai", "markup": 1.3}
+    )
+    assert res["created"] is True
+    rule_id = res["rule_id"]
+
+    card = await get_tool.handler(gateway, {})
+    assert "default_markup" in card
+    assert any(o["rule_id"] == rule_id for o in card["overrides"])
+
+    deleted = await del_tool.handler(gateway, {"rule_id": rule_id})
+    assert deleted["deleted"] is True
+    card_after = await get_tool.handler(gateway, {})
+    assert all(o["rule_id"] != rule_id for o in card_after["overrides"])
+
+
+async def test_rate_card_delete_unknown_raises(gateway):
+    del_tool = _tool("delete_rate_card_override")
+    with pytest.raises(ValidationError):
+        await del_tool.handler(gateway, {"rule_id": "no-such-rule"})

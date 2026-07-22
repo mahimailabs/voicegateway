@@ -18,12 +18,12 @@ def gateway(temp_config, tmp_path, monkeypatch):
 
 
 async def test_list_tools_protocol(gateway):
-    """In admin mode the client sees all 22 tools (including v0.0.5 vg_* tools)."""
+    """In admin mode the client sees all 25 tools (including v0.0.5 vg_* tools)."""
     server = create_server(gateway, is_admin=True)
     async with create_connected_server_and_client_session(server) as client:
         await client.initialize()
         result = await client.list_tools()
-        assert len(result.tools) == 22
+        assert len(result.tools) == 25
         names = {t.name for t in result.tools}
         assert "get_health" in names
         assert "add_provider" in names

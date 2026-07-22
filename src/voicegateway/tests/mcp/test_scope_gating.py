@@ -26,6 +26,7 @@ def test_legacy_and_destructive_tools_are_admin_scoped():
         "delete_model",
         "delete_project",
         "get_provider_status",
+        "delete_rate_card_override",
     ):
         assert _scope(name) == ADMIN_SCOPE, name
 
@@ -41,6 +42,8 @@ def test_framework_agnostic_tools_are_public():
         "get_project",
         "create_project",
         "list_models",
+        "get_rate_card",
+        "set_rate_card_override",
     ):
         assert _scope(name) is None, name
 
