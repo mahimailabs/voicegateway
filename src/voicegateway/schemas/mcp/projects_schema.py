@@ -20,17 +20,19 @@ class GetProjectInput(StrictMcpInput):
 
 
 class CreateProjectInput(StrictMcpInput):
-    """Input for create_project: full project definition."""
+    """Input for create_project: a framework-agnostic project.
+
+    A project is an attribution + cost-control scope: a label plus a daily
+    budget and what to do when it is exceeded. VoiceGateway no longer routes
+    models, so the old stt/llm/tts_model + default_stack routing fields are
+    gone.
+    """
 
     project_id: str
     name: str
     description: str = ""
     daily_budget: float = Field(default=0.0, ge=0.0)
     budget_action: Literal["warn", "throttle", "block"] = "warn"
-    stt_model: str | None = None
-    llm_model: str | None = None
-    tts_model: str | None = None
-    default_stack: str | None = None
     tags: list[str] | None = None
 
 

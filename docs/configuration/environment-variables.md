@@ -26,7 +26,7 @@ These variables configure the agent-side remote sink that pushes telemetry to Vo
 
 | Variable | Purpose |
 |---|---|
-| `VOICEGW_COLLECTOR_URL` | Full URL of the ingest endpoint, e.g. `https://collect.voicegateway.dev/v1/ingest` |
+| `VOICEGW_COLLECTOR_URL` | Base URL of the collector, e.g. `https://collect.voicegateway.dev`. The engine appends `/v1/ingest` (a full `.../v1/ingest` URL is also accepted). |
 | `VOICEGW_API_KEY` | Virtual API key (`vk_...`) that authenticates the agent to the collector |
 | `VOICEGW_PROJECT` | Default project name for `attach()` calls. Resolution order: `project=` argument, then this env var, then `"default"`. |
 

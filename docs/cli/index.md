@@ -48,7 +48,6 @@ After installation, the `voicegw` command is available globally. See
 | [`costs`](/cli/costs) | Cost summaries per provider, project, and period. |
 | [`projects`](/cli/projects) | List configured projects. |
 | [`dashboard`](/cli/dashboard) | Open the dashboard in your browser. |
-| [`tui`](/cli/tui) | Launch the terminal UI (status, costs, sessions). |
 | [`replay`](/cli/replay) | Print the dashboard replay URL for a session. |
 
 ### Reconciliation and export

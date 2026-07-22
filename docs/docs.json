@@ -131,7 +131,6 @@
               "cli/onboard",
               "cli/serve",
               "cli/dashboard",
-              "cli/tui",
               "cli/status",
               "cli/costs",
               "cli/export-costs",

@@ -37,7 +37,7 @@ VG_TOOLS = [
 
 async def test_all_five_vg_tools_listed_via_protocol(gateway):
     """An MCP client sees every v0.0.5 provider tool advertised."""
-    server = create_server(gateway)
+    server = create_server(gateway, is_admin=True)
     async with create_connected_server_and_client_session(server) as client:
         await client.initialize()
         result = await client.list_tools()
@@ -48,7 +48,7 @@ async def test_all_five_vg_tools_listed_via_protocol(gateway):
 
 async def test_vg_lifecycle_through_mcp_protocol(gateway):
     """Full add → list → set (rotate) → remove lifecycle, all over MCP."""
-    server = create_server(gateway)
+    server = create_server(gateway, is_admin=True)
     async with create_connected_server_and_client_session(server) as client:
         await client.initialize()
 
@@ -121,7 +121,7 @@ async def test_vg_test_provider_key_ok_through_mcp(gateway, monkeypatch):
         lambda _name, cfg: _Healthy(cfg),
     )
 
-    server = create_server(gateway)
+    server = create_server(gateway, is_admin=True)
     async with create_connected_server_and_client_session(server) as client:
         await client.initialize()
 
@@ -148,7 +148,7 @@ async def test_vg_remove_unknown_pair_returns_error_envelope(gateway):
     """Calling vg_remove_provider on a non-existent pair returns the
     structured error envelope (not a crash).
     """
-    server = create_server(gateway)
+    server = create_server(gateway, is_admin=True)
     async with create_connected_server_and_client_session(server) as client:
         await client.initialize()
         result = await client.call_tool(
@@ -161,7 +161,7 @@ async def test_vg_remove_unknown_pair_returns_error_envelope(gateway):
 
 async def test_vg_set_provider_key_unknown_pair_returns_error_envelope(gateway):
     """Same envelope shape for vg_set_provider_key on missing rows."""
-    server = create_server(gateway)
+    server = create_server(gateway, is_admin=True)
     async with create_connected_server_and_client_session(server) as client:
         await client.initialize()
         result = await client.call_tool(
@@ -176,7 +176,7 @@ async def test_vg_add_provider_validation_error_through_protocol(gateway):
     """Unknown provider type → MCP returns isError=True with the
     structured envelope.
     """
-    server = create_server(gateway)
+    server = create_server(gateway, is_admin=True)
     async with create_connected_server_and_client_session(server) as client:
         await client.initialize()
         result = await client.call_tool(

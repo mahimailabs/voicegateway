@@ -34,8 +34,37 @@ def _format_tool_result(result: Any) -> str:
     return json.dumps(result, default=str, indent=2)
 
 
-def create_server(gateway: Gateway) -> Any:
-    """Create an MCP server wired to the given gateway instance."""
+def admin_enabled() -> bool:
+    """Whether admin-scoped tools are exposed on this MCP server.
+
+    Off by default: the MCP surface presents the framework-agnostic tools
+    (reads + project/budget/rate-card config) that an agent should drive.
+    The legacy provider-config tools and destructive deletes are hidden
+    unless the operator opts in with ``VOICEGW_MCP_ADMIN`` set to a truthy
+    value (1/true/yes/on).
+    """
+    import os
+
+    return os.environ.get("VOICEGW_MCP_ADMIN", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _tool_visible(tool_def: Any, is_admin: bool) -> bool:
+    """A tool is visible when it needs no scope, or admin mode is on."""
+    return tool_def.required_scope is None or is_admin
+
+
+def create_server(gateway: Gateway, *, is_admin: bool = False) -> Any:
+    """Create an MCP server wired to the given gateway instance.
+
+    ``is_admin`` exposes the admin-scoped tools (provider config + destructive
+    deletes). Defaults to False so the server presents only the
+    framework-agnostic surface.
+    """
     try:
         from mcp.server import Server
         from mcp.types import TextContent, Tool
@@ -61,6 +90,7 @@ def create_server(gateway: Gateway) -> Any:
                 inputSchema=t.input_schema,
             )
             for t in ALL_TOOLS
+            if _tool_visible(t, is_admin)
         ]
 
     @server.call_tool()
@@ -73,6 +103,21 @@ def create_server(gateway: Gateway) -> Any:
                         "code": "UNKNOWN_TOOL",
                         "message": f"No such tool: {name}",
                         "details": {},
+                    }
+                }
+            )
+            return [TextContent(type="text", text=payload)]
+
+        if not _tool_visible(tool_def, is_admin):
+            payload = json.dumps(
+                {
+                    "error": {
+                        "code": "FORBIDDEN",
+                        "message": (
+                            f"Tool '{name}' requires admin mode "
+                            "(set VOICEGW_MCP_ADMIN=1 on the server)."
+                        ),
+                        "details": {"required_scope": tool_def.required_scope},
                     }
                 }
             )
@@ -100,7 +145,7 @@ async def serve_stdio(gateway: Gateway) -> None:
             "mcp package not installed. Run: pip install voicegateway[dashboard]"
         ) from e
 
-    server = create_server(gateway)
+    server = create_server(gateway, is_admin=admin_enabled())
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream, write_stream, server.create_initialization_options()
@@ -133,7 +178,7 @@ async def serve_http(
 
     from voicegateway.server.mcp.auth import AuthError, check_authorization_header
 
-    server = create_server(gateway)
+    server = create_server(gateway, is_admin=admin_enabled())
     sse = SseServerTransport("/messages/")
 
     async def handle_sse(request: Request) -> Response:

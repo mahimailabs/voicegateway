@@ -6,6 +6,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from voicegateway import __version__ as VOICEGW_VERSION
+from voicegateway.core.auth import ADMIN_SCOPE
 from voicegateway.schemas.mcp.observability_schema import (
     GetCostsInput,
     GetHealthInput,
@@ -303,11 +304,14 @@ async def _handle_get_logs(
 
 OBSERVABILITY_TOOLS: list[ToolDef] = [
     make_tool("get_health", GET_HEALTH_DOC, GetHealthInput, _handle_get_health),
+    # Provider-era view (reads config.providers); admin-only in the
+    # framework-agnostic surface.
     make_tool(
         "get_provider_status",
         GET_PROVIDER_STATUS_DOC,
         GetProviderStatusInput,
         _handle_get_provider_status,
+        required_scope=ADMIN_SCOPE,
     ),
     make_tool("get_costs", GET_COSTS_DOC, GetCostsInput, _handle_get_costs),
     make_tool(

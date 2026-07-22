@@ -32,6 +32,11 @@ logger = logging.getLogger(__name__)
 _RETRY_AFTER_MAX = 60.0
 
 
+def _now() -> float:
+    """Wall-clock seconds; isolated so the outbox timestamp is easy to reason about."""
+    return datetime.now(tz=UTC).timestamp()
+
+
 @runtime_checkable
 class Sink(Protocol):
     """Narrow write target for request records.
@@ -75,16 +80,44 @@ class LocalSqliteSink:
         await self._storage.finalize_session_replay(session_id)
 
 
+def _normalize_ingest_url(url: str) -> str:
+    """Resolve a collector base URL to its ``/v1/ingest`` endpoint, idempotently.
+
+    ``VOICEGW_COLLECTOR_URL`` is the collector's base host (the heartbeat path is
+    appended the same way). But older docs told users to include ``/v1/ingest``
+    themselves, and appending it unconditionally produced ``/v1/ingest/v1/ingest``
+    -> a silent 404. Accept both the base host and a full ingest URL so neither
+    foot-guns the caller.
+    """
+    trimmed = url.rstrip("/")
+    if trimmed.endswith("/v1/ingest"):
+        return trimmed
+    return trimmed + "/v1/ingest"
+
+
 class RemoteCollectorSink:
     """Fleet sink: batches records and pushes them to a collector's /v1/ingest.
 
-    Best-effort by design (cost telemetry is not billing-of-record): writes
-    never block or fail the agent's hot path. Records buffer in memory and
-    flush on batch size, on a periodic interval, or on ``aclose``. On a full
-    in-memory buffer the oldest rows are dropped. A 429 is backpressure: the
-    batch is retried with a clamped Retry-After delay and is never dropped on
-    rate limiting. Other failed POSTs are retried with backoff up to
-    ``max_retries`` and then dropped.
+    Two durability modes, selected by ``spool_path``:
+
+    **Best-effort (``spool_path=None``, default).** Cost telemetry is not
+    billing-of-record: writes never block or fail the agent's hot path.
+    Records buffer in memory and flush on batch size, on a periodic interval,
+    or on ``aclose``. On a full in-memory buffer the oldest rows are dropped.
+    A 429 is backpressure: the batch is retried with a clamped Retry-After
+    delay and is never dropped on rate limiting. Other failed POSTs are
+    retried with backoff up to ``max_retries`` and then dropped.
+
+    **Durable store-and-forward (``spool_path`` set).** For invoice-grade
+    fleet ingest where ``voicegw reconcile`` must trust that no cost rows were
+    silently lost. Each ``log_request`` also appends the record to a tiny
+    SQLite ``outbox`` table at ``spool_path``; rows are removed only once the
+    collector acknowledges a batch (2xx). A batch that fails (or a 429 that
+    cannot drain) stays in the outbox for a later flush or a later process, so
+    a restart resumes delivery. The hot path stays non-blocking and
+    non-raising: a spool write error is swallowed and counted, never
+    propagated to the agent. ``completeness()`` reports ``sent``/``pending``/
+    ``dropped`` so reconcile can tell whether fleet data is complete.
     """
 
     def __init__(
@@ -97,10 +130,11 @@ class RemoteCollectorSink:
         max_buffer: int = 1000,
         max_retries: int = 2,
         backoff: float = 0.2,
+        spool_path: str | None = None,
         client: Any | None = None,
         sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
-        self._ingest_url = url.rstrip("/") + "/v1/ingest"
+        self._ingest_url = _normalize_ingest_url(url)
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self._batch_size = max(1, batch_size)
         self._flush_interval = flush_interval
@@ -110,9 +144,24 @@ class RemoteCollectorSink:
         self._client = client
         self._owns_client = client is None
         self._sleep = sleep or asyncio.sleep
+        # In-memory batching buffer. Without a spool it holds bare payload
+        # dicts (unchanged legacy shape). With a spool it holds
+        # ``(seq, payload)`` so an ack can delete exactly those outbox rows.
         self._buffer: list[dict[str, Any]] = []
+        self._spooled: list[tuple[int, dict[str, Any]]] = []
         self._flusher: asyncio.Task[None] | None = None
         self._closed = False
+        # Durable outbox (opt-in).
+        self._spool_path = spool_path
+        self._spool: Any | None = None  # aiosqlite.Connection when open
+        self._spool_lock = asyncio.Lock()
+        self._sent = 0
+        self._dropped = 0
+        # Hard cap on outbox rows: with a durable spool this should never be
+        # hit under normal operation; it only guards against unbounded growth
+        # when the collector is down indefinitely.
+        self._spool_hard_cap = max(self._max_buffer * 100, 100_000)
+        self._reloaded = False
 
     def _ensure_client(self) -> Any:
         if self._client is None:
@@ -121,11 +170,171 @@ class RemoteCollectorSink:
             self._client = httpx.AsyncClient(timeout=10.0)
         return self._client
 
+    # ------------------------------------------------------------------
+    # Durable outbox (aiosqlite) — only touched when spool_path is set
+    # ------------------------------------------------------------------
+
+    async def _ensure_spool(self) -> Any:
+        """Open the outbox connection and reload un-acked rows on first use.
+
+        Idempotent: subsequent calls return the live connection. Creating the
+        table and reloading the backlog happen exactly once, guarded by a lock
+        so a burst of concurrent ``log_request`` calls cannot race the setup.
+        """
+        if self._spool is not None:
+            return self._spool
+        async with self._spool_lock:
+            if self._spool is not None:  # double-checked after lock
+                return self._spool
+            import aiosqlite
+
+            assert self._spool_path is not None
+            conn = await aiosqlite.connect(self._spool_path)
+            await conn.execute(
+                "CREATE TABLE IF NOT EXISTS outbox ("
+                "seq INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "payload TEXT NOT NULL, "
+                "enqueued_at REAL NOT NULL)"
+            )
+            await conn.commit()
+            self._spool = conn
+            await self._reload_outbox(conn)
+            return conn
+
+    async def _reload_outbox(self, conn: Any) -> None:
+        """Load un-acked rows (bounded by max_buffer) so a restart resumes."""
+        if self._reloaded:
+            return
+        self._reloaded = True
+        cursor = await conn.execute(
+            "SELECT seq, payload FROM outbox ORDER BY seq LIMIT ?",
+            (self._max_buffer,),
+        )
+        rows = await cursor.fetchall()
+        await cursor.close()
+        for seq, payload in rows:
+            try:
+                self._spooled.append((int(seq), json.loads(payload)))
+            except (ValueError, TypeError):  # corrupt row: skip, do not crash
+                logger.warning(
+                    "RemoteCollectorSink outbox: skipped unreadable seq %s", seq
+                )
+
+    async def _spool_enqueue(self, payload: dict[str, Any]) -> int | None:
+        """Durably append one payload; return its seq (or None on failure).
+
+        Best-effort ethos: any storage error is swallowed and counted, never
+        raised into the agent's hot path.
+        """
+        try:
+            conn = await self._ensure_spool()
+            cursor = await conn.execute(
+                "INSERT INTO outbox (payload, enqueued_at) VALUES (?, ?)",
+                (json.dumps(payload), _now()),
+            )
+            seq = cursor.lastrowid
+            await cursor.close()
+            await conn.commit()
+            await self._enforce_spool_cap(conn)
+            return int(seq) if seq is not None else None
+        except Exception as exc:  # noqa: BLE001 - hot path must never raise
+            self._dropped += 1
+            logger.warning("RemoteCollectorSink outbox write failed: %s", exc)
+            return None
+
+    async def _enforce_spool_cap(self, conn: Any) -> None:
+        """Trim the oldest outbox rows if the hard cap is exceeded."""
+        cursor = await conn.execute("SELECT COUNT(*) FROM outbox")
+        row = await cursor.fetchone()
+        await cursor.close()
+        count = int(row[0]) if row else 0
+        if count <= self._spool_hard_cap:
+            return
+        overflow = count - self._spool_hard_cap
+        await conn.execute(
+            "DELETE FROM outbox WHERE seq IN "
+            "(SELECT seq FROM outbox ORDER BY seq LIMIT ?)",
+            (overflow,),
+        )
+        await conn.commit()
+        self._dropped += overflow
+        logger.warning(
+            "RemoteCollectorSink outbox exceeded hard cap; dropped %d oldest row(s)",
+            overflow,
+        )
+
+    async def _spool_ack(self, seqs: list[int]) -> None:
+        """Delete acked rows from the outbox after the collector confirms 2xx."""
+        if not seqs or self._spool is None:
+            return
+        try:
+            placeholders = ",".join("?" for _ in seqs)
+            await self._spool.execute(
+                f"DELETE FROM outbox WHERE seq IN ({placeholders})", seqs
+            )
+            await self._spool.commit()
+        except Exception as exc:  # noqa: BLE001 - never propagate
+            logger.warning("RemoteCollectorSink outbox ack failed: %s", exc)
+
+    async def _spool_pending(self) -> int:
+        """Current outbox row count (0 when no spool is configured)."""
+        if self._spool_path is None:
+            return 0
+        try:
+            conn = await self._ensure_spool()
+            cursor = await conn.execute("SELECT COUNT(*) FROM outbox")
+            row = await cursor.fetchone()
+            await cursor.close()
+            return int(row[0]) if row else 0
+        except Exception:  # noqa: BLE001
+            return 0
+
+    async def completeness(self) -> dict[str, int]:
+        """Report delivery completeness for reconcile-against-fleet.
+
+        ``sent`` is acked rows, ``pending`` is the live outbox row count, and
+        ``dropped`` is rows lost only when the outbox itself overflowed its
+        hard cap (0 under normal operation with a durable spool). Without a
+        spool, ``pending`` is always 0 and ``dropped`` counts the in-memory
+        drop-oldest and post-retry drops.
+        """
+        return {
+            "sent": self._sent,
+            "pending": await self._spool_pending(),
+            "dropped": self._dropped,
+        }
+
+    async def aclose_spool(self) -> None:
+        """Close the outbox connection without flushing (used for restart tests)."""
+        if self._spool is not None:
+            try:
+                await self._spool.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._spool = None
+
     async def log_request(self, record: RequestRecord) -> None:
-        self._buffer.append(asdict(record))
+        payload = asdict(record)
+        if self._spool_path is not None:
+            # Durable path: persist first, then batch the (seq, payload) pair so
+            # an ack can delete exactly this row. A failed spool write returns
+            # None (counted, not raised) and the row is dropped rather than
+            # buffered un-tracked.
+            seq = await self._spool_enqueue(payload)
+            if seq is not None:
+                self._spooled.append((seq, payload))
+            if len(self._spooled) > self._max_buffer:
+                overflow = len(self._spooled) - self._max_buffer
+                del self._spooled[:overflow]
+            self._maybe_start_flusher()
+            if len(self._spooled) >= self._batch_size:
+                await self.flush()
+            return
+        self._buffer.append(payload)
         if len(self._buffer) > self._max_buffer:
             overflow = len(self._buffer) - self._max_buffer
             del self._buffer[:overflow]
+            self._dropped += overflow
             logger.warning(
                 "RemoteCollectorSink buffer full; dropped %d oldest row(s)", overflow
             )
@@ -151,13 +360,33 @@ class RemoteCollectorSink:
             pass
 
     async def flush(self) -> None:
+        if self._spool_path is not None:
+            if not self._spooled:
+                return
+            tracked = self._spooled
+            self._spooled = []
+            seqs = [seq for seq, _ in tracked]
+            payloads = [payload for _, payload in tracked]
+            if await self._post(payloads):
+                # Acked: drop from the outbox and count. On failure, requeue so
+                # a later flush (or a later process via the outbox) retries.
+                await self._spool_ack(seqs)
+                self._sent += len(payloads)
+            else:
+                self._spooled = tracked + self._spooled
+            return
         if not self._buffer:
             return
         batch = self._buffer
         self._buffer = []
         await self._post(batch)
 
-    async def _post(self, batch: list[dict[str, Any]]) -> None:
+    async def _post(self, batch: list[dict[str, Any]]) -> bool:
+        """POST a batch; return True on ack (2xx), False if it was not delivered.
+
+        The return value drives the durable-spool ack/requeue decision. The
+        legacy (no-spool) caller ignores it, preserving best-effort behavior.
+        """
         client = self._ensure_client()
         attempt = 0
         while True:
@@ -167,7 +396,7 @@ class RemoteCollectorSink:
                     self._ingest_url, json=batch, headers=self._headers
                 )
                 if resp.status_code < 400:
-                    return
+                    return True
                 if resp.status_code == 429:
                     # Backpressure, not failure: honor Retry-After (clamped) and
                     # retry the same batch WITHOUT counting toward max_retries,
@@ -179,13 +408,15 @@ class RemoteCollectorSink:
             except Exception as exc:  # noqa: BLE001 - best-effort, never propagate
                 reason = exc
             if attempt >= self._max_retries:
+                if self._spool_path is None:
+                    self._dropped += len(batch)
                 logger.warning(
                     "RemoteCollectorSink dropped %d row(s) after %d attempt(s): %s",
                     len(batch),
                     attempt + 1,
                     reason,
                 )
-                return
+                return False
             await self._sleep(self._backoff * (2**attempt))
             attempt += 1
 
@@ -219,6 +450,7 @@ class RemoteCollectorSink:
                 pass
             self._flusher = None
         await self.flush()
+        await self.aclose_spool()
         if self._owns_client and self._client is not None:
             await self._client.aclose()
 

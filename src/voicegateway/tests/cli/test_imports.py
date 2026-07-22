@@ -121,11 +121,10 @@ _V010_COMMAND_NAMES: frozenset[str] = frozenset(
     }
 )
 
-# Commands the v0.1.1 release adds on top of v0.1.0. Same gating
-# pattern: a deliberate touch-point for "the public command surface
-# grew." When v0.1.1 ships, the union of the three frozensets is the
-# documented end-state surface.
-_V011_COMMAND_NAMES: frozenset[str] = frozenset({"tui"})
+# v0.1.1 added the `tui` command; it was removed in the framework-agnostic
+# reshape (the web dashboard plus the costs/logs CLI cover its read paths), so
+# this set is now empty. Kept as a named touch-point in the command-surface union.
+_V011_COMMAND_NAMES: frozenset[str] = frozenset()
 
 # Commands the v0.3.0 release adds (replay signpost, T15).
 _V030_COMMAND_NAMES: frozenset[str] = frozenset({"replay"})
