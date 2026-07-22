@@ -14,16 +14,23 @@ class _LLMMetric:
     prompt_tokens = 1000
     completion_tokens = 500
     prompt_cached_tokens = 200
-    ttft = 0.25
+    ttft = 0.25  # time to first token (seconds) -> ttfb_ms 250
+    duration = 1.8  # total LLM latency (seconds) -> total_latency_ms 1800
 
 
 class _STTMetric:
-    audio_duration = 120.0  # seconds
+    audio_duration = 120.0  # seconds of audio
+    duration = 0.4  # total STT latency (seconds) -> total_latency_ms 400
+    acquire_time = 0.05  # connection-acquisition hop (seconds) -> acquire_ms 50
+    connection_reused = True
 
 
 class _TTSMetric:
     characters_count = 350
-    ttfb = 0.1
+    ttfb = 0.1  # time to first audio byte (seconds) -> ttfb_ms 100
+    duration = 0.9  # total TTS latency (seconds) -> total_latency_ms 900
+    acquire_time = 0.03  # connection-acquisition hop (seconds) -> acquire_ms 30
+    connection_reused = False
 
 
 class _FakeEmitter:
@@ -93,6 +100,25 @@ def test_units_from_tts_metric():
     assert ttfb_ms == 100.0
 
 
+def test_duration_and_network_helpers():
+    from voicegateway.inference.session.capture import _duration_ms, _network_meta
+
+    # duration (seconds) -> total latency ms; absent -> None.
+    assert _duration_ms(_LLMMetric()) == 1800.0
+    assert _duration_ms(object()) is None
+
+    # acquire_time -> acquire_ms + connection_reused; absent -> {}.
+    assert _network_meta(_STTMetric()) == {
+        "acquire_ms": 50.0,
+        "connection_reused": True,
+    }
+    assert _network_meta(_TTSMetric()) == {
+        "acquire_ms": 30.0,
+        "connection_reused": False,
+    }
+    assert _network_meta(_LLMMetric()) == {}  # LLM metrics carry no acquire_time
+
+
 # --- capture binding -----------------------------------------------------
 
 
@@ -127,6 +153,9 @@ async def test_metric_capture_writes_llm_row(tmp_path):
     assert row["cached_input_units"] == 200.0
     assert row["agent_id"] == "agent-3"
     assert row["session_id"] == "vg-test"
+    # ttfb_ms is the LLM time-to-first-token; total_latency_ms is the full call.
+    assert row["ttfb_ms"] == 250.0
+    assert row["total_latency_ms"] == 1800.0
 
 
 def _stamp_capture(channel):
@@ -198,6 +227,21 @@ async def test_metric_capture_handles_three_modalities(tmp_path):
     assert by_modality["stt"]["input_units"] == 2.0
     assert by_modality["tts"]["model_id"] == "cartesia/sonic-3"
     assert by_modality["tts"]["input_units"] == 350.0
+
+    # STT has no first-byte metric, but its latency lands in total_latency_ms
+    # (no more "n/a") and its connection hop rides in metadata.
+    stt_row = by_modality["stt"]
+    assert stt_row["ttfb_ms"] is None
+    assert stt_row["total_latency_ms"] == 400.0
+    assert stt_row["metadata"]["acquire_ms"] == 50.0
+    assert stt_row["metadata"]["connection_reused"] is True
+    # TTS: ttfb_ms is time-to-first-audio; total + network hop captured too.
+    tts_row = by_modality["tts"]
+    assert tts_row["ttfb_ms"] == 100.0
+    assert tts_row["total_latency_ms"] == 900.0
+    assert tts_row["metadata"]["acquire_ms"] == 30.0
+    # LLM has no connection-acquire hop -> no acquire_ms key.
+    assert "acquire_ms" not in (by_modality["llm"].get("metadata") or {})
 
 
 class _LLMErrorSource:
