@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
+from voicegateway.core.auth import ADMIN_SCOPE
 from voicegateway.schemas.mcp.projects_schema import (
     CreateProjectInput,
     DeleteProjectInput,
@@ -13,7 +14,6 @@ from voicegateway.schemas.mcp.projects_schema import (
 )
 from voicegateway.server.mcp.errors import (
     ConfirmationRequiredError,
-    ModelNotFoundError,
     ProjectAlreadyExistsError,
     ProjectNotFoundError,
     ReadOnlyResourceError,
@@ -30,13 +30,6 @@ def _parse(model_cls: type, arguments: dict[str, Any]) -> Any:
         return model_cls(**arguments)
     except Exception as exc:
         raise ValidationError(str(exc)) from exc
-
-
-async def _model_exists(gateway: Gateway, model_id: str) -> bool:
-    for modality_models in gateway.config.models.values():
-        if isinstance(modality_models, dict) and model_id in modality_models:
-            return True
-    return False
 
 
 LIST_PROJECTS_DOC = """List every project on the gateway with today's stats.
@@ -167,23 +160,21 @@ async def _handle_get_project(
     }
 
 
-CREATE_PROJECT_DOC = """Create a new project for cost tracking and routing.
+CREATE_PROJECT_DOC = """Create a new project for cost tracking and budgeting.
 
-Use this to bind requests to a logical project with its own budget and
-model preferences. You can either set ``default_stack`` (referencing a
-named stack from voicegw.yaml) OR individual stt_model/llm_model/tts_model
-fields. Setting both is an error.
+A project is an attribution + cost-control scope: a label plus a daily
+budget and what happens when it is exceeded. VoiceGateway meters the native
+STT/LLM/TTS instances your agent attaches; it does not route models, so a
+project carries no model configuration.
 
 Args:
     project_id: Unique identifier (kebab-case recommended).
     name: Human-readable name.
     description: Optional long description.
     daily_budget: USD limit per day (0 = unlimited).
-    budget_action: "warn" (default) logs when exceeded, "throttle" falls
-        back to the local stack, "block" raises an error on future requests.
-    stt_model, llm_model, tts_model: Optional explicit model ids. Each must
-        already be registered (use list_models to check).
-    default_stack: Optional name of a stack in voicegw.yaml (e.g. "premium").
+    budget_action: "warn" (default) logs when exceeded, "throttle" signals
+        your agent to fall back to a cheaper model, "block" raises an error
+        on future requests for the day.
     tags: Optional labels for grouping.
 
 Returns:
@@ -191,8 +182,7 @@ Returns:
 
 Raises:
     PROJECT_ALREADY_EXISTS if the id collides.
-    MODEL_NOT_FOUND if any referenced model isn't registered.
-    VALIDATION_ERROR on bad input (both default_stack and explicit models).
+    VALIDATION_ERROR if cost tracking is disabled.
 """
 
 
@@ -213,38 +203,6 @@ async def _handle_create_project(
             details={"project_id": payload.project_id},
         )
 
-    explicit_models = [payload.stt_model, payload.llm_model, payload.tts_model]
-    has_explicit = any(m is not None for m in explicit_models)
-    if payload.default_stack and has_explicit:
-        raise ValidationError(
-            "Set either default_stack OR explicit stt/llm/tts models, not both.",
-            details={
-                "default_stack": payload.default_stack,
-                "stt_model": payload.stt_model,
-                "llm_model": payload.llm_model,
-                "tts_model": payload.tts_model,
-            },
-        )
-
-    if payload.default_stack and payload.default_stack not in gateway.config.stacks:
-        raise ValidationError(
-            f"Stack '{payload.default_stack}' is not defined in voicegw.yaml.",
-            details={"default_stack": payload.default_stack},
-        )
-
-    # Validate that explicit model references exist.
-    for label, model_id in [
-        ("stt_model", payload.stt_model),
-        ("llm_model", payload.llm_model),
-        ("tts_model", payload.tts_model),
-    ]:
-        if model_id and not await _model_exists(gateway, model_id):
-            raise ModelNotFoundError(
-                f"Model '{model_id}' referenced by {label} is not registered. "
-                "Call register_model first.",
-                details={"field": label, "model_id": model_id},
-            )
-
     tags = list(payload.tags or [])
     await gateway.storage.upsert_managed_project(
         project_id=payload.project_id,
@@ -252,10 +210,6 @@ async def _handle_create_project(
         description=payload.description,
         daily_budget=payload.daily_budget,
         budget_action=payload.budget_action,
-        default_stack=payload.default_stack,
-        stt_model=payload.stt_model,
-        llm_model=payload.llm_model,
-        tts_model=payload.tts_model,
         tags=tags,
     )
     await gateway.refresh_config()
@@ -266,10 +220,6 @@ async def _handle_create_project(
         "description": payload.description,
         "daily_budget": payload.daily_budget,
         "budget_action": payload.budget_action,
-        "default_stack": payload.default_stack,
-        "stt_model": payload.stt_model,
-        "llm_model": payload.llm_model,
-        "tts_model": payload.tts_model,
         "tags": tags,
         "source": "db",
         "created": True,
@@ -369,7 +319,12 @@ PROJECT_TOOLS: list[ToolDef] = [
     make_tool(
         "create_project", CREATE_PROJECT_DOC, CreateProjectInput, _handle_create_project
     ),
+    # Destructive: admin-only.
     make_tool(
-        "delete_project", DELETE_PROJECT_DOC, DeleteProjectInput, _handle_delete_project
+        "delete_project",
+        DELETE_PROJECT_DOC,
+        DeleteProjectInput,
+        _handle_delete_project,
+        required_scope=ADMIN_SCOPE,
     ),
 ]

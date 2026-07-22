@@ -23,7 +23,7 @@ def _parse(result) -> dict:
 
 async def test_full_agent_workflow(gateway):
     """Exercises every tool the way a coding agent would, in order."""
-    server = create_server(gateway)
+    server = create_server(gateway, is_admin=True)
     async with create_connected_server_and_client_session(server) as client:
         await client.initialize()
 
@@ -66,7 +66,7 @@ async def test_full_agent_workflow(gateway):
         registered = _parse(result)
         assert registered["model_id"] == "ollama-local/llama3.2"
 
-        # 5. create_project — using the new model
+        # 5. create_project — a framework-agnostic project (label + budget)
         result = await client.call_tool(
             "create_project",
             {
@@ -75,7 +75,6 @@ async def test_full_agent_workflow(gateway):
                 "description": "E2E integration test",
                 "daily_budget": 10.0,
                 "budget_action": "warn",
-                "llm_model": "ollama-local/llama3.2",
             },
         )
         created = _parse(result)
@@ -85,7 +84,6 @@ async def test_full_agent_workflow(gateway):
         result = await client.call_tool("get_project", {"project_id": "acme-corp"})
         fetched = _parse(result)
         assert fetched["id"] == "acme-corp"
-        assert fetched["llm_model"] == "ollama-local/llama3.2"
         assert fetched["daily_budget"] == 10.0
 
         # 7. get_logs — empty for this new project, no crash
@@ -126,7 +124,7 @@ async def test_full_agent_workflow(gateway):
 
 async def test_get_costs_and_latency_chain(gateway):
     """Agent can read costs and latency after observing logs."""
-    server = create_server(gateway)
+    server = create_server(gateway, is_admin=True)
     async with create_connected_server_and_client_session(server) as client:
         await client.initialize()
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from voicegateway.core.auth import ADMIN_SCOPE
 from voicegateway.schemas.mcp.models_schema import (
     DeleteModelInput,
     ListModelsInput,
@@ -296,8 +297,19 @@ async def _handle_delete_model(
 
 MODEL_TOOLS: list[ToolDef] = [
     make_tool("list_models", LIST_MODELS_DOC, ListModelsInput, _handle_list_models),
+    # register/delete mutate the config catalog: admin-only.
     make_tool(
-        "register_model", REGISTER_MODEL_DOC, RegisterModelInput, _handle_register_model
+        "register_model",
+        REGISTER_MODEL_DOC,
+        RegisterModelInput,
+        _handle_register_model,
+        required_scope=ADMIN_SCOPE,
     ),
-    make_tool("delete_model", DELETE_MODEL_DOC, DeleteModelInput, _handle_delete_model),
+    make_tool(
+        "delete_model",
+        DELETE_MODEL_DOC,
+        DeleteModelInput,
+        _handle_delete_model,
+        required_scope=ADMIN_SCOPE,
+    ),
 ]

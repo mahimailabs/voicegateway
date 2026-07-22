@@ -9,7 +9,7 @@ import pytest
 
 from voicegateway.core.gateway import Gateway
 from voicegateway.models.request_model import RequestRecord
-from voicegateway.server.mcp.errors import ModelNotFoundError, ValidationError
+from voicegateway.server.mcp.errors import ValidationError
 from voicegateway.server.mcp.tools import ALL_TOOLS
 
 
@@ -490,31 +490,19 @@ async def test_create_project_conflict(gateway):
         )
 
 
-async def test_create_project_unknown_model(gateway):
-    tool = _tool("create_project")
-    with pytest.raises(ModelNotFoundError):
-        await tool.handler(
-            gateway,
-            {
-                "project_id": "broken-proj",
-                "name": "Broken",
-                "llm_model": "openai/gpt-99",
-            },
-        )
+async def test_create_project_rejects_model_routing_fields(gateway):
+    """Framework-agnostic: create_project no longer accepts model routing.
 
-
-async def test_create_project_default_stack_and_model_conflict(gateway):
+    A project is a label + budget scope; the old stt/llm/tts_model and
+    default_stack routing fields are gone (extra="forbid" rejects them).
+    """
     tool = _tool("create_project")
-    with pytest.raises(ValidationError):
-        await tool.handler(
-            gateway,
-            {
-                "project_id": "conflict",
-                "name": "X",
-                "default_stack": "default",
-                "llm_model": "openai/gpt-4o-mini",
-            },
-        )
+    for field in ("stt_model", "llm_model", "tts_model", "default_stack"):
+        with pytest.raises(ValidationError):
+            await tool.handler(
+                gateway,
+                {"project_id": f"p-{field}", "name": "X", field: "whatever"},
+            )
 
 
 async def test_create_project_negative_budget(gateway):

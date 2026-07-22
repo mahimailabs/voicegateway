@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from voicegateway.core import registry as _registry
+from voicegateway.core.auth import ADMIN_SCOPE
 from voicegateway.core.crypto import decrypt, mask
 from voicegateway.schemas.mcp.providers_schema import (
     AddProviderInput,
@@ -856,7 +858,12 @@ async def _handle_vg_test_provider_key(
     }
 
 
-PROVIDER_TOOLS: list[ToolDef] = [
+# Every provider tool is legacy: VoiceGateway no longer constructs providers
+# (framework-agnostic — you build native STT/LLM/TTS instances and attach()
+# them), so these provider-config / key-management tools are admin-only and
+# hidden from the default MCP surface. The managed/cloud path can still expose
+# them by starting the server with VOICEGW_MCP_ADMIN=1.
+_PROVIDER_TOOLS: list[ToolDef] = [
     make_tool(
         "list_providers", LIST_PROVIDERS_DOC, ListProvidersInput, _handle_list_providers
     ),
@@ -901,4 +908,8 @@ PROVIDER_TOOLS: list[ToolDef] = [
         VgTestProviderKeyInput,
         _handle_vg_test_provider_key,
     ),
+]
+
+PROVIDER_TOOLS: list[ToolDef] = [
+    replace(t, required_scope=ADMIN_SCOPE) for t in _PROVIDER_TOOLS
 ]
