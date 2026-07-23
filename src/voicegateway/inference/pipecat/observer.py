@@ -14,8 +14,10 @@ Mapping (``on_push_frame`` sees ``FramePushed`` events; ``frame.data`` on a
        cached=cache_read_input_tokens.
 - ``TTSUsageMetricsData`` (``.value`` is an int char count)
     -> modality=tts, input=chars.
-- ``TTFBMetricsData`` (``.value`` seconds) -> ttfb_ms; ``TTFAMetricsData``
-    (``.value`` seconds) -> total_latency_ms.
+- ``TTFBMetricsData`` (``.value`` seconds) -> ttfb_ms (first response, the ttft
+    analog); ``ProcessingMetricsData`` (``.value`` seconds) -> total_latency_ms
+    (total processing time, the LiveKit ``metric.duration`` analog). Pipecat
+    exposes no connection-acquire metric, so a Pipecat row carries no network hop.
 - STT has NO usage metric: accumulate ``AudioRawFrame`` bytes routed to each STT
   processor and derive seconds = bytes / (sample_rate * 2) (16-bit mono PCM),
   converted to minutes for input_units (the cost path multiplies back by 60).
@@ -225,13 +227,17 @@ def _lazy_frame_types() -> dict[str, Any]:
         "TTSUsageMetricsData": TTSUsageMetricsData,
         "TTFBMetricsData": TTFBMetricsData,
     }
-    # TTFAMetricsData (time-to-first-audio) is optional across versions.
+    # ProcessingMetricsData (total processing time, the Pipecat analog of
+    # LiveKit's metric.duration) is optional across versions; when present it is
+    # the total-latency source. Pipecat exposes no connection-acquire metric, so
+    # a Pipecat row's network hop is legitimately absent (unlike LiveKit's
+    # streaming STT/TTS acquire_time).
     try:
-        from pipecat.metrics.metrics import TTFAMetricsData
+        from pipecat.metrics.metrics import ProcessingMetricsData
 
-        types["TTFAMetricsData"] = TTFAMetricsData
-    except Exception:  # noqa: BLE001 - older pipecat without TTFA
-        types["TTFAMetricsData"] = ()
+        types["ProcessingMetricsData"] = ProcessingMetricsData
+    except Exception:  # noqa: BLE001 - older pipecat without ProcessingMetricsData
+        types["ProcessingMetricsData"] = ()
     # AudioRawFrame is the base of InputAudioRawFrame; matching it catches output
     # audio too, but STT accumulates only input audio, so we key on the base and
     # let the STT-processor routing decide what counts.
@@ -373,7 +379,9 @@ class VoiceGatewayObserver(BaseObserver):
         for md in data_list:
             if isinstance(md, types["TTFBMetricsData"]):
                 self._buffer_for(md).ttfb_ms = float(md.value) * 1000.0
-            elif types["TTFAMetricsData"] and isinstance(md, types["TTFAMetricsData"]):
+            elif types["ProcessingMetricsData"] and isinstance(
+                md, types["ProcessingMetricsData"]
+            ):
                 self._buffer_for(md).total_latency_ms = float(md.value) * 1000.0
         for md in data_list:
             if isinstance(md, types["LLMUsageMetricsData"]):
