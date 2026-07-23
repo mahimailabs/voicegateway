@@ -23,6 +23,7 @@ function-first by design.
 from __future__ import annotations
 
 from voicegateway.cli import brand_cli as _brand  # noqa: F401, E402
+from voicegateway.cli import calls_cli as _calls  # noqa: F401, E402
 from voicegateway.cli import check_cli as _check  # noqa: F401, E402
 from voicegateway.cli import costs_cli as _costs  # noqa: F401, E402
 from voicegateway.cli import dashboard_cli as _dashboard  # noqa: F401, E402
