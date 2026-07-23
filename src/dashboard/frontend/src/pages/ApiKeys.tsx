@@ -93,7 +93,6 @@ export default function ApiKeys() {
               <tr>
                 <th>Name</th>
                 <th>Prefix</th>
-                <th>Tenant</th>
                 <th>Issued</th>
                 <th>Last used</th>
                 <th>Status</th>
@@ -116,17 +115,6 @@ export default function ApiKeys() {
                     </td>
                     <td>
                       <code>{k.key_prefix}…</code>
-                    </td>
-                    <td>
-                      {k.tenant_id ? (
-                        <span className="neo-badge neo-badge--black">
-                          {k.tenant_id}
-                        </span>
-                      ) : (
-                        <span className="label" style={{ opacity: 0.6 }}>
-                          unscoped
-                        </span>
-                      )}
                     </td>
                     <td className="label">{formatRelative(k.issued_at)}</td>
                     <td className="label">{formatRelative(k.last_used_at)}</td>
@@ -206,7 +194,6 @@ function IssueKeyModal({
   onIssued: (resp: CreatedApiKey) => void;
 }) {
   const [name, setName] = useState('');
-  const [tenantId, setTenantId] = useState('');
   const [issuedBy, setIssuedBy] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -215,7 +202,7 @@ function IssueKeyModal({
     try {
       const resp = await createApiKey({
         name,
-        tenant_id: tenantId.trim() || null,
+        tenant_id: null,
         issued_by: issuedBy.trim() || null,
       });
       onIssued(resp);
@@ -238,17 +225,6 @@ function IssueKeyModal({
           placeholder="prod-bot"
           autoFocus
         />
-        <label className="label mt-md">Tenant scope (optional)</label>
-        <input
-          className="neo-input"
-          value={tenantId}
-          onChange={(e) => setTenantId(e.target.value)}
-          placeholder="acme"
-        />
-        <div className="label mt-sm" style={{ fontSize: '0.75rem', opacity: 0.7 }}>
-          Scoped keys auto-tag every session with this tenant. Conflicting
-          body tenants return 403.
-        </div>
         <label className="label mt-md">Issued by (optional)</label>
         <input
           className="neo-input"
@@ -310,8 +286,7 @@ function ShowKeyOnceModal({
         </div>
         <div className="flex-row mt-md" style={{ justifyContent: 'space-between' }}>
           <span className="label">
-            Name: <strong>{response.row.name}</strong> · Tenant:{' '}
-            <strong>{response.row.tenant_id ?? 'unscoped'}</strong>
+            Name: <strong>{response.row.name}</strong>
           </span>
           <div className="flex-row">
             <button className="neo-btn" onClick={copy}>

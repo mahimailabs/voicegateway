@@ -43,7 +43,6 @@ from voicegateway.cli import rotate_secret_cli as _rotate_secret  # noqa: F401, 
 from voicegateway.cli import route_cli as _route  # noqa: F401, E402
 from voicegateway.cli import serve_cli as _serve  # noqa: F401, E402
 from voicegateway.cli import status_cli as _status  # noqa: F401, E402
-from voicegateway.cli import tenant_cli as _tenant  # noqa: F401, E402
 from voicegateway.cli._app import app, console
 from voicegateway.cli.base_cli import BaseCli
 

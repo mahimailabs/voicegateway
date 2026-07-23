@@ -20,7 +20,6 @@ class SetRateCardOverrideInput(StrictMcpInput):
     modality: str = "*"
     provider: str = "*"
     model: str = "*"
-    tenant: str | None = None
     plan: str | None = None
     markup: float | None = None
     fixed: float | None = None

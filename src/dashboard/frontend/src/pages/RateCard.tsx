@@ -40,13 +40,14 @@ interface ModelRow {
 }
 
 function scopeLabel(r: {
-  tenant: string | null;
   plan: string | null;
   modality: string;
   provider: string;
   model: string;
 }): string {
-  const parts = [r.tenant, r.plan, r.modality, r.provider, r.model].filter(
+  // Single-tenant OSS: the tenant field is ignored so every local rule
+  // reads as global-scope even if a pre-existing DB rule carries a tenant.
+  const parts = [r.plan, r.modality, r.provider, r.model].filter(
     (x) => x && x !== '*',
   );
   return parts.length ? parts.join(' / ') : '(global)';
@@ -377,7 +378,6 @@ function AddOverrideModal({
   const [modality, setModality] = useState(initialModality ?? '*');
   const [provider, setProvider] = useState(initialProvider ?? '*');
   const [model, setModel] = useState(initialModel ?? '*');
-  const [tenant, setTenant] = useState('');
   const [plan, setPlan] = useState('');
   const [markup, setMarkup] = useState('1.3');
   const [fixed, setFixed] = useState('0.006');
@@ -392,7 +392,7 @@ function AddOverrideModal({
       modality: modality.trim() || '*',
       provider: provider.trim() || '*',
       model: model.trim() || '*',
-      tenant: tenant.trim() || null,
+      tenant: null,
       plan: plan.trim() || null,
     };
     if (kind === 'cost_plus') {
@@ -478,19 +478,6 @@ function AddOverrideModal({
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 placeholder="nova-3, gpt-4o, *"
-                disabled={saving}
-              />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <label className="vg-card__label" style={labelStyle}>
-                Tenant
-              </label>
-              <input
-                className="neo-input"
-                style={fullWidth}
-                value={tenant}
-                onChange={(e) => setTenant(e.target.value)}
-                placeholder="(any)"
                 disabled={saving}
               />
             </div>

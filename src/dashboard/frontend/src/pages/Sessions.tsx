@@ -9,7 +9,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import FilterBar, { useTenantFilter, useAgentFilter } from '../components/FilterBar';
 import PageHeader from '../components/PageHeader';
-import TenantPill from '../components/TenantPill';
 import { fetchJson } from '../lib/api';
 import { formatCost } from '../lib/ui';
 import type {
@@ -151,7 +150,6 @@ export default function Sessions() {
                 <th>Started</th>
                 <th>Duration</th>
                 <th>Project</th>
-                <th>Tenant</th>
                 <th>Modalities</th>
                 <th>Requests</th>
                 <th style={{ textAlign: 'right' }}>Cost</th>
@@ -179,9 +177,6 @@ export default function Sessions() {
                     {formatDuration(row.started_at, row.ended_at)}
                   </td>
                   <td>{row.project}</td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <TenantPill tenantId={row.tenant_id ?? null} asLink />
-                  </td>
                   <td>
                     <ModalityBadges modalities={row.modalities} />
                   </td>
@@ -281,7 +276,6 @@ function SessionDetailModal({
           >
             Copy
           </button>
-          <TenantPill tenantId={session.tenant_id ?? null} />
         </div>
 
         <div className="grid grid-cols-2 mt-md">

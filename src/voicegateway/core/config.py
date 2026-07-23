@@ -90,13 +90,6 @@ class BrandingConfig:
 
 
 @dataclass
-class TenantConfig:
-    """Multi-tenant attribution knobs."""
-
-    api_key_stale_days: int = 90
-
-
-@dataclass
 class ProjectConfig:
     """Configuration for a single project."""
 
@@ -113,7 +106,6 @@ class ProjectConfig:
     providers: dict[str, dict[str, Any]] = field(default_factory=dict)
     metrics: MetricsConfig = field(default_factory=MetricsConfig)
     replay: ReplayConfig = field(default_factory=ReplayConfig)
-    tenant: TenantConfig = field(default_factory=TenantConfig)
     routing: RoutingConfig = field(default_factory=RoutingConfig)
     branding: BrandingConfig = field(default_factory=BrandingConfig)
 
@@ -259,10 +251,6 @@ class GatewayConfig:
                     buffer_size_events=int(replay_raw.get("buffer_size_events", 5000)),
                     flush_size_events=int(replay_raw.get("flush_size_events", 500)),
                 )
-                tenant_raw = pcfg.get("tenant") or {}
-                tenant_cfg = TenantConfig(
-                    api_key_stale_days=int(tenant_raw.get("api_key_stale_days", 90)),
-                )
                 routing_raw = pcfg.get("routing") or {}
                 rosters_raw = routing_raw.get("rosters") or {}
                 rosters: dict[str, list[str]] = {}
@@ -306,7 +294,6 @@ class GatewayConfig:
                     providers=project_providers,
                     metrics=metrics_cfg,
                     replay=replay_cfg,
-                    tenant=tenant_cfg,
                     routing=routing_cfg,
                     branding=branding_cfg,
                 )
