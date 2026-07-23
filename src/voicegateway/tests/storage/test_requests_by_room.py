@@ -55,10 +55,12 @@ async def test_get_requests_for_room_returns_only_that_room(tmp_path):
     assert len(rows) == 4
     assert all(r["metadata"]["room"] == "vg-probe-a" for r in rows)
 
-    # Full read-back: the split aggregates to the expected seconds.
+    # Full read-back: the split aggregates to the expected seconds. The eou row's
+    # transcription_delay surfaces as the STT tail alongside the per-call ttfb.
     assert aggregate_components(rows) == {
         "eou": 0.30,
         "stt": 0.12,
+        "stt_transcription_delay": 0.08,
         "llm_ttft": 0.45,
         "tts": 0.09,
     }
