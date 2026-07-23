@@ -145,7 +145,7 @@ export default function Agents() {
                       </span>
                     </td>
                     <td className="mono">
-                      <Link to={`/costs?agent=${encodeURIComponent(a.agent_id)}`}>
+                      <Link to={`/agents/${encodeURIComponent(a.agent_id)}`}>
                         {a.agent_id}
                       </Link>
                     </td>

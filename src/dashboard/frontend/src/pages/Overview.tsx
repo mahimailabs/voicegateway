@@ -112,7 +112,7 @@ export default function Overview() {
                   className="flex-row mt-sm"
                   style={{ justifyContent: 'space-between', borderBottom: '1px solid var(--vg-hairline-2)', paddingBottom: 8 }}
                 >
-                  <Link className="mono" to={`/costs?agent=${encodeURIComponent(a.agent_id)}`} style={{ color: 'var(--vg-teal-deep)', fontSize: 13 }}>
+                  <Link className="mono" to={`/agents/${encodeURIComponent(a.agent_id)}`} style={{ color: 'var(--vg-teal-deep)', fontSize: 13 }}>
                     {a.agent_id}
                   </Link>
                   <span className="mono" style={{ color: 'var(--vg-ink)', fontWeight: 700 }}>{formatCost(a.total_cost_usd, 4)}</span>

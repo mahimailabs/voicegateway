@@ -5,6 +5,7 @@ import Costs from './pages/Costs';
 import Replay from './pages/Replay';
 import Sessions from './pages/Sessions';
 import Agents from './pages/Agents';
+import AgentDetail from './pages/AgentDetail';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Latency from './pages/Latency';
@@ -92,6 +93,7 @@ export default function App() {
               <Route path="/latency" element={<Latency />} />
               <Route path="/diagnostics" element={<Diagnostics />} />
               <Route path="/agents" element={<Agents />} />
+              <Route path="/agents/:agentId" element={<AgentDetail />} />
               <Route path="/projects" element={<Projects />} />
               <Route path="/rate-card" element={<RateCard />} />
               <Route path="/api-keys" element={<ApiKeys />} />
