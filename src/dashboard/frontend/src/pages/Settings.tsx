@@ -23,9 +23,16 @@ export default function Settings({ tab: initialTab }: { tab?: string }) {
     initialTab === 'audit' ? 'Audit Log' : 'API Keys'
   );
 
+  // API Keys and Projects tabs render their own page (with its own PageHeader);
+  // only the header-less tabs (General, Audit Log) get the Settings header, so
+  // no tab shows a doubled header.
+  const ownsHeader = activeTab === 'API Keys' || activeTab === 'Projects';
+
   return (
     <div>
-      <PageHeader title="Settings" subtitle="Manage projects and configuration" accent="pink" />
+      {!ownsHeader && (
+        <PageHeader title="Settings" subtitle="Manage projects and configuration" accent="pink" />
+      )}
 
       <div className="neo-tabs">
         {TABS.map((t) => (

@@ -21,10 +21,7 @@ export default function PreV030Banner({ sessionId }: Props) {
         This session predates v0.3.0 conversation-replay capture, so no
         event timeline is available. Cost, duration, and per-modality
         breakdown are still on the{' '}
-        <Link to={`/calls/${encodeURIComponent(sessionId)}`}>
-          session detail page
-        </Link>
-        .
+        <Link to="/calls">Calls page</Link> (open this session for its detail).
       </div>
       <div className="label mt-sm" style={{ opacity: 0.7 }}>
         Replay capture started recording events for sessions that began
