@@ -133,6 +133,7 @@
               "cli/dashboard",
               "cli/status",
               "cli/costs",
+              "cli/calls",
               "cli/export-costs",
               "cli/projects",
               "cli/logs",
