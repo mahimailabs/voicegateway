@@ -308,6 +308,41 @@ async def test_stt_transcription_frame_is_also_a_boundary() -> None:
     assert sink.records[0].input_units == pytest.approx(1.0 / 60.0)
 
 
+async def test_stt_processing_metric_stitches_total_latency() -> None:
+    """ProcessingMetricsData on an STT processor lands as total_latency_ms.
+
+    Regression: the STT flush previously read only ttfb_ms from the buffer, so a
+    Pipecat STT row carried no total latency even though the observer buffered
+    the ProcessingMetricsData (LLM/TTS rows did get it).
+    """
+    obs, sink = _make_observer()
+    stt = _StubSTT("nova-3")
+    obs.register_stt(stt)
+    sr = 16000
+    await _feed(
+        obs,
+        stt,
+        InputAudioRawFrame(audio=b"\x00\x01" * sr, sample_rate=sr, num_channels=1),
+    )
+    await _feed(
+        obs,
+        stt,
+        MetricsFrame(
+            data=[
+                TTFBMetricsData(processor=stt.name, value=0.22),
+                ProcessingMetricsData(processor=stt.name, value=0.4),
+            ]
+        ),
+    )
+    await _feed(obs, stt, UserStoppedSpeakingFrame())
+
+    assert len(sink.records) == 1
+    rec = sink.records[0]
+    assert rec.modality == "stt"
+    assert rec.ttfb_ms == pytest.approx(220.0)
+    assert rec.total_latency_ms == pytest.approx(400.0)
+
+
 # --- metadata stamping -----------------------------------------------------
 
 

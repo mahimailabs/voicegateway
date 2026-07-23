@@ -534,6 +534,7 @@ class VoiceGatewayObserver(BaseObserver):
         minutes = seconds / 60.0
         pending = self._pending.pop(name, None)
         ttfb_ms = pending.ttfb_ms if pending is not None else None
+        total_latency_ms = pending.total_latency_ms if pending is not None else None
         record = self._cost_tracker.create_record(
             model_id=_model_id(provider, model),
             modality="stt",
@@ -541,6 +542,7 @@ class VoiceGatewayObserver(BaseObserver):
             project=self._project,
             input_units=minutes,
             ttfb_ms=ttfb_ms,
+            total_latency_ms=total_latency_ms,
             session_id=self._session_id,
             agent_id=self._agent_id,
         )
