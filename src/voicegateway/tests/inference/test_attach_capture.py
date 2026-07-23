@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from voicegateway.inference.session.capture import MetricCapture, units_from_metric
 from voicegateway.middleware.cost_tracker_middleware import CostTracker
 from voicegateway.services.sinks import LocalSqliteSink
@@ -796,3 +798,143 @@ async def test_attach_explicit_room_overrides_session():
     await session._vg_capture.drain()
 
     assert sink.rows[0].metadata.get("room") == "explicit-room"
+
+
+# --- turn-level time-to-first-partial-transcript --------------------------
+
+
+class _RecordingSink:
+    def __init__(self) -> None:
+        self.records: list[Any] = []
+
+    async def log_request(self, record: Any) -> None:
+        self.records.append(record)
+
+    async def flush(self) -> None:
+        pass
+
+
+class _SpeakingEvent:
+    def __init__(self, created_at: float) -> None:
+        self.created_at = created_at
+
+
+class _Transcript:
+    def __init__(self, is_final: bool, created_at: float) -> None:
+        self.is_final = is_final
+        self.created_at = created_at
+
+
+class _TurnEOU:
+    end_of_utterance_delay = 0.5
+    transcription_delay = 0.2
+
+
+def _ttfp_capture():
+    sink = _RecordingSink()
+    capture = MetricCapture(
+        cost_tracker=CostTracker(sink),  # unused for eou rows
+        sink=sink,
+        project="fleet",
+        agent_id="agent-3",
+        session_id="vg-ttfp",
+    )
+    return capture, sink
+
+
+async def test_time_to_first_partial_latched_onto_eou_row():
+    """First interim's delay from speech onset lands on the turn's EOU row."""
+    capture, sink = _ttfp_capture()
+    session = _FakeSession()
+    capture.bind(session)
+
+    session.emit("user_started_speaking", _SpeakingEvent(100.0))
+    session.emit("user_input_transcribed", _Transcript(is_final=False, created_at=100.3))
+    session.emit("user_input_transcribed", _Transcript(is_final=False, created_at=100.5))
+    session.emit("user_input_transcribed", _Transcript(is_final=True, created_at=100.9))
+    session.emit("metrics_collected", _TurnEOU())
+    await capture.drain()
+
+    eou = next(r for r in sink.records if r.modality == "eou")
+    assert eou.metadata["eou"]["time_to_first_partial_ms"] == pytest.approx(300.0)  # first interim only
+    assert eou.metadata["eou"]["end_of_utterance_delay"] == 0.5
+
+
+async def test_no_first_partial_when_stt_emits_no_interim():
+    """Final-only / non-streaming STT never fabricates a first-partal number."""
+    capture, sink = _ttfp_capture()
+    session = _FakeSession()
+    capture.bind(session)
+
+    session.emit("user_started_speaking", _SpeakingEvent(200.0))
+    session.emit("user_input_transcribed", _Transcript(is_final=True, created_at=200.4))
+    session.emit("metrics_collected", _TurnEOU())
+    await capture.drain()
+
+    eou = next(r for r in sink.records if r.modality == "eou")
+    assert "time_to_first_partial_ms" not in eou.metadata["eou"]
+
+
+async def test_first_partial_latch_resets_between_turns():
+    """A turn with an interim doesn't leak its value into the next turn."""
+    capture, sink = _ttfp_capture()
+    session = _FakeSession()
+    capture.bind(session)
+
+    session.emit("user_started_speaking", _SpeakingEvent(100.0))
+    session.emit("user_input_transcribed", _Transcript(is_final=False, created_at=100.3))
+    session.emit("metrics_collected", _TurnEOU())
+    session.emit("user_started_speaking", _SpeakingEvent(200.0))  # turn 2: no interim
+    session.emit("metrics_collected", _TurnEOU())
+    await capture.drain()
+
+    eous = [r for r in sink.records if r.modality == "eou"]
+    assert eous[0].metadata["eou"]["time_to_first_partial_ms"] == pytest.approx(300.0)
+    assert "time_to_first_partial_ms" not in eous[1].metadata["eou"]
+
+
+class _UserStateChanged:
+    """Mirror of livekit.agents UserStateChangedEvent (the real 1.6 onset signal).
+
+    livekit-agents 1.6 emits no discrete ``user_started_speaking``; the onset is
+    the transition into the ``speaking`` state, carried on ``user_state_changed``.
+    """
+
+    def __init__(self, new_state: str, created_at: float) -> None:
+        self.new_state = new_state
+        self.created_at = created_at
+
+
+async def test_time_to_first_partial_via_user_state_changed():
+    """Real LiveKit 1.6 onset path: user_state_changed -> "speaking" anchors it.
+
+    This is the event that actually fires in production; the legacy
+    ``user_started_speaking`` tests above cover older / non-LiveKit frameworks.
+    """
+    capture, sink = _ttfp_capture()
+    session = _FakeSession()
+    capture.bind(session)
+
+    session.emit("user_state_changed", _UserStateChanged("speaking", 100.0))
+    session.emit("user_input_transcribed", _Transcript(is_final=False, created_at=100.28))
+    session.emit("user_input_transcribed", _Transcript(is_final=True, created_at=100.9))
+    session.emit("metrics_collected", _TurnEOU())
+    await capture.drain()
+
+    eou = next(r for r in sink.records if r.modality == "eou")
+    assert eou.metadata["eou"]["time_to_first_partial_ms"] == pytest.approx(280.0)
+
+
+async def test_non_speaking_user_state_change_does_not_anchor_onset():
+    """listening / away transitions must not start a turn or latch a partial."""
+    capture, sink = _ttfp_capture()
+    session = _FakeSession()
+    capture.bind(session)
+
+    session.emit("user_state_changed", _UserStateChanged("listening", 50.0))
+    session.emit("user_input_transcribed", _Transcript(is_final=False, created_at=100.28))
+    session.emit("metrics_collected", _TurnEOU())
+    await capture.drain()
+
+    eou = next(r for r in sink.records if r.modality == "eou")
+    assert "time_to_first_partial_ms" not in eou.metadata["eou"]
