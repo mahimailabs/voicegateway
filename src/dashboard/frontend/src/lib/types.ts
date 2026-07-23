@@ -189,29 +189,6 @@ export interface RetentionWindow {
 // v0.4.0 multi-tenant attribution (REQ-VG-TENANT-001..004).
 // ----------------------------------------------------------------------
 
-/** One row from the dashboard's tenant typeahead feed. */
-export interface TenantRow {
-  tenant_id: string;
-  session_count: number;
-  total_cost_usd: number;
-  first_seen: string | null;
-  last_seen: string | null;
-}
-
-/** Aggregates for the implicit `tenant_id IS NULL` bucket. */
-export interface UnattributedAggregates {
-  session_count: number;
-  total_cost_usd: number;
-  first_seen: string | null;
-  last_seen: string | null;
-}
-
-/** `/api/tenants` response shape. */
-export interface TenantsResponse {
-  tenants: TenantRow[];
-  unattributed: UnattributedAggregates;
-}
-
 /**
  * Tenant filter URL convention:
  *   - `null`: no filter (everything)

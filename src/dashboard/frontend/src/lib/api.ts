@@ -100,8 +100,6 @@ import type {
   ReplayResponse,
   RetentionWindow,
   TenantFilter,
-  TenantRow,
-  TenantsResponse,
   TurnRow,
 } from './types';
 
@@ -186,26 +184,6 @@ export function updateReplayRetention(
       body: JSON.stringify({ retention_days: retentionDays }),
     },
   );
-}
-
-// ----------------------------------------------------------------------
-// v0.4.0 multi-tenant typed fetchers (REQ-VG-TENANT-002 + -003).
-// ----------------------------------------------------------------------
-
-export function fetchTenants(
-  options: { limit?: number; q?: string } = {},
-): Promise<TenantsResponse> {
-  const params = new URLSearchParams();
-  if (options.limit !== undefined) params.set('limit', String(options.limit));
-  if (options.q !== undefined && options.q.length > 0) params.set('q', options.q);
-  const query = params.toString();
-  return fetchJson<TenantsResponse>(
-    query ? `/api/tenants?${query}` : '/api/tenants',
-  );
-}
-
-export function fetchTenant(tenantId: string): Promise<TenantRow> {
-  return fetchJson<TenantRow>(`/api/tenants/${encodeURIComponent(tenantId)}`);
 }
 
 // ----------------------------------------------------------------------

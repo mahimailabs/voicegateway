@@ -1,9 +1,8 @@
 import { useSearchParams } from 'react-router-dom';
-import TenantFilter from './TenantFilter';
 import AgentFilter from './AgentFilter';
 
 interface Props {
-  /** When true, render the tenant typeahead. Default true. */
+  /** When true, render the tenant typeahead. Default false (single-tenant OSS). */
   showTenant?: boolean;
   /** When true, render the agent typeahead. Default true. */
   showAgent?: boolean;
@@ -34,7 +33,7 @@ interface Props {
  * which the existing v0.2.0 / v0.3.0 pages don't agree on.
  */
 export default function FilterBar({
-  showTenant = true,
+  showTenant = false,
   showAgent = true,
   projectSlot,
   timeRangeSlot,
@@ -73,7 +72,6 @@ export default function FilterBar({
       {timeRangeSlot}
       {extra}
       {showAgent && <AgentFilter value={agent} onChange={setAgent} />}
-      {showTenant && <TenantFilter value={tenant} onChange={setTenant} />}
     </div>
   );
 }

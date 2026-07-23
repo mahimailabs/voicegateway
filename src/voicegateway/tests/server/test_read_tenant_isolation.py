@@ -177,30 +177,3 @@ async def test_no_credential_operator_sees_all(harness):
     assert costs.json()["total"] == pytest.approx(1.30)
     ids = {r["id"] for r in sessions.json()}
     assert {"s-acme-1", "s-acme-2", "s-beta-1"}.issubset(ids)
-
-
-async def test_admin_route_refuses_tenant_key(harness):
-    """A tenant key hitting the admin cross-tenant route gets 403."""
-    token = await _make_key(harness.gateway, tenant_id="acme", role="tenant")
-    async with harness.client() as c:
-        resp = await c.get(
-            "/api/admin/costs/by-tenant",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-    assert resp.status_code == 403, resp.text
-
-
-async def test_admin_route_authz_precedes_backend_availability(harness):
-    """An admin key hits the route but gets 503 (ClickHouse absent), not 200.
-
-    Authz (403 for tenants) must precede the backend-availability 503: the
-    tenant key above gets 403, the admin key here passes authz and only then
-    discovers ClickHouse is not configured.
-    """
-    token = await _make_key(harness.gateway, role="admin")
-    async with harness.client() as c:
-        resp = await c.get(
-            "/api/admin/costs/by-tenant",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-    assert resp.status_code == 503, resp.text

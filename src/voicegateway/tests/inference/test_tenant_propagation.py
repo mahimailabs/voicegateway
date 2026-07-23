@@ -10,7 +10,6 @@ from voicegateway.inference.session.context import (
     set_tenant,
 )
 from voicegateway.models.request_model import RequestRecord
-from voicegateway.repository import tenants_repository as tenants
 from voicegateway.services.storage_service import StorageService
 
 
@@ -60,23 +59,15 @@ async def test_three_tenants_aggregate_independently(storage) -> None:
 
     reset_tenant_id()
 
-    # Per-tenant cost summary.
+    # The write-side tenant stamp survives to a tenant-filtered read: each
+    # tenant's cost aggregates independently. This is the wire we keep even
+    # though the OSS dashboard no longer exposes a tenant selector.
     alpha = await storage.get_cost_summary("all", tenant="alpha")
     assert alpha["total"] == pytest.approx(0.30)
     bravo = await storage.get_cost_summary("all", tenant="bravo")
     assert bravo["total"] == pytest.approx(1.00)
     charlie = await storage.get_cost_summary("all", tenant="charlie")
     assert charlie["total"] == pytest.approx(0.50)
-
-    # Tenants repo index aggregates.
-    await storage._ensure_initialized()
-    async with storage._conn.session() as s:
-        rows = await tenants.list_tenants(s)
-    by_tenant = {r.tenant_id: r for r in rows}
-    assert by_tenant["alpha"].session_count == 2
-    assert by_tenant["alpha"].total_cost_usd == pytest.approx(0.30)
-    assert by_tenant["bravo"].session_count == 1
-    assert by_tenant["charlie"].session_count == 1
 
 
 async def test_context_var_resets_between_tenants(storage) -> None:
@@ -89,22 +80,3 @@ async def test_context_var_resets_between_tenants(storage) -> None:
 
     reset_tenant_id()
     assert current_tenant() is None
-
-
-async def test_unattributed_sessions_separate_from_tenant_index(storage) -> None:
-    """The list_tenants result excludes NULL-tenant sessions."""
-    set_tenant("alpha")
-    await storage.log_request(_req("a-1", cost=0.10))
-
-    reset_tenant_id()
-    await storage.log_request(_req("u-1", cost=0.05))
-    await storage.log_request(_req("u-2", cost=0.05))
-
-    await storage._ensure_initialized()
-    async with storage._conn.session() as s:
-        tenant_rows = await tenants.list_tenants(s)
-        unattr = await tenants.get_unattributed_aggregates(s)
-    assert {r.tenant_id for r in tenant_rows} == {"alpha"}
-
-    assert unattr.session_count == 2
-    assert unattr.total_cost_usd == pytest.approx(0.10)

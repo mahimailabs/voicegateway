@@ -35,9 +35,6 @@ from voicegateway.server.api import (
     system,
 )
 from voicegateway.server.api.dashboard import (
-    admin_costs as dashboard_admin_costs,
-)
-from voicegateway.server.api.dashboard import (
     agents as dashboard_agents,
 )
 from voicegateway.server.api.dashboard import (
@@ -73,9 +70,6 @@ from voicegateway.server.api.dashboard import (
 from voicegateway.server.api.dashboard import (
     status as dashboard_status,
 )
-from voicegateway.server.api.dashboard import (
-    tenants as dashboard_tenants,
-)
 
 system_router = APIRouter()
 system_router.include_router(system.router)
@@ -100,12 +94,10 @@ dashboard_router.include_router(dashboard_health.router)
 dashboard_router.include_router(dashboard_auth_status.router)
 dashboard_router.include_router(dashboard_status.router)
 dashboard_router.include_router(dashboard_costs.router)
-dashboard_router.include_router(dashboard_admin_costs.router)
 dashboard_router.include_router(dashboard_projects.router)
 dashboard_router.include_router(dashboard_sessions.router)
 dashboard_router.include_router(dashboard_metrics.router)
 dashboard_router.include_router(dashboard_replay.router)
-dashboard_router.include_router(dashboard_tenants.router)
 dashboard_router.include_router(dashboard_agents.router)
 dashboard_router.include_router(dashboard_diagnostics.router)
 dashboard_router.include_router(dashboard_api_keys.router)

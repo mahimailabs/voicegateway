@@ -120,19 +120,6 @@ def test_project_replay_retention_returns_503_when_storage_disabled(
     assert resp.status_code == 404
 
 
-def test_tenants_list_returns_empty_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.get("/api/tenants")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["tenants"] == []
-    assert body["unattributed"]["session_count"] == 0
-
-
-def test_tenant_detail_returns_404_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.get("/api/tenants/anything")
-    assert resp.status_code == 404
-
-
 def test_api_keys_list_returns_empty_when_storage_disabled(storage_disabled_client):
     resp = storage_disabled_client.get("/api/api_keys")
     assert resp.status_code == 200

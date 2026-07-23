@@ -37,7 +37,6 @@ def _serialize_rule(rule: Any) -> dict[str, Any]:
         "modality": rule.modality,
         "provider": rule.provider,
         "model": rule.model,
-        "tenant": rule.tenant,
         "plan": rule.plan,
         "kind": rule.kind,
         "markup": rule.markup,
@@ -59,7 +58,7 @@ Returns:
 
 SET_RATE_CARD_OVERRIDE_DOC = """Add or update a DB rate-card override for a scope.
 
-One rule per scope (modality/provider/model, optionally tenant/plan; each
+One rule per scope (modality/provider/model, optionally plan; each
 defaults to ``*``). Provide either ``markup`` (cost-plus multiplier, e.g. 1.3)
 or ``fixed`` + ``unit`` (a fixed per-unit price). Takes effect on the config
 refresh this triggers.
@@ -116,7 +115,6 @@ async def _handle_set_rate_card_override(
             modality=payload.modality,
             provider=payload.provider,
             model=payload.model,
-            tenant=payload.tenant,
             plan=payload.plan,
             markup=payload.markup,
             fixed=payload.fixed,
