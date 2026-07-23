@@ -10,7 +10,7 @@ An agency runs one VoiceGateway deployment and provisions a separate project for
 This guide walks the end-to-end provisioning flow for one new client.
 
 <Note>
-Projects separate cost and routing at the client level. Tenants (covered in [Multi-tenant quickstart](/guide/multi-tenant-quickstart)) separate cost within a project at the end-user level. The two are composable: pass `project=` and `tenant_id=` together in `attach()` when you need both levels.
+Projects separate cost and routing at the client level. Tenant attribution (covered in [Tenant attribution](/guide/multi-tenant-quickstart)) stamps cost within a project at the end-user level on the wire. The two are composable: pass `project=` and `tenant_id=` together in `attach()` when you need both levels. Per-tenant billing rollups run on the hosted cloud.
 </Note>
 
 ## Prerequisites
@@ -195,8 +195,8 @@ From the Sessions page, click any row to open the SessionDetail modal. The routi
   <Card title="Configuration: projects" href="/configuration/projects">
     Full projects schema: budgets, rosters, and stale-key settings.
   </Card>
-  <Card title="Multi-tenant quickstart" href="/guide/multi-tenant-quickstart">
-    Add per-end-user cost attribution within a project.
+  <Card title="Tenant attribution" href="/guide/multi-tenant-quickstart">
+    Stamp per-end-user cost attribution within a project on the wire.
   </Card>
   <Card title="Budget enforcement example" href="/examples/budget-enforcement">
     Code example for daily_budget enforcement with guard().

@@ -166,9 +166,11 @@ conversation and its per-turn timeline. On LiveKit the id is created when the
 session context opens; on Pipecat it is created when you attach.
 
 <Tip>
-Multi-tenant operators pass `tenant_id=` to slice costs per customer. Each row
-is labelled so the dashboard and API can filter or group by tenant. See
-[Multi-tenant quickstart](/guide/multi-tenant-quickstart) for a worked example.
+Single-tenant is the default. Pass `tenant_id=` only for per-call attribution
+when one deployment serves many customers. Each row is stamped with the tenant
+on the wire, so the hosted cloud can bill per customer and local SQL can group by
+tenant. See [Tenant attribution](/guide/multi-tenant-quickstart) for a worked
+example.
 </Tip>
 
 ## See also

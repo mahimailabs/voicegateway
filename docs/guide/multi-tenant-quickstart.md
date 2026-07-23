@@ -1,14 +1,16 @@
 ---
-title: Multi-tenant quickstart
-description: Tag every voice session with a tenant id so a single deployment can attribute cost to each customer separately.
+title: Tenant attribution (advanced)
+description: Single-tenant is the default. Pass a tenant_id only when you need per-call attribution, such as an agency splitting cost per end-user through the hosted cloud.
 ---
 
-# Multi-tenant quickstart
+# Tenant attribution (advanced)
 
-One VoiceGateway deployment can serve many customers. Pass `tenant_id` to `attach()` and every STT, LLM, and TTS record is stamped with that customer's identifier. The dashboard and API can then filter, group, and export by tenant so you see per-customer cost without running separate deployments.
+A VoiceGateway deployment is **single-tenant by default**: every record belongs to one operator and no tenant wiring is required. You only reach for `tenant_id` when you need per-call attribution *within* one deployment, for example an agency splitting cost per end-user, or a SaaS product that fans usage out to the hosted cloud for per-tenant billing.
+
+`attach()` accepts a `tenant_id` keyword argument. When you pass it, every STT, LLM, and TTS record from that session is stamped with the value on the wire. The stamp is what the **hosted cloud** and downstream analysis use to attribute cost per customer. The local OSS dashboard has no tenant selector; it renders your single deployment's totals.
 
 <Note>
-This page covers the agent-side wiring. For project-level grouping (one project per agency client), see [Agency quickstart](/guide/agency-quickstart). The two are composable: you can pass both `project=` and `tenant_id=` to `attach()`.
+This page covers the agent-side wiring (the wire). For project-level grouping (one project per agency client), see [Agency quickstart](/guide/agency-quickstart). The two are composable: you can pass both `project=` and `tenant_id=` to `attach()`. For per-tenant billing and margin rollups, that runs on the [hosted cloud](/hosted/quickstart).
 </Note>
 
 ## Prerequisites
@@ -23,7 +25,7 @@ This page covers the agent-side wiring. For project-level grouping (one project 
 
 The tenant id is bounded at 128 UTF-8 characters. Unicode is allowed.
 
-Sessions where `tenant_id` is not set store `NULL` and appear as "unattributed" in the dashboard.
+Sessions where `tenant_id` is not set store `NULL` (the single-tenant default) and appear as "unattributed" downstream.
 
 ## Step 1: wire attach() with a tenant id
 
@@ -102,29 +104,12 @@ session_id = attach(session, project="platform", tenant_id="agency-acme")
 ```
 
 <Tip>
-If you are sending data to the VoiceGateway Cloud collector, pass `metadata.tenant_id` in the ingest payload. The collector routes it alongside the top-level `tenant_id` so both levels appear in the dashboard. See [Hosted quickstart](/hosted/quickstart) for the collector env vars.
+If you are sending data to the VoiceGateway Cloud collector, pass `metadata.tenant_id` in the ingest payload. The collector routes it alongside the top-level `tenant_id` so both levels appear in the hosted dashboard. See [Hosted quickstart](/hosted/quickstart) for the collector env vars.
 </Tip>
 
-## Step 3: view per-tenant costs in the dashboard
+## Step 3: read per-tenant costs
 
-Open the dashboard at `http://127.0.0.1:8080` (your daemon's serve port).
-
-Every cost, session, and metrics page respects the **Tenant** filter in the top-right filter strip. Type a tenant id to scope the page, or choose **Unattributed** to audit sessions with no `tenant_id`. The filter value lives in the URL so it persists across navigation.
-
-The Sessions page shows a **Tenant** column. Clicking the tenant pill on any row scopes the whole page to that tenant immediately.
-
-## Step 4: export per-tenant data
-
-For billing exports or downstream analysis, use the CLI or direct SQL.
-
-### CLI
-
-```bash
-voicegw tenant list --json
-voicegw tenant show acme --json
-```
-
-`tenant show` exits 1 when the tenant has no sessions, so CI scripts can branch on it.
+Per-tenant rollups (revenue, cost, margin) run on the **hosted cloud**, which resolves the tenant from the verified `vk_` ingest key and bills per tenant. In an OSS deployment, the `tenant_id` is stamped on the wire and stored, but you read it back with SQL rather than a dashboard filter.
 
 ### SQL
 
@@ -143,13 +128,15 @@ ORDER BY total_cost DESC;
 
 The `requests` and `turns` tables also carry `tenant_id`, so any join-and-aggregate query can group by tenant without schema changes.
 
+For a managed per-tenant billing view (rated revenue, recorded cost, and margin per tenant), send your fleet to the hosted cloud and read `GET /v1/billing/usage`. See [Rating](/architecture/rating) and the [HTTP API reference](/api/http-api).
+
 ## Known limitations
 
 <Note>
 These are deliberate scope decisions, not bugs.
 </Note>
 
-- **No `voicegw costs --tenant` flag.** Use the dashboard's `/api/costs?tenant=` endpoint for per-tenant cost totals.
+- **The OSS dashboard has no tenant selector.** It renders your single deployment's totals; per-tenant slicing lives on the hosted cloud. Read the stored `tenant_id` with SQL for local analysis.
 - **No re-tag affordance.** Once a session has a non-NULL `tenant_id`, it cannot be changed after the fact.
 - **Virtual keys do not carry RBAC scopes.** A verified virtual key grants the same access as a wildcard static key.
 
@@ -169,3 +156,5 @@ These are deliberate scope decisions, not bugs.
     Set daily budgets and routing rosters per project in voicegw.yaml.
   </Card>
 </CardGroup>
+</content>
+</invoke>

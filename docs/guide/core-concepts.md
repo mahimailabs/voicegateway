@@ -97,10 +97,10 @@ VoiceGateway uses Python `contextvars.ContextVar` to carry the active session id
 
 This matters in two situations:
 
-1. **Multi-tenant agents.** Pass `tenant_id=` to `attach()` when one agent instance serves multiple end-users. Each call's record is labelled with the tenant so the dashboard and API can slice costs per customer.
+1. **Per-call tenant attribution.** Single-tenant is the default. Pass `tenant_id=` to `attach()` when one agent instance serves multiple end-users. Each call's record is stamped with the tenant on the wire, so the hosted cloud can bill per customer and local SQL can group by tenant.
 2. **Sub-task correlation.** If your agent spawns helper tasks inside the same async context, their provider calls are automatically tagged with the same session id.
 
-See [Multi-tenant quickstart](/guide/multi-tenant-quickstart) for a worked example.
+See [Tenant attribution](/guide/multi-tenant-quickstart) for a worked example.
 
 ## What this page is not
 

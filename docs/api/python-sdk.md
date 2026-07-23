@@ -121,13 +121,13 @@ logger.info("session started", extra={"vg_session": session_id})
 
 ### Tenant attribution
 
-Set `tenant_id` to attribute this session to a specific customer. When `room` is also passed, VoiceGateway carries the tenant id in LiveKit room metadata so it survives SFU hops.
+Single-tenant is the default. Set `tenant_id` only when you need per-call attribution to a specific customer within one deployment. When `room` is also passed, VoiceGateway carries the tenant id in LiveKit room metadata so it survives SFU hops. The stamp is what the hosted cloud bills per tenant against; the OSS deployment stores it for SQL analysis.
 
 ```python
 attach(session, project="acme-platform", tenant_id=request.user_id, room=room)
 ```
 
-Sessions with no tenant set are stored as `tenant_id = NULL` and shown as "unattributed" in the dashboard.
+Sessions with no tenant set are stored as `tenant_id = NULL` (the single-tenant default) and appear as "unattributed" downstream.
 
 See [Attach guide](/guide/attach) for a full walkthrough.
 
