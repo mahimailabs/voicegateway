@@ -24,15 +24,22 @@ def aggregate_components(rows: list[dict]) -> dict | None:
 
     ``rows`` are ``metadata.room``-tagged request records the instrumented agent
     wrote during the probe. Turn detection comes from the ``eou`` row's
-    ``end_of_utterance_delay``; STT from the per-component ttfb (falling back to
-    the eou row's ``transcription_delay``); LLM/TTS from their ttfb. Values are
-    seconds, averaged across every row for the room (so a fixed ``--room-name``
-    reused across turns averages them; the default per-trial rooms each hold one
-    turn). Returns None when nothing usable is present (an uninstrumented agent,
-    or rows without latencies).
+    ``end_of_utterance_delay``. STT responsiveness is the turn's
+    time-to-first-partial (the ``eou`` row's ``time_to_first_partial_ms``: speech
+    onset -> first interim, the head / first-byte metric). It is preferred, as
+    the STT headline, over the ``transcription_delay`` tail (end-of-speech ->
+    final, which folds in the provider's endpointing) and over a per-call STT
+    ``ttfb`` if a provider ever emits one. LLM/TTS come from their ttfb. Values
+    are seconds, averaged across every row for the room (so a fixed
+    ``--room-name`` reused across turns averages them; the default per-trial
+    rooms each hold one turn). ``stt`` is the headline number; ``stt_ttfp`` (head)
+    and ``stt_transcription_delay`` (tail) are also surfaced when present so a
+    caller can show both ends of the utterance. Returns None when nothing usable
+    is present (an uninstrumented agent, or rows without latencies).
     """
     eou: list[float] = []
     transcription: list[float] = []
+    first_partial: list[float] = []
     stt: list[float] = []
     llm: list[float] = []
     tts: list[float] = []
@@ -48,6 +55,9 @@ def aggregate_components(rows: list[dict]) -> dict | None:
             td = eou_meta.get("transcription_delay")
             if td is not None:
                 transcription.append(float(td))
+            ttfp_ms = eou_meta.get("time_to_first_partial_ms")
+            if ttfp_ms is not None:
+                first_partial.append(float(ttfp_ms) / 1000.0)
         elif modality == "stt" and ttfb_ms is not None:
             stt.append(float(ttfb_ms) / 1000.0)
         elif modality == "llm" and ttfb_ms is not None:
@@ -58,10 +68,19 @@ def aggregate_components(rows: list[dict]) -> dict | None:
     out: dict[str, float] = {}
     if eou:
         out["eou"] = mean(eou)
+    # STT headline: prefer a real first-response (a per-call ttfb, else the
+    # turn-level time-to-first-partial) over the endpointing-laden
+    # transcription_delay tail. Expose the head and tail separately too.
     if stt:
         out["stt"] = mean(stt)
+    elif first_partial:
+        out["stt"] = mean(first_partial)
     elif transcription:
         out["stt"] = mean(transcription)
+    if first_partial:
+        out["stt_ttfp"] = mean(first_partial)
+    if transcription:
+        out["stt_transcription_delay"] = mean(transcription)
     if llm:
         out["llm_ttft"] = mean(llm)
     if tts:

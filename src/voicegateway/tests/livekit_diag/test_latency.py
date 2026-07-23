@@ -88,7 +88,14 @@ def _split_rows(room="vg-probe-x"):
 
 def test_aggregate_components_full_split():
     out = aggregate_components(_split_rows())
-    assert out == {"eou": 0.30, "stt": 0.12, "llm_ttft": 0.45, "tts": 0.09}
+    # a per-call stt ttfb wins the headline; the tail is surfaced alongside it.
+    assert out == {
+        "eou": 0.30,
+        "stt": 0.12,
+        "stt_transcription_delay": 0.08,
+        "llm_ttft": 0.45,
+        "tts": 0.09,
+    }
 
 
 def test_aggregate_components_stt_falls_back_to_transcription_delay():
@@ -102,7 +109,47 @@ def test_aggregate_components_stt_falls_back_to_transcription_delay():
         }
     ]
     out = aggregate_components(rows)
-    assert out == {"eou": 0.30, "stt": 0.08}  # no stt row -> transcription_delay
+    # no stt row and no first-partial -> headline falls back to the tail.
+    assert out == {"eou": 0.30, "stt": 0.08, "stt_transcription_delay": 0.08}
+
+
+def test_aggregate_components_stt_prefers_ttfp_over_transcription_delay():
+    """The turn's time-to-first-partial (head) is the STT headline, not the tail."""
+    rows = [
+        {
+            "modality": "eou",
+            "ttfb_ms": None,
+            "metadata": {
+                "eou": {
+                    "end_of_utterance_delay": 0.30,
+                    "transcription_delay": 0.08,
+                    "time_to_first_partial_ms": 280.0,
+                }
+            },
+        }
+    ]
+    out = aggregate_components(rows)
+    assert out == {
+        "eou": 0.30,
+        "stt": 0.28,  # first-partial, not the 0.08 transcription_delay tail
+        "stt_ttfp": 0.28,
+        "stt_transcription_delay": 0.08,
+    }
+
+
+def test_aggregate_components_percall_stt_ttfb_outranks_ttfp():
+    """A real per-call STT ttfb, if a provider emits one, wins over the turn TTFP."""
+    rows = [
+        {
+            "modality": "eou",
+            "ttfb_ms": None,
+            "metadata": {"eou": {"time_to_first_partial_ms": 280.0}},
+        },
+        {"modality": "stt", "ttfb_ms": 120.0, "metadata": {}},
+    ]
+    out = aggregate_components(rows)
+    assert out["stt"] == 0.12  # per-call ttfb is the headline
+    assert out["stt_ttfp"] == 0.28  # ...but the turn TTFP is still exposed
 
 
 def test_aggregate_components_averages_multiple_turns():
@@ -136,7 +183,13 @@ class _FakeStore:
 async def test_component_reader_reads_and_aggregates():
     reader = ComponentReader(_FakeStore([_split_rows()]))
     out = await reader.read("vg-probe-x")
-    assert out == {"eou": 0.30, "stt": 0.12, "llm_ttft": 0.45, "tts": 0.09}
+    assert out == {
+        "eou": 0.30,
+        "stt": 0.12,
+        "stt_transcription_delay": 0.08,
+        "llm_ttft": 0.45,
+        "tts": 0.09,
+    }
 
 
 async def test_component_reader_no_store_returns_none():
@@ -183,7 +236,13 @@ async def test_component_reader_returns_partial_after_exhausting_polls():
     store = _FakeStore([_partial_rows(), _partial_rows()])
     reader = ComponentReader(store, poll_attempts=2, poll_delay=0.0)
     out = await reader.read("vg-probe-x")
-    assert out == {"eou": 0.30, "stt": 0.12, "llm_ttft": 0.45}  # no tts key
+    # no tts key; the eou row's transcription_delay still surfaces as the tail
+    assert out == {
+        "eou": 0.30,
+        "stt": 0.12,
+        "stt_transcription_delay": 0.08,
+        "llm_ttft": 0.45,
+    }
     assert store.calls == 2
 
 
@@ -197,6 +256,7 @@ async def test_probe_reads_components_after_loop():
     assert result.components == {
         "eou": 0.30,
         "stt": 0.12,
+        "stt_transcription_delay": 0.08,
         "llm_ttft": 0.45,
         "tts": 0.09,
     }

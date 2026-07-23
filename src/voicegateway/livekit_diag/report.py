@@ -78,6 +78,7 @@ def render_latency(results: list, target_ms: float, summarize) -> str:
             labels = [
                 ("eou", "turn-detect"),
                 ("stt", "STT"),
+                ("stt_ttfp", "STT-ttfp"),
                 ("llm_ttft", "LLM-ttft"),
                 ("tts", "TTS"),
             ]
