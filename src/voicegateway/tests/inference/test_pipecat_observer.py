@@ -32,6 +32,7 @@ from pipecat.frames.frames import (  # noqa: E402
 from pipecat.metrics.metrics import (  # noqa: E402
     LLMTokenUsage,
     LLMUsageMetricsData,
+    ProcessingMetricsData,
     TTFBMetricsData,
     TTSUsageMetricsData,
 )
@@ -202,6 +203,32 @@ async def test_ttfb_and_usage_correlate_into_one_llm_record() -> None:
     rec = sink.records[0]
     assert rec.ttfb_ms == pytest.approx(250.0)
     assert rec.input_units == 1000.0
+
+
+async def test_processing_metric_stitches_total_latency() -> None:
+    """ProcessingMetricsData (Pipecat's total processing time) -> total_latency_ms.
+
+    It is the LiveKit ``metric.duration`` analog; it rides the same per-processor
+    buffer as TTFB and flushes on the usage frame.
+    """
+    obs, sink = _make_observer()
+    llm = _StubLLM("gpt-4o")
+    usage = LLMTokenUsage(prompt_tokens=1000, completion_tokens=500, total_tokens=1500)
+    await _feed(
+        obs,
+        llm,
+        MetricsFrame(
+            data=[
+                TTFBMetricsData(processor=llm.name, value=0.25),
+                ProcessingMetricsData(processor=llm.name, value=0.9),
+                LLMUsageMetricsData(processor=llm.name, value=usage),
+            ]
+        ),
+    )
+    assert len(sink.records) == 1
+    rec = sink.records[0]
+    assert rec.ttfb_ms == pytest.approx(250.0)
+    assert rec.total_latency_ms == pytest.approx(900.0)
 
 
 async def test_ttfb_and_usage_same_frame_one_record() -> None:
