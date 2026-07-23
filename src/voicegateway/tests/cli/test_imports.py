@@ -133,6 +133,10 @@ _V030_COMMAND_NAMES: frozenset[str] = frozenset({"replay"})
 # name lives on as a hidden alias, so it stays in the _V005 set above).
 _FRAMEWORK_AGNOSTIC_COMMAND_NAMES: frozenset[str] = frozenset({"check"})
 
+# Operator-centric read views added on top: `calls` (per-call cost, the unit an
+# operator thinks in, alongside the provider/model rollup in `costs`).
+_OPERATOR_VIEW_COMMAND_NAMES: frozenset[str] = frozenset({"calls"})
+
 
 def _registered_command_names() -> set[str]:
     """Names every Typer command registered on ``app`` answers to."""
@@ -176,6 +180,7 @@ def test_command_count_matches_documented_surface() -> None:
         | _V011_COMMAND_NAMES
         | _V030_COMMAND_NAMES
         | _FRAMEWORK_AGNOSTIC_COMMAND_NAMES
+        | _OPERATOR_VIEW_COMMAND_NAMES
     )
     registered = _registered_command_names()
     assert registered == expected, (
