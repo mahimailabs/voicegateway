@@ -891,3 +891,50 @@ async def test_first_partial_latch_resets_between_turns():
     eous = [r for r in sink.records if r.modality == "eou"]
     assert eous[0].metadata["eou"]["time_to_first_partial_ms"] == pytest.approx(300.0)
     assert "time_to_first_partial_ms" not in eous[1].metadata["eou"]
+
+
+class _UserStateChanged:
+    """Mirror of livekit.agents UserStateChangedEvent (the real 1.6 onset signal).
+
+    livekit-agents 1.6 emits no discrete ``user_started_speaking``; the onset is
+    the transition into the ``speaking`` state, carried on ``user_state_changed``.
+    """
+
+    def __init__(self, new_state: str, created_at: float) -> None:
+        self.new_state = new_state
+        self.created_at = created_at
+
+
+async def test_time_to_first_partial_via_user_state_changed():
+    """Real LiveKit 1.6 onset path: user_state_changed -> "speaking" anchors it.
+
+    This is the event that actually fires in production; the legacy
+    ``user_started_speaking`` tests above cover older / non-LiveKit frameworks.
+    """
+    capture, sink = _ttfp_capture()
+    session = _FakeSession()
+    capture.bind(session)
+
+    session.emit("user_state_changed", _UserStateChanged("speaking", 100.0))
+    session.emit("user_input_transcribed", _Transcript(is_final=False, created_at=100.28))
+    session.emit("user_input_transcribed", _Transcript(is_final=True, created_at=100.9))
+    session.emit("metrics_collected", _TurnEOU())
+    await capture.drain()
+
+    eou = next(r for r in sink.records if r.modality == "eou")
+    assert eou.metadata["eou"]["time_to_first_partial_ms"] == pytest.approx(280.0)
+
+
+async def test_non_speaking_user_state_change_does_not_anchor_onset():
+    """listening / away transitions must not start a turn or latch a partial."""
+    capture, sink = _ttfp_capture()
+    session = _FakeSession()
+    capture.bind(session)
+
+    session.emit("user_state_changed", _UserStateChanged("listening", 50.0))
+    session.emit("user_input_transcribed", _Transcript(is_final=False, created_at=100.28))
+    session.emit("metrics_collected", _TurnEOU())
+    await capture.drain()
+
+    eou = next(r for r in sink.records if r.modality == "eou")
+    assert "time_to_first_partial_ms" not in eou.metadata["eou"]

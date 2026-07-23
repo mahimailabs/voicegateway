@@ -298,7 +298,12 @@ class MetricCapture:
             on("metrics_collected", self._on_session_metric)
             # Turn-level time-to-first-partial-transcript. The interim arrives on
             # the session's user_input_transcribed stream (STTMetrics carries no
-            # first-partial), anchored to the user_started_speaking onset.
+            # first-partial), anchored to the speech onset. LiveKit 1.6 signals
+            # onset via user_state_changed -> "speaking" (its created_at is the
+            # VAD-backdated true onset); it emits no discrete user_started_speaking.
+            # Older LiveKit builds / other frameworks may emit the discrete event,
+            # so we hook both and whichever fires first wins the turn.
+            on("user_state_changed", self._on_user_state_changed)
             on("user_started_speaking", self._on_user_started_speaking)
             on("user_input_transcribed", self._on_user_transcribed)
 
@@ -371,8 +376,24 @@ class MetricCapture:
         self._stamp_context(record)
         self._schedule(self._sink.log_request(record))
 
+    def _on_user_state_changed(self, event: object, *_a: Any, **_k: Any) -> None:
+        """LiveKit 1.6 onset signal: the transition into the ``speaking`` state.
+
+        ``user_state_changed`` also fires for ``listening``/``away``; only the
+        ``speaking`` edge starts a turn. Its ``created_at`` is the VAD-backdated
+        true onset (earlier than the raw detection instant), which is exactly
+        the anchor a first-partial latency should measure from.
+        """
+        if getattr(event, "new_state", None) != "speaking":
+            return
+        self._begin_turn(event)
+
     def _on_user_started_speaking(self, event: object, *_a: Any, **_k: Any) -> None:
-        """Start a new turn: anchor the onset and clear the first-partial latch."""
+        """Discrete onset signal (older LiveKit / non-LiveKit frameworks)."""
+        self._begin_turn(event)
+
+    def _begin_turn(self, event: object) -> None:
+        """Anchor the onset and clear the first-partial latch for a new turn."""
         self._turn_started_at = _event_time(event)
         self._first_partial_ms = None
 
