@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { fetchServerOverview } from '../lib/api';
 import { formatCost, formatMs, formatRelativeTime } from '../lib/ui';
+import { formatDateTime } from '../lib/time';
 import type { ServerOverview } from '../lib/types';
 
 /**
@@ -55,10 +56,10 @@ function enumLabel(s: string): string {
   return last.toLowerCase();
 }
 
-/** Egress started_at is unix nanoseconds; render a local time or a dash. */
+/** Egress started_at is unix nanoseconds; render a short date+time or a dash. */
 function fmtNs(ns: number): string {
   if (!ns) return '-';
-  return new Date(ns / 1e6).toLocaleString();
+  return formatDateTime(ns / 1e6);
 }
 
 export default function Server() {

@@ -12,6 +12,7 @@ import {
   formatRelativeTime,
   rosterStatusBadge,
 } from '../lib/ui';
+import { formatDateTime } from '../lib/time';
 
 /** Detail view for a single agent: 24h metrics, model stack, recent calls. */
 export default function AgentDetail() {
@@ -117,7 +118,7 @@ export default function AgentDetail() {
               {calls.map((c) => (
                 <tr key={c.id}>
                   <td className="mono">{c.id}</td>
-                  <td>{new Date(c.started_at).toLocaleString()}</td>
+                  <td>{formatDateTime(c.started_at)}</td>
                   <td>{c.modalities.join(' · ')}</td>
                   <td>{c.request_count}</td>
                   <td className="mono">{formatCost(c.total_cost_usd, 4)}</td>

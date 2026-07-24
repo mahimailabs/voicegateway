@@ -11,6 +11,7 @@ import FilterBar, { useTenantFilter, useAgentFilter } from '../components/Filter
 import PageHeader from '../components/PageHeader';
 import { fetchJson } from '../lib/api';
 import { formatCost } from '../lib/ui';
+import { formatDateTime } from '../lib/time';
 import type {
   SessionDetail,
   SessionOrderBy,
@@ -292,13 +293,13 @@ function SessionDetailModal({
           <div>
             <div className="label">Started</div>
             <div className="mt-sm mono" style={{ fontSize: 12 }}>
-              {session.started_at}
+              {formatDateTime(session.started_at)}
             </div>
           </div>
           <div>
             <div className="label">Ended (last activity)</div>
             <div className="mt-sm mono" style={{ fontSize: 12 }}>
-              {session.ended_at ?? '—'}
+              {session.ended_at ? formatDateTime(session.ended_at) : '—'}
             </div>
           </div>
         </div>
