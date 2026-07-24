@@ -27,6 +27,27 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_DB_PATH = "~/.config/voicegateway/voicegw.db"
 
+# aiosqlite and alembic both log every operation at DEBUG. Embedded in a LiveKit
+# agent (voicegateway.attach, or the fleet heartbeat thread), a ``console``/``dev``
+# run sets the root logger to DEBUG, so that per-query chatter (every SELECT /
+# UPDATE the aiosqlite thread runs) floods the host's terminal. Quiet the two noisy
+# dependency loggers, but only when the caller has not picked a level themselves
+# (NOTSET = "inherit", which is what produces the flood).
+_NOISY_EMBEDDED_LOGGERS = ("aiosqlite", "alembic")
+
+
+def quiet_embedded_dependency_loggers() -> None:
+    """Raise the noisy aiosqlite/alembic loggers to WARNING, unless set already.
+
+    Called from ``Database.__init__`` so it covers every path that builds an engine
+    (the cost sink, the dashboard, and the local-mode fleet heartbeat thread that
+    constructs a ``Database`` directly), not just the ``StorageService`` facade.
+    """
+    for name in _NOISY_EMBEDDED_LOGGERS:
+        dep_logger = logging.getLogger(name)
+        if dep_logger.level == logging.NOTSET:
+            dep_logger.setLevel(logging.WARNING)
+
 
 def resolve_database_url(config: GatewayConfig) -> str:
     """Compute the SQLAlchemy URL from the gateway config.
@@ -110,6 +131,7 @@ class Database:
     """Async SQLAlchemy engine + session factory bound to a config."""
 
     def __init__(self, config: GatewayConfig) -> None:
+        quiet_embedded_dependency_loggers()
         self.config = config
         url = resolve_database_url(config)
         self._db_file_path = _resolve_db_file_path(config)

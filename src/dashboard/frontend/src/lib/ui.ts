@@ -53,6 +53,13 @@ export function agentStatusBadgeClass(status: AgentStatus): string {
   return 'neo-badge--offline';
 }
 
+/** Badge class for a live roster status (idle/busy/offline), matching Server > Fleet. */
+export function rosterStatusBadge(status: string): string {
+  if (status === 'busy') return 'neo-badge--green';
+  if (status === 'idle') return 'neo-badge--blue';
+  return 'neo-badge--offline'; // offline
+}
+
 /** Compact "Ns / Nm / Nh / Nd ago" from an epoch-seconds timestamp. */
 export function formatRelativeTime(lastSeen: number | null | undefined): string {
   if (lastSeen == null) return '—';
