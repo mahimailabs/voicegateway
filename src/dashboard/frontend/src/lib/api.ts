@@ -99,6 +99,7 @@ import type {
   ProjectBrandingResponse,
   ReplayResponse,
   RetentionWindow,
+  ServerOverview,
   TenantFilter,
   TurnRow,
 } from './types';
@@ -285,6 +286,14 @@ export function createDiagnosticsRun(body: {
     method: 'POST',
     body: JSON.stringify({ checks: body.checks, config: body.config ?? {} }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Server page: live LiveKit topology + fleet, cost-annotated (read-only).
+// ---------------------------------------------------------------------------
+
+export function fetchServerOverview(): Promise<ServerOverview> {
+  return fetchJson<ServerOverview>('/api/server/overview');
 }
 
 /**

@@ -65,6 +65,9 @@ from voicegateway.server.api.dashboard import (
     replay as dashboard_replay,
 )
 from voicegateway.server.api.dashboard import (
+    server as dashboard_server,
+)
+from voicegateway.server.api.dashboard import (
     sessions as dashboard_sessions,
 )
 from voicegateway.server.api.dashboard import (
@@ -100,6 +103,7 @@ dashboard_router.include_router(dashboard_metrics.router)
 dashboard_router.include_router(dashboard_replay.router)
 dashboard_router.include_router(dashboard_agents.router)
 dashboard_router.include_router(dashboard_diagnostics.router)
+dashboard_router.include_router(dashboard_server.router)
 dashboard_router.include_router(dashboard_api_keys.router)
 dashboard_router.include_router(dashboard_branding.router)
 
