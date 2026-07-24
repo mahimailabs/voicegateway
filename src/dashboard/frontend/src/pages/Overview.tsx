@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import StatusCard from '../components/StatusCard';
 import TrendChart from '../components/TrendChart';
 import { Skeleton, StatCardSkeleton } from '../components/Skeleton';
+import AgentCard from '../components/AgentCard';
 import { fetchJson, fetchAgents } from '../lib/api';
 import { formatCost, agentStatus } from '../lib/ui';
 import type { OverviewResponse, AgentRow } from '../lib/types';
@@ -50,9 +51,10 @@ export default function Overview() {
   }
 
   const activeCount = agents.filter((a) => agentStatus(a.last_seen) === 'active').length;
-  const topAgents = [...agents]
+  // Cards, cost-ranked. Cap the Overview grid; the full fleet lives on /agents.
+  const cardAgents = [...agents]
     .sort((a, b) => b.total_cost_usd - a.total_cost_usd)
-    .slice(0, 3);
+    .slice(0, 6);
 
   return (
     <div>
@@ -84,42 +86,24 @@ export default function Overview() {
       </div>
 
       {agents.length > 0 && (
-        <div className="mt-lg vg-card">
-          <div className="vg-card__head">
-            <div className="vg-card__label">Fleet</div>
+        <div className="mt-lg">
+          <div
+            className="flex-row"
+            style={{ justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}
+          >
+            <div className="vg-card__label">
+              Fleet · {agents.length} agent{agents.length === 1 ? '' : 's'}
+              {activeCount > 0 ? ` · ${activeCount} active` : ''}
+            </div>
             <Link className="neo-btn" to="/agents" style={{ fontSize: 12, padding: '5px 12px' }}>
               View all agents &rarr;
             </Link>
           </div>
-          <div className="flex-row flex-wrap mt-md" style={{ gap: '2.5rem' }}>
-            <div>
-              <div className="vg-stat">{agents.length}</div>
-              <div className="vg-card__label" style={{ marginTop: 4 }}>Agents</div>
-            </div>
-            <div>
-              <div className="vg-stat">{activeCount}</div>
-              <div className="vg-card__label" style={{ marginTop: 4 }}>Active now</div>
-            </div>
+          <div className="grid grid-cols-3">
+            {cardAgents.map((a) => (
+              <AgentCard key={a.agent_id} agent={a} />
+            ))}
           </div>
-          {topAgents.length > 0 && (
-            <div className="mt-md">
-              <div className="vg-card__label" style={{ marginBottom: 6 }}>
-                Top by cost (24h)
-              </div>
-              {topAgents.map((a) => (
-                <div
-                  key={a.agent_id}
-                  className="flex-row mt-sm"
-                  style={{ justifyContent: 'space-between', borderBottom: '1px solid var(--vg-hairline-2)', paddingBottom: 8 }}
-                >
-                  <Link className="mono" to={`/agents/${encodeURIComponent(a.agent_id)}`} style={{ color: 'var(--vg-teal-deep)', fontSize: 13 }}>
-                    {a.agent_id}
-                  </Link>
-                  <span className="mono" style={{ color: 'var(--vg-ink)', fontWeight: 700 }}>{formatCost(a.total_cost_usd, 4)}</span>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
 

@@ -219,6 +219,10 @@ export interface AgentRow {
   memory_pct?: number | null;
   /** Last-seen model per modality, from /api/agents; a modality is null when unseen. */
   models?: { stt: string | null; llm: string | null; tts: string | null };
+  /** Average first-byte latency (ms) per modality over 24h, for the card
+   * waterfall; a modality is null when it metered nothing. Only STT/LLM/TTS are
+   * measured (network hops / turn detection are not metered). */
+  latency_ms?: { stt: number | null; llm: number | null; tts: number | null };
   /** Live roster presence: 'idle' | 'busy' | 'offline'; null when the agent is
    * telemetry-only (not currently a registered/heartbeating worker). */
   fleet_status?: string | null;
