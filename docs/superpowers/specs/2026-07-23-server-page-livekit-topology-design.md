@@ -1,7 +1,8 @@
 # Server page: LiveKit deployment topology, cost-annotated
 
 Date: 2026-07-23
-Status: approved scope, pending build green light
+Status: Phase 1 shipped (rooms + agents + fleet, cost-annotated); Phase 2 shipped
+(SIP + Egress + Ingress). Both on PR #147. Pipecat deferred.
 Scope decision: full control plane, new "Server" nav item (OSS dashboard, LiveKit first; Pipecat deferred)
 
 ## Problem
@@ -29,6 +30,12 @@ VG shows only data it actually has. It must NOT draw:
 
 The SFU tile shows live room/participant totals (real, cheap) plus a timestamped
 "last probe" line and a Run-probe button into Diagnostics. No invented gauge.
+
+Secret whitelist (Phase 2): the LiveKit egress/ingress/sip proto messages carry
+credentials (auth_password, auth_username, stream_key, RTMP url, allowed_addresses,
+headers, metadata). The engine row dataclasses copy ONLY non-sensitive identifiers,
+so no secret can reach the dashboard JSON. Enforced by allowlist-by-construction
+and asserted in tests that build a proto WITH the secret set.
 
 ## Data sources (grounded in the repo)
 

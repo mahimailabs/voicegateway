@@ -18,6 +18,13 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
+from voicegateway.livekit_diag.admin import (
+    EgressRow,
+    IngressRow,
+    SipDispatchRuleRow,
+    SipInboundTrunkRow,
+    SipOutboundTrunkRow,
+)
 from voicegateway.livekit_diag.config import CredsError, LiveKitCreds
 from voicegateway.models.request_model import RequestRecord
 from voicegateway.repository import workers_repository
@@ -58,23 +65,67 @@ def _not_configured(monkeypatch) -> None:
 
 
 class _FakeAdmin:
-    """A LiveKitAdmin stand-in that returns canned rows without a real server."""
+    """A LiveKitAdmin stand-in that returns canned rows without a real server.
+
+    ``raises`` fails EVERY control-plane read (a down/unreachable server);
+    ``agents_raises`` fails only list_agents (one section down, others fine).
+    """
 
     def __init__(
         self,
         rows: list[Any] | None = None,
         raises: Exception | None = None,
+        agents_raises: Exception | None = None,
+        sip_raises: Exception | None = None,
         aclose_raises: Exception | None = None,
+        egress: list[Any] | None = None,
+        ingress: list[Any] | None = None,
+        sip: dict[str, list[Any]] | None = None,
     ):
         self._rows = rows or []
         self._raises = raises
+        self._agents_raises = agents_raises
+        self._sip_raises = sip_raises
         self._aclose_raises = aclose_raises
+        self._egress = egress or []
+        self._ingress = ingress or []
+        self._sip = sip or {"inbound": [], "outbound": [], "dispatch_rules": []}
         self.closed = False
 
-    async def list_agents(self) -> list[Any]:
+    def _guard(self) -> None:
         if self._raises is not None:
             raise self._raises
+
+    def _sip_guard(self) -> None:
+        self._guard()
+        if self._sip_raises is not None:
+            raise self._sip_raises
+
+    async def list_agents(self) -> list[Any]:
+        self._guard()
+        if self._agents_raises is not None:
+            raise self._agents_raises
         return self._rows
+
+    async def list_egress(self) -> list[Any]:
+        self._guard()
+        return self._egress
+
+    async def list_ingress(self) -> list[Any]:
+        self._guard()
+        return self._ingress
+
+    async def list_sip_inbound_trunks(self) -> list[Any]:
+        self._sip_guard()
+        return self._sip["inbound"]
+
+    async def list_sip_outbound_trunks(self) -> list[Any]:
+        self._sip_guard()
+        return self._sip["outbound"]
+
+    async def list_sip_dispatch_rules(self) -> list[Any]:
+        self._sip_guard()
+        return self._sip["dispatch_rules"]
 
     async def aclose(self) -> None:
         self.closed = True
@@ -143,6 +194,11 @@ async def test_overview_not_configured(client, monkeypatch):
     assert data["rooms"]["ok"] is False
     assert "not configured" in data["rooms"]["error"].lower()
     assert data["rooms"]["rooms"] == []
+    # Every LiveKit section degrades together when creds are absent.
+    for sec in ("egress", "ingress", "sip"):
+        assert data[sec]["ok"] is False
+    assert data["egress"]["items"] == []
+    assert data["sip"]["inbound"] == []
     # Fleet is a local DB read, so it is fine even when LiveKit is not configured.
     assert data["fleet"]["ok"] is True
     assert data["fleet"]["workers"] == []
@@ -243,22 +299,43 @@ async def test_overview_room_cost_windowed_real_db(client, gateway, monkeypatch)
     assert room["p95_latency_ms"] == pytest.approx(290.0)
 
 
-async def test_overview_rooms_degrade_on_read_error(client, monkeypatch):
+async def test_overview_rooms_degrade_but_others_ok(client, monkeypatch):
+    """One failing LiveKit read is a section error; the others still answer."""
     _configured(monkeypatch)
     admin = _capture_admin(
-        monkeypatch, _FakeAdmin(raises=RuntimeError("livekit unreachable"))
+        monkeypatch, _FakeAdmin(agents_raises=RuntimeError("agents read boom"))
     )
     resp = await client.get("/api/server/overview")
     # The endpoint must never 500: a failed control-plane read is a section error.
     assert resp.status_code == 200
     data = resp.json()
     assert data["rooms"]["ok"] is False
-    assert "unreachable" in data["rooms"]["error"]
-    # A read was attempted and the server did not answer: reachable is False.
-    assert data["connection"]["reachable"] is False
+    assert "boom" in data["rooms"]["error"]
+    # egress/ingress/sip answered, so the deployment is reachable.
+    assert data["egress"]["ok"] is True
+    assert data["ingress"]["ok"] is True
+    assert data["sip"]["ok"] is True
+    assert data["connection"]["reachable"] is True
     # Fleet still succeeds independently.
     assert data["fleet"]["ok"] is True
     # The client is closed even on the error path (finally guard).
+    assert admin.closed is True
+
+
+async def test_overview_unreachable_when_all_reads_fail(client, monkeypatch):
+    """Every control-plane read failing means the server is unreachable."""
+    _configured(monkeypatch)
+    admin = _capture_admin(
+        monkeypatch, _FakeAdmin(raises=RuntimeError("connection refused"))
+    )
+    resp = await client.get("/api/server/overview")
+    assert resp.status_code == 200
+    data = resp.json()
+    for sec in ("rooms", "egress", "ingress", "sip"):
+        assert data[sec]["ok"] is False
+    assert data["connection"]["reachable"] is False
+    # Fleet is a local read, unaffected by LiveKit being down.
+    assert data["fleet"]["ok"] is True
     assert admin.closed is True
 
 
@@ -289,6 +366,10 @@ async def test_overview_sdk_absent(client, monkeypatch):
     data = resp.json()
     assert data["rooms"]["ok"] is False
     assert "not installed" in data["rooms"]["error"].lower()
+    # Every LiveKit section carries the same install hint.
+    for sec in ("egress", "ingress", "sip"):
+        assert data[sec]["ok"] is False
+        assert "not installed" in data[sec]["error"].lower()
     # The SDK was never even loaded, so nothing probed the control plane:
     # reachable stays null (the UI shows "Configured", not "Unreachable").
     assert data["connection"]["reachable"] is None
@@ -311,6 +392,113 @@ async def test_overview_fleet_roster(client, gateway, monkeypatch):
     assert by_id["agent-idle"]["region"] == "us-east"
     assert by_id["agent-idle"]["memory_pct"] == 10.0
     assert by_id["agent-gone"]["status"] == "offline"
+
+
+async def test_overview_livekit_sections_populated(client, monkeypatch):
+    """Egress / Ingress / SIP serialize their whitelisted rows; no secrets leak."""
+    _configured(monkeypatch)
+    _capture_admin(
+        monkeypatch,
+        _FakeAdmin(
+            rows=[],
+            egress=[
+                EgressRow(
+                    egress_id="eg1",
+                    status="EGRESS_ACTIVE",
+                    source_type="EGRESS_SOURCE_TYPE_WEB",
+                    room_name="r1",
+                    started_at=123,
+                )
+            ],
+            ingress=[
+                IngressRow(
+                    ingress_id="in1",
+                    name="stream",
+                    input_type="RTMP_INPUT",
+                    room_name="r2",
+                    status="ENDPOINT_PUBLISHING",
+                )
+            ],
+            sip={
+                "inbound": [
+                    SipInboundTrunkRow(
+                        trunk_id="tin1", name="main-in", numbers=["+15551234567"]
+                    )
+                ],
+                "outbound": [
+                    SipOutboundTrunkRow(
+                        trunk_id="tout1",
+                        name="main-out",
+                        address="sip.example.com",
+                        transport="SIP_TRANSPORT_TCP",
+                        numbers=["+15559876543"],
+                    )
+                ],
+                "dispatch_rules": [
+                    SipDispatchRuleRow(rule_id="dr1", name="rule", trunk_ids=["tin1"])
+                ],
+            },
+        ),
+    )
+    resp = await client.get("/api/server/overview")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # Exact-dict equality doubles as a secret tripwire: any extra serialized
+    # field (a leaked secret, a schema drift) fails the test.
+    assert data["egress"]["ok"] is True
+    assert data["egress"]["items"][0] == {
+        "egress_id": "eg1",
+        "status": "EGRESS_ACTIVE",
+        "source_type": "EGRESS_SOURCE_TYPE_WEB",
+        "room_name": "r1",
+        "started_at": 123,
+    }
+    assert data["ingress"]["items"][0] == {
+        "ingress_id": "in1",
+        "name": "stream",
+        "input_type": "RTMP_INPUT",
+        "room_name": "r2",
+        "status": "ENDPOINT_PUBLISHING",
+    }
+    sip = data["sip"]
+    assert sip["inbound"][0] == {
+        "trunk_id": "tin1",
+        "name": "main-in",
+        "numbers": ["+15551234567"],
+    }
+    assert sip["outbound"][0] == {
+        "trunk_id": "tout1",
+        "name": "main-out",
+        "address": "sip.example.com",
+        "transport": "SIP_TRANSPORT_TCP",
+        "numbers": ["+15559876543"],
+    }
+    assert sip["dispatch_rules"][0] == {
+        "rule_id": "dr1",
+        "name": "rule",
+        "trunk_ids": ["tin1"],
+    }
+
+
+async def test_overview_sip_degrades_but_others_ok(client, monkeypatch):
+    """A SIP sub-read failure degrades only SIP; rooms/egress/ingress still answer."""
+    _configured(monkeypatch)
+    admin = _capture_admin(
+        monkeypatch, _FakeAdmin(sip_raises=RuntimeError("sip service disabled"))
+    )
+    resp = await client.get("/api/server/overview")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["sip"]["ok"] is False
+    assert "sip service disabled" in data["sip"]["error"]
+    assert data["sip"]["inbound"] == []
+    # The other LiveKit reads still succeeded, so the deployment is reachable.
+    assert data["rooms"]["ok"] is True
+    assert data["egress"]["ok"] is True
+    assert data["ingress"]["ok"] is True
+    assert data["connection"]["reachable"] is True
+    assert admin.closed is True
 
 
 async def test_overview_fleet_degrades_on_read_error(client, monkeypatch):

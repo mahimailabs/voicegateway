@@ -20,6 +20,7 @@ number VG can produce is a timestamped, billed probe, which lives on Diagnostics
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import time
 from typing import TYPE_CHECKING, Any
@@ -103,44 +104,12 @@ async def _room_cost(gateway: Gateway, room: str, now: float) -> dict[str, Any]:
     }
 
 
-async def _rooms_section(
-    gateway: Gateway, creds: LiveKitCreds | None, now: float
-) -> tuple[dict[str, Any], bool | None]:
-    """Live rooms + in-room agents from the LiveKit Server API, cost-annotated.
-
-    Returns ``(section, reachable)``. ``reachable`` is a concrete True/False only
-    when a control-plane read was actually attempted, so a False genuinely means
-    the server did not answer. It stays ``None`` when nothing probed the
-    deployment (creds absent, or the ``[livekit]`` extra not installed), so the
-    UI never reports an "unreachable" state VG never measured.
-    """
-    if creds is None:
-        return {"ok": False, "error": "LiveKit not configured", "rooms": []}, None
-    try:
-        admin = _make_admin(creds)
-    except Exception as exc:  # noqa: BLE001 - client construction must not 500
-        return {"ok": False, "error": str(exc), "rooms": []}, False
-    if admin is None:
-        return (
-            {
-                "ok": False,
-                "error": "LiveKit SDK not installed. Install voicegateway[livekit].",
-                "rooms": [],
-            },
-            None,
-        )
+async def _rooms_section(admin: Any, gateway: Gateway, now: float) -> dict[str, Any]:
+    """Live rooms + in-room agents (LiveKit Server API), annotated with VG cost."""
     try:
         agent_rows = await admin.list_agents()
     except Exception as exc:  # noqa: BLE001 - a control-plane read degrades, never 500s
-        return {"ok": False, "error": str(exc), "rooms": []}, False
-    finally:
-        # Best-effort teardown: a transport-close error must neither discard the
-        # section return above nor 500 the endpoint.
-        try:
-            await admin.aclose()
-        except Exception:  # noqa: BLE001
-            logger.debug("LiveKitAdmin.aclose() failed", exc_info=True)
-
+        return {"ok": False, "error": str(exc), "rooms": []}
     grouped: dict[str, dict[str, Any]] = {}
     for r in agent_rows:
         room = grouped.setdefault(
@@ -159,7 +128,107 @@ async def _rooms_section(
     costs = await asyncio.gather(*(_room_cost(gateway, r["name"], now) for r in rooms))
     for room, cost in zip(rooms, costs, strict=True):
         room.update(cost)
-    return {"ok": True, "error": None, "rooms": rooms}, True
+    return {"ok": True, "error": None, "rooms": rooms}
+
+
+async def _egress_section(admin: Any) -> dict[str, Any]:
+    """Active/recent egress jobs (recording/streaming)."""
+    try:
+        rows = await admin.list_egress()
+    except Exception as exc:  # noqa: BLE001 - a control-plane read degrades, never 500s
+        return {"ok": False, "error": str(exc), "items": []}
+    return {"ok": True, "error": None, "items": [dataclasses.asdict(r) for r in rows]}
+
+
+async def _ingress_section(admin: Any) -> dict[str, Any]:
+    """Configured ingress endpoints (WHIP / RTMP / URL)."""
+    try:
+        rows = await admin.list_ingress()
+    except Exception as exc:  # noqa: BLE001 - a control-plane read degrades, never 500s
+        return {"ok": False, "error": str(exc), "items": []}
+    return {"ok": True, "error": None, "items": [dataclasses.asdict(r) for r in rows]}
+
+
+async def _sip_section(admin: Any) -> dict[str, Any]:
+    """SIP inbound/outbound trunks and dispatch rules (telephony wiring)."""
+    try:
+        inbound, outbound, rules = await asyncio.gather(
+            admin.list_sip_inbound_trunks(),
+            admin.list_sip_outbound_trunks(),
+            admin.list_sip_dispatch_rules(),
+        )
+    except Exception as exc:  # noqa: BLE001 - a control-plane read degrades, never 500s
+        return {
+            "ok": False,
+            "error": str(exc),
+            "inbound": [],
+            "outbound": [],
+            "dispatch_rules": [],
+        }
+    return {
+        "ok": True,
+        "error": None,
+        "inbound": [dataclasses.asdict(r) for r in inbound],
+        "outbound": [dataclasses.asdict(r) for r in outbound],
+        "dispatch_rules": [dataclasses.asdict(r) for r in rules],
+    }
+
+
+def _absent_sections(error: str) -> dict[str, dict[str, Any]]:
+    """The LiveKit section shapes when nothing could be read (creds/SDK absent)."""
+    return {
+        "rooms": {"ok": False, "error": error, "rooms": []},
+        "egress": {"ok": False, "error": error, "items": []},
+        "ingress": {"ok": False, "error": error, "items": []},
+        "sip": {
+            "ok": False,
+            "error": error,
+            "inbound": [],
+            "outbound": [],
+            "dispatch_rules": [],
+        },
+    }
+
+
+async def _livekit_snapshot(
+    gateway: Gateway, creds: LiveKitCreds | None, now: float
+) -> tuple[dict[str, dict[str, Any]], bool | None]:
+    """Every LiveKit control-plane read through ONE admin client.
+
+    Returns ``(sections, reachable)`` where sections = {rooms, egress, ingress,
+    sip}. ``reachable`` is a concrete True/False only when reads were attempted
+    (True if any section answered), and stays ``None`` when nothing probed the
+    deployment (creds absent, or the ``[livekit]`` extra missing), so the UI
+    never reports an "unreachable" state VG never measured.
+    """
+    if creds is None:
+        return _absent_sections("LiveKit not configured"), None
+    try:
+        admin = _make_admin(creds)
+    except Exception as exc:  # noqa: BLE001 - client construction must not 500
+        return _absent_sections(str(exc)), False
+    if admin is None:
+        return (
+            _absent_sections("LiveKit SDK not installed. Install voicegateway[livekit]."),
+            None,
+        )
+    try:
+        rooms, egress, ingress, sip = await asyncio.gather(
+            _rooms_section(admin, gateway, now),
+            _egress_section(admin),
+            _ingress_section(admin),
+            _sip_section(admin),
+        )
+    finally:
+        # Best-effort teardown: a transport-close error must neither discard the
+        # sections above nor 500 the endpoint.
+        try:
+            await admin.aclose()
+        except Exception:  # noqa: BLE001
+            logger.debug("LiveKitAdmin.aclose() failed", exc_info=True)
+    sections = {"rooms": rooms, "egress": egress, "ingress": ingress, "sip": sip}
+    reachable = any(s["ok"] for s in sections.values())
+    return sections, reachable
 
 
 def _worker_entry(w: RosterRow) -> dict[str, Any]:
@@ -233,7 +302,7 @@ async def get_server_overview(
         else {"configured": False, "url": None}
     )
 
-    rooms, reachable = await _rooms_section(gateway, creds, now)
+    sections, reachable = await _livekit_snapshot(gateway, creds, now)
     fleet = await _fleet_section(gateway, now)
     # reachable is None unless a control-plane read was actually attempted, so
     # the UI never labels an unmeasured deployment "unreachable".
@@ -241,6 +310,9 @@ async def get_server_overview(
     return {
         "generated_at": now,
         "connection": connection,
-        "rooms": rooms,
+        "rooms": sections["rooms"],
+        "egress": sections["egress"],
+        "ingress": sections["ingress"],
+        "sip": sections["sip"],
         "fleet": fleet,
     }

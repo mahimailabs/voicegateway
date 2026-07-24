@@ -30,6 +30,37 @@ function workerStatusBadge(status: string): string {
   return 'neo-badge--offline';
 }
 
+function egressStatusBadge(status: string): string {
+  if (status === 'EGRESS_ACTIVE') return 'neo-badge--green';
+  if (status === 'EGRESS_STARTING' || status === 'EGRESS_ENDING') return 'neo-badge--yellow';
+  if (status === 'EGRESS_FAILED' || status === 'EGRESS_ABORTED') return 'neo-badge--red';
+  return 'neo-badge--black';
+}
+
+function ingressStatusBadge(status: string): string {
+  if (status === 'ENDPOINT_PUBLISHING') return 'neo-badge--green';
+  if (status === 'ENDPOINT_BUFFERING') return 'neo-badge--yellow';
+  if (status === 'ENDPOINT_ERROR') return 'neo-badge--red';
+  return 'neo-badge--black';
+}
+
+/**
+ * A LiveKit enum name rendered as its distinctive last token, lowercased:
+ * "EGRESS_ACTIVE" -> "active", "SIP_TRANSPORT_TCP" -> "tcp",
+ * "ENDPOINT_PUBLISHING" -> "publishing", "RTMP_INPUT" -> "rtmp". An unknown
+ * numeric value (the backend fallback) passes through unchanged (e.g. "9").
+ */
+function enumLabel(s: string): string {
+  const last = s.replace(/_INPUT$/, '').split('_').pop() ?? s;
+  return last.toLowerCase();
+}
+
+/** Egress started_at is unix nanoseconds; render a local time or a dash. */
+function fmtNs(ns: number): string {
+  if (!ns) return '-';
+  return new Date(ns / 1e6).toLocaleString();
+}
+
 export default function Server() {
   const mountedRef = useRef(true);
   const [data, setData] = useState<ServerOverview | null>(null);
@@ -85,7 +116,7 @@ export default function Server() {
     );
   }
 
-  const { connection, rooms, fleet } = data;
+  const { connection, rooms, egress, ingress, sip, fleet } = data;
   const badge = connectionBadge(connection);
   const activeAgents = rooms.rooms.reduce(
     (n, r) => n + r.agents.filter((a) => a.state === 'active').length,
@@ -95,6 +126,11 @@ export default function Server() {
     (n, r) => n + r.agents.filter((a) => a.state === 'dispatched').length,
     0,
   );
+  const sipTrunks = sip.inbound.length + sip.outbound.length;
+  const sipEmpty = sipTrunks + sip.dispatch_rules.length === 0;
+  // Count only when the section actually answered, so an unconfigured/unreachable
+  // deployment shows "-" rather than a misleading 0.
+  const tileCount = (ok: boolean, n: number) => (ok ? n : '-');
 
   return (
     <div>
@@ -168,6 +204,23 @@ export default function Server() {
             Health is a billed probe, not a live gauge.
           </div>
         </div>
+        <div className="vg-card">
+          <div className="vg-card__label">Egress</div>
+          <div className="vg-stat" style={{ marginTop: 6 }}>{tileCount(egress.ok, egress.items.length)}</div>
+          <div style={{ marginTop: 4, fontSize: 12, color: 'var(--vg-muted)' }}>jobs</div>
+        </div>
+        <div className="vg-card">
+          <div className="vg-card__label">Ingress</div>
+          <div className="vg-stat" style={{ marginTop: 6 }}>{tileCount(ingress.ok, ingress.items.length)}</div>
+          <div style={{ marginTop: 4, fontSize: 12, color: 'var(--vg-muted)' }}>endpoints</div>
+        </div>
+        <div className="vg-card">
+          <div className="vg-card__label">SIP</div>
+          <div className="vg-stat" style={{ marginTop: 6 }}>{tileCount(sip.ok, sipTrunks)}</div>
+          <div style={{ marginTop: 4, fontSize: 12, color: 'var(--vg-muted)' }}>
+            trunks · {sip.ok ? sip.dispatch_rules.length : '-'} rules
+          </div>
+        </div>
       </div>
 
       {/* Rooms */}
@@ -221,6 +274,141 @@ export default function Server() {
         )}
       </div>
 
+      {/* SIP / Egress / Ingress: only when LiveKit is configured (the connection
+          card already explains an unconfigured deployment). */}
+      {connection.configured && (
+        <>
+          {/* SIP */}
+          <div className="vg-card" style={{ marginBottom: 16 }}>
+            <div className="vg-card__label" style={{ marginBottom: 12 }}>
+              SIP · telephony
+              {sip.ok
+                ? ` (${sip.inbound.length} inbound · ${sip.outbound.length} outbound · ${sip.dispatch_rules.length} rules)`
+                : ''}
+            </div>
+            {!sip.ok ? (
+              <div className="empty-state">{sip.error ?? 'SIP is not available on this deployment.'}</div>
+            ) : sipEmpty ? (
+              <div className="empty-state">No SIP trunks or dispatch rules configured.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {sip.inbound.length > 0 && (
+                  <div>
+                    <div className="label" style={{ marginBottom: 6 }}>Inbound trunks</div>
+                    <table className="neo-table neo-table--orange">
+                      <thead><tr><th>Trunk</th><th>Name</th><th>Numbers</th></tr></thead>
+                      <tbody>
+                        {sip.inbound.map((t) => (
+                          <tr key={t.trunk_id}>
+                            <td className="mono">{t.trunk_id}</td>
+                            <td>{t.name || '-'}</td>
+                            <td className="mono">{t.numbers.join(', ') || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {sip.outbound.length > 0 && (
+                  <div>
+                    <div className="label" style={{ marginBottom: 6 }}>Outbound trunks</div>
+                    <table className="neo-table neo-table--orange">
+                      <thead><tr><th>Trunk</th><th>Name</th><th>Address</th><th>Transport</th><th>Numbers</th></tr></thead>
+                      <tbody>
+                        {sip.outbound.map((t) => (
+                          <tr key={t.trunk_id}>
+                            <td className="mono">{t.trunk_id}</td>
+                            <td>{t.name || '-'}</td>
+                            <td className="mono">{t.address || '-'}</td>
+                            <td>{enumLabel(t.transport)}</td>
+                            <td className="mono">{t.numbers.join(', ') || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {sip.dispatch_rules.length > 0 && (
+                  <div>
+                    <div className="label" style={{ marginBottom: 6 }}>Dispatch rules</div>
+                    <table className="neo-table neo-table--orange">
+                      <thead><tr><th>Rule</th><th>Name</th><th>Trunks</th></tr></thead>
+                      <tbody>
+                        {sip.dispatch_rules.map((r) => (
+                          <tr key={r.rule_id}>
+                            <td className="mono">{r.rule_id}</td>
+                            <td>{r.name || '-'}</td>
+                            <td className="mono">{r.trunk_ids.join(', ') || 'any'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Egress */}
+          <div className="vg-card" style={{ marginBottom: 16 }}>
+            <div className="vg-card__label" style={{ marginBottom: 12 }}>
+              Egress{egress.ok ? ` (${egress.items.length})` : ''}
+            </div>
+            {!egress.ok ? (
+              <div className="empty-state">{egress.error ?? 'Egress is not available.'}</div>
+            ) : egress.items.length === 0 ? (
+              <div className="empty-state">No egress jobs.</div>
+            ) : (
+              <table className="neo-table neo-table--pink">
+                <thead><tr><th>Egress</th><th>Status</th><th>Room</th><th>Source</th><th>Started</th></tr></thead>
+                <tbody>
+                  {egress.items.map((e) => (
+                    <tr key={e.egress_id}>
+                      <td className="mono">{e.egress_id}</td>
+                      <td><span className={`neo-badge ${egressStatusBadge(e.status)}`}>{enumLabel(e.status)}</span></td>
+                      <td className="mono">{e.room_name || '-'}</td>
+                      <td>{enumLabel(e.source_type)}</td>
+                      <td style={{ color: 'var(--vg-muted)', fontSize: 13 }}>{fmtNs(e.started_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Ingress */}
+          <div className="vg-card" style={{ marginBottom: 16 }}>
+            <div className="vg-card__label" style={{ marginBottom: 12 }}>
+              Ingress{ingress.ok ? ` (${ingress.items.length})` : ''}
+            </div>
+            {!ingress.ok ? (
+              <div className="empty-state">{ingress.error ?? 'Ingress is not available.'}</div>
+            ) : ingress.items.length === 0 ? (
+              <div className="empty-state">No ingress endpoints.</div>
+            ) : (
+              <table className="neo-table neo-table--yellow">
+                <thead><tr><th>Ingress</th><th>Name</th><th>Input</th><th>Room</th><th>Status</th></tr></thead>
+                <tbody>
+                  {ingress.items.map((i) => (
+                    <tr key={i.ingress_id}>
+                      <td className="mono">{i.ingress_id}</td>
+                      <td>{i.name || '-'}</td>
+                      <td>{enumLabel(i.input_type)}</td>
+                      <td className="mono">{i.room_name || '-'}</td>
+                      <td>
+                        <span className={`neo-badge ${ingressStatusBadge(i.status)}`}>
+                          {i.status ? enumLabel(i.status) : '-'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
+
       {/* Fleet */}
       <div className="vg-card" style={{ marginBottom: 16 }}>
         <div className="vg-card__label" style={{ marginBottom: 12 }}>
@@ -271,9 +459,9 @@ export default function Server() {
       </div>
 
       <p style={{ fontSize: 12, color: 'var(--vg-muted)', lineHeight: 1.5 }}>
-        SIP trunks, Egress, and Ingress land in a follow-up. VG shows only what it
-        can measure: no SFU node health or load bars, since those need metrics VG
-        does not collect.
+        VG shows only what it can measure: no SFU node health or load bars, since
+        those need metrics VG does not collect. SIP auth and ingress stream keys are
+        never read into the dashboard.
       </p>
     </div>
   );

@@ -386,11 +386,66 @@ export interface ServerFleetSection extends ServerSection {
   counts: { total: number; idle: number; busy: number; offline: number };
 }
 
+/** An egress job (recording / streaming). Secret fields are never included. */
+export interface ServerEgressItem {
+  egress_id: string;
+  status: string;
+  source_type: string;
+  room_name: string;
+  started_at: number;
+}
+
+/** An ingress endpoint. stream_key / url (secrets) are never included. */
+export interface ServerIngressItem {
+  ingress_id: string;
+  name: string;
+  input_type: string;
+  room_name: string;
+  status: string;
+}
+
+export interface ServerSipInboundTrunk {
+  trunk_id: string;
+  name: string;
+  numbers: string[];
+}
+
+export interface ServerSipOutboundTrunk {
+  trunk_id: string;
+  name: string;
+  address: string;
+  transport: string;
+  numbers: string[];
+}
+
+export interface ServerSipDispatchRule {
+  rule_id: string;
+  name: string;
+  trunk_ids: string[];
+}
+
+export interface ServerEgressSection extends ServerSection {
+  items: ServerEgressItem[];
+}
+
+export interface ServerIngressSection extends ServerSection {
+  items: ServerIngressItem[];
+}
+
+export interface ServerSipSection extends ServerSection {
+  inbound: ServerSipInboundTrunk[];
+  outbound: ServerSipOutboundTrunk[];
+  dispatch_rules: ServerSipDispatchRule[];
+}
+
 /** GET /api/server/overview: a read-only deployment snapshot, per section. */
 export interface ServerOverview {
   generated_at: number;
   connection: ServerConnection;
   rooms: ServerRoomsSection;
+  egress: ServerEgressSection;
+  ingress: ServerIngressSection;
+  sip: ServerSipSection;
   fleet: ServerFleetSection;
 }
 
