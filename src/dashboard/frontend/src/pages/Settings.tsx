@@ -2,6 +2,14 @@ import { useEffect, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import SourceBadge from '../components/SourceBadge';
 import { fetchJson } from '../lib/api';
+import {
+  AUTO,
+  formatDateTime,
+  listTimeZones,
+  resolvedTimeZone,
+  setTimeZonePref,
+  useTimeZone,
+} from '../lib/time';
 import Projects from './Projects';
 import ApiKeys from './ApiKeys';
 
@@ -77,7 +85,8 @@ function GeneralTab() {
 
   return (
     <div className="mt-lg">
-      <div className="neo-card">
+      <TimeZoneCard />
+      <div className="neo-card mt-lg">
         <div className="label">Gateway Info</div>
         <table className="info-table mt-md">
           <tbody>
@@ -87,6 +96,38 @@ function GeneralTab() {
             <tr><td className="label">Total Cost (All Time)</td><td>${data.total_cost_all.toFixed(4)}</td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+// Timezone preference: a frontend-only choice (localStorage) that every
+// dashboard timestamp renders in. "Auto" resolves to the browser zone, which
+// on a co-located dashboard is the machine hosting the gateway.
+function TimeZoneCard() {
+  const pref = useTimeZone();
+  const zones = listTimeZones();
+  const resolved = resolvedTimeZone();
+  return (
+    <div className="neo-card">
+      <div className="label">Timezone</div>
+      <div style={{ marginTop: 6, fontSize: 13, color: 'var(--vg-muted)' }}>
+        All dashboard times render in this zone.
+      </div>
+      <div className="flex-row gap-sm mt-md" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+        <select
+          className="neo-select"
+          value={pref}
+          onChange={(e) => setTimeZonePref(e.target.value)}
+        >
+          <option value={AUTO}>Auto (browser: {resolved})</option>
+          {zones.map((z) => (
+            <option key={z} value={z}>{z}</option>
+          ))}
+        </select>
+        <span className="mono" style={{ fontSize: 13, color: 'var(--vg-ink)' }}>
+          now {formatDateTime(Date.now())}
+        </span>
       </div>
     </div>
   );
@@ -128,7 +169,7 @@ function AuditLogTab() {
         <tbody>
           {entries.map((e) => (
             <tr key={e.id}>
-              <td className="mono">{new Date(e.timestamp * 1000).toLocaleString()}</td>
+              <td className="mono">{formatDateTime(e.timestamp * 1000)}</td>
               <td><span className="neo-badge neo-badge--black">{e.action}</span></td>
               <td>{e.entity_type}</td>
               <td className="mono">{e.entity_id}</td>
