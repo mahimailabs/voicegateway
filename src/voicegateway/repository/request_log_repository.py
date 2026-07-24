@@ -338,6 +338,7 @@ async def get_recent_requests(
 async def get_requests_for_room(
     session: AsyncSession,
     room: str,
+    since: float | None = None,
 ) -> list[dict[str, Any]]:
     """Return every request row tagged ``metadata.room == room``.
 
@@ -348,6 +349,12 @@ async def get_requests_for_room(
     parsed match rejects any incidental substring hit. The ``LIKE`` only ever
     widens the candidate set (``_`` / ``%`` in a room name match more, never
     fewer), so the exact match below never drops a true row.
+
+    ``since`` bounds the scan to ``timestamp >= since`` (epoch seconds). The
+    metadata ``LIKE`` is a non-sargable full scan, so a time bound lets the
+    ``idx_requests_timestamp`` index cut the rows read: use it when rolling up a
+    long-lived room over a window (the Server-page cost annotation). ``None``
+    keeps the original unbounded behavior for the ephemeral-probe caller.
     """
     column_list = ", ".join(_REQUEST_COLUMNS)
     # Build the needle with json.dumps so it matches the write path byte-for-byte,
@@ -356,11 +363,13 @@ async def get_requests_for_room(
     # the object braces, leaving the exact ``"room": "<escaped>"`` substring.
     key = json.dumps({"room": room})[1:-1]
     like = f"%{key}%"
-    query = (
-        f"SELECT {column_list} FROM requests WHERE metadata LIKE :like "
-        "ORDER BY timestamp ASC"
-    )
-    result = await session.execute(text(query), {"like": like})
+    params: dict[str, Any] = {"like": like}
+    where = "metadata LIKE :like"
+    if since is not None:
+        where += " AND timestamp >= :since"
+        params["since"] = since
+    query = f"SELECT {column_list} FROM requests WHERE {where} ORDER BY timestamp ASC"
+    result = await session.execute(text(query), params)
     rows = [_row_to_dict(row) for row in result]
     return [
         r

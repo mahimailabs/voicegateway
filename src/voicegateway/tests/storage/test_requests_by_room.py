@@ -17,7 +17,14 @@ from voicegateway.models.request_model import RequestRecord
 from voicegateway.services.storage_service import StorageService
 
 
-def _rec(modality: str, *, room: str | None, ttfb: float | None = None, eou=None):
+def _rec(
+    modality: str,
+    *,
+    room: str | None,
+    ttfb: float | None = None,
+    eou=None,
+    ts: float | None = None,
+):
     metadata: dict = {}
     if room is not None:
         metadata["room"] = room
@@ -25,7 +32,7 @@ def _rec(modality: str, *, room: str | None, ttfb: float | None = None, eou=None
         metadata["eou"] = eou
     return RequestRecord(
         id=str(uuid.uuid4()),
-        timestamp=time.time(),
+        timestamp=ts if ts is not None else time.time(),
         modality=modality,
         model_id="openai/gpt-4o-mini" if modality == "llm" else "",
         provider="openai" if modality == "llm" else "",
@@ -81,3 +88,20 @@ async def test_get_requests_for_room_empty_when_absent(tmp_path):
     storage = StorageService(str(tmp_path / "none.db"))
     await storage.log_request(_rec("llm", room="vg-probe-a", ttfb=100.0))
     assert await storage.get_requests_for_room("nope") == []
+
+
+async def test_get_requests_for_room_respects_since_window(tmp_path):
+    """``since`` bounds the scan to ``timestamp >= since`` (inclusive lower edge)."""
+    storage = StorageService(str(tmp_path / "since.db"))
+    now = time.time()
+    cutoff = now - 3600.0
+    await storage.log_request(_rec("llm", room="vg-win", ttfb=10.0, ts=cutoff + 1))
+    await storage.log_request(_rec("llm", room="vg-win", ttfb=20.0, ts=cutoff))
+    await storage.log_request(_rec("llm", room="vg-win", ttfb=30.0, ts=cutoff - 1))
+
+    # Unbounded read (the probe caller) still sees every row.
+    assert len(await storage.get_requests_for_room("vg-win")) == 3
+
+    # Windowed read includes the boundary row (>=) and drops the older one.
+    windowed = await storage.get_requests_for_room("vg-win", since=cutoff)
+    assert sorted(r["timestamp"] for r in windowed) == [cutoff, cutoff + 1]

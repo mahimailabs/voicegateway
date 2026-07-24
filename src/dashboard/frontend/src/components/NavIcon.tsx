@@ -16,6 +16,7 @@ const PATHS: Record<string, JSX.Element> = {
   apikeys: <><circle cx="8" cy="14" r="4" /><path d="M11 11l8-8M16 6l3 3M14 8l2 2" /></>,
   account: <><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 4-6 8-6s8 2 8 6" /></>,
   diagnostics: <><path d="M12 13l4-3" /><path d="M4 18a8 8 0 1 1 16 0" /><circle cx="12" cy="13" r="1.2" /></>,
+  server: <><rect x="4" y="4" width="16" height="7" rx="1.5" /><rect x="4" y="13" width="16" height="7" rx="1.5" /><path d="M7.5 7.5h.01M7.5 16.5h.01" /></>,
 };
 
 export default function NavIcon({ id, size = 17 }: { id: string; size?: number }) {

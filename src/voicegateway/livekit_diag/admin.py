@@ -32,6 +32,51 @@ class AgentRow:
     age_s: float | None
 
 
+# The control-plane component rows below deliberately carry only non-sensitive
+# identifiers. LiveKit's egress/ingress/sip info messages also hold secrets
+# (auth_password, auth_username, stream_key, url, allowed_addresses, headers);
+# those are NEVER copied onto these rows, so the dashboard cannot leak them.
+@dataclass(frozen=True)
+class EgressRow:
+    egress_id: str
+    status: str  # EgressStatus name, e.g. "EGRESS_ACTIVE"
+    source_type: str  # EgressSourceType name
+    room_name: str
+    started_at: int  # unix ns (0 when unset)
+
+
+@dataclass(frozen=True)
+class IngressRow:
+    ingress_id: str
+    name: str
+    input_type: str  # IngressInput name, e.g. "RTMP_INPUT"
+    room_name: str
+    status: str  # IngressState.Status name, "" when no state reported
+
+
+@dataclass(frozen=True)
+class SipInboundTrunkRow:
+    trunk_id: str
+    name: str
+    numbers: list[str]
+
+
+@dataclass(frozen=True)
+class SipOutboundTrunkRow:
+    trunk_id: str
+    name: str
+    address: str
+    transport: str  # SIPTransport name
+    numbers: list[str]
+
+
+@dataclass(frozen=True)
+class SipDispatchRuleRow:
+    rule_id: str
+    name: str
+    trunk_ids: list[str]
+
+
 class LiveKitAdmin:
     def __init__(self, creds: LiveKitCreds, *, api: Any | None = None) -> None:
         self._creds = creds
@@ -80,6 +125,71 @@ class LiveKitAdmin:
                 )
         return sorted(seen.values(), key=lambda r: (r.agent_name, r.room))
 
+    # --- Control-plane component reads (read-only, non-billing) --------------
+
+    async def list_egress(self) -> list[EgressRow]:
+        resp = await self._api.egress.list_egress(_req("ListEgressRequest"))
+        return [
+            EgressRow(
+                egress_id=e.egress_id,
+                status=_enum_name(e, "status"),
+                source_type=_enum_name(e, "source_type"),
+                room_name=e.room_name,
+                started_at=e.started_at,
+            )
+            for e in resp.items
+        ]
+
+    async def list_ingress(self) -> list[IngressRow]:
+        resp = await self._api.ingress.list_ingress(_req("ListIngressRequest"))
+        return [
+            IngressRow(
+                ingress_id=i.ingress_id,
+                name=i.name,
+                input_type=_enum_name(i, "input_type"),
+                room_name=i.room_name,
+                status=_enum_name(i.state, "status") if i.HasField("state") else "",
+            )
+            for i in resp.items
+        ]
+
+    async def list_sip_inbound_trunks(self) -> list[SipInboundTrunkRow]:
+        resp = await self._api.sip.list_sip_inbound_trunk(
+            _req("ListSIPInboundTrunkRequest")
+        )
+        return [
+            SipInboundTrunkRow(
+                trunk_id=t.sip_trunk_id, name=t.name, numbers=list(t.numbers)
+            )
+            for t in resp.items
+        ]
+
+    async def list_sip_outbound_trunks(self) -> list[SipOutboundTrunkRow]:
+        resp = await self._api.sip.list_sip_outbound_trunk(
+            _req("ListSIPOutboundTrunkRequest")
+        )
+        return [
+            SipOutboundTrunkRow(
+                trunk_id=t.sip_trunk_id,
+                name=t.name,
+                address=t.address,
+                transport=_enum_name(t, "transport"),
+                numbers=list(t.numbers),
+            )
+            for t in resp.items
+        ]
+
+    async def list_sip_dispatch_rules(self) -> list[SipDispatchRuleRow]:
+        resp = await self._api.sip.list_sip_dispatch_rule(
+            _req("ListSIPDispatchRuleRequest")
+        )
+        return [
+            SipDispatchRuleRow(
+                rule_id=r.sip_dispatch_rule_id, name=r.name, trunk_ids=list(r.trunk_ids)
+            )
+            for r in resp.items
+        ]
+
     async def create_room(self, name: str) -> None:
         await self._api.room.create_room(_req("CreateRoomRequest", name=name))
 
@@ -118,3 +228,18 @@ def _req(cls_name: str, **kwargs):
     # The param name must not collide with request fields (e.g. CreateRoomRequest
     # has a `name` field), so it is cls_name, not name.
     return getattr(api, cls_name)(**kwargs)
+
+
+def _enum_name(msg: Any, field: str) -> str:
+    """Human-readable name for an enum field on a proto message.
+
+    Falls back to the raw integer (as a string) for a value the descriptor does
+    not know, so a newer server enum never raises here.
+    """
+    value = getattr(msg, field)
+    descriptor = msg.DESCRIPTOR.fields_by_name.get(field)
+    enum_type = descriptor.enum_type if descriptor is not None else None
+    if enum_type is None:
+        return str(value)
+    entry = enum_type.values_by_number.get(value)
+    return entry.name if entry is not None else str(value)

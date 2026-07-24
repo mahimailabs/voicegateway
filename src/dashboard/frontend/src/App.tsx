@@ -10,6 +10,7 @@ import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Latency from './pages/Latency';
 import Diagnostics from './pages/Diagnostics';
+import Server from './pages/Server';
 import Projects from './pages/Projects';
 import RateCard from './pages/RateCard';
 import ApiKeys from './pages/ApiKeys';
@@ -92,6 +93,7 @@ export default function App() {
               <Route path="/costs" element={<Costs />} />
               <Route path="/latency" element={<Latency />} />
               <Route path="/diagnostics" element={<Diagnostics />} />
+              <Route path="/server" element={<Server />} />
               <Route path="/agents" element={<Agents />} />
               <Route path="/agents/:agentId" element={<AgentDetail />} />
               <Route path="/projects" element={<Projects />} />

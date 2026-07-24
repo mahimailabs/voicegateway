@@ -19,6 +19,7 @@ export const NAV: NavEntry[] = [
       { to: '/latency', label: 'Latency', id: 'latency' },
       { to: '/calls', label: 'Calls', id: 'calls' },
       { to: '/diagnostics', label: 'Diagnostics', id: 'diagnostics' },
+      { to: '/server', label: 'Server', id: 'server' },
     ],
   },
   {

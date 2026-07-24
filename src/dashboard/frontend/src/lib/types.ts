@@ -329,3 +329,123 @@ export interface DiagnosticRun {
   ended_at: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Server: live LiveKit deployment topology + fleet, cost-annotated.
+// ---------------------------------------------------------------------------
+
+/** LiveKit control-plane connection state. `reachable` is null until probed. */
+export interface ServerConnection {
+  configured: boolean;
+  url: string | null;
+  reachable: boolean | null;
+}
+
+/** One agent inside a live room. */
+export interface ServerRoomAgent {
+  agent_name: string;
+  identity: string | null;
+  state: string; // "active" (joined) or "dispatched" (assigned, not joined)
+  age_s: number | null;
+}
+
+/** A live room, annotated with VG's own metered cost over the last 24h. */
+export interface ServerRoom {
+  name: string;
+  humans: number;
+  agents: ServerRoomAgent[];
+  cost_usd: number;
+  request_count: number;
+  p95_latency_ms: number | null;
+}
+
+/** One registered worker from the local heartbeat roster. */
+export interface ServerWorker {
+  agent_id: string;
+  agent_name: string;
+  region: string | null;
+  host: string | null;
+  version: string | null;
+  status: string; // idle | busy | offline
+  active_sessions: number;
+  last_seen: number;
+  memory_pct: number | null;
+}
+
+/** A section that may fail independently without blanking the page. */
+export interface ServerSection {
+  ok: boolean;
+  error: string | null;
+}
+
+export interface ServerRoomsSection extends ServerSection {
+  rooms: ServerRoom[];
+}
+
+export interface ServerFleetSection extends ServerSection {
+  workers: ServerWorker[];
+  counts: { total: number; idle: number; busy: number; offline: number };
+}
+
+/** An egress job (recording / streaming). Secret fields are never included. */
+export interface ServerEgressItem {
+  egress_id: string;
+  status: string;
+  source_type: string;
+  room_name: string;
+  started_at: number;
+}
+
+/** An ingress endpoint. stream_key / url (secrets) are never included. */
+export interface ServerIngressItem {
+  ingress_id: string;
+  name: string;
+  input_type: string;
+  room_name: string;
+  status: string;
+}
+
+export interface ServerSipInboundTrunk {
+  trunk_id: string;
+  name: string;
+  numbers: string[];
+}
+
+export interface ServerSipOutboundTrunk {
+  trunk_id: string;
+  name: string;
+  address: string;
+  transport: string;
+  numbers: string[];
+}
+
+export interface ServerSipDispatchRule {
+  rule_id: string;
+  name: string;
+  trunk_ids: string[];
+}
+
+export interface ServerEgressSection extends ServerSection {
+  items: ServerEgressItem[];
+}
+
+export interface ServerIngressSection extends ServerSection {
+  items: ServerIngressItem[];
+}
+
+export interface ServerSipSection extends ServerSection {
+  inbound: ServerSipInboundTrunk[];
+  outbound: ServerSipOutboundTrunk[];
+  dispatch_rules: ServerSipDispatchRule[];
+}
+
+/** GET /api/server/overview: a read-only deployment snapshot, per section. */
+export interface ServerOverview {
+  generated_at: number;
+  connection: ServerConnection;
+  rooms: ServerRoomsSection;
+  egress: ServerEgressSection;
+  ingress: ServerIngressSection;
+  sip: ServerSipSection;
+  fleet: ServerFleetSection;
+}
+

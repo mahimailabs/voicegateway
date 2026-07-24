@@ -61,10 +61,15 @@ class RequestLogService:
                 s, limit, modality, project, tenant, agent
             )
 
-    async def get_requests_for_room(self, room: str) -> list[dict[str, Any]]:
-        """Return every request row tagged with ``metadata.room == room``."""
+    async def get_requests_for_room(
+        self, room: str, since: float | None = None
+    ) -> list[dict[str, Any]]:
+        """Return every request row tagged with ``metadata.room == room``.
+
+        ``since`` bounds the scan to ``timestamp >= since`` (epoch seconds).
+        """
         async with self._db.session() as s:
-            return await repo.get_requests_for_room(s, room)
+            return await repo.get_requests_for_room(s, room, since)
 
     async def get_requests_in_window(
         self,
