@@ -9,6 +9,7 @@ import {
   formatCost,
   formatMs,
   formatRelativeTime,
+  rosterStatusBadge,
 } from '../lib/ui';
 
 type SortKey =
@@ -36,6 +37,7 @@ function memoryBarColor(pct: number): string {
   if (pct >= 75) return '#f59e0b';
   return 'var(--vg-teal, #1F96AA)';
 }
+
 
 export default function Agents() {
   const [agents, setAgents] = useState<AgentRow[]>([]);
@@ -101,9 +103,9 @@ export default function Agents() {
 
       {sorted.length === 0 ? (
         <div className="empty-state mt-md">
-          No agents yet. Agents appear here once they push telemetry to the
-          collector (via <span className="mono">voicegateway.attach()</span> or a
-          remote sink).
+          No agents yet. Agents appear here once they register (via{' '}
+          <span className="mono">voicegateway.register_worker()</span>) or push
+          telemetry (via <span className="mono">voicegateway.attach()</span>).
         </div>
       ) : (
         <div className="vg-card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -136,17 +138,23 @@ export default function Agents() {
             </thead>
             <tbody>
               {sorted.map((a) => {
-                const status = agentStatus(a.last_seen);
+                // Registered workers show their live roster status (idle/busy/
+                // offline), matching Server > Fleet; telemetry-only agents fall
+                // back to the telemetry-recency status (active/idle/dormant).
+                // `|| null` normalizes so the label and color never diverge.
+                const fleet = a.fleet_status || null;
+                const status = fleet ?? agentStatus(a.last_seen);
+                const badgeClass = fleet
+                  ? rosterStatusBadge(fleet)
+                  : agentStatusBadgeClass(agentStatus(a.last_seen));
                 return (
                   <tr key={a.agent_id}>
                     <td>
-                      <span className={`neo-badge ${agentStatusBadgeClass(status)}`}>
-                        {status}
-                      </span>
+                      <span className={`neo-badge ${badgeClass}`}>{status}</span>
                     </td>
                     <td className="mono">
                       <Link to={`/agents/${encodeURIComponent(a.agent_id)}`}>
-                        {a.agent_id}
+                        {a.agent_name || a.agent_id}
                       </Link>
                     </td>
                     <td>

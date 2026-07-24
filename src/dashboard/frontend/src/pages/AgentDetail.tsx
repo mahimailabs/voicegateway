@@ -10,6 +10,7 @@ import {
   formatCost,
   formatMs,
   formatRelativeTime,
+  rosterStatusBadge,
 } from '../lib/ui';
 
 /** Detail view for a single agent: 24h metrics, model stack, recent calls. */
@@ -56,19 +57,25 @@ export default function AgentDetail() {
     );
   }
 
-  const status = agentStatus(agent.last_seen);
+  // Match the Agents list: live roster status (idle/busy/offline) when present,
+  // else the telemetry-recency status. `|| null` keeps label and color in sync.
+  const fleet = agent.fleet_status || null;
+  const status = fleet ?? agentStatus(agent.last_seen);
+  const badgeClass = fleet
+    ? rosterStatusBadge(fleet)
+    : agentStatusBadgeClass(agentStatus(agent.last_seen));
 
   return (
     <div>
       <PageHeader
-        title={agent.agent_id}
+        title={agent.agent_name || agent.agent_id}
         subtitle={`Last seen ${formatRelativeTime(agent.last_seen)} · metrics over the last 24h`}
         accent="blue"
         actions={<Link className="neo-btn" to="/agents">← All agents</Link>}
       />
 
       <div className="flex-row gap-sm mb-md" style={{ alignItems: 'center' }}>
-        <span className={`neo-badge ${agentStatusBadgeClass(status)}`}>{status}</span>
+        <span className={`neo-badge ${badgeClass}`}>{status}</span>
         {(['stt', 'llm', 'tts'] as const).map((m) => {
           const model = agent.models?.[m] ?? null;
           return (

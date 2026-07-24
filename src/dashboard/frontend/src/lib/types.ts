@@ -204,6 +204,9 @@ export type TenantFilter = string | null;
 /** One row in the agent index (the fleet table + agent-filter feed). */
 export interface AgentRow {
   agent_id: string;
+  /** Friendly worker label from the roster (matches Server > Fleet); null for a
+   * telemetry-only agent, where the UI falls back to agent_id. */
+  agent_name?: string | null;
   request_count: number;
   total_cost_usd: number;
   /** Epoch seconds of the agent's most recent request, or null. */
@@ -216,6 +219,9 @@ export interface AgentRow {
   memory_pct?: number | null;
   /** Last-seen model per modality, from /api/agents; a modality is null when unseen. */
   models?: { stt: string | null; llm: string | null; tts: string | null };
+  /** Live roster presence: 'idle' | 'busy' | 'offline'; null when the agent is
+   * telemetry-only (not currently a registered/heartbeating worker). */
+  fleet_status?: string | null;
 }
 
 /** Aggregates for the implicit `agent_id IS NULL` bucket. */
