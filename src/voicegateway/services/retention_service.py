@@ -33,6 +33,7 @@ _DEFAULT_BATCH_SIZE: Final[int] = 500
 _SESSION_CHILD_TABLES: Final[tuple[str, ...]] = (
     "turns",
     "dead_air_events",
+    "transcript_turns",
 )
 
 

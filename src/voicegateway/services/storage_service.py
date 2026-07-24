@@ -315,6 +315,39 @@ class StorageService:
         await self._session_service.finalize_replay(session_id)
 
     # ------------------------------------------------------------------
+    # Transcripts
+    # ------------------------------------------------------------------
+
+    async def write_transcript(
+        self,
+        session_id: str,
+        turns: list[tuple[str, str]],
+        *,
+        tenant_id: str | None = None,
+    ) -> int:
+        """Replace a session's transcript with ``turns`` ((role, text) list)."""
+        from voicegateway.repository import transcript_turns_repository
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            return await transcript_turns_repository.create_transcript_bulk(
+                db, session_id, turns, tenant_id=tenant_id
+            )
+
+    async def get_transcript(self, session_id: str) -> list[dict[str, Any]]:
+        """Return a session's transcript turns, ordered, as dicts."""
+        import dataclasses
+
+        from voicegateway.repository import transcript_turns_repository
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            rows = await transcript_turns_repository.list_transcript_by_session(
+                db, session_id
+            )
+        return [dataclasses.asdict(r) for r in rows]
+
+    # ------------------------------------------------------------------
     # Managed providers / models / projects
     # ------------------------------------------------------------------
 
