@@ -303,6 +303,7 @@ def attach(
     api_key: str | None = None,
     sink: Sink | None = None,
     room: str | None = None,
+    heartbeat: bool = False,
 ) -> str:
     """Attach VoiceGateway to a LiveKit ``AgentSession`` or Pipecat ``PipelineTask``.
 
@@ -334,6 +335,18 @@ def attach(
         room: LiveKit room name for probe correlation; auto-resolved from the
             running job context when omitted (``voicegw livekit latency`` reads
             the STT/LLM/TTS split back by this). Ignored on the Pipecat path.
+        heartbeat: register this process in the fleet roster and heartbeat its
+            presence, so it shows in the dashboard's Fleet/Agents view. Uses the
+            collector when one is configured, else writes to the shared local DB
+            (``VOICEGW_DB_PATH`` / the default) the co-located dashboard reads. On
+            LiveKit it also flips idle<->busy per session; on Pipecat it reports
+            presence only. Best for SINGLE-process agents (Pipecat / the LiveKit
+            thread executor), where attach is the sole writer. In the LiveKit
+            process-executor model (``agent dev``) attach runs in a per-call job
+            subprocess, so to show the worker while idle call
+            ``register_worker("agent", local=True)`` at your ``__main__`` boot
+            instead, and do not also pass ``heartbeat=True`` there (the subprocess
+            would become a second writer of the same roster row).
 
     Returns:
         The correlation session id stamped on every captured row.
@@ -352,6 +365,7 @@ def attach(
             collector_url=collector_url,
             api_key=api_key,
             sink=sink,
+            heartbeat=heartbeat,
         )
     return _attach_livekit(
         session,
@@ -362,6 +376,7 @@ def attach(
         api_key=api_key,
         sink=sink,
         room=room,
+        heartbeat=heartbeat,
     )
 
 
@@ -375,6 +390,7 @@ def _attach_livekit(
     api_key: str | None = None,
     sink: Sink | None = None,
     room: str | None = None,
+    heartbeat: bool = False,
 ) -> str:
     """LiveKit ``attach()`` body: bind ``MetricCapture`` to an ``AgentSession``."""
     import asyncio
@@ -434,12 +450,27 @@ def _attach_livekit(
         except Exception:  # noqa: BLE001 - real session may forbid attribute set
             pass
 
+    if heartbeat:
+        # Opt into the fleet roster: register + start the heartbeat (local-DB or
+        # collector per env). ensure_registered never clobbers a register_worker
+        # already done at __main__ boot, so both can coexist.
+        from voicegateway.fleet.worker import ensure_registered
+
+        ensure_registered(
+            resolved_agent_id,
+            project=project,
+            tenant_id=tenant_id,
+            collector_url=resolved_collector,
+            api_key=resolved_key,
+            local=True,
+        )
+
     on = getattr(session, "on", None)
     if callable(on):
         # Only mark this worker busy for the fleet roster once we have a close
         # handler to drop it back toward idle; pairing the +1 with the -1 means a
         # session that cannot signal close never pins the worker "busy" forever.
-        # (No-op unless register_worker was called.)
+        # (No-op unless register_worker/ensure_registered ran.)
         bump_active(1)
         on("close", _on_close)
 
@@ -540,6 +571,7 @@ def _attach_pipecat(
     collector_url: str | None = None,
     api_key: str | None = None,
     sink: Sink | None = None,
+    heartbeat: bool = False,
 ) -> str:
     """Register a ``VoiceGatewayObserver`` on a Pipecat ``PipelineTask``.
 
@@ -590,6 +622,20 @@ def _attach_pipecat(
         task._vg_observer = observer
     except Exception:  # noqa: BLE001 - real task may forbid attribute set
         logger.debug("attach(pipecat): could not stash observer on task", exc_info=True)
+
+    if heartbeat:
+        # Fleet presence for a Pipecat worker. (Pipecat has no session open/close
+        # counter, so this reports presence; idle<->busy bumping is LiveKit-only.)
+        from voicegateway.fleet.worker import ensure_registered
+
+        ensure_registered(
+            resolved_agent_id,
+            project=project,
+            tenant_id=tenant_id,
+            collector_url=resolved_collector,
+            api_key=resolved_key,
+            local=True,
+        )
 
     return session_id
 
