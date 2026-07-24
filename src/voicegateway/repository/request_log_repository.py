@@ -438,6 +438,41 @@ async def read_last_seen_models(
     return out
 
 
+async def read_avg_ttfb_by_modality(
+    session: AsyncSession,
+    agent_ids: list[str] | None = None,
+    *,
+    since: float | None = None,
+) -> dict[str, dict[str, float]]:
+    """Average first-byte latency (``ttfb_ms``) per (agent_id, modality).
+
+    Returns ``{agent_id: {modality: avg_ttfb_ms}}``. Feeds the Overview agent
+    cards' STT/LLM/TTS latency waterfall. Rows with a NULL ttfb_ms drop out of
+    the AVG. Scoped to ``since`` (epoch seconds) when given, so the index can
+    match its 24h window.
+    """
+    where = "agent_id IS NOT NULL AND ttfb_ms IS NOT NULL"
+    params: dict[str, Any] = {}
+    if agent_ids:
+        keys = ", ".join(f":a{i}" for i in range(len(agent_ids)))
+        where += f" AND agent_id IN ({keys})"
+        params = {f"a{i}": a for i, a in enumerate(agent_ids)}
+    if since is not None:
+        where += " AND timestamp >= :since"
+        params["since"] = since
+    sql = text(f"""
+        SELECT agent_id, modality, AVG(ttfb_ms) AS avg_ttfb
+        FROM requests
+        WHERE {where}
+        GROUP BY agent_id, modality
+    """)
+    result = await session.execute(sql, params)
+    out: dict[str, dict[str, float]] = {}
+    for row in result.mappings():
+        out.setdefault(row["agent_id"], {})[row["modality"]] = float(row["avg_ttfb"])
+    return out
+
+
 async def read_models_in_use(session: AsyncSession) -> list[dict[str, str]]:
     """Distinct (modality, provider, model_id) seen in requests, newest first."""
     sql = text("""
@@ -469,6 +504,7 @@ __all__ = [
     "get_requests_in_window",
     "log_audit_event",
     "log_request",
+    "read_avg_ttfb_by_modality",
     "read_last_seen_models",
     "read_models_in_use",
 ]

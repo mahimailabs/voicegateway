@@ -335,6 +335,69 @@ async def test_list_skips_offline_roster_only_worker(tmp_path, monkeypatch):
     assert not any(a["agent_id"] == "dead" for a in data["agents"])
 
 
+async def test_list_includes_avg_ttfb_latency_stack(tmp_path, monkeypatch):
+    gw = _gateway(tmp_path, monkeypatch)
+    now = time.time()
+    await _insert_obs(
+        gw, agent_id="lat-agent", request_count=4, total_cost_usd=0.0,
+        error_count=0, last_seen=now, window_start="ws", window_end="we",
+    )
+    # STT avg = 100, LLM = 200, TTS = 50 (first-byte per modality).
+    for i, (mod, model, ttfb) in enumerate([
+        ("stt", "deepgram/nova-3", 80.0),
+        ("stt", "deepgram/nova-3", 120.0),
+        ("llm", "openai/gpt-4o", 200.0),
+        ("tts", "cartesia/sonic", 50.0),
+    ]):
+        await gw.storage.log_request(RequestRecord(
+            id=f"r{i}", timestamp=now, modality=mod, model_id=model,
+            provider=model.split("/")[0], project="default", agent_id="lat-agent",
+            ttfb_ms=ttfb,
+        ))
+    async with _client(gw) as c:
+        data = (await c.get("/api/agents")).json()
+    entry = next(x for x in data["agents"] if x["agent_id"] == "lat-agent")
+    assert entry["latency_ms"]["stt"] == pytest.approx(100.0)
+    assert entry["latency_ms"]["llm"] == pytest.approx(200.0)
+    assert entry["latency_ms"]["tts"] == pytest.approx(50.0)
+
+
+async def test_list_latency_stack_is_windowed_to_24h(tmp_path, monkeypatch):
+    gw = _gateway(tmp_path, monkeypatch)
+    now = time.time()
+    await _insert_obs(
+        gw, agent_id="win-agent", request_count=2, total_cost_usd=0.0,
+        error_count=0, last_seen=now, window_start="ws", window_end="we",
+    )
+    # An ancient STT call (26h ago) must not drag the average; only the recent
+    # one counts.
+    await gw.storage.log_request(RequestRecord(
+        id="old", timestamp=now - 93600, modality="stt", model_id="deepgram/nova-3",
+        provider="deepgram", project="default", agent_id="win-agent", ttfb_ms=999.0,
+    ))
+    await gw.storage.log_request(RequestRecord(
+        id="new", timestamp=now, modality="stt", model_id="deepgram/nova-3",
+        provider="deepgram", project="default", agent_id="win-agent", ttfb_ms=100.0,
+    ))
+    async with _client(gw) as c:
+        data = (await c.get("/api/agents")).json()
+    entry = next(x for x in data["agents"] if x["agent_id"] == "win-agent")
+    assert entry["latency_ms"]["stt"] == pytest.approx(100.0)
+
+
+async def test_list_latency_stack_null_for_roster_only_worker(tmp_path, monkeypatch):
+    gw = _gateway(tmp_path, monkeypatch)
+    now = time.time()
+    await _insert_worker(
+        gw, agent_id="idle-lat", agent_name="idle-lat", project="default",
+        status="idle", last_seen=now,
+    )
+    async with _client(gw) as c:
+        data = (await c.get("/api/agents")).json()
+    entry = next(x for x in data["agents"] if x["agent_id"] == "idle-lat")
+    assert entry["latency_ms"] == {"stt": None, "llm": None, "tts": None}
+
+
 async def test_list_q_filter_covers_roster_only_workers(tmp_path, monkeypatch):
     gw = _gateway(tmp_path, monkeypatch)
     now = time.time()

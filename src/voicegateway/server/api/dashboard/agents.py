@@ -50,10 +50,25 @@ def _memory_pct(rss: int | None, total: int | None) -> float | None:
     return round(rss / total * 100, 1)
 
 
+def _latency_stack(latency: dict[str, float]) -> dict[str, float | None]:
+    """Per-modality average first-byte latency for the card waterfall.
+
+    Only STT / LLM / TTS are measured (first-byte per modality); the network
+    hops and turn-detection segments in a colocation diagram are not metered, so
+    the waterfall is honest about the three segments it can show.
+    """
+    return {
+        "stt": latency.get("stt"),
+        "llm": latency.get("llm"),
+        "tts": latency.get("tts"),
+    }
+
+
 def _agent_entry(
     row: AgentObservationRow,
     memory_pct: float | None,
     models: dict[str, str],
+    latency: dict[str, float],
     *,
     fleet_status: str | None = None,
     last_seen: float | None = None,
@@ -77,6 +92,8 @@ def _agent_entry(
             "llm": models.get("llm"),
             "tts": models.get("tts"),
         },
+        # Average STT/LLM/TTS first-byte latency (24h) for the card waterfall.
+        "latency_ms": _latency_stack(latency),
         # idle/busy/offline from the worker roster; None when the agent is not
         # currently registered (telemetry-only, e.g. a past run).
         "fleet_status": fleet_status,
@@ -99,6 +116,8 @@ def _roster_only_entry(w: RosterRow) -> dict[str, Any]:
         "p95_latency_ms": None,
         "memory_pct": _memory_pct(w.memory_rss_bytes, w.memory_total_bytes),
         "models": {"stt": None, "llm": None, "tts": None},
+        # A booted-but-idle worker has metered nothing yet, so no latency stack.
+        "latency_ms": {"stt": None, "llm": None, "tts": None},
         "fleet_status": w.status,
     }
 
@@ -147,6 +166,11 @@ async def list_agents_endpoint(
         )
         agent_ids = [r.agent_id for r in rows if r.agent_id]
         cascade = await request_log_repository.read_last_seen_models(db, agent_ids)
+        # Average STT/LLM/TTS first-byte latency over the same 24h window, for the
+        # Overview cards' latency waterfall.
+        latency_by_agent = await request_log_repository.read_avg_ttfb_by_modality(
+            db, agent_ids, since=time.time() - 86400
+        )
     # Dedup the roster by agent_id, keeping the FRESHEST heartbeat. read_roster is
     # ordered last_seen DESC, so the first row per id is freshest; setdefault keeps
     # it. The full-fleet read (tenant_id=None) can return >1 row for one agent_id
@@ -169,6 +193,7 @@ async def list_agents_endpoint(
                 r,
                 memory_by_agent.get(r.agent_id) if r.agent_id else None,
                 cascade.get(r.agent_id, {}) if r.agent_id else {},
+                latency_by_agent.get(r.agent_id, {}) if r.agent_id else {},
                 fleet_status=w.status if w is not None else None,
                 last_seen=_merged_last_seen(
                     r.last_seen, w.last_seen if w is not None else None
