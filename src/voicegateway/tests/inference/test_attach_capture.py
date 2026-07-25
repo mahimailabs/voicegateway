@@ -62,10 +62,14 @@ class _FakeSession:
         stt: Any = None,
         llm: Any = None,
         tts: Any = None,
+        current_agent: Any = None,
     ) -> None:
         self.stt = stt
         self.llm = llm
         self.tts = tts
+        # The active Agent, whose stt/llm/tts may hold components set on the
+        # Agent rather than the session (Agent(llm=...)).
+        self.current_agent = current_agent
         self._handlers: dict[str, list[Any]] = {}
 
     def on(self, event: str, handler: Any) -> None:
@@ -244,6 +248,79 @@ async def test_metric_capture_handles_three_modalities(tmp_path):
     assert tts_row["metadata"]["acquire_ms"] == 30.0
     # LLM has no connection-acquire hop -> no acquire_ms key.
     assert "acquire_ms" not in (by_modality["llm"].get("metadata") or {})
+
+
+class _FakeAgent:
+    """Stand-in for a livekit Agent, whose stt/llm/tts are set on the Agent
+    (Agent(llm=...)) rather than the AgentSession."""
+
+    def __init__(self, *, stt: Any = None, llm: Any = None, tts: Any = None) -> None:
+        self.stt = stt
+        self.llm = llm
+        self.tts = tts
+
+
+async def test_agent_level_llm_is_metered_via_session_event(tmp_path):
+    """An LLM set on the Agent (not the AgentSession) has no session slot, so no
+    per-component subscription. Its metric still arrives on the session-level
+    event, and must be recorded with the Agent's model identity."""
+    storage = StorageService(str(tmp_path / "agentllm.db"))
+    sink = LocalSqliteSink(storage)
+    cost_tracker = CostTracker(sink)
+    stt = _FakeEmitter(model="nova-3", provider="deepgram")
+    tts = _FakeEmitter(model="sonic-2", provider="cartesia")
+    agent_llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
+    # stt/tts on the SESSION; llm only on the AGENT.
+    session = _FakeSession(stt=stt, tts=tts, current_agent=_FakeAgent(llm=agent_llm))
+
+    capture = MetricCapture(
+        cost_tracker=cost_tracker,
+        sink=sink,
+        project="fleet",
+        agent_id="agent-9",
+        session_id="vg-9",
+    )
+    capture.bind(session)
+
+    # The session surfaces the Agent-LLM's metric on its own metrics_collected.
+    session.emit("metrics_collected", _LLMMetric())
+    await capture.drain()
+
+    rows = await storage.get_recent_requests(limit=10)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["modality"] == "llm"
+    assert row["model_id"] == "openai/gpt-4o-mini"  # the Agent's llm, resolved
+    assert row["input_units"] == 1000.0
+    assert row["ttfb_ms"] == 250.0  # per-turn LLM latency, captured
+
+
+async def test_session_level_metric_does_not_double_count_a_session_component(tmp_path):
+    """When the LLM is on the SESSION, its per-component handler records it. The
+    same metric surfacing on the session-level event must be skipped, or the row
+    (and the reconcile tally) is double-counted."""
+    storage = StorageService(str(tmp_path / "nodouble.db"))
+    sink = LocalSqliteSink(storage)
+    cost_tracker = CostTracker(sink)
+    llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
+    session = _FakeSession(llm=llm)
+
+    capture = MetricCapture(
+        cost_tracker=cost_tracker,
+        sink=sink,
+        project="fleet",
+        agent_id="agent-9",
+        session_id="vg-9",
+    )
+    capture.bind(session)
+
+    metric = _LLMMetric()
+    llm.emit("metrics_collected", metric)  # per-component (session slot)
+    session.emit("metrics_collected", metric)  # same metric, session-level: skip
+    await capture.drain()
+
+    rows = await storage.get_recent_requests(limit=10)
+    assert len(rows) == 1  # not two
 
 
 class _LLMErrorSource:
