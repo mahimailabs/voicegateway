@@ -282,6 +282,13 @@ async def probe_agent(
         await admin.aclose()
 
     stats = d.summarize(result)
+    # Prefer the client/dispatch error (the call never connected); else surface
+    # what the agent itself logged for this room. The synthetic client only sees
+    # "no reply"; the reason (an STT/LLM/TTS that errored, e.g. a 401 to the model
+    # gateway) is in the rows the agent wrote. Read by the FIXED room, not
+    # result.room (which is None when no turn completed, exactly the failure case
+    # where the cause matters most).
+    error = result.error or await _probe_error(store, room)
     return {
         "agent_id": agent_id,
         "dispatch_name": dispatch_name,
@@ -292,7 +299,7 @@ async def probe_agent(
         "e2e": stats if stats["trials"] else None,
         "components": result.components,
         "cost_usd": await _probe_cost(store, result.room),
-        "error": result.error,
+        "error": error,
     }
 
 
@@ -313,6 +320,36 @@ async def _probe_cost(store: Any, room: str | None) -> float | None:
     if not rows:
         return None
     return sum(float(r.get("cost_usd") or 0.0) for r in rows)
+
+
+async def _probe_error(store: Any, room: str | None) -> str | None:
+    """A one-line summary of any agent-side error rows for this probe's room.
+
+    ``attach``'s error handler writes a ``status="error"`` row per failed
+    STT/LLM/TTS call, carrying the provider's message. When the probe measured
+    nothing because the agent's pipeline errored (rather than because the agent
+    never joined), this is the cause: surfacing it turns a bland "not measured"
+    into "STT: 401 Unauthorized" that the operator can act on. Deduped and
+    capped so a retry storm does not flood the card.
+    """
+    if store is None or not room:
+        return None
+    try:
+        rows = await store.get_requests_for_room(room)
+    except Exception:  # noqa: BLE001 - a read-back failure must not fail the probe
+        return None
+    labels: list[str] = []
+    for r in rows:
+        if r.get("status") != "error":
+            continue
+        modality = (r.get("modality") or "").upper()
+        message = r.get("error_message") or "error"
+        label = f"{modality}: {message}" if modality else message
+        if label not in labels:
+            labels.append(label)
+    if not labels:
+        return None
+    return "; ".join(labels[:3])
 
 
 def _verdict(check_results: dict[str, Any], target_ms: float) -> str:

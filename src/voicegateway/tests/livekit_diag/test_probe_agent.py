@@ -436,3 +436,36 @@ async def test_a_dead_agent_reports_the_error_and_no_numbers(monkeypatch) -> Non
     assert out["e2e"] is None
     assert out["cost_usd"] is None
     assert _FakeAdmin.last.deleted == ["vg-probe-a-ab12cd34"]
+
+
+async def test_agent_side_error_is_surfaced_when_nothing_measured(monkeypatch) -> None:
+    """The agent joined but its pipeline errored (e.g. STT 401). The synthetic
+    client just sees no reply (returns None, no exception), so the probe measures
+    nothing. Rather than a bland all-null, it surfaces the agent's own error rows
+    so the card says WHY. Deduped: a retry storm collapses to one label."""
+    _patch(monkeypatch)
+
+    class _SilentClient(_FakeClient):
+        async def wait_reply(self, t0, timeout=15.0):
+            return None  # no reply, but no exception
+
+    monkeypatch.setattr(_FakeClient, "wait_reply", _SilentClient.wait_reply)
+    room = "vg-probe-a-ab12cd34"
+    msg = "Invalid response status (401 Unauthorized)"
+    error_rows = [
+        {"modality": "stt", "status": "error", "error_message": msg,
+         "metadata": {"room": room}},
+        {"modality": "stt", "status": "error", "error_message": msg,
+         "metadata": {"room": room}},  # duplicate retry -> deduped
+    ]
+    out = await service.probe_agent(
+        _CREDS,
+        agent_id="a",
+        dispatch_name="a",
+        nonce="ab12cd34",
+        warmup=False,
+        store=_FakeStore(error_rows),
+    )
+    assert out["e2e"] is None  # nothing measured
+    assert out["cost_usd"] is None
+    assert out["error"] == f"STT: {msg}"  # the cause, surfaced and deduped
