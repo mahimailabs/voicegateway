@@ -11,6 +11,8 @@ SDK surface verified against livekit>=1.0 (installed version):
 - AudioSource(sample_rate, num_channels) positional.
 - LocalAudioTrack.create_audio_track(name, source) classmethod.
 - publish_track(track, options=TrackPublishOptions()) is async.
+- TrackPublishOptions(source=TrackSource.SOURCE_MICROPHONE): required so an agent's
+  RoomIO (accepted_sources=[SOURCE_MICROPHONE]) routes the probe audio to STT.
 - publish_data(payload, *, reliable=True) is async.
 - capture_frame(frame) is async on AudioSource.
 - AudioStream(track) yields AudioFrameEvent; .frame is AudioFrame; .data is memoryview.
@@ -138,7 +140,15 @@ class SyntheticClient:
     async def publish_utterance(self, src: UtteranceSource) -> float:
         source = rtc.AudioSource(src._rate, 1)
         track = rtc.LocalAudioTrack.create_audio_track("probe", source)
-        await self._room.local_participant.publish_track(track)
+        # Publish as SOURCE_MICROPHONE, not the default SOURCE_UNKNOWN. A LiveKit
+        # AgentSession's RoomIO only routes microphone-sourced tracks to STT
+        # (its accepted_sources is [SOURCE_MICROPHONE]); an unsourced track is
+        # ignored, so the agent hears nothing, never transcribes, and never
+        # replies. This is what a probe needs the agent to actually process.
+        await self._room.local_participant.publish_track(
+            track,
+            rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE),
+        )
         loop = asyncio.get_running_loop()
         for pcm, rate in src.frames():
             # AudioFrame(data, sample_rate, num_channels, samples_per_channel)

@@ -1,3 +1,5 @@
+import pytest
+
 from voicegateway.livekit_diag import latency
 from voicegateway.livekit_diag.latency import (
     ComponentReader,
@@ -7,6 +9,12 @@ from voicegateway.livekit_diag.latency import (
     summarize,
 )
 from voicegateway.livekit_diag.report import render_latency
+
+
+@pytest.fixture(autouse=True)
+def _no_settle(monkeypatch):
+    """Zero the pre-utterance settle so probe() does not sleep in tests."""
+    monkeypatch.setattr(latency, "_AGENT_SETTLE_SECONDS", 0.0)
 
 
 class _FakeAdmin:

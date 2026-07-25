@@ -20,6 +20,12 @@ _CALLER_IDENTITY = "vg-probe"
 # poll returns the instant the agent appears).
 _AGENT_JOIN_TIMEOUT = 8.0
 _AGENT_POLL_INTERVAL = 0.25
+# After the agent joins, its session spends ~1-2s bringing up STT before it can
+# hear anything. Speak a moment later so the utterance lands on a listening STT
+# instead of a still-initializing one (a one-shot utterance played into a
+# not-yet-ready pipeline is never transcribed). It sits before t0, so it does not
+# inflate the measured reply latency.
+_AGENT_SETTLE_SECONDS = 2.0
 
 
 @dataclass
@@ -263,6 +269,12 @@ class ProbeRunner:
                 await client.connect()
                 try:
                     await self._await_agent(room, agent, explicit=dispatch)
+                    # Let the agent's STT finish coming up before speaking, so a
+                    # one-shot utterance is not lost into a still-initializing
+                    # pipeline. Skipped when the room read is unavailable only in
+                    # the sense that _await_agent already returned; the wait is
+                    # unconditional because readiness is not otherwise observable.
+                    await asyncio.sleep(_AGENT_SETTLE_SECONDS)
                     t0 = await client.publish_utterance(self._utterance)
                     e2e = await client.wait_reply(t0)
                 finally:

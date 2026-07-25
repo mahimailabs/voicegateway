@@ -13,8 +13,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from voicegateway.livekit_diag import service
+from voicegateway.livekit_diag import latency, service
 from voicegateway.repository.request_log_repository import PROBE_ROOM_PREFIX
+
+
+@pytest.fixture(autouse=True)
+def _no_settle(monkeypatch):
+    """Zero the pre-utterance settle so probe() does not sleep in tests."""
+    monkeypatch.setattr(latency, "_AGENT_SETTLE_SECONDS", 0.0)
 
 _CREDS = SimpleNamespace(url="ws://fake", api_key="k", api_secret="s")
 
