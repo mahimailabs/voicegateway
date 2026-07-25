@@ -244,9 +244,10 @@ def _agent_entry(
         "last_seen": last_seen if last_seen is not None else row.last_seen,
         "error_rate": _error_rate(row.error_count, row.request_count),
         "p95_latency_ms": row.p95_ms,
-        # Kept top-level for existing consumers; the fuller cpu+memory snapshot is
-        # under ``resources``.
+        # Kept top-level for existing consumers + the Agents table's sortable
+        # columns; the fuller cpu+memory snapshot is under ``resources``.
         "memory_pct": resources["memory_pct"],
+        "cpu_pct": resources["cpu_pct"],
         "resources": resources,
         "models": {
             "stt": models.get("stt"),
@@ -283,6 +284,7 @@ def _roster_only_entry(
         "error_rate": 0.0,
         "p95_latency_ms": None,
         "memory_pct": _resources(w)["memory_pct"],
+        "cpu_pct": _resources(w)["cpu_pct"],
         "resources": _resources(w),
         "models": {
             "stt": models.get("stt"),

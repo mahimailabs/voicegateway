@@ -19,6 +19,7 @@ type SortKey =
   | 'request_count'
   | 'p95_latency_ms'
   | 'error_rate'
+  | 'cpu_pct'
   | 'memory_pct';
 
 const COLUMNS: { key: SortKey; label: string }[] = [
@@ -28,14 +29,56 @@ const COLUMNS: { key: SortKey; label: string }[] = [
   { key: 'request_count', label: 'Requests (24h)' },
   { key: 'p95_latency_ms', label: 'p95 (24h)' },
   { key: 'error_rate', label: 'Error rate (24h)' },
+  { key: 'cpu_pct', label: 'Compute' },
   { key: 'memory_pct', label: 'Memory' },
 ];
 
-/** Bar color for a memory-headroom reading: teal healthy, amber warm, red tight. */
-function memoryBarColor(pct: number): string {
+// Live compute/memory refresh cadence. These are heartbeat reads (not billed),
+// so a short interval keeps the table current without hammering anything.
+const RESOURCE_POLL_MS = 5000;
+
+/** Bar color for a usage reading: teal healthy, amber warm, red tight. */
+function usageBarColor(pct: number): string {
   if (pct >= 90) return '#dc2626';
   if (pct >= 75) return '#f59e0b';
   return 'var(--vg-teal, #1F96AA)';
+}
+
+/** A percent-usage bar + label, shared by the Compute and Memory columns. */
+function UsageCell({ pct, title }: { pct: number | null | undefined; title?: string }) {
+  if (pct == null) {
+    return (
+      <span className="mono" style={{ color: 'var(--vg-muted)' }}>
+        -
+      </span>
+    );
+  }
+  return (
+    <div className="flex-row gap-sm" style={{ alignItems: 'center' }} title={title}>
+      <span
+        style={{
+          display: 'inline-block',
+          width: 60,
+          height: 6,
+          borderRadius: 999,
+          background: 'rgba(31,150,170,0.15)',
+          overflow: 'hidden',
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            display: 'block',
+            width: `${Math.min(100, pct)}%`,
+            height: '100%',
+            borderRadius: 999,
+            background: usageBarColor(pct),
+          }}
+        />
+      </span>
+      <span className="mono">{pct}%</span>
+    </div>
+  );
 }
 
 
@@ -46,12 +89,23 @@ export default function Agents() {
   const [sortAsc, setSortAsc] = useState(false);
 
   useEffect(() => {
-    const handle = setTimeout(() => {
+    let cancelled = false;
+    const load = () =>
       fetchAgents({ limit: 200, q: search.trim() || undefined })
-        .then((d) => setAgents(d.agents))
-        .catch(() => setAgents([]));
-    }, 200);
-    return () => clearTimeout(handle);
+        .then((d) => {
+          if (!cancelled) setAgents(d.agents);
+        })
+        .catch(() => {
+          if (!cancelled) setAgents([]);
+        });
+    // Debounced load on search change, then poll so compute/memory stay live.
+    const debounce = setTimeout(load, 200);
+    const poll = setInterval(load, RESOURCE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(debounce);
+      clearInterval(poll);
+    };
   }, [search]);
 
   const sorted = useMemo(() => {
@@ -179,40 +233,24 @@ export default function Agents() {
                     <td className="mono">{formatMs(a.p95_latency_ms)}</td>
                     <td className="mono">{(a.error_rate * 100).toFixed(1)}%</td>
                     <td>
-                      {a.memory_pct == null ? (
-                        <span className="mono" style={{ color: 'var(--vg-muted)' }}>
-                          -
-                        </span>
-                      ) : (
-                        <div
-                          className="flex-row gap-sm"
-                          style={{ alignItems: 'center' }}
-                          title={`RSS is ${a.memory_pct}% of this worker's memory ceiling`}
-                        >
-                          <span
-                            style={{
-                              display: 'inline-block',
-                              width: 60,
-                              height: 6,
-                              borderRadius: 999,
-                              background: 'rgba(31,150,170,0.15)',
-                              overflow: 'hidden',
-                              flexShrink: 0,
-                            }}
-                          >
-                            <span
-                              style={{
-                                display: 'block',
-                                width: `${Math.min(100, a.memory_pct)}%`,
-                                height: '100%',
-                                borderRadius: 999,
-                                background: memoryBarColor(a.memory_pct),
-                              }}
-                            />
-                          </span>
-                          <span className="mono">{a.memory_pct}%</span>
-                        </div>
-                      )}
+                      <UsageCell
+                        pct={a.cpu_pct}
+                        title={
+                          a.cpu_pct == null
+                            ? undefined
+                            : `${a.cpu_pct}% of the machine's compute in use (${(100 - a.cpu_pct).toFixed(0)}% left)`
+                        }
+                      />
+                    </td>
+                    <td>
+                      <UsageCell
+                        pct={a.memory_pct}
+                        title={
+                          a.memory_pct == null
+                            ? undefined
+                            : `RSS is ${a.memory_pct}% of this worker's memory ceiling`
+                        }
+                      />
                     </td>
                   </tr>
                 );

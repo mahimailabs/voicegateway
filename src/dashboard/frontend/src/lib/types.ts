@@ -217,6 +217,9 @@ export interface AgentRow {
   /** RSS as a percent of the worker's memory ceiling, merged from the live
    * roster; null when the agent is not a heartbeating worker or sent no sample. */
   memory_pct?: number | null;
+  /** CPU as a percent of the machine's capacity, from the live roster; null when
+   * the agent is not a heartbeating worker or sent no sample. */
+  cpu_pct?: number | null;
   /** CPU + memory snapshot from the live roster. Percentages are shares of the
    * machine's capacity (utilized; left = 100 - this). All null for a
    * telemetry-only agent (no heartbeat) or a sample that failed. */
