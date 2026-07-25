@@ -70,17 +70,19 @@ def sample_cpu() -> float | None:
     800%), so divide by the core count to express "share of the machine", which
     is the natural "utilized vs left" reading (left = 100 - this). The delta is
     measured since the previous call, i.e. over one heartbeat interval; the first
-    call after boot has no baseline and returns 0.0. Best-effort: None on failure.
+    call after boot has no baseline and returns None ("not sampled yet"), never a
+    0.0 that the UI would render as a confident "0% used". Best-effort: None on
+    failure. Floored at 0 so a float-precision negative delta never surfaces.
     """
     global _proc
     try:
         if _proc is None:
             _proc = psutil.Process()
             _proc.cpu_percent(interval=None)  # prime the baseline; no interval yet
-            return 0.0
+            return None
         raw = float(_proc.cpu_percent(interval=None))
         cores = psutil.cpu_count() or 1
-        return round(min(100.0, raw / cores), 1)
+        return round(max(0.0, min(100.0, raw / cores)), 1)
     except Exception:
         return None
 

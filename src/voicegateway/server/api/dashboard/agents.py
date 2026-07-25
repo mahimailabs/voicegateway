@@ -248,6 +248,50 @@ def _latency_probe(cached: dict[str, Any] | None) -> dict[str, Any] | None:
     }
 
 
+def _probe_failure_result(
+    agent_id: str, dispatch_name: str, error: str
+) -> dict[str, Any]:
+    """A probe result that carries only the failure; everything measurable is None.
+
+    A timed-out or crashed probe never produced a split, an e2e, a cost or the
+    models it ran, so those come back None (the same "not measured" the UI
+    already renders for them). Caching this in place of the previous row means the
+    Agents page shows the real last outcome, an explicit error, instead of a stale
+    graph from an earlier successful probe.
+    """
+    return {
+        "agent_id": agent_id,
+        "dispatch_name": dispatch_name,
+        "mode": "explicit" if dispatch_name else "automatic",
+        "room": None,
+        "trials": 0,
+        "e2e": None,
+        "components": None,
+        "cost_usd": None,
+        "models": None,
+        "error": error,
+    }
+
+
+async def _cache_probe_result(
+    gateway: Gateway, agent_id: str, result: dict[str, Any]
+) -> None:
+    """Upsert a probe outcome into the cache. Best-effort by contract.
+
+    A cache write that fails logs a warning and returns: the probe the caller
+    already paid for must not fail because a convenience write did.
+    """
+    if gateway.storage is None:  # nothing to cache into; the endpoint gated on this
+        return
+    try:
+        async with gateway.storage._conn.session() as db:
+            await agent_probe_result_repository.upsert_probe_result(
+                db, agent_id, result, time.time()
+            )
+    except Exception:  # noqa: BLE001 - the cache is a convenience, not the probe
+        logger.warning("probe result cache write failed", exc_info=True)
+
+
 def _agent_entry(
     row: AgentObservationRow,
     roster: RosterRow | None,
@@ -588,6 +632,7 @@ async def probe_agent_endpoint(
     # an immediate second one.
     _PROBE_LAST_RUN[agent_id] = now
     _PROBES_INFLIGHT.add(agent_id)
+    failure: HTTPException | None = None
     try:
         result = await asyncio.wait_for(
             diag_service.probe_agent(
@@ -608,22 +653,23 @@ async def probe_agent_endpoint(
             diag_service.PROBE_TIMEOUT_SECONDS,
         )
     except TimeoutError:
-        raise HTTPException(status_code=504, detail="probe timed out") from None
+        result = _probe_failure_result(agent_id, dispatch_name, "probe timed out")
+        failure = HTTPException(status_code=504, detail="probe timed out")
+    except Exception as exc:  # noqa: BLE001 - cache the honest failure, then surface it
+        # Keep the traceback in the logs; the operator gets the reason as a 502.
+        logger.warning("probe crashed for %r", agent_id, exc_info=True)
+        result = _probe_failure_result(agent_id, dispatch_name, f"probe failed: {exc}")
+        failure = HTTPException(status_code=502, detail=str(exc))
     finally:
         _PROBES_INFLIGHT.discard(agent_id)
 
-    # Cache this result so the Agents page can render the agent's latency graph
-    # without re-running a billed probe on every view. Best-effort: a cache write
-    # that fails must not fail the probe the caller already paid for. Failures and
-    # all-null results are cached too: "the last probe errored / measured nothing"
-    # is honest state for the page, and refresh re-runs it.
-    try:
-        async with gateway.storage._conn.session() as db:
-            await agent_probe_result_repository.upsert_probe_result(
-                db, agent_id, result, time.time()
-            )
-    except Exception:  # noqa: BLE001 - the probe succeeded; the cache is a convenience
-        logger.warning("probe result cache write failed", exc_info=True)
+    # Cache EVERY outcome (success, timeout, crash) so the Agents page renders the
+    # real last state, not a stale graph from an earlier good probe. A probe that
+    # errored or measured nothing is honest state for the page, and refresh re-runs
+    # it. The write is best-effort and never changes what the caller gets back.
+    await _cache_probe_result(gateway, agent_id, result)
+    if failure is not None:
+        raise failure
     return result
 
 

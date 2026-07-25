@@ -13,11 +13,12 @@ def test_sample_memory_returns_plausible_values() -> None:
 
 
 def test_sample_cpu_first_call_primes_then_reports_a_share(monkeypatch) -> None:
-    """The first call has no baseline and returns 0.0; later calls report a
+    """The first call has no baseline and returns None ("not sampled yet"), never
+    a 0.0 that the UI would render as a confident "0% used"; later calls report a
     machine-capacity share in [0, 100]."""
     monkeypatch.setattr(resource, "_proc", None)  # fresh baseline for this test
     first = resource.sample_cpu()
-    assert first == 0.0
+    assert first is None
     second = resource.sample_cpu()
     assert isinstance(second, float)
     assert 0.0 <= second <= 100.0
