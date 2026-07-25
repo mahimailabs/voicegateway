@@ -197,6 +197,24 @@ export default function AgentCard({ agent }: { agent: AgentRow }) {
         </div>
       </Link>
 
+      {/* Why the play button is dead, on-screen rather than on hover. The
+          wrapper span above carries the same text in a title, but a control
+          that ignores clicks and only explains itself to a mouse that stops
+          on it reads as broken to the operator who just pressed it. Rendered
+          only for the ineligible state: "running" and the cooldown countdown
+          are already legible from the button itself. */}
+      {probe && !probe.eligible && (
+        <div
+          style={{
+            marginTop: 10,
+            fontSize: 10,
+            lineHeight: 1.35,
+            color: 'var(--vg-muted)',
+          }}
+        >
+          {probe.reason ?? 'this agent cannot be probed'}
+        </div>
+      )}
       {failure && (
         <div
           style={{
