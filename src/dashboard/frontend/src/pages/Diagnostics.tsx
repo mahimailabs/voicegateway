@@ -6,6 +6,7 @@ import {
   fetchDiagnosticsRun,
   fetchDiagnosticsRuns,
 } from '../lib/api';
+import { DEMO_MODE } from '../lib/demo';
 import type { DiagnosticRun, DiagnosticsCreds } from '../lib/types';
 
 const CHECK_OPTS = [
@@ -52,7 +53,8 @@ export default function Diagnostics() {
 
   const configured = creds?.configured ?? false;
   const costy = selected.has('latency') || selected.has('sfu_load');
-  const canRun = configured && selected.size > 0 && !inFlight;
+  // Demo build is read-only: never allow starting a (billed, long-polling) run.
+  const canRun = configured && selected.size > 0 && !inFlight && !DEMO_MODE;
 
   const toggleCheck = (key: string) => {
     setSelected((prev) => {
@@ -195,13 +197,21 @@ export default function Diagnostics() {
             className="neo-btn neo-btn--primary"
             onClick={startRun}
             disabled={!canRun}
+            // Demo build is read-only: keep the button visible but inert.
+            title={DEMO_MODE ? 'Read-only in the demo' : undefined}
           >
             {inFlight ? 'Running...' : 'Run checks'}
           </button>
-          {!configured && (
+          {DEMO_MODE ? (
             <span style={{ fontSize: 12, color: 'var(--vg-muted)' }}>
-              Configure LiveKit credentials first.
+              Read-only in the demo.
             </span>
+          ) : (
+            !configured && (
+              <span style={{ fontSize: 12, color: 'var(--vg-muted)' }}>
+                Configure LiveKit credentials first.
+              </span>
+            )
           )}
         </div>
       </div>

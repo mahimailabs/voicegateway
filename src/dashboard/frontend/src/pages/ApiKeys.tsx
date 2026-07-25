@@ -5,6 +5,7 @@ import {
   fetchApiKeys,
   revokeApiKey,
 } from '../lib/api';
+import { DEMO_MODE } from '../lib/demo';
 import type { CreatedApiKey, ApiKey } from '../lib/types';
 
 const STALE_DAYS_DEFAULT = 90;
@@ -64,12 +65,15 @@ export default function ApiKeys() {
         subtitle={`${activeCount} active · ${staleCount} stale · ${keys.length} total`}
         accent="orange"
         actions={
-          <button
-            className="neo-btn neo-btn--primary"
-            onClick={() => setShowCreate(true)}
-          >
-            + Issue Key
-          </button>
+          // Demo build is read-only: hide the create-key control entirely.
+          !DEMO_MODE && (
+            <button
+              className="neo-btn neo-btn--primary"
+              onClick={() => setShowCreate(true)}
+            >
+              + Issue Key
+            </button>
+          )
         }
       />
 
@@ -132,7 +136,10 @@ export default function ApiKeys() {
                       )}
                     </td>
                     <td>
-                      {!revoked && <RevokeButton id={k.id} onDone={refresh} />}
+                      {/* Demo build is read-only: hide the per-row revoke action. */}
+                      {!revoked && !DEMO_MODE && (
+                        <RevokeButton id={k.id} onDone={refresh} />
+                      )}
                     </td>
                   </tr>
                 );
