@@ -343,9 +343,37 @@ async def test_result_shape_is_pinned(monkeypatch) -> None:
         "e2e",
         "components",
         "cost_usd",
+        "models",
         "error",
     }
     assert set(out["e2e"]) == {"avg", "p50", "p95", "min", "max", "trials"}
+
+
+async def test_probe_surfaces_the_models_it_ran(monkeypatch) -> None:
+    """The response carries the model per leg (for the split's hover labels), read
+    from the same rows as the split and cost. None per leg the call did not run."""
+    _patch(monkeypatch)
+    room = "vg-probe-a-ab12cd34"
+    rows = [
+        {"modality": "stt", "model_id": "livekit/deepgram/nova-3",
+         "metadata": {"room": room}},
+        {"modality": "llm", "model_id": "livekit/google/gemma-4-31b-it",
+         "metadata": {"room": room}},
+        # No TTS row: that leg's model stays None, not a guess.
+    ]
+    out = await service.probe_agent(
+        _CREDS,
+        agent_id="a",
+        dispatch_name="a",
+        nonce="ab12cd34",
+        warmup=False,
+        store=_FakeStore(rows),
+    )
+    assert out["models"] == {
+        "stt": "livekit/deepgram/nova-3",
+        "llm": "livekit/google/gemma-4-31b-it",
+        "tts": None,
+    }
 
 
 async def test_no_store_reports_null_cost_and_split_not_zero(monkeypatch) -> None:

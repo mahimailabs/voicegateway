@@ -299,6 +299,7 @@ async def probe_agent(
         "e2e": stats if stats["trials"] else None,
         "components": result.components,
         "cost_usd": await _probe_cost(store, result.room),
+        "models": await _probe_models(store, result.room),
         "error": error,
     }
 
@@ -320,6 +321,28 @@ async def _probe_cost(store: Any, room: str | None) -> float | None:
     if not rows:
         return None
     return sum(float(r.get("cost_usd") or 0.0) for r in rows)
+
+
+async def _probe_models(store: Any, room: str | None) -> dict[str, str | None]:
+    """The STT/LLM/TTS model this probe actually ran, for the split's hover labels.
+
+    Read from the same rows as the cost/split so the label matches the measured
+    call exactly. None per leg the call did not produce (or that this host did not
+    see), never a guess.
+    """
+    out: dict[str, str | None] = {"stt": None, "llm": None, "tts": None}
+    if store is None or not room:
+        return out
+    try:
+        rows = await store.get_requests_for_room(room)
+    except Exception:  # noqa: BLE001 - a read-back failure must not fail the probe
+        return out
+    for r in rows:
+        modality = r.get("modality")
+        model = r.get("model_id")
+        if modality in out and model:
+            out[modality] = model
+    return out
 
 
 async def _probe_error(store: Any, room: str | None) -> str | None:

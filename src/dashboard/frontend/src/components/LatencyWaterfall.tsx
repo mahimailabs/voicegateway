@@ -4,6 +4,7 @@
 // metered, so the bar is honest about the three segments it can show.
 
 type Stack = { stt: number | null; llm: number | null; tts: number | null };
+type Models = { stt?: string | null; llm?: string | null; tts?: string | null };
 
 const SEGMENTS = [
   { key: 'stt', label: 'STT', color: 'var(--vg-teal)' },
@@ -13,18 +14,24 @@ const SEGMENTS = [
 
 export default function LatencyWaterfall({
   latency,
+  models,
   label = 'Avg first-byte latency',
   emptyText = 'No latency samples yet',
 }: {
   latency?: Stack | null;
+  /** The provider/model behind each leg, shown on hover so a narrow segment (or
+   * any segment) can be identified without cross-referencing the model chips. */
+  models?: Models | null;
   /** What the bar is measuring. The 24h card average and a single probe sample
    * are different claims, so the caller names its own. */
   label?: string;
   emptyText?: string;
 }) {
-  const parts = SEGMENTS.map((s) => ({ ...s, ms: latency?.[s.key] ?? 0 })).filter(
-    (s) => s.ms > 0,
-  );
+  const parts = SEGMENTS.map((s) => ({
+    ...s,
+    ms: latency?.[s.key] ?? 0,
+    model: models?.[s.key] ?? null,
+  })).filter((s) => s.ms > 0);
   const total = parts.reduce((sum, s) => sum + s.ms, 0);
 
   if (total === 0) {
@@ -61,7 +68,10 @@ export default function LatencyWaterfall({
           return (
             <div
               key={s.key}
-              title={`${s.label} ${Math.round(s.ms)}ms`}
+              title={
+                `${s.label} ${Math.round(s.ms)}ms` +
+                (s.model ? ` · ${s.model}` : '')
+              }
               style={{
                 width: `${pct}%`,
                 background: s.color,
@@ -86,6 +96,7 @@ export default function LatencyWaterfall({
           <span
             key={s.key}
             className="mono"
+            title={s.model ? `${s.label}: ${s.model}` : undefined}
             style={{
               fontSize: 11,
               color: 'var(--vg-muted)',

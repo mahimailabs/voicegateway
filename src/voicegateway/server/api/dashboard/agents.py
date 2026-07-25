@@ -237,11 +237,15 @@ def _agent_entry(
     }
 
 
-def _roster_only_entry(w: RosterRow, probe: dict[str, Any]) -> dict[str, Any]:
-    """A registered worker that has not written any telemetry yet (0 requests).
+def _roster_only_entry(
+    w: RosterRow, probe: dict[str, Any], models: dict[str, str]
+) -> dict[str, Any]:
+    """A registered worker that has not written any rollup telemetry yet.
 
     Lets a booted-but-idle agent show on the Agents page (matching Server > Fleet)
-    instead of appearing only once it has handled a call.
+    instead of appearing only once it has handled a call. ``models`` is its last-
+    seen STT/LLM/TTS stack (from any traffic, including a probe): 0 rollup requests
+    does not mean 0 knowledge of which models it runs.
     """
     return {
         "agent_id": w.agent_id,
@@ -252,7 +256,11 @@ def _roster_only_entry(w: RosterRow, probe: dict[str, Any]) -> dict[str, Any]:
         "error_rate": 0.0,
         "p95_latency_ms": None,
         "memory_pct": _memory_pct(w.memory_rss_bytes, w.memory_total_bytes),
-        "models": {"stt": None, "llm": None, "tts": None},
+        "models": {
+            "stt": models.get("stt"),
+            "llm": models.get("llm"),
+            "tts": models.get("tts"),
+        },
         # A booted-but-idle worker has metered nothing yet, so no latency stack.
         "latency_ms": {"stt": None, "llm": None, "tts": None},
         "fleet_status": w.status,
@@ -303,7 +311,15 @@ async def list_agents_endpoint(
             db, tenant_id=None, now=time.time(), ttl_seconds=DEFAULT_TTL_SECONDS
         )
         agent_ids = [r.agent_id for r in rows if r.agent_id]
-        cascade = await request_log_repository.read_last_seen_models(db, agent_ids)
+        # The model stack is looked up for roster agents too, not just the rollup
+        # ones, so a booted-but-idle agent that has only been probed still shows
+        # which STT/LLM/TTS it runs. The model NAMES are not a rollup metric (unlike
+        # cost/p95), so surfacing them from a probe does not skew the card; the
+        # latency and cost lookups below stay real-traffic-only.
+        roster_agent_ids = [rw.agent_id for rw in roster if rw.agent_id]
+        cascade = await request_log_repository.read_last_seen_models(
+            db, list({*agent_ids, *roster_agent_ids})
+        )
         # Average STT/LLM/TTS first-byte latency over the same 24h window, for the
         # Overview cards' latency waterfall.
         latency_by_agent = await request_log_repository.read_avg_ttfb_by_modality(
@@ -393,7 +409,9 @@ async def list_agents_endpoint(
             continue
         if ql is not None and ql not in w.agent_id.lower():
             continue
-        agents_out.append(_roster_only_entry(w, _probe_for(w.agent_id)))
+        agents_out.append(
+            _roster_only_entry(w, _probe_for(w.agent_id), cascade.get(w.agent_id, {}))
+        )
 
     return {
         "agents": agents_out[:limit],

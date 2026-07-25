@@ -286,6 +286,9 @@ export interface AgentProbeResult {
     tts?: number;
   } | null;
   cost_usd: number | null;
+  /** The provider/model this call ran per leg, for the split's hover labels.
+   * Null per leg the call did not produce. */
+  models: { stt: string | null; llm: string | null; tts: string | null };
   error: string | null;
 }
 

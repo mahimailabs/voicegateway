@@ -86,6 +86,7 @@ export default function ProbeSample({ result }: { result: AgentProbeResult }) {
           <div style={{ marginTop: 10 }}>
             <LatencyWaterfall
               latency={split}
+              models={result.models}
               label="This call's first-byte split"
               emptyText="Split not measured: this agent does not write telemetry to this host"
             />

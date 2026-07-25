@@ -193,7 +193,7 @@ export default function AgentCard({ agent }: { agent: AgentRow }) {
         </div>
 
         <div className="mt-md">
-          <LatencyWaterfall latency={agent.latency_ms} />
+          <LatencyWaterfall latency={agent.latency_ms} models={agent.models} />
         </div>
       </Link>
 
