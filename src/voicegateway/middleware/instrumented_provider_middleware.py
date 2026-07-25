@@ -95,8 +95,13 @@ class InstrumentedSTT(lk_stt.STT, InstrumentationMixin):
     ) -> Any:
         return self._wrapped.stream(language=language, conn_options=conn_options)
 
-    def prewarm(self) -> None:
-        self._wrapped.prewarm()
+    def prewarm(self, *args: Any, **kwargs: Any) -> None:
+        # Accept-and-forward any signature: LiveKit's STT/LLM/TTS prewarm was
+        # `(self)` in 1.5/1.6.6 and the LLM's gained a keyword-only `loop` in
+        # 1.6.7. A `*args, **kwargs` override is compatible with every version's
+        # supertype (so mypy stays green across the pin range) and passes whatever
+        # it is given straight to the wrapped provider.
+        self._wrapped.prewarm(*args, **kwargs)
 
     async def aclose(self) -> None:
         await self._wrapped.aclose()
@@ -172,8 +177,13 @@ class InstrumentedLLM(lk_llm.LLM, InstrumentationMixin):
             extra_kwargs=extra_kwargs,
         )
 
-    def prewarm(self) -> None:
-        self._wrapped.prewarm()
+    def prewarm(self, *args: Any, **kwargs: Any) -> None:
+        # Accept-and-forward any signature: LiveKit's STT/LLM/TTS prewarm was
+        # `(self)` in 1.5/1.6.6 and the LLM's gained a keyword-only `loop` in
+        # 1.6.7. A `*args, **kwargs` override is compatible with every version's
+        # supertype (so mypy stays green across the pin range) and passes whatever
+        # it is given straight to the wrapped provider.
+        self._wrapped.prewarm(*args, **kwargs)
 
     async def aclose(self) -> None:
         await self._wrapped.aclose()
@@ -242,8 +252,13 @@ class InstrumentedTTS(lk_tts.TTS, InstrumentationMixin):
     def stream(self, *, conn_options: Any = DEFAULT_API_CONNECT_OPTIONS) -> Any:
         return self._wrapped.stream(conn_options=conn_options)
 
-    def prewarm(self) -> None:
-        self._wrapped.prewarm()
+    def prewarm(self, *args: Any, **kwargs: Any) -> None:
+        # Accept-and-forward any signature: LiveKit's STT/LLM/TTS prewarm was
+        # `(self)` in 1.5/1.6.6 and the LLM's gained a keyword-only `loop` in
+        # 1.6.7. A `*args, **kwargs` override is compatible with every version's
+        # supertype (so mypy stays green across the pin range) and passes whatever
+        # it is given straight to the wrapped provider.
+        self._wrapped.prewarm(*args, **kwargs)
 
     async def aclose(self) -> None:
         await self._wrapped.aclose()
