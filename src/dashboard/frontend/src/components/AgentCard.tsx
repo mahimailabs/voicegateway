@@ -61,14 +61,21 @@ export default function AgentCard({ agent }: { agent: AgentRow }) {
   const [showResources, setShowResources] = useState(true);
   const [running, setRunning] = useState(false);
   const [sample, setSample] = useState<AgentProbeResult | null>(null);
-  // The agent's last cached probe, rendered on load so the latency split is
-  // visible without pressing play (which re-runs a billed call). A fresh press
-  // overrides it; until then this is what the card shows.
-  const cached = cachedProbeSample(agent);
-  const displayedSample = sample ?? cached;
   const [failure, setFailure] = useState<string | null>(null);
+  // True only when a probe was actually placed and did NOT complete (a timeout /
+  // crash), as opposed to a refusal (429 cooldown, 409 in-flight, 400 ineligible)
+  // that placed no call. A real failure must not leave a stale earlier success on
+  // screen; a refusal leaves the prior cached measurement standing.
+  const [probeFailed, setProbeFailed] = useState(false);
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
+
+  // What the card shows for latency: a fresh probe result if one was just placed,
+  // else the agent's last cached probe (rendered on load so the split is visible
+  // without pressing play). A real failed attempt suppresses the cache so a stale
+  // success never sits beneath a red "it failed" line.
+  const cached = cachedProbeSample(agent);
+  const displayedSample = sample ?? (probeFailed ? null : cached);
 
   // Tick once a second only while a cooldown is actually counting down, and stop
   // the timer the moment it lapses: an always-on interval per card would re-render
@@ -91,6 +98,7 @@ export default function AgentCard({ agent }: { agent: AgentRow }) {
     if (running || coolingSeconds > 0) return;
     setRunning(true);
     setFailure(null);
+    setProbeFailed(false);
     try {
       setSample(await probeAgent(agent.agent_id));
       // Only a returned result means a call was actually placed, which is what
@@ -101,6 +109,13 @@ export default function AgentCard({ agent }: { agent: AgentRow }) {
     } catch (err) {
       setSample(null);
       setFailure(err instanceof Error ? err.message : String(err));
+      // A refusal (429 cooldown, 409 in-flight, 400 ineligible) placed no call,
+      // so the prior cached measurement still stands and is kept on screen. Any
+      // other error means the call was attempted and did not complete, so the
+      // stale success is suppressed.
+      const refusedNoCall =
+        err instanceof ApiError && [400, 409, 429].includes(err.status);
+      setProbeFailed(!refusedNoCall);
       // A refusal placed no call, so it earns no cooldown of its own. But a
       // 429 means the SERVER is still counting one down (a reload drops the
       // local timer while the server's keeps running), and it says how long
