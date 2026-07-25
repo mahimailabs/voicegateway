@@ -11,6 +11,7 @@ import {
 } from '../lib/ui';
 import LatencyWaterfall from './LatencyWaterfall';
 import ProbeSample from './ProbeSample';
+import ResourceMeter from './ResourceMeter';
 
 // A single agent tile for the Overview fleet grid: identity + presence, the
 // model stack, 24h cost/requests, and the STT/LLM/TTS latency waterfall. The
@@ -34,6 +35,16 @@ function Spinner() {
   );
 }
 
+// A gauge/meter glyph for the compute + memory toggle: a dial with a needle.
+function GaugeIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+      <path d="M1.5 9a4.5 4.5 0 1 1 9 0" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M6 9l2.4-2.4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export default function AgentCard({ agent }: { agent: AgentRow }) {
   // Live roster status (idle/busy/offline) when present, matching Server > Fleet;
   // else the telemetry-recency status.
@@ -44,6 +55,7 @@ export default function AgentCard({ agent }: { agent: AgentRow }) {
     : agentStatusBadgeClass(agentStatus(agent.last_seen));
 
   const probe = agent.probe ?? null;
+  const [showResources, setShowResources] = useState(false);
   const [running, setRunning] = useState(false);
   const [sample, setSample] = useState<AgentProbeResult | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -133,6 +145,18 @@ export default function AgentCard({ agent }: { agent: AgentRow }) {
           {agent.agent_name || agent.agent_id}
         </Link>
         <div className="flex-row" style={{ gap: 6, alignItems: 'center', flexShrink: 0 }}>
+          {/* Compute + memory toggle. Reads the live heartbeat sample already in
+              the fleet index (no extra call); expands the readout below the card. */}
+          <button
+            type="button"
+            className="neo-btn neo-btn--sm"
+            onClick={() => setShowResources((v) => !v)}
+            aria-pressed={showResources}
+            aria-label={`Show compute and memory for ${agent.agent_name || agent.agent_id}`}
+            title="Compute & memory this agent is using"
+          >
+            <GaugeIcon />
+          </button>
           {/* A disabled button receives no pointer events, so a title on the
               button itself never renders a tooltip: the one state that most
               needs to explain itself would be a dead control with no reason.
@@ -196,6 +220,18 @@ export default function AgentCard({ agent }: { agent: AgentRow }) {
           <LatencyWaterfall latency={agent.latency_ms} models={agent.models} />
         </div>
       </Link>
+
+      {showResources && (
+        <div
+          style={{
+            marginTop: 12,
+            paddingTop: 10,
+            borderTop: '1px dashed var(--vg-hairline)',
+          }}
+        >
+          <ResourceMeter resources={agent.resources} />
+        </div>
+      )}
 
       {/* Why the play button is dead, on-screen rather than on hover. The
           wrapper span above carries the same text in a title, but a control

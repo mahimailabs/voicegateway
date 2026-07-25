@@ -44,6 +44,7 @@ def _row(**overrides: Any) -> RosterRow:
         "last_seen": 1000.0,
         "memory_rss_bytes": None,
         "memory_total_bytes": None,
+        "cpu_pct": None,
     }
     base.update(overrides)
     return RosterRow(**base)

@@ -55,6 +55,20 @@ async def test_upsert_then_read_fresh_is_busy(db: AsyncSession) -> None:
     assert row.active_sessions == 3  # preserved from the payload
 
 
+async def test_cpu_pct_round_trips(db: AsyncSession) -> None:
+    """The CPU sample a heartbeat reports is stored and served on the roster."""
+    await workers.upsert_heartbeat(db, _presence(cpu_pct=42.5))
+    rows = await workers.read_roster(db, tenant_id="acme", now=2010.0)
+    assert rows[0].cpu_pct == 42.5
+
+
+async def test_cpu_pct_absent_is_none(db: AsyncSession) -> None:
+    """A heartbeat with no CPU sample stores None, not a fabricated 0."""
+    await workers.upsert_heartbeat(db, _presence())  # no cpu_pct key
+    rows = await workers.read_roster(db, tenant_id="acme", now=2010.0)
+    assert rows[0].cpu_pct is None
+
+
 async def test_upsert_twice_same_key_keeps_one_row_latest_wins(
     db: AsyncSession,
 ) -> None:

@@ -59,6 +59,29 @@ def _memory_pct(rss: int | None, total: int | None) -> float | None:
     return round(rss / total * 100, 1)
 
 
+def _resources(w: RosterRow | None) -> dict[str, Any]:
+    """CPU + memory snapshot for a worker's card, all None off the live roster.
+
+    ``cpu_pct`` and ``memory_pct`` are shares of the machine's capacity (0-100),
+    so the UI can render "utilized vs left"; the raw memory bytes ride along for
+    an absolute readout (e.g. 512 MB / 8 GB). A telemetry-only agent (no live
+    heartbeat) has no sample, so every field is None.
+    """
+    if w is None:
+        return {
+            "cpu_pct": None,
+            "memory_pct": None,
+            "memory_rss_bytes": None,
+            "memory_total_bytes": None,
+        }
+    return {
+        "cpu_pct": w.cpu_pct,
+        "memory_pct": _memory_pct(w.memory_rss_bytes, w.memory_total_bytes),
+        "memory_rss_bytes": w.memory_rss_bytes,
+        "memory_total_bytes": w.memory_total_bytes,
+    }
+
+
 def _latency_stack(latency: dict[str, float]) -> dict[str, float | None]:
     """Per-modality average first-byte latency for the card waterfall.
 
@@ -199,7 +222,7 @@ def _probe_block(
 
 def _agent_entry(
     row: AgentObservationRow,
-    memory_pct: float | None,
+    roster: RosterRow | None,
     models: dict[str, str],
     latency: dict[str, float],
     *,
@@ -208,6 +231,7 @@ def _agent_entry(
     agent_name: str | None = None,
     probe: dict[str, Any],
 ) -> dict[str, Any]:
+    resources = _resources(roster)
     return {
         "agent_id": row.agent_id,
         # Friendly label from the worker roster (matches Server > Fleet); None for
@@ -220,7 +244,10 @@ def _agent_entry(
         "last_seen": last_seen if last_seen is not None else row.last_seen,
         "error_rate": _error_rate(row.error_count, row.request_count),
         "p95_latency_ms": row.p95_ms,
-        "memory_pct": memory_pct,
+        # Kept top-level for existing consumers; the fuller cpu+memory snapshot is
+        # under ``resources``.
+        "memory_pct": resources["memory_pct"],
+        "resources": resources,
         "models": {
             "stt": models.get("stt"),
             "llm": models.get("llm"),
@@ -255,7 +282,8 @@ def _roster_only_entry(
         "last_seen": w.last_seen,
         "error_rate": 0.0,
         "p95_latency_ms": None,
-        "memory_pct": _memory_pct(w.memory_rss_bytes, w.memory_total_bytes),
+        "memory_pct": _resources(w)["memory_pct"],
+        "resources": _resources(w),
         "models": {
             "stt": models.get("stt"),
             "llm": models.get("llm"),
@@ -339,10 +367,6 @@ async def list_agents_endpoint(
     roster_by_id: dict[str, RosterRow] = {}
     for rw in roster:
         roster_by_id.setdefault(rw.agent_id, rw)
-    memory_by_agent = {
-        aid: _memory_pct(w.memory_rss_bytes, w.memory_total_bytes)
-        for aid, w in roster_by_id.items()
-    }
     # The LiveKit dispatch name a live worker reported, keyed by agent_id. This is
     # the fallback the play button uses for an agent that has heartbeated but not
     # yet served an instrumented call, so the button need not wait for a first
@@ -386,7 +410,7 @@ async def list_agents_endpoint(
         agents_out.append(
             _agent_entry(
                 r,
-                memory_by_agent.get(r.agent_id) if r.agent_id else None,
+                w,
                 cascade.get(r.agent_id, {}) if r.agent_id else {},
                 latency_by_agent.get(r.agent_id, {}) if r.agent_id else {},
                 fleet_status=w.status if w is not None else None,

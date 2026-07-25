@@ -3835,15 +3835,15 @@ wheels = [
 
 [[package]]
 name = "voice-prices"
-version = "0.0.8"
+version = "0.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx2" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f5/1b/8337816e4e083fc750b327d3e01b6ddb264532b5df499df6ea92ab7945c0/voice_prices-0.0.8.tar.gz", hash = "sha256:a7bf7974ad203a2aaad03d4cf0c795f9e0c964f4a6af1433ffa9137ae92f0c60", size = 74013, upload-time = "2026-05-29T13:04:22.802Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/84/4a/b6f03355abc1f2c946f679d3aaaac39e842fadbca00dc67d366470bdc26e/voice_prices-0.1.0.tar.gz", hash = "sha256:aa2dd840eb1c03309e03128c4f91fb55f455277490aa677b6414f4ee0977b7c4", size = 80332, upload-time = "2026-07-24T20:01:11.286Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ee/20/2988e84a5ae592ec7044643c701bb89a0ee4f31a8a3ae21a4ddf7b315a22/voice_prices-0.0.8-py3-none-any.whl", hash = "sha256:48d77ec45244bd0f37680cbcd86c880a462a9aa891d751bd8aba90dfe7766071", size = 76775, upload-time = "2026-05-29T13:04:21.701Z" },
+    { url = "https://files.pythonhosted.org/packages/79/56/edfa3ad88eb1db51369351c336401f76893de912af2ea205498778ca1271/voice_prices-0.1.0-py3-none-any.whl", hash = "sha256:a5006aa5d22b2d083c34166fad17d58baf62ca754ee4e510651f621ee29bebf5", size = 84832, upload-time = "2026-07-24T20:01:10.302Z" },
 ]
 
 [[package]]
@@ -3979,7 +3979,7 @@ requires-dist = [
     { name = "uvicorn", marker = "extra == 'collector'", specifier = ">=0.32.0" },
     { name = "uvicorn", marker = "extra == 'dashboard'", specifier = ">=0.32.0" },
     { name = "uvicorn", marker = "extra == 'dev'", specifier = ">=0.32.0" },
-    { name = "voice-prices", specifier = ">=0.0.8,<0.1" },
+    { name = "voice-prices", specifier = ">=0.1.0,<0.2" },
 ]
 provides-extras = ["collector", "dashboard", "dev", "livekit", "pipecat"]
 

@@ -41,3 +41,6 @@ class Worker(SQLModel, table=True):
     last_seen: float
     memory_rss_bytes: int | None = Field(default=None, sa_type=BigInteger)
     memory_total_bytes: int | None = Field(default=None, sa_type=BigInteger)
+    # Worker CPU use as a percent of the machine's capacity (0-100) at the last
+    # heartbeat. Nullable: an older agent or a failed sample reports none.
+    cpu_pct: float | None = None

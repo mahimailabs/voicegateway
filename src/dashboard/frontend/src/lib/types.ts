@@ -217,6 +217,15 @@ export interface AgentRow {
   /** RSS as a percent of the worker's memory ceiling, merged from the live
    * roster; null when the agent is not a heartbeating worker or sent no sample. */
   memory_pct?: number | null;
+  /** CPU + memory snapshot from the live roster. Percentages are shares of the
+   * machine's capacity (utilized; left = 100 - this). All null for a
+   * telemetry-only agent (no heartbeat) or a sample that failed. */
+  resources?: {
+    cpu_pct: number | null;
+    memory_pct: number | null;
+    memory_rss_bytes: number | null;
+    memory_total_bytes: number | null;
+  };
   /** Last-seen model per modality, from /api/agents; a modality is null when unseen. */
   models?: { stt: string | null; llm: string | null; tts: string | null };
   /** Average first-byte latency (ms) per modality over 24h, for the card
