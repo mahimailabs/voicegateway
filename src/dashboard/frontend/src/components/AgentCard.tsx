@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, PROBE_COOLDOWN_SECONDS, probeAgent } from '../lib/api';
+import { attemptedProbes } from '../lib/autoProbe';
 import type { AgentProbeResult, AgentRow } from '../lib/types';
 import {
   agentStatus,
@@ -83,39 +84,60 @@ export default function AgentCard({ agent }: { agent: AgentRow }) {
 
   const coolingSeconds = Math.max(0, Math.ceil((cooldownUntil - nowMs) / 1000));
 
+  // The core call, shared by the play button and the on-load auto-run. Splitting
+  // it off the click handler lets the auto-run place a probe without a synthetic
+  // event, while both go through the exact same guards and cooldown handling.
+  const placeProbe = useCallback(async () => {
+    if (running || coolingSeconds > 0) return;
+    setRunning(true);
+    setFailure(null);
+    try {
+      setSample(await probeAgent(agent.agent_id));
+      // Only a returned result means a call was actually placed, which is what
+      // the cooldown is about. A refusal (no observed job, one already in
+      // flight, the server's own cooldown) placed nothing, so it must not
+      // start a local timer on top of the server's.
+      setCooldownUntil(Date.now() + PROBE_COOLDOWN_SECONDS * 1000);
+    } catch (err) {
+      setSample(null);
+      setFailure(err instanceof Error ? err.message : String(err));
+      // A refusal placed no call, so it earns no cooldown of its own. But a
+      // 429 means the SERVER is still counting one down (a reload drops the
+      // local timer while the server's keeps running), and it says how long
+      // in Retry-After. Adopting that leaves the button honest about being
+      // unavailable instead of re-offering a press already decided against.
+      if (err instanceof ApiError && err.retryAfterSeconds !== null) {
+        setCooldownUntil(Date.now() + err.retryAfterSeconds * 1000);
+      }
+    } finally {
+      setRunning(false);
+    }
+  }, [agent.agent_id, coolingSeconds, running]);
+
   const runProbe = useCallback(
-    async (e: MouseEvent<HTMLButtonElement>) => {
+    (e: MouseEvent<HTMLButtonElement>) => {
       // The button sits inside a card whose regions are links; stop the press
       // from also navigating away from the result it is about to produce.
       e.preventDefault();
       e.stopPropagation();
-      if (running || coolingSeconds > 0) return;
-      setRunning(true);
-      setFailure(null);
-      try {
-        setSample(await probeAgent(agent.agent_id));
-        // Only a returned result means a call was actually placed, which is what
-        // the cooldown is about. A refusal (no observed job, one already in
-        // flight, the server's own cooldown) placed nothing, so it must not
-        // start a local timer on top of the server's.
-        setCooldownUntil(Date.now() + PROBE_COOLDOWN_SECONDS * 1000);
-      } catch (err) {
-        setSample(null);
-        setFailure(err instanceof Error ? err.message : String(err));
-        // A refusal placed no call, so it earns no cooldown of its own. But a
-        // 429 means the SERVER is still counting one down (a reload drops the
-        // local timer while the server's keeps running), and it says how long
-        // in Retry-After. Adopting that leaves the button honest about being
-        // unavailable instead of re-offering a press already decided against.
-        if (err instanceof ApiError && err.retryAfterSeconds !== null) {
-          setCooldownUntil(Date.now() + err.retryAfterSeconds * 1000);
-        }
-      } finally {
-        setRunning(false);
-      }
+      void placeProbe();
     },
-    [agent.agent_id, coolingSeconds, running],
+    [placeProbe],
   );
+
+  // On load, run one probe for an eligible agent that has no cached latency yet,
+  // so the split is populated on visit ("run once, then cache") rather than left
+  // blank until someone presses play. `attemptedProbes` is module scope, so
+  // navigating away and back does not re-bill, and it is shared with the Agents
+  // page: whichever surface renders the agent first places the single call. Once
+  // cached, `latency_probe` is set and this is skipped; play re-runs on demand.
+  useEffect(() => {
+    if (!probe?.eligible || agent.latency_probe || attemptedProbes.has(agent.agent_id)) {
+      return;
+    }
+    attemptedProbes.add(agent.agent_id);
+    void placeProbe();
+  }, [agent.agent_id, agent.latency_probe, probe?.eligible, placeProbe]);
 
   const disabled = !probe?.eligible || running || coolingSeconds > 0;
   const buttonTitle = !probe

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { fetchAgents, probeAgent } from '../lib/api';
+import { attemptedProbes } from '../lib/autoProbe';
 import type { AgentRow } from '../lib/types';
 import {
   agentStatus,
@@ -130,10 +131,10 @@ export default function Agents() {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('last_seen');
   const [sortAsc, setSortAsc] = useState(false);
-  // Agents whose probe is in flight (spinner), and those we have already
-  // auto-run this session, so the poll re-render never re-bills the same agent.
+  // Agents whose probe is in flight (spinner). Those already auto-run live in the
+  // module-level `attemptedProbes` (shared with the Overview cards) so neither the
+  // 5s poll, a remount, nor the other surface re-bills the same agent.
   const [runningProbes, setRunningProbes] = useState<Set<string>>(new Set());
-  const attempted = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -178,13 +179,14 @@ export default function Agents() {
   );
 
   // Run one probe per eligible agent that has no cached latency yet, once per
-  // session: the "run once, then cache" default. A billed call per new agent on
-  // first view, then the stored graph on every later view. The `attempted` guard
-  // means the 5s poll never re-bills the same agent.
+  // page load: the "run once, then cache" default. A billed call per new agent on
+  // first view, then the stored graph on every later view. The shared
+  // `attemptedProbes` guard means the 5s poll, a remount, or the Overview cards
+  // never re-bill the same agent.
   useEffect(() => {
     for (const a of agents) {
-      if (a.probe?.eligible && !a.latency_probe && !attempted.current.has(a.agent_id)) {
-        attempted.current.add(a.agent_id);
+      if (a.probe?.eligible && !a.latency_probe && !attemptedProbes.has(a.agent_id)) {
+        attemptedProbes.add(a.agent_id);
         runProbe(a.agent_id);
       }
     }
