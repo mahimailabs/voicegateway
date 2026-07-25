@@ -248,6 +248,10 @@ export interface AgentRow {
     e2e: AgentProbeResult['e2e'];
     cost_usd: number | null;
     models: AgentProbeResult['models'] | null;
+    /** What the probe actually ran with, so the Overview card can render the
+     * cached sample verbatim without re-billing. */
+    mode: ProbeMode | null;
+    dispatch_name: string | null;
     error: string | null;
     /** Epoch seconds the probe ran, so the UI can say how fresh it is. */
     created_at: number;

@@ -55,9 +55,16 @@ export default function AgentCard({ agent }: { agent: AgentRow }) {
     : agentStatusBadgeClass(agentStatus(agent.last_seen));
 
   const probe = agent.probe ?? null;
-  const [showResources, setShowResources] = useState(false);
+  // Compute + memory are a free heartbeat read, so show them by default rather
+  // than behind a click; the gauge button collapses them.
+  const [showResources, setShowResources] = useState(true);
   const [running, setRunning] = useState(false);
   const [sample, setSample] = useState<AgentProbeResult | null>(null);
+  // The agent's last cached probe, rendered on load so the latency split is
+  // visible without pressing play (which re-runs a billed call). A fresh press
+  // overrides it; until then this is what the card shows.
+  const cached = cachedProbeSample(agent);
+  const displayedSample = sample ?? cached;
   const [failure, setFailure] = useState<string | null>(null);
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -264,7 +271,28 @@ export default function AgentCard({ agent }: { agent: AgentRow }) {
           {failure}
         </div>
       )}
-      {sample && <ProbeSample result={sample} />}
+      {displayedSample && <ProbeSample result={displayedSample} />}
     </div>
   );
+}
+
+// Rebuild a full probe result from the card's cached `latency_probe` so
+// ProbeSample can render it verbatim. The cache carries the measured legs plus
+// the mode/dispatch_name the probe ran with; the fields ProbeSample does not
+// read (room, trials) are filled with honest placeholders.
+function cachedProbeSample(agent: AgentRow): AgentProbeResult | null {
+  const lp = agent.latency_probe;
+  if (!lp) return null;
+  return {
+    agent_id: agent.agent_id,
+    dispatch_name: lp.dispatch_name ?? agent.probe?.dispatch_name ?? '',
+    mode: lp.mode ?? agent.probe?.mode ?? 'explicit',
+    room: null,
+    trials: 0,
+    e2e: lp.e2e,
+    components: lp.components,
+    cost_usd: lp.cost_usd,
+    models: lp.models ?? { stt: null, llm: null, tts: null },
+    error: lp.error,
+  };
 }

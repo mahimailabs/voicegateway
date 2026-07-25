@@ -243,6 +243,11 @@ def _latency_probe(cached: dict[str, Any] | None) -> dict[str, Any] | None:
         "e2e": r.get("e2e"),
         "cost_usd": r.get("cost_usd"),
         "models": r.get("models"),
+        # mode + dispatch_name are what the probe actually ran with, carried so the
+        # Overview card can render the cached sample verbatim (badge, hover) without
+        # re-running a billed call.
+        "mode": r.get("mode"),
+        "dispatch_name": r.get("dispatch_name"),
         "error": r.get("error"),
         "created_at": cached["created_at"],
     }
