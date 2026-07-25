@@ -134,6 +134,13 @@ async def test_list_agents_joins_participants_and_dispatch():
     assert by_name["concierge"].state == "dispatched"
 
 
+async def test_room_participant_identities_lists_everyone_in_the_room():
+    """The probe reads this to confirm a dispatched worker actually joined."""
+    admin = LiveKitAdmin(LiveKitCreds("u", "k", "s"), api=_FakeApi())
+    idents = await admin.room_participant_identities("r1")
+    assert idents == ["agent-x", "human-1"]
+
+
 async def test_join_token_is_a_jwt():
     admin = LiveKitAdmin(LiveKitCreds("u", "k", "s"), api=_FakeApi())
     token = admin.join_token("room1", "probe")

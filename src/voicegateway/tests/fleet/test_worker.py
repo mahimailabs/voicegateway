@@ -47,6 +47,22 @@ def test_register_populates_presence(monkeypatch):
     assert p["version"]  # from _version
 
 
+def test_dispatch_name_defaults_to_agent_name(monkeypatch):
+    """register_worker's name is the LiveKit dispatch name by convention, so the
+    presence carries it as the dispatch_name unless told otherwise."""
+    monkeypatch.setenv("VOICEGW_AGENT_ID", "w1")
+    worker.register_worker("reception")
+    assert worker._worker.presence()["dispatch_name"] == "reception"
+
+
+def test_explicit_none_dispatch_name_is_preserved(monkeypatch):
+    """A Pipecat worker has no LiveKit dispatch: an explicit None must NOT fall
+    back to the agent_name, so the roster does not offer a probe it can't answer."""
+    monkeypatch.setenv("VOICEGW_AGENT_ID", "w1")
+    worker.register_worker("display-label", dispatch_name=None)
+    assert worker._worker.presence()["dispatch_name"] is None
+
+
 def test_bump_active_toggles_status_and_clamps(monkeypatch):
     monkeypatch.setenv("VOICEGW_AGENT_ID", "w1")
     worker.register_worker("realty")

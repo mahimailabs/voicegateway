@@ -190,11 +190,11 @@ Return the fleet index over the last 24 hours: the telemetry rollup merged with 
 | Field | Type | Description |
 |---|---|---|
 | `eligible` | `boolean` | Whether `POST /api/agents/{agent_id}/probe` will be accepted. |
-| `dispatch_name` | `string \| null` | The LiveKit `Job.agent_name` VoiceGateway observed on a call this agent actually ran. `""` means automatic dispatch. `null` when the name is not available: either nothing was observed for this agent, or LiveKit is not configured on this host and no name was looked up at all. `reason` says which. |
+| `dispatch_name` | `string \| null` | The LiveKit `agent_name` VoiceGateway will dispatch by. `""` means automatic dispatch. `null` when no name is available: nothing was observed and no live worker is in the roster, or LiveKit is not configured on this host. `reason` says which. |
 | `mode` | `"explicit" \| "automatic" \| null` | `explicit` dispatches to that name; `automatic` means creating the room is the whole dispatch. |
-| `reason` | `string \| null` | Why the probe is unavailable, or a caveat on an eligible one (for example: more than one worker has registered on automatic dispatch, so whichever is online may answer). |
+| `reason` | `string \| null` | Why the probe is unavailable, or a caveat on an eligible one (a name taken from the roster but not yet confirmed by a completed call, or more than one worker registered on automatic dispatch so whichever is online may answer). |
 
-The dispatch name is decided at worker registration inside the agent's own process (`WorkerOptions.agent_name`), so VoiceGateway can only read it back, never invent one. An agent it has never seen a job for comes back ineligible with the reason, not with a guess.
+The dispatch name is LiveKit's `agent_name` (the value on `@server.rtc_session(agent_name=...)`, or the legacy `WorkerOptions.agent_name`). VoiceGateway resolves it from two sources, most-trusted first: the name **observed** on a call the agent already ran, and failing that the **dispatch name a live worker reports** in the fleet roster (`register_worker`'s name, or the value `attach` resolves from the job). The roster fallback lets a booted-but-idle agent be probed before its first call. A roster name is what the worker claimed, not what a finished job proved, so `reason` flags it as unverified; if it is wrong, the probe reaches no worker and returns that as an error rather than a fabricated number. A worker with no LiveKit dispatch (a Pipecat agent) reports no dispatch name and is not probeable, so it never gets a play button it could not answer. Only an agent absent from **both** sources comes back ineligible.
 
 **Example:**
 
@@ -233,7 +233,7 @@ Probe rows are tagged by a `vg-probe-` room name, which the 24-hour rollups excl
 All probe times are **seconds**, not milliseconds. The rest of this API reports milliseconds.
 </Warning>
 
-Every number returned was measured: `e2e` comes from a synthetic client that speaks a fixed utterance and waits for audio back, while `components` and `cost_usd` are read from the rows the agent itself wrote for the probe's room. Anything that could not be measured is `null`, never zero. A `null` `cost_usd` means this host cannot know (the agent ships its telemetry to a remote collector), which is a different claim from "the call was free". `components` is `null` for the same reason. `e2e` is `null` when no turn completed, in which case `error` says why.
+Every number returned was measured: `e2e` comes from a synthetic client that speaks a fixed utterance and waits for audio back, while `components` and `cost_usd` are read from the rows the agent itself wrote for the probe's room. Anything that could not be measured is `null`, never zero. A `null` `cost_usd` means this host cannot know (the agent ships its telemetry to a remote collector), which is a different claim from "the call was free". `components` is `null` for the same reason. `e2e` is `null` when no turn completed, in which case `error` says why: if the dispatch reached no worker (a wrong or unverified name, or an offline automatic worker), the probe detects that no one joined the room and `error` names it, rather than speaking into an empty room and reporting all nulls.
 
 `components` carries whichever of these legs the call produced: `eou` (turn detection), `stt`, `stt_ttfp` (onset to first partial, the head), `stt_transcription_delay` (end of speech to final, the tail), `llm_ttft`, and `tts`. Keys for legs the call did not produce are absent rather than zeroed.
 
@@ -241,7 +241,7 @@ Every number returned was measured: `e2e` comes from a synthetic client that spe
 
 | Status | Condition |
 |---|---|
-| `400` | Telemetry storage is disabled, LiveKit is not configured, or no LiveKit job has been observed for this agent. |
+| `400` | Telemetry storage is disabled, LiveKit is not configured, or the agent has no dispatch name in either source (no observed job and no live worker in the roster). |
 | `409` | A probe for this agent is already running. |
 | `429` | Inside the 30-second cooldown. Carries a `Retry-After` header. |
 | `504` | The probe did not finish within 120 seconds. |

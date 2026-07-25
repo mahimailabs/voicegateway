@@ -99,32 +99,42 @@ def _livekit_configured() -> bool:
 def _probe_block(
     agent_id: str | None,
     dispatch_names: dict[str, str],
+    roster_names: dict[str, str],
     *,
     livekit_configured: bool,
     automatic_count: int,
 ) -> dict[str, Any]:
     """Whether this agent can be probed, and if not, why not.
 
-    The dispatch name is ``Job.agent_name`` as ``attach`` observed it on a call
-    the agent actually ran. It is decided at worker registration inside the
-    agent's own process, so it can only be read back, never chosen here: an
-    invented name would resolve to no worker and the probe would hang until it
-    timed out. An agent VoiceGateway has never seen a job for is therefore
-    reported as not probeable, with the reason, rather than given a guess.
+    The dispatch name is LiveKit's ``agent_name``: the value on
+    ``@server.rtc_session(agent_name=...)`` (or the legacy ``WorkerOptions``)
+    that explicit dispatch routes a job by. VoiceGateway learns it from two
+    places, most-trusted first:
 
-    Three observable states map to three answers:
+    - OBSERVED: ``Job.agent_name`` as ``attach`` read it back off a call the
+      agent actually ran. Proven, because a real job carried it.
+    - ROSTER: the ``agent_name`` the worker passed to ``register_worker`` when
+      it came online and started heartbeating. It is the same value a worker
+      registers with LiveKit under, available the instant the agent connects,
+      before it has served a single call. Used only when nothing was observed.
+
+    A roster name is what the worker *claimed*, not what a finished job proved,
+    so it can be wrong if someone registers under one name and dispatches under
+    another. That does not make the probe fake: dispatching to a wrong name
+    reaches no worker, and the probe reports that as a failure (the runner
+    fails fast once no worker joins) rather than inventing a number. The reason
+    string says the name is unverified so the operator reads it as such.
+
+    The resolved name maps to a mode:
 
     - a non-empty name: explicit dispatch, targeted at exactly this agent.
     - ``""``: the worker registered no agent_name, so LiveKit has it on
       automatic dispatch and it joins every new room. Creating the room is the
       whole dispatch. With more than one such worker known, whichever is online
-      grabs the job, so the reason says so instead of implying precision. The
-      count is of workers OBSERVED on automatic dispatch, not of workers proven
-      live: this host cannot see which are running, and dropping the caveat for
-      a worker that turns out to be up would hide a real ambiguity about whose
-      numbers came back. Warning about a possible answerer is the safe error.
-    - absent: never observed (no instrumented call yet, or the agent ships its
-      telemetry to a remote collector so nothing landed in this database).
+      grabs the job, so the reason says so instead of implying precision.
+    - absent from BOTH sources: never observed and not in the live roster (no
+      instrumented call yet and no heartbeat, or the agent ships its telemetry
+      to a remote collector and never registered here).
     """
     if not agent_id:
         return {
@@ -143,15 +153,18 @@ def _probe_block(
                 "LIVEKIT_API_KEY and LIVEKIT_API_SECRET"
             ),
         }
-    name = dispatch_names.get(agent_id)
+    observed = dispatch_names.get(agent_id)
+    name = observed if observed is not None else roster_names.get(agent_id)
+    verified = observed is not None
     if name is None:
         return {
             "eligible": False,
             "dispatch_name": None,
             "mode": None,
             "reason": (
-                "no LiveKit job observed for this agent yet: VoiceGateway reads "
-                "the dispatch name from a call the agent actually ran"
+                "no LiveKit job observed for this agent yet and no live worker "
+                "in the roster: VoiceGateway dispatches by the agent_name a "
+                "worker registers with, and has seen neither"
             ),
         }
     if name:
@@ -159,7 +172,14 @@ def _probe_block(
             "eligible": True,
             "dispatch_name": name,
             "mode": "explicit",
-            "reason": None,
+            "reason": (
+                None
+                if verified
+                else (
+                    f"dispatch name {name!r} is how this worker registered; the "
+                    "probe has not yet confirmed it against a completed call"
+                )
+            ),
         }
     return {
         "eligible": True,
@@ -307,23 +327,38 @@ async def list_agents_endpoint(
         aid: _memory_pct(w.memory_rss_bytes, w.memory_total_bytes)
         for aid, w in roster_by_id.items()
     }
+    # The LiveKit dispatch name a live worker reported, keyed by agent_id. This is
+    # the fallback the play button uses for an agent that has heartbeated but not
+    # yet served an instrumented call, so the button need not wait for a first
+    # call. It is the worker's dispatch_name, NOT its display agent_name: a worker
+    # with no LiveKit dispatch (a Pipecat agent, dispatch_name None) is omitted, so
+    # it is not offered a probe it could never answer. "" is kept (automatic
+    # dispatch) and resolves to mode "automatic".
+    roster_names = {
+        aid: w.dispatch_name
+        for aid, w in roster_by_id.items()
+        if w.dispatch_name is not None
+    }
 
     # Resolved once per request: reading creds is a filesystem/env lookup, and
     # the answer is the same for every card.
     livekit_ready = _livekit_configured()
-    # How many agents were observed registering with no agent_name, i.e. are on
-    # automatic dispatch. Two or more means a probe that creates a room can be
-    # answered by any of them, which the eligibility reason has to admit. Counted
-    # over all observed history rather than intersected with the live roster: the
-    # roster only holds workers that opted into heartbeats, so intersecting would
-    # silently drop the caveat for a live worker it cannot see, which is the
-    # worse error of the two.
-    automatic_count = sum(1 for n in dispatch_names.values() if n == "")
+    # How many distinct agents are on automatic dispatch (registered with no
+    # agent_name). Two or more means a probe that creates a room can be answered
+    # by any of them, which the eligibility reason has to admit. Counted across
+    # BOTH sources, deduped by agent_id: an agent seen only in the live roster is
+    # just as able to grab an anonymous room's job as one seen in past traffic,
+    # and dropping either would understate the ambiguity about whose numbers came
+    # back.
+    automatic_ids = {aid for aid, n in dispatch_names.items() if n == ""}
+    automatic_ids |= {aid for aid, n in roster_names.items() if n == ""}
+    automatic_count = len(automatic_ids)
 
     def _probe_for(agent_id: str | None) -> dict[str, Any]:
         return _probe_block(
             agent_id,
             dispatch_names,
+            roster_names,
             livekit_configured=livekit_ready,
             automatic_count=automatic_count,
         )
@@ -406,14 +441,35 @@ async def probe_agent_endpoint(
         names = await request_log_repository.read_last_seen_dispatch_name(
             db, [agent_id]
         )
-    dispatch_name = names.get(agent_id)
+        dispatch_name = names.get(agent_id)
+        # Fall back to the live roster when no completed job carried a name. A
+        # worker reports the LiveKit agent_name it dispatches under, so an agent
+        # that has heartbeated but not yet served an instrumented call is still
+        # reachable: it put the name here the moment it came online. read_roster
+        # is ordered last_seen DESC, so the first match is the freshest row, the
+        # same one the card's roster_names built from. A worker with no dispatch
+        # name (Pipecat) yields None here and falls through to the 400 below. If
+        # the name is wrong, the probe reaches no worker and the runner fails
+        # fast with that reason; nothing is faked.
+        if dispatch_name is None:
+            roster = await workers_repository.read_roster(
+                db, tenant_id=None, now=time.time(), ttl_seconds=DEFAULT_TTL_SECONDS
+            )
+            dispatch_name = next(
+                (
+                    w.dispatch_name
+                    for w in roster
+                    if w.agent_id == agent_id and w.dispatch_name is not None
+                ),
+                None,
+            )
     if dispatch_name is None:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"no LiveKit job observed for agent {agent_id!r}: VoiceGateway "
-                "reads the dispatch name from a call the agent actually ran, and "
-                "cannot invent one"
+                f"no LiveKit job observed for agent {agent_id!r} and no live "
+                "worker in the roster: VoiceGateway dispatches by the agent_name "
+                "a worker registers with, and has seen neither"
             ),
         )
 

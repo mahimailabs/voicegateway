@@ -33,6 +33,10 @@ class RosterRow:
 
     agent_id: str
     agent_name: str
+    # The LiveKit agent_name this worker dispatches under, or None when it has
+    # none (a Pipecat worker, or one that reported no dispatch name). Distinct
+    # from agent_name (a display label); the probe dispatches by this.
+    dispatch_name: str | None
     project: str
     tenant_id: str | None
     region: str | None
@@ -51,6 +55,7 @@ def _fields_from_presence(presence: dict[str, Any]) -> dict[str, Any]:
     return {
         "agent_id": presence["agent_id"],
         "agent_name": presence["agent_name"],
+        "dispatch_name": presence.get("dispatch_name"),
         "project": presence.get("project", "default"),
         "tenant_id": presence.get("tenant_id"),
         "region": presence.get("region"),
@@ -120,6 +125,7 @@ async def read_roster(
             RosterRow(
                 agent_id=w.agent_id,
                 agent_name=w.agent_name,
+                dispatch_name=w.dispatch_name,
                 project=w.project,
                 tenant_id=w.tenant_id,
                 region=w.region,

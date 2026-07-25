@@ -32,6 +32,7 @@ def _row(**overrides: Any) -> RosterRow:
     base: dict[str, Any] = {
         "agent_id": "w1",
         "agent_name": "alpha",
+        "dispatch_name": "alpha",
         "project": "default",
         "tenant_id": None,
         "region": None,

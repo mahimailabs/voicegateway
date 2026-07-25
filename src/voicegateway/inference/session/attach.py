@@ -501,6 +501,11 @@ def _attach_livekit(
             collector_url=resolved_collector,
             api_key=resolved_key,
             local=True,
+            # The roster display name here is the VG agent-id label, not a LiveKit
+            # name, so record the dispatch name resolved from the job separately.
+            # None off a LiveKit job: the worker stays in the roster but is not
+            # probeable by a name it never registered under.
+            dispatch_name=resolved_dispatch_name,
         )
 
     on = getattr(session, "on", None)
@@ -673,6 +678,10 @@ def _attach_pipecat(
             collector_url=resolved_collector,
             api_key=resolved_key,
             local=True,
+            # A Pipecat worker is not on a LiveKit job, so it has no dispatch name
+            # and cannot be probed by one. Explicit None keeps it in the roster but
+            # off the probe path, rather than defaulting to the agent-id label.
+            dispatch_name=None,
         )
 
     return session_id

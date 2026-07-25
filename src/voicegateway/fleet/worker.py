@@ -56,6 +56,17 @@ _DEFAULT_INTERVAL = 15.0
 _DEFAULT_DB_PATH = "~/.config/voicegateway/voicegw.db"
 
 
+# Sentinel for register_worker(dispatch_name=...): "caller said nothing", which
+# defaults the dispatch name to agent_name (register_worker's name IS the LiveKit
+# dispatch name by convention). Passing an explicit None means "this worker has
+# no dispatch name" (a Pipecat agent), which must NOT fall back to agent_name.
+class _Unset:
+    pass
+
+
+_UNSET = _Unset()
+
+
 @dataclass
 class _Worker:
     agent_id: str
@@ -66,6 +77,9 @@ class _Worker:
     region: str | None
     host: str
     started_at: float
+    # The LiveKit agent_name this worker dispatches under, or None when it has no
+    # LiveKit dispatch (Pipecat). Distinct from agent_name (the display label).
+    dispatch_name: str | None = None
     active_sessions: int = 0
 
     @property
@@ -79,6 +93,7 @@ class _Worker:
         return {
             "agent_id": self.agent_id,
             "agent_name": self.agent_name,
+            "dispatch_name": self.dispatch_name,
             "status": self.status,
             "active_sessions": self.active_sessions,
             "version": self.version,
@@ -122,6 +137,7 @@ def register_worker(
     interval: float = _DEFAULT_INTERVAL,
     local: bool = False,
     db_path: str | None = None,
+    dispatch_name: str | None | _Unset = _UNSET,
 ) -> str:
     """Register this process as an agent worker and start heartbeating.
 
@@ -135,13 +151,24 @@ def register_worker(
     right away. Without a collector and without ``local``, the worker is tracked in
     this process but nothing is pushed. ``api_key`` falls back to
     ``VOICEGW_API_KEY``; ``region`` to ``VOICEGW_REGION``. Returns the agent id.
+
+    ``dispatch_name`` is the LiveKit agent_name this worker dispatches under, which
+    the dashboard's probe uses to place a call by name. Left unset, it defaults to
+    ``agent_name``: the name you register a LiveKit worker with is the name LiveKit
+    dispatches to, so ``register_worker("reception")`` is probeable as "reception".
+    Pass an explicit ``None`` for a worker with no LiveKit dispatch (a Pipecat
+    agent), which keeps it in the roster but not probeable by name.
     """
     global _worker, _collector_url, _api_key, _interval, _local_db_path, _local_enabled
     from voicegateway._version import __version__
 
+    resolved_dispatch = (
+        agent_name if isinstance(dispatch_name, _Unset) else dispatch_name
+    )
     _worker = _Worker(
         agent_id=_agent_id(),
         agent_name=agent_name,
+        dispatch_name=resolved_dispatch,
         version=version or __version__,
         project=project,
         tenant_id=tenant_id,
@@ -180,12 +207,18 @@ def ensure_registered(
     interval: float = _DEFAULT_INTERVAL,
     local: bool = False,
     db_path: str | None = None,
+    dispatch_name: str | None | _Unset = _UNSET,
 ) -> str:
     """Register + heartbeat only if this process has no worker yet.
 
     ``attach(heartbeat=True)`` calls this so it never clobbers an explicit
     ``register_worker`` done at ``__main__`` boot; if one exists, it just makes sure
     the heartbeat is running and returns its agent id.
+
+    ``attach`` here passes ``agent_name`` = the VoiceGateway agent-id label (not a
+    LiveKit name), so it also passes ``dispatch_name`` explicitly (the value it
+    resolved from the job, or ``None`` off a LiveKit job) rather than letting it
+    default to that label.
     """
     if _worker is not None:
         _ensure_running()
@@ -201,6 +234,7 @@ def ensure_registered(
         interval=interval,
         local=local,
         db_path=db_path,
+        dispatch_name=dispatch_name,
     )
 
 

@@ -10,6 +10,17 @@ import uuid
 from dataclasses import dataclass, field
 from statistics import mean
 
+# Identity the synthetic caller joins the probe room under. Anything else in the
+# room is the agent we dispatched, which is how the probe confirms a worker
+# actually answered.
+_CALLER_IDENTITY = "vg-probe"
+# How long to wait for a dispatched worker to join before calling the room empty.
+# A worker on LiveKit Cloud is dispatched in well under a second; this is slack
+# for a cold self-hosted worker, not a value the happy path ever spends (the
+# poll returns the instant the agent appears).
+_AGENT_JOIN_TIMEOUT = 8.0
+_AGENT_POLL_INTERVAL = 0.25
+
 
 @dataclass
 class LatencyResult:
@@ -155,6 +166,59 @@ class ProbeRunner:
         self._utterance = utterance
         self._reader = reader or ComponentReader()
 
+    async def _await_agent(self, room: str, agent: str, *, explicit: bool) -> None:
+        """Block until a worker joins ``room``, or raise a named failure.
+
+        A dispatch to a name no running worker registered, and automatic dispatch
+        with no worker online, both look identical downstream: the caller speaks
+        into an empty room and ``wait_reply`` simply times out, producing an
+        all-null sample with no error. That reads as "measured nothing" when the
+        truth is "nobody answered". Polling the participant list turns that silent
+        empty into a reason the operator can act on.
+
+        Fails OPEN on an inconclusive check. If every participant read itself
+        errored (a transient control-plane hiccup, or an ``admin`` with no
+        ``room_participant_identities``) we never learned the room was empty, so
+        we let the call proceed and speak for itself rather than block a probe
+        that may well be fine. It fails CLOSED only on a clean read that shows no
+        one but the caller in the room by the deadline.
+        """
+        read = getattr(self._admin, "room_participant_identities", None)
+        if not callable(read):
+            return  # cannot verify presence on this admin; do not block the probe
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _AGENT_JOIN_TIMEOUT
+        saw_empty = False
+        # Read, THEN decide whether to break on the deadline, so the last thing
+        # before giving up is a fresh read: a worker that joins just before the
+        # deadline is still seen, rather than missed because the final decision
+        # rode on a snapshot taken a poll-interval earlier.
+        while True:
+            try:
+                idents = await read(room)
+                if any(i and i != _CALLER_IDENTITY for i in idents):
+                    return  # a worker joined
+                saw_empty = True
+            except Exception:  # noqa: BLE001 - an unreadable roster is inconclusive
+                pass
+            if loop.time() >= deadline:
+                break
+            await asyncio.sleep(_AGENT_POLL_INTERVAL)
+        if not saw_empty:
+            return  # never got a clean read; do not fail on an inconclusive check
+        secs = int(_AGENT_JOIN_TIMEOUT)
+        if explicit:
+            raise RuntimeError(
+                f"dispatched to {agent!r} but no worker joined within {secs}s: "
+                "that name is how the worker registered (register_worker / "
+                "@server.rtc_session agent_name); check a worker with that name "
+                "is running"
+            )
+        raise RuntimeError(
+            f"created a probe room but no automatic-dispatch worker joined "
+            f"within {secs}s: check a worker for this agent is running"
+        )
+
     async def probe(
         self,
         agent: str,
@@ -194,10 +258,11 @@ class ProbeRunner:
                 if dispatch:
                     await self._admin.create_dispatch(room, agent, metadata)
                 client = self._make_client(
-                    self._url, self._admin.join_token(room, "vg-probe")
+                    self._url, self._admin.join_token(room, _CALLER_IDENTITY)
                 )
                 await client.connect()
                 try:
+                    await self._await_agent(room, agent, explicit=dispatch)
                     t0 = await client.publish_utterance(self._utterance)
                     e2e = await client.wait_reply(t0)
                 finally:

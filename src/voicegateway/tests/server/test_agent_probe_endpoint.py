@@ -32,6 +32,10 @@ from voicegateway.server.api.dashboard import agents
 
 _CREDS = LiveKitCreds("wss://fake", "key", "secret")
 
+# Sentinel so _seed_roster can tell "dispatch_name not passed" (default to the
+# display name) from an explicit None (a Pipecat worker with no dispatch name).
+_UNSET_ARG = object()
+
 # What a probe returns when everything was measurable. The endpoint must not
 # reshape it. Keep in step with test_result_shape_is_pinned in
 # tests/livekit_diag/test_probe_agent.py, which asserts the real key set: this
@@ -108,6 +112,31 @@ async def _seed_dispatch(gw: Gateway, agent_id: str, name: str, ts: float = 1.0)
     )
 
 
+async def _seed_roster(
+    gw: Gateway, agent_id: str, name: str, dispatch_name: str | None = _UNSET_ARG
+) -> None:
+    """Register a live worker in the roster, the way register_worker's heartbeat
+    does: this is the fallback source for an agent that has come online but not
+    yet served an observed call. ``dispatch_name`` defaults to ``name`` (a worker
+    registered under a name dispatches by it); pass ``None`` for a worker with no
+    LiveKit dispatch (a Pipecat agent), which stays in the roster but not
+    probeable."""
+    from sqlalchemy import text
+
+    dn = name if dispatch_name is _UNSET_ARG else dispatch_name
+    await gw.storage._ensure_initialized()
+    async with gw.storage._conn.session() as db:
+        await db.execute(
+            text(
+                "INSERT INTO workers (agent_id, agent_name, dispatch_name, "
+                "project, status, last_seen) VALUES (:a, :n, :dn, 'default', "
+                "'idle', :now)"
+            ),
+            {"a": agent_id, "n": name, "dn": dn, "now": time.time()},
+        )
+        await db.commit()
+
+
 def _configured(monkeypatch) -> None:
     monkeypatch.setattr(agents, "_resolve_creds", lambda: _CREDS)
 
@@ -170,6 +199,64 @@ async def test_probe_dispatches_to_the_observed_name(tmp_path, monkeypatch):
     assert len(seen["nonce"]) == 8  # unique room per press
 
 
+async def test_probe_falls_back_to_the_roster_name(tmp_path, monkeypatch):
+    """No observed job, but a live worker in the roster: the endpoint dispatches
+    to the name that worker registered with instead of refusing."""
+    gw = _gateway(tmp_path, monkeypatch)
+    await _seed_roster(gw, "reception", "reception")
+    _configured(monkeypatch)
+    seen: dict[str, Any] = {}
+
+    async def _capture(creds, **kw):
+        seen.update(kw)
+        return _SAMPLE
+
+    _patch_probe(monkeypatch, _capture)
+    async with _client(gw) as c:
+        resp = await c.post("/api/agents/reception/probe")
+    assert resp.status_code == 200
+    assert seen["dispatch_name"] == "reception"
+    assert seen["agent_id"] == "reception"
+
+
+async def test_probe_refuses_a_worker_with_no_dispatch_name(tmp_path, monkeypatch):
+    """A roster row whose dispatch_name is None (a Pipecat worker) has no name to
+    dispatch by, so the endpoint refuses rather than dispatch the display label."""
+    gw = _gateway(tmp_path, monkeypatch)
+    await _seed_roster(gw, "pipecat-bot", "pipecat-bot", dispatch_name=None)
+    _configured(monkeypatch)
+    called = False
+
+    async def _never(*a, **kw):
+        nonlocal called
+        called = True
+        return _SAMPLE
+
+    _patch_probe(monkeypatch, _never)
+    async with _client(gw) as c:
+        resp = await c.post("/api/agents/pipecat-bot/probe")
+    assert resp.status_code == 400
+    assert called is False
+
+
+async def test_probe_prefers_the_observed_name_over_the_roster(tmp_path, monkeypatch):
+    """Both sources present: the endpoint dispatches to the proven name."""
+    gw = _gateway(tmp_path, monkeypatch)
+    await _seed_dispatch(gw, "support", "observed-name")
+    await _seed_roster(gw, "support", "roster-name")
+    _configured(monkeypatch)
+    seen: dict[str, Any] = {}
+
+    async def _capture(creds, **kw):
+        seen.update(kw)
+        return _SAMPLE
+
+    _patch_probe(monkeypatch, _capture)
+    async with _client(gw) as c:
+        await c.post("/api/agents/support/probe")
+    assert seen["dispatch_name"] == "observed-name"
+
+
 async def test_an_automatic_dispatch_agent_is_probeable(tmp_path, monkeypatch):
     """An empty name is an answer (automatic dispatch), not a missing one."""
     gw = _gateway(tmp_path, monkeypatch)
@@ -228,11 +315,10 @@ async def test_probe_refuses_when_livekit_is_not_configured(tmp_path, monkeypatc
 
 
 async def test_probe_refuses_an_agent_with_no_observed_job(tmp_path, monkeypatch):
-    """No dispatch name observed means no worker to dispatch to.
-
-    The daemon cannot mint one: dispatch eligibility is decided at worker
-    registration inside the agent's own process, so an invented name would
-    resolve to nothing and the probe would hang until it timed out.
+    """No observed job AND no live worker in the roster means no name to
+    dispatch by. The daemon dispatches by the agent_name a worker registers
+    with; with neither source it has nothing, so it refuses before any billed
+    traffic rather than inventing a name that would resolve to no worker.
     """
     gw = _gateway(tmp_path, monkeypatch)
     await gw.storage._ensure_initialized()
@@ -558,31 +644,53 @@ async def test_index_blames_missing_livekit_creds_first(tmp_path, monkeypatch):
     assert "LIVEKIT_URL" in probe["reason"]
 
 
-async def test_a_roster_only_worker_carries_a_probe_block(tmp_path, monkeypatch):
-    """An idle registered worker still gets the field, so the card can render."""
-    from sqlalchemy import text
-
+async def test_a_roster_only_worker_is_probeable_by_its_registered_name(
+    tmp_path, monkeypatch
+):
+    """A worker that has heartbeated but never served an observed call is still
+    probeable: register_worker's agent_name is what LiveKit dispatches by, so
+    the button need not wait for a first call. The reason flags the name as not
+    yet confirmed against a completed job."""
     gw = _gateway(tmp_path, monkeypatch)
-    await gw.storage._ensure_initialized()
-    async with gw.storage._conn.session() as db:
-        await db.execute(
-            text(
-                "INSERT INTO workers (agent_id, agent_name, project, status, "
-                "last_seen) VALUES ('idle-bot', 'idle-bot', 'default', 'idle', "
-                ":now)"
-            ),
-            {"now": time.time()},
-        )
-        await db.commit()
+    await _seed_roster(gw, "idle-bot", "idle-bot")
     _configured(monkeypatch)
     probe = (await _entry(gw, "idle-bot"))["probe"]
-    assert probe["eligible"] is False  # never ran an observed job
-    assert "no LiveKit job observed" in probe["reason"]
+    assert probe["eligible"] is True
+    assert probe["dispatch_name"] == "idle-bot"
+    assert probe["mode"] == "explicit"
+    assert "registered" in probe["reason"]  # unverified-name caveat
+
+
+async def test_a_worker_with_no_dispatch_name_is_not_probeable(tmp_path, monkeypatch):
+    """A Pipecat worker (or any roster row with no LiveKit dispatch name) is in
+    the roster but has nothing to dispatch by, so its card stays ineligible."""
+    gw = _gateway(tmp_path, monkeypatch)
+    await _seed_roster(gw, "pipecat-bot", "pipecat-bot", dispatch_name=None)
+    _configured(monkeypatch)
+    probe = (await _entry(gw, "pipecat-bot"))["probe"]
+    assert probe["eligible"] is False
+    assert probe["dispatch_name"] is None
+
+
+async def test_observed_name_wins_over_the_roster(tmp_path, monkeypatch):
+    """When a completed job proved a name, that beats whatever the worker
+    currently claims in the roster: the proven value is more trustworthy."""
+    gw = _gateway(tmp_path, monkeypatch)
+    await _seed_dispatch(gw, "support", "observed-name")
+    await _seed_roster(gw, "support", "roster-name")
+    await _insert_obs(gw, "support")
+    _configured(monkeypatch)
+    probe = (await _entry(gw, "support"))["probe"]
+    assert probe["eligible"] is True
+    assert probe["dispatch_name"] == "observed-name"
+    assert probe["reason"] is None  # proven, so no caveat
 
 
 def test_unattributed_traffic_is_not_probeable() -> None:
     """Rows with no agent_id belong to no agent, so there is nothing to call."""
-    block = agents._probe_block(None, {}, livekit_configured=True, automatic_count=0)
+    block = agents._probe_block(
+        None, {}, {}, livekit_configured=True, automatic_count=0
+    )
     assert block["eligible"] is False
     assert block["dispatch_name"] is None
     assert "unattributed" in block["reason"]

@@ -201,12 +201,34 @@ class LiveKitAdmin:
         try:
             await self._api.room.delete_room(_req("DeleteRoomRequest", room=name))
         except Exception:  # noqa: BLE001
-            logger.debug("delete_room(%s): ignored (room already gone?)", name, exc_info=True)
+            logger.debug(
+                "delete_room(%s): ignored (room already gone?)", name, exc_info=True
+            )
 
-    async def create_dispatch(self, room: str, agent_name: str, metadata: str = "") -> None:
+    async def create_dispatch(
+        self, room: str, agent_name: str, metadata: str = ""
+    ) -> None:
         await self._api.agent_dispatch.create_dispatch(
-            _req("CreateAgentDispatchRequest", room=room, agent_name=agent_name, metadata=metadata)
+            _req(
+                "CreateAgentDispatchRequest",
+                room=room,
+                agent_name=agent_name,
+                metadata=metadata,
+            )
         )
+
+    async def room_participant_identities(self, room: str) -> list[str]:
+        """Identities currently in ``room``.
+
+        The probe uses it to confirm a dispatched worker actually joined: LiveKit
+        has no "did this dispatch find a worker" call, but a worker that took the
+        job shows up here as a participant. An empty read (only the probe's own
+        caller present) means nobody answered.
+        """
+        resp = await self._api.room.list_participants(
+            _req("ListParticipantsRequest", room=room)
+        )
+        return [p.identity for p in resp.participants]
 
     def join_token(self, room: str, identity: str) -> str:
         return (
