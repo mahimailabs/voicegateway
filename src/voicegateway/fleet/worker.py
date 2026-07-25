@@ -359,14 +359,19 @@ def _ensure_local_thread() -> None:
 def _local_run(stop: threading.Event, db_path: str, interval: float) -> None:
     """Thread body: own event loop, write presence to the shared DB each interval.
 
-    Does NOT create tables. The shared ``voicegw.db`` schema is owned by alembic
-    (the dashboard, and the agent's own cost sink, migrate it via
-    ``run_migrations``); seeding it here with ``create_all`` would create the 18
-    tables un-stamped and poison a later ``alembic upgrade head`` (breaking cost
-    tracking + the dashboard on that file). So the heartbeat write is best-effort:
-    it fails silently until something with alembic has created the ``workers``
-    table, then succeeds on a later interval. In the co-located case the dashboard
-    is running, so the table already exists.
+    Brings the shared ``voicegw.db`` to head once on startup via ``run_migrations``
+    (alembic upgrade), so a worker booting against a database older than its own
+    code (a schema this release added a column to, say) writes cleanly instead of
+    failing every interval until something else migrates it. That mattered for an
+    idle agent with no dashboard up and no call yet: nothing else would have run
+    a migration, and each heartbeat spewed a stack trace. This is ``alembic
+    upgrade``, NOT ``create_all``: it stamps the version table, so it composes
+    with the dashboard and the agent's own cost sink migrating the same file
+    rather than seeding 18 un-stamped tables and poisoning a later upgrade.
+
+    The write itself stays best-effort: if the one-time migration cannot run
+    (a locked file, a genuinely broken DB), presence is never load-bearing, so a
+    failed write is logged once and skipped rather than crashing the worker.
     """
     from voicegateway.core.config import GatewayConfig
     from voicegateway.core.database import Database
@@ -374,7 +379,9 @@ def _local_run(stop: threading.Event, db_path: str, interval: float) -> None:
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    conn = Database(GatewayConfig(cost_tracking={"db_path": os.path.expanduser(db_path)}))
+    conn = Database(
+        GatewayConfig(cost_tracking={"db_path": os.path.expanduser(db_path)})
+    )
 
     async def _write() -> None:
         w = _worker
@@ -383,13 +390,29 @@ def _local_run(stop: threading.Event, db_path: str, interval: float) -> None:
         async with conn.session() as db:
             await workers_repository.upsert_heartbeat(db, w.presence())
 
+    # Migrate the shared DB to head once, before the first write. Best-effort:
+    # a failure here (a locked file, no write access) leaves the writes to fail
+    # gracefully below, exactly as when this thread did not migrate at all.
+    try:
+        loop.run_until_complete(conn.run_migrations())
+    except Exception:  # noqa: BLE001 - migration is best-effort; writes degrade gracefully
+        logger.debug("local heartbeat: startup migration failed", exc_info=True)
+
+    # A failed write is logged in full once, then quietly: an unmigratable or
+    # locked DB must not stamp a stack trace into the agent's console every
+    # interval for the life of the process.
+    logged_write_failure = False
     try:
         while not stop.is_set():
             if _worker is not None:
                 try:
                     loop.run_until_complete(_write())
                 except Exception:  # noqa: BLE001 - presence is never load-bearing
-                    logger.debug("local heartbeat write failed", exc_info=True)
+                    if not logged_write_failure:
+                        logger.debug("local heartbeat write failed", exc_info=True)
+                        logged_write_failure = True
+                    else:
+                        logger.debug("local heartbeat write failed (suppressed trace)")
             stop.wait(interval)
     finally:
         try:
