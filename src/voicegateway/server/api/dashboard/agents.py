@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import logging
 import time
 import uuid
 from typing import TYPE_CHECKING, Any
@@ -24,10 +25,16 @@ from voicegateway.core.auth import ADMIN_SCOPE
 from voicegateway.livekit_diag import service as diag_service
 from voicegateway.livekit_diag.config import CredsError, resolve_creds
 from voicegateway.repository import agent_observations_repository as agent_obs
+from voicegateway.repository import (
+    agent_probe_result_repository,
+    request_log_repository,
+    workers_repository,
+)
 from voicegateway.repository import agents_repository as agents
-from voicegateway.repository import request_log_repository, workers_repository
 from voicegateway.repository.workers_repository import DEFAULT_TTL_SECONDS
 from voicegateway.server.api._deps import get_gateway, require_scope
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -220,6 +227,27 @@ def _probe_block(
     }
 
 
+def _latency_probe(cached: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Flatten a cached probe result for the Agents-page latency graph.
+
+    ``cached`` is ``{"result": <probe response>, "created_at": <float>}`` from the
+    probe cache, or None when this agent has never been probed. The split, e2e,
+    cost, models and any error come straight from the stored probe; ``created_at``
+    lets the UI say how fresh the sample is and offer a refresh.
+    """
+    if cached is None:
+        return None
+    r = cached["result"]
+    return {
+        "components": r.get("components"),
+        "e2e": r.get("e2e"),
+        "cost_usd": r.get("cost_usd"),
+        "models": r.get("models"),
+        "error": r.get("error"),
+        "created_at": cached["created_at"],
+    }
+
+
 def _agent_entry(
     row: AgentObservationRow,
     roster: RosterRow | None,
@@ -230,6 +258,7 @@ def _agent_entry(
     last_seen: float | None = None,
     agent_name: str | None = None,
     probe: dict[str, Any],
+    latency_probe: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     resources = _resources(roster)
     return {
@@ -262,11 +291,17 @@ def _agent_entry(
         # Whether the card's play button can place a probe, and why not if it
         # cannot. See _probe_block.
         "probe": probe,
+        # The last cached probe (split/e2e/cost/models), for the Agents-page
+        # latency graph. None until this agent has been probed.
+        "latency_probe": latency_probe,
     }
 
 
 def _roster_only_entry(
-    w: RosterRow, probe: dict[str, Any], models: dict[str, str]
+    w: RosterRow,
+    probe: dict[str, Any],
+    models: dict[str, str],
+    latency_probe: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """A registered worker that has not written any rollup telemetry yet.
 
@@ -295,6 +330,7 @@ def _roster_only_entry(
         "latency_ms": {"stt": None, "llm": None, "tts": None},
         "fleet_status": w.status,
         "probe": probe,
+        "latency_probe": latency_probe,
     }
 
 
@@ -361,6 +397,9 @@ async def list_agents_endpoint(
         # windowed for the same reason: an agent's dispatch name is a property
         # of how its worker registered, not of recent traffic.
         dispatch_names = await request_log_repository.read_last_seen_dispatch_name(db)
+        # Cached probe result per agent, for the Agents-page latency graph. Small
+        # (one row per probed agent), so read the whole cache rather than filter.
+        probe_cache = await agent_probe_result_repository.read_probe_results(db)
     # Dedup the roster by agent_id, keeping the FRESHEST heartbeat. read_roster is
     # ordered last_seen DESC, so the first row per id is freshest; setdefault keeps
     # it. The full-fleet read (tenant_id=None) can return >1 row for one agent_id
@@ -421,6 +460,9 @@ async def list_agents_endpoint(
                 ),
                 agent_name=w.agent_name if w is not None else None,
                 probe=_probe_for(r.agent_id),
+                latency_probe=_latency_probe(
+                    probe_cache.get(r.agent_id) if r.agent_id else None
+                ),
             )
         )
         if r.agent_id:
@@ -436,7 +478,12 @@ async def list_agents_endpoint(
         if ql is not None and ql not in w.agent_id.lower():
             continue
         agents_out.append(
-            _roster_only_entry(w, _probe_for(w.agent_id), cascade.get(w.agent_id, {}))
+            _roster_only_entry(
+                w,
+                _probe_for(w.agent_id),
+                cascade.get(w.agent_id, {}),
+                _latency_probe(probe_cache.get(w.agent_id)),
+            )
         )
 
     return {
@@ -542,7 +589,7 @@ async def probe_agent_endpoint(
     _PROBE_LAST_RUN[agent_id] = now
     _PROBES_INFLIGHT.add(agent_id)
     try:
-        return await asyncio.wait_for(
+        result = await asyncio.wait_for(
             diag_service.probe_agent(
                 creds,
                 agent_id=agent_id,
@@ -564,6 +611,20 @@ async def probe_agent_endpoint(
         raise HTTPException(status_code=504, detail="probe timed out") from None
     finally:
         _PROBES_INFLIGHT.discard(agent_id)
+
+    # Cache this result so the Agents page can render the agent's latency graph
+    # without re-running a billed probe on every view. Best-effort: a cache write
+    # that fails must not fail the probe the caller already paid for. Failures and
+    # all-null results are cached too: "the last probe errored / measured nothing"
+    # is honest state for the page, and refresh re-runs it.
+    try:
+        async with gateway.storage._conn.session() as db:
+            await agent_probe_result_repository.upsert_probe_result(
+                db, agent_id, result, time.time()
+            )
+    except Exception:  # noqa: BLE001 - the probe succeeded; the cache is a convenience
+        logger.warning("probe result cache write failed", exc_info=True)
+    return result
 
 
 @router.get("/{agent_id}")

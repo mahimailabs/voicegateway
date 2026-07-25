@@ -177,6 +177,39 @@ async def _echo(value: Any) -> Any:
     return value
 
 
+async def test_probe_caches_result_and_index_exposes_latency_probe(
+    tmp_path, monkeypatch
+):
+    """A probe caches its result; the fleet index then serves it as latency_probe
+    so the Agents page renders the split without re-running a billed probe."""
+    gw = _gateway(tmp_path, monkeypatch)
+    await _seed_dispatch(gw, "support", "support-bot")
+    await _insert_obs(gw, "support")  # so it appears on the index
+    _configured(monkeypatch)
+    _patch_probe(monkeypatch, lambda *a, **kw: _echo(_SAMPLE))
+    async with _client(gw) as c:
+        await c.post("/api/agents/support/probe")
+        listing = (await c.get("/api/agents")).json()["agents"]
+    entry = next(a for a in listing if a["agent_id"] == "support")
+    lp = entry["latency_probe"]
+    assert lp is not None
+    assert lp["components"] == _SAMPLE["components"]
+    assert lp["cost_usd"] == _SAMPLE["cost_usd"]
+    assert lp["created_at"] > 0
+
+
+async def test_index_latency_probe_is_null_before_any_probe(tmp_path, monkeypatch):
+    """An agent that has never been probed has no cached latency graph."""
+    gw = _gateway(tmp_path, monkeypatch)
+    await _seed_dispatch(gw, "support", "support-bot")
+    await _insert_obs(gw, "support")
+    _configured(monkeypatch)
+    async with _client(gw) as c:
+        listing = (await c.get("/api/agents")).json()["agents"]
+    entry = next(a for a in listing if a["agent_id"] == "support")
+    assert entry["latency_probe"] is None
+
+
 async def test_probe_dispatches_to_the_observed_name(tmp_path, monkeypatch):
     """The name is read back from telemetry, never chosen by the dashboard."""
     gw = _gateway(tmp_path, monkeypatch)

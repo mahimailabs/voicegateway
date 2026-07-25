@@ -241,6 +241,17 @@ export interface AgentRow {
   /** Whether this agent's card can place a probe, and why not when it cannot.
    * Absent on older servers, which the UI reads as "no play button". */
   probe?: AgentProbeBlock;
+  /** The agent's last cached probe (run once, refreshable), for the Agents-page
+   * latency graph. Null until this agent has been probed. */
+  latency_probe?: {
+    components: AgentProbeResult['components'];
+    e2e: AgentProbeResult['e2e'];
+    cost_usd: number | null;
+    models: AgentProbeResult['models'] | null;
+    error: string | null;
+    /** Epoch seconds the probe ran, so the UI can say how fresh it is. */
+    created_at: number;
+  } | null;
 }
 
 export type ProbeMode = 'explicit' | 'automatic';
