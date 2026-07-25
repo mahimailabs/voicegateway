@@ -1,4 +1,4 @@
-"""Unit tests for the fleet memory sampler."""
+"""Unit tests for the fleet memory + CPU sampler."""
 
 from __future__ import annotations
 
@@ -10,6 +10,18 @@ def test_sample_memory_returns_plausible_values() -> None:
     assert isinstance(rss, int) and rss > 0
     assert isinstance(total, int) and total > 0
     assert rss <= total  # a process cannot use more than the ceiling
+
+
+def test_sample_cpu_first_call_primes_then_reports_a_share(monkeypatch) -> None:
+    """The first call has no baseline and returns None ("not sampled yet"), never
+    a 0.0 that the UI would render as a confident "0% used"; later calls report a
+    machine-capacity share in [0, 100]."""
+    monkeypatch.setattr(resource, "_proc", None)  # fresh baseline for this test
+    first = resource.sample_cpu()
+    assert first is None
+    second = resource.sample_cpu()
+    assert isinstance(second, float)
+    assert 0.0 <= second <= 100.0
 
 
 def test_cgroup_limit_reads_v2_integer(tmp_path) -> None:

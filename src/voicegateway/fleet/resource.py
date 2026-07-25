@@ -56,4 +56,35 @@ def sample_memory() -> tuple[int | None, int | None]:
         return None, None
 
 
-__all__ = ["sample_memory"]
+# One persistent Process handle: psutil computes CPU% as the delta between
+# successive calls on the SAME object, so a fresh Process() each time would
+# always read 0. The heartbeat is the only caller and runs single-threaded per
+# transport, so a module global is safe.
+_proc: psutil.Process | None = None
+
+
+def sample_cpu() -> float | None:
+    """This worker's CPU use as a percent of the whole machine's capacity (0-100).
+
+    ``Process.cpu_percent`` is per-core (a busy process on 8 cores can report
+    800%), so divide by the core count to express "share of the machine", which
+    is the natural "utilized vs left" reading (left = 100 - this). The delta is
+    measured since the previous call, i.e. over one heartbeat interval; the first
+    call after boot has no baseline and returns None ("not sampled yet"), never a
+    0.0 that the UI would render as a confident "0% used". Best-effort: None on
+    failure. Floored at 0 so a float-precision negative delta never surfaces.
+    """
+    global _proc
+    try:
+        if _proc is None:
+            _proc = psutil.Process()
+            _proc.cpu_percent(interval=None)  # prime the baseline; no interval yet
+            return None
+        raw = float(_proc.cpu_percent(interval=None))
+        cores = psutil.cpu_count() or 1
+        return round(max(0.0, min(100.0, raw / cores)), 1)
+    except Exception:
+        return None
+
+
+__all__ = ["sample_cpu", "sample_memory"]

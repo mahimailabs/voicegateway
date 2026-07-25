@@ -18,6 +18,19 @@ export function formatMs(value: number | undefined | null): string {
   return `${Math.round(value)}ms`;
 }
 
+/** Human byte size (base-1024): 512 MB, 7.8 GB. '-' when unknown. */
+export function formatBytes(value: number | undefined | null): string {
+  if (value == null) return '-';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let v = value;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+}
+
 export function latencyBadgeClass(ms: number | undefined | null): string {
   if (ms == null || ms === 0) return 'neo-badge--black';
   if (ms < 200) return 'neo-badge--online';

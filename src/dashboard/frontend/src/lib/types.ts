@@ -217,6 +217,18 @@ export interface AgentRow {
   /** RSS as a percent of the worker's memory ceiling, merged from the live
    * roster; null when the agent is not a heartbeating worker or sent no sample. */
   memory_pct?: number | null;
+  /** CPU as a percent of the machine's capacity, from the live roster; null when
+   * the agent is not a heartbeating worker or sent no sample. */
+  cpu_pct?: number | null;
+  /** CPU + memory snapshot from the live roster. Percentages are shares of the
+   * machine's capacity (utilized; left = 100 - this). All null for a
+   * telemetry-only agent (no heartbeat) or a sample that failed. */
+  resources?: {
+    cpu_pct: number | null;
+    memory_pct: number | null;
+    memory_rss_bytes: number | null;
+    memory_total_bytes: number | null;
+  };
   /** Last-seen model per modality, from /api/agents; a modality is null when unseen. */
   models?: { stt: string | null; llm: string | null; tts: string | null };
   /** Average first-byte latency (ms) per modality over 24h, for the card
@@ -229,6 +241,21 @@ export interface AgentRow {
   /** Whether this agent's card can place a probe, and why not when it cannot.
    * Absent on older servers, which the UI reads as "no play button". */
   probe?: AgentProbeBlock;
+  /** The agent's last cached probe (run once, refreshable), for the Agents-page
+   * latency graph. Null until this agent has been probed. */
+  latency_probe?: {
+    components: AgentProbeResult['components'];
+    e2e: AgentProbeResult['e2e'];
+    cost_usd: number | null;
+    models: AgentProbeResult['models'] | null;
+    /** What the probe actually ran with, so the Overview card can render the
+     * cached sample verbatim without re-billing. */
+    mode: ProbeMode | null;
+    dispatch_name: string | null;
+    error: string | null;
+    /** Epoch seconds the probe ran, so the UI can say how fresh it is. */
+    created_at: number;
+  } | null;
 }
 
 export type ProbeMode = 'explicit' | 'automatic';

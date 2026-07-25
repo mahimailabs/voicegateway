@@ -8,6 +8,7 @@ both see them.
 from __future__ import annotations
 
 from voicegateway.models.agent_observation_model import AgentObservation
+from voicegateway.models.agent_probe_result_model import AgentProbeResult
 from voicegateway.models.api_key_model import ApiKey
 from voicegateway.models.base_model import BaseModel, BaseUUIDModel
 from voicegateway.models.config_audit_log_model import ConfigAuditLog
@@ -31,6 +32,7 @@ from voicegateway.models.worker_model import Worker
 
 __all__ = [
     "AgentObservation",
+    "AgentProbeResult",
     "BaseModel",
     "BaseUUIDModel",
     "ConfigAuditLog",

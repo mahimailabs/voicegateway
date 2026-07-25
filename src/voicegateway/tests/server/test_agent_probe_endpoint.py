@@ -177,6 +177,39 @@ async def _echo(value: Any) -> Any:
     return value
 
 
+async def test_probe_caches_result_and_index_exposes_latency_probe(
+    tmp_path, monkeypatch
+):
+    """A probe caches its result; the fleet index then serves it as latency_probe
+    so the Agents page renders the split without re-running a billed probe."""
+    gw = _gateway(tmp_path, monkeypatch)
+    await _seed_dispatch(gw, "support", "support-bot")
+    await _insert_obs(gw, "support")  # so it appears on the index
+    _configured(monkeypatch)
+    _patch_probe(monkeypatch, lambda *a, **kw: _echo(_SAMPLE))
+    async with _client(gw) as c:
+        await c.post("/api/agents/support/probe")
+        listing = (await c.get("/api/agents")).json()["agents"]
+    entry = next(a for a in listing if a["agent_id"] == "support")
+    lp = entry["latency_probe"]
+    assert lp is not None
+    assert lp["components"] == _SAMPLE["components"]
+    assert lp["cost_usd"] == _SAMPLE["cost_usd"]
+    assert lp["created_at"] > 0
+
+
+async def test_index_latency_probe_is_null_before_any_probe(tmp_path, monkeypatch):
+    """An agent that has never been probed has no cached latency graph."""
+    gw = _gateway(tmp_path, monkeypatch)
+    await _seed_dispatch(gw, "support", "support-bot")
+    await _insert_obs(gw, "support")
+    _configured(monkeypatch)
+    async with _client(gw) as c:
+        listing = (await c.get("/api/agents")).json()["agents"]
+    entry = next(a for a in listing if a["agent_id"] == "support")
+    assert entry["latency_probe"] is None
+
+
 async def test_probe_dispatches_to_the_observed_name(tmp_path, monkeypatch):
     """The name is read back from telemetry, never chosen by the dashboard."""
     gw = _gateway(tmp_path, monkeypatch)
@@ -410,6 +443,7 @@ async def test_the_lock_is_released_after_a_press(tmp_path, monkeypatch):
 async def test_a_hung_probe_times_out_without_wedging_the_agent(tmp_path, monkeypatch):
     gw = _gateway(tmp_path, monkeypatch)
     await _seed_dispatch(gw, "support", "support-bot")
+    await _insert_obs(gw, "support")  # so it appears on the index
     _configured(monkeypatch)
 
     async def _hang(*a, **kw):
@@ -418,7 +452,15 @@ async def test_a_hung_probe_times_out_without_wedging_the_agent(tmp_path, monkey
     _patch_probe(monkeypatch, _hang, timeout=0.05)
     async with _client(gw) as c:
         resp = await c.post("/api/agents/support/probe")
-    assert resp.status_code == 504
+        assert resp.status_code == 504
+        # A timeout is cached as an honest error too, so the page shows "errored"
+        # rather than a stale graph from an earlier good probe.
+        listing = (await c.get("/api/agents")).json()["agents"]
+    entry = next(a for a in listing if a["agent_id"] == "support")
+    lp = entry["latency_probe"]
+    assert lp is not None
+    assert lp["components"] is None
+    assert lp["error"] == "probe timed out"
     # The lock is released, so the agent is not probeable-never-again...
     assert agents._PROBES_INFLIGHT == set()
     # ...but the cooldown was stamped BEFORE the call, so a hung probe cannot be
@@ -426,36 +468,46 @@ async def test_a_hung_probe_times_out_without_wedging_the_agent(tmp_path, monkey
     assert agents._PROBE_LAST_RUN["support"] is not None
 
 
-async def test_a_failing_probe_still_releases_the_lock(tmp_path, monkeypatch):
+async def test_a_failing_probe_caches_the_error_and_releases_the_lock(
+    tmp_path, monkeypatch
+):
+    """A crash is caught, cached as an honest "errored" state, and surfaced as a
+    502, so the page never shows a stale graph and the agent stays probeable."""
     gw = _gateway(tmp_path, monkeypatch)
     await _seed_dispatch(gw, "support", "support-bot")
+    await _insert_obs(gw, "support")  # so it appears on the index
     _configured(monkeypatch)
 
     async def _boom(*a, **kw):
         raise RuntimeError("livekit exploded")
 
     _patch_probe(monkeypatch, _boom)
-    # The failure propagates (ASGITransport re-raises app exceptions); what
-    # matters is that the agent is not left permanently un-probeable by it.
     async with _client(gw) as c:
-        with pytest.raises(RuntimeError, match="exploded"):
-            await c.post("/api/agents/support/probe")
+        resp = await c.post("/api/agents/support/probe")
+        # The crash is surfaced, not swallowed into a tidy 200...
+        assert resp.status_code == 502
+        assert "livekit exploded" in resp.json()["detail"]
+        # ...and cached as an honest failure the index then serves, so the page
+        # shows "errored" instead of the previous good probe's stale split.
+        listing = (await c.get("/api/agents")).json()["agents"]
+    entry = next(a for a in listing if a["agent_id"] == "support")
+    lp = entry["latency_probe"]
+    assert lp is not None
+    assert lp["components"] is None  # nothing was measured
+    assert "livekit exploded" in lp["error"]
+    # The lock is released, so the agent is not left permanently un-probeable.
     assert agents._PROBES_INFLIGHT == set()
 
 
-async def test_an_unexpected_failure_is_a_500_and_still_costs_the_cooldown(
+async def test_an_unexpected_failure_is_a_502_and_still_costs_the_cooldown(
     tmp_path, monkeypatch
 ):
     """What reaches the operator when the probe blows up part-way through.
 
-    The test above pins that the lock is released, but it never sees a response:
-    the transport re-raises before one is produced. This one turns that off to
-    assert the status the browser actually gets.
-
-    The endpoint deliberately does not catch this into a tidy 200 carrying an
-    ``error`` string. ``probe_agent`` already reports the failures it can name
-    that way, so anything arriving here is unhandled, and a 500 is the honest
-    answer (it also keeps the traceback in the logs instead of swallowing it).
+    A crash the probe service could not name is caught, cached as an honest
+    "errored" state (so the page never shows a stale graph), and surfaced as a
+    502 carrying the reason. The traceback still lands in the logs; it is not
+    swallowed into a tidy 200.
 
     The cooldown survives the failure on purpose. The stamp is written before
     the call, and an exception raised part-way through may well follow a call
@@ -470,10 +522,10 @@ async def test_an_unexpected_failure_is_a_500_and_still_costs_the_cooldown(
         raise RuntimeError("livekit exploded")
 
     _patch_probe(monkeypatch, _boom)
-    app = build_app(gw)
-    transport = ASGITransport(app=app, raise_app_exceptions=False)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        assert (await c.post("/api/agents/support/probe")).status_code == 500
+    async with _client(gw) as c:
+        first = await c.post("/api/agents/support/probe")
+        assert first.status_code == 502
+        assert "livekit exploded" in first.json()["detail"]
         assert (await c.post("/api/agents/support/probe")).status_code == 429
 
 
