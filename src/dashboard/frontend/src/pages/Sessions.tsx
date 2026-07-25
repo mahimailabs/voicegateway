@@ -16,6 +16,7 @@ import type {
   SessionDetail,
   SessionOrderBy,
   SessionRow,
+  TranscriptTurn,
 } from '../lib/types';
 
 interface ProjectEntry {
@@ -361,12 +362,92 @@ function SessionDetailModal({
           </div>
         </div>
 
+        <TranscriptPane sessionId={session.id} />
+
         <div className="flex-row mt-lg">
           <button className="neo-btn neo-btn--primary" onClick={onClose}>
             Close
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Turn-by-turn call transcript, lazily fetched when the modal opens. Rendered as
+// role-aligned bubbles (agent left, user right). No per-turn timestamp: turns are
+// persisted together when the call ends, so a per-turn time would be misleading.
+function TranscriptPane({ sessionId }: { sessionId: string }) {
+  const [turns, setTurns] = useState<TranscriptTurn[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setTurns(null);
+    fetchJson<{ session_id: string; turns: TranscriptTurn[] }>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/transcript`,
+    )
+      .then((d) => alive && setTurns(d.turns))
+      .catch(() => alive && setTurns([]));
+    return () => {
+      alive = false;
+    };
+  }, [sessionId]);
+
+  return (
+    <div className="mt-lg">
+      <div className="label">Transcript</div>
+      {turns === null ? (
+        <div className="empty-state mt-sm">Loading transcript...</div>
+      ) : turns.length === 0 ? (
+        <div className="empty-state mt-sm">No transcript captured for this call.</div>
+      ) : (
+        <div
+          className="mt-sm"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            maxHeight: 320,
+            overflowY: 'auto',
+          }}
+        >
+          {turns.map((t) => {
+            const isAgent = t.role === 'agent';
+            return (
+              <div
+                key={t.seq}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: isAgent ? 'flex-start' : 'flex-end',
+                }}
+              >
+                <span
+                  className="vg-card__label"
+                  style={{ fontSize: 10, marginBottom: 2 }}
+                >
+                  {isAgent ? 'Agent' : 'User'}
+                </span>
+                <span
+                  style={{
+                    maxWidth: '82%',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--vg-radius-sm)',
+                    background: isAgent ? 'var(--vg-teal-tint)' : 'var(--vg-hairline-2)',
+                    color: 'var(--vg-ink)',
+                    fontSize: 13,
+                    lineHeight: 1.45,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {t.text}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

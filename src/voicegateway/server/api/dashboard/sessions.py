@@ -3,6 +3,7 @@
 - GET /api/sessions: list recent sessions
 - GET /api/sessions/{id}: single-session details
 - GET /api/sessions/{id}/turns: per-turn rows
+- GET /api/sessions/{id}/transcript: per-turn call transcript
 - GET /api/sessions/{id}/dead_air: dead-air events for one session
 
 The replay endpoints on /api/sessions/{id}/replay live in
@@ -115,6 +116,22 @@ async def get_session_turns(
         "session_id": session_id,
         "turns": [dataclasses.asdict(t) for t in rows],
     }
+
+
+@router.get("/{session_id}/transcript")
+async def get_session_transcript(
+    session_id: str, gateway: Gateway = Depends(get_gateway)
+) -> dict[str, Any]:
+    """Return the ordered per-turn transcript for a call.
+
+    Populated when transcript capture is on (``attach(transcript=True)``, the
+    default). Returns an empty list (not a 404) when a call has no captured
+    transcript, so the UI can show a clean empty state.
+    """
+    if gateway.storage is None:
+        return {"session_id": session_id, "turns": []}
+    turns = await gateway.storage.get_transcript(session_id)
+    return {"session_id": session_id, "turns": turns}
 
 
 @router.get("/{session_id}/dead_air")

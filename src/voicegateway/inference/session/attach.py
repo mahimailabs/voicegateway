@@ -340,6 +340,7 @@ def attach(
     sink: Sink | None = None,
     room: str | None = None,
     heartbeat: bool = False,
+    transcript: bool = True,
 ) -> str:
     """Attach VoiceGateway to a LiveKit ``AgentSession`` or Pipecat ``PipelineTask``.
 
@@ -383,6 +384,14 @@ def attach(
             ``register_worker("agent", local=True)`` at your ``__main__`` boot
             instead, and do not also pass ``heartbeat=True`` there (the subprocess
             would become a second writer of the same roster row).
+        transcript: capture the call transcript (default on). On close, the
+            user/agent text turns are read from the framework's conversation
+            history and written to the local store, so the Calls page can show
+            the conversation. Pass ``transcript=False`` to disable per attach, or
+            set ``VOICEGW_TRANSCRIPTS=0`` to disable capture fleet-wide (the
+            kill-switch wins over the argument). Captures to the local SQLite the
+            co-located dashboard reads; currently LiveKit-only (the Pipecat path
+            accepts the flag but does not capture transcripts yet).
 
     Returns:
         The correlation session id stamped on every captured row.
@@ -402,6 +411,7 @@ def attach(
             api_key=api_key,
             sink=sink,
             heartbeat=heartbeat,
+            transcript=transcript,
         )
     return _attach_livekit(
         session,
@@ -413,7 +423,44 @@ def attach(
         sink=sink,
         room=room,
         heartbeat=heartbeat,
+        transcript=transcript,
     )
+
+
+def _transcripts_enabled(param: bool) -> bool:
+    """Whether to capture transcripts: the ``attach(transcript=)`` flag, unless
+    the ``VOICEGW_TRANSCRIPTS`` kill-switch explicitly disables it fleet-wide."""
+    env = os.environ.get("VOICEGW_TRANSCRIPTS")
+    if env is not None and env.strip().lower() in ("0", "false", "no", "off"):
+        return False
+    return param
+
+
+async def _capture_transcript_from_history(
+    session: Any, session_id: str, storage: Any, tenant_id: str | None
+) -> None:
+    """Best-effort: persist the call transcript from the framework history.
+
+    Reads the AgentSession's conversation history (populated by close time), keeps
+    the user/agent text turns (mapping the ``assistant`` role to ``agent``), and
+    writes them to the local transcript store. Never raises: a capture failure
+    must not affect the agent.
+    """
+    try:
+        history = getattr(session, "history", None)
+        items = getattr(history, "items", None)
+        if not items:
+            return
+        turns: list[tuple[str, str]] = []
+        for item in items:
+            role = getattr(item, "role", None)
+            body = getattr(item, "text_content", None)
+            if role in ("user", "assistant") and isinstance(body, str) and body.strip():
+                turns.append(("agent" if role == "assistant" else "user", body))
+        if turns:
+            await storage.write_transcript(session_id, turns, tenant_id=tenant_id)
+    except Exception:  # noqa: BLE001 - transcripts are never load-bearing
+        logger.debug("attach: transcript capture failed", exc_info=True)
 
 
 def _attach_livekit(
@@ -427,6 +474,7 @@ def _attach_livekit(
     sink: Sink | None = None,
     room: str | None = None,
     heartbeat: bool = False,
+    transcript: bool = True,
 ) -> str:
     """LiveKit ``attach()`` body: bind ``MetricCapture`` to an ``AgentSession``."""
     import asyncio
@@ -467,6 +515,8 @@ def _attach_livekit(
     except Exception:  # noqa: BLE001 - real session may forbid attribute set
         logger.debug("attach: could not stash capture on session", exc_info=True)
 
+    transcript_on = _transcripts_enabled(transcript)
+
     async def _finish() -> None:
         # Reconcile cumulative session.usage against the per-call rows, drain
         # in-flight writes, then flush the sink so a buffered RemoteCollectorSink
@@ -475,6 +525,14 @@ def _attach_livekit(
         await capture.reconcile(session)
         await capture.drain()
         await sink.flush()
+        if transcript_on:
+            # LocalSqliteSink exposes the storage the co-located dashboard reads;
+            # remote/ClickHouse sinks have no local transcript store (None -> skip).
+            storage = getattr(sink, "_storage", None)
+            if storage is not None:
+                await _capture_transcript_from_history(
+                    session, session_id, storage, tenant_id
+                )
 
     def _on_close(*_args: Any, **_kwargs: Any) -> None:
         try:
@@ -615,13 +673,19 @@ def _attach_pipecat(
     api_key: str | None = None,
     sink: Sink | None = None,
     heartbeat: bool = False,
+    transcript: bool = True,
 ) -> str:
     """Register a ``VoiceGatewayObserver`` on a Pipecat ``PipelineTask``.
 
     Mirrors the LiveKit ``attach`` path: builds the same sink, stamps the tenant
     ContextVar, and returns the correlation session id. The observer is the sole
     meter; it finalizes itself on the pipeline ``EndFrame`` (drain + flush).
+
+    ``transcript`` is accepted for signature parity with the LiveKit path but is
+    not captured on Pipecat yet (its transcript would come from transcription
+    frames, a separate hook); it is a no-op here.
     """
+    _ = transcript  # reserved: Pipecat transcript capture is a future step
     from voicegateway.inference.pipecat.observer import VoiceGatewayObserver
 
     resolved_agent_id = agent_id or _default_agent_id()

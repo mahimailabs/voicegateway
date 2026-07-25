@@ -104,6 +104,15 @@ export interface SessionDetail extends SessionRow {
   providers: string[];
 }
 
+/** One captured transcript turn for a call (from /api/sessions/{id}/transcript). */
+export interface TranscriptTurn {
+  session_id: string;
+  seq: number;
+  role: string; // 'user' | 'agent'
+  text: string;
+  created_at?: string | null;
+}
+
 export type SessionOrderBy =
   | 'started_at_desc'
   | 'started_at_asc'
