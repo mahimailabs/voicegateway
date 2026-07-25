@@ -35,6 +35,15 @@ if (
 
 
 def _resolve_url() -> str:
+    # A caller that already knows which database it means (Database.
+    # run_migrations, built from an explicit config) passes the URL through as
+    # an attribute. Honour it first: loading voicegw.yaml here would redirect
+    # those migrations to whatever database the yaml names, which is how a test
+    # holding its own tmp database ends up migrating the operator's default one
+    # and leaving its own without tables.
+    explicit = alembic_config.attributes.get("voicegw_url")
+    if explicit:
+        return str(explicit)
     try:
         cfg = GatewayConfig.load()
     except Exception:

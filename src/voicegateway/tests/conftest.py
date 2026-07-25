@@ -1,5 +1,6 @@
 """Shared pytest fixtures."""
 
+import os
 import time
 import uuid
 
@@ -7,6 +8,26 @@ import pytest
 import yaml
 
 from voicegateway.models.request_model import RequestRecord
+
+# VOICEGW_DB_PATH beats an explicit db_path everywhere it is read, so one test
+# that sets it and forgets to unset it redirects every later StorageService,
+# Gateway, and migration in the run into a single shared file. That shows up as
+# "no such table" on a test's own tmp database and as UNIQUE-constraint
+# collisions between tests that never touched each other. Snapshot it per test
+# so a leak stops at the test that caused it.
+_LEAKY_ENV_VARS = ("VOICEGW_DB_PATH",)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_db_path_env():
+    """Restore process-global DB env vars a test may have set directly."""
+    saved = {name: os.environ.get(name) for name in _LEAKY_ENV_VARS}
+    yield
+    for name, value in saved.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
 
 
 @pytest.fixture(autouse=True)

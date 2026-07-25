@@ -705,6 +705,9 @@ class TestIngestCHRouting:
 
             asyncio.run(_run())
         finally:
+            # tmp is about to vanish: a VOICEGW_DB_PATH still pointing into it
+            # would redirect every later test's storage into this one file.
+            os.environ.pop("VOICEGW_DB_PATH", None)
             tmp_obj.cleanup()
 
     def test_ingest_returns_503_when_clickhouse_flush_fails(self):
@@ -795,6 +798,9 @@ class TestIngestCHRouting:
 
             asyncio.run(_run())
         finally:
+            # tmp is about to vanish: a VOICEGW_DB_PATH still pointing into it
+            # would redirect every later test's storage into this one file.
+            os.environ.pop("VOICEGW_DB_PATH", None)
             tmp_obj.cleanup()
 
     def test_ingest_sqlite_path_untouched_when_ch_client_absent(self):
@@ -866,4 +872,7 @@ class TestIngestCHRouting:
 
             asyncio.run(_run())
         finally:
+            # tmp is about to vanish: a VOICEGW_DB_PATH still pointing into it
+            # would redirect every later test's storage into this one file.
+            os.environ.pop("VOICEGW_DB_PATH", None)
             tmp_obj.cleanup()
