@@ -1,16 +1,24 @@
 """Per-component metric capture for ``voicegateway.attach()``.
 
-Subscribes to the NON-DEPRECATED per-component ``metrics_collected`` events on
-an ``AgentSession``'s stt/llm/tts components, maps each LiveKit metric to a
+Subscribes to the per-component ``metrics_collected`` events on an
+``AgentSession``'s stt/llm/tts components, maps each LiveKit metric to a
 ``RequestRecord``, and writes it through a ``Sink``. This works for ANY plugin,
 because native LiveKit plugins (and ``livekit.agents.inference``) emit these
 per-component events regardless of how they were constructed.
 
-We deliberately avoid the session-level ``metrics_collected`` event, which is
-deprecated in livekit-agents 1.5+. Unit conventions mirror
-``InstrumentationMixin._extract_units``: LLM passes raw tokens, STT passes
-audio MINUTES (the cost path multiplies back by 60 to recover seconds), TTS
-passes characters.
+A component set on the ``Agent`` (``Agent(llm=...)``) rather than the
+``AgentSession`` is not a session slot, so it gets no per-component subscription.
+LiveKit still surfaces its metric on the SESSION-level ``metrics_collected``
+event, so we listen there too and record the modalities that live on the Agent,
+skipping the session-bound ones (which the per-component handlers already cover)
+to avoid double-counting. This is what lets the common starter shape, an LLM on
+the Agent, be metered for cost AND per-turn latency, not just reconciled at
+close. The session event is deprecated in livekit-agents 1.5+ but still fires;
+``reconcile`` remains the cumulative-usage backstop when it does not.
+
+Unit conventions mirror ``InstrumentationMixin._extract_units``: LLM passes raw
+tokens, STT passes audio MINUTES (the cost path multiplies back by 60 to recover
+seconds), TTS passes characters.
 """
 
 from __future__ import annotations
@@ -189,6 +197,31 @@ def _iter_components(session: object) -> Iterator[tuple[str, object]]:
             yield modality, component
 
 
+def _metric_modality(metric: object) -> str:
+    """Map a LiveKit metric object to a modality by its type name, best-effort.
+
+    ``STTMetrics`` -> ``stt``, ``LLMMetrics`` / ``RealtimeModelMetrics`` -> ``llm``,
+    ``TTSMetrics`` -> ``tts``. Anything else (VAD, EOU, unknown) -> ``""``.
+    """
+    name = type(metric).__name__.lower()
+    if "stt" in name:
+        return "stt"
+    if "tts" in name:
+        return "tts"
+    if "llm" in name or "realtime" in name:
+        return "llm"
+    return ""
+
+
+def _active_agent(session: object) -> object | None:
+    """The session's currently-running Agent, best-effort across LK versions."""
+    for attr in ("current_agent", "_agent", "agent"):
+        agent: object | None = getattr(session, attr, None)
+        if agent is not None:
+            return agent
+    return None
+
+
 def _usage_modality(entry: object) -> str:
     """Map an AgentSessionUsage.model_usage entry to a modality, best-effort."""
     name = type(entry).__name__.lower()
@@ -263,6 +296,7 @@ class MetricCapture:
         tenant_id: str | None = None,
         room: str | None = None,
         channel: str | None = None,
+        dispatch_name: str | None = None,
     ) -> None:
         self._cost_tracker = cost_tracker
         self._sink = sink
@@ -272,7 +306,13 @@ class MetricCapture:
         self._tenant_id = tenant_id
         self._room = room
         self._channel = channel
+        self._dispatch_name = dispatch_name
         self._pending: set[asyncio.Task[None]] = set()
+        # Set at bind(): the session, so a session-level metric can resolve the
+        # active Agent's component identity, and the modalities bound
+        # per-component, so the session-level handler skips them (no double count).
+        self._session: object | None = None
+        self._session_modalities: set[str] = set()
         # Per-(provider, model_id) running tally of captured units, so the
         # close-time reconcile can diff against cumulative session.usage.
         self._recorded: dict[tuple[str, str], dict[str, float]] = {}
@@ -286,7 +326,9 @@ class MetricCapture:
 
     def bind(self, session: object) -> None:
         """Subscribe to every component's metrics + the session error event."""
+        self._session = session
         for modality, component in _iter_components(session):
+            self._session_modalities.add(modality)
             provider, model_id = component_identity(component)
             component.on(  # type: ignore[attr-defined]
                 "metrics_collected",
@@ -309,54 +351,61 @@ class MetricCapture:
 
     def _make_metric_handler(self, modality: str, provider: str, model_id: str) -> Any:
         def handler(metric: object, *_args: Any, **_kwargs: Any) -> None:
-            input_units, output_units, cached, ttfb_ms = units_from_metric(
-                metric, modality
-            )
-            total_latency_ms = _duration_ms(metric)
-            status = (
-                "cancelled" if bool(getattr(metric, "cancelled", False)) else "success"
-            )
-            # guard() coordination: if the active call fell back from a primary
-            # provider (guard set the ContextVar before the fallback ran), stamp
-            # the primary on this row and mark it a fallback. attach stays the
-            # sole meter; guard writes nothing itself.
-            from voicegateway.inference.session.context import (
-                current_guard_fallback_from,
-            )
-
-            fallback_from = current_guard_fallback_from()
-            if fallback_from is not None and fallback_from != provider:
-                status = "fallback"
-            else:
-                fallback_from = None
-            record = self._cost_tracker.create_record(
-                model_id=model_id,
-                modality=modality,
-                provider=provider,
-                project=self._project,
-                input_units=input_units,
-                output_units=output_units,
-                cached_input_units=cached,
-                ttfb_ms=ttfb_ms,
-                total_latency_ms=total_latency_ms,
-                status=status,
-                fallback_from=fallback_from,
-                session_id=self._session_id,
-                agent_id=self._agent_id,
-            )
-            network = _network_meta(metric)
-            if network:
-                record.metadata = {**record.metadata, **network}
-            self._stamp_context(record)
-            tally = self._recorded.setdefault(
-                (provider, model_id), {"input": 0.0, "output": 0.0, "cached": 0.0}
-            )
-            tally["input"] += input_units
-            tally["output"] += output_units
-            tally["cached"] += cached
-            self._schedule(self._sink.log_request(record))
+            self._record_metric(metric, modality, provider, model_id)
 
         return handler
+
+    def _record_metric(
+        self, metric: object, modality: str, provider: str, model_id: str
+    ) -> None:
+        """Map one STT/LLM/TTS metric to a RequestRecord and write it.
+
+        Shared by the per-component handlers (session slots) and the
+        session-level handler (Agent slots), so a metric is recorded identically
+        no matter which event delivered it, and the reconcile tally stays right.
+        """
+        input_units, output_units, cached, ttfb_ms = units_from_metric(metric, modality)
+        total_latency_ms = _duration_ms(metric)
+        status = "cancelled" if bool(getattr(metric, "cancelled", False)) else "success"
+        # guard() coordination: if the active call fell back from a primary
+        # provider (guard set the ContextVar before the fallback ran), stamp
+        # the primary on this row and mark it a fallback. attach stays the
+        # sole meter; guard writes nothing itself.
+        from voicegateway.inference.session.context import (
+            current_guard_fallback_from,
+        )
+
+        fallback_from = current_guard_fallback_from()
+        if fallback_from is not None and fallback_from != provider:
+            status = "fallback"
+        else:
+            fallback_from = None
+        record = self._cost_tracker.create_record(
+            model_id=model_id,
+            modality=modality,
+            provider=provider,
+            project=self._project,
+            input_units=input_units,
+            output_units=output_units,
+            cached_input_units=cached,
+            ttfb_ms=ttfb_ms,
+            total_latency_ms=total_latency_ms,
+            status=status,
+            fallback_from=fallback_from,
+            session_id=self._session_id,
+            agent_id=self._agent_id,
+        )
+        network = _network_meta(metric)
+        if network:
+            record.metadata = {**record.metadata, **network}
+        self._stamp_context(record)
+        tally = self._recorded.setdefault(
+            (provider, model_id), {"input": 0.0, "output": 0.0, "cached": 0.0}
+        )
+        tally["input"] += input_units
+        tally["output"] += output_units
+        tally["cached"] += cached
+        self._schedule(self._sink.log_request(record))
 
     def _on_error(self, event: object, *_args: Any, **_kwargs: Any) -> None:
         source = getattr(event, "source", None)
@@ -411,11 +460,37 @@ class MetricCapture:
         delay_ms = (_event_time(event) - self._turn_started_at) * 1000.0
         self._first_partial_ms = max(0.0, delay_ms)
 
+    def _agent_component_identity(self, modality: str) -> tuple[str, str]:
+        """``(provider, model_id)`` for the active Agent's component, best-effort.
+
+        Used when a session-level metric belongs to a component set on the Agent
+        (``Agent(llm=...)``) rather than the session, so it has no per-component
+        identity resolved at bind time. Falls back to ``("unknown", "unknown")``
+        (still records; cost falls to unpriced) if the agent or slot is absent.
+        """
+        agent = _active_agent(self._session)
+        try:
+            component = getattr(agent, modality, None) if agent is not None else None
+        except Exception:  # noqa: BLE001 - a property may raise before the agent is ready
+            component = None
+        if component is not None:
+            return component_identity(component)
+        return "unknown", "unknown"
+
     def _on_session_metric(self, metric: object, *_a: Any, **_k: Any) -> None:
         metric = getattr(metric, "metrics", metric)
         eou = getattr(metric, "end_of_utterance_delay", None)
         if eou is None:
-            return  # not an EOU metric; per-component metrics are handled elsewhere
+            # Not EOU: a per-component metric surfaced at the session level. The
+            # per-component handlers already cover components bound on the
+            # SESSION, so record only one whose modality lives on the Agent (no
+            # session slot), else it is double-counted. This is what meters an
+            # LLM (or STT/TTS) set on the Agent rather than the AgentSession.
+            modality = _metric_modality(metric)
+            if modality in _MODALITIES and modality not in self._session_modalities:
+                provider, model_id = self._agent_component_identity(modality)
+                self._record_metric(metric, modality, provider, model_id)
+            return
         record = RequestRecord(
             id=str(uuid.uuid4()),
             timestamp=time.time(),
@@ -468,6 +543,14 @@ class MetricCapture:
         # phone/web chip. Absent when attach could not classify the participants.
         if self._channel:
             extra["channel"] = self._channel
+        # ``dispatch_name`` is the LiveKit job's ``agent_name``: the name an
+        # explicit dispatch must target. Stamped with ``is not None`` (not a
+        # truthiness test) because the empty string is meaningful, not missing:
+        # it is what LiveKit reports for a worker registered WITHOUT an
+        # agent_name, i.e. one on automatic dispatch. The dashboard needs to tell
+        # "automatic dispatch" apart from "never observed", so both survive here.
+        if self._dispatch_name is not None:
+            extra["dispatch_name"] = self._dispatch_name
         if extra:
             record.metadata = {**record.metadata, **extra}
 

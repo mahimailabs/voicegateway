@@ -25,6 +25,11 @@ class Worker(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     agent_id: str
     agent_name: str
+    # The LiveKit agent_name this worker dispatches under, when known. Distinct
+    # from agent_name (a display label): this is the value an explicit dispatch
+    # must match. Nullable, because a worker not on a LiveKit job (Pipecat) has
+    # none, and an agent with no dispatch name is not probeable by name.
+    dispatch_name: str | None = None
     project: str = "default"
     tenant_id: str | None = None
     region: str | None

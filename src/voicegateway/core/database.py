@@ -201,7 +201,18 @@ class Database:
         os.environ["VOICEGW_ALEMBIC_SKIP_LOGGING"] = "1"
         try:
             cfg = Config(str(_find_alembic_ini()))
-            cfg.set_main_option("sqlalchemy.url", resolve_database_url(self.config))
+            url = resolve_database_url(self.config)
+            cfg.set_main_option("sqlalchemy.url", url)
+            # env.py computes its own URL by loading voicegw.yaml, which would
+            # override the line above and migrate whatever database that file
+            # names instead of this one. The attribute tells env.py the caller
+            # already knows which database it means: this Database was built
+            # from an explicit config, so deferring to a yaml found on disk is
+            # never right. Without it, any process that opens a database by
+            # path (a test with a tmp file, a second gateway in one process)
+            # silently migrates the operator's default DB and leaves its own
+            # unmigrated.
+            cfg.attributes["voicegw_url"] = url
             command.upgrade(cfg, "head")
         finally:
             if prev is None:

@@ -1,3 +1,6 @@
+import pytest
+
+from voicegateway.livekit_diag import latency
 from voicegateway.livekit_diag.latency import (
     ComponentReader,
     LatencyResult,
@@ -8,7 +11,19 @@ from voicegateway.livekit_diag.latency import (
 from voicegateway.livekit_diag.report import render_latency
 
 
+@pytest.fixture(autouse=True)
+def _no_settle(monkeypatch):
+    """Zero the pre-utterance settle so probe() does not sleep in tests."""
+    monkeypatch.setattr(latency, "_AGENT_SETTLE_SECONDS", 0.0)
+    monkeypatch.setattr(latency, "_REPLY_GRACE_SECONDS", 0.0)
+
+
 class _FakeAdmin:
+    # A worker joins every probe room by default, so _await_agent sees a
+    # participant and lets the call proceed. Set present=False to model a name
+    # no worker answered (a wrong dispatch name, or an offline automatic worker).
+    present = True
+
     def __init__(self):
         self.created, self.deleted, self.dispatched = [], [], []
 
@@ -20,6 +35,10 @@ class _FakeAdmin:
 
     async def create_dispatch(self, r, a, metadata=""):
         self.dispatched.append((r, a))
+
+    async def room_participant_identities(self, room):
+        # "vg-probe" is the probe's own caller; the agent is anything else.
+        return ["vg-probe", "worker-1"] if self.present else ["vg-probe"]
 
     def join_token(self, r, i):
         return "tok"
@@ -58,6 +77,61 @@ async def test_probe_discards_warmup_and_aggregates():
     assert len(result.e2e_samples) == 3  # warmup discarded
     stats = summarize(result)
     assert round(stats["avg"], 2) == 1.42
+
+
+class _OKClient:
+    def __init__(self, url, token):
+        pass
+
+    async def connect(self):
+        pass
+
+    async def publish_utterance(self, src):
+        return 0.0
+
+    async def wait_reply(self, t0, timeout=15.0):
+        return 1.5
+
+    async def disconnect(self):
+        pass
+
+
+async def test_probe_fails_closed_when_no_worker_joins(monkeypatch):
+    """A dispatch name no worker answered must not read as an empty measurement.
+    The runner polls the room, sees only its own caller, and reports the reason
+    instead of speaking into an empty room and returning all nulls."""
+    monkeypatch.setattr(latency, "_AGENT_JOIN_TIMEOUT", 0.05)
+    monkeypatch.setattr(latency, "_AGENT_POLL_INTERVAL", 0.01)
+    admin = _FakeAdmin()
+    admin.present = False
+    runner = ProbeRunner(admin, _OKClient, _StubUtterance())
+    result = await runner.probe(
+        "wrong-name", trials=1, warmup=False, room_name=None, metadata=""
+    )
+    assert result.e2e_samples == []  # nothing measured
+    assert result.error is not None
+    assert "wrong-name" in result.error  # names the culprit
+    assert "no worker joined" in result.error
+    assert admin.deleted  # room still cleaned up in the finally
+
+
+async def test_probe_fails_open_when_presence_is_unreadable(monkeypatch):
+    """If the participant read itself errors, the check is inconclusive, not a
+    verdict of empty: the probe proceeds rather than block a call that may be
+    fine, and lets the reply (or its absence) be the measurement."""
+    monkeypatch.setattr(latency, "_AGENT_JOIN_TIMEOUT", 0.05)
+    monkeypatch.setattr(latency, "_AGENT_POLL_INTERVAL", 0.01)
+
+    class _BlindAdmin(_FakeAdmin):
+        async def room_participant_identities(self, room):
+            raise RuntimeError("control plane unreachable")
+
+    runner = ProbeRunner(_BlindAdmin(), _OKClient, _StubUtterance())
+    result = await runner.probe(
+        "maybe-fine", trials=1, warmup=False, room_name=None, metadata=""
+    )
+    assert result.error is None
+    assert result.e2e_samples == [1.5]  # proceeded, measured the reply
 
 
 class _StubUtterance:

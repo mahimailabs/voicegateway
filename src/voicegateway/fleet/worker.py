@@ -56,6 +56,17 @@ _DEFAULT_INTERVAL = 15.0
 _DEFAULT_DB_PATH = "~/.config/voicegateway/voicegw.db"
 
 
+# Sentinel for register_worker(dispatch_name=...): "caller said nothing", which
+# defaults the dispatch name to agent_name (register_worker's name IS the LiveKit
+# dispatch name by convention). Passing an explicit None means "this worker has
+# no dispatch name" (a Pipecat agent), which must NOT fall back to agent_name.
+class _Unset:
+    pass
+
+
+_UNSET = _Unset()
+
+
 @dataclass
 class _Worker:
     agent_id: str
@@ -66,6 +77,9 @@ class _Worker:
     region: str | None
     host: str
     started_at: float
+    # The LiveKit agent_name this worker dispatches under, or None when it has no
+    # LiveKit dispatch (Pipecat). Distinct from agent_name (the display label).
+    dispatch_name: str | None = None
     active_sessions: int = 0
 
     @property
@@ -79,6 +93,7 @@ class _Worker:
         return {
             "agent_id": self.agent_id,
             "agent_name": self.agent_name,
+            "dispatch_name": self.dispatch_name,
             "status": self.status,
             "active_sessions": self.active_sessions,
             "version": self.version,
@@ -122,6 +137,7 @@ def register_worker(
     interval: float = _DEFAULT_INTERVAL,
     local: bool = False,
     db_path: str | None = None,
+    dispatch_name: str | None | _Unset = _UNSET,
 ) -> str:
     """Register this process as an agent worker and start heartbeating.
 
@@ -135,13 +151,24 @@ def register_worker(
     right away. Without a collector and without ``local``, the worker is tracked in
     this process but nothing is pushed. ``api_key`` falls back to
     ``VOICEGW_API_KEY``; ``region`` to ``VOICEGW_REGION``. Returns the agent id.
+
+    ``dispatch_name`` is the LiveKit agent_name this worker dispatches under, which
+    the dashboard's probe uses to place a call by name. Left unset, it defaults to
+    ``agent_name``: the name you register a LiveKit worker with is the name LiveKit
+    dispatches to, so ``register_worker("reception")`` is probeable as "reception".
+    Pass an explicit ``None`` for a worker with no LiveKit dispatch (a Pipecat
+    agent), which keeps it in the roster but not probeable by name.
     """
     global _worker, _collector_url, _api_key, _interval, _local_db_path, _local_enabled
     from voicegateway._version import __version__
 
+    resolved_dispatch = (
+        agent_name if isinstance(dispatch_name, _Unset) else dispatch_name
+    )
     _worker = _Worker(
         agent_id=_agent_id(),
         agent_name=agent_name,
+        dispatch_name=resolved_dispatch,
         version=version or __version__,
         project=project,
         tenant_id=tenant_id,
@@ -180,12 +207,18 @@ def ensure_registered(
     interval: float = _DEFAULT_INTERVAL,
     local: bool = False,
     db_path: str | None = None,
+    dispatch_name: str | None | _Unset = _UNSET,
 ) -> str:
     """Register + heartbeat only if this process has no worker yet.
 
     ``attach(heartbeat=True)`` calls this so it never clobbers an explicit
     ``register_worker`` done at ``__main__`` boot; if one exists, it just makes sure
     the heartbeat is running and returns its agent id.
+
+    ``attach`` here passes ``agent_name`` = the VoiceGateway agent-id label (not a
+    LiveKit name), so it also passes ``dispatch_name`` explicitly (the value it
+    resolved from the job, or ``None`` off a LiveKit job) rather than letting it
+    default to that label.
     """
     if _worker is not None:
         _ensure_running()
@@ -201,6 +234,7 @@ def ensure_registered(
         interval=interval,
         local=local,
         db_path=db_path,
+        dispatch_name=dispatch_name,
     )
 
 
@@ -325,14 +359,19 @@ def _ensure_local_thread() -> None:
 def _local_run(stop: threading.Event, db_path: str, interval: float) -> None:
     """Thread body: own event loop, write presence to the shared DB each interval.
 
-    Does NOT create tables. The shared ``voicegw.db`` schema is owned by alembic
-    (the dashboard, and the agent's own cost sink, migrate it via
-    ``run_migrations``); seeding it here with ``create_all`` would create the 18
-    tables un-stamped and poison a later ``alembic upgrade head`` (breaking cost
-    tracking + the dashboard on that file). So the heartbeat write is best-effort:
-    it fails silently until something with alembic has created the ``workers``
-    table, then succeeds on a later interval. In the co-located case the dashboard
-    is running, so the table already exists.
+    Brings the shared ``voicegw.db`` to head once on startup via ``run_migrations``
+    (alembic upgrade), so a worker booting against a database older than its own
+    code (a schema this release added a column to, say) writes cleanly instead of
+    failing every interval until something else migrates it. That mattered for an
+    idle agent with no dashboard up and no call yet: nothing else would have run
+    a migration, and each heartbeat spewed a stack trace. This is ``alembic
+    upgrade``, NOT ``create_all``: it stamps the version table, so it composes
+    with the dashboard and the agent's own cost sink migrating the same file
+    rather than seeding 18 un-stamped tables and poisoning a later upgrade.
+
+    The write itself stays best-effort: if the one-time migration cannot run
+    (a locked file, a genuinely broken DB), presence is never load-bearing, so a
+    failed write is logged once and skipped rather than crashing the worker.
     """
     from voicegateway.core.config import GatewayConfig
     from voicegateway.core.database import Database
@@ -340,7 +379,9 @@ def _local_run(stop: threading.Event, db_path: str, interval: float) -> None:
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    conn = Database(GatewayConfig(cost_tracking={"db_path": os.path.expanduser(db_path)}))
+    conn = Database(
+        GatewayConfig(cost_tracking={"db_path": os.path.expanduser(db_path)})
+    )
 
     async def _write() -> None:
         w = _worker
@@ -349,13 +390,29 @@ def _local_run(stop: threading.Event, db_path: str, interval: float) -> None:
         async with conn.session() as db:
             await workers_repository.upsert_heartbeat(db, w.presence())
 
+    # Migrate the shared DB to head once, before the first write. Best-effort:
+    # a failure here (a locked file, no write access) leaves the writes to fail
+    # gracefully below, exactly as when this thread did not migrate at all.
+    try:
+        loop.run_until_complete(conn.run_migrations())
+    except Exception:  # noqa: BLE001 - migration is best-effort; writes degrade gracefully
+        logger.debug("local heartbeat: startup migration failed", exc_info=True)
+
+    # A failed write is logged in full once, then quietly: an unmigratable or
+    # locked DB must not stamp a stack trace into the agent's console every
+    # interval for the life of the process.
+    logged_write_failure = False
     try:
         while not stop.is_set():
             if _worker is not None:
                 try:
                     loop.run_until_complete(_write())
                 except Exception:  # noqa: BLE001 - presence is never load-bearing
-                    logger.debug("local heartbeat write failed", exc_info=True)
+                    if not logged_write_failure:
+                        logger.debug("local heartbeat write failed", exc_info=True)
+                        logged_write_failure = True
+                    else:
+                        logger.debug("local heartbeat write failed (suppressed trace)")
             stop.wait(interval)
     finally:
         try:

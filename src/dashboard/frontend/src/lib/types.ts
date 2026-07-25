@@ -226,6 +226,70 @@ export interface AgentRow {
   /** Live roster presence: 'idle' | 'busy' | 'offline'; null when the agent is
    * telemetry-only (not currently a registered/heartbeating worker). */
   fleet_status?: string | null;
+  /** Whether this agent's card can place a probe, and why not when it cannot.
+   * Absent on older servers, which the UI reads as "no play button". */
+  probe?: AgentProbeBlock;
+}
+
+export type ProbeMode = 'explicit' | 'automatic';
+
+/**
+ * Probe eligibility for one agent, from `/api/agents`.
+ *
+ * `dispatch_name` is the LiveKit `Job.agent_name` VoiceGateway observed on a
+ * call the agent actually ran. It is set at worker registration inside the
+ * agent's own process, so it can only be read back, never invented: an agent
+ * with no observed job comes back ineligible with the reason, not with a guess.
+ * `""` is an answer, not a blank: that worker is on automatic dispatch.
+ */
+export interface AgentProbeBlock {
+  eligible: boolean;
+  dispatch_name: string | null;
+  mode: ProbeMode | null;
+  /** Why the button is disabled, or a caveat on an eligible probe (e.g. more
+   * than one automatic-dispatch worker online). Null when there is nothing to say. */
+  reason: string | null;
+}
+
+/**
+ * `POST /api/agents/{id}/probe`: one real call, measured.
+ *
+ * Times are SECONDS. Anything that could not be measured is null, never zero:
+ * a null `cost_usd` means this host cannot know (the agent ships its telemetry
+ * elsewhere), which is a different claim from "the call was free".
+ */
+export interface AgentProbeResult {
+  agent_id: string;
+  dispatch_name: string;
+  mode: ProbeMode;
+  /** The throwaway `vg-probe-` room the call ran in; null when no turn completed. */
+  room: string | null;
+  trials: number;
+  /** End-to-end reply time in seconds, measured by the synthetic client itself.
+   * Null when no turn completed (see `error`). */
+  e2e: {
+    avg: number;
+    p50: number;
+    p95: number;
+    min: number;
+    max: number;
+    trials: number;
+  } | null;
+  /** Per-leg split in seconds, read back from the rows the agent wrote for this
+   * room. Null when the agent is not writing telemetry to this host. */
+  components: {
+    eou?: number;
+    stt?: number;
+    stt_ttfp?: number;
+    stt_transcription_delay?: number;
+    llm_ttft?: number;
+    tts?: number;
+  } | null;
+  cost_usd: number | null;
+  /** The provider/model this call ran per leg, for the split's hover labels.
+   * Null per leg the call did not produce. */
+  models: { stt: string | null; llm: string | null; tts: string | null };
+  error: string | null;
 }
 
 /** Aggregates for the implicit `agent_id IS NULL` bucket. */

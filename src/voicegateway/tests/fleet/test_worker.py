@@ -47,6 +47,22 @@ def test_register_populates_presence(monkeypatch):
     assert p["version"]  # from _version
 
 
+def test_dispatch_name_defaults_to_agent_name(monkeypatch):
+    """register_worker's name is the LiveKit dispatch name by convention, so the
+    presence carries it as the dispatch_name unless told otherwise."""
+    monkeypatch.setenv("VOICEGW_AGENT_ID", "w1")
+    worker.register_worker("reception")
+    assert worker._worker.presence()["dispatch_name"] == "reception"
+
+
+def test_explicit_none_dispatch_name_is_preserved(monkeypatch):
+    """A Pipecat worker has no LiveKit dispatch: an explicit None must NOT fall
+    back to the agent_name, so the roster does not offer a probe it can't answer."""
+    monkeypatch.setenv("VOICEGW_AGENT_ID", "w1")
+    worker.register_worker("display-label", dispatch_name=None)
+    assert worker._worker.presence()["dispatch_name"] is None
+
+
 def test_bump_active_toggles_status_and_clamps(monkeypatch):
     monkeypatch.setenv("VOICEGW_AGENT_ID", "w1")
     worker.register_worker("realty")
@@ -189,6 +205,54 @@ async def test_local_heartbeat_writes_worker_row(tmp_path, monkeypatch):
     assert row.status == "idle"
 
 
+async def _poll_worker_row(db_path: str, agent_id: str, timeout: float = 6.0):
+    """Poll the workers table via raw sqlite until agent_id appears.
+
+    Raw sqlite (not read_roster) so a read that races the startup migration on a
+    fresh file just returns nothing that round instead of raising on a
+    half-created schema."""
+    import asyncio
+    import sqlite3
+    import time
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if _table_exists(db_path, "workers"):
+            con = sqlite3.connect(db_path)
+            try:
+                r = con.execute(
+                    "SELECT agent_name, dispatch_name FROM workers WHERE agent_id=?",
+                    (agent_id,),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                r = None  # column not there yet mid-migration; try again
+            finally:
+                con.close()
+            if r is not None:
+                return r
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"no worker row for {agent_id!r} within {timeout}s")
+
+
+async def test_local_heartbeat_self_migrates_a_fresh_db(tmp_path, monkeypatch):
+    """An idle agent booting against a DB with no schema (no dashboard up, no call
+    yet to migrate it) must bring the file to head itself and write cleanly.
+
+    Regression: adding workers.dispatch_name used to make such an agent fail every
+    heartbeat with 'no such column' until something else ran a migration. The DB is
+    deliberately NOT pre-created here (no _ensure_db), so the row only appears if
+    the heartbeat thread ran the migration on startup.
+    """
+    monkeypatch.setenv("VOICEGW_AGENT_ID", "w-fresh")
+    monkeypatch.delenv("VOICEGW_COLLECTOR_URL", raising=False)
+    db = str(tmp_path / "fresh.db")
+    worker.register_worker("reception", local=True, db_path=db, interval=0.05)
+    agent_name, dispatch_name = await _poll_worker_row(db, "w-fresh")
+    assert agent_name == "reception"
+    # The column the migration added, populated: proves the schema is at head.
+    assert dispatch_name == "reception"
+
+
 async def test_local_heartbeat_reflects_busy_after_bump(tmp_path, monkeypatch):
     monkeypatch.setenv("VOICEGW_AGENT_ID", "w-busy")
     monkeypatch.delenv("VOICEGW_COLLECTOR_URL", raising=False)
@@ -229,23 +293,37 @@ def _table_exists(db_path: str, table: str) -> bool:
         con.close()
 
 
-async def test_local_heartbeat_does_not_seed_schema(tmp_path, monkeypatch):
-    """Regression: the heartbeat must NEVER create tables on the shared file.
+async def test_local_heartbeat_migrates_stamped_not_seeded(tmp_path, monkeypatch):
+    """The heartbeat brings a schema-less shared file to head via a STAMPED alembic
+    upgrade, never an un-stamped create_all.
 
-    create_all would seed all tables un-stamped and poison a later `alembic
-    upgrade head` (the dashboard's and the agent's own cost sink's migration),
-    permanently breaking that DB. The heartbeat writes best-effort into a schema
-    alembic owns; it must not create it.
+    The failure mode this guards against: create_all seeds every table with no
+    alembic_version row, so a later `alembic upgrade head` (the dashboard, the
+    agent's own cost sink) re-creates them and breaks the file. A real upgrade
+    stamps alembic_version, so those later upgrades no-op. Proving the DB carries
+    a stamped alembic_version (not just a workers table) is what separates the two.
     """
-    import asyncio
+    import sqlite3
 
-    monkeypatch.setenv("VOICEGW_AGENT_ID", "w-noseed")
+    monkeypatch.setenv("VOICEGW_AGENT_ID", "w-migrate")
     monkeypatch.delenv("VOICEGW_COLLECTOR_URL", raising=False)
     db = str(tmp_path / "fresh.db")
     worker.register_worker("agent", local=True, db_path=db, interval=0.02)
-    # Several heartbeat intervals against a fresh, schema-less file.
-    await asyncio.sleep(0.25)
-    assert not _table_exists(db, "workers")
+    # Wait for the write, which only happens after the startup migration.
+    await _poll_worker_row(db, "w-migrate")
+    assert _table_exists(db, "workers")
+    # The engine stamps a NAMED version table (alembic_version_voicegateway, so it
+    # can share a file with other alembic trees). Its presence is what proves this
+    # was a real upgrade, not an un-stamped create_all a later upgrade would break.
+    assert _table_exists(db, "alembic_version_voicegateway")
+    con = sqlite3.connect(db)
+    try:
+        ver = con.execute(
+            "SELECT version_num FROM alembic_version_voicegateway"
+        ).fetchone()
+    finally:
+        con.close()
+    assert ver is not None and ver[0]  # a real revision, not an empty stamp
 
 
 def test_collector_takes_precedence_over_local(tmp_path, monkeypatch):
@@ -277,7 +355,9 @@ def test_attach_heartbeat_wires_ensure_registered_local(monkeypatch):
     monkeypatch.setattr(fw, "detect_framework", lambda _s: "livekit")
     calls: list = []
     monkeypatch.setattr(
-        worker, "ensure_registered", lambda name, **kw: calls.append((name, kw)) or "w-attach"
+        worker,
+        "ensure_registered",
+        lambda name, **kw: calls.append((name, kw)) or "w-attach",
     )
 
     class _FakeSession:

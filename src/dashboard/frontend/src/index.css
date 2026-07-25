@@ -358,6 +358,38 @@ a:hover { color: var(--vg-teal-deep); }
   box-shadow: none;
 }
 
+.neo-btn:disabled,
+.neo-btn[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+.neo-btn:disabled:hover,
+.neo-btn[disabled]:hover {
+  background: var(--vg-card);
+  color: var(--vg-ink-2);
+  transform: none;
+}
+
+/* Play button on an agent card: places one real, billed probe call. Sized to
+   sit beside the status badge and to hold a cooldown countdown ("12s"). */
+.vg-probe-btn {
+  min-width: 26px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--vg-radius-pill);
+  color: var(--vg-teal-deep);
+  font-variant-numeric: tabular-nums;
+}
+.vg-probe-btn:hover:not(:disabled) {
+  background: var(--vg-teal-tint);
+  color: var(--vg-teal-deep);
+}
+
+.vg-spin { animation: vg-spin 0.9s linear infinite; transform-origin: 50% 50%; }
+@keyframes vg-spin { to { transform: rotate(360deg); } }
+
 /* ============================================================
    Inputs / Selects (D1: cloud style)
    ============================================================ */

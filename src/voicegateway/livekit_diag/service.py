@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import pathlib
+import re
 from typing import Any
 
 PER_CHECK_TIMEOUT_SECONDS = 120.0
@@ -82,13 +83,18 @@ def _diag() -> Any:
         import voicegateway.livekit_diag as pkg
         from voicegateway.livekit_diag.admin import LiveKitAdmin
         from voicegateway.livekit_diag.client import SyntheticClient, UtteranceSource
-        from voicegateway.livekit_diag.latency import ProbeRunner, summarize
+        from voicegateway.livekit_diag.latency import (
+            ComponentReader,
+            ProbeRunner,
+            summarize,
+        )
         from voicegateway.livekit_diag.report import agents_json
         from voicegateway.livekit_diag.resources import ResourceMonitor
         from voicegateway.livekit_diag.sfu import SfuProbe, find_knee
 
         _diag_cache = SimpleNamespace(
             pkg=pkg,
+            ComponentReader=ComponentReader,
             LiveKitAdmin=LiveKitAdmin,
             SyntheticClient=SyntheticClient,
             UtteranceSource=UtteranceSource,
@@ -106,8 +112,40 @@ def _utterance_path() -> str:
     return str(pathlib.Path(_diag().pkg.__file__).parent / "assets" / "probe.wav")
 
 
+# The read-back polls because the agent writes its STT/LLM/TTS rows from another
+# process and may still be flushing when the probe's last turn ends. ~2s total,
+# matching the CLI (voicegw livekit latency).
+_READBACK_POLL_ATTEMPTS = 6
+_READBACK_POLL_DELAY = 0.4
+
+
+def _component_reader(store: Any) -> Any:
+    """A ComponentReader over ``store``, or a storeless one when there is none.
+
+    A storeless reader returns None rather than a fabricated split, which is the
+    honest answer for an agent whose telemetry goes to a remote collector: those
+    rows were never written here, so this host cannot know the breakdown.
+    """
+    d = _diag()
+    if store is None:
+        return d.ComponentReader()
+    return d.ComponentReader(
+        store, poll_attempts=_READBACK_POLL_ATTEMPTS, poll_delay=_READBACK_POLL_DELAY
+    )
+
+
 class RealProbes:
-    """Runs the engine probes against a live LiveKit server."""
+    """Runs the engine probes against a live LiveKit server.
+
+    ``store`` is the local VoiceGateway store (a StorageService) used to read the
+    STT/LLM/TTS split back out of the instrumented agent's own telemetry rows.
+    Without it every probe reports end-to-end time only, and the component split
+    is None: the breakdown lives in rows the agent wrote, not in anything the
+    probe can time from outside.
+    """
+
+    def __init__(self, store: Any = None) -> None:
+        self._store = store
 
     async def agents(self, creds) -> dict[str, Any]:
         d = _diag()
@@ -163,6 +201,7 @@ class RealProbes:
                 admin,
                 lambda u, t: d.SyntheticClient(creds.url, t),
                 d.UtteranceSource(_utterance_path()),
+                _component_reader(self._store),
             )
             out = []
             for name in targets:
@@ -173,6 +212,167 @@ class RealProbes:
         finally:
             await admin.aclose()
         return {"agents": out}
+
+
+MAX_PROBE_TRIALS = 3
+PROBE_TIMEOUT_SECONDS = 120.0
+
+_ROOM_SAFE = re.compile(r"[^A-Za-z0-9_-]+")
+
+
+def probe_room_name(agent_id: str, nonce: str) -> str:
+    """Build the throwaway room name for a single-agent probe.
+
+    The ``vg-probe-`` prefix is not cosmetic: it is what marks the rows this call
+    produces as synthetic, so they can be kept out of the agent's real-traffic
+    rollups (see request_log_repository.exclude_probes_clause). ``nonce`` makes
+    the room unique per press; the caller supplies it so this stays pure.
+    """
+    slug = _ROOM_SAFE.sub("-", agent_id).strip("-")[:48] or "agent"
+    return f"vg-probe-{slug}-{nonce}"
+
+
+async def probe_agent(
+    creds,
+    *,
+    agent_id: str,
+    dispatch_name: str,
+    nonce: str,
+    trials: int = 1,
+    warmup: bool = True,
+    store: Any = None,
+) -> dict[str, Any]:
+    """Place one real call to a single agent and report what it actually cost.
+
+    ``dispatch_name`` is the LiveKit ``Job.agent_name`` previously OBSERVED for
+    this agent. A non-empty name is dispatched explicitly. The empty string means
+    the worker registered without an agent_name, so it is on automatic dispatch:
+    creating the room is the whole dispatch, and any other automatic-dispatch
+    worker online may answer instead. The caller is responsible for having
+    observed the name; nothing here invents one.
+
+    Every number returned is measured: end-to-end timing comes from the synthetic
+    client, the STT/LLM/TTS split from the rows the agent itself wrote for this
+    room, and ``cost_usd`` is the sum of those same rows' costs. Anything that
+    could not be measured comes back None rather than zero.
+    """
+    d = _diag()
+    trials = min(max(1, int(trials)), MAX_PROBE_TRIALS)
+    room = probe_room_name(agent_id, nonce)
+    explicit = bool(dispatch_name)
+
+    admin = d.LiveKitAdmin(creds)
+    admin.url = creds.url
+    try:
+        runner = d.ProbeRunner(
+            admin,
+            lambda u, t: d.SyntheticClient(creds.url, t),
+            d.UtteranceSource(_utterance_path()),
+            _component_reader(store),
+        )
+        result = await runner.probe(
+            dispatch_name,
+            trials,
+            warmup,
+            room,
+            "",
+            dispatch=explicit,
+        )
+    finally:
+        await admin.aclose()
+
+    stats = d.summarize(result)
+    # Prefer the client/dispatch error (the call never connected); else surface
+    # what the agent itself logged for this room. The synthetic client only sees
+    # "no reply"; the reason (an STT/LLM/TTS that errored, e.g. a 401 to the model
+    # gateway) is in the rows the agent wrote. Read by the FIXED room, not
+    # result.room (which is None when no turn completed, exactly the failure case
+    # where the cause matters most).
+    error = result.error or await _probe_error(store, room)
+    return {
+        "agent_id": agent_id,
+        "dispatch_name": dispatch_name,
+        "mode": "explicit" if explicit else "automatic",
+        "room": result.room,
+        "trials": stats["trials"],
+        # Seconds, like every other number the probe reports.
+        "e2e": stats if stats["trials"] else None,
+        "components": result.components,
+        "cost_usd": await _probe_cost(store, result.room),
+        "models": await _probe_models(store, result.room),
+        "error": error,
+    }
+
+
+async def _probe_cost(store: Any, room: str | None) -> float | None:
+    """Sum ``cost_usd`` over the rows this probe's room produced.
+
+    None (not 0.0) when the cost is unknowable here: no store, no room, or an
+    agent that ships its telemetry to a remote collector so nothing landed
+    locally. A zero would read as "this call was free", which is a different and
+    false claim.
+    """
+    if store is None or not room:
+        return None
+    try:
+        rows = await store.get_requests_for_room(room)
+    except Exception:  # noqa: BLE001 - a read-back failure must not fail the probe
+        return None
+    if not rows:
+        return None
+    return sum(float(r.get("cost_usd") or 0.0) for r in rows)
+
+
+async def _probe_models(store: Any, room: str | None) -> dict[str, str | None]:
+    """The STT/LLM/TTS model this probe actually ran, for the split's hover labels.
+
+    Read from the same rows as the cost/split so the label matches the measured
+    call exactly. None per leg the call did not produce (or that this host did not
+    see), never a guess.
+    """
+    out: dict[str, str | None] = {"stt": None, "llm": None, "tts": None}
+    if store is None or not room:
+        return out
+    try:
+        rows = await store.get_requests_for_room(room)
+    except Exception:  # noqa: BLE001 - a read-back failure must not fail the probe
+        return out
+    for r in rows:
+        modality = r.get("modality")
+        model = r.get("model_id")
+        if modality in out and model:
+            out[modality] = model
+    return out
+
+
+async def _probe_error(store: Any, room: str | None) -> str | None:
+    """A one-line summary of any agent-side error rows for this probe's room.
+
+    ``attach``'s error handler writes a ``status="error"`` row per failed
+    STT/LLM/TTS call, carrying the provider's message. When the probe measured
+    nothing because the agent's pipeline errored (rather than because the agent
+    never joined), this is the cause: surfacing it turns a bland "not measured"
+    into "STT: 401 Unauthorized" that the operator can act on. Deduped and
+    capped so a retry storm does not flood the card.
+    """
+    if store is None or not room:
+        return None
+    try:
+        rows = await store.get_requests_for_room(room)
+    except Exception:  # noqa: BLE001 - a read-back failure must not fail the probe
+        return None
+    labels: list[str] = []
+    for r in rows:
+        if r.get("status") != "error":
+            continue
+        modality = (r.get("modality") or "").upper()
+        message = r.get("error_message") or "error"
+        label = f"{modality}: {message}" if modality else message
+        if label not in labels:
+            labels.append(label)
+    if not labels:
+        return None
+    return "; ".join(labels[:3])
 
 
 def _verdict(check_results: dict[str, Any], target_ms: float) -> str:

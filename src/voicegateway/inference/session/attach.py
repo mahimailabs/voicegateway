@@ -218,6 +218,42 @@ def _resolve_room(session: Any) -> str | None:
     return name if isinstance(name, str) and name else None
 
 
+def _resolve_dispatch_name(session: Any) -> str | None:
+    """Best-effort LiveKit *dispatch* name for this job, for probe targeting.
+
+    This is ``Job.agent_name``: the name an explicit dispatch has to match. It is
+    set at worker registration inside the agent's own process (``WorkerOptions``
+    / ``ServerOptions``), so it can only be OBSERVED here, never chosen. It is
+    also distinct from ``attach(agent_id=...)`` and from
+    ``register_worker(agent_name=...)``, both of which are VoiceGateway labels
+    that LiveKit has never heard of.
+
+    Three outcomes, all meaningful:
+
+    - a non-empty string: the worker registered an agent_name, so the dashboard
+      can dispatch a probe to it by that name.
+    - ``""``: LiveKit's value for a worker registered WITHOUT an agent_name,
+      which means automatic dispatch (the worker joins every new room). A probe
+      reaches it by creating a room, with no explicit dispatch.
+    - ``None``: not observable (no job context, livekit not installed, older
+      protocol without the field). The dashboard says so instead of guessing.
+
+    Prefers an explicit ``session._vg_dispatch_name`` (tests / advanced callers).
+    Never raises.
+    """
+    explicit = getattr(session, "_vg_dispatch_name", None)
+    if isinstance(explicit, str):
+        return explicit
+    try:
+        from livekit.agents import get_job_context
+
+        ctx = get_job_context(required=False)
+    except Exception:  # noqa: BLE001 - livekit not installed / no job context
+        return None
+    name = getattr(getattr(ctx, "job", None), "agent_name", None)
+    return name if isinstance(name, str) else None
+
+
 def _resolve_channel(session: Any) -> str | None:
     """Best-effort telephony-vs-web classification for the dashboard's per-call chip.
 
@@ -404,6 +440,7 @@ def _attach_livekit(
     resolved_key = api_key or os.environ.get("VOICEGW_API_KEY")
     resolved_room = room or _resolve_room(session)
     resolved_channel = _resolve_channel(session)
+    resolved_dispatch_name = _resolve_dispatch_name(session)
     session_id = get_or_create_session_id()
     if tenant_id is not None:
         set_tenant(tenant_id)
@@ -420,6 +457,7 @@ def _attach_livekit(
         tenant_id=tenant_id,
         room=resolved_room,
         channel=resolved_channel,
+        dispatch_name=resolved_dispatch_name,
     )
     capture.bind(session)
 
@@ -463,6 +501,11 @@ def _attach_livekit(
             collector_url=resolved_collector,
             api_key=resolved_key,
             local=True,
+            # The roster display name here is the VG agent-id label, not a LiveKit
+            # name, so record the dispatch name resolved from the job separately.
+            # None off a LiveKit job: the worker stays in the roster but is not
+            # probeable by a name it never registered under.
+            dispatch_name=resolved_dispatch_name,
         )
 
     on = getattr(session, "on", None)
@@ -635,6 +678,10 @@ def _attach_pipecat(
             collector_url=resolved_collector,
             api_key=resolved_key,
             local=True,
+            # A Pipecat worker is not on a LiveKit job, so it has no dispatch name
+            # and cannot be probed by one. Explicit None keeps it in the roster but
+            # off the probe path, rather than defaulting to the agent-id label.
+            dispatch_name=None,
         )
 
     return session_id

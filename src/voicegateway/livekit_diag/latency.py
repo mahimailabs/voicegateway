@@ -10,6 +10,29 @@ import uuid
 from dataclasses import dataclass, field
 from statistics import mean
 
+# Identity the synthetic caller joins the probe room under. Anything else in the
+# room is the agent we dispatched, which is how the probe confirms a worker
+# actually answered.
+_CALLER_IDENTITY = "vg-probe"
+# How long to wait for a dispatched worker to join before calling the room empty.
+# A worker on LiveKit Cloud is dispatched in well under a second; this is slack
+# for a cold self-hosted worker, not a value the happy path ever spends (the
+# poll returns the instant the agent appears).
+_AGENT_JOIN_TIMEOUT = 8.0
+_AGENT_POLL_INTERVAL = 0.25
+# After the agent joins, its session spends ~1-2s bringing up STT before it can
+# hear anything. Speak a moment later so the utterance lands on a listening STT
+# instead of a still-initializing one (a one-shot utterance played into a
+# not-yet-ready pipeline is never transcribed). It sits before t0, so it does not
+# inflate the measured reply latency.
+_AGENT_SETTLE_SECONDS = 2.0
+# The reply is detected on its FIRST audio, so wait_reply returns while the agent
+# is still speaking. Tearing the room down then cuts the agent off before TTS
+# finishes and flushes its metric, so the split loses its TTS leg even though the
+# call replied. Hold on briefly after the reply to let the agent finish and write
+# that row. It sits after t0, so it does not inflate the measured reply latency.
+_REPLY_GRACE_SECONDS = 4.0
+
 
 @dataclass
 class LatencyResult:
@@ -17,6 +40,9 @@ class LatencyResult:
     e2e_samples: list[float] = field(default_factory=list)
     components: dict | None = None
     error: str | None = None
+    # The room the counted (non-warmup) turns ran in, so a caller can correlate
+    # the probe's own cost rows back to it. None when no turn completed.
+    room: str | None = None
 
 
 def aggregate_components(rows: list[dict]) -> dict | None:
@@ -152,6 +178,59 @@ class ProbeRunner:
         self._utterance = utterance
         self._reader = reader or ComponentReader()
 
+    async def _await_agent(self, room: str, agent: str, *, explicit: bool) -> None:
+        """Block until a worker joins ``room``, or raise a named failure.
+
+        A dispatch to a name no running worker registered, and automatic dispatch
+        with no worker online, both look identical downstream: the caller speaks
+        into an empty room and ``wait_reply`` simply times out, producing an
+        all-null sample with no error. That reads as "measured nothing" when the
+        truth is "nobody answered". Polling the participant list turns that silent
+        empty into a reason the operator can act on.
+
+        Fails OPEN on an inconclusive check. If every participant read itself
+        errored (a transient control-plane hiccup, or an ``admin`` with no
+        ``room_participant_identities``) we never learned the room was empty, so
+        we let the call proceed and speak for itself rather than block a probe
+        that may well be fine. It fails CLOSED only on a clean read that shows no
+        one but the caller in the room by the deadline.
+        """
+        read = getattr(self._admin, "room_participant_identities", None)
+        if not callable(read):
+            return  # cannot verify presence on this admin; do not block the probe
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _AGENT_JOIN_TIMEOUT
+        saw_empty = False
+        # Read, THEN decide whether to break on the deadline, so the last thing
+        # before giving up is a fresh read: a worker that joins just before the
+        # deadline is still seen, rather than missed because the final decision
+        # rode on a snapshot taken a poll-interval earlier.
+        while True:
+            try:
+                idents = await read(room)
+                if any(i and i != _CALLER_IDENTITY for i in idents):
+                    return  # a worker joined
+                saw_empty = True
+            except Exception:  # noqa: BLE001 - an unreadable roster is inconclusive
+                pass
+            if loop.time() >= deadline:
+                break
+            await asyncio.sleep(_AGENT_POLL_INTERVAL)
+        if not saw_empty:
+            return  # never got a clean read; do not fail on an inconclusive check
+        secs = int(_AGENT_JOIN_TIMEOUT)
+        if explicit:
+            raise RuntimeError(
+                f"dispatched to {agent!r} but no worker joined within {secs}s: "
+                "that name is how the worker registered (register_worker / "
+                "@server.rtc_session agent_name); check a worker with that name "
+                "is running"
+            )
+        raise RuntimeError(
+            f"created a probe room but no automatic-dispatch worker joined "
+            f"within {secs}s: check a worker for this agent is running"
+        )
+
     async def probe(
         self,
         agent: str,
@@ -159,23 +238,55 @@ class ProbeRunner:
         warmup: bool,
         room_name: str | None,
         metadata: str,
+        *,
+        dispatch: bool = True,
     ) -> LatencyResult:
+        """Place ``trials`` real calls to ``agent`` and time the reply.
+
+        ``dispatch=False`` creates the room but issues no explicit dispatch. That
+        is the path for a worker registered WITHOUT an agent_name: LiveKit puts
+        such a worker on automatic dispatch, so it joins every new room on its
+        own and there is no name to dispatch to. Explicit dispatch remains the
+        default, since it is the only way to target one named agent.
+        """
         result = LatencyResult(agent=agent)
         total = trials + (1 if warmup else 0)
         last_room: str | None = None
         for i in range(total):
             room = room_name or f"vg-probe-{agent}-{uuid.uuid4().hex[:8]}"
+            if i == 0 and warmup and room_name:
+                # The warmup turn is discarded from the timings, so it must not
+                # land in the room the caller reads back: cost is SUMMED and the
+                # component split AVERAGED over every row tagged with that room,
+                # so sharing one room folds a cold start the e2e number
+                # deliberately threw away into both. Per-trial rooms (room_name
+                # is None) isolate it already; a caller-fixed room needs this.
+                # The vg-probe- prefix survives, so the warmup's own rows stay
+                # out of the agent's rollups just the same.
+                room = f"{room_name}-warmup"
             e2e = None
             try:
                 await self._admin.create_room(room)
-                await self._admin.create_dispatch(room, agent, metadata)
+                if dispatch:
+                    await self._admin.create_dispatch(room, agent, metadata)
                 client = self._make_client(
-                    self._url, self._admin.join_token(room, "vg-probe")
+                    self._url, self._admin.join_token(room, _CALLER_IDENTITY)
                 )
                 await client.connect()
                 try:
+                    await self._await_agent(room, agent, explicit=dispatch)
+                    # Let the agent's STT finish coming up before speaking, so a
+                    # one-shot utterance is not lost into a still-initializing
+                    # pipeline. Skipped when the room read is unavailable only in
+                    # the sense that _await_agent already returned; the wait is
+                    # unconditional because readiness is not otherwise observable.
+                    await asyncio.sleep(_AGENT_SETTLE_SECONDS)
                     t0 = await client.publish_utterance(self._utterance)
                     e2e = await client.wait_reply(t0)
+                    if e2e is not None:
+                        # Let the agent finish speaking so its TTS metric is
+                        # written before the room is torn down below.
+                        await asyncio.sleep(_REPLY_GRACE_SECONDS)
                 finally:
                     await client.disconnect()
             except Exception as exc:  # noqa: BLE001 - isolate per-agent failures; caller loops on
@@ -192,7 +303,16 @@ class ProbeRunner:
         # writes those rows from its own process and may still be flushing, so
         # the reader polls. Correlate on the last successful room.
         if last_room is not None:
-            result.components = await self._reader.read(last_room)
+            result.room = last_room
+            try:
+                result.components = await self._reader.read(last_room)
+            except Exception:  # noqa: BLE001 - the call itself already succeeded
+                # The read-back is a local convenience, not the measurement. A
+                # store that errors (locked file, collector mode, a schema this
+                # host has not migrated) costs the component split, which is
+                # reported as None, and nothing else: throwing here would
+                # discard an end-to-end time that was genuinely measured.
+                result.components = None
         return result
 
 

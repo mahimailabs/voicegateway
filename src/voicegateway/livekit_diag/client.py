@@ -11,6 +11,8 @@ SDK surface verified against livekit>=1.0 (installed version):
 - AudioSource(sample_rate, num_channels) positional.
 - LocalAudioTrack.create_audio_track(name, source) classmethod.
 - publish_track(track, options=TrackPublishOptions()) is async.
+- TrackPublishOptions(source=TrackSource.SOURCE_MICROPHONE): required so an agent's
+  RoomIO (accepted_sources=[SOURCE_MICROPHONE]) routes the probe audio to STT.
 - publish_data(payload, *, reliable=True) is async.
 - capture_frame(frame) is async on AudioSource.
 - AudioStream(track) yields AudioFrameEvent; .frame is AudioFrame; .data is memoryview.
@@ -94,6 +96,7 @@ class SyntheticClient:
         self._quality = "Unknown"
         self._drain_tasks: set[asyncio.Task] = set()
         self._data_tasks: set[asyncio.Task] = set()
+        self._silence_task: asyncio.Task | None = None
 
     async def connect(self) -> None:
         self._room.on("data_received", self._on_data)
@@ -138,14 +141,44 @@ class SyntheticClient:
     async def publish_utterance(self, src: UtteranceSource) -> float:
         source = rtc.AudioSource(src._rate, 1)
         track = rtc.LocalAudioTrack.create_audio_track("probe", source)
-        await self._room.local_participant.publish_track(track)
+        # Publish as SOURCE_MICROPHONE, not the default SOURCE_UNKNOWN. A LiveKit
+        # AgentSession's RoomIO only routes microphone-sourced tracks to STT
+        # (its accepted_sources is [SOURCE_MICROPHONE]); an unsourced track is
+        # ignored, so the agent hears nothing, never transcribes, and never
+        # replies. This is what a probe needs the agent to actually process.
+        await self._room.local_participant.publish_track(
+            track,
+            rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE),
+        )
         loop = asyncio.get_running_loop()
         for pcm, rate in src.frames():
             # AudioFrame(data, sample_rate, num_channels, samples_per_channel)
             frame = rtc.AudioFrame(pcm, rate, 1, len(pcm) // 2)
             await source.capture_frame(frame)
             await asyncio.sleep(0.01)
-        return loop.time()  # t0 = end of playback
+        t0 = loop.time()  # t0 = end of speech
+        # Keep the mic open with trailing silence so the agent's VAD / turn
+        # detector sees speech -> silence and fires end-of-turn: a track that just
+        # stops emitting never triggers a response, so STT transcribes but the LLM
+        # and TTS never run. Runs in the background so wait_reply can time a reply
+        # that arrives DURING the silence; t0 stays at end-of-speech so the silence
+        # does not inflate the measured latency.
+        self._silence_task = asyncio.ensure_future(
+            self._emit_silence(source, src._rate)
+        )
+        return t0
+
+    async def _emit_silence(
+        self, source: rtc.AudioSource, rate: int, seconds: float = 12.0
+    ) -> None:
+        chunk = int(rate * 0.01)  # 10ms of samples
+        silence = bytes(chunk * 2)  # 16-bit zeros
+        try:
+            for _ in range(int(seconds / 0.01)):
+                await source.capture_frame(rtc.AudioFrame(silence, rate, 1, chunk))
+                await asyncio.sleep(0.01)
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001 - best-effort tail
+            return
 
     async def wait_reply(self, t0: float, timeout: float = 15.0) -> float | None:
         loop = asyncio.get_running_loop()
@@ -172,4 +205,6 @@ class SyntheticClient:
         return self._quality
 
     async def disconnect(self) -> None:
+        if self._silence_task is not None:
+            self._silence_task.cancel()
         await self._room.disconnect()

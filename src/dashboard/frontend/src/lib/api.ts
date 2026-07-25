@@ -43,6 +43,37 @@ function buildHeaders(init?: RequestInit): Headers {
   return headers;
 }
 
+/**
+ * A non-2xx response, carrying what the server said about it.
+ *
+ * Extends Error so every existing `catch (err) { err instanceof Error }` site
+ * keeps working unchanged; callers that care about the refusal (a rate limit
+ * that names when to come back) can read `status` and `retryAfterSeconds`
+ * instead of re-parsing the message.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  /** Seconds from Retry-After, when the server sent a parseable one. */
+  readonly retryAfterSeconds: number | null;
+
+  constructor(message: string, status: number, retryAfterSeconds: number | null) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+function parseRetryAfter(res: Response): number | null {
+  // Only the delta-seconds form is honoured. The HTTP-date form is legal but
+  // this API never sends it, and guessing at a date against a client clock that
+  // may be skewed would produce a countdown that is confidently wrong.
+  const raw = res.headers.get('Retry-After');
+  if (!raw) return null;
+  const seconds = Number(raw.trim());
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+}
+
 export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -62,7 +93,11 @@ export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T>
 
   if (!res.ok) {
     const detail = await extractErrorDetail(res);
-    throw new Error(detail ?? `HTTP ${res.status}`);
+    throw new ApiError(
+      detail ?? `HTTP ${res.status}`,
+      res.status,
+      parseRetryAfter(res),
+    );
   }
   return res.json() as Promise<T>;
 }
@@ -86,6 +121,7 @@ async function extractErrorDetail(res: Response): Promise<string | null> {
 // ----------------------------------------------------------------------
 
 import type {
+  AgentProbeResult,
   AgentRow,
   AgentsResponse,
   ApiKey,
@@ -204,6 +240,32 @@ export function fetchAgents(
 
 export function fetchAgent(agentId: string): Promise<AgentRow> {
   return fetchJson<AgentRow>(`/api/agents/${encodeURIComponent(agentId)}`);
+}
+
+/**
+ * How long the UI keeps the play button disabled after a probe.
+ *
+ * Mirrors PROBE_COOLDOWN_SECONDS in server/api/dashboard/agents.py. The server
+ * is authoritative (it answers 429 with Retry-After if this drifts); this only
+ * spares the operator a round trip that was always going to be refused.
+ */
+export const PROBE_COOLDOWN_SECONDS = 30;
+
+/**
+ * Place one real call to this agent and return what it measured.
+ *
+ * Every press is billed traffic against the agent's real providers, so the
+ * endpoint is admin-scoped and rate limited: 409 while one is in flight, 429
+ * inside the cooldown. Both come back as a thrown ApiError carrying the
+ * server's detail string, plus Retry-After on the 429 so the caller can render
+ * the wait the server is actually enforcing rather than re-offering a press it
+ * has already decided to refuse.
+ */
+export function probeAgent(agentId: string): Promise<AgentProbeResult> {
+  return fetchJson<AgentProbeResult>(
+    `/api/agents/${encodeURIComponent(agentId)}/probe`,
+    { method: 'POST' },
+  );
 }
 
 export function fetchApiKeys(
