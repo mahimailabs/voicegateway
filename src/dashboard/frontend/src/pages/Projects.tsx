@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import SourceBadge from '../components/SourceBadge';
 import { fetchJson } from '../lib/api';
+import { DEMO_MODE } from '../lib/demo';
 
 interface ProjectBranding {
   logo_url?: string | null;
@@ -50,9 +51,12 @@ export default function Projects() {
         subtitle={`${projects.length} projects configured`}
         accent="orange"
         actions={
-          <button className="neo-btn neo-btn--primary" onClick={() => setShowCreate(true)}>
-            + Create Project
-          </button>
+          // Demo build is read-only: hide the create-project control.
+          !DEMO_MODE && (
+            <button className="neo-btn neo-btn--primary" onClick={() => setShowCreate(true)}>
+              + Create Project
+            </button>
+          )
         }
       />
 
@@ -112,15 +116,19 @@ export default function Projects() {
                 <span className="vg-card__label">{s?.requests_today ?? 0} requests today</span>
                 <span className="neo-badge neo-badge--info">{p.budget_action}</span>
               </div>
-              <div className="mt-sm">
-                <button
-                  type="button"
-                  className="neo-btn neo-btn--sm"
-                  onClick={() => setBrandingFor(p.id)}
-                >
-                  Brand
-                </button>
-              </div>
+              {/* Demo build is read-only: hide the branding editor opener
+                  (BrandingModal only performs writes: save/reset/logo upload). */}
+              {!DEMO_MODE && (
+                <div className="mt-sm">
+                  <button
+                    type="button"
+                    className="neo-btn neo-btn--sm"
+                    onClick={() => setBrandingFor(p.id)}
+                  >
+                    Brand
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}

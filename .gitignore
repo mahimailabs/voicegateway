@@ -27,7 +27,9 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+dist-demo/
 downloads/
+.playwright-mcp/
 eggs/
 .eggs/
 lib/

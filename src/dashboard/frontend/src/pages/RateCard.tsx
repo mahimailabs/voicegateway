@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import { fetchJson } from '../lib/api';
+import { DEMO_MODE } from '../lib/demo';
 
 interface EffectiveRule {
   modality: string;
@@ -320,12 +321,15 @@ export default function RateCard() {
                     </td>
                     <td>{valueLabel(r)}</td>
                     <td style={{ textAlign: 'right' }}>
-                      <button
-                        className="neo-btn neo-btn--sm neo-btn--danger"
-                        onClick={() => handleDelete(r)}
-                      >
-                        Delete
-                      </button>
+                      {/* Demo build is read-only: hide the delete-override action. */}
+                      {!DEMO_MODE && (
+                        <button
+                          className="neo-btn neo-btn--sm neo-btn--danger"
+                          onClick={() => handleDelete(r)}
+                        >
+                          Delete
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

@@ -16,6 +16,7 @@ import RateCard from './pages/RateCard';
 import ApiKeys from './pages/ApiKeys';
 import type { StatusResponse } from './lib/types';
 import { AUTH_REQUIRED_EVENT, clearToken, fetchJson, getToken } from './lib/api';
+import { DEMO_MODE } from './lib/demo';
 import { applyBrandingForProject } from './lib/branding';
 import NavIcon from './components/NavIcon';
 import BrandMark from './components/BrandMark';
@@ -80,11 +81,16 @@ export default function App() {
     return <Login onAuthed={() => setAuthState('ready')} />;
   }
 
+  // The build's base path ('/demo/' for the demo build, '/' otherwise) becomes
+  // the router basename, so client routes like /demo/agents resolve correctly.
+  const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || undefined;
+
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <div className="app-shell">
         <Sidebar status={status} onSignOut={signOut} branding={branding} />
         <div className="main">
+          {DEMO_MODE && <DemoBanner />}
           <main className="main-content">
             <Routes>
               <Route path="/" element={<Overview />} />
@@ -107,6 +113,45 @@ export default function App() {
       </div>
       <CommandPalette />
     </BrowserRouter>
+  );
+}
+
+// A slim, honest banner shown only in the demo build: this is a real dashboard
+// on seeded example data, with a way back to the real thing.
+function DemoBanner() {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        flexWrap: 'wrap',
+        padding: '8px 16px',
+        fontSize: 13,
+        fontWeight: 600,
+        color: 'var(--vg-ink)',
+        background: 'var(--vg-accent-yellow, #ffe27a)',
+        borderBottom: '2px solid var(--vg-ink)',
+      }}
+    >
+      <span aria-hidden="true">●</span>
+      <span>
+        Demo data — a live VoiceGateway dashboard with example numbers. Nothing
+        here is billed or editable.
+      </span>
+      <a
+        href="/"
+        style={{
+          fontWeight: 700,
+          textDecoration: 'underline',
+          color: 'var(--vg-ink)',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        Get started free →
+      </a>
+    </div>
   );
 }
 
