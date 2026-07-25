@@ -1,3 +1,5 @@
+import { DEMO_MODE } from './demo';
+
 const API_BASE = '';
 const TOKEN_KEY = 'voicegw_token';
 
@@ -75,6 +77,13 @@ function parseRetryAfter(res: Response): number | null {
 }
 
 export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  if (DEMO_MODE) {
+    // No backend in the demo: serve seeded fixtures. The dynamic import keeps the
+    // fixtures out of the real dashboard bundle (this whole branch is dead code
+    // when DEMO_MODE folds to false at build time).
+    const { demoFetch } = await import('./demoFixtures');
+    return demoFetch<T>(path, init);
+  }
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: buildHeaders(init),
@@ -370,6 +379,7 @@ export async function uploadBrandingLogo(
   projectId: string,
   file: File,
 ): Promise<LogoUploadResponse> {
+  if (DEMO_MODE) throw new Error('This is a read-only demo.');
   const fd = new FormData();
   fd.append('file', file);
   const headers: Record<string, string> = {};

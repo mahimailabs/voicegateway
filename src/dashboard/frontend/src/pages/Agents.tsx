@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { fetchAgents, probeAgent } from '../lib/api';
 import { attemptedProbes } from '../lib/autoProbe';
+import { DEMO_MODE } from '../lib/demo';
 import type { AgentRow } from '../lib/types';
 import {
   agentStatus,
@@ -147,12 +148,13 @@ export default function Agents() {
           if (!cancelled) setAgents([]);
         });
     // Debounced load on search change, then poll so compute/memory stay live.
+    // The demo has no live backend, so it loads once and skips the poll.
     const debounce = setTimeout(load, 200);
-    const poll = setInterval(load, RESOURCE_POLL_MS);
+    const poll = DEMO_MODE ? null : setInterval(load, RESOURCE_POLL_MS);
     return () => {
       cancelled = true;
       clearTimeout(debounce);
-      clearInterval(poll);
+      if (poll) clearInterval(poll);
     };
   }, [search]);
 
