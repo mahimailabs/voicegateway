@@ -263,6 +263,7 @@ class MetricCapture:
         tenant_id: str | None = None,
         room: str | None = None,
         channel: str | None = None,
+        dispatch_name: str | None = None,
     ) -> None:
         self._cost_tracker = cost_tracker
         self._sink = sink
@@ -272,6 +273,7 @@ class MetricCapture:
         self._tenant_id = tenant_id
         self._room = room
         self._channel = channel
+        self._dispatch_name = dispatch_name
         self._pending: set[asyncio.Task[None]] = set()
         # Per-(provider, model_id) running tally of captured units, so the
         # close-time reconcile can diff against cumulative session.usage.
@@ -468,6 +470,14 @@ class MetricCapture:
         # phone/web chip. Absent when attach could not classify the participants.
         if self._channel:
             extra["channel"] = self._channel
+        # ``dispatch_name`` is the LiveKit job's ``agent_name``: the name an
+        # explicit dispatch must target. Stamped with ``is not None`` (not a
+        # truthiness test) because the empty string is meaningful, not missing:
+        # it is what LiveKit reports for a worker registered WITHOUT an
+        # agent_name, i.e. one on automatic dispatch. The dashboard needs to tell
+        # "automatic dispatch" apart from "never observed", so both survive here.
+        if self._dispatch_name is not None:
+            extra["dispatch_name"] = self._dispatch_name
         if extra:
             record.metadata = {**record.metadata, **extra}
 

@@ -18,7 +18,7 @@ import asyncio
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -26,7 +26,10 @@ from pydantic import BaseModel
 from voicegateway.core.auth import ADMIN_SCOPE
 from voicegateway.livekit_diag import service
 from voicegateway.livekit_diag.config import CredsError, resolve_creds
-from voicegateway.server.api._deps import require_scope
+from voicegateway.server.api._deps import get_gateway, require_scope
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from voicegateway.core.gateway import Gateway
 
 router = APIRouter(prefix="/diagnostics", tags=["dashboard"])
 
@@ -73,8 +76,16 @@ def _as_dict(r: _Run) -> dict[str, Any]:
 
 
 # Seams for tests to override (monkeypatch):
-def _make_probes() -> service.RealProbes:
-    return service.RealProbes()
+def _make_probes(store: Any) -> service.RealProbes:
+    """Probes bound to this host's telemetry store.
+
+    ``store`` is what lets the latency check report the STT/LLM/TTS split rather
+    than end-to-end time alone: the split lives in the rows the probed agent
+    wrote for the probe's room, so without a store to read them back the check
+    can only time the reply from outside. None (storage disabled, or an agent
+    reporting to a remote collector) degrades to end-to-end only.
+    """
+    return service.RealProbes(store)
 
 
 def _resolve_creds() -> Any:
@@ -88,12 +99,14 @@ def _active_run_id() -> str | None:
     return None
 
 
-async def _execute(run: _Run, creds: Any) -> None:
+async def _execute(run: _Run, creds: Any, store: Any = None) -> None:
     run.status = "running"
     run.started_at = _now()
     try:
         out = await asyncio.wait_for(
-            service.execute_run(run.checks, run.config, creds, probes=_make_probes()),
+            service.execute_run(
+                run.checks, run.config, creds, probes=_make_probes(store)
+            ),
             _OVERALL_RUN_TIMEOUT_SECONDS,
         )
         run.results = out
@@ -140,6 +153,7 @@ async def get_creds(
 async def create_run(
     body: _RunRequest,
     _auth: None = Depends(require_scope(ADMIN_SCOPE)),
+    gateway: Gateway = Depends(get_gateway),
 ) -> dict[str, Any]:
     """Start a new diagnostics run. Returns 400 when not configured or checks invalid,
     409 when another run is already active."""
@@ -181,7 +195,7 @@ async def create_run(
         else:
             break
 
-    task = asyncio.create_task(_execute(run, creds))
+    task = asyncio.create_task(_execute(run, creds, gateway.storage))
     _TASKS.add(task)
     task.add_done_callback(_TASKS.discard)
 

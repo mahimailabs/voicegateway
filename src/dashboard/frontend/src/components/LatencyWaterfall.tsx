@@ -11,7 +11,17 @@ const SEGMENTS = [
   { key: 'tts', label: 'TTS', color: 'var(--vg-red)' },
 ] as const;
 
-export default function LatencyWaterfall({ latency }: { latency?: Stack | null }) {
+export default function LatencyWaterfall({
+  latency,
+  label = 'Avg first-byte latency',
+  emptyText = 'No latency samples yet',
+}: {
+  latency?: Stack | null;
+  /** What the bar is measuring. The 24h card average and a single probe sample
+   * are different claims, so the caller names its own. */
+  label?: string;
+  emptyText?: string;
+}) {
   const parts = SEGMENTS.map((s) => ({ ...s, ms: latency?.[s.key] ?? 0 })).filter(
     (s) => s.ms > 0,
   );
@@ -19,9 +29,7 @@ export default function LatencyWaterfall({ latency }: { latency?: Stack | null }
 
   if (total === 0) {
     return (
-      <div style={{ fontSize: 11, color: 'var(--vg-muted-2)' }}>
-        No latency samples yet
-      </div>
+      <div style={{ fontSize: 11, color: 'var(--vg-muted-2)' }}>{emptyText}</div>
     );
   }
 
@@ -32,7 +40,7 @@ export default function LatencyWaterfall({ latency }: { latency?: Stack | null }
         style={{ justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}
       >
         <span className="vg-card__label" style={{ fontSize: 11 }}>
-          Avg first-byte latency
+          {label}
         </span>
         <span className="mono" style={{ fontSize: 12, fontWeight: 700, color: 'var(--vg-ink)' }}>
           {Math.round(total)}ms

@@ -285,6 +285,38 @@ _REQUEST_COLUMNS = (
 )
 
 
+# Rooms a VoiceGateway probe creates are named ``vg-probe-<agent>-<hex8>``
+# (livekit_diag.latency.ProbeRunner.probe). That prefix is what makes a probe's
+# rows self-identifying: they are ordinary ``requests`` rows, so nothing else
+# distinguishes synthetic probe traffic from a real call. Matching on the room
+# name (rather than a new column) means the exclusion also works for agents that
+# are already deployed, with no migration and no agent-side change.
+PROBE_ROOM_PREFIX = "vg-probe-"
+
+# ``"room": "vg-probe-`` exactly as it appears in the serialized metadata JSON.
+# Built with json.dumps so it matches the write path byte for byte, then sliced
+# to drop the closing quote so it matches any room STARTING with the prefix.
+_PROBE_ROOM_NEEDLE = "%" + json.dumps({"room": PROBE_ROOM_PREFIX})[1:-2] + "%"
+
+# A row with NULL metadata is real traffic that simply carried no context, so it
+# must survive the filter: ``NULL NOT LIKE x`` is NULL (i.e. dropped) in SQL, so
+# the IS NULL arm is load-bearing, not defensive noise.
+_EXCLUDE_PROBES_SQL = "(metadata IS NULL OR metadata NOT LIKE :probe_needle)"
+
+# The metadata key ``attach`` stamps with the observed LiveKit Job.agent_name.
+_DISPATCH_NAME_NEEDLE = "%" + json.dumps("dispatch_name") + ":%"
+
+
+def exclude_probes_clause() -> tuple[str, dict[str, Any]]:
+    """Return the SQL predicate + bind params that drop VoiceGateway probe rows.
+
+    Handed out as a pair so every caller that reports on *real traffic* filters
+    identically, and so the needle is built in exactly one place. ``AND`` the
+    predicate into a WHERE clause and merge the params.
+    """
+    return _EXCLUDE_PROBES_SQL, {"probe_needle": _PROBE_ROOM_NEEDLE}
+
+
 def _row_to_dict(row: Any) -> dict[str, Any]:
     record = {col: row[i] for i, col in enumerate(_REQUEST_COLUMNS)}
     if record.get("metadata"):
@@ -450,13 +482,18 @@ async def read_avg_ttfb_by_modality(
     cards' STT/LLM/TTS latency waterfall. Rows with a NULL ttfb_ms drop out of
     the AVG. Scoped to ``since`` (epoch seconds) when given, so the index can
     match its 24h window.
+
+    Rows from VoiceGateway's own probes are excluded: the waterfall describes
+    how this agent serves real callers, and a synthetic probe (a fixed 2-second
+    utterance, no barge-in, a cold room) is not that. The probe's own numbers are
+    shown separately, as one sample, by the per-agent probe endpoint.
     """
-    where = "agent_id IS NOT NULL AND ttfb_ms IS NOT NULL"
-    params: dict[str, Any] = {}
+    where = f"agent_id IS NOT NULL AND ttfb_ms IS NOT NULL AND {_EXCLUDE_PROBES_SQL}"
+    params: dict[str, Any] = {"probe_needle": _PROBE_ROOM_NEEDLE}
     if agent_ids:
         keys = ", ".join(f":a{i}" for i in range(len(agent_ids)))
         where += f" AND agent_id IN ({keys})"
-        params = {f"a{i}": a for i, a in enumerate(agent_ids)}
+        params.update({f"a{i}": a for i, a in enumerate(agent_ids)})
     if since is not None:
         where += " AND timestamp >= :since"
         params["since"] = since
@@ -470,6 +507,83 @@ async def read_avg_ttfb_by_modality(
     out: dict[str, dict[str, float]] = {}
     for row in result.mappings():
         out.setdefault(row["agent_id"], {})[row["modality"]] = float(row["avg_ttfb"])
+    return out
+
+
+async def read_last_seen_dispatch_name(
+    session: AsyncSession,
+    agent_ids: list[str] | None = None,
+    *,
+    since: float | None = None,
+) -> dict[str, str]:
+    """Last-observed LiveKit dispatch name per agent_id.
+
+    Returns ``{agent_id: dispatch_name}``, where the value is ``Job.agent_name``
+    as ``attach`` saw it on the agent's most recent instrumented call. An empty
+    string is a real, distinct answer (the worker registered no agent_name, so it
+    is on automatic dispatch); an agent absent from the mapping was simply never
+    observed, and the dashboard must not guess a name for it.
+
+    This is the only honest source for "can the dashboard dispatch a probe to
+    this agent". Dispatch eligibility is decided at worker registration inside
+    the agent's own process, so it can be read back from a job it actually ran,
+    never invented here. Agents whose telemetry goes to a remote collector write
+    no local rows and so never appear.
+    """
+    params: dict[str, Any] = {"dispatch_needle": _DISPATCH_NAME_NEEDLE}
+    if agent_ids:
+        params.update({f"a{i}": a for i, a in enumerate(agent_ids)})
+    if since is not None:
+        params["since"] = since
+
+    def _predicate(prefix: str) -> str:
+        # The same filter is applied twice, once inside the aggregate and once
+        # on the joined rows, so it is generated rather than reused as a string:
+        # the outer copy sits in a two-table scope where a bare ``agent_id``
+        # is ambiguous and SQLite rejects the whole query.
+        parts = [
+            f"{prefix}agent_id IS NOT NULL",
+            f"{prefix}metadata LIKE :dispatch_needle",
+        ]
+        if agent_ids:
+            keys = ", ".join(f":a{i}" for i in range(len(agent_ids)))
+            parts.append(f"{prefix}agent_id IN ({keys})")
+        if since is not None:
+            parts.append(f"{prefix}timestamp >= :since")
+        return " AND ".join(parts)
+
+    # Newest qualifying row per agent, same JOIN-on-MAX shape as
+    # read_last_seen_models so one chatty agent cannot crowd out a quiet one.
+    # The outer filter matters: an agent can write several rows at the same
+    # timestamp (an eou row and an llm row from one turn), and only some of them
+    # carry a dispatch_name, so the join alone would hand back rows that cannot
+    # answer the question.
+    sql = text(f"""
+        SELECT r.agent_id, r.metadata
+        FROM requests r
+        JOIN (
+            SELECT agent_id, MAX(timestamp) AS mt
+            FROM requests
+            WHERE {_predicate("")}
+            GROUP BY agent_id
+        ) latest
+        ON r.agent_id = latest.agent_id AND r.timestamp = latest.mt
+        WHERE {_predicate("r.")}
+    """)
+    result = await session.execute(sql, params)
+    out: dict[str, str] = {}
+    for row in result.mappings():
+        try:
+            meta = json.loads(row["metadata"]) if row["metadata"] else None
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(meta, dict):
+            continue
+        name = meta.get("dispatch_name")
+        # The LIKE only pre-filters the serialized JSON; this is the exact match
+        # that rejects an incidental substring hit.
+        if isinstance(name, str):
+            out.setdefault(row["agent_id"], name)
     return out
 
 
@@ -504,7 +618,9 @@ __all__ = [
     "get_requests_in_window",
     "log_audit_event",
     "log_request",
+    "PROBE_ROOM_PREFIX",
     "read_avg_ttfb_by_modality",
+    "read_last_seen_dispatch_name",
     "read_last_seen_models",
     "read_models_in_use",
 ]

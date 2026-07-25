@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 
+from voicegateway.repository.request_log_repository import exclude_probes_clause
 from voicegateway.utils.percentiles import compute_percentiles
 
 if TYPE_CHECKING:
@@ -77,12 +78,21 @@ async def roll_up(
     ws_ts = window_start.timestamp()
     we_ts = now.timestamp()
 
+    # Rows written by VoiceGateway's own probes are excluded from the rollup.
+    # A probe is a synthetic call this dashboard placed, so folding it into the
+    # agent's cost / request count / p95 / error rate would make the fleet card
+    # report on the observer rather than on real traffic (and would let one
+    # button press move a p95). The probe's own latency and cost are reported
+    # separately, as a single labelled sample, by the per-agent probe endpoint.
+    # Total spend on the Costs page still includes probes: that money was spent.
+    no_probes, probe_params = exclude_probes_clause()
     result = await session.execute(
         text(
             "SELECT agent_id, cost_usd, status, total_latency_ms, timestamp "
-            "FROM requests WHERE timestamp >= :ws AND timestamp < :we"
+            "FROM requests WHERE timestamp >= :ws AND timestamp < :we "
+            f"AND {no_probes}"
         ),
-        {"ws": ws_ts, "we": we_ts},
+        {"ws": ws_ts, "we": we_ts, **probe_params},
     )
 
     groups: dict[Any, dict[str, Any]] = {}

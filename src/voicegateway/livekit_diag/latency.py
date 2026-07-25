@@ -17,6 +17,9 @@ class LatencyResult:
     e2e_samples: list[float] = field(default_factory=list)
     components: dict | None = None
     error: str | None = None
+    # The room the counted (non-warmup) turns ran in, so a caller can correlate
+    # the probe's own cost rows back to it. None when no turn completed.
+    room: str | None = None
 
 
 def aggregate_components(rows: list[dict]) -> dict | None:
@@ -159,16 +162,37 @@ class ProbeRunner:
         warmup: bool,
         room_name: str | None,
         metadata: str,
+        *,
+        dispatch: bool = True,
     ) -> LatencyResult:
+        """Place ``trials`` real calls to ``agent`` and time the reply.
+
+        ``dispatch=False`` creates the room but issues no explicit dispatch. That
+        is the path for a worker registered WITHOUT an agent_name: LiveKit puts
+        such a worker on automatic dispatch, so it joins every new room on its
+        own and there is no name to dispatch to. Explicit dispatch remains the
+        default, since it is the only way to target one named agent.
+        """
         result = LatencyResult(agent=agent)
         total = trials + (1 if warmup else 0)
         last_room: str | None = None
         for i in range(total):
             room = room_name or f"vg-probe-{agent}-{uuid.uuid4().hex[:8]}"
+            if i == 0 and warmup and room_name:
+                # The warmup turn is discarded from the timings, so it must not
+                # land in the room the caller reads back: cost is SUMMED and the
+                # component split AVERAGED over every row tagged with that room,
+                # so sharing one room folds a cold start the e2e number
+                # deliberately threw away into both. Per-trial rooms (room_name
+                # is None) isolate it already; a caller-fixed room needs this.
+                # The vg-probe- prefix survives, so the warmup's own rows stay
+                # out of the agent's rollups just the same.
+                room = f"{room_name}-warmup"
             e2e = None
             try:
                 await self._admin.create_room(room)
-                await self._admin.create_dispatch(room, agent, metadata)
+                if dispatch:
+                    await self._admin.create_dispatch(room, agent, metadata)
                 client = self._make_client(
                     self._url, self._admin.join_token(room, "vg-probe")
                 )
@@ -192,7 +216,16 @@ class ProbeRunner:
         # writes those rows from its own process and may still be flushing, so
         # the reader polls. Correlate on the last successful room.
         if last_room is not None:
-            result.components = await self._reader.read(last_room)
+            result.room = last_room
+            try:
+                result.components = await self._reader.read(last_room)
+            except Exception:  # noqa: BLE001 - the call itself already succeeded
+                # The read-back is a local convenience, not the measurement. A
+                # store that errors (locked file, collector mode, a schema this
+                # host has not migrated) costs the component split, which is
+                # reported as None, and nothing else: throwing here would
+                # discard an end-to-end time that was genuinely measured.
+                result.components = None
         return result
 
 

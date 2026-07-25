@@ -62,7 +62,9 @@ class _FakeProbes:
     async def agents(self, creds: Any) -> dict[str, Any]:
         return {"agents": []}
 
-    async def sfu(self, creds: Any, load: bool, config: dict[str, Any]) -> dict[str, Any]:
+    async def sfu(
+        self, creds: Any, load: bool, config: dict[str, Any]
+    ) -> dict[str, Any]:
         return {
             "baseline": {"rtt_ms": 5.0, "loss_pct": 0.0, "quality": "Excellent"},
             "ramp": [],
@@ -113,7 +115,11 @@ async def _poll_until_done(client: AsyncClient, run_id: str) -> dict[str, Any]:
 async def test_creds_reports_not_configured(client, monkeypatch):
     from voicegateway.server.api.dashboard import diagnostics
 
-    monkeypatch.setattr(diagnostics, "_resolve_creds", lambda: (_ for _ in ()).throw(CredsError("no creds")))
+    monkeypatch.setattr(
+        diagnostics,
+        "_resolve_creds",
+        lambda: (_ for _ in ()).throw(CredsError("no creds")),
+    )
     resp = await client.get("/api/diagnostics/creds")
     assert resp.status_code == 200
     data = resp.json()
@@ -140,8 +146,14 @@ async def test_creds_reports_configured(client, monkeypatch):
 async def test_run_rejects_when_not_configured(client, monkeypatch):
     from voicegateway.server.api.dashboard import diagnostics
 
-    monkeypatch.setattr(diagnostics, "_resolve_creds", lambda: (_ for _ in ()).throw(CredsError("no creds")))
-    resp = await client.post("/api/diagnostics/runs", json={"checks": ["agents"], "config": {}})
+    monkeypatch.setattr(
+        diagnostics,
+        "_resolve_creds",
+        lambda: (_ for _ in ()).throw(CredsError("no creds")),
+    )
+    resp = await client.post(
+        "/api/diagnostics/runs", json={"checks": ["agents"], "config": {}}
+    )
     assert resp.status_code == 400
     assert "LiveKit not configured" in resp.json()["detail"]
 
@@ -150,7 +162,7 @@ async def test_run_rejects_empty_checks(client, monkeypatch):
     from voicegateway.server.api.dashboard import diagnostics
 
     monkeypatch.setattr(diagnostics, "_resolve_creds", lambda: _FAKE_CREDS)
-    monkeypatch.setattr(diagnostics, "_make_probes", lambda: _FakeProbes())
+    monkeypatch.setattr(diagnostics, "_make_probes", lambda _store: _FakeProbes())
     resp = await client.post("/api/diagnostics/runs", json={"checks": [], "config": {}})
     assert resp.status_code == 400
 
@@ -159,8 +171,10 @@ async def test_run_rejects_bad_checks(client, monkeypatch):
     from voicegateway.server.api.dashboard import diagnostics
 
     monkeypatch.setattr(diagnostics, "_resolve_creds", lambda: _FAKE_CREDS)
-    monkeypatch.setattr(diagnostics, "_make_probes", lambda: _FakeProbes())
-    resp = await client.post("/api/diagnostics/runs", json={"checks": ["bogus"], "config": {}})
+    monkeypatch.setattr(diagnostics, "_make_probes", lambda _store: _FakeProbes())
+    resp = await client.post(
+        "/api/diagnostics/runs", json={"checks": ["bogus"], "config": {}}
+    )
     assert resp.status_code == 400
 
 
@@ -173,9 +187,11 @@ async def test_run_completes_and_polls(client, monkeypatch):
     from voicegateway.server.api.dashboard import diagnostics
 
     monkeypatch.setattr(diagnostics, "_resolve_creds", lambda: _FAKE_CREDS)
-    monkeypatch.setattr(diagnostics, "_make_probes", lambda: _FakeProbes())
+    monkeypatch.setattr(diagnostics, "_make_probes", lambda _store: _FakeProbes())
 
-    resp = await client.post("/api/diagnostics/runs", json={"checks": ["agents"], "config": {}})
+    resp = await client.post(
+        "/api/diagnostics/runs", json={"checks": ["agents"], "config": {}}
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert "run_id" in body
@@ -194,14 +210,18 @@ async def test_run_conflict_when_active(client, monkeypatch):
     from voicegateway.server.api.dashboard import diagnostics
 
     monkeypatch.setattr(diagnostics, "_resolve_creds", lambda: _FAKE_CREDS)
-    monkeypatch.setattr(diagnostics, "_make_probes", lambda: _SlowProbes())
+    monkeypatch.setattr(diagnostics, "_make_probes", lambda _store: _SlowProbes())
 
-    resp1 = await client.post("/api/diagnostics/runs", json={"checks": ["agents"], "config": {}})
+    resp1 = await client.post(
+        "/api/diagnostics/runs", json={"checks": ["agents"], "config": {}}
+    )
     assert resp1.status_code == 200
     run_id = resp1.json()["run_id"]
 
     # The run should still be queued or running, so the second POST must 409.
-    resp2 = await client.post("/api/diagnostics/runs", json={"checks": ["agents"], "config": {}})
+    resp2 = await client.post(
+        "/api/diagnostics/runs", json={"checks": ["agents"], "config": {}}
+    )
     assert resp2.status_code == 409
     assert "already in progress" in resp2.json()["detail"]
 
@@ -218,11 +238,13 @@ async def test_runs_list_newest_first_and_capped(client, monkeypatch):
     from voicegateway.server.api.dashboard import diagnostics
 
     monkeypatch.setattr(diagnostics, "_resolve_creds", lambda: _FAKE_CREDS)
-    monkeypatch.setattr(diagnostics, "_make_probes", lambda: _FakeProbes())
+    monkeypatch.setattr(diagnostics, "_make_probes", lambda _store: _FakeProbes())
 
     run_ids = []
     for _ in range(5):
-        resp = await client.post("/api/diagnostics/runs", json={"checks": ["agents"], "config": {}})
+        resp = await client.post(
+            "/api/diagnostics/runs", json={"checks": ["agents"], "config": {}}
+        )
         assert resp.status_code == 200
         run_id = resp.json()["run_id"]
         run_ids.append(run_id)
@@ -241,7 +263,9 @@ async def test_run_isolates_failing_check(client, monkeypatch):
     from voicegateway.server.api.dashboard import diagnostics
 
     monkeypatch.setattr(diagnostics, "_resolve_creds", lambda: _FAKE_CREDS)
-    monkeypatch.setattr(diagnostics, "_make_probes", lambda: _FailLatencyProbes())
+    monkeypatch.setattr(
+        diagnostics, "_make_probes", lambda _store: _FailLatencyProbes()
+    )
 
     resp = await client.post(
         "/api/diagnostics/runs",
