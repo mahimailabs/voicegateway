@@ -26,6 +26,12 @@ _AGENT_POLL_INTERVAL = 0.25
 # not-yet-ready pipeline is never transcribed). It sits before t0, so it does not
 # inflate the measured reply latency.
 _AGENT_SETTLE_SECONDS = 2.0
+# The reply is detected on its FIRST audio, so wait_reply returns while the agent
+# is still speaking. Tearing the room down then cuts the agent off before TTS
+# finishes and flushes its metric, so the split loses its TTS leg even though the
+# call replied. Hold on briefly after the reply to let the agent finish and write
+# that row. It sits after t0, so it does not inflate the measured reply latency.
+_REPLY_GRACE_SECONDS = 4.0
 
 
 @dataclass
@@ -277,6 +283,10 @@ class ProbeRunner:
                     await asyncio.sleep(_AGENT_SETTLE_SECONDS)
                     t0 = await client.publish_utterance(self._utterance)
                     e2e = await client.wait_reply(t0)
+                    if e2e is not None:
+                        # Let the agent finish speaking so its TTS metric is
+                        # written before the room is torn down below.
+                        await asyncio.sleep(_REPLY_GRACE_SECONDS)
                 finally:
                     await client.disconnect()
             except Exception as exc:  # noqa: BLE001 - isolate per-agent failures; caller loops on

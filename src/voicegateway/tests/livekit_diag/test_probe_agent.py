@@ -21,6 +21,8 @@ from voicegateway.repository.request_log_repository import PROBE_ROOM_PREFIX
 def _no_settle(monkeypatch):
     """Zero the pre-utterance settle so probe() does not sleep in tests."""
     monkeypatch.setattr(latency, "_AGENT_SETTLE_SECONDS", 0.0)
+    monkeypatch.setattr(latency, "_REPLY_GRACE_SECONDS", 0.0)
+
 
 _CREDS = SimpleNamespace(url="ws://fake", api_key="k", api_secret="s")
 
@@ -459,10 +461,18 @@ async def test_agent_side_error_is_surfaced_when_nothing_measured(monkeypatch) -
     room = "vg-probe-a-ab12cd34"
     msg = "Invalid response status (401 Unauthorized)"
     error_rows = [
-        {"modality": "stt", "status": "error", "error_message": msg,
-         "metadata": {"room": room}},
-        {"modality": "stt", "status": "error", "error_message": msg,
-         "metadata": {"room": room}},  # duplicate retry -> deduped
+        {
+            "modality": "stt",
+            "status": "error",
+            "error_message": msg,
+            "metadata": {"room": room},
+        },
+        {
+            "modality": "stt",
+            "status": "error",
+            "error_message": msg,
+            "metadata": {"room": room},
+        },  # duplicate retry -> deduped
     ]
     out = await service.probe_agent(
         _CREDS,
