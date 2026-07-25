@@ -432,3 +432,5 @@ web/references/
 /helicone/
 /.shots/
 
+qa/
+.gstack/
