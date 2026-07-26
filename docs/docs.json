@@ -193,6 +193,7 @@
             "pages": [
               "reference/faq",
               "reference/troubleshooting",
+              "reference/cloud-rows-not-appearing",
               "reference/reconcile-formats"
             ]
           },
