@@ -1,0 +1,59 @@
+name: Assign issue on .take
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+
+jobs:
+  take:
+    # Only on issues (not PRs), and only when the comment starts with ".take"
+    if: >
+      github.event.issue.pull_request == null &&
+      startsWith(github.event.comment.body, '.take')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const commenter = context.payload.comment.user.login;
+            const issue = context.payload.issue;
+            const assignees = issue.assignees || [];
+
+            // Trigger only on a bare ".take" (ignore trailing whitespace).
+            if (context.payload.comment.body.trim() !== '.take') return;
+
+            // First .take wins: if already assigned to someone else, say so.
+            if (assignees.length > 0) {
+              if (assignees.some(a => a.login === commenter)) return; // already theirs
+              const current = assignees.map(a => '@' + a.login).join(', ');
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `This one is already assigned to ${current}. @${commenter}, please pick another open issue, or ask here if it looks stale.`,
+              });
+              return;
+            }
+
+            // Assign the commenter.
+            await github.rest.issues.addAssignees({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: issue.number, assignees: [commenter],
+            });
+
+            // GitHub silently drops assignees it won't allow, so confirm it stuck.
+            const { data: updated } = await github.rest.issues.get({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: issue.number,
+            });
+            const gotIt = (updated.assignees || []).some(a => a.login === commenter);
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: issue.number,
+              body: gotIt
+                ? `Assigned to @${commenter}. Thanks for taking this! Open a PR with \`Closes #${issue.number}\` when it is ready, and comment here if you get stuck.`
+                : `@${commenter} I could not auto-assign you (GitHub only allows it for people who have interacted with the repo before). A maintainer will assign you shortly.`,
+            });
