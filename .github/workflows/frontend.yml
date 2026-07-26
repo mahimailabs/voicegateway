@@ -1,0 +1,33 @@
+name: Frontend
+
+# The Python CI (ci.yml) does not build the dashboard frontend, so a
+# frontend-only PR could merge with a TypeScript error that only surfaces
+# at `voicegw dashboard` build time. This job type-checks and builds the
+# Vite app on any PR that touches it. `npm run build` runs `tsc -b`, so a
+# type error fails the job.
+
+on:
+  pull_request:
+    paths:
+      - 'src/dashboard/frontend/**'
+      - '.github/workflows/frontend.yml'
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/dashboard/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: src/dashboard/frontend/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Build (tsc + vite)
+        run: npm run build
