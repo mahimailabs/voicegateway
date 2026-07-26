@@ -256,6 +256,7 @@ export default function Agents() {
                 {COLUMNS.slice(0, 1).map((c) => (
                   <th
                     key={c.key}
+                    aria-sort={sortKey === c.key ? (sortAsc ? 'ascending' : 'descending') : 'none'}
                     onClick={() => onSort(c.key)}
                     style={{ cursor: 'pointer', userSelect: 'none' }}
                   >
@@ -267,6 +268,7 @@ export default function Agents() {
                 {COLUMNS.slice(1).map((c) => (
                   <th
                     key={c.key}
+                    aria-sort={sortKey === c.key ? (sortAsc ? 'ascending' : 'descending') : 'none'}
                     onClick={() => onSort(c.key)}
                     style={{ cursor: 'pointer', userSelect: 'none' }}
                   >
