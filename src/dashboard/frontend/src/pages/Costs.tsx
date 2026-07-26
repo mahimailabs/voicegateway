@@ -6,6 +6,7 @@ import TimeRange, { usePeriod } from '../components/TimeRange';
 import PageHeader from '../components/PageHeader';
 import StatusCard from '../components/StatusCard';
 import LatencyChart from '../components/LatencyChart';
+import { Skeleton, StatCardSkeleton } from '../components/Skeleton';
 import { fetchJson } from '../lib/api';
 import { formatCost, latencyBadgeClass, formatMs } from '../lib/ui';
 import type { CostsResponse, LatencyResponse, LatencyStats } from '../lib/types';
@@ -31,6 +32,45 @@ function badgeFor(v: number | null | undefined): string {
   return typeof v === 'number' ? latencyBadgeClass(v) : 'neo-badge--black';
 }
 
+function ChartSkeleton({ height }: { height: number }) {
+  return (
+    <div className="vg-card">
+      <Skeleton width={120} height={13} />
+      <Skeleton height={height} style={{ marginTop: 16 }} />
+    </div>
+  );
+}
+
+function CostsLoadingSkeleton() {
+  return (
+    <>
+      <div className="mb-lg">
+        <StatCardSkeleton />
+      </div>
+      <div className="grid grid-cols-2">
+        <ChartSkeleton height={240} />
+        <ChartSkeleton height={240} />
+      </div>
+    </>
+  );
+}
+
+function LatencyLoadingSkeleton() {
+  return (
+    <div>
+      <FilterBar showTenant={false} />
+      <div className="grid grid-cols-3 mb-lg">
+        <StatCardSkeleton />
+        <StatCardSkeleton />
+        <StatCardSkeleton />
+      </div>
+      <div className="mb-lg">
+        <ChartSkeleton height={280} />
+      </div>
+    </div>
+  );
+}
+
 function LatencyContent() {
   const [data, setData] = useState<LatencyResponse | null>(null);
   const agent = useAgentFilter();
@@ -44,7 +84,7 @@ function LatencyContent() {
       .catch(() => setData(null));
   }, [agent]);
 
-  if (!data) return <div className="empty-state">Loading latency...</div>;
+  if (!data) return <LatencyLoadingSkeleton />;
 
   const entries = Object.entries(data);
   const p50 = worstP(entries, 'p50');
@@ -158,7 +198,7 @@ function CostsContent() {
           </button>
         </div>
       ) : !data ? (
-        <div className="empty-state">Loading costs...</div>
+        <CostsLoadingSkeleton />
       ) : (
         <>
           <div className="vg-card mb-lg">
