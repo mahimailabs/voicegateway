@@ -46,8 +46,8 @@ def build_session():
         stt=deepgram.STT(model="nova-3"),
         # guard() wraps ONE provider for control; it returns a drop-in LLM.
         llm=voicegateway.guard(
-            openai.LLM(model="gpt-4o-mini"),
-            fallback=[openai.LLM(model="gpt-4o")],
+            openai.LLM(model="gpt-4.1-mini"),
+            fallback=[openai.LLM(model="gpt-4.1")],
             rate_limit="60/min",
             budget="$5.00/day",
             project=PROJECT,

@@ -50,7 +50,7 @@ every STT, LLM, and TTS request and writes the costs to a local dashboard.
 
             session = AgentSession(
                 stt=deepgram.STT(model="nova-3"),
-                llm=openai.LLM(model="gpt-4o-mini"),
+                llm=openai.LLM(model="gpt-4.1-mini"),
                 tts=cartesia.TTS(model="sonic-3"),
             )
 
@@ -71,7 +71,7 @@ every STT, LLM, and TTS request and writes the costs to a local dashboard.
         import voicegateway
 
         stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"])
-        llm = OpenAILLMService(api_key=os.environ["OPENAI_API_KEY"], model="gpt-4o-mini")
+        llm = OpenAILLMService(api_key=os.environ["OPENAI_API_KEY"], model="gpt-4.1-mini")
         tts = CartesiaTTSService(api_key=os.environ["CARTESIA_API_KEY"], voice_id="your-voice-id")
 
         pipeline = Pipeline([transport.input(), stt, llm, tts, transport.output()])

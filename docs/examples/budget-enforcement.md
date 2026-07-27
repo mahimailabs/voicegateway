@@ -15,22 +15,22 @@ from voicegateway import guard
 
 # warn: log and continue (default when you pass budget= without budget_action)
 llm_warn = guard(
-    openai.LLM(model="gpt-4o-mini"),
+    openai.LLM(model="gpt-4.1-mini"),
     budget="$5.00/day",
     project="warn-demo",
 )
 
 # throttle: fall back to a cheaper provider when the budget is exceeded
 llm_throttle = guard(
-    openai.LLM(model="gpt-4o-mini"),
-    fallback=[openai.LLM(model="gpt-4o-mini")],   # swap in a local/cheaper model
+    openai.LLM(model="gpt-4.1-mini"),
+    fallback=[openai.LLM(model="gpt-4.1-mini")],   # swap in a local/cheaper model
     budget="$5.00/day",
     project="throttle-demo",
 )
 
 # block: raise BudgetExceededError when the budget is exceeded
 llm_block = guard(
-    openai.LLM(model="gpt-4o-mini"),
+    openai.LLM(model="gpt-4.1-mini"),
     budget="$5.00/day",
     project="block-demo",
 )
@@ -121,8 +121,8 @@ async def entrypoint(ctx):
         vad=silero.VAD.load(),
         stt=...,
         llm=guard(
-            openai.LLM(model="gpt-4o-mini"),
-            fallback=[openai.LLM(model="gpt-4o-mini")],  # local or cheaper model
+            openai.LLM(model="gpt-4.1-mini"),
+            fallback=[openai.LLM(model="gpt-4.1-mini")],  # local or cheaper model
             budget="$1.00/day",
             project="throttle-demo",
         ),
@@ -147,7 +147,7 @@ from voicegateway.middleware.budget_enforcer import BudgetExceededError
 
 async def main():
     guarded_llm = guard(
-        openai.LLM(model="gpt-4o-mini"),
+        openai.LLM(model="gpt-4.1-mini"),
         budget="$1.00/day",
         project="block-demo",
     )

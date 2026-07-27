@@ -85,8 +85,8 @@ the file for your framework, set your environment variables, and run it.
         # guard() wraps the LLM with a fallback and a daily budget.
         # It returns a drop-in openai.LLM, so AgentSession sees no difference.
         guarded_llm = voicegateway.guard(
-            openai.LLM(model="gpt-4o-mini"),
-            fallback=[openai.LLM(model="gpt-4o")],
+            openai.LLM(model="gpt-4.1-mini"),
+            fallback=[openai.LLM(model="gpt-4.1")],
             rate_limit="60/min",
             budget="$5.00/day",
             project="my-agent",
@@ -120,8 +120,8 @@ the file for your framework, set your environment variables, and run it.
     ### What happens
 
     1. `deepgram.STT` transcribes speech. `attach()` meters audio minutes and cost.
-    2. `guard(openai.LLM(...))` sends the transcript to GPT-4o mini. If GPT-4o mini
-       returns an error, `guard()` retries with GPT-4o automatically. `attach()`
+    2. `guard(openai.LLM(...))` sends the transcript to gpt-4.1 mini. If gpt-4.1 mini
+       returns an error, `guard()` retries with gpt-4.1 automatically. `attach()`
        meters prompt tokens, completion tokens, and cost.
     3. `cartesia.TTS` synthesizes speech. `attach()` meters characters and cost.
     4. Every row lands in the dashboard at `http://127.0.0.1:9090`.
@@ -189,12 +189,12 @@ the file for your framework, set your environment variables, and run it.
         llm = voicegateway.guard(
             OpenAILLMService(
                 api_key=os.environ["OPENAI_API_KEY"],
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
             ),
             fallback=[
                 OpenAILLMService(
                     api_key=os.environ["OPENAI_API_KEY"],
-                    model="gpt-4o",
+                    model="gpt-4.1",
                 )
             ],
             rate_limit="60/min",
@@ -265,8 +265,8 @@ the file for your framework, set your environment variables, and run it.
 
     1. `DeepgramSTTService` transcribes speech. `attach()` accumulates audio bytes,
        converts them to minutes, and prices the STT.
-    2. `guard(OpenAILLMService(...))` sends the transcript to GPT-4o mini. If it
-       returns an error, `guard()` retries with GPT-4o automatically. `attach()`
+    2. `guard(OpenAILLMService(...))` sends the transcript to gpt-4.1 mini. If it
+       returns an error, `guard()` retries with gpt-4.1 automatically. `attach()`
        meters tokens and cost from the `LLMTokenUsage` frame.
     3. `CartesiaTTSService` synthesizes speech. `attach()` meters characters and cost.
     4. On pipeline end, `attach()` flushes all pending rows to the local SQLite sink

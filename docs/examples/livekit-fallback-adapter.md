@@ -39,8 +39,8 @@ async def entrypoint(ctx: JobContext):
             openai.STT(model="whisper-1"),          # secondary cloud
         ]),
         llm=llm.FallbackAdapter([
-            openai.LLM(model="gpt-4o-mini"),
-            lk_openai.LLM(model="gpt-4o"),
+            openai.LLM(model="gpt-4.1-mini"),
+            lk_openai.LLM(model="gpt-4.1"),
         ]),
         tts=tts.FallbackAdapter([
             cartesia.TTS(model="sonic-3"),

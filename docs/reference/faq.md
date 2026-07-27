@@ -128,13 +128,13 @@ from voicegateway import attach
 
 session = AgentSession(
     stt=deepgram.STT(model="nova-3"),
-    llm=openai.LLM(model="gpt-4o-mini"),
+    llm=openai.LLM(model="gpt-4.1-mini"),
     tts=cartesia.TTS(model="sonic-3"),
 )
 attach(session, project="my-agent")  # meters STT, LLM, and TTS separately
 ```
 
-This gives you full control over each stage, independent fallbacks, and per-modality cost tracking. Native S2S model support (e.g., GPT-4o audio) may be added in a future release.
+This gives you full control over each stage, independent fallbacks, and per-modality cost tracking. Native S2S model support (e.g., gpt-4.1 audio) may be added in a future release.
 
 ---
 

@@ -174,7 +174,7 @@ async def entrypoint(ctx):
             rate_limit=60,
         ),
         llm=guard(
-            openai.LLM(model="gpt-4o-mini"),
+            openai.LLM(model="gpt-4.1-mini"),
             fallback=[openai.LLM(model="gpt-4.1-nano")],
             budget=0.05,
         ),
