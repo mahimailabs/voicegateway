@@ -185,6 +185,23 @@ def test_parse_rate_limit_rejects_garbage():
         parse_rate_limit("banana")
 
 
+@pytest.mark.parametrize(
+    "spec, per_seconds",
+    [
+        ("60/sec", 1.0),
+        ("60/second", 1.0),
+        ("60/minute", 60.0),
+        ("60/m", 60.0),
+        ("5/s", 1.0),
+        ("60/MIN", 60.0),  # case-insensitive
+        (" 60 / s ", 1.0),  # whitespace tolerant
+    ],
+)
+def test_parse_rate_limit_unit_aliases(spec, per_seconds):
+    result = parse_rate_limit(spec)
+    assert result.per_seconds == per_seconds
+
+
 def test_parse_budget_dollar_per_day():
     spec = parse_budget("$5.00/day")
     assert spec.amount_usd == 5.0
