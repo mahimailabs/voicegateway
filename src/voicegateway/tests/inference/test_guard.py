@@ -198,6 +198,15 @@ def test_parse_rate_limit_rejects_garbage():
     ],
 )
 def test_parse_rate_limit_unit_aliases(spec, per_seconds):
+    """Verify unit aliases parse to the expected number of seconds.
+
+    Args:
+        spec: The rate-limit specification to parse.
+        per_seconds: The expected normalized interval in seconds.
+
+    Returns:
+        None.
+    """
     result = parse_rate_limit(spec)
     assert result.per_seconds == per_seconds
 
