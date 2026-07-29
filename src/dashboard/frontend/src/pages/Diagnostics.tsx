@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import {
   createDiagnosticsRun,
@@ -7,7 +7,14 @@ import {
   fetchDiagnosticsRuns,
 } from '../lib/api';
 import { DEMO_MODE } from '../lib/demo';
-import type { DiagnosticRun, DiagnosticsCreds } from '../lib/types';
+import { formatDateTime } from '../lib/time';
+import type { DiagCheckName, DiagnosticRun, DiagnosticsCreds } from '../lib/types';
+import AgentsTab from './diagnostics/AgentsTab';
+import ErrorsTab from './diagnostics/ErrorsTab';
+import LatencyTab from './diagnostics/LatencyTab';
+import LoadTab from './diagnostics/LoadTab';
+import { Note } from './diagnostics/shared';
+import SfuTab from './diagnostics/SfuTab';
 
 const CHECK_OPTS = [
   { key: 'agents', label: 'Agents in rooms' },
@@ -17,6 +24,20 @@ const CHECK_OPTS = [
 ] as const;
 
 const MAX_POLLS = 180;
+
+// Result tabs. Each renders exactly one check's payload, and says so when that
+// check was not part of the run rather than rendering an empty card.
+const TABS = ['Agents', 'SFU', 'Load', 'Latency', 'Errors'] as const;
+type Tab = (typeof TABS)[number];
+
+const CHECK_LABEL: Record<DiagCheckName, string> = {
+  agents: 'agents',
+  sfu: 'sfu baseline',
+  sfu_load: 'sfu load',
+  latency: 'latency',
+};
+
+const CHECK_ORDER: DiagCheckName[] = ['agents', 'sfu', 'sfu_load', 'latency'];
 
 function verdictBadgeClass(v: string | null): string {
   if (v === 'PASS') return 'neo-badge--green';
@@ -40,6 +61,7 @@ export default function Diagnostics() {
   const [selected, setSelected] = useState<Set<string>>(new Set(['agents', 'sfu']));
   const [inFlight, setInFlight] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>('Agents');
 
   // Load creds status + run history on mount.
   useEffect(() => {
@@ -56,6 +78,16 @@ export default function Diagnostics() {
   // Demo build is read-only: never allow starting a (billed, long-polling) run.
   const canRun = configured && selected.size > 0 && !inFlight && !DEMO_MODE;
 
+  // The run being inspected, and the history the error classes are counted over.
+  // An in-flight run is not in `runs` until it finishes, so it is prepended here
+  // rather than waiting: its partial results are still the newest thing measured.
+  const allRuns = useMemo(() => {
+    if (run && !runs.some((r) => r.run_id === run.run_id)) return [run, ...runs];
+    return runs;
+  }, [run, runs]);
+  const current = run ?? allRuns[0] ?? null;
+  const checks = current?.results?.checks;
+
   const toggleCheck = (key: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -69,8 +101,8 @@ export default function Diagnostics() {
     setInFlight(true);
     setRunError(null);
     try {
-      const checks = Array.from(selected);
-      const { run_id } = await createDiagnosticsRun({ checks, config: {} });
+      const checkList = Array.from(selected);
+      const { run_id } = await createDiagnosticsRun({ checks: checkList, config: {} });
 
       let rec = await fetchDiagnosticsRun(run_id);
       if (mountedRef.current) setRun(rec);
@@ -216,66 +248,58 @@ export default function Diagnostics() {
         </div>
       </div>
 
-      {/* Latest run card */}
-      {run && (
+      {/* Results: the run summary, then one tab per check payload. */}
+      {current === null ? (
         <div className="vg-card" style={{ marginBottom: 16 }}>
-          <div
-            style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}
-          >
-            <span className="vg-card__label">
-              Latest run
-              {(run.status === 'queued' || run.status === 'running') && ' (in progress)'}
-            </span>
-            {run.verdict && (
-              <span className={`neo-badge ${verdictBadgeClass(run.verdict)}`}>
-                {run.verdict}
-              </span>
-            )}
-          </div>
-          {run.results ? (
-            <table className="neo-table neo-table--blue">
-              <thead>
-                <tr>
-                  <th>Check</th>
-                  <th>Result</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(run.results.checks).map(([name, result]) => (
-                  <tr key={name}>
-                    <td style={{ fontWeight: 500 }}>{name}</td>
-                    <td>
-                      {result.ok ? (
-                        <span className="neo-badge neo-badge--green">ok</span>
-                      ) : (
-                        <span className="neo-badge neo-badge--red">
-                          {result.error ? `error: ${result.error}` : 'error'}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : run.error ? (
-            <div
-              style={{
-                padding: '10px 14px',
-                borderRadius: 6,
-                border: '1.5px solid var(--vg-red, #e53e3e)',
-                background: 'rgba(229, 62, 62, 0.07)',
-                color: 'var(--vg-red, #c53030)',
-                fontSize: 13,
-              }}
-            >
-              {run.error}
+          <div className="vg-card__label" style={{ marginBottom: 10 }}>Results</div>
+          <Note>
+            No diagnostics run has been recorded yet. Pick the checks above and run them: the
+            results land here, one tab per check, and nothing is shown that was not measured.
+          </Note>
+        </div>
+      ) : (
+        <>
+          <RunSummary run={current} />
+
+          {current.results === null ? (
+            <div className="vg-card" style={{ marginBottom: 16 }}>
+              <div className="vg-card__label" style={{ marginBottom: 10 }}>Results</div>
+              {current.status === 'queued' || current.status === 'running' ? (
+                <Note>
+                  The checks are still running. Results appear per check as the run completes; a run
+                  is capped at six minutes.
+                </Note>
+              ) : (
+                <Note tone="bad">
+                  This run recorded no results: {current.error ?? 'the reason was not reported'}
+                </Note>
+              )}
             </div>
           ) : (
-            <div style={{ color: 'var(--vg-muted)', fontSize: 13 }}>
-              Waiting for results...
-            </div>
+            <>
+              <div className="neo-tabs">
+                {TABS.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    className={`neo-tab${activeTab === t ? ' neo-tab--active' : ''}`}
+                    onClick={() => setActiveTab(t)}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+
+              {activeTab === 'Agents' && <AgentsTab check={checks?.agents} />}
+              {/* The plain sfu check and the load check both measure a baseline;
+                  prefer the dedicated one, fall back to the load run's. */}
+              {activeTab === 'SFU' && <SfuTab check={checks?.sfu ?? checks?.sfu_load} />}
+              {activeTab === 'Load' && <LoadTab check={checks?.sfu_load} />}
+              {activeTab === 'Latency' && <LatencyTab check={checks?.latency} />}
+              {activeTab === 'Errors' && <ErrorsTab runs={allRuns} />}
+            </>
           )}
-        </div>
+        </>
       )}
 
       {/* Run history card */}
@@ -312,6 +336,59 @@ export default function Diagnostics() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Header card for the run the tabs below are showing: when, what, and how it went. */
+function RunSummary({ run }: { run: DiagnosticRun }) {
+  const checks = run.results?.checks;
+  const ran = CHECK_ORDER.filter((name) => checks?.[name] !== undefined);
+
+  return (
+    <div className="vg-card" style={{ marginBottom: 16 }}>
+      <div
+        className="flex-row"
+        style={{ justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10 }}
+      >
+        <div className="vg-card__label">
+          Latest run
+          {(run.status === 'queued' || run.status === 'running') && ' (in progress)'}
+        </div>
+        <span className={`neo-badge ${verdictBadgeClass(run.verdict)}`}>
+          {run.verdict ?? run.status}
+        </span>
+      </div>
+
+      <div className="flex-row flex-wrap" style={{ gap: 18, fontSize: 12, color: 'var(--vg-muted)' }}>
+        <span>Started {run.created_at ? formatDateTime(run.created_at) : 'at an unrecorded time'}</span>
+        {run.ended_at && <span>Ended {formatDateTime(run.ended_at)}</span>}
+        {/* Run ids are a uuid4 hex; 12 chars is enough to tell two runs apart
+            without wrapping the line. */}
+        <span className="mono">run {run.run_id.slice(0, 12)}</span>
+      </div>
+
+      <div className="flex-row flex-wrap" style={{ gap: 8, marginTop: 12 }}>
+        {ran.length === 0 ? (
+          <span style={{ fontSize: 13, color: 'var(--vg-muted)' }}>
+            No check has reported a result for this run yet.
+          </span>
+        ) : (
+          ran.map((name) => {
+            const check = checks?.[name];
+            const ok = check?.ok === true;
+            return (
+              <span
+                key={name}
+                className={`neo-badge ${ok ? 'neo-badge--green' : 'neo-badge--red'}`}
+                title={ok ? 'the check completed' : (check?.error ?? 'the check failed')}
+              >
+                {CHECK_LABEL[name]} {ok ? 'ok' : `failed: ${check?.error ?? 'no reason reported'}`}
+              </span>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }

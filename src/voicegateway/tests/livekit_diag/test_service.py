@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 from voicegateway.livekit_diag import service as probes
+from voicegateway.livekit_diag.config import LiveKitCreds
+from voicegateway.livekit_diag.resources import ResourceReport
+from voicegateway.livekit_diag.sfu import RampStep, find_knee
 
 
 def test_clamp_config_enforces_caps():
@@ -121,3 +125,172 @@ async def test_verdict_warns_on_slow_latency():
     )
     assert out["checks"]["latency"]["ok"] is True
     assert out["verdict"] == "WARN"
+
+
+# ---------------------------------------------------------------------------
+# RealProbes payloads: what the dashboard can actually render.
+#
+# These pin the three things the probes measured and used to drop on the floor:
+# the heartbeat roster (idle workers are invisible to LiveKit's server API), the
+# per-step connection quality, and the prober's own resource report (without
+# which a knee cannot be attributed to the SFU rather than to this host).
+# ---------------------------------------------------------------------------
+
+_CREDS = LiveKitCreds("wss://x", "k", "s")
+
+
+class _FakeAdmin:
+    def __init__(self, creds) -> None:
+        self.url = ""
+        self.closed = False
+
+    async def list_agents(self):
+        return ["agent-a"]
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class _FakeSfuProbe:
+    """Returns real RampStep / ResourceReport objects, so the shapes stay honest."""
+
+    def __init__(self, admin, client_factory, monitor) -> None:
+        pass
+
+    async def baseline(self, room, seconds: float = 10.0):
+        return RampStep(2, 11.4, 0.0, "Excellent")
+
+    async def ramp(self, room, steps, duration, target_rtt_ms, max_loss, **kwargs):
+        return (
+            [
+                RampStep(2, 12.0, 0.0, "Excellent"),
+                RampStep(10, 61.0, 0.0, "Poor"),
+            ],
+            ResourceReport(
+                cpu_peak=91.2,
+                mem_peak_mb=812.5,
+                net_kbps_up=4200.0,
+                saturated=True,
+                per_client={"cpu_pct": 3.6, "kbps_up": 168.0},
+                sustainable_n=23,
+            ),
+        )
+
+
+def _fake_diag(**overrides):
+    ns = {
+        "LiveKitAdmin": _FakeAdmin,
+        "agents_json": lambda rows: [{"agent_name": r} for r in rows],
+        "fetch_roster": None,
+        "SfuProbe": _FakeSfuProbe,
+        "SyntheticClient": lambda url, token: object(),
+        "ResourceMonitor": lambda: object(),
+        "find_knee": find_knee,
+    }
+    ns.update(overrides)
+    return SimpleNamespace(**ns)
+
+
+async def test_agents_check_returns_none_roster_without_a_collector(monkeypatch):
+    """No collector configured is None, never an empty list.
+
+    [] would claim "the collector is up and nobody has registered"; None is the
+    honest "nobody asked", which is what lets the UI print how to enable it.
+    """
+    monkeypatch.delenv("VOICEGW_COLLECTOR_URL", raising=False)
+    monkeypatch.setattr(probes, "_diag_cache", _fake_diag())
+    out = await probes.RealProbes().agents(_CREDS)
+    assert out["agents"] == [{"agent_name": "agent-a"}]
+    assert out["roster"] is None
+
+
+async def test_agents_check_includes_the_heartbeat_roster(monkeypatch):
+    seen: list[tuple[str, str | None]] = []
+
+    async def _fetch(collector, api_key):
+        seen.append((collector, api_key))
+        return [{"agent_name": "idle-worker", "status": "idle"}]
+
+    monkeypatch.setenv("VOICEGW_COLLECTOR_URL", "https://collector.test")
+    monkeypatch.setenv("VOICEGW_API_KEY", "vk_secret")
+    monkeypatch.setattr(probes, "_diag_cache", _fake_diag(fetch_roster=_fetch))
+
+    out = await probes.RealProbes().agents(_CREDS)
+    assert seen == [("https://collector.test", "vk_secret")]
+    assert out["roster"] == [{"agent_name": "idle-worker", "status": "idle"}]
+    # The in-room view is unaffected by the enrichment.
+    assert out["agents"] == [{"agent_name": "agent-a"}]
+
+
+async def test_agents_check_survives_a_hanging_collector(monkeypatch):
+    """A collector that never answers costs the roster, not the whole check."""
+
+    async def _hang(collector, api_key):
+        await asyncio.sleep(10)
+        return []
+
+    monkeypatch.setenv("VOICEGW_COLLECTOR_URL", "https://collector.test")
+    monkeypatch.setattr(probes, "_ROSTER_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(probes, "_diag_cache", _fake_diag(fetch_roster=_hang))
+
+    out = await probes.RealProbes().agents(_CREDS)
+    assert out["roster"] == []
+    assert out["agents"] == [{"agent_name": "agent-a"}]
+
+
+async def test_sfu_load_payload_carries_quality_resource_and_threshold(monkeypatch):
+    monkeypatch.setattr(probes, "_diag_cache", _fake_diag())
+    out = await probes.RealProbes().sfu(_CREDS, True, probes.clamp_config({}))
+
+    # Per-step quality is the only real connection signal (loss is not measured).
+    assert [s["quality"] for s in out["ramp"]] == ["Excellent", "Poor"]
+    # 10 clients breached 50ms, so the last healthy tier is 2.
+    assert out["knee"] == 2
+    # The threshold the knee was computed against must travel with it: without it
+    # a knee of None is ambiguous (nothing breached vs the FIRST tier breached).
+    assert out["target_rtt_ms"] == probes._TARGET_RTT_MS
+    assert out["resource"]["saturated"] is True
+    assert out["resource"]["cpu_peak"] == 91.2
+    assert out["resource"]["per_client"]["cpu_pct"] == 3.6
+    assert out["resource"]["sustainable_n"] == 23
+
+
+async def test_sfu_baseline_only_has_no_ramp_and_no_resource(monkeypatch):
+    monkeypatch.setattr(probes, "_diag_cache", _fake_diag())
+    out = await probes.RealProbes().sfu(_CREDS, False, probes.clamp_config({}))
+    assert out["ramp"] == []
+    assert out["knee"] is None
+    assert out["resource"] is None
+    assert out["baseline"] == {"rtt_ms": 11.4, "loss_pct": 0.0, "quality": "Excellent"}
+
+
+def test_resource_json_reports_unsampled_metrics_as_none():
+    """An unsampled metric is None, not 0.
+
+    ResourceReport defaults every unsampled metric to 0.0 (and psutil's first
+    cpu_percent call always returns 0.0), so a 0 would render as "this host was
+    idle under load" - the exact opposite of what an unmeasured sample means.
+    """
+    out = probes._resource_json(
+        ResourceReport(
+            cpu_peak=0.0,
+            mem_peak_mb=0.0,
+            net_kbps_up=0.0,
+            saturated=False,
+            per_client={"cpu_pct": 0.0, "kbps_up": 0.0},
+            sustainable_n=None,
+        )
+    )
+    assert out is not None
+    assert out["cpu_peak"] is None
+    assert out["net_kbps_up"] is None
+    assert out["mem_peak_mb"] is None
+    # Saturation is derived from the CPU sample: with no sample it is unknown,
+    # not False (False would be a clean bill of health nobody measured).
+    assert out["saturated"] is None
+    assert out["per_client"] == {"cpu_pct": None, "kbps_up": None}
+    assert out["sustainable_n"] is None
+
+
+def test_resource_json_is_none_without_a_report():
+    assert probes._resource_json(None) is None
