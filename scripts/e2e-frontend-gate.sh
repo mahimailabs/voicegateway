@@ -59,10 +59,23 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
 http.server.HTTPServer(("", int(sys.argv[1])), SPAHandler).serve_forever()
 PYSRV
 
+# A stale server from a previous run holds the port and serves a deleted root,
+# which fails the next run with ERR_CONNECTION_RESET. Clear it first.
+if lsof -ti:"$PORT" >/dev/null 2>&1; then
+  echo "gate: port $PORT busy, clearing"
+  lsof -ti:"$PORT" | xargs kill 2>/dev/null || true
+  sleep 1
+fi
+
 echo "gate: serving $SERVE_ROOT on :$PORT (SPA fallback)"
-( cd "$SERVE_ROOT" && python3 serve.py "$PORT" >/dev/null 2>&1 & echo $! > "$SERVE_ROOT/.pid" )
+# `exec` matters: without it, `&` backgrounds the whole `cd && python3` compound
+# in an implicit subshell, so $! is that subshell and killing it orphans python3,
+# which then holds the port forever. exec replaces the subshell with python3, so
+# $! is the real server PID.
+( cd "$SERVE_ROOT" && exec python3 serve.py "$PORT" ) >/dev/null 2>&1 &
+SERVER_PID=$!
 cleanup() {
-  [ -f "$SERVE_ROOT/.pid" ] && kill "$(cat "$SERVE_ROOT/.pid")" 2>/dev/null || true
+  kill "$SERVER_PID" 2>/dev/null || true
   rm -rf "$SERVE_ROOT"
 }
 trap cleanup EXIT
