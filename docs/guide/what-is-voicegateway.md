@@ -69,7 +69,7 @@ Voice calls mix three different pricing units. VoiceGateway tracks each one sepa
 | Modality | Unit | Example |
 |---|---|---|
 | STT | audio-minutes | Deepgram: $0.0059/min |
-| LLM | input + output tokens | OpenAI gpt-4.1: $2.50/$10.00 per 1M |
+| LLM | input + output tokens | OpenAI gpt-4.1: $2.00/$8.00 per 1M |
 | TTS | characters | Cartesia sonic-3: $65 per 1M chars |
 
 Prices are maintained in [`voice-prices`](https://github.com/mahimailabs/voice-prices), a fork of `pydantic/genai-prices` extended for audio modalities. The `voicegw reconcile` command verifies VoiceGateway's calculated totals against your actual provider invoice.
