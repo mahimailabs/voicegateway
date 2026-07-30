@@ -135,7 +135,9 @@ Reload with `caddy reload --config /etc/caddy.yaml --adapter yaml` (validates be
 ## Security
 
 <Warning>
-Only `/v1/ingest` and `/health` need to be public. Put the dashboard and `/v1/api-keys` behind basic auth at the proxy level, or reach them via an SSH tunnel from your local machine.
+Only `/v1/ingest`, `/health`, and (if you point LiveKit webhooks at VoiceGateway) `/v1/livekit/webhook` need to be public. Put the dashboard and `/v1/api-keys` behind basic auth at the proxy level, or reach them via an SSH tunnel from your local machine.
+
+`/v1/livekit/webhook` carries no bearer token because LiveKit cannot send one: it authenticates every request by verifying the LiveKit webhook signature against your API key and secret, and rejects the request before reading the body. It fails closed, so a deployment with no LiveKit credentials configured rejects every webhook rather than accepting unsigned writes.
 </Warning>
 
 ## Verify
