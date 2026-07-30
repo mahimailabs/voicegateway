@@ -23,6 +23,7 @@ from voicegateway.server.api import (
     api_keys,
     audit_log,
     billing,
+    call_observations,
     costs,
     ingest,
     latency,
@@ -96,6 +97,11 @@ api_router.include_router(agents.router)
 # inside the handler, not by require_scope: LiveKit posts it, not an api-key
 # holder. See the module docstring for why that guard is unconditional.
 api_router.include_router(livekit_webhook.router)
+# POST /v1/calls/observations. Authenticated by require_scope("write") declared
+# on the router itself (the operator's own agents and load workers carry a
+# VoiceGateway api key, unlike LiveKit). Write-only router: a future reader of
+# /v1/calls must not inherit the write scope from here.
+api_router.include_router(call_observations.router)
 
 dashboard_router = APIRouter(prefix="/api")
 dashboard_router.include_router(dashboard_health.router)

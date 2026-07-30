@@ -722,3 +722,57 @@ Delivery is neither ordered nor exactly-once, so every write is an idempotent up
 **What this gives you:** `disconnect_reason` from LiveKit includes real layer-1 failure causes, so a `SIP_TRUNK_FAILURE`, `USER_UNAVAILABLE`, or `USER_REJECTED` becomes readable per leg.
 
 **Configuration:** set `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` (or the `livekit:` block in `voicegw.yaml`). Set `VOICEGW_LOADTEST_TRUNK_IDS` to a comma-separated list of SIP trunk ids to mark calls arriving on those trunks as probe traffic, so load tests never pollute production percentiles.
+
+## Call Observations
+
+### POST /v1/calls/observations
+
+Record what only a participating process can see. LiveKit sends no `track_subscribed` webhook, and webhook timestamps are whole seconds, so the agent's own clock is the only source of a millisecond-precision "I published audio at T" for the call: the timestamp that gates the caller's ring time, because `livekit-sip` withholds `200 OK` until it subscribes to an audio track. An agent (or a load worker) posts its own view here; it merges into the same `calls` and `call_legs` rows the webhook receiver writes.
+
+**Authentication:** a VoiceGateway API key with the `write` scope (`Authorization: Bearer vk_...`, or a static key from `auth.api_keys`). Unlike the LiveKit webhook, the caller here is your own agent, which already carries `VOICEGW_API_KEY`. `tenant_id` is taken from the key, never from the body.
+
+**This endpoint does not wait for the database.** The report is validated, queued, and answered; a single background flusher writes it. That is deliberate: the hook runs in the agent's job-start path, so a synchronous write would add latency to the exact number being reported. The queue is bounded at 1000 reports and **drops the newest report when it is full** rather than blocking the agent or growing without limit.
+
+| Response | Meaning |
+|---|---|
+| `202` | Queued. Not yet written. |
+| `429` | The queue is full and this report was **dropped**. Do not retry: retrying makes the overload worse. |
+| `401` / `403` | Missing/invalid key, or a key without the `write` scope. |
+| `422` | The body carried an unknown field, a timestamp that is not in milliseconds, or no `room_sid`/`attempt_id`. |
+| `503` | The path is disabled (`VG_DISABLE_CALL_OBSERVATIONS`), or this collector has no call storage. |
+
+Both the `202` and the `429` body carry the counters, so a reporter can see the loss:
+
+```json
+{ "status": "queued", "queue_depth": 3, "dropped_total": 0 }
+```
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:8080/v1/calls/observations \
+  -H "Authorization: Bearer vk_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "origin": "agent",
+    "room_sid": "RM_abc123",
+    "room_name": "call-4821",
+    "project": "support",
+    "agent_id": "inbound-agent",
+    "started_at_ms": 1800000000000,
+    "legs": [
+      {"participant_sid": "PA_caller", "kind": "SIP", "joined_at_ms": 1800000000100},
+      {"participant_sid": "PA_agent", "kind": "AGENT", "joined_at_ms": 1800000001000,
+       "first_audio_track_at_ms": 1800000003842, "audio_track_sid": "TR_1",
+       "audio_codec": "audio/opus"}
+    ]
+  }'
+```
+
+**Fields:** `origin` (`agent` or `loadgen`, required), one of `room_sid` or `attempt_id` (required: a report with neither cannot be correlated), plus `room_name`, `run_id`, `project`, `agent_id`, `started_at_ms`, `ended_at_ms`, and up to 16 `legs`. A leg carries `participant_sid` (required), `identity`, `kind` (`SIP`/`AGENT`/`STANDARD`/`INGRESS`/`EGRESS`), `joined_at_ms`, `left_at_ms`, `disconnect_reason`, `first_audio_track_at_ms`, `audio_track_sid`, `audio_codec`. All timestamps are **epoch milliseconds**; a seconds- or microseconds-scale value is rejected rather than merged as a nonsense call duration. `calls.channel` and `calls.end_reason` are derived from the reported legs by the same rule the webhook uses (the call's end reason comes from the SIP leg, because that leg is the caller).
+
+**Unknown fields are rejected, not ignored** (`422`). Silently accepting a field nothing stores would let you believe a number was recorded when it was not. So there is no per-call loss, jitter, MOS, or DTMF field (not observable, no column), no SIP response code (`livekit-api` exposes no `ListSIPCallInfo`), no `is_probe` (probe traffic is discriminated by a dedicated load-test trunk, never by anything on the wire), and no `tenant_id`.
+
+**Writes are idempotent.** Reports are merged with the same upserts the webhook uses, keyed on `room_sid`/`attempt_id` (and `participant_sid` for legs), so a re-sent report is a no-op and a report that arrives before any webhook creates the row.
+
+**Configuration:** set `VG_DISABLE_CALL_OBSERVATIONS` to any value (other than `0`/`false`/`no`/`off`) to turn the path off: the endpoint then answers `503`, queues nothing, and starts no flusher. It is read per request, so it takes effect without a restart.
