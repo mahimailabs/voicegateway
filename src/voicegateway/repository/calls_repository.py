@@ -29,7 +29,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from voicegateway.models.call_leg_model import CallLeg
@@ -344,25 +344,35 @@ async def upsert_call(
 
 
 async def _refresh_num_legs(db: AsyncSession, call_id: str) -> None:
-    """Recount the call's legs. Derived, so redelivery cannot inflate it."""
-    count_stmt = (
+    """Recount the call's legs in ONE statement.
+
+    Derived, so redelivery cannot inflate it. Counting inside the same UPDATE
+    that assigns is what makes it correct under concurrent delivery: a
+    count-then-assign lets two interleaved leg writes for one call both observe
+    the pre-insert total and stamp the same stale number, which was measured at
+    0-3 calls per 300 with 20 webhooks in flight.
+
+    ``synchronize_session="fetch"`` matters because the session is built with
+    ``expire_on_commit=False`` (``core/database.py``), so a bare Core UPDATE
+    would leave an already-loaded Call carrying the old count.
+    """
+    count_sq = (
         select(func.count())
         .select_from(CallLeg)
         .where(CallLeg.call_id == call_id)  # type: ignore[arg-type]
+        .scalar_subquery()
     )
-    count = int((await db.execute(count_stmt)).scalar_one() or 0)
-    call = (
-        await db.execute(
-            select(Call).where(Call.id == call_id)  # type: ignore[arg-type]
-        )
-    ).scalar_one_or_none()
-    if call is None:
+    result = await db.execute(
+        update(Call)
+        .where(Call.id == call_id)  # type: ignore[arg-type]
+        .values(num_legs=count_sq)
+        .execution_options(synchronize_session="fetch")
+    )
+    if (result.rowcount or 0) == 0:  # type: ignore[attr-defined]
         # Callers take call_id from upsert_call, which creates the row from any
         # event, so this means the call was pruned mid-flight or the id was
         # invented. Keep the leg and say so, rather than raise in an ingest path.
         _logger.warning("call_legs row written for unknown call_id=%s", call_id)
-        return
-    call.num_legs = count
 
 
 def _apply_leg_event(
