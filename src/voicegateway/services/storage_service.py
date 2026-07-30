@@ -348,6 +348,148 @@ class StorageService:
         return [dataclasses.asdict(r) for r in rows]
 
     # ------------------------------------------------------------------
+    # Calls + call legs (written by paths that never touch inference)
+    # ------------------------------------------------------------------
+
+    async def upsert_call(
+        self,
+        *,
+        origin: str,
+        room_sid: str | None = None,
+        attempt_id: str | None = None,
+        room_name: str | None = None,
+        run_id: str | None = None,
+        project: str | None = None,
+        tenant_id: str | None = None,
+        agent_id: str | None = None,
+        channel: str | None = None,
+        direction: str | None = None,
+        started_at_ms: int | None = None,
+        ended_at_ms: int | None = None,
+        end_reason: str | None = None,
+        is_probe: bool | int | None = None,
+    ) -> str:
+        """Delegate to calls_repository.upsert_call; return the ``calls.id``.
+
+        Creates the row if this is the first event seen for the call, so an
+        out-of-order or redelivered webhook is never dropped.
+        """
+        from voicegateway.repository import calls_repository
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            return await calls_repository.upsert_call(
+                db,
+                origin=origin,
+                room_sid=room_sid,
+                attempt_id=attempt_id,
+                room_name=room_name,
+                run_id=run_id,
+                project=project,
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                channel=channel,
+                direction=direction,
+                started_at_ms=started_at_ms,
+                ended_at_ms=ended_at_ms,
+                end_reason=end_reason,
+                is_probe=is_probe,
+            )
+
+    async def upsert_call_leg(
+        self,
+        *,
+        call_id: str,
+        participant_sid: str,
+        identity: str | None = None,
+        kind: str | None = None,
+        region: str | None = None,
+        joined_at_ms: int | None = None,
+        left_at_ms: int | None = None,
+        disconnect_reason: str | None = None,
+        is_publisher: bool | int | None = None,
+        attributes: dict[str, Any] | None = None,
+        first_audio_track_at_ms: int | None = None,
+        audio_track_sid: str | None = None,
+        audio_codec: str | None = None,
+    ) -> None:
+        """Delegate to calls_repository.upsert_call_leg (one row per participant)."""
+        from voicegateway.repository import calls_repository
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            await calls_repository.upsert_call_leg(
+                db,
+                call_id=call_id,
+                participant_sid=participant_sid,
+                identity=identity,
+                kind=kind,
+                region=region,
+                joined_at_ms=joined_at_ms,
+                left_at_ms=left_at_ms,
+                disconnect_reason=disconnect_reason,
+                is_publisher=is_publisher,
+                attributes=attributes,
+                first_audio_track_at_ms=first_audio_track_at_ms,
+                audio_track_sid=audio_track_sid,
+                audio_codec=audio_codec,
+            )
+
+    async def get_call(self, call_id: str) -> dict[str, Any] | None:
+        """One call by id, as a dict, or None."""
+        import dataclasses
+
+        from voicegateway.repository import calls_repository
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            row = await calls_repository.get_call(db, call_id)
+        return None if row is None else dataclasses.asdict(row)
+
+    async def get_call_by_room_sid(self, room_sid: str) -> dict[str, Any] | None:
+        """One call by LiveKit room SID, as a dict, or None."""
+        import dataclasses
+
+        from voicegateway.repository import calls_repository
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            row = await calls_repository.get_call_by_room_sid(db, room_sid)
+        return None if row is None else dataclasses.asdict(row)
+
+    async def list_calls(
+        self,
+        limit: int = 100,
+        project: str | None = None,
+        run_id: str | None = None,
+        is_probe: bool | None = False,
+    ) -> list[dict[str, Any]]:
+        """Newest calls first. ``is_probe=False`` (the default) excludes
+        load-test traffic; ``True`` returns only it, ``None`` returns every row.
+        """
+        import dataclasses
+
+        from voicegateway.repository import calls_repository
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            rows = await calls_repository.list_calls(
+                db, limit=limit, project=project, run_id=run_id, is_probe=is_probe
+            )
+        return [dataclasses.asdict(r) for r in rows]
+
+    async def list_call_legs(self, call_id: str) -> list[dict[str, Any]]:
+        """One call's legs, earliest join first, as dicts."""
+        import dataclasses
+
+        from voicegateway.repository import calls_repository
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            rows = await calls_repository.list_call_legs(db, call_id)
+        return [dataclasses.asdict(r) for r in rows]
+
+    # ------------------------------------------------------------------
     # Managed providers / models / projects
     # ------------------------------------------------------------------
 
