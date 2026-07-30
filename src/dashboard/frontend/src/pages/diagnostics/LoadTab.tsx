@@ -1,6 +1,6 @@
 // Diagnostics > Load: the client ramp, its knee, and the prober's own load.
 //
-// Two honesty rules bind this tab.
+// Three honesty rules bind this tab.
 //
 // 1. `find_knee` returns null for two OPPOSITE outcomes: nothing breached the
 //    budget, or the FIRST tier already breached it. A chart that shows only
@@ -8,26 +8,17 @@
 //    against `target_rtt_ms` here and the two cases are named differently.
 // 2. The curve is rtt only. Loss is a hardcoded placeholder in `sfu.py`, so there
 //    is no loss series and no loss column anywhere on this tab.
+// 3. That rtt is the prober's round trip through the SFU's data channel, not the
+//    latency a caller hears. `LoadCurveChart` labels its own Y axis with exactly
+//    that, and the card label and the closing note say it in words.
 //
 // The saturation card is not decoration either: a laptop that pegged its own CPU
 // at 25 clients draws the same curve as an SFU that ran out of headroom, and this
 // is the only block that says which one happened.
 
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import NeoTooltip from '../../components/NeoTooltip';
+import LoadCurveChart from '../../components/LoadCurveChart';
 import type { DiagSfuResult, DiagSfuStep, DiagnosticCheckResult } from '../../lib/types';
 import { Card, CheckGate, Note, NOT_MEASURED, qualityBadgeClass, Row } from './shared';
-
-const TEAL = '#1F96AA';
 
 type KneeState =
   | { kind: 'no-ramp' }
@@ -114,15 +105,13 @@ function KneeBanner({ state, target }: { state: KneeState; target: number }) {
 
 function RampCard({ result }: { result: DiagSfuResult }) {
   const state = classifyKnee(result);
-  const data = result.ramp.map((s) => ({
-    clients: s.clients,
-    rtt: Number(s.rtt_ms.toFixed(1)),
-  }));
+  // Only a resolved knee is marked on the curve. A null knee is ambiguous and is
+  // explained by KneeBanner instead, so an unmarked chart never reads as a pass.
   const knee = state.kind === 'knee' ? state.knee : null;
 
   return (
     <Card
-      label="Client ramp (round-trip vs concurrent clients)"
+      label="Client ramp (SFU data-channel RTT vs concurrent clients)"
       right={
         <span className="neo-badge neo-badge--blue">
           {result.ramp.length} {result.ramp.length === 1 ? 'tier' : 'tiers'}
@@ -131,61 +120,13 @@ function RampCard({ result }: { result: DiagSfuResult }) {
     >
       <KneeBanner state={state} target={result.target_rtt_ms} />
 
-      {data.length > 0 && (
+      {result.ramp.length > 0 && (
         <>
-          <div style={{ width: '100%', height: 250, marginTop: 16 }}>
-            <ResponsiveContainer>
-              <LineChart data={data} margin={{ top: 16, right: 16, left: 0, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="4 4" stroke="var(--vg-hairline-2)" />
-                <XAxis
-                  dataKey="clients"
-                  type="number"
-                  domain={[0, 'dataMax']}
-                  ticks={result.ramp.map((s) => s.clients)}
-                  tick={{ fontSize: 11, fontWeight: 600 }}
-                  label={{ value: 'concurrent clients', position: 'insideBottom', offset: -6, fontSize: 11 }}
-                />
-                <YAxis
-                  tick={{ fontSize: 11, fontWeight: 600 }}
-                  width={48}
-                  tickFormatter={(v) => `${v}`}
-                />
-                <Tooltip content={<NeoTooltip />} cursor={{ stroke: TEAL, strokeWidth: 1 }} />
-                <ReferenceLine
-                  y={result.target_rtt_ms}
-                  stroke="var(--vg-amber)"
-                  strokeDasharray="5 4"
-                  label={{
-                    value: `${result.target_rtt_ms.toFixed(0)} ms budget`,
-                    position: 'insideTopRight',
-                    fontSize: 11,
-                    fill: 'var(--vg-amber)',
-                  }}
-                />
-                {knee !== null && (
-                  <ReferenceLine
-                    x={knee}
-                    stroke="var(--vg-red)"
-                    strokeDasharray="3 3"
-                    label={{
-                      value: `knee ${knee}`,
-                      position: 'top',
-                      fontSize: 11,
-                      fill: 'var(--vg-red)',
-                    }}
-                  />
-                )}
-                <Line
-                  type="monotone"
-                  dataKey="rtt"
-                  name="Round trip (ms)"
-                  stroke={TEAL}
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: TEAL }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <LoadCurveChart
+            ramp={result.ramp}
+            targetRttMs={result.target_rtt_ms}
+            knee={knee}
+          />
 
           <table className="neo-table neo-table--blue" style={{ marginTop: 8 }}>
             <thead>
@@ -219,8 +160,10 @@ function RampCard({ result }: { result: DiagSfuResult }) {
 
           <div style={{ marginTop: 10 }}>
             <Note>
-              Round trip and quality are the only measured columns. Packet loss is {NOT_MEASURED} at
-              every tier, so no loss series is plotted and no loss column is shown.
+              Round trip and quality are the only measured columns, and the round trip is the
+              prober’s own message going through the SFU’s data channel and back — not the latency a
+              caller hears an agent answer with. Packet loss is {NOT_MEASURED} at every tier, so no
+              loss series is plotted and no loss column is shown.
             </Note>
           </div>
         </>

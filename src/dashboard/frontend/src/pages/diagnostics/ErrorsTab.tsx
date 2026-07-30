@@ -10,76 +10,14 @@
 // which is a failure even though the check itself succeeded). Nothing here is
 // inferred beyond matching those strings.
 
+import ErrorClassChart from '../../components/ErrorClassChart';
+import { classifyError, type ClassifiedError } from '../../lib/errorClass';
 import type { DiagnosticRun } from '../../lib/types';
 import { Card, Note } from './shared';
 
-type ClassKey = 'timeout' | 'no_worker' | 'no_reply' | 'auth' | 'config' | 'connect' | 'other';
-
-const CLASS_LABEL: Record<ClassKey, string> = {
-  timeout: 'Timed out',
-  no_worker: 'No worker joined',
-  no_reply: 'No reply from agent',
-  auth: 'Auth rejected',
-  config: 'Not configured',
-  connect: 'Could not connect',
-  other: 'Other',
-};
-
-const CLASS_COLOR: Record<ClassKey, string> = {
-  timeout: 'var(--vg-amber)',
-  no_worker: 'var(--vg-red)',
-  no_reply: 'var(--vg-red)',
-  auth: 'var(--vg-red)',
-  config: 'var(--vg-muted)',
-  connect: 'var(--vg-amber)',
-  other: 'var(--vg-muted-2)',
-};
-
-const ORDER: ClassKey[] = [
-  'timeout',
-  'no_worker',
-  'no_reply',
-  'auth',
-  'connect',
-  'config',
-  'other',
-];
-
-/** Bucket one error string. Substring matching only: no cause is invented. */
-function classify(message: string): ClassKey {
-  const m = message.toLowerCase();
-  if (m.includes('timed out') || m.includes('timeout')) return 'timeout';
-  if (m.includes('no worker joined') || m.includes('worker joined')) return 'no_worker';
-  if (
-    m.includes('401') ||
-    m.includes('403') ||
-    m.includes('unauthorized') ||
-    m.includes('forbidden') ||
-    m.includes('invalid api key')
-  ) {
-    return 'auth';
-  }
-  if (m.includes('not configured') || m.includes('missing livekit credentials')) return 'config';
-  if (
-    m.includes('connect') ||
-    m.includes('connection') ||
-    m.includes('refused') ||
-    m.includes('unreachable') ||
-    m.includes('dns') ||
-    m.includes('handshake') ||
-    m.includes('ssl') ||
-    m.includes('tls')
-  ) {
-    return 'connect';
-  }
-  return 'other';
-}
-
-interface Failure {
+/** A classified failure plus the run it came from. */
+interface Failure extends ClassifiedError {
   runId: string;
-  where: string;
-  message: string;
-  klass: ClassKey;
 }
 
 /** Every failure the history holds, in run order (newest run first). */
@@ -91,7 +29,7 @@ function collectFailures(runs: DiagnosticRun[]): Failure[] {
         runId: run.run_id,
         where: 'run',
         message: run.error,
-        klass: classify(run.error),
+        klass: classifyError(run.error),
       });
     }
     const checks = run.results?.checks;
@@ -100,7 +38,7 @@ function collectFailures(runs: DiagnosticRun[]): Failure[] {
       if (check === undefined) continue;
       if (!check.ok) {
         const message = check.error ?? 'the check reported no result';
-        out.push({ runId: run.run_id, where: name, message, klass: classify(message) });
+        out.push({ runId: run.run_id, where: name, message, klass: classifyError(message) });
       }
     }
     // A latency check can succeed while measuring nothing: the call was placed
@@ -123,18 +61,8 @@ function collectFailures(runs: DiagnosticRun[]): Failure[] {
   return out;
 }
 
-function truncate(text: string, max = 130): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
-}
-
 export default function ErrorsTab({ runs }: { runs: DiagnosticRun[] }) {
   const failures = collectFailures(runs);
-  const counts = ORDER.map((key) => ({
-    key,
-    count: failures.filter((f) => f.klass === key).length,
-    examples: failures.filter((f) => f.klass === key).map((f) => `${f.where}: ${f.message}`),
-  })).filter((c) => c.count > 0);
-  const max = counts.reduce((m, c) => Math.max(m, c.count), 0);
 
   return (
     <Card
@@ -145,7 +73,7 @@ export default function ErrorsTab({ runs }: { runs: DiagnosticRun[] }) {
         </span>
       }
     >
-      {counts.length === 0 ? (
+      {failures.length === 0 ? (
         <Note tone="good">
           No failed check in the {runs.length} {runs.length === 1 ? 'run' : 'runs'} this dashboard
           is holding. Run history lives in memory and is capped at the newest 20 runs, so it starts
@@ -153,54 +81,7 @@ export default function ErrorsTab({ runs }: { runs: DiagnosticRun[] }) {
         </Note>
       ) : (
         <>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {counts.map((c) => (
-              <div key={c.key}>
-                <div
-                  className="flex-row"
-                  style={{ justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}
-                >
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{CLASS_LABEL[c.key]}</span>
-                  <span className="mono" style={{ fontSize: 13, fontWeight: 700 }}>
-                    {c.count}
-                  </span>
-                </div>
-                <div
-                  style={{
-                    height: 10,
-                    marginTop: 5,
-                    borderRadius: 'var(--vg-radius-xs)',
-                    background: 'var(--vg-hairline)',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${max === 0 ? 0 : (c.count / max) * 100}%`,
-                      height: '100%',
-                      background: CLASS_COLOR[c.key],
-                    }}
-                  />
-                </div>
-                <div style={{ marginTop: 5 }}>
-                  {c.examples.slice(0, 2).map((example, i) => (
-                    <div
-                      key={i}
-                      className="mono"
-                      style={{ fontSize: 11, color: 'var(--vg-muted)', lineHeight: 1.5 }}
-                    >
-                      {truncate(example)}
-                    </div>
-                  ))}
-                  {c.examples.length > 2 && (
-                    <div style={{ fontSize: 11, color: 'var(--vg-muted-2)' }}>
-                      +{c.examples.length - 2} more like this
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+          <ErrorClassChart errors={failures} />
 
           <div style={{ marginTop: 16 }}>
             <Note>
