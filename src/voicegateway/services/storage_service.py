@@ -490,6 +490,79 @@ class StorageService:
         return [dataclasses.asdict(r) for r in rows]
 
     # ------------------------------------------------------------------
+    # Diagnostics runs (LiveKit probe runs started from the dashboard)
+    # ------------------------------------------------------------------
+
+    async def upsert_diagnostics_run(
+        self,
+        *,
+        run_id: str,
+        checks: list[str],
+        config: dict[str, Any],
+        status: str,
+        results: dict[str, Any] | None = None,
+        verdict: str | None = None,
+        error: str | None = None,
+        created_at: str,
+        started_at: str | None = None,
+        ended_at: str | None = None,
+        project: str | None = None,
+    ) -> None:
+        """Delegate to diagnostics_runs_repository.upsert_run.
+
+        Called once per state transition, so a run interrupted by a restart still
+        left its last observed state on disk.
+        """
+        from voicegateway.repository import diagnostics_runs_repository as repo
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            await repo.upsert_run(
+                db,
+                run_id=run_id,
+                checks=checks,
+                config=config,
+                status=status,
+                results=results,
+                verdict=verdict,
+                error=error,
+                created_at=created_at,
+                started_at=started_at,
+                ended_at=ended_at,
+                project=project or repo.DEFAULT_PROJECT,
+            )
+
+    async def get_diagnostics_run(self, run_id: str) -> dict[str, Any] | None:
+        """One diagnostics run by id, as a dict, or None."""
+        import dataclasses
+
+        from voicegateway.repository import diagnostics_runs_repository as repo
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            row = await repo.get_run(db, run_id)
+        return None if row is None else dataclasses.asdict(row)
+
+    async def list_diagnostics_runs(
+        self, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Diagnostics runs, newest first, as dicts.
+
+        ``limit`` bounds one response (a run carries its full probe payload); the
+        stored history itself is bounded only by retention.
+        """
+        import dataclasses
+
+        from voicegateway.repository import diagnostics_runs_repository as repo
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            rows = await repo.list_runs(
+                db, limit=repo.DEFAULT_HISTORY_LIMIT if limit is None else limit
+            )
+        return [dataclasses.asdict(r) for r in rows]
+
+    # ------------------------------------------------------------------
     # Managed providers / models / projects
     # ------------------------------------------------------------------
 

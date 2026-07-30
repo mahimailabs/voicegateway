@@ -3,9 +3,10 @@
 Per project, sessions older than the cutoff (by ``ended_at``) and their
 dependent rows (replay, turns, dead-air) are deleted child-first; calls and
 their legs prune on their own clock (a call can exist with no session at all);
-requests are pruned independently by ``timestamp`` (a request may have no
-session). Deletes are hard and batched so a large backlog does not hold a
-long write lock, which keeps the pass friendly to both SQLite and Postgres.
+diagnostics runs prune on their own ISO-8601 timestamps; requests are pruned
+independently by ``timestamp`` (a request may have no session). Deletes are hard
+and batched so a large backlog does not hold a long write lock, which keeps the
+pass friendly to both SQLite and Postgres.
 """
 
 from __future__ import annotations
@@ -67,8 +68,9 @@ class RetentionWorker:
 
     Sessions and their dependent rows (replay, turns, dead-air) prune
     by ``ended_at``; calls and their legs prune by their own epoch-millisecond
-    timestamps; requests prune independently by ``timestamp``. Deletes run
-    child-first in batches on a periodic loop.
+    timestamps; diagnostics runs prune by their ISO-8601 timestamps; requests
+    prune independently by ``timestamp``. Deletes run child-first in batches on a
+    periodic loop.
     """
 
     def __init__(
@@ -173,8 +175,9 @@ class RetentionWorker:
         """Hard-delete one project's aged rows; return the total row count.
 
         Children first (replay, turns, dead-air), then the session rows, then
-        calls with their legs, then requests independently by timestamp. Each
-        chunk commits so a large backlog never holds one long write lock.
+        calls with their legs, then diagnostics runs, then requests independently
+        by timestamp. Each chunk commits so a large backlog never holds one long
+        write lock.
         """
         deleted = 0
 
@@ -209,6 +212,7 @@ class RetentionWorker:
             await db.commit()
 
         deleted += await self._prune_calls(db, project_id, cutoff_ts)
+        deleted += await self._prune_diagnostics_runs(db, project_id, cutoff_iso)
 
         # Requests prune on their own clock (a request may have no session_id).
         while True:
@@ -278,6 +282,46 @@ class RetentionWorker:
             )
             deleted += _rowcount(res)
             await db.commit()
+        return deleted
+
+    async def _prune_diagnostics_runs(
+        self, db: AsyncSession, project_id: str, cutoff_iso: str
+    ) -> int:
+        """Hard-delete one project's aged diagnostics runs; return the count.
+
+        A run has no children, so there is nothing to delete first. It ages on
+        ``ended_at`` when it ended and ``created_at`` otherwise, so a run whose
+        process died mid-flight still ages out instead of sitting in the history
+        as "running" forever.
+
+        The comparison is lexical on ISO-8601 strings, which is exactly what the
+        session pass above does with ``sessions.ended_at``: every writer formats
+        with ``datetime.now(UTC).isoformat()``, so the strings are same-format
+        UTC and sort chronologically.
+        """
+        deleted = 0
+        while True:
+            res = await db.execute(
+                text(
+                    "DELETE FROM diagnostics_runs WHERE run_id IN ("
+                    "  SELECT run_id FROM diagnostics_runs "
+                    "  WHERE project = :project "
+                    # created_at is NOT NULL, so unlike the calls pass this
+                    # COALESCE always yields a value: every run has an age.
+                    "    AND COALESCE(ended_at, created_at) < :cutoff "
+                    "  LIMIT :limit)"
+                ),
+                {
+                    "project": project_id,
+                    "cutoff": cutoff_iso,
+                    "limit": self._batch_size,
+                },
+            )
+            removed = _rowcount(res)
+            await db.commit()
+            deleted += removed
+            if removed == 0:
+                break
         return deleted
 
 
