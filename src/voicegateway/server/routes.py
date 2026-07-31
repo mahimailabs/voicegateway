@@ -67,6 +67,9 @@ from voicegateway.server.api.dashboard import (
     metrics as dashboard_metrics,
 )
 from voicegateway.server.api.dashboard import (
+    nodes as dashboard_nodes,
+)
+from voicegateway.server.api.dashboard import (
     projects as dashboard_projects,
 )
 from voicegateway.server.api.dashboard import (
@@ -125,6 +128,13 @@ dashboard_router.include_router(dashboard_calls.router)
 # <-> calls join actually resolves; the join fails silently, so nothing else on
 # the dashboard would show that it stopped working.
 dashboard_router.include_router(dashboard_correlation.router)
+# GET /api/nodes. Read-only, authenticated by require_principal declared on the
+# router itself, same as /api/calls and /api/correlation above. It serves the
+# node scrapes that OVERLAP each recent call's padded window; the padding and
+# the three window statuses travel with it, because "within 15 s of this call"
+# is a weaker claim than "during this call" and a window nobody scraped is not a
+# healthy node.
+dashboard_router.include_router(dashboard_nodes.router)
 dashboard_router.include_router(dashboard_metrics.router)
 dashboard_router.include_router(dashboard_replay.router)
 dashboard_router.include_router(dashboard_agents.router)

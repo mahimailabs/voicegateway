@@ -882,3 +882,141 @@ export interface CorrelationRate {
   status: CorrelationStatus;
 }
 
+// ---------------------------------------------------------------------------
+// Node samples correlated to calls by TIME WINDOW (GET /api/nodes).
+//
+// Mirrors `node_correlation_repository` field for field. The endpoint is a pure
+// passthrough and so is this type: nothing here is computed in the browser, and
+// no `null` below may be rendered as a 0.
+//
+// The claim these types carry is OVERLAP, not attribution. `node_samples` has
+// no `call_id` (layer 7 counters are node-wide), so a node listed against a call
+// means only that rows exist for it inside that call's padded window.
+// ---------------------------------------------------------------------------
+
+/**
+ * `WindowCorrelation.status`: the CLOSED set from
+ * `node_correlation_repository.WINDOW_STATUSES`.
+ *
+ * Three DIFFERENT claims, and none of them is a zero:
+ *
+ * - `correlated`: at least one successful scrape overlaps the window.
+ * - `scrape_failed`: rows exist in the window and every one of them is a failed
+ *   scrape. The nodes were being watched and the watching did not work, which is
+ *   emphatically not "the nodes were fine".
+ * - `no_samples`: nothing was scraped in the window at all (no worker, no
+ *   configured target, or the window predates the trim). We did not look; it is
+ *   not "the fleet was idle".
+ */
+export type NodeWindowStatus = 'correlated' | 'scrape_failed' | 'no_samples';
+
+/**
+ * Which statistic a peak actually is, from the CLOSED set
+ * `node_correlation_repository.PEAK_STATS`.
+ *
+ * Below 10 measured points a percentile is a story about three numbers, so the
+ * peak is the maximum and says `max_of_n`. With nothing measured it is
+ * `not_measured` and the value beside it is null.
+ */
+export type NodePeakStat = 'p95' | 'max_of_n' | 'not_measured';
+
+/** The time window a correlation was computed over. Epoch milliseconds. */
+export interface NodeWindow {
+  /** `requested_start_ms - pad_ms`: the bound actually queried. */
+  start_ms: number;
+  /** `requested_end_ms + pad_ms`: the bound actually queried. */
+  end_ms: number;
+  /**
+   * How much was added on EACH side. Load-bearing: the scrape grid is coarse
+   * (15 s) next to a short call and the scrape host's clock is not the clock
+   * that stamped the call, so without it a short call correlates to nothing.
+   * A reader who cannot see this cannot tell "within 15 s of this call" from
+   * "during this call", and must never be shown the padded region as the call.
+   */
+  pad_ms: number;
+  /** What the caller asked about: the call's own span. */
+  requested_start_ms: number;
+  requested_end_ms: number;
+}
+
+/** One point-in-time column over the window. Gauges are never diffed. */
+export interface NodeGaugeSummary {
+  column: string;
+  /** Rows whose value was actually present. A NULL is excluded, not zeroed. */
+  samples: number;
+  minimum: number | null;
+  maximum: number | null;
+  /** Last measured value in the window: what a saturation reading compares at. */
+  latest: number | null;
+  /** Null exactly when `peak_stat` is `not_measured`. Never 0 in its place. */
+  peak: number | null;
+  peak_stat: NodePeakStat;
+}
+
+/** One cumulative column over the window, as per-second rates. */
+export interface NodeCounterRateSummary {
+  column: string;
+  /** In-window rate points. */
+  points: number;
+  /**
+   * Points whose rate is null: the window's first point, a NULL at either end,
+   * a non-positive time delta, or a counter RESET. The repository deliberately
+   * does not say which, because that rule has exactly one implementation.
+   * `unknown_points === points` means no rate here is sourceable. That is NOT
+   * 0/s.
+   */
+  unknown_points: number;
+  peak_per_second: number | null;
+  peak_stat: NodePeakStat;
+}
+
+/** What one `(node, source)` looked like while the window was open. */
+export interface NodeSamplesInWindow {
+  node: string;
+  source: string;
+  samples: number;
+  ok_samples: number;
+  failed_samples: number;
+  /** `outcome` -> count, so "5 rows, all timeouts" stays visible. */
+  outcomes: Record<string, number>;
+  first_sample_at_ms: number | null;
+  last_sample_at_ms: number | null;
+  /** Every gauge column, including the ones this source cannot measure. */
+  gauges: Record<string, NodeGaugeSummary>;
+  /** Every counter column, same. */
+  counters: Record<string, NodeCounterRateSummary>;
+  /** The read hit its row limit, so these summaries describe a PREFIX. */
+  truncated: boolean;
+}
+
+/** Nodes whose samples OVERLAP a window. Not the nodes that served a call. */
+export interface WindowCorrelation {
+  window: NodeWindow;
+  status: NodeWindowStatus;
+  /** Empty exactly when `status` is `no_samples`. Never a zeroed node. */
+  nodes_sampled: NodeSamplesInWindow[];
+}
+
+/** One `calls` row with the node samples overlapping its window. */
+export interface CallNodeCorrelation extends CallRow {
+  /**
+   * Null when the CALL has no closed span (in flight, or an INVITE that never
+   * produced a room). That is NOT `no_samples`: nothing was looked for, because
+   * substituting "now" for a missing end would invent the span.
+   */
+  correlation: WindowCorrelation | null;
+}
+
+/** GET /api/nodes */
+export interface NodeCorrelationResponse {
+  /** The pad used for this request, readable even with no call to carry one. */
+  pad_ms: number;
+  /**
+   * Whole `node_samples` row count. What separates "this deployment scrapes
+   * nothing" from "this particular window had nothing in it", which a
+   * `no_samples` status on its own cannot say.
+   */
+  samples_stored: number;
+  calls: CallNodeCorrelation[];
+}
+
