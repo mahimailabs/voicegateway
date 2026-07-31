@@ -1,6 +1,6 @@
 ---
 title: HTTP API Reference
-description: REST endpoints served by `voicegw serve`. Covers health, status, models, costs, billing, projects, providers, logs, metrics, audit log, and API keys.
+description: REST endpoints served by `voicegw serve`. Covers health, status, models, costs, sessions, billing, projects, providers, logs, metrics, audit log, and API keys.
 ---
 
 The VoiceGateway HTTP API runs via `voicegw serve` (default port 8080). It provides read-only observability endpoints and full CRUD for managing providers, models, and projects.
@@ -158,6 +158,46 @@ Return latency statistics for the given period.
 ```bash
 curl "http://localhost:8080/v1/latency?period=today"
 curl "http://localhost:8080/v1/latency?period=week&project=my-app"
+```
+
+---
+
+## Sessions
+
+One row per voice call: when it started and ended, which modalities and providers it used, and what it cost. These are the public twin of the dashboard's `/api/sessions` reads and return the same rows; the [Dashboard API](/api/dashboard-api) additionally serves the per-session drill-downs (turns, transcript, dead air, replay).
+
+**Authentication:** both routes require the same read authentication as the dashboard reads, declared on the router so no route can miss it. The gate is a **no-op while no API keys are configured** (the self-hosted default: no `auth.api_keys` block and no `VOICEGW_API_KEY`), and it enforces as soon as auth is enabled, when an unauthenticated request gets `401`. A read-scoped key is enough; no admin scope is needed to read rows already on disk.
+
+**Tenant scoping:** the tenant comes from the authenticated key, never from a parameter (these routes publish none). A tenant-scoped key lists only its own sessions and reads only its own session by id. The list filters as well as the detail: a list that returned every tenant's sessions would hand over exactly the ids the detail route refuses. An operator with no credential, a static config key, or an admin key sees every tenant, unchanged.
+
+| Response | Meaning |
+|---|---|
+| `401` | Auth is enabled and the request carried no token, or an invalid one. |
+| `404` | No such session **or** the session belongs to another tenant. The two are deliberately identical, body included: a `403` on the foreign case would confirm the id is real. |
+
+### GET /v1/sessions
+
+Return recent sessions.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `limit` | `integer` | `100` | Number of rows (1-1000). |
+| `project` | `string` | `null` | Filter by project ID. |
+| `order_by` | `string` | `"started_at_desc"` | One of: `started_at_desc`, `started_at_asc`, `cost_desc`, `cost_asc`. |
+
+**Response:** An array of session rows, each containing `id`, `project`, `started_at`, `ended_at`, `modalities`, `request_count`, `total_cost_usd`, and `tenant_id`. Empty array when cost tracking is disabled.
+
+### GET /v1/sessions/{session_id}
+
+Return one session with the per-modality cost breakdown (`by_modality`) and the deduplicated `providers` list computed by joining the requests table.
+
+**Example:**
+
+```bash
+curl "http://localhost:8080/v1/sessions?limit=20&order_by=cost_desc"
+curl "http://localhost:8080/v1/sessions/vg-8f1c"
 ```
 
 ---

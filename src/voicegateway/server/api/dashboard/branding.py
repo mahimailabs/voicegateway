@@ -13,6 +13,12 @@ The branding directory itself is mounted at ``/static/branding/*`` by
 uploaded logos resolve at
 ``http://<daemon>/static/branding/uploads/<id>.<ext>``.
 
+Both POSTs are admin writes, gated per ROUTE rather than on the router: the
+GET is called by every dashboard layout mount to apply the brand, and the FE
+treats a 403 exactly like a 401 (it clears the stored token and shows the
+login gate), so a router-level admin dependency would log out a read-scoped
+operator on page load.
+
 Three properties the logo upload has to hold, because the bytes it takes
 are attacker-controlled and are then served same-origin:
 
@@ -304,7 +310,10 @@ async def get_project_branding(
     return {"project_id": project_id, "branding": project.get("branding")}
 
 
-@router.post("/{project_id}/branding")
+@router.post(
+    "/{project_id}/branding",
+    dependencies=[Depends(require_scope(ADMIN_SCOPE))],
+)
 async def update_project_branding(
     project_id: str,
     body: dict[str, Any] = Body(...),
@@ -316,6 +325,17 @@ async def update_project_branding(
     shape (hex regex, 64-char product_name cap, no unknown keys).
     Returns the validated branding plus the project_id so the FE can
     re-apply the CSS variables on the next layout mount.
+
+    **Auth.** Same gate as its sibling :func:`upload_project_logo`, and for
+    the same reason: white-label branding is an operator/agency setting, and
+    this is the route that actually stamps ``logo_url`` onto the project.
+    Gating only the upload left the interesting half open, since ``logo_url``
+    is an arbitrary caller-supplied string here (the upload is just one way
+    to produce one), and ``product_name`` is what every dashboard page then
+    renders as its own name. Declared on the ROUTE and not the router
+    because ``GET /{project_id}/branding`` below must stay reachable by a
+    read-scoped operator. The gate is a no-op while no API keys are
+    configured, so the self-hosted default is unchanged.
     """
     if gateway.storage is None:
         raise HTTPException(status_code=503, detail="Storage not configured")

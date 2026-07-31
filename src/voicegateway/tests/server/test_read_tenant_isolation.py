@@ -252,3 +252,130 @@ async def test_admin_key_reads_any_session(harness):
         )
     assert resp.status_code == 200, resp.text
     assert resp.json()["id"] == "s-beta-1"
+
+
+# ---------------------------------------------------------------------------
+# The public /v1 twin: same rows, so the same scoping
+# ---------------------------------------------------------------------------
+
+
+async def test_v1_foreign_session_read_is_404(harness):
+    """An acme key reading beta's session on /v1 gets the same 404 as /api.
+
+    404 and not 403 for the same reason the mirror gives: a 403 would tell
+    the caller the id exists. Pinned against a made-up id so the two cases
+    stay indistinguishable in status AND body.
+    """
+    token = await _make_key(harness.gateway, tenant_id="acme")
+    headers = {"Authorization": f"Bearer {token}"}
+    async with harness.client() as c:
+        foreign = await c.get("/v1/sessions/s-beta-1", headers=headers)
+        missing = await c.get("/v1/sessions/no-such-session", headers=headers)
+
+    assert foreign.status_code == 404, foreign.text
+    assert missing.status_code == foreign.status_code
+    assert foreign.json() == {"detail": "Session 's-beta-1' not found"}
+    assert missing.json() == {"detail": "Session 'no-such-session' not found"}
+
+
+async def test_v1_own_session_read_still_works(harness):
+    """The guard refuses the foreign id only: acme still reads acme on /v1."""
+    token = await _make_key(harness.gateway, tenant_id="acme")
+    async with harness.client() as c:
+        resp = await c.get(
+            "/v1/sessions/s-acme-1", headers={"Authorization": f"Bearer {token}"}
+        )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["id"] == "s-acme-1"
+
+
+async def test_v1_session_list_scopes_to_own_tenant(harness):
+    """The /v1 list filters too, not just the detail route.
+
+    A list that returned every tenant's sessions would hand over exactly the
+    ids the detail route is refusing.
+    """
+    token = await _make_key(harness.gateway, tenant_id="acme")
+    async with harness.client() as c:
+        resp = await c.get("/v1/sessions", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200, resp.text
+    ids = {r["id"] for r in resp.json()}
+    assert ids == {"s-acme-1", "s-acme-2"}
+    assert "s-beta-1" not in resp.text
+
+
+async def test_v1_no_credential_operator_sees_all_sessions(harness):
+    """The self-hosted operator keeps reading every tenant's sessions on /v1."""
+    async with harness.client() as c:
+        listed = await c.get("/v1/sessions")
+        detail = await c.get("/v1/sessions/s-beta-1")
+    assert listed.status_code == 200, listed.text
+    assert {"s-acme-1", "s-acme-2", "s-beta-1"}.issubset(
+        {r["id"] for r in listed.json()}
+    )
+    assert detail.status_code == 200, detail.text
+
+
+# ---------------------------------------------------------------------------
+# GET /api/replay/storage: an aggregate, so the leak is the size not the id
+# ---------------------------------------------------------------------------
+
+
+async def _set_replay_sizes(gateway, sizes: dict[str, int]) -> None:
+    """Stamp ``replay_size_bytes`` onto seeded sessions.
+
+    ``finalize_session_replay`` normally writes this column; the rows the
+    harness seeds have it NULL, and the endpoint sums only non-NULL rows.
+    """
+    from sqlalchemy import text
+
+    async with gateway.storage._conn.session() as db:
+        for session_id, size in sizes.items():
+            await db.execute(
+                text("UPDATE sessions SET replay_size_bytes = :n WHERE id = :id"),
+                {"n": size, "id": session_id},
+            )
+        await db.commit()
+
+
+async def test_replay_storage_totals_are_scoped_to_the_tenant(harness):
+    """An acme key is told acme's replay footprint, never the deployment's.
+
+    There is no id to 404 on here: the endpoint is an aggregate, so the fact
+    being protected is the SIZE of another tenant's captured traffic (and the
+    names of the projects producing it). The predicate therefore runs in the
+    query, which keeps ``total_replay_size_bytes`` consistent with
+    ``by_project``: a total summed over rows excluded from the breakdown
+    would leak the number straight back.
+    """
+    await _set_replay_sizes(
+        harness.gateway, {"s-acme-1": 100, "s-acme-2": 200, "s-beta-1": 4000}
+    )
+    token = await _make_key(harness.gateway, tenant_id="acme")
+    async with harness.client() as c:
+        scoped = await c.get(
+            "/api/replay/storage", headers={"Authorization": f"Bearer {token}"}
+        )
+        operator = await c.get("/api/replay/storage")
+
+    assert scoped.status_code == 200, scoped.text
+    assert scoped.json()["total_replay_size_bytes"] == 300
+    assert [r["replay_size_bytes"] for r in scoped.json()["by_project"]] == [300]
+
+    # The self-hosted operator keeps seeing the whole deployment.
+    assert operator.status_code == 200, operator.text
+    assert operator.json()["total_replay_size_bytes"] == 4300
+
+
+async def test_replay_storage_admin_key_sees_every_tenant(harness):
+    """An admin vk_ key (tenant_id None) is not narrowed by the predicate."""
+    await _set_replay_sizes(
+        harness.gateway, {"s-acme-1": 100, "s-acme-2": 200, "s-beta-1": 4000}
+    )
+    token = await _make_key(harness.gateway, tenant_id=None, role="admin")
+    async with harness.client() as c:
+        resp = await c.get(
+            "/api/replay/storage", headers={"Authorization": f"Bearer {token}"}
+        )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["total_replay_size_bytes"] == 4300

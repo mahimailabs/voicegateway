@@ -251,6 +251,69 @@ def test_logo_upload_requires_admin_when_auth_is_enabled(client, sandbox_brandin
     assert (sandbox_branding_dir / "uploads" / "default.svg").read_bytes() == _CLEAN_SVG
 
 
+def test_post_branding_open_when_no_keys_are_configured(client) -> None:
+    """The self-hosted default (no keys configured) is unchanged.
+
+    ``core.auth.check_request`` returns None on an empty key list, so the
+    admin gate costs the single-operator deployment nothing here either.
+    """
+    _, c = client
+    assert c.app.state.api_keys == []
+    r = c.post("/api/projects/default/branding", json={"product_name": "LocalVoice"})
+    assert r.status_code == 200, r.text
+    assert r.json()["branding"]["product_name"] == "LocalVoice"
+
+
+def test_post_branding_requires_admin_when_auth_is_enabled(client) -> None:
+    """The branding write takes the same gate its upload sibling took.
+
+    Gating only the upload left the interesting half open: ``logo_url`` is an
+    arbitrary string here (the upload is one way to produce one, not the only
+    way), and ``product_name`` is what every dashboard page then renders as
+    its own name. An anonymous caller gets 401, a read-scoped token 403, and
+    the stored branding is untouched by both.
+    """
+    _, c = client
+    c.app.state.api_keys = [
+        ApiKey(token="read-token", name="viewer", scopes=("read",)),
+        ApiKey(token="admin-token", name="operator", scopes=("admin",)),
+    ]
+    payload = {"product_name": "Impostor", "accent_color": "#FF0000"}
+
+    anon = c.post("/api/projects/default/branding", json=payload)
+    assert anon.status_code == 401, anon.text
+
+    wrong = c.post(
+        "/api/projects/default/branding",
+        json=payload,
+        headers={"Authorization": "Bearer nope"},
+    )
+    assert wrong.status_code == 401, wrong.text
+
+    reader = c.post(
+        "/api/projects/default/branding",
+        json=payload,
+        headers={"Authorization": "Bearer read-token"},
+    )
+    assert reader.status_code == 403, reader.text
+
+    # Nothing landed for any of the three refusals.
+    unchanged = c.get(
+        "/api/projects/default/branding",
+        headers={"Authorization": "Bearer read-token"},
+    )
+    assert unchanged.status_code == 200, unchanged.text
+    assert unchanged.json()["branding"] is None
+
+    admin = c.post(
+        "/api/projects/default/branding",
+        json=payload,
+        headers={"Authorization": "Bearer admin-token"},
+    )
+    assert admin.status_code == 200, admin.text
+    assert admin.json()["branding"]["product_name"] == "Impostor"
+
+
 def test_branding_read_is_not_gated_behind_the_admin_scope(client) -> None:
     """The GET stays a read: the admin gate is on the upload route only.
 

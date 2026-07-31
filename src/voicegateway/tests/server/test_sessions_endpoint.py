@@ -412,3 +412,170 @@ async def test_per_session_reads_require_auth_when_enabled(gated_app):
             "/api/sessions", headers={"Authorization": "Bearer read-token"}
         )
         assert listed.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Auth: the public /v1 twin serves the same rows as the gated /api mirror
+# ---------------------------------------------------------------------------
+
+_V1_SESSION_READS = [
+    "/v1/sessions",
+    "/v1/sessions/vg-gated",
+]
+
+
+async def test_v1_session_reads_stay_open_when_no_keys_are_configured(gated_app):
+    """The self-hosted default (no keys configured) is unchanged.
+
+    ``core.auth.check_request`` returns None on an empty key list, so
+    ``require_principal`` resolves the operator principal and the local
+    operator still reads every session with no credential. The behavior tests
+    at the top of this file all ride on that path; this one asserts it.
+    """
+    assert gated_app.state.api_keys == []
+    await _seed_session(gated_app.state.gateway.storage, "vg-gated")
+
+    transport = ASGITransport(app=gated_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        for path in _V1_SESSION_READS:
+            resp = await c.get(path)
+            assert resp.status_code == 200, f"{path}: {resp.status_code} {resp.text}"
+
+
+async def test_v1_session_reads_require_auth_when_enabled(gated_app):
+    """With static keys configured, an unauthenticated caller reads nothing.
+
+    These two routes return exactly the rows the /api mirror returns, so
+    leaving them open made the gate on the mirror worth nothing: the same
+    session detail was one prefix away.
+    """
+    from voicegateway.core.auth import ApiKey
+
+    # A non-vk_ token takes the static-key path (check_request, which reads
+    # app.state.api_keys). A vk_ token would take the DB storage path instead.
+    gated_app.state.api_keys = [
+        ApiKey(token="read-token", name="viewer", scopes=("read",))
+    ]
+    await _seed_session(gated_app.state.gateway.storage, "vg-gated")
+
+    transport = ASGITransport(app=gated_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        for path in _V1_SESSION_READS:
+            anon = await c.get(path)
+            assert anon.status_code == 401, f"{path}: {anon.status_code} {anon.text}"
+            assert "vg-gated" not in anon.text
+
+            wrong = await c.get(path, headers={"Authorization": "Bearer nope"})
+            assert wrong.status_code == 401, f"{path}: {wrong.status_code}"
+
+            ok = await c.get(path, headers={"Authorization": "Bearer read-token"})
+            assert ok.status_code == 200, f"{path}: {ok.status_code} {ok.text}"
+
+
+# ---------------------------------------------------------------------------
+# Auth: the three ungated siblings on the replay router
+# ---------------------------------------------------------------------------
+#
+# The replay READ was gated on its own; these three were not. They live here
+# rather than in test_replay_endpoint.py so every gate this change adds is
+# asserted in one place, next to the /api/sessions/{id}/replay read above.
+
+
+async def test_replay_siblings_stay_open_when_no_keys_are_configured(gated_app):
+    """The self-hosted default (no keys configured) is unchanged.
+
+    Both write gates and the storage read are no-ops on an empty key list, so
+    the single-operator deployment still deletes a replay, reads the storage
+    breakdown and sets a retention window with no credential.
+    """
+    assert gated_app.state.api_keys == []
+    await _seed_session(gated_app.state.gateway.storage, "vg-gated")
+
+    transport = ASGITransport(app=gated_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        assert (await c.get("/api/replay/storage")).status_code == 200
+        assert (await c.delete("/api/sessions/vg-gated/replay")).status_code == 200
+        retention = await c.post(
+            "/api/projects/test-project/replay/retention",
+            json={"retention_days": 7},
+        )
+        assert retention.status_code == 200, retention.text
+
+
+async def test_replay_storage_read_requires_auth_when_enabled(gated_app):
+    """The storage breakdown names every project on the deployment.
+
+    It is a read, so it takes the read dependency the other dashboard reads
+    take: a read-scoped token is enough, an anonymous caller is not.
+    """
+    from voicegateway.core.auth import ApiKey
+
+    gated_app.state.api_keys = [
+        ApiKey(token="read-token", name="viewer", scopes=("read",))
+    ]
+    await _seed_session(gated_app.state.gateway.storage, "vg-gated")
+
+    transport = ASGITransport(app=gated_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        assert (await c.get("/api/replay/storage")).status_code == 401
+        wrong = await c.get(
+            "/api/replay/storage", headers={"Authorization": "Bearer nope"}
+        )
+        assert wrong.status_code == 401
+        ok = await c.get(
+            "/api/replay/storage", headers={"Authorization": "Bearer read-token"}
+        )
+        assert ok.status_code == 200, ok.text
+
+
+async def test_replay_writes_require_admin_when_auth_enabled(gated_app):
+    """The delete and the retention write take the dashboard write scope.
+
+    Admin, like every other write on a dashboard router. A read-scoped token
+    is authenticated but refused (403), an anonymous caller gets 401, and
+    neither one destroys the captured payloads or shortens the window that
+    decides how long they survive.
+    """
+    from voicegateway.core.auth import ApiKey
+
+    gated_app.state.api_keys = [
+        ApiKey(token="read-token", name="viewer", scopes=("read",)),
+        ApiKey(token="admin-token", name="operator", scopes=("admin",)),
+    ]
+    await _seed_session(gated_app.state.gateway.storage, "vg-gated")
+    gateway = gated_app.state.gateway
+    before = gateway.config.projects["test-project"].replay.retention_days
+
+    transport = ASGITransport(app=gated_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        assert (await c.delete("/api/sessions/vg-gated/replay")).status_code == 401
+        denied = await c.delete(
+            "/api/sessions/vg-gated/replay",
+            headers={"Authorization": "Bearer read-token"},
+        )
+        assert denied.status_code == 403, denied.text
+
+        retention_path = "/api/projects/test-project/replay/retention"
+        anon = await c.post(retention_path, json={"retention_days": 1})
+        assert anon.status_code == 401
+        reader = await c.post(
+            retention_path,
+            json={"retention_days": 1},
+            headers={"Authorization": "Bearer read-token"},
+        )
+        assert reader.status_code == 403, reader.text
+        # Nothing moved on either refusal.
+        assert gateway.config.projects["test-project"].replay.retention_days == before
+
+        ok_delete = await c.delete(
+            "/api/sessions/vg-gated/replay",
+            headers={"Authorization": "Bearer admin-token"},
+        )
+        assert ok_delete.status_code == 200, ok_delete.text
+        ok_retention = await c.post(
+            retention_path,
+            json={"retention_days": 1},
+            headers={"Authorization": "Bearer admin-token"},
+        )
+        assert ok_retention.status_code == 200, ok_retention.text
+        assert gateway.config.projects["test-project"].replay.retention_days == 1
