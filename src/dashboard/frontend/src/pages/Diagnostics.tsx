@@ -15,7 +15,7 @@ import ErrorsTab from './diagnostics/ErrorsTab';
 import LatencyTab from './diagnostics/LatencyTab';
 import LoadTab from './diagnostics/LoadTab';
 import ReportTab from './diagnostics/ReportTab';
-import { Card, Note } from './diagnostics/shared';
+import { Card, Note, verdictBadgeClass } from './diagnostics/shared';
 import SfuTab from './diagnostics/SfuTab';
 
 const CHECK_OPTS = [
@@ -42,13 +42,6 @@ const CHECK_LABEL: Record<DiagCheckName, string> = {
 };
 
 const CHECK_ORDER: DiagCheckName[] = ['agents', 'sfu', 'sfu_load', 'latency'];
-
-function verdictBadgeClass(v: string | null): string {
-  if (v === 'PASS') return 'neo-badge--green';
-  if (v === 'WARN') return 'neo-badge--warning';
-  if (v === 'FAIL') return 'neo-badge--red';
-  return 'neo-badge--black';
-}
 
 export default function Diagnostics() {
   const mountedRef = useRef(true);
