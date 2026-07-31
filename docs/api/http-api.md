@@ -698,3 +698,27 @@ Return audit log entries for CRUD operations performed via the API.
 curl "http://localhost:8080/v1/audit-log?entity_type=provider&limit=10"
 curl "http://localhost:8080/v1/audit-log?action=delete"
 ```
+
+## LiveKit Webhooks
+
+### POST /v1/livekit/webhook
+
+Receive LiveKit room and participant lifecycle webhooks and record them as calls. This is what makes a call that runs **no inference** visible: a `calls` row and its `call_legs` are written from webhook events alone, so a call that never reached an LLM still exists in the schema.
+
+Point your LiveKit project's webhook URL at this endpoint. It must be publicly reachable, since LiveKit posts to it.
+
+**Authentication:** the LiveKit webhook signature, not a bearer token. LiveKit cannot send a VoiceGateway API key, so the signature *is* the auth boundary. The request is verified against your LiveKit API key and secret before the body is parsed, and the endpoint **fails closed**: with no LiveKit credentials configured it returns `503` and writes nothing, rather than accepting unsigned writes.
+
+| Response | Meaning |
+|---|---|
+| `200` | Verified and recorded (or a known-but-unhandled event type, which is ignored). |
+| `401` | Missing, malformed, or invalid signature. Nothing was written. |
+| `503` | No LiveKit credentials configured, so the signature cannot be verified. |
+
+**Events recorded:** `room_started`, `room_finished`, `participant_joined`, `participant_left`, `participant_connection_aborted`, `track_published`, `track_unpublished`. Egress and ingress events are accepted and ignored.
+
+Delivery is neither ordered nor exactly-once, so every write is an idempotent upsert keyed on `room_sid` (and `participant_sid` for legs). Any event can create the call row, including a `participant_left` that arrives first.
+
+**What this gives you:** `disconnect_reason` from LiveKit includes real layer-1 failure causes, so a `SIP_TRUNK_FAILURE`, `USER_UNAVAILABLE`, or `USER_REJECTED` becomes readable per leg.
+
+**Configuration:** set `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` (or the `livekit:` block in `voicegw.yaml`). Set `VOICEGW_LOADTEST_TRUNK_IDS` to a comma-separated list of SIP trunk ids to mark calls arriving on those trunks as probe traffic, so load tests never pollute production percentiles.

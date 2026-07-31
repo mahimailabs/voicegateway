@@ -9,6 +9,7 @@ Tests inject a fake `probes` object with the same async method surface.
 from __future__ import annotations
 
 import asyncio
+import os
 import pathlib
 import re
 from typing import Any
@@ -20,6 +21,12 @@ MAX_LATENCY_TRIALS = 3
 _DEFAULT_RAMP = [2, 10, 25]
 _TARGET_RTT_MS = 50.0
 _MAX_LOSS = 1.0
+# The roster is an optional HTTP enrichment on top of the agents check, so it
+# gets a budget of its own well inside PER_CHECK_TIMEOUT_SECONDS: a collector
+# that hangs must cost the roster, never the in-room agent list that was already
+# read successfully. fetch_roster's own httpx timeout is 10s; this is the
+# backstop for a hang it cannot see (DNS, TLS, a proxy holding the socket).
+_ROSTER_TIMEOUT_SECONDS = 15.0
 
 
 def _safe_int(v: Any, default: int) -> int:
@@ -90,6 +97,7 @@ def _diag() -> Any:
         )
         from voicegateway.livekit_diag.report import agents_json
         from voicegateway.livekit_diag.resources import ResourceMonitor
+        from voicegateway.livekit_diag.roster import fetch_roster
         from voicegateway.livekit_diag.sfu import SfuProbe, find_knee
 
         _diag_cache = SimpleNamespace(
@@ -104,6 +112,7 @@ def _diag() -> Any:
             ResourceMonitor=ResourceMonitor,
             SfuProbe=SfuProbe,
             find_knee=find_knee,
+            fetch_roster=fetch_roster,
         )
     return _diag_cache
 
@@ -134,6 +143,37 @@ def _component_reader(store: Any) -> Any:
     )
 
 
+def _resource_json(report: Any) -> dict[str, Any] | None:
+    """Serialize a ResourceReport, with its "not sampled" zeros turned into None.
+
+    ``ResourceReport`` defaults an unsampled metric to 0.0 (``max(..., default=0.0)``
+    over an empty list, a net delta that needs two samples, and psutil's first
+    ``cpu_percent(interval=None)`` call which always returns 0.0). A 0 here
+    therefore means "not measured", not "idle" - and a fabricated 0% CPU printed
+    next to a 25-client ramp reads as a host with infinite headroom, which is the
+    opposite of what this block exists to say. ``saturated`` follows the CPU
+    sample because it is derived from it: with no sample, saturation is unknown,
+    not False.
+    """
+    if report is None:
+        return None
+    per_client = dict(report.per_client or {})
+    cpu_peak = float(report.cpu_peak) if report.cpu_peak else None
+    net_kbps_up = float(report.net_kbps_up) if report.net_kbps_up else None
+    return {
+        "cpu_peak": cpu_peak,
+        "mem_peak_mb": float(report.mem_peak_mb) if report.mem_peak_mb else None,
+        "net_kbps_up": net_kbps_up,
+        "saturated": bool(report.saturated) if cpu_peak is not None else None,
+        "per_client": {
+            "cpu_pct": per_client.get("cpu_pct") if cpu_peak is not None else None,
+            "kbps_up": per_client.get("kbps_up") if net_kbps_up is not None else None,
+        },
+        # Already None when the per-client CPU share was not measurable.
+        "sustainable_n": report.sustainable_n,
+    }
+
+
 class RealProbes:
     """Runs the engine probes against a live LiveKit server.
 
@@ -148,6 +188,16 @@ class RealProbes:
         self._store = store
 
     async def agents(self, creds) -> dict[str, Any]:
+        """In-room agents from the LiveKit server API, plus the heartbeat roster.
+
+        The two are different populations, and the roster is the one that closes
+        the gap: LiveKit's server API only reports a worker once it is IN a room,
+        so an idle registered worker is invisible to ``list_agents``. The roster
+        comes from the agents' own ``register_worker`` heartbeat via the
+        collector, and is a best-effort enrichment: ``roster`` is None when no
+        collector is configured (the UI then says how to enable it) and a list
+        when it is, so "not configured" never renders as "zero workers".
+        """
         d = _diag()
         admin = d.LiveKitAdmin(creds)
         admin.url = creds.url
@@ -155,20 +205,59 @@ class RealProbes:
             rows = await admin.list_agents()
         finally:
             await admin.aclose()
-        return {"agents": d.agents_json(rows)}
+        return {"agents": d.agents_json(rows), "roster": await self._roster()}
+
+    async def _roster(self) -> list[dict[str, Any]] | None:
+        """The collector's worker roster, or None when there is no collector.
+
+        Bounded and non-raising on purpose: this runs inside the agents check,
+        whose in-room result is already measured by the time we get here, so a
+        slow or broken collector must degrade to "no roster" rather than time the
+        whole check out and throw the agent list away with it.
+        """
+        collector = os.environ.get("VOICEGW_COLLECTOR_URL")
+        if not collector:
+            return None
+        try:
+            rows = await asyncio.wait_for(
+                _diag().fetch_roster(collector, os.environ.get("VOICEGW_API_KEY")),
+                _ROSTER_TIMEOUT_SECONDS,
+            )
+        except Exception:  # noqa: BLE001 - the roster must never fail the check
+            return []
+        return list(rows)
 
     async def sfu(self, creds, load: bool, config: dict[str, Any]) -> dict[str, Any]:
+        """SFU baseline, and (when ``load``) the ramp plus the prober's own load.
+
+        ``resource`` is the prober host's CPU/mem/net during the ramp. It is
+        reported, not dropped, because without it a knee is unattributable: a
+        laptop that pegged its own CPU at 25 clients produces exactly the same
+        rtt curve as an SFU that ran out of headroom, and only this block says
+        which one happened.
+
+        ``target_rtt_ms`` is the threshold ``knee`` was computed against.
+        ``find_knee`` returns None for two opposite outcomes (no tier breached,
+        or the FIRST tier breached), so a reader that cannot compare the steps
+        against the threshold cannot tell a clean ramp from a total failure.
+
+        ``loss_pct`` is carried through as the SDK reported it, which today is a
+        hardcoded 0.0 in ``sfu.py`` (per-connection loss is not exposed). It is
+        not a measurement and must not be rendered as one; ``quality`` is the
+        coarse signal that is real.
+        """
         d = _diag()
         admin = d.LiveKitAdmin(creds)
         admin.url = creds.url
         probe = d.SfuProbe(
             admin, lambda u, t: d.SyntheticClient(u, t), d.ResourceMonitor()
         )
+        steps: list[Any] = []
+        resource: Any = None
         try:
             base = await probe.baseline("vg-diag-sfu")
-            steps, _resource = ([], None)
             if load:
-                steps, _resource = await probe.ramp(
+                steps, resource = await probe.ramp(
                     "vg-diag-sfu",
                     config["ramp"],
                     config["duration"],
@@ -185,10 +274,17 @@ class RealProbes:
                 "quality": base.quality,
             },
             "ramp": [
-                {"clients": s.clients, "rtt_ms": s.rtt_ms, "loss_pct": s.loss_pct}
+                {
+                    "clients": s.clients,
+                    "rtt_ms": s.rtt_ms,
+                    "loss_pct": s.loss_pct,
+                    "quality": s.quality,
+                }
                 for s in steps
             ],
             "knee": knee,
+            "target_rtt_ms": _TARGET_RTT_MS,
+            "resource": _resource_json(resource),
         }
 
     async def latency(self, creds, config: dict[str, Any]) -> dict[str, Any]:

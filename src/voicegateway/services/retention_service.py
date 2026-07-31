@@ -1,10 +1,12 @@
-"""Hourly retention worker: ages out requests, sessions, and their rows.
+"""Hourly retention worker: ages out requests, sessions, calls, and their rows.
 
 Per project, sessions older than the cutoff (by ``ended_at``) and their
-dependent rows (replay, turns, dead-air) are deleted child-first;
-requests are pruned independently by ``timestamp`` (a request may have no
-session). Deletes are hard and batched so a large backlog does not hold a
-long write lock, which keeps the pass friendly to both SQLite and Postgres.
+dependent rows (replay, turns, dead-air) are deleted child-first; calls and
+their legs prune on their own clock (a call can exist with no session at all);
+diagnostics runs prune on their own ISO-8601 timestamps; requests are pruned
+independently by ``timestamp`` (a request may have no session). Deletes are hard
+and batched so a large backlog does not hold a long write lock, which keeps the
+pass friendly to both SQLite and Postgres.
 """
 
 from __future__ import annotations
@@ -35,6 +37,10 @@ _SESSION_CHILD_TABLES: Final[tuple[str, ...]] = (
     "dead_air_events",
     "transcript_turns",
 )
+# Children of a ``calls`` row, deleted before it. Calls prune on their own clock
+# (epoch milliseconds), not the session's: a call can exist with no session at
+# all, which is the whole reason the table exists.
+_CALL_CHILD_TABLES: Final[tuple[str, ...]] = ("call_legs",)
 
 
 def _rowcount(result: Any) -> int:
@@ -61,8 +67,10 @@ class RetentionWorker:
     """Background worker that hard-deletes aged rows per project.
 
     Sessions and their dependent rows (replay, turns, dead-air) prune
-    by ``ended_at``; requests prune independently by ``timestamp``. Deletes run
-    child-first in batches on a periodic loop.
+    by ``ended_at``; calls and their legs prune by their own epoch-millisecond
+    timestamps; diagnostics runs prune by their ISO-8601 timestamps; requests
+    prune independently by ``timestamp``. Deletes run child-first in batches on a
+    periodic loop.
     """
 
     def __init__(
@@ -167,8 +175,9 @@ class RetentionWorker:
         """Hard-delete one project's aged rows; return the total row count.
 
         Children first (replay, turns, dead-air), then the session rows, then
-        requests independently by timestamp. Each chunk commits so a large
-        backlog never holds one long write lock.
+        calls with their legs, then diagnostics runs, then requests independently
+        by timestamp. Each chunk commits so a large backlog never holds one long
+        write lock.
         """
         deleted = 0
 
@@ -202,6 +211,9 @@ class RetentionWorker:
             deleted += _rowcount(res)
             await db.commit()
 
+        deleted += await self._prune_calls(db, project_id, cutoff_ts)
+        deleted += await self._prune_diagnostics_runs(db, project_id, cutoff_iso)
+
         # Requests prune on their own clock (a request may have no session_id).
         while True:
             res = await db.execute(
@@ -223,6 +235,93 @@ class RetentionWorker:
             if removed == 0:
                 break
 
+        return deleted
+
+    async def _prune_calls(
+        self, db: AsyncSession, project_id: str, cutoff_ts: float
+    ) -> int:
+        """Hard-delete one project's aged calls + their legs; return the count.
+
+        Calls are their own root: a call can exist with no session (that is why
+        the table exists), so it prunes by its own timestamps rather than with
+        the session pass above. Age is taken from ``ended_at_ms`` when the call
+        ended and ``started_at_ms`` otherwise, so a call whose end webhook never
+        arrived still ages out instead of living forever. A row with neither
+        timestamp has no age and is left alone.
+
+        The cutoff arrives in epoch seconds and this table stores epoch
+        milliseconds, hence the conversion here.
+        """
+        deleted = 0
+        cutoff_ms = int(cutoff_ts * 1000)
+        result = await db.execute(
+            text(
+                "SELECT id FROM calls "
+                "WHERE project = :project "
+                "  AND COALESCE(ended_at_ms, started_at_ms) IS NOT NULL "
+                "  AND COALESCE(ended_at_ms, started_at_ms) < :cutoff_ms"
+            ),
+            {"project": project_id, "cutoff_ms": cutoff_ms},
+        )
+        stale_ids = [row[0] for row in result]
+        for chunk in _chunked(stale_ids, self._batch_size):
+            ids = list(chunk)
+            for table in _CALL_CHILD_TABLES:
+                res = await db.execute(
+                    text(f"DELETE FROM {table} WHERE call_id IN :ids").bindparams(
+                        bindparam("ids", expanding=True)
+                    ),
+                    {"ids": ids},
+                )
+                deleted += _rowcount(res)
+            res = await db.execute(
+                text("DELETE FROM calls WHERE id IN :ids").bindparams(
+                    bindparam("ids", expanding=True)
+                ),
+                {"ids": ids},
+            )
+            deleted += _rowcount(res)
+            await db.commit()
+        return deleted
+
+    async def _prune_diagnostics_runs(
+        self, db: AsyncSession, project_id: str, cutoff_iso: str
+    ) -> int:
+        """Hard-delete one project's aged diagnostics runs; return the count.
+
+        A run has no children, so there is nothing to delete first. It ages on
+        ``ended_at`` when it ended and ``created_at`` otherwise, so a run whose
+        process died mid-flight still ages out instead of sitting in the history
+        as "running" forever.
+
+        The comparison is lexical on ISO-8601 strings, which is exactly what the
+        session pass above does with ``sessions.ended_at``: every writer formats
+        with ``datetime.now(UTC).isoformat()``, so the strings are same-format
+        UTC and sort chronologically.
+        """
+        deleted = 0
+        while True:
+            res = await db.execute(
+                text(
+                    "DELETE FROM diagnostics_runs WHERE run_id IN ("
+                    "  SELECT run_id FROM diagnostics_runs "
+                    "  WHERE project = :project "
+                    # created_at is NOT NULL, so unlike the calls pass this
+                    # COALESCE always yields a value: every run has an age.
+                    "    AND COALESCE(ended_at, created_at) < :cutoff "
+                    "  LIMIT :limit)"
+                ),
+                {
+                    "project": project_id,
+                    "cutoff": cutoff_iso,
+                    "limit": self._batch_size,
+                },
+            )
+            removed = _rowcount(res)
+            await db.commit()
+            deleted += removed
+            if removed == 0:
+                break
         return deleted
 
 

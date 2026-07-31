@@ -23,6 +23,8 @@ class Session(SQLModel, table=True):
         Index("idx_sessions_project", "project"),
         Index("idx_sessions_started_at", "started_at"),
         Index("idx_sessions_agent_id", "agent_id"),
+        Index("idx_sessions_room_name", "room_name"),
+        Index("idx_sessions_call_id", "call_id"),
     )
 
     id: str = Field(primary_key=True)
@@ -55,4 +57,13 @@ class Session(SQLModel, table=True):
     budget_overrun: int | None = None
     routed_llm: str | None = None
     routed_tts: str | None = None
+
+    # e2e profiling: correlation onto the ``calls`` table. Both nullable and
+    # both forward-only -- a session that predates the call writers has nothing
+    # to join to, so there is no backfill by design. ``room_name`` is the
+    # best-effort join key (it only exists when attach resolved a LiveKit job
+    # context; web and Pipecat sessions have none), ``call_id`` is the resolved
+    # ``calls.id``. Indexed so the correlation rate is cheap to measure.
+    room_name: str | None = None
+    call_id: str | None = None
 
