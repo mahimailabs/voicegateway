@@ -70,7 +70,11 @@ dashboard = [
     "pydantic-settings>=2.0",
     "asgi-correlation-id>=4.3",
     "loguru>=0.7",
-    "mcp>=1.2.0",
+    # Capped below 2.0: mcp 2.0.0 renamed Tool's ``inputSchema`` to
+    # ``input_schema`` and moved the Server.list_tools/call_tool decorators,
+    # which reds mypy on server/mcp/server.py. Same style as voice-prices
+    # above. Lift the cap in a deliberate 2.x migration, not by resolver drift.
+    "mcp>=1.2.0,<2",
 ]
 
 # Self-host the shared fleet collector: the dashboard/server plus the Postgres
