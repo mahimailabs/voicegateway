@@ -372,6 +372,18 @@ List all configured projects with today's stats.
 curl http://localhost:8080/api/projects
 ```
 
+## API keys
+
+`GET /api/api_keys`, `POST /api/api_keys`, and `POST /api/api_keys/{key_id}/revoke` back the dashboard's API keys screen: list, mint, and soft-revoke the virtual keys (`vk_...`) that authenticate callers.
+
+**Authentication:** every route under `/api/api_keys` requires the `admin` scope, declared on the router so no route can miss it. As with Diagnostics and the Server overview, the gate is a **no-op while no API keys are configured** (the self-hosted default), and it enforces the admin scope as soon as auth is enabled. An unauthenticated request then gets `401`, and a valid token without the `admin` scope gets `403`. The dashboard already sends its bearer token on these calls.
+
+This gate matters because a minted key is issued with the wildcard scope. An ungated mint is a write escalation onto every `/v1` endpoint. A key minted here defaults to `role: tenant`, so **a minted key cannot mint another key** (`403`).
+
+`POST /api/api_keys` takes `name` (required), `tenant_id` (optional), and `issued_by` (optional), and returns `plaintext` exactly once at creation; the dashboard shows the "save this key" modal and discards it. Subsequent list responses expose only `key_prefix`, never the plaintext or the bcrypt hash. Revoke is soft: the row stays for audit with `revoked_at` set, and revoking an already-revoked key returns `404`.
+
+For the equivalent endpoints on the public API, see the [HTTP API](/api/http-api).
+
 ## Static File Serving
 
 The dashboard also serves the React frontend's built assets. If the frontend has been built (`src/dashboard/frontend/dist/` exists), the daemon serves:

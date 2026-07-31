@@ -1,6 +1,6 @@
 ---
 title: HTTP API Reference
-description: REST endpoints served by `voicegw serve`. Covers health, status, models, costs, billing, projects, providers, logs, metrics, and audit log.
+description: REST endpoints served by `voicegw serve`. Covers health, status, models, costs, billing, projects, providers, logs, metrics, audit log, and API keys.
 ---
 
 The VoiceGateway HTTP API runs via `voicegw serve` (default port 8080). It provides read-only observability endpoints and full CRUD for managing providers, models, and projects.
@@ -713,6 +713,42 @@ Return audit log entries for CRUD operations performed via the API.
 curl "http://localhost:8080/v1/audit-log?entity_type=provider&limit=10"
 curl "http://localhost:8080/v1/audit-log?action=delete"
 ```
+
+## API Keys
+
+Mint, list, and revoke the virtual keys (`vk_...`) that authenticate callers of this API.
+
+**Authentication:** every route under `/v1/api-keys` requires the `admin` scope, declared on the router so no route can miss it. Like Diagnostics, the gate is a **no-op while no API keys are configured** (the self-hosted default: no `auth.api_keys` block and no `VOICEGW_API_KEY`), and it enforces the admin scope as soon as auth is enabled. Pass a static key carrying `admin` or the `*` wildcard scope, or an admin-role `vk_` key: `Authorization: Bearer ...`.
+
+This gate matters because a minted key is issued with the wildcard scope. An ungated mint is a write escalation onto every `/v1` endpoint, so an unauthenticated caller must not reach it. A key minted here defaults to `role: tenant`, which means **a minted key cannot mint another key** (`403`): a leaked key is not self-replicating.
+
+| Response | Meaning |
+|---|---|
+| `401` | Auth is enabled and the request carried no token, or an invalid one. |
+| `403` | Valid token without the `admin` scope, or a `vk_` key whose role is not `admin`. |
+
+### POST /v1/api-keys
+
+Mint a virtual key. Body: `name` (required), `tenant_id` (optional, binds the key to one tenant), `issued_by` (optional audit string). Returns `201` with `plaintext` (**the only time the full key is ever returned**) and the stored `key` row. The bcrypt hash is never exposed.
+
+```bash
+curl -X POST http://localhost:8080/v1/api-keys \
+  -H "Authorization: Bearer $VG_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "prod-bot", "tenant_id": "acme"}'
+```
+
+### GET /v1/api-keys
+
+List every key. `include_revoked` (default `true`) keeps soft-revoked rows in the response. Rows carry `key_prefix`, never the hash or the plaintext.
+
+### GET /v1/api-keys/{key_id}
+
+Fetch one key by id. `404` when missing.
+
+### DELETE /v1/api-keys/{key_id}
+
+Soft-revoke a key. The row stays for audit with `revoked_at` set. Returns `204`.
 
 ## LiveKit Webhooks
 
