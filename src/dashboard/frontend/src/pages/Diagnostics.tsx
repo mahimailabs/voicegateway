@@ -15,7 +15,7 @@ import ErrorsTab from './diagnostics/ErrorsTab';
 import LatencyTab from './diagnostics/LatencyTab';
 import LoadTab from './diagnostics/LoadTab';
 import ReportTab from './diagnostics/ReportTab';
-import { Note } from './diagnostics/shared';
+import { Card, Note } from './diagnostics/shared';
 import SfuTab from './diagnostics/SfuTab';
 
 const CHECK_OPTS = [
@@ -91,6 +91,9 @@ export default function Diagnostics() {
   }, [run, runs]);
   const current = run ?? allRuns[0] ?? null;
   const checks = current?.results?.checks;
+  // Still in flight, as opposed to ended without recording anything. The two are
+  // both "no results", and only the second one has a report worth exporting.
+  const pending = current?.status === 'queued' || current?.status === 'running';
 
   const toggleCheck = (key: string) => {
     setSelected((prev) => {
@@ -271,10 +274,10 @@ export default function Diagnostics() {
         <>
           <RunSummary run={current} />
 
-          {current.results === null ? (
+          {current.results === null && (
             <div className="vg-card" style={{ marginBottom: 16 }}>
               <div className="vg-card__label" style={{ marginBottom: 10 }}>Results</div>
-              {current.status === 'queued' || current.status === 'running' ? (
+              {pending ? (
                 <Note>
                   The checks are still running. Results appear per check as the run completes; a run
                   is capped at six minutes.
@@ -285,7 +288,16 @@ export default function Diagnostics() {
                 </Note>
               )}
             </div>
-          ) : (
+          )}
+
+          {/* The tab strip is gated on the run having ENDED, not on it having
+              produced results. A run that failed before recording anything still
+              has a report the server renders for it (its status, its error, the
+              checks it was asked for, and every finding as "no result"), and a
+              failed run is exactly when an operator needs that file. Only a run
+              still in flight has no tabs: there, "nothing yet" is not a finding.
+              The per-check tabs of a resultless run say so themselves below. */}
+          {(current.results !== null || !pending) && (
             <>
               <div className="neo-tabs">
                 {TABS.map((t) => (
@@ -300,12 +312,32 @@ export default function Diagnostics() {
                 ))}
               </div>
 
-              {activeTab === 'Agents' && <AgentsTab check={checks?.agents} />}
+              {activeTab === 'Agents' &&
+                (current.results === null ? (
+                  <NoRunResult label="Agents in rooms" run={current} names={['agents']} />
+                ) : (
+                  <AgentsTab check={checks?.agents} />
+                ))}
               {/* The plain sfu check and the load check both measure a baseline;
                   prefer the dedicated one, fall back to the load run's. */}
-              {activeTab === 'SFU' && <SfuTab check={checks?.sfu ?? checks?.sfu_load} />}
-              {activeTab === 'Load' && <LoadTab check={checks?.sfu_load} />}
-              {activeTab === 'Latency' && <LatencyTab check={checks?.latency} />}
+              {activeTab === 'SFU' &&
+                (current.results === null ? (
+                  <NoRunResult label="SFU baseline" run={current} names={['sfu', 'sfu_load']} />
+                ) : (
+                  <SfuTab check={checks?.sfu ?? checks?.sfu_load} />
+                ))}
+              {activeTab === 'Load' &&
+                (current.results === null ? (
+                  <NoRunResult label="SFU load" run={current} names={['sfu_load']} />
+                ) : (
+                  <LoadTab check={checks?.sfu_load} />
+                ))}
+              {activeTab === 'Latency' &&
+                (current.results === null ? (
+                  <NoRunResult label="Latency (real calls)" run={current} names={['latency']} />
+                ) : (
+                  <LatencyTab check={checks?.latency} />
+                ))}
               {activeTab === 'Errors' && <ErrorsTab runs={allRuns} />}
               {activeTab === 'Report' && <ReportTab run={current} />}
             </>
@@ -348,6 +380,43 @@ export default function Diagnostics() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * What one per-check tab shows for a run that ended having recorded no results.
+ *
+ * It does NOT go through `CheckGate`: an absent payload there means "this check
+ * was not part of the run", which is only true when the run recorded results and
+ * this check is missing from them. A run that died before writing anything is the
+ * other case, and the check may well have been requested. The report the server
+ * renders keeps those apart (`not_requested` vs `no_result`), so this does too.
+ * Neither branch renders a number, a chart or a zero: nothing was measured.
+ */
+function NoRunResult({
+  label,
+  run,
+  names,
+}: {
+  label: string;
+  run: DiagnosticRun;
+  names: DiagCheckName[];
+}) {
+  const requested = names.some((name) => run.checks.includes(name));
+  return (
+    <Card label={label} right={<span className="neo-badge neo-badge--black">no result</span>}>
+      {requested ? (
+        <Note tone="bad">
+          This run was asked for this check and ended without recording anything for it:{' '}
+          {run.error ?? 'the reason was not reported'}. Nothing was measured, so nothing is shown.
+        </Note>
+      ) : (
+        <Note>
+          This run did not include the check, and it recorded no results at all, so there is
+          nothing measured to show. The Report tab still exports the run itself.
+        </Note>
+      )}
+    </Card>
   );
 }
 
