@@ -14,6 +14,7 @@ import CallsPanel from './diagnostics/CallsPanel';
 import ErrorsTab from './diagnostics/ErrorsTab';
 import LatencyTab from './diagnostics/LatencyTab';
 import LoadTab from './diagnostics/LoadTab';
+import ReportTab from './diagnostics/ReportTab';
 import { Note } from './diagnostics/shared';
 import SfuTab from './diagnostics/SfuTab';
 
@@ -27,8 +28,10 @@ const CHECK_OPTS = [
 const MAX_POLLS = 180;
 
 // Result tabs. Each renders exactly one check's payload, and says so when that
-// check was not part of the run rather than rendering an empty card.
-const TABS = ['Agents', 'SFU', 'Load', 'Latency', 'Errors'] as const;
+// check was not part of the run rather than rendering an empty card. "Report" is
+// the exception and sits last: it renders no check, it exports the whole run as
+// a file an operator can hand to somebody who cannot open this dashboard.
+const TABS = ['Agents', 'SFU', 'Load', 'Latency', 'Errors', 'Report'] as const;
 type Tab = (typeof TABS)[number];
 
 const CHECK_LABEL: Record<DiagCheckName, string> = {
@@ -304,6 +307,7 @@ export default function Diagnostics() {
               {activeTab === 'Load' && <LoadTab check={checks?.sfu_load} />}
               {activeTab === 'Latency' && <LatencyTab check={checks?.latency} />}
               {activeTab === 'Errors' && <ErrorsTab runs={allRuns} />}
+              {activeTab === 'Report' && <ReportTab run={current} />}
             </>
           )}
         </>
