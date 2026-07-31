@@ -219,6 +219,70 @@ Authentication follows the other dashboard reads: with no API keys configured (t
 curl "http://localhost:8080/api/calls?limit=6"
 ```
 
+## GET /api/correlation
+
+How many sessions that had a room actually reached a call row. This is a data-quality reading about VoiceGateway's own recording, not about your deployment's health: a low rate means calls are being missed or arriving unmatched, so any per-call number computed downstream is drawn from an incomplete set.
+
+**Response:**
+
+```json
+{
+  "eligible": 6,
+  "correlated": 4,
+  "rate": 0.6666666666666666,
+  "ambiguous": 1,
+  "dangling": 1,
+  "no_room": 2,
+  "warn_threshold": 0.9,
+  "status": "warn"
+}
+```
+
+`status` is one of `ok`, `warn`, `unknown`. **`rate` is `null` and `status` is `unknown` when `eligible` is 0**: no session that could have joined a call has been recorded, so there is no rate to publish. That is not the same as a rate of 0, and the dashboard renders it as "not measured" rather than "0%".
+
+`ambiguous`, `dangling` and `no_room` account for the uncorrelated remainder: a room name that matched more than one call, a call row that retention has since pruned, and a session that never had a room at all.
+
+Authentication is `require_principal`. A **tenant-scoped key gets 403** rather than the number, because the underlying query has no tenant dimension and the counts are deployment-wide: serving them to one tenant would publish every other tenant's session volume. The self-hosted operator default (no keys configured, or a static config key) is unaffected.
+
+## GET /api/nodes
+
+Per recent call, which infrastructure nodes were sampled during that call's time window. Correlation is **by time window, not by attribution**: VoiceGateway does not claim a given node served a given call, only that these samples fall inside the call's span padded on each side. `window.pad_ms` is that padding and is reported alongside every window so the claim is auditable.
+
+Requires the node scrape to be running (`VOICEGW_NODE_SCRAPE_TARGETS`); with it unset the endpoint returns 200 with `samples_stored: 0` and every window `no_samples`.
+
+**Response (abridged):**
+
+```json
+{
+  "samples_stored": 322,
+  "pad_ms": 15000,
+  "calls": [
+    {
+      "call_id": "8f1c...",
+      "correlation": {
+        "status": "correlated",
+        "window": { "from_ms": 1785000000000, "to_ms": 1785000042000, "pad_ms": 15000 },
+        "nodes_sampled": [ { "target": "sfu-1", "ok": 8, "failed": 0 } ]
+      }
+    }
+  ]
+}
+```
+
+`correlation.status` distinguishes three states that must never be read as each other:
+
+| Status | Meaning |
+|---|---|
+| `correlated` | Samples exist in the window and are reported with their values. |
+| `no_samples` | The scrape ran and there was nothing in this window. **Not a reading**: it does not say the nodes were idle or healthy. `nodes_sampled` is empty. |
+| `scrape_failed` | The scrape itself did not succeed, so nothing is known. Values are suppressed, and the failure outcomes are reported instead. |
+
+`correlation` is `null` when the call has no closed span to search, which is distinct again from `no_samples`.
+
+A series the scrape did not return is named and counted rather than dropped or zeroed, and a counter with no sourceable rate reports as not measured rather than `0/s`. Peak statistics carry their own label (`p95`, `max_of_n`, `not_measured`), so a peak over fewer than ten samples is never presented as a p95.
+
+Authentication matches `/api/correlation`, including the 403 for a tenant-scoped key: a node is infrastructure serving every tenant at once, so there is no tenant-scoped answer to give.
+
 ## GET /api/agents
 
 Return the fleet index over the last 24 hours: the telemetry rollup merged with the live worker roster. Agents that have metered traffic come from the rollup; registered-but-idle workers (0 requests) are merged in so a booted agent appears before it has handled its first call.
