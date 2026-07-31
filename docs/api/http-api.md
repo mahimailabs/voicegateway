@@ -523,7 +523,7 @@ curl -X POST http://localhost:8080/v1/providers \
 
 ### PATCH /v1/providers/{provider_id}
 
-Update a managed provider's API key, base URL, or type.
+Update a managed provider's API key, base URL, or type. Omitted fields keep their stored value, so a body of `{"api_key":"sk-new-key"}` rotates the key and leaves `base_url` alone.
 
 **Example:**
 
@@ -532,6 +532,26 @@ curl -X PATCH http://localhost:8080/v1/providers/deepgram-staging \
   -H "Content-Type: application/json" \
   -d '{"api_key":"sk-new-key"}'
 ```
+
+**Moving `base_url` to a new host**
+
+A request that changes `base_url` without supplying an `api_key` keeps the stored key, and `POST /v1/providers/{provider_id}/test` then sends that key to the new host. So that one combination requires the new host to be permitted. Permitted are the provider's current host, the vendor's own default host (`api.openai.com` for `openai`, `localhost` for `ollama`, and so on), and any host listed in `serve.provider_base_url_hosts` in [voicegw.yaml](/configuration/voicegw-yaml). An unpermitted host returns `400` naming the config key:
+
+```json
+{
+  "detail": "base_url host 'proxy.internal.example.com' is not permitted for provider 'deepgram-staging'. Moving base_url to a new host while reusing the stored API key would send that key to the new host. Add the host to 'serve.provider_base_url_hosts' in voicegw.yaml, or send a fresh 'api_key' in this request."
+}
+```
+
+Sending the key with the change is always allowed, because the caller already holds a key:
+
+```bash
+curl -X PATCH http://localhost:8080/v1/providers/deepgram-staging \
+  -H "Content-Type: application/json" \
+  -d '{"base_url":"https://proxy.internal.example.com","api_key":"sk-new-key"}'
+```
+
+Requests that keep the same host (port or path edits), clear `base_url`, or leave it untouched are unaffected, as are providers stored with an empty key such as a local `ollama`.
 
 ### DELETE /v1/providers/{provider_id}
 
