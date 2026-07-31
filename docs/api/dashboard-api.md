@@ -134,6 +134,91 @@ curl "http://localhost:8080/api/latency?period=today"
 curl "http://localhost:8080/api/latency?project=my-app"
 ```
 
+## GET /api/calls
+
+Return recent recorded calls, newest first, each with its participant legs. A call row is written by the LiveKit webhook receiver and by agent/load-worker self-reports (`POST /v1/calls/observations`), so a call that ran no inference at all still appears here. This is what the dashboard's per-call layer waterfall reads.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `limit` | `integer` | `50` | Page size, 1-200. Each call costs one extra read for its legs, so the cap bounds the query count too. |
+
+**Response:**
+
+```json
+{
+  "calls": [
+    {
+      "id": "8f1c...",
+      "room_sid": "RM_abc123",
+      "room_name": "call-inbound-42",
+      "origin": "webhook",
+      "attempt_id": null,
+      "run_id": null,
+      "project": "default",
+      "tenant_id": null,
+      "agent_id": null,
+      "channel": "sip",
+      "direction": "inbound",
+      "started_at_ms": 1750000000000,
+      "ended_at_ms": 1750000042000,
+      "duration_ms": 42000,
+      "end_reason": "CLIENT_INITIATED",
+      "num_legs": 2,
+      "is_probe": 0,
+      "answer_latency_ms": 1200,
+      "answer_latency_source": "webhook_proxy",
+      "legs": [
+        {
+          "id": 1,
+          "call_id": "8f1c...",
+          "participant_sid": "PA_caller",
+          "identity": "sip_+15195551234",
+          "kind": "SIP",
+          "region": null,
+          "joined_at_ms": 1750000000000,
+          "left_at_ms": 1750000042000,
+          "disconnect_reason": "CLIENT_INITIATED",
+          "is_publisher": 1,
+          "attributes_json": "{\"sip.phoneNumber\": \"+15195551234\"}",
+          "first_audio_track_at_ms": null,
+          "audio_track_sid": null,
+          "audio_codec": null,
+          "joined_at_source": "webhook",
+          "first_audio_track_at_source": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+`answer_latency_ms` is the caller-visible ring time. It is derived once, at write time, and served here untouched. `answer_latency_source` names the clock behind it, strongest first:
+
+| Source | Meaning |
+|---|---|
+| `sipp_rtd` | The true INVITE-to-200-OK wall time, measured and reported by the worker that placed the call. |
+| `agent_report` | Derived from two leg timestamps that were both self-reported by a process inside the call: millisecond precision. |
+| `webhook_proxy` | The same subtraction from LiveKit webhook timestamps, whose `created_at` is whole seconds. Carries up to a second of truncation. |
+
+Four things this endpoint deliberately does not do:
+
+- **It never computes.** No value is re-derived, repaired or aggregated on the way out, and no percentile is served: one page of rows is not the population.
+- **It never fills a NULL.** `answer_latency_ms: null` means the recorded timestamps do not support a ring time (for example a call that never answered), which is a different fact from a fast answer. Nothing is coerced to `0` or `""`.
+- **It excludes load-test traffic.** Rows flagged `is_probe` are synthetic and are not served here, so they cannot leak into numbers read as production.
+- **It is polled, not pushed.** There is no WebSocket or SSE variant.
+
+Only the `sip.*` participant attributes are persisted and served in `attributes_json`; other participant attributes are application state and are dropped at write time.
+
+Authentication follows the other dashboard reads: with no API keys configured (the self-hosted default) the endpoint is open, and once keys are configured a tenant-scoped key sees only its own calls.
+
+**Example:**
+
+```bash
+curl "http://localhost:8080/api/calls?limit=6"
+```
+
 ## GET /api/agents
 
 Return the fleet index over the last 24 hours: the telemetry rollup merged with the live worker roster. Agents that have metered traffic come from the rollup; registered-but-idle workers (0 requests) are merged in so a booted agent appears before it has handled its first call.

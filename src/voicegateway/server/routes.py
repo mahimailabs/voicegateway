@@ -49,6 +49,9 @@ from voicegateway.server.api.dashboard import (
     branding as dashboard_branding,
 )
 from voicegateway.server.api.dashboard import (
+    calls as dashboard_calls,
+)
+from voicegateway.server.api.dashboard import (
     costs as dashboard_costs,
 )
 from voicegateway.server.api.dashboard import (
@@ -110,6 +113,10 @@ dashboard_router.include_router(dashboard_status.router)
 dashboard_router.include_router(dashboard_costs.router)
 dashboard_router.include_router(dashboard_projects.router)
 dashboard_router.include_router(dashboard_sessions.router)
+# GET /api/calls. Read-only, authenticated by require_principal declared on the
+# router itself. Distinct from /v1/calls/observations above: that router is
+# write-only, and neither inherits the other's scope.
+dashboard_router.include_router(dashboard_calls.router)
 dashboard_router.include_router(dashboard_metrics.router)
 dashboard_router.include_router(dashboard_replay.router)
 dashboard_router.include_router(dashboard_agents.router)
