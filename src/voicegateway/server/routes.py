@@ -52,6 +52,9 @@ from voicegateway.server.api.dashboard import (
     calls as dashboard_calls,
 )
 from voicegateway.server.api.dashboard import (
+    correlation as dashboard_correlation,
+)
+from voicegateway.server.api.dashboard import (
     costs as dashboard_costs,
 )
 from voicegateway.server.api.dashboard import (
@@ -117,6 +120,11 @@ dashboard_router.include_router(dashboard_sessions.router)
 # router itself. Distinct from /v1/calls/observations above: that router is
 # write-only, and neither inherits the other's scope.
 dashboard_router.include_router(dashboard_calls.router)
+# GET /api/correlation. Read-only, authenticated by require_principal declared on
+# the router itself, same as /api/calls above. It reports how often the sessions
+# <-> calls join actually resolves; the join fails silently, so nothing else on
+# the dashboard would show that it stopped working.
+dashboard_router.include_router(dashboard_correlation.router)
 dashboard_router.include_router(dashboard_metrics.router)
 dashboard_router.include_router(dashboard_replay.router)
 dashboard_router.include_router(dashboard_agents.router)

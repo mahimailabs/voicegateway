@@ -11,6 +11,7 @@ import { formatDateTime } from '../lib/time';
 import type { DiagCheckName, DiagnosticRun, DiagnosticsCreds } from '../lib/types';
 import AgentsTab from './diagnostics/AgentsTab';
 import CallsPanel from './diagnostics/CallsPanel';
+import CorrelationPanel from './diagnostics/CorrelationPanel';
 import ErrorsTab from './diagnostics/ErrorsTab';
 import LatencyTab from './diagnostics/LatencyTab';
 import LoadTab from './diagnostics/LoadTab';
@@ -152,6 +153,13 @@ export default function Diagnostics() {
           tabs on purpose: it needs no billed run, it is the page's headline
           claim, and it is the only thing here that reads what the deployment
           already recorded rather than what a probe just went and measured. */}
+      {/* How often a session joins the call it ran in. Above the calls it
+          describes and outside the run tabs for the same reasons: it needs no
+          billed run, and it is the one card that says whether the join behind
+          every other number on this page is still resolving. That join fails
+          silently, so nothing else here would show it stopped. */}
+      <CorrelationPanel />
+
       <CallsPanel />
 
       {/* Connection status card */}

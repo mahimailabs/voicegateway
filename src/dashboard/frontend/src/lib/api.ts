@@ -135,6 +135,7 @@ import type {
   AgentsResponse,
   ApiKey,
   CallsResponse,
+  CorrelationRate,
   CreatedApiKey,
   DeadAirEvent,
   DiagnosticRun,
@@ -374,6 +375,18 @@ export function fetchCalls(
   if (options.limit !== undefined) params.set('limit', String(options.limit));
   const query = params.toString();
   return fetchJson<CallsResponse>(query ? `/api/calls?${query}` : '/api/calls');
+}
+
+// ---------------------------------------------------------------------------
+// Correlation: how often the sessions <-> calls join actually resolves.
+//
+// Takes no argument on purpose. The endpoint publishes the deployment-wide
+// number and its warn threshold; the browser neither scopes it nor recomputes
+// it.
+// ---------------------------------------------------------------------------
+
+export function fetchCorrelationRate(): Promise<CorrelationRate> {
+  return fetchJson<CorrelationRate>('/api/correlation');
 }
 
 // ---------------------------------------------------------------------------

@@ -828,3 +828,43 @@ export interface CallsResponse {
   calls: CallDetail[];
 }
 
+// ---------------------------------------------------------------------------
+// Correlation rate (GET /api/correlation).
+//
+// Mirrors `session_repository.CorrelationRate` field for field. The endpoint is
+// a pure passthrough and so is this type: nothing here is computed in the
+// browser.
+// ---------------------------------------------------------------------------
+
+/**
+ * `CorrelationRate.status`: the CLOSED set from
+ * `session_repository.CORRELATION_STATUSES`.
+ *
+ * `unknown` is a real, distinct answer, not an error: with an empty denominator
+ * there is no rate to publish, and neither 100% nor 0% would be true.
+ */
+export type CorrelationStatus = 'ok' | 'warn' | 'unknown';
+
+/** GET /api/correlation: how often the sessions <-> calls join resolves. */
+export interface CorrelationRate {
+  /** Denominator: sessions that HAD a room and so should have joined. */
+  eligible: number;
+  /** Numerator: of those, the ones pointing at a call that exists. */
+  correlated: number;
+  /**
+   * `correlated / eligible`, or null when `eligible` is 0. Null is NOT 0: it
+   * means nothing was measured, and rendering it as 0% would report an
+   * unmeasured deployment as a completely broken one.
+   */
+  rate: number | null;
+  /** Uncorrelated because the room name matched more than one call. */
+  ambiguous: number;
+  /** Pointing at a call that has since been pruned. Not a correlation. */
+  dangling: number;
+  /** Sessions with no room at all (web, Pipecat). Out of BOTH sides. */
+  no_room: number;
+  /** The rate below which this is worth attention. Published, not assumed. */
+  warn_threshold: number;
+  status: CorrelationStatus;
+}
+

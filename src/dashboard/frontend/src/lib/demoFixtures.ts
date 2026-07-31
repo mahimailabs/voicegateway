@@ -25,6 +25,7 @@ import type {
   ApiKey,
   CallDetail,
   CallsResponse,
+  CorrelationRate,
   CostByDayPoint,
   CostsResponse,
   DiagnosticRun,
@@ -1675,6 +1676,33 @@ const CALLS: CallDetail[] = [
 const CALLS_RESPONSE: CallsResponse = { calls: CALLS };
 
 // ---------------------------------------------------------------------------
+// Correlation rate (GET /api/correlation).
+//
+// Deliberately NOT a flattering 100%. The demo deployment is one where the
+// sessions <-> calls join is partly broken, because that is the state this card
+// exists to make visible and a green 100% would demo nothing. The counts are
+// consistent with the 8 sessions above: 6 had a room (the denominator), of
+// which 4 joined, 1 matched a pinned room name and was refused rather than
+// guessed, and 1 pointed at a call that has since been pruned. The other 2 are
+// web sessions that never had a room and so are excluded from BOTH sides.
+//
+// The unmeasured state (`rate: null`, `status: 'unknown'`) cannot be shown at
+// the same time as this one from a single fixture; the panel renders it as
+// `NOT_MEASURED`, never as 0%.
+// ---------------------------------------------------------------------------
+
+const CORRELATION: CorrelationRate = {
+  eligible: 6,
+  correlated: 4,
+  rate: 4 / 6,
+  ambiguous: 1,
+  dangling: 1,
+  no_room: 2,
+  warn_threshold: 0.9,
+  status: 'warn',
+};
+
+// ---------------------------------------------------------------------------
 // Routing + dispatch
 // ---------------------------------------------------------------------------
 
@@ -1739,6 +1767,8 @@ export async function demoFetch<T>(path: string, init?: RequestInit): Promise<T>
       return SESSIONS as T;
     case '/api/calls':
       return CALLS_RESPONSE as T;
+    case '/api/correlation':
+      return CORRELATION as T;
     case '/api/replay/storage':
       return REPLAY_STORAGE as T;
     case '/api/api_keys':
