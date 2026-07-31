@@ -665,12 +665,27 @@ voicegw_providers_configured 5
 voicegw_cost_usd_total{period="today"} 1.234500
 voicegw_requests_total{provider="deepgram"} 42
 voicegw_cost_usd_total{provider="deepgram"} 0.512300
+# HELP voicegw_diag_gate_status Health gates in the newest stored LiveKit diagnostics run, counted by gate id and status.
+# TYPE voicegw_diag_gate_status gauge
+voicegw_diag_gate_status{gate="agents_listing",status="PASS"} 1
+voicegw_diag_gate_status{gate="agent_reply_latency",status="UNKNOWN"} 2
+# TYPE voicegw_diag_run_verdict gauge
+voicegw_diag_run_verdict{verdict="UNKNOWN"} 1
+# TYPE voicegw_diag_run_timestamp_seconds gauge
+voicegw_diag_run_timestamp_seconds 1785412800.000
 ```
+
+This endpoint exposes VoiceGateway's own numbers so your Prometheus can scrape it. It is the opposite direction from the node scrape, which pulls exposition text *from* livekit-server and node_exporter *into* this database; nothing scraped from another process is served back out here.
+
+**Diagnostics gate series.** `voicegw_diag_gate_status` reports the health gates of the newest stored [diagnostics run](/cli/livekit) that gated anything, aggregated per gate id and status: the probed agent is not a label, so cardinality does not grow with your fleet. Statuses are the one ladder `voicegw livekit check` uses, `PASS < WARN < UNKNOWN < FAIL`, where **`UNKNOWN` means the gate could not be evaluated and is not a pass** (only `PASS` exits 0). `voicegw_diag_run_verdict` is that run's stored verdict, and `voicegw_diag_run_timestamp_seconds` is when it finished, so a clean verdict from three weeks ago is distinguishable from one from a minute ago.
+
+**Unknown values are omitted, never zero.** No diagnostics run, no readable diagnostics table, or a status this build does not recognise means the series is *absent*. A `0` would be a real observation and would be alerted on; absence is the honest reading. Alert on what is there (for example `voicegw_diag_gate_status{status!="PASS"} > 0`) and on `absent(...)` if you require a run to have happened.
 
 **Example:**
 
 ```bash
 curl http://localhost:8080/v1/metrics
+curl -s http://localhost:8080/v1/metrics | grep voicegw_diag_gate_status
 ```
 
 ---
