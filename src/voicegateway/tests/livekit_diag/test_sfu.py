@@ -33,7 +33,13 @@ def test_find_knee_at_first_threshold_break():
 
 
 def test_find_knee_none_when_all_healthy():
-    steps = [RampStep(10, 4.0, 0.0, "Excellent"), RampStep(25, 6.0, 0.0, "Good")]
+    # Sample counts are load-bearing: without them these steps default to
+    # samples 0, the walk stops at the first tier for lack of evidence, and the
+    # None below arrives for the opposite reason to the one this test names.
+    steps = [
+        RampStep(10, 4.0, 0.0, "Excellent", 10),
+        RampStep(25, 6.0, 0.0, "Good", 25),
+    ]
     assert find_knee(steps, target_rtt_ms=20.0, max_loss=1.0) is None
 
 

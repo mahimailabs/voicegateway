@@ -271,7 +271,13 @@ def test_a_ramp_that_broke_at_the_first_tier_fails():
 def test_a_ramp_that_never_broke_passes():
     from voicegateway.livekit_diag.sfu import RampStep, find_knee
 
-    steps = [RampStep(2, 11.0, 0.0, "Excellent"), RampStep(10, 14.0, 0.0, "Excellent")]
+    # The sample counts keep this None meaning "every tier was measured and
+    # stayed in budget". Drop them and the walk stops at tier one for lack of
+    # evidence, which is the same None for the opposite reason.
+    steps = [
+        RampStep(2, 11.0, 0.0, "Excellent", 2),
+        RampStep(10, 14.0, 0.0, "Excellent", 10),
+    ]
     assert find_knee(steps, 50.0, 1.0) is None  # same None, opposite outcome
 
     gate = gates.sfu_capacity_gate([_step(2, 11.0), _step(10, 14.0)], 50.0, None)
