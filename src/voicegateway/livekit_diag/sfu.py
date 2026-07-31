@@ -57,11 +57,29 @@ class RampStep:
 def find_knee(
     steps: list[RampStep], target_rtt_ms: float, max_loss: float
 ) -> int | None:
-    """The last healthy client count before the first step that breaks a
-    threshold. None when every step is within budget.
+    """The last healthy client count before the walk stops.
+
+    The walk stops at the first step that breaks a threshold, and also at the
+    first step that measured nothing (``samples`` 0). Capacity cannot be
+    certified past a tier that was never demonstrated: such a tier reports an
+    ``rtt_ms`` of 0.0, which is the mean of an empty list rather than a fast
+    SFU, and ``0.0 > target_rtt_ms`` is False, so walking on credited every tier
+    below it with capacity nobody measured. Stopping there understates capacity
+    when the tier was in fact fine, which is the safe direction, and it matches
+    the multi-vantage walk in :func:`distributed.aggregate_vantages` so the two
+    SFU modes cannot report contradictory things about the same server.
+
+    A step that DID measure is judged exactly as before, against the same
+    ``target_rtt_ms`` and ``max_loss``.
+
+    None when every step was measured and stayed within budget, and ALSO when
+    the very first step stopped the walk. ``gates.sfu_capacity_gate`` exists to
+    tell those apart; None must never be read as health on its own.
     """
     last_ok = None
     for s in steps:
+        if s.samples <= 0:
+            return last_ok
         if s.rtt_ms > target_rtt_ms or s.loss_pct > max_loss:
             return last_ok
         last_ok = s.clients

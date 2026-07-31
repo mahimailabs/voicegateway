@@ -483,3 +483,135 @@ def test_the_run_verdict_is_the_worst_gate():
     results = gates.evaluate_checks(checks, 1500.0)
     assert [g.status for g in results] == [gates.PASS, gates.FAIL, gates.PASS]
     assert gates.verdict(results) == gates.FAIL
+
+
+# ---------------------------------------------------------------------------
+# A baseline that measured nothing: quality and rtt are INDEPENDENT readings
+#
+# quality is the SDK's own peer-connection metric; rtt_ms is a mean over ping
+# round trips. A connection that came up while every ping timed out reports
+# "Excellent" beside 0.0ms over 0 samples, and "Excellent" is not falsy, not
+# _NO_QUALITY and not degraded, so the gate fell through to PASS.
+# ---------------------------------------------------------------------------
+
+
+def _baseline(rtt: float, samples: int, quality: str = "Excellent") -> dict:
+    """A baseline as ``service.sfu`` publishes it, with its sample count."""
+    return {
+        "rtt_ms": rtt,
+        "loss_pct": 0.0,
+        "quality": quality,
+        "samples": samples,
+        "rtt_stat": "mean_of_n" if samples else "not_measured",
+    }
+
+
+def test_an_excellent_baseline_where_every_ping_timed_out_does_not_pass():
+    """The bug F6 removed from the ramp, still live in the baseline gate."""
+    gate = gates.sfu_quality_gate(_baseline(0.0, 0))
+    assert gate.status == gates.UNKNOWN
+    assert gate.status != gates.PASS
+    assert "measured nothing" in gate.detail
+    assert "samples 0" in gate.detail
+    # The 0.0 is the mean of an empty list, so it is never printed as a time.
+    assert "rtt 0.0ms" not in gate.detail
+    # Nothing decided it, so no metric is claimed.
+    assert gate.metric is None and gate.value is None
+    # UNKNOWN is not the soft option: the run still exits non-zero.
+    assert gates.exit_code(gates.verdict([gate])) == 1
+
+
+def test_a_measured_baseline_passes_exactly_as_before():
+    gate = gates.sfu_quality_gate(_baseline(11.0, 2))
+    assert gate.status == gates.PASS
+    assert gate.detail == "SFU baseline connection quality is Excellent (rtt 11.0ms)"
+    assert gate.metric == "sfu_baseline_quality"
+    # A single round trip is still a round trip.
+    assert gates.sfu_quality_gate(_baseline(11.0, 1)).status == gates.PASS
+
+
+def test_a_degraded_baseline_that_measured_no_rtt_is_still_a_failure():
+    """Matches the ramp: Poor/Lost is an observation, an absent rtt is not.
+
+    ``sfu_capacity_gate`` FAILs an unmeasured tier that reported Poor rather
+    than calling it UNKNOWN, and the two gates read the same probe, so they
+    answer the same way. Its 0.0ms is not a reading either way, so it is not
+    printed as one.
+    """
+    for quality in ("Poor", "Lost"):
+        gate = gates.sfu_quality_gate(_baseline(0.0, 0, quality))
+        assert gate.status == gates.FAIL, quality
+        assert f"quality is {quality}" in gate.detail
+        assert "no rtt reading" in gate.detail
+        assert "rtt 0.0ms" not in gate.detail
+    # And a degraded baseline that DID measure still prints its rtt.
+    assert "rtt 90.0ms" in gates.sfu_quality_gate(_baseline(90.0, 2, "Poor")).detail
+
+
+def test_a_baseline_from_an_older_run_without_a_sample_count_is_not_mislabelled():
+    """Absent is not zero: archived runs must not all turn UNKNOWN."""
+    legacy = {"rtt_ms": 11.0, "loss_pct": 0.0, "quality": "Excellent"}
+    assert "samples" not in legacy
+    assert gates.sfu_quality_gate(legacy).status == gates.PASS
+
+    degraded = {"rtt_ms": 90.0, "loss_pct": 0.0, "quality": "Poor"}
+    assert gates.sfu_quality_gate(degraded).status == gates.FAIL
+
+    # With no count to key on, the number itself decides, under the same rule
+    # _has_measurement applies to reply latency: an rtt of 0.0 through an SFU is
+    # not a time, so a legacy total failure must not read as a fast one either.
+    dead = {"rtt_ms": 0.0, "loss_pct": 0.0, "quality": "Excellent"}
+    gate = gates.sfu_quality_gate(dead)
+    assert gate.status == gates.UNKNOWN
+    assert "no sample count" in gate.detail
+    assert gate.value is None
+
+    # A legacy baseline with no rtt key at all is not a 0.0 either.
+    assert gates.sfu_quality_gate({"quality": "Excellent"}).status == gates.UNKNOWN
+    # ... and a null rtt does not raise on the way there.
+    assert (
+        gates.sfu_quality_gate({"quality": "Excellent", "rtt_ms": None}).status
+        == gates.UNKNOWN
+    )
+
+
+def test_an_unusable_baseline_sample_count_falls_back_instead_of_crashing():
+    """A null or junk ``samples`` is no count at all, not a count of zero."""
+    for junk in (None, "", "abc", [], {}):
+        alive = {"rtt_ms": 11.0, "quality": "Excellent", "samples": junk}
+        assert gates.sfu_quality_gate(alive).status == gates.PASS  # 11.0 is a reading
+
+        dead = {"rtt_ms": 0.0, "quality": "Excellent", "samples": junk}
+        assert gates.sfu_quality_gate(dead).status == gates.UNKNOWN
+
+    # A count that is a string of digits is still a count.
+    counted = {"rtt_ms": 11.0, "quality": "Excellent", "samples": "3"}
+    assert gates.sfu_quality_gate(counted).status == gates.PASS
+
+
+def test_an_unmeasured_baseline_is_unknown_through_the_whole_run():
+    checks = {
+        "sfu_load": {
+            "ok": True,
+            "result": {
+                # The connection was fine; not one ping came back.
+                "baseline": _baseline(0.0, 0),
+                "ramp": [_measured(2, 11.0, 3)],
+                "target_rtt_ms": 50.0,
+                "resource": None,
+            },
+        }
+    }
+    results = gates.evaluate_checks(checks, 1500.0)
+    quality = [g for g in results if g.gate == gates.SFU_QUALITY_GATE]
+    assert [g.status for g in quality] == [gates.UNKNOWN]
+    # The ramp still measured something, so this is the baseline's verdict alone.
+    assert [g.status for g in results if g.gate == gates.SFU_CAPACITY_GATE] == [
+        gates.PASS
+    ]
+    assert gates.verdict(results) != gates.PASS
+
+    import json
+
+    for gate in results:
+        json.loads(json.dumps(gate.as_dict()))

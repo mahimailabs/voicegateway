@@ -25,9 +25,9 @@ WARM_MS = 26.0
 
 def test_find_knee_at_first_threshold_break():
     steps = [
-        RampStep(10, 5.0, 0.0, "Excellent"),
-        RampStep(25, 9.0, 0.1, "Good"),
-        RampStep(50, 22.0, 1.4, "Poor"),
+        RampStep(10, 5.0, 0.0, "Excellent", 10),
+        RampStep(25, 9.0, 0.1, "Good", 25),
+        RampStep(50, 22.0, 1.4, "Poor", 50),
     ]
     assert find_knee(steps, target_rtt_ms=20.0, max_loss=1.0) == 25  # last good before break
 
@@ -35,6 +35,77 @@ def test_find_knee_at_first_threshold_break():
 def test_find_knee_none_when_all_healthy():
     steps = [RampStep(10, 4.0, 0.0, "Excellent"), RampStep(25, 6.0, 0.0, "Good")]
     assert find_knee(steps, target_rtt_ms=20.0, max_loss=1.0) is None
+
+
+# --- the knee walk stops where the evidence stops ---------------------------
+#
+# A tier that measured nothing reports rtt_ms 0.0 (the mean of an empty list),
+# and 0.0 is inside every budget, so the walk used to sail straight through it.
+# This is the single-host twin of the multi-vantage walk in
+# distributed.aggregate_vantages, which stops at an unmeasured tier for the same
+# reason; the two SFU modes must not disagree about the same server.
+
+
+def test_find_knee_stops_at_a_step_that_measured_nothing():
+    """Measured up to 25 clients, then not one ping came back at 50.
+
+    The old walk read the 50-client tier's placeholder 0.0 as comfortably inside
+    budget, ran off the end of the ramp and returned None, which is the value
+    that means "sustained the whole ramp". Capacity now ends at the last tier
+    that actually demonstrated it.
+    """
+    steps = [
+        RampStep(10, 5.0, 0.0, "Excellent", 10),
+        RampStep(25, 9.0, 0.1, "Good", 25),
+        RampStep(50, 0.0, 0.0, "Unknown", 0),
+    ]
+    assert steps[2].rtt_stat == NOT_MEASURED
+    assert find_knee(steps, target_rtt_ms=20.0, max_loss=1.0) == 25
+
+
+def test_an_all_unmeasured_ramp_is_not_reported_as_sustaining_the_ramp():
+    """A completely dead SFU: every ping of every tier timed out.
+
+    ``knee`` is a published ``int | None`` that callers and stored runs read, so
+    it cannot grow a third value meaning "I measured nothing" and this stays
+    None. What changed is underneath it: the walk stops at the first tier
+    instead of crediting each placeholder 0.0 as sustained on its way to that
+    None, so no tier of a dead ramp is ever the answer (see the mixed-ramp test
+    above, where the difference is visible in the return value).
+
+    ``rtt_stat`` is the evidence that tells this None from a clean ramp's None.
+    It travels with the steps into the published payload, and
+    ``gates.sfu_capacity_gate`` is what reads it: None alone is never health.
+    """
+    steps = [RampStep(n, 0.0, 0.0, "Unknown", 0) for n in (2, 10, 25)]
+
+    assert find_knee(steps, target_rtt_ms=20.0, max_loss=1.0) is None
+    assert [s.rtt_stat for s in steps] == [NOT_MEASURED] * 3
+
+
+def test_a_fully_measured_healthy_ramp_returns_none_exactly_as_before():
+    """Regression: a real clean ramp is unaffected by the unmeasured guard."""
+    steps = [
+        RampStep(10, 4.0, 0.0, "Excellent", 10),
+        RampStep(25, 6.0, 0.0, "Good", 25),
+    ]
+    assert [s.rtt_stat for s in steps] == [MEAN_OF_N, MEAN_OF_N]
+    assert find_knee(steps, target_rtt_ms=20.0, max_loss=1.0) is None
+
+
+def test_a_measured_breach_still_returns_the_last_healthy_count():
+    """Regression: a step that DID measure is judged against the same budget.
+
+    Same ramp, same thresholds and same answer as
+    ``test_find_knee_at_first_threshold_break``; only the loss threshold breaks
+    here, to pin that ``max_loss`` was not disturbed either.
+    """
+    steps = [
+        RampStep(10, 5.0, 0.0, "Excellent", 10),
+        RampStep(25, 9.0, 0.1, "Good", 25),
+        RampStep(50, 9.5, 1.4, "Good", 50),
+    ]
+    assert find_knee(steps, target_rtt_ms=20.0, max_loss=1.0) == 25
 
 
 class _FakeAdmin:

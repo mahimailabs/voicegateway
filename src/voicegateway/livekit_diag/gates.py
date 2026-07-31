@@ -315,6 +315,29 @@ def sfu_quality_gate(baseline: dict[str, Any] | None) -> GateResult:
     ``Poor``/``Lost`` is a FAIL, which is ``check_json``'s reading;
     ``_verdict`` called the same input a WARN. Loss is not consulted: it is a
     hardcoded ``0.0`` (see the module docstring).
+
+    ``quality`` and ``rtt_ms`` are INDEPENDENT readings, and this gate used to
+    consult only the first. ``quality`` is the SDK's own peer-connection metric;
+    ``rtt_ms`` is a mean over ping round trips, which needs a pong back. They
+    disagree exactly when the connection came up and every ping timed out: that
+    baseline reports ``Excellent`` beside an rtt of ``0.0`` over zero samples,
+    and ``Excellent`` is neither falsy, nor :data:`_NO_QUALITY`, nor in
+    :data:`_DEGRADED_QUALITY`, so it fell through to PASS while the detail line
+    printed ``rtt 0.0ms`` as though that were a time. So the gate certified a
+    healthy baseline for a run in which not one round trip completed: the same
+    defect :func:`sfu_capacity_gate` had for the ramp.
+
+    A baseline that measured nothing (:func:`_unmeasured_reason`, the helper the
+    ramp already uses, so the two surfaces cannot drift) is now :data:`UNKNOWN`
+    whatever ``quality`` says. UNKNOWN and not FAIL, for the ramp's reason:
+    nothing was observed, so nothing is claimed, and the pings can die because
+    the PROBER never got its own client connected. It still exits non-zero and
+    still outranks WARN.
+
+    A ``Poor``/``Lost`` baseline that measured no rtt is still a FAIL, also
+    matching the ramp: a degraded quality is a real observation of the SFU,
+    while a missing round trip is only an absence. Its rtt is not a reading
+    either way, so no branch prints one it does not have.
     """
     if not baseline:
         return GateResult(
@@ -324,6 +347,7 @@ def sfu_quality_gate(baseline: dict[str, Any] | None) -> GateResult:
         )
     quality = baseline.get("quality")
     rtt = baseline.get("rtt_ms")
+    unmeasured = _unmeasured_reason(baseline)
     if not quality or quality == _NO_QUALITY:
         return GateResult(
             gate=SFU_QUALITY_GATE,
@@ -334,11 +358,24 @@ def sfu_quality_gate(baseline: dict[str, Any] | None) -> GateResult:
             ),
         )
     if quality in _DEGRADED_QUALITY:
+        observed = (
+            f"no rtt reading: {unmeasured}" if unmeasured is not None else f"rtt {rtt}ms"
+        )
         return GateResult(
             gate=SFU_QUALITY_GATE,
             status=FAIL,
-            detail=f"SFU baseline connection quality is {quality} (rtt {rtt}ms)",
+            detail=f"SFU baseline connection quality is {quality} ({observed})",
             metric="sfu_baseline_quality",
+        )
+    if unmeasured is not None:
+        return GateResult(
+            gate=SFU_QUALITY_GATE,
+            status=UNKNOWN,
+            detail=(
+                f"the SFU baseline measured nothing: {unmeasured}, so its "
+                f"connection quality of {quality} is the only signal and no "
+                "round trip through the SFU was completed at all"
+            ),
         )
     return GateResult(
         gate=SFU_QUALITY_GATE,
@@ -359,11 +396,11 @@ def _breaches(step: dict[str, Any], target_rtt_ms: float) -> bool:
 
 
 def _sample_count(step: dict[str, Any]) -> int | None:
-    """``samples`` off a ramp step, or ``None`` when the step carries no count.
+    """``samples`` off a ramp step or baseline, or ``None`` when it carries none.
 
-    Absent is NOT zero. Ramps stored before ``sfu.RampStep`` grew a sample count
+    Absent is NOT zero. Runs stored before ``sfu.RampStep`` grew a sample count
     have no such key, and reading that absence as "measured nothing" would
-    retroactively turn every archived ramp UNKNOWN, healthy ones included.
+    retroactively turn every archived run UNKNOWN, healthy ones included.
     """
     if "samples" not in step:
         return None
@@ -377,23 +414,30 @@ def _sample_count(step: dict[str, Any]) -> int | None:
 
 
 def _unmeasured_reason(step: dict[str, Any]) -> str | None:
-    """Why a ramp tier is not a measurement, or ``None`` when it is one.
+    """Why a ramp tier or baseline is not a measurement, or ``None`` when it is.
+
+    One helper for both, deliberately: :func:`sfu_capacity_gate` and
+    :func:`sfu_quality_gate` read the same ``{rtt_ms, quality, samples}`` shape
+    off the same probe, so a second copy of this rule is a second place for it
+    to drift.
 
     Keyed on ``samples``, the count of ping round-trips that came back, because
-    a count is a fact while the ``rtt_ms`` of ``0.0`` a tier reports when every
-    ping timed out is an artifact of averaging an empty list. Nothing else here
-    could catch that: ``0.0 > target`` is False, and the quality such a tier
-    reports is :data:`_NO_QUALITY`, which is deliberately not in
-    :data:`_DEGRADED_QUALITY`. So a ramp where every single ping timed out used
-    to satisfy :func:`sfu_capacity_gate` and report PASS -- a monitoring tool
-    telling an operator a dead SFU is fine.
+    a count is a fact while the ``rtt_ms`` of ``0.0`` a reading reports when
+    every ping timed out is an artifact of averaging an empty list. Nothing else
+    here could catch that: ``0.0 > target`` is False, and the quality a tier
+    reports in that state is :data:`_NO_QUALITY`, which is deliberately not in
+    :data:`_DEGRADED_QUALITY` -- while a BASELINE in that state can report a
+    perfectly healthy ``Excellent``, since its quality comes from the SDK's
+    peer-connection metric rather than from the pings. So a run where every
+    single ping timed out used to satisfy both gates and report PASS -- a
+    monitoring tool telling an operator a dead SFU is fine.
 
-    A step with no ``samples`` key at all is NOT assumed unmeasured: ramps
+    A reading with no ``samples`` key at all is NOT assumed unmeasured: runs
     stored before the count existed have no such key, and reading absence as
-    zero would turn every archived ramp UNKNOWN. Those fall back to the number
+    zero would turn every archived run UNKNOWN. Those fall back to the number
     itself, under the rule :func:`_has_measurement` already applies to reply
     latency: a round trip through an SFU cannot take zero milliseconds, so a
-    non-positive (or missing) rtt on a step that carries no count is the
+    non-positive (or missing) rtt on a reading that carries no count is the
     placeholder, and any positive rtt is judged exactly as it was before.
     """
     count = _sample_count(step)
