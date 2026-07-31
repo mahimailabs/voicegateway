@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
+from voicegateway.livekit_diag import gates
 from voicegateway.livekit_diag import service as probes
 from voicegateway.livekit_diag.config import LiveKitCreds
 from voicegateway.livekit_diag.resources import ResourceReport
@@ -294,3 +295,81 @@ def test_resource_json_reports_unsampled_metrics_as_none():
 
 def test_resource_json_is_none_without_a_report():
     assert probes._resource_json(None) is None
+
+
+# ---------------------------------------------------------------------------
+# What rtt_ms IS travels with it: a tier that measured nothing says so
+# ---------------------------------------------------------------------------
+
+
+class _MixedSfuProbe:
+    """A ramp with one measured tier and one where every ping timed out."""
+
+    def __init__(self, admin, client_factory, monitor) -> None:
+        pass
+
+    async def baseline(self, room, seconds: float = 10.0):
+        return RampStep(2, 11.4, 0.0, "Excellent", 2)
+
+    async def ramp(self, room, steps, duration, target_rtt_ms, max_loss, **kwargs):
+        return (
+            [
+                RampStep(2, 12.0, 0.0, "Excellent", 2),
+                # 10 clients, not one pong back: rtt_ms 0.0 is the placeholder
+                # mean of an empty list, and quality has nothing to read.
+                RampStep(10, 0.0, 0.0, "Unknown", 0),
+            ],
+            None,
+        )
+
+
+class _AllTimedOutSfuProbe:
+    """Every tier timed out: the ramp that used to report a clean PASS."""
+
+    def __init__(self, admin, client_factory, monitor) -> None:
+        pass
+
+    async def baseline(self, room, seconds: float = 10.0):
+        return RampStep(2, 0.0, 0.0, "Unknown", 0)
+
+    async def ramp(self, room, steps, duration, target_rtt_ms, max_loss, **kwargs):
+        return (
+            [RampStep(2, 0.0, 0.0, "Unknown", 0), RampStep(10, 0.0, 0.0, "Unknown", 0)],
+            None,
+        )
+
+
+async def test_ramp_steps_publish_the_sample_count_behind_rtt(monkeypatch):
+    """0.0ms and 12.0ms are both floats; only ``samples`` says which is a reading."""
+    import json
+
+    monkeypatch.setattr(probes, "_diag_cache", _fake_diag(SfuProbe=_MixedSfuProbe))
+    out = await probes.RealProbes().sfu(_CREDS, True, probes.clamp_config({}))
+
+    assert [s["samples"] for s in out["ramp"]] == [2, 0]
+    assert [s["rtt_stat"] for s in out["ramp"]] == ["mean_of_n", "not_measured"]
+    # Runs are persisted and re-read, so the honesty has to survive the JSON.
+    assert json.loads(json.dumps(out))["ramp"] == out["ramp"]
+
+
+async def test_a_measured_smallest_tier_still_passes_through_the_payload(monkeypatch):
+    monkeypatch.setattr(probes, "_diag_cache", _fake_diag(SfuProbe=_MixedSfuProbe))
+    out = await probes.RealProbes().sfu(_CREDS, True, probes.clamp_config({}))
+
+    gate = gates.sfu_capacity_gate(
+        out["ramp"], out["target_rtt_ms"], out["resource"]
+    )
+    assert gate.status == gates.PASS  # 12.0ms of 2 real round-trips, budget 50ms
+
+
+async def test_a_ramp_that_measured_nothing_does_not_pass_the_capacity_gate(monkeypatch):
+    """End to end: the probe's own payload, fed to the gate that reads it."""
+    monkeypatch.setattr(probes, "_diag_cache", _fake_diag(SfuProbe=_AllTimedOutSfuProbe))
+    out = await probes.RealProbes().sfu(_CREDS, True, probes.clamp_config({}))
+
+    assert [s["rtt_stat"] for s in out["ramp"]] == ["not_measured", "not_measured"]
+    gate = gates.sfu_capacity_gate(
+        out["ramp"], out["target_rtt_ms"], out["resource"]
+    )
+    assert gate.status == gates.UNKNOWN
+    assert gates.exit_code(gates.verdict([gate])) == 1

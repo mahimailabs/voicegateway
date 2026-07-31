@@ -247,6 +247,12 @@ class RealProbes:
         hardcoded 0.0 in ``sfu.py`` (per-connection loss is not exposed). It is
         not a measurement and must not be rendered as one; ``quality`` is the
         coarse signal that is real.
+
+        Each ramp step carries ``samples`` (how many ping round-trips came back)
+        and ``rtt_stat`` beside its ``rtt_ms``, because a tier whose pings all
+        timed out reports an rtt of 0.0 and only the count says that 0.0 is a
+        placeholder rather than a very fast SFU. ``gates.sfu_capacity_gate``
+        reads it.
         """
         d = _diag()
         admin = d.LiveKitAdmin(creds)
@@ -281,6 +287,14 @@ class RealProbes:
                     "rtt_ms": s.rtt_ms,
                     "loss_pct": s.loss_pct,
                     "quality": s.quality,
+                    # What rtt_ms IS. A tier whose pings all timed out reports
+                    # 0.0, and without a count of the round-trips behind it that
+                    # 0.0 is indistinguishable from a very fast SFU: it read as
+                    # comfortably inside budget, so a completely unmeasured ramp
+                    # passed sfu_capacity. Both keys are ints/strings, so they
+                    # survive the round trip through the stored run JSON.
+                    "samples": s.samples,
+                    "rtt_stat": s.rtt_stat,
                 }
                 for s in steps
             ],

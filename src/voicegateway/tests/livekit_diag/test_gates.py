@@ -307,6 +307,145 @@ def test_a_ramp_with_no_steps_or_no_threshold_is_unknown():
 
 
 # ---------------------------------------------------------------------------
+# A ramp that measured nothing: 0.0ms is under every budget
+# ---------------------------------------------------------------------------
+
+
+def _measured(
+    clients: int, rtt: float, samples: int, quality: str = "Excellent"
+) -> dict:
+    """A step as ``service.sfu`` publishes it, with its sample count."""
+    return {
+        "clients": clients,
+        "rtt_ms": rtt,
+        "loss_pct": 0.0,
+        "quality": quality,
+        "samples": samples,
+        "rtt_stat": "mean_of_n" if samples else "not_measured",
+    }
+
+
+def _timed_out(clients: int, quality: str = "Unknown") -> dict:
+    """The step a tier reports when not one ping came back."""
+    return _measured(clients, 0.0, 0, quality)
+
+
+def test_a_ramp_where_every_ping_timed_out_does_not_pass():
+    """The mirror image of a healthy server reading FAIL, and worse.
+
+    ``0.0 > target`` is False and ``Unknown`` is not in _DEGRADED_QUALITY, so
+    this ramp used to satisfy the gate and report PASS: a monitoring tool
+    telling an operator that a server it could not reach at all is fine.
+    """
+    ramp = [_timed_out(2), _timed_out(10)]
+    gate = gates.sfu_capacity_gate(ramp, 50.0, None)
+    assert gate.status == gates.UNKNOWN
+    assert gate.status != gates.PASS
+    assert "measured nothing" in gate.detail
+    assert "samples 0" in gate.detail
+    # Nothing decided it, so no number is published: a value of 0.0 here is the
+    # placeholder that caused the bug, not a reading.
+    assert gate.metric is None and gate.value is None
+    assert gate.threshold == 50.0
+    # UNKNOWN is not the soft option: the run still exits non-zero.
+    assert gates.exit_code(gates.verdict([gate])) == 1
+
+
+def test_an_unmeasured_ramp_is_unknown_through_the_whole_run():
+    checks = {
+        "sfu_load": {
+            "ok": True,
+            "result": {
+                "baseline": {"rtt_ms": 0.0, "loss_pct": 0.0, "quality": "Unknown"},
+                "ramp": [_timed_out(2), _timed_out(10)],
+                "target_rtt_ms": 50.0,
+                "resource": None,
+            },
+        }
+    }
+    results = gates.evaluate_checks(checks, 1500.0)
+    capacity = [g for g in results if g.gate == gates.SFU_CAPACITY_GATE]
+    assert [g.status for g in capacity] == [gates.UNKNOWN]
+    assert gates.verdict(results) != gates.PASS
+
+    import json
+
+    for gate in results:
+        json.loads(json.dumps(gate.as_dict()))
+
+
+def test_a_partially_measured_tier_is_judged_on_what_it_measured():
+    """Some pongs back is a measurement; the budget for it is unchanged."""
+    healthy = gates.sfu_capacity_gate([_measured(10, 11.0, 3)], 50.0, None)
+    assert healthy.status == gates.PASS
+    assert healthy.value == 11.0
+
+    slow = gates.sfu_capacity_gate([_measured(10, 90.0, 3)], 50.0, None)
+    assert slow.status == gates.FAIL
+    assert slow.value == 90.0
+
+
+def test_a_degraded_tier_that_measured_no_rtt_is_still_a_failure():
+    """Poor is an observation. Its companion 0.0ms is not, so it is not shown."""
+    gate = gates.sfu_capacity_gate([_timed_out(2, "Poor")], 50.0, None)
+    assert gate.status == gates.FAIL
+    assert "quality Poor" in gate.detail
+    assert "no rtt reading" in gate.detail
+    assert "rtt 0.0ms" not in gate.detail
+    assert gate.value is None
+
+
+def test_a_step_from_an_older_run_without_a_sample_count_is_not_mislabelled():
+    """Absent is not zero: archived ramps must not all turn UNKNOWN.
+
+    ``_step`` is the pre-``samples`` shape, which is what every stored run made
+    before the count existed looks like.
+    """
+    assert "samples" not in _step(2, 11.0)
+    healthy = gates.sfu_capacity_gate([_step(2, 11.0), _step(10, 14.0)], 50.0, None)
+    assert healthy.status == gates.PASS
+    assert healthy.value == 11.0
+
+    breached = gates.sfu_capacity_gate([_step(2, 90.0, "Poor")], 50.0, None)
+    assert breached.status == gates.FAIL
+
+    # With no count to key on, the number itself decides, under the same rule
+    # _has_measurement applies to reply latency: an rtt of 0.0 through an SFU is
+    # not a time. A legacy total failure must not read as a fast one either.
+    dead = gates.sfu_capacity_gate([_step(2, 0.0, "Unknown")], 50.0, None)
+    assert dead.status == gates.UNKNOWN
+    assert "no sample count" in dead.detail
+
+    # ... including when the connection quality read fine and only the pings
+    # never came back.
+    quiet = gates.sfu_capacity_gate([_step(2, 0.0, "Excellent")], 50.0, None)
+    assert quiet.status == gates.UNKNOWN
+    assert quiet.value is None
+
+    # A legacy step with no rtt key at all is not a 0.0 either.
+    no_rtt = gates.sfu_capacity_gate([{"clients": 2, "quality": "Excellent"}], 50.0, None)
+    assert no_rtt.status == gates.UNKNOWN
+
+
+def test_an_unusable_sample_count_falls_back_instead_of_crashing():
+    """A null or junk ``samples`` is no count at all, not a count of zero."""
+    for junk in (None, "", "abc", [], {}):
+        step = dict(_step(2, 11.0))
+        step["samples"] = junk
+        gate = gates.sfu_capacity_gate([step], 50.0, None)
+        assert gate.status == gates.PASS  # rtt 11.0 is still a reading
+
+        dead = dict(_step(2, 0.0, "Unknown"))
+        dead["samples"] = junk
+        assert gates.sfu_capacity_gate([dead], 50.0, None).status == gates.UNKNOWN
+
+    # A count that is a string of digits is still a count.
+    counted = dict(_step(2, 11.0))
+    counted["samples"] = "3"
+    assert gates.sfu_capacity_gate([counted], 50.0, None).status == gates.PASS
+
+
+# ---------------------------------------------------------------------------
 # The whole-run shape
 # ---------------------------------------------------------------------------
 
