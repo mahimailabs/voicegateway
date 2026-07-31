@@ -1,5 +1,11 @@
 """Async repo for request log writes + audit events + raw row reads (ORM).
 
+``log_request`` is also where the sessions <-> calls correlation is POPULATED:
+the LiveKit room rides on ``record.metadata["room"]``, so this is the only place
+that sees it on the write path. The join key is stamped by the UPSERT below and
+the pointer is resolved by ``session_repository.correlate_session_to_call``,
+which owns the cardinality rules.
+
 The sessions UPSERT stays as a ``text()`` clause: it carries the
 INSTR-based modality CSV union, the started_at/ended_at min/max
 preservation, and the COALESCE-vs-null preservation for the routing
@@ -22,6 +28,7 @@ from voicegateway.inference.session.context import (
     current_routing_decision,
     current_tenant,
 )
+from voicegateway.repository import session_repository as session_repo
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,14 +60,23 @@ _INSERT_REQUEST = text(
 # preservation, and the COALESCE-vs-null preservation on the routing
 # aggregate columns. Translating to on_conflict_do_update would
 # obscure these invariants.
+#
+# ``room_name`` joins the same COALESCE family: it is the sessions <-> calls
+# correlation key and it only exists when ``attach`` resolved a LiveKit job
+# context, so the FIRST request that carried one fixes it and a later request
+# that lost the context must not erase it. It is set here rather than by a
+# separate UPDATE so the very first request of a session already carries the
+# join key -- ``sessions.call_id`` is resolved from it separately, because a
+# call row need not exist yet at this point.
 _UPSERT_SESSION = text(
     """INSERT INTO sessions
        (id, project, started_at, ended_at, modalities,
         total_cost_usd, request_count, tenant_id, agent_id,
-        routed_llm, routed_tts, budget_ms, budget_overrun)
+        routed_llm, routed_tts, budget_ms, budget_overrun, room_name)
        VALUES (:id, :project, :started_at, :ended_at, :modalities,
                :cost, 1, :tenant_id, :agent_id,
-               :routed_llm, :routed_tts, :budget_ms, :budget_overrun)
+               :routed_llm, :routed_tts, :budget_ms, :budget_overrun,
+               :room_name)
        ON CONFLICT(id) DO UPDATE SET
            total_cost_usd = sessions.total_cost_usd + excluded.total_cost_usd,
            request_count = sessions.request_count + 1,
@@ -72,6 +88,7 @@ _UPSERT_SESSION = text(
            budget_overrun = COALESCE(
                sessions.budget_overrun, excluded.budget_overrun
            ),
+           room_name = COALESCE(sessions.room_name, excluded.room_name),
            started_at = CASE
                WHEN sessions.started_at IS NULL THEN excluded.started_at
                WHEN sessions.started_at > excluded.started_at
@@ -97,12 +114,39 @@ _UPSERT_SESSION = text(
 # Postgres uses STRPOS where SQLite uses INSTR (identical (haystack, needle)
 # signature and 1-based / 0-if-absent semantics); the rest of the UPSERT is
 # portable. Derive the PG statement from the SQLite one so the two never drift.
+#
+# EVERY edit to the statement above has to survive this transform: it is a blind
+# string replace, so anything added that reads INSTR( would be rewritten inside
+# Postgres and anything Postgres cannot parse would only fail there. The
+# ``room_name`` COALESCE clause is plain portable SQL and contains no INSTR(, so
+# the derived statement differs from the SQLite one in exactly one place, still.
+# ``test_session_call_correlation.py`` asserts that property rather than trusting
+# it.
 _UPSERT_SESSION_PG = text(_UPSERT_SESSION.text.replace("INSTR(", "STRPOS("))
 
 _UPSERT_SESSION_BY_DIALECT: dict[str, Any] = {
     "sqlite": _UPSERT_SESSION,
     "postgresql": _UPSERT_SESSION_PG,
 }
+
+
+def _record_room_name(record: RequestRecord) -> str | None:
+    """The LiveKit room ``attach`` stamped on this record, or None.
+
+    ``metadata["room"]`` exists only when ``attach`` resolved a LiveKit job
+    context, so a web or Pipecat session legitimately has none and the column
+    legitimately stays NULL -- that is a session which can never correlate, not
+    a correlation failure (``read_correlation_rate`` counts the two apart).
+
+    The empty string collapses to None: it is not a room anyone can join to, and
+    storing it would put a session into the correlated-eligible denominator that
+    could never leave it.
+    """
+    metadata = record.metadata
+    if not isinstance(metadata, dict):
+        return None
+    room = metadata.get("room")
+    return room if isinstance(room, str) and room else None
 
 
 def _session_upsert_stmt(session: AsyncSession) -> Any:
@@ -159,6 +203,7 @@ async def log_request(session: AsyncSession, record: RequestRecord) -> None:
             r_tts = None
             r_budget = None
             r_overrun = None
+        room_name = _record_room_name(record)
         await session.execute(
             _session_upsert_stmt(session),
             {
@@ -174,8 +219,18 @@ async def log_request(session: AsyncSession, record: RequestRecord) -> None:
                 "routed_tts": r_tts,
                 "budget_ms": r_budget,
                 "budget_overrun": r_overrun,
+                "room_name": room_name,
             },
         )
+        if room_name:
+            # Retried on every request of a room-bearing session until it
+            # resolves, which is what makes the correlation forward-only: the
+            # first request of a call routinely beats the ``room_started``
+            # webhook, and this closes that race without a repair pass. It
+            # settles to one indexed primary-key read per request afterwards.
+            await session_repo.correlate_session_to_call(
+                session, session_id=record.session_id, room_name=room_name
+            )
     await session.commit()
 
 
