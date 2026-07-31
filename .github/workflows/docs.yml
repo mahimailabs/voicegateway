@@ -1,0 +1,28 @@
+name: Docs
+
+# docs/_check_docs.py is the docs gate (every page under docs/ must be in the
+# Mintlify nav and carry title + description frontmatter; superpowers/ and
+# snippets/ are excluded). Nothing ran it in CI, so a docs-only PR got no gate
+# at all: ci.yml only triggers on src/voicegateway/**, src/dashboard/api/** and
+# pyproject.toml. A PR that adds a page without registering it in docs.json, or
+# drops the frontmatter, would have merged clean and broken the docs build.
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Stdlib only by design, so there is nothing to install.
+      - name: Validate docs
+        run: python3 docs/_check_docs.py
