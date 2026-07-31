@@ -242,7 +242,7 @@ SFU  vantage: co-located   baseline: rtt 11ms . loss 0.0% . Excellent
 
 ## voicegw livekit check
 
-Run all three diagnostics and print a single pass/warn/fail report.
+Run all three diagnostics, gate the results, and print one verdict. Built to be run in CI: it exits non-zero unless every gate passed.
 
 ```bash
 voicegw livekit check [OPTIONS]
@@ -250,20 +250,44 @@ voicegw livekit check [OPTIONS]
 
 ### What it runs
 
-Executes `agents`, `latency` (two trials per agent), and `sfu` (baseline) in sequence. For each item it assigns a status:
+Executes `agents`, `latency` (two trials per agent), and `sfu` (baseline) in sequence, then evaluates a **gate** over each result. The run verdict is the worst gate:
 
 | Status | Meaning |
 |---|---|
-| **PASS** | Metric within acceptable range. |
-| **WARN** | Metric degraded but not failing (e.g. latency above `--target-ms`). |
-| **FAIL** | Error, unreachable, or hard threshold exceeded. |
+| **PASS** | The gate was evaluated and the metric is within budget. |
+| **WARN** | The gate was evaluated and the metric is degraded (e.g. latency above `--target-ms`). |
+| **UNKNOWN** | The gate could **not** be evaluated: no agent was probed, a probe measured nothing, or the SFU reported no connection quality. |
+| **FAIL** | A check errored or timed out, or a hard threshold was breached (SFU connection quality `Poor` / `Lost`). |
 
-The command exits 0 if everything passes, 1 if any item is WARN or FAIL.
+`UNKNOWN` is not a pass. A gate that could not run has not demonstrated anything, and reporting success for it would make this command lie to CI. Every gate is printed on its own line under the verdict, naming the metric that decided it.
+
+The gates are:
+
+| Gate | Asserts |
+|---|---|
+| `agents_listing` | LiveKit's server API answered with a list. It does **not** assert that any agent is online: an idle registered worker is invisible to that API, so a count check would fail a healthy fleet between calls. |
+| `agent_reply_latency` | Reply latency is within `--target-ms`, per agent. |
+| `sfu_connection_quality` | The SFU baseline connection quality is not `Poor` or `Lost`. |
+
+Packet loss is deliberately **not** gated: the LiveKit SDK does not expose per-connection loss, so the `loss_pct` field is a hardcoded `0.0`. Gating on a constant would produce a permanently clean bill of health.
+
+### Strict mode
+
+`--strict` gates the **slowest measured turn** instead of the average. An average under target hides a tail well over it, and the tail is what a caller who hung up actually experienced.
+
+The metric name says which statistic was thresholded. `check` places two probe turns per agent, so the tail is the max of two samples and the metric is named accordingly:
+
+```
+  [WARN] agent_reply_latency: agent-2c9b: agent_reply_latency_max_of_2_ms 2400 is over the 1500ms target
+```
+
+It is never called `p95`. A percentile needs at least 10 samples; below that the name states how many samples the max is the max of.
 
 ### Options
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
+| `--strict` | flag | off | Gate the slowest measured turn instead of the average. |
 | `--target-ms` | `integer` | `1500` | Latency threshold (ms) for the WARN boundary. |
 | `--url` | `string` | (see Credentials) | LiveKit server WebSocket URL. |
 | `--api-key` | `string` | (see Credentials) | LiveKit API key. |
@@ -278,6 +302,10 @@ voicegw livekit check --target-ms 1000
 
 ```
 VERDICT: WARN
+  [PASS] agents_listing: 2 agent(s) in rooms
+  [PASS] agent_reply_latency: agent-7f4a: agent_reply_latency_avg_ms 820 is within the 1000ms target
+  [WARN] agent_reply_latency: agent-2c9b: agent_reply_latency_avg_ms 1140 is over the 1000ms target
+  [PASS] sfu_connection_quality: SFU baseline connection quality is Excellent (rtt 11.0ms)
 
 AGENT            ROOM                   STATE       IN-CALL  AGE
 agent-7f4a       demo-room              active      1        42s
@@ -297,7 +325,7 @@ SFU  vantage: co-located   baseline: rtt 11ms . loss 0.0% . Excellent
 ### Example: JSON output
 
 ```bash
-voicegw livekit check --json
+voicegw livekit check --json --target-ms 1000
 ```
 
 ```json
@@ -315,6 +343,12 @@ voicegw livekit check --json
     "ramp": [],
     "knee": null
   },
+  "gates": [
+    {"gate": "agents_listing", "status": "PASS", "detail": "2 agent(s) in rooms", "subject": null, "metric": null, "value": null, "threshold": null},
+    {"gate": "agent_reply_latency", "status": "PASS", "detail": "agent-7f4a: agent_reply_latency_avg_ms 820 is within the 1000ms target", "subject": "agent-7f4a", "metric": "agent_reply_latency_avg_ms", "value": 820.0, "threshold": 1000.0},
+    {"gate": "agent_reply_latency", "status": "WARN", "detail": "agent-2c9b: agent_reply_latency_avg_ms 1140 is over the 1000ms target", "subject": "agent-2c9b", "metric": "agent_reply_latency_avg_ms", "value": 1140.0, "threshold": 1000.0},
+    {"gate": "sfu_connection_quality", "status": "PASS", "detail": "SFU baseline connection quality is Excellent (rtt 11.0ms)", "subject": null, "metric": "sfu_baseline_quality", "value": null, "threshold": null}
+  ],
   "verdict": "WARN"
 }
 ```
@@ -323,8 +357,14 @@ voicegw livekit check --json
 
 | Code | Meaning |
 |---|---|
-| `0` | All checks passed. |
-| `1` | One or more checks are WARN or FAIL, or credentials were not resolved. |
+| `0` | Every gate was evaluated and every gate passed. |
+| `1` | Any gate is WARN, UNKNOWN or FAIL; the run crashed; or credentials were not resolved. |
+
+There is one non-zero code on purpose, so an existing pipeline that tests for `1` keeps catching everything it caught before.
+
+<Warning>
+**Exit codes changed.** `check` previously reported `PASS` (exit 0) for a run that had measured nothing — most notably when no agent was in any room, so the latency gate never ran. That case is now `UNKNOWN` and exits 1. If you run this command in CI, your pipeline may start failing on conditions it previously passed. That is the gate working, not a regression. See the CHANGELOG for the full list.
+</Warning>
 
 ---
 

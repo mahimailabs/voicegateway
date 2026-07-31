@@ -14,6 +14,8 @@ import pathlib
 import re
 from typing import Any
 
+from voicegateway.livekit_diag import gates
+
 PER_CHECK_TIMEOUT_SECONDS = 120.0
 MAX_LOAD_CLIENTS = 25
 MAX_LOAD_SECONDS = 30.0
@@ -471,26 +473,22 @@ async def _probe_error(store: Any, room: str | None) -> str | None:
     return "; ".join(labels[:3])
 
 
-def _verdict(check_results: dict[str, Any], target_ms: float) -> str:
-    if any(not r["ok"] for r in check_results.values()):
-        return "FAIL"
-    lat = check_results.get("latency")
-    if lat and lat["ok"]:
-        for a in lat["result"].get("agents", []):
-            if (a.get("stats", {}).get("avg", 0) * 1000) > target_ms:
-                return "WARN"
-    sfu = check_results.get("sfu")
-    if sfu and sfu["ok"]:
-        b = sfu["result"].get("baseline", {})
-        if b.get("loss_pct", 0) > 1.0 or b.get("quality") in {"Poor", "Lost"}:
-            return "WARN"
-    return "PASS"
-
-
 async def execute_run(
     checks: list[str], config: dict[str, Any], creds, *, probes
 ) -> dict[str, Any]:
-    """Run each requested check under isolation; return results + verdict."""
+    """Run each requested check under isolation; return results, gates + verdict.
+
+    The verdict comes from :mod:`voicegateway.livekit_diag.gates`, which is the
+    ONLY place either surface decides whether a run is healthy. This function
+    used to own a second, more lenient implementation (``_verdict``): it called a
+    probe that measured nothing a PASS, downgraded a ``Poor``/``Lost`` SFU
+    baseline to WARN, and never read an ``sfu_load`` baseline at all. ``gates``
+    carries the strict reading of each of those; see its module docstring for
+    the full disagreement table.
+
+    ``gates`` is additive on the wire: the dashboard reads ``verdict`` exactly as
+    before, and the per-gate detail is there for anything that wants to say WHY.
+    """
     results: dict[str, Any] = {}
     for check in checks:
         try:
@@ -510,7 +508,11 @@ async def execute_run(
             results[check] = {"ok": False, "error": "check timed out"}
         except Exception as exc:  # noqa: BLE001 - a check must not kill the run
             results[check] = {"ok": False, "error": str(exc)}
+    gate_results = gates.evaluate_checks(
+        results, _safe_float(config.get("target_ms", 1500), 1500.0)
+    )
     return {
         "checks": results,
-        "verdict": _verdict(results, config.get("target_ms", 1500)),
+        "gates": [g.as_dict() for g in gate_results],
+        "verdict": gates.verdict(gate_results),
     }

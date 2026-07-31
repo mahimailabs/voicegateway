@@ -6,6 +6,58 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ## Unreleased
 
+### Changed
+
+- **BREAKING for CI: `voicegw livekit check` exit codes changed.** This needs a
+  MINOR version bump, not a patch. The command had **two** verdict
+  implementations that disagreed (`livekit_diag/service.py:_verdict` for the
+  dashboard, `livekit_diag/report.py:check_json` for the CLI). They are collapsed
+  into the new `livekit_diag/gates.py`, and where they disagreed the stricter
+  reading won. **If you run this command in CI, your pipeline may start failing
+  on conditions it previously passed. That is the gate working, not a
+  regression** — the old exit code was 0 for runs that had measured nothing at
+  all.
+
+  What now exits 1 that used to exit 0:
+
+  - **No agent was in any room.** The latency gate had nothing to iterate, so
+    neither implementation ever said it had not run, and the command reported a
+    clean `PASS`. It now reports `UNKNOWN`.
+  - **A probe measured nothing** (the agent never joined, or never replied).
+    `summarize` returns a fabricated `0.0` average for zero samples, which is
+    under any target; the dashboard verdict compared that 0.0 and passed. The CLI
+    already warned here, so CLI users see no change on this case.
+  - **The SFU baseline returned no connection quality.**
+
+  There is a **new `UNKNOWN` verdict**, alongside `PASS` / `WARN` / `FAIL`. It
+  means a gate could not be evaluated, which is not the same as healthy and is
+  not the same as a measured problem. It exits 1. The verdict also appears on the
+  dashboard's diagnostics runs (`GET /api/diagnostics/runs`), where a
+  `Poor`/`Lost` SFU baseline is now `FAIL` rather than `WARN`, and an `sfu_load`
+  baseline is judged at all (`_verdict` only ever read the `sfu` check).
+
+  **Exit codes are still only 0 and 1.** WARN, FAIL and UNKNOWN all exit 1, so an
+  existing `if [ $? -eq 1 ]` pipeline keeps catching everything it caught before.
+
+- **`voicegw livekit check --strict`** is new. It gates the slowest measured turn
+  instead of the average, which is what a caller who hung up actually
+  experienced. Opt-in, because moving the default statistic would turn runs red
+  for a reason unrelated to the collapse above. The failing line names the metric
+  it thresholded, and names it honestly: with fewer than 10 samples it prints
+  `agent_reply_latency_max_of_2_ms`, never `p95` (`check` probes twice, and
+  `MAX_LATENCY_TRIALS` is 3, so a p95 is not a statistic this command can
+  compute).
+
+- **`check --json` gained a `gates` array** — one entry per gate with its status,
+  the metric that decided it, the value and the threshold. Every pre-existing key
+  in that payload is unchanged and in the same place.
+
+- **Loss is no longer part of any verdict.** Both old implementations had a
+  `loss_pct > 1.0` branch, and `sfu.py` hardcodes `loss_pct = 0.0` because
+  per-connection loss is not exposed by the SDK. Those branches could never fire;
+  gating on a constant is theatre. `quality` carries the connection signal that
+  is real.
+
 ### Removed
 
 - **The `voicegw tui` terminal UI is gone.** The four-tab Textual UI (~4,900 LOC

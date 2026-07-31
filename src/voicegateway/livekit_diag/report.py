@@ -1,11 +1,20 @@
-"""Rendering + verdict helpers for the livekit diagnostics. Plain strings so
-tests assert on content; the CLI prints them through BaseCli/Rich.
+"""Rendering for the livekit diagnostics. Plain strings so tests assert on
+content; the CLI prints them through BaseCli/Rich.
+
+The verdict is NOT decided here any more. :func:`check_json` used to carry its
+own pass/warn/fail rules, which disagreed with the dashboard's
+(``service._verdict``) on four inputs. Both now normalise into the one shape
+:func:`voicegateway.livekit_diag.gates.evaluate_checks` reads, so the CLI and the
+dashboard cannot drift again. See ``gates`` for the disagreement table and which
+reading won.
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict
+from typing import Any
 
+from voicegateway.livekit_diag import gates
 from voicegateway.livekit_diag.admin import AgentRow
 
 _ROSTER_NOTE = (
@@ -96,6 +105,71 @@ def render_latency(results: list, target_ms: float, summarize) -> str:
     return "\n".join(lines)
 
 
+def _baseline_json(base) -> dict[str, Any] | None:
+    if not base:
+        return None
+    return {
+        "clients": base.clients,
+        "rtt_ms": base.rtt_ms,
+        "loss_pct": base.loss_pct,
+        "quality": base.quality,
+    }
+
+
+def _check_results(agents, latency_results, base, steps, summarize) -> dict[str, Any]:
+    """The CLI's raw probe objects, in ``execute_run``'s per-check shape.
+
+    Written so the CLI and the dashboard feed the SAME gate function rather than
+    two lookalike rule sets. ``ok`` is True throughout because the CLI's
+    ``check`` aborts on any exception before it gets here; a per-agent probe
+    failure is not an exception, it arrives as a result with zero trials.
+
+    ``samples`` carries the raw per-trial seconds so the gate can compute a real
+    p95 if there are ever enough of them. It does not appear in the returned
+    payload: ``check --json`` is a documented output and this is gate input.
+    """
+    sfu_check = "sfu_load" if steps else "sfu"
+    return {
+        "agents": {"ok": True, "result": {"agents": agents_json(agents)}},
+        "latency": {
+            "ok": True,
+            "result": {
+                "agents": [
+                    {
+                        "agent": r.agent,
+                        "stats": summarize(r),
+                        "samples": list(r.e2e_samples),
+                        "error": r.error,
+                    }
+                    for r in latency_results
+                ]
+            },
+        },
+        sfu_check: {
+            "ok": True,
+            "result": {
+                "baseline": _baseline_json(base),
+                "ramp": [
+                    {
+                        "clients": s.clients,
+                        "rtt_ms": s.rtt_ms,
+                        "loss_pct": s.loss_pct,
+                        "quality": s.quality,
+                    }
+                    for s in (steps or [])
+                ],
+                # Both None until the CLI threads its --target-rtt-ms and a
+                # normalised resource report through (``check`` runs the baseline
+                # only, so it never produces a ramp). Without the threshold the
+                # ramp was measured against, the capacity gate reports that it
+                # could not evaluate rather than inventing one.
+                "target_rtt_ms": None,
+                "resource": None,
+            },
+        },
+    }
+
+
 def check_json(
     agents,
     latency_results,
@@ -105,16 +179,21 @@ def check_json(
     knee,
     summarize,
     target_ms: float = 1500.0,
+    *,
+    strict: bool = False,
 ) -> dict:
-    verdict = "PASS"
-    for r in latency_results:
-        s = summarize(r)
-        if not s["trials"]:
-            verdict = "WARN"
-        elif s["avg"] * 1000 > target_ms:
-            verdict = "WARN"
-    if base and (base.loss_pct > 1.0 or base.quality in {"Poor", "Lost"}):
-        verdict = "FAIL"
+    """The ``check --json`` payload, with the verdict decided by ``gates``.
+
+    ``gates`` is a new, additive key: every field that was here before is
+    unchanged and in the same place. ``verdict`` can now also be ``UNKNOWN``,
+    which is what a run that could not evaluate a gate reports instead of the
+    PASS it used to.
+    """
+    gate_results = gates.evaluate_checks(
+        _check_results(agents, latency_results, base, steps, summarize),
+        target_ms,
+        strict=strict,
+    )
     return {
         "agents": agents_json(agents),
         "latency": [
@@ -122,32 +201,48 @@ def check_json(
             for r in latency_results
         ],
         "sfu": {
-            "baseline": {
-                "clients": base.clients,
-                "rtt_ms": base.rtt_ms,
-                "loss_pct": base.loss_pct,
-                "quality": base.quality,
-            }
-            if base
-            else None,
+            "baseline": _baseline_json(base),
             "ramp": [
                 {"clients": s.clients, "rtt_ms": s.rtt_ms, "loss_pct": s.loss_pct}
                 for s in (steps or [])
             ],
             "knee": knee,
         },
-        "verdict": verdict,
+        "gates": [g.as_dict() for g in gate_results],
+        "verdict": gates.verdict(gate_results),
     }
 
 
 def render_check(
-    agents, latency_results, base, steps, resource, knee, summarize, target_ms
+    agents,
+    latency_results,
+    base,
+    steps,
+    resource,
+    knee,
+    summarize,
+    target_ms,
+    *,
+    strict: bool = False,
 ) -> str:
     js = check_json(
-        agents, latency_results, base, steps, resource, knee, summarize, target_ms
+        agents,
+        latency_results,
+        base,
+        steps,
+        resource,
+        knee,
+        summarize,
+        target_ms,
+        strict=strict,
     )
     parts = [
         f"VERDICT: {js['verdict']}",
+        # Every gate, not just the failing ones: a CI log that says only
+        # "VERDICT: UNKNOWN" sends the reader back to the machine that produced
+        # it. The gate that decided the verdict is named on its own line, with
+        # the statistic that decided it spelled out.
+        *[f"  [{g['status']}] {g['gate']}: {g['detail']}" for g in js["gates"]],
         "",
         render_agents(agents),
         "",
