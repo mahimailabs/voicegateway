@@ -376,6 +376,26 @@ curl http://localhost:8080/api/projects
 
 The dashboard also serves the React frontend's built assets. If the frontend has been built (`src/dashboard/frontend/dist/` exists), the daemon serves:
 
+## GET /api/diagnostics/runs/{run_id}/report
+
+Export one stored diagnostics run as a versioned JSON payload. Requires the `admin` scope, like every other diagnostics endpoint, because a run can place billed calls.
+
+The payload carries `schema_version` (currently `1`) and `kind: "voicegateway.diagnostics.run_report"`. Within a major version the payload is **additive only**: no key changes meaning, type or nesting, none disappears, and parsers must ignore keys they do not recognise. Anything that would break a v1 parser ships as `schema_version: 2`.
+
+Unmeasured is `null`, never `0`. A check that was not part of the run, one that recorded no result, and one that errored are three distinct states, so an absent measurement can never be read as a clean one. Packet loss is reported as the literal `"not_measured"` because it is not observable server-side.
+
+The run's verdict is read from what the run stored, not recomputed: `livekit_diag/gates.py` is the only place in the product that decides a verdict. A run recorded before gates existed reports `gates_recorded: false` rather than being re-judged after the fact.
+
+## GET /api/diagnostics/runs/{run_id}/report.html
+
+The same report as a **single self-contained HTML file**, served with `Content-Disposition: attachment`. Requires the `admin` scope.
+
+Self-contained means exactly that: no script, no external stylesheet, no remote font, no image, no network request of any kind. It renders correctly from `file://` on a machine with no internet, months later, which is the point of handing it to a client or attaching it to a ticket.
+
+A verdict of `UNKNOWN` renders as the word `UNKNOWN` on neutral grey with the line "This is NOT a pass", never a green tick. Each gate prints its status as text rather than colour alone, so a printed or monochrome copy still carries it.
+
+## Static files
+
 - `GET /` -- the React app's `index.html`
 - `GET /assets/*` -- bundled JavaScript, CSS, and other static files
 - All other paths fall through to `index.html` for client-side routing (SPA fallback)

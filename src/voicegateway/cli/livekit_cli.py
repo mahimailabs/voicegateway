@@ -15,6 +15,7 @@ import typer
 
 from voicegateway.cli._app import app
 from voicegateway.cli.base_cli import BaseCli
+from voicegateway.livekit_diag import gates
 from voicegateway.livekit_diag.admin import LiveKitAdmin
 from voicegateway.livekit_diag.client import SyntheticClient, UtteranceSource
 from voicegateway.livekit_diag.config import CredsError, LiveKitCreds, resolve_creds
@@ -319,13 +320,27 @@ def _run_sfu_coordinator(
 @livekit_app.command("check")
 def check_cmd(
     as_json: bool = typer.Option(False, "--json"),
+    strict: bool = typer.Option(
+        False,
+        "--strict",
+        help=(
+            "Gate the slowest measured turn instead of the average. With fewer "
+            "than 10 samples the metric is named max_of_N, never p95."
+        ),
+    ),
     target_ms: float = typer.Option(1500, "--target-ms"),
     url: str = typer.Option(None, "--url"),
     api_key: str = typer.Option(None, "--api-key"),
     api_secret: str = typer.Option(None, "--api-secret"),
     config: str = typer.Option(None, "--config", "-c"),
 ) -> None:
-    """Run agents + latency + sfu baseline and print one verdict report."""
+    """Run agents + latency + sfu baseline and print one verdict report.
+
+    Exits 0 only on a clean PASS. WARN, FAIL and UNKNOWN all exit 1: a gate that
+    could not be evaluated (no agent answered, no baseline came back) has not
+    demonstrated a healthy deployment, and reporting 0 for it would make this
+    command lie to CI. That is stricter than it used to be -- see the CHANGELOG.
+    """
     creds = _creds(url, api_key, api_secret, config)
 
     async def _run():
@@ -353,16 +368,20 @@ def check_cmd(
     except Exception as exc:  # noqa: BLE001
         _cli.error(f"check failed: {exc}")
         raise typer.Exit(1) from None
+    # Computed once. Rendering used to recompute the verdict independently of
+    # the JSON branch, which is the same trap this node exists to close.
+    js = check_json(
+        agents, lat, base, [], None, None, summarize, target_ms, strict=strict
+    )
     if as_json:
-        js = check_json(agents, lat, base, [], None, None, summarize, target_ms)
         _cli.console.print_json(_json.dumps(js))
     else:
-        js = check_json(agents, lat, base, [], None, None, summarize, target_ms)
         _cli.console.print(
-            render_check(agents, lat, base, [], None, None, summarize, target_ms)
+            render_check(
+                agents, lat, base, [], None, None, summarize, target_ms, strict=strict
+            )
         )
-    if js["verdict"] != "PASS":
-        raise typer.Exit(1)
+    raise typer.Exit(gates.exit_code(js["verdict"]))
 
 
 app.add_typer(livekit_app, name="livekit")
