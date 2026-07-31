@@ -23,6 +23,8 @@ import type {
   AgentRow,
   AgentsResponse,
   ApiKey,
+  CallDetail,
+  CallsResponse,
   CostByDayPoint,
   CostsResponse,
   DiagnosticRun,
@@ -1353,6 +1355,326 @@ const DIAG_RUNS: DiagnosticRun[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// calls + call_legs (the call itself, not the inference)
+// ---------------------------------------------------------------------------
+
+// Shaped exactly as `calls_repository.CallRow` / `CallLegRow` serialise, field
+// for field, with one leg array per call.
+//
+// The five rows are chosen to be the five HONEST cases, not five happy ones,
+// because this payload feeds the layer 1-6 waterfall and its whole job is to
+// distinguish "measured" from "not measured":
+//
+//   1. webhook_proxy - the zero-instrumentation default. The caller's join is
+//      millisecond-precise (ParticipantInfo.joined_at_ms) but the agent's
+//      track_published time comes off the webhook's whole-second `created_at`,
+//      so the ring time is real and coarse at once, and renders with its caveat.
+//   2. agent_report  - both timestamps self-reported by the agent, so the same
+//      subtraction earns millisecond rendering.
+//   3. sipp_rtd      - a load worker reporting the true INVITE -> 200 OK wall
+//      time. It is LONGER than the legs sum to, because the SIP setup before
+//      the caller reached the room is inside the ring and layers 1-2 cannot
+//      split it. The UI must not make these two numbers agree.
+//   4. an agent that joined and never published: layer 3 measured, layer 4 not,
+//      and NO ring time at all - the backend stores NULL rather than a zero.
+//   5. a trunk failure with no room and no legs: `room_sid` and `room_name` are
+//      both NULL, which is legitimate (a 503 on INVITE never creates a room)
+//      and is the most important row in a load test.
+//
+// Whole-second timestamps below are whole seconds ON PURPOSE: that is what a
+// webhook `created_at` gives you, and it is why the derived number is coarse.
+
+/** Call 1 anchor: the room started 12 minutes before the demo's "now". */
+const CALL_A_T0 = (BASE_EPOCH - 12 * MIN) * 1000;
+const CALL_B_T0 = (BASE_EPOCH - 34 * MIN) * 1000;
+const CALL_C_T0 = (BASE_EPOCH - 55 * MIN) * 1000;
+const CALL_D_T0 = (BASE_EPOCH - 2 * HOUR) * 1000;
+const CALL_E_T0 = (BASE_EPOCH - 3 * HOUR) * 1000;
+
+const SIP_ATTRS = (number: string, callId: string): string =>
+  JSON.stringify({
+    'sip.callID': callId,
+    'sip.callStatus': 'active',
+    'sip.phoneNumber': number,
+    'sip.trunkID': 'ST_demoinbound',
+    'sip.ruleID': 'SDR_demoreception',
+  });
+
+const CALLS: CallDetail[] = [
+  {
+    // 1. webhook_proxy: 4.1 s of ring, 1.2 s of dispatch, 2.9 s of agent.
+    id: 'ca_7f21demo0001',
+    room_sid: 'RM_7f21demo',
+    room_name: 'support-call-7f21',
+    origin: 'webhook',
+    attempt_id: null,
+    run_id: null,
+    project: 'default',
+    tenant_id: null,
+    agent_id: 'support-voice',
+    channel: 'sip',
+    direction: 'inbound',
+    started_at_ms: CALL_A_T0,
+    ended_at_ms: CALL_A_T0 + 182_000,
+    duration_ms: 182_000,
+    end_reason: 'CLIENT_INITIATED',
+    num_legs: 2,
+    is_probe: 0,
+    answer_latency_ms: 4100,
+    answer_latency_source: 'webhook_proxy',
+    legs: [
+      {
+        id: 1,
+        call_id: 'ca_7f21demo0001',
+        participant_sid: 'PA_7f21caller',
+        identity: 'sip_+15195550142',
+        kind: 'SIP',
+        region: 'us-east-1',
+        joined_at_ms: CALL_A_T0 + 900,
+        left_at_ms: CALL_A_T0 + 182_000,
+        disconnect_reason: 'CLIENT_INITIATED',
+        is_publisher: 1,
+        attributes_json: SIP_ATTRS('+15195550142', 'sip_call_7f21'),
+        first_audio_track_at_ms: CALL_A_T0 + 1000,
+        audio_track_sid: 'TR_7f21caller',
+        audio_codec: 'opus',
+        joined_at_source: 'webhook',
+        first_audio_track_at_source: 'webhook',
+      },
+      {
+        id: 2,
+        call_id: 'ca_7f21demo0001',
+        participant_sid: 'PA_7f21agent',
+        identity: 'agent-support-01',
+        kind: 'AGENT',
+        region: 'us-east-1',
+        joined_at_ms: CALL_A_T0 + 2100,
+        left_at_ms: CALL_A_T0 + 182_000,
+        disconnect_reason: 'ROOM_CLOSED',
+        is_publisher: 1,
+        attributes_json: null,
+        // Whole second: this came off the track_published webhook's created_at.
+        first_audio_track_at_ms: CALL_A_T0 + 5000,
+        audio_track_sid: 'TR_7f21agent',
+        audio_codec: 'opus',
+        joined_at_source: 'webhook',
+        first_audio_track_at_source: 'webhook',
+      },
+    ],
+  },
+  {
+    // 2. agent_report: both timestamps from inside the agent process.
+    id: 'ca_a903demo0002',
+    room_sid: 'RM_a903demo',
+    room_name: 'reception-inbound-a903',
+    origin: 'agent',
+    attempt_id: null,
+    run_id: null,
+    project: 'default',
+    tenant_id: null,
+    agent_id: 'reception',
+    channel: 'sip',
+    direction: 'inbound',
+    started_at_ms: CALL_B_T0,
+    ended_at_ms: CALL_B_T0 + 96_000,
+    duration_ms: 96_000,
+    end_reason: 'CLIENT_INITIATED',
+    num_legs: 2,
+    is_probe: 0,
+    answer_latency_ms: 1832,
+    answer_latency_source: 'agent_report',
+    legs: [
+      {
+        id: 3,
+        call_id: 'ca_a903demo0002',
+        participant_sid: 'PA_a903caller',
+        identity: 'sip_+15195550188',
+        kind: 'SIP',
+        region: 'us-east-1',
+        joined_at_ms: CALL_B_T0,
+        left_at_ms: CALL_B_T0 + 96_000,
+        disconnect_reason: 'CLIENT_INITIATED',
+        is_publisher: 1,
+        attributes_json: SIP_ATTRS('+15195550188', 'sip_call_a903'),
+        first_audio_track_at_ms: CALL_B_T0 + 120,
+        audio_track_sid: 'TR_a903caller',
+        audio_codec: 'opus',
+        joined_at_source: 'agent',
+        first_audio_track_at_source: 'agent',
+      },
+      {
+        id: 4,
+        call_id: 'ca_a903demo0002',
+        participant_sid: 'PA_a903agent',
+        identity: 'agent-reception-02',
+        kind: 'AGENT',
+        region: 'us-east-1',
+        joined_at_ms: CALL_B_T0 + 450,
+        left_at_ms: CALL_B_T0 + 96_000,
+        disconnect_reason: 'ROOM_CLOSED',
+        is_publisher: 1,
+        attributes_json: null,
+        first_audio_track_at_ms: CALL_B_T0 + 1832,
+        audio_track_sid: 'TR_a903agent',
+        audio_codec: 'opus',
+        joined_at_source: 'agent',
+        first_audio_track_at_source: 'agent',
+      },
+    ],
+  },
+  {
+    // 3. sipp_rtd: the reported INVITE -> 200 OK (2740 ms) is longer than the
+    // legs sum to (610 + 1870 = 2480), because the SIP setup before the caller
+    // reached the room is inside the ring and is not splittable.
+    id: 'ca_load42demo003',
+    room_sid: 'RM_load42demo',
+    room_name: 'vg-load-att-0042',
+    origin: 'loadgen',
+    attempt_id: 'att_0042',
+    run_id: 'load_run_01',
+    project: 'default',
+    tenant_id: null,
+    agent_id: 'reception',
+    channel: 'sip',
+    direction: 'inbound',
+    started_at_ms: CALL_C_T0,
+    ended_at_ms: CALL_C_T0 + 30_000,
+    duration_ms: 30_000,
+    end_reason: 'CLIENT_INITIATED',
+    num_legs: 2,
+    is_probe: 1,
+    answer_latency_ms: 2740,
+    answer_latency_source: 'sipp_rtd',
+    legs: [
+      {
+        id: 5,
+        call_id: 'ca_load42demo003',
+        participant_sid: 'PA_load42caller',
+        identity: 'sip_+15195550001',
+        kind: 'SIP',
+        region: 'us-east-1',
+        joined_at_ms: CALL_C_T0,
+        left_at_ms: CALL_C_T0 + 30_000,
+        disconnect_reason: 'CLIENT_INITIATED',
+        is_publisher: 1,
+        attributes_json: SIP_ATTRS('+15195550001', 'sip_call_load42'),
+        first_audio_track_at_ms: CALL_C_T0 + 80,
+        audio_track_sid: 'TR_load42caller',
+        audio_codec: 'opus',
+        joined_at_source: 'loadgen',
+        first_audio_track_at_source: 'loadgen',
+      },
+      {
+        id: 6,
+        call_id: 'ca_load42demo003',
+        participant_sid: 'PA_load42agent',
+        identity: 'agent-reception-07',
+        kind: 'AGENT',
+        region: 'us-east-1',
+        joined_at_ms: CALL_C_T0 + 610,
+        left_at_ms: CALL_C_T0 + 30_000,
+        disconnect_reason: 'ROOM_CLOSED',
+        is_publisher: 1,
+        attributes_json: null,
+        first_audio_track_at_ms: CALL_C_T0 + 2480,
+        audio_track_sid: 'TR_load42agent',
+        audio_codec: 'opus',
+        joined_at_source: 'loadgen',
+        first_audio_track_at_source: 'loadgen',
+      },
+    ],
+  },
+  {
+    // 4. The agent joined and never published. Layer 3 is measured, layer 4 is
+    // not, and there is NO ring time: the caller never heard an answer, which
+    // must not be stored or drawn as a zero.
+    id: 'ca_dead11demo004',
+    room_sid: 'RM_dead11demo',
+    room_name: 'support-call-dead11',
+    origin: 'webhook',
+    attempt_id: null,
+    run_id: null,
+    project: 'default',
+    tenant_id: null,
+    agent_id: 'support-voice',
+    channel: 'sip',
+    direction: 'inbound',
+    started_at_ms: CALL_D_T0,
+    ended_at_ms: CALL_D_T0 + 24_000,
+    duration_ms: 24_000,
+    end_reason: 'CLIENT_INITIATED',
+    num_legs: 2,
+    is_probe: 0,
+    answer_latency_ms: null,
+    answer_latency_source: null,
+    legs: [
+      {
+        id: 7,
+        call_id: 'ca_dead11demo004',
+        participant_sid: 'PA_dead11caller',
+        identity: 'sip_+15195550233',
+        kind: 'SIP',
+        region: 'us-east-1',
+        joined_at_ms: CALL_D_T0 + 400,
+        left_at_ms: CALL_D_T0 + 24_000,
+        disconnect_reason: 'CLIENT_INITIATED',
+        is_publisher: 1,
+        attributes_json: SIP_ATTRS('+15195550233', 'sip_call_dead11'),
+        first_audio_track_at_ms: CALL_D_T0 + 1000,
+        audio_track_sid: 'TR_dead11caller',
+        audio_codec: 'opus',
+        joined_at_source: 'webhook',
+        first_audio_track_at_source: 'webhook',
+      },
+      {
+        id: 8,
+        call_id: 'ca_dead11demo004',
+        participant_sid: 'PA_dead11agent',
+        identity: 'agent-support-04',
+        kind: 'AGENT',
+        region: 'us-east-1',
+        joined_at_ms: CALL_D_T0 + 3000,
+        left_at_ms: CALL_D_T0 + 24_000,
+        disconnect_reason: 'ROOM_CLOSED',
+        is_publisher: 0,
+        attributes_json: null,
+        first_audio_track_at_ms: null,
+        audio_track_sid: null,
+        audio_codec: null,
+        joined_at_source: 'webhook',
+        first_audio_track_at_source: null,
+      },
+    ],
+  },
+  {
+    // 5. Trunk failure. No room was ever created, so `room_sid` and `room_name`
+    // are both NULL and the load attempt id is the only identifier.
+    id: 'ca_load43demo005',
+    room_sid: null,
+    room_name: null,
+    origin: 'loadgen',
+    attempt_id: 'att_0043',
+    run_id: 'load_run_01',
+    project: 'default',
+    tenant_id: null,
+    agent_id: null,
+    channel: 'sip',
+    direction: 'inbound',
+    started_at_ms: CALL_E_T0,
+    ended_at_ms: CALL_E_T0 + 1200,
+    duration_ms: 1200,
+    end_reason: 'SIP_TRUNK_FAILURE',
+    num_legs: 0,
+    is_probe: 1,
+    answer_latency_ms: null,
+    answer_latency_source: null,
+    legs: [],
+  },
+];
+
+const CALLS_RESPONSE: CallsResponse = { calls: CALLS };
+
+// ---------------------------------------------------------------------------
 // Routing + dispatch
 // ---------------------------------------------------------------------------
 
@@ -1415,6 +1737,8 @@ export async function demoFetch<T>(path: string, init?: RequestInit): Promise<T>
       return PROJECTS as T;
     case '/api/sessions':
       return SESSIONS as T;
+    case '/api/calls':
+      return CALLS_RESPONSE as T;
     case '/api/replay/storage':
       return REPLAY_STORAGE as T;
     case '/api/api_keys':

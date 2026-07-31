@@ -134,6 +134,7 @@ import type {
   AgentRow,
   AgentsResponse,
   ApiKey,
+  CallsResponse,
   CreatedApiKey,
   DeadAirEvent,
   DiagnosticRun,
@@ -357,6 +358,22 @@ export function createDiagnosticsRun(body: {
     method: 'POST',
     body: JSON.stringify({ checks: body.checks, config: body.config ?? {} }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Calls: the recorded call (SIP -> SFU -> dispatch -> agent) with its legs.
+//
+// Read-only and polled, never pushed: the dashboard has zero WebSocket by
+// design, and this surface is no exception.
+// ---------------------------------------------------------------------------
+
+export function fetchCalls(
+  options: { limit?: number } = {},
+): Promise<CallsResponse> {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  const query = params.toString();
+  return fetchJson<CallsResponse>(query ? `/api/calls?${query}` : '/api/calls');
 }
 
 // ---------------------------------------------------------------------------

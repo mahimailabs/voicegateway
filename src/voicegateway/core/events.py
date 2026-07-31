@@ -127,6 +127,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     yield
 
+    # Write out whatever the call-observations endpoint has accepted but not yet
+    # flushed. Every queued report was answered with a 202, so a bounded drain is
+    # what keeps that answer honest; the call is a no-op when nothing was ever
+    # enqueued, and it never raises into shutdown.
+    # Imported here, not at module scope: ``core`` must not import ``server`` at
+    # load time (the dependency runs the other way).
+    try:
+        from voicegateway.server.api.call_observations import (
+            shutdown_call_observations,
+        )
+
+        await shutdown_call_observations()
+    except Exception:  # noqa: BLE001 - teardown must not fail on telemetry
+        logger.warning("call observations shutdown failed", exc_info=True)
+
     for worker in started:
         await worker.stop()
     if started:

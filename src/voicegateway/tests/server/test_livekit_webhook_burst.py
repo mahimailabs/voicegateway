@@ -22,6 +22,15 @@ timing ceiling that only trips on a pathological regression -- an fsync per
 event, or an accidental N+1 in the upsert path. The numbers themselves are
 printed, not asserted, because a wall-clock threshold tight enough to be
 meaningful is also tight enough to be flaky on shared CI.
+
+Marked ``integration`` for the same reason, one step further. The concurrent case
+drives 20 writers at one synchronous SQLite file, and on a shared runner's disk
+that can exceed the 5 s ``busy_timeout`` set in ``core/database.py``, at which
+point the endpoint correctly answers 503 "call store temporarily unavailable"
+and LiveKit retries. That is the honest behaviour under contention, not a defect,
+but it makes "every POST returned 200" a property of the hardware rather than of
+the code, so it does not belong in the unit matrix. It runs in the integration
+job and on demand locally, where the measurement is worth something.
 """
 
 from __future__ import annotations
@@ -47,6 +56,11 @@ from voicegateway.utils.percentiles import compute_percentiles
 _KEY = "APIbursttest"
 _SECRET = "s3cret-burst-signing-key-not-real"
 _URL = "/v1/livekit/webhook"
+
+# A measurement, not a unit test: it drives 20 concurrent writers at one
+# synchronous SQLite file, so whether every POST gets a 200 depends on the
+# runner's disk, not on this code. See the module docstring.
+pytestmark = pytest.mark.integration
 
 # 500 calls x 5 events = the 2500-event burst from the plan. Default lower so
 # the suite stays fast; override to measure the real thing.
@@ -253,13 +267,14 @@ async def test_concurrent_delivery_loses_and_duplicates_nothing(gateway):
     Every row must still be exactly right with many requests in flight, which is
     what the repository's select-then-update + IntegrityError retry is for.
 
-    ``calls.num_legs`` is deliberately NOT asserted here. It is derived by
-    counting ``call_legs`` inside ``upsert_call_leg``, and two leg writes for the
-    same call that interleave can both count the pre-insert total, so the counter
-    can be left one low (measured: 0-3 calls per 300 at concurrency 20) even
-    though both leg rows are present. That is a race in the derived counter, not
-    lost data, and this test pins the part that is actually true: every call and
-    every leg lands exactly once. The sequential test above still asserts
+    ``calls.num_legs`` is still not asserted here, though the reason has changed.
+    This test originally found a real race: the counter was recomputed with a
+    SELECT and then assigned, so two interleaved leg writes for one call could
+    both read the pre-insert total and leave it one low (measured 0-3 calls per
+    300 at concurrency 20). That was fixed by counting inside the UPDATE itself,
+    so the counter is now correct under concurrency. What this test pins is the
+    stronger and more durable property: every call and every leg lands exactly
+    once, never lost and never duplicated. The sequential test above asserts
     ``num_legs`` exactly.
     """
     burst = _burst(_BURST_CALLS)

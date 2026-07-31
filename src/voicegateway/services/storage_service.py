@@ -314,6 +314,33 @@ class StorageService:
         await self._ensure_initialized()
         await self._session_service.finalize_replay(session_id)
 
+    async def read_correlation_rate(
+        self,
+        *,
+        project: str | None = None,
+        since: str | None = None,
+        warn_threshold: float | None = None,
+    ) -> dict[str, Any]:
+        """How often the sessions <-> calls join resolves, as a dict.
+
+        The denominator is sessions that HAD a room and so should have joined;
+        sessions with no room (web, Pipecat) are reported as ``no_room`` and
+        excluded from both sides, and ``rate`` is None when that denominator is
+        empty. ``status`` is one of ``session_repository.CORRELATION_STATUSES``,
+        against ``warn_threshold`` (default
+        ``session_repository.CORRELATION_WARN_THRESHOLD``).
+        """
+        import dataclasses
+
+        from voicegateway.repository import session_repository
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            row = await session_repository.read_correlation_rate(
+                db, project=project, since=since, warn_threshold=warn_threshold
+            )
+        return dataclasses.asdict(row)
+
     # ------------------------------------------------------------------
     # Transcripts
     # ------------------------------------------------------------------
@@ -368,11 +395,21 @@ class StorageService:
         ended_at_ms: int | None = None,
         end_reason: str | None = None,
         is_probe: bool | int | None = None,
+        reported_answer_latency_ms: int | None = None,
+        reported_answer_latency_source: str | None = None,
     ) -> str:
         """Delegate to calls_repository.upsert_call; return the ``calls.id``.
 
         Creates the row if this is the first event seen for the call, so an
         out-of-order or redelivered webhook is never dropped.
+
+        ``reported_answer_latency_*`` carry a caller-MEASURED answer latency,
+        which today means only ``sipp_rtd``: the true INVITE->200 wall time a
+        load worker saw, and the strongest source in the precedence. Without this
+        passthrough the repository accepts it but no HTTP writer can reach it, so
+        the top tier would be dead code and every number would degrade to a
+        derived one. The repository still enforces the precedence and rejects any
+        source a caller may not assert.
         """
         from voicegateway.repository import calls_repository
 
@@ -394,6 +431,8 @@ class StorageService:
                 ended_at_ms=ended_at_ms,
                 end_reason=end_reason,
                 is_probe=is_probe,
+                reported_answer_latency_ms=reported_answer_latency_ms,
+                reported_answer_latency_source=reported_answer_latency_source,
             )
 
     async def upsert_call_leg(
@@ -412,8 +451,15 @@ class StorageService:
         first_audio_track_at_ms: int | None = None,
         audio_track_sid: str | None = None,
         audio_codec: str | None = None,
+        source: str | None = None,
     ) -> None:
-        """Delegate to calls_repository.upsert_call_leg (one row per participant)."""
+        """Delegate to calls_repository.upsert_call_leg (one row per participant).
+
+        ``source`` is the origin of THIS event's writer ("agent"/"loadgen" for a
+        self-report, "webhook" for LiveKit). It is what lets the answer-latency
+        derivation tell a millisecond in-process clock from a webhook's
+        whole-second ``created_at``; omitting it under-claims as webhook precision.
+        """
         from voicegateway.repository import calls_repository
 
         await self._ensure_initialized()
@@ -433,6 +479,7 @@ class StorageService:
                 first_audio_track_at_ms=first_audio_track_at_ms,
                 audio_track_sid=audio_track_sid,
                 audio_codec=audio_codec,
+                source=source,
             )
 
     async def get_call(self, call_id: str) -> dict[str, Any] | None:

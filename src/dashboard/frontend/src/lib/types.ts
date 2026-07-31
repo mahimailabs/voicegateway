@@ -734,3 +734,97 @@ export interface ServerOverview {
   fleet: ServerFleetSection;
 }
 
+// ---------------------------------------------------------------------------
+// Calls: the call itself (SIP -> SFU -> dispatch -> agent), not the inference.
+//
+// These mirror the reader dataclasses in `repository/calls_repository.py`
+// (`CallRow`, `CallLegRow`) field for field, on purpose. A field invented here
+// that the repository does not serve renders as a permanently blank row that
+// still compiles, which is the failure mode the demo fixtures already taught
+// this codebase once.
+// ---------------------------------------------------------------------------
+
+/**
+ * Which clock produced one leg timestamp (`call_legs.*_source`).
+ *
+ * `agent` and `loadgen` are processes that took part in the call reporting
+ * their own millisecond clock. `webhook` is LiveKit's delivery, whose
+ * `created_at` is whole SECONDS, so anything derived from it carries up to a
+ * second of truncation. `null` is "the writer did not say", which
+ * `calls_repository.SELF_REPORT_ORIGINS` treats as webhook precision - and so
+ * does the UI, because under-claiming precision is the safe direction.
+ */
+export type ClockSource = 'webhook' | 'agent' | 'loadgen';
+
+/**
+ * `calls.answer_latency_source`: the CLOSED set from
+ * `calls_repository.ANSWER_LATENCY_SOURCES`, strongest first.
+ *
+ * The field on `CallRow` below is typed `string | null` rather than this union
+ * so a name added server-side later renders as unknown provenance instead of
+ * failing to type-check against a stale copy of the set.
+ */
+export type AnswerLatencySource = 'sipp_rtd' | 'agent_report' | 'webhook_proxy';
+
+/** One `call_legs` row: one participant's slice of the call. */
+export interface CallLegRow {
+  id: number | null;
+  call_id: string;
+  participant_sid: string;
+  identity: string | null;
+  /** 'SIP' (the caller), 'AGENT', or 'STANDARD'. Null when never observed. */
+  kind: string | null;
+  region: string | null;
+  joined_at_ms: number | null;
+  left_at_ms: number | null;
+  disconnect_reason: string | null;
+  is_publisher: number | null;
+  /** JSON object of the `sip.*` participant attributes only. */
+  attributes_json: string | null;
+  first_audio_track_at_ms: number | null;
+  audio_track_sid: string | null;
+  audio_codec: string | null;
+  joined_at_source: ClockSource | null;
+  first_audio_track_at_source: ClockSource | null;
+}
+
+/** One `calls` row. `answer_latency_ms` is THE headline number. */
+export interface CallRow {
+  id: string;
+  room_sid: string | null;
+  /** Best-effort. NULL is legitimate: a 503 on INVITE never creates a room. */
+  room_name: string | null;
+  origin: string;
+  attempt_id: string | null;
+  run_id: string | null;
+  project: string;
+  tenant_id: string | null;
+  agent_id: string | null;
+  channel: string | null;
+  direction: string | null;
+  started_at_ms: number | null;
+  ended_at_ms: number | null;
+  duration_ms: number | null;
+  end_reason: string | null;
+  num_legs: number;
+  is_probe: number;
+  /**
+   * Caller-visible answer latency, or null when the recorded timestamps do not
+   * support one. Computed ONLY by `calls_repository._derive_answer_latency`;
+   * the UI displays it and never recomputes it.
+   */
+  answer_latency_ms: number | null;
+  /** See `AnswerLatencySource`. Null exactly when `answer_latency_ms` is. */
+  answer_latency_source: string | null;
+}
+
+/** A call with its legs, which is what the layer waterfall needs. */
+export interface CallDetail extends CallRow {
+  legs: CallLegRow[];
+}
+
+/** GET /api/calls */
+export interface CallsResponse {
+  calls: CallDetail[];
+}
+
