@@ -412,8 +412,15 @@ class StorageService:
         first_audio_track_at_ms: int | None = None,
         audio_track_sid: str | None = None,
         audio_codec: str | None = None,
+        source: str | None = None,
     ) -> None:
-        """Delegate to calls_repository.upsert_call_leg (one row per participant)."""
+        """Delegate to calls_repository.upsert_call_leg (one row per participant).
+
+        ``source`` is the origin of THIS event's writer ("agent"/"loadgen" for a
+        self-report, "webhook" for LiveKit). It is what lets the answer-latency
+        derivation tell a millisecond in-process clock from a webhook's
+        whole-second ``created_at``; omitting it under-claims as webhook precision.
+        """
         from voicegateway.repository import calls_repository
 
         await self._ensure_initialized()
@@ -433,6 +440,7 @@ class StorageService:
                 first_audio_track_at_ms=first_audio_track_at_ms,
                 audio_track_sid=audio_track_sid,
                 audio_codec=audio_codec,
+                source=source,
             )
 
     async def get_call(self, call_id: str) -> dict[str, Any] | None:

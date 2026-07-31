@@ -92,11 +92,29 @@ class Call(SQLModel, table=True):
     # percentiles.
     is_probe: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
 
-    # Caller-visible answer latency, and how it was derived: 'sipp_rtd' (true
-    # INVITE->200 wall time) > agent self-report > webhook proxy
-    # (agent_track_published_at_ms - caller_joined_at_ms). One number, one
-    # column, one computation -- which lands in a later node; these two columns
-    # are created here so the schema is written once. NULL means not derived:
-    # never write 0 for an unmeasured latency.
+    # Caller-visible answer latency, and how it was derived. ONE number, ONE
+    # column, ONE computation: ``calls_repository._derive_answer_latency`` is the
+    # only place in this product that computes it, and no caller may pass a
+    # derived value in.
+    #
+    # ``answer_latency_source`` is a CLOSED set, strongest first
+    # (``calls_repository.ANSWER_LATENCY_SOURCES``), because a reader who cannot
+    # trust the label cannot trust the number:
+    #
+    #   'sipp_rtd'      the true INVITE->200 OK wall time, reported by the load
+    #                   worker that placed the call. Only ever a report: LiveKit
+    #                   exposes no per-call SIP response (livekit-api 1.1.0 has
+    #                   no ListSIPCallInfo).
+    #   'agent_report'  the track-publish subtraction below, from two timestamps
+    #                   BOTH self-reported by a process that took part in the
+    #                   call, i.e. one clock at millisecond precision.
+    #   'webhook_proxy' the same subtraction, from timestamps not known to be
+    #                   self-reported. The zero-instrumentation default, and
+    #                   coarse: a webhook's ``created_at`` is whole seconds.
+    #
+    # A stronger source is never overwritten by a weaker one, in any arrival
+    # order. NULL means not derived -- no agent leg, no published audio track, no
+    # caller join, or an interval the clocks do not support. Never 0: a 0 here
+    # reads as "the caller heard no ring at all".
     answer_latency_ms: int | None = Field(default=None, sa_type=BigInteger)
     answer_latency_source: str | None = None

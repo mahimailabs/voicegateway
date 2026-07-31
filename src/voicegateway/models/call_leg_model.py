@@ -11,6 +11,13 @@ hold epoch milliseconds, which overflow a PostgreSQL INT4.
 Deliberately absent: per-leg RTP loss / jitter / MOS. None of it is observable
 server-side (``sfu.py`` hardcodes ``loss_pct = 0.0``), and an empty column
 invites a UI that renders 0.0 as "no loss".
+
+Two of the timestamps here are the inputs to ``calls.answer_latency_ms`` (the
+caller leg's ``joined_at_ms`` and the agent leg's ``first_audio_track_at_ms``),
+so each carries a ``*_source`` column naming the writer whose value is stored.
+Without it the derived number could not say whether it was built from
+whole-second webhook timestamps or from an agent's own millisecond clock, which
+is the difference between the two weaker rungs of the precedence rule.
 """
 
 from __future__ import annotations
@@ -66,3 +73,23 @@ class CallLeg(SQLModel, table=True):
     first_audio_track_at_ms: int | None = Field(default=None, sa_type=BigInteger)
     audio_track_sid: str | None = None
     audio_codec: str | None = None
+
+    # Provenance of the two timestamps above the ``calls.answer_latency_ms``
+    # computation subtracts (see ``calls_repository._derive_answer_latency``).
+    # 'webhook' | 'agent' | 'loadgen', or NULL when the writer did not say.
+    #
+    # These exist because the precedence rule needs to tell a webhook timestamp
+    # from a self-reported one and the values alone cannot: a webhook's
+    # ``created_at`` is whole SECONDS, while an agent or load worker that took
+    # part in the call reports its own clock at millisecond precision. Same
+    # number, an order of magnitude apart in resolution -- and on a 4 s answer
+    # latency a second of truncation is 25% error, so a reader must be told
+    # which one it is looking at.
+    #
+    # Each column describes THE VALUE THAT IS STORED, not the last writer: the
+    # merge keeps the earliest timestamp, so if a webhook's truncated value wins
+    # over an agent's, the stored value is webhook-precision and the column says
+    # so. That is what keeps ``answer_latency_source`` reproducible from the leg
+    # rows a reader can see.
+    joined_at_source: str | None = None
+    first_audio_track_at_source: str | None = None

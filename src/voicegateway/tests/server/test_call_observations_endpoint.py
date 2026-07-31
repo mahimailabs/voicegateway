@@ -391,9 +391,14 @@ async def test_the_report_is_merged_into_calls_and_legs(gateway):
     # Derived from the reported legs by the webhook's own rule.
     assert call["channel"] == "sip"
     assert call["num_legs"] == 2
-    # Never invented here: this is T5's column.
-    assert call["answer_latency_ms"] is None
-    assert call["answer_latency_source"] is None
+    # Still not invented here: calls_repository owns the one computation. This
+    # endpoint contributes the two timestamps it subtracts, and once T5 landed
+    # those timestamps do resolve to a number (3_842 - 100). The source is
+    # "agent_report" rather than "webhook_proxy" because the legs are stamped
+    # source=obs.origin, so the derivation knows both came from one in-process
+    # millisecond clock instead of a webhook's whole-second created_at.
+    assert call["answer_latency_ms"] == 3742
+    assert call["answer_latency_source"] == "agent_report"
 
     legs = await gateway.storage.list_call_legs(call["id"])
     assert [leg["participant_sid"] for leg in legs] == ["PA_caller", "PA_agent"]

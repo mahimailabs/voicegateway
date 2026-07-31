@@ -451,6 +451,11 @@ async def _write_observation(item: _QueuedObservation) -> None:
                 first_audio_track_at_ms=leg.first_audio_track_at_ms,
                 audio_track_sid=leg.audio_track_sid,
                 audio_codec=leg.audio_codec,
+                # Stamp who observed these timestamps. obs.origin is already
+                # "agent" or "loadgen", both in-process clocks, so the
+                # answer-latency derivation can earn "agent_report" instead of
+                # under-claiming the millisecond values as webhook precision.
+                source=obs.origin,
             )
         except asyncio.CancelledError:
             raise
