@@ -219,6 +219,30 @@ Authentication follows the other dashboard reads: with no API keys configured (t
 curl "http://localhost:8080/api/calls?limit=6"
 ```
 
+## Session reads
+
+The list endpoint plus five reads that hang off a session id back the dashboard's call drill-down:
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/sessions` | Recent sessions, newest first. Takes `limit`, `project`, `tenant`, `agent` and `order_by`. |
+| `GET /api/sessions/{id}` | One session with its per-modality cost breakdown and provider list. |
+| `GET /api/sessions/{id}/turns` | Ordered per-turn rows (latency, response speed). |
+| `GET /api/sessions/{id}/transcript` | The captured call transcript, one row per turn. |
+| `GET /api/sessions/{id}/dead_air` | Dead-air events for the call, oldest first. |
+| `GET /api/sessions/{id}/replay` | The full time-ordered replay: the STT, LLM and TTS payloads of the call. |
+
+**Authentication:** all six require the same read authentication as the other dashboard reads (`/api/costs`, `/api/calls`). As there, the gate is a **no-op while no API keys are configured** (the self-hosted default) and enforces as soon as auth is enabled, when an unauthenticated request gets `401`. Only the list endpoint was gated before, so a session id alone was enough to read the detail, the turns, the transcript, the dead air and the replay of any call on the deployment.
+
+**Tenant scoping:** a tenant-scoped key reads only its own sessions. The per-session routes take no `tenant` parameter (the id is the whole request), so the check runs on the fetched session row. A session belonging to another tenant returns `404` with the same body as a session id that does not exist: a `403` would confirm the id is real. The self-hosted operator (no credential, or a static config key) is an admin principal and keeps reading every session, unchanged.
+
+**Example:**
+
+```bash
+curl "http://localhost:8080/api/sessions?limit=20"
+curl "http://localhost:8080/api/sessions/vg-8f1c/transcript"
+```
+
 ## GET /api/agents
 
 Return the fleet index over the last 24 hours: the telemetry rollup merged with the live worker roster. Agents that have metered traffic come from the rollup; registered-but-idle workers (0 requests) are merged in so a booted agent appears before it has handled its first call.

@@ -12,6 +12,11 @@ principal, never from the raw caller-supplied ``tenant`` query param:
 - the admin cross-tenant endpoint is gated: a tenant key gets 403 before any
   backend-availability (503) check, an admin key gets 503 when ClickHouse is
   absent (the SQLite self-hoster default).
+
+The last section covers the per-session reads, which take no ``tenant`` param
+at all: the id IS the request. There the check runs on the fetched row, and a
+foreign session must return the same 404 as a session that does not exist, so
+that the response never confirms the id is real.
 """
 
 from __future__ import annotations
@@ -177,3 +182,73 @@ async def test_no_credential_operator_sees_all(harness):
     assert costs.json()["total"] == pytest.approx(1.30)
     ids = {r["id"] for r in sessions.json()}
     assert {"s-acme-1", "s-acme-2", "s-beta-1"}.issubset(ids)
+
+
+# ---------------------------------------------------------------------------
+# Per-session reads: the id is the whole request, so the check is post-fetch
+# ---------------------------------------------------------------------------
+
+# Every read that hangs off /api/sessions/{id}. /replay is served by
+# dashboard/replay.py, the other four by dashboard/sessions.py.
+_SESSION_READ_TEMPLATES = [
+    "/api/sessions/{sid}",
+    "/api/sessions/{sid}/turns",
+    "/api/sessions/{sid}/transcript",
+    "/api/sessions/{sid}/dead_air",
+    "/api/sessions/{sid}/replay",
+]
+
+
+@pytest.mark.parametrize("template", _SESSION_READ_TEMPLATES)
+async def test_foreign_session_read_is_404(harness, template):
+    """An acme key reading beta's session gets 404, never beta's rows.
+
+    404 and not 403: a 403 would tell the caller the id exists, which is the
+    fact being protected. The assertion below pins that a foreign id and a
+    made-up id are the same status.
+    """
+    token = await _make_key(harness.gateway, tenant_id="acme")
+    headers = {"Authorization": f"Bearer {token}"}
+    async with harness.client() as c:
+        foreign = await c.get(template.format(sid="s-beta-1"), headers=headers)
+        missing = await c.get(template.format(sid="no-such-session"), headers=headers)
+
+    assert foreign.status_code == 404, (
+        f"{template} on a foreign session should be 404, got "
+        f"{foreign.status_code}: {foreign.text}"
+    )
+    assert missing.status_code == foreign.status_code
+    # Same body too: nothing but the id the caller already typed comes back.
+    assert foreign.json() == {"detail": "Session 's-beta-1' not found"}
+    assert missing.json() == {"detail": "Session 'no-such-session' not found"}
+
+
+@pytest.mark.parametrize("template", _SESSION_READ_TEMPLATES)
+async def test_own_session_read_still_works(harness, template):
+    """The guard refuses the foreign id only: acme still reads acme."""
+    token = await _make_key(harness.gateway, tenant_id="acme")
+    async with harness.client() as c:
+        resp = await c.get(
+            template.format(sid="s-acme-1"),
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert resp.status_code == 200, f"{template}: {resp.status_code} {resp.text}"
+
+
+@pytest.mark.parametrize("template", _SESSION_READ_TEMPLATES)
+async def test_no_credential_operator_reads_any_session(harness, template):
+    """The self-hosted operator keeps reading every tenant's sessions."""
+    async with harness.client() as c:
+        resp = await c.get(template.format(sid="s-beta-1"))
+    assert resp.status_code == 200, f"{template}: {resp.status_code} {resp.text}"
+
+
+async def test_admin_key_reads_any_session(harness):
+    """An admin vk_ key (tenant_id None) is not narrowed by the guard."""
+    token = await _make_key(harness.gateway, tenant_id=None, role="admin")
+    async with harness.client() as c:
+        resp = await c.get(
+            "/api/sessions/s-beta-1", headers={"Authorization": f"Bearer {token}"}
+        )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["id"] == "s-beta-1"

@@ -42,3 +42,56 @@ async def test_transcript_endpoint_empty_for_unknown_call(tmp_path, monkeypatch)
     async with _client(gw) as c:
         data = (await c.get("/api/sessions/nope/transcript")).json()
     assert data == {"session_id": "nope", "turns": []}
+
+
+# ---------------------------------------------------------------------------
+# Auth: the transcript is the most sensitive payload on the router
+# ---------------------------------------------------------------------------
+
+
+async def test_transcript_stays_open_when_no_keys_are_configured(tmp_path, monkeypatch):
+    """The self-hosted default (no keys configured) is unchanged."""
+    gw = _gateway(tmp_path, monkeypatch)
+    app = build_app(gw)
+    assert app.state.api_keys == []
+    await gw.storage.write_transcript("call-open", [("user", "hi")])
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        resp = await c.get("/api/sessions/call-open/transcript")
+    assert resp.status_code == 200
+    assert [t["text"] for t in resp.json()["turns"]] == ["hi"]
+
+
+async def test_transcript_requires_auth_when_enabled(tmp_path, monkeypatch):
+    """With static keys configured, a session id alone does not buy a call.
+
+    This route was ungated: anyone who could reach the port could read what
+    the caller said, on any session, by guessing or scraping one id.
+    """
+    from voicegateway.core.auth import ApiKey
+
+    gw = _gateway(tmp_path, monkeypatch)
+    app = build_app(gw)
+    app.state.api_keys = [ApiKey(token="read-token", name="viewer", scopes=("read",))]
+    await gw.storage.write_transcript("call-secret", [("user", "my card number is")])
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        anon = await c.get("/api/sessions/call-secret/transcript")
+        wrong = await c.get(
+            "/api/sessions/call-secret/transcript",
+            headers={"Authorization": "Bearer nope"},
+        )
+        ok = await c.get(
+            "/api/sessions/call-secret/transcript",
+            headers={"Authorization": "Bearer read-token"},
+        )
+
+    assert anon.status_code == 401, anon.text
+    assert "my card number is" not in anon.text
+    assert wrong.status_code == 401
+    assert ok.status_code == 200
+    assert [t["text"] for t in ok.json()["turns"]] == ["my card number is"]

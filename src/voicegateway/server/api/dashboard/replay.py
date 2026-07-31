@@ -10,6 +10,13 @@ per-project storage-usage view:
 
 Same ``/api/*`` prefix as the v0.2.0 metrics endpoints; the main
 server may publish ``/v1/*`` mirrors later if SDK consumers need them.
+
+Auth here is declared per handler, not on the router: this router also
+carries the two write endpoints and the cross-project storage read, and
+gating the replay READ is what was scoped. ``GET /sessions/{id}/replay``
+is the fifth read under a session id, so it takes exactly the dependency
+and the tenant check that the other four take in
+:mod:`voicegateway.server.api.dashboard.sessions`.
 """
 
 from __future__ import annotations
@@ -23,7 +30,12 @@ from sqlalchemy import text
 from voicegateway.repository import (
     replay_repository as replay,
 )
-from voicegateway.server.api._deps import get_gateway
+from voicegateway.server.api._deps import (
+    Principal,
+    get_gateway,
+    require_principal,
+)
+from voicegateway.server.api.dashboard.sessions import require_visible_session
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -33,7 +45,9 @@ router = APIRouter(tags=["dashboard"])
 
 @router.get("/sessions/{session_id}/replay")
 async def get_session_replay(
-    session_id: str, gateway: Gateway = Depends(get_gateway)
+    session_id: str,
+    gateway: Gateway = Depends(get_gateway),
+    principal: Principal = Depends(require_principal),
 ) -> dict[str, Any]:
     """Return the full time-ordered replay for one session.
 
@@ -45,9 +59,14 @@ async def get_session_replay(
     (pre-v0.3.0 sessions or projects with ``replay.enabled: false``);
     the FE renders a PreV030Banner in that case (REQ-VG-REPLAY-001
     AC-3).
+
+    A replay carries the raw STT/LLM/TTS payloads of the call, so a
+    tenant-bound caller reading another tenant's session gets the same 404
+    it would get for a session id that does not exist.
     """
     if gateway.storage is None:
         raise HTTPException(status_code=503, detail="Storage not configured")
+    await require_visible_session(gateway.storage, session_id, principal)
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
         events = await replay.read_full_replay(db, session_id)
