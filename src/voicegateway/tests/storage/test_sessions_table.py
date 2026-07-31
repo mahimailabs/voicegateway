@@ -107,6 +107,9 @@ async def test_sessions_columns_match_design(tmp_path):
         "budget_overrun",
         "routed_llm",
         "routed_tts",
+        # calls correlation, nullable + forward-only (migration e4a7c2f9b1d3).
+        "room_name",
+        "call_id",
     }
 
     # Required keys (NOT NULL).

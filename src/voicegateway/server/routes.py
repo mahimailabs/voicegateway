@@ -26,6 +26,7 @@ from voicegateway.server.api import (
     costs,
     ingest,
     latency,
+    livekit_webhook,
     logs,
     metrics,
     models,
@@ -91,6 +92,10 @@ api_router.include_router(audit_log.router)
 api_router.include_router(api_keys.router)
 api_router.include_router(ingest.router)
 api_router.include_router(agents.router)
+# POST /v1/livekit/webhook. Authenticated by the LiveKit webhook signature
+# inside the handler, not by require_scope: LiveKit posts it, not an api-key
+# holder. See the module docstring for why that guard is unconditional.
+api_router.include_router(livekit_webhook.router)
 
 dashboard_router = APIRouter(prefix="/api")
 dashboard_router.include_router(dashboard_health.router)
