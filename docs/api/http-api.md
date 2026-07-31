@@ -677,6 +677,16 @@ voicegw_diag_run_timestamp_seconds 1785412800.000
 
 This endpoint exposes VoiceGateway's own numbers so your Prometheus can scrape it. It is the opposite direction from the node scrape, which pulls exposition text *from* livekit-server and node_exporter *into* this database; nothing scraped from another process is served back out here.
 
+**Turning the node scrape on.** That inbound scrape is off unless you name targets. Set `VOICEGW_NODE_SCRAPE_TARGETS` to a comma-separated list of `source:name=url` entries before starting the collector:
+
+```bash
+export VOICEGW_NODE_SCRAPE_TARGETS="livekit-server:sfu-1=http://10.0.0.4:6789/metrics,node-exporter:sfu-1=http://10.0.0.4:9100/metrics"
+```
+
+`source` is one of `livekit-server`, `livekit-sip` or `node-exporter`. `name` is the node the samples are filed under, and using the same `name` for two sources is the point: it puts an SFU's own counters and its host's file descriptors on one time axis. A malformed entry is skipped with a warning instead of failing startup, and the collector logs how many targets it read.
+
+With the variable unset or empty no scrape worker is started and the collector makes no outbound requests, which is the default. Cadence comes from `workers.node_scrape_interval_seconds` in `voicegw.yaml` (default 15 seconds, matching Prometheus' own default); `workers.enabled: false` disables this worker along with the rollups.
+
 **Diagnostics gate series.** `voicegw_diag_gate_status` reports the health gates of the newest stored [diagnostics run](/cli/livekit) that gated anything, aggregated per gate id and status: the probed agent is not a label, so cardinality does not grow with your fleet. Statuses are the one ladder `voicegw livekit check` uses, `PASS < WARN < UNKNOWN < FAIL`, where **`UNKNOWN` means the gate could not be evaluated and is not a pass** (only `PASS` exits 0). `voicegw_diag_run_verdict` is that run's stored verdict, and `voicegw_diag_run_timestamp_seconds` is when it finished, so a clean verdict from three weeks ago is distinguishable from one from a minute ago.
 
 **Unknown values are omitted, never zero.** No diagnostics run, no readable diagnostics table, or a status this build does not recognise means the series is *absent*. A `0` would be a real observation and would be alerted on; absence is the honest reading. Alert on what is there (for example `voicegw_diag_gate_status{status!="PASS"} > 0`) and on `absent(...)` if you require a run to have happened.

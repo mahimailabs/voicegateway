@@ -96,11 +96,16 @@ class RetentionConfig(_StrictBase):
 
 
 class WorkersConfig(_StrictBase):
-    """Background-worker cadence for the collector (rollups, retention)."""
+    """Background-worker cadence for the collector (rollups, retention, scrape)."""
 
     enabled: bool = True
     rollup_interval_seconds: int = Field(default=900, ge=1)
     retention_interval_seconds: int = Field(default=3600, ge=1)
+    # Cadence of the Prometheus node scrape. 15 s is Prometheus' own default and
+    # the resolution the node_samples row budget is sized against. Setting it
+    # does NOT turn the scrape on: the worker exists only when
+    # VOICEGW_NODE_SCRAPE_TARGETS names at least one target.
+    node_scrape_interval_seconds: int = Field(default=15, ge=1)
 
 
 class ProjectConfig(_StrictBase):
