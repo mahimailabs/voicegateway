@@ -10,6 +10,7 @@ import { DEMO_MODE } from '../lib/demo';
 import { formatDateTime } from '../lib/time';
 import type { DiagCheckName, DiagnosticRun, DiagnosticsCreds } from '../lib/types';
 import AgentsTab from './diagnostics/AgentsTab';
+import CallsPanel from './diagnostics/CallsPanel';
 import ErrorsTab from './diagnostics/ErrorsTab';
 import LatencyTab from './diagnostics/LatencyTab';
 import LoadTab from './diagnostics/LoadTab';
@@ -143,6 +144,12 @@ export default function Diagnostics() {
         subtitle="Probe your LiveKit deployment from this machine"
         accent="blue"
       />
+
+      {/* Recorded calls, layer 1-6. Above the run controls and outside the run
+          tabs on purpose: it needs no billed run, it is the page's headline
+          claim, and it is the only thing here that reads what the deployment
+          already recorded rather than what a probe just went and measured. */}
+      <CallsPanel />
 
       {/* Connection status card */}
       <div className="vg-card" style={{ marginBottom: 16 }}>
