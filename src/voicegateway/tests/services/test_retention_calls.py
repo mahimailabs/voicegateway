@@ -330,3 +330,189 @@ async def test_null_out_and_delete_commit_together(storage) -> None:
     assert await _count(storage, "calls", "id = :i", {"i": doomed}) == 1
     assert await _count(storage, "call_legs", "call_id = :i", {"i": doomed}) == 1
     assert await _session_call_id(storage, "sess-atomic") == doomed
+
+
+# ---- requests.session_id must not outlive the session it names -------------
+#
+# The same defect one level down, which is why it is pinned next to the section
+# above rather than with the request-clock tests: a request prunes on its own
+# ``timestamp`` while a session prunes on ``ended_at``, so the session pass
+# would otherwise leave the pointer aimed at a deleted row. Unlike
+# ``sessions.call_id`` this pointer has NO read-time guard, because no read
+# joins ``requests`` to ``sessions`` at all: nulling at the source is the whole
+# defence, not the belt half of belt-and-braces.
+
+
+_INSERT_REQUEST = text(
+    "INSERT INTO requests "
+    "(id, timestamp, project, modality, model_id, provider, cost_usd, "
+    " session_id, tenant_id) "
+    "VALUES (:id, :ts, :project, 'llm', 'openai/gpt-4o-mini', 'openai', 0.0, "
+    "        :session_id, :tenant)"
+)
+
+
+async def _seed_request(
+    storage,
+    request_id: str,
+    project: str,
+    session_id: str | None,
+    tenant: str | None = None,
+    days_ago: float = 1.0,
+) -> None:
+    """Insert a request that survives the requests pass but names a session.
+
+    ``days_ago`` defaults inside every retention window used here, so the
+    request itself is never the thing being pruned: the session is. Inserted
+    raw rather than through ``log_request`` because that path upserts a
+    ``sessions`` row for the id it is handed, which would fabricate the very
+    row these tests need to control the age of.
+    """
+    ts = (datetime.now(UTC) - timedelta(days=days_ago)).timestamp()
+    async with storage._conn.session() as db:
+        await db.execute(
+            _INSERT_REQUEST,
+            {
+                "id": request_id,
+                "ts": ts,
+                "project": project,
+                "session_id": session_id,
+                "tenant": tenant,
+            },
+        )
+        await db.commit()
+
+
+async def _request_session_id(storage, request_id: str) -> str | None:
+    """The stored pointer. Asserts the row still exists, so a nulled pointer is
+    never confused with a deleted request."""
+    async with storage._conn.session() as db:
+        row = (
+            await db.execute(
+                text("SELECT session_id FROM requests WHERE id = :i"), {"i": request_id}
+            )
+        ).fetchone()
+    assert row is not None, f"request {request_id} was deleted, not repointed"
+    return row[0]
+
+
+async def test_pruned_session_nulls_the_request_pointer(storage) -> None:
+    await _seed_session(storage, "s-req-doomed", "acme", call_id=None, ended_days_ago=10)
+    await _seed_request(storage, "r-keeps", "acme", session_id="s-req-doomed")
+
+    await RetentionWorker(storage, retention_provider=_provider("acme", 5)).tick_now()
+
+    assert await _count(storage, "sessions", "id = :i", {"i": "s-req-doomed"}) == 0
+    assert await _request_session_id(storage, "r-keeps") is None
+
+
+async def test_surviving_session_keeps_the_request_pointer(storage) -> None:
+    """Only pointers at deleted sessions get nulled. A live link is not collateral."""
+    await _seed_session(storage, "s-req-young", "acme", call_id=None, ended_days_ago=1)
+    await _seed_request(storage, "r-linked", "acme", session_id="s-req-young")
+
+    await RetentionWorker(storage, retention_provider=_provider("acme", 5)).tick_now()
+
+    assert await _count(storage, "sessions", "id = :i", {"i": "s-req-young"}) == 1
+    assert await _request_session_id(storage, "r-linked") == "s-req-young"
+
+
+async def test_other_sessions_projects_and_tenants_keep_their_pointers(storage) -> None:
+    """The null-out follows the deleted ids, not the project or the tenant."""
+    await _seed_session(storage, "s-doomed", "acme", call_id=None, ended_days_ago=10)
+    await _seed_session(storage, "s-alive", "acme", call_id=None, ended_days_ago=1)
+    # Aged, but its project is not in this tick's provider, so it stays.
+    await _seed_session(storage, "s-foreign", "other", call_id=None, ended_days_ago=10)
+
+    await _seed_request(storage, "r-doomed", "acme", session_id="s-doomed", tenant="t1")
+    await _seed_request(storage, "r-alive", "acme", session_id="s-alive", tenant="t2")
+    await _seed_request(storage, "r-foreign", "other", session_id="s-foreign", tenant="t3")
+    await _seed_request(storage, "r-none", "acme", session_id=None, tenant="t2")
+    # A request in another project (and another tenant) pointing at the doomed
+    # session: the row itself is out of this tick's scope and must survive, but
+    # its pointer is dangling all the same and goes.
+    await _seed_request(storage, "r-cross", "other", session_id="s-doomed", tenant="t9")
+
+    await RetentionWorker(storage, retention_provider=_provider("acme", 5)).tick_now()
+
+    assert await _request_session_id(storage, "r-doomed") is None
+    assert await _request_session_id(storage, "r-alive") == "s-alive"
+    assert await _request_session_id(storage, "r-foreign") == "s-foreign"
+    assert await _request_session_id(storage, "r-none") is None
+    assert await _request_session_id(storage, "r-cross") is None
+    assert await _count(storage, "sessions", "id = :i", {"i": "s-foreign"}) == 1
+
+
+class _CommitAtSessionDeleteFails:
+    """AsyncSession stand-in that forwards statements but refuses one commit.
+
+    Stands in for a crash at the chunk boundary. The session pass commits more
+    than once per chunk (``replay.delete_replay`` commits per session id, before
+    the chunk's own statements run), so failing on the first commit would prove
+    nothing about the null-out. This forwards every commit taken while the
+    target session row is still present and fails on the one taken after it has
+    gone, which is by construction the chunk commit. Before raising it snapshots
+    the state on its OWN connection, where both the null-out and the delete are
+    already pending: that snapshot is what proves they share a transaction
+    rather than merely both happening at some point.
+    """
+
+    def __init__(self, db, session_id: str, request_id: str) -> None:
+        self._db = db
+        self._session_id = session_id
+        self._request_id = request_id
+        self.forwarded = 0
+        self.pending: tuple[int, str | None] | None = None
+
+    async def execute(self, *args, **kwargs):
+        return await self._db.execute(*args, **kwargs)
+
+    async def commit(self) -> None:
+        sessions_left = int(
+            (
+                await self._db.execute(
+                    text("SELECT COUNT(*) FROM sessions WHERE id = :i"),
+                    {"i": self._session_id},
+                )
+            ).scalar()
+            or 0
+        )
+        if sessions_left:
+            self.forwarded += 1
+            await self._db.commit()
+            return
+        pointer = (
+            await self._db.execute(
+                text("SELECT session_id FROM requests WHERE id = :i"),
+                {"i": self._request_id},
+            )
+        ).scalar()
+        self.pending = (sessions_left, pointer)
+        raise RuntimeError("commit boom")
+
+
+async def test_session_null_out_and_delete_commit_together(storage) -> None:
+    """Neither half lands on its own: the pointer and the row share one commit."""
+    await _seed_session(storage, "s-atomic", "acme", call_id=None, ended_days_ago=10)
+    await _seed_request(storage, "r-atomic", "acme", session_id="s-atomic")
+
+    worker = RetentionWorker(storage, retention_provider=_provider("acme", 5))
+    cutoff = datetime.now(UTC) - timedelta(days=5)
+    # The context manager rolls back on the way out, which is exactly what the
+    # worker's own tick does when a pass raises.
+    failing: _CommitAtSessionDeleteFails | None = None
+    with pytest.raises(RuntimeError, match="commit boom"):
+        async with storage._conn.session() as db:
+            failing = _CommitAtSessionDeleteFails(
+                db, session_id="s-atomic", request_id="r-atomic"
+            )
+            await worker._prune_project(
+                failing, "acme", cutoff.isoformat(), cutoff.timestamp()
+            )
+
+    # Uncommitted, both halves were staged together...
+    assert failing is not None
+    assert failing.pending == (0, None)
+    # ...and the rollback took both back.
+    assert await _count(storage, "sessions", "id = :i", {"i": "s-atomic"}) == 1
+    assert await _request_session_id(storage, "r-atomic") == "s-atomic"

@@ -94,7 +94,20 @@ class Request(SQLModel, table=True):
     rated_price_usd: float | None = Field(
         default=0.0, sa_column_kwargs={"server_default": "0"}
     )
-    rate_rule: str = Field(default="", sa_column_kwargs={"server_default": ""})
+    # Text and nullable, because migration c7d2a9f1e6b4 declares
+    # ``sa.Text(), nullable=True`` and the migration is deployed truth: a plain
+    # ``str`` here maps to VARCHAR NOT NULL, so an upgraded install and a fresh
+    # ``create_all`` install would disagree on both halves. Nothing in this repo
+    # runs autogenerate, so the model has to agree with the DDL by hand. SQLite
+    # hides the VARCHAR/Text half; PostgreSQL does not, and it enforces the NOT
+    # NULL half for real. Nothing reads this column back except as an opaque
+    # audit token, so NULL is as harmless as the "" the server default writes.
+    # (ClickHouse declares it a third way, LowCardinality(String) DEFAULT ''
+    # and non-nullable, in clickhouse/migrations/0004_requests_rated_price.sql;
+    # that store is separate and is not what this line unifies.)
+    rate_rule: str | None = Field(
+        default="", sa_type=Text, sa_column_kwargs={"server_default": ""}
+    )
     ttfb_ms: float | None = None
     total_latency_ms: float | None = None
     status: str | None = Field(default="success")
