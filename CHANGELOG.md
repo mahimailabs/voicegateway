@@ -58,6 +58,28 @@ follows [Semantic Versioning](https://semver.org/) and
   gating on a constant is theatre. `quality` carries the connection signal that
   is real.
 
+### Added
+
+- **`voicegw livekit report`** exports a recorded diagnostics run as one
+  self-contained HTML file, so CI can collect the artifact on a host that never
+  runs the dashboard. It probes nothing and judges nothing: it reads a run out of
+  the local store and reproduces the verdict that run recorded.
+
+  The renderer moved out of the dashboard endpoint into
+  `livekit_diag/run_report.py` and **both surfaces now call it**. The CLI's file
+  and `GET /api/diagnostics/runs/{id}/report.html` are byte-identical for the
+  same run on the same host, which a test asserts by comparing the bytes: two
+  copies of a report renderer are two reports that disagree the first time one of
+  them is edited.
+
+  The document references nothing external (no script, stylesheet, font, image or
+  CDN), so it renders offline from `file://`. `--json` emits the same payload the
+  HTML is rendered from, still at `schema_version: 1` (the extraction changed no
+  payload). A run that failed still exports, and reads as a run that measured
+  nothing rather than one that measured zeros. It exits 0 whenever it wrote the
+  artifact, whatever the verdict was: gating CI on a deployment's health stays
+  `voicegw livekit check`'s job.
+
 ### Removed
 
 - **The `voicegw tui` terminal UI is gone.** The four-tab Textual UI (~4,900 LOC
