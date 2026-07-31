@@ -12,6 +12,19 @@ another process's numbers to this one.
 known. In Prometheus a ``0`` is an observation: it is graphed, alerted on and
 believed. An absent series says "nothing was measured"; a zero says "measured,
 and it was none", and only one of those is true when no diagnostics run exists.
+
+**No fabricated counters.** ``voicegw_cost_usd_total`` and
+``voicegw_requests_total`` are sums over the ``"today"`` window, which
+``cost_repository.period_since`` defines as ``time.time() - 86400``: a ROLLING
+trailing 24 hours, not a calendar day and not a since-start total. Their values
+fall whenever a request ages out of that window, so they are gauges. They were
+published as ``# TYPE ... counter``, which promises Prometheus the value never
+decreases; ``rate()`` and ``increase()`` read every one of those decreases as a
+counter reset and silently invent traffic that did not happen. The ``_total``
+suffix is kept only because the names are published (docs/api/http-api.md,
+docs/reference/faq.md) and renaming a scraped series breaks every dashboard
+built on it; the suffix is wrong and the type metadata is what operators'
+tooling actually reads.
 """
 
 from __future__ import annotations
@@ -75,11 +88,21 @@ async def prometheus_metrics(
     if gateway.storage is not None:
         today = await gateway.storage.get_cost_summary("today")
         lines += [
-            "# HELP voicegw_cost_usd_total Total cost in USD (today)",
-            "# TYPE voicegw_cost_usd_total counter",
+            # gauge, not counter: see the module docstring. The window is a
+            # rolling one, so the value goes down as well as up.
+            "# HELP voicegw_cost_usd_total USD cost summed over a ROLLING "
+            "trailing 24 hours (now-86400s to now). This is a gauge despite the "
+            "_total suffix: it DECREASES as requests age out of the window. It "
+            "is not a since-start total and not a calendar day. Do not use "
+            "rate() or increase() on it.",
+            "# TYPE voicegw_cost_usd_total gauge",
             f'voicegw_cost_usd_total{{period="today"}} {today["total"]:.6f}',
-            "# HELP voicegw_requests_total Total requests (today)",
-            "# TYPE voicegw_requests_total counter",
+            "# HELP voicegw_requests_total Requests counted over a ROLLING "
+            "trailing 24 hours (now-86400s to now). This is a gauge despite the "
+            "_total suffix: it DECREASES as requests age out of the window. It "
+            "is not a since-start total and not a calendar day. Do not use "
+            "rate() or increase() on it.",
+            "# TYPE voicegw_requests_total gauge",
         ]
         for provider, data in today.get("by_provider", {}).items():
             lines.append(
@@ -98,12 +121,20 @@ async def prometheus_metrics(
         pcts = gateway.config.latency.get("percentiles") or [50.0, 95.0, 99.0]
         latency = await gateway.storage.get_latency_stats("today", percentiles=pcts)
         if latency:
+            # summary is the right type here: the quantile children of a
+            # summary are already sliding-window statistics, not counters, so
+            # nothing promises Prometheus they only rise. The window is stated
+            # anyway, because "p95 of what span?" is not answerable from the
+            # series alone. No _sum / _count children are emitted, so there is
+            # no counter here to rate() either.
             lines += [
-                "# HELP voicegw_request_ttfb_seconds "
-                "Per-model time to first byte (seconds, summary)",
+                "# HELP voicegw_request_ttfb_seconds Per-model time to first "
+                "byte (seconds), quantiles over a ROLLING trailing 24 hours "
+                "(now-86400s to now). Not since-start, not a calendar day.",
                 "# TYPE voicegw_request_ttfb_seconds summary",
-                "# HELP voicegw_request_total_latency_seconds "
-                "Per-model total latency (seconds, summary)",
+                "# HELP voicegw_request_total_latency_seconds Per-model total "
+                "latency (seconds), quantiles over a ROLLING trailing 24 hours "
+                "(now-86400s to now). Not since-start, not a calendar day.",
                 "# TYPE voicegw_request_total_latency_seconds summary",
             ]
             for model, s in latency.items():

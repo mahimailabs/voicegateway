@@ -134,3 +134,60 @@ async def test_metrics_summary_rejects_out_of_range_days(client) -> None:
     assert resp.status_code == 422
     resp = await client.get("/api/metrics?days=1000")
     assert resp.status_code == 422
+
+
+# --------------------------------------------------------------------
+# Prometheus exposition types on GET /v1/metrics
+# --------------------------------------------------------------------
+
+
+def _types(text: str) -> dict[str, str]:
+    """``{series: type}`` from the ``# TYPE`` lines of an exposition body."""
+    out: dict[str, str] = {}
+    for line in text.splitlines():
+        if line.startswith("# TYPE "):
+            _, _, name, kind = line.split(" ", 3)
+            out[name] = kind
+    return out
+
+
+def _help(text: str, series: str) -> str:
+    """The HELP text published for ``series``."""
+    prefix = f"# HELP {series} "
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :]
+    raise AssertionError(f"no HELP line for {series}")
+
+
+async def test_rolling_window_series_are_gauges_not_counters(client) -> None:
+    """A trailing-24h sum is a gauge, and must not be typed as a counter.
+
+    Both series come from the ``"today"`` window, which
+    ``cost_repository.period_since`` defines as ``time.time() - 86400``. That
+    window rolls, so the value falls whenever a request ages off the trailing
+    edge. Typing it ``counter`` promises Prometheus the opposite, and
+    ``rate()`` / ``increase()`` then read every decrease as a counter reset and
+    invent traffic that never happened.
+    """
+    resp = await client.get("/v1/metrics")
+    assert resp.status_code == 200
+    types = _types(resp.text)
+
+    assert types["voicegw_cost_usd_total"] == "gauge"
+    assert types["voicegw_requests_total"] == "gauge"
+    # The names are published in docs/api/http-api.md and docs/reference/faq.md
+    # as things operators graph. Renaming them is a breaking contract change, so
+    # the (wrong) _total suffix stays and only the type metadata is corrected.
+    assert "voicegw_cost_usd_total" in resp.text
+    assert "voicegw_requests_total" in resp.text
+
+
+async def test_rolling_window_help_text_names_the_window(client) -> None:
+    """HELP must say trailing 24h: "today" reads as a calendar day otherwise."""
+    resp = await client.get("/v1/metrics")
+    for series in ("voicegw_cost_usd_total", "voicegw_requests_total"):
+        help_text = _help(resp.text, series)
+        assert "ROLLING" in help_text
+        assert "24 hours" in help_text
+        assert "not a calendar day" in help_text

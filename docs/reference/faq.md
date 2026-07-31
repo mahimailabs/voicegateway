@@ -107,13 +107,27 @@ voicegw_uptime_seconds 3421.5
 # HELP voicegw_providers_configured Configured providers
 # TYPE voicegw_providers_configured gauge
 voicegw_providers_configured 5
-# HELP voicegw_cost_usd_total Total cost in USD (today)
-# TYPE voicegw_cost_usd_total counter
+# HELP voicegw_cost_usd_total USD cost summed over a ROLLING trailing 24 hours (now-86400s to now). This is a gauge despite the _total suffix: it DECREASES as requests age out of the window. It is not a since-start total and not a calendar day. Do not use rate() or increase() on it.
+# TYPE voicegw_cost_usd_total gauge
 voicegw_cost_usd_total{period="today"} 12.340000
+# TYPE voicegw_requests_total gauge
 voicegw_requests_total{provider="deepgram"} 142
 ```
 
-For Grafana, point it at Prometheus and query `voicegw_cost_usd_total` or `voicegw_requests_total`.
+For Grafana, point it at Prometheus and graph `voicegw_cost_usd_total{period="today"}` or `sum(voicegw_requests_total)` directly.
+
+**They are gauges, so `rate()` and `increase()` do not apply.** Both series are sums over a rolling trailing 24 hours (`now - 86400`), not since-start totals and not a calendar day, so the value falls whenever a request ages out of the window. `rate()` and `increase()` require a monotonic counter and read every one of those decreases as a counter reset, which invents spend and traffic that never happened. The `_total` suffix and the `period="today"` label are misnomers kept so the published series names do not break; the `# TYPE` line is now `gauge`.
+
+```promql
+# Wrong
+rate(voicegw_cost_usd_total[5m])
+
+# Right
+voicegw_cost_usd_total{period="today"}             # spend in the last 24h
+delta(voicegw_cost_usd_total{period="today"}[1h])  # how that 24h figure moved
+```
+
+If you were already graphing these with `rate()` or `increase()`, replace the expression rather than the metric name: the names are unchanged. For a true monotonic total, use `GET /v1/costs?period=all`.
 
 ---
 
