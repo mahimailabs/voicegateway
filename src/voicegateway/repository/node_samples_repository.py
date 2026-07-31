@@ -1,0 +1,453 @@
+"""Async repo for the ``node_samples`` table (layer 7 scrapes, read-time diffed).
+
+Four properties this module exists to hold:
+
+* **Append, never upsert.** A sample is an observation, not an entity: two
+  scrapes of one node are two facts about two instants. There is no natural key
+  to conflict on, so unlike every other repository here this one inserts. (The
+  select-then-update rule exists for tables whose nullable unique keys make a
+  native ON CONFLICT duplicate rows; there is no such key here.)
+
+* **Counters are diffed at READ time, and a decrease yields NULL.** A
+  livekit-server or host restart zeroes every ``_total``. Diffing across that
+  boundary produces a huge negative rate, and clamping it to 0 is worse than the
+  negative: 0 renders as "this node carried no traffic" on the one chart an
+  operator reads to explain a knee. The truth is that the increment between the
+  two samples is *unknowable* -- the counter may have climbed for a while before
+  it zeroed -- and NULL is the only value that says so. See
+  :func:`counter_rates`.
+
+* **NULL is never repaired.** A column is NULL because the series was absent,
+  the scrape failed, or the release renamed the metric. Nothing here
+  interpolates, carries a value forward, or substitutes 0. A caller rendering
+  these must suppress the series and label it not measured.
+
+* **The table trims itself.** ~10 nodes at 15 s is ~57k rows/day, on the same
+  SQLite writer that absorbs webhook bursts. :func:`trim_older_than` is called
+  unconditionally by the scrape worker on every tick; the per-project retention
+  pass is the second line of defence, not the first (it is opt-in and it
+  discovers projects from ``requests``/``sessions``, which a node-only
+  deployment never populates).
+"""
+
+from __future__ import annotations
+
+import logging
+import math
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+from sqlalchemy import select, text
+
+from voicegateway.models.node_sample_model import NodeSample
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+_logger = logging.getLogger(__name__)
+
+DEFAULT_PROJECT = "default"
+
+# How many samples one read returns at most, so a caller cannot pull a week of
+# 15-second scrapes into memory by omitting a window.
+DEFAULT_READ_LIMIT = 5_000
+
+# How many rows one trim batch deletes. Matches the retention worker's default:
+# a bounded delete never holds a long write lock, which keeps the pass friendly
+# to the shared SQLite writer.
+DEFAULT_TRIM_BATCH = 500
+
+# Cumulative counters: monotonic between restarts, meaningless as an absolute,
+# read as a rate via :func:`counter_rates`.
+COUNTER_COLUMNS: frozenset[str] = frozenset(
+    {
+        "packets_total",
+        "packet_bytes_total",
+        "nacks_total",
+        "sip_invite_requests_raw_total",
+        "sip_invite_requests_total",
+        "sip_invite_accepted_total",
+        "sip_calls_terminated_total",
+        "cpu_seconds_total",
+        "cpu_idle_seconds_total",
+    }
+)
+
+# Point-in-time values: read exactly as scraped, never diffed.
+GAUGE_COLUMNS: frozenset[str] = frozenset(
+    {
+        "rooms",
+        "participants",
+        "sip_calls_active",
+        "filefd_allocated",
+        "filefd_maximum",
+        "load1",
+        "memory_available_bytes",
+        "memory_total_bytes",
+    }
+)
+
+VALUE_COLUMNS: frozenset[str] = COUNTER_COLUMNS | GAUGE_COLUMNS
+
+# Columns stored as integers. Everything else in VALUE_COLUMNS is a float.
+# Prometheus exposition is float-typed on the wire, so an integer column is
+# truncated on the way in (see :func:`_coerce`).
+_INT_COLUMNS: frozenset[str] = frozenset(
+    {
+        "rooms",
+        "participants",
+        "packets_total",
+        "packet_bytes_total",
+        "nacks_total",
+        "sip_calls_active",
+        "sip_invite_requests_raw_total",
+        "sip_invite_requests_total",
+        "sip_invite_accepted_total",
+        "sip_calls_terminated_total",
+        "filefd_allocated",
+        "filefd_maximum",
+        "memory_available_bytes",
+        "memory_total_bytes",
+    }
+)
+
+# Widest value a 64-bit column takes. ``node_filefd_maximum`` is commonly
+# 9223372036854775807, which round-trips through float64 as 9.223372036854776e18
+# and truncates to 2**63 -- one past the limit, which SQLite raises on and
+# PostgreSQL rejects. A value that does not fit is dropped (stored NULL, "not
+# measured"), never clamped: a clamped ceiling would silently become a real
+# reading of a saturation headroom chart.
+_INT64_MAX = 2**63 - 1
+_INT64_MIN = -(2**63)
+
+
+@dataclass(frozen=True)
+class NodeSampleInput:
+    """One scrape, as produced by the worker and handed to :func:`insert_samples`.
+
+    ``values`` carries only the series that were actually present; any column
+    left out stays NULL, which is what a reader must render as not measured.
+    """
+
+    node: str
+    source: str
+    at_ms: int
+    outcome: str
+    project: str = DEFAULT_PROJECT
+    series_found: int | None = None
+    values: Mapping[str, float | None] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class NodeSampleRow:
+    """One ``node_samples`` row as served to readers."""
+
+    id: int | None
+    node: str
+    source: str
+    at_ms: int
+    project: str
+    outcome: str
+    series_found: int | None
+    rooms: int | None
+    participants: int | None
+    packets_total: int | None
+    packet_bytes_total: int | None
+    nacks_total: int | None
+    sip_calls_active: int | None
+    sip_invite_requests_raw_total: int | None
+    sip_invite_requests_total: int | None
+    sip_invite_accepted_total: int | None
+    sip_calls_terminated_total: int | None
+    filefd_allocated: int | None
+    filefd_maximum: int | None
+    load1: float | None
+    cpu_seconds_total: float | None
+    cpu_idle_seconds_total: float | None
+    memory_available_bytes: int | None
+    memory_total_bytes: int | None
+
+
+@dataclass(frozen=True)
+class CounterRate:
+    """A per-second rate at ``at_ms``, or ``None`` when it is unknowable.
+
+    ``per_second is None`` for the first sample of a series (nothing to diff
+    against), for a sample whose column is NULL at either end, and -- the case
+    this type exists for -- for a counter that went BACKWARDS. None is not zero
+    and not a negative: it is "we cannot say".
+    """
+
+    at_ms: int
+    per_second: float | None
+
+
+def _row(sample: NodeSample) -> NodeSampleRow:
+    return NodeSampleRow(
+        id=sample.id,
+        node=sample.node,
+        source=sample.source,
+        at_ms=sample.at_ms,
+        project=sample.project,
+        outcome=sample.outcome,
+        series_found=sample.series_found,
+        rooms=sample.rooms,
+        participants=sample.participants,
+        packets_total=sample.packets_total,
+        packet_bytes_total=sample.packet_bytes_total,
+        nacks_total=sample.nacks_total,
+        sip_calls_active=sample.sip_calls_active,
+        sip_invite_requests_raw_total=sample.sip_invite_requests_raw_total,
+        sip_invite_requests_total=sample.sip_invite_requests_total,
+        sip_invite_accepted_total=sample.sip_invite_accepted_total,
+        sip_calls_terminated_total=sample.sip_calls_terminated_total,
+        filefd_allocated=sample.filefd_allocated,
+        filefd_maximum=sample.filefd_maximum,
+        load1=sample.load1,
+        cpu_seconds_total=sample.cpu_seconds_total,
+        cpu_idle_seconds_total=sample.cpu_idle_seconds_total,
+        memory_available_bytes=sample.memory_available_bytes,
+        memory_total_bytes=sample.memory_total_bytes,
+    )
+
+
+def _coerce(column: str, value: float | None) -> int | float | None:
+    """Storage value for one scraped series, or None to leave the column NULL.
+
+    Refuses rather than mangles: a NaN or an infinity is not a measurement, and
+    an integer outside the 64-bit range would either raise on insert (SQLite) or
+    be rejected (PostgreSQL). Both store NULL and log, because a wrong number on
+    a saturation chart is worse than an admitted gap.
+    """
+    if value is None:
+        return None
+    if not math.isfinite(value):
+        _logger.debug("node_samples.%s dropped: value %r is not finite", column, value)
+        return None
+    if column not in _INT_COLUMNS:
+        return float(value)
+    as_int = int(value)
+    if not (_INT64_MIN <= as_int <= _INT64_MAX):
+        _logger.warning(
+            "node_samples.%s dropped: %r does not fit a 64-bit column; storing "
+            "NULL rather than a clamped value that would read as a measurement",
+            column,
+            value,
+        )
+        return None
+    return as_int
+
+
+async def insert_samples(db: AsyncSession, samples: Sequence[NodeSampleInput]) -> int:
+    """Append one row per scrape; return how many were written.
+
+    One commit for the whole pass: a scrape tick is a set of observations taken
+    at one instant, and committing per target would multiply the write-lock
+    acquisitions on a SQLite file that is also absorbing webhooks.
+
+    An unknown key in ``values`` raises. It can only come from a metric map that
+    names a column the model does not have, which is a programming error that
+    would otherwise be silently dropped and show up as an always-empty chart.
+    """
+    if not samples:
+        return 0
+    for sample in samples:
+        row = NodeSample(
+            node=sample.node,
+            source=sample.source,
+            at_ms=sample.at_ms,
+            project=sample.project,
+            outcome=sample.outcome,
+            series_found=sample.series_found,
+        )
+        for column, value in sample.values.items():
+            if column not in VALUE_COLUMNS:
+                raise ValueError(
+                    f"unknown node_samples value column {column!r}; known columns "
+                    f"are {sorted(VALUE_COLUMNS)}"
+                )
+            setattr(row, column, _coerce(column, value))
+        db.add(row)
+    await db.commit()
+    return len(samples)
+
+
+async def list_samples(
+    db: AsyncSession,
+    *,
+    node: str,
+    source: str,
+    since_ms: int | None = None,
+    until_ms: int | None = None,
+    limit: int = DEFAULT_READ_LIMIT,
+) -> list[NodeSampleRow]:
+    """One node's samples from one source, OLDEST first.
+
+    Ascending, unlike every "newest first" listing elsewhere, because the caller
+    is diffing a counter and a diff is only meaningful in time order. ``id`` is
+    the stable tiebreak for two samples that share a timestamp.
+    """
+    stmt = select(NodeSample).where(
+        NodeSample.node == node,  # type: ignore[arg-type]
+        NodeSample.source == source,  # type: ignore[arg-type]
+    )
+    if since_ms is not None:
+        stmt = stmt.where(NodeSample.at_ms >= since_ms)  # type: ignore[arg-type]
+    if until_ms is not None:
+        stmt = stmt.where(NodeSample.at_ms <= until_ms)  # type: ignore[arg-type]
+    stmt = stmt.order_by(
+        NodeSample.at_ms.asc(),  # type: ignore[attr-defined]
+        NodeSample.id.asc(),  # type: ignore[union-attr]
+    ).limit(limit)
+    rows = (await db.execute(stmt)).scalars().all()
+    return [_row(sample) for sample in rows]
+
+
+def counter_rates(points: Sequence[tuple[int, float | None]]) -> list[CounterRate]:
+    """Per-second rates from ``(at_ms, cumulative_value)`` pairs, oldest first.
+
+    THE counter-reset rule, and the only place it is implemented:
+
+    * The first point has no predecessor, so its rate is None.
+    * Either end NULL (the series was absent, or the scrape failed) makes the
+      increment unknown, so None.
+    * ``current < previous`` is a RESET -- a livekit-server restart zeroes every
+      ``_total``, and so does a reboot for ``node_cpu_seconds_total``. The
+      increment across that boundary is unknowable: the counter may have climbed
+      for most of the interval before it zeroed. The rate is None. **Not 0**
+      (which renders as an idle node, i.e. a clean bill of health at exactly the
+      moment something restarted) and **not the raw negative** (which renders as
+      a spike pointing the wrong way).
+    * A non-positive time delta (duplicate timestamp, clock stepped backwards)
+      makes the division meaningless, so None.
+
+    ``current == previous`` is NOT a reset: a counter that did not move is a
+    genuine 0.0/s, and that is what is returned.
+    """
+    rates: list[CounterRate] = []
+    previous: tuple[int, float] | None = None
+    for at_ms, value in points:
+        if value is None:
+            rates.append(CounterRate(at_ms=at_ms, per_second=None))
+            # A gap breaks the chain: the next sample cannot be diffed against a
+            # value we never saw.
+            previous = None
+            continue
+        if previous is None:
+            rates.append(CounterRate(at_ms=at_ms, per_second=None))
+            previous = (at_ms, value)
+            continue
+        prev_at_ms, prev_value = previous
+        delta_seconds = (at_ms - prev_at_ms) / 1000.0
+        if value < prev_value or delta_seconds <= 0:
+            rates.append(CounterRate(at_ms=at_ms, per_second=None))
+        else:
+            rates.append(
+                CounterRate(
+                    at_ms=at_ms, per_second=(value - prev_value) / delta_seconds
+                )
+            )
+        previous = (at_ms, value)
+    return rates
+
+
+async def read_counter_rate(
+    db: AsyncSession,
+    *,
+    node: str,
+    source: str,
+    column: str,
+    since_ms: int | None = None,
+    until_ms: int | None = None,
+    limit: int = DEFAULT_READ_LIMIT,
+) -> list[CounterRate]:
+    """Read one cumulative column and diff it under the rule above.
+
+    ``column`` must name a counter. A gauge is refused rather than diffed: the
+    rate of change of ``filefd_allocated`` is not what anyone means by it, and a
+    caller that asked for one has a bug. The name is checked against
+    :data:`COUNTER_COLUMNS` before it reaches the query, so it can never be a
+    caller-supplied SQL fragment.
+    """
+    if column not in COUNTER_COLUMNS:
+        raise ValueError(
+            f"{column!r} is not a node_samples counter; counters are "
+            f"{sorted(COUNTER_COLUMNS)}. Gauges are read as stored, not diffed."
+        )
+    rows = await list_samples(
+        db,
+        node=node,
+        source=source,
+        since_ms=since_ms,
+        until_ms=until_ms,
+        limit=limit,
+    )
+    points: list[tuple[int, float | None]] = []
+    for row in rows:
+        value = getattr(row, column)
+        points.append((row.at_ms, None if value is None else float(value)))
+    return counter_rates(points)
+
+
+async def trim_older_than(
+    db: AsyncSession, *, cutoff_ms: int, limit: int = DEFAULT_TRIM_BATCH
+) -> int:
+    """Delete up to ``limit`` samples older than ``cutoff_ms``; return the count.
+
+    ONE bounded batch per call, not a drain loop, because the caller is the
+    scrape worker's tick: at steady state a tick inserts one row per target and
+    a 500-row batch clears far more than that, so the table converges without
+    any single call holding the write lock long enough to stall the shared
+    uvicorn. A backlog (retention shortened, or the worker restarted after a
+    long gap) drains over the following ticks instead of in one stop-the-world
+    delete.
+
+    ``DELETE ... WHERE id IN (SELECT ... LIMIT)`` rather than ``DELETE ...
+    LIMIT``: the latter needs a compile-time option SQLite usually ships
+    without, and does not exist in PostgreSQL at all. Same shape as the
+    retention worker's passes.
+    """
+    result = await db.execute(
+        text(
+            "DELETE FROM node_samples WHERE id IN ("
+            "  SELECT id FROM node_samples WHERE at_ms < :cutoff_ms LIMIT :limit)"
+        ),
+        {"cutoff_ms": cutoff_ms, "limit": limit},
+    )
+    # Same ignore every repository here carries: execute() is typed Result, and
+    # only the CursorResult a DELETE actually returns has rowcount.
+    removed = int(result.rowcount or 0)  # type: ignore[attr-defined]
+    await db.commit()
+    return removed
+
+
+async def count_samples(db: AsyncSession, *, node: str | None = None) -> int:
+    """How many samples are stored (optionally for one node). For tests and ops."""
+    if node is None:
+        result = await db.execute(text("SELECT COUNT(*) FROM node_samples"))
+    else:
+        result = await db.execute(
+            text("SELECT COUNT(*) FROM node_samples WHERE node = :node"),
+            {"node": node},
+        )
+    return int(result.scalar() or 0)
+
+
+__all__ = [
+    "COUNTER_COLUMNS",
+    "DEFAULT_PROJECT",
+    "DEFAULT_READ_LIMIT",
+    "DEFAULT_TRIM_BATCH",
+    "GAUGE_COLUMNS",
+    "VALUE_COLUMNS",
+    "CounterRate",
+    "NodeSampleInput",
+    "NodeSampleRow",
+    "count_samples",
+    "counter_rates",
+    "insert_samples",
+    "list_samples",
+    "read_counter_rate",
+    "trim_older_than",
+]

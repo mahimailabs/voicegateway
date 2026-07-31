@@ -3,7 +3,9 @@
 Per project, sessions older than the cutoff (by ``ended_at``) and their
 dependent rows (replay, turns, dead-air) are deleted child-first; calls and
 their legs prune on their own clock (a call can exist with no session at all);
-diagnostics runs prune on their own ISO-8601 timestamps; requests are pruned
+diagnostics runs prune on their own ISO-8601 timestamps; node samples prune on
+theirs (and are also trimmed unconditionally by the scrape worker, which is what
+actually bounds that table); requests are pruned
 independently by ``timestamp`` (a request may have no session). Deletes are hard
 and batched so a large backlog does not hold a long write lock, which keeps the
 pass friendly to both SQLite and Postgres.
@@ -68,7 +70,8 @@ class RetentionWorker:
 
     Sessions and their dependent rows (replay, turns, dead-air) prune
     by ``ended_at``; calls and their legs prune by their own epoch-millisecond
-    timestamps; diagnostics runs prune by their ISO-8601 timestamps; requests
+    timestamps; diagnostics runs prune by their ISO-8601 timestamps; node
+    samples prune by ``at_ms``; requests
     prune independently by ``timestamp``. Deletes run child-first in batches on a
     periodic loop.
     """
@@ -175,7 +178,8 @@ class RetentionWorker:
         """Hard-delete one project's aged rows; return the total row count.
 
         Children first (replay, turns, dead-air), then the session rows, then
-        calls with their legs, then diagnostics runs, then requests independently
+        calls with their legs, then diagnostics runs, then node samples, then
+        requests independently
         by timestamp. Each chunk commits so a large backlog never holds one long
         write lock.
         """
@@ -213,6 +217,7 @@ class RetentionWorker:
 
         deleted += await self._prune_calls(db, project_id, cutoff_ts)
         deleted += await self._prune_diagnostics_runs(db, project_id, cutoff_iso)
+        deleted += await self._prune_node_samples(db, project_id, cutoff_ts)
 
         # Requests prune on their own clock (a request may have no session_id).
         while True:
@@ -314,6 +319,49 @@ class RetentionWorker:
                 {
                     "project": project_id,
                     "cutoff": cutoff_iso,
+                    "limit": self._batch_size,
+                },
+            )
+            removed = _rowcount(res)
+            await db.commit()
+            deleted += removed
+            if removed == 0:
+                break
+        return deleted
+
+    async def _prune_node_samples(
+        self, db: AsyncSession, project_id: str, cutoff_ts: float
+    ) -> int:
+        """Hard-delete one project's aged node samples; return the count.
+
+        A sample has no children and no parent: layer 7 is correlated by
+        ``(node, time window)``, never by a foreign key to a call, so this
+        prunes on its own epoch-millisecond clock exactly like the calls pass.
+        Every row has an age (``at_ms`` is NOT NULL), so unlike calls there is
+        no "no timestamp, leave it alone" case.
+
+        This is the SECOND line of defence, not the first. Scraping ~10 nodes at
+        15 s is ~57k rows/day, and this pass is opt-in (``retention.enabled``)
+        and only ever sees projects discovered from ``requests``/``sessions`` --
+        which a deployment that scrapes nodes but runs no inference never
+        populates. The scrape worker therefore trims the table itself on every
+        tick; this pass exists so samples also age out on the operator's
+        configured clock, and so a project's samples go when the project's data
+        goes.
+        """
+        deleted = 0
+        cutoff_ms = int(cutoff_ts * 1000)
+        while True:
+            res = await db.execute(
+                text(
+                    "DELETE FROM node_samples WHERE id IN ("
+                    "  SELECT id FROM node_samples "
+                    "  WHERE project = :project AND at_ms < :cutoff_ms "
+                    "  LIMIT :limit)"
+                ),
+                {
+                    "project": project_id,
+                    "cutoff_ms": cutoff_ms,
                     "limit": self._batch_size,
                 },
             )
