@@ -213,6 +213,8 @@ Only the `sip.*` participant attributes are persisted and served in `attributes_
 
 Authentication follows the other dashboard reads: with no API keys configured (the self-hosted default) the endpoint is open, and once keys are configured a tenant-scoped key sees only its own calls.
 
+Tenant scoping happens in the query, not on the page after it is read, so `limit` means the same thing for a scoped key as for the operator: a key bound to one tenant asking for 50 gets its own newest 50, not whatever fraction of the newest 50 calls overall happened to belong to it. A key whose `tenant_id` is null reads the unattributed calls (`tenant_id IS NULL`), never every tenant's.
+
 **Example:**
 
 ```bash

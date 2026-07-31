@@ -412,3 +412,164 @@ async def test_answer_latency_columns_default_to_null(db: AsyncSession) -> None:
     assert row is not None
     assert row.answer_latency_ms is None
     assert row.answer_latency_source is None
+
+
+# --- the tenant predicate ---------------------------------------------------
+
+
+async def _seed_tenant_calls(
+    db: AsyncSession,
+    *,
+    tenant_id: str | None,
+    prefix: str,
+    count: int,
+    base_ms: int,
+) -> None:
+    """``count`` calls for one tenant, oldest first, 1s apart."""
+    for i in range(count):
+        await repo.upsert_call(
+            db,
+            origin="webhook",
+            room_sid=f"{prefix}{i}",
+            tenant_id=tenant_id,
+            started_at_ms=base_ms + i * 1000,
+        )
+
+
+async def test_a_tenant_scoped_read_returns_a_full_page(db: AsyncSession) -> None:
+    """THE regression. Filtering after a bounded read makes ``limit`` a bound on
+    rows scanned, not rows returned: every one of the six newest calls belongs to
+    beta, so a caller-side filter hands acme an empty page while six acme calls
+    sit one row past the boundary. In SQL the page is acme's own six."""
+    await _seed_tenant_calls(
+        db, tenant_id="acme", prefix="RM_acme", count=6, base_ms=1_750_000_000_000
+    )
+    await _seed_tenant_calls(
+        db, tenant_id="beta", prefix="RM_beta", count=6, base_ms=1_750_000_100_000
+    )
+
+    rows = await repo.list_calls(db, limit=6, tenant="acme")
+
+    assert len(rows) == 6
+    assert {r.tenant_id for r in rows} == {"acme"}
+    # Newest first, inside the scope.
+    assert [r.room_sid for r in rows] == [f"RM_acme{i}" for i in reversed(range(6))]
+
+
+async def test_a_tenant_scope_beyond_the_page_still_honours_limit(
+    db: AsyncSession,
+) -> None:
+    """The scoped page is bounded by ``limit`` as well as filled by it: a tenant
+    with more rows than the page size gets its newest ``limit``, not all of them."""
+    await _seed_tenant_calls(
+        db, tenant_id="acme", prefix="RM_many", count=8, base_ms=1_750_000_000_000
+    )
+
+    rows = await repo.list_calls(db, limit=3, tenant="acme")
+
+    assert [r.room_sid for r in rows] == ["RM_many7", "RM_many6", "RM_many5"]
+
+
+async def test_no_tenant_is_every_tenant(db: AsyncSession) -> None:
+    """``tenant=None`` is the operator: rows of every tenant, including the
+    unattributed ones, and the unscoped ordering and limit are untouched."""
+    await _seed_tenant_calls(
+        db, tenant_id="acme", prefix="RM_ops_a", count=4, base_ms=1_750_000_000_000
+    )
+    await _seed_tenant_calls(
+        db, tenant_id="beta", prefix="RM_ops_b", count=4, base_ms=1_750_000_100_000
+    )
+    await repo.upsert_call(
+        db, origin="webhook", room_sid="RM_ops_none", started_at_ms=1_750_000_200_000
+    )
+
+    everything = await repo.list_calls(db, limit=100)
+    assert len(everything) == 9
+    assert {r.tenant_id for r in everything} == {"acme", "beta", None}
+
+    # Unscoped, `limit` still cuts by recency and nothing else.
+    newest = await repo.list_calls(db, limit=3)
+    assert [r.room_sid for r in newest] == ["RM_ops_none", "RM_ops_b3", "RM_ops_b2"]
+
+
+async def test_empty_tenant_is_the_unattributed_bucket(db: AsyncSession) -> None:
+    """``tenant=""`` means ``tenant_id IS NULL`` (the sibling convention in
+    ``session_repository.list_sessions``), and a NULL row belongs to nobody
+    else: a named tenant's scope must not pick it up on either engine."""
+    await repo.upsert_call(
+        db, origin="webhook", room_sid="RM_null1", started_at_ms=1_750_000_000_000
+    )
+    await repo.upsert_call(
+        db, origin="webhook", room_sid="RM_null2", started_at_ms=1_750_000_001_000
+    )
+    await repo.upsert_call(
+        db,
+        origin="webhook",
+        room_sid="RM_named",
+        tenant_id="acme",
+        started_at_ms=1_750_000_002_000,
+    )
+
+    unattributed = await repo.list_calls(db, tenant="")
+    assert [r.room_sid for r in unattributed] == ["RM_null2", "RM_null1"]
+    assert all(r.tenant_id is None for r in unattributed)
+
+    named = await repo.list_calls(db, tenant="acme")
+    assert [r.room_sid for r in named] == ["RM_named"]
+
+
+async def test_a_tenant_scope_keeps_the_start_less_row_last(db: AsyncSession) -> None:
+    """The dialect-neutral NULL sort key survives the predicate: a scoped page
+    still puts an INVITE that never produced a room last, not first."""
+    await repo.upsert_call(
+        db,
+        origin="webhook",
+        room_sid="RM_scoped_old",
+        tenant_id="acme",
+        started_at_ms=1000,
+    )
+    await repo.upsert_call(
+        db,
+        origin="webhook",
+        room_sid="RM_scoped_new",
+        tenant_id="acme",
+        started_at_ms=9000,
+    )
+    await repo.upsert_call(
+        db, origin="loadgen", attempt_id="att-scoped-503", tenant_id="acme"
+    )
+
+    rows = await repo.list_calls(db, tenant="acme")
+
+    assert [r.room_sid for r in rows] == ["RM_scoped_new", "RM_scoped_old", None]
+
+
+async def test_the_tenant_predicate_composes_with_the_other_filters(
+    db: AsyncSession,
+) -> None:
+    """Tenant narrows alongside project / run_id / is_probe rather than
+    replacing them, so load traffic stays excluded inside a scope."""
+    await repo.upsert_call(
+        db, origin="webhook", room_sid="RM_mix_real", tenant_id="acme", project="p1"
+    )
+    await repo.upsert_call(
+        db,
+        origin="loadgen",
+        room_sid="RM_mix_probe",
+        tenant_id="acme",
+        project="p1",
+        is_probe=True,
+    )
+    await repo.upsert_call(
+        db, origin="webhook", room_sid="RM_mix_other", tenant_id="acme", project="p2"
+    )
+
+    scoped = await repo.list_calls(db, tenant="acme", project="p1")
+    assert [r.room_sid for r in scoped] == ["RM_mix_real"]
+
+    with_probes = await repo.list_calls(db, tenant="acme", is_probe=None)
+    assert {r.room_sid for r in with_probes} == {
+        "RM_mix_real",
+        "RM_mix_probe",
+        "RM_mix_other",
+    }
