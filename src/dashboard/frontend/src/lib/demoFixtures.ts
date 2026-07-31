@@ -1099,41 +1099,256 @@ const DIAG_CREDS: DiagnosticsCreds = {
   url: 'wss://demo-voicegw.livekit.cloud',
 };
 
+// Runs are shaped exactly as livekit_diag.service.RealProbes returns them, check
+// by check: `agents` carries the in-room rows plus the heartbeat roster, `sfu` /
+// `sfu_load` carry the baseline, the ramp, the knee, the budget the knee was
+// computed against and the prober's own resource sample, and `latency` carries
+// per-agent stats (seconds) plus the split read back from the agent's own rows.
+//
+// Three deliberate properties, so the demo shows the honest cases and not just
+// the happy one:
+//   - The newest run's verdict is PASS while one probed agent answered nothing.
+//     That is what today's `_verdict` really does (it only compares averages
+//     against target_ms), and the Errors tab is what surfaces the no-reply.
+//   - The two older runs each carry one real failure string, so the error-class
+//     bars have something to group: a per-check timeout and a dispatch that found
+//     no worker.
+//   - The oldest run has `roster: []` (a configured collector reporting nothing)
+//     against the newest run's populated roster: two different answers that must
+//     never collapse into "0 workers".
 const DIAG_RUNS: DiagnosticRun[] = [
   {
-    run_id: 'diag_run_002',
+    run_id: 'diag_run_003',
     status: 'done',
-    checks: ['agents', 'sfu'],
-    config: {},
+    checks: ['agents', 'latency', 'sfu', 'sfu_load'],
+    config: { target_ms: 1500, ramp: [2, 10, 25], duration: 10, trials: 3 },
     results: {
       checks: {
-        agents: { ok: true, result: { rooms: 2, agents: 3 } },
-        sfu: { ok: true, result: { region: 'us-east-1', rtt_ms: 24 } },
+        agents: {
+          ok: true,
+          result: {
+            agents: [
+              {
+                agent_name: 'support-voice',
+                room: 'support-call-7f21',
+                identity: 'agent-support-01',
+                state: 'active',
+                humans: 1,
+                age_s: 132,
+              },
+              {
+                agent_name: 'reception',
+                room: 'reception-inbound-a903',
+                identity: 'agent-reception-02',
+                state: 'active',
+                humans: 1,
+                age_s: 54,
+              },
+              {
+                // Assigned by LiveKit but not joined: a dispatch nobody took yet.
+                agent_name: 'reception',
+                room: 'reception-inbound-a903',
+                identity: null,
+                state: 'dispatched',
+                humans: 1,
+                age_s: null,
+              },
+            ],
+            roster: [
+              {
+                agent_id: 'support-voice',
+                agent_name: 'support-voice',
+                status: 'busy',
+                region: 'us-east-1',
+                host: 'worker-01',
+                version: '0.20.1',
+                active_sessions: 2,
+                last_seen: BASE_EPOCH - 45,
+              },
+              {
+                agent_id: 'reception',
+                agent_name: 'reception',
+                status: 'busy',
+                region: 'us-east-1',
+                host: 'worker-02',
+                version: '0.20.1',
+                active_sessions: 1,
+                last_seen: BASE_EPOCH - 12,
+              },
+              {
+                // Idle: registered and heartbeating, in no room, so LiveKit's
+                // server API cannot see it at all. This row is the whole point.
+                agent_id: 'outbound-sales',
+                agent_name: 'outbound-sales',
+                status: 'idle',
+                region: 'us-west-2',
+                host: 'worker-03',
+                version: '0.20.0',
+                active_sessions: 0,
+                last_seen: BASE_EPOCH - 22 * MIN,
+              },
+              {
+                agent_id: 'nightly-batch',
+                agent_name: 'nightly-batch',
+                status: 'offline',
+                region: 'us-west-2',
+                host: 'worker-04',
+                version: '0.20.0',
+                active_sessions: 0,
+                last_seen: BASE_EPOCH - 9 * HOUR,
+              },
+            ],
+          },
+        },
+        sfu: {
+          ok: true,
+          result: {
+            baseline: { rtt_ms: 18.4, loss_pct: 0.0, quality: 'Excellent' },
+            ramp: [],
+            knee: null,
+            target_rtt_ms: 50.0,
+            resource: null, // nothing is sampled without a ramp
+          },
+        },
+        sfu_load: {
+          ok: true,
+          result: {
+            baseline: { rtt_ms: 19.1, loss_pct: 0.0, quality: 'Excellent' },
+            ramp: [
+              { clients: 2, rtt_ms: 14.6, loss_pct: 0.0, quality: 'Excellent' },
+              { clients: 10, rtt_ms: 31.2, loss_pct: 0.0, quality: 'Good' },
+              { clients: 25, rtt_ms: 68.9, loss_pct: 0.0, quality: 'Poor' },
+            ],
+            // 25 clients broke the 50 ms budget, so the last healthy tier is 10.
+            knee: 10,
+            target_rtt_ms: 50.0,
+            resource: {
+              cpu_peak: 71.4,
+              mem_peak_mb: 842.6,
+              net_kbps_up: 4180.5,
+              saturated: false,
+              per_client: { cpu_pct: 2.856, kbps_up: 167.2 },
+              sustainable_n: 29,
+            },
+          },
+        },
+        latency: {
+          ok: true,
+          result: {
+            agents: [
+              {
+                // Times are SECONDS. p95 is present on the wire and deliberately
+                // not rendered: 3 trials cannot support a percentile.
+                agent: 'support-voice',
+                stats: {
+                  avg: 0.912,
+                  p50: 0.884,
+                  p95: 1.043,
+                  min: 0.83,
+                  max: 1.043,
+                  trials: 3,
+                },
+                components: {
+                  eou: 0.412,
+                  stt: 0.168,
+                  stt_ttfp: 0.168,
+                  stt_transcription_delay: 0.334,
+                  llm_ttft: 0.402,
+                  tts: 0.214,
+                },
+              },
+              {
+                // Answered nothing: every number is 0 with trials 0, which the UI
+                // must render as "not measured", never as an instant reply.
+                agent: 'reception',
+                stats: { avg: 0, p50: 0, p95: 0, min: 0, max: 0, trials: 0 },
+                components: null,
+              },
+            ],
+          },
+        },
       },
       verdict: 'PASS',
     },
     verdict: 'PASS',
     error: null,
+    created_at: iso(BASE_EPOCH - 12 * MIN),
+    started_at: iso(BASE_EPOCH - 12 * MIN),
+    ended_at: iso(BASE_EPOCH - 12 * MIN + 96),
+  },
+  {
+    run_id: 'diag_run_002',
+    status: 'done',
+    checks: ['agents', 'sfu_load'],
+    config: { target_ms: 1500, ramp: [2, 10, 25], duration: 10, trials: 2 },
+    results: {
+      checks: {
+        agents: {
+          ok: true,
+          result: {
+            agents: [
+              {
+                agent_name: 'support-voice',
+                room: 'support-call-1c04',
+                identity: 'agent-support-01',
+                state: 'active',
+                humans: 1,
+                age_s: 61,
+              },
+            ],
+            roster: [
+              {
+                agent_id: 'support-voice',
+                agent_name: 'support-voice',
+                status: 'busy',
+                region: 'us-east-1',
+                host: 'worker-01',
+                version: '0.20.1',
+                active_sessions: 1,
+                last_seen: BASE_EPOCH - 90 * MIN,
+              },
+            ],
+          },
+        },
+        // The per-check timeout string, verbatim from service.execute_run.
+        sfu_load: { ok: false, error: 'check timed out' },
+      },
+      verdict: 'FAIL',
+    },
+    verdict: 'FAIL',
+    error: null,
     created_at: iso(BASE_EPOCH - 90 * MIN),
     started_at: iso(BASE_EPOCH - 90 * MIN),
-    ended_at: iso(BASE_EPOCH - 90 * MIN + 6),
+    ended_at: iso(BASE_EPOCH - 90 * MIN + 128),
   },
   {
     run_id: 'diag_run_001',
     status: 'done',
-    checks: ['agents'],
-    config: {},
+    checks: ['agents', 'latency'],
+    config: { target_ms: 1500, ramp: [2, 10, 25], duration: 10, trials: 1 },
     results: {
       checks: {
-        agents: { ok: true, result: { rooms: 1, agents: 1 } },
+        agents: {
+          ok: true,
+          result: {
+            agents: [],
+            // Configured collector, nothing reported: NOT the same as null.
+            roster: [],
+          },
+        },
+        latency: {
+          ok: false,
+          error:
+            "dispatched to 'outbound-sales' but no worker joined within 8s: that name is how the worker registered (register_worker / @server.rtc_session agent_name); check a worker with that name is running",
+        },
       },
-      verdict: 'PASS',
+      verdict: 'FAIL',
     },
-    verdict: 'PASS',
+    verdict: 'FAIL',
     error: null,
     created_at: iso(BASE_EPOCH - 1 * DAY),
     started_at: iso(BASE_EPOCH - 1 * DAY),
-    ended_at: iso(BASE_EPOCH - 1 * DAY + 3),
+    ended_at: iso(BASE_EPOCH - 1 * DAY + 19),
   },
 ];
 

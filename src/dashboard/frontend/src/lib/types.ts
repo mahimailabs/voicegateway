@@ -418,11 +418,186 @@ export interface DiagnosticsCreds {
   url: string | null;
 }
 
-/** Per-check result inside a DiagnosticRun's results map. */
-export interface DiagnosticCheckResult {
+/** The checks a run can request. Also the key each result is filed under. */
+export type DiagCheckName = 'agents' | 'sfu' | 'sfu_load' | 'latency';
+
+/**
+ * One agent seen inside a live room (`livekit_diag.admin.AgentRow`).
+ *
+ * This is the IN-ROOM population only: LiveKit's server API reports a worker
+ * only once it has joined a room, so an idle registered worker never appears
+ * here. `DiagAgentsResult.roster` is the other half.
+ */
+export interface DiagAgentRow {
+  agent_name: string;
+  room: string;
+  identity: string | null;
+  /** 'active' (joined the room) or 'dispatched' (assigned, has not joined yet). */
+  state: string;
+  /** Non-agent participants in the same room. */
+  humans: number;
+  /** Seconds since the agent joined; null when the server reported no join time. */
+  age_s: number | null;
+}
+
+/**
+ * One registered worker from the collector's heartbeat roster.
+ *
+ * Every field is optional because this JSON is produced by whatever collector
+ * the operator pointed at (`VOICEGW_COLLECTOR_URL`), not by this build, so the
+ * UI must tolerate a missing key rather than render `undefined`.
+ */
+export interface DiagRosterWorker {
+  agent_id?: string | null;
+  agent_name?: string | null;
+  /** idle | busy | offline, as reported by the worker's own heartbeat. */
+  status?: string | null;
+  region?: string | null;
+  host?: string | null;
+  version?: string | null;
+  active_sessions?: number | null;
+  /** Epoch seconds of the last heartbeat. */
+  last_seen?: number | null;
+}
+
+/** `agents` check result. */
+export interface DiagAgentsResult {
+  agents: DiagAgentRow[];
+  /**
+   * The heartbeat roster, or null when NO collector is configured.
+   *
+   * The distinction is load-bearing: `null` means nobody was asked (so the UI
+   * says how to enable it), `[]` means the collector was asked and reported no
+   * workers (or could not be reached). Collapsing the two would render "not
+   * configured" as "you have zero workers".
+   */
+  roster: DiagRosterWorker[] | null;
+}
+
+/** The SFU baseline: 2 synthetic clients talking through the SFU. */
+export interface DiagSfuBaseline {
+  /** Data-channel round trip through the SFU, in ms (no clock sync needed). */
+  rtt_ms: number;
+  /**
+   * NOT A MEASUREMENT. `sfu.py` hardcodes 0.0 because the SDK does not expose
+   * per-connection loss here. Never render it as a number and never build a
+   * series on it: a flat 0% loss line reads as a clean bill of health nobody
+   * measured. `quality` is the coarse signal that is real.
+   */
+  loss_pct: number;
+  /** Connection quality from the SDK: Excellent | Good | Poor | Lost | Unknown. */
+  quality: string;
+}
+
+/** One ramp tier: `clients` synthetic clients in one room for the step duration. */
+export interface DiagSfuStep extends DiagSfuBaseline {
+  clients: number;
+}
+
+/**
+ * The PROBER host's own load during the ramp (not the SFU's).
+ *
+ * Null fields mean "not sampled", never "idle": the backend maps
+ * `ResourceReport`'s 0.0 defaults to null so an unsampled CPU cannot render as a
+ * host with infinite headroom. `saturated` is null for the same reason - with no
+ * CPU sample, saturation is unknown, not false.
+ */
+export interface DiagResourceReport {
+  cpu_peak: number | null;
+  mem_peak_mb: number | null;
+  net_kbps_up: number | null;
+  saturated: boolean | null;
+  per_client: { cpu_pct: number | null; kbps_up: number | null };
+  /** Clients this host could sustain before it is CPU-bound; null when unknown. */
+  sustainable_n: number | null;
+}
+
+/** `sfu` and `sfu_load` check result (the ramp is empty for the plain `sfu` check). */
+export interface DiagSfuResult {
+  baseline: DiagSfuBaseline;
+  ramp: DiagSfuStep[];
+  /**
+   * The last healthy client count before the first tier that broke the budget.
+   *
+   * **Null is ambiguous on its own**: `find_knee` returns null both when nothing
+   * breached AND when the FIRST tier breached. Compare `ramp` against
+   * `target_rtt_ms` to tell a clean ramp from a total failure.
+   */
+  knee: number | null;
+  /** The rtt budget the knee was computed against, in ms. */
+  target_rtt_ms: number;
+  /** Null when the run did not include the load check (no ramp, nothing sampled). */
+  resource: DiagResourceReport | null;
+}
+
+/**
+ * Per-leg split for one probed agent, in SECONDS, read back from the rows the
+ * agent itself wrote for the probe room. A leg the run did not produce (or that
+ * this host never saw) is absent - never zero.
+ */
+export interface DiagComponentSplit {
+  eou?: number;
+  stt?: number;
+  stt_ttfp?: number;
+  stt_transcription_delay?: number;
+  llm_ttft?: number;
+  tts?: number;
+}
+
+/**
+ * End-to-end reply timings for one agent, in SECONDS.
+ *
+ * `p50`/`p95` come from `livekit_diag.latency.summarize` over at most
+ * `MAX_LATENCY_TRIALS = 3` samples. Three samples cannot support a percentile,
+ * so the UI must render `max` labelled "max of N" - never "p95".
+ */
+export interface DiagLatencyStats {
+  avg: number;
+  p50: number;
+  p95: number;
+  min: number;
+  max: number;
+  /** Successful trials. 0 means nothing was measured for this agent. */
+  trials: number;
+}
+
+export interface DiagLatencyAgent {
+  agent: string;
+  stats: DiagLatencyStats;
+  /** Null when the agent does not write telemetry to this host. */
+  components: DiagComponentSplit | null;
+}
+
+/** `latency` check result. */
+export interface DiagLatencyResult {
+  agents: DiagLatencyAgent[];
+}
+
+/** Any check's payload, for code that only reads `ok` / `error`. */
+export type DiagCheckPayload = DiagAgentsResult | DiagSfuResult | DiagLatencyResult;
+
+/**
+ * Per-check result inside a DiagnosticRun's results map.
+ *
+ * `result` is present only when `ok`; a failed check carries `error` instead.
+ */
+export interface DiagnosticCheckResult<R = DiagCheckPayload> {
   ok: boolean;
-  result?: unknown;
+  result?: R;
   error?: string;
+}
+
+/** The per-check map, keyed by check name: only requested checks are present. */
+export interface DiagnosticRunChecks {
+  agents?: DiagnosticCheckResult<DiagAgentsResult>;
+  sfu?: DiagnosticCheckResult<DiagSfuResult>;
+  sfu_load?: DiagnosticCheckResult<DiagSfuResult>;
+  latency?: DiagnosticCheckResult<DiagLatencyResult>;
+}
+
+export interface DiagnosticRunResults {
+  checks: DiagnosticRunChecks;
+  verdict: string;
 }
 
 /** One diagnostic run record from the backend. */
@@ -431,7 +606,7 @@ export interface DiagnosticRun {
   status: 'queued' | 'running' | 'done' | 'failed';
   checks: string[];
   config: Record<string, unknown>;
-  results: { checks: Record<string, DiagnosticCheckResult>; verdict: string } | null;
+  results: DiagnosticRunResults | null;
   verdict: string | null;
   error: string | null;
   created_at: string | null;
