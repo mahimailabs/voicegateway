@@ -1,5 +1,12 @@
+import contextlib
+import logging
+from collections.abc import Iterator
 from typing import Any
 
+from voicegateway.livekit_diag.client import (
+    SyntheticClient,
+    quiet_livekit_teardown_noise,
+)
 from voicegateway.livekit_diag.sfu import (
     MEAN_OF_N,
     NOT_MEASURED,
@@ -189,3 +196,123 @@ async def test_ramp_tiers_are_not_dominated_by_setup_cost():
     assert rtts[0] < unwarmed_smallest_tier / 2
     # Every client of every tier was warmed exactly once and measured once.
     assert {c.pings for c in made} == {2}
+
+
+# --- teardown log noise -----------------------------------------------------
+#
+# A probe run tears down ~40 synthetic clients, and the rtc SDK reports each
+# shutdown through logging.getLogger("livekit") at ERROR. Those lines make a
+# healthy run look broken. They are demoted to DEBUG, and only while a teardown
+# is in flight; see client.quiet_livekit_teardown_noise.
+
+
+class _CapturingHandler(logging.Handler):
+    """Records what a handler at a given level would actually emit."""
+
+    def __init__(self, level: int) -> None:
+        super().__init__(level=level)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+@contextlib.contextmanager
+def _capture(level: int) -> Iterator[_CapturingHandler]:
+    handler = _CapturingHandler(level)
+    root = logging.getLogger()
+    previous = root.level
+    root.addHandler(handler)
+    root.setLevel(logging.DEBUG)  # let the record reach the handler's own level
+    try:
+        yield handler
+    finally:
+        root.removeHandler(handler)
+        root.setLevel(previous)
+
+
+def test_teardown_noise_is_demoted_not_shown_at_error():
+    sdk = logging.getLogger("livekit")
+    with _capture(logging.WARNING) as handler:
+        with quiet_livekit_teardown_noise():
+            sdk.error("livekit::room:412:rtc_engine - failed to close data channel")
+
+    # A default (WARNING) handler sees nothing: the run stops looking broken.
+    assert handler.records == []
+
+
+def test_demoted_teardown_noise_is_still_visible_at_debug():
+    sdk = logging.getLogger("livekit")
+    with _capture(logging.DEBUG) as handler:
+        with quiet_livekit_teardown_noise():
+            sdk.error("livekit::room:412:rtc_engine - failed to close data channel")
+
+    # Demoted, never discarded, and it still says what it was demoted from.
+    assert [r.getMessage() for r in handler.records] == [
+        "livekit::room:412:rtc_engine - failed to close data channel"
+    ]
+    assert handler.records[0].levelno == logging.DEBUG
+    assert handler.records[0].__dict__["vg_demoted_from"] == "ERROR"
+
+
+def test_livekit_error_outside_teardown_is_still_an_error():
+    """The suppression is a window, not a mute. This is the whole safety margin:
+    a genuine connect/ping/measurement failure is what the probe exists to show.
+    """
+    sdk = logging.getLogger("livekit")
+    with _capture(logging.ERROR) as handler:
+        with quiet_livekit_teardown_noise():
+            pass  # window opened and closed
+        sdk.error("livekit::rtc_engine:88:signal_client - connection refused")
+
+    assert [r.levelno for r in handler.records] == [logging.ERROR]
+    assert "connection refused" in handler.records[0].getMessage()
+
+
+def test_child_logger_errors_are_untouched_during_teardown():
+    """An embedded agent logs to ``livekit.agents``. A filter on a logger only
+    sees records logged through that exact logger, so the child never passes
+    through this one even while the window is open.
+    """
+    agent_log = logging.getLogger("livekit.agents")
+    with _capture(logging.ERROR) as handler:
+        with quiet_livekit_teardown_noise():
+            agent_log.error("agent failed to start")
+
+    assert [r.levelno for r in handler.records] == [logging.ERROR]
+
+
+def test_non_error_levels_are_left_alone_during_teardown():
+    sdk = logging.getLogger("livekit")
+    with _capture(logging.WARNING) as handler:
+        with quiet_livekit_teardown_noise():
+            sdk.warning("livekit::room:412 - reconnecting")
+            sdk.critical("livekit::ffi:1 - unrecoverable")
+
+    assert [r.levelno for r in handler.records] == [logging.WARNING, logging.CRITICAL]
+
+
+async def test_disconnect_opens_the_quiet_window():
+    """Pins the wiring, not just the filter: it is ``SyntheticClient.disconnect``
+    that opens the window, so the SDK's teardown ERROR lands inside it.
+    """
+
+    class _NoisyRoom:
+        def __init__(self) -> None:
+            self.disconnected = False
+
+        async def disconnect(self) -> None:
+            logging.getLogger("livekit").error(
+                "livekit::room:412:rtc_engine - peer connection closed"
+            )
+            self.disconnected = True
+
+    client = SyntheticClient.__new__(SyntheticClient)
+    client._silence_task = None
+    client._room = _NoisyRoom()  # type: ignore[assignment]
+
+    with _capture(logging.WARNING) as handler:
+        await client.disconnect()
+
+    assert client._room.disconnected  # type: ignore[attr-defined]
+    assert handler.records == []
