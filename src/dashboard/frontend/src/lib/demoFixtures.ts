@@ -1108,7 +1108,7 @@ const DIAG_CREDS: DiagnosticsCreds = {
 // computed against and the prober's own resource sample, and `latency` carries
 // per-agent stats (seconds) plus the split read back from the agent's own rows.
 //
-// Three deliberate properties, so the demo shows the honest cases and not just
+// Four deliberate properties, so the demo shows the honest cases and not just
 // the happy one:
 //   - The newest run's verdict is PASS while one probed agent answered nothing.
 //     That is what today's `_verdict` really does (it only compares averages
@@ -1119,6 +1119,10 @@ const DIAG_CREDS: DiagnosticsCreds = {
 //   - The oldest run has `roster: []` (a configured collector reporting nothing)
 //     against the newest run's populated roster: two different answers that must
 //     never collapse into "0 workers".
+//   - The newest run's latency check carries BOTH no-reply states: `reception`
+//     answered nothing and the probe recorded why, `checkout-voice` answered
+//     nothing and it recorded no reason at all. They must never render the same,
+//     and an errorless absence must never render as an empty explanation.
 const DIAG_RUNS: DiagnosticRun[] = [
   {
     run_id: 'diag_run_003',
@@ -1155,6 +1159,17 @@ const DIAG_RUNS: DiagnosticRun[] = [
                 state: 'dispatched',
                 humans: 1,
                 age_s: null,
+              },
+              {
+                // In a room, and absent from the heartbeat roster below: an agent
+                // that is not running register_worker is still visible here. It is
+                // the third agent the latency check probes.
+                agent_name: 'checkout-voice',
+                room: 'checkout-8d47',
+                identity: 'agent-checkout-03',
+                state: 'active',
+                humans: 1,
+                age_s: 41,
               },
             ],
             roster: [
@@ -1259,13 +1274,29 @@ const DIAG_RUNS: DiagnosticRun[] = [
                   llm_ttft: 0.402,
                   tts: 0.214,
                 },
+                // The probe completed, so there is nothing to explain.
+                error: null,
               },
               {
                 // Answered nothing: every number is 0 with trials 0, which the UI
-                // must render as "not measured", never as an instant reply.
+                // must render as "not measured", never as an instant reply. The
+                // probe DID record why, verbatim from ProbeRunner._await_agent,
+                // so the UI has a cause to print instead of a bare "no reply".
                 agent: 'reception',
                 stats: { avg: 0, p50: 0, p95: 0, min: 0, max: 0, trials: 0 },
                 components: null,
+                error:
+                  "dispatched to 'reception' but no worker joined within 8s: that name is how the worker registered (register_worker / @server.rtc_session agent_name); check a worker with that name is running",
+              },
+              {
+                // Answered nothing and NOTHING said why: the worker joined the
+                // probe room and never replied, so no exception was raised and
+                // `LatencyResult.error` stayed None. This must read as an absence,
+                // never as an empty reason, and it is the other half of the pair.
+                agent: 'checkout-voice',
+                stats: { avg: 0, p50: 0, p95: 0, min: 0, max: 0, trials: 0 },
+                components: null,
+                error: null,
               },
             ],
           },

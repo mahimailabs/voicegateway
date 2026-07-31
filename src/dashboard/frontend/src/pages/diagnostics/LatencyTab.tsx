@@ -10,7 +10,14 @@
 // to THIS host: it is read back out of the rows the agent itself wrote for the
 // probe room. An agent reporting to a remote collector says so, rather than
 // showing zeros.
+//
+// An agent that answered nothing has two distinct states, and this tab keeps them
+// apart: the probe recorded a reason (a dispatch that reached no worker, a
+// connect that failed), or it recorded none and the caller simply got no reply.
+// The first is printed verbatim; the second says so. An empty reason is never
+// shown as an explanation.
 
+import type { CSSProperties } from 'react';
 import LatencyWaterfall from '../../components/LatencyWaterfall';
 import type {
   DiagLatencyAgent,
@@ -26,6 +33,45 @@ const MIN_SAMPLES_FOR_PERCENTILE = 10;
 function toMs(seconds: number | undefined): number | null {
   return seconds == null ? null : seconds * 1000;
 }
+
+/**
+ * The reason the probe recorded for this agent, or null when it recorded none.
+ *
+ * Absent, null, and blank all collapse to null on purpose. "No reply and nobody
+ * said why" is a real state and must read as an absence; a whitespace-only
+ * string rendered as an explanation would claim a cause that is not there.
+ *
+ * Exported because the Errors tab groups the same failure and must read the
+ * field the same way: one definition, so the two surfaces cannot drift.
+ */
+export function probeReason(agent: DiagLatencyAgent): string | null {
+  const reason = agent.error?.trim();
+  return reason ? reason : null;
+}
+
+/**
+ * Remote text, so it is rendered as text and boxed.
+ *
+ * `overflowWrap: anywhere` is load-bearing: a provider message can be one long
+ * unbroken token (a URL, a base64 body) which would otherwise push the card
+ * wider than the page. The height cap keeps an unbounded message from pushing
+ * everything below it off-screen; it scrolls instead of truncating, because
+ * cutting an error string loses the part an operator needs.
+ */
+const REASON_BOX: CSSProperties = {
+  fontSize: 12,
+  lineHeight: 1.5,
+  color: 'var(--vg-ink)',
+  background: 'var(--vg-red-tint)',
+  border: '1px solid var(--vg-red)',
+  borderRadius: 'var(--vg-radius-xs)',
+  padding: '8px 10px',
+  whiteSpace: 'pre-wrap',
+  overflowWrap: 'anywhere',
+  wordBreak: 'break-word',
+  maxHeight: 160,
+  overflowY: 'auto',
+};
 
 export default function LatencyTab({
   check,
@@ -61,6 +107,7 @@ export default function LatencyTab({
 function AgentCard({ agent }: { agent: DiagLatencyAgent }) {
   const { stats, components } = agent;
   const measured = stats.trials > 0;
+  const reason = probeReason(agent);
   const split = {
     stt: toMs(components?.stt),
     llm: toMs(components?.llm_ttft),
@@ -82,10 +129,33 @@ function AgentCard({ agent }: { agent: DiagLatencyAgent }) {
       }
     >
       {!measured ? (
-        <Note tone="bad">
-          Nothing was measured for this agent: no trial produced a reply. The end-to-end time is
-          reported as {NOT_MEASURED} rather than as a zero, which would read as an instant answer.
-        </Note>
+        <>
+          <Note tone="bad">
+            Nothing was measured for this agent: no trial produced a reply. The end-to-end time is
+            reported as {NOT_MEASURED} rather than as a zero, which would read as an instant answer.
+          </Note>
+          <div style={{ marginTop: 12 }}>
+            {reason === null ? (
+              // No reason recorded is its own state, not a blank one: say so in
+              // the same words the CLI uses when it has nothing to print either.
+              <Note>
+                The probe recorded no reason for it, so this is a bare “no reply”: the synthetic
+                caller heard nothing back and nothing said why. The cause is {NOT_MEASURED}, not
+                empty.
+              </Note>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, color: 'var(--vg-muted)', marginBottom: 5 }}>
+                  Reason the probe recorded, verbatim
+                </div>
+                {/* Plain text child: React escapes it, and it is never markup. */}
+                <div className="mono" style={REASON_BOX}>
+                  {reason}
+                </div>
+              </>
+            )}
+          </div>
+        </>
       ) : (
         <>
           <div className="flex-row" style={{ gap: 28, flexWrap: 'wrap', alignItems: 'flex-end' }}>

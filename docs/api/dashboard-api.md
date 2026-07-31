@@ -376,6 +376,42 @@ curl http://localhost:8080/api/projects
 
 The dashboard also serves the React frontend's built assets. If the frontend has been built (`src/dashboard/frontend/dist/` exists), the daemon serves:
 
+## GET /api/diagnostics/runs/{run_id}
+
+Return one recorded diagnostics run: its status, verdict, gates, and one entry per check that ran. Requires the `admin` scope, like every other diagnostics endpoint, because a run can place billed calls.
+
+Only the `latency` check's per-agent entry is specified here; every check is exported in full by the report endpoints below.
+
+**`latency` check result:**
+
+```json
+{
+  "ok": true,
+  "result": {
+    "agents": [
+      {
+        "agent": "support-voice",
+        "stats": { "avg": 0.91, "p50": 0.88, "p95": 1.04, "min": 0.83, "max": 1.04, "trials": 3 },
+        "components": { "eou": 0.41, "stt": 0.17, "llm_ttft": 0.4, "tts": 0.21 },
+        "error": null
+      },
+      {
+        "agent": "reception",
+        "stats": { "avg": 0, "p50": 0, "p95": 0, "min": 0, "max": 0, "trials": 0 },
+        "components": null,
+        "error": "dispatched to 'reception' but no worker joined within 8s: that name is how the worker registered (register_worker / @server.rtc_session agent_name); check a worker with that name is running"
+      }
+    ]
+  }
+}
+```
+
+All probe times are **seconds**. `trials` counts the trials that **answered**, so `0` means nothing was measured for that agent and every statistic beside it is `summarize`'s fabricated zero: render it as not measured, never as an instant reply.
+
+`error` is the reason the probe recorded for an agent that answered nothing, verbatim: a dispatch that reached no worker, a connection that failed, a client that raised. `null` means no reason was recorded, which is a different fact from an empty reason (the worker joined and simply never replied). Both surfaces name the failure the same way, because both read this one field: `voicegw livekit latency` and `voicegw livekit check` print `no successful probe (<reason>)` and fall back to `no successful probe (no reply)`, and the dashboard's Latency and Errors tabs say the same. A probe that measured nothing therefore still says why, whenever why is knowable.
+
+The string is written by the LiveKit server or a provider, not by VoiceGateway. Treat it as untrusted remote text: render it as text, never as markup.
+
 ## GET /api/diagnostics/runs/{run_id}/report
 
 Export one stored diagnostics run as a versioned JSON payload. Requires the `admin` scope, like every other diagnostics endpoint, because a run can place billed calls.

@@ -3,8 +3,11 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
+from voicegateway.livekit_diag import run_report
 from voicegateway.livekit_diag import service as probes
 from voicegateway.livekit_diag.config import LiveKitCreds
+from voicegateway.livekit_diag.latency import LatencyResult, summarize
+from voicegateway.livekit_diag.report import render_latency
 from voicegateway.livekit_diag.resources import ResourceReport
 from voicegateway.livekit_diag.sfu import RampStep, find_knee
 
@@ -294,3 +297,196 @@ def test_resource_json_reports_unsampled_metrics_as_none():
 
 def test_resource_json_is_none_without_a_report():
     assert probes._resource_json(None) is None
+
+
+# ---------------------------------------------------------------------------
+# The latency payload says WHY an agent answered nothing.
+#
+# RealProbes.latency used to drop LatencyResult.error, so a run that knew
+# "dispatched to 'reception' but no worker joined within 8s" reached the
+# dashboard as a bare "no reply" while the CLI printed the reason from the same
+# object. These pin the two states apart: a no-reply WITH a recorded reason, and
+# a no-reply WITHOUT one, which must stay an absence rather than become an empty
+# explanation.
+# ---------------------------------------------------------------------------
+
+# Verbatim from ProbeRunner._await_agent's explicit-dispatch failure.
+_NO_WORKER = (
+    "dispatched to 'reception' but no worker joined within 8s: that name is how "
+    "the worker registered (register_worker / @server.rtc_session agent_name); "
+    "check a worker with that name is running"
+)
+
+# Copied from `DiagLatencyAgent` in src/dashboard/frontend/src/lib/types.ts, in
+# declaration order. The Latency and Errors tabs are written against exactly
+# these names, and a renamed or dropped key still compiles over there: it renders
+# a permanently blank reason instead. The mismatch fails here instead.
+_LATENCY_AGENT_FIELDS = ["agent", "stats", "components", "error"]
+
+_PROBED = ("support-voice", "reception", "checkout-voice")
+
+
+class _FakeLatencyAdmin:
+    """list_agents returns rows, not names: RealProbes reads ``.agent_name``."""
+
+    def __init__(self, creds) -> None:
+        self.url = ""
+        self.closed = False
+
+    async def list_agents(self):
+        return [SimpleNamespace(agent_name=name) for name in _PROBED]
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+def _runner_returning(results: dict[str, LatencyResult]):
+    """A ProbeRunner stand-in that hands back one canned result per agent."""
+
+    class _FakeRunner:
+        def __init__(self, admin, client_factory, utterance, reader) -> None:
+            pass
+
+        async def probe(
+            self, agent, trials, warmup, room_name, metadata, *, dispatch=True
+        ) -> LatencyResult:
+            return results[agent]
+
+    return _FakeRunner
+
+
+def _results() -> dict[str, LatencyResult]:
+    """One agent per outcome: answered, failed with a reason, failed silently."""
+    return {
+        "support-voice": LatencyResult(
+            agent="support-voice",
+            e2e_samples=[0.9, 1.1],
+            components={"llm_ttft": 0.4, "tts": 0.2},
+        ),
+        # The probe raised, so the reason is on the result.
+        "reception": LatencyResult(agent="reception", error=_NO_WORKER),
+        # The worker joined and never replied: wait_reply returned None and
+        # nothing raised, so no reason exists to report.
+        "checkout-voice": LatencyResult(agent="checkout-voice"),
+    }
+
+
+def _install_fake_diag(monkeypatch, results: dict[str, LatencyResult]) -> None:
+    monkeypatch.setattr(
+        probes,
+        "_diag_cache",
+        _fake_diag(
+            LiveKitAdmin=_FakeLatencyAdmin,
+            ProbeRunner=_runner_returning(results),
+            UtteranceSource=lambda path: object(),
+            ComponentReader=lambda *args, **kwargs: object(),
+            summarize=summarize,
+            # Only _utterance_path reads this, and the fake UtteranceSource
+            # never opens what it is handed.
+            pkg=SimpleNamespace(__file__="/nonexistent/livekit_diag/__init__.py"),
+        ),
+    )
+
+
+async def _latency_payload(monkeypatch) -> dict:
+    _install_fake_diag(monkeypatch, _results())
+    return await probes.RealProbes().latency(_CREDS, probes.clamp_config({}))
+
+
+async def test_latency_payload_carries_the_reason_the_probe_recorded(monkeypatch):
+    out = await _latency_payload(monkeypatch)
+    entries = {a["agent"]: a for a in out["agents"]}
+
+    assert entries["reception"]["stats"]["trials"] == 0
+    # Verbatim: the dashboard needs the provider's / server's own words, and a
+    # summary written here would be a second vocabulary for one failure.
+    assert entries["reception"]["error"] == _NO_WORKER
+
+
+async def test_an_agent_with_no_recorded_reason_reads_as_an_absence(monkeypatch):
+    """No reply and nobody said why is a real state, and not an empty reason.
+
+    None is the whole point: an empty string would render as an explanation that
+    explains nothing, which reads as "the probe answered the question" when it
+    did not.
+    """
+    out = await _latency_payload(monkeypatch)
+    entries = {a["agent"]: a for a in out["agents"]}
+
+    assert entries["checkout-voice"]["stats"]["trials"] == 0
+    assert entries["checkout-voice"]["error"] is None
+    # An agent that DID answer has nothing to explain either, and is not given
+    # an invented reason for having succeeded.
+    assert entries["support-voice"]["stats"]["trials"] == 2
+    assert entries["support-voice"]["error"] is None
+
+
+async def test_latency_agent_fields_match_the_frontend_type(monkeypatch):
+    """Field for field against types.ts: no invented, renamed or dropped key."""
+    out = await _latency_payload(monkeypatch)
+    assert [a["agent"] for a in out["agents"]] == list(_PROBED)
+    for entry in out["agents"]:
+        assert list(entry) == _LATENCY_AGENT_FIELDS
+
+
+async def test_the_gate_reads_the_reason_and_says_what_the_cli_says(monkeypatch):
+    """One failure, one sentence, both surfaces.
+
+    ``gates._latency_gate`` has always read ``entry["error"]`` and found nothing
+    there on a dashboard run. Now that the payload carries it, the gate detail a
+    run records must name the same cause the CLI's ``render_latency`` prints for
+    the same probe result.
+    """
+    results = _results()
+    _install_fake_diag(monkeypatch, results)
+
+    # Clamped, as the endpoint always hands it over: RealProbes.latency reads
+    # config["trials"], which only clamp_config guarantees.
+    out = await probes.execute_run(
+        ["latency"],
+        probes.clamp_config({"target_ms": 1500}),
+        creds=_CREDS,
+        probes=probes.RealProbes(),
+    )
+    details = [g["detail"] for g in out["gates"]]
+    cli = render_latency(list(results.values()), 1500.0, summarize)
+
+    # The agent that failed with a reason: the reason itself, on both surfaces.
+    assert any(_NO_WORKER in d for d in details)
+    assert f"no successful probe ({_NO_WORKER})" in cli
+    # The agent that failed without one: the same "no reply" fallback on both,
+    # rather than a blank parenthesis or a second phrase for the same absence.
+    assert any("no successful probe" in d and "(no reply)" in d for d in details)
+    assert "no successful probe (no reply)" in cli
+
+
+async def test_the_run_report_still_renders_after_the_payload_change(monkeypatch):
+    """The report reads the keys it knows and ignores the new one.
+
+    ``run_report`` is shared byte for byte by the dashboard's download and
+    ``voicegw livekit report``, so a payload change that broke it would break
+    both. Nothing it renders moves: the agents that measured nothing still read
+    as measured-nothing, and no number is invented for them.
+    """
+    payload = await _latency_payload(monkeypatch)
+    run = run_report.RunRecord(
+        run_id="run_n2",
+        checks=["latency"],
+        config={"target_ms": 1500},
+        status="done",
+        results={"checks": {"latency": {"ok": True, "result": payload}}},
+        verdict="UNKNOWN",
+        created_at="2026-07-31T12:00:00+00:00",
+    )
+
+    finding = run_report.build_payload(run, livekit_url="wss://x")["findings"]["latency"]
+    assert [a["agent"] for a in finding["agents"]] == list(_PROBED)
+    assert [a["measured"] for a in finding["agents"]] == [True, False, False]
+    # Unmeasured stays null, never zero, for both no-reply agents.
+    assert [a["avg_ms"] for a in finding["agents"][1:]] == [None, None]
+
+    document = run_report.render_html(
+        run_report.build_payload(run, livekit_url="wss://x")
+    )
+    assert "reception" in document and "checkout-voice" in document
+    assert "no trial produced a reply" in document

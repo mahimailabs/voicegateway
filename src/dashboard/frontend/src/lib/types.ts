@@ -566,6 +566,20 @@ export interface DiagLatencyAgent {
   stats: DiagLatencyStats;
   /** Null when the agent does not write telemetry to this host. */
   components: DiagComponentSplit | null;
+  /**
+   * Why no trial answered, verbatim from `LatencyResult.error`: the same string
+   * the CLI prints after "no successful probe" (a dispatch that reached no
+   * worker, a connect that failed, a client that raised).
+   *
+   * Null means the probe recorded NO reason, and undefined means the run was
+   * recorded before this field existed. Both are the same claim: nothing said
+   * why. Neither is an empty reason, so render "no reply" for them and never a
+   * blank explanation.
+   *
+   * This is remote text (a provider or the LiveKit server wrote it, not
+   * VoiceGateway): render it as TEXT, never as markup, and let it wrap.
+   */
+  error?: string | null;
 }
 
 /** `latency` check result. */
