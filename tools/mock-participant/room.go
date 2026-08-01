@@ -10,12 +10,22 @@ import (
 	"github.com/pion/webrtc/v4/pkg/media"
 )
 
-// opusCapability is the codec every published track advertises. 48kHz mono is
-// what tone.ogg was encoded at, and what livekit-sip expects to subscribe to.
+// opusCapability is the codec every published track advertises. It must match
+// what the remote registered or the answer is rejected with "codec is not
+// supported by remote", which surfaces as a join that times out several
+// seconds later rather than as a codec error.
+//
+// CHANNELS IS 2 EVEN THOUGH THE TONE IS MONO. That is not a mismatch: RFC 7587
+// specifies the Opus RTP payload format as always declaring two channels, and
+// mono content is signalled inside the stream (Opus packets are self-describing
+// about channel count) rather than by changing the rtpmap. Declaring 1 here
+// produces an rtpmap no WebRTC endpoint offers. The fmtp line matches pion's
+// own default registration so the two compare equal.
 var opusCapability = webrtc.RTPCodecCapability{
-	MimeType:  webrtc.MimeTypeOpus,
-	ClockRate: 48000,
-	Channels:  1,
+	MimeType:    webrtc.MimeTypeOpus,
+	ClockRate:   48000,
+	Channels:    2,
+	SDPFmtpLine: "minptime=10;useinbandfec=1",
 }
 
 // JoinAndPublish joins the assigned room with an audio track ALREADY ATTACHED
