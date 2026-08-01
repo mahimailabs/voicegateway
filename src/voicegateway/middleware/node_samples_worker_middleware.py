@@ -56,9 +56,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import time
+import urllib.parse
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Final
 
 import httpx
@@ -120,12 +122,26 @@ TARGETS_ENV_VAR: Final[str] = "VOICEGW_NODE_SCRAPE_TARGETS"
 
 @dataclass(frozen=True)
 class ScrapeTarget:
-    """One exposition endpoint, and the node name its samples are filed under."""
+    """One exposition endpoint, and the node name its samples are filed under.
+
+    ``url`` NEVER carries userinfo. A metrics endpoint behind basic auth is
+    configured as ``http://user:secret@host/metrics``, and httpx would happily
+    authenticate from that: it also logs the request line at INFO, so the
+    password would be written to the log on every tick, four times a minute, for
+    as long as the process runs. :func:`targets_from_env` splits the credential
+    off into :attr:`auth` so the URL that gets logged, retried and reported is
+    the URL without it.
+
+    ``auth`` is ``repr=False`` because a dataclass repr is the other way a
+    secret escapes: any log line, exception or debugger that renders a target
+    would print it.
+    """
 
     node: str
     url: str
     source: str
     project: str = node_samples.DEFAULT_PROJECT
+    auth: tuple[str, str] | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -363,22 +379,67 @@ def targets_from_env(
             continue
         head, sep, url = item.partition("=")
         source, colon, node = head.partition(":")
+        # Redacted before it reaches a log line. A skipped entry is the case
+        # where a credential is MOST likely present and least likely to have
+        # been parsed out yet, so the warning about it is a leak of its own.
+        shown = redact_url(item)
         if not sep or not colon or not url.strip() or not node.strip():
             logger.warning(
-                "%s: ignoring %r; expected 'source:name=url'", TARGETS_ENV_VAR, item
+                "%s: ignoring %r; expected 'source:name=url'", TARGETS_ENV_VAR, shown
             )
             continue
         if source not in SOURCES:
             logger.warning(
                 "%s: ignoring %r; unknown source %r (known: %s)",
                 TARGETS_ENV_VAR,
-                item,
+                shown,
                 source,
                 ", ".join(SOURCES),
             )
             continue
-        targets.append(ScrapeTarget(node=node.strip(), url=url.strip(), source=source))
+        clean, auth = split_userinfo(url.strip())
+        targets.append(
+            ScrapeTarget(node=node.strip(), url=clean, source=source, auth=auth)
+        )
     return targets
+
+
+# Anything between "://" and the "@" that ends an authority. Used to redact a
+# URL before it is logged, so a credential cannot ride into the log on a path
+# that never went through targets_from_env: a directly constructed target, or a
+# malformed env entry that is skipped before it is ever parsed.
+_USERINFO = re.compile(r"(?<=://)[^@/\s]+@")
+_REDACTED = "***@"
+
+
+def redact_url(text: str) -> str:
+    """``text`` with any URL userinfo replaced by ``***``.
+
+    Applied at every point that logs a URL rather than only at the parse site,
+    because the parse site is not the only way a target is built and a secret
+    written to a log file cannot be unwritten.
+    """
+    return _USERINFO.sub(_REDACTED, text)
+
+
+def split_userinfo(url: str) -> tuple[str, tuple[str, str] | None]:
+    """``(url_without_userinfo, auth_or_None)``.
+
+    httpx authenticates from userinfo on its own, so leaving it in the URL
+    WORKS -- and logs the password at INFO on every request. Splitting it here
+    keeps the behaviour and drops the leak.
+
+    The credential is percent-decoded, because that is how it travels in a URL
+    and how httpx expects it in an auth tuple: a password containing ``@`` or
+    ``/`` is only expressible encoded.
+    """
+    parts = urllib.parse.urlsplit(url)
+    userinfo, sep, host = parts.netloc.rpartition("@")
+    if not sep:
+        return url, None
+    username, _, password = userinfo.partition(":")
+    auth = (urllib.parse.unquote(username), urllib.parse.unquote(password))
+    return urllib.parse.urlunsplit(parts._replace(netloc=host)), auth
 
 
 async def _default_target_provider() -> list[ScrapeTarget]:
@@ -524,7 +585,8 @@ class NodeSamplesWorker(AsyncWorker):
         """Scrape one target. Never raises: a failure becomes a row that says so."""
         try:
             body, outcome = await asyncio.wait_for(
-                self._fetch(client, target.url), timeout=self._scrape_timeout
+                self._fetch(client, target.url, target.auth),
+                timeout=self._scrape_timeout,
             )
         except (TimeoutError, httpx.TimeoutException):
             # The outer wait_for is not redundant with httpx's timeouts: httpx
@@ -540,7 +602,7 @@ class NodeSamplesWorker(AsyncWorker):
             # would propagate it and lose every other target's sample).
             logger.exception(
                 "NodeSamplesWorker: unexpected error scraping %s (%s)",
-                target.url,
+                redact_url(target.url),
                 target.node,
             )
             outcome, body = OUTCOME_UNREACHABLE, None
@@ -595,15 +657,23 @@ class NodeSamplesWorker(AsyncWorker):
         )
 
     async def _fetch(
-        self, client: httpx.AsyncClient, url: str
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        auth: tuple[str, str] | None = None,
     ) -> tuple[str | None, str]:
         """GET one exposition body, capped. ``(body_or_None, outcome)``.
 
         Streamed rather than buffered so the byte cap is enforced while the
         response arrives: a misconfigured target pointed at a log endpoint must
         not be able to allocate its way through this process's memory.
+
+        ``auth`` becomes an Authorization header rather than part of the URL,
+        which is the difference between a credential httpx sends and one it also
+        logs. ``None`` is httpx's "no auth" and is what an unauthenticated
+        target passes.
         """
-        async with client.stream("GET", url) as response:
+        async with client.stream("GET", url, auth=auth) as response:
             if response.status_code != 200:
                 # Body deliberately unread: an error page is not an exposition.
                 return None, OUTCOME_HTTP_ERROR
@@ -614,7 +684,7 @@ class NodeSamplesWorker(AsyncWorker):
                 if total > self._max_response_bytes:
                     logger.warning(
                         "NodeSamplesWorker: %s exceeded %d bytes; dropping the scrape",
-                        url,
+                        redact_url(url),
                         self._max_response_bytes,
                     )
                     return None, OUTCOME_TOO_LARGE
@@ -638,5 +708,7 @@ __all__ = [
     "NodeSamplesWorker",
     "ScrapeTarget",
     "TargetProvider",
+    "redact_url",
+    "split_userinfo",
     "targets_from_env",
 ]
