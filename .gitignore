@@ -446,3 +446,8 @@ qa/
 
 # Compiled Go helpers under tools/ (built by go build, never committed).
 tools/mock-participant/mock-participant
+
+# ...except the load-generator capture. Its stat file is a CSV by CONTENT and a
+# .log by NAME, and that mismatch is the bug the fixture reproduces: renaming it
+# to .csv to get it past this rule would delete the only thing it proves.
+!src/voicegateway/tests/fixtures/loadtest/**/*.log
