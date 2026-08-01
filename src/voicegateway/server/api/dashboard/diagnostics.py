@@ -48,6 +48,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Iterable
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -182,19 +184,29 @@ async def _history(store: Any) -> list[_Run]:
     why the result can exceed the stored read limit by up to ``_HISTORY_CAP``.
     """
     stored = await _load_history(store)
+    working = [_RUNS[rid] for rid in _ORDER]
     if not stored:
-        # Nothing persisted (storage disabled, or no run has been recorded on
-        # this database yet): the working set is the whole history, in exactly
-        # the order this endpoint has always returned it.
-        return [_RUNS[rid] for rid in reversed(_ORDER)]
+        # Nothing persisted: storage disabled, or no run recorded on this
+        # database yet. Sorted by the SAME key as the branch below rather than
+        # by insertion order, because otherwise one endpoint documented as
+        # "newest first" has two different meanings, and which one a caller gets
+        # depends on whether a write has landed yet.
+        return _newest_first(working)
     merged: dict[str, _Run] = {r.run_id: r for r in stored}
-    for rid in _ORDER:
-        merged[rid] = _RUNS[rid]
-    # Same sort key as the repository's ORDER BY: ISO-8601 created_at descending,
-    # run_id as the stable tiebreak.
-    return sorted(
-        merged.values(), key=lambda r: (r.created_at, r.run_id), reverse=True
-    )
+    for run in working:
+        merged[run.run_id] = run
+    return _newest_first(merged.values())
+
+
+def _newest_first(runs: Iterable[_Run]) -> list[_Run]:
+    """Runs newest first: created_at descending, run_id as the stable tiebreak.
+
+    The same key as the repository's ORDER BY, so a history read before a
+    restart and one read after it agree. ISO-8601 sorts correctly as a string
+    because every writer formats it the same way, and run_id breaks the tie so
+    two runs created in the same microsecond do not swap between reads.
+    """
+    return sorted(runs, key=lambda r: (r.created_at, r.run_id), reverse=True)
 
 
 async def _load_history(store: Any) -> list[_Run]:
@@ -235,6 +247,19 @@ async def _execute(run: _Run, creds: Any, store: Any = None) -> None:
     # its process (restart, OOM, deploy) leaves its last observed state on disk
     # instead of vanishing, and the history shows that it started.
     await _persist(store, run)
+    # The terminal state is built in LOCALS and published in one step below,
+    # after it is durable. Assigning it to ``run`` as it is computed would
+    # publish it immediately: ``run`` is the very object /runs serves, so a
+    # reader polling for completion would see "done" while storage still said
+    # "running". Anything acting on that signal -- exporting the report, reading
+    # the row from another process, the CLI -- could then read a run that this
+    # process considers finished and the database does not.
+    #
+    # Seeded from the current status so a CANCELLATION, which is not an
+    # Exception and so reaches the finally block uncaught, still persists
+    # exactly what it persisted before this change.
+    status, error = run.status, run.error
+    results, verdict = run.results, run.verdict
     try:
         out = await asyncio.wait_for(
             service.execute_run(
@@ -242,21 +267,35 @@ async def _execute(run: _Run, creds: Any, store: Any = None) -> None:
             ),
             _OVERALL_RUN_TIMEOUT_SECONDS,
         )
-        run.results = out
-        run.verdict = out.get("verdict")
-        run.status = "done"
+        results = out
+        verdict = out.get("verdict")
+        status = "done"
     except TimeoutError:
-        run.status = "failed"
-        run.error = "run timed out"
+        status, error = "failed", "run timed out"
     except Exception as exc:  # noqa: BLE001 - a run must never crash the loop
-        run.status = "failed"
-        run.error = str(exc)
+        status, error = "failed", str(exc)
     finally:
-        run.ended_at = _now()
+        ended_at = _now()
         # The terminal write. Reached on the success, timeout and failure paths
         # alike, so a stored run cannot be left at "running" by an outcome this
         # process actually observed.
-        await _persist(store, run)
+        await _persist(
+            store,
+            replace(
+                run,
+                status=status,
+                results=results,
+                verdict=verdict,
+                error=error,
+                ended_at=ended_at,
+            ),
+        )
+        # Published only now. A reader that sees a terminal status can rely on
+        # the row existing, which is what makes "done" mean something to anyone
+        # outside this process.
+        run.results, run.verdict = results, verdict
+        run.error, run.ended_at = error, ended_at
+        run.status = status
 
 
 # ---------------------------------------------------------------------------

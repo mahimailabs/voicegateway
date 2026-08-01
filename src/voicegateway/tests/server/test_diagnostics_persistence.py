@@ -445,3 +445,163 @@ def test_the_poll_budget_and_the_run_timeout_stay_coupled() -> None:
     )
     assert "setTimeout(resolve, 2000)" in source, "the poll interval moved"
     assert 180 * 2000 / 1000 == d._OVERALL_RUN_TIMEOUT_SECONDS
+
+
+# ---------------------------------------------------------------------------
+# A terminal status is durable BEFORE anyone can see it
+# ---------------------------------------------------------------------------
+#
+# Both properties below were found by CI failing intermittently on py3.13 while
+# 3.11 and 3.12 passed, which is what a race looks like from the outside. They
+# are asserted directly here rather than left to timing.
+
+
+class _OrderWatchingStore:
+    """A store that records what the LIVE run object looked like at write time.
+
+    This is what makes the ordering testable at all. Polling for "done" and then
+    reading storage only catches the bug when the scheduler cooperates, which is
+    exactly the intermittency that sent this to CI instead of to a test. Here the
+    write itself reports whether the terminal status had already been published,
+    so the assertion holds on every run.
+    """
+
+    def __init__(self, run) -> None:
+        self._run = run
+        self.writes: list[tuple[str, str]] = []
+
+    async def upsert_diagnostics_run(self, **kw) -> None:
+        # (what this write carries, what a reader of the live object sees now)
+        self.writes.append((kw["status"], self._run.status))
+
+
+async def test_a_terminal_status_is_stored_before_it_is_published(
+    monkeypatch,
+) -> None:
+    """The race, pinned deterministically.
+
+    ``_execute`` used to assign run.status = "done" and only then await the
+    write. ``run`` is the object /runs serves, so between those two statements
+    the API reported a finished run whose row still said "running", and anything
+    keying off completion could act on a run the database did not agree was over.
+    """
+    from voicegateway.server.api.dashboard import diagnostics as d
+
+    monkeypatch.setattr(d, "_make_probes", lambda _store: _FakeProbes())
+    run = d._Run(
+        run_id="r1", checks=["agents"], config={}, created_at="2026-08-01T00:00:00Z"
+    )
+    store = _OrderWatchingStore(run)
+
+    await d._execute(run, _FAKE_CREDS, store)
+
+    assert run.status == "done"
+    terminal = [w for w in store.writes if w[0] in ("done", "failed")]
+    assert terminal, f"no terminal write was made; got {store.writes}"
+    written, visible_at_write_time = terminal[-1]
+    assert visible_at_write_time != written, (
+        "the terminal status was already visible to readers when it was written"
+    )
+    assert visible_at_write_time == "running"
+
+
+async def test_the_row_is_complete_when_the_status_lands(monkeypatch) -> None:
+    """A terminal row carrying no results is a run nobody can report on.
+
+    The results and the status have to reach storage in the SAME write, or a
+    reader that trusts the status finds a row it cannot build a report from.
+    """
+    from voicegateway.server.api.dashboard import diagnostics as d
+
+    monkeypatch.setattr(d, "_make_probes", lambda _store: _FakeProbes())
+    run = d._Run(
+        run_id="r2",
+        checks=["agents", "sfu"],
+        config={},
+        created_at="2026-08-01T00:00:00Z",
+    )
+    seen: list[dict] = []
+
+    class _Recorder:
+        async def upsert_diagnostics_run(self, **kw):
+            seen.append(kw)
+
+    await d._execute(run, _FAKE_CREDS, _Recorder())
+
+    [terminal] = [w for w in seen if w["status"] == "done"]
+    assert terminal["verdict"] is not None
+    assert terminal["ended_at"] is not None
+    assert "agents" in terminal["results"]["checks"]
+
+
+async def test_a_visible_terminal_status_is_already_stored(client, gateway) -> None:
+    """The same property end to end, through the real endpoint and storage.
+
+    Kept alongside the deterministic test above because it exercises the wiring
+    rather than the function: it would catch a regression that reintroduced the
+    window somewhere other than _execute.
+    """
+    run_id = await _start(client, ["agents"])
+    for _ in range(400):
+        body = (await client.get(f"/api/diagnostics/runs/{run_id}")).json()
+        if body["status"] in ("done", "failed"):
+            stored = await gateway.storage.get_diagnostics_run(run_id)
+            assert stored is not None, "terminal over the API, absent from storage"
+            assert stored["status"] == body["status"]
+            assert stored["ended_at"] is not None
+            return
+        await asyncio.sleep(0)
+    raise AssertionError(f"run {run_id} never reached a terminal state")
+
+
+# ---------------------------------------------------------------------------
+# One ordering, whether or not storage has caught up
+# ---------------------------------------------------------------------------
+
+
+async def test_the_history_order_does_not_depend_on_storage(client, gateway) -> None:
+    """Two branches of _history used two different orderings.
+
+    With storage empty it returned insertion order; with storage populated it
+    sorted by created_at. Both were documented as "newest first", so the same
+    endpoint meant two things depending on whether a write had landed, and the
+    rehydrated history could disagree with the live one about the order of the
+    same runs.
+    """
+    await _run_to_completion(client, ["agents"])
+    await _run_to_completion(client, ["sfu"])
+
+    merged = [r["run_id"] for r in (await client.get("/api/diagnostics/runs")).json()]
+
+    # The same working set with storage taken out of the picture, which is the
+    # branch that used insertion order.
+    from voicegateway.server.api.dashboard import diagnostics as d
+
+    memory_only = [r.run_id for r in await d._history(None)]
+    assert memory_only == merged
+
+    _simulate_restart()
+    from_storage = [
+        r["run_id"] for r in (await client.get("/api/diagnostics/runs")).json()
+    ]
+    assert from_storage == merged
+
+
+async def test_runs_created_in_the_same_instant_do_not_swap(client) -> None:
+    """created_at alone is not a total order, so run_id breaks the tie.
+
+    Without a tiebreak two runs sharing a timestamp order arbitrarily, and the
+    history flips between reads for no reason a user can see.
+    """
+    from voicegateway.server.api.dashboard import diagnostics as d
+
+    same = "2026-08-01T20:41:30.482092+00:00"
+    for rid in ("bbb", "aaa", "ccc"):
+        d._RUNS[rid] = d._Run(
+            run_id=rid, checks=["agents"], config={}, status="done", created_at=same
+        )
+        d._ORDER.append(rid)
+
+    once = [r.run_id for r in await d._history(None)]
+    twice = [r.run_id for r in await d._history(None)]
+    assert once == twice == ["ccc", "bbb", "aaa"]
