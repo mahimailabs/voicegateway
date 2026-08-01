@@ -18,6 +18,7 @@ from rich.table import Table
 from voicegateway.cli._app import app, console
 from voicegateway.cli.base_cli import BaseCli
 from voicegateway.livekit_diag.gates import MAX_NODE_CPU_UTILISATION
+from voicegateway.livekit_diag.run_report import appendix_entry
 from voicegateway.loadtest.aggregation import TestAggregate, peak_label
 from voicegateway.loadtest.artifacts import ArtifactError
 from voicegateway.loadtest.capacity import (
@@ -282,6 +283,78 @@ def _capacity_for(tests: list[dict]) -> dict:
     return capacity
 
 
+#: The sections _render_appendix renders, in the order it renders them. A file
+#: naming anything else is refused rather than partially read: a typo would
+#: otherwise drop a whole section silently, and the operator would hand over a
+#: report missing the commands that produced it.
+_APPENDIX_SECTIONS = ("commands", "flags", "toolchain")
+
+
+def _appendix_from_file(path: Path) -> dict[str, list[dict[str, str]]]:
+    """Read an operator-supplied appendix, refusing anything uncited.
+
+    The entries live in a file the operator holds rather than in this
+    repository, for two reasons. The commands belong to a particular engagement
+    and have no business being compiled into a general tool. And the generator
+    they drive is AGPL-3.0 while this repository is MIT, so its scenarios and
+    configuration must not be copied here; flag names and command lines are
+    interface facts and travel fine.
+
+    Every entry goes through :func:`appendix_entry`, which requires a citation
+    and reduces any absolute URL to a bare host. An uncited command is
+    indistinguishable from one this report invented, so it is refused by label
+    rather than dropped quietly.
+
+    Shape::
+
+        {"commands": [{"label": ..., "detail": ..., "citation": ...}, ...],
+         "flags":    [...],
+         "toolchain": [...]}
+    """
+    try:
+        raw = json.loads(path.read_text())
+    except OSError as exc:
+        raise typer.BadParameter(f"cannot read {path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"{path} is not valid JSON: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise typer.BadParameter(f"{path}: expected an object of sections")
+
+    unknown = sorted(set(raw) - set(_APPENDIX_SECTIONS))
+    if unknown:
+        raise typer.BadParameter(
+            f"{path}: unknown section(s) {unknown}. Known sections are "
+            f"{list(_APPENDIX_SECTIONS)}; a misspelled one would silently drop "
+            "every entry under it."
+        )
+
+    out: dict[str, list[dict[str, str]]] = {}
+    for section in _APPENDIX_SECTIONS:
+        entries = raw.get(section) or []
+        if not isinstance(entries, list):
+            raise typer.BadParameter(f"{path}: {section} must be a list")
+        built: list[dict[str, str]] = []
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                raise typer.BadParameter(
+                    f"{path}: {section}[{index}] must be an object"
+                )
+            try:
+                built.append(
+                    appendix_entry(
+                        label=str(entry.get("label", "")),
+                        detail=str(entry.get("detail", "")),
+                        citation=str(entry.get("citation", "")),
+                    )
+                )
+            except ValueError as exc:
+                # Refused by label so the operator can find the offending line.
+                raise typer.BadParameter(f"{path}: {section}[{index}]: {exc}") from exc
+        if built:
+            out[section] = built
+    return out
+
+
 @loadtest_app.command("report")
 def report(
     run_id: str = typer.Argument(..., help="Run id to report on"),
@@ -291,6 +364,14 @@ def report(
         "--out",
         "-o",
         help="Directory to write the report into",
+    ),
+    appendix: Path = typer.Option(
+        None,
+        "--appendix",
+        help=(
+            "JSON file of reproducible-test assets. Sections: commands, flags, "
+            "toolchain. Every entry needs label, detail and a citation."
+        ),
     ),
 ) -> None:
     """Write one run's report as JSON plus a self-contained HTML file."""
@@ -321,11 +402,13 @@ def report(
         )
     results = judge_run(tests, aggregates=aggregates)
     capacity = _capacity_for(tests)
+    assets = _appendix_from_file(appendix) if appendix is not None else None
     payload = build_load_payload(
         run=run,
         tests=tests,
         gate_results=[g.as_dict() for g in results],
         capacity=capacity,
+        appendix=assets,
     )
     out.mkdir(parents=True, exist_ok=True)
     json_path = out / f"{load_report_filename(run_id).removesuffix('.html')}.json"
@@ -354,6 +437,18 @@ def report(
                 f"{t['target_concurrency']}->{t['nodes']} nodes"
                 for t in capacity["tiers"]
             )
+        )
+
+    if assets is None:
+        _cli.warn(
+            "No reproducible-test assets recorded. Without the commands and "
+            "flag semantics behind them these numbers cannot be reproduced by "
+            "anybody else, which is most of what makes them evidence. Supply "
+            "them with --appendix."
+        )
+    else:
+        console.print(
+            "Appendix: " + ", ".join(f"{len(v)} {k}" for k, v in sorted(assets.items()))
         )
 
     if payload["data_provenance"] != "measured":
