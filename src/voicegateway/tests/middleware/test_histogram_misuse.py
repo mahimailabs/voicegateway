@@ -317,3 +317,29 @@ def test_the_exporter_names_both_boundaries_itself(live) -> None:
         if line.startswith("# HELP livekit_sip_dur_join_sec ")
     ]
     assert "from INVITE to mixed room audio" in help_line
+
+
+def test_the_docstring_does_not_claim_the_server_process_block_is_verified() -> None:
+    """The one gap left, stated where somebody adding an entry will read it.
+
+    livekit-server's metrics port is commonly behind basic auth, so the five
+    process_* entries in its tuple are inferred from livekit-sip registering the
+    same prometheus/client_golang collector. That is a good reason to expect
+    them and it is not a measurement, and this map's whole doctrine is that the
+    difference is what decides whether a column works or only looks like it.
+    """
+    from voicegateway.middleware import node_samples_worker_middleware as module
+
+    doc = module.__doc__ or ""
+    assert "STILL INFERRED" in doc
+    assert "process_*" in doc
+    # And the claim is specific about which source, since the same names ARE
+    # measured on livekit-sip.
+    server_process = [
+        e.metric for e in SERIES["livekit-server"] if e.metric.startswith("process_")
+    ]
+    assert len(server_process) == 5
+    sip_process = {
+        e.metric for e in SERIES["livekit-sip"] if e.metric.startswith("process_")
+    }
+    assert set(server_process) <= sip_process
