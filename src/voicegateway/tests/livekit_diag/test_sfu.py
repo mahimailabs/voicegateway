@@ -1,15 +1,395 @@
-from voicegateway.livekit_diag.sfu import RampStep, find_knee
+import contextlib
+import logging
+from collections.abc import Iterator
+from typing import Any
+
+from voicegateway.livekit_diag.client import (
+    SyntheticClient,
+    quiet_livekit_teardown_noise,
+)
+from voicegateway.livekit_diag.sfu import (
+    MEAN_OF_N,
+    NOT_MEASURED,
+    RampStep,
+    SfuProbe,
+    find_knee,
+)
+
+# The CLI's default --target-rtt-ms, i.e. the budget the live run failed against.
+TARGET_RTT_MS = 50.0
+# Shaped like the live Hetzner run: the first data-channel message of a session
+# costs ~129ms (TLS/ICE/DTLS setup), every one after it ~26ms.
+COLD_MS = 129.3
+WARM_MS = 26.0
 
 
 def test_find_knee_at_first_threshold_break():
     steps = [
-        RampStep(10, 5.0, 0.0, "Excellent"),
-        RampStep(25, 9.0, 0.1, "Good"),
-        RampStep(50, 22.0, 1.4, "Poor"),
+        RampStep(10, 5.0, 0.0, "Excellent", 10),
+        RampStep(25, 9.0, 0.1, "Good", 25),
+        RampStep(50, 22.0, 1.4, "Poor", 50),
     ]
     assert find_knee(steps, target_rtt_ms=20.0, max_loss=1.0) == 25  # last good before break
 
 
 def test_find_knee_none_when_all_healthy():
-    steps = [RampStep(10, 4.0, 0.0, "Excellent"), RampStep(25, 6.0, 0.0, "Good")]
+    # Sample counts are load-bearing: without them these steps default to
+    # samples 0, the walk stops at the first tier for lack of evidence, and the
+    # None below arrives for the opposite reason to the one this test names.
+    steps = [
+        RampStep(10, 4.0, 0.0, "Excellent", 10),
+        RampStep(25, 6.0, 0.0, "Good", 25),
+    ]
     assert find_knee(steps, target_rtt_ms=20.0, max_loss=1.0) is None
+
+
+# --- the knee walk stops where the evidence stops ---------------------------
+#
+# A tier that measured nothing reports rtt_ms 0.0 (the mean of an empty list),
+# and 0.0 is inside every budget, so the walk used to sail straight through it.
+# This is the single-host twin of the multi-vantage walk in
+# distributed.aggregate_vantages, which stops at an unmeasured tier for the same
+# reason; the two SFU modes must not disagree about the same server.
+
+
+def test_find_knee_stops_at_a_step_that_measured_nothing():
+    """Measured up to 25 clients, then not one ping came back at 50.
+
+    The old walk read the 50-client tier's placeholder 0.0 as comfortably inside
+    budget, ran off the end of the ramp and returned None, which is the value
+    that means "sustained the whole ramp". Capacity now ends at the last tier
+    that actually demonstrated it.
+    """
+    steps = [
+        RampStep(10, 5.0, 0.0, "Excellent", 10),
+        RampStep(25, 9.0, 0.1, "Good", 25),
+        RampStep(50, 0.0, 0.0, "Unknown", 0),
+    ]
+    assert steps[2].rtt_stat == NOT_MEASURED
+    assert find_knee(steps, target_rtt_ms=20.0, max_loss=1.0) == 25
+
+
+def test_an_all_unmeasured_ramp_is_not_reported_as_sustaining_the_ramp():
+    """A completely dead SFU: every ping of every tier timed out.
+
+    ``knee`` is a published ``int | None`` that callers and stored runs read, so
+    it cannot grow a third value meaning "I measured nothing" and this stays
+    None. What changed is underneath it: the walk stops at the first tier
+    instead of crediting each placeholder 0.0 as sustained on its way to that
+    None, so no tier of a dead ramp is ever the answer (see the mixed-ramp test
+    above, where the difference is visible in the return value).
+
+    ``rtt_stat`` is the evidence that tells this None from a clean ramp's None.
+    It travels with the steps into the published payload, and
+    ``gates.sfu_capacity_gate`` is what reads it: None alone is never health.
+    """
+    steps = [RampStep(n, 0.0, 0.0, "Unknown", 0) for n in (2, 10, 25)]
+
+    assert find_knee(steps, target_rtt_ms=20.0, max_loss=1.0) is None
+    assert [s.rtt_stat for s in steps] == [NOT_MEASURED] * 3
+
+
+def test_a_fully_measured_healthy_ramp_returns_none_exactly_as_before():
+    """Regression: a real clean ramp is unaffected by the unmeasured guard."""
+    steps = [
+        RampStep(10, 4.0, 0.0, "Excellent", 10),
+        RampStep(25, 6.0, 0.0, "Good", 25),
+    ]
+    assert [s.rtt_stat for s in steps] == [MEAN_OF_N, MEAN_OF_N]
+    assert find_knee(steps, target_rtt_ms=20.0, max_loss=1.0) is None
+
+
+def test_a_measured_breach_still_returns_the_last_healthy_count():
+    """Regression: a step that DID measure is judged against the same budget.
+
+    Same ramp, same thresholds and same answer as
+    ``test_find_knee_at_first_threshold_break``; only the loss threshold breaks
+    here, to pin that ``max_loss`` was not disturbed either.
+    """
+    steps = [
+        RampStep(10, 5.0, 0.0, "Excellent", 10),
+        RampStep(25, 9.0, 0.1, "Good", 25),
+        RampStep(50, 9.5, 1.4, "Good", 50),
+    ]
+    assert find_knee(steps, target_rtt_ms=20.0, max_loss=1.0) == 25
+
+
+class _FakeAdmin:
+    url = "ws://fake"
+
+    def __init__(self) -> None:
+        self.deleted: list[str] = []
+
+    def join_token(self, room: str, identity: str) -> str:
+        return f"{room}/{identity}"
+
+    async def delete_room(self, room: str) -> None:
+        self.deleted.append(room)
+
+
+class _FakeMonitor:
+    async def start(self) -> None:
+        return None
+
+    async def stop(self) -> None:
+        return None
+
+    def report_for(self, clients: int) -> dict[str, int]:
+        return {"peak_clients": clients}
+
+
+class _ColdStartClient:
+    """A client whose FIRST ping pays the session's connection setup."""
+
+    def __init__(self, *, cold_ms: float = COLD_MS, warm_ms: float = WARM_MS) -> None:
+        self._cold_ms = cold_ms
+        self._warm_ms = warm_ms
+        self.pings = 0
+        self.connected = False
+
+    async def connect(self) -> None:
+        self.connected = True
+
+    async def ping(self) -> float | None:
+        self.pings += 1
+        ms = self._cold_ms if self.pings == 1 else self._warm_ms
+        return ms / 1000.0
+
+    def quality(self) -> str:
+        return "Excellent"
+
+    async def disconnect(self) -> None:
+        self.connected = False
+
+
+class _SilentClient(_ColdStartClient):
+    """Connects, but no pong ever comes back: every ping times out."""
+
+    async def ping(self) -> float | None:
+        self.pings += 1
+        return None
+
+
+class _OneAnswersClient(_ColdStartClient):
+    """Only the client named ``c0`` answers; the rest time out."""
+
+    def __init__(self, identity: str) -> None:
+        super().__init__()
+        self._identity = identity
+
+    async def ping(self) -> float | None:
+        self.pings += 1
+        if self._identity != "c0":
+            return None
+        return WARM_MS / 1000.0
+
+
+def _probe(made: list[Any], factory=None) -> SfuProbe:
+    def default_factory(url: str, token: str) -> Any:
+        c = _ColdStartClient()
+        made.append(c)
+        return c
+
+    return SfuProbe(_FakeAdmin(), factory or default_factory, _FakeMonitor())
+
+
+async def test_baseline_excludes_the_cold_first_sample():
+    """The measured rtt is the steady state, not the setup-inflated first ping.
+
+    Before the warm-up, the two-client baseline averaged one cold ping with one
+    warm one and reported ~77.6ms against a 50ms budget on a ~26ms server.
+    """
+    made: list[Any] = []
+    step = await _probe(made).baseline("vg-t-baseline", seconds=0.0)
+
+    assert step.rtt_ms == WARM_MS
+    assert step.rtt_ms <= TARGET_RTT_MS
+    # One discarded warm-up ping plus one measured ping, per client.
+    assert [c.pings for c in made] == [2, 2]
+
+
+async def test_step_says_how_many_samples_it_averaged():
+    made: list[Any] = []
+    step = await _probe(made).baseline("vg-t-samples", seconds=0.0)
+
+    # The warm-up ping is discarded, so it is not counted as evidence.
+    assert step.samples == 2
+    assert step.rtt_stat == MEAN_OF_N
+
+
+async def test_step_with_no_returned_ping_is_not_measured():
+    """Nothing came back, so the step says so instead of naming a statistic.
+
+    ``rtt_ms`` cannot carry None without changing the field type that
+    gates/report/distributed read, so ``rtt_stat`` is what disambiguates a
+    placeholder from a reading.
+    """
+
+    def factory(url: str, token: str) -> Any:
+        return _SilentClient()
+
+    step = await _probe([], factory).baseline("vg-t-silent", seconds=0.0)
+
+    assert step.samples == 0
+    assert step.rtt_stat == NOT_MEASURED
+
+
+async def test_partially_answered_step_counts_only_the_pings_that_returned():
+    def factory(url: str, token: str) -> Any:
+        return _OneAnswersClient(token.rsplit("/", 1)[-1])
+
+    steps, _resource = await _probe([], factory).ramp(
+        "vg-t-partial", [4], 0.0, TARGET_RTT_MS, 1.0
+    )
+
+    # Three of the four clients never answered: the step is the mean of the one
+    # that did, and it says one, rather than passing a lone reading off as the
+    # tier's converged latency.
+    assert steps[0].samples == 1
+    assert steps[0].rtt_stat == MEAN_OF_N
+    assert steps[0].rtt_ms == WARM_MS
+
+
+async def test_ramp_tiers_are_not_dominated_by_setup_cost():
+    """The live run's tell: 129.3ms at 2 clients against 26.1/25.7 at 10/25.
+
+    More clients measuring faster is backwards for a capacity probe. With the
+    cold sample out of the measurement the tiers sit flat, and the smallest tier
+    (the only one sfu_capacity_gate reads) is inside the same budget it failed.
+    """
+    made: list[Any] = []
+    steps, _resource = await _probe(made).ramp(
+        "vg-t-ramp", [2, 10, 25], 0.0, TARGET_RTT_MS, 1.0
+    )
+
+    rtts = [s.rtt_ms for s in steps]
+    assert [s.clients for s in steps] == [2, 10, 25]
+    assert [s.samples for s in steps] == [2, 10, 25]
+    assert max(rtts) <= 1.2 * min(rtts)  # flat across tiers, not 5x at the smallest
+    assert all(rtt <= TARGET_RTT_MS for rtt in rtts)
+    # Control: the un-warmed two-client tier is what breached the budget.
+    unwarmed_smallest_tier = (COLD_MS + WARM_MS) / 2
+    assert unwarmed_smallest_tier > TARGET_RTT_MS
+    assert rtts[0] < unwarmed_smallest_tier / 2
+    # Every client of every tier was warmed exactly once and measured once.
+    assert {c.pings for c in made} == {2}
+
+
+# --- teardown log noise -----------------------------------------------------
+#
+# A probe run tears down ~40 synthetic clients, and the rtc SDK reports each
+# shutdown through logging.getLogger("livekit") at ERROR. Those lines make a
+# healthy run look broken. They are demoted to DEBUG, and only while a teardown
+# is in flight; see client.quiet_livekit_teardown_noise.
+
+
+class _CapturingHandler(logging.Handler):
+    """Records what a handler at a given level would actually emit."""
+
+    def __init__(self, level: int) -> None:
+        super().__init__(level=level)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+@contextlib.contextmanager
+def _capture(level: int) -> Iterator[_CapturingHandler]:
+    handler = _CapturingHandler(level)
+    root = logging.getLogger()
+    previous = root.level
+    root.addHandler(handler)
+    root.setLevel(logging.DEBUG)  # let the record reach the handler's own level
+    try:
+        yield handler
+    finally:
+        root.removeHandler(handler)
+        root.setLevel(previous)
+
+
+def test_teardown_noise_is_demoted_not_shown_at_error():
+    sdk = logging.getLogger("livekit")
+    with _capture(logging.WARNING) as handler:
+        with quiet_livekit_teardown_noise():
+            sdk.error("livekit::room:412:rtc_engine - failed to close data channel")
+
+    # A default (WARNING) handler sees nothing: the run stops looking broken.
+    assert handler.records == []
+
+
+def test_demoted_teardown_noise_is_still_visible_at_debug():
+    sdk = logging.getLogger("livekit")
+    with _capture(logging.DEBUG) as handler:
+        with quiet_livekit_teardown_noise():
+            sdk.error("livekit::room:412:rtc_engine - failed to close data channel")
+
+    # Demoted, never discarded, and it still says what it was demoted from.
+    assert [r.getMessage() for r in handler.records] == [
+        "livekit::room:412:rtc_engine - failed to close data channel"
+    ]
+    assert handler.records[0].levelno == logging.DEBUG
+    assert handler.records[0].__dict__["vg_demoted_from"] == "ERROR"
+
+
+def test_livekit_error_outside_teardown_is_still_an_error():
+    """The suppression is a window, not a mute. This is the whole safety margin:
+    a genuine connect/ping/measurement failure is what the probe exists to show.
+    """
+    sdk = logging.getLogger("livekit")
+    with _capture(logging.ERROR) as handler:
+        with quiet_livekit_teardown_noise():
+            pass  # window opened and closed
+        sdk.error("livekit::rtc_engine:88:signal_client - connection refused")
+
+    assert [r.levelno for r in handler.records] == [logging.ERROR]
+    assert "connection refused" in handler.records[0].getMessage()
+
+
+def test_child_logger_errors_are_untouched_during_teardown():
+    """An embedded agent logs to ``livekit.agents``. A filter on a logger only
+    sees records logged through that exact logger, so the child never passes
+    through this one even while the window is open.
+    """
+    agent_log = logging.getLogger("livekit.agents")
+    with _capture(logging.ERROR) as handler:
+        with quiet_livekit_teardown_noise():
+            agent_log.error("agent failed to start")
+
+    assert [r.levelno for r in handler.records] == [logging.ERROR]
+
+
+def test_non_error_levels_are_left_alone_during_teardown():
+    sdk = logging.getLogger("livekit")
+    with _capture(logging.WARNING) as handler:
+        with quiet_livekit_teardown_noise():
+            sdk.warning("livekit::room:412 - reconnecting")
+            sdk.critical("livekit::ffi:1 - unrecoverable")
+
+    assert [r.levelno for r in handler.records] == [logging.WARNING, logging.CRITICAL]
+
+
+async def test_disconnect_opens_the_quiet_window():
+    """Pins the wiring, not just the filter: it is ``SyntheticClient.disconnect``
+    that opens the window, so the SDK's teardown ERROR lands inside it.
+    """
+
+    class _NoisyRoom:
+        def __init__(self) -> None:
+            self.disconnected = False
+
+        async def disconnect(self) -> None:
+            logging.getLogger("livekit").error(
+                "livekit::room:412:rtc_engine - peer connection closed"
+            )
+            self.disconnected = True
+
+    client = SyntheticClient.__new__(SyntheticClient)
+    client._silence_task = None
+    client._room = _NoisyRoom()  # type: ignore[assignment]
+
+    with _capture(logging.WARNING) as handler:
+        await client.disconnect()
+
+    assert client._room.disconnected  # type: ignore[attr-defined]
+    assert handler.records == []

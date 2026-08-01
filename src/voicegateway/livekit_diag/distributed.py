@@ -26,10 +26,19 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from voicegateway.livekit_diag.sfu import NOT_MEASURED
+
 # Worst-to-best quality ranking; the aggregate reports the worst any vantage saw
 # at a tier. "Unknown" sits above the healthy states but below the bad ones: it
 # is a missing signal, not evidence of failure.
 _QUALITY_RANK = {"Excellent": 0, "Good": 1, "Unknown": 2, "Poor": 3, "Lost": 4}
+
+# What a combined tier's ``rtt_ms`` is: the worst (max) of the vantage readings
+# that exist, or nothing at all. Named beside the number for the same reason
+# RampStep names its own statistic: an absent reading must not read as a fast
+# one. ``NOT_MEASURED`` is imported rather than restated so the two surfaces
+# cannot drift apart.
+_WORST_OF_N = "worst_of_n"
 
 
 class RegisterBody(BaseModel):
@@ -53,7 +62,7 @@ class VantageReport:
     """One prover's ramp result: per-tier steps in ramp order, plus its label."""
 
     vantage: str
-    steps: list[dict]  # each: {clients, rtt_ms, loss_pct, quality}
+    steps: list[dict]  # each: {clients, rtt_ms, loss_pct, quality, samples}
     baseline: dict | None = None
 
 
@@ -61,6 +70,33 @@ def _worst_quality(qualities: list[str]) -> str:
     if not qualities:
         return "Unknown"
     return max(qualities, key=lambda q: _QUALITY_RANK.get(q, 2))
+
+
+def _rtt_reading(step: dict[str, Any]) -> float | None:
+    """One vantage's tier rtt, or ``None`` when that vantage measured nothing.
+
+    A vantage whose pings all timed out reports ``rtt_ms`` 0.0 with ``samples``
+    0, and folding that 0.0 into the aggregate is how an unmeasured vantage
+    reads as a fast one: with every vantage in that state the combined tier came
+    out at 0.0, inside any budget, and the knee walk called the ramp sustained.
+    A round trip through an SFU is never 0.0 ms and never negative, so a
+    non-positive rtt is the placeholder, not a reading.
+
+    Also the one place that could raise: ``float(None)`` is a TypeError, and a
+    step is free to carry a null rtt.
+    """
+    samples = step.get("samples")
+    if samples is not None:
+        try:
+            if int(samples) <= 0:
+                return None
+        except (TypeError, ValueError):
+            pass
+    try:
+        rtt = float(step["rtt_ms"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return rtt if rtt > 0.0 else None
 
 
 def aggregate_vantages(
@@ -74,18 +110,32 @@ def aggregate_vantages(
     only as healthy as its unhappiest vantage). The combined knee is the last
     tier whose total client count stayed within both thresholds. Vantages that
     reported short (a failed tier) only contribute the tiers they have.
+
+    **An unmeasured vantage contributes nothing, not a zero.** Only vantages
+    with a real reading (see :func:`_rtt_reading`) fold into a tier's rtt, and
+    ``measured_vantages`` says how many that was, so ``4 clients from 2
+    vantages`` can no longer hide that neither of them got a ping back. A tier
+    no vantage measured reports ``rtt_ms`` ``None`` with ``rtt_stat``
+    ``not_measured``: never 0.0, which the knee walk would have read as
+    comfortably inside budget. The knee walk stops at such a tier rather than
+    walking past it, and ``unmeasured_tiers`` lists them, because a ``knee`` of
+    None means "sustained the whole ramp" and nothing else may be allowed to
+    produce it.
     """
     valid = [r for r in reports if r.steps]
     tier_count = min((len(r.steps) for r in valid), default=0)
     combined: list[dict[str, Any]] = []
     for i in range(tier_count):
         row = [r.steps[i] for r in valid]
+        rtts = [rtt for rtt in (_rtt_reading(s) for s in row) if rtt is not None]
         combined.append(
             {
                 "tier": i,
                 "clients": sum(int(s.get("clients", 0)) for s in row),
                 "vantages": len(row),
-                "rtt_ms": max((float(s.get("rtt_ms", 0.0)) for s in row), default=0.0),
+                "measured_vantages": len(rtts),
+                "rtt_ms": max(rtts) if rtts else None,
+                "rtt_stat": _WORST_OF_N if rtts else NOT_MEASURED,
                 "loss_pct": max(
                     (float(s.get("loss_pct", 0.0)) for s in row), default=0.0
                 ),
@@ -99,9 +149,16 @@ def aggregate_vantages(
     # a threshold. Matches single-host find_knee semantics exactly, including None
     # when no tier breaks ("no knee within ramp: sustained the whole ramp"), so
     # the two SFU modes never report contradictory things for an all-healthy run.
+    # A tier nobody measured breaks the walk too: it was not demonstrated
+    # healthy, so the last count that WAS demonstrated is where the evidence
+    # ends. That understates capacity when the tier was fine, which is the safe
+    # direction; unmeasured_tiers says which reading it was.
     knee: int | None = None
     last_ok: int | None = None
     for tier in combined:
+        if tier["rtt_ms"] is None:
+            knee = last_ok
+            break
         if tier["rtt_ms"] > target_rtt_ms or tier["loss_pct"] > max_loss:
             knee = last_ok
             break
@@ -111,6 +168,7 @@ def aggregate_vantages(
         "vantages": [{"vantage": r.vantage, "steps": r.steps} for r in valid],
         "combined": combined,
         "knee": knee,
+        "unmeasured_tiers": [t["tier"] for t in combined if t["rtt_ms"] is None],
         "target_rtt_ms": target_rtt_ms,
         "max_loss": max_loss,
         "dropped": [r.vantage for r in reports if not r.steps],
@@ -367,6 +425,11 @@ async def run_prober(
                     "rtt_ms": s.rtt_ms,
                     "loss_pct": s.loss_pct,
                     "quality": s.quality,
+                    # Sent so the coordinator can tell a vantage that measured a
+                    # fast tier from one that measured nothing: both report an
+                    # rtt_ms, and only one of them is a reading.
+                    "samples": s.samples,
+                    "rtt_stat": s.rtt_stat,
                 }
                 for s in steps
             ],

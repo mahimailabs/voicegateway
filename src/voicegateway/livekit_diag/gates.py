@@ -315,6 +315,29 @@ def sfu_quality_gate(baseline: dict[str, Any] | None) -> GateResult:
     ``Poor``/``Lost`` is a FAIL, which is ``check_json``'s reading;
     ``_verdict`` called the same input a WARN. Loss is not consulted: it is a
     hardcoded ``0.0`` (see the module docstring).
+
+    ``quality`` and ``rtt_ms`` are INDEPENDENT readings, and this gate used to
+    consult only the first. ``quality`` is the SDK's own peer-connection metric;
+    ``rtt_ms`` is a mean over ping round trips, which needs a pong back. They
+    disagree exactly when the connection came up and every ping timed out: that
+    baseline reports ``Excellent`` beside an rtt of ``0.0`` over zero samples,
+    and ``Excellent`` is neither falsy, nor :data:`_NO_QUALITY`, nor in
+    :data:`_DEGRADED_QUALITY`, so it fell through to PASS while the detail line
+    printed ``rtt 0.0ms`` as though that were a time. So the gate certified a
+    healthy baseline for a run in which not one round trip completed: the same
+    defect :func:`sfu_capacity_gate` had for the ramp.
+
+    A baseline that measured nothing (:func:`_unmeasured_reason`, the helper the
+    ramp already uses, so the two surfaces cannot drift) is now :data:`UNKNOWN`
+    whatever ``quality`` says. UNKNOWN and not FAIL, for the ramp's reason:
+    nothing was observed, so nothing is claimed, and the pings can die because
+    the PROBER never got its own client connected. It still exits non-zero and
+    still outranks WARN.
+
+    A ``Poor``/``Lost`` baseline that measured no rtt is still a FAIL, also
+    matching the ramp: a degraded quality is a real observation of the SFU,
+    while a missing round trip is only an absence. Its rtt is not a reading
+    either way, so no branch prints one it does not have.
     """
     if not baseline:
         return GateResult(
@@ -324,6 +347,7 @@ def sfu_quality_gate(baseline: dict[str, Any] | None) -> GateResult:
         )
     quality = baseline.get("quality")
     rtt = baseline.get("rtt_ms")
+    unmeasured = _unmeasured_reason(baseline)
     if not quality or quality == _NO_QUALITY:
         return GateResult(
             gate=SFU_QUALITY_GATE,
@@ -334,11 +358,24 @@ def sfu_quality_gate(baseline: dict[str, Any] | None) -> GateResult:
             ),
         )
     if quality in _DEGRADED_QUALITY:
+        observed = (
+            f"no rtt reading: {unmeasured}" if unmeasured is not None else f"rtt {rtt}ms"
+        )
         return GateResult(
             gate=SFU_QUALITY_GATE,
             status=FAIL,
-            detail=f"SFU baseline connection quality is {quality} (rtt {rtt}ms)",
+            detail=f"SFU baseline connection quality is {quality} ({observed})",
             metric="sfu_baseline_quality",
+        )
+    if unmeasured is not None:
+        return GateResult(
+            gate=SFU_QUALITY_GATE,
+            status=UNKNOWN,
+            detail=(
+                f"the SFU baseline measured nothing: {unmeasured}, so its "
+                f"connection quality of {quality} is the only signal and no "
+                "round trip through the SFU was completed at all"
+            ),
         )
     return GateResult(
         gate=SFU_QUALITY_GATE,
@@ -358,6 +395,63 @@ def _breaches(step: dict[str, Any], target_rtt_ms: float) -> bool:
         return False
 
 
+def _sample_count(step: dict[str, Any]) -> int | None:
+    """``samples`` off a ramp step or baseline, or ``None`` when it carries none.
+
+    Absent is NOT zero. Runs stored before ``sfu.RampStep`` grew a sample count
+    have no such key, and reading that absence as "measured nothing" would
+    retroactively turn every archived run UNKNOWN, healthy ones included.
+    """
+    if "samples" not in step:
+        return None
+    raw = step.get("samples")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _unmeasured_reason(step: dict[str, Any]) -> str | None:
+    """Why a ramp tier or baseline is not a measurement, or ``None`` when it is.
+
+    One helper for both, deliberately: :func:`sfu_capacity_gate` and
+    :func:`sfu_quality_gate` read the same ``{rtt_ms, quality, samples}`` shape
+    off the same probe, so a second copy of this rule is a second place for it
+    to drift.
+
+    Keyed on ``samples``, the count of ping round-trips that came back, because
+    a count is a fact while the ``rtt_ms`` of ``0.0`` a reading reports when
+    every ping timed out is an artifact of averaging an empty list. Nothing else
+    here could catch that: ``0.0 > target`` is False, and the quality a tier
+    reports in that state is :data:`_NO_QUALITY`, which is deliberately not in
+    :data:`_DEGRADED_QUALITY` -- while a BASELINE in that state can report a
+    perfectly healthy ``Excellent``, since its quality comes from the SDK's
+    peer-connection metric rather than from the pings. So a run where every
+    single ping timed out used to satisfy both gates and report PASS -- a
+    monitoring tool telling an operator a dead SFU is fine.
+
+    A reading with no ``samples`` key at all is NOT assumed unmeasured: runs
+    stored before the count existed have no such key, and reading absence as
+    zero would turn every archived run UNKNOWN. Those fall back to the number
+    itself, under the rule :func:`_has_measurement` already applies to reply
+    latency: a round trip through an SFU cannot take zero milliseconds, so a
+    non-positive (or missing) rtt on a reading that carries no count is the
+    placeholder, and any positive rtt is judged exactly as it was before.
+    """
+    count = _sample_count(step)
+    if count is not None:
+        return None if count > 0 else "no ping round-trip came back (samples 0)"
+    rtt = _as_float(step.get("rtt_ms"))
+    if rtt is None or rtt <= 0.0:
+        return (
+            "it carries no sample count (a run stored before they were recorded) "
+            f"and its rtt of {step.get('rtt_ms')} is not a round-trip time"
+        )
+    return None
+
+
 def sfu_capacity_gate(
     ramp: Sequence[dict[str, Any]],
     target_rtt_ms: float | None,
@@ -373,6 +467,11 @@ def sfu_capacity_gate(
 
     Finding a knee at a later tier is NOT a failure -- measuring where capacity
     ends is the entire purpose of running a ramp.
+
+    A smallest tier that measured NOTHING (see :func:`_unmeasured_reason`) is
+    :data:`UNKNOWN`. It used to be a PASS, which is the same class of bug as the
+    ``knee is None`` ambiguity this gate exists to close, in a worse direction:
+    the reading came from a server where every ping timed out.
     """
     if not ramp:
         return GateResult(
@@ -403,6 +502,26 @@ def sfu_capacity_gate(
     unmeasured_prober = resource is not None and resource.get("saturated") is None
     first = ramp[0]
     clients = first.get("clients")
+    unmeasured = _unmeasured_reason(first)
+    degraded = first.get("quality") in _DEGRADED_QUALITY
+    if unmeasured is not None and not degraded:
+        # Nothing came back, and no quality reading indicts the SFU either, so
+        # there is no number to compare and no observed failure to report.
+        # UNKNOWN, not FAIL: FAIL would claim a breach nobody watched, and the
+        # tier may have measured nothing because the PROBER could not connect
+        # its own clients. UNKNOWN still exits non-zero (see exit_code) and
+        # still outranks WARN in the run verdict, so this is not the soft
+        # option: it is the accurate one.
+        return GateResult(
+            gate=SFU_CAPACITY_GATE,
+            status=UNKNOWN,
+            detail=(
+                f"the smallest tier ({clients} clients) measured nothing: "
+                f"{unmeasured}, so there is no rtt to compare against the "
+                f"{target_rtt_ms}ms budget and no capacity was demonstrated"
+            ),
+            threshold=target_rtt_ms,
+        )
     if _breaches(first, target_rtt_ms):
         caveat = (
             "; the prober's own load was not measured, so this host cannot be "
@@ -410,17 +529,24 @@ def sfu_capacity_gate(
             if unmeasured_prober
             else ""
         )
+        # A degraded tier that measured no rtt is still a FAIL -- Poor/Lost is an
+        # observation -- but its rtt of 0.0 is not, so it is neither printed as a
+        # reading nor published as the gate's value.
+        observed = (
+            f"quality {first.get('quality')}, and no rtt reading: {unmeasured}"
+            if unmeasured is not None
+            else f"rtt {first.get('rtt_ms')}ms, quality {first.get('quality')}"
+        )
         return GateResult(
             gate=SFU_CAPACITY_GATE,
             status=FAIL,
             detail=(
                 f"the smallest tier ({clients} clients) was already outside "
-                f"budget (rtt {first.get('rtt_ms')}ms, quality "
-                f"{first.get('quality')}) against a {target_rtt_ms}ms target, so "
+                f"budget ({observed}) against a {target_rtt_ms}ms target, so "
                 f"there is no healthy capacity to report{caveat}"
             ),
-            metric="sfu_ramp_rtt_ms",
-            value=_as_float(first.get("rtt_ms")),
+            metric=None if unmeasured is not None else "sfu_ramp_rtt_ms",
+            value=None if unmeasured is not None else _as_float(first.get("rtt_ms")),
             threshold=target_rtt_ms,
         )
     return GateResult(

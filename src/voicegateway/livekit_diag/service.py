@@ -247,6 +247,13 @@ class RealProbes:
         hardcoded 0.0 in ``sfu.py`` (per-connection loss is not exposed). It is
         not a measurement and must not be rendered as one; ``quality`` is the
         coarse signal that is real.
+
+        The baseline and each ramp step carry ``samples`` (how many ping
+        round-trips came back) and ``rtt_stat`` beside their ``rtt_ms``, because
+        a reading whose pings all timed out reports an rtt of 0.0 and only the
+        count says that 0.0 is a placeholder rather than a very fast SFU.
+        ``gates.sfu_capacity_gate`` reads the ramp's; ``gates.sfu_quality_gate``
+        reads the baseline's.
         """
         d = _diag()
         admin = d.LiveKitAdmin(creds)
@@ -274,6 +281,17 @@ class RealProbes:
                 "rtt_ms": base.rtt_ms,
                 "loss_pct": base.loss_pct,
                 "quality": base.quality,
+                # The same two keys the ramp steps carry, for the same reason
+                # and one worse case: ``quality`` and ``rtt_ms`` are INDEPENDENT
+                # readings here. ``quality`` is the SDK's own peer-connection
+                # metric, ``rtt_ms`` is a mean over ping round trips, so a
+                # connection that came up while every ping timed out reports
+                # quality "Excellent" beside an rtt of 0.0 over zero samples.
+                # Without the count, sfu_quality_gate read only the quality and
+                # certified that baseline healthy. int/str, so both survive the
+                # round trip through the stored run JSON.
+                "samples": base.samples,
+                "rtt_stat": base.rtt_stat,
             },
             "ramp": [
                 {
@@ -281,6 +299,14 @@ class RealProbes:
                     "rtt_ms": s.rtt_ms,
                     "loss_pct": s.loss_pct,
                     "quality": s.quality,
+                    # What rtt_ms IS. A tier whose pings all timed out reports
+                    # 0.0, and without a count of the round-trips behind it that
+                    # 0.0 is indistinguishable from a very fast SFU: it read as
+                    # comfortably inside budget, so a completely unmeasured ramp
+                    # passed sfu_capacity. Both keys are ints/strings, so they
+                    # survive the round trip through the stored run JSON.
+                    "samples": s.samples,
+                    "rtt_stat": s.rtt_stat,
                 }
                 for s in steps
             ],

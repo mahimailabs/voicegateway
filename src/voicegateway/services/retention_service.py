@@ -182,6 +182,14 @@ class RetentionWorker:
         requests independently
         by timestamp. Each chunk commits so a large backlog never holds one long
         write lock.
+
+        A request is NOT a child of a session (it prunes on the request clock
+        and routinely outlives the session it names), so it is not deleted with
+        the session pass; its ``session_id`` pointer is nulled instead, in the
+        same chunk transaction as the delete. That keeps the invariant at the
+        source, which is the only guard this pointer has: no read joins
+        ``requests`` to ``sessions``, so unlike ``sessions.call_id`` there is no
+        read-time LEFT JOIN that would filter a dangling one out.
         """
         deleted = 0
 
@@ -206,6 +214,21 @@ class RetentionWorker:
                     {"ids": ids},
                 )
                 deleted += _rowcount(res)
+            # A request is NOT a child of a session (it prunes on its own
+            # ``timestamp`` clock and routinely outlives the session it names),
+            # so it is not deleted here; its ``session_id`` pointer is dropped
+            # before the row it points at, inside this chunk's transaction, so
+            # a crash mid-sweep can never commit the delete without the
+            # null-out. Deliberately not scoped by project: a pointer from
+            # anywhere at a session that is going away is dangling either way.
+            # Not added to ``deleted`` either, which counts deleted rows and
+            # would otherwise over-report.
+            await db.execute(
+                text(
+                    "UPDATE requests SET session_id = NULL WHERE session_id IN :ids"
+                ).bindparams(bindparam("ids", expanding=True)),
+                {"ids": ids},
+            )
             res = await db.execute(
                 text("DELETE FROM sessions WHERE id IN :ids").bindparams(
                     bindparam("ids", expanding=True)
@@ -256,6 +279,13 @@ class RetentionWorker:
 
         The cutoff arrives in epoch seconds and this table stores epoch
         milliseconds, hence the conversion here.
+
+        A session is NOT a child of a call (it prunes on the session clock and
+        routinely outlives the call it names), so it is not deleted here; its
+        ``call_id`` pointer is nulled instead, in the same chunk transaction as
+        the delete. That keeps the invariant at the source. The read side keeps
+        its own LEFT JOIN guard against dangling pointers regardless: this is
+        defence in depth, not a replacement for it.
         """
         deleted = 0
         cutoff_ms = int(cutoff_ts * 1000)
@@ -279,6 +309,18 @@ class RetentionWorker:
                     {"ids": ids},
                 )
                 deleted += _rowcount(res)
+            # Drop the pointers before the rows they point at, inside this
+            # chunk's transaction, so a crash mid-sweep can never commit the
+            # delete without the null-out. Deliberately not scoped by project:
+            # a pointer from anywhere at a call that is going away is dangling
+            # either way. Not added to ``deleted`` either, which counts deleted
+            # rows and would otherwise over-report.
+            await db.execute(
+                text(
+                    "UPDATE sessions SET call_id = NULL WHERE call_id IN :ids"
+                ).bindparams(bindparam("ids", expanding=True)),
+                {"ids": ids},
+            )
             res = await db.execute(
                 text("DELETE FROM calls WHERE id IN :ids").bindparams(
                     bindparam("ids", expanding=True)

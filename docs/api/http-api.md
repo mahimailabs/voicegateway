@@ -720,9 +720,10 @@ voicegw_uptime_seconds 3621.4
 # HELP voicegw_providers_configured Configured providers
 # TYPE voicegw_providers_configured gauge
 voicegw_providers_configured 5
-# HELP voicegw_cost_usd_total Total cost in USD (today)
-# TYPE voicegw_cost_usd_total counter
+# HELP voicegw_cost_usd_total USD cost summed over a ROLLING trailing 24 hours (now-86400s to now). This is a gauge despite the _total suffix: it DECREASES as requests age out of the window. It is not a since-start total and not a calendar day. Do not use rate() or increase() on it.
+# TYPE voicegw_cost_usd_total gauge
 voicegw_cost_usd_total{period="today"} 1.234500
+# TYPE voicegw_requests_total gauge
 voicegw_requests_total{provider="deepgram"} 42
 voicegw_cost_usd_total{provider="deepgram"} 0.512300
 # HELP voicegw_diag_gate_status Health gates in the newest stored LiveKit diagnostics run, counted by gate id and status.
@@ -736,6 +737,30 @@ voicegw_diag_run_timestamp_seconds 1785412800.000
 ```
 
 This endpoint exposes VoiceGateway's own numbers so your Prometheus can scrape it. It is the opposite direction from the node scrape, which pulls exposition text *from* livekit-server and node_exporter *into* this database; nothing scraped from another process is served back out here.
+
+**`voicegw_cost_usd_total` and `voicegw_requests_total` are gauges over a rolling 24-hour window, not counters.** Both are computed from the `"today"` window, which is `now - 86400` seconds: a rolling trailing 24 hours. It is *not* midnight-to-now and *not* a since-process-start total. The value therefore goes **down** as well as up, every time a request falls off the trailing edge. The `period="today"` label and the `_total` suffix are both misnomers kept for backward compatibility, because renaming a scraped series would break every dashboard already built on it. The `# TYPE` metadata is now `gauge`, which is what your tooling actually reads.
+
+Concretely, this means:
+
+```promql
+# WRONG. rate()/increase() require a counter. Every decrease (a request ageing
+# out of the 24h window) is read as a counter reset, and Prometheus extrapolates
+# spend and traffic that never happened.
+rate(voicegw_cost_usd_total[5m])
+increase(voicegw_requests_total[1h])
+
+# RIGHT. Read the gauge as-is, or aggregate/compare it over time.
+voicegw_cost_usd_total{period="today"}                    # spend in the last 24h
+sum(voicegw_requests_total)                               # requests in the last 24h
+delta(voicegw_cost_usd_total{period="today"}[1h])         # how the 24h window moved
+max_over_time(voicegw_cost_usd_total{period="today"}[7d]) # worst 24h in a week
+```
+
+`sum(voicegw_requests_total)` sums the per-provider series; there is no separate unlabelled total. Do **not** write bare `sum(voicegw_cost_usd_total)`: that series is emitted three times over, once with `period="today"`, once per `provider` and once per `project`, so an unfiltered `sum` counts the same spend about three times. Always select a label set.
+
+For an actual monotonic spend counter (one that supports `rate()` and `increase()`), VoiceGateway does not publish one yet. Use `GET /v1/costs?period=all`, which is a true since-start total, or `period=week` / `period=month` for wider rolling windows.
+
+The latency series (`voicegw_request_ttfb_seconds`, `voicegw_request_total_latency_seconds`) are summary quantiles over the same rolling trailing 24 hours. Summary quantiles were never counters, so their type is unchanged; no `_sum` or `_count` children are published, so there is nothing to `rate()` there either.
 
 **Diagnostics gate series.** `voicegw_diag_gate_status` reports the health gates of the newest stored [diagnostics run](/cli/livekit) that gated anything, aggregated per gate id and status: the probed agent is not a label, so cardinality does not grow with your fleet. Statuses are the one ladder `voicegw livekit check` uses, `PASS < WARN < UNKNOWN < FAIL`, where **`UNKNOWN` means the gate could not be evaluated and is not a pass** (only `PASS` exits 0). `voicegw_diag_run_verdict` is that run's stored verdict, and `voicegw_diag_run_timestamp_seconds` is when it finished, so a clean verdict from three weeks ago is distinguishable from one from a minute ago.
 
