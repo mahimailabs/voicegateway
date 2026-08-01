@@ -60,6 +60,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -163,22 +164,39 @@ def _as_int(value: Any, *, where: str) -> int | None:
         parsed = float(text)
     except ValueError as exc:
         raise MalformedArtifact(f"{where}: {value!r} is not a number") from exc
+    # float() ACCEPTS "nan", "inf" and "Infinity", and json.loads accepts the
+    # bare NaN/Infinity tokens, so both reach here having parsed cleanly. int()
+    # then raises ValueError on NaN and OverflowError on an infinity, neither of
+    # which is an ArtifactError, so a corrupt artifact would escape this
+    # module's own error hierarchy and surface as an unhandled crash.
+    if not math.isfinite(parsed):
+        raise MalformedArtifact(f"{where}: {value!r} is not a finite number")
     if parsed != int(parsed):
         raise MalformedArtifact(f"{where}: {value!r} is not a whole number")
     return int(parsed)
 
 
 def _as_float(value: Any, *, where: str) -> float | None:
-    """A float, or None when the artifact did not carry one."""
+    """A float, or None when the artifact did not carry one.
+
+    NaN and the infinities are refused rather than stored. A NaN is worse than
+    useless here: every comparison against it is False, so a NaN
+    ``success_ratio`` would make :attr:`ParsedTest.reported_ratio_disagrees`
+    answer "no disagreement" and the cross-check that exists to catch a misread
+    import would silently pass on the one input it most needs to catch.
+    """
     if value is None:
         return None
     text = str(value).strip()
     if not text:
         return None
     try:
-        return float(text)
+        parsed = float(text)
     except ValueError as exc:
         raise MalformedArtifact(f"{where}: {value!r} is not a number") from exc
+    if not math.isfinite(parsed):
+        raise MalformedArtifact(f"{where}: {value!r} is not a finite number")
+    return parsed
 
 
 def _as_epoch_ms(value: Any, *, where: str) -> int | None:
@@ -253,7 +271,9 @@ class IntervalSample:
     calls_per_second: float | None
     rtp_packets_sent: int | None
     rtp_packets_received: int | None
-    failures_by_cause: dict[str, int] = field(default_factory=dict)
+    # None when this CSV carries no failure_* column at all, as distinct from
+    # carrying them with nothing recognised in them.
+    failures_by_cause: dict[str, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -273,7 +293,8 @@ class RunSummary:
     reported_success_ratio: float | None
     retransmits: int | None
     timeouts: int | None
-    failures_by_cause: dict[str, int] = field(default_factory=dict)
+    # None when summary.json carried no failure_classes section at all.
+    failures_by_cause: dict[str, int] | None = None
     rtp_packets_sent: int | None = None
     rtp_packets_received: int | None = None
     answer_latency: AnswerLatency | None = None
@@ -357,16 +378,22 @@ class ParsedTest:
         return abs(computed - self.reported_success_ratio) > 1e-3
 
 
-def _failures_from_mapping(raw: Any, *, where: str) -> dict[str, int]:
+def _failures_from_mapping(raw: Any, *, where: str) -> dict[str, int] | None:
     """Normalise the summary's NESTED ``failure_classes`` onto the cause names.
 
-    Only causes actually present are returned. A cause the artifact omitted is
-    absent from the mapping rather than zero, because "the artifact carried no
-    breakdown" and "there were no timeouts" are different claims and only the
-    second one may be rendered as a zero.
+    Returns None when the section is ABSENT, and a mapping when it is present.
+    Those are different facts and the caller acts on them differently: an absent
+    section means this surface cannot answer the question, while a present but
+    empty one means it answered "no recognised causes". Collapsing both to ``{}``
+    is what lets a fallback fire against a summary that did answer.
+
+    Within a present section, only causes actually carried are returned. A cause
+    the artifact omitted is absent from the mapping rather than zero, because
+    "the artifact carried no breakdown" and "there were no timeouts" are
+    different claims and only the second may be rendered as a zero.
     """
     if not isinstance(raw, dict):
-        return {}
+        return None
     out: dict[str, int] = {}
     for cause in FAILURE_CAUSES:
         value = _as_int(raw.get(cause), where=f"{where}.{cause}")
@@ -375,13 +402,19 @@ def _failures_from_mapping(raw: Any, *, where: str) -> dict[str, int]:
     return out
 
 
-def _failures_from_row(row: dict[str, Any], *, where: str) -> dict[str, int]:
+def _failures_from_row(row: dict[str, Any], *, where: str) -> dict[str, int] | None:
     """Normalise the CSV's FLAT ``failure_<cause>`` columns onto the same names.
 
+    None when the CSV carries no ``failure_*`` column at all, mirroring
+    :func:`_failures_from_mapping`: this surface cannot answer, as distinct from
+    answering that nothing was recognised.
+
     The ``delta_failure_<cause>`` columns beside them are per-interval and are
-    deliberately not read here: these are cumulative totals, and summing the
-    deltas as if they were would double-count.
+    deliberately not read here: these are cumulative totals, and reading a
+    delta as the total under-reports every interval after the first.
     """
+    if not any(f"failure_{cause}" in row for cause in FAILURE_CAUSES):
+        return None
     out: dict[str, int] = {}
     for cause in FAILURE_CAUSES:
         value = _as_int(row.get(f"failure_{cause}"), where=f"{where}.failure_{cause}")
@@ -469,12 +502,26 @@ def parse_stat_csv(path: Path) -> list[IntervalSample]:
     is missing a column the report needs.
     """
     try:
-        text = path.read_text()
+        # utf-8-sig, not utf-8: a BOM would otherwise attach to the first header
+        # field, turning "timestamp" into "\ufefftimestamp". That column is not
+        # required, so nothing would raise, and every row's at_ms would silently
+        # read None while the column sat there full of valid data.
+        text = path.read_text(encoding="utf-8-sig")
     except OSError as exc:
         raise MalformedArtifact(f"{path}: cannot be read: {exc}") from exc
 
     reader = csv.DictReader(text.splitlines())
-    header = set(reader.fieldnames or ())
+    fieldnames = list(reader.fieldnames or ())
+    duplicates = sorted({c for c in fieldnames if fieldnames.count(c) > 1})
+    if duplicates:
+        # DictReader keeps only the last occurrence, so a duplicated column
+        # means the value read is whichever came last, with nothing to say so.
+        raise UnknownArtifactSchema(
+            f"{path}: stat CSV header repeats {duplicates}. Only the last "
+            "occurrence of a repeated column survives, so which value was read "
+            "would be unknowable."
+        )
+    header = set(fieldnames)
     missing = REQUIRED_STAT_COLUMNS - header
     if missing:
         raise UnknownArtifactSchema(
@@ -595,9 +642,15 @@ def parse_test_directory(directory: Path, *, name: str | None = None) -> ParsedT
         succeeded = last.success_calls if succeeded is None else succeeded
         failed = last.failed_calls if failed is None else failed
 
-    failures = dict(summary.failures_by_cause) if summary else {}
-    if not failures and last is not None:
-        failures = dict(last.failures_by_cause)
+    # The CSV supplies the breakdown ONLY on a summary-less import. Unlike the
+    # cumulative scalars above, a breakdown can CONTRADICT a value the summary
+    # did give: a summary reporting failed_calls=0 and omitting failure_classes,
+    # paired with a CSV whose cumulative failure_timeout reads 5, would yield a
+    # test that failed no calls and timed out five times. When the summary is
+    # present it is the authority, and a section it omitted is not measured.
+    failures = summary.failures_by_cause if summary else None
+    if summary is None and last is not None:
+        failures = last.failures_by_cause
 
     duration_ms = summary.elapsed_ms if summary else None
     if duration_ms is None and last is not None:
@@ -640,7 +693,7 @@ def parse_test_directory(directory: Path, *, name: str | None = None) -> ParsedT
         attempted_calls=attempted,
         succeeded_calls=succeeded,
         failed_calls=failed,
-        failures_by_cause=failures,
+        failures_by_cause=dict(failures) if failures else {},
         rtp_packets_sent=rtp_sent,
         rtp_packets_received=rtp_recv,
         answer_latency=summary.answer_latency if summary else None,

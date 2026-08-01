@@ -514,3 +514,140 @@ def test_every_parsed_field_maps_onto_a_load_run_test_column(run_dir: Path) -> N
     ):
         assert name in columns, f"{name} has no column on load_run_tests"
         assert hasattr(parsed, name)
+
+
+# --------------------------------------------------------------------------
+# Regressions found by adversarially probing the error paths
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("token", ["nan", "NaN", "inf", "-inf", "Infinity"])
+def test_a_nonfinite_count_is_a_named_error_not_a_crash(
+    tmp_path: Path, token: str
+) -> None:
+    """float() accepts these; int() then raises outside this module's hierarchy.
+
+    ``float("nan")`` and ``float("Infinity")`` both parse cleanly, so the
+    failure only appears at the later ``int()``, as a bare ValueError or
+    OverflowError. A caller catching ArtifactError would not catch either.
+    """
+    directory = tmp_path / f"nf-{token}"
+    directory.mkdir()
+    (directory / "s.csv").write_text(
+        "elapsed_ms,total_calls,success_calls,failed_calls,active_calls\n"
+        f"1000,{token},0,0,4\n"
+    )
+    with pytest.raises(art.ArtifactError):
+        art.parse_stat_csv(directory / "s.csv")
+
+
+def test_a_nonfinite_value_in_json_is_a_named_error(tmp_path: Path) -> None:
+    """json.loads accepts the bare NaN and Infinity tokens by default."""
+    directory = tmp_path / "nfjson"
+    directory.mkdir()
+    (directory / "summary.json").write_text(
+        '{"schema_version": "gossipper_summary_v1", "total_calls": Infinity}'
+    )
+    with pytest.raises(art.MalformedArtifact):
+        art.parse_summary(directory / "summary.json")
+
+
+def test_a_nan_ratio_cannot_silently_defeat_the_cross_check(tmp_path: Path) -> None:
+    """Every comparison against NaN is False, including the disagreement test.
+
+    Storing a NaN would make reported_ratio_disagrees answer "they agree" for
+    precisely the corrupt input the cross-check exists to catch.
+    """
+    poisoned = dict(SUMMARY)
+    poisoned["success_ratio"] = float("nan")
+    directory = tmp_path / "nanratio"
+    directory.mkdir()
+    (directory / "summary.json").write_text(
+        json.dumps(poisoned)  # json.dumps writes a bare NaN token
+    )
+    with pytest.raises(art.MalformedArtifact):
+        art.parse_summary(directory / "summary.json")
+
+    # And the property itself would indeed have been fooled, which is why the
+    # value is refused at the boundary rather than handled downstream.
+    fooled = art.ParsedTest(
+        name="t",
+        attempted_calls=100,
+        succeeded_calls=10,
+        reported_success_ratio=float("nan"),
+    )
+    assert fooled.reported_ratio_disagrees is False
+
+
+def test_a_summary_that_omits_failure_classes_does_not_take_the_csv_totals(
+    tmp_path: Path,
+) -> None:
+    """An absent section is not the same fact as an empty one.
+
+    A clean run may omit failure_classes entirely. Treating that as "no answer"
+    let the CSV's cumulative counts overwrite it, producing failures that
+    contradict the summary's own failed_calls.
+    """
+    clean = {k: v for k, v in SUMMARY.items() if k != "failure_classes"}
+    clean["failed_calls"] = 0
+    clean["success_calls"] = 15000
+    directory = tmp_path / "clean"
+    directory.mkdir()
+    (directory / "summary.json").write_text(json.dumps(clean))
+    # A companion CSV whose cumulative column disagrees with the summary.
+    (directory / "s.csv").write_text(
+        "elapsed_ms,total_calls,success_calls,failed_calls,active_calls,"
+        "failure_timeout\n3600000,15000,15000,0,0,5\n"
+    )
+    parsed = art.parse_test_directory(directory)
+    assert parsed.failed_calls == 0
+    total_by_cause = sum(parsed.failures_by_cause.values())
+    assert total_by_cause == 0, (
+        f"the CSV's failure counts overwrote a summary that reported a clean "
+        f"run: failed_calls=0 but causes sum to {total_by_cause}"
+    )
+
+
+def test_the_csv_still_supplies_failures_when_the_summary_is_absent(
+    tmp_path: Path,
+) -> None:
+    """The fallback must still work; only its trigger condition changed."""
+    parsed = art.parse_test_directory(_write(tmp_path / "csvonly", summary=None))
+    assert parsed.failures_by_cause["unexpected_sip"] == 9
+
+
+def test_a_byte_order_mark_does_not_silently_void_every_timestamp(
+    tmp_path: Path,
+) -> None:
+    """A BOM attaches to the first header field and timestamp is not required.
+
+    So nothing raises, and every at_ms reads None while the column sits there
+    full of valid data.
+    """
+    directory = tmp_path / "bom"
+    directory.mkdir()
+    (directory / "s.csv").write_bytes(
+        b"\xef\xbb\xbf"
+        + (
+            b"timestamp,elapsed_ms,total_calls,success_calls,failed_calls,"
+            b"active_calls\n2026-07-31T18:00:01Z,1000,4,0,0,4\n"
+        )
+    )
+    [row] = art.parse_stat_csv(directory / "s.csv")
+    assert row.at_ms is not None, "the BOM voided the timestamp column"
+    assert row.active_calls == 4
+
+
+def test_a_repeated_column_is_refused_rather_than_silently_collapsed(
+    tmp_path: Path,
+) -> None:
+    """DictReader keeps the last occurrence, so the value read is unknowable."""
+    directory = tmp_path / "dup"
+    directory.mkdir()
+    (directory / "s.csv").write_text(
+        "elapsed_ms,total_calls,total_calls,success_calls,failed_calls,"
+        "active_calls\n1000,4,999,0,0,4\n"
+    )
+    with pytest.raises(art.UnknownArtifactSchema) as excinfo:
+        art.parse_stat_csv(directory / "s.csv")
+    assert "total_calls" in str(excinfo.value)
