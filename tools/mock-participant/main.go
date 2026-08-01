@@ -31,13 +31,9 @@ func main() {
 		APISecret: *apiSecret,
 		AgentName: *agentName,
 		Logf:      logf,
-		OnAssignment: func(_ context.Context, a Assignment) error {
-			// Joining the room and publishing audio land here. Until then this
-			// reports what it was given, which is what makes the handshake
-			// verifiable on its own.
-			logf("job %s ready to join room %q at %s (token %d bytes)",
-				a.JobID, a.RoomName, a.URL, len(a.Token))
-			return nil
+		OnAssignment: func(ctx context.Context, a Assignment) error {
+			logf("job %s joining room %q at %s", a.JobID, a.RoomName, a.URL)
+			return JoinAndPublish(ctx, a, logf)
 		},
 	}
 
