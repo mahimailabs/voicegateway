@@ -142,7 +142,8 @@
               "cli/replay",
               "cli/mcp",
               "cli/check",
-              "cli/livekit"
+              "cli/livekit",
+              "cli/loadtest"
             ]
           }
         ]

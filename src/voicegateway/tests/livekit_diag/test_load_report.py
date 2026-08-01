@@ -304,3 +304,92 @@ def test_build_and_render_are_synchronous() -> None:
 def test_the_filename_cannot_smuggle_anything_into_a_header() -> None:
     assert run_report.load_report_filename("../../etc/passwd").endswith(".html")
     assert "/" not in run_report.load_report_filename("../../etc/passwd")
+
+
+# --------------------------------------------------------------------------
+# Reproducible-test-assets appendix
+# --------------------------------------------------------------------------
+
+
+def _appendix():
+    return {
+        "commands": [
+            run_report.appendix_entry(
+                label="ramp",
+                detail=(
+                    "gossipper sipp -sf uac-media.xml -rsa wss://media.example.com:5060 "
+                    "-l 500 -r 4.1667 -m 15000 -pause_ms 118000 -trace_stat"
+                ),
+                citation="operator notebook, step 4.1",
+            )
+        ],
+        "flags": [
+            run_report.appendix_entry(
+                label="-l",
+                detail="Max concurrent calls. Defaults to 1: omitting it caps the "
+                "whole run at one concurrent call.",
+                citation="gossipper sipp -h, binary 0.1.62",
+            )
+        ],
+        "toolchain": [
+            run_report.appendix_entry(
+                label="build",
+                detail="Does not build on macOS; cross-compile for linux/amd64.",
+                citation="observed on 0.1.61 and 0.1.62",
+            )
+        ],
+    }
+
+
+def test_an_uncited_appendix_entry_is_refused() -> None:
+    """An uncited command is indistinguishable from an invented one."""
+    with pytest.raises(ValueError):
+        run_report.appendix_entry(label="ramp", detail="gossipper sipp", citation="  ")
+
+
+def test_absolute_urls_are_reduced_to_a_host_label() -> None:
+    """Two reasons at once: self-containment, and not leaking an endpoint."""
+    assert run_report.redact_urls("wss://media.example.com/rtc") == "media.example.com"
+    assert run_report.redact_urls("see http://10.0.0.4:5060/x now") == (
+        "see 10.0.0.4:5060 now"
+    )
+    # A string with no URL is untouched.
+    assert run_report.redact_urls("-l 500 -r 4.1667") == "-l 500 -r 4.1667"
+
+
+def test_an_appendix_carrying_a_url_still_renders_a_self_contained_file() -> None:
+    """The whole reason redaction happens before the HTML is built."""
+    document = run_report.render_load_html(_payload(appendix=_appendix()))
+    lowered = document.lower()
+    for marker in ("http://", "https://", "wss://", "src=", "url("):
+        assert marker not in lowered, f"appendix leaked {marker!r}"
+    # The host survived, because a reader reproducing a run needs to know which.
+    assert "media.example.com" in document
+
+
+def test_the_appendix_renders_every_section_with_its_citation() -> None:
+    document = run_report.render_load_html(_payload(appendix=_appendix()))
+    assert "Reproducible test assets" in document
+    assert "gossipper sipp -h, binary 0.1.62" in document
+    assert "operator notebook, step 4.1" in document
+    assert "cross-compile for linux/amd64" in document
+
+
+def test_a_missing_appendix_is_stated_not_silently_omitted() -> None:
+    """A section that vanishes reads as one nobody needed."""
+    document = run_report.render_load_html(_payload())
+    assert "None recorded" in document
+    assert "cannot be reproduced by anybody else" in document
+
+
+def test_scenario_files_are_referenced_never_reproduced() -> None:
+    """They are somebody else's authored work, not an interface fact."""
+    document = run_report.render_load_html(_payload(appendix=_appendix()))
+    assert "referenced by name rather than reproduced" in document
+
+
+def test_the_appendix_travels_in_the_payload_not_only_the_html() -> None:
+    """An automated consumer inherits the provenance with the commands."""
+    payload = _payload(appendix=_appendix())
+    assert payload["appendix"]["commands"][0]["citation"]
+    json.loads(json.dumps(payload))
