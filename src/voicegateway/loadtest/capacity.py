@@ -88,7 +88,11 @@ class InstanceType:
 class RampStep:
     """One step of a ramp: what was asked for, and what was reached."""
 
-    target_concurrency: int
+    # Optional because an imported row never carries it: the target lives in
+    # the generator's scenario file, which is not an artifact. A step with no
+    # target cannot be said to have asked for more, which is what the plateau
+    # scan needs and why it skips them.
+    target_concurrency: int | None
     peak_concurrency: int | None = None
     peak_cpu_utilisation: float | None = None
     # The generator's arrival rate and hold, when known. Used to predict a
@@ -172,18 +176,22 @@ def unreachable_steps(
     """
     out: list[tuple[RampStep, float, float]] = []
     for step in steps:
-        if step.rate_per_second is None or step.hold_seconds is None:
+        # All three are needed to say a step asks for more than its own plan
+        # can produce. A step missing any of them is not evidence either way,
+        # so it is skipped rather than assumed reachable.
+        target = step.target_concurrency
+        if target is None or step.rate_per_second is None or step.hold_seconds is None:
             continue
         ceiling = sustainable_concurrency(
             step.rate_per_second, step.hold_seconds, setup_overhead_s=setup_overhead_s
         )
-        if step.target_concurrency > ceiling:
+        if target > ceiling:
             out.append(
                 (
                     step,
                     ceiling,
                     required_rate(
-                        step.target_concurrency,
+                        target,
                         step.hold_seconds,
                         setup_overhead_s=setup_overhead_s,
                     ),
@@ -213,7 +221,13 @@ def detect_plateau(
     predicted = unreachable_steps(steps, setup_overhead_s=setup_overhead_s)
     if predicted:
         worst = min(ceiling for _, ceiling, _ in predicted)
-        targets = [step.target_concurrency for step, _, _ in predicted]
+        # Every entry in `predicted` carries a known target: unreachable_steps
+        # skips the ones that do not, so this is list[int] by construction.
+        targets = [
+            step.target_concurrency
+            for step, _, _ in predicted
+            if step.target_concurrency is not None
+        ]
         fixes = ", ".join(
             f"{step.target_concurrency} needs r >= {rate:.2f}/s"
             for step, _, rate in predicted
@@ -229,10 +243,14 @@ def detect_plateau(
             ),
         )
 
+    # A step with no recorded target cannot be said to have asked for more, so
+    # it cannot contribute to a plateau finding. Imported rows routinely have
+    # none: the target lives in the generator's scenario file, which is not an
+    # artifact, so this is the common case rather than the exceptional one.
     reached = [
         (s.target_concurrency, s.peak_concurrency)
         for s in steps
-        if s.peak_concurrency is not None
+        if s.peak_concurrency is not None and s.target_concurrency is not None
     ]
     for (prev_target, prev_peak), (target, peak) in zip(
         reached, reached[1:], strict=False
@@ -266,7 +284,7 @@ def derive_calls_per_node(
     """The calls-per-node figure, or None with the reason it is not derivable.
 
     Returns the highest concurrency actually REACHED while the node stayed at or
-    under ``cpu_ceiling``. Refuses in three cases, each of which would otherwise
+    under ``cpu_ceiling``. Refuses in four cases, each of which would otherwise
     yield a plausible number:
 
     * The ramp plateaued. The ceiling belongs to whatever stopped scaling, and a
@@ -275,10 +293,32 @@ def derive_calls_per_node(
       largest concurrency observed is a floor on its capacity, not a measure of
       it, and sizing from it would UNDER-provision.
     * Nothing measured CPU at all. An unscraped ramp demonstrates nothing.
+    * No step declared what it asked for, so a plateau could not be ruled out.
+      "No plateau detected" from a ramp that recorded neither targets nor rates
+      means the check never ran, which is not the same as a ramp that climbed.
     """
     plateau = detect_plateau(steps, setup_overhead_s=setup_overhead_s)
     if plateau.plateaued:
         return None, plateau.detail
+
+    # A plateau can only be RULED OUT when the steps say what they asked for.
+    # With no targets and no declared rates, "no plateau detected" means the
+    # check could not run, not that the ramp kept climbing, and a false ceiling
+    # sized as a real one buys the wrong fleet. Refusing is the conservative
+    # reading and the only honest one.
+    declared = [
+        s
+        for s in steps
+        if s.target_concurrency is not None
+        or (s.rate_per_second is not None and s.hold_seconds is not None)
+    ]
+    if len(steps) > 1 and not declared:
+        return None, (
+            f"no step recorded a target concurrency or an arrival rate, so a "
+            f"plateau could not be ruled out across {len(steps)} steps. The "
+            "highest concurrency reached may be the load generator's ceiling "
+            "rather than the node's, and sizing from it would be a guess"
+        )
 
     # Narrowed into concrete pairs rather than filtered in place: a step is only
     # evidence when it carries BOTH halves, and pulling them out here means

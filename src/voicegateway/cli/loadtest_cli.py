@@ -17,8 +17,14 @@ from rich.table import Table
 
 from voicegateway.cli._app import app, console
 from voicegateway.cli.base_cli import BaseCli
+from voicegateway.livekit_diag.gates import MAX_NODE_CPU_UTILISATION
 from voicegateway.loadtest.aggregation import TestAggregate, peak_label
 from voicegateway.loadtest.artifacts import ArtifactError
+from voicegateway.loadtest.capacity import (
+    RampStep,
+    capacity_table,
+    derive_calls_per_node,
+)
 from voicegateway.loadtest.importer import build_plan, observations_for
 from voicegateway.loadtest.judge import judge_run, verdict_for
 
@@ -229,6 +235,53 @@ def list_runs(
     console.print(table)
 
 
+def _capacity_for(tests: list[dict]) -> dict:
+    """Derive the calls-per-node figure and the node count at each tier.
+
+    The derivation is the one number the whole table rests on, and it refuses
+    far more often than it answers. Its REASON is returned either way: a report
+    saying why it could not size the fleet is worth more than one quietly
+    missing the section, and far more than one carrying a number nobody earned.
+
+    The ceiling is imported from the gates rather than typed here. It is a
+    contracted threshold and two copies of it would drift.
+    """
+    steps = [
+        RampStep(
+            target_concurrency=test.get("target_concurrency"),
+            peak_concurrency=test.get("peak_concurrency"),
+            peak_cpu_utilisation=test.get("peak_cpu_utilisation"),
+            # Arrival rate and hold live in the generator's scenario file, which
+            # is not an artifact and never reaches load_run_tests. Leaving them
+            # None means the plan-side plateau check cannot run, which the
+            # derivation accounts for rather than treating as a clean ramp.
+        )
+        for test in tests
+    ]
+    calls_per_node, reason = derive_calls_per_node(
+        steps, cpu_ceiling=MAX_NODE_CPU_UTILISATION
+    )
+    capacity: dict = {"calls_per_node": calls_per_node, "reason": reason}
+    if calls_per_node is None:
+        # Refused. The reason is the payload, and no tiers are invented.
+        return capacity
+    capacity["tiers"] = [
+        {
+            "target_concurrency": tier.target_concurrency,
+            "calls_per_node": tier.calls_per_node,
+            "usable_per_node": tier.usable_per_node,
+            "nodes_for_load": tier.nodes_for_load,
+            "spare_nodes": tier.spare_nodes,
+            "nodes": tier.nodes,
+        }
+        for tier in capacity_table(calls_per_node)
+    ]
+    # instance_type is deliberately absent. Nothing here can derive a machine
+    # type, and InstanceType requires a citation for exactly that reason, so it
+    # is supplied by whoever holds the source rather than guessed at here.
+    return capacity
+
+
 @loadtest_app.command("report")
 def report(
     run_id: str = typer.Argument(..., help="Run id to report on"),
@@ -267,10 +320,12 @@ def report(
             )
         )
     results = judge_run(tests, aggregates=aggregates)
+    capacity = _capacity_for(tests)
     payload = build_load_payload(
         run=run,
         tests=tests,
         gate_results=[g.as_dict() for g in results],
+        capacity=capacity,
     )
     out.mkdir(parents=True, exist_ok=True)
     json_path = out / f"{load_report_filename(run_id).removesuffix('.html')}.json"
@@ -288,6 +343,17 @@ def report(
         _cli.warn(
             "UNKNOWN is not a pass. At least one acceptance criterion could not "
             "be evaluated; the run did not demonstrate it, it failed to measure it."
+        )
+
+    if capacity.get("calls_per_node") is None:
+        _cli.warn(f"No capacity table: {capacity['reason']}")
+    else:
+        console.print(
+            f"Sized from {capacity['calls_per_node']} calls per node: "
+            + ", ".join(
+                f"{t['target_concurrency']}->{t['nodes']} nodes"
+                for t in capacity["tiers"]
+            )
         )
 
     if payload["data_provenance"] != "measured":

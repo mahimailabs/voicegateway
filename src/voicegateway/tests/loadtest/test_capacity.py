@@ -295,3 +295,64 @@ def test_the_node_count_is_a_ceiling_never_a_rounding() -> None:
     """3.1 nodes of load is four machines. Rounding down under-provisions."""
     tier = capacity.nodes_for(400, 150)
     assert tier.nodes_for_load == math.ceil(400 / 127.5) == 4
+
+
+# --------------------------------------------------------------------------
+# Imported rows carry no target concurrency, which is the common case
+# --------------------------------------------------------------------------
+
+
+def test_a_ramp_with_no_targets_does_not_crash_the_plateau_scan() -> None:
+    """load_run_tests rows routinely have target_concurrency NULL.
+
+    The target lives in the generator's scenario file, which is not an
+    artifact, so nothing imports it. Comparing two unknown targets raised a
+    TypeError and took the whole report command down the moment anything
+    called the derivation.
+    """
+    steps = [
+        RampStep(target_concurrency=None, peak_concurrency=p, peak_cpu_utilisation=c)
+        for p, c in ((100, 0.31), (150, 0.48), (200, 0.66))
+    ]
+    finding = capacity.detect_plateau(steps)
+    assert finding.plateaued is False
+
+
+def test_unknown_targets_cannot_clear_a_ramp_of_plateauing() -> None:
+    """ "No plateau detected" must not mean "the check could not run".
+
+    With neither targets nor rates there is nothing to say a step asked for
+    more, so a plateau cannot be ruled out. The highest concurrency reached may
+    be the generator's ceiling, and sizing from it would be a guess.
+    """
+    steps = [
+        RampStep(target_concurrency=None, peak_concurrency=p, peak_cpu_utilisation=c)
+        for p, c in ((100, 0.31), (150, 0.48), (200, 0.66))
+    ]
+    value, reason = capacity.derive_calls_per_node(steps, cpu_ceiling=0.70)
+    assert value is None
+    assert "could not be ruled out" in reason
+    # The tempting wrong answer is right there.
+    assert max(s.peak_concurrency for s in steps) == 200
+
+
+def test_one_step_is_not_asked_to_rule_out_a_plateau() -> None:
+    """A single step cannot plateau against anything, so the guard does not fire.
+
+    It still refuses, but for the honest reason: one step with no CPU reading
+    shows nothing about the node.
+    """
+    [step] = [RampStep(target_concurrency=None, peak_concurrency=100)]
+    value, reason = capacity.derive_calls_per_node([step], cpu_ceiling=0.70)
+    assert value is None
+    assert "could not be ruled out" not in reason
+
+
+def test_a_declared_target_still_lets_the_derivation_answer() -> None:
+    """Non-vacuous: the guard blocks unknown ramps, not every ramp."""
+    steps = [
+        RampStep(target_concurrency=t, peak_concurrency=p, peak_cpu_utilisation=c)
+        for t, p, c in ((100, 100, 0.31), (200, 200, 0.66), (250, 250, 0.79))
+    ]
+    value, _ = capacity.derive_calls_per_node(steps, cpu_ceiling=0.70)
+    assert value == 200
