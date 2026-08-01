@@ -46,6 +46,34 @@ Peak CPU and memory come from `node_samples` correlated by **time-window overlap
 
 Numbers are only evidence if somebody else can produce them again, so the report carries an appendix of commands and flag semantics, each requiring a citation. An uncited command is indistinguishable from one the report invented.
 
+Supply it with `--appendix`, pointing at a JSON file you hold:
+
+```json
+{
+  "commands": [
+    {"label": "ramp step",
+     "detail": "gossip sipp -l 200 -r 3.2258 -pause_ms 60000 -trace_stat",
+     "citation": "runbook.md:75"}
+  ],
+  "flags": [
+    {"label": "-l",
+     "detail": "Max concurrent calls. Defaults to 1.",
+     "citation": "runbook.md:53"}
+  ],
+  "toolchain": [
+    {"label": "build",
+     "detail": "Cross-compile for linux/amd64; does not build on macOS.",
+     "citation": "observed on 0.1.61 and 0.1.62"}
+  ]
+}
+```
+
+The file lives with you rather than in this repository. Commands belong to a particular engagement, and the generator they drive is under a copyleft licence while this project is MIT, so its scenarios and configuration must not be copied here. Flag names and command lines are interface facts and travel fine.
+
+Three sections are recognised: `commands`, `flags` and `toolchain`. A misspelled one is refused rather than ignored, because silently dropping a section would hand over a report missing the commands that produced it. An entry with no citation is refused by position so you can find the line.
+
+Run `voicegw loadtest report` without `--appendix` and it says so rather than omitting the section quietly.
+
 Scenario files and generator configuration are referenced by name, never copied. They are the work of whoever authored them, and a generator under a copyleft licence has no business having its source pasted into an MIT repository. Run it as a separate binary, ingest its output files.
 
 Absolute URLs in the appendix are reduced to a bare host label before rendering, both because an absolute URL breaks the self-containment guarantee and because a report handed to somebody outside the deployment should not carry its endpoints.

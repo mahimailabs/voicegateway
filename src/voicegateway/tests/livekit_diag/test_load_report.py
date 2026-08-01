@@ -400,3 +400,103 @@ def test_the_appendix_travels_in_the_payload_not_only_the_html() -> None:
     payload = _payload(appendix=_appendix())
     assert payload["appendix"]["commands"][0]["citation"]
     json.loads(json.dumps(payload))
+
+
+# --------------------------------------------------------------------------
+# The verdict reaches the file, not just the operator's console
+# --------------------------------------------------------------------------
+
+
+def _gated(*statuses: str):
+    return _payload(
+        gate_results=[
+            {"gate": f"g{i}", "status": s, "detail": "d"}
+            for i, s in enumerate(statuses)
+        ]
+    )
+
+
+def test_the_verdict_is_carried_in_the_payload() -> None:
+    payload = _gated("PASS", "UNKNOWN")
+    assert payload["verdict"]["status"] == "UNKNOWN"
+    assert payload["verdict"]["recorded"] is True
+    assert payload["verdict"]["decided_by"] == "voicegateway.livekit_diag.gates"
+
+
+def test_the_verdict_is_derived_from_the_gates_it_ships_with() -> None:
+    """Derived, not passed in, so the two cannot disagree in one file."""
+    payload = _gated("PASS", "FAIL")
+    assert payload["verdict"]["status"] == "FAIL"
+    assert {g["status"] for g in payload["gates"]} == {"PASS", "FAIL"}
+
+
+def test_the_verdict_reaches_the_rendered_file() -> None:
+    """It used to be printed to a console nobody keeps."""
+    document = run_report.render_load_html(_gated("PASS", "UNKNOWN"))
+    assert 'class="verdict' in document
+    assert "UNKNOWN" in document
+
+
+def test_the_stamp_still_comes_before_the_verdict() -> None:
+    """The stamp's whole design is being the first thing a reader passes.
+
+    A verdict above it would be the first thing read on a file built from
+    fixtures, which is the one ordering that must never happen.
+    """
+    document = run_report.render_load_html(_gated("PASS"))
+    body = document[document.index("<body>") + len("<body>") :]
+    assert body.lstrip().startswith('<div class="stamp">')
+    assert body.index("stamp") < body.index('class="verdict')
+
+
+def test_the_verdict_sits_above_the_gate_table_it_summarises() -> None:
+    document = run_report.render_load_html(_gated("PASS", "FAIL"))
+    body = document[document.index("<body>") + len("<body>") :]
+    assert body.index('class="verdict') < body.index("Gates")
+
+
+def test_no_gates_recorded_renders_no_verdict_rather_than_a_pass() -> None:
+    payload = _payload()
+    assert payload["verdict"]["status"] is None
+    assert payload["verdict"]["recorded"] is False
+    assert "NO VERDICT" in run_report.render_load_html(payload)
+
+
+def test_an_empty_gate_list_is_unknown_and_never_a_pass() -> None:
+    """The sharp edge. worst_status([]) returns PASS on its own.
+
+    Gating that ran and produced nothing is a run that evaluated nothing, so it
+    must not read as clean just because there was no failing gate to find.
+    """
+    payload = _payload(gate_results=[])
+    assert payload["verdict"]["status"] == "UNKNOWN"
+    assert payload["verdict"]["recorded"] is True
+
+
+def test_a_waiver_shows_as_the_verdict_and_not_as_a_pass() -> None:
+    payload = _gated("PASS", "WAIVED")
+    assert payload["verdict"]["status"] == "WAIVED"
+
+
+def test_adding_the_verdict_kept_the_file_self_contained() -> None:
+    document = run_report.render_load_html(_gated("PASS", "FAIL")).lower()
+    for marker in (
+        "<script",
+        "<link",
+        "<img",
+        "<iframe",
+        "<object",
+        "<embed",
+        "<svg",
+        "@import",
+        "url(",
+        "src=",
+        "srcset",
+        "integrity=",
+        "crossorigin",
+        "//cdn",
+        "fonts.googleapis",
+        "http://",
+        "https://",
+    ):
+        assert marker not in document, f"the verdict block reaches for {marker!r}"

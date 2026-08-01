@@ -1329,6 +1329,38 @@ def _load_test_row(test: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _load_verdict(gate_results: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """The run verdict, derived from the gates this payload already carries.
+
+    Derived rather than passed in, so the verdict and the gate table can never
+    disagree: they are the same list read twice.
+
+    ``None`` gates means nothing was gated at all, which renders as NO VERDICT.
+    An EMPTY list is different and is deliberately not a pass: it means gating
+    ran and produced nothing, which is a run that evaluated nothing. That is the
+    same rule :func:`gates.verdict` applies, and it matters because
+    ``worst_status([])`` returns PASS on its own.
+    """
+    if gate_results is None:
+        return {
+            "status": None,
+            "recorded": False,
+            "meaning": None,
+            "decided_by": "voicegateway.livekit_diag.gates",
+        }
+    status = (
+        gates.worst_status(str(g.get("status")) for g in gate_results)
+        if gate_results
+        else gates.UNKNOWN
+    )
+    return {
+        "status": status,
+        "recorded": True,
+        "meaning": _VERDICT_MEANING.get(status),
+        "decided_by": "voicegateway.livekit_diag.gates",
+    }
+
+
 def build_load_payload(
     *,
     run: dict[str, Any],
@@ -1379,6 +1411,8 @@ def build_load_payload(
             "ended_at_ms": run.get("ended_at_ms"),
         },
         "tests": [_load_test_row(t) for t in tests],
+        # Derived from the gates below, so the two exports cannot disagree.
+        "verdict": _load_verdict(gate_results),
         "gates_recorded": gate_results is not None,
         "gates": list(gate_results) if gate_results is not None else None,
         "capacity": capacity,
@@ -1451,15 +1485,23 @@ def _render_capacity(payload: dict[str, Any]) -> str:
     """The node count per tier, or the reason there is none."""
     capacity = payload.get("capacity")
     if not capacity:
+        # NOTHING RAN THE DERIVATION. Distinct from a derivation that ran and
+        # refused, which is the branch below and carries a reason. Saying "not
+        # derivable from this run" here would claim an attempt was made and
+        # blame the data for a gap in the caller.
         return (
-            "<h2>Capacity</h2><p>No capacity table: the calls-per-node figure "
-            "was not derivable from this run, so sizing it would mean inventing "
-            "the one number the whole table rests on.</p>"
+            "<h2>Capacity</h2><p>No capacity table, and none was attempted: "
+            "whoever built this payload supplied no capacity block, so nothing "
+            "here is a statement about the run. Sizing without a derivation "
+            "would mean inventing the one number the whole table rests on.</p>"
         )
     if capacity.get("calls_per_node") is None:
+        # The derivation RAN and refused. The reason is the whole value of this
+        # branch, so it is never summarised away.
         return (
-            "<h2>Capacity</h2><p>No capacity table. "
-            f"{_esc(capacity.get('reason') or 'the figure was not derivable')}</p>"
+            "<h2>Capacity</h2><p>No capacity table. The calls-per-node figure "
+            "was not derivable, so sizing would mean inventing the one number "
+            f"the whole table rests on. {_esc(capacity.get('reason') or '')}</p>"
         )
     rows = "".join(
         "<tr>"
@@ -1520,11 +1562,17 @@ def render_load_html(payload: dict[str, Any]) -> str:
     run_id = _esc(payload["run"]["id"])
     body = "".join(
         [
+            # The stamp stays the FIRST element in the body. Its whole design
+            # is that a reader who scrolls to the numbers passes it on the way,
+            # and a verdict above it would be the first thing read on a file
+            # built from fixtures.
             _render_stamp(payload),
             "<h1>Load-test run report</h1>",
             f'<p class="sub">VoiceGateway &middot; run '
             f'<span class="mono">{run_id}</span> &middot; provenance '
             f"<strong>{_esc(payload['data_provenance'])}</strong></p>",
+            # Above the gate table it summarises, and below the stamp.
+            _render_verdict(payload),
             _render_gates(payload),
             _render_load_tests(payload),
             _render_capacity(payload),

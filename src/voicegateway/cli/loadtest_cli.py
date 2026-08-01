@@ -17,10 +17,17 @@ from rich.table import Table
 
 from voicegateway.cli._app import app, console
 from voicegateway.cli.base_cli import BaseCli
+from voicegateway.livekit_diag.gates import MAX_NODE_CPU_UTILISATION, exit_code
+from voicegateway.livekit_diag.run_report import appendix_entry
 from voicegateway.loadtest.aggregation import TestAggregate, peak_label
 from voicegateway.loadtest.artifacts import ArtifactError
+from voicegateway.loadtest.capacity import (
+    RampStep,
+    capacity_table,
+    derive_calls_per_node,
+)
 from voicegateway.loadtest.importer import build_plan, observations_for
-from voicegateway.loadtest.judge import judge_run, verdict_for
+from voicegateway.loadtest.judge import judge_run
 
 _cli = BaseCli()
 
@@ -229,6 +236,125 @@ def list_runs(
     console.print(table)
 
 
+def _capacity_for(tests: list[dict]) -> dict:
+    """Derive the calls-per-node figure and the node count at each tier.
+
+    The derivation is the one number the whole table rests on, and it refuses
+    far more often than it answers. Its REASON is returned either way: a report
+    saying why it could not size the fleet is worth more than one quietly
+    missing the section, and far more than one carrying a number nobody earned.
+
+    The ceiling is imported from the gates rather than typed here. It is a
+    contracted threshold and two copies of it would drift.
+    """
+    steps = [
+        RampStep(
+            target_concurrency=test.get("target_concurrency"),
+            peak_concurrency=test.get("peak_concurrency"),
+            peak_cpu_utilisation=test.get("peak_cpu_utilisation"),
+            # Arrival rate and hold live in the generator's scenario file, which
+            # is not an artifact and never reaches load_run_tests. Leaving them
+            # None means the plan-side plateau check cannot run, which the
+            # derivation accounts for rather than treating as a clean ramp.
+        )
+        for test in tests
+    ]
+    calls_per_node, reason = derive_calls_per_node(
+        steps, cpu_ceiling=MAX_NODE_CPU_UTILISATION
+    )
+    capacity: dict = {"calls_per_node": calls_per_node, "reason": reason}
+    if calls_per_node is None:
+        # Refused. The reason is the payload, and no tiers are invented.
+        return capacity
+    capacity["tiers"] = [
+        {
+            "target_concurrency": tier.target_concurrency,
+            "calls_per_node": tier.calls_per_node,
+            "usable_per_node": tier.usable_per_node,
+            "nodes_for_load": tier.nodes_for_load,
+            "spare_nodes": tier.spare_nodes,
+            "nodes": tier.nodes,
+        }
+        for tier in capacity_table(calls_per_node)
+    ]
+    # instance_type is deliberately absent. Nothing here can derive a machine
+    # type, and InstanceType requires a citation for exactly that reason, so it
+    # is supplied by whoever holds the source rather than guessed at here.
+    return capacity
+
+
+#: The sections _render_appendix renders, in the order it renders them. A file
+#: naming anything else is refused rather than partially read: a typo would
+#: otherwise drop a whole section silently, and the operator would hand over a
+#: report missing the commands that produced it.
+_APPENDIX_SECTIONS = ("commands", "flags", "toolchain")
+
+
+def _appendix_from_file(path: Path) -> dict[str, list[dict[str, str]]]:
+    """Read an operator-supplied appendix, refusing anything uncited.
+
+    The entries live in a file the operator holds rather than in this
+    repository, for two reasons. The commands belong to a particular engagement
+    and have no business being compiled into a general tool. And the generator
+    they drive is AGPL-3.0 while this repository is MIT, so its scenarios and
+    configuration must not be copied here; flag names and command lines are
+    interface facts and travel fine.
+
+    Every entry goes through :func:`appendix_entry`, which requires a citation
+    and reduces any absolute URL to a bare host. An uncited command is
+    indistinguishable from one this report invented, so it is refused by label
+    rather than dropped quietly.
+
+    Shape::
+
+        {"commands": [{"label": ..., "detail": ..., "citation": ...}, ...],
+         "flags":    [...],
+         "toolchain": [...]}
+    """
+    try:
+        raw = json.loads(path.read_text())
+    except OSError as exc:
+        raise typer.BadParameter(f"cannot read {path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"{path} is not valid JSON: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise typer.BadParameter(f"{path}: expected an object of sections")
+
+    unknown = sorted(set(raw) - set(_APPENDIX_SECTIONS))
+    if unknown:
+        raise typer.BadParameter(
+            f"{path}: unknown section(s) {unknown}. Known sections are "
+            f"{list(_APPENDIX_SECTIONS)}; a misspelled one would silently drop "
+            "every entry under it."
+        )
+
+    out: dict[str, list[dict[str, str]]] = {}
+    for section in _APPENDIX_SECTIONS:
+        entries = raw.get(section) or []
+        if not isinstance(entries, list):
+            raise typer.BadParameter(f"{path}: {section} must be a list")
+        built: list[dict[str, str]] = []
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                raise typer.BadParameter(
+                    f"{path}: {section}[{index}] must be an object"
+                )
+            try:
+                built.append(
+                    appendix_entry(
+                        label=str(entry.get("label", "")),
+                        detail=str(entry.get("detail", "")),
+                        citation=str(entry.get("citation", "")),
+                    )
+                )
+            except ValueError as exc:
+                # Refused by label so the operator can find the offending line.
+                raise typer.BadParameter(f"{path}: {section}[{index}]: {exc}") from exc
+        if built:
+            out[section] = built
+    return out
+
+
 @loadtest_app.command("report")
 def report(
     run_id: str = typer.Argument(..., help="Run id to report on"),
@@ -238,6 +364,14 @@ def report(
         "--out",
         "-o",
         help="Directory to write the report into",
+    ),
+    appendix: Path = typer.Option(
+        None,
+        "--appendix",
+        help=(
+            "JSON file of reproducible-test assets. Sections: commands, flags, "
+            "toolchain. Every entry needs label, detail and a citation."
+        ),
     ),
 ) -> None:
     """Write one run's report as JSON plus a self-contained HTML file."""
@@ -267,10 +401,14 @@ def report(
             )
         )
     results = judge_run(tests, aggregates=aggregates)
+    capacity = _capacity_for(tests)
+    assets = _appendix_from_file(appendix) if appendix is not None else None
     payload = build_load_payload(
         run=run,
         tests=tests,
         gate_results=[g.as_dict() for g in results],
+        capacity=capacity,
+        appendix=assets,
     )
     out.mkdir(parents=True, exist_ok=True)
     json_path = out / f"{load_report_filename(run_id).removesuffix('.html')}.json"
@@ -278,7 +416,10 @@ def report(
     json_path.write_text(json.dumps(payload, indent=2) + "\n")
     html_path.write_text(render_load_html(payload))
 
-    run_verdict = verdict_for(results)
+    # Read from the payload rather than recomputed, so the console, the exit
+    # code, the JSON and the HTML are one derivation rather than four that
+    # happen to agree today.
+    run_verdict = str(payload["verdict"]["status"])
     counts: dict[str, int] = {}
     for gate in results:
         counts[gate.status] = counts.get(gate.status, 0) + 1
@@ -290,6 +431,29 @@ def report(
             "be evaluated; the run did not demonstrate it, it failed to measure it."
         )
 
+    if capacity.get("calls_per_node") is None:
+        _cli.warn(f"No capacity table: {capacity['reason']}")
+    else:
+        console.print(
+            f"Sized from {capacity['calls_per_node']} calls per node: "
+            + ", ".join(
+                f"{t['target_concurrency']}->{t['nodes']} nodes"
+                for t in capacity["tiers"]
+            )
+        )
+
+    if assets is None:
+        _cli.warn(
+            "No reproducible-test assets recorded. Without the commands and "
+            "flag semantics behind them these numbers cannot be reproduced by "
+            "anybody else, which is most of what makes them evidence. Supply "
+            "them with --appendix."
+        )
+    else:
+        console.print(
+            "Appendix: " + ", ".join(f"{len(v)} {k}" for k, v in sorted(assets.items()))
+        )
+
     if payload["data_provenance"] != "measured":
         _cli.warn(
             "SYNTHETIC: the HTML carries the not-a-deliverable stamp as its "
@@ -297,3 +461,18 @@ def report(
             "artifacts and re-import with --captured before handing it over."
         )
     _cli.success(f"Wrote {json_path} and {html_path}")
+
+    # Exit AFTER both files are written. A failing run is exactly the run whose
+    # evidence somebody needs, so exiting before writing it would destroy the
+    # only record of why it failed.
+    #
+    # The code comes from gates.exit_code rather than a second convention here:
+    # 0 only for PASS. WAIVED is not clean (a waived gate is one nobody held the
+    # run to, and a pipeline that goes green on a waiver has dropped the
+    # requirement rather than recorded it) and UNKNOWN is not clean either (the
+    # run failed to measure something, which is not the same as demonstrating
+    # it). One non-zero code on purpose, so an existing `if [ $? -eq 1 ]` keeps
+    # catching every kind of failure.
+    code = exit_code(run_verdict)
+    if code != 0:
+        raise typer.Exit(code)
