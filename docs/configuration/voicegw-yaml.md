@@ -40,7 +40,7 @@ All sections are optional. Omitted sections use defaults.
 | `ingest` | Rate limits for the fleet collector ingest endpoint |
 | `retention` | Age-out policy for collector data |
 | `workers` | Background rollup and retention cadence |
-| `serve` | Bind host and port for the daemon |
+| `serve` | Bind host and port for the daemon, and the provider `base_url` host allowlist |
 
 ---
 
@@ -359,10 +359,19 @@ Bind host and port for the daemon. The daemon serves the HTTP API (`/v1/*`), das
 serve:
   host: 0.0.0.0
   port: 8080
+  provider_base_url_hosts:
+    - proxy.internal.example.com
 ```
 
 - `host` (string, default `0.0.0.0`): bind address. Use `127.0.0.1` to restrict to localhost.
 - `port` (int, default `8080`): port number.
+- `provider_base_url_hosts` (list of strings, default empty): hosts a managed provider's `base_url` may be moved to by [`PATCH /v1/providers/{provider_id}`](/api/http-api) when the request does not carry a new `api_key`. Entries are bare hosts (`api.example.com`) or full URLs, whose host is what counts. Values support `${ENV_VAR}` substitution.
+
+### Why `provider_base_url_hosts` exists
+
+A `PATCH` that only changes `base_url` keeps the provider's already-stored API key. `POST /v1/providers/{provider_id}/test` then builds the provider from that row, so the stored key is sent to whatever host the `PATCH` set. Anyone who can reach the write API could point a provider at a host they control and read the key out of the request.
+
+The endpoint therefore constrains the host only for that exact combination: a host change that reuses the stored key. Permitted without any config are the provider's current host and the vendor's own default host (`api.openai.com` for `openai`, `localhost` for `ollama`, and so on), so leaving this list empty changes nothing for an existing deployment. Add a host here to allow a proxy or self-hosted gateway. A `PATCH` that includes its own `api_key` is never constrained: the caller already holds a key, so there is nothing to leak.
 
 ---
 

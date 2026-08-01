@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -19,6 +20,91 @@ if TYPE_CHECKING:
 router = APIRouter(prefix="/providers", tags=["providers"])
 write_dep = Depends(require_scope("write"))
 logger = logging.getLogger(__name__)
+
+# The operator allowlist for provider base_url hosts. Declared on ServeConfig in
+# schemas/config_schema.py; read here off the raw ``serve:`` block because that
+# is what GatewayConfig carries at runtime.
+_HOSTS_CONFIG_KEY = "provider_base_url_hosts"
+_HOSTS_CONFIG_PATH = f"serve.{_HOSTS_CONFIG_KEY}"
+
+# The host each provider module already treats as its own endpoint, mirroring
+# the literals in voicegateway/inference/providers/*.py. Keeping these permitted
+# by default is what makes an unset allowlist a no-op for deployments that only
+# ever point a provider at its own vendor.
+_DEFAULT_PROVIDER_HOSTS: dict[str, tuple[str, ...]] = {
+    "openai": ("api.openai.com",),
+    "anthropic": ("api.anthropic.com",),
+    "deepgram": ("api.deepgram.com",),
+    "cartesia": ("api.cartesia.ai",),
+    "elevenlabs": ("api.elevenlabs.io",),
+    "assemblyai": ("api.assemblyai.com",),
+    "groq": ("api.groq.com",),
+    "ollama": ("localhost",),
+}
+
+
+def _url_host(value: Any) -> str | None:
+    """Return the lowercase host of a base URL, or None when there is none."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    candidate = value.strip()
+    if "//" not in candidate:
+        # Bare "api.example.com/v1" parses as a path without this.
+        candidate = "//" + candidate
+    try:
+        host = urlparse(candidate).hostname
+    except ValueError:
+        return None
+    return host.lower() if host else None
+
+
+def _allowlisted_hosts(gateway: Gateway) -> set[str]:
+    """Return the hosts the operator configured under ``serve:``."""
+    serve_cfg: Any = getattr(gateway.config, "serve", None)
+    if isinstance(serve_cfg, dict):
+        raw = serve_cfg.get(_HOSTS_CONFIG_KEY)
+    else:
+        raw = getattr(serve_cfg, _HOSTS_CONFIG_KEY, None)
+    if not isinstance(raw, list):
+        return set()
+    hosts = {_url_host(entry) for entry in raw}
+    return {host for host in hosts if host is not None}
+
+
+def _guard_base_url_host(
+    gateway: Gateway,
+    provider_id: str,
+    provider_type: str,
+    current_base_url: Any,
+    new_base_url: Any,
+) -> None:
+    """Reject repointing a stored key at a host nobody approved.
+
+    Only called when the update keeps the already-stored key: with the key in
+    the same request there is nothing to leak, so the host stays unconstrained.
+    """
+    new_host = _url_host(new_base_url)
+    if new_host is None:
+        # Cleared or absent base_url falls back to the provider's own default.
+        return
+
+    permitted = _allowlisted_hosts(gateway)
+    permitted.update(_DEFAULT_PROVIDER_HOSTS.get(provider_type, ()))
+    current_host = _url_host(current_base_url)
+    if current_host is not None:
+        permitted.add(current_host)
+
+    if new_host in permitted:
+        return
+
+    raise HTTPException(
+        400,
+        f"base_url host '{new_host}' is not permitted for provider "
+        f"'{provider_id}'. Moving base_url to a new host while reusing the "
+        "stored API key would send that key to the new host. Add the host to "
+        f"'{_HOSTS_CONFIG_PATH}' in voicegw.yaml, or send a fresh 'api_key' "
+        "in this request.",
+    )
 
 
 @router.get("")
@@ -114,6 +200,24 @@ async def update_provider(
         raise HTTPException(400, f"Unknown provider_type '{ptype}'")
 
     project = body.get("project", existing.get("project"))
+
+    # The dangerous shape is "new host + stored key": POST /test would then ship
+    # the operator's key to a host the caller picked. A request that carries its
+    # own api_key owns a key already, and an empty stored key is not a secret, so
+    # both stay unconstrained. Default hosts come from the STORED provider_type,
+    # the vendor that issued the stored key, not from a caller-supplied one.
+    supplied_key = body.get("api_key")
+    reuses_stored_key = bool(current_key) and not (
+        isinstance(supplied_key, str) and supplied_key
+    )
+    if reuses_stored_key:
+        _guard_base_url_host(
+            gateway,
+            provider_id,
+            str(existing["provider_type"]),
+            existing.get("base_url"),
+            base_url,
+        )
 
     await gateway.storage.upsert_managed_provider(
         provider_id, ptype, api_key, base_url, project=project

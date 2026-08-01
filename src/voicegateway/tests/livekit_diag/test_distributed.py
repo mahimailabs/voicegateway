@@ -62,6 +62,82 @@ def test_aggregate_worst_quality_wins():
     assert out["combined"][0]["quality"] == "Poor"
 
 
+def _unmeasured_steps(*, clients=(2,), quality="Unknown"):
+    """What a vantage reports for a tier where not one ping came back."""
+    return [
+        {
+            "clients": c,
+            "rtt_ms": 0.0,
+            "loss_pct": 0.0,
+            "quality": quality,
+            "samples": 0,
+            "rtt_stat": "not_measured",
+        }
+        for c in clients
+    ]
+
+
+def test_a_tier_no_vantage_measured_is_null_not_a_fast_zero():
+    """0.0 is inside every budget, so it made a dead ramp look sustained."""
+    reports = [
+        VantageReport("iad", _unmeasured_steps()),
+        VantageReport("sjc", _unmeasured_steps()),
+    ]
+    out = aggregate_vantages(reports, target_rtt_ms=50.0, max_loss=1.0)
+    tier = out["combined"][0]
+    assert tier["rtt_ms"] is None  # never 0.0
+    assert tier["rtt_stat"] == "not_measured"
+    assert tier["vantages"] == 2 and tier["measured_vantages"] == 0
+    # knee None reads as "sustained the whole ramp", so it cannot be the only
+    # signal: this says the walk never had anything to walk.
+    assert out["unmeasured_tiers"] == [0]
+
+
+def test_an_unmeasured_vantage_does_not_dilute_a_measured_tier():
+    reports = [
+        VantageReport("iad", _steps([40.0], clients=(2,))),
+        VantageReport("sjc", _unmeasured_steps()),
+    ]
+    out = aggregate_vantages(reports, target_rtt_ms=50.0, max_loss=1.0)
+    tier = out["combined"][0]
+    assert tier["rtt_ms"] == 40.0  # the reading that exists
+    assert tier["rtt_stat"] == "worst_of_n"
+    assert tier["measured_vantages"] == 1  # of 2 vantages, so the gap is visible
+    assert out["unmeasured_tiers"] == []
+
+
+def test_aggregate_does_not_crash_on_a_null_or_missing_rtt():
+    """``float(None)`` is a TypeError, and a step may carry a null rtt."""
+    reports = [
+        VantageReport("iad", [{"clients": 2, "rtt_ms": None, "loss_pct": 0.0}]),
+        VantageReport("sjc", [{"clients": 2, "loss_pct": 0.0}]),
+    ]
+    out = aggregate_vantages(reports, target_rtt_ms=50.0, max_loss=1.0)
+    assert out["combined"][0]["rtt_ms"] is None
+    assert out["combined"][0]["measured_vantages"] == 0
+
+
+def test_the_knee_walk_stops_at_a_tier_nobody_measured():
+    """Capacity past an unmeasured tier was not demonstrated, so it is not claimed."""
+    reports = [
+        VantageReport(
+            "iad",
+            _steps([10.0], clients=(2,))
+            + _unmeasured_steps(clients=(5,))
+            + _steps([12.0], clients=(9,)),
+        ),
+        VantageReport(
+            "sjc",
+            _steps([11.0], clients=(2,))
+            + _unmeasured_steps(clients=(5,))
+            + _steps([13.0], clients=(9,)),
+        ),
+    ]
+    out = aggregate_vantages(reports, target_rtt_ms=50.0, max_loss=1.0)
+    assert out["knee"] == 4  # the last tier that WAS measured healthy (2+2)
+    assert out["unmeasured_tiers"] == [1]
+
+
 def test_aggregate_ragged_reports_use_common_tier_count_and_flag_empty():
     reports = [
         VantageReport("iad", _steps([10.0, 20.0])),  # 2 tiers
@@ -249,3 +325,40 @@ async def test_run_prober_barrier_times_out_instead_of_hanging():
             poll_interval=1.0,
             barrier_timeout=3.0,  # -> at most 3 polls, then raise
         )
+
+
+class _HalfMeasuringProbe:
+    """One tier measured, one where every ping timed out."""
+
+    async def ramp(self, room, counts, duration, target, max_loss, *, cleanup):
+        return [
+            RampStep(counts[0], 11.0, 0.0, "Good", 2),
+            RampStep(counts[1], 0.0, 0.0, "Unknown", 0),
+        ], None
+
+
+async def test_run_prober_reports_the_sample_count_behind_each_rtt():
+    """The coordinator cannot aggregate honestly on numbers alone."""
+    http = _FakeHttp(ready_after=1)
+
+    async def _sleep(_d):
+        pass
+
+    payload = await run_prober(
+        "http://coord",
+        _HalfMeasuringProbe(),
+        vantage="iad",
+        http=http,
+        sleep=_sleep,
+        clock=lambda: 100.0,
+        poll_interval=0.5,
+    )
+    assert [s["samples"] for s in payload["steps"]] == [2, 0]
+    assert [s["rtt_stat"] for s in payload["steps"]] == ["mean_of_n", "not_measured"]
+
+    # And the tier that measured nothing does not read as a fast one on arrival.
+    out = aggregate_vantages(
+        [VantageReport("iad", payload["steps"])], target_rtt_ms=50.0, max_loss=1.0
+    )
+    assert [t["rtt_ms"] for t in out["combined"]] == [11.0, None]
+    assert out["unmeasured_tiers"] == [1]

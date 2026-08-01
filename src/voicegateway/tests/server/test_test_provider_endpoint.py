@@ -249,6 +249,173 @@ async def test_stateless_test_timeout_returns_failed(client, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# PATCH base_url must not repoint the stored key at an unapproved host
+#
+# POST /v1/providers/{id}/test builds the provider from the stored row, so a
+# PATCH that moves base_url to a new host while keeping the stored key is what
+# ships that key to a host the caller chose.
+# ---------------------------------------------------------------------------
+
+
+def _config_with_allowlist(tmp_path, hosts: list[str] | None) -> str:
+    """Write a minimal config, optionally with the serve host allowlist."""
+    serve: dict[str, Any] = {"host": "127.0.0.1", "port": 8080}
+    if hosts is not None:
+        serve["provider_base_url_hosts"] = hosts
+    cfg_path = tmp_path / "voicegw.yaml"
+    cfg_path.write_text(
+        yaml.dump(
+            {
+                "providers": {},
+                "models": {"stt": {}, "llm": {}, "tts": {}},
+                "stacks": {},
+                "fallbacks": {"stt": [], "llm": [], "tts": []},
+                "cost_tracking": {"enabled": True},
+                "observability": {"latency_tracking": True},
+                "serve": serve,
+            }
+        )
+    )
+    return str(cfg_path)
+
+
+@pytest.fixture
+def allowlist_client(tmp_path, monkeypatch):
+    """Build a client whose serve block carries the given host allowlist."""
+
+    def _build(hosts: list[str] | None):
+        monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "allowlist.db"))
+        gw = Gateway(config_path=_config_with_allowlist(tmp_path, hosts))
+        transport = ASGITransport(app=build_app(gw))
+        return gw, AsyncClient(transport=transport, base_url="http://test")
+
+    return _build
+
+
+async def _create_keyed_provider(client, provider_id: str = "openai-managed") -> None:
+    resp = await client.post(
+        "/v1/providers",
+        json={
+            "provider_id": provider_id,
+            "provider_type": "openai",
+            "api_key": "sk-operator-secret",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def test_patch_to_new_host_with_stored_key_is_rejected(allowlist_client):
+    gw, ctx = allowlist_client(None)
+    async with ctx as client:
+        await _create_keyed_provider(client)
+        resp = await client.patch(
+            "/v1/providers/openai-managed",
+            json={"base_url": "https://attacker.example.com/v1"},
+        )
+        assert resp.status_code == 400, resp.text
+        detail = resp.json()["detail"]
+        assert "attacker.example.com" in detail
+        # The error must name the config key the operator has to set.
+        assert "serve.provider_base_url_hosts" in detail
+        # And nothing may have been persisted.
+        row = await gw.storage.get_managed_provider("openai-managed")
+        assert row["base_url"] is None
+
+
+async def test_patch_to_allowlisted_host_with_stored_key_is_permitted(
+    allowlist_client,
+):
+    gw, ctx = allowlist_client(["https://proxy.internal.example.com"])
+    async with ctx as client:
+        await _create_keyed_provider(client)
+        resp = await client.patch(
+            "/v1/providers/openai-managed",
+            json={"base_url": "https://proxy.internal.example.com/v1"},
+        )
+        assert resp.status_code == 200, resp.text
+        row = await gw.storage.get_managed_provider("openai-managed")
+        assert row["base_url"] == "https://proxy.internal.example.com/v1"
+
+
+async def test_patch_to_new_host_with_fresh_key_needs_no_allowlist(allowlist_client):
+    """A caller who supplies the key has nothing to exfiltrate."""
+    gw, ctx = allowlist_client(None)
+    async with ctx as client:
+        await _create_keyed_provider(client)
+        resp = await client.patch(
+            "/v1/providers/openai-managed",
+            json={
+                "base_url": "https://byo.example.com/v1",
+                "api_key": "sk-caller-owned",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        row = await gw.storage.get_managed_provider("openai-managed")
+        assert row["base_url"] == "https://byo.example.com/v1"
+
+
+async def test_patch_same_host_with_stored_key_still_works(allowlist_client):
+    """Port and path edits on the host already stored keep working."""
+    gw, ctx = allowlist_client(None)
+    async with ctx as client:
+        await _create_keyed_provider(client)
+        first = await client.patch(
+            "/v1/providers/openai-managed",
+            json={
+                "base_url": "https://proxy.example.com/v1",
+                "api_key": "sk-operator-secret",
+            },
+        )
+        assert first.status_code == 200, first.text
+
+        resp = await client.patch(
+            "/v1/providers/openai-managed",
+            json={"base_url": "https://proxy.example.com:8443/v2"},
+        )
+        assert resp.status_code == 200, resp.text
+        row = await gw.storage.get_managed_provider("openai-managed")
+        assert row["base_url"] == "https://proxy.example.com:8443/v2"
+
+
+async def test_patch_to_vendor_default_host_needs_no_allowlist(allowlist_client):
+    """The provider's own default host stays reachable with the allowlist unset."""
+    gw, ctx = allowlist_client(None)
+    async with ctx as client:
+        await _create_keyed_provider(client)
+        resp = await client.patch(
+            "/v1/providers/openai-managed",
+            json={"base_url": "https://api.openai.com/v1"},
+        )
+        assert resp.status_code == 200, resp.text
+        row = await gw.storage.get_managed_provider("openai-managed")
+        assert row["base_url"] == "https://api.openai.com/v1"
+
+
+async def test_patch_that_changes_nothing_still_works(allowlist_client):
+    gw, ctx = allowlist_client(None)
+    async with ctx as client:
+        await _create_keyed_provider(client)
+        resp = await client.patch("/v1/providers/openai-managed", json={})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["updated"] is True
+        row = await gw.storage.get_managed_provider("openai-managed")
+        assert row["base_url"] is None
+
+
+async def test_patch_project_only_with_stored_key_still_works(allowlist_client):
+    """A non-base_url field edit must not trip the host guard."""
+    gw, ctx = allowlist_client(None)
+    async with ctx as client:
+        await _create_keyed_provider(client)
+        resp = await client.patch(
+            "/v1/providers/openai-managed", json={"project": "tony-pizza"}
+        )
+        assert resp.status_code == 200, resp.text
+        row = await gw.storage.get_managed_provider("openai-managed")
+        assert row["project"] == "tony-pizza"
+
+
+# ---------------------------------------------------------------------------
 # Suppressed unused-import noise (mocks may move into the file later).
 # ---------------------------------------------------------------------------
 

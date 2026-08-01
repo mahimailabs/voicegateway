@@ -221,6 +221,46 @@ Tenant scoping happens in the query, not on the page after it is read, so `limit
 curl "http://localhost:8080/api/calls?limit=6"
 ```
 
+## Session reads
+
+The list endpoint plus five reads that hang off a session id back the dashboard's call drill-down:
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/sessions` | Recent sessions, newest first. Takes `limit`, `project`, `tenant`, `agent` and `order_by`. |
+| `GET /api/sessions/{id}` | One session with its per-modality cost breakdown and provider list. |
+| `GET /api/sessions/{id}/turns` | Ordered per-turn rows (latency, response speed). |
+| `GET /api/sessions/{id}/transcript` | The captured call transcript, one row per turn. |
+| `GET /api/sessions/{id}/dead_air` | Dead-air events for the call, oldest first. |
+| `GET /api/sessions/{id}/replay` | The full time-ordered replay: the STT, LLM and TTS payloads of the call. |
+
+**Authentication:** all six require the same read authentication as the other dashboard reads (`/api/costs`, `/api/calls`). As there, the gate is a **no-op while no API keys are configured** (the self-hosted default) and enforces as soon as auth is enabled, when an unauthenticated request gets `401`. Only the list endpoint was gated before, so a session id alone was enough to read the detail, the turns, the transcript, the dead air and the replay of any call on the deployment.
+
+**Tenant scoping:** a tenant-scoped key reads only its own sessions. The per-session routes take no `tenant` parameter (the id is the whole request), so the check runs on the fetched session row. A session belonging to another tenant returns `404` with the same body as a session id that does not exist: a `403` would confirm the id is real. The self-hosted operator (no credential, or a static config key) is an admin principal and keeps reading every session, unchanged.
+
+**Example:**
+
+```bash
+curl "http://localhost:8080/api/sessions?limit=20"
+curl "http://localhost:8080/api/sessions/vg-8f1c/transcript"
+```
+
+The same rows are served by `GET /v1/sessions` and `GET /v1/sessions/{id}` on the [HTTP API](/api/http-api), under the same authentication and the same tenant scoping.
+
+## Replay writes and storage
+
+Three endpoints beside the `GET /api/sessions/{id}/replay` read above:
+
+| Endpoint | Does |
+|---|---|
+| `DELETE /api/sessions/{id}/replay` | Delete every replay row for the call, cascading across the four `replay_*` tables in one transaction. Returns the row count. |
+| `GET /api/replay/storage` | Per-project sum of `sessions.replay_size_bytes`, plus the deployment total. |
+| `POST /api/projects/{id}/replay/retention` | Set that project's retention window, `{"retention_days": N}` with N in 1-365. Applied in memory for the retention worker; not persisted to `voicegw.yaml`. |
+
+**Authentication:** the two writes require the **`admin` scope**, the scope every write on a dashboard router takes (API keys, diagnostics runs, the agent probe, the branding logo upload). One destroys captured payloads outright and the other sets how long any of them survive. `GET /api/replay/storage` is a read and takes the same read authentication as the reads above: a read-scoped key is enough. All three gates are **no-ops while no API keys are configured** (the self-hosted default). With auth enabled, an unauthenticated caller gets `401` and a read-scoped key attempting either write gets `403`.
+
+**Tenant scoping:** `GET /api/replay/storage` aggregates every session row, so the tenant resolved from the key becomes a predicate on the query. A tenant-scoped key is told its own footprint only, and the total matches the breakdown it can see. There is no id to `404` on here: what the scoping protects is the size of another tenant's captured traffic and the names of the projects producing it.
+
 ## GET /api/agents
 
 Return the fleet index over the last 24 hours: the telemetry rollup merged with the live worker roster. Agents that have metered traffic come from the rollup; registered-but-idle workers (0 requests) are merged in so a booted agent appears before it has handled its first call.
@@ -373,6 +413,26 @@ List all configured projects with today's stats.
 ```bash
 curl http://localhost:8080/api/projects
 ```
+
+## API keys
+
+`GET /api/api_keys`, `POST /api/api_keys`, and `POST /api/api_keys/{key_id}/revoke` back the dashboard's API keys screen: list, mint, and soft-revoke the virtual keys (`vk_...`) that authenticate callers.
+
+**Authentication:** every route under `/api/api_keys` requires the `admin` scope, declared on the router so no route can miss it. As with Diagnostics and the Server overview, the gate is a **no-op while no API keys are configured** (the self-hosted default), and it enforces the admin scope as soon as auth is enabled. An unauthenticated request then gets `401`, and a valid token without the `admin` scope gets `403`. The dashboard already sends its bearer token on these calls.
+
+This gate matters because a minted key is issued with the wildcard scope. An ungated mint is a write escalation onto every `/v1` endpoint. A key minted here defaults to `role: tenant`, so **a minted key cannot mint another key** (`403`).
+
+`POST /api/api_keys` takes `name` (required), `tenant_id` (optional), and `issued_by` (optional), and returns `plaintext` exactly once at creation; the dashboard shows the "save this key" modal and discards it. Subsequent list responses expose only `key_prefix`, never the plaintext or the bcrypt hash. Revoke is soft: the row stays for audit with `revoked_at` set, and revoking an already-revoked key returns `404`.
+
+For the equivalent endpoints on the public API, see the [HTTP API](/api/http-api).
+
+## Branding
+
+`GET /api/projects/{id}/branding` returns the project's white-label payload (`logo_url`, `accent_color`, `product_name`), `POST /api/projects/{id}/branding` upserts it, and `POST /api/projects/{id}/branding/logo` uploads a PNG or SVG logo.
+
+**Authentication:** both POSTs require the `admin` scope; the GET does not. White-label branding is an operator/agency setting: the write stamps the `logo_url` every dashboard page renders and the `product_name` it renders as its own name. The **GET stays open to any authenticated reader on purpose**: every dashboard layout mount calls it to apply the brand, and the frontend treats a `403` exactly like a `401` (it clears the stored token and shows the login gate), so gating it behind the admin scope would log out a read-scoped operator on page load. That is why the gate sits on the two write routes and not on the router. Both gates are no-ops while no API keys are configured.
+
+See [Agency quickstart](/guide/agency-quickstart) for what the logo upload accepts.
 
 ## Static File Serving
 

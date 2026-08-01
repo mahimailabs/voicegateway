@@ -113,3 +113,113 @@ def test_list_api_keys_filters_revoked_when_include_revoked_false(client) -> Non
 
     assert any(k["id"] == created_id for k in with_revoked)
     assert all(k["id"] != created_id for k in without_revoked)
+
+
+# ---------------------------------------------------------------------------
+# Auth: the router is admin-gated once auth is enabled
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def app_under_test(temp_config, tmp_path, monkeypatch):
+    """A built app the auth tests can stamp ``state.api_keys`` onto."""
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "vk-auth.db"))
+    monkeypatch.delenv("VOICEGW_API_KEY", raising=False)
+    gw = Gateway(config_path=temp_config)
+    return build_app(gw, enable_mcp_sse=False, enable_dashboard=False)
+
+
+def test_mint_stays_open_when_no_keys_are_configured(app_under_test) -> None:
+    """The self-hosted default (no keys configured) is unchanged.
+
+    ``core.auth.check_request`` returns None on an empty key list, so
+    ``require_scope(ADMIN_SCOPE)`` is a no-op and the local operator still
+    mints a key with no credential.
+    """
+    assert app_under_test.state.api_keys == []
+    client = TestClient(app_under_test)
+    created = client.post("/api/api_keys", json={"name": "local-operator"})
+    assert created.status_code in (200, 201)
+    assert created.json()["plaintext"].startswith("vk_")
+    assert client.get("/api/api_keys").status_code == 200
+
+
+def test_router_requires_admin_when_auth_enabled(app_under_test) -> None:
+    """With static keys configured, an unauthenticated caller cannot mint.
+
+    A minted key carries the wildcard scope, so an ungated POST here is a
+    write escalation onto every /v1 endpoint. The gate covers the list and
+    the revoke too.
+    """
+    from voicegateway.core.auth import ADMIN_SCOPE, ApiKey
+
+    # A non-vk_ token takes the static-key path (check_request, which reads
+    # app.state.api_keys). A vk_ token would take the DB storage path instead.
+    app_under_test.state.api_keys = [
+        ApiKey(token="admin-secret-token", name="ops", scopes=(ADMIN_SCOPE,))
+    ]
+    client = TestClient(app_under_test)
+
+    assert client.post("/api/api_keys", json={"name": "stolen"}).status_code == 401
+    assert client.get("/api/api_keys").status_code == 401
+    assert client.post("/api/api_keys/1/revoke").status_code == 401
+    assert (
+        client.post(
+            "/api/api_keys",
+            json={"name": "stolen"},
+            headers={"Authorization": "Bearer wrong-token"},
+        ).status_code
+        == 401
+    )
+
+    ok = client.post(
+        "/api/api_keys",
+        json={"name": "minted-by-admin"},
+        headers={"Authorization": "Bearer admin-secret-token"},
+    )
+    assert ok.status_code in (200, 201)
+
+
+def test_router_rejects_key_without_admin_scope(app_under_test) -> None:
+    """A valid static key lacking the admin scope is authenticated but 403."""
+    from voicegateway.core.auth import ADMIN_SCOPE, ApiKey
+
+    app_under_test.state.api_keys = [
+        ApiKey(token="read-only-token", name="viewer", scopes=("read",)),
+        ApiKey(token="admin-secret-token", name="ops", scopes=(ADMIN_SCOPE,)),
+    ]
+    client = TestClient(app_under_test)
+
+    denied = client.post(
+        "/api/api_keys",
+        json={"name": "escalation"},
+        headers={"Authorization": "Bearer read-only-token"},
+    )
+    assert denied.status_code == 403
+    assert (
+        client.get(
+            "/api/api_keys", headers={"Authorization": "Bearer read-only-token"}
+        ).status_code
+        == 403
+    )
+
+
+def test_minted_tenant_key_cannot_mint_another_key(app_under_test) -> None:
+    """A vk_ key minted here defaults to role='tenant', so it cannot re-mint.
+
+    Without this, a single leaked wildcard key would be self-replicating.
+    """
+    from voicegateway.core.auth import ADMIN_SCOPE, ApiKey
+
+    client = TestClient(app_under_test)
+    plaintext = client.post("/api/api_keys", json={"name": "agent"}).json()["plaintext"]
+
+    app_under_test.state.api_keys = [
+        ApiKey(token="admin-secret-token", name="ops", scopes=(ADMIN_SCOPE,))
+    ]
+    denied = client.post(
+        "/api/api_keys",
+        json={"name": "self-replication"},
+        headers={"Authorization": f"Bearer {plaintext}"},
+    )
+    assert denied.status_code == 403
