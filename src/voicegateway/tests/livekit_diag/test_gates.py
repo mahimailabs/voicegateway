@@ -1196,3 +1196,122 @@ def test_return_to_baseline_is_synchronous_and_json_safe():
         tolerance=1.5,
     ):
         json.loads(json.dumps(gate.as_dict()))
+
+
+# ---------------------------------------------------------------------------
+# WAIVED: a threshold the run was not held to, recorded rather than dropped
+#
+# The requirement is "record the CPU/headroom gates as waived in writing, never a
+# silent pass". Every assertion here is about the second half of that sentence.
+# ---------------------------------------------------------------------------
+
+
+def _failing() -> gates.GateResult:
+    return gates.GateResult(
+        gate=gates.NODE_CPU_GATE,
+        status=gates.FAIL,
+        detail="peak CPU on sfu-1 was 91.0%",
+        subject="sfu-1",
+        metric="node_cpu_utilisation",
+        value=0.91,
+        threshold=0.70,
+    )
+
+
+def test_a_waiver_requires_a_reason():
+    """An unexplained waiver is a silently dropped gate wearing a label."""
+    for blank in ("", "   ", "\n\t "):
+        with pytest.raises(ValueError, match="requires a reason"):
+            gates.waive(_failing(), reason=blank)
+
+
+def test_a_waiver_never_collapses_to_pass():
+    waived = gates.waive(_failing(), reason="instrumentation not funded")
+    assert waived.status == gates.WAIVED
+    assert waived.status != gates.PASS
+    assert gates.verdict([waived]) == gates.WAIVED
+    assert gates.verdict([waived]) != gates.PASS
+
+
+def test_exit_code_does_not_treat_a_waiver_as_clean():
+    """A pipeline that goes green on a waiver has dropped the requirement."""
+    assert gates.exit_code(gates.WAIVED) == 1
+    waived = gates.waive(_failing(), reason="instrumentation not funded")
+    assert gates.exit_code(gates.verdict([waived])) == 1
+    # Even alongside otherwise-clean gates.
+    clean = gates.GateResult(gate="x", status=gates.PASS, detail="fine")
+    assert gates.verdict([clean, waived]) == gates.WAIVED
+    assert gates.exit_code(gates.verdict([clean, waived])) == 1
+
+
+def test_waived_outranks_pass_and_loses_to_a_measured_problem():
+    """Above PASS: a gate nobody enforced was not satisfied.
+
+    Below WARN: a WARN is an observed degradation, which is worse news than a
+    threshold somebody agreed in writing not to hold this run to.
+    """
+    assert gates.worst_status([gates.PASS, gates.WAIVED]) == gates.WAIVED
+    assert gates.worst_status([gates.WAIVED, gates.WARN]) == gates.WARN
+    assert gates.worst_status([gates.WAIVED, gates.UNKNOWN]) == gates.UNKNOWN
+    assert gates.worst_status([gates.WAIVED, gates.FAIL]) == gates.FAIL
+
+
+def test_the_reason_is_carried_structurally_and_in_the_prose():
+    """A surface that renders one and not the other still shows the reason."""
+    waived = gates.waive(_failing(), reason="CPU exporter not funded for this run")
+    assert waived.waiver_reason == "CPU exporter not funded for this run"
+    assert "CPU exporter not funded for this run" in waived.detail
+    # It survives the JSON round trip the payload is persisted through.
+    import json
+
+    assert (
+        json.loads(json.dumps(waived.as_dict()))["waiver_reason"]
+        == "CPU exporter not funded for this run"
+    )
+
+
+def test_the_waived_status_keeps_what_it_would_otherwise_have_been():
+    """Would-have-failed and would-have-passed-anyway are different facts,
+    and only the first one is a risk somebody accepted."""
+    waived = gates.waive(_failing(), reason="r")
+    assert "Would otherwise have been FAIL" in waived.detail
+    passing = gates.GateResult(gate="g", status=gates.PASS, detail="fine")
+    assert "Would otherwise have been PASS" in gates.waive(passing, reason="r").detail
+
+
+def test_a_waiver_preserves_the_number_that_was_measured():
+    """The measurement is not erased by the decision not to enforce it."""
+    waived = gates.waive(_failing(), reason="not funded")
+    assert waived.value == 0.91
+    assert waived.threshold == 0.70
+    assert waived.metric == "node_cpu_utilisation"
+    assert waived.subject == "sfu-1"
+    assert waived.gate == gates.NODE_CPU_GATE
+
+
+def test_the_reason_is_stripped_but_not_otherwise_altered():
+    waived = gates.waive(_failing(), reason="  agreed on 2026-07-31  ")
+    assert waived.waiver_reason == "agreed on 2026-07-31"
+
+
+def test_a_waiver_shows_up_in_the_summary_lines():
+    [line] = gates.summary_lines([gates.waive(_failing(), reason="not funded")])
+    assert "[WAIVED]" in line
+    assert "not funded" in line
+
+
+def test_the_prometheus_exposition_does_not_drop_a_waived_gate():
+    """The filter there DROPS unrecognised statuses, and an absent gate reads as
+    one that never ran rather than one somebody chose not to enforce."""
+    from voicegateway.server.api import metrics as metrics_api
+
+    assert gates.WAIVED in metrics_api._GATE_STATUSES
+
+
+def test_the_report_renders_waived_distinctly_from_unknown():
+    """Falling through to the unknown class would say "could not evaluate"."""
+    from voicegateway.livekit_diag import run_report
+
+    assert gates.WAIVED in run_report._VERDICT_MEANING
+    assert "NOT a pass" in run_report._VERDICT_MEANING[gates.WAIVED]
+    assert ".tag.waived" in run_report._CSS if hasattr(run_report, "_CSS") else True

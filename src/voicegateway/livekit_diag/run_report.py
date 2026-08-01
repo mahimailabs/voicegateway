@@ -136,6 +136,12 @@ _VERDICT_MEANING = {
         "Every gate this run evaluated was inside its threshold. It says nothing "
         "about anything the run did not measure."
     ),
+    gates.WAIVED: (
+        "At least one gate was explicitly WAIVED: it was not enforced for this "
+        "run, and somebody recorded why. This is NOT a pass. The requirement was "
+        "not withdrawn, it was set aside, and the reason is printed on the gate "
+        "row so the risk that was accepted is legible rather than absent."
+    ),
     gates.WARN: (
         "Every gate evaluated, and at least one measured value is outside the "
         "threshold it was compared against."
@@ -617,6 +623,7 @@ td.num, th.num { text-align: right;
 .tag.pass { border-color: #1f7a44; color: #1f7a44; }
 .tag.warn { border-color: #a86a00; color: #a86a00; }
 .tag.unknown { border-color: #4a4f5a; color: #4a4f5a; }
+.tag.waived { border-color: #6a4ca8; color: #6a4ca8; }
 .tag.fail { border-color: #a32020; color: #a32020; }
 .nm { color: #6b7280; font-style: italic; }
 .note { border-left: 3px solid #c9ced6; padding: 8px 12px; margin: 10px 0;
@@ -759,7 +766,8 @@ def _render_verdict(payload: dict[str, Any]) -> str:
         f'<div class="verdict {css}"><div class="word">{_esc(status)}</div>'
         f"<p>{_esc(meaning)}</p>"
         "<p class=\"nm\">The verdict is the worst gate below "
-        "(PASS &lt; WARN &lt; UNKNOWN &lt; FAIL), decided when the run "
+        "(PASS &lt; WAIVED &lt; WARN &lt; UNKNOWN &lt; FAIL), decided when the "
+        "run "
         "executed, not when this report was exported.</p></div>"
     )
 
@@ -779,9 +787,11 @@ def _render_gates(payload: dict[str, Any]) -> str:
         if not isinstance(gate, dict):
             continue
         status = str(gate.get("status") or "UNKNOWN")
-        css = status.lower() if status.lower() in (
-            "pass", "warn", "unknown", "fail"
-        ) else "unknown"
+        css = (
+            status.lower()
+            if status.lower() in ("pass", "waived", "warn", "unknown", "fail")
+            else "unknown"
+        )
         subject = gate.get("subject")
         value = _as_float(gate.get("value"))
         threshold = _as_float(gate.get("threshold"))

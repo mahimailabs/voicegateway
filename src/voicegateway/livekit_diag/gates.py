@@ -52,12 +52,13 @@ surfaces).
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 from voicegateway.utils.percentiles import compute_percentiles
 
 PASS = "PASS"
+WAIVED = "WAIVED"
 WARN = "WARN"
 UNKNOWN = "UNKNOWN"
 FAIL = "FAIL"
@@ -68,7 +69,12 @@ FAIL = "FAIL"
 # run's verdict is the worst gate, so a run that both measured a degradation and
 # failed to measure something reports the un-measured half, which is the part
 # nobody can act on until it is fixed.
-_SEVERITY = {PASS: 0, WARN: 1, UNKNOWN: 2, FAIL: 3}
+# WAIVED sits directly above PASS and below WARN. Above PASS because a gate
+# nobody enforced has not been satisfied, and collapsing it into PASS is exactly
+# the silent pass the waiver exists to prevent. Below WARN because a WARN is an
+# observed degradation, which is worse news than a threshold somebody explicitly
+# and in writing agreed not to hold this run to.
+_SEVERITY = {PASS: 0, WAIVED: 1, WARN: 2, UNKNOWN: 3, FAIL: 4}
 
 # Below this many samples a percentile is not a percentile. See the module
 # docstring: with MAX_LATENCY_TRIALS = 3 this branch is the normal one, and the
@@ -156,10 +162,25 @@ class GateResult:
     metric: str | None = None
     value: float | None = None
     threshold: float | None = None
+    # Set only by :func:`waive`, and never empty when it is set. Carried as a
+    # field as well as inside ``detail`` so a surface that renders structured
+    # data rather than prose still has to deal with it.
+    waiver_reason: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        """A JSON-safe copy (the run payload is persisted and served as JSON)."""
-        return asdict(self)
+        """A JSON-safe copy (the run payload is persisted and served as JSON).
+
+        ``waiver_reason`` is omitted entirely when it is None, so the payload of
+        every gate that was not waived keeps exactly the shape it had before
+        waivers existed. That shape is a contract: it is persisted with each run,
+        served to the dashboard, and pinned by a test that asserts the key set.
+        A waived gate is the only one that carries new information, so it is the
+        only one whose payload grows.
+        """
+        out = asdict(self)
+        if out.get("waiver_reason") is None:
+            out.pop("waiver_reason", None)
+        return out
 
 
 def worst_status(statuses: Iterable[str]) -> str:
@@ -196,6 +217,9 @@ def exit_code(run_verdict: str) -> int:
     a gate weaker. WARN, UNKNOWN and FAIL all mean "this run did not demonstrate
     a healthy deployment", and all three exit 1.
     """
+    # WAIVED is not clean either. A waived gate is one nobody held the run to,
+    # which is a decision worth a non-zero exit: a pipeline that goes green on a
+    # waiver has quietly dropped the requirement rather than recorded it.
     return 0 if run_verdict == PASS else 1
 
 
@@ -1199,6 +1223,44 @@ def evaluate_checks(
     return gates
 
 
+def waive(gate: GateResult, *, reason: str) -> GateResult:
+    """Record a gate as explicitly waived, with the reason it was waived.
+
+    For the case the checklist names: a threshold the run was not held to,
+    because somebody decided in writing not to hold it. The requirement is that
+    this is recorded, never that it becomes a pass.
+
+    ``reason`` is required and may not be blank. A waiver with no reason is
+    indistinguishable from a gate somebody quietly deleted, which is the thing
+    this function exists to make impossible. Whitespace does not count.
+
+    The reason lands in two places on purpose: on
+    :attr:`GateResult.waiver_reason` for a structured consumer, and prefixed into
+    ``detail`` for every surface that renders prose. A surface that shows one and
+    not the other still shows the reason.
+
+    WAIVED never collapses to PASS. It outranks PASS in :data:`_SEVERITY`, so a
+    run whose only blemish is a waiver reports WAIVED rather than PASS, and
+    :func:`exit_code` returns non-zero for it.
+
+    The original status is kept in the detail rather than discarded: "it would
+    have failed and we waived it" and "it would have passed anyway" are
+    different facts, and only the first one is a risk somebody accepted.
+    """
+    if not reason or not reason.strip():
+        raise ValueError(
+            "a waiver requires a reason: an unexplained waiver is "
+            "indistinguishable from a silently dropped gate"
+        )
+    reason = reason.strip()
+    return replace(
+        gate,
+        status=WAIVED,
+        detail=f"WAIVED ({reason}). Would otherwise have been {gate.status}: {gate.detail}",
+        waiver_reason=reason,
+    )
+
+
 def summary_lines(gates: Sequence[GateResult]) -> list[str]:
     """One ``[STATUS] gate: detail`` line per gate, for a human or a CI log."""
     return [f"  [{g.status}] {g.gate}: {g.detail}" for g in gates]
@@ -1228,6 +1290,7 @@ __all__ = [
     "SFU_CAPACITY_GATE",
     "SFU_QUALITY_GATE",
     "UNKNOWN",
+    "WAIVED",
     "WARN",
     "BaselineComparison",
     "GateResult",
@@ -1247,5 +1310,6 @@ __all__ = [
     "sfu_quality_gate",
     "summary_lines",
     "verdict",
+    "waive",
     "worst_status",
 ]

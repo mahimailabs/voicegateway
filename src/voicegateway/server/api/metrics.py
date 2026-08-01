@@ -41,7 +41,7 @@ from fastapi.responses import PlainTextResponse
 # drift into a second severity ladder. The verdict itself is NOT recomputed
 # here: livekit_diag.gates decides it once, the run stores it, and this endpoint
 # only reads back what was stored.
-from voicegateway.livekit_diag.gates import FAIL, PASS, UNKNOWN, WARN
+from voicegateway.livekit_diag.gates import FAIL, PASS, UNKNOWN, WAIVED, WARN
 from voicegateway.server.api._deps import get_gateway
 from voicegateway.utils.percentiles import quantile_label
 
@@ -56,7 +56,13 @@ router = APIRouter(prefix="/metrics", tags=["metrics"])
 # Statuses this exposition knows how to encode. Anything else is left out
 # rather than mapped: rounding an unrecognised status down to PASS invents a
 # healthy reading, and up to FAIL invents an alert nobody measured.
-_GATE_STATUSES = frozenset({PASS, WARN, UNKNOWN, FAIL})
+#
+# WAIVED is in the set because the alternative is worse than a wrong value. This
+# filter DROPS what it does not recognise, so a waived gate would disappear from
+# the exposition entirely, and a gate that is absent reads as a gate that never
+# ran rather than one somebody decided not to enforce. A waiver has to be
+# visible on the surface an operator alerts from.
+_GATE_STATUSES = frozenset({PASS, WAIVED, WARN, UNKNOWN, FAIL})
 
 # How far back to look for a run that actually gated something. A run in flight
 # (queued/running) has no gates yet, and a run that failed before any check
