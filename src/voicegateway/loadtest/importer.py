@@ -214,6 +214,7 @@ def build_plan(
     label: str | None = None,
     captured: bool = False,
     now_ms: int,
+    declared_targets: dict[str, int] | None = None,
 ) -> ImportPlan:
     """Read a directory of artifacts and plan the rows it would become.
 
@@ -292,10 +293,14 @@ def build_plan(
             failed_cancelled=p.failures_by_cause.get("cancelled"),
             rtp_packets_sent=p.rtp_packets_sent,
             rtp_packets_received=p.rtp_packets_received,
-            # target_concurrency, the node CPU/memory peaks and the sample count
-            # are deliberately left None. The first lives in the generator's
-            # scenario file, which is not an artifact; the rest are DATA4's job,
-            # correlating node_samples over each test's window.
+            # What the step ASKED for is not in any artifact: it lives in the
+            # generator's scenario file. It is None unless the operator declared
+            # it, and a declaration is kept apart from a measurement: the peak
+            # concurrency above still comes from the stat file and is never
+            # overwritten by this.
+            target_concurrency=(declared_targets or {}).get(p.name),
+            # The node CPU/memory peaks and the sample count stay None here:
+            # they are correlated from node_samples over each test's window.
         )
         for index, p in enumerate(parsed)
     ]
