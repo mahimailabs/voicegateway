@@ -1,0 +1,63 @@
+name: Go tools
+
+# The Go under tools/ was gated by nothing. ci.yml triggers on
+# src/voicegateway/**, src/dashboard/api/** and pyproject.toml, and pytest's
+# testpaths is src/voicegateway/tests, so a change to the mock participant ran
+# no test, no vet and no build anywhere in CI.
+#
+# That matters more than the usual "add a job for the new language" case. Two
+# bugs shipped in this package that unit tests could not catch, because both
+# only appear when Join talks to a real LiveKit: WithTrack without
+# WithSinglePeerConnection, and Opus declared as 48000/1. The guards written
+# against them live here as Go tests, and a guard nothing runs is a guard that
+# stops working the moment somebody edits around it.
+
+on:
+  pull_request:
+    paths:
+      - 'tools/**'
+      - '.github/workflows/go-tools.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/**'
+      - '.github/workflows/go-tools.yml'
+
+jobs:
+  mock-participant:
+    name: mock-participant
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/mock-participant
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/mock-participant/go.mod
+          cache-dependency-path: tools/mock-participant/go.sum
+
+      - name: Formatting
+        # gofmt -l prints unformatted files and still exits 0, so the output is
+        # what has to be checked, not the status.
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt would rewrite:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      # -race because the worker, the tone streamer and one drain goroutine per
+      # subscribed track all touch the same counters, and those counters are the
+      # bidirectional-media evidence.
+      - name: Test
+        run: go test ./... -race
+
+      - name: Build
+        run: go build -o /dev/null .
