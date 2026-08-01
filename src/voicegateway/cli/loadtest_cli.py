@@ -8,6 +8,7 @@ is owed.
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import typer
@@ -15,6 +16,7 @@ from rich.table import Table
 
 from voicegateway.cli._app import app, console
 from voicegateway.cli.base_cli import BaseCli
+from voicegateway.loadtest.aggregation import TestAggregate, peak_label
 from voicegateway.loadtest.artifacts import ArtifactError
 from voicegateway.loadtest.importer import build_plan, observations_for
 
@@ -41,6 +43,19 @@ def _ratio(value: float | None) -> str:
     return "-" if value is None else f"{value * 100:.3f}%"
 
 
+def _pct(value: float | None) -> str:
+    """A utilisation fraction as a percentage, or "not measured".
+
+    Never "0%" for an absent reading: a node nobody scraped is not an idle one.
+    """
+    return "not measured" if value is None else f"{value * 100:.1f}%"
+
+
+def _cpu_samples(aggregate: TestAggregate) -> int:
+    """How many points the CPU peak came from, for labelling it honestly."""
+    return max((r.samples for r in aggregate.cpu_readings), default=0)
+
+
 @loadtest_app.command("import")
 def import_run(
     directory: Path = typer.Argument(..., help="Directory of run artifacts"),
@@ -57,6 +72,9 @@ def import_run(
             "Declare these artifacts came from a real run. Without it the run "
             "is recorded as synthetic and every report stamps itself so."
         ),
+    ),
+    node: str = typer.Option(
+        None, "--node", help="Correlate against one node only (default: all)"
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show what would be written, write nothing"
@@ -131,12 +149,49 @@ def import_run(
     gw = _cli.require_gateway(config)
     storage = _cli.require_storage(gw)
 
-    async def _write() -> None:
+    async def _write() -> list[str]:
         await storage.upsert_load_run(plan.run)
+        correlated: list[str] = []
         for test in plan.tests:
-            await storage.upsert_load_run_test(test)
+            # Correlate BEFORE writing, so the row lands complete rather than
+            # being written once without the fleet columns and again with them.
+            aggregate = await storage.correlate_load_run_test(
+                started_at_ms=test.started_at_ms,
+                ended_at_ms=test.ended_at_ms,
+                node=node,
+            )
+            if aggregate is None:
+                # No window, so nothing to overlap. The columns stay NULL.
+                await storage.upsert_load_run_test(test)
+                continue
+            await storage.upsert_load_run_test(
+                replace(
+                    test,
+                    peak_cpu_utilisation=aggregate.peak_cpu_utilisation,
+                    peak_memory_utilisation=aggregate.peak_memory_utilisation,
+                    node_samples_in_window=aggregate.node_samples_in_window,
+                )
+            )
+            if aggregate.node_samples_in_window:
+                correlated.append(
+                    f"{test.name}: {aggregate.node_samples_in_window} node samples "
+                    f"overlap this test's window across {aggregate.nodes_seen} "
+                    f"targets, cpu {_pct(aggregate.peak_cpu_utilisation)} "
+                    f"({peak_label(_cpu_samples(aggregate))}), "
+                    f"memory {_pct(aggregate.peak_memory_utilisation)}"
+                )
+        return correlated
 
-    _cli.async_run(_write())
+    correlated = _cli.async_run(_write())
+    if correlated:
+        console.print("\n[dim]Fleet during each test (overlap, not attribution):[/dim]")
+        for line in correlated:
+            console.print(f"  [dim]- {line}[/dim]")
+    else:
+        _cli.warn(
+            "No node samples overlap these test windows, so peak CPU and memory "
+            "are not measured. They stay NULL rather than reading 0."
+        )
     _cli.success(f"Imported {plan.run.id}: {len(plan.tests)} tests.")
 
 

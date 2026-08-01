@@ -397,6 +397,32 @@ class StorageService:
             rows = await load_runs.list_tests(db, run_id)
         return [r.as_dict() for r in rows]
 
+    async def correlate_load_run_test(
+        self,
+        *,
+        started_at_ms: int | None,
+        ended_at_ms: int | None,
+        node: str | None = None,
+        source: str | None = None,
+    ) -> Any:
+        """Node samples OVERLAPPING one test's window, or None without a window.
+
+        Overlap, not attribution: this says what the fleet looked like while a
+        test ran, never that a node served any particular call. Returns a
+        ``TestAggregate``.
+        """
+        from voicegateway.loadtest.aggregation import aggregate_test_window
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            return await aggregate_test_window(
+                db,
+                started_at_ms=started_at_ms,
+                ended_at_ms=ended_at_ms,
+                node=node,
+                source=source,
+            )
+
     # ------------------------------------------------------------------
     # Transcripts
     # ------------------------------------------------------------------
