@@ -143,8 +143,11 @@ async def test_livekit_server_exposition_lands_in_columns(storage) -> None:
     # total, not a per-label split.
     assert row.packets_total == 10_000
     assert row.packet_bytes_total == 4_000_000_000  # > 2 GiB, the INT4 trap
-    assert row.nacks_total == 12
-    assert row.series_found == 5
+    # 4, not 5: livekit_nack_total is still in the fixture above but is no
+    # longer mapped, because it does not exist on livekit-server 1.10.1.
+    # An unmapped metric is ignored and uncounted, which is what this now
+    # also demonstrates.
+    assert row.series_found == 4
     # Nothing from another exporter leaked in.
     assert row.filefd_allocated is None
     assert row.sip_calls_active is None

@@ -151,7 +151,6 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         # kind of detail that drifts between releases.
         _Series("livekit_packet_total", "packets_total"),
         _Series("livekit_packet_bytes", "packet_bytes_total"),
-        _Series("livekit_nack_total", "nacks_total"),
         # Go runtime, from the standard prometheus/client_golang collectors that
         # both binaries register by default. These are the return-to-baseline
         # pair, NOT RSS: Go hands freed heap back to the OS lazily, so a drained

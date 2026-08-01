@@ -64,13 +64,26 @@ COUNTER_COLUMNS: frozenset[str] = frozenset(
     {
         "packets_total",
         "packet_bytes_total",
-        "nacks_total",
         "sip_invite_requests_raw_total",
         "sip_invite_requests_total",
         "sip_invite_accepted_total",
         "sip_calls_terminated_total",
         "cpu_seconds_total",
         "cpu_idle_seconds_total",
+        # Histogram _sum and _count are both cumulative, so a rate over them is
+        # the only meaningful read. The two bucket counts are cumulative too.
+        "sip_join_sec_sum",
+        "sip_join_sec_count",
+        "sip_join_le1_count",
+        "sip_join_le5_count",
+        "sip_check_sec_sum",
+        "sip_check_sec_count",
+        "session_start_time_ms_sum",
+        "session_start_time_ms_count",
+        "sip_rtp_packets_recv",
+        "sip_rtp_packets_send",
+        "process_cpu_seconds_total",
+        "udp_no_ports_total",
     }
 )
 
@@ -88,6 +101,25 @@ GAUGE_COLUMNS: frozenset[str] = frozenset(
         # Go runtime. Gauges: what the process holds right now, never diffed.
         "heap_inuse_bytes",
         "go_goroutines",
+        # Per-process rlimit pair, the ceiling a service actually hits.
+        "process_open_fds",
+        "process_max_fds",
+        "sip_available",
+        "sip_node_cpu_load",
+        # A constant per process life, not cumulative: it is the instant the
+        # process started, and it changes only across a restart.
+        "process_start_time_seconds",
+        "process_resident_memory_bytes",
+        "sockstat_udp_inuse",
+        # Named _total by the exporter but behaving as gauges: current counts,
+        # not cumulative. Putting them in COUNTER_COLUMNS would have
+        # read_counter_rate diff a value that already is the answer.
+        "track_published_total",
+        "track_subscribed_total",
+        "psrpc_stream_count",
+        # Derived from node_filefd_maximum rather than scraped, but still an
+        # observation about one scrape. 1 unbounded, 0 bounded, NULL unmeasured.
+        "filefd_maximum_unbounded",
     }
 )
 
@@ -102,7 +134,6 @@ _INT_COLUMNS: frozenset[str] = frozenset(
         "participants",
         "packets_total",
         "packet_bytes_total",
-        "nacks_total",
         "sip_calls_active",
         "sip_invite_requests_raw_total",
         "sip_invite_requests_total",
@@ -114,6 +145,29 @@ _INT_COLUMNS: frozenset[str] = frozenset(
         "memory_total_bytes",
         "heap_inuse_bytes",
         "go_goroutines",
+        # Integer columns. Anything omitted here is stored as a float, and
+        # anything named here that is genuinely fractional would be truncated,
+        # so sip_join_sec_sum / sip_check_sec_sum / sip_node_cpu_load /
+        # process_start_time_seconds / process_cpu_seconds_total are all
+        # deliberately ABSENT: they are seconds and load averages.
+        "sip_join_sec_count",
+        "sip_join_le1_count",
+        "sip_join_le5_count",
+        "sip_check_sec_count",
+        "session_start_time_ms_sum",
+        "session_start_time_ms_count",
+        "process_open_fds",
+        "process_max_fds",
+        "sip_available",
+        "sip_rtp_packets_recv",
+        "sip_rtp_packets_send",
+        "process_resident_memory_bytes",
+        "sockstat_udp_inuse",
+        "udp_no_ports_total",
+        "track_published_total",
+        "track_subscribed_total",
+        "psrpc_stream_count",
+        "filefd_maximum_unbounded",
     }
 )
 
@@ -159,7 +213,6 @@ class NodeSampleRow:
     participants: int | None
     packets_total: int | None
     packet_bytes_total: int | None
-    nacks_total: int | None
     sip_calls_active: int | None
     sip_invite_requests_raw_total: int | None
     sip_invite_requests_total: int | None
@@ -174,6 +227,29 @@ class NodeSampleRow:
     memory_total_bytes: int | None
     heap_inuse_bytes: int | None
     go_goroutines: int | None
+    sip_join_sec_sum: float | None
+    sip_join_sec_count: int | None
+    sip_join_le1_count: int | None
+    sip_join_le5_count: int | None
+    sip_check_sec_sum: float | None
+    sip_check_sec_count: int | None
+    session_start_time_ms_sum: int | None
+    session_start_time_ms_count: int | None
+    process_open_fds: int | None
+    process_max_fds: int | None
+    sip_available: int | None
+    sip_node_cpu_load: float | None
+    sip_rtp_packets_recv: int | None
+    sip_rtp_packets_send: int | None
+    process_start_time_seconds: float | None
+    process_cpu_seconds_total: float | None
+    process_resident_memory_bytes: int | None
+    sockstat_udp_inuse: int | None
+    udp_no_ports_total: int | None
+    track_published_total: int | None
+    track_subscribed_total: int | None
+    psrpc_stream_count: int | None
+    filefd_maximum_unbounded: int | None
 
 
 @dataclass(frozen=True)
@@ -222,7 +298,6 @@ def _row(sample: NodeSample) -> NodeSampleRow:
         participants=sample.participants,
         packets_total=sample.packets_total,
         packet_bytes_total=sample.packet_bytes_total,
-        nacks_total=sample.nacks_total,
         sip_calls_active=sample.sip_calls_active,
         sip_invite_requests_raw_total=sample.sip_invite_requests_raw_total,
         sip_invite_requests_total=sample.sip_invite_requests_total,
@@ -237,6 +312,29 @@ def _row(sample: NodeSample) -> NodeSampleRow:
         memory_total_bytes=sample.memory_total_bytes,
         heap_inuse_bytes=sample.heap_inuse_bytes,
         go_goroutines=sample.go_goroutines,
+        sip_join_sec_sum=sample.sip_join_sec_sum,
+        sip_join_sec_count=sample.sip_join_sec_count,
+        sip_join_le1_count=sample.sip_join_le1_count,
+        sip_join_le5_count=sample.sip_join_le5_count,
+        sip_check_sec_sum=sample.sip_check_sec_sum,
+        sip_check_sec_count=sample.sip_check_sec_count,
+        session_start_time_ms_sum=sample.session_start_time_ms_sum,
+        session_start_time_ms_count=sample.session_start_time_ms_count,
+        process_open_fds=sample.process_open_fds,
+        process_max_fds=sample.process_max_fds,
+        sip_available=sample.sip_available,
+        sip_node_cpu_load=sample.sip_node_cpu_load,
+        sip_rtp_packets_recv=sample.sip_rtp_packets_recv,
+        sip_rtp_packets_send=sample.sip_rtp_packets_send,
+        process_start_time_seconds=sample.process_start_time_seconds,
+        process_cpu_seconds_total=sample.process_cpu_seconds_total,
+        process_resident_memory_bytes=sample.process_resident_memory_bytes,
+        sockstat_udp_inuse=sample.sockstat_udp_inuse,
+        udp_no_ports_total=sample.udp_no_ports_total,
+        track_published_total=sample.track_published_total,
+        track_subscribed_total=sample.track_subscribed_total,
+        psrpc_stream_count=sample.psrpc_stream_count,
+        filefd_maximum_unbounded=sample.filefd_maximum_unbounded,
     )
 
 
