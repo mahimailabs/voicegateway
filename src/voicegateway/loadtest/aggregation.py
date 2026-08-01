@@ -1,0 +1,284 @@
+"""Per-test aggregation: the five columns a load-test report is owed.
+
+Four of the five come from the generator's own artifacts and are already on the
+row by the time this runs: concurrency, wall duration, the establishment counts,
+and failures by cause. The fifth, peak CPU and memory per node, comes from
+somewhere else entirely, and assembling it is what this module does.
+
+Overlap, never attribution
+--------------------------
+
+Node samples are correlated to a test by TIME WINDOW OVERLAP. Nothing here says
+a node served a call, because nothing server-side can: there is no per-call
+identity at that layer, which is why ``node_samples`` carries no call id. Read
+every number below as "this is what the fleet looked like while that test was
+running".
+
+Where each reading comes from
+-----------------------------
+
+CPU is a COUNTER pair. ``cpu_seconds_total`` is summed over every cpu and every
+mode, so its rate IS the core count, and ``cpu_idle_seconds_total`` is the same
+metric restricted to the idle mode. Utilisation is therefore ``1 - idle/total``
+exactly, needing no core count and no assumption about machine size. The rates
+come from :func:`counter_rates` via
+:func:`node_samples_repository.utilisation_points`, so a counter reset (a reboot,
+a restarted server) arrives as ``None`` and stays ``None`` rather than rendering
+as a suddenly idle machine.
+
+Memory is a GAUGE pair, and gauges are never diffed. Both values are read off the
+SAME ROW, which is what makes them paired at one instant: taking
+``min(available)`` from one sample and ``max(total)`` from another would compute
+a utilisation that existed at no point in time.
+
+**Peak memory utilisation corresponds to the MINIMUM of
+``memory_available_bytes``, not its maximum.** Reaching for the maximum there is
+the obvious mistake and it reports a machine at its emptiest as its busiest.
+
+None is never zero
+------------------
+
+A node nobody could scrape reads ``None`` with a reason attached. An idle node
+reads 0.0. Collapsing the first into the second is a clean bill of health nobody
+earned, so every unmeasured path here carries ``unmeasured_reason`` and the gates
+turn it into UNKNOWN rather than PASS.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from voicegateway.livekit_diag.gates import (
+    MIN_PERCENTILE_SAMPLES,
+    NodeUtilisationReading,
+)
+from voicegateway.repository.node_correlation_repository import (
+    DEFAULT_WINDOW_PAD_MS,
+    NodeWindow,
+    list_nodes_sampled_in_window,
+    window_of,
+)
+from voicegateway.repository.node_samples_repository import (
+    DEFAULT_READ_LIMIT,
+    list_samples,
+    read_counter_rate,
+    utilisation_points,
+)
+
+# The counter pair CPU utilisation is derived from. Named here so the two are
+# always read together: one without the other is not a utilisation.
+CPU_CAPACITY_COLUMN = "cpu_seconds_total"
+CPU_IDLE_COLUMN = "cpu_idle_seconds_total"
+
+# The gauge pair memory utilisation is derived from, read off the same row.
+MEMORY_AVAILABLE_COLUMN = "memory_available_bytes"
+MEMORY_TOTAL_COLUMN = "memory_total_bytes"
+
+
+@dataclass(frozen=True)
+class TestAggregate:
+    """What the fleet looked like while one test ran.
+
+    ``peak_cpu_utilisation`` and ``peak_memory_utilisation`` are the WORST node's
+    peak, as fractions in 0..1. The worst node governs because a fleet is only as
+    healthy as its most loaded member, and averaging would hide the one node that
+    breached while the others idled.
+
+    Both are ``None`` when nothing in the window produced a usable reading, which
+    is a different fact from 0.0 and must render as not-measured.
+    """
+
+    window: NodeWindow
+    peak_cpu_utilisation: float | None
+    peak_memory_utilisation: float | None
+    node_samples_in_window: int
+    cpu_readings: list[NodeUtilisationReading] = field(default_factory=list)
+    memory_readings: list[NodeUtilisationReading] = field(default_factory=list)
+
+    @property
+    def nodes_seen(self) -> int:
+        """How many ``(node, source)`` targets had samples overlapping the window."""
+        return len({(r.node, r.source) for r in self.cpu_readings})
+
+
+def peak_label(samples: int) -> str:
+    """How a peak over ``samples`` readings may be described.
+
+    Below :data:`MIN_PERCENTILE_SAMPLES` a peak is a maximum over a handful of
+    points and calling it a p95 would claim a distribution that was never
+    observed. The threshold is imported rather than restated so there is one
+    number, not two that can drift.
+    """
+    if samples <= 0:
+        return "not_measured"
+    if samples < MIN_PERCENTILE_SAMPLES:
+        return f"max of {samples}"
+    return "p95"
+
+
+def _worst(readings: list[NodeUtilisationReading]) -> float | None:
+    """The highest measured utilisation, or None when none was measured.
+
+    ``max`` over an empty sequence is an error and ``max(..., default=0.0)``
+    would be worse than an error: it would report a fully idle fleet for a window
+    nobody scraped.
+    """
+    measured = [r.utilisation for r in readings if r.utilisation is not None]
+    return max(measured) if measured else None
+
+
+async def _cpu_reading(
+    db: AsyncSession, *, node: str, source: str, window: NodeWindow, limit: int
+) -> NodeUtilisationReading:
+    """One node's peak CPU utilisation over the window."""
+    capacity = await read_counter_rate(
+        db,
+        node=node,
+        source=source,
+        column=CPU_CAPACITY_COLUMN,
+        since_ms=window.start_ms,
+        until_ms=window.end_ms,
+        limit=limit,
+    )
+    idle = await read_counter_rate(
+        db,
+        node=node,
+        source=source,
+        column=CPU_IDLE_COLUMN,
+        since_ms=window.start_ms,
+        until_ms=window.end_ms,
+        limit=limit,
+    )
+    points = utilisation_points(capacity, idle)
+    usable = [p.fraction for p in points if p.fraction is not None]
+    if not usable:
+        # Deliberately does not distinguish why. counter_rates is the one place
+        # the reset rule lives, and it hands back None for a reset, a NULL, a
+        # non-positive delta and the window's first point alike. Guessing
+        # between them here would be a second copy of that rule.
+        return NodeUtilisationReading(
+            node=node,
+            source=source,
+            utilisation=None,
+            samples=0,
+            unmeasured_reason=(
+                f"no usable {CPU_CAPACITY_COLUMN}/{CPU_IDLE_COLUMN} rate pair in "
+                f"the window ({len(points)} points, none sourceable)"
+            ),
+        )
+    return NodeUtilisationReading(
+        node=node, source=source, utilisation=max(usable), samples=len(usable)
+    )
+
+
+async def _memory_reading(
+    db: AsyncSession, *, node: str, source: str, window: NodeWindow, limit: int
+) -> NodeUtilisationReading:
+    """One node's peak memory utilisation over the window.
+
+    Paired per ROW, so both halves describe the same instant. Peak utilisation
+    is where AVAILABLE is at its minimum.
+    """
+    rows = await list_samples(
+        db,
+        node=node,
+        source=source,
+        since_ms=window.start_ms,
+        until_ms=window.end_ms,
+        limit=limit,
+    )
+    fractions: list[float] = []
+    for row in rows:
+        available = getattr(row, MEMORY_AVAILABLE_COLUMN)
+        total = getattr(row, MEMORY_TOTAL_COLUMN)
+        if available is None or total is None or total <= 0:
+            # A NULL on either side is not measured, and a non-positive total
+            # gives nothing to be a fraction of.
+            continue
+        used = float(total) - float(available)
+        if used < 0:
+            # More available than exists. The two did not come from the same
+            # machine, so the number they imply is not a measurement.
+            continue
+        fractions.append(used / float(total))
+    if not fractions:
+        return NodeUtilisationReading(
+            node=node,
+            source=source,
+            utilisation=None,
+            samples=0,
+            unmeasured_reason=(
+                f"no row in the window carried both {MEMORY_AVAILABLE_COLUMN} "
+                f"and {MEMORY_TOTAL_COLUMN} ({len(rows)} rows read)"
+            ),
+        )
+    # The maximum FRACTION, which is the minimum available. Taking the maximum
+    # of memory_available_bytes instead would report the emptiest moment as the
+    # busiest one.
+    return NodeUtilisationReading(
+        node=node, source=source, utilisation=max(fractions), samples=len(fractions)
+    )
+
+
+async def aggregate_test_window(
+    db: AsyncSession,
+    *,
+    started_at_ms: int | None,
+    ended_at_ms: int | None,
+    node: str | None = None,
+    source: str | None = None,
+    pad_ms: int = DEFAULT_WINDOW_PAD_MS,
+    limit: int = DEFAULT_READ_LIMIT,
+) -> TestAggregate | None:
+    """Correlate node samples to one test's window.
+
+    None when the test has no window to correlate against. A test whose start or
+    end was never recorded cannot be correlated at all, and inventing a window
+    from the other end would silently attribute an arbitrary span of fleet
+    activity to it.
+    """
+    if started_at_ms is None or ended_at_ms is None:
+        return None
+
+    window = window_of(started_at_ms, ended_at_ms, pad_ms=pad_ms)
+    targets = await list_nodes_sampled_in_window(
+        db, window=window, node=node, source=source
+    )
+
+    cpu: list[NodeUtilisationReading] = []
+    memory: list[NodeUtilisationReading] = []
+    for target in targets:
+        cpu.append(
+            await _cpu_reading(
+                db, node=target.node, source=target.source, window=window, limit=limit
+            )
+        )
+        memory.append(
+            await _memory_reading(
+                db, node=target.node, source=target.source, window=window, limit=limit
+            )
+        )
+
+    return TestAggregate(
+        window=window,
+        peak_cpu_utilisation=_worst(cpu),
+        peak_memory_utilisation=_worst(memory),
+        # Every row overlapping the window, across targets. Carried so a peak
+        # over three samples is never presented as if it came from three hundred.
+        node_samples_in_window=sum(t.samples for t in targets),
+        cpu_readings=cpu,
+        memory_readings=memory,
+    )
+
+
+__all__ = [
+    "CPU_CAPACITY_COLUMN",
+    "CPU_IDLE_COLUMN",
+    "MEMORY_AVAILABLE_COLUMN",
+    "MEMORY_TOTAL_COLUMN",
+    "TestAggregate",
+    "aggregate_test_window",
+    "peak_label",
+]

@@ -85,6 +85,9 @@ GAUGE_COLUMNS: frozenset[str] = frozenset(
         "load1",
         "memory_available_bytes",
         "memory_total_bytes",
+        # Go runtime. Gauges: what the process holds right now, never diffed.
+        "heap_inuse_bytes",
+        "go_goroutines",
     }
 )
 
@@ -109,6 +112,8 @@ _INT_COLUMNS: frozenset[str] = frozenset(
         "filefd_maximum",
         "memory_available_bytes",
         "memory_total_bytes",
+        "heap_inuse_bytes",
+        "go_goroutines",
     }
 )
 
@@ -167,6 +172,8 @@ class NodeSampleRow:
     cpu_idle_seconds_total: float | None
     memory_available_bytes: int | None
     memory_total_bytes: int | None
+    heap_inuse_bytes: int | None
+    go_goroutines: int | None
 
 
 @dataclass(frozen=True)
@@ -181,6 +188,25 @@ class CounterRate:
 
     at_ms: int
     per_second: float | None
+
+
+# Tolerance for an idle rate that rounds just above its capacity rate. The two
+# come from the same scrape of the same counter, so a genuine excess means the
+# pair does not describe one machine; this only absorbs float division noise.
+_UTILISATION_EPSILON = 1e-9
+
+
+@dataclass(frozen=True)
+class UtilisationPoint:
+    """The busy fraction at ``at_ms``, or ``None`` when it is unknowable.
+
+    ``fraction`` is 0.0 to 1.0. ``None`` is not zero: a fully idle machine reads
+    0.0, while a machine nobody could measure reads ``None``, and rendering the
+    second as the first is a clean bill of health nobody earned.
+    """
+
+    at_ms: int
+    fraction: float | None
 
 
 def _row(sample: NodeSample) -> NodeSampleRow:
@@ -209,6 +235,8 @@ def _row(sample: NodeSample) -> NodeSampleRow:
         cpu_idle_seconds_total=sample.cpu_idle_seconds_total,
         memory_available_bytes=sample.memory_available_bytes,
         memory_total_bytes=sample.memory_total_bytes,
+        heap_inuse_bytes=sample.heap_inuse_bytes,
+        go_goroutines=sample.go_goroutines,
     )
 
 
@@ -352,6 +380,56 @@ def counter_rates(points: Sequence[tuple[int, float | None]]) -> list[CounterRat
     return rates
 
 
+def utilisation_points(
+    capacity: Sequence[CounterRate],
+    idle: Sequence[CounterRate],
+) -> list[UtilisationPoint]:
+    """Busy fraction per instant, from a total rate and its idle subset.
+
+    Written for the cpu pair and general in the same shape: ``cpu_seconds_total``
+    is summed over every cpu AND every mode, while ``cpu_idle_seconds_total`` is
+    that same metric restricted to ``mode="idle"``. So the total rate IS the core
+    count (each core accrues one cpu-second per second across all modes), and
+    ``1 - idle/total`` is utilisation exactly, with no core count needed and no
+    assumption about machine size.
+
+    PAIRED BY ``at_ms``, never by position. The two series are read separately,
+    so a NULL in one column can leave them different lengths, and zipping them
+    positionally would silently compare a rate at one instant against a rate at
+    another. An instant present in only one series is not a measurement.
+
+    This lives beside :func:`counter_rates` on purpose. The reset rule is
+    implemented there once, and this function consumes its output rather than
+    re-deriving a rate, so a counter that went backwards (a livekit-server
+    restart, or a reboot zeroing ``node_cpu_seconds_total``) arrives here as
+    ``None`` and stays ``None``. A second copy of that rule would render a reset
+    as an idle node, which is a clean bill of health at exactly the moment
+    something restarted.
+
+    ``fraction`` is ``None``, never 0.0, whenever the pair cannot be sourced:
+    either side unknown, a non-positive capacity rate (nothing to be a fraction
+    of), or an idle rate above capacity (the two do not describe the same
+    machine, so the number they imply is not a measurement).
+    """
+    by_at_ms = {r.at_ms: r.per_second for r in idle}
+    out: list[UtilisationPoint] = []
+    for point in capacity:
+        total = point.per_second
+        idle_rate = by_at_ms.get(point.at_ms)
+        if total is None or idle_rate is None or total <= 0.0:
+            out.append(UtilisationPoint(at_ms=point.at_ms, fraction=None))
+            continue
+        ratio = idle_rate / total
+        if ratio > 1.0 + _UTILISATION_EPSILON:
+            out.append(UtilisationPoint(at_ms=point.at_ms, fraction=None))
+            continue
+        # Clamp the float noise around a fully idle machine to exactly 0.0
+        # rather than a tiny negative, which would render as a nonsense
+        # utilisation below zero.
+        out.append(UtilisationPoint(at_ms=point.at_ms, fraction=max(0.0, 1.0 - ratio)))
+    return out
+
+
 async def read_counter_rate(
     db: AsyncSession,
     *,
@@ -444,10 +522,12 @@ __all__ = [
     "CounterRate",
     "NodeSampleInput",
     "NodeSampleRow",
+    "UtilisationPoint",
     "count_samples",
     "counter_rates",
     "insert_samples",
     "list_samples",
     "read_counter_rate",
     "trim_older_than",
+    "utilisation_points",
 ]

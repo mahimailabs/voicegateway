@@ -3,6 +3,10 @@ prompt.md
 src/voicegateway/_version.py
 .venv
 .agents
+# Generated reports. Never committed: a report in the tree is one somebody
+# will later open and mistake for a measured run, long after the fixtures it
+# was built from are forgotten.
+.artifacts
 .codex
 .playwright-mcp
 .DS_Store
@@ -439,3 +443,6 @@ qa/
 
 # G0 frontend gate screenshot artifact (scripts/e2e-frontend-gate.sh)
 .e2e-gate-*.png
+
+# Compiled Go helpers under tools/ (built by go build, never committed).
+tools/mock-participant/mock-participant

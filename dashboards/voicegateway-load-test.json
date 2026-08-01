@@ -1,0 +1,310 @@
+{
+  "description": "7 of 12 panels have a series behind them. The rest are rendered as explicit NOT MEASURED notes rather than empty graphs, because an empty graph reads as nothing happening when it means nobody measured. Generated from the node_samples column sets, so a panel can never name a series that does not exist.",
+  "editable": true,
+  "panels": [
+    {
+      "datasource": "${DS_VOICEGATEWAY}",
+      "description": "Accepted INVITEs over requested, from the SIP node's own counters. NULL across a counter reset rather than a spike. This is the node's view; the authoritative establishment figure for a test comes from the load generator's own counts.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": "${DS_VOICEGATEWAY}",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT at_ms AS time, node, CASE WHEN sip_invite_requests_total - LAG(sip_invite_requests_total) OVER w <= 0 THEN NULL ELSE 1.0 * (sip_invite_accepted_total - LAG(sip_invite_accepted_total) OVER w) / (sip_invite_requests_total - LAG(sip_invite_requests_total) OVER w) END AS establishment FROM node_samples WINDOW w AS (PARTITION BY node, source ORDER BY at_ms) ORDER BY at_ms",
+          "refId": "A"
+        }
+      ],
+      "title": "Establishment rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${DS_VOICEGATEWAY}",
+      "description": "1 - idle/total. cpu_seconds_total is summed over every cpu and every mode, so its rate is the core count and this needs no assumption about machine size. NULL across a reset.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": "${DS_VOICEGATEWAY}",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT at_ms AS time, node, 1.0 - (CASE WHEN cpu_idle_seconds_total - LAG(cpu_idle_seconds_total) OVER w < 0 THEN NULL ELSE (cpu_idle_seconds_total - LAG(cpu_idle_seconds_total) OVER w) * 1000.0 / NULLIF(at_ms - LAG(at_ms) OVER w, 0) END) / NULLIF(CASE WHEN cpu_seconds_total - LAG(cpu_seconds_total) OVER w < 0 THEN NULL ELSE (cpu_seconds_total - LAG(cpu_seconds_total) OVER w) * 1000.0 / NULLIF(at_ms - LAG(at_ms) OVER w, 0) END, 0) AS cpu FROM node_samples WINDOW w AS (PARTITION BY node, source ORDER BY at_ms) ORDER BY at_ms",
+          "refId": "A"
+        }
+      ],
+      "title": "CPU utilisation per node",
+      "type": "timeseries"
+    },
+    {
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "options": {
+        "content": "### Not measured\n\n**CPU per core** would need `cpu_per_core`, which `node_samples` does not carry.\n\nNot collected. cpu_seconds_total is scraped already summed across cpus and modes, so the per-core breakdown is gone before it reaches this system. A node pinning one core while its average looks healthy would not show here.\n\n_This is an absence of measurement, not a measurement of zero. Nothing here passed; nothing here was checked._",
+        "mode": "markdown"
+      },
+      "title": "CPU per core \u2014 NOT MEASURED",
+      "type": "text"
+    },
+    {
+      "datasource": "${DS_VOICEGATEWAY}",
+      "description": "Used over total, both read from the same row so the two halves describe the same instant. Peak utilisation is where AVAILABLE is lowest.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "datasource": "${DS_VOICEGATEWAY}",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT at_ms AS time, node, 1.0 - (1.0 * memory_available_bytes / NULLIF(memory_total_bytes, 0)) AS memory FROM node_samples ORDER BY at_ms",
+          "refId": "A"
+        }
+      ],
+      "title": "Memory utilisation per node",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${DS_VOICEGATEWAY}",
+      "description": "Allocated over maximum. The acceptance threshold is 20% remaining, so this panel is read against 0.80.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "datasource": "${DS_VOICEGATEWAY}",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT at_ms AS time, node, 1.0 * filefd_allocated / NULLIF(filefd_maximum, 0) AS fd_used FROM node_samples ORDER BY at_ms",
+          "refId": "A"
+        }
+      ],
+      "title": "File descriptors against the limit",
+      "type": "timeseries"
+    },
+    {
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "options": {
+        "content": "### Not measured\n\n**RTP port usage** would need `rtp_ports_in_use`, which `node_samples` does not carry.\n\nNot collected. Nothing scrapes the media port range, so the port-exhaustion half of the headroom requirement is unevaluated rather than passing. A run can clear every CPU and memory ceiling and still have been near this limit.\n\n_This is an absence of measurement, not a measurement of zero. Nothing here passed; nothing here was checked._",
+        "mode": "markdown"
+      },
+      "title": "RTP port usage \u2014 NOT MEASURED",
+      "type": "text"
+    },
+    {
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "options": {
+        "content": "### Not measured\n\n**ENA packets per second allowance** would need `ena_pps_allowance_exceeded`, which `node_samples` does not carry.\n\nNot collected. No interface saturation or allowance counter is scraped, so network headroom is unmeasured. This is the panel that would show a link limit reached while every host metric looked fine.\n\n_This is an absence of measurement, not a measurement of zero. Nothing here passed; nothing here was checked._",
+        "mode": "markdown"
+      },
+      "title": "ENA packets per second allowance \u2014 NOT MEASURED",
+      "type": "text"
+    },
+    {
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "options": {
+        "content": "### Not measured\n\n**Conntrack occupancy** would need `nf_conntrack_entries`, which `node_samples` does not carry.\n\nNot collected. Conntrack exhaustion drops new flows while CPU and memory stay unremarkable, which is exactly the failure this panel would have caught.\n\n_This is an absence of measurement, not a measurement of zero. Nothing here passed; nothing here was checked._",
+        "mode": "markdown"
+      },
+      "title": "Conntrack occupancy \u2014 NOT MEASURED",
+      "type": "text"
+    },
+    {
+      "datasource": "${DS_VOICEGATEWAY}",
+      "description": "Heap actually in use, NOT RSS. Go returns memory to the OS lazily, so RSS lags and a return-to-baseline check on it reads as a leak.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "datasource": "${DS_VOICEGATEWAY}",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT at_ms AS time, node, heap_inuse_bytes FROM node_samples ORDER BY at_ms",
+          "refId": "A"
+        }
+      ],
+      "title": "Go heap in use",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${DS_VOICEGATEWAY}",
+      "description": "A count that does not return to its idle level after teardown is the clearest signal of a leaked session.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "targets": [
+        {
+          "datasource": "${DS_VOICEGATEWAY}",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT at_ms AS time, node, go_goroutines FROM node_samples ORDER BY at_ms",
+          "refId": "A"
+        }
+      ],
+      "title": "Goroutines",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${DS_VOICEGATEWAY}",
+      "description": "Read for what does NOT drain after a run. A count that stays up once traffic stops is a stale room or session, and that is the shape a leak takes here.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "targets": [
+        {
+          "datasource": "${DS_VOICEGATEWAY}",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT at_ms AS time, node, rooms, participants, sip_calls_active FROM node_samples ORDER BY at_ms",
+          "refId": "A"
+        }
+      ],
+      "title": "Rooms, participants and active calls",
+      "type": "timeseries"
+    },
+    {
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "options": {
+        "content": "### Not measured\n\n**Redis health** would need `redis_up`, which `node_samples` does not carry.\n\nNot collected. Nothing scrapes Redis, so the sustained-Redis-failure half of the acceptance criteria is unevaluated. It is not passing; it is unmeasured.\n\n_This is an absence of measurement, not a measurement of zero. Nothing here passed; nothing here was checked._",
+        "mode": "markdown"
+      },
+      "title": "Redis health \u2014 NOT MEASURED",
+      "type": "text"
+    }
+  ],
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "label": "VoiceGateway database",
+        "name": "DS_VOICEGATEWAY",
+        "query": "postgres",
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "title": "VoiceGateway load test",
+  "uid": "voicegateway-load-test"
+}

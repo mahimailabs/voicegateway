@@ -140,6 +140,7 @@ import type {
   DeadAirEvent,
   DiagnosticRun,
   DiagnosticsCreds,
+  LoadRunsResponse,
   LogoUploadResponse,
   MetricsAggregate,
   NodeCorrelationResponse,
@@ -458,3 +459,13 @@ export async function uploadBrandingLogo(
   return (await res.json()) as LogoUploadResponse;
 }
 
+
+/**
+ * Imported load runs with their tests embedded.
+ *
+ * One request, no query string: the demo build answers by pathname only, so a
+ * per-run path could not be fixtured and the page would throw in demo mode.
+ */
+export async function fetchLoadRuns(): Promise<LoadRunsResponse> {
+  return fetchJson<LoadRunsResponse>('/api/loadtest/runs');
+}

@@ -8,6 +8,8 @@ than as a green CI run on a broken deployment.
 
 from __future__ import annotations
 
+import pytest
+
 from voicegateway.livekit_diag import gates
 
 
@@ -621,3 +623,695 @@ def test_an_unmeasured_baseline_is_unknown_through_the_whole_run():
 
     for gate in results:
         json.loads(json.dumps(gate.as_dict()))
+
+
+# ---------------------------------------------------------------------------
+# establishment_gate: at least 99.5% of call attempts must establish
+#
+# The acceptance criterion this gate encodes is a share of attempts, so the one
+# input that must never read as healthy is a run that attempted nothing. Zero
+# attempts also means zero failures, and every "failures within budget" phrasing
+# calls that run perfect. These pin UNKNOWN over PASS for every such shape.
+# ---------------------------------------------------------------------------
+
+
+def test_a_run_above_the_bar_passes():
+    gate = gates.establishment_gate(attempted=15000, succeeded=14985)
+    assert gate.status == gates.PASS
+    assert gate.gate == gates.ESTABLISHMENT_GATE
+    assert gate.metric == "establishment_ratio"
+    assert gate.value == 14985 / 15000
+    assert gate.threshold == gates.MIN_ESTABLISHMENT_RATIO
+    assert "14985 of 15000" in gate.detail
+
+
+def test_the_bar_is_inclusive_at_every_scale():
+    """Exactly 99.5% passes, and float division must not lose the boundary."""
+    for attempted, succeeded in ((200, 199), (2000, 1990), (20000, 19900)):
+        gate = gates.establishment_gate(attempted=attempted, succeeded=succeeded)
+        assert gate.status == gates.PASS, (attempted, succeeded, gate.detail)
+        assert gate.value == succeeded / attempted
+
+
+def test_one_call_below_the_bar_fails():
+    gate = gates.establishment_gate(attempted=1000, succeeded=994)
+    assert gate.status == gates.FAIL
+    assert gate.value == 0.994
+    assert "below" in gate.detail
+    assert gates.exit_code(gates.verdict([gate])) == 1
+
+
+def test_a_run_that_attempted_nothing_is_unknown_not_pass():
+    """The whole reason this gate reports UNKNOWN rather than a clean rate."""
+    gate = gates.establishment_gate(attempted=0, succeeded=0)
+    assert gate.status == gates.UNKNOWN
+    assert gate.status != gates.PASS
+    # The detail must say why zero attempts is not success, because "0 failures"
+    # is exactly what a reader would otherwise take from it.
+    assert "no failures" in gate.detail
+    # Nothing decided it, so no number is claimed.
+    assert gate.metric is None
+    assert gate.value is None
+    # The bar is still known even though nothing was measured against it.
+    assert gate.threshold == gates.MIN_ESTABLISHMENT_RATIO
+    assert gates.exit_code(gates.verdict([gate])) == 1
+
+
+def test_absent_counts_are_unknown_and_name_which_one_is_missing():
+    both = gates.establishment_gate(attempted=None, succeeded=None)
+    assert both.status == gates.UNKNOWN
+    assert "attempt and success counts" in both.detail
+
+    no_success = gates.establishment_gate(attempted=15000, succeeded=None)
+    assert no_success.status == gates.UNKNOWN
+    assert "success count" in no_success.detail
+
+    no_attempt = gates.establishment_gate(attempted=None, succeeded=14985)
+    assert no_attempt.status == gates.UNKNOWN
+    assert "attempt count" in no_attempt.detail
+
+
+def test_counts_that_cannot_describe_a_run_are_unknown():
+    more = gates.establishment_gate(attempted=100, succeeded=101)
+    assert more.status == gates.UNKNOWN
+    assert "do not describe a run" in more.detail
+
+    negative = gates.establishment_gate(attempted=100, succeeded=-1)
+    assert negative.status == gates.UNKNOWN
+
+    negative_attempts = gates.establishment_gate(attempted=-5, succeeded=0)
+    assert negative_attempts.status == gates.UNKNOWN
+
+
+def test_a_bool_is_not_a_call_count():
+    """bool is an int subclass, so True would otherwise be an attempt count."""
+    gate = gates.establishment_gate(attempted=True, succeeded=True)
+    assert gate.status == gates.UNKNOWN
+    assert gate.value is None
+
+
+def test_no_unmeasured_shape_can_ever_pass():
+    """One sweep over every shape that carries no usable measurement."""
+    unmeasured = [
+        {"attempted": None, "succeeded": None},
+        {"attempted": None, "succeeded": 10},
+        {"attempted": 10, "succeeded": None},
+        {"attempted": 0, "succeeded": 0},
+        {"attempted": 0, "succeeded": 5},
+        {"attempted": -1, "succeeded": 0},
+        {"attempted": 100, "succeeded": -1},
+        {"attempted": 100, "succeeded": 101},
+        {"attempted": True, "succeeded": False},
+        {"attempted": "many", "succeeded": "most"},
+        {"attempted": [], "succeeded": {}},
+    ]
+    for kwargs in unmeasured:
+        gate = gates.establishment_gate(**kwargs)
+        assert gate.status == gates.UNKNOWN, kwargs
+        assert gate.status != gates.PASS, kwargs
+        assert gate.value is None, kwargs
+        assert gates.exit_code(gates.verdict([gate])) == 1, kwargs
+
+
+def test_the_threshold_is_configurable_but_defaults_to_the_acceptance_bar():
+    assert gates.MIN_ESTABLISHMENT_RATIO == 0.995
+    # A stricter bar the same run now fails.
+    strict = gates.establishment_gate(attempted=1000, succeeded=996, threshold=0.999)
+    assert strict.status == gates.FAIL
+    assert strict.threshold == 0.999
+    assert "99.9% bar" in strict.detail
+    # The same run against the shipped bar passes.
+    assert gates.establishment_gate(attempted=1000, succeeded=996).status == gates.PASS
+
+
+def test_the_subject_names_which_test_was_judged():
+    gate = gates.establishment_gate(attempted=1000, succeeded=999, subject="ramp-500")
+    assert gate.subject == "ramp-500"
+
+
+def test_the_gate_is_synchronous_and_json_safe():
+    import inspect
+    import json
+
+    assert not inspect.iscoroutinefunction(gates.establishment_gate)
+    for gate in (
+        gates.establishment_gate(attempted=100, succeeded=100),
+        gates.establishment_gate(attempted=0, succeeded=0),
+    ):
+        json.loads(json.dumps(gate.as_dict()))
+
+
+def test_a_non_finite_count_is_unknown_not_a_traceback():
+    """``json.loads`` accepts the ``Infinity`` token, so this is reachable.
+
+    ``int(float('inf'))`` raises OverflowError, not ValueError, so a summary
+    carrying a non-finite count would have escaped the gate as a traceback
+    instead of an UNKNOWN verdict.
+    """
+    for bad in (float("inf"), float("-inf"), float("nan")):
+        gate = gates.establishment_gate(attempted=bad, succeeded=1)
+        assert gate.status == gates.UNKNOWN, bad
+        assert gate.value is None, bad
+        gate = gates.establishment_gate(attempted=100, succeeded=bad)
+        assert gate.status == gates.UNKNOWN, bad
+
+
+# ---------------------------------------------------------------------------
+# node_cpu_gates / node_memory_gates: per-node resource ceilings
+#
+# The ceilings are STRICT ("CPU below 70%", "memory below 75%"), the opposite
+# direction to establishment_gate's inclusive floor. Sitting exactly on a ceiling
+# has not stayed below it. Reusing one gate's comparison for the other is the easy
+# mistake, so both directions are pinned.
+# ---------------------------------------------------------------------------
+
+
+def _reading(node: str, utilisation, **kw) -> gates.NodeUtilisationReading:
+    kw.setdefault("samples", 12)
+    return gates.NodeUtilisationReading(node=node, utilisation=utilisation, **kw)
+
+
+def test_a_node_under_both_ceilings_passes():
+    [cpu] = gates.node_cpu_gates([_reading("sfu-1", 0.42)])
+    assert cpu.status == gates.PASS
+    assert cpu.gate == gates.NODE_CPU_GATE
+    assert cpu.subject == "sfu-1"
+    assert cpu.value == 0.42
+    assert cpu.threshold == gates.MAX_NODE_CPU_UTILISATION
+    assert "42.0%" in cpu.detail
+
+    [mem] = gates.node_memory_gates([_reading("sfu-1", 0.60)])
+    assert mem.status == gates.PASS
+    assert mem.threshold == gates.MAX_NODE_MEMORY_UTILISATION
+
+
+def test_the_ceilings_are_strict_so_sitting_exactly_on_one_fails():
+    """ "Below 70%" is not satisfied by 70%. The opposite of the 99.5% floor."""
+    assert gates.MAX_NODE_CPU_UTILISATION == 0.70
+    assert gates.MAX_NODE_MEMORY_UTILISATION == 0.75
+    [cpu] = gates.node_cpu_gates([_reading("sfu-1", 0.70)])
+    assert cpu.status == gates.FAIL
+    [mem] = gates.node_memory_gates([_reading("sfu-1", 0.75)])
+    assert mem.status == gates.FAIL
+    # A hair under still passes, so the boundary is exactly where it claims.
+    assert gates.node_cpu_gates([_reading("s", 0.6999)])[0].status == gates.PASS
+    assert gates.node_memory_gates([_reading("s", 0.7499)])[0].status == gates.PASS
+
+
+def test_the_two_ceilings_are_not_interchangeable():
+    """72% is fine for memory and a failure for CPU. One number, two verdicts."""
+    assert gates.node_cpu_gates([_reading("s", 0.72)])[0].status == gates.FAIL
+    assert gates.node_memory_gates([_reading("s", 0.72)])[0].status == gates.PASS
+
+
+def test_a_node_over_a_ceiling_fails_and_exits_non_zero():
+    [cpu] = gates.node_cpu_gates([_reading("sip-2", 0.91)])
+    assert cpu.status == gates.FAIL
+    assert "at or above" in cpu.detail
+    assert gates.exit_code(gates.verdict([cpu])) == 1
+
+
+def test_one_gate_per_node_never_an_average():
+    """A mean across the fleet hides the one node that saturated."""
+    results = gates.node_cpu_gates(
+        [_reading("sfu-1", 0.10), _reading("sfu-2", 0.12), _reading("sfu-3", 0.95)]
+    )
+    assert len(results) == 3
+    assert [g.status for g in results] == [gates.PASS, gates.PASS, gates.FAIL]
+    assert gates.verdict(results) == gates.FAIL
+
+
+def test_an_unmeasured_node_is_unknown_not_pass():
+    [gate] = gates.node_cpu_gates(
+        [_reading("sfu-1", None, samples=0, unmeasured_reason="every scrape timed out")]
+    )
+    assert gate.status == gates.UNKNOWN
+    assert gate.status != gates.PASS
+    assert "every scrape timed out" in gate.detail
+    assert "not the same as staying under one" in gate.detail
+    # Nothing decided it, so no number is claimed.
+    assert gate.metric is None
+    assert gate.value is None
+    assert gates.exit_code(gates.verdict([gate])) == 1
+
+
+def test_a_window_nobody_sampled_is_unknown_not_an_idle_fleet():
+    """no_samples and scrape_failed both land here. Neither is a quiet node."""
+    for fn in (gates.node_cpu_gates, gates.node_memory_gates):
+        [gate] = fn([])
+        assert gate.status == gates.UNKNOWN
+        assert "not a quiet fleet" in gate.detail
+        assert gate.value is None
+
+
+def test_zero_utilisation_is_a_reading_and_none_is_not():
+    """An idle node passes on evidence; an unscraped one has no evidence."""
+    [idle] = gates.node_cpu_gates([_reading("sfu-1", 0.0)])
+    assert idle.status == gates.PASS
+    assert idle.value == 0.0
+    [unscraped] = gates.node_cpu_gates([_reading("sfu-1", None, samples=0)])
+    assert unscraped.status == gates.UNKNOWN
+
+
+def test_the_sample_count_travels_so_a_peak_over_two_is_not_dressed_up():
+    [gate] = gates.node_cpu_gates([_reading("sfu-1", 0.5, samples=2)])
+    assert "2 measured sample(s)" in gate.detail
+
+
+def test_the_source_disambiguates_two_scrapes_of_one_node():
+    [gate] = gates.node_cpu_gates([_reading("node-a", 0.5, source="node-exporter")])
+    assert gate.subject == "node-a/node-exporter"
+
+
+def test_the_node_gates_are_synchronous_and_json_safe():
+    import inspect
+    import json
+
+    assert not inspect.iscoroutinefunction(gates.node_cpu_gates)
+    assert not inspect.iscoroutinefunction(gates.node_memory_gates)
+    for gate in gates.node_cpu_gates([_reading("n", 0.5), _reading("m", None)]):
+        json.loads(json.dumps(gate.as_dict()))
+
+
+# ---------------------------------------------------------------------------
+# headroom_gates: at least 20% of a limited resource must stay free
+#
+# A third threshold DIRECTION in this module, and the reason each one is pinned
+# separately: establishment is an inclusive floor on a ratio, CPU and memory are
+# strict ceilings on a utilisation, and headroom is an inclusive floor on what is
+# left. The criterion names three resources and only one is scraped.
+# ---------------------------------------------------------------------------
+
+
+def _fd(node: str, used, limit, **kw) -> gates.HeadroomReading:
+    return gates.HeadroomReading(
+        node=node,
+        resource=gates.HEADROOM_FILE_DESCRIPTORS,
+        used=used,
+        limit=limit,
+        **kw,
+    )
+
+
+def test_a_node_with_room_to_spare_passes():
+    [gate] = gates.headroom_gates([_fd("sfu-1", 400_000, 1_048_576)])
+    assert gate.status == gates.PASS
+    assert gate.gate == gates.HEADROOM_GATE
+    assert gate.subject == "sfu-1/file_descriptors"
+    assert gate.threshold == gates.MIN_HEADROOM_FRACTION
+    # The raw counts travel, so a reader can check the percentage.
+    assert "400000 of 1048576 used" in gate.detail
+
+
+def test_the_headroom_floor_is_inclusive_at_exactly_twenty_percent():
+    """ "At least 20% headroom" is met by exactly 20%."""
+    assert gates.MIN_HEADROOM_FRACTION == 0.20
+    [exact] = gates.headroom_gates([_fd("sfu-1", 800, 1000)])
+    assert exact.status == gates.PASS
+    assert exact.value == pytest.approx(0.20)
+    # One descriptor further along and the floor is breached.
+    [under] = gates.headroom_gates([_fd("sfu-1", 801, 1000)])
+    assert under.status == gates.FAIL
+    assert "below" in under.detail
+
+
+def test_headroom_is_a_floor_where_cpu_is_a_ceiling():
+    """The same shape of number, judged in opposite directions.
+
+    80% of the file-descriptor limit in use leaves exactly the required headroom
+    and passes. 80% CPU is over its ceiling and fails. Reusing one comparison for
+    the other would invert one of them silently.
+    """
+    [fd] = gates.headroom_gates([_fd("n", 80, 100)])
+    assert fd.status == gates.PASS
+    [cpu] = gates.node_cpu_gates([_reading("n", 0.80)])
+    assert cpu.status == gates.FAIL
+
+
+def test_the_sizing_margin_is_not_this_threshold():
+    """0.85 in the node-count formula is a different number for a different job.
+
+    It is a 15% CPU margin reserved so the fleet still carries its target after
+    losing a node. This is 20% of a limited resource left unused during the run.
+    Pinned here because the two are close enough to invite a reconciliation.
+    """
+    assert gates.MIN_HEADROOM_FRACTION == 0.20
+    assert gates.MIN_HEADROOM_FRACTION != 0.15
+    # Judged as headroom remaining, never as an 0.80 utilisation ceiling.
+    [gate] = gates.headroom_gates([_fd("n", 80, 100)])
+    assert gate.metric == "file_descriptors_headroom"
+    assert gate.value == pytest.approx(0.20)
+
+
+def test_rtp_ports_and_network_are_emitted_as_not_measured():
+    """The criterion names three resources and nothing scrapes two of them.
+
+    Omitting them would show one green row and read as full coverage.
+    """
+    readings = gates.unscraped_headroom_readings("sfu-1")
+    assert [r.resource for r in readings] == [
+        gates.HEADROOM_RTP_PORTS,
+        gates.HEADROOM_NETWORK,
+    ]
+    results = gates.headroom_gates(readings)
+    assert [g.status for g in results] == [gates.UNKNOWN, gates.UNKNOWN]
+    for gate in results:
+        assert "nothing measures it" in gate.detail
+        assert "not spare capacity" in gate.detail
+        assert gate.value is None
+    assert gates.exit_code(gates.verdict(results)) == 1
+
+
+def test_an_absent_pair_is_unknown_not_full_headroom():
+    for used, limit in ((None, 1000), (500, None), (None, None)):
+        [gate] = gates.headroom_gates([_fd("n", used, limit)])
+        assert gate.status == gates.UNKNOWN, (used, limit)
+        assert gate.value is None
+
+
+def test_counts_that_do_not_describe_a_limit_are_unknown():
+    """A zero ceiling has no headroom to have, and used>limit is incoherent."""
+    for used, limit in ((0, 0), (10, 0), (-1, 100), (101, 100)):
+        [gate] = gates.headroom_gates([_fd("n", used, limit)])
+        assert gate.status == gates.UNKNOWN, (used, limit)
+        assert "do not describe a limit" in gate.detail
+
+
+def test_a_fully_free_resource_passes_and_a_saturated_one_fails():
+    assert gates.headroom_gates([_fd("n", 0, 100)])[0].status == gates.PASS
+    saturated = gates.headroom_gates([_fd("n", 100, 100)])[0]
+    assert saturated.status == gates.FAIL
+    assert saturated.value == pytest.approx(0.0)
+
+
+def test_no_readings_at_all_is_unknown_not_room_to_spare():
+    [gate] = gates.headroom_gates([])
+    assert gate.status == gates.UNKNOWN
+    assert "not room to spare" in gate.detail
+
+
+def test_one_gate_per_node_and_resource():
+    results = gates.headroom_gates(
+        [_fd("sfu-1", 10, 100), _fd("sfu-2", 95, 100)]
+        + gates.unscraped_headroom_readings("sfu-1")
+    )
+    assert len(results) == 4
+    assert [g.status for g in results] == [
+        gates.PASS,
+        gates.FAIL,
+        gates.UNKNOWN,
+        gates.UNKNOWN,
+    ]
+    assert gates.verdict(results) == gates.FAIL
+
+
+def test_headroom_gates_are_synchronous_and_json_safe():
+    import inspect
+    import json
+
+    assert not inspect.iscoroutinefunction(gates.headroom_gates)
+    for gate in gates.headroom_gates(
+        [_fd("n", 10, 100)] + gates.unscraped_headroom_readings("n")
+    ):
+        json.loads(json.dumps(gate.as_dict()))
+
+
+# ---------------------------------------------------------------------------
+# return_to_baseline_gates: did the fleet give its resources back after teardown?
+#
+# heap_inuse and goroutines, never RSS: Go returns freed heap to the OS lazily, so
+# a drained process holds its resident size and an RSS gate would report a leak on
+# every healthy run.
+# ---------------------------------------------------------------------------
+
+
+def _cmp(metric: str, baseline, post, **kw) -> gates.BaselineComparison:
+    kw.setdefault("node", "sfu-1")
+    return gates.BaselineComparison(
+        metric=metric, baseline=baseline, post_settle=post, **kw
+    )
+
+
+def test_a_fleet_that_gave_its_memory_back_passes():
+    [gate] = gates.return_to_baseline_gates(
+        [_cmp(gates.BASELINE_HEAP, 100_000_000, 108_000_000)], tolerance=1.5
+    )
+    assert gate.status == gates.PASS
+    assert gate.gate == gates.RETURN_TO_BASELINE_GATE
+    assert gate.subject == "sfu-1/heap_inuse_bytes"
+    assert gate.value == pytest.approx(1.08)
+    assert gate.threshold == 1.5
+    assert "1.08x" in gate.detail
+
+
+def test_a_goroutine_count_that_never_came_down_fails():
+    """The shape a real leak takes here: a per-call goroutine that never exits."""
+    [gate] = gates.return_to_baseline_gates(
+        [_cmp(gates.BASELINE_GOROUTINES, 120, 4_800)], tolerance=1.5
+    )
+    assert gate.status == gates.FAIL
+    assert "outside" in gate.detail
+    assert gates.exit_code(gates.verdict([gate])) == 1
+
+
+def test_the_tolerance_is_required_and_has_no_default():
+    """Near baseline is never quantified by the criterion, so nothing here may
+    invent a number that would look exactly like a contracted threshold."""
+    import inspect
+
+    sig = inspect.signature(gates.return_to_baseline_gates)
+    tolerance = sig.parameters["tolerance"]
+    assert tolerance.default is inspect.Parameter.empty
+    assert tolerance.kind is inspect.Parameter.KEYWORD_ONLY
+    with pytest.raises(TypeError):
+        gates.return_to_baseline_gates([_cmp(gates.BASELINE_HEAP, 10, 10)])
+
+
+def test_the_tolerance_travels_on_every_result():
+    """A reader must see which tolerance produced the verdict."""
+    for tol in (1.1, 2.0):
+        [gate] = gates.return_to_baseline_gates(
+            [_cmp(gates.BASELINE_HEAP, 100, 150)], tolerance=tol
+        )
+        assert gate.threshold == tol
+    # The same pair, judged either way, depending on the number supplied.
+    assert (
+        gates.return_to_baseline_gates(
+            [_cmp(gates.BASELINE_HEAP, 100, 150)], tolerance=1.1
+        )[0].status
+        == gates.FAIL
+    )
+    assert (
+        gates.return_to_baseline_gates(
+            [_cmp(gates.BASELINE_HEAP, 100, 150)], tolerance=2.0
+        )[0].status
+        == gates.PASS
+    )
+
+
+def test_a_sample_taken_before_the_settle_window_is_unknown_not_pass():
+    """Teardown that has not finished draining looks exactly like a clean one."""
+    assert gates.MIN_SETTLE_MS == 300_000
+    [early] = gates.return_to_baseline_gates(
+        [
+            _cmp(
+                gates.BASELINE_HEAP,
+                100,
+                100,
+                baseline_at_ms=0,
+                post_settle_at_ms=60_000,
+            )
+        ],
+        tolerance=1.5,
+    )
+    assert early.status == gates.UNKNOWN
+    assert early.status != gates.PASS
+    assert "settle window" in early.detail
+    assert "60s after the first" in early.detail
+    # Past the window, the very same numbers pass.
+    [settled] = gates.return_to_baseline_gates(
+        [
+            _cmp(
+                gates.BASELINE_HEAP,
+                100,
+                100,
+                baseline_at_ms=0,
+                post_settle_at_ms=600_000,
+            )
+        ],
+        tolerance=1.5,
+    )
+    assert settled.status == gates.PASS
+
+
+def test_timestamps_are_optional_and_absent_ones_do_not_fabricate_a_settle():
+    """No timestamps means the settle check cannot run, not that it passed."""
+    [gate] = gates.return_to_baseline_gates(
+        [_cmp(gates.BASELINE_HEAP, 100, 100)], tolerance=1.5
+    )
+    assert gate.status == gates.PASS
+    assert "settle window" not in gate.detail
+
+
+def test_a_missing_side_is_unknown_not_a_clean_return():
+    for baseline, post in ((None, 100), (100, None), (None, None)):
+        [gate] = gates.return_to_baseline_gates(
+            [_cmp(gates.BASELINE_HEAP, baseline, post)], tolerance=1.5
+        )
+        assert gate.status == gates.UNKNOWN, (baseline, post)
+        assert "given back" in gate.detail
+        assert gate.value is None
+
+
+def test_a_zero_baseline_is_not_a_level_to_return_to():
+    for baseline in (0, -1):
+        [gate] = gates.return_to_baseline_gates(
+            [_cmp(gates.BASELINE_GOROUTINES, baseline, 10)], tolerance=1.5
+        )
+        assert gate.status == gates.UNKNOWN
+        assert "not a level to return to" in gate.detail
+
+
+def test_no_pair_at_all_is_unknown_not_a_clean_teardown():
+    [gate] = gates.return_to_baseline_gates([], tolerance=1.5)
+    assert gate.status == gates.UNKNOWN
+    assert "not a clean teardown" in gate.detail
+
+
+def test_rss_is_not_one_of_the_measured_series():
+    """Pinned so nobody adds it later: it reports a leak on healthy runs."""
+    assert gates.BASELINE_HEAP == "heap_inuse_bytes"
+    assert gates.BASELINE_GOROUTINES == "go_goroutines"
+    assert "rss" not in gates.BASELINE_HEAP.lower()
+    assert "resident" not in gates.BASELINE_HEAP.lower()
+
+
+def test_return_to_baseline_is_synchronous_and_json_safe():
+    import inspect
+    import json
+
+    assert not inspect.iscoroutinefunction(gates.return_to_baseline_gates)
+    for gate in gates.return_to_baseline_gates(
+        [_cmp(gates.BASELINE_HEAP, 100, 110), _cmp(gates.BASELINE_GOROUTINES, None, 5)],
+        tolerance=1.5,
+    ):
+        json.loads(json.dumps(gate.as_dict()))
+
+
+# ---------------------------------------------------------------------------
+# WAIVED: a threshold the run was not held to, recorded rather than dropped
+#
+# The requirement is "record the CPU/headroom gates as waived in writing, never a
+# silent pass". Every assertion here is about the second half of that sentence.
+# ---------------------------------------------------------------------------
+
+
+def _failing() -> gates.GateResult:
+    return gates.GateResult(
+        gate=gates.NODE_CPU_GATE,
+        status=gates.FAIL,
+        detail="peak CPU on sfu-1 was 91.0%",
+        subject="sfu-1",
+        metric="node_cpu_utilisation",
+        value=0.91,
+        threshold=0.70,
+    )
+
+
+def test_a_waiver_requires_a_reason():
+    """An unexplained waiver is a silently dropped gate wearing a label."""
+    for blank in ("", "   ", "\n\t "):
+        with pytest.raises(ValueError, match="requires a reason"):
+            gates.waive(_failing(), reason=blank)
+
+
+def test_a_waiver_never_collapses_to_pass():
+    waived = gates.waive(_failing(), reason="instrumentation not funded")
+    assert waived.status == gates.WAIVED
+    assert waived.status != gates.PASS
+    assert gates.verdict([waived]) == gates.WAIVED
+    assert gates.verdict([waived]) != gates.PASS
+
+
+def test_exit_code_does_not_treat_a_waiver_as_clean():
+    """A pipeline that goes green on a waiver has dropped the requirement."""
+    assert gates.exit_code(gates.WAIVED) == 1
+    waived = gates.waive(_failing(), reason="instrumentation not funded")
+    assert gates.exit_code(gates.verdict([waived])) == 1
+    # Even alongside otherwise-clean gates.
+    clean = gates.GateResult(gate="x", status=gates.PASS, detail="fine")
+    assert gates.verdict([clean, waived]) == gates.WAIVED
+    assert gates.exit_code(gates.verdict([clean, waived])) == 1
+
+
+def test_waived_outranks_pass_and_loses_to_a_measured_problem():
+    """Above PASS: a gate nobody enforced was not satisfied.
+
+    Below WARN: a WARN is an observed degradation, which is worse news than a
+    threshold somebody agreed in writing not to hold this run to.
+    """
+    assert gates.worst_status([gates.PASS, gates.WAIVED]) == gates.WAIVED
+    assert gates.worst_status([gates.WAIVED, gates.WARN]) == gates.WARN
+    assert gates.worst_status([gates.WAIVED, gates.UNKNOWN]) == gates.UNKNOWN
+    assert gates.worst_status([gates.WAIVED, gates.FAIL]) == gates.FAIL
+
+
+def test_the_reason_is_carried_structurally_and_in_the_prose():
+    """A surface that renders one and not the other still shows the reason."""
+    waived = gates.waive(_failing(), reason="CPU exporter not funded for this run")
+    assert waived.waiver_reason == "CPU exporter not funded for this run"
+    assert "CPU exporter not funded for this run" in waived.detail
+    # It survives the JSON round trip the payload is persisted through.
+    import json
+
+    assert (
+        json.loads(json.dumps(waived.as_dict()))["waiver_reason"]
+        == "CPU exporter not funded for this run"
+    )
+
+
+def test_the_waived_status_keeps_what_it_would_otherwise_have_been():
+    """Would-have-failed and would-have-passed-anyway are different facts,
+    and only the first one is a risk somebody accepted."""
+    waived = gates.waive(_failing(), reason="r")
+    assert "Would otherwise have been FAIL" in waived.detail
+    passing = gates.GateResult(gate="g", status=gates.PASS, detail="fine")
+    assert "Would otherwise have been PASS" in gates.waive(passing, reason="r").detail
+
+
+def test_a_waiver_preserves_the_number_that_was_measured():
+    """The measurement is not erased by the decision not to enforce it."""
+    waived = gates.waive(_failing(), reason="not funded")
+    assert waived.value == 0.91
+    assert waived.threshold == 0.70
+    assert waived.metric == "node_cpu_utilisation"
+    assert waived.subject == "sfu-1"
+    assert waived.gate == gates.NODE_CPU_GATE
+
+
+def test_the_reason_is_stripped_but_not_otherwise_altered():
+    waived = gates.waive(_failing(), reason="  agreed on 2026-07-31  ")
+    assert waived.waiver_reason == "agreed on 2026-07-31"
+
+
+def test_a_waiver_shows_up_in_the_summary_lines():
+    [line] = gates.summary_lines([gates.waive(_failing(), reason="not funded")])
+    assert "[WAIVED]" in line
+    assert "not funded" in line
+
+
+def test_the_prometheus_exposition_does_not_drop_a_waived_gate():
+    """The filter there DROPS unrecognised statuses, and an absent gate reads as
+    one that never ran rather than one somebody chose not to enforce."""
+    from voicegateway.server.api import metrics as metrics_api
+
+    assert gates.WAIVED in metrics_api._GATE_STATUSES
+
+
+def test_the_report_renders_waived_distinctly_from_unknown():
+    """Falling through to the unknown class would say "could not evaluate"."""
+    from voicegateway.livekit_diag import run_report
+
+    assert gates.WAIVED in run_report._VERDICT_MEANING
+    assert "NOT a pass" in run_report._VERDICT_MEANING[gates.WAIVED]
+    assert ".tag.waived" in run_report._CSS if hasattr(run_report, "_CSS") else True

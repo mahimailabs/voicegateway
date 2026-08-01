@@ -342,6 +342,88 @@ class StorageService:
         return dataclasses.asdict(row)
 
     # ------------------------------------------------------------------
+    # Load runs
+    # ------------------------------------------------------------------
+
+    async def upsert_load_run(self, run: Any) -> dict[str, Any]:
+        """Write one load run, keyed on its caller-supplied id.
+
+        A passthrough, deliberately: the repository owns the select-then-update
+        so a re-import of the same artifacts updates rather than duplicates, and
+        putting a second copy of that rule here is how the two drift.
+        """
+        from voicegateway.repository import load_runs_repository as load_runs
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            row = await load_runs.upsert_run(db, run)
+        return row.as_dict()
+
+    async def upsert_load_run_test(self, test: Any) -> dict[str, Any]:
+        """Write one test step, keyed on ``(run_id, name)``."""
+        from voicegateway.repository import load_runs_repository as load_runs
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            row = await load_runs.upsert_test(db, test)
+        return row.as_dict()
+
+    async def get_load_run(self, run_id: str) -> dict[str, Any] | None:
+        """One run, or None. ``artifact_sha256`` is what decides provenance."""
+        from voicegateway.repository import load_runs_repository as load_runs
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            row = await load_runs.get_run(db, run_id)
+        return None if row is None else row.as_dict()
+
+    async def list_load_runs(
+        self, *, project: str | None = None, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """Runs, newest first. ``project`` None means every project."""
+        from voicegateway.repository import load_runs_repository as load_runs
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            rows = await load_runs.list_runs(db, project=project, limit=limit)
+        return [r.as_dict() for r in rows]
+
+    async def list_load_run_tests(self, run_id: str) -> list[dict[str, Any]]:
+        """One run's tests, in the order they ran (by ``sequence``)."""
+        from voicegateway.repository import load_runs_repository as load_runs
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            rows = await load_runs.list_tests(db, run_id)
+        return [r.as_dict() for r in rows]
+
+    async def correlate_load_run_test(
+        self,
+        *,
+        started_at_ms: int | None,
+        ended_at_ms: int | None,
+        node: str | None = None,
+        source: str | None = None,
+    ) -> Any:
+        """Node samples OVERLAPPING one test's window, or None without a window.
+
+        Overlap, not attribution: this says what the fleet looked like while a
+        test ran, never that a node served any particular call. Returns a
+        ``TestAggregate``.
+        """
+        from voicegateway.loadtest.aggregation import aggregate_test_window
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            return await aggregate_test_window(
+                db,
+                started_at_ms=started_at_ms,
+                ended_at_ms=ended_at_ms,
+                node=node,
+                source=source,
+            )
+
+    # ------------------------------------------------------------------
     # Transcripts
     # ------------------------------------------------------------------
 

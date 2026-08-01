@@ -64,6 +64,9 @@ from voicegateway.server.api.dashboard import (
     health as dashboard_health,
 )
 from voicegateway.server.api.dashboard import (
+    loadtest as dashboard_loadtest,
+)
+from voicegateway.server.api.dashboard import (
     metrics as dashboard_metrics,
 )
 from voicegateway.server.api.dashboard import (
@@ -135,6 +138,12 @@ dashboard_router.include_router(dashboard_correlation.router)
 # is a weaker claim than "during this call" and a window nobody scraped is not a
 # healthy node.
 dashboard_router.include_router(dashboard_nodes.router)
+# GET /api/loadtest/runs. Read-only, so it belongs here behind
+# require_principal and NOT on the /v1/calls router, which carries
+# require_scope("write") on the router itself. Tests are embedded in each run
+# rather than served from a per-run path: the demo build answers by pathname
+# only, so a parameterised path is a shape it cannot render.
+dashboard_router.include_router(dashboard_loadtest.router)
 dashboard_router.include_router(dashboard_metrics.router)
 dashboard_router.include_router(dashboard_replay.router)
 dashboard_router.include_router(dashboard_agents.router)

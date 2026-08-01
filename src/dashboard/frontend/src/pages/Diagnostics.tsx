@@ -15,6 +15,7 @@ import CorrelationPanel from './diagnostics/CorrelationPanel';
 import ErrorsTab from './diagnostics/ErrorsTab';
 import LatencyTab from './diagnostics/LatencyTab';
 import LoadTab from './diagnostics/LoadTab';
+import LoadRunsPanel from './diagnostics/LoadRunsPanel';
 import NodesPanel from './diagnostics/NodesPanel';
 import ReportTab from './diagnostics/ReportTab';
 import { Card, Note, verdictBadgeClass } from './diagnostics/shared';
@@ -166,6 +167,13 @@ export default function Diagnostics() {
           attribution, which is why every card prints the pad it was widened by
           and why a window nobody scraped says so instead of showing zeros. */}
       <NodesPanel />
+
+      {/* What an external generator measured, per test. Outside the run
+          tabs for the same reason as the three panels above: it needs no
+          billed run. A load run is imported, not probed, so gating it
+          behind a tab would hide it until somebody paid for a probe that
+          has nothing to do with it. */}
+      <LoadRunsPanel />
 
       {/* Connection status card */}
       <div className="vg-card" style={{ marginBottom: 16 }}>

@@ -71,7 +71,12 @@ def _full_run() -> diagnostics._Run:
         diagnostics._Run(
             run_id="run" + "a" * 13,
             checks=["agents", "latency", "sfu", "sfu_load"],
-            config={"target_ms": 1500.0, "ramp": [2, 10], "duration": 10.0, "trials": 3},
+            config={
+                "target_ms": 1500.0,
+                "ramp": [2, 10],
+                "duration": 10.0,
+                "trials": 3,
+            },
             status="done",
             verdict=gates.UNKNOWN,
             created_at="2026-07-31T09:00:00+00:00",
@@ -227,9 +232,7 @@ async def test_report_json_carries_schema_version_and_kind(client):
 async def test_report_json_reads_the_stored_verdict_and_gates(client):
     """The report reports V4's verdict; it never re-derives one."""
     run = _full_run()
-    body = (
-        await client.get(f"/api/diagnostics/runs/{run.run_id}/report")
-    ).json()
+    body = (await client.get(f"/api/diagnostics/runs/{run.run_id}/report")).json()
     assert body["verdict"]["status"] == gates.UNKNOWN
     assert body["verdict"]["decided_by"] == "voicegateway.livekit_diag.gates"
     assert "NOT a pass" in body["verdict"]["meaning"]
@@ -239,9 +242,7 @@ async def test_report_json_reads_the_stored_verdict_and_gates(client):
 
 async def test_report_json_never_calls_three_samples_a_p95(client):
     run = _full_run()
-    body = (
-        await client.get(f"/api/diagnostics/runs/{run.run_id}/report")
-    ).json()
+    body = (await client.get(f"/api/diagnostics/runs/{run.run_id}/report")).json()
     agents = {a["agent"]: a for a in body["findings"]["latency"]["agents"]}
 
     measured = agents["support"]
@@ -276,9 +277,7 @@ async def test_report_json_reports_no_loss_figure(client):
 async def test_report_json_distinguishes_the_two_null_knees(client):
     """A knee of null means two opposite things; the report says which."""
     run = _full_run()
-    body = (
-        await client.get(f"/api/diagnostics/runs/{run.run_id}/report")
-    ).json()
+    body = (await client.get(f"/api/diagnostics/runs/{run.run_id}/report")).json()
     load = body["findings"]["load"]
     assert load["knee"]["kind"] == "knee"
     assert load["knee"]["clients"] == 2
@@ -309,9 +308,9 @@ async def test_report_json_separates_the_four_check_states(client):
             },
         )
     )
-    findings = (
-        await client.get(f"/api/diagnostics/runs/{run.run_id}/report")
-    ).json()["findings"]
+    findings = (await client.get(f"/api/diagnostics/runs/{run.run_id}/report")).json()[
+        "findings"
+    ]
     assert findings["agents"]["state"] == "ok"
     assert findings["latency"]["state"] == "errored"
     assert findings["latency"]["error"] == "check timed out"
@@ -339,9 +338,7 @@ async def test_report_json_says_when_a_run_predates_gate_provenance(client):
             },
         )
     )
-    body = (
-        await client.get(f"/api/diagnostics/runs/{run.run_id}/report")
-    ).json()
+    body = (await client.get(f"/api/diagnostics/runs/{run.run_id}/report")).json()
     assert body["gates_recorded"] is False
     assert body["gates"] is None
     assert body["verdict"]["status"] == gates.PASS
@@ -403,7 +400,10 @@ async def test_report_html_downloads_with_a_sanitised_filename(client):
     assert disposition.startswith("attachment; ")
     assert f"voicegateway-diagnostics-{run.run_id}.html" in disposition
     # A run id from the path can never break out of the header.
-    assert diagnostics._report_filename('x"; drop\n') == "voicegateway-diagnostics-xdrop.html"
+    assert (
+        diagnostics._report_filename('x"; drop\n')
+        == "voicegateway-diagnostics-xdrop.html"
+    )
 
 
 async def test_report_html_escapes_what_it_does_not_own(client):
@@ -544,3 +544,25 @@ async def test_html_is_rendered_from_the_json_payload(client):
     assert payload["verdict"]["status"] in document
     assert payload["findings"]["latency"]["agents"][0]["tail"]["label"] in document
     assert str(payload["schema_version"]) in document
+
+
+def test_load_report_html_is_self_contained() -> None:
+    """The load-test document must reach for nothing either.
+
+    Reuses _EXTERNAL_MARKERS above rather than declaring a second list: two
+    copies drift, and the copy that stops being extended is the one guarding the
+    document somebody actually opens offline.
+    """
+    from voicegateway.livekit_diag import run_report
+
+    document = run_report.render_load_html(
+        run_report.build_load_payload(
+            run={"id": "ramp-500", "artifact_sha256": None},
+            tests=[{"name": "ramp-500", "peak_concurrency": 492}],
+        )
+    )
+    assert document.startswith("<!DOCTYPE html>")
+    assert "<style>" in document
+    lowered = document.lower()
+    for marker in _EXTERNAL_MARKERS:
+        assert marker not in lowered, f"load report reaches for {marker!r}"

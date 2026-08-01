@@ -17,6 +17,7 @@ from voicegateway.models.config_audit_log_model import ConfigAuditLog
 from voicegateway.models.dead_air_event_model import DeadAirEvent
 from voicegateway.models.diagnostics_run_model import DiagnosticsRun
 from voicegateway.models.latency_observation_model import LatencyObservation
+from voicegateway.models.load_run_model import LoadRun, LoadRunTest
 from voicegateway.models.managed_model_model import ManagedModel
 from voicegateway.models.managed_project_model import ManagedProject
 from voicegateway.models.managed_provider_model import ManagedProvider
@@ -46,6 +47,8 @@ __all__ = [
     "DeadAirEvent",
     "DiagnosticsRun",
     "LatencyObservation",
+    "LoadRun",
+    "LoadRunTest",
     "ManagedModel",
     "ManagedProject",
     "ManagedProvider",
