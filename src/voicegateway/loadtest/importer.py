@@ -44,6 +44,7 @@ from voicegateway.loadtest.artifacts import (
     SUMMARY_FILENAME,
     MissingArtifact,
     ParsedTest,
+    _find_stat_file,
     parse_test_directory,
 )
 from voicegateway.repository.load_runs_repository import (
@@ -52,10 +53,17 @@ from voicegateway.repository.load_runs_repository import (
     LoadRunTestInput,
 )
 
-# Files whose bytes go into a run's checksum. The call-record file is included
-# even though nothing interprets it: the checksum answers "which artifacts was
-# this row built from", and a run that shipped one is not the same run as a run
-# that did not.
+# Files whose bytes go into a run's checksum, BY NAME. The call-record file is
+# included even though nothing interprets it: the checksum answers "which
+# artifacts was this row built from", and a run that shipped one is not the same
+# run as a run that did not.
+#
+# The stat file is NOT here, because it cannot be recognised by extension: the
+# generator names it gossipper_<pid>_stats.log. It is added by content in
+# :func:`_artifact_files`. Leaving it to this tuple checksummed a run's
+# calls.jsonl and silently omitted the file every number in the row came from,
+# so two runs with the same call records and different measurements hashed
+# identically.
 _CHECKSUMMED_SUFFIXES = (".json", ".csv", ".jsonl")
 
 
@@ -78,22 +86,41 @@ class ImportPlan:
 
 
 def _artifact_files(directory: Path) -> list[Path]:
-    """The artifact files in one directory, in a stable order."""
-    return sorted(
-        (
-            p
-            for p in directory.iterdir()
-            if p.is_file() and p.suffix in _CHECKSUMMED_SUFFIXES
-        ),
-        key=lambda p: p.name,
-    )
+    """The artifact files in one directory, in a stable order.
+
+    Two rules, because the artifacts answer to two different kinds of name. The
+    fixed surfaces are known by extension; the stat file is known only by its
+    header, since the generator names it after its own pid. A set unions them,
+    so a stat file that IS a .csv is counted once rather than twice.
+    """
+    files = {
+        p
+        for p in directory.iterdir()
+        if p.is_file() and p.suffix in _CHECKSUMMED_SUFFIXES
+    }
+    stat_file = _find_stat_file(directory)
+    if stat_file is not None:
+        files.add(stat_file)
+    return sorted(files, key=lambda p: p.name)
 
 
 def _has_artifacts(directory: Path) -> bool:
-    """Whether a directory holds either primary surface."""
+    """Whether a directory holds either primary surface.
+
+    The stat half asks the PARSER'S OWN finder rather than testing an extension.
+    This gate used to look for ``*.csv`` while the parser behind it selected by
+    header, so a real capture, whose stat file is named
+    ``gossipper_<pid>_stats.log``, was turned away here and the parser was never
+    reached: ``discover_tests`` returned [] and the caller was told there were no
+    artifacts, standing in a directory holding a valid 43-column CSV.
+
+    Calling the same function the parser calls is the point. Two places deciding
+    "is this a stat file" by two criteria is what produced that, and a second
+    rule written to agree with the first only agrees until one of them changes.
+    """
     if (directory / SUMMARY_FILENAME).is_file():
         return True
-    return any(p.suffix == ".csv" for p in directory.iterdir() if p.is_file())
+    return _find_stat_file(directory) is not None
 
 
 def discover_tests(directory: Path) -> list[Path]:
@@ -187,6 +214,7 @@ def build_plan(
     label: str | None = None,
     captured: bool = False,
     now_ms: int,
+    declared_targets: dict[str, int] | None = None,
 ) -> ImportPlan:
     """Read a directory of artifacts and plan the rows it would become.
 
@@ -202,7 +230,9 @@ def build_plan(
     if not test_dirs:
         raise MissingArtifact(
             f"{directory}: no artifacts here and no subdirectory holding any. "
-            f"Expected {SUMMARY_FILENAME} or a stat CSV."
+            f"Expected {SUMMARY_FILENAME}, or a stat file whose header carries "
+            "the interval columns. A stat file is recognised by that header "
+            "whatever it is named, so its extension is not the problem."
         )
 
     parsed = [parse_test_directory(d) for d in test_dirs]
@@ -263,10 +293,14 @@ def build_plan(
             failed_cancelled=p.failures_by_cause.get("cancelled"),
             rtp_packets_sent=p.rtp_packets_sent,
             rtp_packets_received=p.rtp_packets_received,
-            # target_concurrency, the node CPU/memory peaks and the sample count
-            # are deliberately left None. The first lives in the generator's
-            # scenario file, which is not an artifact; the rest are DATA4's job,
-            # correlating node_samples over each test's window.
+            # What the step ASKED for is not in any artifact: it lives in the
+            # generator's scenario file. It is None unless the operator declared
+            # it, and a declaration is kept apart from a measurement: the peak
+            # concurrency above still comes from the stat file and is never
+            # overwritten by this.
+            target_concurrency=(declared_targets or {}).get(p.name),
+            # The node CPU/memory peaks and the sample count stay None here:
+            # they are correlated from node_samples over each test's window.
         )
         for index, p in enumerate(parsed)
     ]

@@ -17,7 +17,11 @@ from rich.table import Table
 
 from voicegateway.cli._app import app, console
 from voicegateway.cli.base_cli import BaseCli
-from voicegateway.livekit_diag.gates import MAX_NODE_CPU_UTILISATION, exit_code
+from voicegateway.livekit_diag.gates import (
+    MAX_NODE_CPU_UTILISATION,
+    exit_code,
+)
+from voicegateway.livekit_diag.gates import waive as gates_waive
 from voicegateway.livekit_diag.run_report import appendix_entry
 from voicegateway.loadtest.aggregation import TestAggregate, peak_label
 from voicegateway.loadtest.artifacts import ArtifactError
@@ -85,11 +89,22 @@ def import_run(
     node: str = typer.Option(
         None, "--node", help="Correlate against one node only (default: all)"
     ),
+    targets: Path = typer.Option(
+        None,
+        "--plan",
+        help=(
+            "JSON mapping test name to the concurrency it ASKED for, e.g. "
+            "'{\"ramp-250\": 250}'. Not recorded by any artifact: it lives in "
+            "the generator's scenario file. Without it the capacity table "
+            "cannot be derived across a multi-step ramp."
+        ),
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show what would be written, write nothing"
     ),
 ) -> None:
     """Import one directory of artifacts as a run with a row per test."""
+    declared = _plan_from_file(targets) if targets is not None else {}
     try:
         plan = build_plan(
             directory,
@@ -98,11 +113,21 @@ def import_run(
             label=label,
             captured=captured,
             now_ms=int(time.time() * 1000),
+            declared_targets=declared,
         )
     except ArtifactError as exc:
         # Named errors carry which surface disagreed and how, so they are shown
         # rather than flattened into a generic import failure.
         _cli.fail(f"{type(exc).__name__}: {exc}", code=2)
+
+    unknown = sorted(set(declared) - {t.name for t in plan.tests})
+    if unknown:
+        _cli.fail(
+            f"--plan names {unknown} which no test in this run is called. "
+            f"Tests here: {sorted(t.name for t in plan.tests)}. A typo would "
+            "otherwise leave the ramp undeclared and the capacity table missing.",
+            code=2,
+        )
 
     table = Table(title=f"Run {plan.run.id} ({len(plan.tests)} tests)")
     table.add_column("#", justify="right")
@@ -234,6 +259,113 @@ def list_runs(
             "[green]measured[/green]" if measured else "[yellow]synthetic[/yellow]",
         )
     console.print(table)
+
+
+def _plan_from_file(path: Path) -> dict[str, int]:
+    """Read what each step ASKED for, which no artifact records.
+
+    ``target_concurrency`` lives in the generator's scenario file. A scenario
+    file is not an artifact, so nothing on the import path can recover it, and
+    without it :func:`derive_calls_per_node` refuses across a multi-step ramp:
+    "no plateau detected" from a ramp that declared no targets means the check
+    never ran, not that the ramp kept climbing. The capacity table is therefore
+    unreachable from artifacts alone, however good the run was.
+
+    This is the operator declaring it. It is a DECLARATION, not a measurement,
+    and it is kept apart from one: the peak concurrency a step reached still
+    comes from the stat file and is never overwritten here. What the operator
+    supplies is only what was requested, which is the half a machine cannot see.
+
+    Shape, test name to target concurrency::
+
+        {"ramp-100": 100, "ramp-250": 250}
+
+    A name that matches no test is refused rather than ignored, because a typo
+    would otherwise silently leave the ramp undeclared and the table missing.
+    """
+    try:
+        raw = json.loads(path.read_text())
+    except OSError as exc:
+        raise typer.BadParameter(f"cannot read {path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"{path} is not valid JSON: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise typer.BadParameter(
+            f"{path}: expected an object mapping test name to target concurrency"
+        )
+    plan: dict[str, int] = {}
+    for name, value in raw.items():
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            raise typer.BadParameter(
+                f"{path}: {name!r} target concurrency must be a positive "
+                f"integer, got {value!r}"
+            )
+        plan[str(name)] = value
+    return plan
+
+
+def _waivers_from_file(path: Path) -> dict[str, str]:
+    """Read gates the operator decided IN WRITING not to hold this run to.
+
+    The checklist requires that a threshold nobody funded is recorded as waived
+    rather than passed silently. :func:`gates.waive` implements that and nothing
+    reached it from here, so the only way to report an unscraped resource was
+    UNKNOWN, with no way to say who accepted it or why.
+
+    That matters more than it sounds. Two of the three contracted headroom
+    resources, RTP ports and network, are scraped by nothing, so every run
+    reports UNKNOWN for them and a run's verdict can never be PASS. A waiver
+    does not turn that into a pass either: WAIVED outranks PASS and exits
+    non-zero. What it changes is that the report says WHY the requirement was
+    set aside, and by whom, instead of looking like a measurement nobody took.
+
+    Keys are ``gate`` or ``gate/subject``, the more specific winning::
+
+        {"resource_headroom/fleet/rtp_ports": "not funded for this run, agreed
+         with the client on 2026-08-01"}
+
+    A blank reason is refused by :func:`gates.waive`. A key matching no gate is
+    refused here, because a typo would silently leave the gate unwaived.
+    """
+    try:
+        raw = json.loads(path.read_text())
+    except OSError as exc:
+        raise typer.BadParameter(f"cannot read {path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"{path} is not valid JSON: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise typer.BadParameter(
+            f"{path}: expected an object mapping gate to the reason it was waived"
+        )
+    waivers: dict[str, str] = {}
+    for key, reason in raw.items():
+        if not isinstance(reason, str) or not reason.strip():
+            raise typer.BadParameter(
+                f"{path}: {key!r} needs a non-empty reason. A waiver with no "
+                "reason is indistinguishable from a gate somebody deleted."
+            )
+        waivers[str(key)] = reason
+    return waivers
+
+
+def _apply_waivers(results: list, waivers: dict[str, str]) -> tuple[list, list[str]]:
+    """Waive matching gates, returning the results and any key that matched none."""
+    if not waivers:
+        return results, []
+    matched: set[str] = set()
+    applied = []
+    for result in results:
+        keys = [result.gate]
+        if result.subject:
+            keys.append(f"{result.gate}/{result.subject}")
+        # Most specific first, so a subject-scoped waiver beats a gate-wide one.
+        hit = next((k for k in reversed(keys) if k in waivers), None)
+        if hit is None:
+            applied.append(result)
+            continue
+        matched.add(hit)
+        applied.append(gates_waive(result, reason=waivers[hit]))
+    return applied, sorted(set(waivers) - matched)
 
 
 def _capacity_for(tests: list[dict]) -> dict:
@@ -373,6 +505,15 @@ def report(
             "toolchain. Every entry needs label, detail and a citation."
         ),
     ),
+    waive: Path = typer.Option(
+        None,
+        "--waive",
+        help=(
+            "JSON mapping gate (or gate/subject) to the reason it was waived in "
+            "writing. Records a threshold the run was not held to; never turns "
+            "it into a pass, and the report still exits non-zero."
+        ),
+    ),
 ) -> None:
     """Write one run's report as JSON plus a self-contained HTML file."""
     from voicegateway.livekit_diag.run_report import (
@@ -401,6 +542,16 @@ def report(
             )
         )
     results = judge_run(tests, aggregates=aggregates)
+    results, unmatched = _apply_waivers(
+        results, _waivers_from_file(waive) if waive is not None else {}
+    )
+    if unmatched:
+        _cli.fail(
+            f"--waive names {unmatched} which match no gate in this run. Gates "
+            f"here: {sorted({g.gate for g in results})}. A typo would otherwise "
+            "leave the gate unwaived and the waiver unrecorded.",
+            code=2,
+        )
     capacity = _capacity_for(tests)
     assets = _appendix_from_file(appendix) if appendix is not None else None
     payload = build_load_payload(
