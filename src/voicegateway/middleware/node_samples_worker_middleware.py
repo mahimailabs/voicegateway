@@ -151,14 +151,34 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         # kind of detail that drifts between releases.
         _Series("livekit_packet_total", "packets_total"),
         _Series("livekit_packet_bytes", "packet_bytes_total"),
-        # Go runtime, from the standard prometheus/client_golang collectors that
-        # both binaries register by default. These are the return-to-baseline
-        # pair, NOT RSS: Go hands freed heap back to the OS lazily, so a drained
-        # process can hold its resident size long after the heap emptied.
-        # Unverified against a live target, like every name in this map; an
-        # unmatched one stores NULL and is counted by series_found.
+        # Go runtime and process collectors, from the standard
+        # prometheus/client_golang set both binaries register by default. The
+        # heap and goroutine pair is the return-to-baseline signal, NOT RSS: Go
+        # hands freed heap back to the OS lazily, so a drained process can hold
+        # its resident size long after the heap emptied.
+        #
+        # process_max_fds is the PER-PROCESS rlimit and is the ceiling a service
+        # actually hits, unlike the host fs.file-max which is commonly
+        # unbounded. process_start_time_seconds is what makes a mid-run restart
+        # visible rather than an unexplained discontinuity in every counter rate
+        # across it.
         _Series("go_memstats_heap_inuse_bytes", "heap_inuse_bytes"),
         _Series("go_goroutines", "go_goroutines"),
+        _Series("process_open_fds", "process_open_fds"),
+        _Series("process_max_fds", "process_max_fds"),
+        _Series("process_start_time_seconds", "process_start_time_seconds"),
+        _Series("process_cpu_seconds_total", "process_cpu_seconds_total"),
+        _Series("process_resident_memory_bytes", "process_resident_memory_bytes"),
+        # NOT here: livekit_node_cpu_load, which exists on livekit-sip only and
+        # appears in none of the livekit_* families the server exports.
+        #
+        # ALSO NOT here, and their columns therefore store NULL:
+        # livekit_session_start_time_ms_sum/_count, livekit_track_published_total,
+        # livekit_track_subscribed_total and psrpc_stream_count. They are
+        # server-side names that could not be read off a live server, and a
+        # guessed name stores NULL for the life of a deployment while
+        # series_found still reads high because its siblings matched. An
+        # unwired column is honest; a wrong one is invisible.
     ),
     SOURCE_LIVEKIT_SIP: (
         # Fleet aggregates only. livekit-sip is blind to anything per-call, so
@@ -170,14 +190,58 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         # Summed across the `status` label: the per-status split is a different
         # (and wider) table than this one.
         _Series("livekit_sip_calls_terminated", "sip_calls_terminated_total"),
-        # Go runtime, from the standard prometheus/client_golang collectors that
-        # both binaries register by default. These are the return-to-baseline
-        # pair, NOT RSS: Go hands freed heap back to the OS lazily, so a drained
-        # process can hold its resident size long after the heap emptied.
-        # Unverified against a live target, like every name in this map; an
-        # unmatched one stores NULL and is counted by series_found.
+        # Go runtime and process collectors, from the standard
+        # prometheus/client_golang set both binaries register by default. The
+        # heap and goroutine pair is the return-to-baseline signal, NOT RSS: Go
+        # hands freed heap back to the OS lazily, so a drained process can hold
+        # its resident size long after the heap emptied.
+        #
+        # process_max_fds is the PER-PROCESS rlimit and is the ceiling a service
+        # actually hits, unlike the host fs.file-max which is commonly
+        # unbounded. process_start_time_seconds is what makes a mid-run restart
+        # visible rather than an unexplained discontinuity in every counter rate
+        # across it.
         _Series("go_memstats_heap_inuse_bytes", "heap_inuse_bytes"),
         _Series("go_goroutines", "go_goroutines"),
+        _Series("process_open_fds", "process_open_fds"),
+        _Series("process_max_fds", "process_max_fds"),
+        _Series("process_start_time_seconds", "process_start_time_seconds"),
+        _Series("process_cpu_seconds_total", "process_cpu_seconds_total"),
+        _Series("process_resident_memory_bytes", "process_resident_memory_bytes"),
+        # ---- answer latency ------------------------------------------------
+        # The engagement's headline risk: livekit-sip withholds 200 OK until it
+        # has subscribed to an audio track, so this histogram IS caller-visible
+        # answer latency. Stored as _sum and _count; the buckets are cumulative
+        # and summing them counts one observation once per bucket.
+        _Series("livekit_sip_dur_join_sec_sum", "sip_join_sec_sum"),
+        _Series("livekit_sip_dur_join_sec_count", "sip_join_sec_count"),
+        # Two explicit buckets, each selected by an le naming ONE bound, so a
+        # proportion under it is answerable without inventing a percentile.
+        _Series(
+            "livekit_sip_dur_join_sec_bucket", "sip_join_le1_count", where={"le": "1"}
+        ),
+        _Series(
+            "livekit_sip_dur_join_sec_bucket", "sip_join_le5_count", where={"le": "5"}
+        ),
+        _Series("livekit_sip_dur_check_sec_sum", "sip_check_sec_sum"),
+        _Series("livekit_sip_dur_check_sec_count", "sip_check_sec_count"),
+        # ---- admission -----------------------------------------------------
+        # "Whether node can accept new requests". Flips to 0 when the node stops
+        # taking INVITEs, which serves both the health clause and the drain test.
+        _Series("livekit_sip_available", "sip_available"),
+        # livekit-sip ONLY. Absent from every livekit_* family on the server.
+        _Series("livekit_node_cpu_load", "sip_node_cpu_load"),
+        # ---- media ---------------------------------------------------------
+        # SPLIT BY DIRECTION, never summed: a call that sent 337 and received
+        # 330 sums to 667 and one-way audio disappears into that one number.
+        # Not also filtered on payload: the send leg carries the literal string
+        # "audio" rather than a codec name, so a payload filter would empty it.
+        _Series(
+            "livekit_sip_packets_rtp", "sip_rtp_packets_recv", where={"op": "recv"}
+        ),
+        _Series(
+            "livekit_sip_packets_rtp", "sip_rtp_packets_send", where={"op": "send"}
+        ),
     ),
     SOURCE_NODE_EXPORTER: (
         # The M4 headline pair.
@@ -192,6 +256,12 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         ),
         _Series("node_memory_MemAvailable_bytes", "memory_available_bytes"),
         _Series("node_memory_MemTotal_bytes", "memory_total_bytes"),
+        # ---- port headroom -------------------------------------------------
+        # UDP sockets in use, and ports that could not be allocated. The second
+        # is the one that matters: a rising rate means the box ran out of ports,
+        # which at 500 concurrent is a likelier wall than CPU.
+        _Series("node_sockstat_UDP_inuse", "sockstat_udp_inuse"),
+        _Series("node_netstat_Udp_NoPorts", "udp_no_ports_total"),
     ),
 }
 

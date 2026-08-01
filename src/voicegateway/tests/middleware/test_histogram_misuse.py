@@ -189,3 +189,86 @@ def test_the_map_is_validated_at_import_not_on_demand() -> None:
 
     source = inspect.getsource(module)
     assert "\nvalidate_series_map(SERIES)\n" in source
+
+
+# --------------------------------------------------------------------------
+# Every wired livekit-sip entry resolves against the real capture
+# --------------------------------------------------------------------------
+
+
+def test_every_sip_entry_resolves_against_the_capture(live) -> None:
+    """The point of wiring against a live box rather than documentation.
+
+    A name that matches nothing stores NULL for the life of a deployment, and
+    nothing at runtime says so. This is the only place that can catch it.
+    """
+    absent = [
+        f"{entry.metric} -> {entry.column}"
+        for entry in SERIES["livekit-sip"]
+        if sum_series(live, entry.metric, where=entry.where) is None
+    ]
+    assert not absent, f"mapped names absent from the capture: {absent}"
+
+
+def test_the_sip_tuple_holds_no_server_only_name(live) -> None:
+    """Placement is as easy to get wrong as the name itself.
+
+    An entry in the wrong tuple is scraped against a binary that does not
+    export it, which reads exactly like a name that does not exist.
+    """
+    for entry in SERIES["livekit-sip"]:
+        assert sum_series(live, entry.metric, where=entry.where) is not None
+
+
+def test_livekit_node_cpu_load_is_sip_only() -> None:
+    """It exists on livekit-sip and on none of the server's livekit_* families."""
+    server = {e.metric for e in SERIES["livekit-server"]}
+    sip = {e.metric for e in SERIES["livekit-sip"]}
+    assert "livekit_node_cpu_load" in sip
+    assert "livekit_node_cpu_load" not in server
+
+
+def test_no_sip_named_series_is_scraped_from_the_server() -> None:
+    leaked = [
+        e.metric for e in SERIES["livekit-server"] if e.metric.startswith("livekit_sip")
+    ]
+    assert not leaked, f"livekit-sip names in the server tuple: {leaked}"
+
+
+def test_rtp_is_split_by_direction_and_never_summed(live) -> None:
+    """One-way audio must not disappear into a single total.
+
+    A call that sent 337 and received 330 sums to 667, and a fleet losing its
+    inbound leg would look identical to a healthy one at that granularity.
+    """
+    entries = {
+        e.column: e
+        for e in SERIES["livekit-sip"]
+        if e.metric == "livekit_sip_packets_rtp"
+    }
+    assert set(entries) == {"sip_rtp_packets_recv", "sip_rtp_packets_send"}
+    for entry in entries.values():
+        assert entry.where and "op" in entry.where
+        # NOT filtered on payload: the send leg carries the literal "audio"
+        # rather than a codec name, so a payload filter would empty it.
+        assert "payload" not in entry.where
+    recv = sum_series(live, "livekit_sip_packets_rtp", where={"op": "recv"})
+    send = sum_series(live, "livekit_sip_packets_rtp", where={"op": "send"})
+    assert recv != send, "the fixture cannot distinguish the two directions"
+
+
+def test_the_unverifiable_server_names_were_not_guessed_in() -> None:
+    """Their columns exist and store NULL, which is the honest state.
+
+    A guessed name would store NULL for the life of a deployment while
+    series_found still read high because its siblings matched.
+    """
+    wired = {e.metric for entries in SERIES.values() for e in entries}
+    for name in (
+        "livekit_session_start_time_ms_sum",
+        "livekit_session_start_time_ms_count",
+        "livekit_track_published_total",
+        "livekit_track_subscribed_total",
+        "psrpc_stream_count",
+    ):
+        assert name not in wired, f"{name} was guessed into the map"
