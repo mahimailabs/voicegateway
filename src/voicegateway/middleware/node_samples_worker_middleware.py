@@ -227,8 +227,18 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         # ---- answer latency ------------------------------------------------
         # The engagement's headline risk: livekit-sip withholds 200 OK until it
         # has subscribed to an audio track, so this histogram IS caller-visible
-        # answer latency. Stored as _sum and _count; the buckets are cumulative
-        # and summing them counts one observation once per bucket.
+        # answer latency.
+        #
+        # MEASURED, not reasoned. Its HELP string on 1.10.1 reads "SIP room join
+        # duration (from INVITE to mixed room audio)", which names both
+        # boundaries, and the arithmetic on a real call agrees: session_sec_sum
+        # 8.670751059 minus call_sec_sum 8.613975456 is 0.056775603 against a
+        # join_sec_sum of 0.056595646, a disagreement of 0.18 ms. Join is
+        # therefore the pre-200-OK segment of the session, which is what makes
+        # it the answer latency rather than a number that correlates with it.
+        #
+        # Stored as _sum and _count; the buckets are cumulative and summing them
+        # counts one observation once per bucket.
         _Series("livekit_sip_dur_join_sec_sum", "sip_join_sec_sum"),
         _Series("livekit_sip_dur_join_sec_count", "sip_join_sec_count"),
         # Two explicit buckets, each selected by an le naming ONE bound, so a
