@@ -17,7 +17,7 @@ from rich.table import Table
 
 from voicegateway.cli._app import app, console
 from voicegateway.cli.base_cli import BaseCli
-from voicegateway.livekit_diag.gates import MAX_NODE_CPU_UTILISATION
+from voicegateway.livekit_diag.gates import MAX_NODE_CPU_UTILISATION, exit_code
 from voicegateway.livekit_diag.run_report import appendix_entry
 from voicegateway.loadtest.aggregation import TestAggregate, peak_label
 from voicegateway.loadtest.artifacts import ArtifactError
@@ -458,3 +458,18 @@ def report(
             "artifacts and re-import with --captured before handing it over."
         )
     _cli.success(f"Wrote {json_path} and {html_path}")
+
+    # Exit AFTER both files are written. A failing run is exactly the run whose
+    # evidence somebody needs, so exiting before writing it would destroy the
+    # only record of why it failed.
+    #
+    # The code comes from gates.exit_code rather than a second convention here:
+    # 0 only for PASS. WAIVED is not clean (a waived gate is one nobody held the
+    # run to, and a pipeline that goes green on a waiver has dropped the
+    # requirement rather than recorded it) and UNKNOWN is not clean either (the
+    # run failed to measure something, which is not the same as demonstrating
+    # it). One non-zero code on purpose, so an existing `if [ $? -eq 1 ]` keeps
+    # catching every kind of failure.
+    code = exit_code(run_verdict)
+    if code != 0:
+        raise typer.Exit(code)
