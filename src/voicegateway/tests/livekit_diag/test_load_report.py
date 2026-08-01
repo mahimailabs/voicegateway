@@ -69,7 +69,14 @@ def _payload(run=SYNTHETIC_RUN, **kw):
 def test_a_run_without_a_checksum_is_synthetic() -> None:
     payload = _payload()
     assert payload["data_provenance"] == run_report.PROVENANCE_SYNTHETIC
-    assert "describes nothing that happened" in payload["provenance_basis"]
+    # The basis states only what is true: nobody attested these artifacts. It
+    # must NOT claim the run carries no checksum (one is computed on every
+    # import and kept in the notes), nor that the numbers came from fixtures
+    # (real artifacts imported without --captured land here too).
+    basis = payload["provenance_basis"]
+    assert "nobody declared" in basis
+    assert "carries NO artifact checksum" not in basis
+    assert "came from fixtures" not in basis
 
 
 def test_a_run_carrying_a_checksum_is_measured() -> None:

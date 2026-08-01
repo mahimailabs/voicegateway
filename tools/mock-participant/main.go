@@ -36,6 +36,26 @@ func main() {
 		Project: *project,
 		Logf:    logf,
 	}
+	// Parse the tone HERE, not on the first job. It is sync.Once-guarded, so
+	// whoever touches it first pays for it, and leaving that to the first
+	// assignment puts an Ogg parse on the answer path of a real call. It also
+	// means a corrupt tone.ogg is discovered at startup instead of by one
+	// unlucky caller.
+	if frames, err := ToneFrames(); err != nil {
+		log.Fatalf("tone: %v", err)
+	} else {
+		logf("tone ready: %d frames of 20ms Opus, shared by every call", len(frames))
+	}
+
+	// A worker that declares no capacity never reports WS_FULL, so the server
+	// keeps assigning to it forever. That is fine for one call and wrong for a
+	// load test: a single process would take every job in the run, holding
+	// every peer connection and every 20ms ticker itself.
+	if *maxJobs <= 0 {
+		logf("no -max-jobs set: this worker declares no capacity and will " +
+			"accept EVERY job dispatched to it; set it before a load test")
+	}
+
 	if !reporter.Enabled() {
 		logf("no -collector-url set: call observations will not be filed")
 	}

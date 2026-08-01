@@ -1255,13 +1255,27 @@ _LOAD_REPORT_LIMITS = [
 ]
 
 
+#: A sha256 digest, lowercase hex. The SHAPE is checked, not merely presence:
+#: a truthy string is not a checksum, and "TODO" or "n/a" in that column would
+#: otherwise read as measured and SUPPRESS the synthetic stamp. Nothing on the
+#: import path can produce such a value, but the docstring below promises that
+#: measured-ness cannot be asserted without the artifact, and a bare truthiness
+#: test does not keep that promise against a hand-written row.
+_SHA256_RE = re.compile(r"[0-9a-f]{64}")
+
+
 def _provenance_of(run: dict[str, Any]) -> str:
     """``measured`` only when a real artifact was hashed.
 
-    Derived from the checksum's presence rather than read from a flag, so a
-    future writer cannot assert measured-ness without the artifact behind it.
+    Derived from the checksum rather than read from a flag, so a future writer
+    cannot assert measured-ness without the artifact behind it. The value must
+    look like a sha256 digest; anything else is treated as no checksum at all,
+    because a column holding "pending" is not evidence of anything.
     """
-    return PROVENANCE_MEASURED if run.get("artifact_sha256") else PROVENANCE_SYNTHETIC
+    checksum = run.get("artifact_sha256")
+    if isinstance(checksum, str) and _SHA256_RE.fullmatch(checksum.strip().lower()):
+        return PROVENANCE_MEASURED
+    return PROVENANCE_SYNTHETIC
 
 
 def _load_test_row(test: dict[str, Any]) -> dict[str, Any]:
@@ -1345,8 +1359,13 @@ def build_load_payload(
         "provenance_basis": (
             "the source run carries the checksum of a real artifact"
             if provenance == PROVENANCE_MEASURED
-            else "the source run carries NO artifact checksum, so every number "
-            "below came from fixtures and describes nothing that happened"
+            # Deliberately narrow. The old wording claimed the run carried NO
+            # checksum, which is false (one is computed on every import and
+            # kept in the notes), and that the numbers came from fixtures,
+            # which nothing knows: real artifacts imported without --captured
+            # land here too. The only true claim is that nobody attested them.
+            else "nobody declared these artifacts as captured from a real run, "
+            "so nothing here may be read as measured, whatever it was built from"
         ),
         "run": {
             "id": run.get("id"),
@@ -1553,6 +1572,15 @@ def render_load_html(payload: dict[str, Any]) -> str:
 #: deployment should not carry its endpoints.
 _URL_RE = re.compile(r"\b[a-zA-Z][a-zA-Z0-9+.-]*://([^\s/\"'<>]+)(?:/\S*)?")
 
+#: sip:, sips:, tel: and mailto: carry a host with no "//" at all, and a SIP
+#: load test is exactly where those appear. Left alone they put a real endpoint
+#: into a file that gets handed to somebody outside the deployment.
+_OPAQUE_URI_RE = re.compile(r"\b(?:sips?|tel|mailto|data):([^\s\"'<>]+)", re.IGNORECASE)
+
+#: Protocol-relative //host/path. It has no scheme to strip and would survive
+#: the pattern above.
+_SCHEMELESS_RE = re.compile(r"(?<![a-zA-Z0-9:/])//([^\s/\"'<>]+)(?:/\S*)?")
+
 
 def redact_urls(text: str) -> str:
     """Reduce every absolute URL in ``text`` to a bare host label.
@@ -1562,7 +1590,9 @@ def redact_urls(text: str) -> str:
     scheme and path are dropped because neither survives a self-containment
     scan and neither helps.
     """
-    return _URL_RE.sub(lambda m: m.group(1), text)
+    reduced = _URL_RE.sub(lambda m: m.group(1), text)
+    reduced = _OPAQUE_URI_RE.sub(lambda m: m.group(1), reduced)
+    return _SCHEMELESS_RE.sub(lambda m: m.group(1), reduced)
 
 
 def appendix_entry(*, label: str, detail: str, citation: str) -> dict[str, str]:

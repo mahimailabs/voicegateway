@@ -20,6 +20,7 @@ from voicegateway.cli.base_cli import BaseCli
 from voicegateway.loadtest.aggregation import TestAggregate, peak_label
 from voicegateway.loadtest.artifacts import ArtifactError
 from voicegateway.loadtest.importer import build_plan, observations_for
+from voicegateway.loadtest.judge import judge_run, verdict_for
 
 _cli = BaseCli()
 
@@ -254,12 +255,40 @@ def report(
         _cli.fail(f"No load run {run_id!r}. Import one first.", code=2)
     tests = _cli.async_run(storage.list_load_run_tests(run_id))
 
-    payload = build_load_payload(run=run, tests=tests)
+    # Judge before rendering. A report that carries numbers and no verdict
+    # cannot answer the question it exists to answer, and the gates were
+    # previously reachable from nothing.
+    aggregates = {}
+    for test in tests:
+        aggregates[test["name"]] = _cli.async_run(
+            storage.correlate_load_run_test(
+                started_at_ms=test.get("started_at_ms"),
+                ended_at_ms=test.get("ended_at_ms"),
+            )
+        )
+    results = judge_run(tests, aggregates=aggregates)
+    payload = build_load_payload(
+        run=run,
+        tests=tests,
+        gate_results=[g.as_dict() for g in results],
+    )
     out.mkdir(parents=True, exist_ok=True)
     json_path = out / f"{load_report_filename(run_id).removesuffix('.html')}.json"
     html_path = out / load_report_filename(run_id)
     json_path.write_text(json.dumps(payload, indent=2) + "\n")
     html_path.write_text(render_load_html(payload))
+
+    run_verdict = verdict_for(results)
+    counts: dict[str, int] = {}
+    for gate in results:
+        counts[gate.status] = counts.get(gate.status, 0) + 1
+    breakdown = ", ".join(f"{n} {status}" for status, n in sorted(counts.items()))
+    console.print(f"\nVerdict: [bold]{run_verdict}[/bold]  ({breakdown})")
+    if run_verdict == "UNKNOWN":
+        _cli.warn(
+            "UNKNOWN is not a pass. At least one acceptance criterion could not "
+            "be evaluated; the run did not demonstrate it, it failed to measure it."
+        )
 
     if payload["data_provenance"] != "measured":
         _cli.warn(

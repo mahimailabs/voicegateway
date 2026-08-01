@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from voicegateway.livekit_diag.run_report import _provenance_of
 from voicegateway.server.api._deps import (
     Principal,
     get_gateway,
@@ -89,9 +90,11 @@ async def list_load_runs(
                 **run,
                 # Derived, never stored as a flag: nothing can claim
                 # measured-ness without the artifact behind it.
-                "data_provenance": (
-                    "measured" if run.get("artifact_sha256") else "synthetic"
-                ),
+                # Derived here the same way the report derives it, via the
+                # report's own helper rather than a second copy of the rule: a
+                # duplicated truthiness test would let "TODO" in that column
+                # read as measured on one surface and not the other.
+                "data_provenance": _provenance_of(run),
                 "tests": tests,
             }
         )
