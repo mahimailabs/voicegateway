@@ -241,6 +241,7 @@ class RetentionWorker:
         deleted += await self._prune_calls(db, project_id, cutoff_ts)
         deleted += await self._prune_diagnostics_runs(db, project_id, cutoff_iso)
         deleted += await self._prune_node_samples(db, project_id, cutoff_ts)
+        deleted += await self._prune_load_runs(db, project_id, cutoff_ts)
 
         # Requests prune on their own clock (a request may have no session_id).
         while True:
@@ -412,6 +413,61 @@ class RetentionWorker:
             deleted += removed
             if removed == 0:
                 break
+        return deleted
+
+    async def _prune_load_runs(
+        self, db: AsyncSession, project_id: str, cutoff_ts: float
+    ) -> int:
+        """Hard-delete one project's aged load runs + their tests; return count.
+
+        A load run is its own root: it is produced by an external generator and
+        has no session or call to hang from, so it prunes on its own
+        epoch-millisecond clock like the calls and node-samples passes.
+
+        Ages on ``ended_at_ms`` when the run ended and ``created_at_ms``
+        otherwise, so a run whose import died mid-flight still ages out instead
+        of sitting in the history forever. ``created_at_ms`` is NOT NULL, so
+        every row has an age and there is no leave-it-alone case.
+
+        The child rows go FIRST, inside the same chunk transaction as the
+        parent. A crash between the two would otherwise leave ``load_run_tests``
+        rows pointing at a run that no longer exists, and nothing reads those
+        back to a user, so they would accumulate unseen.
+        """
+        deleted = 0
+        cutoff_ms = int(cutoff_ts * 1000)
+        while True:
+            result = await db.execute(
+                text(
+                    "SELECT id FROM load_runs "
+                    "WHERE project = :project "
+                    "  AND COALESCE(ended_at_ms, created_at_ms) < :cutoff_ms "
+                    "LIMIT :limit"
+                ),
+                {
+                    "project": project_id,
+                    "cutoff_ms": cutoff_ms,
+                    "limit": self._batch_size,
+                },
+            )
+            ids = [row[0] for row in result]
+            if not ids:
+                break
+            res = await db.execute(
+                text("DELETE FROM load_run_tests WHERE run_id IN :ids").bindparams(
+                    bindparam("ids", expanding=True)
+                ),
+                {"ids": ids},
+            )
+            deleted += _rowcount(res)
+            res = await db.execute(
+                text("DELETE FROM load_runs WHERE id IN :ids").bindparams(
+                    bindparam("ids", expanding=True)
+                ),
+                {"ids": ids},
+            )
+            deleted += _rowcount(res)
+            await db.commit()
         return deleted
 
 
