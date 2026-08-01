@@ -27,22 +27,41 @@ from typing import Any
 
 from voicegateway.livekit_diag import gates
 from voicegateway.livekit_diag.gates import GateResult
-from voicegateway.loadtest.aggregation import TestAggregate
+from voicegateway.loadtest.aggregation import (
+    FD_LIMIT_COLUMN,
+    FD_USED_COLUMN,
+    TestAggregate,
+)
 
 # The FD pair is the one headroom resource anything scrapes. RTP ports and
 # network are emitted as unmeasured by unscraped_headroom_readings, so they
 # appear in every report as UNKNOWN instead of vanishing.
-_FD_USED = "filefd_allocated"
-_FD_LIMIT = "filefd_maximum"
+# The PER-PROCESS rlimit pair, not the host filefd pair. The host maximum is
+# commonly unbounded and yields no ratio at all; the limit a service actually
+# hits is its own.
+_FD_USED = FD_USED_COLUMN
+_FD_LIMIT = FD_LIMIT_COLUMN
 
 
-def _fd_reading(node: str, source: str | None = None) -> gates.HeadroomReading:
-    """File descriptors as an unmeasured reading.
+_NO_WINDOW = (
+    "the test has no window, so no scrape carrying "
+    f"{_FD_USED}/{_FD_LIMIT} could be correlated to it"
+)
+_NOT_ON_AGGREGATE = (
+    f"the correlated window carried no {_FD_USED}/{_FD_LIMIT} reading for this node"
+)
 
-    The pair IS scraped into node_samples, but it is not threaded onto the
-    per-test aggregate yet, so it is reported as unmeasured rather than guessed
-    at. Emitted on every path so an unscraped run shows three UNKNOWN headroom
-    gates rather than two, with file descriptors quietly unjudged.
+
+def _fd_reading(
+    node: str, source: str | None = None, *, reason: str = _NO_WINDOW
+) -> gates.HeadroomReading:
+    """File descriptors as an unmeasured reading, with the reason it is one.
+
+    A test that correlated a window carries REAL readings on its aggregate,
+    built where the measurement happens rather than rebuilt here: this module
+    decides and does not measure. This is the fallback for the two ways a node
+    can arrive with nothing to judge, and it exists so those cases produce an
+    UNKNOWN gate rather than no gate at all.
     """
     return gates.HeadroomReading(
         node=node,
@@ -50,10 +69,7 @@ def _fd_reading(node: str, source: str | None = None) -> gates.HeadroomReading:
         used=None,
         limit=None,
         source=source,
-        unmeasured_reason=(
-            f"{_FD_USED}/{_FD_LIMIT} are scraped but are not carried on the "
-            "per-test aggregate yet"
-        ),
+        unmeasured_reason=reason,
     )
 
 
@@ -124,12 +140,22 @@ def _headroom_gates_for(aggregate: TestAggregate) -> list[GateResult]:
     """
 
     readings: list[gates.HeadroomReading] = []
+    # Real file-descriptor readings, measured during correlation. A node whose
+    # window carried no usable pair arrives here already unmeasured WITH its
+    # reason, which the gate turns into UNKNOWN rather than a pass.
+    readings.extend(aggregate.fd_readings)
+    measured = {(r.node, r.source) for r in aggregate.fd_readings}
     for reading in aggregate.cpu_readings:
-        # The FD pair is not carried on TestAggregate, so it is reported as
-        # unmeasured here rather than guessed at. Wiring it needs the gauge
-        # pair threaded through aggregation, which is a measurement change and
-        # does not belong in a module that only judges.
-        readings.append(_fd_reading(reading.node, reading.source))
+        # A node the aggregate judged for CPU but carries no FD reading for
+        # would otherwise lose the file-descriptor gate while keeping the other
+        # two, which reads as a resource nobody had to satisfy rather than one
+        # nobody measured.
+        if (reading.node, reading.source) not in measured:
+            readings.append(
+                _fd_reading(
+                    reading.node, reading.source, reason=_NOT_ON_AGGREGATE
+                )
+            )
         readings.extend(
             gates.unscraped_headroom_readings(reading.node, source=reading.source)
         )
