@@ -86,6 +86,15 @@ Run mypy:
 mypy
 ```
 
+CI pins mypy below 2. mypy 2.x stops resolving the `livekit` namespace
+package's subpackages and reports `Module "livekit" has no attribute
+"api"/"rtc"` on a tree that is otherwise clean, so install the same cap
+locally or your results will not match CI:
+
+```bash
+uv run --with 'mypy<2' --with types-PyYAML mypy
+```
+
 ### Type annotation guidelines
 
 - All public functions must have type annotations
