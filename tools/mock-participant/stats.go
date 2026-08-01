@@ -22,6 +22,19 @@ type CallStats struct {
 	// Unix nanoseconds. Zero means it has not happened.
 	joinedAtNanos    atomic.Int64
 	firstPacketNanos atomic.Int64
+
+	// The SID the server assigned this participant, known only after the join.
+	participantSID atomic.Value
+}
+
+func (c *CallStats) setParticipantSID(sid string) { c.participantSID.Store(sid) }
+
+// ParticipantSID is the SID the server assigned, or "" before the join.
+func (c *CallStats) ParticipantSID() string {
+	if v, ok := c.participantSID.Load().(string); ok {
+		return v
+	}
+	return ""
 }
 
 func (c *CallStats) markJoined(t time.Time) { c.joinedAtNanos.Store(t.UnixNano()) }

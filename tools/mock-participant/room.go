@@ -65,6 +65,7 @@ func JoinAndPublish(
 	}
 	defer room.Disconnect()
 	stats.markJoined(time.Now())
+	stats.setParticipantSID(room.LocalParticipant.SID())
 
 	if logf != nil {
 		logf("joined room %q as %s, publishing %d frames of tone",
