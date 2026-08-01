@@ -19,6 +19,7 @@ against the base stores NULL for the life of the deployment, while
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -319,27 +320,68 @@ def test_the_exporter_names_both_boundaries_itself(live) -> None:
     assert "from INVITE to mixed room audio" in help_line
 
 
-def test_the_docstring_does_not_claim_the_server_process_block_is_verified() -> None:
-    """The one gap left, stated where somebody adding an entry will read it.
+def test_the_docstring_accounts_for_every_wired_entry() -> None:
+    """Provenance is a claim about a COUNT, so the count is what is checked.
 
-    livekit-server's metrics port is commonly behind basic auth, so the five
-    process_* entries in its tuple are inferred from livekit-sip registering the
-    same prometheus/client_golang collector. That is a good reason to expect
-    them and it is not a measurement, and this map's whole doctrine is that the
-    difference is what decides whether a column works or only looks like it.
+    Replaces an earlier test that pinned the one unverified block, which was the
+    livekit-server process_* entries. Those have since been read off a live
+    server by authenticated scrape, so nothing in the map is inferred and there
+    is no gap left to pin.
+
+    The failure this now guards is the one that is actually likely: somebody
+    adds a plausible-looking entry from documentation, and the docstring goes on
+    claiming every entry was measured. Asserting the stated counts against the
+    real tuple lengths makes that a red test rather than a sentence nobody
+    reread. It is deliberately mechanical: the doc has to be edited, which is
+    where the decision about provenance gets made.
     """
     from voicegateway.middleware import node_samples_worker_middleware as module
 
     doc = module.__doc__ or ""
-    assert "STILL INFERRED" in doc
-    assert "process_*" in doc
-    # And the claim is specific about which source, since the same names ARE
-    # measured on livekit-sip.
-    server_process = [
+    for source in SERIES:
+        # \s+ rather than a literal space: the docstring is wrapped, and a
+        # claim must not stop being checkable because it fell across a line.
+        claimed = re.search(rf"all\s+(\d+)\s+``{re.escape(source)}``\s+entries", doc)
+        assert claimed, f"the docstring makes no count claim for {source}"
+        assert int(claimed.group(1)) == len(SERIES[source]), (
+            f"{source}: docstring says {claimed.group(1)}, map has "
+            f"{len(SERIES[source])}"
+        )
+
+
+def test_the_docstring_claims_no_inferred_entry() -> None:
+    """The state this map is meant to be in, said once and checked.
+
+    Kept separate from the counts because they answer different questions: the
+    counts catch an entry added without a decision, this catches the decision
+    itself being reversed without the note being updated.
+    """
+    from voicegateway.middleware import node_samples_worker_middleware as module
+
+    doc = module.__doc__ or ""
+    assert "Nothing in" in doc and "is inferred" in doc
+    # The deliberately-unwired names are a different thing and must survive:
+    # they are absent on purpose, not unverified.
+    assert "DELIBERATELY UNWIRED" in doc
+
+
+def test_the_server_process_block_is_recorded_as_measured() -> None:
+    """The five that were confirmed last, with the cross-check that dates them.
+
+    Their per-process rlimit is the same 524287 livekit-sip reports on the same
+    host, which is what distinguishes them from anything host-wide.
+    """
+    from voicegateway.middleware import node_samples_worker_middleware as module
+
+    doc = module.__doc__ or ""
+    assert "authenticated scrape" in doc
+    assert "524287" in doc
+    server_process = {
         e.metric for e in SERIES["livekit-server"] if e.metric.startswith("process_")
-    ]
+    }
     assert len(server_process) == 5
+    # The same names on livekit-sip, where they were confirmed first.
     sip_process = {
         e.metric for e in SERIES["livekit-sip"] if e.metric.startswith("process_")
     }
-    assert set(server_process) <= sip_process
+    assert server_process <= sip_process

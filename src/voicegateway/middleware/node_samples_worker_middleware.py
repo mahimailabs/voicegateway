@@ -26,8 +26,8 @@ cannot be the guarantee.
 carry stays NULL and is counted out of ``series_found``. Nothing is stored as 0
 unless a target reported 0.
 
-WHICH NAMES ARE MEASURED, AND WHICH ARE STILL INFERRED
-------------------------------------------------------
+WHERE THESE NAMES CAME FROM: ALL OF THEM MEASURED
+-------------------------------------------------
 These names were originally taken from
 ``docs/superpowers/specs/2026-07-29-end-to-end-profiling-scope.md`` (§2 "What is
 actually observable"), which was written against the SDKs installed here rather
@@ -36,40 +36,41 @@ livekit-server or livekit-sip BINARY an operator runs, and inferring a metric
 name is how a column ends up storing NULL for the life of a deployment while
 nothing at runtime says so. Three names taken that way were wrong.
 
-So the map is now split by provenance, and the distinction is kept because it is
-the difference between a column that works and one that only looks like it does.
+Every wired entry has since been read off a running binary. **Nothing in
+:data:`SERIES` is inferred.** The provenance note is kept, and a count check in
+``tests/middleware/test_histogram_misuse.py`` enforces it, because the way this
+map degrades is one plausible entry added from documentation.
 
 MEASURED against livekit-sip 1.10.1 and node_exporter, with a real inbound call
 placed so every counter was populated: all 22 ``livekit-sip`` entries and all 9
-``node-exporter`` entries. Every one resolves, asserted per entry in
-``tests/middleware/test_histogram_misuse.py`` against a captured exposition and
-again in ``tests/integration/test_live_node_scrape.py`` against the running
-exporters.
+``node-exporter`` entries. Every one resolves, asserted per entry against a
+captured exposition and again in
+``tests/integration/test_live_node_scrape.py`` against the running exporters.
 
-MEASURED against livekit-server 1.10.1: ``livekit_room_total``,
-``livekit_participant_total``, ``livekit_packet_total``, ``livekit_packet_bytes``,
-``go_memstats_heap_inuse_bytes`` and ``go_goroutines``.
-
-**STILL INFERRED**, and the one remaining gap: the five ``process_*`` entries in
-the ``livekit-server`` tuple. They are the standard prometheus/client_golang
-process collector and they resolve against livekit-sip, which registers the same
-library, so they are very likely right. Very likely is not measured. Closing this
-needs one authenticated scrape of a livekit-server metrics port, which is
-commonly behind basic auth; until then those five columns may store NULL on a
-real deployment and ``series_found`` will say so rather than hide it.
+MEASURED against livekit-server 1.10.1, by authenticated scrape of its metrics
+port: all 11 ``livekit-server`` entries. The four ``livekit_*`` families and the
+two Go runtime series came first; the five ``process_*`` entries were the last to
+be confirmed, because that port is commonly behind basic auth and an
+unauthenticated request gets a 401 rather than an exposition. Observed:
+``process_open_fds`` 20, ``process_max_fds`` 524287,
+``process_start_time_seconds`` 1.78553687934e+09, ``process_cpu_seconds_total``
+111.39, ``process_resident_memory_bytes`` 7.3125888e+07. That rlimit is the same
+524287 livekit-sip reports on the same host, which is the cross-check that these
+are the per-process ceiling rather than anything host-wide.
 
 DELIBERATELY UNWIRED, so their columns store NULL rather than a wrong name:
 ``livekit_session_start_time_ms_*``, ``livekit_track_published_total``,
-``livekit_track_subscribed_total`` and ``psrpc_stream_count``. An unwired column
-is honest; a guessed one is invisible.
+``livekit_track_subscribed_total`` and ``psrpc_stream_count``. These are the
+names that could not be found on a live server under any spelling. An unwired
+column is honest; a guessed one is invisible.
 
 node_exporter names come from its filefd / loadavg / cpu / meminfo / sockstat /
 netstat collectors and have been stable since node_exporter 0.18 (current 1.9).
 
-That residual uncertainty is exactly why an unmatched series stores NULL and why
-every row records ``series_found``: an operator on a release that renamed
-something sees the count fall on the row instead of an unexplainable empty chart,
-and fixing it is one entry in :data:`SERIES`.
+A metric name can still be renamed by a release, which is why an unmatched
+series stores NULL and why every row records ``series_found``: an operator on a
+release that renamed something sees the count fall on the row instead of an
+unexplainable empty chart, and fixing it is one entry in :data:`SERIES`.
 """
 
 from __future__ import annotations

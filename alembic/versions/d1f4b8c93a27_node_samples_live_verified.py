@@ -31,7 +31,10 @@ unbounded, 0 bounded, NULL unmeasured) rather than a boolean, so it travels the
 same coercion path as every other column instead of needing a parallel one.
 
 ``nacks_total`` is DROPPED. ``livekit_nack_total`` does not exist on 1.10.1:
-there are zero occurrences of "nack" anywhere in the exposition under any name.
+zero occurrences of "nack" under any name in the full 77 KB livekit-server
+exposition, read by authenticated scrape. livekit-server is where that series
+would have lived, so this is the capture that settles it rather than an absence
+noticed somewhere it was never expected.
 A column nothing can ever populate is worse than no column, because it is
 reachable by a chart that will read NULL forever. No substitute is put in its
 place: the obvious candidate is declared a gauge while behaving cumulatively.
