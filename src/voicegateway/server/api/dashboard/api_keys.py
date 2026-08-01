@@ -4,6 +4,15 @@ Virtual keys expose their plaintext exactly once at creation: the FE
 shows the "save this key" modal and discards it; subsequent list
 responses expose only ``key_prefix``. Revoke is soft (the row stays
 for audit per OQ5).
+
+Auth is declared ONCE, here, for every route on this router. A minted key
+carries the wildcard scope (``api_keys_repository`` defaults ``scopes='*'``),
+so an ungated mint hands the caller write access to every ``/v1`` endpoint.
+``require_scope(ADMIN_SCOPE)`` is a no-op while no API keys are configured
+(the self-hosted single-operator default: ``core.auth.check_request``
+returns None on an empty key list), and enforces the admin scope once auth
+is enabled, exactly like Diagnostics and the Server overview. The dashboard
+frontend already sends its bearer token on these calls.
 """
 
 from __future__ import annotations
@@ -13,15 +22,20 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
+from voicegateway.core.auth import ADMIN_SCOPE
 from voicegateway.repository import (
     api_keys_repository as api_keys,
 )
-from voicegateway.server.api._deps import get_gateway
+from voicegateway.server.api._deps import get_gateway, require_scope
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
 
-router = APIRouter(prefix="/api_keys", tags=["dashboard"])
+router = APIRouter(
+    prefix="/api_keys",
+    tags=["dashboard"],
+    dependencies=[Depends(require_scope(ADMIN_SCOPE))],
+)
 
 
 @router.get("")

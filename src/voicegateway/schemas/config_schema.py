@@ -156,12 +156,24 @@ class DashboardConfig(BaseModel):
 
 
 class ServeConfig(BaseModel):
-    """HTTP API serve config (the daemon-first ``voicegw serve`` target)."""
+    """HTTP API serve config (the daemon-first ``voicegw serve`` target).
+
+    ``provider_base_url_hosts`` is the operator allowlist consulted by
+    ``PATCH /v1/providers/{id}`` when a request moves a managed provider's
+    ``base_url`` to a new host WITHOUT supplying a new ``api_key``: that
+    combination would hand the stored provider key to the new host on the next
+    ``POST /v1/providers/{id}/test``. Entries are hosts (``api.example.com``)
+    or full URLs whose host is used. Left empty (the default) the endpoint
+    still permits the provider's current host and the vendor's own default
+    host, so an existing deployment is unaffected. Values support
+    ``${ENV_VAR}`` substitution like every other string in the config.
+    """
 
     model_config = ConfigDict(extra="allow")
 
     host: str = "0.0.0.0"
     port: int = 8080
+    provider_base_url_hosts: list[str] = Field(default_factory=list)
 
 
 class LiveKitConfig(BaseModel):

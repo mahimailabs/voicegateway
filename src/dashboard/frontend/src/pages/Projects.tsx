@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import SourceBadge from '../components/SourceBadge';
-import { fetchJson } from '../lib/api';
+import { fetchJson, uploadBrandingLogo } from '../lib/api';
 import { DEMO_MODE } from '../lib/demo';
 
 interface ProjectBranding {
@@ -325,17 +325,10 @@ function BrandingModal({
     setError(null);
     try {
       if (logoFile) {
-        const fd = new FormData();
-        fd.append('file', logoFile);
-        const resp = await fetch(
-          `/api/projects/${encodeURIComponent(projectId)}/branding/logo`,
-          { method: 'POST', body: fd },
-        );
-        if (!resp.ok) {
-          const body = await resp.json().catch(() => ({}));
-          throw new Error(body.detail || `HTTP ${resp.status}`);
-        }
-        const data = (await resp.json()) as { logo_url: string };
+        // Via the shared helper, not a bare fetch: the upload is an admin
+        // write now, and the hand-rolled call here sent no Authorization
+        // header at all, so it would 401 on any deployment with auth on.
+        const data = await uploadBrandingLogo(projectId, logoFile);
         setLogoUrl(data.logo_url);
       }
       await fetchJson(`/api/projects/${encodeURIComponent(projectId)}/branding`, {
