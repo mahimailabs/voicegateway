@@ -148,6 +148,14 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         _Series("livekit_packet_total", "packets_total"),
         _Series("livekit_packet_bytes", "packet_bytes_total"),
         _Series("livekit_nack_total", "nacks_total"),
+        # Go runtime, from the standard prometheus/client_golang collectors that
+        # both binaries register by default. These are the return-to-baseline
+        # pair, NOT RSS: Go hands freed heap back to the OS lazily, so a drained
+        # process can hold its resident size long after the heap emptied.
+        # Unverified against a live target, like every name in this map; an
+        # unmatched one stores NULL and is counted by series_found.
+        _Series("go_memstats_heap_inuse_bytes", "heap_inuse_bytes"),
+        _Series("go_goroutines", "go_goroutines"),
     ),
     SOURCE_LIVEKIT_SIP: (
         # Fleet aggregates only. livekit-sip is blind to anything per-call, so
@@ -159,6 +167,14 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         # Summed across the `status` label: the per-status split is a different
         # (and wider) table than this one.
         _Series("livekit_sip_calls_terminated", "sip_calls_terminated_total"),
+        # Go runtime, from the standard prometheus/client_golang collectors that
+        # both binaries register by default. These are the return-to-baseline
+        # pair, NOT RSS: Go hands freed heap back to the OS lazily, so a drained
+        # process can hold its resident size long after the heap emptied.
+        # Unverified against a live target, like every name in this map; an
+        # unmatched one stores NULL and is counted by series_found.
+        _Series("go_memstats_heap_inuse_bytes", "heap_inuse_bytes"),
+        _Series("go_goroutines", "go_goroutines"),
     ),
     SOURCE_NODE_EXPORTER: (
         # The M4 headline pair.

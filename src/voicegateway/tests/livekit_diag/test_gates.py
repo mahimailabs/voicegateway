@@ -1034,3 +1034,165 @@ def test_headroom_gates_are_synchronous_and_json_safe():
         [_fd("n", 10, 100)] + gates.unscraped_headroom_readings("n")
     ):
         json.loads(json.dumps(gate.as_dict()))
+
+
+# ---------------------------------------------------------------------------
+# return_to_baseline_gates: did the fleet give its resources back after teardown?
+#
+# heap_inuse and goroutines, never RSS: Go returns freed heap to the OS lazily, so
+# a drained process holds its resident size and an RSS gate would report a leak on
+# every healthy run.
+# ---------------------------------------------------------------------------
+
+
+def _cmp(metric: str, baseline, post, **kw) -> gates.BaselineComparison:
+    kw.setdefault("node", "sfu-1")
+    return gates.BaselineComparison(
+        metric=metric, baseline=baseline, post_settle=post, **kw
+    )
+
+
+def test_a_fleet_that_gave_its_memory_back_passes():
+    [gate] = gates.return_to_baseline_gates(
+        [_cmp(gates.BASELINE_HEAP, 100_000_000, 108_000_000)], tolerance=1.5
+    )
+    assert gate.status == gates.PASS
+    assert gate.gate == gates.RETURN_TO_BASELINE_GATE
+    assert gate.subject == "sfu-1/heap_inuse_bytes"
+    assert gate.value == pytest.approx(1.08)
+    assert gate.threshold == 1.5
+    assert "1.08x" in gate.detail
+
+
+def test_a_goroutine_count_that_never_came_down_fails():
+    """The shape a real leak takes here: a per-call goroutine that never exits."""
+    [gate] = gates.return_to_baseline_gates(
+        [_cmp(gates.BASELINE_GOROUTINES, 120, 4_800)], tolerance=1.5
+    )
+    assert gate.status == gates.FAIL
+    assert "outside" in gate.detail
+    assert gates.exit_code(gates.verdict([gate])) == 1
+
+
+def test_the_tolerance_is_required_and_has_no_default():
+    """Near baseline is never quantified by the criterion, so nothing here may
+    invent a number that would look exactly like a contracted threshold."""
+    import inspect
+
+    sig = inspect.signature(gates.return_to_baseline_gates)
+    tolerance = sig.parameters["tolerance"]
+    assert tolerance.default is inspect.Parameter.empty
+    assert tolerance.kind is inspect.Parameter.KEYWORD_ONLY
+    with pytest.raises(TypeError):
+        gates.return_to_baseline_gates([_cmp(gates.BASELINE_HEAP, 10, 10)])
+
+
+def test_the_tolerance_travels_on_every_result():
+    """A reader must see which tolerance produced the verdict."""
+    for tol in (1.1, 2.0):
+        [gate] = gates.return_to_baseline_gates(
+            [_cmp(gates.BASELINE_HEAP, 100, 150)], tolerance=tol
+        )
+        assert gate.threshold == tol
+    # The same pair, judged either way, depending on the number supplied.
+    assert (
+        gates.return_to_baseline_gates(
+            [_cmp(gates.BASELINE_HEAP, 100, 150)], tolerance=1.1
+        )[0].status
+        == gates.FAIL
+    )
+    assert (
+        gates.return_to_baseline_gates(
+            [_cmp(gates.BASELINE_HEAP, 100, 150)], tolerance=2.0
+        )[0].status
+        == gates.PASS
+    )
+
+
+def test_a_sample_taken_before_the_settle_window_is_unknown_not_pass():
+    """Teardown that has not finished draining looks exactly like a clean one."""
+    assert gates.MIN_SETTLE_MS == 300_000
+    [early] = gates.return_to_baseline_gates(
+        [
+            _cmp(
+                gates.BASELINE_HEAP,
+                100,
+                100,
+                baseline_at_ms=0,
+                post_settle_at_ms=60_000,
+            )
+        ],
+        tolerance=1.5,
+    )
+    assert early.status == gates.UNKNOWN
+    assert early.status != gates.PASS
+    assert "settle window" in early.detail
+    assert "60s after the first" in early.detail
+    # Past the window, the very same numbers pass.
+    [settled] = gates.return_to_baseline_gates(
+        [
+            _cmp(
+                gates.BASELINE_HEAP,
+                100,
+                100,
+                baseline_at_ms=0,
+                post_settle_at_ms=600_000,
+            )
+        ],
+        tolerance=1.5,
+    )
+    assert settled.status == gates.PASS
+
+
+def test_timestamps_are_optional_and_absent_ones_do_not_fabricate_a_settle():
+    """No timestamps means the settle check cannot run, not that it passed."""
+    [gate] = gates.return_to_baseline_gates(
+        [_cmp(gates.BASELINE_HEAP, 100, 100)], tolerance=1.5
+    )
+    assert gate.status == gates.PASS
+    assert "settle window" not in gate.detail
+
+
+def test_a_missing_side_is_unknown_not_a_clean_return():
+    for baseline, post in ((None, 100), (100, None), (None, None)):
+        [gate] = gates.return_to_baseline_gates(
+            [_cmp(gates.BASELINE_HEAP, baseline, post)], tolerance=1.5
+        )
+        assert gate.status == gates.UNKNOWN, (baseline, post)
+        assert "given back" in gate.detail
+        assert gate.value is None
+
+
+def test_a_zero_baseline_is_not_a_level_to_return_to():
+    for baseline in (0, -1):
+        [gate] = gates.return_to_baseline_gates(
+            [_cmp(gates.BASELINE_GOROUTINES, baseline, 10)], tolerance=1.5
+        )
+        assert gate.status == gates.UNKNOWN
+        assert "not a level to return to" in gate.detail
+
+
+def test_no_pair_at_all_is_unknown_not_a_clean_teardown():
+    [gate] = gates.return_to_baseline_gates([], tolerance=1.5)
+    assert gate.status == gates.UNKNOWN
+    assert "not a clean teardown" in gate.detail
+
+
+def test_rss_is_not_one_of_the_measured_series():
+    """Pinned so nobody adds it later: it reports a leak on healthy runs."""
+    assert gates.BASELINE_HEAP == "heap_inuse_bytes"
+    assert gates.BASELINE_GOROUTINES == "go_goroutines"
+    assert "rss" not in gates.BASELINE_HEAP.lower()
+    assert "resident" not in gates.BASELINE_HEAP.lower()
+
+
+def test_return_to_baseline_is_synchronous_and_json_safe():
+    import inspect
+    import json
+
+    assert not inspect.iscoroutinefunction(gates.return_to_baseline_gates)
+    for gate in gates.return_to_baseline_gates(
+        [_cmp(gates.BASELINE_HEAP, 100, 110), _cmp(gates.BASELINE_GOROUTINES, None, 5)],
+        tolerance=1.5,
+    ):
+        json.loads(json.dumps(gate.as_dict()))

@@ -126,3 +126,20 @@ class NodeSample(SQLModel, table=True):
     cpu_idle_seconds_total: float | None = None
     memory_available_bytes: int | None = Field(default=None, sa_type=BigInteger)
     memory_total_bytes: int | None = Field(default=None, sa_type=BigInteger)
+
+    # ---- Go runtime (livekit-server and livekit-sip are both Go) -----------
+    # The return-to-baseline pair: after a load run is torn down and the reap
+    # timeouts have passed, these two should come back near where they started.
+    #
+    # RSS is deliberately NOT one of them. Go returns freed heap to the OS
+    # lazily, so a process that has fully drained can hold its resident size for
+    # a long time afterwards. Gating on RSS would report a leak that is not one,
+    # and worse, it would do so on every healthy run, which trains a reader to
+    # ignore the gate. ``heap_inuse`` is what the runtime actually still holds,
+    # and a goroutine count that does not come down is the shape a real leak
+    # takes here (a per-call goroutine that never exits).
+    #
+    # ``heap_inuse_bytes`` rather than ``heap_inuse``: every other byte column in
+    # this table carries its unit in the name.
+    heap_inuse_bytes: int | None = Field(default=None, sa_type=BigInteger)
+    go_goroutines: int | None = None

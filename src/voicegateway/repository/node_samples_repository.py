@@ -85,6 +85,9 @@ GAUGE_COLUMNS: frozenset[str] = frozenset(
         "load1",
         "memory_available_bytes",
         "memory_total_bytes",
+        # Go runtime. Gauges: what the process holds right now, never diffed.
+        "heap_inuse_bytes",
+        "go_goroutines",
     }
 )
 
@@ -109,6 +112,8 @@ _INT_COLUMNS: frozenset[str] = frozenset(
         "filefd_maximum",
         "memory_available_bytes",
         "memory_total_bytes",
+        "heap_inuse_bytes",
+        "go_goroutines",
     }
 )
 
@@ -167,6 +172,8 @@ class NodeSampleRow:
     cpu_idle_seconds_total: float | None
     memory_available_bytes: int | None
     memory_total_bytes: int | None
+    heap_inuse_bytes: int | None
+    go_goroutines: int | None
 
 
 @dataclass(frozen=True)
@@ -228,6 +235,8 @@ def _row(sample: NodeSample) -> NodeSampleRow:
         cpu_idle_seconds_total=sample.cpu_idle_seconds_total,
         memory_available_bytes=sample.memory_available_bytes,
         memory_total_bytes=sample.memory_total_bytes,
+        heap_inuse_bytes=sample.heap_inuse_bytes,
+        go_goroutines=sample.go_goroutines,
     )
 
 

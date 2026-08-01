@@ -90,6 +90,20 @@ ESTABLISHMENT_GATE = "call_establishment"
 NODE_CPU_GATE = "node_cpu"
 NODE_MEMORY_GATE = "node_memory"
 HEADROOM_GATE = "resource_headroom"
+RETURN_TO_BASELINE_GATE = "return_to_baseline"
+
+# The two Go runtime series the teardown check reads. RSS is deliberately absent:
+# Go hands freed heap back to the OS lazily, so a drained process holds its
+# resident size long after the heap emptied, and gating on it would report a leak
+# on healthy runs.
+BASELINE_HEAP = "heap_inuse_bytes"
+BASELINE_GOROUTINES = "go_goroutines"
+
+# How long teardown must have been left to settle before a post sample means
+# anything. The runbook specifies 5 to 10 minutes, past LiveKit's reap timeouts;
+# this is the floor of that range, so a sample taken earlier is not a
+# post-settle sample and this module refuses to read it as one.
+MIN_SETTLE_MS = 300_000
 
 # The share of call attempts that must establish. Inclusive: a run landing
 # exactly on the bar passes. This is an acceptance threshold, not a tuning knob,
@@ -993,6 +1007,133 @@ def headroom_gates(
     return [_headroom_gate(r, threshold) for r in readings]
 
 
+@dataclass(frozen=True)
+class BaselineComparison:
+    """One node's reading for one metric, idle before against settled after.
+
+    ``metric`` is :data:`BASELINE_HEAP` or :data:`BASELINE_GOROUTINES`. Both are
+    raw values in their own unit, so the detail can quote them.
+
+    The two ``*_at_ms`` timestamps are optional but load-bearing when present:
+    they are what lets the gate refuse a "post-settle" sample that was taken
+    before the settle window elapsed.
+    """
+
+    node: str
+    metric: str
+    baseline: float | None
+    post_settle: float | None
+    baseline_at_ms: int | None = None
+    post_settle_at_ms: int | None = None
+    source: str | None = None
+    unmeasured_reason: str | None = None
+
+
+def _return_to_baseline_gate(
+    comparison: BaselineComparison, tolerance: float, min_settle_ms: int
+) -> GateResult:
+    c = comparison
+    subject = f"{c.node}/{c.metric}"
+    if c.baseline is None or c.post_settle is None:
+        why = c.unmeasured_reason or "one of the two samples is missing"
+        return GateResult(
+            gate=RETURN_TO_BASELINE_GATE,
+            status=UNKNOWN,
+            subject=subject,
+            detail=(
+                f"{c.metric} on {c.node} could not be compared against its "
+                f"baseline: {why}. Nothing was shown to have been given back"
+            ),
+            threshold=tolerance,
+        )
+    if c.baseline <= 0:
+        return GateResult(
+            gate=RETURN_TO_BASELINE_GATE,
+            status=UNKNOWN,
+            subject=subject,
+            detail=(
+                f"the {c.metric} baseline on {c.node} is {c.baseline:g}, which "
+                "is not a level to return to, so no ratio is meaningful"
+            ),
+            threshold=tolerance,
+        )
+    if c.baseline_at_ms is not None and c.post_settle_at_ms is not None:
+        settled_ms = c.post_settle_at_ms - c.baseline_at_ms
+        if settled_ms < min_settle_ms:
+            return GateResult(
+                gate=RETURN_TO_BASELINE_GATE,
+                status=UNKNOWN,
+                subject=subject,
+                detail=(
+                    f"the second {c.metric} sample on {c.node} was taken "
+                    f"{settled_ms / 1000:.0f}s after the first, inside the "
+                    f"{min_settle_ms / 1000:.0f}s settle window, so it is not a "
+                    "post-settle reading and a return cannot be claimed from it"
+                ),
+                threshold=tolerance,
+            )
+    ratio = c.post_settle / c.baseline
+    status = PASS if ratio <= tolerance else FAIL
+    relation = "within" if status == PASS else "outside"
+    return GateResult(
+        gate=RETURN_TO_BASELINE_GATE,
+        status=status,
+        subject=subject,
+        detail=(
+            f"{c.metric} on {c.node} settled at {c.post_settle:g} against a "
+            f"baseline of {c.baseline:g} ({ratio:.2f}x), {relation} the "
+            f"{tolerance:.2f}x tolerance"
+        ),
+        metric=f"{c.metric}_baseline_ratio",
+        value=ratio,
+        threshold=tolerance,
+    )
+
+
+def return_to_baseline_gates(
+    comparisons: Sequence[BaselineComparison],
+    *,
+    tolerance: float,
+    min_settle_ms: int = MIN_SETTLE_MS,
+) -> list[GateResult]:
+    """Did the fleet give its resources back after teardown?
+
+    ``tolerance`` IS REQUIRED and has no default, on purpose. The acceptance
+    criterion says resources must return "near baseline" and never quantifies
+    "near", so there is no contracted number for this module to hold. Inventing
+    a default here would put a number nobody agreed to into a report while
+    looking exactly like the thresholds that were agreed. The caller has to state
+    it, and it travels on every result as ``threshold`` so a reader sees which
+    tolerance produced the verdict.
+
+    ``tolerance`` is a ratio ceiling: 1.5 means the settled value may be at most
+    1.5x the idle baseline.
+
+    A post sample taken before ``min_settle_ms`` elapsed is UNKNOWN, not PASS.
+    Teardown that has not finished draining can look like a clean return, and
+    that reads as evidence when it is the absence of it.
+
+    Reads ``heap_inuse_bytes`` and ``go_goroutines``, never RSS. See
+    :data:`BASELINE_HEAP`.
+
+    Synchronous, like every gate here.
+    """
+    if not comparisons:
+        return [
+            GateResult(
+                gate=RETURN_TO_BASELINE_GATE,
+                status=UNKNOWN,
+                detail=(
+                    "no before-and-after pair was supplied, so nothing was "
+                    "shown to have returned to baseline. An absent comparison "
+                    "is not a clean teardown"
+                ),
+                threshold=tolerance,
+            )
+        ]
+    return [_return_to_baseline_gate(c, tolerance, min_settle_ms) for c in comparisons]
+
+
 # ---------------------------------------------------------------------------
 # The run-level entry point
 # ---------------------------------------------------------------------------
@@ -1065,6 +1206,8 @@ def summary_lines(gates: Sequence[GateResult]) -> list[str]:
 
 __all__ = [
     "AGENTS_GATE",
+    "BASELINE_GOROUTINES",
+    "BASELINE_HEAP",
     "ESTABLISHMENT_GATE",
     "FAIL",
     "HEADROOM_FILE_DESCRIPTORS",
@@ -1077,13 +1220,16 @@ __all__ = [
     "MIN_ESTABLISHMENT_RATIO",
     "MIN_HEADROOM_FRACTION",
     "MIN_PERCENTILE_SAMPLES",
+    "MIN_SETTLE_MS",
     "NODE_CPU_GATE",
     "NODE_MEMORY_GATE",
+    "RETURN_TO_BASELINE_GATE",
     "PASS",
     "SFU_CAPACITY_GATE",
     "SFU_QUALITY_GATE",
     "UNKNOWN",
     "WARN",
+    "BaselineComparison",
     "GateResult",
     "HeadroomReading",
     "NodeUtilisationReading",
@@ -1095,6 +1241,7 @@ __all__ = [
     "latency_gates",
     "node_cpu_gates",
     "node_memory_gates",
+    "return_to_baseline_gates",
     "unscraped_headroom_readings",
     "sfu_capacity_gate",
     "sfu_quality_gate",
