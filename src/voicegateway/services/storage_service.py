@@ -551,6 +551,82 @@ class StorageService:
         return [dataclasses.asdict(r) for r in rows]
 
     # ------------------------------------------------------------------
+    # Node samples (layer 7 scrapes) against the calls they OVERLAP
+    # ------------------------------------------------------------------
+
+    async def correlate_recent_calls_to_nodes(
+        self,
+        *,
+        limit: int = 5,
+        pad_ms: int | None = None,
+    ) -> dict[str, Any]:
+        """Recent calls, each with the node samples that OVERLAP its window.
+
+        Overlap, never attribution. ``node_samples`` has no ``call_id`` (layer 7
+        counters are node-wide), so a node listed against a call means exactly
+        "rows exist for that node inside this call's padded window" -- not that
+        the call's media crossed it. Two concurrent calls correlate to the same
+        nodes, and a call on a node nobody scrapes correlates to none.
+
+        Nothing here computes. The window, its padding, the status and every
+        summary come from ``node_correlation_repository.correlate_call_window``;
+        this composes it over the recent calls (the repository takes a
+        :class:`CallRow`, which is why the composition cannot live in the
+        handler) and serialises the dataclasses.
+
+        Shape::
+
+            {"pad_ms": int,
+             "samples_stored": int,
+             "calls": [<calls row> + {"correlation": <WindowCorrelation>|null}]}
+
+        ``pad_ms`` is echoed at the top level as well as on every window so the
+        pad is readable even when there is no call to carry one: "within 15 s of
+        this call" is a weaker claim than "during this call", and a reader who
+        cannot see the pad cannot judge which one they are holding.
+
+        ``samples_stored`` is the whole ``node_samples`` row count. It is what
+        separates "no scrape target is configured in this deployment" from "this
+        particular window had nothing in it", which
+        ``WindowCorrelation.status == "no_samples"`` alone cannot say.
+
+        ``correlation`` is ``null`` only when the CALL has no closed span (still
+        in flight, or an INVITE that never produced a room). That is not
+        ``no_samples``: nothing was looked for, because substituting "now" for a
+        missing end would invent the span.
+
+        Load-test traffic is excluded, the same ``is_probe=False`` default
+        ``list_calls`` (and therefore ``/api/calls``) applies.
+        """
+        import dataclasses
+
+        from voicegateway.repository import calls_repository
+        from voicegateway.repository import node_correlation_repository as correlate
+        from voicegateway.repository import node_samples_repository as node_samples
+
+        resolved_pad = correlate.DEFAULT_WINDOW_PAD_MS if pad_ms is None else pad_ms
+        await self._ensure_initialized()
+        out: list[dict[str, Any]] = []
+        async with self._conn.session() as db:
+            stored = await node_samples.count_samples(db)
+            rows = await calls_repository.list_calls(db, limit=limit)
+            for row in rows:
+                correlation = await correlate.correlate_call_window(
+                    db, call=row, pad_ms=resolved_pad
+                )
+                out.append(
+                    {
+                        **dataclasses.asdict(row),
+                        "correlation": (
+                            None
+                            if correlation is None
+                            else dataclasses.asdict(correlation)
+                        ),
+                    }
+                )
+        return {"pad_ms": resolved_pad, "samples_stored": stored, "calls": out}
+
+    # ------------------------------------------------------------------
     # Diagnostics runs (LiveKit probe runs started from the dashboard)
     # ------------------------------------------------------------------
 

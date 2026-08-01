@@ -135,12 +135,14 @@ import type {
   AgentsResponse,
   ApiKey,
   CallsResponse,
+  CorrelationRate,
   CreatedApiKey,
   DeadAirEvent,
   DiagnosticRun,
   DiagnosticsCreds,
   LogoUploadResponse,
   MetricsAggregate,
+  NodeCorrelationResponse,
   ProjectBranding,
   ProjectBrandingResponse,
   ReplayResponse,
@@ -374,6 +376,36 @@ export function fetchCalls(
   if (options.limit !== undefined) params.set('limit', String(options.limit));
   const query = params.toString();
   return fetchJson<CallsResponse>(query ? `/api/calls?${query}` : '/api/calls');
+}
+
+// ---------------------------------------------------------------------------
+// Correlation: how often the sessions <-> calls join actually resolves.
+//
+// Takes no argument on purpose. The endpoint publishes the deployment-wide
+// number and its warn threshold; the browser neither scopes it nor recomputes
+// it.
+// ---------------------------------------------------------------------------
+
+export function fetchCorrelationRate(): Promise<CorrelationRate> {
+  return fetchJson<CorrelationRate>('/api/correlation');
+}
+
+// ---------------------------------------------------------------------------
+// Node samples correlated to recent calls by TIME WINDOW.
+//
+// The browser neither builds the window nor computes a summary. It may ask for
+// a different pad, and the payload reports the pad that was actually used, so
+// what is on screen is always checkable against the bounds beside it.
+// ---------------------------------------------------------------------------
+
+export function fetchNodeCorrelation(
+  options: { limit?: number; padMs?: number } = {},
+): Promise<NodeCorrelationResponse> {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.padMs !== undefined) params.set('pad_ms', String(options.padMs));
+  const query = params.toString();
+  return fetchJson<NodeCorrelationResponse>(query ? `/api/nodes?${query}` : '/api/nodes');
 }
 
 // ---------------------------------------------------------------------------

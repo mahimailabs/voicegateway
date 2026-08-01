@@ -316,6 +316,25 @@ class RealProbes:
         }
 
     async def latency(self, creds, config: dict[str, Any]) -> dict[str, Any]:
+        """Probe every in-room agent, and say WHY one that answered nothing did not.
+
+        ``error`` is ``LatencyResult.error`` carried through unchanged: the reason
+        ``ProbeRunner.probe`` recorded for an agent whose call never completed (a
+        dispatch that reached no worker, a connect that failed, a client that
+        raised). It used to be dropped right here, so a run that knew "dispatched
+        to 'reception' but no worker joined within 8s" reached the dashboard as a
+        bare "no reply" while the CLI printed the reason from the same object
+        (``report.render_latency``: ``no successful probe ({error or 'no reply'})``).
+        One field, one vocabulary, both surfaces. It also reaches
+        ``gates._latency_gate``, which has always read ``entry["error"]`` and
+        until now found nothing there on a dashboard run, so the gate detail this
+        run records now names the cause exactly as the CLI's does.
+
+        None means the probe recorded NO reason, which is not an empty reason: an
+        agent that joined and simply never replied is an absence, and every
+        reader of this payload must keep it reading as one. The string is never
+        synthesised here; an agent with nothing recorded gets None.
+        """
         d = _diag()
         admin = d.LiveKitAdmin(creds)
         admin.url = creds.url
@@ -331,7 +350,12 @@ class RealProbes:
             for name in targets:
                 r = await runner.probe(name, config["trials"], True, None, "")
                 out.append(
-                    {"agent": name, "stats": d.summarize(r), "components": r.components}
+                    {
+                        "agent": name,
+                        "stats": d.summarize(r),
+                        "components": r.components,
+                        "error": r.error,
+                    }
                 )
         finally:
             await admin.aclose()

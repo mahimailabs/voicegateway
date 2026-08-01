@@ -25,12 +25,18 @@ import type {
   ApiKey,
   CallDetail,
   CallsResponse,
+  CorrelationRate,
   CostByDayPoint,
   CostsResponse,
   DiagnosticRun,
   DiagnosticsCreds,
   LatencyResponse,
   MetricsAggregate,
+  NodeCorrelationResponse,
+  NodeCounterRateSummary,
+  NodeGaugeSummary,
+  NodePeakStat,
+  NodeSamplesInWindow,
   OverviewResponse,
   ProjectBrandingResponse,
   ReplayResponse,
@@ -1128,6 +1134,10 @@ const DIAG_CREDS: DiagnosticsCreds = {
 //   - The oldest run has `roster: []` (a configured collector reporting nothing)
 //     against the populated roster of the run above it: two different answers
 //     that must never collapse into "0 workers".
+//   - The newest run's latency check carries BOTH no-reply states: `reception`
+//     answered nothing and the probe recorded why, `checkout-voice` answered
+//     nothing and it recorded no reason at all. They must never render the same,
+//     and an errorless absence must never render as an empty explanation.
 const DIAG_RUNS: DiagnosticRun[] = [
   {
     run_id: 'diag_run_003',
@@ -1164,6 +1174,17 @@ const DIAG_RUNS: DiagnosticRun[] = [
                 state: 'dispatched',
                 humans: 1,
                 age_s: null,
+              },
+              {
+                // In a room, and absent from the heartbeat roster below: an agent
+                // that is not running register_worker is still visible here. It is
+                // the third agent the latency check probes.
+                agent_name: 'checkout-voice',
+                room: 'checkout-8d47',
+                identity: 'agent-checkout-03',
+                state: 'active',
+                humans: 1,
+                age_s: 41,
               },
             ],
             roster: [
@@ -1268,13 +1289,29 @@ const DIAG_RUNS: DiagnosticRun[] = [
                   llm_ttft: 0.402,
                   tts: 0.214,
                 },
+                // The probe completed, so there is nothing to explain.
+                error: null,
               },
               {
                 // Answered nothing: every number is 0 with trials 0, which the UI
-                // must render as "not measured", never as an instant reply.
+                // must render as "not measured", never as an instant reply. The
+                // probe DID record why, verbatim from ProbeRunner._await_agent,
+                // so the UI has a cause to print instead of a bare "no reply".
                 agent: 'reception',
                 stats: { avg: 0, p50: 0, p95: 0, min: 0, max: 0, trials: 0 },
                 components: null,
+                error:
+                  "dispatched to 'reception' but no worker joined within 8s: that name is how the worker registered (register_worker / @server.rtc_session agent_name); check a worker with that name is running",
+              },
+              {
+                // Answered nothing and NOTHING said why: the worker joined the
+                // probe room and never replied, so no exception was raised and
+                // `LatencyResult.error` stayed None. This must read as an absence,
+                // never as an empty reason, and it is the other half of the pair.
+                agent: 'checkout-voice',
+                stats: { avg: 0, p50: 0, p95: 0, min: 0, max: 0, trials: 0 },
+                components: null,
+                error: null,
               },
             ],
           },
@@ -1717,6 +1754,394 @@ const CALLS: CallDetail[] = [
 const CALLS_RESPONSE: CallsResponse = { calls: CALLS };
 
 // ---------------------------------------------------------------------------
+// Correlation rate (GET /api/correlation).
+//
+// Deliberately NOT a flattering 100%. The demo deployment is one where the
+// sessions <-> calls join is partly broken, because that is the state this card
+// exists to make visible and a green 100% would demo nothing. The counts are
+// consistent with the 8 sessions above: 6 had a room (the denominator), of
+// which 4 joined, 1 matched a pinned room name and was refused rather than
+// guessed, and 1 pointed at a call that has since been pruned. The other 2 are
+// web sessions that never had a room and so are excluded from BOTH sides.
+//
+// The unmeasured state (`rate: null`, `status: 'unknown'`) cannot be shown at
+// the same time as this one from a single fixture; the panel renders it as
+// `NOT_MEASURED`, never as 0%.
+// ---------------------------------------------------------------------------
+
+const CORRELATION: CorrelationRate = {
+  eligible: 6,
+  correlated: 4,
+  rate: 4 / 6,
+  ambiguous: 1,
+  dangling: 1,
+  no_room: 2,
+  warn_threshold: 0.9,
+  status: 'warn',
+};
+
+// ---------------------------------------------------------------------------
+// Node samples correlated to calls by TIME WINDOW (GET /api/nodes).
+//
+// The whole point of this surface is that three ABSENCES are not the same
+// absence, so the fixture carries all three at once rather than the flattering
+// one:
+//
+//   * call 1 (12 minutes ago) is `correlated`: two targets on the same host were
+//     scraped through its window. The host is near its file-descriptor ceiling,
+//     which is the M4 sentence this layer exists to let somebody write, and it
+//     is a correlation, not a cause.
+//   * call 2 (34 minutes ago) is `scrape_failed`: rows exist for that window and
+//     every one of them failed. The nodes were being watched and the watching
+//     did not work, which is emphatically not a clean bill of health, and every
+//     value stays null.
+//   * call 4 (2 hours ago) is `no_samples`: nothing was scraped in its window at
+//     all, because in this demo the scrape targets were configured about 40
+//     minutes ago. It gets an EMPTY node list, never a node with zeroed
+//     summaries.
+//
+// The two probe calls in CALLS are absent on purpose: the real endpoint applies
+// the same `is_probe=False` filter `/api/calls` does.
+//
+// `samples_stored: 322` is consistent with that story: two targets at one scrape
+// every 15 s is 8 rows a minute, so ~40 minutes of scraping is a few hundred
+// rows. It is what tells an operator that the scrape IS running, which a
+// `no_samples` window on its own cannot say.
+//
+// The fourth payload shape, `correlation: null` (a call with no closed span, so
+// no window was ever built for it), cannot be shown here because every demo call
+// ended. The panel renders it with its own sentence.
+// ---------------------------------------------------------------------------
+
+/** Gauge columns, in the order the backend's sorted map emits them. */
+const NODE_GAUGE_COLUMNS = [
+  'filefd_allocated',
+  'filefd_maximum',
+  'load1',
+  'memory_available_bytes',
+  'memory_total_bytes',
+  'participants',
+  'rooms',
+  'sip_calls_active',
+] as const;
+
+/** Counter columns, same order. */
+const NODE_COUNTER_COLUMNS = [
+  'cpu_idle_seconds_total',
+  'cpu_seconds_total',
+  'nacks_total',
+  'packet_bytes_total',
+  'packets_total',
+  'sip_calls_terminated_total',
+  'sip_invite_accepted_total',
+  'sip_invite_requests_raw_total',
+  'sip_invite_requests_total',
+] as const;
+
+type GaugeSeed = {
+  samples: number;
+  minimum: number;
+  maximum: number;
+  latest: number;
+  peak: number;
+  peak_stat: NodePeakStat;
+};
+
+type CounterSeed = {
+  points: number;
+  unknown_points: number;
+  peak_per_second: number;
+  peak_stat: NodePeakStat;
+};
+
+/**
+ * Every gauge column, with the ones this source did not carry left `null` and
+ * `not_measured`. The backend always returns all of them for exactly this
+ * reason: an absent series must read as not measured, not disappear.
+ */
+function nodeGauges(seed: Partial<Record<string, GaugeSeed>>): Record<string, NodeGaugeSummary> {
+  const out: Record<string, NodeGaugeSummary> = {};
+  for (const column of NODE_GAUGE_COLUMNS) {
+    const s = seed[column];
+    out[column] = s
+      ? { column, ...s }
+      : {
+          column,
+          samples: 0,
+          minimum: null,
+          maximum: null,
+          latest: null,
+          peak: null,
+          peak_stat: 'not_measured',
+        };
+  }
+  return out;
+}
+
+/** Same for counters. A column with no sourceable rate keeps `null`, not 0/s. */
+function nodeCounters(
+  seed: Partial<Record<string, CounterSeed>>,
+  points: number,
+): Record<string, NodeCounterRateSummary> {
+  const out: Record<string, NodeCounterRateSummary> = {};
+  for (const column of NODE_COUNTER_COLUMNS) {
+    const s = seed[column];
+    out[column] = s
+      ? { column, ...s }
+      : {
+          column,
+          points,
+          unknown_points: points,
+          peak_per_second: null,
+          peak_stat: 'not_measured',
+        };
+  }
+  return out;
+}
+
+const NODE_PAD_MS = 15_000;
+
+/** Call 1: the SFU's own counters through the window. 14 scrapes, all ok. */
+const NODE_A_SFU: NodeSamplesInWindow = {
+  node: 'sfu-1',
+  source: 'livekit-server',
+  samples: 14,
+  ok_samples: 14,
+  failed_samples: 0,
+  outcomes: { ok: 14 },
+  first_sample_at_ms: CALL_A_T0 - 9_000,
+  last_sample_at_ms: CALL_A_T0 + 186_000,
+  gauges: nodeGauges({
+    rooms: { samples: 14, minimum: 21, maximum: 27, latest: 24, peak: 27, peak_stat: 'p95' },
+    participants: {
+      samples: 14,
+      minimum: 44,
+      maximum: 58,
+      latest: 51,
+      peak: 57,
+      peak_stat: 'p95',
+    },
+  }),
+  counters: nodeCounters(
+    {
+      packets_total: {
+        points: 14,
+        unknown_points: 0,
+        peak_per_second: 48_120.5,
+        peak_stat: 'p95',
+      },
+      packet_bytes_total: {
+        points: 14,
+        unknown_points: 0,
+        peak_per_second: 6_940_233.1,
+        peak_stat: 'p95',
+      },
+      nacks_total: { points: 14, unknown_points: 2, peak_per_second: 3.4, peak_stat: 'p95' },
+    },
+    14,
+  ),
+  truncated: false,
+};
+
+/** Call 1: the same host's file descriptors, near the ceiling. */
+const NODE_A_HOST: NodeSamplesInWindow = {
+  node: 'sfu-1',
+  source: 'node-exporter',
+  samples: 14,
+  ok_samples: 14,
+  failed_samples: 0,
+  outcomes: { ok: 14 },
+  first_sample_at_ms: CALL_A_T0 - 9_000,
+  last_sample_at_ms: CALL_A_T0 + 186_000,
+  gauges: nodeGauges({
+    filefd_allocated: {
+      samples: 14,
+      minimum: 51_200,
+      maximum: 62_310,
+      latest: 61_984,
+      peak: 62_180,
+      peak_stat: 'p95',
+    },
+    filefd_maximum: {
+      samples: 14,
+      minimum: 65_536,
+      maximum: 65_536,
+      latest: 65_536,
+      peak: 65_536,
+      peak_stat: 'p95',
+    },
+    load1: { samples: 14, minimum: 3.11, maximum: 7.42, latest: 6.88, peak: 7.31, peak_stat: 'p95' },
+    memory_available_bytes: {
+      samples: 14,
+      minimum: 1_204_224_000,
+      maximum: 2_411_724_800,
+      latest: 1_268_776_960,
+      peak: 2_357_198_848,
+      peak_stat: 'p95',
+    },
+    memory_total_bytes: {
+      samples: 14,
+      minimum: 16_777_216_000,
+      maximum: 16_777_216_000,
+      latest: 16_777_216_000,
+      peak: 16_777_216_000,
+      peak_stat: 'p95',
+    },
+  }),
+  counters: nodeCounters(
+    {
+      cpu_seconds_total: {
+        points: 14,
+        unknown_points: 0,
+        peak_per_second: 6.21,
+        peak_stat: 'p95',
+      },
+      cpu_idle_seconds_total: {
+        points: 14,
+        unknown_points: 0,
+        peak_per_second: 1.79,
+        peak_stat: 'p95',
+      },
+    },
+    14,
+  ),
+  truncated: false,
+};
+
+/** Call 2: eight scrapes of the SFU, every one of them timed out. */
+const NODE_B_SFU: NodeSamplesInWindow = {
+  node: 'sfu-1',
+  source: 'livekit-server',
+  samples: 8,
+  ok_samples: 0,
+  failed_samples: 8,
+  outcomes: { timeout: 8 },
+  first_sample_at_ms: CALL_B_T0 - 12_000,
+  last_sample_at_ms: CALL_B_T0 + 99_000,
+  gauges: nodeGauges({}),
+  counters: nodeCounters({}, 8),
+  truncated: false,
+};
+
+/** Call 2: the host exporter was not answering either. Same window, other cause. */
+const NODE_B_HOST: NodeSamplesInWindow = {
+  node: 'sfu-1',
+  source: 'node-exporter',
+  samples: 8,
+  ok_samples: 0,
+  failed_samples: 8,
+  outcomes: { unreachable: 8 },
+  first_sample_at_ms: CALL_B_T0 - 12_000,
+  last_sample_at_ms: CALL_B_T0 + 99_000,
+  gauges: nodeGauges({}),
+  counters: nodeCounters({}, 8),
+  truncated: false,
+};
+
+const NODE_CORRELATION: NodeCorrelationResponse = {
+  pad_ms: NODE_PAD_MS,
+  samples_stored: 322,
+  calls: [
+    {
+      id: 'ca_7f21demo0001',
+      room_sid: 'RM_7f21demo',
+      room_name: 'support-call-7f21',
+      origin: 'webhook',
+      attempt_id: null,
+      run_id: null,
+      project: 'default',
+      tenant_id: null,
+      agent_id: 'support-voice',
+      channel: 'sip',
+      direction: 'inbound',
+      started_at_ms: CALL_A_T0,
+      ended_at_ms: CALL_A_T0 + 182_000,
+      duration_ms: 182_000,
+      end_reason: 'CLIENT_INITIATED',
+      num_legs: 2,
+      is_probe: 0,
+      answer_latency_ms: 4100,
+      answer_latency_source: 'webhook_proxy',
+      correlation: {
+        window: {
+          start_ms: CALL_A_T0 - NODE_PAD_MS,
+          end_ms: CALL_A_T0 + 182_000 + NODE_PAD_MS,
+          pad_ms: NODE_PAD_MS,
+          requested_start_ms: CALL_A_T0,
+          requested_end_ms: CALL_A_T0 + 182_000,
+        },
+        status: 'correlated',
+        nodes_sampled: [NODE_A_SFU, NODE_A_HOST],
+      },
+    },
+    {
+      id: 'ca_a903demo0002',
+      room_sid: 'RM_a903demo',
+      room_name: 'reception-inbound-a903',
+      origin: 'agent',
+      attempt_id: null,
+      run_id: null,
+      project: 'default',
+      tenant_id: null,
+      agent_id: 'reception',
+      channel: 'sip',
+      direction: 'inbound',
+      started_at_ms: CALL_B_T0,
+      ended_at_ms: CALL_B_T0 + 96_000,
+      duration_ms: 96_000,
+      end_reason: 'CLIENT_INITIATED',
+      num_legs: 2,
+      is_probe: 0,
+      answer_latency_ms: 1832,
+      answer_latency_source: 'agent_report',
+      correlation: {
+        window: {
+          start_ms: CALL_B_T0 - NODE_PAD_MS,
+          end_ms: CALL_B_T0 + 96_000 + NODE_PAD_MS,
+          pad_ms: NODE_PAD_MS,
+          requested_start_ms: CALL_B_T0,
+          requested_end_ms: CALL_B_T0 + 96_000,
+        },
+        status: 'scrape_failed',
+        nodes_sampled: [NODE_B_SFU, NODE_B_HOST],
+      },
+    },
+    {
+      id: 'ca_dead11demo004',
+      room_sid: 'RM_dead11demo',
+      room_name: 'support-call-dead11',
+      origin: 'webhook',
+      attempt_id: null,
+      run_id: null,
+      project: 'default',
+      tenant_id: null,
+      agent_id: 'support-voice',
+      channel: 'sip',
+      direction: 'inbound',
+      started_at_ms: CALL_D_T0,
+      ended_at_ms: CALL_D_T0 + 24_000,
+      duration_ms: 24_000,
+      end_reason: 'CLIENT_INITIATED',
+      num_legs: 2,
+      is_probe: 0,
+      answer_latency_ms: null,
+      answer_latency_source: null,
+      correlation: {
+        window: {
+          start_ms: CALL_D_T0 - NODE_PAD_MS,
+          end_ms: CALL_D_T0 + 24_000 + NODE_PAD_MS,
+          pad_ms: NODE_PAD_MS,
+          requested_start_ms: CALL_D_T0,
+          requested_end_ms: CALL_D_T0 + 24_000,
+        },
+        status: 'no_samples',
+        nodes_sampled: [],
+      },
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------
 // Routing + dispatch
 // ---------------------------------------------------------------------------
 
@@ -1781,6 +2206,10 @@ export async function demoFetch<T>(path: string, init?: RequestInit): Promise<T>
       return SESSIONS as T;
     case '/api/calls':
       return CALLS_RESPONSE as T;
+    case '/api/correlation':
+      return CORRELATION as T;
+    case '/api/nodes':
+      return NODE_CORRELATION as T;
     case '/api/replay/storage':
       return REPLAY_STORAGE as T;
     case '/api/api_keys':

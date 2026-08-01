@@ -11,9 +11,11 @@ import { formatDateTime } from '../lib/time';
 import type { DiagCheckName, DiagnosticRun, DiagnosticsCreds } from '../lib/types';
 import AgentsTab from './diagnostics/AgentsTab';
 import CallsPanel from './diagnostics/CallsPanel';
+import CorrelationPanel from './diagnostics/CorrelationPanel';
 import ErrorsTab from './diagnostics/ErrorsTab';
 import LatencyTab from './diagnostics/LatencyTab';
 import LoadTab from './diagnostics/LoadTab';
+import NodesPanel from './diagnostics/NodesPanel';
 import ReportTab from './diagnostics/ReportTab';
 import { Card, Note, verdictBadgeClass } from './diagnostics/shared';
 import SfuTab from './diagnostics/SfuTab';
@@ -148,7 +150,22 @@ export default function Diagnostics() {
           tabs on purpose: it needs no billed run, it is the page's headline
           claim, and it is the only thing here that reads what the deployment
           already recorded rather than what a probe just went and measured. */}
+      {/* How often a session joins the call it ran in. Above the calls it
+          describes and outside the run tabs for the same reasons: it needs no
+          billed run, and it is the one card that says whether the join behind
+          every other number on this page is still resolving. That join fails
+          silently, so nothing else here would show it stopped. */}
+      <CorrelationPanel />
+
       <CallsPanel />
+
+      {/* Layer 7: what the boxes looked like while each of those calls ran.
+          Under the calls it is keyed to, outside the run tabs for the same
+          reasons: it needs no billed run and reads what the scrape worker
+          already recorded. It is a correlation by TIME WINDOW and never an
+          attribution, which is why every card prints the pad it was widened by
+          and why a window nobody scraped says so instead of showing zeros. */}
+      <NodesPanel />
 
       {/* Connection status card */}
       <div className="vg-card" style={{ marginBottom: 16 }}>

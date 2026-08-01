@@ -2,6 +2,11 @@
 
 A thin Typer surface over voicegateway.livekit_diag. Commands added in later
 tasks: agents, latency, sfu, check. Creds resolve via shared options.
+
+``report`` is the odd one out: it probes nothing. It exports a run the dashboard
+already recorded, through the same renderer the dashboard's own download button
+uses (:mod:`voicegateway.livekit_diag.run_report`), so CI can collect the
+artifact on a host that never runs the dashboard.
 """
 
 from __future__ import annotations
@@ -10,12 +15,13 @@ import asyncio
 import json as _json
 import os
 import pathlib
+from typing import Any
 
 import typer
 
 from voicegateway.cli._app import app
 from voicegateway.cli.base_cli import BaseCli
-from voicegateway.livekit_diag import gates
+from voicegateway.livekit_diag import gates, run_report
 from voicegateway.livekit_diag.admin import LiveKitAdmin
 from voicegateway.livekit_diag.client import SyntheticClient, UtteranceSource
 from voicegateway.livekit_diag.config import CredsError, LiveKitCreds, resolve_creds
@@ -382,6 +388,111 @@ def check_cmd(
             )
         )
     raise typer.Exit(gates.exit_code(js["verdict"]))
+
+
+def _report_url(
+    url: str | None, api_key: str | None, api_secret: str | None, config: str | None
+) -> str | None:
+    """The LiveKit server to name in the report, or None.
+
+    Deliberately NOT :func:`_creds`: every other subcommand needs credentials to
+    do its work and exits 1 without them, but ``report`` only reads a run that
+    already happened. Missing credentials cost it one labelled line ("not
+    recorded"), not the artifact. Same resolution the dashboard endpoint does, so
+    the two agree on the same host.
+    """
+    try:
+        return resolve_creds(url, api_key, api_secret, config).url
+    except CredsError:
+        return None
+
+
+async def _fetch_run(storage: Any, run_id: str | None) -> Any:
+    """One stored diagnostics run as a row, newest when no id was given.
+
+    One coroutine for both reads on purpose: a second ``asyncio.run`` would hand
+    the same storage engine to a second event loop.
+    """
+    if run_id:
+        return await storage.get_diagnostics_run(run_id)
+    rows = await storage.list_diagnostics_runs(limit=1)
+    return rows[0] if rows else None
+
+
+@livekit_app.command("report")
+def report_cmd(
+    run: str = typer.Option(
+        None, "--run", help="Run id to export (default: the most recent run recorded)"
+    ),
+    out: str = typer.Option(
+        None,
+        "--out",
+        help=(
+            "Where to write it (default: ./voicegateway-diagnostics-<run>.html; "
+            "with --json, the payload goes to stdout unless --out is given)"
+        ),
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+    url: str = typer.Option(None, "--url"),
+    api_key: str = typer.Option(None, "--api-key"),
+    api_secret: str = typer.Option(None, "--api-secret"),
+    config: str = typer.Option(None, "--config", "-c"),
+) -> None:
+    """Export a recorded diagnostics run as one self-contained HTML file.
+
+    Reads the run out of this host's store (the dashboard writes one row per
+    run) and renders it through
+    :mod:`voicegateway.livekit_diag.run_report` -- the same payload and the same
+    document the dashboard's ``/report.html`` serves, byte for byte, with no web
+    framework in the path. The file loads nothing over the network, so it reads
+    the same offline months later.
+
+    This command judges nothing and probes nothing: no call is placed, no
+    provider is billed, and the verdict is the one the run recorded. It exits 0
+    whenever it produced the artifact, whatever that verdict says -- gating CI on
+    a run's health is ``voicegw livekit check``'s job, and exiting 1 on a FAIL
+    here would throw away the report that explains it.
+    """
+    gw = _cli.require_gateway(config)
+    storage = _cli.require_storage(gw)
+    try:
+        row = _cli.async_run(_fetch_run(storage, run))
+    except Exception as exc:  # noqa: BLE001 - diagnostics never crash raw
+        _cli.error(f"could not read the diagnostics run store: {exc}")
+        raise typer.Exit(1) from None
+    if row is None:
+        _cli.fail(
+            f"no diagnostics run {run!r} is recorded on this host."
+            if run
+            else "no diagnostics run is recorded on this host yet. Start one from "
+            "the dashboard's Diagnostics page; this command exports what a run "
+            "already recorded, it does not run one."
+        )
+
+    record = run_report.run_from_row(row)
+    payload = run_report.build_payload(
+        record, livekit_url=_report_url(url, api_key, api_secret, config)
+    )
+    if as_json and not out:
+        _cli.console.print_json(_json.dumps(payload))
+        return
+
+    if as_json:
+        document = _json.dumps(payload, indent=2) + "\n"
+    else:
+        document = run_report.render_html(payload)
+    default_name = run_report.report_filename(record.run_id)
+    path = pathlib.Path(out) if out else pathlib.Path(default_name)
+    try:
+        path.write_text(document, encoding="utf-8")
+    except OSError as exc:
+        _cli.fail(f"could not write {path}: {exc}")
+    _cli.success(f"Wrote {path} ({len(document.encode('utf-8')):,} bytes).")
+    # The verdict is reproduced, never recomputed: it is what the run recorded.
+    _cli.dim(
+        f"run {record.run_id} · status {record.status} · verdict "
+        f"{record.verdict or 'none recorded'}"
+    )
 
 
 app.add_typer(livekit_app, name="livekit")

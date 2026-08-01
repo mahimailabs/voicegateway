@@ -5,7 +5,7 @@ description: Diagnostics commands for inspecting agents, measuring end-to-end la
 
 # voicegw livekit
 
-Diagnostics for a running LiveKit deployment. Four subcommands cover agent listing, end-to-end latency measurement, SFU health, and an all-in-one check report.
+Diagnostics for a running LiveKit deployment. Five subcommands cover agent listing, end-to-end latency measurement, SFU health, an all-in-one check report, and exporting a recorded dashboard run as one self-contained HTML file.
 
 ## Usage
 
@@ -15,13 +15,13 @@ voicegw livekit <subcommand> [OPTIONS]
 
 ## Credentials
 
-All four subcommands resolve LiveKit credentials in the same order:
+All subcommands resolve LiveKit credentials in the same order:
 
 1. **CLI flags**: `--url`, `--api-key`, `--api-secret` (highest priority).
 2. **Environment variables**: `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`.
 3. **Config file**: a `livekit:` block in `voicegw.yaml` (lowest priority).
 
-If credentials are missing after all three layers, the command exits with an error before making any network calls.
+If credentials are missing after all three layers, the command exits with an error before making any network calls. The one exception is `report`, which talks to no server: it reads a run that already happened, so missing credentials cost it one labelled line in the output ("not recorded") rather than the export.
 
 ```yaml
 # voicegw.yaml
@@ -368,9 +368,73 @@ There is one non-zero code on purpose, so an existing pipeline that tests for `1
 
 ---
 
+## voicegw livekit report
+
+Export a diagnostics run the dashboard already recorded as **one self-contained HTML file**. Built for CI: it collects the artifact on a host that never runs the dashboard.
+
+```bash
+voicegw livekit report [OPTIONS]
+```
+
+### What it does
+
+Reads a run out of this host's VoiceGateway store (the dashboard writes one row per diagnostics run) and renders it through the same code path the dashboard's own download button uses. The output is **byte-identical** to `GET /api/diagnostics/runs/{id}/report.html` for the same run on the same host: there is one renderer, not a CLI copy that drifts from the web copy.
+
+This command probes nothing. No call is placed, no provider is billed, and the verdict in the file is the one the run recorded when it ran, not a fresh judgement of old numbers.
+
+**Self-contained means self-contained.** The document carries its own CSS inline and references nothing external: no script, no stylesheet, no font, no image, no CDN. It renders identically from `file://` on a laptop with no internet, which is the state it is usually read in.
+
+The file carries the context a number needs out of band: when the run was queued, started and ended, which checks were requested, the thresholds it was measured against, the LiveKit server, the tool version and the report schema version. It also carries a "what this report does not measure" section, because a single-vantage snapshot has structural limits that are not this run's bad luck.
+
+### A run that failed still exports
+
+A run whose checks never completed still produces a report. It reads as a run that measured nothing, not as a run that measured zeros: every check says whether it was never requested, requested but never recorded a result, or errored, and no unmeasured value is rendered as `0`. `--json` reports the same absences as `null`.
+
+### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--run` | `string` | most recent run | Run id to export. |
+| `--out` | `string` | `./voicegateway-diagnostics-<run>.html` | Where to write the file. The default is the same filename the dashboard offers on download. |
+| `--json` | flag | off | Emit the machine-readable payload (carrying `schema_version`) instead of the HTML. Printed to stdout, or written to `--out` when that is given. |
+| `--url` | `string` | (see Credentials) | LiveKit server WebSocket URL, named in the report. |
+| `--api-key` | `string` | (see Credentials) | LiveKit API key. |
+| `--api-secret` | `string` | (see Credentials) | LiveKit API secret. |
+| `--config` / `-c` | `string` | search path | Path to `voicegw.yaml` (this is also how the command finds the store). |
+
+### Example
+
+```bash
+voicegw livekit report --run 6a1c9f2b4d7e --out artifacts/diagnostics.html
+```
+
+```
+Wrote artifacts/diagnostics.html (28,410 bytes).
+run 6a1c9f2b4d7e · status done · verdict UNKNOWN
+```
+
+### The JSON payload
+
+`--json` emits the payload the HTML is rendered from, so the file and the JSON cannot say different things about the same run. It is versioned:
+
+- `schema_version` is `1`. Within a major version the payload is **additive only**: new keys may appear, but an existing key never changes meaning, type or nesting, and never disappears. Parsers must ignore keys they do not recognise.
+- A value nobody measured is `null` (or the string `"not_measured"` for a field that is structurally always absent, such as packet loss). It is never `0`, and a consumer must not coerce it to one.
+- Anything that would break a v1 parser lands as `schema_version: 2`.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | The report was written. **Whatever the verdict says**: this command exports a run, it does not gate one. |
+| `1` | There was nothing to export (no run recorded, or no such run id), storage is not configured, or the file could not be written. |
+
+Gating CI on a deployment's health is [`voicegw livekit check`](#voicegw-livekit-check)'s job. Exiting non-zero here on a `FAIL` run would throw away the report that explains it.
+
+---
+
 ## Shared limitations
 
-The following limitations apply across all four subcommands:
+The following limitations apply across the four probing subcommands (`report` measures nothing itself; it re-renders what a run recorded):
 
 **In-room agents only, unless workers heartbeat.** The LiveKit server API does not expose idle (pre-dispatch) workers. `agents` shows the idle/registered roster only when your agents call `voicegateway.register_worker(...)` and the collector is configured; otherwise it (and `latency`) see only agents currently in rooms.
 
