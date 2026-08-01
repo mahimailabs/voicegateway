@@ -287,3 +287,61 @@ async def test_the_host_filefd_pair_alone_does_not_satisfy_the_gate(
     assert _fd(agg).used is None
     [gate] = gates.headroom_gates([_fd(agg)])
     assert gate.status == gates.UNKNOWN
+
+
+# --------------------------------------------------------------------------
+# One node, several exporters: the gates must be tellable apart
+# --------------------------------------------------------------------------
+
+
+async def test_gates_for_one_node_across_sources_have_distinct_subjects(
+    db: AsyncSession,
+) -> None:
+    """Found by a live run, invisible to every single-source fixture.
+
+    A node is commonly scraped by three exporters, and only one of them carries
+    the per-process descriptor pair. The subject dropped the source, so the run
+    emitted three gates labelled identically reading PASS, UNKNOWN and UNKNOWN,
+    with nothing saying which exporter passed. A reader cannot act on that, and
+    the PASS is the half that looks like coverage.
+    """
+    await insert_samples(
+        db,
+        [
+            _sample(0, process_open_fds=11, process_max_fds=524287),
+            NodeSampleInput(
+                node="sip-1",
+                source="node-exporter",
+                at_ms=T0,
+                outcome="ok",
+                values={"filefd_allocated": 2496.0},
+            ),
+        ],
+    )
+    agg = await _aggregate(db, 0)
+    assert agg is not None
+    fd_gates = [
+        g
+        for g in judge.judge_test(HEALTHY, aggregate=agg)
+        if g.subject and g.subject.endswith("/file_descriptors")
+    ]
+    assert len(fd_gates) == 2
+    assert len({g.subject for g in fd_gates}) == 2, [g.subject for g in fd_gates]
+    # And the statuses really do differ, so the collision was not cosmetic.
+    assert {g.status for g in fd_gates} == {gates.PASS, gates.UNKNOWN}
+    # The one that passed says which exporter it came from.
+    [passed] = [g for g in fd_gates if g.status == gates.PASS]
+    assert "livekit-sip" in passed.subject
+    assert "livekit-sip" in passed.detail
+
+
+def test_a_reading_with_no_source_keeps_the_short_subject() -> None:
+    """A caller holding only a node name is unaffected by the change."""
+    [gate] = gates.headroom_gates(
+        [
+            gates.HeadroomReading(
+                node="sfu-1", resource="file_descriptors", used=400, limit=1000
+            )
+        ]
+    )
+    assert gate.subject == "sfu-1/file_descriptors"
