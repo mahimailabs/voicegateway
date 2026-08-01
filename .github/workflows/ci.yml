@@ -42,7 +42,17 @@ jobs:
           PYTHON_VERSION: ${{ matrix.python-version }}
         run: |
           uv venv --seed --python "$PYTHON_VERSION"
-          uv pip install -e ".[dev,dashboard]" ruff mypy types-PyYAML
+          # mypy is pinned below 2. mypy 2.x stops resolving the `livekit`
+          # namespace package's subpackages and reports `Module "livekit" has
+          # no attribute "api"/"rtc"` in livekit_diag/admin.py and client.py,
+          # on a tree that is otherwise clean. Those distributions do ship
+          # py.typed and ignore_missing_imports is already true, so this is a
+          # resolution change upstream, not a defect here. Unpinned, a new
+          # major reds this job on files no PR touched: the same way mcp 2.0.0
+          # broke this workflow, which is why mcp is capped in pyproject.toml.
+          # Revisit when livekit ships packaging mypy 2.x resolves, then drop
+          # the cap here and in the local gate command.
+          uv pip install -e ".[dev,dashboard]" ruff 'mypy<2' types-PyYAML
       - name: Ruff
         run: uv run ruff check src
       - name: Mypy
