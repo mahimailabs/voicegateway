@@ -1020,3 +1020,63 @@ export interface NodeCorrelationResponse {
   calls: CallNodeCorrelation[];
 }
 
+
+/**
+ * One test step of a load run, as GET /api/loadtest/runs returns it.
+ *
+ * Every measured field is nullable and null means NOT MEASURED, never zero. A
+ * 0 in `peak_concurrency` describes a test that carried no calls, which is a
+ * different claim from "the artifacts did not say", and a renderer that shows
+ * both as 0 makes the second unfalsifiable.
+ */
+export interface LoadRunTest {
+  id: number | null;
+  run_id: string;
+  name: string;
+  sequence: number;
+  started_at_ms: number | null;
+  ended_at_ms: number | null;
+  target_concurrency: number | null;
+  peak_concurrency: number | null;
+  attempted_calls: number | null;
+  succeeded_calls: number | null;
+  failed_calls: number | null;
+  failed_timeout: number | null;
+  failed_unexpected_sip: number | null;
+  failed_transport_error: number | null;
+  failed_parse_error: number | null;
+  failed_scenario_error: number | null;
+  failed_cancelled: number | null;
+  peak_cpu_utilisation: number | null;
+  peak_memory_utilisation: number | null;
+  node_samples_in_window: number | null;
+  rtp_packets_sent: number | null;
+  rtp_packets_received: number | null;
+  created_at_ms: number;
+}
+
+/**
+ * One imported load run. `data_provenance` is derived server-side from whether
+ * the run holds a real artifact checksum, so nothing can assert measured-ness
+ * without the artifact behind it.
+ */
+export interface LoadRun {
+  id: string;
+  project: string;
+  label: string | null;
+  tool: string | null;
+  tool_version: string | null;
+  artifact_schema_version: string | null;
+  started_at_ms: number | null;
+  ended_at_ms: number | null;
+  artifact_sha256: string | null;
+  artifact_source: string | null;
+  notes: string | null;
+  created_at_ms: number;
+  data_provenance: 'measured' | 'synthetic';
+  tests: LoadRunTest[];
+}
+
+export interface LoadRunsResponse {
+  runs: LoadRun[];
+}

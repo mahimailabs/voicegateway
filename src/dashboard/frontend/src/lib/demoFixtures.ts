@@ -31,6 +31,7 @@ import type {
   DiagnosticRun,
   DiagnosticsCreds,
   LatencyResponse,
+  LoadRunsResponse,
   MetricsAggregate,
   NodeCorrelationResponse,
   NodeCounterRateSummary,
@@ -2151,6 +2152,85 @@ const READ_ONLY_ERROR = 'This is a read-only demo.';
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 /** Match `/api/agents/{id}`-style single-segment parameterized routes. */
+// One imported load run, deliberately SYNTHETIC: it carries no artifact
+// checksum, so the panel badges it and says so before any number is read. The
+// demo has no captured artifacts, and a demo that showed "measured" would be
+// teaching the reader to trust the wrong badge.
+const LOAD_RUNS: LoadRunsResponse = {
+  runs: [
+    {
+      id: 'ramp-500',
+      project: 'default',
+      label: 'baseline ramp',
+      tool: 'gossipper',
+      tool_version: '0.1.62',
+      artifact_schema_version: 'gossipper_summary_v1',
+      started_at_ms: (BASE_EPOCH - 2 * HOUR) * 1000,
+      ended_at_ms: (BASE_EPOCH - HOUR) * 1000,
+      artifact_sha256: null,
+      artifact_source: '/srv/loadgen/run-2026-07-31',
+      notes: 'imported without --captured',
+      created_at_ms: (BASE_EPOCH - HOUR) * 1000,
+      data_provenance: 'synthetic',
+      tests: [
+        {
+          id: 1,
+          run_id: 'ramp-500',
+          name: 'ramp-500',
+          sequence: 0,
+          started_at_ms: (BASE_EPOCH - 2 * HOUR) * 1000,
+          ended_at_ms: (BASE_EPOCH - HOUR) * 1000,
+          // Never reached the plan's target, which is the single most
+          // important thing a capacity read can say.
+          target_concurrency: null,
+          peak_concurrency: 492,
+          attempted_calls: 15000,
+          succeeded_calls: 14985,
+          failed_calls: 15,
+          failed_timeout: 3,
+          failed_unexpected_sip: 9,
+          failed_transport_error: 2,
+          // A genuine zero, distinct from the nulls below it.
+          failed_parse_error: 0,
+          failed_scenario_error: 1,
+          failed_cancelled: 0,
+          peak_cpu_utilisation: 0.68,
+          peak_memory_utilisation: 0.612,
+          node_samples_in_window: 12,
+          rtp_packets_sent: 88410000,
+          rtp_packets_received: 88396500,
+          created_at_ms: (BASE_EPOCH - HOUR) * 1000,
+        },
+        {
+          id: 2,
+          run_id: 'ramp-500',
+          name: 'soak-100',
+          sequence: 1,
+          started_at_ms: (BASE_EPOCH - HOUR) * 1000,
+          ended_at_ms: null,
+          target_concurrency: null,
+          peak_concurrency: null,
+          attempted_calls: null,
+          succeeded_calls: null,
+          failed_calls: null,
+          failed_timeout: null,
+          failed_unexpected_sip: null,
+          failed_transport_error: null,
+          failed_parse_error: null,
+          failed_scenario_error: null,
+          failed_cancelled: null,
+          peak_cpu_utilisation: null,
+          peak_memory_utilisation: null,
+          node_samples_in_window: null,
+          rtp_packets_sent: null,
+          rtp_packets_received: null,
+          created_at_ms: (BASE_EPOCH - HOUR) * 1000,
+        },
+      ],
+    },
+  ],
+};
+
 function matchOne(pathname: string, prefix: string, suffix = ''): string | null {
   if (!pathname.startsWith(prefix)) return null;
   const rest = pathname.slice(prefix.length);
@@ -2222,6 +2302,8 @@ export async function demoFetch<T>(path: string, init?: RequestInit): Promise<T>
       return RATE_CARD_RULES as T;
     case '/v1/billing/rate-card/models':
       return RATE_CARD_MODELS as T;
+    case '/api/loadtest/runs':
+      return LOAD_RUNS as unknown as T;
     case '/api/diagnostics/creds':
       return DIAG_CREDS as T;
     case '/api/diagnostics/runs':
