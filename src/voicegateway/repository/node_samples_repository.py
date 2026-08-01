@@ -125,6 +125,13 @@ GAUGE_COLUMNS: frozenset[str] = frozenset(
 
 VALUE_COLUMNS: frozenset[str] = COUNTER_COLUMNS | GAUGE_COLUMNS
 
+# Value columns computed FROM a scrape rather than read off one. They are real
+# observations and belong in VALUE_COLUMNS, but they are not series, so they are
+# counted out of ``series_found``: that number answers "how many of the series
+# expected for this source did the target actually expose", and a derived
+# marker would inflate it into a claim about the target.
+DERIVED_COLUMNS: frozenset[str] = frozenset({"filefd_maximum_unbounded"})
+
 # Columns stored as integers. Everything else in VALUE_COLUMNS is a float.
 # Prometheus exposition is float-typed on the wire, so an integer column is
 # truncated on the way in (see :func:`_coerce`).
@@ -387,16 +394,49 @@ async def insert_samples(db: AsyncSession, samples: Sequence[NodeSampleInput]) -
             outcome=sample.outcome,
             series_found=sample.series_found,
         )
+        stored = 0
         for column, value in sample.values.items():
             if column not in VALUE_COLUMNS:
                 raise ValueError(
                     f"unknown node_samples value column {column!r}; known columns "
                     f"are {sorted(VALUE_COLUMNS)}"
                 )
-            setattr(row, column, _coerce(column, value))
+            coerced = _coerce(column, value)
+            setattr(row, column, coerced)
+            if coerced is not None and column not in DERIVED_COLUMNS:
+                stored += 1
+        if sample.series_found is not None:
+            row.series_found = _reconciled_series_found(sample, stored)
         db.add(row)
     await db.commit()
     return len(samples)
+
+
+def _reconciled_series_found(sample: NodeSampleInput, stored: int) -> int:
+    """What ``series_found`` must say once coercion has had its turn.
+
+    The caller counts a series when it MATCHES the exposition, which is before
+    this module gets to refuse it. A value that is non-finite, or that does not
+    survive the trip through a 64-bit column, is dropped here and the caller's
+    count never hears about it: the row then claims one more measurement than it
+    holds, and it is the columns nobody can read that go missing, so the
+    overstatement is invisible in exactly the case it matters.
+
+    A derived marker is excluded because it is not a series. Counting it would
+    make the number say a target exposed something it never did.
+    """
+    claimed = sample.series_found
+    if claimed is not None and claimed != stored:
+        _logger.debug(
+            "node_samples series_found for %s/%s corrected %d -> %d: %d value(s) "
+            "were refused at coercion",
+            sample.node,
+            sample.source,
+            claimed,
+            stored,
+            claimed - stored,
+        )
+    return stored
 
 
 async def list_samples(

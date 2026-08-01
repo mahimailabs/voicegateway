@@ -266,6 +266,44 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
 }
 
 
+# The host file-descriptor maximum a kernel reports when nothing constrains it.
+# VERIFIED LIVE: node_filefd_maximum reads 9.223372036854776e+18, and
+# int(float(...)) of that is 9223372036854775808, exactly ONE past the 64-bit
+# ceiling. That is a float64 round-trip artifact of a number that is already
+# 2**63 - 1, not a machine with more descriptors than a signed 64-bit integer
+# can count. So the column is left NULL and the fact is recorded separately.
+#
+# The threshold is short of 2**63 rather than equal to it because the round trip
+# is lossy in both directions: any value this close to the ceiling is the
+# kernel's "no limit", and the last 1024 counts are not a distinction anything
+# can act on.
+FILEFD_UNBOUNDED_THRESHOLD: Final[float] = float(2**63 - 1024)
+_FILEFD_MAXIMUM_COLUMN: Final[str] = "filefd_maximum"
+_FILEFD_UNBOUNDED_COLUMN: Final[str] = "filefd_maximum_unbounded"
+
+
+def _mark_unbounded_filefd(values: dict[str, float | None]) -> None:
+    """Record whether the host descriptor ceiling is reachable at all.
+
+    THREE states, and keeping them apart is the whole point. 1 says the maximum
+    parsed as effectively unbounded, so headroom on it cannot run out. 0 says it
+    parsed as a real bound. Leaving the key out entirely stores NULL, which says
+    nobody measured it.
+
+    Without this, an unbounded ceiling and an unscraped one are the same empty
+    column, and "this limit cannot be hit" reads identically to "we never
+    looked". They support opposite conclusions about a fleet.
+    """
+    maximum = values.get(_FILEFD_MAXIMUM_COLUMN)
+    if maximum is None:
+        # Absent or unparseable. NOT 0: an absent series says nothing about
+        # whether the limit is reachable.
+        return
+    values[_FILEFD_UNBOUNDED_COLUMN] = (
+        1.0 if maximum >= FILEFD_UNBOUNDED_THRESHOLD else 0.0
+    )
+
+
 def validate_series_map(series_map: Mapping[str, tuple[_Series, ...]]) -> None:
     """Refuse a metric map that cannot produce meaningful numbers.
 
@@ -541,12 +579,17 @@ class NodeSamplesWorker(AsyncWorker):
                 continue
             values[series.column] = value
             found += 1
+        _mark_unbounded_filefd(values)
         return node_samples.NodeSampleInput(
             node=target.node,
             source=target.source,
             at_ms=at_ms,
             outcome=outcome,
             project=target.project,
+            # A count of what MATCHED, which is not yet a count of what stored:
+            # a value the repository refuses at coercion is dropped after this
+            # point. insert_samples recomputes from what actually landed, and
+            # this is the input to that.
             series_found=found,
             values=values,
         )

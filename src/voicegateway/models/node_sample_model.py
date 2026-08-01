@@ -7,7 +7,7 @@ scraped twice per tick -- once as ``livekit-server`` and once as
 
 **No foreign key to ``calls``, and no ``call_id`` column.** Layer 7 is
 correlated by ``(node, time window)`` only. livekit-server's
-``livekit_packet_*`` / ``livekit_nack_total`` and livekit-sip's
+``livekit_packet_*`` and livekit-sip's
 ``invite_*`` / ``calls_*`` are NODE counters: attributing one of them to a call
 would invent a per-call measurement that does not exist server-side (the same
 reason ``call_legs`` has no loss / jitter / MOS column).
