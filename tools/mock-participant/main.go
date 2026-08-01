@@ -16,6 +16,7 @@ func main() {
 		apiKey    = flag.String("api-key", os.Getenv("LIVEKIT_API_KEY"), "LiveKit API key")
 		apiSecret = flag.String("api-secret", os.Getenv("LIVEKIT_API_SECRET"), "LiveKit API secret")
 		agentName = flag.String("agent-name", "mock-participant", "name this worker registers under; dispatch matches on it")
+		maxJobs   = flag.Int("max-jobs", 0, "declared capacity used to compute reported load; 0 leaves load undeclared at 0")
 		quiet     = flag.Bool("quiet", false, "suppress progress output")
 	)
 	flag.Parse()
@@ -31,9 +32,17 @@ func main() {
 		APISecret: *apiSecret,
 		AgentName: *agentName,
 		Logf:      logf,
+		MaxJobs:   *maxJobs,
 		OnAssignment: func(ctx context.Context, a Assignment) error {
 			logf("job %s joining room %q at %s", a.JobID, a.RoomName, a.URL)
-			return JoinAndPublish(ctx, a, logf)
+			stats := &CallStats{}
+			err := JoinAndPublish(ctx, a, stats, logf)
+			// The counts are the bidirectional-media evidence, so they are
+			// reported whether the call ended cleanly or not.
+			logf("job %s ended: %d rtp packets, %d bytes, %d tracks",
+				a.JobID, stats.RTPPacketsReceived.Load(),
+				stats.RTPBytesReceived.Load(), stats.TracksSubscribed.Load())
+			return err
 		},
 	}
 

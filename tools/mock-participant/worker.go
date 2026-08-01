@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -70,9 +71,20 @@ type Worker struct {
 	// Logf is where progress goes. nil means silent, which is what the tests use.
 	Logf func(format string, args ...any)
 
-	conn     *websocket.Conn
-	writeMu  sync.Mutex
-	workerID string
+	// MaxJobs is the operator's declared capacity, used only to compute the load
+	// this worker reports. Zero means undeclared, and then the reported load is
+	// 0: this worker does NOT measure its own load, and reporting a made-up
+	// number would put a fabricated reading on the surface the server schedules
+	// from.
+	MaxJobs int
+	// StatusInterval is how often worker status is reported. Zero uses the
+	// default.
+	StatusInterval time.Duration
+
+	conn       *websocket.Conn
+	writeMu    sync.Mutex
+	workerID   string
+	activeJobs atomic.Int64
 }
 
 const (
@@ -82,6 +94,8 @@ const (
 	// Advertised at registration. The server uses it to decide when a worker has
 	// gone silent.
 	defaultPingInterval = 10 * time.Second
+	// How often worker status is reported when the caller does not say.
+	defaultStatusInterval = 5 * time.Second
 )
 
 func (w *Worker) logf(format string, args ...any) {
@@ -207,6 +221,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		<-ctx.Done()
 		_ = w.conn.Close()
 	}()
+	go w.reportStatusUntil(ctx)
 	for {
 		_, payload, err := w.conn.ReadMessage()
 		if err != nil {
@@ -293,10 +308,87 @@ func (w *Worker) handleAssignment(ctx context.Context, a *livekit.JobAssignment)
 	}
 	// Off the read loop: a slow join must not stall the connection the next job
 	// arrives on.
+	w.activeJobs.Add(1)
 	go func() {
+		defer func() {
+			w.activeJobs.Add(-1)
+			// Report immediately on the way out rather than waiting for the next
+			// tick, so capacity that has just freed up is visible to the
+			// scheduler now.
+			_ = w.reportStatus()
+		}()
 		if err := w.OnAssignment(ctx, assignment); err != nil {
 			w.logf("job %s failed: %v", assignment.JobID, err)
 		}
 	}()
-	return nil
+	// And immediately on the way in, so a burst of assignments cannot look like
+	// an idle worker for a whole tick.
+	return w.reportStatus()
+}
+
+// ActiveJobs is how many assignments are currently in flight.
+func (w *Worker) ActiveJobs() int64 { return w.activeJobs.Load() }
+
+// reportedLoad is the load this worker declares, in 0..1.
+//
+// Derived from a real job count against an operator-declared MaxJobs, never
+// measured. With MaxJobs unset there is nothing to divide by, and this returns
+// 0 rather than inventing a figure: the server schedules off this number, so a
+// guess here changes where real calls land.
+func (w *Worker) reportedLoad() float32 {
+	if w.MaxJobs <= 0 {
+		return 0
+	}
+	load := float32(w.activeJobs.Load()) / float32(w.MaxJobs)
+	if load > 1 {
+		return 1
+	}
+	return load
+}
+
+func (w *Worker) reportStatus() error {
+	status := livekit.WorkerStatus_WS_AVAILABLE
+	if w.MaxJobs > 0 && w.activeJobs.Load() >= int64(w.MaxJobs) {
+		status = livekit.WorkerStatus_WS_FULL
+	}
+	jobs := w.activeJobs.Load()
+	if jobs < 0 {
+		jobs = 0
+	}
+	return w.send(&livekit.WorkerMessage{
+		Message: &livekit.WorkerMessage_UpdateWorker{
+			UpdateWorker: &livekit.UpdateWorkerStatus{
+				Status:   &status,
+				Load:     w.reportedLoad(),
+				JobCount: uint32(jobs),
+			},
+		},
+	})
+}
+
+// reportStatusUntil reports worker status on a timer until ctx ends.
+//
+// WITHOUT THIS THE RUN STOPS. The server tracks each worker's computed capacity
+// and stops assigning jobs to one that has gone quiet, so a worker that
+// registers and then never updates drains to zero capacity and silently receives
+// nothing. The symptom is a load test that ramps to a plateau far below its
+// target with no error anywhere.
+func (w *Worker) reportStatusUntil(ctx context.Context) {
+	every := w.StatusInterval
+	if every <= 0 {
+		every = defaultStatusInterval
+	}
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := w.reportStatus(); err != nil {
+				// The read loop owns connection errors; this one just stops.
+				return
+			}
+		}
+	}
 }

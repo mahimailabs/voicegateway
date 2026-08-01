@@ -27,7 +27,9 @@ var opusCapability = webrtc.RTPCodecCapability{
 // a publish that waits for the join to complete first adds its whole round trip
 // to every call's answer latency, and at 500 concurrent that shows up directly
 // in the establishment rate.
-func JoinAndPublish(ctx context.Context, a Assignment, logf func(string, ...any)) error {
+func JoinAndPublish(
+	ctx context.Context, a Assignment, stats *CallStats, logf func(string, ...any),
+) error {
 	frames, err := ToneFrames()
 	if err != nil {
 		return fmt.Errorf("tone: %w", err)
@@ -38,14 +40,31 @@ func JoinAndPublish(ctx context.Context, a Assignment, logf func(string, ...any)
 		return fmt.Errorf("create track: %w", err)
 	}
 
+	// The drain is wired BEFORE the join, so a track subscribed during the join
+	// handshake is read from the moment it exists. Wiring it afterwards leaves a
+	// window where pion is buffering a track nobody is reading.
+	callback := lksdk.NewRoomCallback()
+	callback.OnTrackSubscribed = func(
+		track *webrtc.TrackRemote, _ *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant,
+	) {
+		stats.TracksSubscribed.Add(1)
+		if logf != nil {
+			logf("subscribed to %s from %s, draining", track.Kind(), rp.Identity())
+		}
+		// One goroutine per track. It ends when the track does, which is what
+		// ReadRTP reports as an error.
+		go drainRTP(track, stats)
+	}
+
 	room, err := lksdk.ConnectToRoomWithToken(
-		a.URL, a.Token, lksdk.NewRoomCallback(),
+		a.URL, a.Token, callback,
 		lksdk.WithTrack(track, &lksdk.TrackPublicationOptions{Name: "mock-audio"}),
 	)
 	if err != nil {
 		return fmt.Errorf("join %q: %w", a.RoomName, err)
 	}
 	defer room.Disconnect()
+	stats.markJoined(time.Now())
 
 	if logf != nil {
 		logf("joined room %q as %s, publishing %d frames of tone",
