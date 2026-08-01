@@ -772,3 +772,120 @@ def test_a_non_finite_count_is_unknown_not_a_traceback():
         assert gate.value is None, bad
         gate = gates.establishment_gate(attempted=100, succeeded=bad)
         assert gate.status == gates.UNKNOWN, bad
+
+
+# ---------------------------------------------------------------------------
+# node_cpu_gates / node_memory_gates: per-node resource ceilings
+#
+# The ceilings are STRICT ("CPU below 70%", "memory below 75%"), the opposite
+# direction to establishment_gate's inclusive floor. Sitting exactly on a ceiling
+# has not stayed below it. Reusing one gate's comparison for the other is the easy
+# mistake, so both directions are pinned.
+# ---------------------------------------------------------------------------
+
+
+def _reading(node: str, utilisation, **kw) -> gates.NodeUtilisationReading:
+    kw.setdefault("samples", 12)
+    return gates.NodeUtilisationReading(node=node, utilisation=utilisation, **kw)
+
+
+def test_a_node_under_both_ceilings_passes():
+    [cpu] = gates.node_cpu_gates([_reading("sfu-1", 0.42)])
+    assert cpu.status == gates.PASS
+    assert cpu.gate == gates.NODE_CPU_GATE
+    assert cpu.subject == "sfu-1"
+    assert cpu.value == 0.42
+    assert cpu.threshold == gates.MAX_NODE_CPU_UTILISATION
+    assert "42.0%" in cpu.detail
+
+    [mem] = gates.node_memory_gates([_reading("sfu-1", 0.60)])
+    assert mem.status == gates.PASS
+    assert mem.threshold == gates.MAX_NODE_MEMORY_UTILISATION
+
+
+def test_the_ceilings_are_strict_so_sitting_exactly_on_one_fails():
+    """ "Below 70%" is not satisfied by 70%. The opposite of the 99.5% floor."""
+    assert gates.MAX_NODE_CPU_UTILISATION == 0.70
+    assert gates.MAX_NODE_MEMORY_UTILISATION == 0.75
+    [cpu] = gates.node_cpu_gates([_reading("sfu-1", 0.70)])
+    assert cpu.status == gates.FAIL
+    [mem] = gates.node_memory_gates([_reading("sfu-1", 0.75)])
+    assert mem.status == gates.FAIL
+    # A hair under still passes, so the boundary is exactly where it claims.
+    assert gates.node_cpu_gates([_reading("s", 0.6999)])[0].status == gates.PASS
+    assert gates.node_memory_gates([_reading("s", 0.7499)])[0].status == gates.PASS
+
+
+def test_the_two_ceilings_are_not_interchangeable():
+    """72% is fine for memory and a failure for CPU. One number, two verdicts."""
+    assert gates.node_cpu_gates([_reading("s", 0.72)])[0].status == gates.FAIL
+    assert gates.node_memory_gates([_reading("s", 0.72)])[0].status == gates.PASS
+
+
+def test_a_node_over_a_ceiling_fails_and_exits_non_zero():
+    [cpu] = gates.node_cpu_gates([_reading("sip-2", 0.91)])
+    assert cpu.status == gates.FAIL
+    assert "at or above" in cpu.detail
+    assert gates.exit_code(gates.verdict([cpu])) == 1
+
+
+def test_one_gate_per_node_never_an_average():
+    """A mean across the fleet hides the one node that saturated."""
+    results = gates.node_cpu_gates(
+        [_reading("sfu-1", 0.10), _reading("sfu-2", 0.12), _reading("sfu-3", 0.95)]
+    )
+    assert len(results) == 3
+    assert [g.status for g in results] == [gates.PASS, gates.PASS, gates.FAIL]
+    assert gates.verdict(results) == gates.FAIL
+
+
+def test_an_unmeasured_node_is_unknown_not_pass():
+    [gate] = gates.node_cpu_gates(
+        [_reading("sfu-1", None, samples=0, unmeasured_reason="every scrape timed out")]
+    )
+    assert gate.status == gates.UNKNOWN
+    assert gate.status != gates.PASS
+    assert "every scrape timed out" in gate.detail
+    assert "not the same as staying under one" in gate.detail
+    # Nothing decided it, so no number is claimed.
+    assert gate.metric is None
+    assert gate.value is None
+    assert gates.exit_code(gates.verdict([gate])) == 1
+
+
+def test_a_window_nobody_sampled_is_unknown_not_an_idle_fleet():
+    """no_samples and scrape_failed both land here. Neither is a quiet node."""
+    for fn in (gates.node_cpu_gates, gates.node_memory_gates):
+        [gate] = fn([])
+        assert gate.status == gates.UNKNOWN
+        assert "not a quiet fleet" in gate.detail
+        assert gate.value is None
+
+
+def test_zero_utilisation_is_a_reading_and_none_is_not():
+    """An idle node passes on evidence; an unscraped one has no evidence."""
+    [idle] = gates.node_cpu_gates([_reading("sfu-1", 0.0)])
+    assert idle.status == gates.PASS
+    assert idle.value == 0.0
+    [unscraped] = gates.node_cpu_gates([_reading("sfu-1", None, samples=0)])
+    assert unscraped.status == gates.UNKNOWN
+
+
+def test_the_sample_count_travels_so_a_peak_over_two_is_not_dressed_up():
+    [gate] = gates.node_cpu_gates([_reading("sfu-1", 0.5, samples=2)])
+    assert "2 measured sample(s)" in gate.detail
+
+
+def test_the_source_disambiguates_two_scrapes_of_one_node():
+    [gate] = gates.node_cpu_gates([_reading("node-a", 0.5, source="node-exporter")])
+    assert gate.subject == "node-a/node-exporter"
+
+
+def test_the_node_gates_are_synchronous_and_json_safe():
+    import inspect
+    import json
+
+    assert not inspect.iscoroutinefunction(gates.node_cpu_gates)
+    assert not inspect.iscoroutinefunction(gates.node_memory_gates)
+    for gate in gates.node_cpu_gates([_reading("n", 0.5), _reading("m", None)]):
+        json.loads(json.dumps(gate.as_dict()))

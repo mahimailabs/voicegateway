@@ -87,11 +87,21 @@ LATENCY_GATE = "agent_reply_latency"
 SFU_QUALITY_GATE = "sfu_connection_quality"
 SFU_CAPACITY_GATE = "sfu_capacity"
 ESTABLISHMENT_GATE = "call_establishment"
+NODE_CPU_GATE = "node_cpu"
+NODE_MEMORY_GATE = "node_memory"
 
 # The share of call attempts that must establish. Inclusive: a run landing
 # exactly on the bar passes. This is an acceptance threshold, not a tuning knob,
 # which is why it lives beside the gate ids rather than in a config file.
 MIN_ESTABLISHMENT_RATIO = 0.995
+
+# Per-node resource ceilings. These are STRICT, unlike MIN_ESTABLISHMENT_RATIO
+# above: the criterion reads "CPU below 70%, memory below 75%", so a node sitting
+# exactly on its ceiling has not stayed below it and does not pass. The two
+# directions live next to each other deliberately, because reusing one gate's
+# comparison for the other is the easy mistake.
+MAX_NODE_CPU_UTILISATION = 0.70
+MAX_NODE_MEMORY_UTILISATION = 0.75
 
 
 @dataclass(frozen=True)
@@ -687,6 +697,136 @@ def establishment_gate(
     )
 
 
+@dataclass(frozen=True)
+class NodeUtilisationReading:
+    """One node's peak utilisation over a window, as a fraction, or nothing.
+
+    ``utilisation`` is ``None`` whenever the window produced no usable reading,
+    and ``unmeasured_reason`` says why. None is never 0.0: an idle node reads
+    0.0, and a node nobody could scrape reads None.
+
+    Assembled by the caller, not here, because building it is a measurement and
+    this module only judges. CPU comes from
+    ``node_samples_repository.utilisation_points`` over the paired
+    ``cpu_seconds_total`` and ``cpu_idle_seconds_total`` rates; memory comes from
+    the gauge pair, where peak utilisation corresponds to the MINIMUM of
+    ``memory_available_bytes`` rather than its maximum.
+
+    ``samples`` counts the points that produced a usable fraction, so a peak over
+    two readings is never presented as if it came from two hundred.
+    """
+
+    node: str
+    utilisation: float | None
+    samples: int = 0
+    source: str | None = None
+    unmeasured_reason: str | None = None
+
+
+def _resource_gate(
+    gate_id: str,
+    what: str,
+    reading: NodeUtilisationReading,
+    threshold: float,
+) -> GateResult:
+    """One node judged against a strict ceiling. See :func:`node_cpu_gates`."""
+    subject = f"{reading.node}/{reading.source}" if reading.source else reading.node
+    if reading.utilisation is None:
+        why = reading.unmeasured_reason or "the window produced no usable reading"
+        return GateResult(
+            gate=gate_id,
+            status=UNKNOWN,
+            subject=subject,
+            detail=(
+                f"{what} on {subject} was not measured: {why}. No ceiling was "
+                "demonstrated, which is not the same as staying under one"
+            ),
+            threshold=threshold,
+        )
+    # Strict: the criterion is "below", so sitting exactly on the ceiling is not
+    # under it.
+    status = PASS if reading.utilisation < threshold else FAIL
+    relation = "below" if status == PASS else "at or above"
+    return GateResult(
+        gate=gate_id,
+        status=status,
+        subject=subject,
+        detail=(
+            f"peak {what} on {subject} was {reading.utilisation * 100:.1f}% "
+            f"over {reading.samples} measured sample(s), {relation} the "
+            f"{threshold * 100:.0f}% ceiling"
+        ),
+        metric=f"{gate_id}_utilisation",
+        value=reading.utilisation,
+        threshold=threshold,
+    )
+
+
+def _resource_gates(
+    gate_id: str,
+    what: str,
+    readings: Sequence[NodeUtilisationReading],
+    threshold: float,
+) -> list[GateResult]:
+    if not readings:
+        return [
+            GateResult(
+                gate=gate_id,
+                status=UNKNOWN,
+                detail=(
+                    f"no node was sampled in the window, so no {what} ceiling "
+                    "was demonstrated. A window with no samples is not a quiet "
+                    "fleet"
+                ),
+                threshold=threshold,
+            )
+        ]
+    return [_resource_gate(gate_id, what, r, threshold) for r in readings]
+
+
+def node_cpu_gates(
+    readings: Sequence[NodeUtilisationReading],
+    *,
+    threshold: float = MAX_NODE_CPU_UTILISATION,
+) -> list[GateResult]:
+    """One gate per node: did peak CPU stay below the ceiling?
+
+    Per node, never aggregated. A mean across a fleet hides the one node that
+    saturated, and the criterion is written per node.
+
+    STRICT comparison, unlike :func:`establishment_gate`: "CPU below 70%" is not
+    satisfied by sitting on 70%.
+
+    A node whose window produced no usable reading is UNKNOWN, never PASS. The
+    two window states this exists for are the ones
+    ``node_correlation_repository`` names: ``scrape_failed`` (every scrape in the
+    window errored, so nothing is known) and ``no_samples`` (nobody scraped that
+    window at all). Neither is a quiet node. The caller decides which applies by
+    branching on the sample ``outcome`` counts, never on a value being NULL,
+    because every value column of ``node_samples`` is nullable and a NULL there
+    means "not measured" rather than zero.
+
+    Synchronous, like every gate in this module. The correlation and rate reads
+    that produce ``readings`` are async and happen in the caller.
+    """
+    return _resource_gates(NODE_CPU_GATE, "CPU", readings, threshold)
+
+
+def node_memory_gates(
+    readings: Sequence[NodeUtilisationReading],
+    *,
+    threshold: float = MAX_NODE_MEMORY_UTILISATION,
+) -> list[GateResult]:
+    """One gate per node: did peak memory stay below the ceiling?
+
+    Same rules as :func:`node_cpu_gates`, at a different ceiling. Note that peak
+    memory utilisation comes from the MINIMUM of ``memory_available_bytes`` over
+    the window, not its maximum: the most-used instant is the least-available
+    one.
+    """
+    return _resource_gates(NODE_MEMORY_GATE, "memory", readings, threshold)
+
+
 # ---------------------------------------------------------------------------
 # The run-level entry point
 # ---------------------------------------------------------------------------
@@ -762,19 +902,26 @@ __all__ = [
     "ESTABLISHMENT_GATE",
     "FAIL",
     "LATENCY_GATE",
+    "MAX_NODE_CPU_UTILISATION",
+    "MAX_NODE_MEMORY_UTILISATION",
     "MIN_ESTABLISHMENT_RATIO",
     "MIN_PERCENTILE_SAMPLES",
+    "NODE_CPU_GATE",
+    "NODE_MEMORY_GATE",
     "PASS",
     "SFU_CAPACITY_GATE",
     "SFU_QUALITY_GATE",
     "UNKNOWN",
     "WARN",
     "GateResult",
+    "NodeUtilisationReading",
     "agents_gate",
     "establishment_gate",
     "evaluate_checks",
     "exit_code",
     "latency_gates",
+    "node_cpu_gates",
+    "node_memory_gates",
     "sfu_capacity_gate",
     "sfu_quality_gate",
     "summary_lines",

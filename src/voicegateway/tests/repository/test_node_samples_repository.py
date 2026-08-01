@@ -308,3 +308,110 @@ async def test_insert_samples_with_nothing_to_write_is_a_no_op(
     assert await repo.insert_samples(db, []) == 0
     result = await db.execute(text("SELECT COUNT(*) FROM node_samples"))
     assert int(result.scalar() or 0) == 0
+
+
+# ---------------------------------------------------------------------------
+# utilisation_points: busy fraction from a total rate and its idle subset
+#
+# cpu_seconds_total is summed over every cpu AND every mode; cpu_idle_seconds_total
+# is that same metric restricted to mode=idle. So the total rate is the core count
+# and 1 - idle/total is utilisation exactly, with no core count needed.
+# ---------------------------------------------------------------------------
+
+
+def _rate(at_ms: int, per_second: float | None) -> repo.CounterRate:
+    return repo.CounterRate(at_ms=at_ms, per_second=per_second)
+
+
+def test_utilisation_is_one_minus_the_idle_share():
+    # 8 cores: total rate 8.0 cpu-seconds per second. 2.0 idle means 75% busy.
+    points = repo.utilisation_points([_rate(1000, 8.0)], [_rate(1000, 2.0)])
+    assert [p.at_ms for p in points] == [1000]
+    assert points[0].fraction == pytest.approx(0.75)
+
+
+def test_a_fully_idle_machine_reads_zero_and_a_saturated_one_reads_one():
+    idle = repo.utilisation_points([_rate(1, 4.0)], [_rate(1, 4.0)])
+    assert idle[0].fraction == 0.0
+    busy = repo.utilisation_points([_rate(1, 4.0)], [_rate(1, 0.0)])
+    assert busy[0].fraction == 1.0
+
+
+def test_the_core_count_never_has_to_be_supplied():
+    """The same busy share on a 2-core and a 64-core box reads the same."""
+    small = repo.utilisation_points([_rate(1, 2.0)], [_rate(1, 1.0)])
+    large = repo.utilisation_points([_rate(1, 64.0)], [_rate(1, 32.0)])
+    assert small[0].fraction == large[0].fraction == pytest.approx(0.5)
+
+
+def test_an_unknown_rate_on_either_side_is_none_not_zero():
+    """A reset arrives here as None from counter_rates and must stay None.
+
+    0.0 would render as an idle node at exactly the moment something restarted.
+    """
+    assert (
+        repo.utilisation_points([_rate(1, None)], [_rate(1, 2.0)])[0].fraction is None
+    )
+    assert (
+        repo.utilisation_points([_rate(1, 8.0)], [_rate(1, None)])[0].fraction is None
+    )
+    assert (
+        repo.utilisation_points([_rate(1, None)], [_rate(1, None)])[0].fraction is None
+    )
+
+
+def test_a_non_positive_capacity_rate_is_none():
+    """Nothing to be a fraction of, so there is no fraction."""
+    assert repo.utilisation_points([_rate(1, 0.0)], [_rate(1, 0.0)])[0].fraction is None
+    assert (
+        repo.utilisation_points([_rate(1, -1.0)], [_rate(1, 0.0)])[0].fraction is None
+    )
+
+
+def test_idle_above_capacity_is_none_rather_than_a_negative_utilisation():
+    """The pair does not describe one machine, so it is not a measurement."""
+    assert repo.utilisation_points([_rate(1, 4.0)], [_rate(1, 6.0)])[0].fraction is None
+
+
+def test_float_noise_around_a_fully_idle_machine_clamps_to_zero():
+    """idle marginally over total is division noise, not a negative reading."""
+    points = repo.utilisation_points([_rate(1, 4.0)], [_rate(1, 4.0 * (1 + 1e-12))])
+    assert points[0].fraction == 0.0
+
+
+def test_the_series_are_paired_by_timestamp_never_by_position():
+    """The two columns are read separately, so lengths can differ.
+
+    Zipping positionally would compare a rate at one instant against a rate at
+    another and produce a confident wrong number.
+    """
+    capacity = [_rate(1000, 8.0), _rate(2000, 8.0), _rate(3000, 8.0)]
+    # The idle series is missing 2000 entirely and carries an extra 9000.
+    idle = [_rate(1000, 2.0), _rate(3000, 4.0), _rate(9000, 0.0)]
+    points = repo.utilisation_points(capacity, idle)
+    assert [p.at_ms for p in points] == [1000, 2000, 3000]
+    assert points[0].fraction == pytest.approx(0.75)
+    # Present in capacity only: not a measurement.
+    assert points[1].fraction is None
+    assert points[2].fraction == pytest.approx(0.5)
+    # An instant only the idle series saw is not invented into the output.
+    assert 9000 not in [p.at_ms for p in points]
+
+
+def test_it_consumes_counter_rates_output_end_to_end():
+    """The reset rule is implemented once, in counter_rates, and survives here."""
+    # A reboot zeroes both counters between the second and third sample.
+    capacity = repo.counter_rates([(0, 800.0), (1000, 808.0), (2000, 0.0)])
+    idle = repo.counter_rates([(0, 600.0), (1000, 602.0), (2000, 0.0)])
+    points = repo.utilisation_points(capacity, idle)
+    # First point of a series has no predecessor.
+    assert points[0].fraction is None
+    # 8 cpu-seconds in a second, 2 of them idle.
+    assert points[1].fraction == pytest.approx(0.75)
+    # The reset must not render as an idle machine.
+    assert points[2].fraction is None
+
+
+def test_empty_input_is_empty_output():
+    assert repo.utilisation_points([], []) == []
+    assert repo.utilisation_points([], [_rate(1, 1.0)]) == []
