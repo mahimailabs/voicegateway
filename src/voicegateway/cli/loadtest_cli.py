@@ -27,7 +27,7 @@ from voicegateway.loadtest.capacity import (
     derive_calls_per_node,
 )
 from voicegateway.loadtest.importer import build_plan, observations_for
-from voicegateway.loadtest.judge import judge_run, verdict_for
+from voicegateway.loadtest.judge import judge_run
 
 _cli = BaseCli()
 
@@ -416,7 +416,10 @@ def report(
     json_path.write_text(json.dumps(payload, indent=2) + "\n")
     html_path.write_text(render_load_html(payload))
 
-    run_verdict = verdict_for(results)
+    # Read from the payload rather than recomputed, so the console, the exit
+    # code, the JSON and the HTML are one derivation rather than four that
+    # happen to agree today.
+    run_verdict = str(payload["verdict"]["status"])
     counts: dict[str, int] = {}
     for gate in results:
         counts[gate.status] = counts.get(gate.status, 0) + 1
