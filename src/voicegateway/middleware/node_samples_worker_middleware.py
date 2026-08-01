@@ -64,7 +64,11 @@ from typing import TYPE_CHECKING, Final
 import httpx
 
 from voicegateway.middleware.base_middleware import AsyncWorker
-from voicegateway.middleware.prometheus_exposition import parse_exposition, sum_series
+from voicegateway.middleware.prometheus_exposition import (
+    BUCKET_SUFFIX,
+    parse_exposition,
+    sum_series,
+)
 from voicegateway.repository import node_samples_repository as node_samples
 
 if TYPE_CHECKING:
@@ -191,6 +195,45 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         _Series("node_memory_MemTotal_bytes", "memory_total_bytes"),
     ),
 }
+
+
+def validate_series_map(series_map: Mapping[str, tuple[_Series, ...]]) -> None:
+    """Refuse a metric map that cannot produce meaningful numbers.
+
+    Called at import, so a bad entry is a startup failure rather than a column
+    that quietly stores the wrong thing for the life of a deployment. Both
+    checks exist because both failure modes were observed against a real
+    exposition, and neither announces itself at runtime.
+
+    A ``_bucket`` entry without an ``le`` selector would sum cumulative buckets
+    and count each observation once per bucket. On a real capture that reads
+    11.0 for a histogram whose true count is 1.
+
+    A base histogram name (``livekit_sip_dur_join_sec`` rather than its ``_sum``
+    or ``_count``) matches no sample and stores NULL forever, while
+    ``series_found`` still reads high because the sibling entries matched. That
+    one cannot be caught without an exposition to compare against, so it is
+    checked by a test against a captured fixture rather than here.
+    """
+    problems: list[str] = []
+    for source, entries in series_map.items():
+        for entry in entries:
+            if entry.metric.endswith(BUCKET_SUFFIX) and not (
+                entry.where and "le" in entry.where
+            ):
+                problems.append(
+                    f"{source}: {entry.metric!r} -> {entry.column!r} is a "
+                    "cumulative bucket with no le selector; summing it counts "
+                    "each observation once per bucket"
+                )
+    if problems:
+        raise ValueError(
+            "the node_samples metric map has entries that cannot produce a "
+            "meaningful number:\n  " + "\n  ".join(problems)
+        )
+
+
+validate_series_map(SERIES)
 
 
 TargetProvider = Callable[[], Awaitable[Sequence[ScrapeTarget]]]
