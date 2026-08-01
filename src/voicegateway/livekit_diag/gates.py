@@ -89,6 +89,7 @@ SFU_CAPACITY_GATE = "sfu_capacity"
 ESTABLISHMENT_GATE = "call_establishment"
 NODE_CPU_GATE = "node_cpu"
 NODE_MEMORY_GATE = "node_memory"
+HEADROOM_GATE = "resource_headroom"
 
 # The share of call attempts that must establish. Inclusive: a run landing
 # exactly on the bar passes. This is an acceptance threshold, not a tuning knob,
@@ -102,6 +103,25 @@ MIN_ESTABLISHMENT_RATIO = 0.995
 # comparison for the other is the easy mistake.
 MAX_NODE_CPU_UTILISATION = 0.70
 MAX_NODE_MEMORY_UTILISATION = 0.75
+
+# Headroom that must REMAIN on a limited resource. A floor, and inclusive: a node
+# sitting on exactly 20% free has met "at least 20% headroom".
+#
+# This is not the 0.85 that appears in the node-count sizing formula, and the two
+# must never be reconciled. That 0.85 is a 15% CPU margin reserved so the fleet
+# still carries its target after losing a node; this 0.20 is how much of a
+# limited resource has to be unused during the run. They measure different
+# things, on different resources, for different reasons. Expressing this one as
+# headroom rather than as an 0.80 utilisation ceiling is deliberate: the moment
+# it is written as 0.80, somebody reads it next to 0.85 and "corrects" one of
+# them.
+MIN_HEADROOM_FRACTION = 0.20
+
+# The resources the criterion names. Only the first is scraped today; the other
+# two are carried so the report cannot go quiet about them.
+HEADROOM_FILE_DESCRIPTORS = "file_descriptors"
+HEADROOM_RTP_PORTS = "rtp_ports"
+HEADROOM_NETWORK = "network"
 
 
 @dataclass(frozen=True)
@@ -827,6 +847,152 @@ def node_memory_gates(
     return _resource_gates(NODE_MEMORY_GATE, "memory", readings, threshold)
 
 
+@dataclass(frozen=True)
+class HeadroomReading:
+    """How much of one limited resource was still free on one node.
+
+    ``used`` and ``limit`` are raw counts in the resource's own unit, not a
+    fraction, so the detail line can say "819200 of 1048576 file descriptors"
+    rather than a percentage a reader cannot check. Either being ``None`` means
+    the pair was not measured, and ``unmeasured_reason`` says why.
+
+    File descriptors come from the ``filefd_allocated`` / ``filefd_maximum``
+    gauge pair. RTP ports and network are named by the criterion and scraped by
+    nothing today, which is what :func:`unscraped_headroom_readings` exists for.
+    """
+
+    node: str
+    resource: str
+    used: float | None
+    limit: float | None
+    source: str | None = None
+    unmeasured_reason: str | None = None
+
+
+def unscraped_headroom_readings(
+    node: str, *, source: str | None = None
+) -> list[HeadroomReading]:
+    """The headroom resources nothing measures yet, as explicit non-readings.
+
+    The criterion asks for headroom on network, RTP ports and system limits.
+    Only system limits (file descriptors) are scraped. Emitting the other two as
+    ``not_measured`` is the whole point of this helper: a report that simply
+    omits them shows one green row and reads as full coverage of a three-part
+    requirement.
+
+    A helper rather than a note in a docstring, because a caller that has to
+    remember to add them is a caller that eventually does not.
+    """
+    return [
+        HeadroomReading(
+            node=node,
+            resource=resource,
+            used=None,
+            limit=None,
+            source=source,
+            unmeasured_reason=reason,
+        )
+        for resource, reason in (
+            (
+                HEADROOM_RTP_PORTS,
+                "no exporter in the scrape set publishes an RTP port-range "
+                "usage series, so nothing measures it",
+            ),
+            (
+                HEADROOM_NETWORK,
+                "no exporter in the scrape set publishes a network saturation "
+                "series (PPS or conntrack), so nothing measures it",
+            ),
+        )
+    ]
+
+
+def _headroom_gate(reading: HeadroomReading, threshold: float) -> GateResult:
+    subject = f"{reading.node}/{reading.resource}"
+    if reading.used is None or reading.limit is None:
+        why = reading.unmeasured_reason or "the window produced no usable reading"
+        return GateResult(
+            gate=HEADROOM_GATE,
+            status=UNKNOWN,
+            subject=subject,
+            detail=(
+                f"{reading.resource} headroom on {reading.node} was not "
+                f"measured: {why}. Absent headroom evidence is not spare "
+                "capacity"
+            ),
+            threshold=threshold,
+        )
+    if reading.limit <= 0 or reading.used < 0 or reading.used > reading.limit:
+        return GateResult(
+            gate=HEADROOM_GATE,
+            status=UNKNOWN,
+            subject=subject,
+            detail=(
+                f"the {reading.resource} counts on {reading.node} do not "
+                f"describe a limit ({reading.used:.0f} of {reading.limit:.0f}), "
+                "so the headroom they imply is not a measurement"
+            ),
+            threshold=threshold,
+        )
+    free = reading.limit - reading.used
+    # (limit - used) / limit, NOT 1 - used/limit. The two are equal in algebra and
+    # not in float: 1 - 800/1000 is 0.19999999999999996, which is below a 0.20
+    # floor, so a node sitting exactly on the bar would be reported as breaching
+    # it. Subtracting the counts first keeps the boundary exact.
+    headroom = free / reading.limit
+    # Inclusive floor: "at least 20% headroom" is met by exactly 20%. This is the
+    # opposite direction to the CPU and memory ceilings above, which are strict.
+    # Compared as counts for the same reason as above: free >= threshold * limit
+    # cannot drift the way a difference of two fractions can.
+    status = PASS if free >= threshold * reading.limit else FAIL
+    relation = "at or above" if status == PASS else "below"
+    return GateResult(
+        gate=HEADROOM_GATE,
+        status=status,
+        subject=subject,
+        detail=(
+            f"{reading.resource} on {reading.node} had "
+            f"{headroom * 100:.1f}% headroom ({reading.used:.0f} of "
+            f"{reading.limit:.0f} used), {relation} the "
+            f"{threshold * 100:.0f}% floor"
+        ),
+        metric=f"{reading.resource}_headroom",
+        value=headroom,
+        threshold=threshold,
+    )
+
+
+def headroom_gates(
+    readings: Sequence[HeadroomReading],
+    *,
+    threshold: float = MIN_HEADROOM_FRACTION,
+) -> list[GateResult]:
+    """One gate per (node, resource): did enough of the limit stay free?
+
+    A FLOOR, and inclusive, unlike :func:`node_cpu_gates`. Exactly 20% free
+    satisfies "at least 20% headroom".
+
+    ``threshold`` is headroom, never a utilisation ceiling. See
+    :data:`MIN_HEADROOM_FRACTION` for why that distinction is load-bearing and
+    why the sizing formula's 0.85 must never be reconciled with it.
+
+    Synchronous, like every gate here.
+    """
+    if not readings:
+        return [
+            GateResult(
+                gate=HEADROOM_GATE,
+                status=UNKNOWN,
+                detail=(
+                    "no headroom reading was supplied, so no limit was shown to "
+                    "have room left. Nothing measured is not room to spare"
+                ),
+                threshold=threshold,
+            )
+        ]
+    return [_headroom_gate(r, threshold) for r in readings]
+
+
 # ---------------------------------------------------------------------------
 # The run-level entry point
 # ---------------------------------------------------------------------------
@@ -901,10 +1067,15 @@ __all__ = [
     "AGENTS_GATE",
     "ESTABLISHMENT_GATE",
     "FAIL",
+    "HEADROOM_FILE_DESCRIPTORS",
+    "HEADROOM_GATE",
+    "HEADROOM_NETWORK",
+    "HEADROOM_RTP_PORTS",
     "LATENCY_GATE",
     "MAX_NODE_CPU_UTILISATION",
     "MAX_NODE_MEMORY_UTILISATION",
     "MIN_ESTABLISHMENT_RATIO",
+    "MIN_HEADROOM_FRACTION",
     "MIN_PERCENTILE_SAMPLES",
     "NODE_CPU_GATE",
     "NODE_MEMORY_GATE",
@@ -914,14 +1085,17 @@ __all__ = [
     "UNKNOWN",
     "WARN",
     "GateResult",
+    "HeadroomReading",
     "NodeUtilisationReading",
     "agents_gate",
     "establishment_gate",
     "evaluate_checks",
     "exit_code",
+    "headroom_gates",
     "latency_gates",
     "node_cpu_gates",
     "node_memory_gates",
+    "unscraped_headroom_readings",
     "sfu_capacity_gate",
     "sfu_quality_gate",
     "summary_lines",

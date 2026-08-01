@@ -8,6 +8,8 @@ than as a green CI run on a broken deployment.
 
 from __future__ import annotations
 
+import pytest
+
 from voicegateway.livekit_diag import gates
 
 
@@ -888,4 +890,147 @@ def test_the_node_gates_are_synchronous_and_json_safe():
     assert not inspect.iscoroutinefunction(gates.node_cpu_gates)
     assert not inspect.iscoroutinefunction(gates.node_memory_gates)
     for gate in gates.node_cpu_gates([_reading("n", 0.5), _reading("m", None)]):
+        json.loads(json.dumps(gate.as_dict()))
+
+
+# ---------------------------------------------------------------------------
+# headroom_gates: at least 20% of a limited resource must stay free
+#
+# A third threshold DIRECTION in this module, and the reason each one is pinned
+# separately: establishment is an inclusive floor on a ratio, CPU and memory are
+# strict ceilings on a utilisation, and headroom is an inclusive floor on what is
+# left. The criterion names three resources and only one is scraped.
+# ---------------------------------------------------------------------------
+
+
+def _fd(node: str, used, limit, **kw) -> gates.HeadroomReading:
+    return gates.HeadroomReading(
+        node=node,
+        resource=gates.HEADROOM_FILE_DESCRIPTORS,
+        used=used,
+        limit=limit,
+        **kw,
+    )
+
+
+def test_a_node_with_room_to_spare_passes():
+    [gate] = gates.headroom_gates([_fd("sfu-1", 400_000, 1_048_576)])
+    assert gate.status == gates.PASS
+    assert gate.gate == gates.HEADROOM_GATE
+    assert gate.subject == "sfu-1/file_descriptors"
+    assert gate.threshold == gates.MIN_HEADROOM_FRACTION
+    # The raw counts travel, so a reader can check the percentage.
+    assert "400000 of 1048576 used" in gate.detail
+
+
+def test_the_headroom_floor_is_inclusive_at_exactly_twenty_percent():
+    """ "At least 20% headroom" is met by exactly 20%."""
+    assert gates.MIN_HEADROOM_FRACTION == 0.20
+    [exact] = gates.headroom_gates([_fd("sfu-1", 800, 1000)])
+    assert exact.status == gates.PASS
+    assert exact.value == pytest.approx(0.20)
+    # One descriptor further along and the floor is breached.
+    [under] = gates.headroom_gates([_fd("sfu-1", 801, 1000)])
+    assert under.status == gates.FAIL
+    assert "below" in under.detail
+
+
+def test_headroom_is_a_floor_where_cpu_is_a_ceiling():
+    """The same shape of number, judged in opposite directions.
+
+    80% of the file-descriptor limit in use leaves exactly the required headroom
+    and passes. 80% CPU is over its ceiling and fails. Reusing one comparison for
+    the other would invert one of them silently.
+    """
+    [fd] = gates.headroom_gates([_fd("n", 80, 100)])
+    assert fd.status == gates.PASS
+    [cpu] = gates.node_cpu_gates([_reading("n", 0.80)])
+    assert cpu.status == gates.FAIL
+
+
+def test_the_sizing_margin_is_not_this_threshold():
+    """0.85 in the node-count formula is a different number for a different job.
+
+    It is a 15% CPU margin reserved so the fleet still carries its target after
+    losing a node. This is 20% of a limited resource left unused during the run.
+    Pinned here because the two are close enough to invite a reconciliation.
+    """
+    assert gates.MIN_HEADROOM_FRACTION == 0.20
+    assert gates.MIN_HEADROOM_FRACTION != 0.15
+    # Judged as headroom remaining, never as an 0.80 utilisation ceiling.
+    [gate] = gates.headroom_gates([_fd("n", 80, 100)])
+    assert gate.metric == "file_descriptors_headroom"
+    assert gate.value == pytest.approx(0.20)
+
+
+def test_rtp_ports_and_network_are_emitted_as_not_measured():
+    """The criterion names three resources and nothing scrapes two of them.
+
+    Omitting them would show one green row and read as full coverage.
+    """
+    readings = gates.unscraped_headroom_readings("sfu-1")
+    assert [r.resource for r in readings] == [
+        gates.HEADROOM_RTP_PORTS,
+        gates.HEADROOM_NETWORK,
+    ]
+    results = gates.headroom_gates(readings)
+    assert [g.status for g in results] == [gates.UNKNOWN, gates.UNKNOWN]
+    for gate in results:
+        assert "nothing measures it" in gate.detail
+        assert "not spare capacity" in gate.detail
+        assert gate.value is None
+    assert gates.exit_code(gates.verdict(results)) == 1
+
+
+def test_an_absent_pair_is_unknown_not_full_headroom():
+    for used, limit in ((None, 1000), (500, None), (None, None)):
+        [gate] = gates.headroom_gates([_fd("n", used, limit)])
+        assert gate.status == gates.UNKNOWN, (used, limit)
+        assert gate.value is None
+
+
+def test_counts_that_do_not_describe_a_limit_are_unknown():
+    """A zero ceiling has no headroom to have, and used>limit is incoherent."""
+    for used, limit in ((0, 0), (10, 0), (-1, 100), (101, 100)):
+        [gate] = gates.headroom_gates([_fd("n", used, limit)])
+        assert gate.status == gates.UNKNOWN, (used, limit)
+        assert "do not describe a limit" in gate.detail
+
+
+def test_a_fully_free_resource_passes_and_a_saturated_one_fails():
+    assert gates.headroom_gates([_fd("n", 0, 100)])[0].status == gates.PASS
+    saturated = gates.headroom_gates([_fd("n", 100, 100)])[0]
+    assert saturated.status == gates.FAIL
+    assert saturated.value == pytest.approx(0.0)
+
+
+def test_no_readings_at_all_is_unknown_not_room_to_spare():
+    [gate] = gates.headroom_gates([])
+    assert gate.status == gates.UNKNOWN
+    assert "not room to spare" in gate.detail
+
+
+def test_one_gate_per_node_and_resource():
+    results = gates.headroom_gates(
+        [_fd("sfu-1", 10, 100), _fd("sfu-2", 95, 100)]
+        + gates.unscraped_headroom_readings("sfu-1")
+    )
+    assert len(results) == 4
+    assert [g.status for g in results] == [
+        gates.PASS,
+        gates.FAIL,
+        gates.UNKNOWN,
+        gates.UNKNOWN,
+    ]
+    assert gates.verdict(results) == gates.FAIL
+
+
+def test_headroom_gates_are_synchronous_and_json_safe():
+    import inspect
+    import json
+
+    assert not inspect.iscoroutinefunction(gates.headroom_gates)
+    for gate in gates.headroom_gates(
+        [_fd("n", 10, 100)] + gates.unscraped_headroom_readings("n")
+    ):
         json.loads(json.dumps(gate.as_dict()))
