@@ -26,28 +26,49 @@ cannot be the guarantee.
 carry stays NULL and is counted out of ``series_found``. Nothing is stored as 0
 unless a target reported 0.
 
-WHICH RELEASE THE SERIES NAMES CAME FROM
-----------------------------------------
-The livekit-server and livekit-sip names in :data:`SERIES` are the set
-enumerated in ``docs/superpowers/specs/2026-07-29-end-to-end-profiling-scope.md``
-(§2 "What is actually observable"), carrying the ``livekit`` Prometheus
-namespace and the subsystem prefix those exporters use (``livekit_room_total``,
-``livekit_sip_calls_active``, ...). That scope was written against the SDKs
-installed here -- ``livekit-api 1.1.0`` / ``livekit-protocol 1.1.7`` -- but a
-Python SDK version does NOT pin the livekit-server or livekit-sip BINARY an
-operator runs, and this repo pins neither anywhere (the only reference in the
-tree is an untagged ``livekit/livekit-server --dev`` in ``docs/cli/check.md``).
-**These names are therefore unverified against a live target**, and metric names
-drift between releases.
+WHICH NAMES ARE MEASURED, AND WHICH ARE STILL INFERRED
+------------------------------------------------------
+These names were originally taken from
+``docs/superpowers/specs/2026-07-29-end-to-end-profiling-scope.md`` (§2 "What is
+actually observable"), which was written against the SDKs installed here rather
+than against a running binary. A Python SDK version does not pin the
+livekit-server or livekit-sip BINARY an operator runs, and inferring a metric
+name is how a column ends up storing NULL for the life of a deployment while
+nothing at runtime says so. Three names taken that way were wrong.
 
-node_exporter names (``node_filefd_allocated``, ``node_filefd_maximum``,
-``node_load1``, ``node_cpu_seconds_total``, ``node_memory_Mem*_bytes``) come
-from its filefd / loadavg / cpu / meminfo collectors and have been stable since
-node_exporter 0.18 (current 1.9).
+So the map is now split by provenance, and the distinction is kept because it is
+the difference between a column that works and one that only looks like it does.
 
-That uncertainty is exactly why an unmatched series stores NULL and why every
-row records ``series_found``: an operator on a release that renamed something
-sees "0 of 5 series matched" on the row instead of an unexplainable empty chart,
+MEASURED against livekit-sip 1.10.1 and node_exporter, with a real inbound call
+placed so every counter was populated: all 22 ``livekit-sip`` entries and all 9
+``node-exporter`` entries. Every one resolves, asserted per entry in
+``tests/middleware/test_histogram_misuse.py`` against a captured exposition and
+again in ``tests/integration/test_live_node_scrape.py`` against the running
+exporters.
+
+MEASURED against livekit-server 1.10.1: ``livekit_room_total``,
+``livekit_participant_total``, ``livekit_packet_total``, ``livekit_packet_bytes``,
+``go_memstats_heap_inuse_bytes`` and ``go_goroutines``.
+
+**STILL INFERRED**, and the one remaining gap: the five ``process_*`` entries in
+the ``livekit-server`` tuple. They are the standard prometheus/client_golang
+process collector and they resolve against livekit-sip, which registers the same
+library, so they are very likely right. Very likely is not measured. Closing this
+needs one authenticated scrape of a livekit-server metrics port, which is
+commonly behind basic auth; until then those five columns may store NULL on a
+real deployment and ``series_found`` will say so rather than hide it.
+
+DELIBERATELY UNWIRED, so their columns store NULL rather than a wrong name:
+``livekit_session_start_time_ms_*``, ``livekit_track_published_total``,
+``livekit_track_subscribed_total`` and ``psrpc_stream_count``. An unwired column
+is honest; a guessed one is invisible.
+
+node_exporter names come from its filefd / loadavg / cpu / meminfo / sockstat /
+netstat collectors and have been stable since node_exporter 0.18 (current 1.9).
+
+That residual uncertainty is exactly why an unmatched series stores NULL and why
+every row records ``series_found``: an operator on a release that renamed
+something sees the count fall on the row instead of an unexplainable empty chart,
 and fixing it is one entry in :data:`SERIES`.
 """
 
@@ -227,8 +248,18 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         # ---- answer latency ------------------------------------------------
         # The engagement's headline risk: livekit-sip withholds 200 OK until it
         # has subscribed to an audio track, so this histogram IS caller-visible
-        # answer latency. Stored as _sum and _count; the buckets are cumulative
-        # and summing them counts one observation once per bucket.
+        # answer latency.
+        #
+        # MEASURED, not reasoned. Its HELP string on 1.10.1 reads "SIP room join
+        # duration (from INVITE to mixed room audio)", which names both
+        # boundaries, and the arithmetic on a real call agrees: session_sec_sum
+        # 8.670751059 minus call_sec_sum 8.613975456 is 0.056775603 against a
+        # join_sec_sum of 0.056595646, a disagreement of 0.18 ms. Join is
+        # therefore the pre-200-OK segment of the session, which is what makes
+        # it the answer latency rather than a number that correlates with it.
+        #
+        # Stored as _sum and _count; the buckets are cumulative and summing them
+        # counts one observation once per bucket.
         _Series("livekit_sip_dur_join_sec_sum", "sip_join_sec_sum"),
         _Series("livekit_sip_dur_join_sec_count", "sip_join_sec_count"),
         # Two explicit buckets, each selected by an le naming ONE bound, so a

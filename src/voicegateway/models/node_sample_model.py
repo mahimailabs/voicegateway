@@ -149,6 +149,14 @@ class NodeSample(SQLModel, table=True):
     # time IS the caller-visible answer latency. These are the only server-side
     # series that measure it.
     #
+    # That identity is MEASURED rather than argued. On livekit-sip 1.10.1 the
+    # HELP string reads "SIP room join duration (from INVITE to mixed room
+    # audio)", naming both boundaries, and the three duration families close on
+    # a real call: session (INVITE to closed) minus call (successful pin to
+    # closed) is 0.056775603 s against a join sum of 0.056595646 s, agreeing to
+    # 0.18 ms. Join is the pre-200-OK segment of the session, not a number that
+    # merely tracks it.
+    #
     # A histogram is stored as its _sum and _count rather than its buckets,
     # because buckets are cumulative and summing them counts one observation
     # once per bucket. Two explicit bucket counts are kept alongside so a

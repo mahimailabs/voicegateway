@@ -272,3 +272,74 @@ def test_the_unverifiable_server_names_were_not_guessed_in() -> None:
         "psrpc_stream_count",
     ):
         assert name not in wired, f"{name} was guessed into the map"
+
+
+# --------------------------------------------------------------------------
+# Join IS the pre-200-OK segment, and the capture proves it
+# --------------------------------------------------------------------------
+
+
+def test_join_is_the_segment_of_the_session_before_the_call_starts(live) -> None:
+    """The load-bearing claim of the whole engagement, checked arithmetically.
+
+    Everything downstream rests on livekit_sip_dur_join_sec being caller-visible
+    answer latency rather than a number that merely correlates with it. That was
+    argued from behaviour (livekit-sip withholds 200 OK until it has subscribed
+    to an audio track) and is now measured: the three duration families close on
+    a real call.
+
+    session (INVITE to closed) - call (successful pin to closed) = the part
+    before the call began, which is what join should be. On this capture they
+    agree to 0.18 ms out of 56.6 ms.
+    """
+    session = sum_series(live, "livekit_sip_dur_session_sec_sum")
+    call = sum_series(live, "livekit_sip_dur_call_sec_sum")
+    join = sum_series(live, "livekit_sip_dur_join_sec_sum")
+    assert None not in (session, call, join)
+    derived = session - call
+    assert derived == pytest.approx(join, abs=0.001)
+    # Non-vacuous: the segment is a small fraction of the session, so an
+    # approximate match is not something any two of these numbers would show.
+    assert join < session / 100
+
+
+def test_the_exporter_names_both_boundaries_itself(live) -> None:
+    """The HELP string, which is the exporter's own statement of the interval.
+
+    Read from the capture rather than restated here, so a release that redefines
+    the metric fails this instead of silently invalidating every answer-latency
+    number downstream.
+    """
+    text = FIXTURE.read_text()
+    [help_line] = [
+        line
+        for line in text.splitlines()
+        if line.startswith("# HELP livekit_sip_dur_join_sec ")
+    ]
+    assert "from INVITE to mixed room audio" in help_line
+
+
+def test_the_docstring_does_not_claim_the_server_process_block_is_verified() -> None:
+    """The one gap left, stated where somebody adding an entry will read it.
+
+    livekit-server's metrics port is commonly behind basic auth, so the five
+    process_* entries in its tuple are inferred from livekit-sip registering the
+    same prometheus/client_golang collector. That is a good reason to expect
+    them and it is not a measurement, and this map's whole doctrine is that the
+    difference is what decides whether a column works or only looks like it.
+    """
+    from voicegateway.middleware import node_samples_worker_middleware as module
+
+    doc = module.__doc__ or ""
+    assert "STILL INFERRED" in doc
+    assert "process_*" in doc
+    # And the claim is specific about which source, since the same names ARE
+    # measured on livekit-sip.
+    server_process = [
+        e.metric for e in SERIES["livekit-server"] if e.metric.startswith("process_")
+    ]
+    assert len(server_process) == 5
+    sip_process = {
+        e.metric for e in SERIES["livekit-sip"] if e.metric.startswith("process_")
+    }
+    assert set(server_process) <= sip_process
