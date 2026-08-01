@@ -96,11 +96,21 @@ REQUIRED_STAT_COLUMNS = frozenset(
     }
 )
 
-# Discovery names, in preference order. The CSV is whatever ``-trace_stat`` was
-# pointed at, so it is matched by suffix rather than by an exact name.
+# Discovery names. The stat file is whatever ``-trace_stat`` was pointed at, so
+# it is found by reading headers rather than by name or extension: an observed
+# run wrote "gossipper_<pid>_stats.log", which no extension-based match finds.
 SUMMARY_FILENAME = "summary.json"
 CALL_RECORDS_FILENAME = "calls.jsonl"
-_STAT_CSV_SUFFIX = ".csv"
+
+# Skipped during stat discovery because they are known to be OTHER surfaces.
+# Named explicitly rather than filtered by extension, which is the mistake this
+# discovery exists to avoid making twice.
+_NOT_STAT_FILES: frozenset[str] = frozenset({SUMMARY_FILENAME, CALL_RECORDS_FILENAME})
+
+# How much of a file to read while deciding whether it is the stat file. The
+# real header is ~700 bytes; this is generous and still bounded, so a directory
+# containing something enormous costs one small read.
+_STAT_HEADER_MAX_BYTES = 64 * 1024
 
 
 class ArtifactError(Exception):
@@ -567,26 +577,81 @@ def parse_stat_csv(path: Path) -> list[IntervalSample]:
     return samples
 
 
-def _find_stat_csv(directory: Path) -> Path | None:
-    """The stat CSV in a directory, or None.
+def _looks_like_stat_file(path: Path) -> bool:
+    """Does this file's FIRST LINE parse as a stat header?
 
-    Matched by suffix because the file is named by whatever ``-trace_stat`` was
-    pointed at. When several exist the lexicographically first is taken, and the
-    caller can always pass an explicit path to :func:`parse_stat_csv` instead.
+    Reads a bounded prefix, so pointing this at a directory holding a multi-GB
+    packet capture costs one small read rather than the whole file. Anything
+    that is not decodable text, or whose header does not carry every required
+    column, is not a candidate.
     """
-    candidates = sorted(
-        p for p in directory.glob(f"*{_STAT_CSV_SUFFIX}") if p.is_file()
-    )
-    return candidates[0] if candidates else None
+    try:
+        with path.open("r", encoding="utf-8", errors="strict", newline="") as handle:
+            first = handle.readline(_STAT_HEADER_MAX_BYTES)
+    except (OSError, UnicodeDecodeError):
+        # Unreadable or binary. Not an error: discovery looks at every file in
+        # the directory, so most of what it sees is expected not to qualify.
+        return False
+    if not first.strip():
+        return False
+    try:
+        header = next(csv.reader([first]))
+    except (csv.Error, StopIteration):
+        return False
+    return REQUIRED_STAT_COLUMNS <= {column.strip() for column in header}
+
+
+def _find_stat_file(directory: Path) -> Path | None:
+    """The stat file in a directory, or None. Selected by HEADER, not by name.
+
+    The generator writes ``gossipper_<pid>_stats.log``, and this used to glob
+    ``*.csv``, so a real run's stat file was never even a candidate and the
+    header check that would have recognised it never ran. The import then failed
+    with "neither surface is present" while sitting in a directory containing a
+    valid 43-column CSV. The file is a CSV by content and a ``.log`` by name, so
+    the extension is ignored entirely and content decides.
+
+    Files are considered in sorted order for determinism. ``calls.jsonl`` and
+    ``summary.json`` are skipped by name because they are known to be other
+    surfaces, not because of their extensions; everything else is judged by
+    reading its first line.
+    """
+    for path in sorted(directory.iterdir()):
+        if not path.is_file() or path.name in _NOT_STAT_FILES:
+            continue
+        if _looks_like_stat_file(path):
+            return path
+    return None
 
 
 def _count_call_records(path: Path) -> tuple[str, int | None]:
     """Count readable records in ``calls.jsonl`` without interpreting them.
 
-    NO field mapping is applied. The per-record schema is documented nowhere,
-    and the only ways to recover it are running the binary or reading AGPL
-    source, so this reports presence and record count and nothing more. Never
-    raises: this surface is enrichment, and an import must not fail on it.
+    NO field mapping is applied, still. The schema is now KNOWN, recovered by
+    capturing a real run rather than by reading AGPL source, and is recorded
+    here so the next person does not have to capture one:
+
+        schema_version  "gossipper_call_record_v1"
+        call_id         str      e.g. "gossip-1-1-8e31bd2e"
+        call_number     int      1-based
+        success         bool
+        duration_ms     int
+        error           str      empty on success
+        media           object, keys in PascalCase:
+                        RTPPacketsSent, RTPOctetsSent, RTPPacketsReceived,
+                        RTCPSenderReports, RTCPReceiverReports,
+                        RTCPPacketsReceived, RTCPReportBlocks,
+                        RTCPMaxFractionLost, RTCPMaxJitter, RTCPMinJitter,
+                        RTCPJitterSum, RTCPJitterSamples,
+                        RTPRecvMaxCumulativeLost,
+                        RTPRecvInterarrivalJitterPeak
+
+    Mapping it is a separate change from recording it, and this function is not
+    where it belongs: the per-call surface feeds observations and jitter, not
+    the per-test row this module builds. Knowing the shape is what unblocks
+    that; guessing at it was what stopped it.
+
+    Never raises: this surface is enrichment, and an import must not fail on it.
     """
     if not path.is_file():
         return "absent", None
@@ -613,15 +678,17 @@ def parse_test_directory(directory: Path, *, name: str | None = None) -> ParsedT
     """
     directory = Path(directory)
     summary_path = directory / SUMMARY_FILENAME
-    csv_path = _find_stat_csv(directory)
+    csv_path = _find_stat_file(directory)
 
     summary = parse_summary(summary_path) if summary_path.is_file() else None
     samples = parse_stat_csv(csv_path) if csv_path is not None else []
 
     if summary is None and not samples:
         raise MissingArtifact(
-            f"{directory}: neither {SUMMARY_FILENAME} nor a stat CSV is present, "
-            "so there is nothing to import. Either surface alone is enough."
+            f"{directory}: neither {SUMMARY_FILENAME} nor a stat file is present, so "
+            "there is nothing to import. Either surface alone is enough. A stat "
+            "file is recognised by its header carrying "
+            f"{sorted(REQUIRED_STAT_COLUMNS)}, whatever it is named."
         )
 
     # Peak concurrency: max over the CSV's per-interval active_calls. The
