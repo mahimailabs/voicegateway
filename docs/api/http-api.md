@@ -746,6 +746,14 @@ export VOICEGW_NODE_SCRAPE_TARGETS="livekit-server:sfu-1=http://10.0.0.4:6789/me
 
 `source` is one of `livekit-server`, `livekit-sip` or `node-exporter`. `name` is the node the samples are filed under, and using the same `name` for two sources is the point: it puts an SFU's own counters and its host's file descriptors on one time axis. A malformed entry is skipped with a warning instead of failing startup, and the collector logs how many targets it read.
 
+**An endpoint behind basic auth** takes the credential in the URL, the usual way:
+
+```bash
+export VOICEGW_NODE_SCRAPE_TARGETS="livekit-server:sfu-1=http://user:secret@10.0.0.4:6789/metrics"
+```
+
+The credential is split off the URL when the variable is parsed and sent as an `Authorization` header instead. That matters because the HTTP client logs its request line at INFO: left in the URL, the password would be written to the log on every tick, four times a minute, for as long as the collector runs. Nothing logs it now, including the warning about a malformed entry, which prints the host with the credential replaced by `***`. Percent-encode a password containing `@`, `:` or `/`.
+
 With the variable unset or empty no scrape worker is started and the collector makes no outbound requests, which is the default. Cadence comes from `workers.node_scrape_interval_seconds` in `voicegw.yaml` (default 15 seconds, matching Prometheus' own default); `workers.enabled: false` disables this worker along with the rollups.
 
 **`voicegw_cost_usd_total` and `voicegw_requests_total` are gauges over a rolling 24-hour window, not counters.** Both are computed from the `"today"` window, which is `now - 86400` seconds: a rolling trailing 24 hours. It is *not* midnight-to-now and *not* a since-process-start total. The value therefore goes **down** as well as up, every time a request falls off the trailing edge. The `period="today"` label and the `_total` suffix are both misnomers kept for backward compatibility, because renaming a scraped series would break every dashboard already built on it. The `# TYPE` metadata is now `gauge`, which is what your tooling actually reads.

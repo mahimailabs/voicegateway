@@ -2,8 +2,8 @@
 
 **This module owns no table and writes nothing.** It is the read side of layer 7,
 and it exists because layer 7 has no per-call identity to join on:
-``livekit_packet_*``, ``livekit_nack_total`` and the ``livekit-sip``
-``invite_*``/``calls_*`` families are NODE counters, and ``node_samples`` has no
+``livekit_packet_*`` and the ``livekit-sip`` ``invite_*``/``calls_*``
+families are NODE counters, and ``node_samples`` has no
 ``call_id`` column by design (see the model docstring). There is no ``node_id``
 awareness anywhere in this tree, and this module does not add any.
 

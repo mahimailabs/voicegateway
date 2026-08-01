@@ -7,7 +7,7 @@ scraped twice per tick -- once as ``livekit-server`` and once as
 
 **No foreign key to ``calls``, and no ``call_id`` column.** Layer 7 is
 correlated by ``(node, time window)`` only. livekit-server's
-``livekit_packet_*`` / ``livekit_nack_total`` and livekit-sip's
+``livekit_packet_*`` and livekit-sip's
 ``invite_*`` / ``calls_*`` are NODE counters: attributing one of them to a call
 would invent a per-call measurement that does not exist server-side (the same
 reason ``call_legs`` has no loss / jitter / MOS column).
@@ -100,7 +100,6 @@ class NodeSample(SQLModel, table=True):
     packets_total: int | None = Field(default=None, sa_type=BigInteger)
     # BigInteger is load-bearing here (see the module docstring).
     packet_bytes_total: int | None = Field(default=None, sa_type=BigInteger)
-    nacks_total: int | None = Field(default=None, sa_type=BigInteger)
 
     # ---- livekit-sip ------------------------------------------------------
     # Fleet aggregates only. livekit-sip is blind to anything per-call, so
@@ -143,3 +142,79 @@ class NodeSample(SQLModel, table=True):
     # this table carries its unit in the name.
     heap_inuse_bytes: int | None = Field(default=None, sa_type=BigInteger)
     go_goroutines: int | None = None
+
+    # ---- answer latency ---------------------------------------------------
+    # The engagement's single biggest risk: livekit-sip withholds 200 OK until
+    # it has subscribed to an audio track, so the answering participant's join
+    # time IS the caller-visible answer latency. These are the only server-side
+    # series that measure it.
+    #
+    # A histogram is stored as its _sum and _count rather than its buckets,
+    # because buckets are cumulative and summing them counts one observation
+    # once per bucket. Two explicit bucket counts are kept alongside so a
+    # proportion under a bound is answerable without a percentile: le=1 and
+    # le=5 are the two the acceptance conversation actually turns on.
+    sip_join_sec_sum: float | None = None
+    sip_join_sec_count: int | None = Field(default=None, sa_type=BigInteger)
+    sip_join_le1_count: int | None = Field(default=None, sa_type=BigInteger)
+    sip_join_le5_count: int | None = Field(default=None, sa_type=BigInteger)
+    sip_check_sec_sum: float | None = None
+    sip_check_sec_count: int | None = Field(default=None, sa_type=BigInteger)
+    session_start_time_ms_sum: int | None = Field(default=None, sa_type=BigInteger)
+    session_start_time_ms_count: int | None = Field(default=None, sa_type=BigInteger)
+
+    # ---- file descriptors, the limit that actually binds -------------------
+    # The PER-PROCESS rlimit, not the host fs.file-max. The host figure is
+    # commonly unbounded and unstorable, and the limit a service actually hits
+    # is its own LimitNOFILE, which node_exporter structurally cannot see.
+    process_open_fds: int | None = Field(default=None, sa_type=BigInteger)
+    process_max_fds: int | None = Field(default=None, sa_type=BigInteger)
+
+    # ---- admission and media ----------------------------------------------
+    # sip_available is "whether this node can accept new requests" and flips to
+    # 0 when it stops taking INVITEs, which is both the health signal and the
+    # node-drain test.
+    sip_available: int | None = None
+    # Present on livekit-sip ONLY. Absent from every livekit_* family on the
+    # server, so it is never wired there.
+    sip_node_cpu_load: float | None = None
+    # Split by direction and never summed. A call that sent 337 and received
+    # 330 sums to 667, and one-way audio disappears into that single number.
+    sip_rtp_packets_recv: int | None = Field(default=None, sa_type=BigInteger)
+    sip_rtp_packets_send: int | None = Field(default=None, sa_type=BigInteger)
+
+    # ---- restart and attribution ------------------------------------------
+    # A process that restarted mid-run invalidates every counter rate across
+    # the restart. start_time is what makes that visible rather than a mystery
+    # discontinuity.
+    process_start_time_seconds: float | None = None
+    process_cpu_seconds_total: float | None = None
+    process_resident_memory_bytes: int | None = Field(default=None, sa_type=BigInteger)
+
+    # ---- port headroom ----------------------------------------------------
+    # UDP sockets in use against ports that could not be allocated. The second
+    # is the one that matters: a non-zero rate means the box ran out of ports,
+    # which at 500 concurrent is a far more likely wall than CPU.
+    sockstat_udp_inuse: int | None = Field(default=None, sa_type=BigInteger)
+    udp_no_ports_total: int | None = Field(default=None, sa_type=BigInteger)
+
+    # ---- stale state ------------------------------------------------------
+    # Read for what does NOT come down after teardown. Named _total by the
+    # exporter but behaving as gauges: they are current counts, not cumulative,
+    # so they are never diffed.
+    track_published_total: int | None = Field(default=None, sa_type=BigInteger)
+    track_subscribed_total: int | None = Field(default=None, sa_type=BigInteger)
+    psrpc_stream_count: int | None = Field(default=None, sa_type=BigInteger)
+
+    # ---- unbounded marker -------------------------------------------------
+    # THREE states, and the distinction between them is the entire point.
+    # 1 means the host file-descriptor maximum parsed as effectively unbounded,
+    # so headroom on it cannot run out. 0 means it parsed as a real bound. NULL
+    # means nobody measured it. "Cannot run out" and "nobody looked" are
+    # different claims and this table's doctrine forbids collapsing them.
+    #
+    # Integer rather than Boolean so it travels the same coercion path as every
+    # other scraped column instead of needing a parallel one. It is derived
+    # from node_filefd_maximum rather than scraped directly, but it is still an
+    # observation about one scrape, which is what a value column is.
+    filefd_maximum_unbounded: int | None = None

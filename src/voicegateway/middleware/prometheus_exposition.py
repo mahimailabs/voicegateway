@@ -181,6 +181,41 @@ def parse_exposition(body: str) -> list[Sample]:
     return samples
 
 
+#: The suffix Prometheus gives a histogram's cumulative bucket series.
+BUCKET_SUFFIX = "_bucket"
+
+#: Suffixes that only ever exist on a histogram or summary, never alone. A map
+#: entry naming the BASE of one of these matches no sample at all.
+_AGGREGATE_SUFFIXES = ("_bucket", "_sum", "_count")
+
+
+class HistogramMisuse(ValueError):
+    """A series was requested in a way that cannot produce a meaningful number.
+
+    Raised rather than returning None, because both cases this covers are
+    programming errors in the metric map, not absences in the data, and a None
+    would be indistinguishable from "this deployment does not export it".
+    """
+
+
+def histogram_bases(samples: Iterable[Sample]) -> set[str]:
+    """Names that exist ONLY as ``_bucket``/``_sum``/``_count``.
+
+    A map entry naming one of these matches nothing and stores NULL for the
+    life of the deployment, while ``series_found`` still reads high because the
+    other entries matched. That is invisible without this check.
+    """
+    present = {sample.name for sample in samples}
+    bases: set[str] = set()
+    for name in present:
+        for suffix in _AGGREGATE_SUFFIXES:
+            if name.endswith(suffix):
+                base = name[: -len(suffix)]
+                if base and base not in present:
+                    bases.add(base)
+    return bases
+
+
 def sum_series(
     samples: Iterable[Sample],
     name: str,
@@ -201,7 +236,21 @@ def sum_series(
     a release spelled it differently. ``where`` is used only where the value is
     part of the definition (``mode="idle"``), never to reconstruct a split this
     schema does not store.
+
+    Summing across BUCKETS is a different operation and is refused. Prometheus
+    buckets are cumulative, so ``le=0.1`` is contained in ``le=0.5`` and so on
+    up to ``+Inf``: adding them counts the same observation once per bucket. On
+    a real capture this returns 11.0 for a histogram whose true ``_count`` is 1,
+    and at load that charts as a smooth believable curve nobody questions. A
+    bucket therefore requires an explicit ``le``, which selects ONE bucket and
+    makes the result "observations at or under this bound".
     """
+    if name.endswith(BUCKET_SUFFIX) and not (where and "le" in where):
+        raise HistogramMisuse(
+            f"{name!r} is a cumulative histogram bucket and summing across "
+            "buckets counts each observation once per bucket. Pass an explicit "
+            'le selector, e.g. where={"le": "1"}, to select a single bucket.'
+        )
     total: float | None = None
     for sample in samples:
         if sample.name != name:
@@ -213,7 +262,10 @@ def sum_series(
 
 
 __all__ = [
+    "BUCKET_SUFFIX",
+    "HistogramMisuse",
     "Sample",
+    "histogram_bases",
     "parse_exposition",
     "sum_series",
 ]

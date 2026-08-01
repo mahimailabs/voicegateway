@@ -946,7 +946,15 @@ def unscraped_headroom_readings(
 
 
 def _headroom_gate(reading: HeadroomReading, threshold: float) -> GateResult:
-    subject = f"{reading.node}/{reading.resource}"
+    # The source belongs in the subject whenever there is one, exactly as in
+    # _resource_gate. One node is commonly scraped by several exporters, and
+    # dropping it produced several gates with IDENTICAL subjects: an observed
+    # run emitted "live-1/file_descriptors" three times reading PASS, UNKNOWN
+    # and UNKNOWN, with nothing in the report saying which exporter passed. A
+    # reading with no source keeps the shorter form, so a caller that has only
+    # a node name is unaffected.
+    where = f"{reading.node}/{reading.source}" if reading.source else reading.node
+    subject = f"{where}/{reading.resource}"
     if reading.used is None or reading.limit is None:
         why = reading.unmeasured_reason or "the window produced no usable reading"
         return GateResult(
@@ -954,7 +962,7 @@ def _headroom_gate(reading: HeadroomReading, threshold: float) -> GateResult:
             status=UNKNOWN,
             subject=subject,
             detail=(
-                f"{reading.resource} headroom on {reading.node} was not "
+                f"{reading.resource} headroom on {where} was not "
                 f"measured: {why}. Absent headroom evidence is not spare "
                 "capacity"
             ),
@@ -966,7 +974,7 @@ def _headroom_gate(reading: HeadroomReading, threshold: float) -> GateResult:
             status=UNKNOWN,
             subject=subject,
             detail=(
-                f"the {reading.resource} counts on {reading.node} do not "
+                f"the {reading.resource} counts on {where} do not "
                 f"describe a limit ({reading.used:.0f} of {reading.limit:.0f}), "
                 "so the headroom they imply is not a measurement"
             ),
@@ -989,7 +997,7 @@ def _headroom_gate(reading: HeadroomReading, threshold: float) -> GateResult:
         status=status,
         subject=subject,
         detail=(
-            f"{reading.resource} on {reading.node} had "
+            f"{reading.resource} on {where} had "
             f"{headroom * 100:.1f}% headroom ({reading.used:.0f} of "
             f"{reading.limit:.0f} used), {relation} the "
             f"{threshold * 100:.0f}% floor"

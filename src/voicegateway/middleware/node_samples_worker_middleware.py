@@ -56,15 +56,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import time
+import urllib.parse
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Final
 
 import httpx
 
 from voicegateway.middleware.base_middleware import AsyncWorker
-from voicegateway.middleware.prometheus_exposition import parse_exposition, sum_series
+from voicegateway.middleware.prometheus_exposition import (
+    BUCKET_SUFFIX,
+    parse_exposition,
+    sum_series,
+)
 from voicegateway.repository import node_samples_repository as node_samples
 
 if TYPE_CHECKING:
@@ -116,12 +122,26 @@ TARGETS_ENV_VAR: Final[str] = "VOICEGW_NODE_SCRAPE_TARGETS"
 
 @dataclass(frozen=True)
 class ScrapeTarget:
-    """One exposition endpoint, and the node name its samples are filed under."""
+    """One exposition endpoint, and the node name its samples are filed under.
+
+    ``url`` NEVER carries userinfo. A metrics endpoint behind basic auth is
+    configured as ``http://user:secret@host/metrics``, and httpx would happily
+    authenticate from that: it also logs the request line at INFO, so the
+    password would be written to the log on every tick, four times a minute, for
+    as long as the process runs. :func:`targets_from_env` splits the credential
+    off into :attr:`auth` so the URL that gets logged, retried and reported is
+    the URL without it.
+
+    ``auth`` is ``repr=False`` because a dataclass repr is the other way a
+    secret escapes: any log line, exception or debugger that renders a target
+    would print it.
+    """
 
     node: str
     url: str
     source: str
     project: str = node_samples.DEFAULT_PROJECT
+    auth: tuple[str, str] | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -147,15 +167,34 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         # kind of detail that drifts between releases.
         _Series("livekit_packet_total", "packets_total"),
         _Series("livekit_packet_bytes", "packet_bytes_total"),
-        _Series("livekit_nack_total", "nacks_total"),
-        # Go runtime, from the standard prometheus/client_golang collectors that
-        # both binaries register by default. These are the return-to-baseline
-        # pair, NOT RSS: Go hands freed heap back to the OS lazily, so a drained
-        # process can hold its resident size long after the heap emptied.
-        # Unverified against a live target, like every name in this map; an
-        # unmatched one stores NULL and is counted by series_found.
+        # Go runtime and process collectors, from the standard
+        # prometheus/client_golang set both binaries register by default. The
+        # heap and goroutine pair is the return-to-baseline signal, NOT RSS: Go
+        # hands freed heap back to the OS lazily, so a drained process can hold
+        # its resident size long after the heap emptied.
+        #
+        # process_max_fds is the PER-PROCESS rlimit and is the ceiling a service
+        # actually hits, unlike the host fs.file-max which is commonly
+        # unbounded. process_start_time_seconds is what makes a mid-run restart
+        # visible rather than an unexplained discontinuity in every counter rate
+        # across it.
         _Series("go_memstats_heap_inuse_bytes", "heap_inuse_bytes"),
         _Series("go_goroutines", "go_goroutines"),
+        _Series("process_open_fds", "process_open_fds"),
+        _Series("process_max_fds", "process_max_fds"),
+        _Series("process_start_time_seconds", "process_start_time_seconds"),
+        _Series("process_cpu_seconds_total", "process_cpu_seconds_total"),
+        _Series("process_resident_memory_bytes", "process_resident_memory_bytes"),
+        # NOT here: livekit_node_cpu_load, which exists on livekit-sip only and
+        # appears in none of the livekit_* families the server exports.
+        #
+        # ALSO NOT here, and their columns therefore store NULL:
+        # livekit_session_start_time_ms_sum/_count, livekit_track_published_total,
+        # livekit_track_subscribed_total and psrpc_stream_count. They are
+        # server-side names that could not be read off a live server, and a
+        # guessed name stores NULL for the life of a deployment while
+        # series_found still reads high because its siblings matched. An
+        # unwired column is honest; a wrong one is invisible.
     ),
     SOURCE_LIVEKIT_SIP: (
         # Fleet aggregates only. livekit-sip is blind to anything per-call, so
@@ -167,14 +206,58 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         # Summed across the `status` label: the per-status split is a different
         # (and wider) table than this one.
         _Series("livekit_sip_calls_terminated", "sip_calls_terminated_total"),
-        # Go runtime, from the standard prometheus/client_golang collectors that
-        # both binaries register by default. These are the return-to-baseline
-        # pair, NOT RSS: Go hands freed heap back to the OS lazily, so a drained
-        # process can hold its resident size long after the heap emptied.
-        # Unverified against a live target, like every name in this map; an
-        # unmatched one stores NULL and is counted by series_found.
+        # Go runtime and process collectors, from the standard
+        # prometheus/client_golang set both binaries register by default. The
+        # heap and goroutine pair is the return-to-baseline signal, NOT RSS: Go
+        # hands freed heap back to the OS lazily, so a drained process can hold
+        # its resident size long after the heap emptied.
+        #
+        # process_max_fds is the PER-PROCESS rlimit and is the ceiling a service
+        # actually hits, unlike the host fs.file-max which is commonly
+        # unbounded. process_start_time_seconds is what makes a mid-run restart
+        # visible rather than an unexplained discontinuity in every counter rate
+        # across it.
         _Series("go_memstats_heap_inuse_bytes", "heap_inuse_bytes"),
         _Series("go_goroutines", "go_goroutines"),
+        _Series("process_open_fds", "process_open_fds"),
+        _Series("process_max_fds", "process_max_fds"),
+        _Series("process_start_time_seconds", "process_start_time_seconds"),
+        _Series("process_cpu_seconds_total", "process_cpu_seconds_total"),
+        _Series("process_resident_memory_bytes", "process_resident_memory_bytes"),
+        # ---- answer latency ------------------------------------------------
+        # The engagement's headline risk: livekit-sip withholds 200 OK until it
+        # has subscribed to an audio track, so this histogram IS caller-visible
+        # answer latency. Stored as _sum and _count; the buckets are cumulative
+        # and summing them counts one observation once per bucket.
+        _Series("livekit_sip_dur_join_sec_sum", "sip_join_sec_sum"),
+        _Series("livekit_sip_dur_join_sec_count", "sip_join_sec_count"),
+        # Two explicit buckets, each selected by an le naming ONE bound, so a
+        # proportion under it is answerable without inventing a percentile.
+        _Series(
+            "livekit_sip_dur_join_sec_bucket", "sip_join_le1_count", where={"le": "1"}
+        ),
+        _Series(
+            "livekit_sip_dur_join_sec_bucket", "sip_join_le5_count", where={"le": "5"}
+        ),
+        _Series("livekit_sip_dur_check_sec_sum", "sip_check_sec_sum"),
+        _Series("livekit_sip_dur_check_sec_count", "sip_check_sec_count"),
+        # ---- admission -----------------------------------------------------
+        # "Whether node can accept new requests". Flips to 0 when the node stops
+        # taking INVITEs, which serves both the health clause and the drain test.
+        _Series("livekit_sip_available", "sip_available"),
+        # livekit-sip ONLY. Absent from every livekit_* family on the server.
+        _Series("livekit_node_cpu_load", "sip_node_cpu_load"),
+        # ---- media ---------------------------------------------------------
+        # SPLIT BY DIRECTION, never summed: a call that sent 337 and received
+        # 330 sums to 667 and one-way audio disappears into that one number.
+        # Not also filtered on payload: the send leg carries the literal string
+        # "audio" rather than a codec name, so a payload filter would empty it.
+        _Series(
+            "livekit_sip_packets_rtp", "sip_rtp_packets_recv", where={"op": "recv"}
+        ),
+        _Series(
+            "livekit_sip_packets_rtp", "sip_rtp_packets_send", where={"op": "send"}
+        ),
     ),
     SOURCE_NODE_EXPORTER: (
         # The M4 headline pair.
@@ -189,8 +272,91 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         ),
         _Series("node_memory_MemAvailable_bytes", "memory_available_bytes"),
         _Series("node_memory_MemTotal_bytes", "memory_total_bytes"),
+        # ---- port headroom -------------------------------------------------
+        # UDP sockets in use, and ports that could not be allocated. The second
+        # is the one that matters: a rising rate means the box ran out of ports,
+        # which at 500 concurrent is a likelier wall than CPU.
+        _Series("node_sockstat_UDP_inuse", "sockstat_udp_inuse"),
+        _Series("node_netstat_Udp_NoPorts", "udp_no_ports_total"),
     ),
 }
+
+
+# The host file-descriptor maximum a kernel reports when nothing constrains it.
+# VERIFIED LIVE: node_filefd_maximum reads 9.223372036854776e+18, and
+# int(float(...)) of that is 9223372036854775808, exactly ONE past the 64-bit
+# ceiling. That is a float64 round-trip artifact of a number that is already
+# 2**63 - 1, not a machine with more descriptors than a signed 64-bit integer
+# can count. So the column is left NULL and the fact is recorded separately.
+#
+# The threshold is short of 2**63 rather than equal to it because the round trip
+# is lossy in both directions: any value this close to the ceiling is the
+# kernel's "no limit", and the last 1024 counts are not a distinction anything
+# can act on.
+FILEFD_UNBOUNDED_THRESHOLD: Final[float] = float(2**63 - 1024)
+_FILEFD_MAXIMUM_COLUMN: Final[str] = "filefd_maximum"
+_FILEFD_UNBOUNDED_COLUMN: Final[str] = "filefd_maximum_unbounded"
+
+
+def _mark_unbounded_filefd(values: dict[str, float | None]) -> None:
+    """Record whether the host descriptor ceiling is reachable at all.
+
+    THREE states, and keeping them apart is the whole point. 1 says the maximum
+    parsed as effectively unbounded, so headroom on it cannot run out. 0 says it
+    parsed as a real bound. Leaving the key out entirely stores NULL, which says
+    nobody measured it.
+
+    Without this, an unbounded ceiling and an unscraped one are the same empty
+    column, and "this limit cannot be hit" reads identically to "we never
+    looked". They support opposite conclusions about a fleet.
+    """
+    maximum = values.get(_FILEFD_MAXIMUM_COLUMN)
+    if maximum is None:
+        # Absent or unparseable. NOT 0: an absent series says nothing about
+        # whether the limit is reachable.
+        return
+    values[_FILEFD_UNBOUNDED_COLUMN] = (
+        1.0 if maximum >= FILEFD_UNBOUNDED_THRESHOLD else 0.0
+    )
+
+
+def validate_series_map(series_map: Mapping[str, tuple[_Series, ...]]) -> None:
+    """Refuse a metric map that cannot produce meaningful numbers.
+
+    Called at import, so a bad entry is a startup failure rather than a column
+    that quietly stores the wrong thing for the life of a deployment. Both
+    checks exist because both failure modes were observed against a real
+    exposition, and neither announces itself at runtime.
+
+    A ``_bucket`` entry without an ``le`` selector would sum cumulative buckets
+    and count each observation once per bucket. On a real capture that reads
+    11.0 for a histogram whose true count is 1.
+
+    A base histogram name (``livekit_sip_dur_join_sec`` rather than its ``_sum``
+    or ``_count``) matches no sample and stores NULL forever, while
+    ``series_found`` still reads high because the sibling entries matched. That
+    one cannot be caught without an exposition to compare against, so it is
+    checked by a test against a captured fixture rather than here.
+    """
+    problems: list[str] = []
+    for source, entries in series_map.items():
+        for entry in entries:
+            if entry.metric.endswith(BUCKET_SUFFIX) and not (
+                entry.where and "le" in entry.where
+            ):
+                problems.append(
+                    f"{source}: {entry.metric!r} -> {entry.column!r} is a "
+                    "cumulative bucket with no le selector; summing it counts "
+                    "each observation once per bucket"
+                )
+    if problems:
+        raise ValueError(
+            "the node_samples metric map has entries that cannot produce a "
+            "meaningful number:\n  " + "\n  ".join(problems)
+        )
+
+
+validate_series_map(SERIES)
 
 
 TargetProvider = Callable[[], Awaitable[Sequence[ScrapeTarget]]]
@@ -213,22 +379,67 @@ def targets_from_env(
             continue
         head, sep, url = item.partition("=")
         source, colon, node = head.partition(":")
+        # Redacted before it reaches a log line. A skipped entry is the case
+        # where a credential is MOST likely present and least likely to have
+        # been parsed out yet, so the warning about it is a leak of its own.
+        shown = redact_url(item)
         if not sep or not colon or not url.strip() or not node.strip():
             logger.warning(
-                "%s: ignoring %r; expected 'source:name=url'", TARGETS_ENV_VAR, item
+                "%s: ignoring %r; expected 'source:name=url'", TARGETS_ENV_VAR, shown
             )
             continue
         if source not in SOURCES:
             logger.warning(
                 "%s: ignoring %r; unknown source %r (known: %s)",
                 TARGETS_ENV_VAR,
-                item,
+                shown,
                 source,
                 ", ".join(SOURCES),
             )
             continue
-        targets.append(ScrapeTarget(node=node.strip(), url=url.strip(), source=source))
+        clean, auth = split_userinfo(url.strip())
+        targets.append(
+            ScrapeTarget(node=node.strip(), url=clean, source=source, auth=auth)
+        )
     return targets
+
+
+# Anything between "://" and the "@" that ends an authority. Used to redact a
+# URL before it is logged, so a credential cannot ride into the log on a path
+# that never went through targets_from_env: a directly constructed target, or a
+# malformed env entry that is skipped before it is ever parsed.
+_USERINFO = re.compile(r"(?<=://)[^@/\s]+@")
+_REDACTED = "***@"
+
+
+def redact_url(text: str) -> str:
+    """``text`` with any URL userinfo replaced by ``***``.
+
+    Applied at every point that logs a URL rather than only at the parse site,
+    because the parse site is not the only way a target is built and a secret
+    written to a log file cannot be unwritten.
+    """
+    return _USERINFO.sub(_REDACTED, text)
+
+
+def split_userinfo(url: str) -> tuple[str, tuple[str, str] | None]:
+    """``(url_without_userinfo, auth_or_None)``.
+
+    httpx authenticates from userinfo on its own, so leaving it in the URL
+    WORKS -- and logs the password at INFO on every request. Splitting it here
+    keeps the behaviour and drops the leak.
+
+    The credential is percent-decoded, because that is how it travels in a URL
+    and how httpx expects it in an auth tuple: a password containing ``@`` or
+    ``/`` is only expressible encoded.
+    """
+    parts = urllib.parse.urlsplit(url)
+    userinfo, sep, host = parts.netloc.rpartition("@")
+    if not sep:
+        return url, None
+    username, _, password = userinfo.partition(":")
+    auth = (urllib.parse.unquote(username), urllib.parse.unquote(password))
+    return urllib.parse.urlunsplit(parts._replace(netloc=host)), auth
 
 
 async def _default_target_provider() -> list[ScrapeTarget]:
@@ -374,7 +585,8 @@ class NodeSamplesWorker(AsyncWorker):
         """Scrape one target. Never raises: a failure becomes a row that says so."""
         try:
             body, outcome = await asyncio.wait_for(
-                self._fetch(client, target.url), timeout=self._scrape_timeout
+                self._fetch(client, target.url, target.auth),
+                timeout=self._scrape_timeout,
             )
         except (TimeoutError, httpx.TimeoutException):
             # The outer wait_for is not redundant with httpx's timeouts: httpx
@@ -390,7 +602,7 @@ class NodeSamplesWorker(AsyncWorker):
             # would propagate it and lose every other target's sample).
             logger.exception(
                 "NodeSamplesWorker: unexpected error scraping %s (%s)",
-                target.url,
+                redact_url(target.url),
                 target.node,
             )
             outcome, body = OUTCOME_UNREACHABLE, None
@@ -429,26 +641,39 @@ class NodeSamplesWorker(AsyncWorker):
                 continue
             values[series.column] = value
             found += 1
+        _mark_unbounded_filefd(values)
         return node_samples.NodeSampleInput(
             node=target.node,
             source=target.source,
             at_ms=at_ms,
             outcome=outcome,
             project=target.project,
+            # A count of what MATCHED, which is not yet a count of what stored:
+            # a value the repository refuses at coercion is dropped after this
+            # point. insert_samples recomputes from what actually landed, and
+            # this is the input to that.
             series_found=found,
             values=values,
         )
 
     async def _fetch(
-        self, client: httpx.AsyncClient, url: str
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        auth: tuple[str, str] | None = None,
     ) -> tuple[str | None, str]:
         """GET one exposition body, capped. ``(body_or_None, outcome)``.
 
         Streamed rather than buffered so the byte cap is enforced while the
         response arrives: a misconfigured target pointed at a log endpoint must
         not be able to allocate its way through this process's memory.
+
+        ``auth`` becomes an Authorization header rather than part of the URL,
+        which is the difference between a credential httpx sends and one it also
+        logs. ``None`` is httpx's "no auth" and is what an unauthenticated
+        target passes.
         """
-        async with client.stream("GET", url) as response:
+        async with client.stream("GET", url, auth=auth) as response:
             if response.status_code != 200:
                 # Body deliberately unread: an error page is not an exposition.
                 return None, OUTCOME_HTTP_ERROR
@@ -459,7 +684,7 @@ class NodeSamplesWorker(AsyncWorker):
                 if total > self._max_response_bytes:
                     logger.warning(
                         "NodeSamplesWorker: %s exceeded %d bytes; dropping the scrape",
-                        url,
+                        redact_url(url),
                         self._max_response_bytes,
                     )
                     return None, OUTCOME_TOO_LARGE
@@ -483,5 +708,7 @@ __all__ = [
     "NodeSamplesWorker",
     "ScrapeTarget",
     "TargetProvider",
+    "redact_url",
+    "split_userinfo",
     "targets_from_env",
 ]

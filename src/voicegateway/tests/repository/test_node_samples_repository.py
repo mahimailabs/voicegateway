@@ -176,7 +176,6 @@ async def test_absent_series_stay_null_never_zero(db: AsyncSession) -> None:
     assert row.rooms == 4
     assert row.packets_total is None
     assert row.packet_bytes_total is None
-    assert row.nacks_total is None
 
 
 async def test_a_failed_scrape_is_a_row_with_no_values(db: AsyncSession) -> None:

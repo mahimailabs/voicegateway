@@ -52,6 +52,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from voicegateway.livekit_diag.gates import (
     MIN_PERCENTILE_SAMPLES,
+    HeadroomReading,
     NodeUtilisationReading,
 )
 from voicegateway.repository.node_correlation_repository import (
@@ -76,6 +77,15 @@ CPU_IDLE_COLUMN = "cpu_idle_seconds_total"
 MEMORY_AVAILABLE_COLUMN = "memory_available_bytes"
 MEMORY_TOTAL_COLUMN = "memory_total_bytes"
 
+# The file-descriptor pair headroom is judged against. These are the PER-PROCESS
+# rlimit, not the host filefd pair, and the difference is not cosmetic: the host
+# maximum on an observed box reads 9.223372036854776e18, which is effectively
+# unbounded and does not fit a 64-bit column, while this pair reads a real
+# 524287. The limit a service actually hits is its own, and the host figure
+# cannot produce a ratio at all.
+FD_USED_COLUMN = "process_open_fds"
+FD_LIMIT_COLUMN = "process_max_fds"
+
 
 @dataclass(frozen=True)
 class TestAggregate:
@@ -96,6 +106,10 @@ class TestAggregate:
     node_samples_in_window: int
     cpu_readings: list[NodeUtilisationReading] = field(default_factory=list)
     memory_readings: list[NodeUtilisationReading] = field(default_factory=list)
+    # File-descriptor headroom per node, already in the shape the gate judges.
+    # Carried here rather than rebuilt in the judge so the measurement lives in
+    # one place and the judge stays a thing that only decides.
+    fd_readings: list[HeadroomReading] = field(default_factory=list)
 
     @property
     def nodes_seen(self) -> int:
@@ -222,6 +236,58 @@ async def _memory_reading(
     )
 
 
+async def _fd_reading(
+    db: AsyncSession, *, node: str, source: str, window: NodeWindow, limit: int
+) -> HeadroomReading:
+    """One node's WORST file-descriptor headroom over the window.
+
+    Worst, not last: headroom is a floor, and a run that touched 95% for one
+    scrape and settled back has still demonstrated it can get there. The pair is
+    read off the SAME ROW so both halves describe one instant, exactly as memory
+    is, because an open count from one scrape against a limit from another
+    describes a state that never existed.
+
+    A row missing either half contributes nothing rather than a zero. When no
+    row carries both, the reading is unmeasured WITH a reason, and the gate
+    turns that into UNKNOWN rather than a pass.
+    """
+    rows = await list_samples(
+        db,
+        node=node,
+        source=source,
+        since_ms=window.start_ms,
+        until_ms=window.end_ms,
+        limit=limit,
+    )
+    worst: tuple[float, float] | None = None
+    for row in rows:
+        used = getattr(row, FD_USED_COLUMN)
+        ceiling = getattr(row, FD_LIMIT_COLUMN)
+        if used is None or ceiling is None or ceiling <= 0:
+            continue
+        if worst is None or (used / ceiling) > (worst[0] / worst[1]):
+            worst = (float(used), float(ceiling))
+    if worst is None:
+        return HeadroomReading(
+            node=node,
+            resource="file_descriptors",
+            used=None,
+            limit=None,
+            source=source,
+            unmeasured_reason=(
+                f"no row in the window carried both {FD_USED_COLUMN} and "
+                f"{FD_LIMIT_COLUMN} ({len(rows)} rows read)"
+            ),
+        )
+    return HeadroomReading(
+        node=node,
+        resource="file_descriptors",
+        used=worst[0],
+        limit=worst[1],
+        source=source,
+    )
+
+
 async def aggregate_test_window(
     db: AsyncSession,
     *,
@@ -249,6 +315,7 @@ async def aggregate_test_window(
 
     cpu: list[NodeUtilisationReading] = []
     memory: list[NodeUtilisationReading] = []
+    fds: list[HeadroomReading] = []
     for target in targets:
         cpu.append(
             await _cpu_reading(
@@ -257,6 +324,11 @@ async def aggregate_test_window(
         )
         memory.append(
             await _memory_reading(
+                db, node=target.node, source=target.source, window=window, limit=limit
+            )
+        )
+        fds.append(
+            await _fd_reading(
                 db, node=target.node, source=target.source, window=window, limit=limit
             )
         )
@@ -270,12 +342,15 @@ async def aggregate_test_window(
         node_samples_in_window=sum(t.samples for t in targets),
         cpu_readings=cpu,
         memory_readings=memory,
+        fd_readings=fds,
     )
 
 
 __all__ = [
     "CPU_CAPACITY_COLUMN",
     "CPU_IDLE_COLUMN",
+    "FD_LIMIT_COLUMN",
+    "FD_USED_COLUMN",
     "MEMORY_AVAILABLE_COLUMN",
     "MEMORY_TOTAL_COLUMN",
     "TestAggregate",
