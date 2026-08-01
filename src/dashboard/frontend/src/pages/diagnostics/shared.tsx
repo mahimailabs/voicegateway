@@ -131,6 +131,36 @@ export function qualityBadgeClass(quality: string): string {
   return 'neo-badge--black'; // Unknown: the SDK reported nothing usable
 }
 
+/**
+ * Badge class for one stored verdict. Never re-judges: the verdict is whatever
+ * `livekit_diag.gates` recorded when the run executed.
+ *
+ * It lives here, beside `qualityBadgeClass`, because two surfaces render the
+ * same run's verdict: the run-history table and the summary pill on
+ * `Diagnostics`, and the header on `ReportTab`. Those were separate copies, and
+ * they disagreed the moment one of them learned about UNKNOWN.
+ *
+ * UNKNOWN has its own case because it is a real, reachable verdict and not a
+ * missing one: `gates.verdict` returns it when nothing could be evaluated, and
+ * `gates.exit_code` still exits non-zero for it. Every other treatment in this
+ * kit would misreport it. Green and teal read as healthy, and a run that
+ * measured nothing has not passed. Amber is WARN's, a different and strictly
+ * lesser severity. Ink is what this very badge already shows for a run with NO
+ * verdict at all: `RunSummary` renders `verdict ?? status`, so a run that never
+ * produced one puts "failed" / "running" in the same pill, and UNKNOWN sharing
+ * it would collapse "could not tell" into "never got that far". That leaves the
+ * kit's colourless badge, which is the point: it makes no claim, and no claim is
+ * all an unevaluated run has earned.
+ */
+export function verdictBadgeClass(v: string | null): string {
+  if (v === 'PASS') return 'neo-badge--green';
+  if (v === 'WARN') return 'neo-badge--warning';
+  if (v === 'FAIL') return 'neo-badge--red';
+  if (v === 'UNKNOWN') return 'neo-badge--white';
+  // No verdict, or one this build does not recognise. Not a health claim either.
+  return 'neo-badge--black';
+}
+
 export function CheckGate<R>({
   check,
   label,

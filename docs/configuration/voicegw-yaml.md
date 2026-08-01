@@ -335,11 +335,19 @@ workers:
   enabled: true
   rollup_interval_seconds: 900
   retention_interval_seconds: 3600
+  node_scrape_interval_seconds: 15
 ```
 
 - `enabled` (bool, default `true`): start the background workers.
 - `rollup_interval_seconds` (int, default `900`): how often the latency and agent rollups refresh.
 - `retention_interval_seconds` (int, default `3600`): how often retention runs.
+- `node_scrape_interval_seconds` (int, default `15`): how often the node scrape polls, when it runs at all.
+
+The node scrape is the one worker that is off by default. It is built only when
+`VOICEGW_NODE_SCRAPE_TARGETS` names at least one target, so an install that does
+not set that variable starts no scrape task and makes no outbound requests, and
+this interval has no effect. See `GET /v1/metrics` in the HTTP API reference for
+the target grammar.
 
 ---
 

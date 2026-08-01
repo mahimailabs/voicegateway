@@ -847,6 +847,7 @@ async def list_calls(
     limit: int = 100,
     project: str | None = None,
     run_id: str | None = None,
+    tenant: str | None = None,
     is_probe: bool | None = False,
 ) -> list[CallRow]:
     """Newest calls first.
@@ -855,6 +856,27 @@ async def list_calls(
     asked for**, so a caller computing production numbers cannot silently mix
     synthetic load into them. Pass ``True`` for load traffic only, ``None`` for
     every row.
+
+    ``tenant`` is a read SCOPE, not a column value, which is why it is not named
+    ``tenant_id`` like the write path's argument. It carries the same three-way
+    convention every sibling read uses
+    (``session_repository.list_sessions``, ``cost_repository``,
+    ``request_log_repository``, ``latency_repository``):
+
+    * ``None`` -- every tenant. The operator/admin case.
+    * ``""`` -- the unattributed bucket, i.e. ``tenant_id IS NULL``.
+    * anything else -- that tenant's rows only.
+
+    The predicate belongs HERE and not in the caller: filtering a page after it
+    has been read makes ``limit`` a bound on rows *scanned* rather than rows
+    *returned*, so a tenant-scoped reader asking for 50 gets however many of its
+    own calls happened to fall inside the newest 50 overall -- possibly none,
+    while more of its own sit one row past the boundary.
+
+    The ``""`` case is spelled ``IS NULL`` explicitly rather than left to SQL's
+    three-valued logic: ``tenant_id = ''`` matches no NULL row on SQLite or
+    PostgreSQL, so the unattributed reader would silently be served an empty
+    page instead of its own calls.
 
     The explicit ``started_at_ms IS NULL`` sort key puts a start-less row (an
     INVITE that never produced a room) last on SQLite and PostgreSQL alike: the
@@ -866,6 +888,11 @@ async def list_calls(
         stmt = stmt.where(Call.project == project)  # type: ignore[arg-type]
     if run_id is not None:
         stmt = stmt.where(Call.run_id == run_id)  # type: ignore[arg-type]
+    if tenant is not None:
+        if tenant == "":
+            stmt = stmt.where(Call.tenant_id.is_(None))  # type: ignore[union-attr]
+        else:
+            stmt = stmt.where(Call.tenant_id == tenant)  # type: ignore[arg-type]
     if is_probe is not None:
         stmt = stmt.where(Call.is_probe == int(is_probe))  # type: ignore[arg-type]
     stmt = stmt.order_by(

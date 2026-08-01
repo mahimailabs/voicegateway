@@ -509,10 +509,19 @@ class StorageService:
         limit: int = 100,
         project: str | None = None,
         run_id: str | None = None,
+        tenant: str | None = None,
         is_probe: bool | None = False,
     ) -> list[dict[str, Any]]:
         """Newest calls first. ``is_probe=False`` (the default) excludes
         load-test traffic; ``True`` returns only it, ``None`` returns every row.
+
+        ``tenant`` carries the same read-scope convention as the other list
+        passthroughs on this service (``list_sessions``,
+        ``get_recent_requests``): ``None`` is every tenant, ``""`` is the
+        unattributed bucket (``tenant_id IS NULL``), anything else is that
+        tenant. It is applied in SQL, so ``limit`` bounds the rows RETURNED for
+        the scoped caller and not merely the rows scanned before a caller-side
+        filter thins them.
         """
         import dataclasses
 
@@ -521,7 +530,12 @@ class StorageService:
         await self._ensure_initialized()
         async with self._conn.session() as db:
             rows = await calls_repository.list_calls(
-                db, limit=limit, project=project, run_id=run_id, is_probe=is_probe
+                db,
+                limit=limit,
+                project=project,
+                run_id=run_id,
+                tenant=tenant,
+                is_probe=is_probe,
             )
         return [dataclasses.asdict(r) for r in rows]
 
