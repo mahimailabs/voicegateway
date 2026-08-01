@@ -56,8 +56,14 @@ func JoinAndPublish(
 		go drainRTP(track, stats)
 	}
 
+	// WithSinglePeerConnection is a PRECONDITION of WithTrack, not a tuning
+	// option: queuing a track for the join request without it is rejected at
+	// join time with ErrPublishRequiresSinglePC. The two travel together, and
+	// dropping either one silently turns this back into a publish that costs a
+	// second round trip on every call's answer path.
 	room, err := lksdk.ConnectToRoomWithToken(
 		a.URL, a.Token, callback,
+		lksdk.WithSinglePeerConnection(),
 		lksdk.WithTrack(track, &lksdk.TrackPublicationOptions{Name: "mock-audio"}),
 	)
 	if err != nil {
