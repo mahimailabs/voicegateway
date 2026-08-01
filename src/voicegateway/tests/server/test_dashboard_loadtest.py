@@ -120,16 +120,38 @@ async def test_storage_disabled_is_503_not_an_empty_list(gw, monkeypatch) -> Non
     assert "not an empty list" in resp.json()["detail"]
 
 
-async def test_the_route_is_on_the_dashboard_router_not_the_write_scoped_one() -> None:
-    """A read must not demand a write scope to look at a table."""
-    from voicegateway.server.routes import api_router, dashboard_router
+async def test_a_read_key_can_reach_it_without_a_write_scope(gw) -> None:
+    """The claim behind putting this on the dashboard router.
 
-    dashboard_paths = {r.path for r in dashboard_router.routes}
-    api_paths = {r.path for r in api_router.routes}
-    assert "/api/loadtest/runs" in dashboard_paths
-    # Nothing load-test shaped hangs off /v1, whose calls router declares
-    # require_scope("write") on the router itself.
-    assert not [p for p in api_paths if "loadtest" in p]
+    Asserted behaviourally rather than by introspecting which router object
+    holds the route: FastAPI changes what ``router.routes`` contains between
+    versions (a newer one wraps included routers in an object with no ``path``),
+    so a structural check passes locally and breaks in CI on a different
+    resolved version. What actually matters is that a caller holding only a read
+    scope can fetch this, which is what a write-scoped router would have denied.
+    """
+    from voicegateway.core.auth import ApiKey
+    from voicegateway.server.api._deps import READ_SCOPE
+
+    app = build_app(gw, enable_mcp_sse=False, enable_dashboard=True)
+    app.state.api_keys = [
+        ApiKey(token="read-only-token", name="viewer", scopes=(READ_SCOPE,))
+    ]
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        allowed = await c.get(
+            "/api/loadtest/runs",
+            headers={"Authorization": "Bearer read-only-token"},
+        )
+        # Non-vacuous: auth only enforces once keys are configured, so without
+        # these two the 200 above would prove nothing but that auth was off.
+        anonymous = await c.get("/api/loadtest/runs")
+        wrong = await c.get(
+            "/api/loadtest/runs", headers={"Authorization": "Bearer wrong-token"}
+        )
+    assert allowed.status_code == 200, allowed.text
+    assert anonymous.status_code == 401
+    assert wrong.status_code == 401
 
 
 async def test_the_limit_is_bounded(gw, client) -> None:
