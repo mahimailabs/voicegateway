@@ -7,6 +7,7 @@ is owed.
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -225,3 +226,45 @@ def list_runs(
             "[green]measured[/green]" if measured else "[yellow]synthetic[/yellow]",
         )
     console.print(table)
+
+
+@loadtest_app.command("report")
+def report(
+    run_id: str = typer.Argument(..., help="Run id to report on"),
+    config: str = typer.Option(None, "--config", "-c", help="Path to voicegw.yaml"),
+    out: Path = typer.Option(
+        Path(".artifacts/capacity-evidence"),
+        "--out",
+        "-o",
+        help="Directory to write the report into",
+    ),
+) -> None:
+    """Write one run's report as JSON plus a self-contained HTML file."""
+    from voicegateway.livekit_diag.run_report import (
+        build_load_payload,
+        load_report_filename,
+        render_load_html,
+    )
+
+    gw = _cli.require_gateway(config)
+    storage = _cli.require_storage(gw)
+
+    run = _cli.async_run(storage.get_load_run(run_id))
+    if run is None:
+        _cli.fail(f"No load run {run_id!r}. Import one first.", code=2)
+    tests = _cli.async_run(storage.list_load_run_tests(run_id))
+
+    payload = build_load_payload(run=run, tests=tests)
+    out.mkdir(parents=True, exist_ok=True)
+    json_path = out / f"{load_report_filename(run_id).removesuffix('.html')}.json"
+    html_path = out / load_report_filename(run_id)
+    json_path.write_text(json.dumps(payload, indent=2) + "\n")
+    html_path.write_text(render_load_html(payload))
+
+    if payload["data_provenance"] != "measured":
+        _cli.warn(
+            "SYNTHETIC: the HTML carries the not-a-deliverable stamp as its "
+            "first visible element. Replace the fixtures with captured "
+            "artifacts and re-import with --captured before handing it over."
+        )
+    _cli.success(f"Wrote {json_path} and {html_path}")

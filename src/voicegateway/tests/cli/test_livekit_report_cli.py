@@ -315,7 +315,7 @@ def test_failed_run_renders_and_fabricates_no_zeros(tmp_path, monkeypatch) -> No
     assert "Trials that answered" not in document
     # The only surviving "max of N" is the caveat explaining why a run with few
     # samples never prints a p95, which is prose about the report, not a figure.
-    assert 'as &quot;max of N&quot;' in document
+    assert "as &quot;max of N&quot;" in document
     assert "max of 3" not in document
     # It is still the same document type, with its context and its caveats.
     assert "report schema v1" in document
@@ -426,3 +426,39 @@ def test_no_recorded_run_exits_one_and_says_where_runs_come_from(
     out = _strip(result.output)
     assert "no diagnostics run is recorded on this host yet" in out
     assert "Diagnostics page" in out
+
+
+def test_load_report_file_reaches_for_nothing() -> None:
+    """Same scan as the diagnostics file, including absolute URLs anywhere.
+
+    Extends the list above rather than starting a third. A load report is
+    handed over and opened from disk, so an http:// anywhere in it is a hole.
+    """
+    from voicegateway.livekit_diag import run_report
+
+    document = run_report.render_load_html(
+        run_report.build_load_payload(
+            run={"id": "ramp-500", "artifact_sha256": None},
+            tests=[{"name": "ramp-500", "peak_concurrency": 492}],
+            capacity={
+                "calls_per_node": 150,
+                "reason": "sustained under the CPU ceiling",
+                "tiers": [
+                    {
+                        "target_concurrency": 500,
+                        "nodes_for_load": 4,
+                        "spare_nodes": 1,
+                        "nodes": 5,
+                    }
+                ],
+                "instance_type": {
+                    "name": "c7i.2xlarge",
+                    "role": "SIP",
+                    "citation": "sizing-runbook.md:115",
+                },
+            },
+        )
+    )
+    lowered = document.lower()
+    for marker in _EXTERNAL_MARKERS:
+        assert marker not in lowered, f"load report reaches for {marker!r}"
