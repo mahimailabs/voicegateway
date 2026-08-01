@@ -8,6 +8,50 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ### Changed
 
+- **`voicegw_cost_usd_total` and `voicegw_requests_total` on `GET /v1/metrics`
+  are now `# TYPE ... gauge`, not `counter`.** Both are sums over the `"today"`
+  window, which is `time.time() - 86400`: a **rolling trailing 24 hours**, not a
+  calendar day and not a since-start total. The value falls whenever a request
+  ages out of the trailing edge, so it was never a counter. Declaring it one
+  told Prometheus the series is monotonic, and `rate()` / `increase()` read
+  every one of those decreases as a counter reset and extrapolate spend and
+  traffic that never happened. The HELP text now states the window.
+
+  **The metric names are unchanged**, deliberately. `docs/api/http-api.md` and
+  `docs/reference/faq.md` publish them as things you graph in Grafana, and
+  renaming a scraped series breaks every dashboard, alert and recording rule
+  built on it. So the `_total` suffix survives on a gauge, which is ugly and
+  against Prometheus naming convention. It is a wart we are choosing over a
+  broken contract; a rename would be a separate, announced breaking change.
+
+  **Migration for existing dashboards.** Nothing to change on the scrape side:
+  same endpoint, same names, same labels. Prometheus accepts the new type on the
+  next scrape with no config change and no re-ingest. What you must fix is any
+  query that treats these as counters:
+
+  | Before (silently wrong) | After |
+  |---|---|
+  | `rate(voicegw_cost_usd_total[5m])` | `voicegw_cost_usd_total{period="today"}` |
+  | `increase(voicegw_cost_usd_total[1h])` | `delta(voicegw_cost_usd_total{period="today"}[1h])` |
+  | `rate(voicegw_requests_total[5m])` | `sum(voicegw_requests_total)` |
+  | `increase(voicegw_requests_total[24h])` | `sum(voicegw_requests_total)` (already the last 24h) |
+
+  Historical samples already stored in Prometheus are unaffected: the values
+  were always the rolling-window numbers, only the type metadata was wrong, so
+  fixing the query fixes the whole retained history too. Two further traps worth
+  checking while you are in there: bare `sum(voicegw_cost_usd_total)`
+  triple-counts, because that series is emitted once with `period="today"`, once
+  per `provider` and once per `project`; and there is no monotonic spend counter
+  to migrate to, so if you need a since-start total use
+  `GET /v1/costs?period=all`.
+
+  `voicegw_request_ttfb_seconds` and `voicegw_request_total_latency_seconds` keep
+  `# TYPE ... summary`: summary quantiles are sliding-window statistics, never
+  counters, and no `_sum` / `_count` children are published. Their HELP text now
+  names the same rolling 24-hour window. `voicegw_uptime_seconds`, the
+  `*_configured` series and every `voicegw_diag_*` series were already gauges and
+  are unchanged.
+
 - **BREAKING for CI: `voicegw livekit check` exit codes changed.** This needs a
   MINOR version bump, not a patch. The command had **two** verdict
   implementations that disagreed (`livekit_diag/service.py:_verdict` for the

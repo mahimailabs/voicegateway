@@ -159,12 +159,21 @@ voicegw brand set \
   --accent "#FF6633" \
   --name AcmeVoice
 # Project acme branding updated:
-#   Logo:         /static/branding/acme.png
+#   Logo:         /static/branding/uploads/acme.png
 #   Accent color: #FF6633
 #   Product name: AcmeVoice
 ```
 
 Set `VOICEGW_API_KEY` when your dashboard requires auth.
+
+### What the logo upload accepts
+
+Uploaded logos are served from the deployment's own origin, so the endpoint is strict about what it stores:
+
+- **Admin scope.** `POST /api/projects/{id}/branding/logo` requires an admin-scoped token once you have configured API keys. A read-scoped token gets `403`. With no API keys configured (the single-operator default) nothing changes.
+- **Uploads land in `/static/branding/uploads/`,** never in the branding root, so an upload cannot replace one of the assets that ship with the dashboard. The filename comes from the project id when the id is plain (letters, digits, `_`, `-`); any other id is replaced by a digest of itself, so the stored path is stable but can never contain a path separator.
+- **SVGs are inspected and refused, not sanitized.** A `<script>` element, an `on*` event-handler attribute, `<foreignObject>`, `<iframe>`, `<embed>`, `<object>`, SMIL `<animate>`/`<set>`, an entity declaration, or a `javascript:` or `data:` URL in any attribute returns `400` with the reason. The file must also parse as well-formed XML with an `<svg>` root. Export the logo as a plain vector (paths, groups, fills) or upload the PNG instead.
+- **Every asset under `/static/branding` is served with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and `X-Content-Type-Options: nosniff`,** so a branding file cannot execute in the dashboard's origin even if it gets past the content check. This does not affect how the logo renders in the dashboard.
 
 ## Step 5: share a branded dashboard link
 

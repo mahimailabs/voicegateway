@@ -10,6 +10,27 @@ per-project storage-usage view:
 
 Same ``/api/*`` prefix as the v0.2.0 metrics endpoints; the main
 server may publish ``/v1/*`` mirrors later if SDK consumers need them.
+
+Auth here is declared per handler, not on the router, because the four
+handlers do not want the same gate:
+
+- the two READS take :func:`require_principal`, the dependency the sibling
+  dashboard reads use, plus a tenant check. ``GET /sessions/{id}/replay``
+  is the fifth read under a session id, so it takes exactly the dependency
+  and the check the other four take in
+  :mod:`voicegateway.server.api.dashboard.sessions`; ``GET /replay/storage``
+  aggregates every session row on the deployment, so it scopes its own
+  query.
+- the DELETE and the retention POST take ``require_scope(ADMIN_SCOPE)``,
+  which is what every write on a dashboard router takes (the API-key
+  routers, the diagnostics run, the agent probe, the branding logo
+  upload). One destroys captured payloads outright and the other sets how
+  long any of them survive.
+
+A router-level dependency would have to be the strictest of those, and
+putting the admin scope on the replay reads would refuse a read-scoped
+operator on the Replay page. Every one of these gates is a no-op while no
+API keys are configured, so the self-hosted default is unchanged.
 """
 
 from __future__ import annotations
@@ -20,10 +41,18 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import text
 
+from voicegateway.core.auth import ADMIN_SCOPE
 from voicegateway.repository import (
     replay_repository as replay,
 )
-from voicegateway.server.api._deps import get_gateway
+from voicegateway.server.api._deps import (
+    Principal,
+    get_gateway,
+    require_principal,
+    require_scope,
+    resolve_read_tenant,
+)
+from voicegateway.server.api.dashboard.sessions import require_visible_session
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -33,7 +62,9 @@ router = APIRouter(tags=["dashboard"])
 
 @router.get("/sessions/{session_id}/replay")
 async def get_session_replay(
-    session_id: str, gateway: Gateway = Depends(get_gateway)
+    session_id: str,
+    gateway: Gateway = Depends(get_gateway),
+    principal: Principal = Depends(require_principal),
 ) -> dict[str, Any]:
     """Return the full time-ordered replay for one session.
 
@@ -45,9 +76,14 @@ async def get_session_replay(
     (pre-v0.3.0 sessions or projects with ``replay.enabled: false``);
     the FE renders a PreV030Banner in that case (REQ-VG-REPLAY-001
     AC-3).
+
+    A replay carries the raw STT/LLM/TTS payloads of the call, so a
+    tenant-bound caller reading another tenant's session gets the same 404
+    it would get for a session id that does not exist.
     """
     if gateway.storage is None:
         raise HTTPException(status_code=503, detail="Storage not configured")
+    await require_visible_session(gateway.storage, session_id, principal)
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
         events = await replay.read_full_replay(db, session_id)
@@ -57,7 +93,10 @@ async def get_session_replay(
     }
 
 
-@router.delete("/sessions/{session_id}/replay")
+@router.delete(
+    "/sessions/{session_id}/replay",
+    dependencies=[Depends(require_scope(ADMIN_SCOPE))],
+)
 async def delete_session_replay(
     session_id: str, gateway: Gateway = Depends(get_gateway)
 ) -> dict[str, Any]:
@@ -66,6 +105,17 @@ async def delete_session_replay(
     Cascade across all four ``replay_*`` tables in one transaction.
     Returns the total row count deleted (across modalities) so the
     caller can confirm the cleanup landed.
+
+    **Auth.** This route carried no dependency at all while its GET sibling
+    was gated, so the one verb that destroys the captured payloads of a call
+    was the one verb anyone could reach. It takes
+    ``require_scope(ADMIN_SCOPE)``, the scope every write on a dashboard
+    router takes. The gate is a no-op while no API keys are configured, so
+    the self-hosted default is unchanged.
+
+    No tenant check on top of the scope: an admin principal is not narrowed
+    by tenant anywhere in this codebase, and the only key that clears the
+    admin scope is an admin key.
     """
     if gateway.storage is None:
         raise HTTPException(status_code=503, detail="Storage not configured")
@@ -78,6 +128,7 @@ async def delete_session_replay(
 @router.get("/replay/storage")
 async def get_replay_storage(
     gateway: Gateway = Depends(get_gateway),
+    principal: Principal = Depends(require_principal),
 ) -> dict[str, Any]:
     """Return per-project replay storage breakdown.
 
@@ -86,19 +137,42 @@ async def get_replay_storage(
     captured replay (NULL replay_size_bytes) contribute 0 to the sum.
     The Refinery requires the dashboard surface this so "the cost is
     not invisible" to the developer.
+
+    **Auth and tenant scoping.** This read had no dependency: it aggregates
+    every session row on the deployment, so it named other tenants' projects
+    and sized their captured traffic to anyone who could reach the port. It
+    takes :func:`require_principal`, the dependency the sibling dashboard
+    reads take, and the tenant resolved from that principal becomes a
+    predicate on the query. The predicate is the one the repositories use
+    (``session_repository.list_sessions``): ``None`` means every row (the
+    operator/admin case, unchanged), ``""`` means the unattributed bucket,
+    i.e. ``tenant_id IS NULL``. Filtering in SQL rather than post-hoc keeps
+    ``total_replay_size_bytes`` consistent with ``by_project``: a total
+    computed over rows the caller cannot see would leak the size back.
     """
     if gateway.storage is None:
         raise HTTPException(status_code=503, detail="Storage not configured")
+    tenant = resolve_read_tenant(principal, None)
+    conditions = ["replay_size_bytes IS NOT NULL"]
+    params: dict[str, Any] = {}
+    if tenant is not None:
+        if tenant == "":
+            conditions.append("tenant_id IS NULL")
+        else:
+            conditions.append("tenant_id = :tenant")
+            params["tenant"] = tenant
+    where = " AND ".join(conditions)
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
         result = await db.execute(
             text(
                 "SELECT project, COALESCE(SUM(replay_size_bytes), 0) "
                 "FROM sessions "
-                "WHERE replay_size_bytes IS NOT NULL "
+                f"WHERE {where} "
                 "GROUP BY project "
                 "ORDER BY project ASC"
-            )
+            ),
+            params,
         )
         per_project: list[dict[str, Any]] = []
         total = 0
@@ -118,7 +192,10 @@ async def get_replay_storage(
         }
 
 
-@router.post("/projects/{project_id}/replay/retention")
+@router.post(
+    "/projects/{project_id}/replay/retention",
+    dependencies=[Depends(require_scope(ADMIN_SCOPE))],
+)
 async def update_replay_retention(
     project_id: str,
     body: dict[str, Any] = Body(...),
@@ -136,6 +213,15 @@ async def update_replay_retention(
     follow-up that needs config-file-write infrastructure; the in-
     memory mutation matches the runtime contract the retention worker
     reads from.
+
+    **Auth.** This route carried no dependency at all: it edits runtime
+    config, and the config it edits decides how long captured payloads
+    survive, so an anonymous caller could shorten a project's window to a
+    day and let the retention worker do the deleting. It takes
+    ``require_scope(ADMIN_SCOPE)``, the scope every write on a dashboard
+    router takes, declared on the ROUTE and not the router because the two
+    reads on this router must stay reachable by a read-scoped operator. The
+    gate is a no-op while no API keys are configured.
     """
     new_days_raw = body.get("retention_days")
     if not isinstance(new_days_raw, int) or new_days_raw < 1 or new_days_raw > 365:

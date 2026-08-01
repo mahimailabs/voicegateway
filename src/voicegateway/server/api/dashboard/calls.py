@@ -61,21 +61,6 @@ DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
 
 
-def _visible(row: dict[str, Any], tenant: str | None) -> bool:
-    """Whether a call row is readable by a principal scoped to ``tenant``.
-
-    ``None`` is the operator/admin case: every row. ``""`` is the unattributed
-    bucket, i.e. ``tenant_id IS NULL``, the same convention the repositories use
-    for their SQL tenant predicate (``session_repository.list_sessions``).
-    """
-    if tenant is None:
-        return True
-    stored: str | None = row["tenant_id"]
-    if tenant == "":
-        return stored is None
-    return stored == tenant
-
-
 @router.get("")
 async def get_calls(
     limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
@@ -92,11 +77,16 @@ async def get_calls(
     keeps synthetic calls out of the numbers a reader takes for production, and
     this endpoint does not expose a knob to mix them back in.
 
-    Tenant scoping: a tenant-bound (non-admin) key sees only its own calls. The
-    filter runs here rather than in the query, so such a page can hold fewer than
-    ``limit`` rows -- fewer, never another tenant's. The self-hosted operator
-    default (no credential, or a static config key) is an admin principal and is
-    unaffected.
+    Tenant scoping: a tenant-bound (non-admin) key sees only its own calls, and
+    the predicate is pushed into the query rather than applied to the page after
+    it is read. That is what makes ``limit`` mean the same thing for a scoped
+    reader as for the operator: filtering afterwards bounded the rows SCANNED,
+    so a tenant asking for 50 could be handed 3 while more of its own calls sat
+    one row past the boundary, and a reader had no way to tell a quiet week from
+    a truncated page. ``resolve_read_tenant`` maps the principal onto the
+    repository's convention (``None`` every tenant, ``""`` the unattributed
+    ``tenant_id IS NULL`` bucket). The self-hosted operator default (no
+    credential, or a static config key) is an admin principal and is unaffected.
 
     503 when storage is disabled, rather than an empty list: "no call has been
     recorded" and "this deployment records nothing" are different facts and the
@@ -105,11 +95,9 @@ async def get_calls(
     if gateway.storage is None:
         raise HTTPException(status_code=503, detail="Storage not configured")
     tenant = resolve_read_tenant(principal, None)
-    rows = await gateway.storage.list_calls(limit=limit)
+    rows = await gateway.storage.list_calls(limit=limit, tenant=tenant)
     calls: list[dict[str, Any]] = []
     for row in rows:
-        if not _visible(row, tenant):
-            continue
         legs = await gateway.storage.list_call_legs(row["id"])
         calls.append({**row, "legs": legs})
     return {"calls": calls}

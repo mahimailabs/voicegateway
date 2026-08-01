@@ -1,6 +1,6 @@
 ---
 title: HTTP API Reference
-description: REST endpoints served by `voicegw serve`. Covers health, status, models, costs, billing, projects, providers, logs, metrics, and audit log.
+description: REST endpoints served by `voicegw serve`. Covers health, status, models, costs, sessions, billing, projects, providers, logs, metrics, audit log, and API keys.
 ---
 
 The VoiceGateway HTTP API runs via `voicegw serve` (default port 8080). It provides read-only observability endpoints and full CRUD for managing providers, models, and projects.
@@ -158,6 +158,46 @@ Return latency statistics for the given period.
 ```bash
 curl "http://localhost:8080/v1/latency?period=today"
 curl "http://localhost:8080/v1/latency?period=week&project=my-app"
+```
+
+---
+
+## Sessions
+
+One row per voice call: when it started and ended, which modalities and providers it used, and what it cost. These are the public twin of the dashboard's `/api/sessions` reads and return the same rows; the [Dashboard API](/api/dashboard-api) additionally serves the per-session drill-downs (turns, transcript, dead air, replay).
+
+**Authentication:** both routes require the same read authentication as the dashboard reads, declared on the router so no route can miss it. The gate is a **no-op while no API keys are configured** (the self-hosted default: no `auth.api_keys` block and no `VOICEGW_API_KEY`), and it enforces as soon as auth is enabled, when an unauthenticated request gets `401`. A read-scoped key is enough; no admin scope is needed to read rows already on disk.
+
+**Tenant scoping:** the tenant comes from the authenticated key, never from a parameter (these routes publish none). A tenant-scoped key lists only its own sessions and reads only its own session by id. The list filters as well as the detail: a list that returned every tenant's sessions would hand over exactly the ids the detail route refuses. An operator with no credential, a static config key, or an admin key sees every tenant, unchanged.
+
+| Response | Meaning |
+|---|---|
+| `401` | Auth is enabled and the request carried no token, or an invalid one. |
+| `404` | No such session **or** the session belongs to another tenant. The two are deliberately identical, body included: a `403` on the foreign case would confirm the id is real. |
+
+### GET /v1/sessions
+
+Return recent sessions.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `limit` | `integer` | `100` | Number of rows (1-1000). |
+| `project` | `string` | `null` | Filter by project ID. |
+| `order_by` | `string` | `"started_at_desc"` | One of: `started_at_desc`, `started_at_asc`, `cost_desc`, `cost_asc`. |
+
+**Response:** An array of session rows, each containing `id`, `project`, `started_at`, `ended_at`, `modalities`, `request_count`, `total_cost_usd`, and `tenant_id`. Empty array when cost tracking is disabled.
+
+### GET /v1/sessions/{session_id}
+
+Return one session with the per-modality cost breakdown (`by_modality`) and the deduplicated `providers` list computed by joining the requests table.
+
+**Example:**
+
+```bash
+curl "http://localhost:8080/v1/sessions?limit=20&order_by=cost_desc"
+curl "http://localhost:8080/v1/sessions/vg-8f1c"
 ```
 
 ---
@@ -523,7 +563,7 @@ curl -X POST http://localhost:8080/v1/providers \
 
 ### PATCH /v1/providers/{provider_id}
 
-Update a managed provider's API key, base URL, or type.
+Update a managed provider's API key, base URL, or type. Omitted fields keep their stored value, so a body of `{"api_key":"sk-new-key"}` rotates the key and leaves `base_url` alone.
 
 **Example:**
 
@@ -532,6 +572,26 @@ curl -X PATCH http://localhost:8080/v1/providers/deepgram-staging \
   -H "Content-Type: application/json" \
   -d '{"api_key":"sk-new-key"}'
 ```
+
+**Moving `base_url` to a new host**
+
+A request that changes `base_url` without supplying an `api_key` keeps the stored key, and `POST /v1/providers/{provider_id}/test` then sends that key to the new host. So that one combination requires the new host to be permitted. Permitted are the provider's current host, the vendor's own default host (`api.openai.com` for `openai`, `localhost` for `ollama`, and so on), and any host listed in `serve.provider_base_url_hosts` in [voicegw.yaml](/configuration/voicegw-yaml). An unpermitted host returns `400` naming the config key:
+
+```json
+{
+  "detail": "base_url host 'proxy.internal.example.com' is not permitted for provider 'deepgram-staging'. Moving base_url to a new host while reusing the stored API key would send that key to the new host. Add the host to 'serve.provider_base_url_hosts' in voicegw.yaml, or send a fresh 'api_key' in this request."
+}
+```
+
+Sending the key with the change is always allowed, because the caller already holds a key:
+
+```bash
+curl -X PATCH http://localhost:8080/v1/providers/deepgram-staging \
+  -H "Content-Type: application/json" \
+  -d '{"base_url":"https://proxy.internal.example.com","api_key":"sk-new-key"}'
+```
+
+Requests that keep the same host (port or path edits), clear `base_url`, or leave it untouched are unaffected, as are providers stored with an empty key such as a local `ollama`.
 
 ### DELETE /v1/providers/{provider_id}
 
@@ -660,9 +720,10 @@ voicegw_uptime_seconds 3621.4
 # HELP voicegw_providers_configured Configured providers
 # TYPE voicegw_providers_configured gauge
 voicegw_providers_configured 5
-# HELP voicegw_cost_usd_total Total cost in USD (today)
-# TYPE voicegw_cost_usd_total counter
+# HELP voicegw_cost_usd_total USD cost summed over a ROLLING trailing 24 hours (now-86400s to now). This is a gauge despite the _total suffix: it DECREASES as requests age out of the window. It is not a since-start total and not a calendar day. Do not use rate() or increase() on it.
+# TYPE voicegw_cost_usd_total gauge
 voicegw_cost_usd_total{period="today"} 1.234500
+# TYPE voicegw_requests_total gauge
 voicegw_requests_total{provider="deepgram"} 42
 voicegw_cost_usd_total{provider="deepgram"} 0.512300
 # HELP voicegw_diag_gate_status Health gates in the newest stored LiveKit diagnostics run, counted by gate id and status.
@@ -676,6 +737,40 @@ voicegw_diag_run_timestamp_seconds 1785412800.000
 ```
 
 This endpoint exposes VoiceGateway's own numbers so your Prometheus can scrape it. It is the opposite direction from the node scrape, which pulls exposition text *from* livekit-server and node_exporter *into* this database; nothing scraped from another process is served back out here.
+
+**Turning the node scrape on.** That inbound scrape is off unless you name targets. Set `VOICEGW_NODE_SCRAPE_TARGETS` to a comma-separated list of `source:name=url` entries before starting the collector:
+
+```bash
+export VOICEGW_NODE_SCRAPE_TARGETS="livekit-server:sfu-1=http://10.0.0.4:6789/metrics,node-exporter:sfu-1=http://10.0.0.4:9100/metrics"
+```
+
+`source` is one of `livekit-server`, `livekit-sip` or `node-exporter`. `name` is the node the samples are filed under, and using the same `name` for two sources is the point: it puts an SFU's own counters and its host's file descriptors on one time axis. A malformed entry is skipped with a warning instead of failing startup, and the collector logs how many targets it read.
+
+With the variable unset or empty no scrape worker is started and the collector makes no outbound requests, which is the default. Cadence comes from `workers.node_scrape_interval_seconds` in `voicegw.yaml` (default 15 seconds, matching Prometheus' own default); `workers.enabled: false` disables this worker along with the rollups.
+
+**`voicegw_cost_usd_total` and `voicegw_requests_total` are gauges over a rolling 24-hour window, not counters.** Both are computed from the `"today"` window, which is `now - 86400` seconds: a rolling trailing 24 hours. It is *not* midnight-to-now and *not* a since-process-start total. The value therefore goes **down** as well as up, every time a request falls off the trailing edge. The `period="today"` label and the `_total` suffix are both misnomers kept for backward compatibility, because renaming a scraped series would break every dashboard already built on it. The `# TYPE` metadata is now `gauge`, which is what your tooling actually reads.
+
+Concretely, this means:
+
+```promql
+# WRONG. rate()/increase() require a counter. Every decrease (a request ageing
+# out of the 24h window) is read as a counter reset, and Prometheus extrapolates
+# spend and traffic that never happened.
+rate(voicegw_cost_usd_total[5m])
+increase(voicegw_requests_total[1h])
+
+# RIGHT. Read the gauge as-is, or aggregate/compare it over time.
+voicegw_cost_usd_total{period="today"}                    # spend in the last 24h
+sum(voicegw_requests_total)                               # requests in the last 24h
+delta(voicegw_cost_usd_total{period="today"}[1h])         # how the 24h window moved
+max_over_time(voicegw_cost_usd_total{period="today"}[7d]) # worst 24h in a week
+```
+
+`sum(voicegw_requests_total)` sums the per-provider series; there is no separate unlabelled total. Do **not** write bare `sum(voicegw_cost_usd_total)`: that series is emitted three times over, once with `period="today"`, once per `provider` and once per `project`, so an unfiltered `sum` counts the same spend about three times. Always select a label set.
+
+For an actual monotonic spend counter (one that supports `rate()` and `increase()`), VoiceGateway does not publish one yet. Use `GET /v1/costs?period=all`, which is a true since-start total, or `period=week` / `period=month` for wider rolling windows.
+
+The latency series (`voicegw_request_ttfb_seconds`, `voicegw_request_total_latency_seconds`) are summary quantiles over the same rolling trailing 24 hours. Summary quantiles were never counters, so their type is unchanged; no `_sum` or `_count` children are published, so there is nothing to `rate()` there either.
 
 **Diagnostics gate series.** `voicegw_diag_gate_status` reports the health gates of the newest stored [diagnostics run](/cli/livekit) that gated anything, aggregated per gate id and status: the probed agent is not a label, so cardinality does not grow with your fleet. Statuses are the one ladder `voicegw livekit check` uses, `PASS < WARN < UNKNOWN < FAIL`, where **`UNKNOWN` means the gate could not be evaluated and is not a pass** (only `PASS` exits 0). `voicegw_diag_run_verdict` is that run's stored verdict, and `voicegw_diag_run_timestamp_seconds` is when it finished, so a clean verdict from three weeks ago is distinguishable from one from a minute ago.
 
@@ -713,6 +808,42 @@ Return audit log entries for CRUD operations performed via the API.
 curl "http://localhost:8080/v1/audit-log?entity_type=provider&limit=10"
 curl "http://localhost:8080/v1/audit-log?action=delete"
 ```
+
+## API Keys
+
+Mint, list, and revoke the virtual keys (`vk_...`) that authenticate callers of this API.
+
+**Authentication:** every route under `/v1/api-keys` requires the `admin` scope, declared on the router so no route can miss it. Like Diagnostics, the gate is a **no-op while no API keys are configured** (the self-hosted default: no `auth.api_keys` block and no `VOICEGW_API_KEY`), and it enforces the admin scope as soon as auth is enabled. Pass a static key carrying `admin` or the `*` wildcard scope, or an admin-role `vk_` key: `Authorization: Bearer ...`.
+
+This gate matters because a minted key is issued with the wildcard scope. An ungated mint is a write escalation onto every `/v1` endpoint, so an unauthenticated caller must not reach it. A key minted here defaults to `role: tenant`, which means **a minted key cannot mint another key** (`403`): a leaked key is not self-replicating.
+
+| Response | Meaning |
+|---|---|
+| `401` | Auth is enabled and the request carried no token, or an invalid one. |
+| `403` | Valid token without the `admin` scope, or a `vk_` key whose role is not `admin`. |
+
+### POST /v1/api-keys
+
+Mint a virtual key. Body: `name` (required), `tenant_id` (optional, binds the key to one tenant), `issued_by` (optional audit string). Returns `201` with `plaintext` (**the only time the full key is ever returned**) and the stored `key` row. The bcrypt hash is never exposed.
+
+```bash
+curl -X POST http://localhost:8080/v1/api-keys \
+  -H "Authorization: Bearer $VG_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "prod-bot", "tenant_id": "acme"}'
+```
+
+### GET /v1/api-keys
+
+List every key. `include_revoked` (default `true`) keeps soft-revoked rows in the response. Rows carry `key_prefix`, never the hash or the plaintext.
+
+### GET /v1/api-keys/{key_id}
+
+Fetch one key by id. `404` when missing.
+
+### DELETE /v1/api-keys/{key_id}
+
+Soft-revoke a key. The row stays for audit with `revoked_at` set. Returns `204`.
 
 ## LiveKit Webhooks
 

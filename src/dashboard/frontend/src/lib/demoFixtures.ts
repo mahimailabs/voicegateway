@@ -1115,15 +1115,25 @@ const DIAG_CREDS: DiagnosticsCreds = {
 //
 // Four deliberate properties, so the demo shows the honest cases and not just
 // the happy one:
-//   - The newest run's verdict is PASS while one probed agent answered nothing.
-//     That is what today's `_verdict` really does (it only compares averages
-//     against target_ms), and the Errors tab is what surfaces the no-reply.
-//   - The two older runs each carry one real failure string, so the error-class
+//   - One run died before recording anything: `status: 'failed'`, `results:
+//     null`, `verdict: null`, one error string. That is exactly what the backend
+//     stores on that path. It is deliberately NOT the newest: the tabs only ever
+//     render the first run, and leading the public demo with four "no result"
+//     cards would sell the product short. It sits in the run history, which is
+//     enough to prove the failed path is stored and listed honestly.
+//   - One completed run stores the verdict PASS while one probed agent answered
+//     nothing. That was `_verdict`'s reading, and `_verdict` is gone: `gates`
+//     replaced it and would call the same payload UNKNOWN, because a probe that
+//     measured nothing has not passed. This page renders the STORED verdict and
+//     never recomputes one, so the value here is a display fixture and not a
+//     claim about what today's gates return. The Errors tab surfaces the
+//     no-reply either way.
+//   - The two oldest runs each carry one real failure string, so the error-class
 //     bars have something to group: a per-check timeout and a dispatch that found
 //     no worker.
 //   - The oldest run has `roster: []` (a configured collector reporting nothing)
-//     against the newest run's populated roster: two different answers that must
-//     never collapse into "0 workers".
+//     against the populated roster of the run above it: two different answers
+//     that must never collapse into "0 workers".
 //   - The newest run's latency check carries BOTH no-reply states: `reception`
 //     answered nothing and the probe recorded why, `checkout-voice` answered
 //     nothing and it recorded no reason at all. They must never render the same,
@@ -1314,6 +1324,38 @@ const DIAG_RUNS: DiagnosticRun[] = [
     created_at: iso(BASE_EPOCH - 12 * MIN),
     started_at: iso(BASE_EPOCH - 12 * MIN),
     ended_at: iso(BASE_EPOCH - 12 * MIN + 96),
+  },
+  {
+    // A run that ended without recording anything. `_execute` wraps the whole
+    // run in `asyncio.wait_for(..., 360s)`; when that fires, `run.results` was
+    // never assigned and no verdict was ever computed, so the stored row is
+    // `results: null` + `verdict: null` + the error string verbatim. It is NOT a
+    // run of zeros: a zero would claim a measurement nobody took.
+    //
+    // Deliberately NOT the newest. The tabs and the exportable report only ever
+    // render the first run, and voicegateway.dev/demo is a shop window: leading
+    // with four 'no result' cards would sell the product short. It sits in the
+    // run history instead, where it still proves the failed path is stored and
+    // listed honestly. Make the history rows selectable and this becomes
+    // reachable in the demo without costing the default view.
+    //
+    // `latency` is left out of `checks` so the four per-check tabs cover both
+    // resultless states: three that were asked for and recorded nothing, and one
+    // that was never part of the run at all.
+    run_id: 'diag_run_004',
+    status: 'failed',
+    // A 4-tier ramp held 30s per tier does not fit inside the six-minute cap,
+    // which is why this run hit it.
+    checks: ['agents', 'sfu', 'sfu_load'],
+    config: { target_ms: 1500, ramp: [2, 10, 25, 50], duration: 30, trials: 3 },
+    results: null,
+    verdict: null,
+    // Verbatim from the TimeoutError branch of `_execute`.
+    error: 'run timed out',
+    created_at: iso(BASE_EPOCH - 26 * MIN),
+    started_at: iso(BASE_EPOCH - 26 * MIN),
+    // Started plus the 360s cap: the run was killed, it did not finish early.
+    ended_at: iso(BASE_EPOCH - 20 * MIN),
   },
   {
     run_id: 'diag_run_002',

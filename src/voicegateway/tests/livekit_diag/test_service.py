@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
-from voicegateway.livekit_diag import run_report
+from voicegateway.livekit_diag import gates, run_report
 from voicegateway.livekit_diag import service as probes
 from voicegateway.livekit_diag.config import LiveKitCreds
 from voicegateway.livekit_diag.latency import LatencyResult, summarize
@@ -166,8 +166,8 @@ class _FakeSfuProbe:
     async def ramp(self, room, steps, duration, target_rtt_ms, max_loss, **kwargs):
         return (
             [
-                RampStep(2, 12.0, 0.0, "Excellent"),
-                RampStep(10, 61.0, 0.0, "Poor"),
+                RampStep(2, 12.0, 0.0, "Excellent", 2),
+                RampStep(10, 61.0, 0.0, "Poor", 10),
             ],
             ResourceReport(
                 cpu_peak=91.2,
@@ -264,7 +264,17 @@ async def test_sfu_baseline_only_has_no_ramp_and_no_resource(monkeypatch):
     assert out["ramp"] == []
     assert out["knee"] is None
     assert out["resource"] is None
-    assert out["baseline"] == {"rtt_ms": 11.4, "loss_pct": 0.0, "quality": "Excellent"}
+    # _FakeSfuProbe builds its baseline RampStep without a sample count, so the
+    # dataclass default of 0 travels: a hand-built step is not credited with
+    # evidence it does not carry, and rtt_stat says so rather than implying the
+    # 11.4 came from somewhere.
+    assert out["baseline"] == {
+        "rtt_ms": 11.4,
+        "loss_pct": 0.0,
+        "quality": "Excellent",
+        "samples": 0,
+        "rtt_stat": "not_measured",
+    }
 
 
 def test_resource_json_reports_unsampled_metrics_as_none():
@@ -490,3 +500,140 @@ async def test_the_run_report_still_renders_after_the_payload_change(monkeypatch
     )
     assert "reception" in document and "checkout-voice" in document
     assert "no trial produced a reply" in document
+
+# What rtt_ms IS travels with it: a tier that measured nothing says so
+# ---------------------------------------------------------------------------
+
+
+class _MixedSfuProbe:
+    """A ramp with one measured tier and one where every ping timed out."""
+
+    def __init__(self, admin, client_factory, monitor) -> None:
+        pass
+
+    async def baseline(self, room, seconds: float = 10.0):
+        return RampStep(2, 11.4, 0.0, "Excellent", 2)
+
+    async def ramp(self, room, steps, duration, target_rtt_ms, max_loss, **kwargs):
+        return (
+            [
+                RampStep(2, 12.0, 0.0, "Excellent", 2),
+                # 10 clients, not one pong back: rtt_ms 0.0 is the placeholder
+                # mean of an empty list, and quality has nothing to read.
+                RampStep(10, 0.0, 0.0, "Unknown", 0),
+            ],
+            None,
+        )
+
+
+class _AllTimedOutSfuProbe:
+    """Every tier timed out: the ramp that used to report a clean PASS."""
+
+    def __init__(self, admin, client_factory, monitor) -> None:
+        pass
+
+    async def baseline(self, room, seconds: float = 10.0):
+        return RampStep(2, 0.0, 0.0, "Unknown", 0)
+
+    async def ramp(self, room, steps, duration, target_rtt_ms, max_loss, **kwargs):
+        return (
+            [RampStep(2, 0.0, 0.0, "Unknown", 0), RampStep(10, 0.0, 0.0, "Unknown", 0)],
+            None,
+        )
+
+
+async def test_ramp_steps_publish_the_sample_count_behind_rtt(monkeypatch):
+    """0.0ms and 12.0ms are both floats; only ``samples`` says which is a reading."""
+    import json
+
+    monkeypatch.setattr(probes, "_diag_cache", _fake_diag(SfuProbe=_MixedSfuProbe))
+    out = await probes.RealProbes().sfu(_CREDS, True, probes.clamp_config({}))
+
+    assert [s["samples"] for s in out["ramp"]] == [2, 0]
+    assert [s["rtt_stat"] for s in out["ramp"]] == ["mean_of_n", "not_measured"]
+    # Runs are persisted and re-read, so the honesty has to survive the JSON.
+    assert json.loads(json.dumps(out))["ramp"] == out["ramp"]
+
+
+async def test_a_measured_smallest_tier_still_passes_through_the_payload(monkeypatch):
+    monkeypatch.setattr(probes, "_diag_cache", _fake_diag(SfuProbe=_MixedSfuProbe))
+    out = await probes.RealProbes().sfu(_CREDS, True, probes.clamp_config({}))
+
+    gate = gates.sfu_capacity_gate(
+        out["ramp"], out["target_rtt_ms"], out["resource"]
+    )
+    assert gate.status == gates.PASS  # 12.0ms of 2 real round-trips, budget 50ms
+
+
+async def test_a_ramp_that_measured_nothing_does_not_pass_the_capacity_gate(monkeypatch):
+    """End to end: the probe's own payload, fed to the gate that reads it."""
+    monkeypatch.setattr(probes, "_diag_cache", _fake_diag(SfuProbe=_AllTimedOutSfuProbe))
+    out = await probes.RealProbes().sfu(_CREDS, True, probes.clamp_config({}))
+
+    assert [s["rtt_stat"] for s in out["ramp"]] == ["not_measured", "not_measured"]
+    gate = gates.sfu_capacity_gate(
+        out["ramp"], out["target_rtt_ms"], out["resource"]
+    )
+    assert gate.status == gates.UNKNOWN
+    assert gates.exit_code(gates.verdict([gate])) == 1
+
+
+# ---------------------------------------------------------------------------
+# The same, for the BASELINE: its quality and its rtt are separate readings
+# ---------------------------------------------------------------------------
+
+
+class _SilentPingSfuProbe:
+    """The connection came up; not one ping came back.
+
+    ``quality`` is the SDK's own peer-connection metric, so it reads
+    ``Excellent``; ``rtt_ms`` is a mean over round trips, so it is the 0.0 of an
+    empty list. This is the pair that used to satisfy ``sfu_quality_gate``.
+    """
+
+    def __init__(self, admin, client_factory, monitor) -> None:
+        pass
+
+    async def baseline(self, room, seconds: float = 10.0):
+        return RampStep(2, 0.0, 0.0, "Excellent", 0)
+
+    async def ramp(self, room, steps, duration, target_rtt_ms, max_loss, **kwargs):
+        return [], None
+
+
+async def test_the_baseline_publishes_the_sample_count_behind_its_rtt(monkeypatch):
+    """Without it, 'Excellent, rtt 0.0ms' is indistinguishable from a fast SFU."""
+    import json
+
+    monkeypatch.setattr(probes, "_diag_cache", _fake_diag(SfuProbe=_MixedSfuProbe))
+    out = await probes.RealProbes().sfu(_CREDS, False, probes.clamp_config({}))
+
+    assert out["baseline"]["samples"] == 2
+    assert out["baseline"]["rtt_stat"] == "mean_of_n"
+    # Runs are persisted and re-read, so the honesty has to survive the JSON.
+    assert json.loads(json.dumps(out))["baseline"] == out["baseline"]
+
+
+async def test_a_measured_baseline_still_passes_the_quality_gate(monkeypatch):
+    monkeypatch.setattr(probes, "_diag_cache", _fake_diag(SfuProbe=_MixedSfuProbe))
+    out = await probes.RealProbes().sfu(_CREDS, False, probes.clamp_config({}))
+
+    gate = gates.sfu_quality_gate(out["baseline"])
+    assert gate.status == gates.PASS  # Excellent over 2 real round-trips
+    assert "rtt 11.4ms" in gate.detail
+
+
+async def test_an_excellent_baseline_that_measured_nothing_does_not_pass(monkeypatch):
+    """End to end: the probe's own payload, fed to the gate that reads it."""
+    monkeypatch.setattr(
+        probes, "_diag_cache", _fake_diag(SfuProbe=_SilentPingSfuProbe)
+    )
+    out = await probes.RealProbes().sfu(_CREDS, False, probes.clamp_config({}))
+
+    assert out["baseline"]["quality"] == "Excellent"  # the SDK really said this
+    assert out["baseline"]["rtt_stat"] == "not_measured"
+    gate = gates.sfu_quality_gate(out["baseline"])
+    assert gate.status == gates.UNKNOWN
+    assert gate.status != gates.PASS
+    assert "rtt 0.0ms" not in gate.detail
+    assert gates.exit_code(gates.verdict([gate])) == 1

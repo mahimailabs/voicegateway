@@ -19,18 +19,9 @@ import { useState } from 'react';
 import { getToken } from '../../lib/api';
 import { DEMO_MODE } from '../../lib/demo';
 import type { DiagnosticRun } from '../../lib/types';
-import { Card, Note } from './shared';
+import { Card, Note, verdictBadgeClass } from './shared';
 
 type Kind = 'html' | 'json';
-
-/** Badge class for a stored verdict. UNKNOWN is deliberately not green. */
-function verdictBadgeClass(verdict: string | null): string {
-  if (verdict === 'PASS') return 'neo-badge--green';
-  if (verdict === 'WARN') return 'neo-badge--warning';
-  if (verdict === 'FAIL') return 'neo-badge--red';
-  // UNKNOWN, and anything this build does not recognise: neutral, never green.
-  return 'neo-badge--black';
-}
 
 /** Same filename the server puts in Content-Disposition, same sanitising. */
 function fileName(runId: string, kind: Kind): string {

@@ -409,6 +409,59 @@ async def test_the_operator_default_still_sees_every_call(client, gateway):
     assert {c["room_sid"] for c in body["calls"]} == {"RM_acme2", "RM_none"}
 
 
+async def test_a_tenant_key_gets_a_full_page_not_a_short_one(client, gateway):
+    """``limit`` means the same thing for a scoped reader as for the operator.
+
+    The endpoint used to read ``limit`` rows and drop the other tenants' in
+    Python, so this fixture (the six newest calls all belong to beta) handed acme
+    an EMPTY page while six acme calls sat one row past the read boundary. With
+    the predicate in the query the page is acme's own six, newest first.
+    """
+    for i in range(6):
+        await _answered_call(
+            gateway.storage,
+            room_sid=f"RM_pg_acme{i}",
+            tenant_id="acme",
+            started_at_ms=1_750_000_000_000 + i * 1000,
+        )
+    for i in range(6):
+        await _answered_call(
+            gateway.storage,
+            room_sid=f"RM_pg_beta{i}",
+            tenant_id="beta",
+            started_at_ms=1_750_000_100_000 + i * 1000,
+        )
+    async with gateway.storage._conn.session() as db:
+        created = await api_keys.create_api_key(db, name="acme-page", tenant_id="acme")
+
+    resp = await client.get(
+        f"{_URL}?limit=6", headers={"Authorization": f"Bearer {created.plaintext}"}
+    )
+
+    assert resp.status_code == 200
+    calls = resp.json()["calls"]
+    assert [c["room_sid"] for c in calls] == [
+        f"RM_pg_acme{i}" for i in reversed(range(6))
+    ]
+    assert {c["tenant_id"] for c in calls} == {"acme"}
+
+
+async def test_a_key_with_no_tenant_reads_the_unattributed_bucket(client, gateway):
+    """A non-admin key whose ``tenant_id`` is NULL resolves to ``""``, which the
+    query reads as ``tenant_id IS NULL`` -- never as every tenant."""
+    await _answered_call(gateway.storage, room_sid="RM_unattributed")
+    await _answered_call(gateway.storage, room_sid="RM_owned", tenant_id="acme")
+    async with gateway.storage._conn.session() as db:
+        created = await api_keys.create_api_key(db, name="no-tenant-ui")
+
+    resp = await client.get(
+        _URL, headers={"Authorization": f"Bearer {created.plaintext}"}
+    )
+
+    assert resp.status_code == 200
+    assert [c["room_sid"] for c in resp.json()["calls"]] == ["RM_unattributed"]
+
+
 # --- storage disabled -------------------------------------------------------
 
 

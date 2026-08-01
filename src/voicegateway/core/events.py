@@ -5,6 +5,11 @@ cost tracking is enabled and workers are not disabled, starts the latency and
 agent rollup workers plus the retention worker, stopping them on shutdown. The
 poll intervals come from the ``workers`` config; retention runs only when
 enabled and prunes every project that has data at ``retention.default_days``.
+
+The Prometheus node scrape is the one worker that is not started by default:
+it is the only one that talks to the network, so it is built only when
+``VOICEGW_NODE_SCRAPE_TARGETS`` names at least one target. An install that
+never sets the variable behaves exactly as it did before the worker existed.
 """
 
 from __future__ import annotations
@@ -23,6 +28,11 @@ from voicegateway.middleware.agent_observations_worker_middleware import (
 )
 from voicegateway.middleware.latency_observations_worker_middleware import (
     LatencyObservationsWorker,
+)
+from voicegateway.middleware.node_samples_worker_middleware import (
+    TARGETS_ENV_VAR,
+    NodeSamplesWorker,
+    targets_from_env,
 )
 from voicegateway.services.retention_service import RetentionWorker
 
@@ -68,6 +78,27 @@ def _build_workers(gateway: Gateway) -> list[Any]:
                 default_retention_days=retention_cfg.default_days,
                 poll_interval_seconds=workers_cfg.retention_interval_seconds,
             )
+        )
+
+    # The node scrape is opt-in, and opting in is naming targets: it is the only
+    # worker here that makes outbound HTTP requests, so an install that upgrades
+    # into this code must not start talking to the network on its own. No
+    # targets, no worker at all (rather than a worker idling on empty ticks), so
+    # the default process has exactly the tasks it had before.
+    node_targets = targets_from_env()
+    if node_targets:
+        workers.append(
+            NodeSamplesWorker(
+                storage,
+                poll_interval_seconds=workers_cfg.node_scrape_interval_seconds,
+            )
+        )
+        # Logged because the alternative is silence: an operator who typos the
+        # variable otherwise cannot tell "not read" from "read and empty".
+        logger.info(
+            "Node scrape enabled: %d target(s) from %s",
+            len(node_targets),
+            TARGETS_ENV_VAR,
         )
     return workers
 

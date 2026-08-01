@@ -1,10 +1,21 @@
-"""FastAPI router for api-key management."""
+"""FastAPI router for api-key management.
+
+Auth is declared ONCE, here, for every route on this router. A minted key
+carries the wildcard scope (``api_keys_repository`` defaults ``scopes='*'``),
+so an ungated mint hands the caller write access to every ``/v1`` endpoint.
+``require_scope(ADMIN_SCOPE)`` is a no-op while no API keys are configured
+(the self-hosted single-operator default: ``core.auth.check_request``
+returns None on an empty key list), and enforces the admin scope once auth
+is enabled. Declaring it on the router rather than per handler means a new
+route cannot forget to opt in.
+"""
 
 from __future__ import annotations
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query
 
+from voicegateway.core.auth import ADMIN_SCOPE
 from voicegateway.core.container import Container
 from voicegateway.core.exceptions import NotFoundError
 from voicegateway.schemas.api.api_key_schema import (
@@ -13,9 +24,14 @@ from voicegateway.schemas.api.api_key_schema import (
     ApiKeyResponse,
     CreatedApiKey,
 )
+from voicegateway.server.api._deps import require_scope
 from voicegateway.services.api_key_service import ApiKeyService
 
-router = APIRouter(prefix="/api-keys", tags=["api-keys"])
+router = APIRouter(
+    prefix="/api-keys",
+    tags=["api-keys"],
+    dependencies=[Depends(require_scope(ADMIN_SCOPE))],
+)
 
 
 @router.post("", response_model=CreatedApiKey, status_code=201)

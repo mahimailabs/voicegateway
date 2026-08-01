@@ -27,10 +27,102 @@ from __future__ import annotations
 
 import array
 import asyncio
+import contextlib
+import logging
+import threading
 import wave
 from collections.abc import Iterator
 
 from livekit import rtc
+
+# The livekit rtc SDK logs through logging.getLogger("livekit"): its own task and
+# queue errors (_utils.task_done_logger, _ffi_client "error putting to queue")
+# and, far more numerously, every native Rust/libwebrtc record the FFI layer
+# forwards (_ffi_client.ffi_event_callback -> logger.log(level, ...)). Tearing a
+# room down mid-session makes that native stack report the shutdown as errors:
+# roughly 40 ERROR lines per diagnostics run, on the order of one per synthetic
+# client, none of them a failure. A healthy run reads as broken to anyone looking
+# at the logs, which is the opposite of what a diagnostics tool is for.
+#
+# Same technique as core.database.quiet_embedded_dependency_loggers: reach for the
+# named third-party logger rather than the root, and touch it as little as
+# possible. This has to be narrower still, because swallowing genuine LiveKit
+# errors would defeat the probe, so the suppression is bounded three ways:
+#
+#   1. In time. It is only live while a SyntheticClient teardown is actually in
+#      flight (see SyntheticClient.disconnect). Connect, publish, ping, reply
+#      detection and every measurement window keep logging at ERROR.
+#   2. In scope. A logging.Filter attached to a *logger* only sees records logged
+#      through that exact logger; records from children reach the handlers via
+#      Logger.callHandlers and never pass through it. So "livekit.agents" (an
+#      embedded agent's own logging) is untouched by this, verified in the tests.
+#   3. In severity handling. The record is demoted, never dropped: filter()
+#      always returns True and the record keeps flowing at DEBUG, so a run with
+#      DEBUG handlers still prints every one of those lines, tagged with the
+#      level it was demoted from.
+#
+# Only ERROR is demoted, not >= ERROR: nothing in the SDK logs CRITICAL through
+# this logger, so demoting CRITICAL would buy no quiet and could only ever hide
+# something severe.
+_LIVEKIT_SDK_LOGGER = "livekit"
+
+
+class _TeardownNoiseFilter(logging.Filter):
+    """Demotes SDK ERROR records to DEBUG while a room teardown is in flight.
+
+    The depth counter is guarded by a lock because the noisiest records are
+    emitted from the FFI callback thread, not the asyncio thread that opened the
+    window, and the whole point is to catch those. That thread affinity is also
+    why the window cannot be a ContextVar: the FFI thread does not carry the
+    teardown context.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._lock = threading.Lock()
+        self._depth = 0
+
+    def open(self) -> None:
+        with self._lock:
+            self._depth += 1
+
+    def close(self) -> None:
+        with self._lock:
+            self._depth -= 1
+
+    def active(self) -> bool:
+        with self._lock:
+            return self._depth > 0
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno == logging.ERROR and self.active():
+            # Keep the original severity readable on the demoted line, so a DEBUG
+            # run can still tell teardown noise from ordinary SDK chatter.
+            record.__dict__["vg_demoted_from"] = record.levelname
+            record.levelno = logging.DEBUG
+            record.levelname = logging.getLevelName(logging.DEBUG)
+        return True
+
+
+_TEARDOWN_NOISE = _TeardownNoiseFilter()
+_INSTALL_LOCK = threading.Lock()
+
+
+@contextlib.contextmanager
+def quiet_livekit_teardown_noise() -> Iterator[None]:
+    """Demote the rtc SDK's shutdown ERROR lines to DEBUG for the duration.
+
+    Installed lazily, on first teardown, so merely importing this module does not
+    reach into a third-party logger. ``Logger.addFilter`` is a no-op when the
+    filter is already attached, so repeated entry adds nothing.
+    """
+    with _INSTALL_LOCK:
+        logging.getLogger(_LIVEKIT_SDK_LOGGER).addFilter(_TEARDOWN_NOISE)
+    _TEARDOWN_NOISE.open()
+    try:
+        yield
+    finally:
+        _TEARDOWN_NOISE.close()
 
 
 class ReplyDetector:
@@ -207,4 +299,8 @@ class SyntheticClient:
     async def disconnect(self) -> None:
         if self._silence_task is not None:
             self._silence_task.cancel()
-        await self._room.disconnect()
+        # The only window in this client where the SDK's ERROR lines are demoted.
+        # Everything the probe actually measures happens before it, so a real
+        # connect/publish/ping failure is still reported at ERROR.
+        with quiet_livekit_teardown_noise():
+            await self._room.disconnect()
