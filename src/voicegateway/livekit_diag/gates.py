@@ -86,6 +86,12 @@ AGENTS_GATE = "agents_listing"
 LATENCY_GATE = "agent_reply_latency"
 SFU_QUALITY_GATE = "sfu_connection_quality"
 SFU_CAPACITY_GATE = "sfu_capacity"
+ESTABLISHMENT_GATE = "call_establishment"
+
+# The share of call attempts that must establish. Inclusive: a run landing
+# exactly on the bar passes. This is an acceptance threshold, not a tuning knob,
+# which is why it lives beside the gate ids rather than in a config file.
+MIN_ESTABLISHMENT_RATIO = 0.995
 
 
 @dataclass(frozen=True)
@@ -569,6 +575,118 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
+def _as_count(value: Any) -> int | None:
+    """A call count, or ``None`` when the value cannot be one.
+
+    ``bool`` is refused explicitly. It is an ``int`` subclass in Python, so a
+    stray ``True`` would otherwise arrive as an attempt count of 1 and produce a
+    confident rate out of a flag.
+
+    ``OverflowError`` is caught alongside the usual pair because it is reachable
+    from a real artifact, not just in theory: :func:`json.loads` accepts the
+    non-standard ``Infinity`` token by default, so a malformed summary can hand
+    this function ``float('inf')``, and ``int(float('inf'))`` raises
+    ``OverflowError`` rather than ``ValueError``. An unparseable count is an
+    UNKNOWN verdict, never a traceback out of a gate.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def establishment_gate(
+    *,
+    attempted: Any,
+    succeeded: Any,
+    threshold: float = MIN_ESTABLISHMENT_RATIO,
+    subject: str | None = None,
+) -> GateResult:
+    """Did enough call attempts actually establish?
+
+    The acceptance criterion is at least 99.5% establishment. The comparison is
+    inclusive, so a run landing exactly on the bar passes.
+
+    COUNTS, NEVER A RATIO SOMEBODY ELSE COMPUTED. A load generator publishes its
+    own success ratio and, separately, its own pass/fail self-assessment against
+    its own configured bar. Neither is this gate's answer. Reading a generator's
+    verdict back out as the verdict is a run grading its own homework, and when
+    the two bars happen to coincide the substitution is invisible in the output.
+    Callers extract ``attempted`` and ``succeeded``; this function decides.
+
+    Unmeasured is never a pass, following the rule :func:`_unmeasured_reason`
+    applies to the SFU readings. The specific trap UNKNOWN exists to catch here:
+    a run that placed zero calls also recorded zero failures, so any gate phrased
+    as "failures within budget" calls that run perfect. Absent counts, zero
+    attempts, and counts that cannot describe a run (negative, or more
+    successes than attempts) all return UNKNOWN with the reason, never PASS.
+
+    Synchronous, like every gate in this module. Do not await it.
+    """
+    a = _as_count(attempted)
+    s = _as_count(succeeded)
+    if a is None or s is None:
+        which = "attempt and success counts"
+        if a is not None:
+            which = "success count"
+        elif s is not None:
+            which = "attempt count"
+        return GateResult(
+            gate=ESTABLISHMENT_GATE,
+            status=UNKNOWN,
+            subject=subject,
+            detail=(
+                f"the run reported no {which}, so no establishment rate could "
+                "be computed and no establishment was demonstrated"
+            ),
+            threshold=threshold,
+        )
+    if a <= 0:
+        return GateResult(
+            gate=ESTABLISHMENT_GATE,
+            status=UNKNOWN,
+            subject=subject,
+            detail=(
+                "the run reported 0 call attempts, so there is no establishment "
+                "rate to judge. It recorded no failures either, which is why "
+                "this is UNKNOWN rather than a pass"
+            ),
+            threshold=threshold,
+        )
+    if s < 0 or s > a:
+        return GateResult(
+            gate=ESTABLISHMENT_GATE,
+            status=UNKNOWN,
+            subject=subject,
+            detail=(
+                f"the counts do not describe a run ({s} established of {a} "
+                "attempted), so the rate they imply is not a measurement"
+            ),
+            threshold=threshold,
+        )
+    ratio = s / a
+    status = PASS if ratio >= threshold else FAIL
+    lead = (
+        f"{s} of {a} call attempts established"
+        if status == PASS
+        else f"only {s} of {a} call attempts established"
+    )
+    relation = "at or above" if status == PASS else "below"
+    return GateResult(
+        gate=ESTABLISHMENT_GATE,
+        status=status,
+        subject=subject,
+        detail=(
+            f"{lead} ({ratio * 100:.3f}%), {relation} the {threshold * 100:.1f}% bar"
+        ),
+        metric="establishment_ratio",
+        value=ratio,
+        threshold=threshold,
+    )
+
+
 # ---------------------------------------------------------------------------
 # The run-level entry point
 # ---------------------------------------------------------------------------
@@ -641,8 +759,10 @@ def summary_lines(gates: Sequence[GateResult]) -> list[str]:
 
 __all__ = [
     "AGENTS_GATE",
+    "ESTABLISHMENT_GATE",
     "FAIL",
     "LATENCY_GATE",
+    "MIN_ESTABLISHMENT_RATIO",
     "MIN_PERCENTILE_SAMPLES",
     "PASS",
     "SFU_CAPACITY_GATE",
@@ -651,6 +771,7 @@ __all__ = [
     "WARN",
     "GateResult",
     "agents_gate",
+    "establishment_gate",
     "evaluate_checks",
     "exit_code",
     "latency_gates",

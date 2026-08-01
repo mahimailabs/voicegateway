@@ -621,3 +621,154 @@ def test_an_unmeasured_baseline_is_unknown_through_the_whole_run():
 
     for gate in results:
         json.loads(json.dumps(gate.as_dict()))
+
+
+# ---------------------------------------------------------------------------
+# establishment_gate: at least 99.5% of call attempts must establish
+#
+# The acceptance criterion this gate encodes is a share of attempts, so the one
+# input that must never read as healthy is a run that attempted nothing. Zero
+# attempts also means zero failures, and every "failures within budget" phrasing
+# calls that run perfect. These pin UNKNOWN over PASS for every such shape.
+# ---------------------------------------------------------------------------
+
+
+def test_a_run_above_the_bar_passes():
+    gate = gates.establishment_gate(attempted=15000, succeeded=14985)
+    assert gate.status == gates.PASS
+    assert gate.gate == gates.ESTABLISHMENT_GATE
+    assert gate.metric == "establishment_ratio"
+    assert gate.value == 14985 / 15000
+    assert gate.threshold == gates.MIN_ESTABLISHMENT_RATIO
+    assert "14985 of 15000" in gate.detail
+
+
+def test_the_bar_is_inclusive_at_every_scale():
+    """Exactly 99.5% passes, and float division must not lose the boundary."""
+    for attempted, succeeded in ((200, 199), (2000, 1990), (20000, 19900)):
+        gate = gates.establishment_gate(attempted=attempted, succeeded=succeeded)
+        assert gate.status == gates.PASS, (attempted, succeeded, gate.detail)
+        assert gate.value == succeeded / attempted
+
+
+def test_one_call_below_the_bar_fails():
+    gate = gates.establishment_gate(attempted=1000, succeeded=994)
+    assert gate.status == gates.FAIL
+    assert gate.value == 0.994
+    assert "below" in gate.detail
+    assert gates.exit_code(gates.verdict([gate])) == 1
+
+
+def test_a_run_that_attempted_nothing_is_unknown_not_pass():
+    """The whole reason this gate reports UNKNOWN rather than a clean rate."""
+    gate = gates.establishment_gate(attempted=0, succeeded=0)
+    assert gate.status == gates.UNKNOWN
+    assert gate.status != gates.PASS
+    # The detail must say why zero attempts is not success, because "0 failures"
+    # is exactly what a reader would otherwise take from it.
+    assert "no failures" in gate.detail
+    # Nothing decided it, so no number is claimed.
+    assert gate.metric is None
+    assert gate.value is None
+    # The bar is still known even though nothing was measured against it.
+    assert gate.threshold == gates.MIN_ESTABLISHMENT_RATIO
+    assert gates.exit_code(gates.verdict([gate])) == 1
+
+
+def test_absent_counts_are_unknown_and_name_which_one_is_missing():
+    both = gates.establishment_gate(attempted=None, succeeded=None)
+    assert both.status == gates.UNKNOWN
+    assert "attempt and success counts" in both.detail
+
+    no_success = gates.establishment_gate(attempted=15000, succeeded=None)
+    assert no_success.status == gates.UNKNOWN
+    assert "success count" in no_success.detail
+
+    no_attempt = gates.establishment_gate(attempted=None, succeeded=14985)
+    assert no_attempt.status == gates.UNKNOWN
+    assert "attempt count" in no_attempt.detail
+
+
+def test_counts_that_cannot_describe_a_run_are_unknown():
+    more = gates.establishment_gate(attempted=100, succeeded=101)
+    assert more.status == gates.UNKNOWN
+    assert "do not describe a run" in more.detail
+
+    negative = gates.establishment_gate(attempted=100, succeeded=-1)
+    assert negative.status == gates.UNKNOWN
+
+    negative_attempts = gates.establishment_gate(attempted=-5, succeeded=0)
+    assert negative_attempts.status == gates.UNKNOWN
+
+
+def test_a_bool_is_not_a_call_count():
+    """bool is an int subclass, so True would otherwise be an attempt count."""
+    gate = gates.establishment_gate(attempted=True, succeeded=True)
+    assert gate.status == gates.UNKNOWN
+    assert gate.value is None
+
+
+def test_no_unmeasured_shape_can_ever_pass():
+    """One sweep over every shape that carries no usable measurement."""
+    unmeasured = [
+        {"attempted": None, "succeeded": None},
+        {"attempted": None, "succeeded": 10},
+        {"attempted": 10, "succeeded": None},
+        {"attempted": 0, "succeeded": 0},
+        {"attempted": 0, "succeeded": 5},
+        {"attempted": -1, "succeeded": 0},
+        {"attempted": 100, "succeeded": -1},
+        {"attempted": 100, "succeeded": 101},
+        {"attempted": True, "succeeded": False},
+        {"attempted": "many", "succeeded": "most"},
+        {"attempted": [], "succeeded": {}},
+    ]
+    for kwargs in unmeasured:
+        gate = gates.establishment_gate(**kwargs)
+        assert gate.status == gates.UNKNOWN, kwargs
+        assert gate.status != gates.PASS, kwargs
+        assert gate.value is None, kwargs
+        assert gates.exit_code(gates.verdict([gate])) == 1, kwargs
+
+
+def test_the_threshold_is_configurable_but_defaults_to_the_acceptance_bar():
+    assert gates.MIN_ESTABLISHMENT_RATIO == 0.995
+    # A stricter bar the same run now fails.
+    strict = gates.establishment_gate(attempted=1000, succeeded=996, threshold=0.999)
+    assert strict.status == gates.FAIL
+    assert strict.threshold == 0.999
+    assert "99.9% bar" in strict.detail
+    # The same run against the shipped bar passes.
+    assert gates.establishment_gate(attempted=1000, succeeded=996).status == gates.PASS
+
+
+def test_the_subject_names_which_test_was_judged():
+    gate = gates.establishment_gate(attempted=1000, succeeded=999, subject="ramp-500")
+    assert gate.subject == "ramp-500"
+
+
+def test_the_gate_is_synchronous_and_json_safe():
+    import inspect
+    import json
+
+    assert not inspect.iscoroutinefunction(gates.establishment_gate)
+    for gate in (
+        gates.establishment_gate(attempted=100, succeeded=100),
+        gates.establishment_gate(attempted=0, succeeded=0),
+    ):
+        json.loads(json.dumps(gate.as_dict()))
+
+
+def test_a_non_finite_count_is_unknown_not_a_traceback():
+    """``json.loads`` accepts the ``Infinity`` token, so this is reachable.
+
+    ``int(float('inf'))`` raises OverflowError, not ValueError, so a summary
+    carrying a non-finite count would have escaped the gate as a traceback
+    instead of an UNKNOWN verdict.
+    """
+    for bad in (float("inf"), float("-inf"), float("nan")):
+        gate = gates.establishment_gate(attempted=bad, succeeded=1)
+        assert gate.status == gates.UNKNOWN, bad
+        assert gate.value is None, bad
+        gate = gates.establishment_gate(attempted=100, succeeded=bad)
+        assert gate.status == gates.UNKNOWN, bad
