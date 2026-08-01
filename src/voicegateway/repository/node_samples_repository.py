@@ -187,6 +187,12 @@ _INT_COLUMNS: frozenset[str] = frozenset(
 _INT64_MAX = 2**63 - 1
 _INT64_MIN = -(2**63)
 
+# Columns already reported as overflowing, so the warning is not repeated on
+# every scrape. Process-wide and deliberately never cleared: the condition is a
+# property of the host, not of one tick, and a "reset" would only restore the
+# flood. Bounded by the number of value columns, so it cannot grow.
+_OVERFLOW_WARNED: set[str] = set()
+
 
 @dataclass(frozen=True)
 class NodeSampleInput:
@@ -362,12 +368,31 @@ def _coerce(column: str, value: float | None) -> int | float | None:
         return float(value)
     as_int = int(value)
     if not (_INT64_MIN <= as_int <= _INT64_MAX):
-        _logger.warning(
-            "node_samples.%s dropped: %r does not fit a 64-bit column; storing "
-            "NULL rather than a clamped value that would read as a measurement",
-            column,
-            value,
-        )
+        # Logged ONCE per column rather than per scrape. On a host with an
+        # unbounded fs.file-max this fires on every tick, four times a minute,
+        # for as long as the collector runs, and a 24 hour soak buries every
+        # real warning under ~5,700 copies of one that is not news.
+        #
+        # It was the right warning before filefd_maximum_unbounded existed. Now
+        # the sentinel records the same fact explicitly and durably, on the row,
+        # where a reader can act on it. The first occurrence is still a warning
+        # because a column silently going NULL deserves to be seen once;
+        # repeats drop to debug.
+        if column in _OVERFLOW_WARNED:
+            _logger.debug(
+                "node_samples.%s dropped again: %r does not fit a 64-bit column",
+                column,
+                value,
+            )
+        else:
+            _OVERFLOW_WARNED.add(column)
+            _logger.warning(
+                "node_samples.%s dropped: %r does not fit a 64-bit column; "
+                "storing NULL rather than a clamped value that would read as a "
+                "measurement. Further occurrences for this column log at debug",
+                column,
+                value,
+            )
         return None
     return as_int
 

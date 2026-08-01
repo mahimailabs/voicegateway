@@ -21,6 +21,8 @@ conclusions about a fleet's headroom.
 
 from __future__ import annotations
 
+import logging
+
 import httpx
 import pytest
 
@@ -287,3 +289,54 @@ def test_no_module_docstring_still_advertises_it() -> None:
 
     for module in (node_sample_model, node_correlation_repository):
         assert "nack" not in (module.__doc__ or ""), module.__name__
+
+
+# --------------------------------------------------------------------------
+# The overflow warning fires once, not on every tick
+# --------------------------------------------------------------------------
+
+
+async def test_the_overflow_warning_is_not_repeated_every_scrape(
+    storage, caplog
+) -> None:
+    """A 24 hour soak logged ~5,700 copies of one line that is not news.
+
+    On any host with an unbounded fs.file-max this fires on every tick, four
+    times a minute, forever, burying the warnings somebody actually needs to
+    see. The fact itself is already recorded durably and per row by
+    filefd_maximum_unbounded, which is where a reader can act on it.
+    """
+    from voicegateway.repository import node_samples_repository as repository
+
+    repository._OVERFLOW_WARNED.discard("filefd_maximum")
+    with caplog.at_level(logging.DEBUG):
+        for tick in range(4):
+            await _scrape(storage, UNBOUNDED_HOST, node=f"host-{tick}")
+
+    overflow = [
+        r for r in caplog.records if "does not fit a 64-bit column" in r.getMessage()
+    ]
+    assert len(overflow) == 4, "the drop should still be recorded on every tick"
+    warnings = [r for r in overflow if r.levelno >= logging.WARNING]
+    assert len(warnings) == 1, (
+        f"{len(warnings)} warnings across 4 scrapes; it must warn once and then "
+        "fall to debug"
+    )
+    assert "log at debug" in warnings[0].getMessage()
+
+
+async def test_the_null_and_the_sentinel_are_unchanged_by_the_quieting(
+    storage,
+) -> None:
+    """A logging change must not have moved what is stored.
+
+    This is the whole reason the warning can be quieted: the fact survives on
+    the row rather than only in the log.
+    """
+    from voicegateway.repository import node_samples_repository as repository
+
+    repository._OVERFLOW_WARNED.discard("filefd_maximum")
+    row = await _scrape(storage, UNBOUNDED_HOST, node="still-honest")
+    assert row.filefd_maximum is None
+    assert row.filefd_maximum_unbounded == 1
+    assert row.series_found == 2
