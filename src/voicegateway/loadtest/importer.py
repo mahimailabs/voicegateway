@@ -172,12 +172,48 @@ def observations_for(parsed: ParsedTest) -> list[dict]:
     return []
 
 
+#: Heading under which a run's own gaps are recorded in ``load_runs.notes``, and
+#: the prefix each one carries. The report is exported by a LATER command, in a
+#: different process, reading the row rather than the artifacts, so a limitation
+#: computed at import and not written down is one nobody downstream can see.
+#:
+#: Stored as text in the notes column rather than behind a new column, because
+#: notes already carries exactly this kind of human-readable fact (the artifact
+#: checksum, the synthetic warning) and a migration to hold prose is a poor
+#: trade. The round trip is pinned by a test, since the cost of the choice is
+#: that the format is load-bearing.
+LIMITATIONS_HEADING = "Not measured by these artifacts:"
+_LIMITATION_PREFIX = "- "
+
+
+def limitations_from_notes(notes: str | None) -> list[str]:
+    """The run's own gaps, read back out of ``load_runs.notes``.
+
+    Returns [] for a row written before this was recorded, which reads as "no
+    gaps were noted" rather than as an error. That is the honest reading: the
+    absence of a record is not a record of absence, and the structural limits
+    list is unaffected either way.
+    """
+    if not notes or LIMITATIONS_HEADING not in notes:
+        return []
+    _, _, tail = notes.partition(LIMITATIONS_HEADING)
+    out: list[str] = []
+    for line in tail.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(_LIMITATION_PREFIX):
+            out.append(stripped[len(_LIMITATION_PREFIX) :])
+        elif stripped:
+            # A later section began. Stop rather than swallowing it.
+            break
+    return out
+
+
 def _limitations_for(parsed: ParsedTest) -> list[str]:
     """What this test's artifacts could not answer, in an operator's words."""
     out: list[str] = []
     if parsed.peak_concurrency is None:
         out.append(
-            f"{parsed.name}: no stat CSV, so peak concurrency is not measured. "
+            f"{parsed.name}: no stat file, so peak concurrency is not measured. "
             "The summary's active_calls is an end-of-run drain value and is not "
             "a substitute for it."
         )
@@ -186,10 +222,33 @@ def _limitations_for(parsed: ParsedTest) -> list[str]:
     if not parsed.failures_by_cause:
         out.append(f"{parsed.name}: no failure breakdown by cause.")
     if parsed.answer_latency is None:
-        out.append(
-            f"{parsed.name}: no answer latency. It comes from rtd.answer, which "
-            'requires start_rtd="answer" in the generator\'s scenario.'
-        )
+        # Two different causes, and naming the wrong one sends somebody to edit
+        # a scenario file that is already correct. Answer latency comes from
+        # rtd.answer, which the generator samples when a call reaches 200 OK. So
+        # a run where nothing was answered produces none however the scenario is
+        # written, and that is a fact about the run rather than the config.
+        if parsed.succeeded_calls == 0 and (parsed.attempted_calls or 0) > 0:
+            out.append(
+                f"{parsed.name}: no answer latency, because none of the "
+                f"{parsed.attempted_calls} calls reached 200 OK. rtd.answer is "
+                "sampled when a call is answered, so nothing here could produce "
+                "one. This says nothing about the generator's scenario."
+            )
+        elif parsed.succeeded_calls:
+            out.append(
+                f"{parsed.name}: no answer latency, although "
+                f"{parsed.succeeded_calls} calls established. Calls were "
+                "answered and no round-trip delay was reported, which points at "
+                'the scenario: rtd.answer needs start_rtd="answer" on the INVITE '
+                'and rtd="answer" on the response that ends the measurement.'
+            )
+        else:
+            out.append(
+                f"{parsed.name}: no answer latency, and no call totals either, "
+                "so whether any call was answered is unknown. The cause cannot "
+                "be attributed to the run or to the scenario from these "
+                "artifacts."
+            )
     if parsed.call_records_status == "absent":
         out.append(
             f"{parsed.name}: no per-call records, so no per-call observations "
@@ -198,8 +257,9 @@ def _limitations_for(parsed: ParsedTest) -> list[str]:
     elif parsed.call_records_status == "present":
         out.append(
             f"{parsed.name}: {parsed.call_records_count} call records were found "
-            f"but not interpreted. {CALL_RECORDS_FILENAME} has no documented "
-            "record schema, so nothing was read out of them."
+            f"but not interpreted. The {CALL_RECORDS_FILENAME} schema is known "
+            "and recorded, and nothing maps it into per-call observations yet, "
+            "so the aggregate columns carry what these artifacts measured."
         )
     elif parsed.call_records_status == "unreadable":
         out.append(f"{parsed.name}: {CALL_RECORDS_FILENAME} could not be read.")
@@ -254,6 +314,14 @@ def build_plan(
             "once these artifacts come from a real run."
         )
 
+    limitations: list[str] = []
+    for p in parsed:
+        limitations.extend(_limitations_for(p))
+    if limitations:
+        notes += f"\n\n{LIMITATIONS_HEADING}\n" + "\n".join(
+            f"{_LIMITATION_PREFIX}{line}" for line in limitations
+        )
+
     run = LoadRunInput(
         id=resolved_run_id,
         created_at_ms=now_ms,
@@ -304,10 +372,6 @@ def build_plan(
         )
         for index, p in enumerate(parsed)
     ]
-
-    limitations: list[str] = []
-    for p in parsed:
-        limitations.extend(_limitations_for(p))
 
     return ImportPlan(run=run, tests=tests, parsed=parsed, limitations=limitations)
 

@@ -126,6 +126,22 @@ def _generated_at() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _utc(at_ms: Any) -> str | None:
+    """Epoch milliseconds as an ISO-8601 UTC instant, or None.
+
+    UTC and explicit about it. A capacity report is read months later by people
+    in other places, and a bare local timestamp is unresolvable by then.
+    """
+    value = _as_int(at_ms)
+    if value is None:
+        return None
+    return (
+        datetime.fromtimestamp(value / 1000, UTC)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z")
+    )
+
+
 # Verdicts are read, never derived, so this maps only what gates can produce.
 # UNKNOWN is spelled out at length because it is the whole reason the gate work
 # happened: a run that could not evaluate used to report a clean PASS, and a
@@ -1183,12 +1199,27 @@ def _render_limits(payload: dict[str, Any]) -> str:
         if payload.get("kind") == LOAD_REPORT_KIND
         else "A diagnostics run is a single-vantage snapshot"
     )
+    # The run's own gaps are a DIFFERENT claim from the structural ones and are
+    # rendered apart from them. "Nothing can measure this" and "nothing measured
+    # it this time" send a reader to two different places, and merging them into
+    # one list makes a fixable gap look permanent and a permanent one look like
+    # this run's bad luck.
+    run_limits = payload.get("run_limitations") or []
+    extra = ""
+    if run_limits:
+        entries = "".join(f"<li>{_esc(item)}</li>" for item in run_limits)
+        extra = (
+            "<h3>...and what THIS run did not measure</h3>"
+            "<p>These are gaps in the artifacts this report was built from, not "
+            "limits of the system. A later run can close them.</p>"
+            f"<ul>{entries}</ul>"
+        )
     return (
         "<h2>What this report does not measure</h2>"
         "<p>Read this section before acting on anything above. "
         f"{subject}, and these are its structural limits, not this "
         "run&rsquo;s bad luck.</p>"
-        f"<ul>{items}</ul>"
+        f"<ul>{items}</ul>{extra}"
     )
 
 
@@ -1413,6 +1444,7 @@ def build_load_payload(
     gate_results: list[dict[str, Any]] | None = None,
     capacity: dict[str, Any] | None = None,
     appendix: dict[str, list[dict[str, str]]] | None = None,
+    limitations: list[str] | None = None,
 ) -> dict[str, Any]:
     """The load-test report payload. The JSON export IS this; the HTML renders it.
 
@@ -1472,6 +1504,12 @@ def build_load_payload(
         # vantage point, is restated above in load terms; the packet-loss one is
         # already covered above with the reason that actually applies here.
         "not_measured": list(_LOAD_REPORT_LIMITS),
+        # What THIS RUN's artifacts could not answer, as opposed to what the
+        # system structurally never measures. The two are different claims and a
+        # reader needs both to tell "nothing can measure this" from "nothing
+        # measured it this time". Printed at import and carried nowhere until
+        # now, so the only person who ever saw them was whoever ran the import.
+        "run_limitations": list(limitations or []),
     }
 
 
@@ -1600,6 +1638,45 @@ padding:16px 20px;margin:0 0 24px;border-radius:6px}
 """
 
 
+def _render_run_identity(payload: dict[str, Any]) -> str:
+    """WHEN the run happened and WHICH artifacts it was built from.
+
+    A capacity report that does not say when the test ran is not filing-quality
+    evidence: it cannot be matched to a change window, an incident, or the
+    invoice for the hours it measured. The window lived in the payload and
+    nowhere in the document, which showed only when the EXPORT was produced, a
+    date that can be months later and says nothing about the test.
+
+    The checksum is here for the same reason. It is what ties this document to
+    the bytes it describes, and a reader holding two reports of two runs needs
+    to be able to tell them apart without opening the JSON.
+
+    Absent values are named as absent rather than omitted, because a header that
+    silently drops the window reads as a report that never had one.
+    """
+    run = payload.get("run") or {}
+    started = _utc(run.get("started_at_ms"))
+    ended = _utc(run.get("ended_at_ms"))
+    if started and ended:
+        window = f"{_esc(started)} to {_esc(ended)}"
+    elif started:
+        window = f"{_esc(started)}, end not recorded"
+    elif ended:
+        window = f"start not recorded, ended {_esc(ended)}"
+    else:
+        window = '<span class="nm">not recorded</span>'
+    checksum = run.get("artifact_sha256")
+    digest = (
+        f'<span class="mono">{_esc(str(checksum)[:16])}</span>'
+        if checksum
+        else '<span class="nm">no artifact checksum</span>'
+    )
+    return (
+        '<p class="sub">Run window (UTC) '
+        f"<strong>{window}</strong> &middot; artifacts {digest}</p>"
+    )
+
+
 def render_load_html(payload: dict[str, Any]) -> str:
     """Render a load-test payload as ONE self-contained HTML document.
 
@@ -1623,6 +1700,7 @@ def render_load_html(payload: dict[str, Any]) -> str:
             f'<p class="sub">VoiceGateway &middot; run '
             f'<span class="mono">{run_id}</span> &middot; provenance '
             f"<strong>{_esc(payload['data_provenance'])}</strong></p>",
+            _render_run_identity(payload),
             # Above the gate table it summarises, and below the stamp.
             _render_verdict(payload),
             _render_gates(payload),
