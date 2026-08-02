@@ -34,8 +34,12 @@ from voicegateway.loadtest.importer import (
     build_plan,
     limitations_from_notes,
     observations_for,
+    plan_from_notes,
 )
-from voicegateway.loadtest.judge import judge_run
+from voicegateway.loadtest.judge import (
+    excluded_headroom_resources,
+    judge_run,
+)
 
 _cli = BaseCli()
 
@@ -265,27 +269,35 @@ def list_runs(
     console.print(table)
 
 
-def _plan_from_file(path: Path) -> dict[str, int]:
+def _plan_from_file(path: Path) -> dict[str, dict[str, float]]:
     """Read what each step ASKED for, which no artifact records.
 
-    ``target_concurrency`` lives in the generator's scenario file. A scenario
-    file is not an artifact, so nothing on the import path can recover it, and
-    without it :func:`derive_calls_per_node` refuses across a multi-step ramp:
-    "no plateau detected" from a ramp that declared no targets means the check
-    never ran, not that the ramp kept climbing. The capacity table is therefore
-    unreachable from artifacts alone, however good the run was.
+    ``target_concurrency`` and the arrival rate live in the generator's scenario
+    file. A scenario file is not an artifact, so nothing on the import path can
+    recover either, and without a target :func:`derive_calls_per_node` refuses
+    across a multi-step ramp: "no plateau detected" from a ramp that declared
+    nothing means the check never ran, not that the ramp kept climbing.
 
-    This is the operator declaring it. It is a DECLARATION, not a measurement,
-    and it is kept apart from one: the peak concurrency a step reached still
-    comes from the stat file and is never overwritten here. What the operator
-    supplies is only what was requested, which is the half a machine cannot see.
+    This is the operator DECLARING it. A declaration is not a measurement and is
+    kept apart from one at every step: the peak concurrency a step reached still
+    comes from the stat file and is never overwritten here, and a declared
+    target that the run did not reach produces a plateau finding rather than a
+    capacity figure. What the operator supplies is only what was requested,
+    which is the half a machine cannot see.
 
-    Shape, test name to target concurrency::
+    Two accepted shapes, so the short one stays available::
 
-        {"ramp-100": 100, "ramp-250": 250}
+        {"ramp-100": 100}
+        {"ramp-100": {"target_concurrency": 100, "rate_per_second": 3.23,
+                      "hold_seconds": 60}}
+
+    The rate matters because it is what lets the plan itself be checked: a step
+    asking for more concurrency than rate times hold can sustain is unreachable
+    before the run starts, and saying so beforehand is worth more than
+    diagnosing it after.
 
     A name that matches no test is refused rather than ignored, because a typo
-    would otherwise silently leave the ramp undeclared and the table missing.
+    would otherwise leave the ramp undeclared and the table missing.
     """
     try:
         raw = json.loads(path.read_text())
@@ -295,16 +307,41 @@ def _plan_from_file(path: Path) -> dict[str, int]:
         raise typer.BadParameter(f"{path} is not valid JSON: {exc}") from exc
     if not isinstance(raw, dict):
         raise typer.BadParameter(
-            f"{path}: expected an object mapping test name to target concurrency"
+            f"{path}: expected an object mapping test name to its declared plan"
         )
-    plan: dict[str, int] = {}
+
+    plan: dict[str, dict[str, float]] = {}
     for name, value in raw.items():
-        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        step = value if isinstance(value, dict) else {"target_concurrency": value}
+        target = step.get("target_concurrency")
+        if not isinstance(target, int) or isinstance(target, bool) or target <= 0:
             raise typer.BadParameter(
-                f"{path}: {name!r} target concurrency must be a positive "
-                f"integer, got {value!r}"
+                f"{path}: {name!r} needs a positive integer target_concurrency, "
+                f"got {target!r}"
             )
-        plan[str(name)] = value
+        entry: dict[str, float] = {"target_concurrency": target}
+        for optional in ("rate_per_second", "hold_seconds"):
+            if step.get(optional) is None:
+                continue
+            number = step[optional]
+            if not isinstance(number, (int, float)) or isinstance(number, bool):
+                raise typer.BadParameter(
+                    f"{path}: {name!r} {optional} must be a number, got {number!r}"
+                )
+            if number <= 0:
+                raise typer.BadParameter(
+                    f"{path}: {name!r} {optional} must be positive, got {number!r}"
+                )
+            entry[optional] = float(number)
+        unknown = sorted(
+            set(step) - {"target_concurrency", "rate_per_second", "hold_seconds"}
+        )
+        if unknown:
+            raise typer.BadParameter(
+                f"{path}: {name!r} has unknown field(s) {unknown}. A misspelled "
+                "field would be silently ignored and the declaration incomplete."
+            )
+        plan[str(name)] = entry
     return plan
 
 
@@ -372,7 +409,7 @@ def _apply_waivers(results: list, waivers: dict[str, str]) -> tuple[list, list[s
     return applied, sorted(set(waivers) - matched)
 
 
-def _capacity_for(tests: list[dict]) -> dict:
+def _capacity_for(tests: list[dict], plan: dict | None = None) -> dict:
     """Derive the calls-per-node figure and the node count at each tier.
 
     The derivation is the one number the whole table rests on, and it refuses
@@ -383,15 +420,18 @@ def _capacity_for(tests: list[dict]) -> dict:
     The ceiling is imported from the gates rather than typed here. It is a
     contracted threshold and two copies of it would drift.
     """
+    # Arrival rate and hold live in the generator's scenario file, which is not
+    # an artifact, so they arrive only when an operator declared them. Absent,
+    # the plan-side plateau check cannot run, which the derivation accounts for
+    # rather than treating as a clean ramp.
+    declared = plan or {}
     steps = [
         RampStep(
             target_concurrency=test.get("target_concurrency"),
             peak_concurrency=test.get("peak_concurrency"),
             peak_cpu_utilisation=test.get("peak_cpu_utilisation"),
-            # Arrival rate and hold live in the generator's scenario file, which
-            # is not an artifact and never reaches load_run_tests. Leaving them
-            # None means the plan-side plateau check cannot run, which the
-            # derivation accounts for rather than treating as a clean ramp.
+            rate_per_second=declared.get(test.get("name"), {}).get("rate_per_second"),
+            hold_seconds=declared.get(test.get("name"), {}).get("hold_seconds"),
         )
         for test in tests
     ]
@@ -399,6 +439,26 @@ def _capacity_for(tests: list[dict]) -> dict:
         steps, cpu_ceiling=MAX_NODE_CPU_UTILISATION
     )
     capacity: dict = {"calls_per_node": calls_per_node, "reason": reason}
+    # Label what this rests on. A target concurrency is an operator ASSERTION
+    # about what the generator was asked for; nothing measured it, and the whole
+    # table is derived from steps carrying one. A reader deciding how much
+    # weight to put on the sizing needs to know that, and a payload that looks
+    # identical whether the figures came from artifacts or from a declaration
+    # cannot tell them.
+    steps_declared = sorted(
+        str(test.get("name"))
+        for test in tests
+        if test.get("target_concurrency") is not None
+    )
+    if steps_declared:
+        capacity["rests_on_declaration"] = True
+        capacity["declared_steps"] = steps_declared
+        capacity["declaration_basis"] = (
+            "target concurrency was declared by the operator at import, not "
+            "measured. The peak each step REACHED is measured and is not "
+            "overwritten by it; a declared target the run did not reach refuses "
+            "the derivation rather than sizing from it."
+        )
     if calls_per_node is None:
         # Refused. The reason is the payload, and no tiers are invented.
         return capacity
@@ -556,7 +616,7 @@ def report(
             "leave the gate unwaived and the waiver unrecorded.",
             code=2,
         )
-    capacity = _capacity_for(tests)
+    capacity = _capacity_for(tests, plan_from_notes(run.get("notes")))
     assets = _appendix_from_file(appendix) if appendix is not None else None
     payload = build_load_payload(
         run=run,
@@ -568,6 +628,9 @@ def report(
         # long gone by the time somebody exports the report, and what the import
         # could not answer is a property of that import.
         limitations=limitations_from_notes(run.get("notes")),
+        # Derived from what nothing can measure, never from a list of names, so
+        # wiring an exporter for them lifts the exclusion by itself.
+        scope_exclusions=excluded_headroom_resources(),
     )
     out.mkdir(parents=True, exist_ok=True)
     json_path = out / f"{load_report_filename(run_id).removesuffix('.html')}.json"

@@ -1445,6 +1445,7 @@ def build_load_payload(
     capacity: dict[str, Any] | None = None,
     appendix: dict[str, list[dict[str, str]]] | None = None,
     limitations: list[str] | None = None,
+    scope_exclusions: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """The load-test report payload. The JSON export IS this; the HTML renders it.
 
@@ -1510,6 +1511,16 @@ def build_load_payload(
         # measured it this time". Printed at import and carried nowhere until
         # now, so the only person who ever saw them was whoever ran the import.
         "run_limitations": list(limitations or []),
+        # Parts of a contracted criterion this system cannot evaluate AT ALL.
+        # Distinct from not_measured, which is what the report structurally does
+        # not tell you, and from run_limitations, which is what these artifacts
+        # could not answer. An exclusion says the requirement is not covered.
+        #
+        # Carried top-level and rendered beside the verdict rather than in a
+        # footnote: removing eighteen UNKNOWN gate rows can move a verdict off
+        # UNKNOWN, and a headline that improves while the disclosure shrinks is
+        # the outcome that must not happen.
+        "scope_exclusions": dict(scope_exclusions or {}),
     }
 
 
@@ -1537,7 +1548,7 @@ def _render_load_tests(payload: dict[str, Any]) -> str:
             "<tr>"
             f"<td>{_esc(test['name'])}</td>"
             f"<td>{_recorded(test['peak_concurrency'])}</td>"
-            f"<td>{_num(_ms_to_minutes(test['duration_ms']), ' min', 1)}</td>"
+            f"<td>{_duration_cell(test['duration_ms'])}</td>"
             f"<td>{_ratio_cell(test['establishment_ratio'])}</td>"
             f"<td>{_pct_cell(test['peak_cpu_utilisation'])}</td>"
             f"<td>{_pct_cell(test['peak_memory_utilisation'])}</td>"
@@ -1560,6 +1571,23 @@ def _render_load_tests(payload: dict[str, Any]) -> str:
 def _ms_to_minutes(value: Any) -> float | None:
     ms = _as_float(value)
     return None if ms is None else ms / 60_000.0
+
+
+#: Below this, a duration is shown in seconds. A ramp step is commonly a minute
+#: or two, and one decimal of a minute cannot tell 62 seconds from 66: both read
+#: "1.1 min". A reader comparing this against their own timing needs the unit
+#: the run was configured in.
+_SECONDS_BELOW_MS = 10 * 60 * 1000
+
+
+def _duration_cell(value: Any) -> str:
+    """A test's wall duration, in a unit that survives being checked."""
+    ms = _as_float(value)
+    if ms is None:
+        return _num(None, "", 0)
+    if ms < _SECONDS_BELOW_MS:
+        return _num(ms / 1000.0, "s", 1)
+    return _num(ms / 60_000.0, "min", 1)
 
 
 def _ratio_cell(value: float | None) -> str:
@@ -1591,7 +1619,12 @@ def _render_capacity(payload: dict[str, Any]) -> str:
         return (
             "<h2>Capacity</h2><p>No capacity table. The calls-per-node figure "
             "was not derivable, so sizing would mean inventing the one number "
-            f"the whole table rests on. {_esc(capacity.get('reason') or '')}</p>"
+            "the whole table rests on.</p>"
+            # The reason is a sentence fragment from the derivation and begins
+            # lowercase. Concatenating it after a full stop read as a typo in a
+            # document somebody is paying for, so it gets its own line and its
+            # own label.
+            f'<p class="sub">Why: {_esc(capacity.get("reason") or "not stated")}</p>'
         )
     rows = "".join(
         "<tr>"
@@ -1630,12 +1663,43 @@ def load_report_filename(run_id: Any) -> str:
 #: The stamp's own styling, appended to the shared sheet. Deliberately loud:
 #: this is the element that stops a fixture-built file being mistaken for a
 #: measurement. No url(), no font import, nothing to fetch.
+_LOAD_EXCLUSION_CSS = (
+    ".exclusions{border:2px solid #b45309;background:#fffbeb;padding:12px 16px;"
+    "margin:16px 0;border-radius:6px}"
+    ".exclusions h2{margin-top:0}"
+)
+
 _LOAD_REPORT_CSS = """
 .stamp{border:4px solid #b00020;background:#fff3f3;color:#7a0016;
 padding:16px 20px;margin:0 0 24px;border-radius:6px}
 .stamp strong{display:block;font-size:20px;letter-spacing:.08em}
 .stamp p{margin:8px 0 0;color:#7a0016}
 """
+
+
+def _render_scope_exclusions(payload: dict[str, Any]) -> str:
+    """Parts of the criterion this system cannot evaluate, stated once and high.
+
+    Directly under the verdict, because the verdict is exactly what they
+    qualify. These were eighteen UNKNOWN gate rows on a real run, and collapsing
+    them to one statement each is only honest while the statement is at least as
+    hard to miss as the rows were.
+    """
+    exclusions = payload.get("scope_exclusions") or {}
+    if not exclusions:
+        return ""
+    items = "".join(
+        f"<li><strong>{_esc(resource.replace('_', ' '))}</strong>: {_esc(reason)}</li>"
+        for resource, reason in sorted(exclusions.items())
+    )
+    return (
+        '<div class="exclusions"><h2>Not in scope for this report</h2>'
+        f"<p>The acceptance criterion asks for headroom on network, RTP ports "
+        f"and system limits. {len(exclusions)} of those three are outside what "
+        "this system measures, so the requirement is <strong>not fully "
+        "covered</strong> whatever the verdict above says.</p>"
+        f"<ul>{items}</ul></div>"
+    )
 
 
 def _render_run_identity(payload: dict[str, Any]) -> str:
@@ -1686,7 +1750,11 @@ def render_load_html(payload: dict[str, Any]) -> str:
 
     When provenance is not ``measured`` the synthetic stamp is the FIRST element
     in the body. A reader who scrolls straight to the numbers passes it on the
-    way, which is the only placement that makes it hard to miss.
+    way, which is the only placement that makes it hard to miss. Nothing is
+    inserted above it, including the results reordering below.
+
+    Order is the answer, then the working: verdict, per-test results, capacity,
+    then the gate detail that produced them.
     """
     run_id = _esc(payload["run"]["id"])
     body = "".join(
@@ -1703,9 +1771,17 @@ def render_load_html(payload: dict[str, Any]) -> str:
             _render_run_identity(payload),
             # Above the gate table it summarises, and below the stamp.
             _render_verdict(payload),
-            _render_gates(payload),
+            # Immediately under the verdict, because that is what they qualify.
+            _render_scope_exclusions(payload),
+            # THE ANSWER, THEN THE WORKING. The per-test table is the contracted
+            # deliverable: concurrency, duration, establishment, peak CPU and
+            # memory, failures by cause. It sat BELOW the gate detail, and on a
+            # real run that meant scrolling past 48 gate rows to reach the three
+            # rows somebody asked for. Capacity follows it because it is derived
+            # from it; the gate detail is the working and now comes after both.
             _render_load_tests(payload),
             _render_capacity(payload),
+            _render_gates(payload),
             _render_appendix(payload),
             _render_limits(payload),
             "<footer>Generated by voicegateway "
@@ -1721,7 +1797,8 @@ def render_load_html(payload: dict[str, Any]) -> str:
         '<html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>Load-test report {run_id}</title>"
-        f"<style>{_REPORT_CSS}{_LOAD_REPORT_CSS}</style></head>"
+        f"<style>{_REPORT_CSS}{_LOAD_REPORT_CSS}"
+        f"{_LOAD_EXCLUSION_CSS}</style></head>"
         f"<body>{body}</body></html>\n"
     )
 

@@ -352,6 +352,72 @@ def _mark_unbounded_filefd(values: dict[str, float | None]) -> None:
     )
 
 
+#: Sources that report facts about the HOST they run on: node-wide CPU, memory,
+#: load, host file-descriptor totals, socket counts.
+#:
+#: VERIFIED BY SCRAPE, not by reading this map. node_exporter publishes
+#: node_cpu_seconds_total and node_memory_Mem*_bytes; livekit-sip publishes
+#: NEITHER, and no amount of load will make it start.
+HOST_EXPORTERS: frozenset[str] = frozenset({SOURCE_NODE_EXPORTER})
+
+#: Sources that are a SERVICE reporting on itself. They publish the Go runtime
+#: and process collectors for their own process and nothing about the box.
+SERVICE_EXPORTERS: frozenset[str] = frozenset(
+    {SOURCE_LIVEKIT_SERVER, SOURCE_LIVEKIT_SIP}
+)
+
+
+def any_source_publishes(*columns: str) -> bool:
+    """Whether ANY declared source is wired to populate every column named.
+
+    The question behind a scope exclusion. A headroom resource computed from
+    columns nothing publishes cannot be measured by this system on any node, in
+    any run, so reporting it per node per test says the same nothing many times.
+
+    Derived rather than listed, so the exclusion lifts by itself. Wire a source
+    for the columns and the resource stops being excluded and goes back to being
+    a real per-node gate, with no second place to remember to update.
+    """
+    return any(
+        all(column in columns_for(source) for column in columns) for source in SERIES
+    )
+
+
+def columns_for(source: str) -> frozenset[str]:
+    """Every ``node_samples`` column this source is wired to populate."""
+    return frozenset(entry.column for entry in SERIES.get(source, ()))
+
+
+def reports_host_metrics(source: str | None) -> bool | None:
+    """Whether ``source`` can report NODE-WIDE facts. None when unknowable.
+
+    The one question that is safe to suppress a gate on, and it is deliberately
+    narrow.
+
+    A service exporter cannot report node CPU or node memory. Verified against a
+    live livekit-sip, which publishes zero node-wide series: grading it UNKNOWN
+    says a measurement failed when none was ever attempted or possible.
+
+    This is NOT the same question as "does :data:`SERIES` wire this column for
+    this source", and the difference cost a round. That map encodes which
+    subject each source is the AUTHORITY for, not what it is capable of.
+    node_exporter publishes process_open_fds for its own process (a live one
+    reads 9), and the map omits it deliberately, because node_exporter's own
+    file handles say nothing about livekit-sip's headroom. Reading that omission
+    as an inability suppresses a gate for a metric the source could have
+    produced, which is the signal, not the noise.
+
+    An undeclared source answers None and is never suppressed.
+    """
+    if source is None:
+        return None
+    if source in HOST_EXPORTERS:
+        return True
+    if source in SERVICE_EXPORTERS:
+        return False
+    return None
+
+
 def validate_series_map(series_map: Mapping[str, tuple[_Series, ...]]) -> None:
     """Refuse a metric map that cannot produce meaningful numbers.
 
@@ -736,7 +802,12 @@ __all__ = [
     "SOURCE_LIVEKIT_SERVER",
     "SOURCE_LIVEKIT_SIP",
     "SOURCE_NODE_EXPORTER",
+    "HOST_EXPORTERS",
+    "SERVICE_EXPORTERS",
     "TARGETS_ENV_VAR",
+    "any_source_publishes",
+    "columns_for",
+    "reports_host_metrics",
     "NodeSamplesWorker",
     "ScrapeTarget",
     "TargetProvider",

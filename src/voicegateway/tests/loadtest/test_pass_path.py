@@ -381,17 +381,23 @@ def test_a_capacity_figure_requires_breaching_the_ceiling(
 
 @pytest.fixture(scope="module")
 def waived(tmp_path_factory):
-    """The acceptance run with the two unscrapeable resources waived."""
+    """The acceptance run with the two unscrapeable resources waived.
+
+    The subject is fleet-level because the gate is: nothing measures either on
+    any node, so they are emitted once per run rather than once per node per
+    test. The waiver still attaches to a real gate, which is why they remained
+    gates rather than becoming a note.
+    """
     tmp = tmp_path_factory.mktemp("waived")
     waiver = tmp / "waivers.json"
     waiver.write_text(
         json.dumps(
             {
-                "resource_headroom/sfu-1/node-exporter/rtp_ports": (
+                "resource_headroom/fleet/rtp_ports": (
                     "no RTP-port exporter was funded for this run, agreed in "
                     "writing before test day"
                 ),
-                "resource_headroom/sfu-1/node-exporter/network": (
+                "resource_headroom/fleet/network": (
                     "no network-headroom exporter was funded for this run, "
                     "agreed in writing before test day"
                 ),
@@ -440,9 +446,7 @@ def test_the_measured_gates_are_untouched_by_the_waiver(waived) -> None:
 def test_a_waiver_naming_no_gate_is_refused(tmp_path) -> None:
     """A typo would leave the gate unwaived and the waiver unrecorded."""
     waiver = tmp_path / "waivers.json"
-    waiver.write_text(
-        json.dumps({"resource_headroom/sfu-1/node-exporter/rtp_port": "typo"})
-    )
+    waiver.write_text(json.dumps({"resource_headroom/fleet/rtp_port": "typo"}))
     result = _run(
         tmp_path,
         ACCEPTANCE,

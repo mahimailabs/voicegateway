@@ -186,6 +186,70 @@ LIMITATIONS_HEADING = "Not measured by these artifacts:"
 _LIMITATION_PREFIX = "- "
 
 
+#: Heading under which a DECLARED ramp plan is recorded in ``load_runs.notes``,
+#: and the prefix each step carries. Same mechanism and same reason as
+#: :data:`LIMITATIONS_HEADING`: the report is exported by a later command
+#: reading the row, and ``rate_per_second`` has no column to live in.
+#:
+#: ``target_concurrency`` is ALSO written to its own column, because it has one.
+#: This records the whole declaration in one place so the report can say which
+#: figures rest on it.
+PLAN_HEADING = "Declared ramp plan (operator-supplied, not measured):"
+_PLAN_PREFIX = "- "
+
+
+def plan_to_notes(plan: dict[str, dict[str, float]]) -> str:
+    """The declared plan as the text appended to a run's notes."""
+    lines = []
+    for name in sorted(plan):
+        step = plan[name]
+        parts = [f"target={step['target_concurrency']}"]
+        if step.get("rate_per_second") is not None:
+            parts.append(f"rate={step['rate_per_second']}")
+        if step.get("hold_seconds") is not None:
+            parts.append(f"hold={step['hold_seconds']}")
+        lines.append(f"{_PLAN_PREFIX}{name}: " + " ".join(parts))
+    return f"\n\n{PLAN_HEADING}\n" + "\n".join(lines)
+
+
+def plan_from_notes(notes: str | None) -> dict[str, dict[str, float]]:
+    """The declared plan, read back out of ``load_runs.notes``.
+
+    Returns {} when nothing was declared, which is what makes capacity refuse
+    rather than guess. An unparseable line is skipped rather than raising: a
+    malformed note must not stop a report being exported.
+    """
+    if not notes or PLAN_HEADING not in notes:
+        return {}
+    _, _, tail = notes.partition(PLAN_HEADING)
+    out: dict[str, dict[str, float]] = {}
+    for line in tail.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if not stripped.startswith(_PLAN_PREFIX):
+            break
+        body = stripped[len(_PLAN_PREFIX) :]
+        name, _, rest = body.partition(":")
+        step: dict[str, float] = {}
+        for token in rest.split():
+            key, _, raw = token.partition("=")
+            field = {
+                "target": "target_concurrency",
+                "rate": "rate_per_second",
+                "hold": "hold_seconds",
+            }.get(key)
+            if field is None:
+                continue
+            try:
+                step[field] = float(raw) if field != "target_concurrency" else int(raw)
+            except ValueError:
+                continue
+        if step.get("target_concurrency") is not None:
+            out[name.strip()] = step
+    return out
+
+
 def limitations_from_notes(notes: str | None) -> list[str]:
     """The run's own gaps, read back out of ``load_runs.notes``.
 
@@ -266,6 +330,19 @@ def _limitations_for(parsed: ParsedTest) -> list[str]:
     return out
 
 
+def _declared_target(
+    declared: dict[str, dict[str, float]] | None, name: str
+) -> int | None:
+    """The target concurrency an operator declared for one step, if any."""
+    step = (declared or {}).get(name)
+    if step is None:
+        return None
+    if isinstance(step, dict):
+        value = step.get("target_concurrency")
+        return int(value) if value is not None else None
+    return int(step)
+
+
 def build_plan(
     directory: Path,
     *,
@@ -274,7 +351,7 @@ def build_plan(
     label: str | None = None,
     captured: bool = False,
     now_ms: int,
-    declared_targets: dict[str, int] | None = None,
+    declared_targets: dict[str, dict[str, float]] | None = None,
 ) -> ImportPlan:
     """Read a directory of artifacts and plan the rows it would become.
 
@@ -312,6 +389,14 @@ def build_plan(
             "\nImported WITHOUT --captured, so this run is synthetic and every "
             "report built from it stamps itself so. Re-import with --captured "
             "once these artifacts come from a real run."
+        )
+
+    if declared_targets:
+        notes += plan_to_notes(
+            {
+                name: (step if isinstance(step, dict) else {"target_concurrency": step})
+                for name, step in declared_targets.items()
+            }
         )
 
     limitations: list[str] = []
@@ -366,7 +451,7 @@ def build_plan(
             # it, and a declaration is kept apart from a measurement: the peak
             # concurrency above still comes from the stat file and is never
             # overwritten by this.
-            target_concurrency=(declared_targets or {}).get(p.name),
+            target_concurrency=_declared_target(declared_targets, p.name),
             # The node CPU/memory peaks and the sample count stay None here:
             # they are correlated from node_samples over each test's window.
         )

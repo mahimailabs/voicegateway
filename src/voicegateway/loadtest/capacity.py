@@ -272,6 +272,54 @@ def detect_plateau(
                 ),
             )
 
+    # LAST SIGNAL, deliberately last: a step that asked for N and reached materially less than N.
+    # Neither check above catches it. The plan-side one needs a declared rate,
+    # and the result-side one compares steps to EACH OTHER, so a ramp whose
+    # every step fell equally short still climbs and reads as clean.
+    #
+    # Runs last because both checks above give a SHARPER answer when they
+    # apply: a converged peak names the concurrency the ramp settled on, and
+    # a declared rate names the arithmetic that made a target impossible.
+    # This one only knows the run fell short.
+    #
+    # A shortfall is the run saying it could not get where it was sent. It does
+    # not say why: the node may have saturated, or the generator may have run
+    # out, and that is exactly the ambiguity a plateau finding exists to report
+    # rather than resolve. Deriving a calls-per-node figure from a ramp that
+    # never reached its own targets sizes a fleet against a number nobody
+    # demonstrated.
+    #
+    # Only a DECLARED target can produce this. An imported row carries none, so
+    # this is silent until an operator states the plan.
+    short = [
+        step
+        for step in steps
+        if step.target_concurrency is not None
+        and step.peak_concurrency is not None
+        and step.peak_concurrency < step.target_concurrency * (1.0 - PLATEAU_TOLERANCE)
+    ]
+    if short:
+        worst = min(step.peak_concurrency or 0 for step in short)
+        pairs = ", ".join(
+            f"asked {step.target_concurrency}, reached {step.peak_concurrency}"
+            for step in short
+        )
+        return PlateauFinding(
+            plateaued=True,
+            plateau_at=int(worst),
+            unreachable_targets=[
+                step.target_concurrency
+                for step in short
+                if step.target_concurrency is not None
+            ],
+            detail=(
+                f"{len(short)} step(s) did not reach the concurrency they asked "
+                f"for ({pairs}). Something stopped scaling before the target, and "
+                "until it is known whether that was the node or the generator, "
+                "the concurrency reached is not attributable to the node"
+            ),
+        )
+
     return PlateauFinding(plateaued=False, detail="no plateau detected")
 
 

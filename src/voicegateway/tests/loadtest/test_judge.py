@@ -57,8 +57,15 @@ def _by_gate(results):
 
 
 def test_all_five_criteria_are_judged_even_with_no_measurements() -> None:
-    """None of them may silently vanish from a report."""
-    results = judge.judge_test(HEALTHY)
+    """None of them may silently vanish from a report.
+
+    Asserted against judge_run, which is what builds a report's gate set. RTP
+    ports and network are emitted once per RUN rather than once per node per
+    test: nothing measures either anywhere, so a per-node row said the same
+    thing eighteen times on a three-step ramp. They are still gates, because a
+    written waiver needs something to attach to.
+    """
+    results = judge.judge_run([HEALTHY])
     kinds = _by_gate(results)
     assert "call_establishment" in kinds
     assert "node_cpu" in kinds
