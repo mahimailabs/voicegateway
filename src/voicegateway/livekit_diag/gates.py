@@ -97,6 +97,7 @@ NODE_CPU_GATE = "node_cpu"
 NODE_MEMORY_GATE = "node_memory"
 HEADROOM_GATE = "resource_headroom"
 RETURN_TO_BASELINE_GATE = "return_to_baseline"
+SUSTAINED_HEALTH_GATE = "sustained_health"
 
 #: The subject a gate is filed under when it describes the whole fleet rather
 #: than one node. Used where nothing was sampled at all: the finding is that NO
@@ -141,6 +142,10 @@ ALL_GATES: frozenset[str] = frozenset(
         NODE_MEMORY_GATE,
         HEADROOM_GATE,
         RETURN_TO_BASELINE_GATE,
+        # Registered here and deliberately ABSENT from RATIO_GATES above: its
+        # value is a count of consecutive failed samples, not a fraction, and
+        # rendering 3 as "300%" is exactly the misstatement that set prevents.
+        SUSTAINED_HEALTH_GATE,
     }
 )
 
@@ -169,6 +174,25 @@ MIN_ESTABLISHMENT_RATIO = 0.995
 # comparison for the other is the easy mistake.
 MAX_NODE_CPU_UTILISATION = 0.70
 MAX_NODE_MEMORY_UTILISATION = 0.75
+
+# How many CONSECUTIVE failed samples make a failure "sustained".
+#
+# The criterion reads "no SUSTAINED Redis or health-check failures", not "no
+# failures". A single missed sample during a container restart, a leader
+# election or a rolling deploy is not an outage, and grading it as one makes the
+# gate cry wolf until somebody stops reading it.
+#
+# Three at the 15-second sampling interval is roughly 45 seconds of continuous
+# failure. That is chosen to sit above the things that legitimately blip and
+# below anything a caller would tolerate: a Redis unreachable for 45 seconds has
+# dropped calls, and a SIP node refusing health checks for 45 seconds is out of
+# the load balancer's rotation. One sample would fire on noise; ten would be
+# four minutes of a dead dependency reported as healthy.
+#
+# Consecutive, not cumulative, and the distinction is the whole point: thirty
+# scattered single-sample failures across an hour are a flapping dependency
+# worth a WARN, while three in a row are an outage.
+MAX_CONSECUTIVE_FAILED_SAMPLES = 3
 
 # Headroom that must REMAIN on a limited resource. A floor, and inclusive: a node
 # sitting on exactly 20% free has met "at least 20% headroom".
@@ -1347,6 +1371,184 @@ def summary_lines(gates: Sequence[GateResult]) -> list[str]:
     return [f"  [{g.status}] {g.gate}: {g.detail}" for g in gates]
 
 
+
+# --------------------------------------------------------------------------
+# Sustained Redis and health-check failures
+# --------------------------------------------------------------------------
+
+#: What a health series is ABOUT, which is also how its row is labelled.
+HEALTH_SUBJECT_REDIS = "redis"
+HEALTH_SUBJECT_ENDPOINT = "health_endpoint"
+
+
+@dataclass(frozen=True)
+class HealthSeriesReading:
+    """One source's healthy/failed samples across a window, in time order.
+
+    ``samples`` carries 1 healthy, 0 failed and None NOT MEASURED, and the three
+    are never collapsed. None is not a failure: a tick nobody sampled says
+    nothing about whether the dependency was up, and counting it as a failure
+    would manufacture an outage out of a scrape gap.
+
+    ``codes`` is the HTTP status alongside each sample where there was one, so a
+    row can say 503 rather than only "unhealthy". Empty for Redis, which has no
+    status code.
+
+    ``unmeasured_reason`` is set when the series could not be read at all, and
+    it is what separates "not configured" from "configured and failing".
+    """
+
+    node: str
+    subject: str
+    source: str | None = None
+    samples: tuple[int | None, ...] = ()
+    codes: tuple[int | None, ...] = ()
+    unmeasured_reason: str | None = None
+
+
+def longest_failure_run(samples: Sequence[int | None]) -> int:
+    """The longest run of CONSECUTIVE failed samples.
+
+    A None breaks the run rather than extending it. Two failures either side of
+    an unsampled tick are not demonstrably three consecutive failures, and this
+    gate must not claim a continuity it did not observe.
+    """
+    longest = current = 0
+    for value in samples:
+        if value == 0:
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 0
+    return longest
+
+
+def _health_subject(reading: HealthSeriesReading) -> str:
+    parts = [reading.node]
+    if reading.source:
+        parts.append(reading.source)
+    parts.append(reading.subject)
+    return "/".join(parts)
+
+
+def sustained_health_gate(
+    reading: HealthSeriesReading,
+    *,
+    threshold: int = MAX_CONSECUTIVE_FAILED_SAMPLES,
+) -> GateResult:
+    """Did this dependency fail for long enough to count?
+
+    Three outcomes, and the middle one is why this is not a boolean.
+
+    FAIL is a run of ``threshold`` consecutive failed samples: an outage.
+    WARN is failures that never reached that run: a flapping dependency, which
+    is a real finding and not a pass, but is not the criterion being breached.
+    PASS is no failed sample at all.
+
+    UNKNOWN when nothing was measured, with a reason that says whether the
+    source was unconfigured or configured and unreadable. Those are different
+    facts and an operator has to be able to tell them apart, so an unconfigured
+    dependency NEVER reads as a pass.
+    """
+    subject = _health_subject(reading)
+    if reading.unmeasured_reason:
+        return GateResult(
+            gate=SUSTAINED_HEALTH_GATE,
+            status=UNKNOWN,
+            detail=f"{subject} was not measured: {reading.unmeasured_reason}",
+            subject=subject,
+            threshold=float(threshold),
+        )
+    measured = [s for s in reading.samples if s is not None]
+    if not measured:
+        return GateResult(
+            gate=SUSTAINED_HEALTH_GATE,
+            status=UNKNOWN,
+            detail=(
+                f"{subject} was not measured: the window carried "
+                f"{len(reading.samples)} sample(s) and none of them recorded a "
+                "result"
+            ),
+            subject=subject,
+            threshold=float(threshold),
+        )
+
+    run = longest_failure_run(reading.samples)
+    failed = sum(1 for s in measured if s == 0)
+    seen = _failure_codes(reading)
+    codes = f" Statuses seen: {seen}." if seen else ""
+
+    if run >= threshold:
+        return GateResult(
+            gate=SUSTAINED_HEALTH_GATE,
+            status=FAIL,
+            detail=(
+                f"{subject} failed {run} consecutive sample(s), at or above the "
+                f"{threshold}-sample bar for a sustained failure "
+                f"({failed} of {len(measured)} measured samples failed).{codes}"
+            ),
+            subject=subject,
+            metric="consecutive_failed_samples",
+            value=float(run),
+            threshold=float(threshold),
+        )
+    if failed:
+        return GateResult(
+            gate=SUSTAINED_HEALTH_GATE,
+            status=WARN,
+            detail=(
+                f"{subject} failed {failed} of {len(measured)} measured "
+                f"sample(s), longest run {run}, below the {threshold}-sample bar "
+                f"for a sustained failure. Not the criterion breached, but not "
+                f"a clean window either.{codes}"
+            ),
+            subject=subject,
+            metric="consecutive_failed_samples",
+            value=float(run),
+            threshold=float(threshold),
+        )
+    return GateResult(
+        gate=SUSTAINED_HEALTH_GATE,
+        status=PASS,
+        detail=(
+            f"{subject} was healthy on all {len(measured)} measured sample(s)."
+        ),
+        subject=subject,
+        metric="consecutive_failed_samples",
+        value=0.0,
+        threshold=float(threshold),
+    )
+
+
+def _failure_codes(reading: HealthSeriesReading) -> str:
+    """The distinct HTTP statuses seen on FAILED samples, most useful first.
+
+    429 UnderLoad and 503 Unavailable are different problems and the row must
+    say which. A failure with no code at all was a refusal or a timeout, which
+    is a third different problem and is named rather than left blank.
+    """
+    if not reading.codes:
+        return ""
+    seen: dict[str, int] = {}
+    for sample, code in zip(reading.samples, reading.codes, strict=False):
+        if sample != 0:
+            continue
+        key = str(code) if code is not None else "no response"
+        seen[key] = seen.get(key, 0) + 1
+    if not seen:
+        return ""
+    return ", ".join(f"{k} x{v}" for k, v in sorted(seen.items()))
+
+
+def sustained_health_gates(
+    readings: Sequence[HealthSeriesReading],
+    *,
+    threshold: int = MAX_CONSECUTIVE_FAILED_SAMPLES,
+) -> list[GateResult]:
+    """One gate per node per source. Per-node rows are never collapsed."""
+    return [sustained_health_gate(r, threshold=threshold) for r in readings]
+
+
 __all__ = [
     "AGENTS_GATE",
     "BASELINE_GOROUTINES",
@@ -1370,6 +1572,14 @@ __all__ = [
     "NODE_MEMORY_GATE",
     "RATIO_GATES",
     "RETURN_TO_BASELINE_GATE",
+    "SUSTAINED_HEALTH_GATE",
+    "HEALTH_SUBJECT_REDIS",
+    "HEALTH_SUBJECT_ENDPOINT",
+    "HealthSeriesReading",
+    "sustained_health_gate",
+    "sustained_health_gates",
+    "longest_failure_run",
+    "MAX_CONSECUTIVE_FAILED_SAMPLES",
     "PASS",
     "SFU_CAPACITY_GATE",
     "SFU_QUALITY_GATE",

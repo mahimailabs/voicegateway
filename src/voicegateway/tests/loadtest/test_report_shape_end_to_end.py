@@ -117,7 +117,14 @@ def test_every_unknown_names_an_attempt_or_a_scope_exclusion(exported) -> None:
         subject = gate["subject"] or ""
         resource = subject.rsplit("/", 1)[-1]
         attempted = "no node was sampled in the window" in gate["detail"]
-        assert attempted or resource in excluded, gate
+        # A third legitimate kind, added with the Redis and health-check
+        # criteria: a dependency that was never wired. It is NOT noise, and it
+        # is the opposite of an UNKNOWN nobody asked for. The criterion was
+        # agreed, nothing was configured to answer it, and the row says so
+        # along with the two ways to resolve it. Omitting it would put the
+        # report back where it started, silently missing a contracted line.
+        unconfigured = "was not evaluated" in gate["detail"]
+        assert attempted or unconfigured or resource in excluded, gate
 
 
 def test_no_gate_grades_a_source_for_a_metric_it_does_not_report(exported) -> None:

@@ -253,6 +253,68 @@ def judge_test(
     results.extend(_graded(aggregate.cpu_readings, gates.node_cpu_gates))
     results.extend(_graded(aggregate.memory_readings, gates.node_memory_gates))
     results.extend(_headroom_gates_for(aggregate))
+    results.extend(_health_gates_for(aggregate))
+    return results
+
+
+def _health_gates_for(aggregate: TestAggregate) -> list[GateResult]:
+    """Sustained Redis and health-endpoint failures, per node per source.
+
+    ONLY what was actually sampled. The "nothing was configured" case is a fact
+    about the RUN, not about each step, and lives in
+    :func:`unconfigured_dependency_gates` so it is stated once. Emitting it here
+    put fourteen identical rows in a seven-step report, which is the same defect
+    that rtp_ports and network already had fixed.
+    """
+    return list(gates.sustained_health_gates(aggregate.health_readings))
+
+
+def unconfigured_dependency_gates(seen: set[str | None]) -> list[GateResult]:
+    """One row per dependency criterion nobody wired, once per run.
+
+    NOT CONFIGURED IS NOT A PASS, and it is not silence either. The criterion
+    was agreed, so a report that omits it reads as one nobody asked about, and a
+    run that never looked at Redis must never be indistinguishable from one that
+    checked and found it healthy.
+
+    The reason names BOTH ways out, because an operator reading UNKNOWN needs to
+    know which they are looking at: wire the source, or declare it absent with a
+    written waiver a reviewer can read. A single-node deployment genuinely has
+    no Redis, and saying so once in config is a true statement; silence is a
+    vacuous one.
+    """
+    results: list[GateResult] = []
+    for subject, what, wire in (
+        (
+            gates.HEALTH_SUBJECT_REDIS,
+            "no scrape target uses the redis-exporter source",
+            "add a redis-exporter scrape target",
+        ),
+        (
+            gates.HEALTH_SUBJECT_ENDPOINT,
+            "no scrape target declares a health endpoint",
+            "attach a health endpoint to a target with the |health= suffix",
+        ),
+    ):
+        if subject in seen:
+            continue
+        results.append(
+            gates.sustained_health_gate(
+                gates.HealthSeriesReading(
+                    node=gates.FLEET_SUBJECT,
+                    subject=subject,
+                    unmeasured_reason=(
+                        f"{what}, so this criterion was not evaluated. It is "
+                        "NOT passing: nothing was asked and nothing answered. "
+                        "There are exactly two ways out and silence is neither: "
+                        f"WIRE it ({wire}), or DECLARE it absent by waiving this "
+                        "gate in writing with a reason. A waiver is recorded and "
+                        "a reviewer reads it; an unevaluated criterion just "
+                        "looks like one nobody agreed to."
+                    ),
+                )
+            )
+        )
     return results
 
 
@@ -334,6 +396,19 @@ def judge_run(
     # gate has nothing to sign. They stay UNKNOWN until somebody does that, so
     # the verdict does not improve on its own either.
     out.extend(unmeasurable_headroom_gates())
+    # ONCE PER RUN, for the same reason. A dependency nobody wired is a fact
+    # about the deployment, not about step four of seven.
+    out.extend(
+        unconfigured_dependency_gates(
+            {g.subject for g in out if g.gate == gates.SUSTAINED_HEALTH_GATE}
+            | {
+                r.subject
+                for agg in (aggregates or {}).values()
+                if agg is not None
+                for r in agg.health_readings
+            }
+        )
+    )
     return out
 
 

@@ -158,6 +158,7 @@ SOURCES: Final[tuple[str, ...]] = (
     SOURCE_LIVEKIT_SERVER,
     SOURCE_LIVEKIT_SIP,
     SOURCE_NODE_EXPORTER,
+    SOURCE_REDIS_EXPORTER,
 )
 
 # Scrape outcomes, stored verbatim in ``node_samples.outcome``.
@@ -198,6 +199,11 @@ class ScrapeTarget:
     source: str
     project: str = node_samples.DEFAULT_PROJECT
     auth: tuple[str, str] | None = field(default=None, repr=False)
+    #: Optional health endpoint, probed on the same tick as the metrics scrape
+    #: so its result lands on the same time axis. None means no endpoint is
+    #: configured, which is recorded as NULL and NEVER as a failure: "nobody
+    #: asked" and "it answered badly" are different facts.
+    health_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -604,6 +610,13 @@ validate_series_map(SERIES)
 TargetProvider = Callable[[], Awaitable[Sequence[ScrapeTarget]]]
 
 
+#: Separator that attaches an optional health endpoint to a target entry:
+#: ``livekit-sip:sip-1=http://sip-1:8082/metrics|health=http://sip-1:8081/``.
+#: A separate suffix rather than a second environment variable, so a target and
+#: its health endpoint cannot drift apart in configuration.
+HEALTH_SUFFIX: Final[str] = "|health="
+
+
 def targets_from_env(
     environ: Mapping[str, str] | None = None,
 ) -> list[ScrapeTarget]:
@@ -639,9 +652,25 @@ def targets_from_env(
                 ", ".join(SOURCES),
             )
             continue
-        clean, auth = split_userinfo(url.strip())
+        metrics_url, _, health = url.strip().partition(HEALTH_SUFFIX)
+        if not metrics_url.strip():
+            logger.warning(
+                "%s: ignoring %r; no metrics url before %r",
+                TARGETS_ENV_VAR,
+                shown,
+                HEALTH_SUFFIX,
+            )
+            continue
+        clean, auth = split_userinfo(metrics_url.strip())
+        health_clean, _ = split_userinfo(health.strip()) if health.strip() else (None, None)
         targets.append(
-            ScrapeTarget(node=node.strip(), url=clean, source=source, auth=auth)
+            ScrapeTarget(
+                node=node.strip(),
+                url=clean,
+                source=source,
+                auth=auth,
+                health_url=health_clean,
+            )
         )
     return targets
 
@@ -821,6 +850,55 @@ class NodeSamplesWorker(AsyncWorker):
         )
         return written
 
+    async def _probe_health(
+        self, client: httpx.AsyncClient, target: ScrapeTarget
+    ) -> dict[str, float | None]:
+        """Probe the target's health endpoint, if it has one.
+
+        Returns the three health columns, or an EMPTY dict when no endpoint is
+        configured. Empty means the columns stay NULL, and NULL means nobody
+        asked. Writing 0 there would report a service as failing its health
+        check because its operator never configured one.
+
+        Any 2xx is healthy. livekit-sip answers 200 OK, 429 UnderLoad or 503
+        Unavailable; livekit-server answers 200 or 406. A 429 counts as
+        unhealthy on purpose: a node shedding load is a node not serving
+        callers. The status is recorded alongside so the report can say WHICH,
+        because 429 and 503 are different problems and so is no answer at all.
+
+        Never raises. A probe failure is a recorded fact, exactly like a failed
+        scrape.
+        """
+        if not target.health_url:
+            return {}
+        try:
+            response = await asyncio.wait_for(
+                client.get(target.health_url),
+                timeout=self._scrape_timeout,
+            )
+        except (TimeoutError, httpx.TimeoutException):
+            # Something is listening and stuck, which is not the same as
+            # nothing listening, so the two are recorded apart.
+            return {"health_ok": 0.0, "health_timed_out": 1.0}
+        except httpx.HTTPError:
+            # Connection refused, DNS failure, TLS failure. No response at all,
+            # so no status code exists to record; the column stays NULL rather
+            # than being filled with a plausible-looking zero.
+            return {"health_ok": 0.0, "health_timed_out": 0.0}
+        except Exception:
+            logger.exception(
+                "NodeSamplesWorker: unexpected error probing health for %s (%s)",
+                redact_url(target.health_url),
+                target.node,
+            )
+            return {"health_ok": 0.0, "health_timed_out": 0.0}
+        healthy = 200 <= response.status_code < 300
+        return {
+            "health_ok": 1.0 if healthy else 0.0,
+            "health_status_code": float(response.status_code),
+            "health_timed_out": 0.0,
+        }
+
     async def _scrape(
         self, client: httpx.AsyncClient, target: ScrapeTarget, at_ms: int
     ) -> node_samples.NodeSampleInput:
@@ -849,6 +927,8 @@ class NodeSamplesWorker(AsyncWorker):
             )
             outcome, body = OUTCOME_UNREACHABLE, None
 
+        health = await self._probe_health(client, target)
+
         if body is None:
             return node_samples.NodeSampleInput(
                 node=target.node,
@@ -859,6 +939,10 @@ class NodeSamplesWorker(AsyncWorker):
                 # NULL, not 0: no exposition was read, so nothing is known about
                 # how many series it would have carried.
                 series_found=None,
+                # The health probe is independent of the metrics scrape, so a
+                # target whose exposition is unreachable can still have a
+                # working health endpoint, and that is worth recording.
+                values=dict(health),
             )
 
         samples = parse_exposition(body)
@@ -870,6 +954,7 @@ class NodeSamplesWorker(AsyncWorker):
                 outcome=OUTCOME_UNPARSEABLE,
                 project=target.project,
                 series_found=None,
+                values=dict(health),
             )
 
         values: dict[str, float | None] = {}
@@ -885,6 +970,9 @@ class NodeSamplesWorker(AsyncWorker):
             found += 1
         _mark_unbounded_filefd(values)
         _mark_unbounded_redis_memory(values)
+        # Merged AFTER `found` is counted. The probe is not part of the
+        # exposition, and series_found answers what the metrics target exposed.
+        values.update(health)
         return node_samples.NodeSampleInput(
             node=target.node,
             source=target.source,
