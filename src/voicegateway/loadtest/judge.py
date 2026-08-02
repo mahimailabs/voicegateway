@@ -319,6 +319,10 @@ def unmeasurable_headroom_gates() -> list[GateResult]:
     excluded = excluded_headroom_resources()
     if not excluded:
         return []
+    # A SHORT reason on the row. The full statement lives once, in the scope
+    # section above the table, and repeating the paragraph in every gate detail
+    # printed it twice on one page and ran two sentences together mid-cell.
+    # The row says what it is and where the detail is.
     return gates.headroom_gates(
         [
             gates.HeadroomReading(
@@ -326,9 +330,12 @@ def unmeasurable_headroom_gates() -> list[GateResult]:
                 resource=resource,
                 used=None,
                 limit=None,
-                unmeasured_reason=reason,
+                unmeasured_reason=(
+                    "nothing in the scrape set publishes what it needs, so it is "
+                    'outside scope for this report (see "Not in scope")'
+                ),
             )
-            for resource, reason in sorted(excluded.items())
+            for resource in sorted(excluded)
         ]
     )
 
