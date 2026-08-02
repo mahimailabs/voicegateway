@@ -84,6 +84,11 @@ COUNTER_COLUMNS: frozenset[str] = frozenset(
         "sip_rtp_packets_send",
         "process_cpu_seconds_total",
         "udp_no_ports_total",
+        # Redis. Cumulative since the server started, so only a rate is
+        # meaningful: an absolute "3 rejected connections" says nothing
+        # about whether any were rejected during THIS window.
+        "redis_rejected_connections_total",
+        "redis_evicted_keys_total",
     }
 )
 
@@ -120,6 +125,17 @@ GAUGE_COLUMNS: frozenset[str] = frozenset(
         # Derived from node_filefd_maximum rather than scraped, but still an
         # observation about one scrape. 1 unbounded, 0 bounded, NULL unmeasured.
         "filefd_maximum_unbounded",
+        # Redis point-in-time state.
+        "redis_up",
+        "redis_memory_used_bytes",
+        "redis_memory_max_bytes",
+        "redis_memory_max_unbounded",
+        "redis_blocked_clients",
+        # Health probe. Not scraped from an exposition, but still an
+        # observation about one sampling tick, read exactly as recorded.
+        "health_ok",
+        "health_status_code",
+        "health_timed_out",
     }
 )
 
@@ -130,7 +146,18 @@ VALUE_COLUMNS: frozenset[str] = COUNTER_COLUMNS | GAUGE_COLUMNS
 # counted out of ``series_found``: that number answers "how many of the series
 # expected for this source did the target actually expose", and a derived
 # marker would inflate it into a claim about the target.
-DERIVED_COLUMNS: frozenset[str] = frozenset({"filefd_maximum_unbounded"})
+DERIVED_COLUMNS: frozenset[str] = frozenset(
+    {
+        "filefd_maximum_unbounded",
+        "redis_memory_max_unbounded",
+        # The health columns come from an HTTP probe, not from the
+        # exposition, so counting them would inflate series_found into a
+        # claim about what the metrics target exposed.
+        "health_ok",
+        "health_status_code",
+        "health_timed_out",
+    }
+)
 
 # Columns stored as integers. Everything else in VALUE_COLUMNS is a float.
 # Prometheus exposition is float-typed on the wire, so an integer column is
@@ -175,6 +202,18 @@ _INT_COLUMNS: frozenset[str] = frozenset(
         "track_subscribed_total",
         "psrpc_stream_count",
         "filefd_maximum_unbounded",
+        # Redis. Counts, byte totals and 0/1 markers, none of them fractional.
+        "redis_up",
+        "redis_rejected_connections_total",
+        "redis_memory_used_bytes",
+        "redis_memory_max_bytes",
+        "redis_memory_max_unbounded",
+        "redis_blocked_clients",
+        "redis_evicted_keys_total",
+        # Health probe: two 0/1 markers and an HTTP status code.
+        "health_ok",
+        "health_status_code",
+        "health_timed_out",
     }
 )
 
@@ -264,6 +303,18 @@ class NodeSampleRow:
     psrpc_stream_count: int | None
     filefd_maximum_unbounded: int | None
 
+    # Redis and health. Nullable like every value column: NULL means
+    # nobody measured, never zero.
+    redis_up: int | None
+    redis_rejected_connections_total: int | None
+    redis_memory_used_bytes: int | None
+    redis_memory_max_bytes: int | None
+    redis_memory_max_unbounded: int | None
+    redis_blocked_clients: int | None
+    redis_evicted_keys_total: int | None
+    health_ok: int | None
+    health_status_code: int | None
+    health_timed_out: int | None
 
 @dataclass(frozen=True)
 class CounterRate:
@@ -348,6 +399,16 @@ def _row(sample: NodeSample) -> NodeSampleRow:
         track_subscribed_total=sample.track_subscribed_total,
         psrpc_stream_count=sample.psrpc_stream_count,
         filefd_maximum_unbounded=sample.filefd_maximum_unbounded,
+        redis_up=sample.redis_up,
+        redis_rejected_connections_total=sample.redis_rejected_connections_total,
+        redis_memory_used_bytes=sample.redis_memory_used_bytes,
+        redis_memory_max_bytes=sample.redis_memory_max_bytes,
+        redis_memory_max_unbounded=sample.redis_memory_max_unbounded,
+        redis_blocked_clients=sample.redis_blocked_clients,
+        redis_evicted_keys_total=sample.redis_evicted_keys_total,
+        health_ok=sample.health_ok,
+        health_status_code=sample.health_status_code,
+        health_timed_out=sample.health_timed_out,
     )
 
 
