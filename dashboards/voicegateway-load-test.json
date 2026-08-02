@@ -1,5 +1,5 @@
 {
-  "description": "7 of 12 panels have a series behind them. The rest are rendered as explicit NOT MEASURED notes rather than empty graphs, because an empty graph reads as nothing happening when it means nobody measured. Generated from the node_samples column sets, so a panel can never name a series that does not exist.",
+  "description": "10 of 14 panels have a series behind them. The rest are rendered as explicit NOT MEASURED notes rather than empty graphs, because an empty graph reads as nothing happening when it means nobody measured. Generated from the node_samples column sets, so a panel can never name a series that does not exist.",
   "editable": true,
   "panels": [
     {
@@ -276,18 +276,97 @@
       "type": "timeseries"
     },
     {
+      "datasource": "${DS_VOICEGATEWAY}",
+      "description": "1 when the exporter reached Redis on that scrape, 0 when it ran and could not. A gap is neither: it means nobody scraped, and the line breaks rather than dropping to zero.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
         "y": 40
       },
-      "options": {
-        "content": "### Not measured\n\n**Redis health** would need `redis_up`, which `node_samples` does not carry.\n\nNot collected. Nothing scrapes Redis, so the sustained-Redis-failure half of the acceptance criteria is unevaluated. It is not passing; it is unmeasured.\n\n_This is an absence of measurement, not a measurement of zero. Nothing here passed; nothing here was checked._",
-        "mode": "markdown"
+      "targets": [
+        {
+          "datasource": "${DS_VOICEGATEWAY}",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT at_ms AS time, node, redis_up AS up FROM node_samples ORDER BY at_ms",
+          "refId": "A"
+        }
+      ],
+      "title": "Redis reachability",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${DS_VOICEGATEWAY}",
+      "description": "Used over the configured maximum. Redis with no maxmemory reports a maximum of 0, which is no limit rather than no memory, so those rows are excluded here instead of rendering as full.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
       },
-      "title": "Redis health \u2014 NOT MEASURED",
-      "type": "text"
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 48
+      },
+      "targets": [
+        {
+          "datasource": "${DS_VOICEGATEWAY}",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT at_ms AS time, node, 1.0 * redis_memory_used_bytes / NULLIF(redis_memory_max_bytes, 0) AS memory_used FROM node_samples ORDER BY at_ms",
+          "refId": "A"
+        }
+      ],
+      "title": "Redis memory against its limit",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${DS_VOICEGATEWAY}",
+      "description": "Clients waiting on a blocking command right now. Rises before a sustained failure rather than after it.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 48
+      },
+      "targets": [
+        {
+          "datasource": "${DS_VOICEGATEWAY}",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT at_ms AS time, node, redis_blocked_clients AS blocked FROM node_samples ORDER BY at_ms",
+          "refId": "A"
+        }
+      ],
+      "title": "Redis blocked clients",
+      "type": "timeseries"
     }
   ],
   "schemaVersion": 39,

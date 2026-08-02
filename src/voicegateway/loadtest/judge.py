@@ -36,6 +36,7 @@ from voicegateway.loadtest.aggregation import (
 from voicegateway.middleware.node_samples_worker_middleware import (
     any_source_publishes,
     reports_host_metrics,
+    reports_process_metrics,
 )
 
 # The FD pair is the one headroom resource anything scrapes. RTP ports and
@@ -157,6 +158,22 @@ def _reports_node_metrics(source: str | None) -> bool:
     return reports_host_metrics(source) is not False
 
 
+def _speaks_for_process_fds(source: str | None) -> bool:
+    """Whether a process-descriptor gate for this source means anything.
+
+    Narrow on purpose. Only a source that is DEFINITELY not an authority is
+    dropped, which today is the Redis exporter and nothing else.
+
+    node_exporter is deliberately NOT dropped. It publishes the pair, it is now
+    wired for it, and an absent reading there is a real gap rather than a
+    category error. That decision is pinned by
+    ``test_gate_only_where_measurable.py::test_node_exporter_keeps_its_file_descriptor_gate``
+    and nothing here disturbs it: reports_process_metrics answers None for a
+    host exporter, and only an explicit False suppresses.
+    """
+    return reports_process_metrics(source) is not False
+
+
 def _graded(readings, gate_fn):
     """Grade the readings whose SOURCE can produce this metric.
 
@@ -252,9 +269,19 @@ def _headroom_gates_for(aggregate: TestAggregate) -> list[GateResult]:
     # Real file-descriptor readings, measured during correlation. A node whose
     # window carried no usable pair arrives here already unmeasured WITH its
     # reason, which the gate turns into UNKNOWN rather than a pass.
-    readings.extend(aggregate.fd_readings)
+    #
+    # A source that cannot be the authority for a service's descriptors is
+    # dropped here, and only when it produced no number: a real reading is
+    # evidence and is graded whatever took it.
+    readings.extend(
+        r
+        for r in aggregate.fd_readings
+        if r.used is not None or _speaks_for_process_fds(r.source)
+    )
     measured = {(r.node, r.source) for r in aggregate.fd_readings}
     for reading in aggregate.cpu_readings:
+        if not _speaks_for_process_fds(reading.source):
+            continue
         # A node the aggregate judged for CPU but carries no FD reading for
         # would otherwise lose the file-descriptor gate while keeping the other
         # two, which reads as a resource nobody had to satisfy rather than one

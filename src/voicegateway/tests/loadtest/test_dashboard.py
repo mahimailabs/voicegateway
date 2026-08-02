@@ -112,11 +112,27 @@ def test_unmeasured_panels_occupy_a_full_panel_of_space() -> None:
         assert (note["gridPos"]["w"], note["gridPos"]["h"]) == size
 
 
-def test_the_five_known_gaps_are_all_present_as_notes() -> None:
-    """Named individually so silently dropping one is a test failure."""
+def test_the_four_known_gaps_are_all_present_as_notes() -> None:
+    """Named individually so silently dropping one is a test failure.
+
+    Redis was the fifth until redis_exporter became a scrape source. It is not
+    removed here to make anything pass: it is removed because it stopped being
+    a gap, and a test pinning "X is unmeasured" has to be updated when X is
+    measured or it starts preventing the improvement it was written to track.
+    The panels below assert the other half, that Redis really is measured now.
+    """
     titles = " ".join(p["title"] for p in _panels_by_type("text"))
-    for gap in ("CPU per core", "RTP port", "ENA", "Conntrack", "Redis"):
+    for gap in ("CPU per core", "RTP port", "ENA", "Conntrack"):
         assert gap in titles, gap
+    assert "Redis" not in titles
+
+
+def test_redis_is_measured_rather_than_a_note() -> None:
+    """The other half of the change above, so the gap cannot quietly return."""
+    measured = " ".join(
+        p.get("title", "") for p in _panels_by_type("timeseries")
+    )
+    assert "Redis" in measured
 
 
 # --------------------------------------------------------------------------

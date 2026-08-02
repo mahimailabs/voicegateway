@@ -70,6 +70,27 @@ unauthenticated request gets a 401 rather than an exposition. Observed:
 524287 livekit-sip reports on the same host, which is the cross-check that these
 are the per-process ceiling rather than anything host-wide.
 
+MEASURED against a live oliver006/redis_exporter scraping redis:7, by local
+scrape rather than from documentation: all 6 ``redis-exporter`` entries.
+Observed: ``redis_up`` 1, ``redis_rejected_connections_total`` 0,
+``redis_memory_used_bytes`` 1194336, ``redis_memory_max_bytes`` 0,
+``redis_blocked_clients`` 0, ``redis_evicted_keys_total`` 0. That exporter
+publishes 302 ``redis_*`` series and six are wired, because every column is one
+somebody has to keep honest; these six are what the acceptance criterion asks
+for and nothing more.
+
+``redis_memory_max_bytes`` 0 is "no maxmemory configured", NOT "no memory".
+``_mark_unbounded_redis_memory`` records that as a separate marker so a ratio is
+never taken against a zero denominator, exactly as the host descriptor ceiling
+is handled.
+
+The same scrape confirms what redis_exporter is NOT an authority for: zero
+``node_*`` series and zero ``livekit_*`` series, so it cannot report node-wide
+CPU or memory. It does publish its own ``process_open_fds`` 8 against
+``process_max_fds`` 1048576, and those are deliberately unwired: they are a
+monitoring sidecar's file handles and say nothing about any service the
+criterion covers. See :data:`DEPENDENCY_EXPORTERS`.
+
 DELIBERATELY UNWIRED, so their columns store NULL rather than a wrong name:
 ``livekit_session_start_time_ms_*``, ``livekit_track_published_total``,
 ``livekit_track_subscribed_total`` and ``psrpc_stream_count``. These are the
@@ -132,6 +153,7 @@ _DEFAULT_MAX_AGE_SECONDS: Final[float] = 7 * 24 * 3600.0
 SOURCE_LIVEKIT_SERVER: Final[str] = "livekit-server"
 SOURCE_LIVEKIT_SIP: Final[str] = "livekit-sip"
 SOURCE_NODE_EXPORTER: Final[str] = "node-exporter"
+SOURCE_REDIS_EXPORTER: Final[str] = "redis-exporter"
 SOURCES: Final[tuple[str, ...]] = (
     SOURCE_LIVEKIT_SERVER,
     SOURCE_LIVEKIT_SIP,
@@ -337,6 +359,30 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         _Series("process_open_fds", "process_open_fds"),
         _Series("process_max_fds", "process_max_fds"),
     ),
+    SOURCE_REDIS_EXPORTER: (
+        # Redis is shared state every SIP node depends on, and the acceptance
+        # criterion asks whether it stayed healthy for the whole window.
+        #
+        # MEASURED against a live oliver006/redis_exporter scraping redis:7.
+        # The smallest set that answers the criterion, not everything the
+        # exporter offers: it publishes 302 redis_* series and each one wired
+        # here is one more column somebody has to keep honest.
+        #
+        # redis_up is the primary signal: 0 means the exporter ran and could
+        # not reach Redis, which is the outage itself.
+        _Series("redis_up", "redis_up"),
+        # Connections Redis turned away. Cumulative, so read as a rate.
+        _Series("redis_rejected_connections_total", "redis_rejected_connections_total"),
+        # Memory against any configured ceiling. A live exporter reads 0 for
+        # the maximum when no maxmemory is set, which is "no limit" and NOT
+        # "no memory": _mark_unbounded_redis_memory keeps those apart.
+        _Series("redis_memory_used_bytes", "redis_memory_used_bytes"),
+        _Series("redis_memory_max_bytes", "redis_memory_max_bytes"),
+        # Both indicate a Redis under pressure rather than one that is down,
+        # which is exactly the state that precedes a sustained failure.
+        _Series("redis_blocked_clients", "redis_blocked_clients"),
+        _Series("redis_evicted_keys_total", "redis_evicted_keys_total"),
+    ),
 }
 
 
@@ -352,8 +398,30 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
 # kernel's "no limit", and the last 1024 counts are not a distinction anything
 # can act on.
 FILEFD_UNBOUNDED_THRESHOLD: Final[float] = float(2**63 - 1024)
+_REDIS_MAX_MEMORY_COLUMN: Final[str] = "redis_memory_max_bytes"
+_REDIS_MAX_MEMORY_UNBOUNDED_COLUMN: Final[str] = "redis_memory_max_unbounded"
 _FILEFD_MAXIMUM_COLUMN: Final[str] = "filefd_maximum"
 _FILEFD_UNBOUNDED_COLUMN: Final[str] = "filefd_maximum_unbounded"
+
+
+def _mark_unbounded_redis_memory(values: dict[str, float | None]) -> None:
+    """Record whether Redis has a memory ceiling at all.
+
+    A live redis_exporter reports ``redis_memory_max_bytes`` 0 when Redis has no
+    ``maxmemory`` configured. 0 there means "no limit", and it is the one value
+    that must never be read as a ratio denominator: used/0 is either a crash or,
+    once guarded, a number that reads as total exhaustion on the one chart an
+    operator checks during an incident.
+
+    Three states, kept apart exactly as the host descriptor ceiling is. 1 says
+    unbounded, so memory headroom cannot run out against a configured limit. 0
+    says a real ceiling was reported. Leaving the key out stores NULL, which
+    says nobody measured.
+    """
+    maximum = values.get(_REDIS_MAX_MEMORY_COLUMN)
+    if maximum is None:
+        return
+    values[_REDIS_MAX_MEMORY_UNBOUNDED_COLUMN] = 1.0 if maximum <= 0 else 0.0
 
 
 def _mark_unbounded_filefd(values: dict[str, float | None]) -> None:
@@ -391,6 +459,19 @@ HOST_EXPORTERS: frozenset[str] = frozenset({SOURCE_NODE_EXPORTER})
 SERVICE_EXPORTERS: frozenset[str] = frozenset(
     {SOURCE_LIVEKIT_SERVER, SOURCE_LIVEKIT_SIP}
 )
+
+#: Sources that report on a DEPENDENCY rather than on the fleet under test.
+#: redis_exporter speaks for Redis and for nothing else. It is deliberately in
+#: neither set above: it is not a host exporter, and it is not one of the
+#: services whose descriptor headroom the acceptance criterion is about.
+#:
+#: THE TRAP THIS CLOSES. redis_exporter publishes its own process_open_fds and
+#: process_max_fds, verified live at 8 against 1048576. Wiring those, or
+#: letting reports_process_metrics answer True for it, would recreate in a new
+#: source exactly the category error two commits were just spent removing: a
+#: gate row asserting a monitoring agent's own file handles as if they were a
+#: service's headroom.
+DEPENDENCY_EXPORTERS: frozenset[str] = frozenset({SOURCE_REDIS_EXPORTER})
 
 
 def any_source_publishes(*columns: str) -> bool:
@@ -440,6 +521,43 @@ def reports_host_metrics(source: str | None) -> bool | None:
     if source in HOST_EXPORTERS:
         return True
     if source in SERVICE_EXPORTERS:
+        return False
+    if source in DEPENDENCY_EXPORTERS:
+        # VERIFIED BY SCRAPE: a live redis_exporter publishes zero node_*
+        # series. It speaks for Redis, not for the box Redis runs on.
+        return False
+    return None
+
+
+def reports_process_metrics(source: str | None) -> bool | None:
+    """Whether ``source`` speaks for a SERVICE UNDER TEST's own process.
+
+    Deliberately three-valued, and the middle value is the point.
+
+    True for the services themselves: process_open_fds against process_max_fds
+    is one process's rlimit headroom, and only livekit-sip and livekit-server
+    can make that number a statement about the fleet under test.
+
+    False for a DEPENDENCY exporter. redis_exporter publishes its own pair
+    (verified live at 8 against 1048576) and is capable of the measurement, but
+    its file handles say nothing about anything the acceptance criterion covers.
+    Grading it would put a row in a client report asserting a monitoring
+    sidecar's descriptor headroom.
+
+    None for a host exporter, which is NOT the same as False and must not
+    become it. node_exporter is wired for the pair and reports it, so its gate
+    is real and is pinned by
+    ``test_gate_only_where_measurable.py::test_node_exporter_keeps_its_file_descriptor_gate``.
+    Answering False here would suppress a gate for a metric that source does
+    produce, which is the defect two earlier commits exist to prevent.
+
+    None for an undeclared source, which is never suppressed.
+    """
+    if source is None:
+        return None
+    if source in SERVICE_EXPORTERS:
+        return True
+    if source in DEPENDENCY_EXPORTERS:
         return False
     return None
 
@@ -766,6 +884,7 @@ class NodeSamplesWorker(AsyncWorker):
             values[series.column] = value
             found += 1
         _mark_unbounded_filefd(values)
+        _mark_unbounded_redis_memory(values)
         return node_samples.NodeSampleInput(
             node=target.node,
             source=target.source,
@@ -833,7 +952,10 @@ __all__ = [
     "TARGETS_ENV_VAR",
     "any_source_publishes",
     "columns_for",
+    "DEPENDENCY_EXPORTERS",
+    "SOURCE_REDIS_EXPORTER",
     "reports_host_metrics",
+    "reports_process_metrics",
     "NodeSamplesWorker",
     "ScrapeTarget",
     "TargetProvider",
