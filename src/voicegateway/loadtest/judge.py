@@ -32,6 +32,9 @@ from voicegateway.loadtest.aggregation import (
     FD_USED_COLUMN,
     TestAggregate,
 )
+from voicegateway.middleware.node_samples_worker_middleware import (
+    reports_host_metrics,
+)
 
 # The FD pair is the one headroom resource anything scrapes. RTP ports and
 # network are emitted as unmeasured by unscraped_headroom_readings, so they
@@ -79,6 +82,55 @@ def _fd_reading(
         source=source,
         unmeasured_reason=reason,
     )
+
+
+def _reports_node_metrics(source: str | None) -> bool:
+    """Whether to grade NODE-WIDE CPU and memory for this source.
+
+    The one suppression this module makes, and it is deliberately the only one.
+
+    A service exporter publishes nothing about the box it runs on. Verified
+    against a live livekit-sip: zero node-wide series. Grading it UNKNOWN
+    reports a failed measurement where none was attempted or possible, and a
+    real run spent twelve of its forty-eight gate rows saying so, above the
+    three-row table the client contracted for.
+
+    Nothing else is suppressed. File descriptors in particular are NOT, because
+    every source is a process with file handles: node_exporter publishes its own
+    (a live one reads 9) even though this system does not wire them, so an
+    absent FD reading there is a metric that COULD have been produced and was
+    not. That is the signal the UNKNOWN status exists to raise.
+    """
+    return reports_host_metrics(source) is not False
+
+
+def _graded(readings, gate_fn):
+    """Grade the readings whose SOURCE can produce this metric.
+
+    Two empty cases that must not be collapsed, which is why this is a function
+    rather than a list comprehension at each call site.
+
+    Nothing was scraped AT ALL: the gate functions report that as a single
+    UNKNOWN, and it is a real finding. The window produced no samples and the
+    run demonstrated no ceiling.
+
+    Something WAS scraped and none of it came from a source that publishes this
+    metric: there is nothing to grade, so no gate. Passing an empty list to the
+    gate function here would resurrect the row this node exists to remove, and
+    would say the fleet went unsampled when it did not.
+    """
+    if not readings:
+        return list(gate_fn(readings))
+    kept = [
+        r
+        for r in readings
+        # A real number is graded whatever its source: the reading is evidence,
+        # and dropping a measurement somebody took is worse than any tidying.
+        if r.utilisation is not None or _reports_node_metrics(r.source)
+    ]
+    if not kept:
+        return []
+    return list(gate_fn(kept))
 
 
 def judge_test(
@@ -132,8 +184,11 @@ def judge_test(
         )
         return results
 
-    results.extend(gates.node_cpu_gates(aggregate.cpu_readings))
-    results.extend(gates.node_memory_gates(aggregate.memory_readings))
+    # Filtered by what the SOURCE can publish, not by what this run produced.
+    # Per-node reporting is untouched: at 500 concurrent across six SIP nodes,
+    # knowing WHICH node breached is the point, so nothing here collapses rows.
+    results.extend(_graded(aggregate.cpu_readings, gates.node_cpu_gates))
+    results.extend(_graded(aggregate.memory_readings, gates.node_memory_gates))
     results.extend(_headroom_gates_for(aggregate))
     return results
 

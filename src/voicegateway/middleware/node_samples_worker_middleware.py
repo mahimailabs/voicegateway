@@ -352,6 +352,51 @@ def _mark_unbounded_filefd(values: dict[str, float | None]) -> None:
     )
 
 
+#: Sources that report facts about the HOST they run on: node-wide CPU, memory,
+#: load, host file-descriptor totals, socket counts.
+#:
+#: VERIFIED BY SCRAPE, not by reading this map. node_exporter publishes
+#: node_cpu_seconds_total and node_memory_Mem*_bytes; livekit-sip publishes
+#: NEITHER, and no amount of load will make it start.
+HOST_EXPORTERS: frozenset[str] = frozenset({SOURCE_NODE_EXPORTER})
+
+#: Sources that are a SERVICE reporting on itself. They publish the Go runtime
+#: and process collectors for their own process and nothing about the box.
+SERVICE_EXPORTERS: frozenset[str] = frozenset(
+    {SOURCE_LIVEKIT_SERVER, SOURCE_LIVEKIT_SIP}
+)
+
+
+def reports_host_metrics(source: str | None) -> bool | None:
+    """Whether ``source`` can report NODE-WIDE facts. None when unknowable.
+
+    The one question that is safe to suppress a gate on, and it is deliberately
+    narrow.
+
+    A service exporter cannot report node CPU or node memory. Verified against a
+    live livekit-sip, which publishes zero node-wide series: grading it UNKNOWN
+    says a measurement failed when none was ever attempted or possible.
+
+    This is NOT the same question as "does :data:`SERIES` wire this column for
+    this source", and the difference cost a round. That map encodes which
+    subject each source is the AUTHORITY for, not what it is capable of.
+    node_exporter publishes process_open_fds for its own process (a live one
+    reads 9), and the map omits it deliberately, because node_exporter's own
+    file handles say nothing about livekit-sip's headroom. Reading that omission
+    as an inability suppresses a gate for a metric the source could have
+    produced, which is the signal, not the noise.
+
+    An undeclared source answers None and is never suppressed.
+    """
+    if source is None:
+        return None
+    if source in HOST_EXPORTERS:
+        return True
+    if source in SERVICE_EXPORTERS:
+        return False
+    return None
+
+
 def validate_series_map(series_map: Mapping[str, tuple[_Series, ...]]) -> None:
     """Refuse a metric map that cannot produce meaningful numbers.
 
@@ -736,7 +781,10 @@ __all__ = [
     "SOURCE_LIVEKIT_SERVER",
     "SOURCE_LIVEKIT_SIP",
     "SOURCE_NODE_EXPORTER",
+    "HOST_EXPORTERS",
+    "SERVICE_EXPORTERS",
     "TARGETS_ENV_VAR",
+    "reports_host_metrics",
     "NodeSamplesWorker",
     "ScrapeTarget",
     "TargetProvider",
