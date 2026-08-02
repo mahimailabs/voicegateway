@@ -1169,12 +1169,25 @@ def _render_latency(finding: dict[str, Any]) -> str:
 
 
 def _render_limits(payload: dict[str, Any]) -> str:
+    """The limits section, describing the run this payload actually came from.
+
+    Shared by both reports, so the preamble is chosen from the payload's kind
+    rather than assumed. It described every run as "a diagnostics run", which in
+    a load report is a reader's first hint that they were sent output from a
+    different tool.
+    """
     items = "".join(f"<li>{_esc(item)}</li>" for item in payload["not_measured"])
+    subject = (
+        "A load run measures a fleet from outside, through a generator placing "
+        "real calls"
+        if payload.get("kind") == LOAD_REPORT_KIND
+        else "A diagnostics run is a single-vantage snapshot"
+    )
     return (
         "<h2>What this report does not measure</h2>"
-        "<p>Read this section before acting on anything above. A diagnostics run "
-        "is a single-vantage snapshot, and these are its structural limits, not "
-        "this run&rsquo;s bad luck.</p>"
+        "<p>Read this section before acting on anything above. "
+        f"{subject}, and these are its structural limits, not this "
+        "run&rsquo;s bad luck.</p>"
         f"<ul>{items}</ul>"
     )
 
@@ -1281,6 +1294,9 @@ _LOAD_REPORT_LIMITS = [
     "reached each step. A ramp holding its arrival rate fixed while raising the "
     "target concurrency plateaus, and that plateau is the generator's ceiling "
     "rather than the node's.",
+    "Every call here was placed from ONE vantage point: the host that ran the "
+    "generator. The establishment rate is what that host achieved against this "
+    "deployment over that path, not what a caller on another network would see.",
 ]
 
 
@@ -1448,7 +1464,14 @@ def build_load_payload(
         # What it takes to run this again. Item-by-item cited; see
         # :func:`appendix_entry`.
         "appendix": appendix,
-        "not_measured": list(_REPORT_LIMITS) + list(_LOAD_REPORT_LIMITS),
+        # _REPORT_LIMITS is the PROBE's list and is deliberately absent. Its
+        # entries describe a prober's data-channel round trip, billed trial
+        # calls per agent and an agents check, none of which exists in a SIP
+        # load test, and a client reading them concludes they were sent output
+        # from a different tool. The one that IS true of a load run, the single
+        # vantage point, is restated above in load terms; the packet-loss one is
+        # already covered above with the reason that actually applies here.
+        "not_measured": list(_LOAD_REPORT_LIMITS),
     }
 
 
