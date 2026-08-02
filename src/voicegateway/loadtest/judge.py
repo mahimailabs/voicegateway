@@ -23,6 +23,7 @@ already UNKNOWN, rather than being left out.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from voicegateway.livekit_diag import gates
@@ -289,7 +290,13 @@ def judge_run(
     out: list[GateResult] = []
     for test in tests:
         name = str(test.get("name") or "test")
-        out.extend(judge_test(test, aggregate=aggregates.get(name)))
+        # Stamped HERE and not inside judge_test, because the step is run-level
+        # identity: judge_test grades one step and has no idea whether it is one
+        # of seven. Identity only, so nothing about the verdict moves.
+        out.extend(
+            replace(result, step=name)
+            for result in judge_test(test, aggregate=aggregates.get(name))
+        )
     # ONCE PER RUN, not once per node per test. Nothing measures these on any
     # node, so eighteen identical rows on a three-step ramp said the same two
     # things eighteen times, above the table the client contracted for.
