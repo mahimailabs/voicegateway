@@ -57,9 +57,10 @@ behaviour or API change.
 Two things to know before editing:
 
 - `docs/_check_docs.py` is a real gate, enforced in CI by
-  `.github/workflows/docs.yml`. It fails any page that is not wired into the
-  `docs.json` nav, so adding a file is never enough on its own.
-- Run it locally with `python docs/_check_docs.py`.
+  `.github/workflows/docs.yml`. It fails any page not wired into the `docs.json`
+  nav, so adding a file is never enough on its own. It skips `superpowers/`,
+  `snippets/`, and any dot- or underscore-prefixed path.
+- Run it locally with `python3 docs/_check_docs.py`, the same command CI uses.
 
 Only the Next.js landing page at <https://voicegateway.dev> lives elsewhere, in
 [`mahimailabs/voicegateway-web`](https://github.com/mahimailabs/voicegateway-web).
@@ -94,8 +95,8 @@ src/
     Dockerfile         # dashboard runtime image
     README.dockerhub.md
 
-docs/assets/           # brand assets used by the README (the docs site lives
-                       # in the mahimailabs/voicegateway-web repo)
+docs/                  # the Mintlify docs site (docs.voicegateway.dev),
+                       # config in docs.json, brand assets in docs/assets/
 install.sh             # one-line installer (curl|bash), repo root by convention
 collector.sh           # fleet collector installer (curl|bash)
 pyproject.toml
