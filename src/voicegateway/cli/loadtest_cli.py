@@ -30,7 +30,11 @@ from voicegateway.loadtest.capacity import (
     capacity_table,
     derive_calls_per_node,
 )
-from voicegateway.loadtest.importer import build_plan, observations_for
+from voicegateway.loadtest.importer import (
+    build_plan,
+    limitations_from_notes,
+    observations_for,
+)
 from voicegateway.loadtest.judge import judge_run
 
 _cli = BaseCli()
@@ -560,6 +564,10 @@ def report(
         gate_results=[g.as_dict() for g in results],
         capacity=capacity,
         appendix=assets,
+        # Recovered from the row rather than recomputed: the artifacts may be
+        # long gone by the time somebody exports the report, and what the import
+        # could not answer is a property of that import.
+        limitations=limitations_from_notes(run.get("notes")),
     )
     out.mkdir(parents=True, exist_ok=True)
     json_path = out / f"{load_report_filename(run_id).removesuffix('.html')}.json"

@@ -50,6 +50,14 @@ _NO_WINDOW = (
 _NOT_ON_AGGREGATE = (
     f"the correlated window carried no {_FD_USED}/{_FD_LIMIT} reading for this node"
 )
+# The test HAS a window; nothing was scraped inside it. Distinct from _NO_WINDOW,
+# and the distinction is visible to a client: the CPU and memory gates on the
+# same run say "no node was sampled in the window", so reusing the no-window
+# wording here made one report explain one absence two incompatible ways.
+_NO_SAMPLES = (
+    "no node was sampled in the window, so no scrape carrying "
+    f"{_FD_USED}/{_FD_LIMIT} could be correlated to it"
+)
 
 
 def _fd_reading(
@@ -152,9 +160,7 @@ def _headroom_gates_for(aggregate: TestAggregate) -> list[GateResult]:
         # nobody measured.
         if (reading.node, reading.source) not in measured:
             readings.append(
-                _fd_reading(
-                    reading.node, reading.source, reason=_NOT_ON_AGGREGATE
-                )
+                _fd_reading(reading.node, reading.source, reason=_NOT_ON_AGGREGATE)
             )
         readings.extend(
             gates.unscraped_headroom_readings(reading.node, source=reading.source)
@@ -163,7 +169,10 @@ def _headroom_gates_for(aggregate: TestAggregate) -> list[GateResult]:
         # Nothing was scraped at all. Every resource is still reported, so an
         # unscraped run reads as three UNKNOWN gates rather than as a run where
         # file descriptors quietly went unjudged while the other two did not.
-        readings = [_fd_reading("fleet"), *gates.unscraped_headroom_readings("fleet")]
+        readings = [
+            _fd_reading("fleet", reason=_NO_SAMPLES),
+            *gates.unscraped_headroom_readings("fleet"),
+        ]
     return gates.headroom_gates(readings)
 
 

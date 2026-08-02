@@ -126,6 +126,22 @@ def _generated_at() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _utc(at_ms: Any) -> str | None:
+    """Epoch milliseconds as an ISO-8601 UTC instant, or None.
+
+    UTC and explicit about it. A capacity report is read months later by people
+    in other places, and a bare local timestamp is unresolvable by then.
+    """
+    value = _as_int(at_ms)
+    if value is None:
+        return None
+    return (
+        datetime.fromtimestamp(value / 1000, UTC)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z")
+    )
+
+
 # Verdicts are read, never derived, so this maps only what gates can produce.
 # UNKNOWN is spelled out at length because it is the whole reason the gate work
 # happened: a run that could not evaluate used to report a clean PASS, and a
@@ -658,6 +674,35 @@ def _num(value: float | None, unit: str, digits: int = 0) -> str:
     return f"{rendered}&nbsp;{_esc(unit)}" if unit else rendered
 
 
+def _ratio_pct(value: float) -> str:
+    """A 0..1 fraction as the percentage the acceptance criteria are written in.
+
+    Precision is adaptive and trailing zeros are dropped, so 0.995 reads "99.5%",
+    0.75 reads "75%" and 0.6666 reads "66.66%". Two decimal places in percent is
+    enough to render every contracted threshold EXACTLY, which is the property
+    that matters: a threshold shown at lower precision than the constant it came
+    from is a misstatement of the contract, not a rounding.
+    """
+    text = f"{value * 100:.2f}".rstrip("0").rstrip(".")
+    return f"{text}%"
+
+
+def _gate_number(value: float | None, gate: str | None) -> str:
+    """One gate's value or threshold, in the unit that gate measures in.
+
+    Ratio gates render as percentages; everything else keeps the previous
+    one-decimal rendering, because the latency and SFU gates carry milliseconds
+    and a percent sign on those would be a new defect replacing an old one.
+
+    The classification comes from :data:`gates.RATIO_GATES` rather than from the
+    metric name. An unmeasured headroom gate carries no metric and a real 0.2
+    threshold, so a name-based rule would still misstate the contracted 20%.
+    """
+    if value is None or gate not in gates.RATIO_GATES:
+        return _num(value, "", 1)
+    return _ratio_pct(value)
+
+
 def _plain(value: Any) -> str:
     """A measured string, or the "not measured" marker."""
     if value is None or value == "":
@@ -803,8 +848,8 @@ def _render_gates(payload: dict[str, Any]) -> str:
             # "not recorded" says that; calling a missing NAME "not measured"
             # would file it as a failed reading.
             f'<td class="mono">{_recorded(gate.get("metric"))}</td>'
-            f'<td class="num">{_num(value, "", 1)}</td>'
-            f'<td class="num">{_num(threshold, "", 1)}</td></tr>'
+            f'<td class="num">{_gate_number(value, gate.get("gate"))}</td>'
+            f'<td class="num">{_gate_number(threshold, gate.get("gate"))}</td></tr>'
         )
     if not rows:
         if stored:
@@ -1140,13 +1185,41 @@ def _render_latency(finding: dict[str, Any]) -> str:
 
 
 def _render_limits(payload: dict[str, Any]) -> str:
+    """The limits section, describing the run this payload actually came from.
+
+    Shared by both reports, so the preamble is chosen from the payload's kind
+    rather than assumed. It described every run as "a diagnostics run", which in
+    a load report is a reader's first hint that they were sent output from a
+    different tool.
+    """
     items = "".join(f"<li>{_esc(item)}</li>" for item in payload["not_measured"])
+    subject = (
+        "A load run measures a fleet from outside, through a generator placing "
+        "real calls"
+        if payload.get("kind") == LOAD_REPORT_KIND
+        else "A diagnostics run is a single-vantage snapshot"
+    )
+    # The run's own gaps are a DIFFERENT claim from the structural ones and are
+    # rendered apart from them. "Nothing can measure this" and "nothing measured
+    # it this time" send a reader to two different places, and merging them into
+    # one list makes a fixable gap look permanent and a permanent one look like
+    # this run's bad luck.
+    run_limits = payload.get("run_limitations") or []
+    extra = ""
+    if run_limits:
+        entries = "".join(f"<li>{_esc(item)}</li>" for item in run_limits)
+        extra = (
+            "<h3>...and what THIS run did not measure</h3>"
+            "<p>These are gaps in the artifacts this report was built from, not "
+            "limits of the system. A later run can close them.</p>"
+            f"<ul>{entries}</ul>"
+        )
     return (
         "<h2>What this report does not measure</h2>"
-        "<p>Read this section before acting on anything above. A diagnostics run "
-        "is a single-vantage snapshot, and these are its structural limits, not "
-        "this run&rsquo;s bad luck.</p>"
-        f"<ul>{items}</ul>"
+        "<p>Read this section before acting on anything above. "
+        f"{subject}, and these are its structural limits, not this "
+        "run&rsquo;s bad luck.</p>"
+        f"<ul>{items}</ul>{extra}"
     )
 
 
@@ -1252,6 +1325,9 @@ _LOAD_REPORT_LIMITS = [
     "reached each step. A ramp holding its arrival rate fixed while raising the "
     "target concurrency plateaus, and that plateau is the generator's ceiling "
     "rather than the node's.",
+    "Every call here was placed from ONE vantage point: the host that ran the "
+    "generator. The establishment rate is what that host achieved against this "
+    "deployment over that path, not what a caller on another network would see.",
 ]
 
 
@@ -1368,6 +1444,7 @@ def build_load_payload(
     gate_results: list[dict[str, Any]] | None = None,
     capacity: dict[str, Any] | None = None,
     appendix: dict[str, list[dict[str, str]]] | None = None,
+    limitations: list[str] | None = None,
 ) -> dict[str, Any]:
     """The load-test report payload. The JSON export IS this; the HTML renders it.
 
@@ -1419,7 +1496,20 @@ def build_load_payload(
         # What it takes to run this again. Item-by-item cited; see
         # :func:`appendix_entry`.
         "appendix": appendix,
-        "not_measured": list(_REPORT_LIMITS) + list(_LOAD_REPORT_LIMITS),
+        # _REPORT_LIMITS is the PROBE's list and is deliberately absent. Its
+        # entries describe a prober's data-channel round trip, billed trial
+        # calls per agent and an agents check, none of which exists in a SIP
+        # load test, and a client reading them concludes they were sent output
+        # from a different tool. The one that IS true of a load run, the single
+        # vantage point, is restated above in load terms; the packet-loss one is
+        # already covered above with the reason that actually applies here.
+        "not_measured": list(_LOAD_REPORT_LIMITS),
+        # What THIS RUN's artifacts could not answer, as opposed to what the
+        # system structurally never measures. The two are different claims and a
+        # reader needs both to tell "nothing can measure this" from "nothing
+        # measured it this time". Printed at import and carried nowhere until
+        # now, so the only person who ever saw them was whoever ran the import.
+        "run_limitations": list(limitations or []),
     }
 
 
@@ -1548,6 +1638,45 @@ padding:16px 20px;margin:0 0 24px;border-radius:6px}
 """
 
 
+def _render_run_identity(payload: dict[str, Any]) -> str:
+    """WHEN the run happened and WHICH artifacts it was built from.
+
+    A capacity report that does not say when the test ran is not filing-quality
+    evidence: it cannot be matched to a change window, an incident, or the
+    invoice for the hours it measured. The window lived in the payload and
+    nowhere in the document, which showed only when the EXPORT was produced, a
+    date that can be months later and says nothing about the test.
+
+    The checksum is here for the same reason. It is what ties this document to
+    the bytes it describes, and a reader holding two reports of two runs needs
+    to be able to tell them apart without opening the JSON.
+
+    Absent values are named as absent rather than omitted, because a header that
+    silently drops the window reads as a report that never had one.
+    """
+    run = payload.get("run") or {}
+    started = _utc(run.get("started_at_ms"))
+    ended = _utc(run.get("ended_at_ms"))
+    if started and ended:
+        window = f"{_esc(started)} to {_esc(ended)}"
+    elif started:
+        window = f"{_esc(started)}, end not recorded"
+    elif ended:
+        window = f"start not recorded, ended {_esc(ended)}"
+    else:
+        window = '<span class="nm">not recorded</span>'
+    checksum = run.get("artifact_sha256")
+    digest = (
+        f'<span class="mono">{_esc(str(checksum)[:16])}</span>'
+        if checksum
+        else '<span class="nm">no artifact checksum</span>'
+    )
+    return (
+        '<p class="sub">Run window (UTC) '
+        f"<strong>{window}</strong> &middot; artifacts {digest}</p>"
+    )
+
+
 def render_load_html(payload: dict[str, Any]) -> str:
     """Render a load-test payload as ONE self-contained HTML document.
 
@@ -1571,6 +1700,7 @@ def render_load_html(payload: dict[str, Any]) -> str:
             f'<p class="sub">VoiceGateway &middot; run '
             f'<span class="mono">{run_id}</span> &middot; provenance '
             f"<strong>{_esc(payload['data_provenance'])}</strong></p>",
+            _render_run_identity(payload),
             # Above the gate table it summarises, and below the stamp.
             _render_verdict(payload),
             _render_gates(payload),

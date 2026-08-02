@@ -98,6 +98,46 @@ NODE_MEMORY_GATE = "node_memory"
 HEADROOM_GATE = "resource_headroom"
 RETURN_TO_BASELINE_GATE = "return_to_baseline"
 
+#: Gates whose ``value`` and ``threshold`` are FRACTIONS in 0..1 that a reader
+#: thinks of as percentages. Every other gate carries an absolute: the latency
+#: and SFU gates are milliseconds.
+#:
+#: Declared here rather than inferred by a renderer, for two reasons. The
+#: distinction is a fact about what each gate measures, which is this module's
+#: business and not a display concern. And it cannot be recovered from the
+#: metric NAME: an unmeasured headroom gate carries ``metric=None`` and a real
+#: 0.2 threshold, so a name-based rule would render the contracted 20% as "0.2".
+#:
+#: A renderer that treats these as plain numbers misstates the contract. 0.995
+#: at one decimal place reads "1.0" and 0.75 reads "0.8", which is FIVE POINTS
+#: PERMISSIVE on the memory ceiling in the document whose purpose is to show the
+#: ceiling was held.
+RATIO_GATES: frozenset[str] = frozenset(
+    {
+        ESTABLISHMENT_GATE,
+        NODE_CPU_GATE,
+        NODE_MEMORY_GATE,
+        HEADROOM_GATE,
+        RETURN_TO_BASELINE_GATE,
+    }
+)
+
+#: Every gate id, so a new one has to be classified rather than defaulting into
+#: whichever branch a renderer happens to fall through to.
+ALL_GATES: frozenset[str] = frozenset(
+    {
+        AGENTS_GATE,
+        LATENCY_GATE,
+        SFU_QUALITY_GATE,
+        SFU_CAPACITY_GATE,
+        ESTABLISHMENT_GATE,
+        NODE_CPU_GATE,
+        NODE_MEMORY_GATE,
+        HEADROOM_GATE,
+        RETURN_TO_BASELINE_GATE,
+    }
+)
+
 # The two Go runtime series the teardown check reads. RSS is deliberately absent:
 # Go hands freed heap back to the OS lazily, so a drained process holds its
 # resident size long after the heap emptied, and gating on it would report a leak
@@ -1289,10 +1329,12 @@ __all__ = [
     "MAX_NODE_MEMORY_UTILISATION",
     "MIN_ESTABLISHMENT_RATIO",
     "MIN_HEADROOM_FRACTION",
+    "ALL_GATES",
     "MIN_PERCENTILE_SAMPLES",
     "MIN_SETTLE_MS",
     "NODE_CPU_GATE",
     "NODE_MEMORY_GATE",
+    "RATIO_GATES",
     "RETURN_TO_BASELINE_GATE",
     "PASS",
     "SFU_CAPACITY_GATE",
