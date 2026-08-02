@@ -127,6 +127,11 @@ if [ "${count:-0}" -lt "$MIN_CARDS" ]; then
   exit 1
 fi
 
-shot="${SHOT:-$REPO/.e2e-gate-$ROUTE.png}"
+# Default the capture into .shots/, which is already gitignored. It used to land
+# at $REPO/.e2e-gate-$ROUTE.png, which is how the repo root kept collecting PNGs:
+# every gate run dropped one, and one of them eventually got swept into a commit.
+# mkdir so a fresh clone does not fail here. SHOT still overrides, unchanged.
+mkdir -p "$REPO/.shots"
+shot="${SHOT:-$REPO/.shots/e2e-gate-$ROUTE.png}"
 "$B" screenshot "$shot" >/dev/null
 echo "gate GREEN: $count card(s) rendered with text on /demo/$ROUTE; screenshot $shot"
