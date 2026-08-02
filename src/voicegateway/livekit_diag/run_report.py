@@ -658,6 +658,35 @@ def _num(value: float | None, unit: str, digits: int = 0) -> str:
     return f"{rendered}&nbsp;{_esc(unit)}" if unit else rendered
 
 
+def _ratio_pct(value: float) -> str:
+    """A 0..1 fraction as the percentage the acceptance criteria are written in.
+
+    Precision is adaptive and trailing zeros are dropped, so 0.995 reads "99.5%",
+    0.75 reads "75%" and 0.6666 reads "66.66%". Two decimal places in percent is
+    enough to render every contracted threshold EXACTLY, which is the property
+    that matters: a threshold shown at lower precision than the constant it came
+    from is a misstatement of the contract, not a rounding.
+    """
+    text = f"{value * 100:.2f}".rstrip("0").rstrip(".")
+    return f"{text}%"
+
+
+def _gate_number(value: float | None, gate: str | None) -> str:
+    """One gate's value or threshold, in the unit that gate measures in.
+
+    Ratio gates render as percentages; everything else keeps the previous
+    one-decimal rendering, because the latency and SFU gates carry milliseconds
+    and a percent sign on those would be a new defect replacing an old one.
+
+    The classification comes from :data:`gates.RATIO_GATES` rather than from the
+    metric name. An unmeasured headroom gate carries no metric and a real 0.2
+    threshold, so a name-based rule would still misstate the contracted 20%.
+    """
+    if value is None or gate not in gates.RATIO_GATES:
+        return _num(value, "", 1)
+    return _ratio_pct(value)
+
+
 def _plain(value: Any) -> str:
     """A measured string, or the "not measured" marker."""
     if value is None or value == "":
@@ -803,8 +832,8 @@ def _render_gates(payload: dict[str, Any]) -> str:
             # "not recorded" says that; calling a missing NAME "not measured"
             # would file it as a failed reading.
             f'<td class="mono">{_recorded(gate.get("metric"))}</td>'
-            f'<td class="num">{_num(value, "", 1)}</td>'
-            f'<td class="num">{_num(threshold, "", 1)}</td></tr>'
+            f'<td class="num">{_gate_number(value, gate.get("gate"))}</td>'
+            f'<td class="num">{_gate_number(threshold, gate.get("gate"))}</td></tr>'
         )
     if not rows:
         if stored:
