@@ -212,6 +212,21 @@ class GateResult:
     # field as well as inside ``detail`` so a surface that renders structured
     # data rather than prose still has to deal with it.
     waiver_reason: str | None = None
+    # Which step of a multi-step run produced this row. Part of the row's
+    # IDENTITY, not of its judgement: nothing here changes what is emitted or
+    # how anything grades.
+    #
+    # ``subject`` alone stopped being unique the moment the same resource was
+    # gated once per step. A seven-step run rendered seven rows reading
+    # ``sura-sip-01/node-exporter/file_descriptors`` with nothing to tell them
+    # apart, and a reader cannot know whether that is one finding or seven. The
+    # same collision was fixed once already for sources, by adding the source to
+    # the subject; the step is the other half of the same identity.
+    #
+    # None for gates that are genuinely run-level rather than per-step, which is
+    # the honest reading: stamping a step on a fleet-wide exclusion would claim
+    # it was evaluated once per step when it was evaluated once.
+    step: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         """A JSON-safe copy (the run payload is persisted and served as JSON).
@@ -222,10 +237,16 @@ class GateResult:
         served to the dashboard, and pinned by a test that asserts the key set.
         A waived gate is the only one that carries new information, so it is the
         only one whose payload grows.
+
+        ``step`` follows the same rule for the same reason. A diagnostics gate
+        belongs to no step and keeps the exact key set it has always had; only a
+        row that really is one of several per run grows a key.
         """
         out = asdict(self)
         if out.get("waiver_reason") is None:
             out.pop("waiver_reason", None)
+        if out.get("step") is None:
+            out.pop("step", None)
         return out
 
 

@@ -836,11 +836,23 @@ def _render_gates(payload: dict[str, Any]) -> str:
             else "unknown"
         )
         subject = gate.get("subject")
+        # The step is part of the row's identity, not decoration. Without it a
+        # seven-step run rendered seven rows reading
+        # "sura-sip-01/node-exporter/file_descriptors" with nothing to tell them
+        # apart, and a fleet run multiplies that by the node count. Suppressed
+        # when it merely repeats the subject, which is the establishment gate,
+        # whose subject IS the step.
+        step = gate.get("step")
+        identity = str(gate.get("gate") or "")
+        if step and step != subject:
+            identity = f"{_esc(identity)}<br>{_esc(step)}"
+        else:
+            identity = _esc(identity)
         value = _as_float(gate.get("value"))
         threshold = _as_float(gate.get("threshold"))
         rows.append(
             f'<tr><td><span class="tag {css}">{_esc(status)}</span></td>'
-            f'<td class="mono">{_esc(gate.get("gate"))}'
+            f'<td class="mono">{identity}'
             + (f"<br>{_esc(subject)}" if subject else "")
             + f"</td><td>{_esc(gate.get('detail'))}</td>"
             # A gate can legitimately carry no metric: agents_listing asserts the
