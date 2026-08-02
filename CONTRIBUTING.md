@@ -48,12 +48,22 @@ Before opening your PR, verify locally:
 
 ## Documentation
 
-The user-facing documentation lives in a separate repository,
-[`mahimailabs/voicegateway-web`](https://github.com/mahimailabs/voicegateway-web):
-a Next.js landing page published at <https://voicegateway.dev> and a Mintlify
-docs site published at <https://docs.voicegateway.dev>. Documentation changes go
-to that repo, not this one. This repository keeps only the brand assets under
-`docs/assets/` (used by the README).
+The Mintlify docs site published at <https://docs.voicegateway.dev> lives in
+**this** repository under `docs/`: config in `docs/docs.json`, pages as `.md`,
+brand assets under `docs/assets/`. Mintlify deploys `docs/` from the default
+branch, so docs version with the code. Change the docs in the same PR as any
+behaviour or API change.
+
+Two things to know before editing:
+
+- `docs/_check_docs.py` is a real gate, enforced in CI by
+  `.github/workflows/docs.yml`. It fails any page that is not wired into the
+  `docs.json` nav, so adding a file is never enough on its own.
+- Run it locally with `python docs/_check_docs.py`.
+
+Only the Next.js landing page at <https://voicegateway.dev> lives elsewhere, in
+[`mahimailabs/voicegateway-web`](https://github.com/mahimailabs/voicegateway-web).
+This repository has no Vercel connection.
 
 ## Project layout (quick orientation)
 
