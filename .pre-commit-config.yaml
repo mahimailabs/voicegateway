@@ -6,7 +6,21 @@ repos:
     rev: v6.0.0
     hooks:
     -   id: check-added-large-files
-        exclude: ^uv\.lock$
+        # 250 KiB, not the 500 KiB default. The default is why a 404 KiB
+        # screenshot (og-capture.png, a byte-identical duplicate of
+        # docs/assets/og.png) reached main and stayed there.
+        #
+        # Only two tracked files exceed this, and both are named below, so the
+        # limit can be set under the largest legitimate asset rather than over
+        # it. That is what makes the guard bite: at 250 KiB the exact file that
+        # got through is now rejected. Next largest tracked file is
+        # docs/assets/banner.gif at 183 KiB, leaving 67 KiB of headroom.
+        #
+        # The excludes are path-anchored on purpose. A copy of og.png committed
+        # under any other name does not match, so duplicating it into the root
+        # is caught even though the original is allowed.
+        args: [--maxkb=250]
+        exclude: ^(uv\.lock|docs/assets/og\.png)$
     -   id: check-toml
     -   id: check-yaml
         args:
