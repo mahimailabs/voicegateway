@@ -444,8 +444,28 @@ qa/
 # G0 frontend gate screenshot artifact (scripts/e2e-frontend-gate.sh)
 .e2e-gate-*.png
 
+# Stray root screenshots. Playwright and dashboard captures land in the cwd,
+# which is the repo root. Root-anchored on purpose: a bare *.png would shadow
+# the tracked assets under docs/assets/ and src/dashboard/api/static/branding/.
+/*.png
+/*.jpg
+
+# Generated agent SVG scratch output.
+/agents-svgs-generated/
+
+# Agent skill-installer lockfile (heygen-com/hyperframes). Regenerates, so
+# deleting it without ignoring it just invites the next git add -A to re-add it.
+/skills-lock.json
+
+# HyperFrames launch-video project, not part of the Python deliverable. Was
+# excluded only in .git/info/exclude, which does not survive a clone and is
+# invisible to hatchling, so every sdist shipped it.
+/videos/
+
 # Compiled Go helpers under tools/ (built by go build, never committed).
-tools/mock-participant/mock-participant
+# A glob, not an exact path: go build -o also produces cross-compiled variants
+# such as mock-participant-linux, and the exact rule let 40 MB through.
+/tools/mock-participant/mock-participant*
 
 # ...except the load-generator capture. Its stat file is a CSV by CONTENT and a
 # .log by NAME, and that mismatch is the bug the fixture reproduces: renaming it

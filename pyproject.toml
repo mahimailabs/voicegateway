@@ -179,6 +179,33 @@ artifacts = [
     "src/voicegateway/livekit_diag/assets/*.wav",
 ]
 
+# The sdist had no target section at all, so it shipped whatever hatchling's
+# default VCS filter allowed: every stray screenshot at the repo root, plus the
+# entire HyperFrames launch-video project. videos/ was excluded only in
+# .git/info/exclude, and hatchling reads .gitignore but not that file, so 183 MB
+# of local video work went out with the source distribution.
+#
+# An explicit include list is the fix, and it is an allowlist on purpose: a new
+# stray at the root now has to be named here to ship, rather than having to be
+# remembered and excluded. Everything listed is needed to build the wheel or run
+# the test suite from an unpacked sdist:
+#   src/         the packages themselves, plus the tests
+#   alembic/     force-included into the wheel from the repo root, so a wheel
+#     alembic.ini  built from an sdist without them has no migrations and
+#                fails at runtime in _find_alembic_ini
+#   README.md    named by project.readme, required for metadata
+#   LICENSE      project.license is the SPDX string, the file still ships
+#   CHANGELOG.md so an unpacked sdist can say what changed
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/alembic",
+    "/alembic.ini",
+    "/README.md",
+    "/LICENSE",
+    "/CHANGELOG.md",
+]
+
 [tool.hatch.build.targets.wheel]
 # Explicit packages list because we are on a src/ layout (PyPA convention).
 # Hatchling cannot auto-detect packages outside the repo root.
