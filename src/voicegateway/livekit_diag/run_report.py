@@ -1548,7 +1548,7 @@ def _render_load_tests(payload: dict[str, Any]) -> str:
             "<tr>"
             f"<td>{_esc(test['name'])}</td>"
             f"<td>{_recorded(test['peak_concurrency'])}</td>"
-            f"<td>{_num(_ms_to_minutes(test['duration_ms']), ' min', 1)}</td>"
+            f"<td>{_duration_cell(test['duration_ms'])}</td>"
             f"<td>{_ratio_cell(test['establishment_ratio'])}</td>"
             f"<td>{_pct_cell(test['peak_cpu_utilisation'])}</td>"
             f"<td>{_pct_cell(test['peak_memory_utilisation'])}</td>"
@@ -1571,6 +1571,23 @@ def _render_load_tests(payload: dict[str, Any]) -> str:
 def _ms_to_minutes(value: Any) -> float | None:
     ms = _as_float(value)
     return None if ms is None else ms / 60_000.0
+
+
+#: Below this, a duration is shown in seconds. A ramp step is commonly a minute
+#: or two, and one decimal of a minute cannot tell 62 seconds from 66: both read
+#: "1.1 min". A reader comparing this against their own timing needs the unit
+#: the run was configured in.
+_SECONDS_BELOW_MS = 10 * 60 * 1000
+
+
+def _duration_cell(value: Any) -> str:
+    """A test's wall duration, in a unit that survives being checked."""
+    ms = _as_float(value)
+    if ms is None:
+        return _num(None, "", 0)
+    if ms < _SECONDS_BELOW_MS:
+        return _num(ms / 1000.0, "s", 1)
+    return _num(ms / 60_000.0, "min", 1)
 
 
 def _ratio_cell(value: float | None) -> str:
@@ -1602,7 +1619,12 @@ def _render_capacity(payload: dict[str, Any]) -> str:
         return (
             "<h2>Capacity</h2><p>No capacity table. The calls-per-node figure "
             "was not derivable, so sizing would mean inventing the one number "
-            f"the whole table rests on. {_esc(capacity.get('reason') or '')}</p>"
+            "the whole table rests on.</p>"
+            # The reason is a sentence fragment from the derivation and begins
+            # lowercase. Concatenating it after a full stop read as a typo in a
+            # document somebody is paying for, so it gets its own line and its
+            # own label.
+            f'<p class="sub">Why: {_esc(capacity.get("reason") or "not stated")}</p>'
         )
     rows = "".join(
         "<tr>"

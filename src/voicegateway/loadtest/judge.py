@@ -108,12 +108,6 @@ HEADROOM_REQUIREMENTS: dict[str, tuple[str, ...]] = {
 }
 
 
-#: The subject a fleet-wide gate is filed under. Not a node name: nothing
-#: measures these anywhere, so attributing the gap to one box would imply the
-#: answer could differ by box.
-FLEET_SUBJECT = "fleet"
-
-
 def excluded_headroom_resources() -> dict[str, str]:
     """Headroom resources nothing in this system can measure, and why.
 
@@ -276,7 +270,7 @@ def _headroom_gates_for(aggregate: TestAggregate) -> list[GateResult]:
         # Nothing was scraped at all. Every resource is still reported, so an
         # unscraped run reads as three UNKNOWN gates rather than as a run where
         # file descriptors quietly went unjudged while the other two did not.
-        readings = [_fd_reading("fleet", reason=_NO_SAMPLES)]
+        readings = [_fd_reading(gates.FLEET_SUBJECT, reason=_NO_SAMPLES)]
     return gates.headroom_gates(readings)
 
 
@@ -326,7 +320,7 @@ def unmeasurable_headroom_gates() -> list[GateResult]:
     return gates.headroom_gates(
         [
             gates.HeadroomReading(
-                node=FLEET_SUBJECT,
+                node=gates.FLEET_SUBJECT,
                 resource=resource,
                 used=None,
                 limit=None,

@@ -103,7 +103,7 @@ def test_exactly_one_fleet_row_per_resource_survives_a_multi_step_run() -> None:
     for resource in (gates.HEADROOM_RTP_PORTS, gates.HEADROOM_NETWORK):
         rows = [r for r in results if (r.subject or "").endswith(f"/{resource}")]
         assert len(rows) == 1, (resource, [r.subject for r in rows])
-        assert rows[0].subject == f"{judge.FLEET_SUBJECT}/{resource}"
+        assert rows[0].subject == f"{gates.FLEET_SUBJECT}/{resource}"
         assert rows[0].status == gates.UNKNOWN
 
 

@@ -98,6 +98,12 @@ NODE_MEMORY_GATE = "node_memory"
 HEADROOM_GATE = "resource_headroom"
 RETURN_TO_BASELINE_GATE = "return_to_baseline"
 
+#: The subject a gate is filed under when it describes the whole fleet rather
+#: than one node. Used where nothing was sampled at all: the finding is that NO
+#: node reported, so naming one would be wrong, and leaving it blank prints an
+#: empty cell in a table where every other row identifies itself.
+FLEET_SUBJECT = "fleet"
+
 #: Gates whose ``value`` and ``threshold`` are FRACTIONS in 0..1 that a reader
 #: thinks of as percentages. Every other gate carries an absolute: the latency
 #: and SFU gates are milliseconds.
@@ -473,7 +479,9 @@ def sfu_quality_gate(baseline: dict[str, Any] | None) -> GateResult:
         )
     if quality in _DEGRADED_QUALITY:
         observed = (
-            f"no rtt reading: {unmeasured}" if unmeasured is not None else f"rtt {rtt}ms"
+            f"no rtt reading: {unmeasured}"
+            if unmeasured is not None
+            else f"rtt {rtt}ms"
         )
         return GateResult(
             gate=SFU_QUALITY_GATE,
@@ -871,6 +879,10 @@ def _resource_gates(
             GateResult(
                 gate=gate_id,
                 status=UNKNOWN,
+                # Fleet-scoped, because the finding is that no node reported at
+                # all. A blank subject left an empty cell beside five populated
+                # ones and read as a rendering fault rather than a scope.
+                subject=FLEET_SUBJECT,
                 detail=(
                     f"no node was sampled in the window, so no {what} ceiling "
                     "was demonstrated. A window with no samples is not a quiet "
@@ -1319,6 +1331,7 @@ __all__ = [
     "BASELINE_GOROUTINES",
     "BASELINE_HEAP",
     "ESTABLISHMENT_GATE",
+    "FLEET_SUBJECT",
     "FAIL",
     "HEADROOM_FILE_DESCRIPTORS",
     "HEADROOM_GATE",

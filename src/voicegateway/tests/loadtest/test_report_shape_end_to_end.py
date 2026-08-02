@@ -86,8 +86,20 @@ def exported(tmp_path_factory):
 
 
 def test_the_gate_table_is_materially_smaller(exported) -> None:
-    """A real three-step run rendered 48 rows, 33 of them UNKNOWN."""
-    assert len(exported["payload"]["gates"]) <= 8
+    """A real three-step run rendered 48 rows, 33 of them UNKNOWN.
+
+    Bounded by the SHAPE rather than by a number measured off one artifact. This
+    fixture has no node samples, so it produces far fewer rows than a scraped
+    run, and an absolute ceiling tuned to it would fail the moment somebody
+    imported a run that actually had metrics. What must hold either way is that
+    rows scale with tests and measured nodes, not with the cross product of
+    tests, sources and resources.
+    """
+    payload = exported["payload"]
+    tests = max(1, len(payload["tests"]))
+    # One establishment gate per test, node CPU and memory per measured node,
+    # file descriptors per measured node, and two fleet-wide exclusions.
+    assert len(payload["gates"]) <= tests * 6 + 2
 
 
 def test_every_unknown_names_an_attempt_or_a_scope_exclusion(exported) -> None:
