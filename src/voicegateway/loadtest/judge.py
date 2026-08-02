@@ -33,6 +33,7 @@ from voicegateway.loadtest.aggregation import (
     TestAggregate,
 )
 from voicegateway.middleware.node_samples_worker_middleware import (
+    any_source_publishes,
     reports_host_metrics,
 )
 
@@ -82,6 +83,63 @@ def _fd_reading(
         source=source,
         unmeasured_reason=reason,
     )
+
+
+#: What each headroom resource would be COMPUTED FROM. The criterion asks for
+#: headroom on network, RTP ports and system limits, and this says what each of
+#: those three needs before it can be answered.
+#:
+#: The names for RTP ports and network are the columns that WOULD carry them. No
+#: source publishes either pair: ``sockstat_udp_inuse`` is collected but the size
+#: of the configured media port range is not, so there is a numerator and no
+#: denominator, and nothing collects interface saturation at all.
+#:
+#: Declared here rather than as a list of excluded names, which is the whole
+#: point. A resource is excluded because nothing can measure it, not because
+#: somebody wrote it down, so wiring a source for these columns lifts the
+#: exclusion by itself and the resource returns to being a real per-node gate.
+HEADROOM_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+    gates.HEADROOM_FILE_DESCRIPTORS: (FD_USED_COLUMN, FD_LIMIT_COLUMN),
+    gates.HEADROOM_RTP_PORTS: ("sockstat_udp_inuse", "rtp_port_range_size"),
+    gates.HEADROOM_NETWORK: (
+        "network_throughput_bytes",
+        "network_link_capacity_bytes",
+    ),
+}
+
+
+#: The subject a fleet-wide gate is filed under. Not a node name: nothing
+#: measures these anywhere, so attributing the gap to one box would imply the
+#: answer could differ by box.
+FLEET_SUBJECT = "fleet"
+
+
+def excluded_headroom_resources() -> dict[str, str]:
+    """Headroom resources nothing in this system can measure, and why.
+
+    A scope EXCLUSION rather than a gate. Grading these per node per test told a
+    reader the same two facts eighteen times on a real run, above the table they
+    contracted for, while a gate row implies a measurement was attempted on that
+    node and failed. Nothing was attempted, and nothing could be.
+
+    Stating it once does NOT reduce what the report discloses, and the report is
+    responsible for making that true: an excluded resource must be at least as
+    visible as eighteen rows were, because removing them can move the verdict
+    off UNKNOWN and a headline that improves while the disclosure shrinks is the
+    one outcome this must not produce.
+    """
+    excluded: dict[str, str] = {}
+    for resource, columns in HEADROOM_REQUIREMENTS.items():
+        if any_source_publishes(*columns):
+            continue
+        missing = [c for c in columns if not any_source_publishes(c)]
+        excluded[resource] = (
+            f"no exporter in the scrape set publishes {' or '.join(missing)}, so "
+            f"{resource.replace('_', ' ')} headroom is outside what this system "
+            "measures on any node, in any run. It is not evaluated rather than "
+            "passing, and the acceptance criterion it belongs to is not covered."
+        )
+    return excluded
 
 
 def _reports_node_metrics(source: str | None) -> bool:
@@ -174,14 +232,7 @@ def judge_test(
         results.extend(gates.node_cpu_gates([unmeasured]))
         results.extend(gates.node_memory_gates([unmeasured]))
         target = node or subject
-        results.extend(
-            gates.headroom_gates(
-                [
-                    _fd_reading(target),
-                    *gates.unscraped_headroom_readings(target),
-                ]
-            )
-        )
+        results.extend(gates.headroom_gates([_fd_reading(target)]))
         return results
 
     # Filtered by what the SOURCE can publish, not by what this run produced.
@@ -217,17 +268,15 @@ def _headroom_gates_for(aggregate: TestAggregate) -> list[GateResult]:
             readings.append(
                 _fd_reading(reading.node, reading.source, reason=_NOT_ON_AGGREGATE)
             )
-        readings.extend(
-            gates.unscraped_headroom_readings(reading.node, source=reading.source)
-        )
+        # RTP ports and network are NOT emitted here. Nothing can measure
+        # either on any node, so a per-node row is the same non-fact repeated
+        # once per test per source. They are reported once, as scope exclusions,
+        # by excluded_headroom_resources.
     if not readings:
         # Nothing was scraped at all. Every resource is still reported, so an
         # unscraped run reads as three UNKNOWN gates rather than as a run where
         # file descriptors quietly went unjudged while the other two did not.
-        readings = [
-            _fd_reading("fleet", reason=_NO_SAMPLES),
-            *gates.unscraped_headroom_readings("fleet"),
-        ]
+        readings = [_fd_reading("fleet", reason=_NO_SAMPLES)]
     return gates.headroom_gates(readings)
 
 
@@ -247,7 +296,41 @@ def judge_run(
     for test in tests:
         name = str(test.get("name") or "test")
         out.extend(judge_test(test, aggregate=aggregates.get(name)))
+    # ONCE PER RUN, not once per node per test. Nothing measures these on any
+    # node, so eighteen identical rows on a three-step ramp said the same two
+    # things eighteen times, above the table the client contracted for.
+    #
+    # Still GATES rather than a note, because a gate is the only thing a written
+    # waiver can attach to. The checklist requires a threshold nobody funded to
+    # be recorded as waived, with a reason and by whom, and an exclusion with no
+    # gate has nothing to sign. They stay UNKNOWN until somebody does that, so
+    # the verdict does not improve on its own either.
+    out.extend(unmeasurable_headroom_gates())
     return out
+
+
+def unmeasurable_headroom_gates() -> list[GateResult]:
+    """One fleet-level gate per headroom resource nothing can measure.
+
+    Fleet-level because the fact is fleet-level: no exporter anywhere publishes
+    what these need, so naming a node would imply the answer could differ by
+    node. The subject is stable so a waiver can name it.
+    """
+    excluded = excluded_headroom_resources()
+    if not excluded:
+        return []
+    return gates.headroom_gates(
+        [
+            gates.HeadroomReading(
+                node=FLEET_SUBJECT,
+                resource=resource,
+                used=None,
+                limit=None,
+                unmeasured_reason=reason,
+            )
+            for resource, reason in sorted(excluded.items())
+        ]
+    )
 
 
 def verdict_for(results: list[GateResult]) -> str:
@@ -255,4 +338,10 @@ def verdict_for(results: list[GateResult]) -> str:
     return gates.verdict(results)
 
 
-__all__ = ["judge_run", "judge_test", "verdict_for"]
+__all__ = [
+    "excluded_headroom_resources",
+    "judge_run",
+    "judge_test",
+    "unmeasurable_headroom_gates",
+    "verdict_for",
+]

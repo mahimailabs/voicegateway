@@ -36,7 +36,10 @@ from voicegateway.loadtest.importer import (
     observations_for,
     plan_from_notes,
 )
-from voicegateway.loadtest.judge import judge_run
+from voicegateway.loadtest.judge import (
+    excluded_headroom_resources,
+    judge_run,
+)
 
 _cli = BaseCli()
 
@@ -625,6 +628,9 @@ def report(
         # long gone by the time somebody exports the report, and what the import
         # could not answer is a property of that import.
         limitations=limitations_from_notes(run.get("notes")),
+        # Derived from what nothing can measure, never from a list of names, so
+        # wiring an exporter for them lifts the exclusion by itself.
+        scope_exclusions=excluded_headroom_resources(),
     )
     out.mkdir(parents=True, exist_ok=True)
     json_path = out / f"{load_report_filename(run_id).removesuffix('.html')}.json"

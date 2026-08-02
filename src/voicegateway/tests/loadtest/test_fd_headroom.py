@@ -250,7 +250,9 @@ def test_an_aggregate_carrying_no_fd_readings_still_produces_the_gate() -> None:
             gates.NodeUtilisationReading(node="sfu-1", utilisation=0.4, samples=2)
         ],
     )
-    results = judge.judge_test(HEALTHY, aggregate=agg)
+    # judge_run, because RTP ports and network are emitted once per run rather
+    # than once per node per test. Every assertion below is unchanged.
+    results = judge.judge_run([HEALTHY], aggregates={HEALTHY["name"]: agg})
     resources = {
         r.subject.split("/")[-1] for r in results if r.subject and "/" in r.subject
     }

@@ -367,6 +367,27 @@ SERVICE_EXPORTERS: frozenset[str] = frozenset(
 )
 
 
+def any_source_publishes(*columns: str) -> bool:
+    """Whether ANY declared source is wired to populate every column named.
+
+    The question behind a scope exclusion. A headroom resource computed from
+    columns nothing publishes cannot be measured by this system on any node, in
+    any run, so reporting it per node per test says the same nothing many times.
+
+    Derived rather than listed, so the exclusion lifts by itself. Wire a source
+    for the columns and the resource stops being excluded and goes back to being
+    a real per-node gate, with no second place to remember to update.
+    """
+    return any(
+        all(column in columns_for(source) for column in columns) for source in SERIES
+    )
+
+
+def columns_for(source: str) -> frozenset[str]:
+    """Every ``node_samples`` column this source is wired to populate."""
+    return frozenset(entry.column for entry in SERIES.get(source, ()))
+
+
 def reports_host_metrics(source: str | None) -> bool | None:
     """Whether ``source`` can report NODE-WIDE facts. None when unknowable.
 
@@ -784,6 +805,8 @@ __all__ = [
     "HOST_EXPORTERS",
     "SERVICE_EXPORTERS",
     "TARGETS_ENV_VAR",
+    "any_source_publishes",
+    "columns_for",
     "reports_host_metrics",
     "NodeSamplesWorker",
     "ScrapeTarget",

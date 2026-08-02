@@ -1445,6 +1445,7 @@ def build_load_payload(
     capacity: dict[str, Any] | None = None,
     appendix: dict[str, list[dict[str, str]]] | None = None,
     limitations: list[str] | None = None,
+    scope_exclusions: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """The load-test report payload. The JSON export IS this; the HTML renders it.
 
@@ -1510,6 +1511,16 @@ def build_load_payload(
         # measured it this time". Printed at import and carried nowhere until
         # now, so the only person who ever saw them was whoever ran the import.
         "run_limitations": list(limitations or []),
+        # Parts of a contracted criterion this system cannot evaluate AT ALL.
+        # Distinct from not_measured, which is what the report structurally does
+        # not tell you, and from run_limitations, which is what these artifacts
+        # could not answer. An exclusion says the requirement is not covered.
+        #
+        # Carried top-level and rendered beside the verdict rather than in a
+        # footnote: removing eighteen UNKNOWN gate rows can move a verdict off
+        # UNKNOWN, and a headline that improves while the disclosure shrinks is
+        # the outcome that must not happen.
+        "scope_exclusions": dict(scope_exclusions or {}),
     }
 
 
@@ -1630,12 +1641,43 @@ def load_report_filename(run_id: Any) -> str:
 #: The stamp's own styling, appended to the shared sheet. Deliberately loud:
 #: this is the element that stops a fixture-built file being mistaken for a
 #: measurement. No url(), no font import, nothing to fetch.
+_LOAD_EXCLUSION_CSS = (
+    ".exclusions{border:2px solid #b45309;background:#fffbeb;padding:12px 16px;"
+    "margin:16px 0;border-radius:6px}"
+    ".exclusions h2{margin-top:0}"
+)
+
 _LOAD_REPORT_CSS = """
 .stamp{border:4px solid #b00020;background:#fff3f3;color:#7a0016;
 padding:16px 20px;margin:0 0 24px;border-radius:6px}
 .stamp strong{display:block;font-size:20px;letter-spacing:.08em}
 .stamp p{margin:8px 0 0;color:#7a0016}
 """
+
+
+def _render_scope_exclusions(payload: dict[str, Any]) -> str:
+    """Parts of the criterion this system cannot evaluate, stated once and high.
+
+    Directly under the verdict, because the verdict is exactly what they
+    qualify. These were eighteen UNKNOWN gate rows on a real run, and collapsing
+    them to one statement each is only honest while the statement is at least as
+    hard to miss as the rows were.
+    """
+    exclusions = payload.get("scope_exclusions") or {}
+    if not exclusions:
+        return ""
+    items = "".join(
+        f"<li><strong>{_esc(resource.replace('_', ' '))}</strong>: {_esc(reason)}</li>"
+        for resource, reason in sorted(exclusions.items())
+    )
+    return (
+        '<div class="exclusions"><h2>Not in scope for this report</h2>'
+        f"<p>The acceptance criterion asks for headroom on network, RTP ports "
+        f"and system limits. {len(exclusions)} of those three are outside what "
+        "this system measures, so the requirement is <strong>not fully "
+        "covered</strong> whatever the verdict above says.</p>"
+        f"<ul>{items}</ul></div>"
+    )
 
 
 def _render_run_identity(payload: dict[str, Any]) -> str:
@@ -1707,6 +1749,8 @@ def render_load_html(payload: dict[str, Any]) -> str:
             _render_run_identity(payload),
             # Above the gate table it summarises, and below the stamp.
             _render_verdict(payload),
+            # Immediately under the verdict, because that is what they qualify.
+            _render_scope_exclusions(payload),
             # THE ANSWER, THEN THE WORKING. The per-test table is the contracted
             # deliverable: concurrency, duration, establishment, peak CPU and
             # memory, failures by cause. It sat BELOW the gate detail, and on a
@@ -1731,7 +1775,8 @@ def render_load_html(payload: dict[str, Any]) -> str:
         '<html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>Load-test report {run_id}</title>"
-        f"<style>{_REPORT_CSS}{_LOAD_REPORT_CSS}</style></head>"
+        f"<style>{_REPORT_CSS}{_LOAD_REPORT_CSS}"
+        f"{_LOAD_EXCLUSION_CSS}</style></head>"
         f"<body>{body}</body></html>\n"
     )
 
