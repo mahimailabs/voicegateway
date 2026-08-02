@@ -42,10 +42,22 @@ Every wired entry has since been read off a running binary. **Nothing in
 map degrades is one plausible entry added from documentation.
 
 MEASURED against livekit-sip 1.10.1 and node_exporter, with a real inbound call
-placed so every counter was populated: all 22 ``livekit-sip`` entries and all 9
+placed so every counter was populated: all 22 ``livekit-sip`` entries and all 11
 ``node-exporter`` entries. Every one resolves, asserted per entry against a
 captured exposition and again in
 ``tests/integration/test_live_node_scrape.py`` against the running exporters.
+
+The last two ``node-exporter`` entries are its own ``process_open_fds`` /
+``process_max_fds``, read off a live exporter as 8 and 524287. They were left
+unwired for a while on the reasoning that an exporter's own handles say nothing
+about a service under test, which is true. What made that untenable is that the
+descriptor headroom gate asks every scraped source for the pair regardless, so
+omitting them did not remove the question, it only guaranteed the answer was
+UNKNOWN: seven of one real seven-step run's nine UNKNOWN rows were this exporter
+being asked a question nothing had been wired to answer. Wiring them resolves
+that without suppressing a gate for a metric the source could have produced.
+Note the same 524287 rlimit livekit-sip and livekit-server report on the host,
+which is the cross-check that this is a per-process ceiling.
 
 MEASURED against livekit-server 1.10.1, by authenticated scrape of its metrics
 port: all 11 ``livekit-server`` entries. The four ``livekit_*`` families and the
@@ -310,6 +322,20 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         # which at 500 concurrent is a likelier wall than CPU.
         _Series("node_sockstat_UDP_inuse", "sockstat_udp_inuse"),
         _Series("node_netstat_Udp_NoPorts", "udp_no_ports_total"),
+        # ---- this exporter's own process ------------------------------------
+        # Wired because the descriptor headroom gate asks every scraped source
+        # for this pair, and a gate that is asked but not fed produced seven of
+        # one real run's nine UNKNOWNs. The two coherent positions are gate and
+        # scrape, or neither; the state before this was the middle one.
+        #
+        # READ WHAT THIS IS. These are node_exporter's OWN file handles, not any
+        # service's. The subject on the resulting gate is
+        # ``<node>/node-exporter/file_descriptors`` and it means exactly that.
+        # It is not evidence about livekit-sip's headroom and must never be read
+        # as such: the services under test report their own pair, and those are
+        # the rows that answer the acceptance criterion.
+        _Series("process_open_fds", "process_open_fds"),
+        _Series("process_max_fds", "process_max_fds"),
     ),
 }
 
