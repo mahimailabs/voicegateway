@@ -191,6 +191,48 @@ class NodeSample(SQLModel, table=True):
     sip_rtp_packets_recv: int | None = Field(default=None, sa_type=BigInteger)
     sip_rtp_packets_send: int | None = Field(default=None, sa_type=BigInteger)
 
+    # ---- Redis, the shared state every SIP node depends on ------------------
+    # VERIFIED against a live oliver006/redis_exporter against redis:7, not
+    # inferred: every name below was read off its exposition before wiring.
+    #
+    # redis_up is the primary signal and the only one that answers "was Redis
+    # reachable at all". 0 means the exporter ran and could not reach Redis,
+    # which is a fact; NULL means nobody scraped, which is not.
+    redis_up: int | None = None
+    redis_rejected_connections_total: int | None = Field(
+        default=None, sa_type=BigInteger
+    )
+    redis_memory_used_bytes: int | None = Field(default=None, sa_type=BigInteger)
+    # A live exporter reports 0 here when no maxmemory is configured, which is
+    # NOT "no memory available": it is "no limit". Storing it raw and dividing
+    # would either divide by zero or read as total exhaustion, so the
+    # unbounded case is recorded separately, exactly as filefd_maximum is.
+    redis_memory_max_bytes: int | None = Field(default=None, sa_type=BigInteger)
+    # 1 unbounded, 0 a real limit, NULL unmeasured. Derived, not scraped.
+    redis_memory_max_unbounded: int | None = None
+    redis_blocked_clients: int | None = None
+    redis_evicted_keys_total: int | None = Field(default=None, sa_type=BigInteger)
+
+    # ---- health endpoint ----------------------------------------------------
+    # Not a Prometheus series. Written by the same sampling loop onto the same
+    # time axis, so a "sustained failure" gate has a window of samples to reason
+    # over exactly like every other criterion, at the cost of three columns
+    # rather than a parallel probe subsystem.
+    #
+    # 1 healthy (any 2xx), 0 unhealthy, NULL not probed. NULL is the answer when
+    # no health endpoint is configured, and it must never be read as 0: "nobody
+    # asked" and "it answered badly" are different facts.
+    health_ok: int | None = None
+    # The HTTP status when a response arrived at all, NULL when none did. This
+    # is what separates "returned 503" from "refused the connection".
+    # livekit-sip answers 200 OK, 429 UnderLoad or 503 Unavailable;
+    # livekit-server answers 200 or 406.
+    health_status_code: int | None = None
+    # 1 when the failure was a deadline rather than a refusal. Both leave
+    # health_status_code NULL, and they are different problems: a refusal means
+    # nothing is listening, a timeout means something is listening and stuck.
+    health_timed_out: int | None = None
+
     # ---- restart and attribution ------------------------------------------
     # A process that restarted mid-run invalidates every counter rate across
     # the restart. start_time is what makes that visible rather than a mystery

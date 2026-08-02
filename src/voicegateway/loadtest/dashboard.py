@@ -18,10 +18,15 @@ that says so, in the same grid position a graph would have occupied. It takes up
 the same space, it is impossible to miss, and it cannot be mistaken for a quiet
 hour on a healthy fleet.
 
-Five of the panels an operator would want are in that state today: per-core CPU,
-RTP port usage, ENA packet-per-second allowances, conntrack occupancy, and Redis
-health. Nothing scrapes any of them. Listing them as unmeasured is more useful
-than omitting them, because an absent panel reads as a question nobody asked.
+Four of the panels an operator would want are in that state today: per-core CPU,
+RTP port usage, ENA packet-per-second allowances and conntrack occupancy.
+Nothing scrapes any of them. Listing them as unmeasured is more useful than
+omitting them, because an absent panel reads as a question nobody asked.
+
+Redis was the fifth and no longer is. redis_exporter is a scrape source, so
+reachability, memory against its limit and blocked clients are measured panels
+and the acceptance criterion has an answer instead of a note saying nobody
+looked.
 
 Counter resets
 --------------
@@ -243,14 +248,46 @@ PANELS: tuple[Panel, ...] = (
         ),
     ),
     Panel(
-        title="Redis health",
+        title="Redis reachability",
         series=("redis_up",),
-        description="Redis availability and latency behind the SFU.",
-        absent_note=(
-            "Not collected. Nothing scrapes Redis, so the sustained-Redis-"
-            "failure half of the acceptance criteria is unevaluated. It is not "
-            "passing; it is unmeasured."
+        description=(
+            "1 when the exporter reached Redis on that scrape, 0 when it ran "
+            "and could not. A gap is neither: it means nobody scraped, and the "
+            "line breaks rather than dropping to zero."
         ),
+        sql=(
+            "SELECT at_ms AS time, node, redis_up AS up "
+            f"FROM {TABLE} ORDER BY at_ms"
+        ),
+        unit="short",
+    ),
+    Panel(
+        title="Redis memory against its limit",
+        series=("redis_memory_used_bytes", "redis_memory_max_bytes"),
+        description=(
+            "Used over the configured maximum. Redis with no maxmemory reports "
+            "a maximum of 0, which is no limit rather than no memory, so those "
+            "rows are excluded here instead of rendering as full."
+        ),
+        sql=(
+            "SELECT at_ms AS time, node, "
+            "1.0 * redis_memory_used_bytes / NULLIF(redis_memory_max_bytes, 0) "
+            f"AS memory_used FROM {TABLE} ORDER BY at_ms"
+        ),
+        unit="percentunit",
+    ),
+    Panel(
+        title="Redis blocked clients",
+        series=("redis_blocked_clients",),
+        description=(
+            "Clients waiting on a blocking command right now. Rises before a "
+            "sustained failure rather than after it."
+        ),
+        sql=(
+            "SELECT at_ms AS time, node, redis_blocked_clients AS blocked "
+            f"FROM {TABLE} ORDER BY at_ms"
+        ),
+        unit="short",
     ),
 )
 

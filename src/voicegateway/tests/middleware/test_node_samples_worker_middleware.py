@@ -22,6 +22,7 @@ from voicegateway.middleware.node_samples_worker_middleware import (
     SOURCE_LIVEKIT_SERVER,
     SOURCE_LIVEKIT_SIP,
     SOURCE_NODE_EXPORTER,
+    SOURCE_REDIS_EXPORTER,
     TARGETS_ENV_VAR,
     NodeSamplesWorker,
     ScrapeTarget,
@@ -517,6 +518,10 @@ def test_every_mapped_series_names_a_real_value_column() -> None:
             SOURCE_LIVEKIT_SERVER,
             SOURCE_LIVEKIT_SIP,
             SOURCE_NODE_EXPORTER,
+            # Adding a name here is the point of this assertion, not a way
+            # around it: a new source has to be a deliberate edit rather than
+            # something that appears because a map grew.
+            SOURCE_REDIS_EXPORTER,
         }
         for entry in series:
             assert entry.column in repo.VALUE_COLUMNS, entry

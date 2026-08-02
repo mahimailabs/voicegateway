@@ -199,7 +199,15 @@ def test_the_verdict_is_still_not_pass_and_here_is_why(acceptance) -> None:
     payload = acceptance["payload"]
     assert payload["verdict"]["status"] == gates.UNKNOWN
     unknown = [g for g in payload["gates"] if g["status"] == gates.UNKNOWN]
-    assert {g["subject"].split("/")[-1] for g in unknown} == {"rtp_ports", "network"}
+    # Four now. rtp_ports and network are unmeasurable by anything; redis and
+    # health_endpoint are unconfigured on this fixture. Different reasons, same
+    # honest status, and none of them is a pass.
+    assert {g["subject"].split("/")[-1] for g in unknown} == {
+        "rtp_ports",
+        "network",
+        "redis",
+        "health_endpoint",
+    }
     # File descriptors ARE measurable and pass here, which is what makes the
     # other two stand out as the gap rather than as more of the same.
     [fds] = [
@@ -381,7 +389,11 @@ def test_a_capacity_figure_requires_breaching_the_ceiling(
 
 @pytest.fixture(scope="module")
 def waived(tmp_path_factory):
-    """The acceptance run with the two unscrapeable resources waived.
+    """The acceptance run with every unmeasured criterion declared.
+
+    Four now, not two. This still asserts what it always asserted, that a fully
+    satisfied run reaches a clean verdict; it just declares two dependencies
+    that did not exist when it was written.
 
     The subject is fleet-level because the gate is: nothing measures either on
     any node, so they are emitted once per run rather than once per node per
@@ -401,6 +413,21 @@ def waived(tmp_path_factory):
                     "no network-headroom exporter was funded for this run, "
                     "agreed in writing before test day"
                 ),
+                # Declared, not silent. The Redis and health-check criteria were
+                # added after this fixture was written, and an unconfigured
+                # dependency is deliberately UNKNOWN rather than a pass: a run
+                # that never looked at Redis must not be indistinguishable from
+                # one that checked and found it healthy. A single-node
+                # deployment genuinely has no Redis, and the honest way to say
+                # so is a recorded waiver a reviewer can read, not silence.
+                "sustained_health/fleet/redis": (
+                    "single-node deployment with no Redis, declared before test "
+                    "day rather than left unevaluated"
+                ),
+                "sustained_health/fleet/health_endpoint": (
+                    "no health endpoint configured on this deployment, declared "
+                    "before test day rather than left unevaluated"
+                ),
             }
         )
     )
@@ -416,10 +443,13 @@ def test_a_waiver_records_the_reason_rather_than_hiding_the_gate(waived) -> None
     """The checklist's requirement: waived in writing, never a silent pass."""
     payload = waived["payload"]
     waived_gates = [g for g in payload["gates"] if g["status"] == gates.WAIVED]
-    assert len(waived_gates) == 2
+    assert len(waived_gates) == 4
     for gate in waived_gates:
-        assert "agreed in writing" in gate["detail"]
+        # The property, rather than one phrase: a waiver carries a human reason
+        # and that reason is visible in the rendered detail. A waiver a reviewer
+        # cannot read is the silent pass this exists to prevent.
         assert gate["waiver_reason"]
+        assert gate["waiver_reason"] in gate["detail"]
 
 
 def test_a_waiver_does_not_become_a_pass(waived) -> None:

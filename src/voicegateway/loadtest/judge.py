@@ -36,6 +36,7 @@ from voicegateway.loadtest.aggregation import (
 from voicegateway.middleware.node_samples_worker_middleware import (
     any_source_publishes,
     reports_host_metrics,
+    reports_process_metrics,
 )
 
 # The FD pair is the one headroom resource anything scrapes. RTP ports and
@@ -157,6 +158,22 @@ def _reports_node_metrics(source: str | None) -> bool:
     return reports_host_metrics(source) is not False
 
 
+def _speaks_for_process_fds(source: str | None) -> bool:
+    """Whether a process-descriptor gate for this source means anything.
+
+    Narrow on purpose. Only a source that is DEFINITELY not an authority is
+    dropped, which today is the Redis exporter and nothing else.
+
+    node_exporter is deliberately NOT dropped. It publishes the pair, it is now
+    wired for it, and an absent reading there is a real gap rather than a
+    category error. That decision is pinned by
+    ``test_gate_only_where_measurable.py::test_node_exporter_keeps_its_file_descriptor_gate``
+    and nothing here disturbs it: reports_process_metrics answers None for a
+    host exporter, and only an explicit False suppresses.
+    """
+    return reports_process_metrics(source) is not False
+
+
 def _graded(readings, gate_fn):
     """Grade the readings whose SOURCE can produce this metric.
 
@@ -236,6 +253,74 @@ def judge_test(
     results.extend(_graded(aggregate.cpu_readings, gates.node_cpu_gates))
     results.extend(_graded(aggregate.memory_readings, gates.node_memory_gates))
     results.extend(_headroom_gates_for(aggregate))
+    results.extend(_health_gates_for(aggregate))
+    return results
+
+
+def _health_gates_for(aggregate: TestAggregate) -> list[GateResult]:
+    """Sustained Redis and health-endpoint failures, per node per source.
+
+    ONLY what was actually sampled. The "nothing was configured" case is a fact
+    about the RUN, not about each step, and lives in
+    :func:`unconfigured_dependency_gates` so it is stated once. Emitting it here
+    put fourteen identical rows in a seven-step report, which is the same defect
+    that rtp_ports and network already had fixed.
+    """
+    return list(gates.sustained_health_gates(aggregate.health_readings))
+
+
+def unconfigured_dependency_gates(seen: set[str]) -> list[GateResult]:
+    """One row per dependency criterion nobody wired, once per run.
+
+    ``seen`` holds BARE dependency constants (:data:`gates.HEALTH_SUBJECT_REDIS`
+    and :data:`gates.HEALTH_SUBJECT_ENDPOINT`) as they appear on a
+    ``HealthSeriesReading``, NOT rendered gate subjects like
+    ``sip-1/redis-exporter/redis``. Passing the latter silently matches nothing
+    and every dependency reads as unconfigured even when it was measured.
+
+    NOT CONFIGURED IS NOT A PASS, and it is not silence either. The criterion
+    was agreed, so a report that omits it reads as one nobody asked about, and a
+    run that never looked at Redis must never be indistinguishable from one that
+    checked and found it healthy.
+
+    The reason names BOTH ways out, because an operator reading UNKNOWN needs to
+    know which they are looking at: wire the source, or declare it absent with a
+    written waiver a reviewer can read. A single-node deployment genuinely has
+    no Redis, and saying so once in config is a true statement; silence is a
+    vacuous one.
+    """
+    results: list[GateResult] = []
+    for subject, what, wire in (
+        (
+            gates.HEALTH_SUBJECT_REDIS,
+            "no scrape target uses the redis-exporter source",
+            "add a redis-exporter scrape target",
+        ),
+        (
+            gates.HEALTH_SUBJECT_ENDPOINT,
+            "no scrape target declares a health endpoint",
+            "attach a health endpoint to a target with the |health= suffix",
+        ),
+    ):
+        if subject in seen:
+            continue
+        results.append(
+            gates.sustained_health_gate(
+                gates.HealthSeriesReading(
+                    node=gates.FLEET_SUBJECT,
+                    subject=subject,
+                    unmeasured_reason=(
+                        f"{what}, so this criterion was not evaluated. It is "
+                        "NOT passing: nothing was asked and nothing answered. "
+                        "There are exactly two ways out and silence is neither: "
+                        f"WIRE it ({wire}), or DECLARE it absent by waiving this "
+                        "gate in writing with a reason. A waiver is recorded and "
+                        "a reviewer reads it; an unevaluated criterion just "
+                        "looks like one nobody agreed to."
+                    ),
+                )
+            )
+        )
     return results
 
 
@@ -252,9 +337,27 @@ def _headroom_gates_for(aggregate: TestAggregate) -> list[GateResult]:
     # Real file-descriptor readings, measured during correlation. A node whose
     # window carried no usable pair arrives here already unmeasured WITH its
     # reason, which the gate turns into UNKNOWN rather than a pass.
-    readings.extend(aggregate.fd_readings)
+    #
+    # Authority first, and for a DEPENDENCY exporter it is unconditional. A
+    # number from redis-exporter's own process is not weak evidence about the
+    # fleet, it is evidence about a monitoring sidecar, and grading it would put
+    # a sidecar's descriptor headroom in a client report as if it answered the
+    # criterion. "Never discard a measurement" protects readings that are about
+    # the subject; it does not promote one that never was.
+    #
+    # A source merely UNKNOWN to the classifier keeps the old rule: a real
+    # reading is graded whatever took it, because there the absence of an answer
+    # is ignorance rather than a category error.
+    readings.extend(
+        r
+        for r in aggregate.fd_readings
+        if _speaks_for_process_fds(r.source)
+        or (r.used is not None and reports_process_metrics(r.source) is None)
+    )
     measured = {(r.node, r.source) for r in aggregate.fd_readings}
     for reading in aggregate.cpu_readings:
+        if not _speaks_for_process_fds(reading.source):
+            continue
         # A node the aggregate judged for CPU but carries no FD reading for
         # would otherwise lose the file-descriptor gate while keeping the other
         # two, which reads as a resource nobody had to satisfy rather than one
@@ -307,6 +410,18 @@ def judge_run(
     # gate has nothing to sign. They stay UNKNOWN until somebody does that, so
     # the verdict does not improve on its own either.
     out.extend(unmeasurable_headroom_gates())
+    # ONCE PER RUN, for the same reason. A dependency nobody wired is a fact
+    # about the deployment, not about step four of seven.
+    out.extend(
+        unconfigured_dependency_gates(
+            {
+                r.subject
+                for agg in aggregates.values()
+                if agg is not None
+                for r in agg.health_readings
+            }
+        )
+    )
     return out
 
 

@@ -70,6 +70,27 @@ unauthenticated request gets a 401 rather than an exposition. Observed:
 524287 livekit-sip reports on the same host, which is the cross-check that these
 are the per-process ceiling rather than anything host-wide.
 
+MEASURED against a live oliver006/redis_exporter scraping redis:7, by local
+scrape rather than from documentation: all 6 ``redis-exporter`` entries.
+Observed: ``redis_up`` 1, ``redis_rejected_connections_total`` 0,
+``redis_memory_used_bytes`` 1194336, ``redis_memory_max_bytes`` 0,
+``redis_blocked_clients`` 0, ``redis_evicted_keys_total`` 0. That exporter
+publishes 302 ``redis_*`` series and six are wired, because every column is one
+somebody has to keep honest; these six are what the acceptance criterion asks
+for and nothing more.
+
+``redis_memory_max_bytes`` 0 is "no maxmemory configured", NOT "no memory".
+``_mark_unbounded_redis_memory`` records that as a separate marker so a ratio is
+never taken against a zero denominator, exactly as the host descriptor ceiling
+is handled.
+
+The same scrape confirms what redis_exporter is NOT an authority for: zero
+``node_*`` series and zero ``livekit_*`` series, so it cannot report node-wide
+CPU or memory. It does publish its own ``process_open_fds`` 8 against
+``process_max_fds`` 1048576, and those are deliberately unwired: they are a
+monitoring sidecar's file handles and say nothing about any service the
+criterion covers. See :data:`DEPENDENCY_EXPORTERS`.
+
 DELIBERATELY UNWIRED, so their columns store NULL rather than a wrong name:
 ``livekit_session_start_time_ms_*``, ``livekit_track_published_total``,
 ``livekit_track_subscribed_total`` and ``psrpc_stream_count``. These are the
@@ -132,10 +153,12 @@ _DEFAULT_MAX_AGE_SECONDS: Final[float] = 7 * 24 * 3600.0
 SOURCE_LIVEKIT_SERVER: Final[str] = "livekit-server"
 SOURCE_LIVEKIT_SIP: Final[str] = "livekit-sip"
 SOURCE_NODE_EXPORTER: Final[str] = "node-exporter"
+SOURCE_REDIS_EXPORTER: Final[str] = "redis-exporter"
 SOURCES: Final[tuple[str, ...]] = (
     SOURCE_LIVEKIT_SERVER,
     SOURCE_LIVEKIT_SIP,
     SOURCE_NODE_EXPORTER,
+    SOURCE_REDIS_EXPORTER,
 )
 
 # Scrape outcomes, stored verbatim in ``node_samples.outcome``.
@@ -176,6 +199,16 @@ class ScrapeTarget:
     source: str
     project: str = node_samples.DEFAULT_PROJECT
     auth: tuple[str, str] | None = field(default=None, repr=False)
+    #: Optional health endpoint, probed on the same tick as the metrics scrape
+    #: so its result lands on the same time axis. None means no endpoint is
+    #: configured, which is recorded as NULL and NEVER as a failure: "nobody
+    #: asked" and "it answered badly" are different facts.
+    health_url: str | None = None
+    #: Credentials for the health endpoint, split out of its URL exactly as
+    #: :attr:`auth` is and for the same reason: httpx logs the request line at
+    #: INFO, so userinfo left in the URL is written to the log on every tick.
+    #: repr=False so a rendered target cannot leak it either.
+    health_auth: tuple[str, str] | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -337,6 +370,30 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         _Series("process_open_fds", "process_open_fds"),
         _Series("process_max_fds", "process_max_fds"),
     ),
+    SOURCE_REDIS_EXPORTER: (
+        # Redis is shared state every SIP node depends on, and the acceptance
+        # criterion asks whether it stayed healthy for the whole window.
+        #
+        # MEASURED against a live oliver006/redis_exporter scraping redis:7.
+        # The smallest set that answers the criterion, not everything the
+        # exporter offers: it publishes 302 redis_* series and each one wired
+        # here is one more column somebody has to keep honest.
+        #
+        # redis_up is the primary signal: 0 means the exporter ran and could
+        # not reach Redis, which is the outage itself.
+        _Series("redis_up", "redis_up"),
+        # Connections Redis turned away. Cumulative, so read as a rate.
+        _Series("redis_rejected_connections_total", "redis_rejected_connections_total"),
+        # Memory against any configured ceiling. A live exporter reads 0 for
+        # the maximum when no maxmemory is set, which is "no limit" and NOT
+        # "no memory": _mark_unbounded_redis_memory keeps those apart.
+        _Series("redis_memory_used_bytes", "redis_memory_used_bytes"),
+        _Series("redis_memory_max_bytes", "redis_memory_max_bytes"),
+        # Both indicate a Redis under pressure rather than one that is down,
+        # which is exactly the state that precedes a sustained failure.
+        _Series("redis_blocked_clients", "redis_blocked_clients"),
+        _Series("redis_evicted_keys_total", "redis_evicted_keys_total"),
+    ),
 }
 
 
@@ -352,8 +409,30 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
 # kernel's "no limit", and the last 1024 counts are not a distinction anything
 # can act on.
 FILEFD_UNBOUNDED_THRESHOLD: Final[float] = float(2**63 - 1024)
+_REDIS_MAX_MEMORY_COLUMN: Final[str] = "redis_memory_max_bytes"
+_REDIS_MAX_MEMORY_UNBOUNDED_COLUMN: Final[str] = "redis_memory_max_unbounded"
 _FILEFD_MAXIMUM_COLUMN: Final[str] = "filefd_maximum"
 _FILEFD_UNBOUNDED_COLUMN: Final[str] = "filefd_maximum_unbounded"
+
+
+def _mark_unbounded_redis_memory(values: dict[str, float | None]) -> None:
+    """Record whether Redis has a memory ceiling at all.
+
+    A live redis_exporter reports ``redis_memory_max_bytes`` 0 when Redis has no
+    ``maxmemory`` configured. 0 there means "no limit", and it is the one value
+    that must never be read as a ratio denominator: used/0 is either a crash or,
+    once guarded, a number that reads as total exhaustion on the one chart an
+    operator checks during an incident.
+
+    Three states, kept apart exactly as the host descriptor ceiling is. 1 says
+    unbounded, so memory headroom cannot run out against a configured limit. 0
+    says a real ceiling was reported. Leaving the key out stores NULL, which
+    says nobody measured.
+    """
+    maximum = values.get(_REDIS_MAX_MEMORY_COLUMN)
+    if maximum is None:
+        return
+    values[_REDIS_MAX_MEMORY_UNBOUNDED_COLUMN] = 1.0 if maximum <= 0 else 0.0
 
 
 def _mark_unbounded_filefd(values: dict[str, float | None]) -> None:
@@ -391,6 +470,19 @@ HOST_EXPORTERS: frozenset[str] = frozenset({SOURCE_NODE_EXPORTER})
 SERVICE_EXPORTERS: frozenset[str] = frozenset(
     {SOURCE_LIVEKIT_SERVER, SOURCE_LIVEKIT_SIP}
 )
+
+#: Sources that report on a DEPENDENCY rather than on the fleet under test.
+#: redis_exporter speaks for Redis and for nothing else. It is deliberately in
+#: neither set above: it is not a host exporter, and it is not one of the
+#: services whose descriptor headroom the acceptance criterion is about.
+#:
+#: THE TRAP THIS CLOSES. redis_exporter publishes its own process_open_fds and
+#: process_max_fds, verified live at 8 against 1048576. Wiring those, or
+#: letting reports_process_metrics answer True for it, would recreate in a new
+#: source exactly the category error two commits were just spent removing: a
+#: gate row asserting a monitoring agent's own file handles as if they were a
+#: service's headroom.
+DEPENDENCY_EXPORTERS: frozenset[str] = frozenset({SOURCE_REDIS_EXPORTER})
 
 
 def any_source_publishes(*columns: str) -> bool:
@@ -441,6 +533,43 @@ def reports_host_metrics(source: str | None) -> bool | None:
         return True
     if source in SERVICE_EXPORTERS:
         return False
+    if source in DEPENDENCY_EXPORTERS:
+        # VERIFIED BY SCRAPE: a live redis_exporter publishes zero node_*
+        # series. It speaks for Redis, not for the box Redis runs on.
+        return False
+    return None
+
+
+def reports_process_metrics(source: str | None) -> bool | None:
+    """Whether ``source`` speaks for a SERVICE UNDER TEST's own process.
+
+    Deliberately three-valued, and the middle value is the point.
+
+    True for the services themselves: process_open_fds against process_max_fds
+    is one process's rlimit headroom, and only livekit-sip and livekit-server
+    can make that number a statement about the fleet under test.
+
+    False for a DEPENDENCY exporter. redis_exporter publishes its own pair
+    (verified live at 8 against 1048576) and is capable of the measurement, but
+    its file handles say nothing about anything the acceptance criterion covers.
+    Grading it would put a row in a client report asserting a monitoring
+    sidecar's descriptor headroom.
+
+    None for a host exporter, which is NOT the same as False and must not
+    become it. node_exporter is wired for the pair and reports it, so its gate
+    is real and is pinned by
+    ``test_gate_only_where_measurable.py::test_node_exporter_keeps_its_file_descriptor_gate``.
+    Answering False here would suppress a gate for a metric that source does
+    produce, which is the defect two earlier commits exist to prevent.
+
+    None for an undeclared source, which is never suppressed.
+    """
+    if source is None:
+        return None
+    if source in SERVICE_EXPORTERS:
+        return True
+    if source in DEPENDENCY_EXPORTERS:
+        return False
     return None
 
 
@@ -486,6 +615,13 @@ validate_series_map(SERIES)
 TargetProvider = Callable[[], Awaitable[Sequence[ScrapeTarget]]]
 
 
+#: Separator that attaches an optional health endpoint to a target entry:
+#: ``livekit-sip:sip-1=http://sip-1:8082/metrics|health=http://sip-1:8081/``.
+#: A separate suffix rather than a second environment variable, so a target and
+#: its health endpoint cannot drift apart in configuration.
+HEALTH_SUFFIX: Final[str] = "|health="
+
+
 def targets_from_env(
     environ: Mapping[str, str] | None = None,
 ) -> list[ScrapeTarget]:
@@ -521,9 +657,28 @@ def targets_from_env(
                 ", ".join(SOURCES),
             )
             continue
-        clean, auth = split_userinfo(url.strip())
+        metrics_url, _, health = url.strip().partition(HEALTH_SUFFIX)
+        if not metrics_url.strip():
+            logger.warning(
+                "%s: ignoring %r; no metrics url before %r",
+                TARGETS_ENV_VAR,
+                shown,
+                HEALTH_SUFFIX,
+            )
+            continue
+        clean, auth = split_userinfo(metrics_url.strip())
+        health_clean, health_auth = (
+            split_userinfo(health.strip()) if health.strip() else (None, None)
+        )
         targets.append(
-            ScrapeTarget(node=node.strip(), url=clean, source=source, auth=auth)
+            ScrapeTarget(
+                node=node.strip(),
+                url=clean,
+                source=source,
+                auth=auth,
+                health_url=health_clean,
+                health_auth=health_auth,
+            )
         )
     return targets
 
@@ -703,15 +858,74 @@ class NodeSamplesWorker(AsyncWorker):
         )
         return written
 
+    async def _probe_health(
+        self, client: httpx.AsyncClient, target: ScrapeTarget
+    ) -> dict[str, float | None]:
+        """Probe the target's health endpoint, if it has one.
+
+        Returns the three health columns, or an EMPTY dict when no endpoint is
+        configured. Empty means the columns stay NULL, and NULL means nobody
+        asked. Writing 0 there would report a service as failing its health
+        check because its operator never configured one.
+
+        Any 2xx is healthy. livekit-sip answers 200 OK, 429 UnderLoad or 503
+        Unavailable; livekit-server answers 200 or 406. A 429 counts as
+        unhealthy on purpose: a node shedding load is a node not serving
+        callers. The status is recorded alongside so the report can say WHICH,
+        because 429 and 503 are different problems and so is no answer at all.
+
+        Never raises. A probe failure is a recorded fact, exactly like a failed
+        scrape.
+        """
+        if not target.health_url:
+            return {}
+        try:
+            response = await asyncio.wait_for(
+                client.get(target.health_url, auth=target.health_auth),
+                timeout=self._scrape_timeout,
+            )
+        except (TimeoutError, httpx.TimeoutException):
+            # Something is listening and stuck, which is not the same as
+            # nothing listening, so the two are recorded apart.
+            return {"health_ok": 0.0, "health_timed_out": 1.0}
+        except httpx.HTTPError:
+            # Connection refused, DNS failure, TLS failure. No response at all,
+            # so no status code exists to record; the column stays NULL rather
+            # than being filled with a plausible-looking zero.
+            return {"health_ok": 0.0, "health_timed_out": 0.0}
+        except Exception:
+            logger.exception(
+                "NodeSamplesWorker: unexpected error probing health for %s (%s)",
+                redact_url(target.health_url),
+                target.node,
+            )
+            return {"health_ok": 0.0, "health_timed_out": 0.0}
+        healthy = 200 <= response.status_code < 300
+        return {
+            "health_ok": 1.0 if healthy else 0.0,
+            "health_status_code": float(response.status_code),
+            "health_timed_out": 0.0,
+        }
+
     async def _scrape(
         self, client: httpx.AsyncClient, target: ScrapeTarget, at_ms: int
     ) -> node_samples.NodeSampleInput:
         """Scrape one target. Never raises: a failure becomes a row that says so."""
+        # Concurrent, not sequential. Both already carry their own deadline, so
+        # running them one after the other made a target that is entirely dead
+        # cost TWO timeouts, and a tick's worst case the sum rather than the max.
+        fetch = asyncio.wait_for(
+            self._fetch(client, target.url, target.auth),
+            timeout=self._scrape_timeout,
+        )
+        probe = self._probe_health(client, target)
+        gathered = asyncio.gather(fetch, probe, return_exceptions=True)
+        fetched, health_result = await gathered
+        health = health_result if isinstance(health_result, dict) else {}
         try:
-            body, outcome = await asyncio.wait_for(
-                self._fetch(client, target.url, target.auth),
-                timeout=self._scrape_timeout,
-            )
+            if isinstance(fetched, BaseException):
+                raise fetched
+            body, outcome = fetched
         except (TimeoutError, httpx.TimeoutException):
             # The outer wait_for is not redundant with httpx's timeouts: httpx
             # applies a READ timeout per read operation, so a target dribbling
@@ -741,6 +955,10 @@ class NodeSamplesWorker(AsyncWorker):
                 # NULL, not 0: no exposition was read, so nothing is known about
                 # how many series it would have carried.
                 series_found=None,
+                # The health probe is independent of the metrics scrape, so a
+                # target whose exposition is unreachable can still have a
+                # working health endpoint, and that is worth recording.
+                values=dict(health),
             )
 
         samples = parse_exposition(body)
@@ -752,6 +970,7 @@ class NodeSamplesWorker(AsyncWorker):
                 outcome=OUTCOME_UNPARSEABLE,
                 project=target.project,
                 series_found=None,
+                values=dict(health),
             )
 
         values: dict[str, float | None] = {}
@@ -766,6 +985,10 @@ class NodeSamplesWorker(AsyncWorker):
             values[series.column] = value
             found += 1
         _mark_unbounded_filefd(values)
+        _mark_unbounded_redis_memory(values)
+        # Merged AFTER `found` is counted. The probe is not part of the
+        # exposition, and series_found answers what the metrics target exposed.
+        values.update(health)
         return node_samples.NodeSampleInput(
             node=target.node,
             source=target.source,
@@ -833,7 +1056,10 @@ __all__ = [
     "TARGETS_ENV_VAR",
     "any_source_publishes",
     "columns_for",
+    "DEPENDENCY_EXPORTERS",
+    "SOURCE_REDIS_EXPORTER",
     "reports_host_metrics",
+    "reports_process_metrics",
     "NodeSamplesWorker",
     "ScrapeTarget",
     "TargetProvider",

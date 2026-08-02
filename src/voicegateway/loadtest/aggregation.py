@@ -50,9 +50,11 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from voicegateway.livekit_diag import gates
 from voicegateway.livekit_diag.gates import (
     MIN_PERCENTILE_SAMPLES,
     HeadroomReading,
+    HealthSeriesReading,
     NodeUtilisationReading,
 )
 from voicegateway.repository.node_correlation_repository import (
@@ -83,6 +85,8 @@ MEMORY_TOTAL_COLUMN = "memory_total_bytes"
 # unbounded and does not fit a 64-bit column, while this pair reads a real
 # 524287. The limit a service actually hits is its own, and the host figure
 # cannot produce a ratio at all.
+REDIS_UP_COLUMN = "redis_up"
+HEALTH_OK_COLUMN = "health_ok"
 FD_USED_COLUMN = "process_open_fds"
 FD_LIMIT_COLUMN = "process_max_fds"
 
@@ -106,6 +110,10 @@ class TestAggregate:
     node_samples_in_window: int
     cpu_readings: list[NodeUtilisationReading] = field(default_factory=list)
     memory_readings: list[NodeUtilisationReading] = field(default_factory=list)
+    # Redis reachability and health-endpoint results as ORDERED sample series,
+    # one per node per source. Ordered because the criterion is about a RUN of
+    # consecutive failures, which a peak or an average cannot express.
+    health_readings: list[HealthSeriesReading] = field(default_factory=list)
     # File-descriptor headroom per node, already in the shape the gate judges.
     # Carried here rather than rebuilt in the judge so the measurement lives in
     # one place and the judge stays a thing that only decides.
@@ -236,6 +244,49 @@ async def _memory_reading(
     )
 
 
+async def _health_readings(
+    db: AsyncSession, *, node: str, source: str, window: NodeWindow, limit: int
+) -> list[HealthSeriesReading]:
+    """Redis and health-endpoint sample series for one node and source.
+
+    Ordered by time, because "three consecutive failures" is a statement about
+    sequence. A row whose column is NULL contributes None rather than being
+    dropped: dropping it would splice two failures either side of an unsampled
+    tick into a run that was never observed.
+
+    Returns an empty list when the source produced no rows carrying the column
+    at all, which the judge turns into an UNKNOWN naming what was not
+    configured.
+    """
+    rows = await list_samples(
+        db,
+        node=node,
+        source=source,
+        since_ms=window.start_ms,
+        until_ms=window.end_ms,
+        limit=limit,
+    )
+    out: list[HealthSeriesReading] = []
+    for column, subject in (
+        (REDIS_UP_COLUMN, gates.HEALTH_SUBJECT_REDIS),
+        (HEALTH_OK_COLUMN, gates.HEALTH_SUBJECT_ENDPOINT),
+    ):
+        values = tuple(getattr(row, column) for row in rows)
+        if all(v is None for v in values):
+            continue
+        codes = (
+            tuple(row.health_status_code for row in rows)
+            if column == HEALTH_OK_COLUMN
+            else ()
+        )
+        out.append(
+            HealthSeriesReading(
+                node=node, source=source, subject=subject, samples=values, codes=codes
+            )
+        )
+    return out
+
+
 async def _fd_reading(
     db: AsyncSession, *, node: str, source: str, window: NodeWindow, limit: int
 ) -> HeadroomReading:
@@ -316,6 +367,7 @@ async def aggregate_test_window(
     cpu: list[NodeUtilisationReading] = []
     memory: list[NodeUtilisationReading] = []
     fds: list[HeadroomReading] = []
+    health: list[HealthSeriesReading] = []
     for target in targets:
         cpu.append(
             await _cpu_reading(
@@ -332,6 +384,11 @@ async def aggregate_test_window(
                 db, node=target.node, source=target.source, window=window, limit=limit
             )
         )
+        health.extend(
+            await _health_readings(
+                db, node=target.node, source=target.source, window=window, limit=limit
+            )
+        )
 
     return TestAggregate(
         window=window,
@@ -343,6 +400,7 @@ async def aggregate_test_window(
         cpu_readings=cpu,
         memory_readings=memory,
         fd_readings=fds,
+        health_readings=health,
     )
 
 

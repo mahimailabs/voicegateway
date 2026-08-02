@@ -141,7 +141,14 @@ def test_run_level_rows_carry_no_step() -> None:
     which is the same lie in the opposite direction.
     """
     run_level = [g for g in _run() if g.step is None]
-    assert {g.subject for g in run_level} == {"fleet/network", "fleet/rtp_ports"}
+    assert {g.subject for g in run_level} == {
+        "fleet/network",
+        "fleet/rtp_ports",
+        # Same shape, added with the dependency criteria: a dependency nobody
+        # wired is a fact about the deployment, not about step four of seven.
+        "fleet/redis",
+        "fleet/health_endpoint",
+    }
 
 
 # --------------------------------------------------------------------------
