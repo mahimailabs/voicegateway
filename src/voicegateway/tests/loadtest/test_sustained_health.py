@@ -186,6 +186,42 @@ def test_a_run_with_nothing_wired_still_reports_both_criteria() -> None:
     assert sorted(subjects) == ["fleet/health_endpoint", "fleet/redis"]
 
 
+def test_a_wired_dependency_suppresses_only_its_own_fleet_row() -> None:
+    """The `seen` branch, which decides which criteria are still unanswered.
+
+    Redis is wired and health is not, which is a real configuration. The Redis
+    rows must be the measured per-node ones with no fleet/redis placeholder, and
+    the health row must still be there: collapsing the two would hide which half
+    of the criterion is missing, and suppressing both on one wired dependency
+    would silently drop a contracted line.
+    """
+    from voicegateway.loadtest.aggregation import TestAggregate
+    from voicegateway.repository.node_correlation_repository import window_of
+
+    aggregate = TestAggregate(
+        window=window_of(1_785_661_201_000, 1_785_661_260_000),
+        peak_cpu_utilisation=None,
+        peak_memory_utilisation=None,
+        node_samples_in_window=3,
+        health_readings=[
+            gates.HealthSeriesReading(
+                node="sip-1",
+                source="redis-exporter",
+                subject=gates.HEALTH_SUBJECT_REDIS,
+                samples=(1, 1, 1),
+            )
+        ],
+    )
+    subjects = {
+        g.subject
+        for g in judge.judge_run([HEALTHY], aggregates={"ramp-25": aggregate})
+        if g.gate == gates.SUSTAINED_HEALTH_GATE
+    }
+    assert "sip-1/redis-exporter/redis" in subjects
+    assert "fleet/redis" not in subjects
+    assert "fleet/health_endpoint" in subjects
+
+
 def test_a_single_step_does_not_emit_the_unconfigured_row_itself() -> None:
     """Non-vacuous: the row is absent per test, which is why it is not repeated."""
     per_test = [

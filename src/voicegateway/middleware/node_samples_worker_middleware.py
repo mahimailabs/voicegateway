@@ -204,6 +204,11 @@ class ScrapeTarget:
     #: configured, which is recorded as NULL and NEVER as a failure: "nobody
     #: asked" and "it answered badly" are different facts.
     health_url: str | None = None
+    #: Credentials for the health endpoint, split out of its URL exactly as
+    #: :attr:`auth` is and for the same reason: httpx logs the request line at
+    #: INFO, so userinfo left in the URL is written to the log on every tick.
+    #: repr=False so a rendered target cannot leak it either.
+    health_auth: tuple[str, str] | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -662,7 +667,9 @@ def targets_from_env(
             )
             continue
         clean, auth = split_userinfo(metrics_url.strip())
-        health_clean, _ = split_userinfo(health.strip()) if health.strip() else (None, None)
+        health_clean, health_auth = (
+            split_userinfo(health.strip()) if health.strip() else (None, None)
+        )
         targets.append(
             ScrapeTarget(
                 node=node.strip(),
@@ -670,6 +677,7 @@ def targets_from_env(
                 source=source,
                 auth=auth,
                 health_url=health_clean,
+                health_auth=health_auth,
             )
         )
     return targets
@@ -873,7 +881,7 @@ class NodeSamplesWorker(AsyncWorker):
             return {}
         try:
             response = await asyncio.wait_for(
-                client.get(target.health_url),
+                client.get(target.health_url, auth=target.health_auth),
                 timeout=self._scrape_timeout,
             )
         except (TimeoutError, httpx.TimeoutException):
@@ -903,11 +911,21 @@ class NodeSamplesWorker(AsyncWorker):
         self, client: httpx.AsyncClient, target: ScrapeTarget, at_ms: int
     ) -> node_samples.NodeSampleInput:
         """Scrape one target. Never raises: a failure becomes a row that says so."""
+        # Concurrent, not sequential. Both already carry their own deadline, so
+        # running them one after the other made a target that is entirely dead
+        # cost TWO timeouts, and a tick's worst case the sum rather than the max.
+        fetch = asyncio.wait_for(
+            self._fetch(client, target.url, target.auth),
+            timeout=self._scrape_timeout,
+        )
+        probe = self._probe_health(client, target)
+        gathered = asyncio.gather(fetch, probe, return_exceptions=True)
+        fetched, health_result = await gathered
+        health = health_result if isinstance(health_result, dict) else {}
         try:
-            body, outcome = await asyncio.wait_for(
-                self._fetch(client, target.url, target.auth),
-                timeout=self._scrape_timeout,
-            )
+            if isinstance(fetched, BaseException):
+                raise fetched
+            body, outcome = fetched
         except (TimeoutError, httpx.TimeoutException):
             # The outer wait_for is not redundant with httpx's timeouts: httpx
             # applies a READ timeout per read operation, so a target dribbling
@@ -926,8 +944,6 @@ class NodeSamplesWorker(AsyncWorker):
                 target.node,
             )
             outcome, body = OUTCOME_UNREACHABLE, None
-
-        health = await self._probe_health(client, target)
 
         if body is None:
             return node_samples.NodeSampleInput(

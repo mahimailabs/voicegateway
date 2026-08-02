@@ -269,8 +269,14 @@ def _health_gates_for(aggregate: TestAggregate) -> list[GateResult]:
     return list(gates.sustained_health_gates(aggregate.health_readings))
 
 
-def unconfigured_dependency_gates(seen: set[str | None]) -> list[GateResult]:
+def unconfigured_dependency_gates(seen: set[str]) -> list[GateResult]:
     """One row per dependency criterion nobody wired, once per run.
+
+    ``seen`` holds BARE dependency constants (:data:`gates.HEALTH_SUBJECT_REDIS`
+    and :data:`gates.HEALTH_SUBJECT_ENDPOINT`) as they appear on a
+    ``HealthSeriesReading``, NOT rendered gate subjects like
+    ``sip-1/redis-exporter/redis``. Passing the latter silently matches nothing
+    and every dependency reads as unconfigured even when it was measured.
 
     NOT CONFIGURED IS NOT A PASS, and it is not silence either. The criterion
     was agreed, so a report that omits it reads as one nobody asked about, and a
@@ -332,13 +338,21 @@ def _headroom_gates_for(aggregate: TestAggregate) -> list[GateResult]:
     # window carried no usable pair arrives here already unmeasured WITH its
     # reason, which the gate turns into UNKNOWN rather than a pass.
     #
-    # A source that cannot be the authority for a service's descriptors is
-    # dropped here, and only when it produced no number: a real reading is
-    # evidence and is graded whatever took it.
+    # Authority first, and for a DEPENDENCY exporter it is unconditional. A
+    # number from redis-exporter's own process is not weak evidence about the
+    # fleet, it is evidence about a monitoring sidecar, and grading it would put
+    # a sidecar's descriptor headroom in a client report as if it answered the
+    # criterion. "Never discard a measurement" protects readings that are about
+    # the subject; it does not promote one that never was.
+    #
+    # A source merely UNKNOWN to the classifier keeps the old rule: a real
+    # reading is graded whatever took it, because there the absence of an answer
+    # is ignorance rather than a category error.
     readings.extend(
         r
         for r in aggregate.fd_readings
-        if r.used is not None or _speaks_for_process_fds(r.source)
+        if _speaks_for_process_fds(r.source)
+        or (r.used is not None and reports_process_metrics(r.source) is None)
     )
     measured = {(r.node, r.source) for r in aggregate.fd_readings}
     for reading in aggregate.cpu_readings:
@@ -400,10 +414,9 @@ def judge_run(
     # about the deployment, not about step four of seven.
     out.extend(
         unconfigured_dependency_gates(
-            {g.subject for g in out if g.gate == gates.SUSTAINED_HEALTH_GATE}
-            | {
+            {
                 r.subject
-                for agg in (aggregates or {}).values()
+                for agg in aggregates.values()
                 if agg is not None
                 for r in agg.health_readings
             }

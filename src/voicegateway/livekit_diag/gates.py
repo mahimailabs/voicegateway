@@ -1521,7 +1521,11 @@ def sustained_health_gate(
 
 
 def _failure_codes(reading: HealthSeriesReading) -> str:
-    """The distinct HTTP statuses seen on FAILED samples, most useful first.
+    """The distinct HTTP statuses seen on FAILED samples, with their counts.
+
+    Ordered by the string form of the status, which is stable rather than
+    meaningful: it exists so one run's row reads the same as the next, not
+    because 429 matters more than 503.
 
     429 UnderLoad and 503 Unavailable are different problems and the row must
     say which. A failure with no code at all was a refusal or a timeout, which
