@@ -322,6 +322,7 @@ async def _trend_readings(
                 metric=metric,
                 values=values,
                 rising_is_bad=rising_is_bad,
+                window_ms=window.end_ms - window.start_ms,
             )
         )
     return out

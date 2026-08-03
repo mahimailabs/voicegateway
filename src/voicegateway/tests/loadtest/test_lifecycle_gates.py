@@ -168,6 +168,146 @@ def test_free_memory_rising_is_not_a_leak() -> None:
     assert gate.status == gates.PASS
 
 
+# The fourteen resource_trend rows a real 100-concurrent fleet run produced:
+# (node, metric, steady-state baseline, drift, rising_is_bad). Every one of them
+# must PASS. Two of them did not before the magnitude floor existed, and one of
+# those was the box running the collector, carrying no test load at all.
+FLEET_ROWS = (
+    ("agent-0", "memory_available_bytes", 3.2e10, 17_452_686, False),
+    ("loadgen-0", "memory_available_bytes", 1.57e10, 2_448_071, False),
+    ("loadgen-1", "memory_available_bytes", 9.5e9, 9_500, False),
+    ("monitor-0", "memory_available_bytes", 7.15e9, -406_727, False),
+    ("sfu-1", "memory_available_bytes", 7.14e9, -7_607_979, False),
+    ("sfu-2", "memory_available_bytes", 7.25e9, 1_500_302, False),
+    ("sip-1", "memory_available_bytes", 1.54e10, 45_882_510, False),
+    ("sip-2", "memory_available_bytes", 1.57e10, 6_103_410, False),
+    ("sfu-1", "rooms", 57.9, -10, True),
+    ("sfu-1", "participants", 215.7, -57, True),
+    ("sfu-2", "rooms", 58.9, -19, True),
+    ("sfu-2", "participants", 110.4, -38, True),
+    ("sip-1", "sip_calls_active", 98.2, -28, True),
+    ("sip-2", "sip_calls_active", 100.0, 0, True),
+)
+
+
+def _steady(baseline: float, drift: float):
+    """A window that ramps, holds at baseline, then settles at baseline+drift."""
+    return tuple([0.0] * MIN + [baseline] * MIN + [baseline + drift] * MIN)
+
+
+@pytest.mark.parametrize(
+    ("node", "metric", "baseline", "drift", "rising_is_bad"), FLEET_ROWS
+)
+def test_no_row_from_the_real_fleet_run_fails(
+    node, metric, baseline, drift, rising_is_bad
+) -> None:
+    """Regression, against measured data rather than an invented fixture.
+
+    monitor-0 failed on 407 KB, 0.0057% of 7.15 GB, over ten minutes, on the box
+    running the collector. sip-1 moved +45.8 MB the other way and passed. The
+    gate was reading the SIGN of ordinary memory noise.
+    """
+    gate = gates.resource_trend_gate(
+        gates.TrendReading(
+            node=node,
+            metric=metric,
+            values=_steady(baseline, drift),
+            rising_is_bad=rising_is_bad,
+            window_ms=600_000,
+        )
+    )
+    assert gate.status == gates.PASS, gate.detail
+
+
+def test_noise_below_the_floor_is_pass_not_unknown() -> None:
+    """The measurement SUCCEEDED and found no meaningful drift.
+
+    UNKNOWN is for the sample-count case, where nothing could be concluded.
+    Using it here would report a clean node as unevaluated.
+    """
+    gate = gates.resource_trend_gate(
+        gates.TrendReading(
+            node="monitor-0",
+            metric="memory_available_bytes",
+            values=_steady(7.15e9, -406_727),
+            rising_is_bad=False,
+        )
+    )
+    assert gate.status == gates.PASS
+    assert gate.status != gates.UNKNOWN
+    assert "measurement noise rather than a leak" in gate.detail
+
+
+def test_a_drift_above_the_floor_still_fails() -> None:
+    """Non-vacuous: the floor must not have turned the gate off."""
+    gate = gates.resource_trend_gate(
+        gates.TrendReading(
+            node="sfu-9",
+            metric="memory_available_bytes",
+            values=_steady(7.14e9, -7.14e9 * 0.05),
+            rising_is_bad=False,
+        )
+    )
+    assert gate.status == gates.FAIL
+
+
+def test_the_floor_sits_well_above_observed_noise() -> None:
+    """1% against a largest observed noise of 0.05% and a largest favourable
+    movement of 0.3%, both from the fleet run above."""
+    assert gates.MIN_TREND_DRIFT_FRACTION == 0.01
+    # Only the rows moving the WRONG way have to clear the floor. The count
+    # metrics moved 17% to 34% on that run and are nowhere near it, but they
+    # were draining, which is the favourable direction and passes on sign.
+    unfavourable = [
+        abs(d) / b
+        for _, _, b, d, rising_bad in FLEET_ROWS
+        if b and (d > 0 if rising_bad else d < 0)
+    ]
+    assert unfavourable, "fixture would be vacuous with nothing moving wrongly"
+    assert max(unfavourable) < gates.MIN_TREND_DRIFT_FRACTION
+
+
+def test_the_boundary_is_inclusive() -> None:
+    """Exactly at the floor is a leak, so the bar is a bar and not a gap."""
+    base = 1000.0
+    at = gates.resource_trend_gate(
+        gates.TrendReading(node="n", metric="m", values=_steady(base, 10.0))
+    )
+    below = gates.resource_trend_gate(
+        gates.TrendReading(node="n", metric="m", values=_steady(base, 9.0))
+    )
+    assert at.status == gates.FAIL
+    assert below.status == gates.PASS
+
+
+def test_a_zero_baseline_counts_whole_units() -> None:
+    """No fraction exists to take. A count going 0 to 5 in steady state is real."""
+    gate = gates.resource_trend_gate(
+        gates.TrendReading(node="n", metric="rooms", values=_steady(0.0, 5.0))
+    )
+    assert gate.status == gates.FAIL
+
+
+def test_the_rate_is_reported_but_never_gated_on() -> None:
+    """A soak and a ten-minute run are not comparable by absolute drift.
+
+    The rate is what makes them comparable to a reader. It is deliberately NOT
+    the threshold: noise scales with the size of the thing measured, not with
+    how long you watch, so a rate threshold would divide a fixed noise floor by
+    a short window and make short runs hypersensitive.
+    """
+    values = _steady(1000.0, 5.0)
+    with_window = gates.resource_trend_gate(
+        gates.TrendReading(node="n", metric="m", values=values, window_ms=600_000)
+    )
+    without = gates.resource_trend_gate(
+        gates.TrendReading(node="n", metric="m", values=values)
+    )
+    assert "per hour" in with_window.detail
+    assert "per hour" not in without.detail
+    assert with_window.status == without.status
+
+
 def test_too_few_samples_is_unknown_not_pass() -> None:
     """ "Too short to tell" and "flat" look identical in one number."""
     gate = gates.resource_trend_gate(_trend([1, 1, 1, 1, 1, 1]))

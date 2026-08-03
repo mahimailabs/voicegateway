@@ -211,6 +211,29 @@ MAX_CONSECUTIVE_FAILED_SAMPLES = 3
 # identical in a single number and support opposite conclusions about a leak.
 MIN_TREND_SAMPLES = 3
 
+# The smallest drift that may be called a leak, as a fraction of the metric's
+# OWN steady-state baseline.
+#
+# Without this the gate read the SIGN of ordinary memory noise. On a real
+# 100-concurrent fleet run it failed monitor-0 on 407 KB of movement, 0.0057% of
+# 7.15 GB, over ten minutes, on the box running the collector and carrying no
+# test load at all, while sip-1 moved +45.8 MB the other way and passed. A false
+# FAIL in a client deliverable is worse than the honest UNKNOWN it replaced.
+#
+# 1% is twenty times the largest noise observed on that run (0.05% of baseline)
+# and three times the largest favourable-direction movement (0.3%). It passes
+# all fourteen of its trend rows while leaving a real leak nowhere to hide: a
+# leak that matters over ten minutes is far larger than 1% of baseline.
+#
+# A FRACTION of baseline rather than a rate per unit time, deliberately.
+# Measurement noise scales with the size of the thing being measured, not with
+# how long you watch it, so a rate threshold would divide a fixed noise floor by
+# a short window and make short runs HYPERSENSITIVE, which is the exact failure
+# being fixed here. A leak, by contrast, accumulates: watch longer and it climbs
+# past this floor on its own. The per-hour rate is still reported in the detail,
+# because that is the number a soak wants to read.
+MIN_TREND_DRIFT_FRACTION = 0.01
+
 # Headroom that must REMAIN on a limited resource. A floor, and inclusive: a node
 # sitting on exactly 20% free has met "at least 20% headroom".
 #
@@ -1740,6 +1763,9 @@ class TrendReading:
     source: str | None = None
     values: tuple[float | None, ...] = ()
     rising_is_bad: bool = True
+    #: How long the window spanned, so the detail can quote a rate. Absent just
+    #: means the rate is not reported; it never changes the verdict.
+    window_ms: int | None = None
 
 
 def steady_state_thirds(
@@ -1759,10 +1785,25 @@ def steady_state_thirds(
     return middle, final
 
 
+def _drift_rate_per_hour(drift: float, window_ms: int | None) -> str:
+    """The drift as a per-hour rate, or empty when the window is unknown.
+
+    Reported, never gated on. A ten-minute run and a twenty-four-hour soak are
+    not comparable by absolute drift, and this is the number that makes them
+    comparable to a reader without making the THRESHOLD depend on how long
+    somebody happened to watch.
+    """
+    if not window_ms or window_ms <= 0:
+        return ""
+    per_hour = drift * 3_600_000.0 / window_ms
+    return f" That is {per_hour:+.4g} per hour."
+
+
 def resource_trend_gate(
     reading: TrendReading,
     *,
     min_samples: int = MIN_TREND_SAMPLES,
+    min_drift_fraction: float = MIN_TREND_DRIFT_FRACTION,
 ) -> GateResult:
     """Did a resource that should be flat in steady state drift instead?
 
@@ -1791,9 +1832,24 @@ def resource_trend_gate(
     before = sum(middle) / len(middle)
     after = sum(final) / len(final)
     drift = after - before
-    leaked = drift > 0 if reading.rising_is_bad else drift < 0
+    wrong_way = drift > 0 if reading.rising_is_bad else drift < 0
     direction = "rose" if drift > 0 else "fell"
-    if leaked:
+    rate = _drift_rate_per_hour(drift, reading.window_ms)
+    # Relative to the metric's OWN baseline, so one floor serves bytes and
+    # counts alike. A zero baseline has no fraction to take, and there any
+    # movement of a whole unit is real: a count going 0 to 5 in steady state is
+    # not noise.
+    if before:
+        share = abs(drift) / abs(before)
+        floor_detail = (
+            f"{share:.4%} of its {before:.4g} baseline, against a "
+            f"{min_drift_fraction:.0%} floor"
+        )
+        big_enough = share >= min_drift_fraction
+    else:
+        floor_detail = "measured against a zero baseline, so any whole unit counts"
+        big_enough = abs(drift) >= 1.0
+    if wrong_way and big_enough:
         return GateResult(
             gate=RESOURCE_TREND_GATE,
             status=FAIL,
@@ -1801,12 +1857,28 @@ def resource_trend_gate(
             detail=(
                 f"{reading.metric} on {subject} {direction} across steady "
                 f"state: mean {before:.4g} over the middle third against "
-                f"{after:.4g} over the final third. Under a fixed offered load "
-                "this should be flat, so the drift is the leak"
+                f"{after:.4g} over the final third, {floor_detail}. Under a "
+                f"fixed offered load this should be flat, so the drift is the "
+                f"leak.{rate}"
             ),
             metric=reading.metric,
             value=float(drift),
-            threshold=0.0,
+            threshold=float(min_drift_fraction),
+        )
+    if wrong_way:
+        return GateResult(
+            gate=RESOURCE_TREND_GATE,
+            status=PASS,
+            subject=subject,
+            detail=(
+                f"{reading.metric} on {subject} {direction} slightly across "
+                f"steady state, by {floor_detail}. That is measurement noise "
+                f"rather than a leak: the measurement succeeded and found no "
+                f"meaningful drift.{rate}"
+            ),
+            metric=reading.metric,
+            value=float(drift),
+            threshold=float(min_drift_fraction),
         )
     return GateResult(
         gate=RESOURCE_TREND_GATE,
@@ -1815,11 +1887,11 @@ def resource_trend_gate(
         detail=(
             f"{reading.metric} on {subject} held flat or improved across steady "
             f"state: mean {before:.4g} over the middle third against "
-            f"{after:.4g} over the final third."
+            f"{after:.4g} over the final third.{rate}"
         ),
         metric=reading.metric,
         value=float(drift),
-        threshold=0.0,
+        threshold=float(min_drift_fraction),
     )
 
 
@@ -1827,8 +1899,14 @@ def resource_trend_gates(
     readings: Sequence[TrendReading],
     *,
     min_samples: int = MIN_TREND_SAMPLES,
+    min_drift_fraction: float = MIN_TREND_DRIFT_FRACTION,
 ) -> list[GateResult]:
-    return [resource_trend_gate(r, min_samples=min_samples) for r in readings]
+    return [
+        resource_trend_gate(
+            r, min_samples=min_samples, min_drift_fraction=min_drift_fraction
+        )
+        for r in readings
+    ]
 
 
 __all__ = [
@@ -1858,6 +1936,7 @@ __all__ = [
     "PROCESS_LIFECYCLE_GATE",
     "RESOURCE_TREND_GATE",
     "MIN_TREND_SAMPLES",
+    "MIN_TREND_DRIFT_FRACTION",
     "LifecycleReading",
     "TrendReading",
     "process_lifecycle_gate",
