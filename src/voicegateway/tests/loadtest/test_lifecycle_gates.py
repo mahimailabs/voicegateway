@@ -222,7 +222,10 @@ def test_the_tolerance_is_stated_by_the_caller_not_defaulted() -> None:
     """return_to_baseline_gates refuses to invent "near". The judge states it."""
     with pytest.raises(TypeError):
         gates.return_to_baseline_gates([])  # type: ignore[call-arg]
-    assert 0 < judge.BASELINE_TOLERANCE < 1
+    # A ratio CEILING, so it sits above 1.0: the resource may end a little
+    # higher than baseline. Below 1.0 would demand the resource shrink, which
+    # fails a node that ended exactly where it started.
+    assert judge.BASELINE_TOLERANCE > 1.0
 
 
 # --------------------------------------------------------------------------

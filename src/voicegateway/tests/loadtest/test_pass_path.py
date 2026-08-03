@@ -216,7 +216,7 @@ def test_the_verdict_is_still_not_pass_and_here_is_why(acceptance) -> None:
         # Return to baseline: this fixture records nothing outside the test
         # window, so no baseline was established and nothing shows the
         # resources came back.
-        "memory_available_bytes",
+        "memory_used_bytes",
         "filefd_allocated",
         "sockstat_udp_inuse",
     }
@@ -448,7 +448,7 @@ def waived(tmp_path_factory):
                 # fixture records nothing outside the test window, so no
                 # baseline was ever established to return to. Restarts and
                 # staleness ARE evaluated on this fixture and are not waived.
-                "return_to_baseline/fleet/memory_available_bytes": (
+                "return_to_baseline/fleet/memory_used_bytes": (
                     "no idle samples outside the window, declared before test day"
                 ),
                 "return_to_baseline/fleet/filefd_allocated": (

@@ -260,33 +260,69 @@ def judge_test(
     results.extend(_health_gates_for(aggregate))
     results.extend(gates.process_lifecycle_gates(aggregate.lifecycle_readings))
     results.extend(gates.resource_trend_gates(aggregate.trend_readings))
-    results.extend(_baseline_gates_for(aggregate))
     return results
 
 
-#: How far a resource may sit above its idle baseline and still count as
-#: returned. The criterion says "close to baseline" and never quantifies it, so
-#: this number is OURS and is stated rather than hidden: 10% of the idle
-#: reading. return_to_baseline_gates refuses to default it precisely so a number
-#: nobody agreed to cannot masquerade as a contracted one, and this is the
-#: caller stating it.
-BASELINE_TOLERANCE = 0.10
+#: The most a resource may end at, as a MULTIPLE of its idle baseline.
+#:
+#: An absolute ratio ceiling, not a percentage band, because that is what
+#: return_to_baseline_gates compares against: it computes post/baseline and
+#: fails above this. Reading it as "within 10%" and passing 0.10 means "must
+#: fall to a tenth of baseline", which fails a node that ended exactly where it
+#: started. That mistake was made here and it produced twenty-one FAIL rows on
+#: a real run, including 4 sockets against a baseline of 4.
+#:
+#: 1.10 is OURS, not contracted. The criterion says "close to baseline" and
+#: never quantifies it, and return_to_baseline_gates refuses to default a
+#: tolerance precisely so a number nobody agreed to cannot look like one that
+#: was agreed. This is the caller stating it out loud.
+BASELINE_TOLERANCE = 1.10
 
 
-def _baseline_gates_for(aggregate: TestAggregate) -> list[GateResult]:
-    """Did the fleet give its resources back after the calls ended?
+def _run_baseline_gates(
+    aggregates: dict[str, TestAggregate | None],
+) -> list[GateResult]:
+    """Did the fleet give its resources back after the CALLS ended?
 
-    Emitted only when there is something to compare. An absent pre-run sample is
-    reported by the comparison itself as UNKNOWN, which is the honest reading:
-    nobody established what baseline was, so nothing can be shown to have
-    returned to it.
+    Once per run, and this is not tidying: per test it compared each step
+    against the step before it, so "baseline" for step four was step three under
+    load. The criterion is about idle before the run against settled after it.
+
+    So the BEFORE side is taken from the earliest test's aggregate and the AFTER
+    side from the latest, matched per node and metric. Anything with only one
+    side stays UNKNOWN, which is the honest reading: nobody established what
+    baseline was, so nothing can be shown to have returned to it.
     """
-    if not aggregate.baseline_comparisons:
+    ordered = [a for a in aggregates.values() if a is not None]
+    if not ordered:
         return []
-    return list(
-        gates.return_to_baseline_gates(
-            aggregate.baseline_comparisons, tolerance=BASELINE_TOLERANCE
+    ordered.sort(key=lambda a: a.window.start_ms)
+    first, last = ordered[0], ordered[-1]
+    befores = {(c.node, c.metric): c for c in first.baseline_comparisons}
+    afters = {(c.node, c.metric): c for c in last.baseline_comparisons}
+    keys = sorted(set(befores) | set(afters))
+    if not keys:
+        return []
+    merged = []
+    for key in keys:
+        before, after = befores.get(key), afters.get(key)
+        node, metric = key
+        merged.append(
+            gates.BaselineComparison(
+                node=node,
+                metric=metric,
+                baseline=before.baseline if before else None,
+                post_settle=after.post_settle if after else None,
+                baseline_at_ms=before.baseline_at_ms if before else None,
+                post_settle_at_ms=after.post_settle_at_ms if after else None,
+                unmeasured_reason=(
+                    (before.unmeasured_reason if before else None)
+                    or (after.unmeasured_reason if after else None)
+                ),
+            )
         )
+    return list(
+        gates.return_to_baseline_gates(merged, tolerance=BASELINE_TOLERANCE)
     )
 
 
@@ -459,6 +495,7 @@ def judge_run(
     # produced no row anywhere in the run is reported once, as unmeasured. This
     # is the defect these gates exist to remove, and it would be quietly
     # recreated by a run whose samples carried none of the needed columns.
+    out.extend(_run_baseline_gates(aggregates))
     out.extend(unevaluated_criteria_gates({g.gate for g in out}))
     return out
 

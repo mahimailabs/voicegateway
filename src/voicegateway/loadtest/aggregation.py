@@ -266,8 +266,13 @@ TREND_METRICS: tuple[tuple[str, bool], ...] = (
 #: What must come back after teardown. Deliberately not heap or goroutines,
 #: which the diagnostics probe already covers: these are the host-level
 #: resources a load test exhausts.
+#: Every one of these must be a metric where HIGHER IS WORSE, because
+#: return_to_baseline compares post/baseline against a ceiling. Free memory is
+#: the trap: it is higher-is-better, so comparing memory_available_bytes here
+#: reports a node that ENDED WITH MORE FREE MEMORY as having failed to return.
+#: Memory is therefore carried as USED, derived from the total/available pair.
 BASELINE_METRICS: tuple[str, ...] = (
-    "memory_available_bytes",
+    "memory_used_bytes",
     "filefd_allocated",
     "sockstat_udp_inuse",
 )
@@ -340,10 +345,22 @@ async def _baseline_comparisons(
     after = await list_samples(
         db, node=node, source=source, since_ms=window.end_ms + 1, limit=limit
     )
+    def _value(row, metric: str) -> float | None:
+        # Derived, because there is no memory_used_bytes column and the raw
+        # available figure runs the wrong way for this gate.
+        if metric == "memory_used_bytes":
+            total = row.memory_total_bytes
+            available = row.memory_available_bytes
+            if total is None or available is None:
+                return None
+            return float(total - available)
+        value = getattr(row, metric)
+        return None if value is None else float(value)
+
     out: list[BaselineComparison] = []
     for metric in BASELINE_METRICS:
-        pre = [r for r in before if getattr(r, metric) is not None]
-        post = [r for r in after if getattr(r, metric) is not None]
+        pre = [r for r in before if _value(r, metric) is not None]
+        post = [r for r in after if _value(r, metric) is not None]
         if not pre and not post:
             continue
         reason = None
@@ -362,8 +379,8 @@ async def _baseline_comparisons(
                 node=node,
                 source=source,
                 metric=metric,
-                baseline=float(getattr(pre[-1], metric)) if pre else None,
-                post_settle=float(getattr(post[-1], metric)) if post else None,
+                baseline=_value(pre[-1], metric) if pre else None,
+                post_settle=_value(post[-1], metric) if post else None,
                 baseline_at_ms=pre[-1].at_ms if pre else None,
                 post_settle_at_ms=post[-1].at_ms if post else None,
                 unmeasured_reason=reason,

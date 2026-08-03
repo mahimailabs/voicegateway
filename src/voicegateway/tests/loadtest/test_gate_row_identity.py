@@ -153,7 +153,7 @@ def test_run_level_rows_carry_no_step() -> None:
         # deployment, not about step four of seven.
         "fleet",
         "fleet/stale_resources",
-        "fleet/memory_available_bytes",
+        "fleet/memory_used_bytes",
         "fleet/filefd_allocated",
         "fleet/sockstat_udp_inuse",
     }
