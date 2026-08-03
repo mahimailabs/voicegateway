@@ -57,9 +57,7 @@ def _payload(rid: str, agent_id: str = "agent-1") -> dict:
 async def test_ingest_accepts_batch_and_stamps_tenant(gateway):
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        created = await api_keys.create_api_key(
-            db, name="bot", tenant_id="acme"
-        )
+        created = await api_keys.create_api_key(db, name="bot", tenant_id="acme")
 
     client = await _client(gateway)
     async with client as c:

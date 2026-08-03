@@ -326,7 +326,9 @@ async def test_an_unmeasured_series_is_null_and_says_so_never_zero(client, gatew
         filefd_allocated=1_024.0,
     )
 
-    node = (await client.get(_URL)).json()["calls"][0]["correlation"]["nodes_sampled"][0]
+    node = (await client.get(_URL)).json()["calls"][0]["correlation"]["nodes_sampled"][
+        0
+    ]
 
     assert node["gauges"]["load1"]["latest"] == pytest.approx(0.75)
     assert node["gauges"]["rooms"]["samples"] == 0
@@ -513,7 +515,10 @@ async def test_an_empty_node_samples_table_is_not_an_error(client, gateway):
     """The state every operator starts in, and the one before the scrape worker
     is wired or a target is configured."""
     await _call(
-        gateway.storage, attempt_id="fresh", started_at_ms=_T0, ended_at_ms=_T0 + _MINUTE
+        gateway.storage,
+        attempt_id="fresh",
+        started_at_ms=_T0,
+        ended_at_ms=_T0 + _MINUTE,
     )
 
     resp = await client.get(_URL)
@@ -525,9 +530,7 @@ async def test_an_empty_node_samples_table_is_not_an_error(client, gateway):
     assert body["calls"][0]["correlation"]["nodes_sampled"] == []
 
 
-async def test_the_stored_row_count_separates_unscraped_from_unsampled(
-    client, gateway
-):
+async def test_the_stored_row_count_separates_unscraped_from_unsampled(client, gateway):
     """`no_samples` on one window does not say whether anything is scraped at
     all, so the row count is published beside it."""
     await _call(
@@ -612,7 +615,7 @@ async def test_a_tenant_key_is_refused_rather_than_shown_the_whole_fleet(
 async def test_storage_disabled_returns_503_not_an_empty_correlation(
     tmp_path, monkeypatch
 ):
-    """"Nothing was scraped" and "this deployment records nothing" are different
+    """ "Nothing was scraped" and "this deployment records nothing" are different
     facts."""
     monkeypatch.delenv("VOICEGW_DB_PATH", raising=False)
     config = _write_config(tmp_path, {"cost_tracking": {"enabled": False}})

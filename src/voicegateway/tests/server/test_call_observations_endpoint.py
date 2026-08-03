@@ -291,9 +291,7 @@ async def test_kill_switch_disables_the_whole_path(gateway, monkeypatch):
     assert await _calls(gateway) == []
 
 
-async def test_kill_switch_set_to_a_falsy_word_leaves_the_path_on(
-    gateway, monkeypatch
-):
+async def test_kill_switch_set_to_a_falsy_word_leaves_the_path_on(gateway, monkeypatch):
     monkeypatch.setenv("VG_DISABLE_CALL_OBSERVATIONS", "0")
 
     resp = await _post(gateway, _observation())
@@ -327,9 +325,7 @@ async def test_auth_is_required_when_api_keys_are_configured(tmp_path, monkeypat
     ).status_code == 401
     assert await _calls(gw) == []
 
-    ok = await _post(
-        gw, _observation(), {"Authorization": "Bearer sk-configured"}
-    )
+    ok = await _post(gw, _observation(), {"Authorization": "Bearer sk-configured"})
     assert ok.status_code == 202
     await _await_flushed(1)
     assert len(await _calls(gw)) == 1
@@ -341,9 +337,7 @@ async def test_a_key_without_the_write_scope_is_refused(tmp_path, monkeypatch):
         tmp_path,
         {
             "auth": {
-                "api_keys": [
-                    {"name": "reader", "token": "sk-read", "scopes": ["read"]}
-                ]
+                "api_keys": [{"name": "reader", "token": "sk-read", "scopes": ["read"]}]
             }
         },
     )

@@ -47,7 +47,11 @@ def _table_backed_classes(path: Path) -> list[str]:
         if not isinstance(node, ast.ClassDef):
             continue
         for kw in node.keywords:
-            if kw.arg == "table" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
+            if (
+                kw.arg == "table"
+                and isinstance(kw.value, ast.Constant)
+                and kw.value.value is True
+            ):
                 found.append(node.name)
     return found
 

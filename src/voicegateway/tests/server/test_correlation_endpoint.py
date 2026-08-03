@@ -299,7 +299,7 @@ async def test_a_tenant_key_is_refused_rather_than_shown_the_whole_deployment(
 
 
 async def test_storage_disabled_returns_503_not_an_unknown_rate(tmp_path, monkeypatch):
-    """"Nothing has correlated yet" and "this deployment records nothing" are
+    """ "Nothing has correlated yet" and "this deployment records nothing" are
     different facts."""
     monkeypatch.delenv("VOICEGW_DB_PATH", raising=False)
     config = _write_config(tmp_path, {"cost_tracking": {"enabled": False}})

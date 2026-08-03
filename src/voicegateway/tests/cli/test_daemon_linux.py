@@ -72,8 +72,7 @@ def test_render_unit_threads_config_path(backend):
     cp = configparser.ConfigParser(strict=False, interpolation=None)
     cp.read_string(rendered)
     assert cp.get("Service", "ExecStart") == (
-        '/usr/local/bin/voicegw serve -c "'
-        '/home/me/.config/voicegateway/voicegw.yaml"'
+        '/usr/local/bin/voicegw serve -c "/home/me/.config/voicegateway/voicegw.yaml"'
     )
 
 

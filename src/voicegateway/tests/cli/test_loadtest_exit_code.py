@@ -62,6 +62,7 @@ def _report(workspace: dict, *extra: str):
         [
             "loadtest",
             "report",
+            "--acceptance",
             "ramp-500",
             "--config",
             workspace["config"],

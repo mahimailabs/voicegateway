@@ -29,7 +29,9 @@ def test_find_knee_at_first_threshold_break():
         RampStep(25, 9.0, 0.1, "Good", 25),
         RampStep(50, 22.0, 1.4, "Poor", 50),
     ]
-    assert find_knee(steps, target_rtt_ms=20.0, max_loss=1.0) == 25  # last good before break
+    assert (
+        find_knee(steps, target_rtt_ms=20.0, max_loss=1.0) == 25
+    )  # last good before break
 
 
 def test_find_knee_none_when_all_healthy():

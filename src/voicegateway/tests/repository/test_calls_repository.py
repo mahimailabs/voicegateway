@@ -299,7 +299,7 @@ async def test_only_sip_attributes_are_persisted(db: AsyncSession) -> None:
 async def test_no_sip_attributes_stores_null_not_empty_object(
     db: AsyncSession,
 ) -> None:
-    """"{}" would read as "we looked and there were none"; NULL is honest."""
+    """ "{}" would read as "we looked and there were none"; NULL is honest."""
     call_id = await repo.upsert_call(db, origin="webhook", room_sid="RM_noattrs")
     await repo.upsert_call_leg(
         db, call_id=call_id, participant_sid="PA_web", attributes={"app.x": 1}

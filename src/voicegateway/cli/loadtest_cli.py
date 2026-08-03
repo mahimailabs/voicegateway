@@ -688,15 +688,41 @@ def report(
         help=(
             "JSON mapping gate (or gate/subject) to the reason it was waived in "
             "writing. Records a threshold the run was not held to; never turns "
-            "it into a pass, and the report still exits non-zero."
+            "it into a pass, and the report still exits non-zero. Only "
+            "meaningful with --acceptance."
+        ),
+    ),
+    acceptance: bool = typer.Option(
+        False,
+        "--acceptance",
+        help=(
+            "Judge the run against contracted acceptance thresholds: adds the "
+            "verdict, the per-gate table and a non-zero exit code. Without it "
+            "the report profiles only, showing what was measured and the range "
+            "each figure is read against, and leaves the conclusion to a reader."
         ),
     ),
 ) -> None:
-    """Write one run's report as JSON plus a self-contained HTML file."""
+    """Write one run's profile as JSON plus a self-contained HTML file.
+
+    Two views over ONE set of measurements, never two derivations. The default
+    profiles: it shows what was measured and the reference each figure is
+    usually read against, and stops. ``--acceptance`` adds the verdict, the gate
+    table and the exit code, for the case where somebody contracted thresholds
+    and needs evidence they were met.
+
+    The split is deliberate. A developer reading their own fleet did not sign an
+    acceptance contract and is not served by a FAIL stamped across their run;
+    the same numbers with a reference band teach them where they stand. The
+    gates are not deleted, because an engagement that agreed 99.5% establishment
+    does need a pass or a fail and a pipeline needs an exit code.
+    """
     from voicegateway.livekit_diag.run_report import (
         build_load_payload,
         load_report_filename,
+        profile_filename,
         render_load_html,
+        render_profile_html,
     )
 
     gw = _cli.require_gateway(config)
@@ -754,10 +780,16 @@ def report(
         scope_exclusions=excluded_headroom_resources(),
     )
     out.mkdir(parents=True, exist_ok=True)
-    json_path = out / f"{load_report_filename(run_id).removesuffix('.html')}.json"
-    html_path = out / load_report_filename(run_id)
+    # The JSON is the same payload either way: it is the machine-readable
+    # export, and a consumer of it must not have to know which view a human
+    # asked for. Only the HTML differs.
+    stem = load_report_filename(run_id) if acceptance else profile_filename(run_id)
+    json_path = out / f"{stem.removesuffix('.html')}.json"
+    html_path = out / stem
     json_path.write_text(json.dumps(payload, indent=2) + "\n")
-    html_path.write_text(render_load_html(payload))
+    html_path.write_text(
+        render_load_html(payload) if acceptance else render_profile_html(payload)
+    )
 
     # Read from the payload rather than recomputed, so the console, the exit
     # code, the JSON and the HTML are one derivation rather than four that
@@ -766,13 +798,29 @@ def report(
     counts: dict[str, int] = {}
     for gate in results:
         counts[gate.status] = counts.get(gate.status, 0) + 1
-    breakdown = ", ".join(f"{n} {status}" for status, n in sorted(counts.items()))
-    console.print(f"\nVerdict: [bold]{run_verdict}[/bold]  ({breakdown})")
-    if run_verdict == "UNKNOWN":
-        _cli.warn(
-            "UNKNOWN is not a pass. At least one acceptance criterion could not "
-            "be evaluated; the run did not demonstrate it, it failed to measure it."
+    if acceptance:
+        breakdown = ", ".join(f"{n} {status}" for status, n in sorted(counts.items()))
+        console.print(f"\nVerdict: [bold]{run_verdict}[/bold]  ({breakdown})")
+        if run_verdict == "UNKNOWN":
+            _cli.warn(
+                "UNKNOWN is not a pass. At least one acceptance criterion could "
+                "not be evaluated; the run did not demonstrate it, it failed to "
+                "measure it."
+            )
+    else:
+        # No verdict on the console either. A profile that prints PASS to the
+        # terminal while the document refuses to is two products disagreeing.
+        measured = sum(1 for g in results if g.value is not None)
+        console.print(
+            f"\nProfiled {measured} measurement(s) across {len(tests)} test(s)."
         )
+        missing = len(results) - measured
+        if missing:
+            _cli.warn(
+                f"{missing} measurement(s) were not collected in this run. The "
+                'report lists them under "Not collected in this run", each with '
+                "what to change so the next run carries them."
+            )
 
     if capacity.get("calls_per_node") is None:
         _cli.warn(f"No capacity table: {capacity['reason']}")
@@ -816,6 +864,13 @@ def report(
     # run failed to measure something, which is not the same as demonstrating
     # it). One non-zero code on purpose, so an existing `if [ $? -eq 1 ]` keeps
     # catching every kind of failure.
-    code = exit_code(run_verdict)
-    if code != 0:
-        raise typer.Exit(code)
+    #
+    # Only under --acceptance. A profile makes no claim to judge, so exiting
+    # non-zero on it would be a verdict delivered through the exit status while
+    # the document carefully refuses to give one. A developer profiling their
+    # own fleet gets 0 and a document; a pipeline that contracted thresholds
+    # asks for --acceptance and gets the code.
+    if acceptance:
+        code = exit_code(run_verdict)
+        if code != 0:
+            raise typer.Exit(code)

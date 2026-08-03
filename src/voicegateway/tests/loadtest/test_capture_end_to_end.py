@@ -65,7 +65,19 @@ def reported(tmp_path_factory):
     out = tmp / "out"
     exported = runner.invoke(
         app,
-        ["loadtest", "report", RUN_ID, "--config", str(config), "--out", str(out)],
+        # --acceptance: this file asserts the exit code and the gate rows,
+        # which are the acceptance view. The default report profiles and
+        # deliberately carries neither.
+        [
+            "loadtest",
+            "report",
+            "--acceptance",
+            RUN_ID,
+            "--config",
+            str(config),
+            "--out",
+            str(out),
+        ],
     )
     payload = json.loads(
         next(p for p in out.iterdir() if p.suffix == ".json").read_text()

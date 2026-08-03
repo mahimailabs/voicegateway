@@ -14,15 +14,21 @@ STD = 0
 
 class _Rooms:
     async def list_rooms(self, _req):
-        return SimpleNamespace(rooms=[SimpleNamespace(name="r1"), SimpleNamespace(name="r2")])
+        return SimpleNamespace(
+            rooms=[SimpleNamespace(name="r1"), SimpleNamespace(name="r2")]
+        )
 
     async def list_participants(self, req):
         table = {
             "r1": [
-                SimpleNamespace(identity="agent-x", name="realty", kind=AGENT, joined_at=100),
+                SimpleNamespace(
+                    identity="agent-x", name="realty", kind=AGENT, joined_at=100
+                ),
                 SimpleNamespace(identity="human-1", name="", kind=STD, joined_at=100),
             ],
-            "r2": [SimpleNamespace(identity="human-2", name="", kind=STD, joined_at=100)],
+            "r2": [
+                SimpleNamespace(identity="human-2", name="", kind=STD, joined_at=100)
+            ],
         }
         return SimpleNamespace(participants=table[req.room])
 

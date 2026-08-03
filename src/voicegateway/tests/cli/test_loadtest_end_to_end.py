@@ -94,6 +94,7 @@ def _report(run: dict, *extra: str):
         [
             "loadtest",
             "report",
+            "--acceptance",
             "ramp-500",
             "--config",
             run["config"],

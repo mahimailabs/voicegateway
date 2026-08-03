@@ -234,11 +234,7 @@ def test_exactly_one_fleet_row_for_the_permanent_exclusion_in_a_multi_step_run()
         for n in (5, 10, 20)
     ]
     results = judge.judge_run(run)
-    rows = [
-        r
-        for r in results
-        if (r.subject or "").endswith(f"/{gates.HEADROOM_PPS}")
-    ]
+    rows = [r for r in results if (r.subject or "").endswith(f"/{gates.HEADROOM_PPS}")]
     assert len(rows) == 1, [r.subject for r in rows]
     assert rows[0].subject == f"{gates.FLEET_SUBJECT}/{gates.HEADROOM_PPS}"
     assert rows[0].status == gates.UNKNOWN
@@ -257,17 +253,13 @@ def test_exactly_one_fleet_row_for_the_permanent_exclusion_in_a_multi_step_run()
         gates.HEADROOM_NETWORK_OUT,
     ):
         assert resource not in excluded, resource
-        [row] = [
-            r for r in results if r.subject == f"{gates.FLEET_SUBJECT}/{resource}"
-        ]
+        [row] = [r for r in results if r.subject == f"{gates.FLEET_SUBJECT}/{resource}"]
         assert row.status == gates.UNKNOWN
         assert "gap in what was collected" in row.detail, resource
         assert "no denominator" not in row.detail, resource
     # And pps reads the other way round.
     [pps_row] = [
-        r
-        for r in results
-        if r.subject == f"{gates.FLEET_SUBJECT}/{gates.HEADROOM_PPS}"
+        r for r in results if r.subject == f"{gates.FLEET_SUBJECT}/{gates.HEADROOM_PPS}"
     ]
     assert "gap in what was collected" not in pps_row.detail
 

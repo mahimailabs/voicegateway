@@ -27,13 +27,24 @@ def test_fmt_started_short_and_passthrough() -> None:
     assert _fmt_started("not-a-date") == "not-a-date"  # unparseable -> first 16 chars
 
 
-def _rec(session_id: str, modality: str, model_id: str, provider: str,
-         cost: float, ts: float) -> RequestRecord:
+def _rec(
+    session_id: str, modality: str, model_id: str, provider: str, cost: float, ts: float
+) -> RequestRecord:
     return RequestRecord(
-        id=f"{session_id}-{modality}-{ts}", timestamp=ts, project="default",
-        modality=modality, model_id=model_id, provider=provider,
-        input_units=1, output_units=0, cost_usd=cost, pricing_source="test",
-        ttfb_ms=None, total_latency_ms=100.0, status="success", session_id=session_id,
+        id=f"{session_id}-{modality}-{ts}",
+        timestamp=ts,
+        project="default",
+        modality=modality,
+        model_id=model_id,
+        provider=provider,
+        input_units=1,
+        output_units=0,
+        cost_usd=cost,
+        pricing_source="test",
+        ttfb_ms=None,
+        total_latency_ms=100.0,
+        status="success",
+        session_id=session_id,
     )
 
 
@@ -41,12 +52,16 @@ def _seed(tmp_path, monkeypatch) -> str:
     db = tmp_path / "calls.db"
     monkeypatch.setenv("VOICEGW_DB_PATH", str(db))
     cfg = tmp_path / "voicegw.yaml"
-    cfg.write_text(yaml.dump({
-        "providers": {"openai": {"api_key": "x"}},
-        "models": {"stt": {}, "llm": {}, "tts": {}},
-        "projects": {},
-        "cost_tracking": {"enabled": True},
-    }))
+    cfg.write_text(
+        yaml.dump(
+            {
+                "providers": {"openai": {"api_key": "x"}},
+                "models": {"stt": {}, "llm": {}, "tts": {}},
+                "projects": {},
+                "cost_tracking": {"enabled": True},
+            }
+        )
+    )
     gw = Gateway(config_path=str(cfg))
 
     async def seed() -> None:
@@ -57,7 +72,9 @@ def _seed(tmp_path, monkeypatch) -> str:
             ("tts", "cartesia/sonic-3", "cartesia", 0.010),
         ]
         for i, (mod, model, prov, cost) in enumerate(turn):
-            await gw.storage.log_request(_rec("call-001", mod, model, prov, cost, 1_700_000 + i))
+            await gw.storage.log_request(
+                _rec("call-001", mod, model, prov, cost, 1_700_000 + i)
+            )
 
     asyncio.run(seed())
     return str(cfg)

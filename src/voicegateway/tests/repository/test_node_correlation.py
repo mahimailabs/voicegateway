@@ -98,7 +98,7 @@ async def _call_row(
 async def test_window_for_call_reports_both_the_requested_and_padded_bounds(
     db: AsyncSession,
 ) -> None:
-    """"Within 15 s of this call" is a weaker claim than "during this call".
+    """ "Within 15 s of this call" is a weaker claim than "during this call".
 
     Both bounds are carried so a renderer can tell which one it is holding.
     """
@@ -574,7 +574,7 @@ async def test_a_truncated_read_says_so(db: AsyncSession) -> None:
 async def test_the_ramp_window_surfaces_file_descriptor_saturation(
     db: AsyncSession,
 ) -> None:
-    """"The knee at 25 clients CORRELATED WITH filefd_allocated hitting
+    """ "The knee at 25 clients CORRELATED WITH filefd_allocated hitting
     filefd_maximum on one host."
 
     One host walks into its fd ceiling during the ramp step; a second host is not

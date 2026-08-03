@@ -63,6 +63,7 @@ def exported(tmp_path_factory):
         [
             "loadtest",
             "report",
+            "--acceptance",
             "capture-01",
             "--config",
             str(config),

@@ -154,6 +154,7 @@ async def test_rate_card_models_lists_price_and_override(gateway) -> None:
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
         from voicegateway.repository import request_log_repository as rlr
+
         await rlr.log_request(
             db,
             RequestRecord(

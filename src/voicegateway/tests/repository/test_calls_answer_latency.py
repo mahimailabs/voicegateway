@@ -270,9 +270,7 @@ async def test_the_first_sip_leg_to_join_is_the_caller(db: AsyncSession) -> None
     """A transfer or SIP REFER adds a second SIP leg; the caller rang first."""
     call_id = await repo.upsert_call(db, origin="webhook", room_sid="RM_transfer")
     await _caller_joined(db, call_id)
-    await _caller_joined(
-        db, call_id, _CALLER_JOINED_MS + 20_000, sid="PA_transferee"
-    )
+    await _caller_joined(db, call_id, _CALLER_JOINED_MS + 20_000, sid="PA_transferee")
     await _agent_published(db, call_id)
     assert await _latency(db, call_id) == (_ANSWER_MS, "webhook_proxy")
 
@@ -323,7 +321,7 @@ async def test_the_source_names_the_weaker_of_the_two_clocks(db: AsyncSession) -
 async def test_an_unstamped_writer_is_treated_as_webhook_precision(
     db: AsyncSession,
 ) -> None:
-    """"The writer did not say" must under-claim, never over-claim."""
+    """ "The writer did not say" must under-claim, never over-claim."""
     call_id = await repo.upsert_call(db, origin="agent", room_sid="RM_unstamped")
     await _caller_joined(db, call_id, source="agent")
     await _agent_published(db, call_id, source=None)
@@ -484,7 +482,10 @@ async def test_a_reported_value_and_its_source_travel_together(
 ) -> None:
     with pytest.raises(ValueError, match="both the value and its source"):
         await repo.upsert_call(
-            db, origin="loadgen", attempt_id="att-half", **kwargs  # type: ignore[arg-type]
+            db,
+            origin="loadgen",
+            attempt_id="att-half",
+            **kwargs,  # type: ignore[arg-type]
         )
 
 

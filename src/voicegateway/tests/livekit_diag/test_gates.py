@@ -431,7 +431,9 @@ def test_a_step_from_an_older_run_without_a_sample_count_is_not_mislabelled():
     assert quiet.value is None
 
     # A legacy step with no rtt key at all is not a 0.0 either.
-    no_rtt = gates.sfu_capacity_gate([{"clients": 2, "quality": "Excellent"}], 50.0, None)
+    no_rtt = gates.sfu_capacity_gate(
+        [{"clients": 2, "quality": "Excellent"}], 50.0, None
+    )
     assert no_rtt.status == gates.UNKNOWN
 
 

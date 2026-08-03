@@ -151,5 +151,3 @@ def test_require_extra_missing_raises_with_hint() -> None:
         assert "pip install voicegateway[definitely_not_a_framework]" in str(exc)
     else:  # pragma: no cover - require_extra must raise for a missing extra
         raise AssertionError("require_extra did not raise for a missing extra")
-
-

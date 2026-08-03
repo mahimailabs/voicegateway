@@ -104,7 +104,7 @@ async def test_state_transitions_overwrite_the_same_row(db: AsyncSession) -> Non
 async def test_no_results_stays_null_and_is_not_an_empty_dict(
     db: AsyncSession,
 ) -> None:
-    """"No results were recorded" is a different claim from "{}"."""
+    """ "No results were recorded" is a different claim from "{}"."""
     await repo.upsert_run(
         db,
         run_id="r1",

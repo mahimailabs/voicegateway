@@ -67,9 +67,7 @@ def test_livekit_block_is_accepted(tmp_path):
     """
     path = tmp_path / "voicegw.yaml"
     with open(path, "w") as f:
-        yaml.dump(
-            {"livekit": {"url": "wss://x", "api_key": "k", "api_secret": "s"}}, f
-        )
+        yaml.dump({"livekit": {"url": "wss://x", "api_key": "k", "api_secret": "s"}}, f)
     # Must not raise ConfigError.
     GatewayConfig.load(str(path))
 

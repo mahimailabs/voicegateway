@@ -49,9 +49,7 @@ async def _seed_run(
 ) -> None:
     """Store one diagnostics run exactly as the dashboard endpoint stores it."""
     results = (
-        None
-        if gates is None
-        else {"checks": {}, "gates": gates, "verdict": verdict}
+        None if gates is None else {"checks": {}, "gates": gates, "verdict": verdict}
     )
     await gateway.storage.upsert_diagnostics_run(
         run_id=run_id,
@@ -151,8 +149,12 @@ async def test_repeated_gate_ids_are_counted_not_duplicated(client, gateway) -> 
     )
     text = (await client.get("/v1/metrics")).text
 
-    assert 'voicegw_diag_gate_status{gate="agent_reply_latency",status="PASS"} 2' in text
-    assert 'voicegw_diag_gate_status{gate="agent_reply_latency",status="WARN"} 1' in text
+    assert (
+        'voicegw_diag_gate_status{gate="agent_reply_latency",status="PASS"} 2' in text
+    )
+    assert (
+        'voicegw_diag_gate_status{gate="agent_reply_latency",status="WARN"} 1' in text
+    )
 
     lines = _diag_lines(text)
     label_sets = [ln.rsplit(" ", 1)[0] for ln in lines]

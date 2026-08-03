@@ -56,7 +56,9 @@ async def test_migration_creates_agent_probe_results(tmp_path: Path) -> None:
             f"agent_probe_results.result_json is {cols['result_json'][0]}; the "
             "migration declares sa.Text() and the model must agree"
         )
-        assert cols["result_json"][1] == 1, "a cached row without a payload is not a cache hit"
+        assert cols["result_json"][1] == 1, (
+            "a cached row without a payload is not a cache hit"
+        )
         # Epoch seconds the probe ran, so the UI can say "measured Ns ago". A row
         # with no timestamp could not be aged, so it is NOT NULL.
         assert cols["created_at"][0] == "FLOAT"

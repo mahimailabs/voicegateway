@@ -926,14 +926,20 @@ async def test_time_to_first_partial_latched_onto_eou_row():
     capture.bind(session)
 
     session.emit("user_started_speaking", _SpeakingEvent(100.0))
-    session.emit("user_input_transcribed", _Transcript(is_final=False, created_at=100.3))
-    session.emit("user_input_transcribed", _Transcript(is_final=False, created_at=100.5))
+    session.emit(
+        "user_input_transcribed", _Transcript(is_final=False, created_at=100.3)
+    )
+    session.emit(
+        "user_input_transcribed", _Transcript(is_final=False, created_at=100.5)
+    )
     session.emit("user_input_transcribed", _Transcript(is_final=True, created_at=100.9))
     session.emit("metrics_collected", _TurnEOU())
     await capture.drain()
 
     eou = next(r for r in sink.records if r.modality == "eou")
-    assert eou.metadata["eou"]["time_to_first_partial_ms"] == pytest.approx(300.0)  # first interim only
+    assert eou.metadata["eou"]["time_to_first_partial_ms"] == pytest.approx(
+        300.0
+    )  # first interim only
     assert eou.metadata["eou"]["end_of_utterance_delay"] == 0.5
 
 
@@ -959,7 +965,9 @@ async def test_first_partial_latch_resets_between_turns():
     capture.bind(session)
 
     session.emit("user_started_speaking", _SpeakingEvent(100.0))
-    session.emit("user_input_transcribed", _Transcript(is_final=False, created_at=100.3))
+    session.emit(
+        "user_input_transcribed", _Transcript(is_final=False, created_at=100.3)
+    )
     session.emit("metrics_collected", _TurnEOU())
     session.emit("user_started_speaking", _SpeakingEvent(200.0))  # turn 2: no interim
     session.emit("metrics_collected", _TurnEOU())
@@ -993,7 +1001,9 @@ async def test_time_to_first_partial_via_user_state_changed():
     capture.bind(session)
 
     session.emit("user_state_changed", _UserStateChanged("speaking", 100.0))
-    session.emit("user_input_transcribed", _Transcript(is_final=False, created_at=100.28))
+    session.emit(
+        "user_input_transcribed", _Transcript(is_final=False, created_at=100.28)
+    )
     session.emit("user_input_transcribed", _Transcript(is_final=True, created_at=100.9))
     session.emit("metrics_collected", _TurnEOU())
     await capture.drain()
@@ -1009,7 +1019,9 @@ async def test_non_speaking_user_state_change_does_not_anchor_onset():
     capture.bind(session)
 
     session.emit("user_state_changed", _UserStateChanged("listening", 50.0))
-    session.emit("user_input_transcribed", _Transcript(is_final=False, created_at=100.28))
+    session.emit(
+        "user_input_transcribed", _Transcript(is_final=False, created_at=100.28)
+    )
     session.emit("metrics_collected", _TurnEOU())
     await capture.drain()
 

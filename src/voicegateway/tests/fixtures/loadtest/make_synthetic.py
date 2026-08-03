@@ -32,9 +32,9 @@ from __future__ import annotations
 import pathlib
 
 HERE = pathlib.Path(__file__).resolve().parent
-HEADER = (HERE / "capture-01" / "gossipper_2958087_stats.log").read_text().splitlines()[
-    0
-]
+HEADER = (
+    (HERE / "capture-01" / "gossipper_2958087_stats.log").read_text().splitlines()[0]
+)
 COLUMNS = HEADER.split(",")
 
 # 2026-08-02T09:00:00Z, a round instant so the windows are easy to reason about.
@@ -134,7 +134,10 @@ def main() -> None:
     for index, target in enumerate((100, 150, 200, 250)):
         established = target * 30
         _stat_file(
-            HERE / "saturation-ramp" / f"ramp-{target}" / f"gossipper_{5000 + index}_stats.log",
+            HERE
+            / "saturation-ramp"
+            / f"ramp-{target}"
+            / f"gossipper_{5000 + index}_stats.log",
             # Steps run back to back, 90s apart, so their windows do not overlap
             # and each correlates to its own node samples.
             start_ms=BASE_MS + index * 90_000,

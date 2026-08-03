@@ -254,7 +254,9 @@ async def test_dashboard_reads_survive_a_concurrent_burst(gateway):
         stop.set()
         await reader
 
-    _report(f"dashboard reads during a {len(burst)}-event burst", read_latencies_ms, wall_s)
+    _report(
+        f"dashboard reads during a {len(burst)}-event burst", read_latencies_ms, wall_s
+    )
 
     assert read_statuses == {200}
     # The loop was never starved: reads kept completing throughout the burst.
