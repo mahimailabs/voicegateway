@@ -436,12 +436,17 @@ def test_a_passing_run_has_no_capacity_figure(acceptance) -> None:
 @pytest.fixture(scope="module")
 def saturation(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("saturation")
-    # One window per step, 90s apart, CPU climbing past the ceiling at the last.
+    # One window per step, 390s apart, CPU climbing past the ceiling at the
+    # last. The spacing follows the fixture, whose steps are now six minutes
+    # rather than one: a step shorter than capacity.MIN_STEADY_STATE_S records
+    # how fast calls ARRIVED rather than how many the node held, and the
+    # derivation excludes it. The windows stay 59s long so each still carries
+    # the same six samples it always did.
     base = 1_785_661_201_000
     windows = [
         (
-            base + index * 90_000,
-            base + index * 90_000 + 59_000,
+            base + index * 390_000,
+            base + index * 390_000 + 59_000,
             cpu,
             0.40 + index * 0.05,
         )

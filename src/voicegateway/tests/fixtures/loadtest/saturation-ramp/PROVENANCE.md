@@ -3,7 +3,7 @@
 **Nothing here was measured.** Every number is computed by `../make_synthetic.py`.
 Do not read any figure here as evidence about any deployment.
 
-Four steps, 100 / 150 / 200 / 250 concurrent, each 60 seconds, run back to back
+Four steps, 100 / 150 / 200 / 250 concurrent, each 6 minutes, run back to back
 so their windows do not overlap and each correlates to its own node samples.
 Named and shaped like a real capture: `gossipper_<pid>_stats.log`, no
 `summary.json`.
@@ -14,6 +14,15 @@ Named and shaped like a real capture: `gossipper_<pid>_stats.log`, no
 something stopped scaling, and until it is known whether that was the node or
 the generator, the ceiling is not attributable. A fixture that plateaued would
 prove the refusal rather than the derivation.
+
+## Every step runs past MIN_STEADY_STATE_S, also on purpose
+
+These steps were 60 seconds each, and at that length the derivation now refuses
+them: a step that short spends most of its wall time ESTABLISHING calls rather
+than holding them, so its CPU reports a call-setup rate. Sizing from that reads
+low in calls and over-provisions, by most of an order of magnitude on one
+observed run. A sizing fixture whose steps the sizing code declines to use is
+not a sizing fixture.
 
 ## The last step exceeds the CPU ceiling, also on purpose
 

@@ -1533,6 +1533,16 @@ def build_load_payload(
         # measured it this time". Printed at import and carried nowhere until
         # now, so the only person who ever saw them was whoever ran the import.
         "run_limitations": list(limitations or []),
+        # Every measurement that produced no number, with the cause and what to
+        # change. Derived from the gates above rather than passed in, so it
+        # cannot disagree with them.
+        #
+        # This is where they live now: the HTML used to table one row per
+        # (subject x measurement) pair and became mostly that table. Nothing is
+        # lost by moving them, because the whole list is here and a consumer
+        # reading the JSON gets more than the table gave them. See
+        # :func:`not_collected_entries`.
+        "not_collected": not_collected_entries(gate_results),
         # Parts of a contracted criterion this system cannot evaluate AT ALL.
         # Distinct from not_measured, which is what the report structurally does
         # not tell you, and from run_limitations, which is what these artifacts
@@ -1638,15 +1648,25 @@ def _render_capacity(payload: dict[str, Any]) -> str:
     if capacity.get("calls_per_node") is None:
         # The derivation RAN and refused. The reason is the whole value of this
         # branch, so it is never summarised away.
+        #
+        # It LEADS, in the first sentence after the heading. It used to sit
+        # under a "Why:" label below a paragraph of standing policy, and a
+        # reader arriving at a section with no table read the policy, concluded
+        # the report had failed to generate something, and stopped. The reason
+        # says what the run actually showed (which ceiling was never reached,
+        # what concurrency was demonstrated as a floor), so it is the finding
+        # rather than an apology for the absence of one.
+        #
+        # The reason is a sentence fragment from the derivation and begins
+        # lowercase, so it is joined with a colon rather than after a full stop.
         return (
-            "<h2>Capacity</h2><p>No capacity table. The calls-per-node figure "
-            "was not derivable, so sizing would mean inventing the one number "
-            "the whole table rests on.</p>"
-            # The reason is a sentence fragment from the derivation and begins
-            # lowercase. Concatenating it after a full stop read as a typo in a
-            # document somebody is paying for, so it gets its own line and its
-            # own label.
-            f'<p class="sub">Why: {_esc(capacity.get("reason") or "not stated")}</p>'
+            "<h2>Capacity</h2>"
+            "<p>No capacity figure and no capacity table: "
+            f"{_esc(capacity.get('reason') or 'no reason was recorded')}.</p>"
+            '<p class="sub">The calls-per-node figure was not derivable, and '
+            "sizing without it would mean inventing the one number the whole "
+            "table rests on. Refusing is the result here, not a gap in this "
+            "report.</p>"
         )
     rows = "".join(
         "<tr>"
@@ -2182,6 +2202,102 @@ _PROFILE_CAUSES: tuple[tuple[tuple[str, ...], str, str], ...] = (
 )
 
 
+#: The at-a-glance READING, and the only place a gate status is ever read by
+#: this view.
+#:
+#: Two words, both lowercase, neither of them a status. ``ok`` says the figure
+#: sits on the safe side of its reference and ``over`` says it does not, which
+#: is a reading of one number against one line. It is not a verdict on the run
+#: and it is deliberately not styled like one: no colour, no chip, no border.
+#:
+#: DERIVED FROM THE GATE'S OWN COMPARISON rather than recomputed here, and that
+#: is the whole reason this mapping exists instead of a "is value past
+#: threshold" branch. Several gates do not compare their value to their
+#: threshold at all. ``resource_trend`` carries a signed drift in the metric's
+#: own units against a threshold that is a FRACTION of that metric's baseline,
+#: so a renderer comparing the two directly would produce nonsense, and which
+#: direction counts as wrong depends on the metric. Reading the comparison the
+#: gate already made means the glance line and the detail row cannot disagree.
+#:
+#: Everything else maps to the empty string, which renders as a blank cell.
+#: WAIVED is the case that matters: a waived gate's value was measured but the
+#: comparison was set aside in writing, so there is no reading to report and
+#: inventing one would quietly re-apply a threshold somebody removed.
+_GLANCE_READINGS: dict[str, str] = {gates.PASS: "ok", gates.FAIL: "over"}
+
+#: Which side of its reference each measurement is safe on, for the two display
+#: decisions that need it: how the reference is worded, and which subject counts
+#: as the worst one when several were measured.
+#:
+#: NEVER used to decide ``ok`` or ``over``. That comes from
+#: :data:`_GLANCE_READINGS`, so an entry here that is wrong, or missing, can
+#: misword a reference or pick a less interesting row to quote. It cannot make
+#: the table say a figure is fine when the gate found it was not.
+#:
+#: ``resource_trend`` is absent on purpose rather than by omission: its drift is
+#: signed and whether rising is bad depends on the metric, so it has no single
+#: direction and is summarised as a count instead.
+_GLANCE_FLOOR = "floor"
+_GLANCE_CEILING = "ceiling"
+_GLANCE_DIRECTION: dict[str, str] = {
+    gates.ESTABLISHMENT_GATE: _GLANCE_FLOOR,
+    gates.NODE_CPU_GATE: _GLANCE_CEILING,
+    gates.NODE_MEMORY_GATE: _GLANCE_CEILING,
+    f"{gates.HEADROOM_GATE}/{gates.HEADROOM_FILE_DESCRIPTORS}": _GLANCE_FLOOR,
+    f"{gates.HEADROOM_GATE}/{gates.HEADROOM_RTP_PORTS}": _GLANCE_FLOOR,
+    f"{gates.HEADROOM_GATE}/{gates.HEADROOM_NETWORK_IN}": _GLANCE_FLOOR,
+    f"{gates.HEADROOM_GATE}/{gates.HEADROOM_NETWORK_OUT}": _GLANCE_FLOOR,
+    gates.HEADROOM_GATE: _GLANCE_FLOOR,
+    gates.NETWORK_ALLOWANCE_GATE: _GLANCE_CEILING,
+    gates.PROCESS_LIFECYCLE_GATE: _GLANCE_CEILING,
+    gates.RETURN_TO_BASELINE_GATE: _GLANCE_CEILING,
+    gates.SUSTAINED_HEALTH_GATE: _GLANCE_CEILING,
+}
+
+#: The order the glance table reads in: what an operator decides on, worst
+#: consequence first. Calls, then the media that carries them, then the limits
+#: the node runs into, then what happened over time.
+#:
+#: A measured key missing from this tuple still renders, at the bottom. A
+#: profiler that silently drops a number because nobody added it to a display
+#: list is exactly the failure this file is written against, and the same
+#: reasoning covers :data:`PROFILE_UNGROUPED_GROUP` in the detail section.
+_GLANCE_ORDER: tuple[str, ...] = (
+    gates.ESTABLISHMENT_GATE,
+    gates.NODE_CPU_GATE,
+    gates.NODE_MEMORY_GATE,
+    f"{gates.HEADROOM_GATE}/{gates.HEADROOM_RTP_PORTS}",
+    f"{gates.HEADROOM_GATE}/{gates.HEADROOM_FILE_DESCRIPTORS}",
+    f"{gates.HEADROOM_GATE}/{gates.HEADROOM_NETWORK_IN}",
+    f"{gates.HEADROOM_GATE}/{gates.HEADROOM_NETWORK_OUT}",
+    gates.NETWORK_ALLOWANCE_GATE,
+    gates.PROCESS_LIFECYCLE_GATE,
+    gates.SUSTAINED_HEALTH_GATE,
+    gates.RESOURCE_TREND_GATE,
+    gates.RETURN_TO_BASELINE_GATE,
+)
+
+#: What the glance table calls each measurement. Shorter than the detail
+#: section's name, because a glance row is read in a column two words wide and
+#: the sentence explaining it is one line below.
+_GLANCE_NAMES: dict[str, str] = {
+    gates.ESTABLISHMENT_GATE: "Calls established",
+    gates.NODE_CPU_GATE: "Peak CPU, worst node",
+    gates.NODE_MEMORY_GATE: "Peak memory, worst node",
+    f"{gates.HEADROOM_GATE}/{gates.HEADROOM_RTP_PORTS}": "RTP media ports free",
+    f"{gates.HEADROOM_GATE}/{gates.HEADROOM_FILE_DESCRIPTORS}": (
+        "File descriptors free"
+    ),
+    f"{gates.HEADROOM_GATE}/{gates.HEADROOM_NETWORK_IN}": "Inbound bandwidth free",
+    f"{gates.HEADROOM_GATE}/{gates.HEADROOM_NETWORK_OUT}": "Outbound bandwidth free",
+    gates.NETWORK_ALLOWANCE_GATE: "Hypervisor allowance events",
+    gates.PROCESS_LIFECYCLE_GATE: "Restarts and OOM kills",
+    gates.SUSTAINED_HEALTH_GATE: "Consecutive failed health samples",
+    gates.RESOURCE_TREND_GATE: "Resource drift, steady state",
+    gates.RETURN_TO_BASELINE_GATE: "Return to baseline",
+}
+
+
 def _headroom_resource(gate: dict[str, Any]) -> str | None:
     """Which resource a headroom gate is about, from whichever field survived.
 
@@ -2274,6 +2390,10 @@ def _profile_rows(
             "value": _as_float(gate.get("value")),
             "threshold": _as_float(gate.get("threshold")),
             "detail": detail,
+            # The status is converted HERE and never carried, so no downstream
+            # renderer can print it by reaching for a field that happened to be
+            # in the dict. See _GLANCE_READINGS.
+            "reading": _GLANCE_READINGS.get(str(gate.get("status")), ""),
         }
         resource = (
             _headroom_resource(gate) if row["gate"] == gates.HEADROOM_GATE else None
@@ -2301,6 +2421,209 @@ def _profile_subject(row: dict[str, Any]) -> str:
     if step and step != subject:
         cell += f'<div class="why">{_esc(step)}</div>'
     return cell
+
+
+def _glance_pick(rows: list[dict[str, Any]], key: str) -> dict[str, Any]:
+    """Which of several measured subjects the glance line quotes.
+
+    Rows reading ``over`` are considered FIRST, and that ordering is what makes
+    this safe. Whatever :data:`_GLANCE_DIRECTION` says, the quoted row is one
+    the gate found past its reference whenever any row was, so the glance table
+    cannot read ``ok`` while a row below it reads ``over``. The direction only
+    chooses which of several equally-graded subjects is the interesting one.
+    """
+    over = [row for row in rows if row["reading"] == "over"]
+    pool = over or rows
+    if _GLANCE_DIRECTION.get(key) == _GLANCE_FLOOR:
+        return min(pool, key=lambda row: row["value"])
+    return max(pool, key=lambda row: row["value"])
+
+
+def _glance_reference(key: str, gate: str, threshold: float | None) -> str:
+    """The reference, worded so its direction is on the page.
+
+    "at least 99.5%" and "at most 70%" are the same two facts a reader would
+    otherwise have to remember per row. The figure itself comes from
+    :func:`_gate_number`, the same call the detail table makes, so the two
+    sections cannot render one threshold two ways.
+    """
+    if threshold is None:
+        return '<span class="nm">no reference recorded</span>'
+    figure = _gate_number(threshold, gate)
+    direction = _GLANCE_DIRECTION.get(key)
+    if direction == _GLANCE_FLOOR:
+        return f"at least {figure}"
+    if direction == _GLANCE_CEILING:
+        return f"at most {figure}"
+    return figure
+
+
+def _glance_trend_row(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Steady-state drift, as a COUNT of resources rather than as one figure.
+
+    The only row here that is not a worst-subject quote, and it has to be. A
+    trend's value is a drift in the metric's OWN units, so a memory drift in
+    bytes and a socket-count drift in sockets have no common scale and no
+    largest. Quoting one of them as "the worst" would be picking whichever
+    metric happens to be measured in big numbers.
+
+    What survives that is the question an operator actually has, which is
+    whether anything moved at all, so the value is how many measured resources
+    the gate found drifting.
+    """
+    over = [row for row in rows if row["reading"] == "over"]
+    threshold = next((r["threshold"] for r in rows if r["threshold"] is not None), None)
+    floor = "its own steady-state baseline"
+    if threshold is not None:
+        floor = f"{_ratio_pct(threshold)} of its own steady-state baseline"
+    return {
+        "what": _GLANCE_NAMES[gates.RESOURCE_TREND_GATE],
+        # Short, because the Value column is a narrow numeric column shared with
+        # percentages: a sentence in it wraps and right-aligns into something a
+        # reader has to stop and parse, which is the opposite of a glance.
+        "value": f"{len(over)} of {len(rows)}",
+        "why": (
+            "Measured resources drifting. A count, not a figure: drift is in "
+            "each resource's own units, so there is no worst one to quote."
+        ),
+        "reference": f"none past {floor}",
+        # Consistent with every other row by construction: it reads over
+        # whenever any trend row does, because it is built from those readings.
+        "reading": "over" if over else "ok",
+    }
+
+
+def _glance_media_row(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Two-way media, from the generator's own RTP totals, or nothing.
+
+    Present in the payload since the first import and rendered nowhere until
+    now, which made a run's only evidence that audio flowed BACK invisible.
+
+    Deliberately not called a per-call figure. These are run totals from the
+    generator's summary, so they show media returning across the test; nothing
+    here attributes a packet to a call, and the report says elsewhere that no
+    server-side surface can. So it carries no reference and no reading: there is
+    no threshold anybody contracted for it, and inventing one to fill the column
+    would be this document grading a number on its own authority.
+    """
+    ratios = [
+        (test["rtp_packets_received"] / test["rtp_packets_sent"], test["name"])
+        for test in payload.get("tests") or []
+        if test.get("rtp_packets_sent") and test.get("rtp_packets_received") is not None
+    ]
+    if not ratios:
+        return None
+    worst, where = min(ratios)
+    return {
+        "what": "Two-way media",
+        "value": f"{worst:.3f}",
+        # ESCAPED. The test name comes from the imported artifacts (a directory
+        # name), and the glance renderer inserts `why` raw because every other
+        # producer of it already escaped its own interpolations. Nothing else in
+        # this document trusts a value that came off disk and this must not
+        # either.
+        "why": (
+            f"Packets received per packet sent. Worst of {len(ratios)} test(s), "
+            f"on {_esc(where)}. Run totals from the generator, so this shows "
+            "media returned across the test and not that every call carried it."
+        ),
+        "reference": "",
+        "reading": "",
+    }
+
+
+def _glance_rows(
+    payload: dict[str, Any], measured: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """One line per thing an operator decides on, and nothing else.
+
+    A measurement with no measured value produces NO ROW. Not a dash, not an
+    empty cell, not the word unknown: the table's whole claim is that every line
+    in it carries a number, and one placeholder breaks that for all the others.
+    What was not collected is named further down, once, with a pointer to the
+    JSON.
+    """
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in measured:
+        if row["value"] is not None:
+            grouped.setdefault(row["key"], []).append(row)
+
+    order = list(_GLANCE_ORDER) + [k for k in grouped if k not in _GLANCE_ORDER]
+    out: list[dict[str, Any]] = []
+    for key in order:
+        rows = grouped.get(key)
+        if not rows:
+            continue
+        if key == gates.RESOURCE_TREND_GATE:
+            out.append(_glance_trend_row(rows))
+            continue
+        pick = _glance_pick(rows, key)
+        why = _esc(str(pick["subject"] or "")) or "no subject recorded"
+        if len(rows) > 1:
+            why += f", worst of {len(rows)} measured"
+        out.append(
+            {
+                "what": _GLANCE_NAMES.get(key, pick["name"]),
+                "value": _gate_number(pick["value"], pick["gate"]),
+                "why": why,
+                "reference": _glance_reference(key, pick["gate"], pick["threshold"]),
+                "reading": pick["reading"],
+            }
+        )
+    media = _glance_media_row(payload)
+    if media is not None:
+        # After the call rows and before the node limits, which is where a
+        # reader looks for it: whether the calls connected, then whether audio
+        # actually moved on them.
+        out.insert(1 if out else 0, media)
+    return out
+
+
+def _render_profile_glance(
+    payload: dict[str, Any], measured: list[dict[str, Any]]
+) -> str:
+    """The first table on the page, and the only one most readers will look at.
+
+    It answers "was this run alright" in the time it takes to scan a column,
+    which the document could not do before: the numbers were all present and
+    spread over four sections, so the answer existed and nobody could reach it.
+
+    It is still not a verdict. Every figure here also appears below with its
+    reference band, the reading is a comparison of one number against one line
+    rather than a grade on the run, and nothing sums the column into an outcome.
+    """
+    rows = _glance_rows(payload, measured)
+    if not rows:
+        return (
+            "<h2>At a glance</h2>"
+            '<div class="note">Nothing to summarise: this run put a number on '
+            "no measurement that belongs here. That is the finding, and the "
+            "sections below carry what the run did record and what it did "
+            "not.</div>"
+        )
+    body = "".join(
+        "<tr>"
+        f"<td>{_esc(row['what'])}"
+        + (f"<div class='why'>{row['why']}</div>" if row["why"] else "")
+        + f"</td><td class='num'>{row['value']}</td>"
+        f"<td>{row['reference']}</td>"
+        f"<td class='reading'>{_esc(row['reading'])}</td>"
+        "</tr>"
+        for row in rows
+    )
+    return (
+        "<h2>At a glance</h2>"
+        "<table class='glance'><thead><tr><th>What</th><th class='num'>Value</th>"
+        "<th>Reference</th><th>Reading</th></tr></thead>"
+        f"<tbody>{body}</tbody></table>"
+        "<p class='sub'>Every line here carries a measured number: anything this "
+        "run did not measure is absent from this table rather than shown blank. "
+        "<strong>ok</strong> means the figure sits on the safe side of its "
+        "reference and <strong>over</strong> means it does not. That is a "
+        "reading of one number against one line, not a verdict on the run, and "
+        "whether it matters depends on what the deployment is for. Peaks are "
+        "the worst node&rsquo;s peak, never a fleet average.</p>"
+    )
 
 
 def _profile_band(value: float, threshold: float) -> str:
@@ -2425,79 +2748,101 @@ def _render_profile_measurements(measured: list[dict[str, Any]]) -> str:
     return "".join(out)
 
 
-def _render_profile_not_collected(
-    payload: dict[str, Any],
-    missing: list[dict[str, Any]],
-    dropped: list[dict[str, Any]],
-) -> str:
-    """The setup checklist: what produced no number, grouped by why.
+def not_collected_entries(
+    gate_results: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]] | None:
+    """Every measurement this run produced no number for, with what to change.
 
-    Rows for permanently unmeasurable resources are absent from this list on
-    purpose, and a single sentence names them when any were dropped. The list
-    itself is a queue of work somebody can do, and an item nobody can ever do
-    turns it into a queue that never empties. Naming them once keeps the
-    disclosure from shrinking silently, which is the failure mode of collapsing
-    rows into a summary.
+    THE PAYLOAD IS WHERE THESE LIVE NOW. They used to be a table in the HTML,
+    one row per (subject x measurement) pair, and on a thirteen-target fleet
+    that is a hundred and eleven rows of "not collected" under a heading a
+    reader hits before they have finished the numbers. The information is worth
+    keeping and worth machine-reading; what it is not worth is most of the
+    document. The HTML states the count and points here.
+
+    ``None`` when nothing was gated, mirroring ``gates``. An empty LIST means
+    gating ran and left no gaps, which is a different claim, and flattening the
+    two would make a run nobody judged look like a run with nothing missing.
+
+    Permanently unmeasurable resources are excluded, because they are not a gap
+    in this run. They are reported once as prose under the structural limits and
+    carried machine-readably in ``scope_exclusions``.
+    """
+    if gate_results is None:
+        return None
+    _measured, missing, _dropped = _profile_rows({"gates": gate_results})
+    entries = []
+    for row in missing:
+        cause, change = _profile_cause(row["detail"])
+        entries.append(
+            {
+                "gate": row["gate"],
+                "subject": row["subject"],
+                "step": row["step"],
+                "measurement": row["name"],
+                "cause": cause,
+                "change": change,
+                # Verbatim, so nothing is lost to a classification that may have
+                # filed the row under the wrong heading.
+                "recorded": row["detail"],
+            }
+        )
+    return entries
+
+
+def _render_profile_not_collected(
+    payload: dict[str, Any], missing: list[dict[str, Any]]
+) -> str:
+    """One line naming how much this run did not collect, and where to read it.
+
+    A table used to stand here, one row per (subject x measurement) pair, and it
+    was the largest thing in the document by a wide margin: forty-six rows on a
+    seven-step run, a hundred and eleven on a thirteen-target fleet. Every row
+    was true and the section as a whole was still wrong, because a reader
+    scanning for what the fleet did had to scroll past a hundred lines about how
+    the run was configured to get there.
+
+    Everything here is RUN-SPECIFIC: a window too short for a trend, a series
+    that was not in this run's scrape, a baseline nobody declared. The fix for
+    every one of them is to run it again differently, which is one action, and
+    the per-row detail that supports it is machine-readable in the JSON beside
+    this file. What no run can ever collect is a different claim entirely and is
+    stated as prose under the structural limits, never here: a reader must not
+    be able to confuse "this run was not set up to collect it" with "this cannot
+    be collected".
     """
     run_limits = payload.get("run_limitations") or []
-    out = ["<h2>Not collected in this run</h2>"]
     if not missing and not run_limits:
-        out.append(
+        return (
+            "<h2>Not collected in this run</h2>"
             "<p>Every gate this run evaluated produced a number, and every "
-            "number is in the section above.</p>"
+            "number is above.</p>"
         )
-    else:
-        out.append(
-            "<p>These produced no number. They are grouped by cause so the "
-            "section reads as a list of things to fix rather than as a list of "
-            "gaps, and each row carries what the run itself recorded, verbatim. "
-            "An absence is never a zero and never a pass: nothing was compared "
-            "against anything.</p>"
-        )
-    if dropped:
-        names = sorted(
-            {str(r["subject"] or r["key"]).rsplit("/", 1)[-1] for r in dropped}
-        )
-        out.append(
-            f"<p class='sub'>{len(dropped)} row(s) covering "
-            f"{_esc(', '.join(names))} are absent from this list entirely, not "
-            "filed as uncollected: no allowance for them is published by "
-            "anybody, so there is no denominator to divide by and no run will "
-            "ever fill them in.</p>"
-        )
-    grouped: dict[str, tuple[str, list[dict[str, Any]]]] = {}
-    for row in missing:
-        title, remedy = _profile_cause(row["detail"])
-        grouped.setdefault(title, (remedy, []))[1].append(row)
-    for _markers, title, _remedy in _PROFILE_CAUSES:
-        entry = grouped.get(title)
-        if entry is None:
-            continue
-        remedy, rows = entry
-        body = "".join(
-            f"<tr><td class='mono'>{_profile_subject(row)}</td>"
-            f"<td>{_esc(row['name'])}</td>"
-            f"<td>{_esc(row['detail'])}</td></tr>"
-            for row in rows
-        )
-        out.append(
-            f"<h3>{_esc(title)}</h3><p class='sub'>{_esc(remedy)}</p>"
-            "<table><thead><tr><th>Subject</th><th>Measurement</th>"
-            "<th>What the run recorded</th></tr></thead>"
-            f"<tbody>{body}</tbody></table>"
-        )
+    counts, keys = [], []
+    if missing:
+        counts.append(f"{len(missing)} measurement(s) were not collected")
+        keys.append("<span class='mono'>not_collected</span>")
     if run_limits:
-        entries = "".join(f"<li>{_esc(item)}</li>" for item in run_limits)
-        out.append(
-            "<h3>From this run's own artifacts</h3>"
-            "<p class='sub'>Gaps in the files this report was built from, rather "
-            "than in the fleet it describes. A later run can close them.</p>"
-            f"<ul>{entries}</ul>"
-        )
-    return "".join(out)
+        counts.append(f"this run&rsquo;s own artifacts left {len(run_limits)} gap(s)")
+        keys.append("<span class='mono'>run_limitations</span>")
+    return (
+        "<h2>Not collected in this run</h2>"
+        f"<p>{', and '.join(counts)}. Read "
+        f"{' and '.join(keys)} in the JSON beside this file for each one, what "
+        "the run recorded about it, and what to change so the next run carries "
+        "it.</p>"
+        "<p class='sub'>Not listed here, on purpose. Every one of them says how "
+        "this run was configured rather than what the fleet did, and a page of "
+        "them buries the measurements above. An absence is still never a zero "
+        "and never a pass: nothing was compared against anything. What no run "
+        "can ever collect is a different thing and is under &ldquo;What this "
+        "report structurally does not measure&rdquo; instead.</p>"
+    )
 
 
-def _render_profile_method(payload: dict[str, Any]) -> str:
+def _render_profile_method(
+    payload: dict[str, Any], dropped: list[dict[str, Any]]
+) -> str:
     """How to read the figures above, including the reasons they read low or high.
 
     The structural limits are :data:`_LOAD_REPORT_LIMITS`, reused through the
@@ -2529,13 +2874,32 @@ def _render_profile_method(payload: dict[str, Any]) -> str:
         "samples is the maximum wearing a more confident label.",
     ]
     items = "".join(f"<li>{_esc(item)}</li>" for item in method)
+    # The permanent absences get their footnote HERE and nowhere else. They used
+    # to be named in the not-collected section, which put a fact no run can
+    # change at the top of a list of things somebody could go and fix. The list
+    # above already states each one in prose; this counts the gate rows that
+    # were dropped because of them, so the disclosure cannot shrink quietly the
+    # way it would if the rows just stopped appearing.
+    footnote = ""
+    if dropped:
+        names = sorted(
+            {str(row["subject"] or row["key"]).rsplit("/", 1)[-1] for row in dropped}
+        )
+        footnote = (
+            f"<p class='sub'>{len(dropped)} gate row(s) covering "
+            f"{_esc(', '.join(names))} are absent from this document entirely, "
+            "rather than reported as not collected. Nobody publishes an "
+            "allowance for them, so there is no denominator to divide by and no "
+            "run will ever fill them in. Listing them as gaps would put an item "
+            "on a checklist that can never be ticked.</p>"
+        )
     return (
         "<h2>How to read these numbers</h2>"
         f"<ul>{items}</ul>"
         "<h3>What this report structurally does not measure</h3>"
         "<p>These are limits of the system, not of this run. A later run does "
         "not close them.</p>"
-        f"<ul>{structural}</ul>"
+        f"<ul>{structural}</ul>{footnote}"
     )
 
 
@@ -2620,6 +2984,15 @@ _PROFILE_CSS = """
              margin-left: -1px; background: #16181d; }
 .band-scale { display: flex; justify-content: space-between; gap: 10px;
               font-size: 11px; color: #5b6472; }
+/* The at-a-glance reading. Deliberately the plainest cell in the document: no
+   colour, no background, no border, no weight. It is a comparison of one number
+   against one line, and the moment it is styled like a chip it reads as a
+   grade, which is the thing this whole view exists to stop doing. */
+.reading { color: #16181d; font-variant-numeric: tabular-nums;
+           white-space: nowrap; }
+/* The figure is the point of the row, so it never wraps. The column is sized by
+   a percentage and "4 of 16" would otherwise break across two lines. */
+.glance td.num { white-space: nowrap; }
 @page { margin: 16mm 14mm; }
 @media print {
   thead { display: table-header-group; }
@@ -2680,6 +3053,11 @@ def render_profile_html(payload: dict[str, Any]) -> str:
             # list did not mention it is how disclosures disappear.
             _render_stamp(payload),
             _render_profile_identity(payload),
+            # FIRST, directly under the run header. Everything in it also
+            # appears below with its reference band; what it adds is that the
+            # answer to "was this alright" no longer requires reading four
+            # sections and holding them in your head.
+            _render_profile_glance(payload, measured),
             # Reused verbatim from the acceptance view rather than reimplemented.
             # These two sections carry no status and no verdict, so they are
             # already the profile rendering of those numbers, and a second
@@ -2687,8 +3065,8 @@ def render_profile_html(payload: dict[str, Any]) -> str:
             _render_load_tests(payload),
             _render_profile_measurements(measured),
             _render_capacity(payload),
-            _render_profile_not_collected(payload, missing, dropped),
-            _render_profile_method(payload),
+            _render_profile_not_collected(payload, missing),
+            _render_profile_method(payload, dropped),
             "<footer>Generated by voicegateway "
             f"{_esc(payload['generator']['version'])} on "
             f"{_esc(payload['generated_at'])} &middot; "

@@ -20,7 +20,14 @@ threshold, so its verdict is PASS.
 ``saturation-ramp`` is a sizing run: it pushes a node past the 70% CPU ceiling
 on purpose, because ``derive_calls_per_node`` refuses a ramp that never
 saturated ("it carries AT LEAST N calls, which is a floor on its capacity and
-not a measure of it"). The step that makes the figure derivable is the same step
+not a measure of it").
+
+EVERY STEP RUNS PAST :data:`capacity.MIN_STEADY_STATE_S`, and that is a property
+of the fixture rather than an incidental length. A step shorter than that spends
+most of its wall time establishing calls rather than holding them, so its CPU
+reports a call-SETUP rate and the derivation refuses it. These steps used to be
+sixty seconds, which made this fixture a sizing run that the code it exercises
+would now decline to size. The step that makes the figure derivable is the same step
 that fails the CPU gate, so this run's verdict is FAIL by construction. That is
 not a defect in either the gate or the derivation. Measuring capacity means
 exceeding the ceiling; passing acceptance means staying under it. They are two
@@ -118,10 +125,12 @@ def main() -> None:
     # 15000 attempted, 14985 established. 99.9%, above the 99.5% floor and not
     # a suspicious 100%: a run with no failures at all is rarer than a report
     # that forgot to count them.
+    # Six minutes, not two: past MIN_STEADY_STATE_S, so the step is a statement
+    # about the calls the node HELD rather than about the rate they arrived at.
     _stat_file(
         HERE / "acceptance-500" / "gossipper_4410_stats.log",
         start_ms=BASE_MS,
-        seconds=120,
+        seconds=360,
         target=500,
         established=14_985,
         failed=15,
@@ -138,10 +147,13 @@ def main() -> None:
             / "saturation-ramp"
             / f"ramp-{target}"
             / f"gossipper_{5000 + index}_stats.log",
-            # Steps run back to back, 90s apart, so their windows do not overlap
-            # and each correlates to its own node samples.
-            start_ms=BASE_MS + index * 90_000,
-            seconds=60,
+            # Steps run back to back, 390s apart, so their windows do not
+            # overlap and each correlates to its own node samples. Six minutes
+            # each, past MIN_STEADY_STATE_S: a sixty-second step measures how
+            # fast calls arrived, not how many the node carried, and the
+            # derivation declines to size a fleet from one.
+            start_ms=BASE_MS + index * 390_000,
+            seconds=360,
             target=target,
             established=established,
             failed=round(established * 0.001),
