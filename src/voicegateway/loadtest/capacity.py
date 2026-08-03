@@ -34,6 +34,31 @@ consistent.
 So :func:`derive_calls_per_node` refuses to return a figure from a plateaued
 ramp. It is the one input to the whole capacity table, and a wrong one is worse
 than a missing one.
+
+The setup-rate ceiling
+----------------------
+
+A second way to measure the wrong thing, and it reads as a plausible number
+rather than as an error.
+
+A short ramp step spends most of its wall time ESTABLISHING calls, not holding
+them. Signalling costs far more CPU per call than carrying one does, so the CPU
+such a step reports is dominated by the arrival rate and barely reflects the
+population. Push the same fleet with real calls, which last minutes, and it
+carries several times more of them at lower CPU.
+
+The two answers are not close and they point opposite ways. One observed run
+recorded 25 concurrent at 83.8% CPU over a 110-second step, and 100 concurrent
+at 66.5% CPU over a soak on the same single node. Sized from the ramp the fleet
+needs nine nodes to carry 100 calls; the soak on the same page shows one node
+doing it. The ramp figure is a call-SETUP-rate limit wearing a concurrency
+limit's label, and sizing from it over-provisions by most of an order of
+magnitude.
+
+Nothing downstream can catch this either: every number in the ramp is real and
+internally consistent. So :data:`MIN_STEADY_STATE_S` keeps a step out of the
+derivation unless it ran long enough to have held a population rather than
+filled one.
 """
 
 from __future__ import annotations
@@ -58,6 +83,28 @@ DEFAULT_SETUP_OVERHEAD_S = 2.0
 # purpose: this exists to catch a generator that stopped scaling, and real
 # concurrency wobbles by a few calls between steps.
 PLATEAU_TOLERANCE = 0.05
+
+# The shortest a step may run and still say anything about CONCURRENCY capacity.
+# See "The setup-rate ceiling" in the module docstring for what goes wrong
+# without it.
+#
+# Five minutes, and the basis is the traffic being modelled rather than a
+# statistical rule. A capacity figure is a claim about how many calls a node can
+# HOLD. A node only demonstrates that once the population it is holding has
+# stopped being dominated by the calls arriving into it, and how long that takes
+# is set by how long a call lasts. Real phone calls last minutes, so a step
+# shorter than five minutes cannot contain more than a couple of call lifetimes
+# and its CPU is mostly signalling.
+#
+# The error is one-directional and expensive. Setup-dominated CPU crosses the
+# ceiling at a LOWER concurrency than holding does, so the derived figure comes
+# out small and the fleet is sized too large. Nobody notices, because
+# over-provisioning does not page anyone.
+#
+# A step below this floor is EXCLUDED from the derivation rather than
+# down-weighted. There is no honest weighting: the step measured a different
+# quantity, and averaging two quantities produces a third that is neither.
+MIN_STEADY_STATE_S = 300.0
 
 
 @dataclass(frozen=True)
@@ -99,6 +146,16 @@ class RampStep:
     # plateau BEFORE a run rather than diagnosing one after.
     rate_per_second: float | None = None
     hold_seconds: float | None = None
+    # How long the step actually ran. Checked against MIN_STEADY_STATE_S, so a
+    # step too short to have held a population cannot contribute a concurrency
+    # figure.
+    #
+    # None means UNRECORDED, and an unrecorded duration never excludes a step:
+    # not knowing how long something ran is not evidence that it was short, and
+    # silently dropping every step of a run whose timings were not carried would
+    # turn a missing field into a missing capacity table. The derivation says so
+    # in its reason instead, so the gap is visible rather than acted on.
+    duration_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -323,18 +380,46 @@ def detect_plateau(
     return PlateauFinding(plateaued=False, detail="no plateau detected")
 
 
+def _steady_state_steps(
+    steps: list[RampStep], min_steady_state_s: float
+) -> tuple[list[RampStep], list[RampStep], bool]:
+    """Split steps into those long enough to have held a population, and not.
+
+    Returns ``(eligible, too_short, any_unrecorded)``. A step whose duration was
+    not recorded lands in ``eligible`` and sets the flag: see
+    :class:`RampStep.duration_seconds` for why an unknown duration must not
+    exclude a step.
+    """
+    eligible: list[RampStep] = []
+    too_short: list[RampStep] = []
+    unrecorded = False
+    for step in steps:
+        if step.duration_seconds is None:
+            unrecorded = True
+            eligible.append(step)
+        elif step.duration_seconds >= min_steady_state_s:
+            eligible.append(step)
+        else:
+            too_short.append(step)
+    return eligible, too_short, unrecorded
+
+
 def derive_calls_per_node(
     steps: list[RampStep],
     *,
     cpu_ceiling: float,
     setup_overhead_s: float = DEFAULT_SETUP_OVERHEAD_S,
+    min_steady_state_s: float = MIN_STEADY_STATE_S,
 ) -> tuple[int | None, str]:
     """The calls-per-node figure, or None with the reason it is not derivable.
 
     Returns the highest concurrency actually REACHED while the node stayed at or
-    under ``cpu_ceiling``. Refuses in four cases, each of which would otherwise
+    under ``cpu_ceiling``. Refuses in five cases, each of which would otherwise
     yield a plausible number:
 
+    * Every step was too short to have held a population, so the CPU on offer is
+      a call-SETUP rate rather than an occupancy cost. See
+      :data:`MIN_STEADY_STATE_S`.
     * The ramp plateaued. The ceiling belongs to whatever stopped scaling, and a
       generator's limit sized as a node's limit buys the wrong fleet.
     * No step reached the CPU ceiling. The node was never saturated, so the
@@ -344,10 +429,42 @@ def derive_calls_per_node(
     * No step declared what it asked for, so a plateau could not be ruled out.
       "No plateau detected" from a ramp that recorded neither targets nor rates
       means the check never ran, which is not the same as a ramp that climbed.
+
+    The duration filter runs FIRST, before the plateau scan. A plateau across
+    steps that each measured a setup rate is a statement about setup rates, and
+    reporting it as the reason would send an operator to fix their generator
+    when the ramp shape was never the problem.
     """
+    eligible, too_short, unrecorded = _steady_state_steps(steps, min_steady_state_s)
+    if too_short and not eligible:
+        longest = max(s.duration_seconds or 0.0 for s in too_short)
+        return None, (
+            f"all {len(too_short)} step(s) ran for under {min_steady_state_s:.0f}s "
+            f"(longest {longest:.0f}s), so their CPU is dominated by call SETUP "
+            "rather than by the calls held, and a concurrency figure from them "
+            "reads LOW and over-provisions. Hold the target concurrency long "
+            "enough that arrivals and departures balance, then re-run"
+        )
+    steps = eligible
+    # Appended to whatever this function concludes, so the reader of a FIGURE
+    # learns what it rests on and the reader of a REFUSAL learns the same. A
+    # note attached only to the refusal path would leave the derived figure
+    # looking like it came from every step.
+    notes = []
+    if too_short:
+        notes.append(
+            f"{len(too_short)} step(s) shorter than {min_steady_state_s:.0f}s "
+            "were excluded as setup-dominated rather than concurrency-limited"
+        )
+    if unrecorded:
+        notes.append(
+            "some step(s) recorded no duration, so whether they were "
+            "setup-dominated could not be checked and they were kept"
+        )
+    tail = (". " + ". ".join(notes)) if notes else ""
     plateau = detect_plateau(steps, setup_overhead_s=setup_overhead_s)
     if plateau.plateaued:
-        return None, plateau.detail
+        return None, plateau.detail + tail
 
     # A plateau can only be RULED OUT when the steps say what they asked for.
     # With no targets and no declared rates, "no plateau detected" means the
@@ -365,7 +482,7 @@ def derive_calls_per_node(
             f"no step recorded a target concurrency or an arrival rate, so a "
             f"plateau could not be ruled out across {len(steps)} steps. The "
             "highest concurrency reached may be the load generator's ceiling "
-            "rather than the node's, and sizing from it would be a guess"
+            "rather than the node's, and sizing from it would be a guess" + tail
         )
 
     # Narrowed into concrete pairs rather than filtered in place: a step is only
@@ -380,7 +497,7 @@ def derive_calls_per_node(
     if not measured:
         return None, (
             "no step carried both a peak concurrency and a peak CPU reading, so "
-            "nothing here shows what the node was doing at any concurrency"
+            "nothing here shows what the node was doing at any concurrency" + tail
         )
 
     under = [(calls, cpu) for calls, cpu in measured if cpu <= cpu_ceiling]
@@ -389,7 +506,7 @@ def derive_calls_per_node(
         return None, (
             f"every step exceeded the {cpu_ceiling:.0%} CPU ceiling (lowest "
             f"observed {lowest:.1%}), so no concurrency here was sustained "
-            "within it"
+            "within it" + tail
         )
 
     best = max(calls for calls, _ in under)
@@ -400,12 +517,13 @@ def derive_calls_per_node(
             f"no step reached the {cpu_ceiling:.0%} CPU ceiling (peak observed "
             f"{highest:.1%}), so the node was never saturated. It carries AT "
             f"LEAST {best} calls, which is a floor on its capacity and not a "
-            "measure of it: sizing from it would under-provision"
+            "measure of it: sizing from it would under-provision" + tail
         )
 
     return best, (
         f"highest concurrency sustained at or under {cpu_ceiling:.0%} CPU across "
-        f"{len(measured)} measured steps"
+        f"{len(measured)} step(s) that each ran long enough to hold a call "
+        "population rather than fill one" + tail
     )
 
 
@@ -443,6 +561,7 @@ def capacity_table(
 
 __all__ = [
     "DEFAULT_SETUP_OVERHEAD_S",
+    "MIN_STEADY_STATE_S",
     "PLATEAU_TOLERANCE",
     "SIZING_MARGIN",
     "SPARE_NODES",

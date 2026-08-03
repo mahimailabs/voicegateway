@@ -16,13 +16,20 @@ run looks like.
 
 ## What it describes
 
-One step holding 500 concurrent calls for two minutes. 15,000 attempted, 14,985
+One step holding 500 concurrent calls for six minutes. 15,000 attempted, 14,985
 established: 99.9%, above the 99.5% floor and deliberately not 100%. A run with
 no failures at all is rarer than a report that forgot to count them, and a
 fixture that never exercises the failure columns is not testing them.
 
 Paired with node samples inside the 70% CPU and 75% memory ceilings, this run's
 verdict is PASS.
+
+Six minutes, not two, and the length is load-bearing. A step shorter than
+`capacity.MIN_STEADY_STATE_S` spends most of its wall time establishing calls
+rather than holding them, so the CPU it records is a call-setup rate and the
+capacity derivation excludes it. At two minutes this fixture's refusal below
+would have been "the step was too short" rather than the reason it is written to
+demonstrate.
 
 ## Why it cannot also produce a capacity table
 

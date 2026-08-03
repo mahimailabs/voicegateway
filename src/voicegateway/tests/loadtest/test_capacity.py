@@ -356,3 +356,164 @@ def test_a_declared_target_still_lets_the_derivation_answer() -> None:
     ]
     value, _ = capacity.derive_calls_per_node(steps, cpu_ceiling=0.70)
     assert value == 200
+
+
+# --------------------------------------------------------------------------
+# The setup-rate ceiling: a short step measures arrivals, not occupancy
+# --------------------------------------------------------------------------
+#
+# The second way to size a fleet from the wrong number, and unlike the plateau
+# it produces a figure that is too SMALL, so it over-provisions and nobody is
+# ever paged about it. An observed run recorded 25 concurrent at 83.8% CPU over
+# a 110-second ramp step and 100 concurrent at 66.5% on the same single node
+# over a soak. Sized from the ramp, 100 calls needs nine nodes; the soak on the
+# same page shows one node doing it.
+
+
+#: The observed run, with the ramp steps that made it wrong.
+_OBSERVED = [
+    RampStep(
+        target_concurrency=t,
+        peak_concurrency=p,
+        peak_cpu_utilisation=cpu,
+        duration_seconds=secs,
+    )
+    for t, p, cpu, secs in (
+        (25, 25, 0.838, 110.0),
+        (30, 30, 0.712, 84.0),
+        (100, 100, 0.665, 600.0),
+    )
+]
+
+
+def test_a_setup_dominated_step_cannot_contribute_the_figure() -> None:
+    """A short step must not supply the saturation a figure rests on.
+
+    Without the filter the ramp steps breach the ceiling, the soak sits under
+    it, and the derivation reads that as "saturated above 100, sustained at
+    100" and returns 100 as a MEASURE. But the only step that held a population
+    is the soak, and it never came near the ceiling, so 100 is a floor on this
+    node's capacity and not a measure of it. The saturation was a call-setup
+    rate, borrowed from steps measuring something else.
+
+    Non-vacuous below: the unfiltered derivation really does answer.
+    """
+    assert (
+        capacity.derive_calls_per_node(
+            _OBSERVED, cpu_ceiling=0.70, min_steady_state_s=0.0
+        )[0]
+        == 100
+    )
+    value, reason = capacity.derive_calls_per_node(_OBSERVED, cpu_ceiling=0.70)
+    assert value is None
+    assert "AT LEAST 100" in reason, reason
+    assert "setup-dominated" in reason
+
+
+def test_the_excluded_steps_are_counted_in_the_reason() -> None:
+    """A silent exclusion is a derivation that quietly used different data."""
+    _value, reason = capacity.derive_calls_per_node(_OBSERVED, cpu_ceiling=0.70)
+    assert "2 step(s) shorter than 300s" in reason
+
+
+def test_every_step_too_short_refuses_and_says_what_to_change() -> None:
+    """The common shape: a ramp of one-minute steps and nothing else.
+
+    It used to yield a plausible figure, which is the worst of the three
+    possible outcomes.
+    """
+    short = [
+        RampStep(
+            target_concurrency=n,
+            peak_concurrency=n,
+            peak_cpu_utilisation=cpu,
+            duration_seconds=110.0,
+        )
+        for n, cpu in ((15, 0.59), (25, 0.84))
+    ]
+    value, reason = capacity.derive_calls_per_node(short, cpu_ceiling=0.70)
+    assert value is None
+    assert "longest 110s" in reason
+    assert "over-provisions" in reason
+    # The tempting wrong answer is right there, and it is exactly what shipped:
+    # 15 calls per node sizes 100 concurrent at 9 nodes.
+    assert (
+        capacity.derive_calls_per_node(short, cpu_ceiling=0.70, min_steady_state_s=0.0)[
+            0
+        ]
+        == 15
+    )
+    assert capacity.nodes_for(100, 15).nodes == 9
+
+
+def test_an_unrecorded_duration_never_excludes_a_step() -> None:
+    """Not knowing how long a step ran is not evidence that it was short.
+
+    Excluding on a missing field would turn an unpopulated column into a missing
+    capacity table, so it is kept and the reason says the check could not run.
+    """
+    steps = [
+        RampStep(target_concurrency=n, peak_concurrency=n, peak_cpu_utilisation=cpu)
+        for n, cpu in ((100, 0.31), (200, 0.66), (250, 0.79))
+    ]
+    value, reason = capacity.derive_calls_per_node(steps, cpu_ceiling=0.70)
+    assert value == 200
+    assert "recorded no duration" in reason
+
+
+def test_a_long_enough_ramp_still_answers() -> None:
+    """Non-vacuous: the floor blocks short steps, not every step."""
+    steps = [
+        RampStep(
+            target_concurrency=n,
+            peak_concurrency=n,
+            peak_cpu_utilisation=cpu,
+            duration_seconds=capacity.MIN_STEADY_STATE_S,
+        )
+        for n, cpu in ((100, 0.31), (200, 0.66), (250, 0.79))
+    ]
+    value, reason = capacity.derive_calls_per_node(steps, cpu_ceiling=0.70)
+    assert value == 200
+    assert "setup-dominated" not in reason
+    assert "recorded no duration" not in reason
+
+
+def test_the_floor_is_inclusive() -> None:
+    """A step landing exactly on it has run long enough."""
+    on = RampStep(
+        target_concurrency=100,
+        peak_concurrency=100,
+        peak_cpu_utilisation=0.5,
+        duration_seconds=capacity.MIN_STEADY_STATE_S,
+    )
+    under = capacity.RampStep(
+        target_concurrency=100,
+        peak_concurrency=100,
+        peak_cpu_utilisation=0.5,
+        duration_seconds=capacity.MIN_STEADY_STATE_S - 0.1,
+    )
+    eligible, too_short, _ = capacity._steady_state_steps(
+        [on, under], capacity.MIN_STEADY_STATE_S
+    )
+    assert eligible == [on]
+    assert too_short == [under]
+
+
+def test_the_duration_filter_runs_before_the_plateau_scan() -> None:
+    """A plateau across setup-dominated steps is a fact about setup rates.
+
+    Reporting it as the reason sends an operator to fix their generator when the
+    ramp shape was never the problem.
+    """
+    steps = [
+        RampStep(
+            target_concurrency=n,
+            peak_concurrency=124,
+            peak_cpu_utilisation=0.58,
+            duration_seconds=60.0,
+        )
+        for n in (150, 200)
+    ]
+    _value, reason = capacity.derive_calls_per_node(steps, cpu_ceiling=0.70)
+    assert "ran for under 300s" in reason
+    assert "stopped scaling" not in reason

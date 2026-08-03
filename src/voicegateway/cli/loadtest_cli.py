@@ -522,6 +522,21 @@ def _apply_waivers(results: list, waivers: dict[str, str]) -> tuple[list, list[s
     return applied, sorted(set(waivers) - matched)
 
 
+def _step_duration_seconds(test: dict) -> float | None:
+    """How long one step ran, from its own timestamps, or None.
+
+    None for a row missing either end, and for a non-positive span: a step that
+    appears to have taken no time did not run for zero seconds, it recorded its
+    window wrong, and feeding 0.0 into the steady-state filter would exclude it
+    on the strength of a bad timestamp.
+    """
+    started, ended = test.get("started_at_ms"), test.get("ended_at_ms")
+    if not isinstance(started, (int, float)) or not isinstance(ended, (int, float)):
+        return None
+    span = (ended - started) / 1000.0
+    return span if span > 0 else None
+
+
 def _capacity_for(tests: list[dict], plan: dict | None = None) -> dict:
     """Derive the calls-per-node figure and the node count at each tier.
 
@@ -545,6 +560,11 @@ def _capacity_for(tests: list[dict], plan: dict | None = None) -> dict:
             peak_cpu_utilisation=test.get("peak_cpu_utilisation"),
             rate_per_second=declared.get(test.get("name"), {}).get("rate_per_second"),
             hold_seconds=declared.get(test.get("name"), {}).get("hold_seconds"),
+            # Measured, from the row's own timestamps, and never declared: how
+            # long a step RAN is the one half of the steady-state question an
+            # artifact can answer. A row missing either end reports None, which
+            # the derivation treats as unrecorded rather than as short.
+            duration_seconds=_step_duration_seconds(test),
         )
         for test in tests
     ]
@@ -814,12 +834,17 @@ def report(
         console.print(
             f"\nProfiled {measured} measurement(s) across {len(tests)} test(s)."
         )
-        missing = len(results) - measured
+        # Counted from the payload, not from len(results) - measured. Those two
+        # differ by the permanently unmeasurable rows, which are dropped rather
+        # than uncollected, and the console quoting a number one larger than the
+        # document and the JSON is exactly the kind of disagreement this split
+        # was meant to remove.
+        missing = len(payload["not_collected"] or [])
         if missing:
             _cli.warn(
                 f"{missing} measurement(s) were not collected in this run. The "
-                'report lists them under "Not collected in this run", each with '
-                "what to change so the next run carries them."
+                "HTML says so in one line; read not_collected in the JSON for "
+                "each one and what to change so the next run carries it."
             )
 
     if capacity.get("calls_per_node") is None:

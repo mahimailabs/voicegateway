@@ -89,6 +89,24 @@ The second is caught for you: `voicegw` refuses to derive a calls-per-node figur
 
 Verify flags against `-h` on the binary you are actually holding, not against its README.
 
+## A ramp step must be long enough to measure concurrency
+
+A step shorter than five minutes does not contribute to the calls-per-node figure, and a run whose every step is that short gets no capacity table at all.
+
+Short steps spend most of their wall time establishing calls rather than holding them. Signalling costs far more CPU per call than carrying one does, so such a step reports a call **setup rate** wearing a concurrency limit's label. One observed run recorded 25 concurrent at 83.8% CPU over a 110-second step, and 100 concurrent at 66.5% on the same single node over a soak. Sized from the ramp, 100 calls needs nine nodes; the soak shows one node doing it.
+
+The error runs one way and nobody gets paged for it: setup-dominated CPU crosses the ceiling at a lower concurrency, so the figure comes out small and the fleet is sized too large.
+
+Hold each step at its target concurrency long enough that arrivals and departures balance. A step whose duration was not recorded is kept rather than excluded, and the report says so: not knowing how long something ran is not evidence that it was short.
+
+## What the report contains
+
+The default view profiles. It opens with an **At a glance** table, one line per thing an operator decides on, and every line in it carries a measured number: anything the run did not measure is absent from that table rather than shown blank. `--acceptance` adds the verdict, the per-gate table and a non-zero exit code, for the case where somebody contracted thresholds.
+
+Measurements the run did not collect are counted in the HTML and listed individually in the JSON under `not_collected`, each with its cause and what to change. They are not tabled in the document: every one of them describes how the run was configured rather than what the fleet did, and a thirteen-target fleet produces over a hundred.
+
+What no run can ever collect is a separate claim, stated as prose under "What this report structurally does not measure" and carried in `scope_exclusions`. The two must not be confused: one is work somebody can do, the other is a fact about the world.
+
 ## Building the generator
 
 If the generator does not compile on your machine, check whether the failure is confined to a non-Linux fallback path before spending time on it. A build error in a file carrying a `//go:build !linux` constraint, where a working `_linux.go` sibling exists, means the tool is fine on the rig you will actually run it on. Cross-compile for the load generator's platform and install it there.

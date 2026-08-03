@@ -80,12 +80,20 @@ def _capacity_html(capacity: dict) -> str:
 
 
 def test_the_refusal_reason_is_not_run_into_the_sentence_before_it() -> None:
-    """The reason is a fragment and begins lowercase."""
+    """The reason is a fragment and begins lowercase.
+
+    It used to sit under a "Why:" label BELOW a paragraph of standing policy,
+    which is where this assertion came from. It now leads, joined to the heading
+    sentence with a colon, because a reader arriving at a section with no table
+    read the policy first, concluded the report had failed to generate
+    something, and stopped. The rule being pinned is unchanged: a lowercase
+    fragment must never be concatenated after a full stop.
+    """
     html = _capacity_html(
         {"calls_per_node": None, "reason": "no step carried both a peak concurrency"}
     )
     assert "rests on. no step" not in html
-    assert "Why:" in html
+    assert "table: no step carried both a peak concurrency." in html
 
 
 def test_the_reason_is_still_shown_in_full() -> None:
@@ -97,8 +105,14 @@ def test_the_reason_is_still_shown_in_full() -> None:
 
 
 def test_a_refusal_with_no_reason_still_says_something() -> None:
+    """An empty reason is a gap in whoever built the payload, and says so.
+
+    The wording moved with the sentence above it; the rule did not. A refusal
+    that renders as a heading and nothing else reads as a section that failed to
+    generate.
+    """
     html = _capacity_html({"calls_per_node": None, "reason": ""})
-    assert "not stated" in html
+    assert "no reason was recorded" in html
 
 
 # --------------------------------------------------------------------------
