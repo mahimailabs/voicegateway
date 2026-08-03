@@ -84,6 +84,8 @@ COUNTER_COLUMNS: frozenset[str] = frozenset(
         "sip_rtp_packets_send",
         "process_cpu_seconds_total",
         "udp_no_ports_total",
+        # Cumulative since boot. Only an INCREASE inside a window is a kill.
+        "vmstat_oom_kill",
         # Redis. Cumulative since the server started, so only a rate is
         # meaningful: an absolute "3 rejected connections" says nothing
         # about whether any were rejected during THIS window.
@@ -198,6 +200,7 @@ _INT_COLUMNS: frozenset[str] = frozenset(
         "process_resident_memory_bytes",
         "sockstat_udp_inuse",
         "udp_no_ports_total",
+        "vmstat_oom_kill",
         "track_published_total",
         "track_subscribed_total",
         "psrpc_stream_count",
@@ -315,6 +318,7 @@ class NodeSampleRow:
     health_ok: int | None
     health_status_code: int | None
     health_timed_out: int | None
+    vmstat_oom_kill: int | None
 
 @dataclass(frozen=True)
 class CounterRate:
@@ -409,6 +413,7 @@ def _row(sample: NodeSample) -> NodeSampleRow:
         health_ok=sample.health_ok,
         health_status_code=sample.health_status_code,
         health_timed_out=sample.health_timed_out,
+        vmstat_oom_kill=sample.vmstat_oom_kill,
     )
 
 

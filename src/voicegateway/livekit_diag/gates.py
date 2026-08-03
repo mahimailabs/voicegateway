@@ -98,6 +98,8 @@ NODE_MEMORY_GATE = "node_memory"
 HEADROOM_GATE = "resource_headroom"
 RETURN_TO_BASELINE_GATE = "return_to_baseline"
 SUSTAINED_HEALTH_GATE = "sustained_health"
+PROCESS_LIFECYCLE_GATE = "process_lifecycle"
+RESOURCE_TREND_GATE = "resource_trend"
 
 #: The subject a gate is filed under when it describes the whole fleet rather
 #: than one node. Used where nothing was sampled at all: the finding is that NO
@@ -146,6 +148,10 @@ ALL_GATES: frozenset[str] = frozenset(
         # value is a count of consecutive failed samples, not a fraction, and
         # rendering 3 as "300%" is exactly the misstatement that set prevents.
         SUSTAINED_HEALTH_GATE,
+        # Counts too: restarts and OOM kills, and a slope in absolute units.
+        # Same reason, same exclusion from RATIO_GATES.
+        PROCESS_LIFECYCLE_GATE,
+        RESOURCE_TREND_GATE,
     }
 )
 
@@ -193,6 +199,17 @@ MAX_NODE_MEMORY_UTILISATION = 0.75
 # scattered single-sample failures across an hour are a flapping dependency
 # worth a WARN, while three in a row are an outage.
 MAX_CONSECUTIVE_FAILED_SAMPLES = 3
+
+# The fewest samples a trend may be computed from.
+#
+# A slope over three points is noise wearing a trend's clothes. The steady-state
+# comparison below splits a window into thirds and reads the last against the
+# middle, so this is the floor for EACH third, not for the window: six samples
+# total, ninety seconds at the sampling interval.
+#
+# Below it the gate is UNKNOWN, never PASS. "Too short to tell" and "flat" look
+# identical in a single number and support opposite conclusions about a leak.
+MIN_TREND_SAMPLES = 3
 
 # Headroom that must REMAIN on a limited resource. A floor, and inclusive: a node
 # sitting on exactly 20% free has met "at least 20% headroom".
@@ -1553,6 +1570,267 @@ def sustained_health_gates(
     return [sustained_health_gate(r, threshold=threshold) for r in readings]
 
 
+
+# --------------------------------------------------------------------------
+# Unplanned restarts, crashes and OOM kills
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class LifecycleReading:
+    """One subject's process-start times and OOM counter across a window.
+
+    ``start_times`` is ``process_start_time_seconds`` in time order. It is a
+    CONSTANT for the life of a process, so any increase inside a window means
+    that process restarted mid-run, and a crash presents exactly that way.
+
+    ``oom_kills`` is ``node_vmstat_oom_kill``, cumulative since boot, so an
+    increase inside the window means the kernel killed something DURING the run.
+    A box OOM-killed last week is not this run's finding.
+
+    None entries are gaps, never zero, and a subject with nothing but gaps is
+    UNKNOWN rather than a pass.
+    """
+
+    node: str
+    source: str | None = None
+    start_times: tuple[float | None, ...] = ()
+    oom_kills: tuple[float | None, ...] = ()
+
+
+def _rose(values: Sequence[float | None]) -> tuple[bool, float | None, float | None]:
+    """Whether a series increased, and the pair that shows it. Gaps skipped."""
+    seen = [v for v in values if v is not None]
+    if len(seen) < 2:
+        return False, (seen[0] if seen else None), None
+    lo, hi = seen[0], seen[0]
+    for value in seen:
+        if value > hi:
+            hi = value
+        if value < lo:
+            lo = value
+    first = seen[0]
+    for value in seen[1:]:
+        if value > first:
+            return True, first, hi
+    return False, lo, hi
+
+
+def process_lifecycle_gate(reading: LifecycleReading) -> GateResult:
+    """Did anything restart, crash or get OOM-killed during this window?
+
+    Restarts and OOM are read together here because they answer one contracted
+    line, but they are NEVER collapsed into one signal: the detail says which
+    fired, and an unmeasured half is reported as unmeasured rather than covered
+    by the measured half. "No restart" does not prove "no OOM".
+    """
+    subject = f"{reading.node}/{reading.source}" if reading.source else reading.node
+    restarted, first_start, last_start = _rose(reading.start_times)
+    oomed, _, oom_high = _rose(reading.oom_kills)
+    measured_starts = [v for v in reading.start_times if v is not None]
+    measured_ooms = [v for v in reading.oom_kills if v is not None]
+
+    if restarted:
+        return GateResult(
+            gate=PROCESS_LIFECYCLE_GATE,
+            status=FAIL,
+            subject=subject,
+            detail=(
+                f"{subject} restarted during the window: "
+                f"process_start_time_seconds rose from {first_start} to "
+                f"{last_start}. A crash presents this way too, so this covers "
+                "both, and every counter rate across the restart is unusable."
+            ),
+            metric="process_restarts",
+            value=1.0,
+            threshold=0.0,
+        )
+    if oomed:
+        return GateResult(
+            gate=PROCESS_LIFECYCLE_GATE,
+            status=FAIL,
+            subject=subject,
+            detail=(
+                f"the kernel OOM-killed at least one process on {subject} "
+                f"during the window (node_vmstat_oom_kill reached {oom_high}). "
+                "The scraped service did not restart, so this would not have "
+                "shown up as a restart."
+            ),
+            metric="oom_kills",
+            value=1.0,
+            threshold=0.0,
+        )
+    if not measured_starts and not measured_ooms:
+        return GateResult(
+            gate=PROCESS_LIFECYCLE_GATE,
+            status=UNKNOWN,
+            subject=subject,
+            detail=(
+                f"{subject} was not measured: it carried neither "
+                "process_start_time_seconds nor node_vmstat_oom_kill in the "
+                "window, so neither restarts nor OOM kills were checked. "
+                "Nothing was shown to be stable"
+            ),
+            threshold=0.0,
+        )
+    if not measured_starts:
+        return GateResult(
+            gate=PROCESS_LIFECYCLE_GATE,
+            status=UNKNOWN,
+            subject=subject,
+            detail=(
+                f"{subject} was not measured for restarts: it recorded no OOM "
+                "kill but carried no process_start_time_seconds, so a restart "
+                "could not be ruled out. No OOM does not prove no restart"
+            ),
+            threshold=0.0,
+        )
+    if not measured_ooms:
+        return GateResult(
+            gate=PROCESS_LIFECYCLE_GATE,
+            status=UNKNOWN,
+            subject=subject,
+            detail=(
+                f"{subject} was not measured for OOM: it did not restart across "
+                f"{len(measured_starts)} sample(s) but carried no "
+                "node_vmstat_oom_kill, so an OOM kill could not be ruled out. "
+                "No restart does not prove no OOM"
+            ),
+            threshold=0.0,
+        )
+    return GateResult(
+        gate=PROCESS_LIFECYCLE_GATE,
+        status=PASS,
+        subject=subject,
+        detail=(
+            f"{subject} held one process start time across "
+            f"{len(measured_starts)} sample(s) and recorded no OOM kill across "
+            f"{len(measured_ooms)}."
+        ),
+        metric="process_restarts",
+        value=0.0,
+        threshold=0.0,
+    )
+
+
+def process_lifecycle_gates(
+    readings: Sequence[LifecycleReading],
+) -> list[GateResult]:
+    """One row per node per source. Never collapsed."""
+    return [process_lifecycle_gate(r) for r in readings]
+
+
+# --------------------------------------------------------------------------
+# Stale resources: a trend that should be flat
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TrendReading:
+    """One subject's series for one metric, in time order, over a window.
+
+    ``rising_is_bad`` says which direction is the leak. Occupancy metrics such
+    as ``sip_calls_active`` leak upward; ``memory_available_bytes`` leaks
+    DOWNWARD, because free memory falling is the same event as used memory
+    rising. Getting that backwards would report a leak as healthy.
+    """
+
+    node: str
+    metric: str
+    source: str | None = None
+    values: tuple[float | None, ...] = ()
+    rising_is_bad: bool = True
+
+
+def steady_state_thirds(
+    values: Sequence[float | None],
+) -> tuple[list[float], list[float]]:
+    """The middle and final thirds of a window, gaps removed.
+
+    Middle against final, NEVER first against last. Under a fixed offered load
+    the first third is the ramp, and a ramp read as a trend reports every
+    successful run as a leak.
+    """
+    size = len(values) // 3
+    if size == 0:
+        return [], []
+    middle = [v for v in values[size : size * 2] if v is not None]
+    final = [v for v in values[size * 2 :] if v is not None]
+    return middle, final
+
+
+def resource_trend_gate(
+    reading: TrendReading,
+    *,
+    min_samples: int = MIN_TREND_SAMPLES,
+) -> GateResult:
+    """Did a resource that should be flat in steady state drift instead?
+
+    UNKNOWN below ``min_samples`` in either third. A slope over two points is
+    noise, and "too short to tell" must never render as "flat".
+    """
+    subject = (
+        f"{reading.node}/{reading.source}/{reading.metric}"
+        if reading.source
+        else f"{reading.node}/{reading.metric}"
+    )
+    middle, final = steady_state_thirds(reading.values)
+    if len(middle) < min_samples or len(final) < min_samples:
+        return GateResult(
+            gate=RESOURCE_TREND_GATE,
+            status=UNKNOWN,
+            subject=subject,
+            detail=(
+                f"{reading.metric} on {subject} was not measured as a trend: the "
+                f"steady-state thirds carried {len(middle)} and {len(final)} "
+                f"usable sample(s), below the {min_samples} each needs. Too "
+                "short to tell is not flat"
+            ),
+            threshold=0.0,
+        )
+    before = sum(middle) / len(middle)
+    after = sum(final) / len(final)
+    drift = after - before
+    leaked = drift > 0 if reading.rising_is_bad else drift < 0
+    direction = "rose" if drift > 0 else "fell"
+    if leaked:
+        return GateResult(
+            gate=RESOURCE_TREND_GATE,
+            status=FAIL,
+            subject=subject,
+            detail=(
+                f"{reading.metric} on {subject} {direction} across steady "
+                f"state: mean {before:.4g} over the middle third against "
+                f"{after:.4g} over the final third. Under a fixed offered load "
+                "this should be flat, so the drift is the leak"
+            ),
+            metric=reading.metric,
+            value=float(drift),
+            threshold=0.0,
+        )
+    return GateResult(
+        gate=RESOURCE_TREND_GATE,
+        status=PASS,
+        subject=subject,
+        detail=(
+            f"{reading.metric} on {subject} held flat or improved across steady "
+            f"state: mean {before:.4g} over the middle third against "
+            f"{after:.4g} over the final third."
+        ),
+        metric=reading.metric,
+        value=float(drift),
+        threshold=0.0,
+    )
+
+
+def resource_trend_gates(
+    readings: Sequence[TrendReading],
+    *,
+    min_samples: int = MIN_TREND_SAMPLES,
+) -> list[GateResult]:
+    return [resource_trend_gate(r, min_samples=min_samples) for r in readings]
+
+
 __all__ = [
     "AGENTS_GATE",
     "BASELINE_GOROUTINES",
@@ -1577,6 +1855,16 @@ __all__ = [
     "RATIO_GATES",
     "RETURN_TO_BASELINE_GATE",
     "SUSTAINED_HEALTH_GATE",
+    "PROCESS_LIFECYCLE_GATE",
+    "RESOURCE_TREND_GATE",
+    "MIN_TREND_SAMPLES",
+    "LifecycleReading",
+    "TrendReading",
+    "process_lifecycle_gate",
+    "process_lifecycle_gates",
+    "resource_trend_gate",
+    "resource_trend_gates",
+    "steady_state_thirds",
     "HEALTH_SUBJECT_REDIS",
     "HEALTH_SUBJECT_ENDPOINT",
     "HealthSeriesReading",

@@ -29,6 +29,7 @@ from typing import Any
 from voicegateway.livekit_diag import gates
 from voicegateway.livekit_diag.gates import GateResult
 from voicegateway.loadtest.aggregation import (
+    BASELINE_METRICS,
     FD_LIMIT_COLUMN,
     FD_USED_COLUMN,
     TestAggregate,
@@ -245,6 +246,9 @@ def judge_test(
         results.extend(gates.node_memory_gates([unmeasured]))
         target = node or subject
         results.extend(gates.headroom_gates([_fd_reading(target)]))
+        # The three lifecycle criteria are NOT emitted per test here. They are
+        # run-level facts, reported once by unevaluated_criteria_gates, which is
+        # what stops a seven-step run repeating the same absence seven times.
         return results
 
     # Filtered by what the SOURCE can publish, not by what this run produced.
@@ -254,7 +258,36 @@ def judge_test(
     results.extend(_graded(aggregate.memory_readings, gates.node_memory_gates))
     results.extend(_headroom_gates_for(aggregate))
     results.extend(_health_gates_for(aggregate))
+    results.extend(gates.process_lifecycle_gates(aggregate.lifecycle_readings))
+    results.extend(gates.resource_trend_gates(aggregate.trend_readings))
+    results.extend(_baseline_gates_for(aggregate))
     return results
+
+
+#: How far a resource may sit above its idle baseline and still count as
+#: returned. The criterion says "close to baseline" and never quantifies it, so
+#: this number is OURS and is stated rather than hidden: 10% of the idle
+#: reading. return_to_baseline_gates refuses to default it precisely so a number
+#: nobody agreed to cannot masquerade as a contracted one, and this is the
+#: caller stating it.
+BASELINE_TOLERANCE = 0.10
+
+
+def _baseline_gates_for(aggregate: TestAggregate) -> list[GateResult]:
+    """Did the fleet give its resources back after the calls ended?
+
+    Emitted only when there is something to compare. An absent pre-run sample is
+    reported by the comparison itself as UNKNOWN, which is the honest reading:
+    nobody established what baseline was, so nothing can be shown to have
+    returned to it.
+    """
+    if not aggregate.baseline_comparisons:
+        return []
+    return list(
+        gates.return_to_baseline_gates(
+            aggregate.baseline_comparisons, tolerance=BASELINE_TOLERANCE
+        )
+    )
 
 
 def _health_gates_for(aggregate: TestAggregate) -> list[GateResult]:
@@ -422,7 +455,60 @@ def judge_run(
             }
         )
     )
+    # Same rule for the three lifecycle criteria: a contracted line that
+    # produced no row anywhere in the run is reported once, as unmeasured. This
+    # is the defect these gates exist to remove, and it would be quietly
+    # recreated by a run whose samples carried none of the needed columns.
+    out.extend(unevaluated_criteria_gates({g.gate for g in out}))
     return out
+
+
+def unevaluated_criteria_gates(seen: set[str]) -> list[GateResult]:
+    """One fleet-level row per contracted criterion that produced nothing.
+
+    ``seen`` is the set of gate IDS already emitted for the run. A criterion
+    that produced even one row somewhere is not reported here: the rows it did
+    produce are the answer, including any UNKNOWN ones.
+
+    Once per RUN, not once per step, for the reason the dependency rows are:
+    "nothing carried the columns for this" is a fact about the deployment.
+    """
+    results: list[GateResult] = []
+    if gates.PROCESS_LIFECYCLE_GATE not in seen:
+        results.append(
+            gates.process_lifecycle_gate(
+                gates.LifecycleReading(node=gates.FLEET_SUBJECT)
+            )
+        )
+    if gates.RESOURCE_TREND_GATE not in seen:
+        results.append(
+            gates.resource_trend_gate(
+                gates.TrendReading(
+                    node=gates.FLEET_SUBJECT, metric="stale_resources"
+                )
+            )
+        )
+    if gates.RETURN_TO_BASELINE_GATE not in seen:
+        results.extend(
+            gates.return_to_baseline_gates(
+                [
+                    gates.BaselineComparison(
+                        node=gates.FLEET_SUBJECT,
+                        metric=metric,
+                        baseline=None,
+                        post_settle=None,
+                        unmeasured_reason=(
+                            "not measured: no sample outside the test window "
+                            "carried this resource, so no baseline was "
+                            "established and nothing shows it came back"
+                        ),
+                    )
+                    for metric in BASELINE_METRICS
+                ],
+                tolerance=BASELINE_TOLERANCE,
+            )
+        )
+    return results
 
 
 def unmeasurable_headroom_gates() -> list[GateResult]:

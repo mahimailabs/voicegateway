@@ -42,7 +42,7 @@ Every wired entry has since been read off a running binary. **Nothing in
 map degrades is one plausible entry added from documentation.
 
 MEASURED against livekit-sip 1.10.1 and node_exporter, with a real inbound call
-placed so every counter was populated: all 22 ``livekit-sip`` entries and all 11
+placed so every counter was populated: all 22 ``livekit-sip`` entries and all 12
 ``node-exporter`` entries. Every one resolves, asserted per entry against a
 captured exposition and again in
 ``tests/integration/test_live_node_scrape.py`` against the running exporters.
@@ -58,6 +58,12 @@ being asked a question nothing had been wired to answer. Wiring them resolves
 that without suppressing a gate for a metric the source could have produced.
 Note the same 524287 rlimit livekit-sip and livekit-server report on the host,
 which is the cross-check that this is a per-process ceiling.
+
+``node_vmstat_oom_kill`` was read off a live prom/node-exporter at 0. It is
+cumulative since boot, so the gate reads an INCREASE within a window rather
+than an absolute, and it is deliberately NOT folded into the restart gate:
+a crash presents as a restart, but an OOM kill of a sibling process does not,
+so one signal cannot vouch for the other.
 
 MEASURED against livekit-server 1.10.1, by authenticated scrape of its metrics
 port: all 11 ``livekit-server`` entries. The four ``livekit_*`` families and the
@@ -369,6 +375,12 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         # the rows that answer the acceptance criterion.
         _Series("process_open_fds", "process_open_fds"),
         _Series("process_max_fds", "process_max_fds"),
+        # Kernel OOM kills since boot. VERIFIED on a live prom/node-exporter,
+        # which reads 0 on a healthy box. Gated on any INCREASE inside a window,
+        # and kept separate from the restart gate because "no restart" does not
+        # prove "no OOM": the kernel can kill a sibling or a child without the
+        # scraped service restarting.
+        _Series("node_vmstat_oom_kill", "vmstat_oom_kill"),
     ),
     SOURCE_REDIS_EXPORTER: (
         # Redis is shared state every SIP node depends on, and the acceptance
