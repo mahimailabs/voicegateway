@@ -235,8 +235,15 @@ def test_an_aggregate_carrying_no_fd_readings_still_produces_the_gate() -> None:
     """The silent-drop guard.
 
     A caller that builds an aggregate without FD readings must not lose the
-    file-descriptor gate while keeping RTP ports and network. An absent gate
-    reads as a resource nobody had to satisfy; UNKNOWN says nobody measured it.
+    file-descriptor gate. An absent gate reads as a resource nobody had to
+    satisfy; UNKNOWN says nobody measured it.
+
+    WHAT CHANGED. The companion resources this used to be compared against were
+    ``rtp_ports`` and ``network``, which were then emitted on every run because
+    nothing could measure either. Both are measured now, per node, from real
+    columns, so an aggregate carrying no readings for them correctly produces no
+    row for them either. ``pps`` is the resource still emitted unconditionally,
+    so it is the one this is now checked beside.
     """
     agg = aggregation.TestAggregate(
         window=window_of(T0, T0 + 10 * SEC),
@@ -250,15 +257,27 @@ def test_an_aggregate_carrying_no_fd_readings_still_produces_the_gate() -> None:
             gates.NodeUtilisationReading(node="sfu-1", utilisation=0.4, samples=2)
         ],
     )
-    # judge_run, because RTP ports and network are emitted once per run rather
-    # than once per node per test. Every assertion below is unchanged.
+    # judge_run, because the permanent pps exclusion is emitted once per run
+    # rather than once per node per test.
     results = judge.judge_run([HEALTHY], aggregates={HEALTHY["name"]: agg})
     resources = {
         r.subject.split("/")[-1] for r in results if r.subject and "/" in r.subject
     }
-    assert {"file_descriptors", "rtp_ports", "network"} <= resources
+    assert {"file_descriptors", gates.HEADROOM_PPS} <= resources
     [fd_gate] = [r for r in results if r.subject == "sfu-1/file_descriptors"]
     assert fd_gate.status == gates.UNKNOWN
+    # THE COMPANION. The two resources this used to be checked against are not
+    # missing because coverage was dropped: they are measurable now, and nothing
+    # excludes them, so their absence here means "this aggregate carried no
+    # reading" rather than "this system cannot measure it".
+    excluded = judge.excluded_headroom_resources()
+    assert sorted(excluded) == [gates.HEADROOM_PPS]
+    for resource in (
+        gates.HEADROOM_RTP_PORTS,
+        gates.HEADROOM_NETWORK_IN,
+        gates.HEADROOM_NETWORK_OUT,
+    ):
+        assert resource not in excluded, resource
 
 
 # --------------------------------------------------------------------------

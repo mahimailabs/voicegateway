@@ -1318,12 +1318,22 @@ SYNTHETIC_STAMP = "SYNTHETIC DATA: NOT A DELIVERABLE"
 #: a limits list that goes quiet as coverage grows reads as a clean bill of
 #: health rather than as an unchanged gap.
 _LOAD_REPORT_LIMITS = [
-    "RTP-port headroom is NOT measured. Nothing scrapes the media port range, so "
-    "the port-exhaustion half of the headroom requirement is unevaluated rather "
-    "than passing.",
-    "Network headroom is NOT measured. No interface saturation figure is "
-    "collected, so a run that stayed under every CPU and memory ceiling may still "
-    "have been near a link limit nothing here would show.",
+    "RTP-port headroom IS measured, from the media port range's own occupancy "
+    "against its configured size. The range size is a DECLARED configuration "
+    "value rather than a measurement, so a node publishing occupancy without it "
+    "reports unmeasured rather than being divided by a guess.",
+    "Network headroom is measured against a DECLARED baseline, not a measured "
+    "capacity. The ENA driver reports no link speed, so there is no capacity to "
+    "measure; the denominator is the instance type's published baseline, "
+    "supplied by an operator at import. The instance can burst above it, so that "
+    "figure is a floor rather than a ceiling and the ratio over-reads rather "
+    "than under-reads. Inbound and outbound are judged separately because the "
+    "hypervisor maintains separate credit buckets.",
+    "Packets-per-second headroom is NOT measured and never will be. No "
+    "per-instance-type PPS allowance is published by anyone, including AWS, so "
+    "there is no denominator to divide by. PPS saturation is still detected as "
+    "an EVENT by the allowance gate; what cannot be quantified is how much "
+    "headroom remained.",
     "Per-call packet loss is NOT measured. No server-side surface attributes loss "
     "to one participant's leg, so no loss figure appears per call anywhere in "
     "this report.",
@@ -1706,10 +1716,12 @@ def _render_scope_exclusions(payload: dict[str, Any]) -> str:
     )
     return (
         '<div class="exclusions"><h2>Not in scope for this report</h2>'
-        f"<p>The acceptance criterion asks for headroom on network, RTP ports "
-        f"and system limits. {len(exclusions)} of those three are outside what "
-        "this system measures, so the requirement is <strong>not fully "
-        "covered</strong> whatever the verdict above says.</p>"
+        "<p>The acceptance criterion asks for headroom on network, RTP ports "
+        "and system limits. Everything listed below is outside what this system "
+        "can measure at all, so the requirement is <strong>not fully "
+        "covered</strong> whatever the verdict above says. These are not gaps "
+        "in what this run collected: they are quantities nobody publishes a "
+        "denominator for.</p>"
         f"<ul>{items}</ul></div>"
     )
 

@@ -280,3 +280,58 @@ class NodeSample(SQLModel, table=True):
     # from node_filefd_maximum rather than scraped directly, but it is still an
     # observation about one scrape, which is what a value column is.
     filefd_maximum_unbounded: int | None = None
+
+    # ---- RTP port headroom -------------------------------------------------
+    # The pair that answers "how close is this node to running out of media
+    # ports", which is the wall a SIP box hits long before CPU does.
+    #
+    # ``media_ports_total`` is a DECLARED config value (the size of the
+    # configured rtp_port range, e.g. 10001), not a measurement. It is stored on
+    # the sample anyway so the ratio is computed against the range that was in
+    # force at that instant rather than against whatever the config says at read
+    # time. A node that publishes in_use without total leaves this NULL, and the
+    # headroom is then UNKNOWN: dividing by a guessed range size would invent a
+    # percentage nobody measured.
+    #
+    # ``media_ports_in_use`` counts UDP sockets bound inside that range, so it is
+    # narrower than sockstat_udp_inuse (which counts every UDP socket on the
+    # host, including signalling and DNS) and is the only one of the two that
+    # can be read as a fraction of the range.
+    media_ports_total: int | None = None
+    media_ports_in_use: int | None = None
+
+    # ---- network headroom --------------------------------------------------
+    # Cloud hosts shape traffic rather than dropping it silently, and the ethtool
+    # allowance counters are where that shaping is admitted. A non-zero DELTA
+    # over a run means the instance was throttled, which presents to a caller as
+    # jitter and loss that no application metric explains.
+    #
+    # Cumulative since driver reset, so only an increase inside the window is
+    # attributable to the run. This is not theoretical: one real SIP node reads
+    # 9613 on bw_in from before the engagement started while its twin reads 0,
+    # so an absolute reading would fail a node for throttling it never suffered
+    # during the test.
+    #
+    # BigInteger on all five: they are unbounded cumulative counters, and an
+    # INT4 that overflows is a 500 on PostgreSQL and a silent wrong number on
+    # SQLite.
+    ethtool_bw_in_allowance_exceeded: int | None = Field(
+        default=None, sa_type=BigInteger
+    )
+    ethtool_bw_out_allowance_exceeded: int | None = Field(
+        default=None, sa_type=BigInteger
+    )
+    ethtool_pps_allowance_exceeded: int | None = Field(default=None, sa_type=BigInteger)
+    ethtool_conntrack_allowance_exceeded: int | None = Field(
+        default=None, sa_type=BigInteger
+    )
+    ethtool_linklocal_allowance_exceeded: int | None = Field(
+        default=None, sa_type=BigInteger
+    )
+
+    # The throughput the allowance counters are the ceiling on. Split by
+    # direction and never summed: one-way audio is invisible in a total, exactly
+    # as with the sip_rtp_packets pair. BigInteger because a busy node passes
+    # 2 GiB within hours.
+    network_receive_bytes_total: int | None = Field(default=None, sa_type=BigInteger)
+    network_transmit_bytes_total: int | None = Field(default=None, sa_type=BigInteger)

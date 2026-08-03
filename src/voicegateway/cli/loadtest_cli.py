@@ -33,6 +33,7 @@ from voicegateway.loadtest.capacity import (
 from voicegateway.loadtest.importer import (
     build_plan,
     limitations_from_notes,
+    network_baselines_from_notes,
     observations_for,
     plan_from_notes,
 )
@@ -107,12 +108,27 @@ def import_run(
             "cannot be derived across a multi-step ramp."
         ),
     ),
+    network_baseline: Path = typer.Option(
+        None,
+        "--network-baseline",
+        help=(
+            "JSON mapping NODE name to its published network baseline in bits "
+            'per second, e.g. \'{"sip-1": {"in_bps": 3125000000, "out_bps": '
+            "3125000000}}'. Nothing measures it: the ENA driver reports no link "
+            "speed. A node with no entry has no denominator and reports UNKNOWN."
+        ),
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show what would be written, write nothing"
     ),
 ) -> None:
     """Import one directory of artifacts as a run with a row per test."""
     declared = _plan_from_file(targets) if targets is not None else {}
+    baselines = (
+        _network_baselines_from_file(network_baseline)
+        if network_baseline is not None
+        else {}
+    )
     try:
         plan = build_plan(
             directory,
@@ -122,6 +138,7 @@ def import_run(
             captured=captured,
             now_ms=int(time.time() * 1000),
             declared_targets=declared,
+            declared_network_baselines=baselines,
         )
     except ArtifactError as exc:
         # Named errors carry which surface disagreed and how, so they are shown
@@ -343,6 +360,102 @@ def _plan_from_file(path: Path) -> dict[str, dict[str, float]]:
             )
         plan[str(name)] = entry
     return plan
+
+
+#: The only two fields a declared baseline may carry. Both are required and
+#: neither has a default, because the point of the file is to be the one place a
+#: figure nobody can measure is written down by hand.
+_NETWORK_BASELINE_DIRECTIONS = ("in_bps", "out_bps")
+
+
+def _network_baselines_from_file(path: Path) -> dict[str, dict[str, float]]:
+    """Read the per-node link capacity that nothing on the host reports.
+
+    There is no measurable denominator for bandwidth headroom on these nodes. The
+    AWS ENA driver publishes no link speed, so ``node_network_speed_bytes`` is
+    absent for the interface carrying the media, and every attempt to compute a
+    utilisation from the byte counters alone divides by something that does not
+    exist. The only figure that does exist is the baseline AWS publishes for the
+    instance type, in a document, which is why an operator declares it here
+    rather than anything scraping it.
+
+    Shape, keyed by NODE name::
+
+        {"sip-1": {"in_bps": 3125000000, "out_bps": 3125000000}}
+
+    In bits per second, both directions, always both. The two are separate
+    allowances on the instance and separate counters on the host, and letting one
+    number cover both would put an assumption inside a declaration that exists to
+    hold none.
+
+    THIS FILE IS THE ONLY SOURCE. No instance type is mapped to a bandwidth
+    anywhere in this code, and none may be added. A lookup table would hand a
+    denominator to a node whose instance type nobody verified, and the report
+    would then carry a percentage of a guess where it owes an UNKNOWN. An
+    undeclared node stays undeclared all the way through to the gate.
+
+    A declaration is not a measurement, and this one under-claims by
+    construction: the published baseline is a FLOOR, since the instance can burst
+    well above it (a c7i.2xlarge baselines at 3.125 Gbps and peaks at 12.5), so a
+    utilisation computed against it reads higher than the truth. That is the safe
+    direction for a headroom check, and it is recorded in the run notes so nobody
+    downstream reads the figure as a measured link capacity.
+
+    A misspelled field is refused rather than ignored, because a silently dropped
+    direction is a node that looks declared and is not.
+    """
+    try:
+        raw = json.loads(path.read_text())
+    except OSError as exc:
+        raise typer.BadParameter(f"cannot read {path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"{path} is not valid JSON: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise typer.BadParameter(
+            f"{path}: expected an object mapping node name to its declared "
+            "network baseline, e.g. "
+            '{"sip-1": {"in_bps": 3125000000, "out_bps": 3125000000}}'
+        )
+
+    baselines: dict[str, dict[str, float]] = {}
+    for node, value in raw.items():
+        if not isinstance(value, dict):
+            raise typer.BadParameter(
+                f"{path}: {node!r} must be an object carrying in_bps and "
+                f"out_bps, got {value!r}. There is no short form: ingress and "
+                "egress are separate allowances, and one figure covering both "
+                "would be an assumption nobody declared."
+            )
+        # Unknown keys are caught BEFORE the missing-field check, so that
+        # {"in_bps": x, "out_bsp": y} names the typo rather than reporting the
+        # field it caused to go missing.
+        unknown = sorted(set(value) - set(_NETWORK_BASELINE_DIRECTIONS))
+        if unknown:
+            raise typer.BadParameter(
+                f"{path}: {node!r} has unknown field(s) {unknown}. Known fields "
+                f"are {list(_NETWORK_BASELINE_DIRECTIONS)}; a misspelled one "
+                "would be silently ignored and the declaration incomplete."
+            )
+        entry: dict[str, float] = {}
+        for direction in _NETWORK_BASELINE_DIRECTIONS:
+            number = value.get(direction)
+            if not isinstance(number, (int, float)) or isinstance(number, bool):
+                raise typer.BadParameter(
+                    f"{path}: {node!r} needs a numeric {direction} in bits per "
+                    f"second, got {number!r}. It cannot be defaulted: no "
+                    "instance-type lookup exists here, and a node with no "
+                    "declared baseline reports UNKNOWN rather than a percentage "
+                    "of a guess."
+                )
+            if number <= 0:
+                raise typer.BadParameter(
+                    f"{path}: {node!r} {direction} must be positive, got "
+                    f"{number!r}. A zero baseline is not a saturated link, it is "
+                    "a denominator nobody supplied."
+                )
+            entry[direction] = float(number)
+        baselines[str(node)] = entry
+    return baselines
 
 
 def _waivers_from_file(path: Path) -> dict[str, str]:
@@ -605,7 +718,15 @@ def report(
                 ended_at_ms=test.get("ended_at_ms"),
             )
         )
-    results = judge_run(tests, aggregates=aggregates)
+    # Declared at import and carried in the run notes, exactly as the ramp plan
+    # is. A node with no declaration reaches the bandwidth gate as UNKNOWN: the
+    # instance type is never read to infer a baseline, because a guessed
+    # denominator would look identical to a measured one in the report.
+    results = judge_run(
+        tests,
+        aggregates=aggregates,
+        network_baselines=network_baselines_from_notes(run.get("notes")),
+    )
     results, unmatched = _apply_waivers(
         results, _waivers_from_file(waive) if waive is not None else {}
     )

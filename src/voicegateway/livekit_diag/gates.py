@@ -100,6 +100,7 @@ RETURN_TO_BASELINE_GATE = "return_to_baseline"
 SUSTAINED_HEALTH_GATE = "sustained_health"
 PROCESS_LIFECYCLE_GATE = "process_lifecycle"
 RESOURCE_TREND_GATE = "resource_trend"
+NETWORK_ALLOWANCE_GATE = "network_allowance"
 
 #: The subject a gate is filed under when it describes the whole fleet rather
 #: than one node. Used where nothing was sampled at all: the finding is that NO
@@ -152,6 +153,11 @@ ALL_GATES: frozenset[str] = frozenset(
         # Same reason, same exclusion from RATIO_GATES.
         PROCESS_LIFECYCLE_GATE,
         RESOURCE_TREND_GATE,
+        # A count of allowance-exceeded EVENTS over the window, so the same
+        # exclusion again. "9613" rendered as "961300%" would be the exact
+        # misstatement RATIO_GATES exists to prevent, and this gate is one where
+        # the number is quoted back to a client as evidence of throttling.
+        NETWORK_ALLOWANCE_GATE,
     }
 )
 
@@ -247,11 +253,48 @@ MIN_TREND_DRIFT_FRACTION = 0.01
 # them.
 MIN_HEADROOM_FRACTION = 0.20
 
-# The resources the criterion names. Only the first is scraped today; the other
-# two are carried so the report cannot go quiet about them.
+# The resources the criterion names, one per HeadroomReading.resource.
+#
+# Network is TWO resources, not one, and the split is not cosmetic. A cloud
+# instance meters inbound and outbound against SEPARATE credit buckets: a node
+# can be shaped on egress while ingress sits nowhere near its allowance, and the
+# fleet's own counters agree (bw_in and bw_out are distinct series that move
+# independently). A single combined row would have to silently pick a direction,
+# and whichever it picked would be the one nobody asked about.
+#
+# The two ids are also what keeps the ROWS distinct. One "network" resource
+# emitted two gates whose subject was `node/network` with different answers and
+# nothing to tell them apart, which is the same subject collision that was fixed
+# once already by putting the source in the subject. Two resources, two
+# subjects, two answers.
 HEADROOM_FILE_DESCRIPTORS = "file_descriptors"
 HEADROOM_RTP_PORTS = "rtp_ports"
-HEADROOM_NETWORK = "network"
+HEADROOM_NETWORK_IN = "network_in"
+HEADROOM_NETWORK_OUT = "network_out"
+
+# Packets per second. A PERMANENT SCOPE EXCLUSION with a stated reason, not a
+# gap waiting on an exporter, and the distinction is the whole point of writing
+# it down here.
+#
+# Packets-per-second headroom cannot be expressed as a percentage by anyone,
+# including AWS, because no per-instance-type PPS allowance is published under
+# any API or document. There is a numerator (the observed packet rate) and there
+# is no denominator to divide it by, anywhere, at any price. Every "PPS
+# headroom" figure in existence is somebody's guess at the allowance wearing a
+# percentage sign.
+#
+# So this must NEVER be turned into a headroom gate, and it is named here
+# precisely so the next person to notice PPS is missing from the headroom rows
+# finds the reason instead of filing it as unfinished work. Wiring an exporter
+# does not lift this one: the counter that is missing is not a metric anybody
+# collects, it is a constant only the hypervisor knows.
+#
+# PPS saturation is still DETECTED, which is why the exclusion is honest rather
+# than a hole. node_ethtool_pps_allowance_exceeded feeds
+# :data:`NETWORK_ALLOWANCE_GATE`, which reads the counter as an EVENT ("the
+# instance was throttled during this window") rather than as a fraction of a
+# limit. The event is measurable and gated; only the headroom is not.
+HEADROOM_PPS = "pps"
 
 
 @dataclass(frozen=True)
@@ -1032,8 +1075,16 @@ class HeadroomReading:
     the pair was not measured, and ``unmeasured_reason`` says why.
 
     File descriptors come from the ``filefd_allocated`` / ``filefd_maximum``
-    gauge pair. RTP ports and network are named by the criterion and scraped by
-    nothing today, which is what :func:`unscraped_headroom_readings` exists for.
+    gauge pair. RTP ports come from ``media_ports_in_use`` /
+    ``media_ports_total``, where the total is the DECLARED size of the
+    configured media port range rather than a measurement, which is exactly why
+    it is stored per sample: the ratio is taken against the range in force at
+    that instant. Network is two resources, :data:`HEADROOM_NETWORK_IN` and
+    :data:`HEADROOM_NETWORK_OUT`, because the buckets are separate.
+
+    A pair this reading cannot be built from is not silently dropped:
+    :func:`unscraped_headroom_readings` exists so an unmeasured resource still
+    files a row saying so.
     """
 
     node: str
@@ -1047,16 +1098,25 @@ class HeadroomReading:
 def unscraped_headroom_readings(
     node: str, *, source: str | None = None
 ) -> list[HeadroomReading]:
-    """The headroom resources nothing measures yet, as explicit non-readings.
+    """The headroom resources a caller could not measure, as explicit
+    non-readings.
 
     The criterion asks for headroom on network, RTP ports and system limits.
-    Only system limits (file descriptors) are scraped. Emitting the other two as
-    ``not_measured`` is the whole point of this helper: a report that simply
-    omits them shows one green row and reads as full coverage of a three-part
-    requirement.
+    Emitting the ones a run could not compute as ``not_measured`` is the whole
+    point of this helper: a report that simply omits them shows one green
+    file-descriptor row and reads as full coverage of a three-part requirement.
 
     A helper rather than a note in a docstring, because a caller that has to
     remember to add them is a caller that eventually does not.
+
+    Network appears TWICE, once per direction, for the reason given at
+    :data:`HEADROOM_NETWORK_IN`: the credit buckets are separate, and a single
+    row cannot be un-measured in one direction and measured in the other.
+
+    :data:`HEADROOM_PPS` is deliberately NOT here. It is a stated permanent
+    exclusion, not something awaiting a scrape, and filing it as an unmeasured
+    headroom row would put it in the queue of things somebody could fix. Nobody
+    can fix it: see the comment on that constant.
     """
     return [
         HeadroomReading(
@@ -1070,13 +1130,22 @@ def unscraped_headroom_readings(
         for resource, reason in (
             (
                 HEADROOM_RTP_PORTS,
-                "no exporter in the scrape set publishes an RTP port-range "
-                "usage series, so nothing measures it",
+                "no scrape correlated to this window carried the "
+                "media_ports_in_use / media_ports_total pair, so the range size "
+                "that would be the denominator is unknown and nothing "
+                "measures it",
             ),
             (
-                HEADROOM_NETWORK,
-                "no exporter in the scrape set publishes a network saturation "
-                "series (PPS or conntrack), so nothing measures it",
+                HEADROOM_NETWORK_IN,
+                "network_receive_bytes_total has no denominator here: no "
+                "exporter in the scrape set publishes the instance INBOUND "
+                "bandwidth allowance, so nothing measures it",
+            ),
+            (
+                HEADROOM_NETWORK_OUT,
+                "network_transmit_bytes_total has no denominator here: no "
+                "exporter in the scrape set publishes the instance OUTBOUND "
+                "bandwidth allowance, so nothing measures it",
             ),
         )
     ]
@@ -1167,8 +1236,16 @@ def headroom_gates(
                 gate=HEADROOM_GATE,
                 status=UNKNOWN,
                 detail=(
-                    "no headroom reading was supplied, so no limit was shown to "
-                    "have room left. Nothing measured is not room to spare"
+                    # "not measured" is load-bearing wording, not prose. Every
+                    # UNKNOWN row in a report has to say which kind of absence
+                    # it is, and two end-to-end tests enforce that every UNKNOWN
+                    # detail carries either "not measured" or "no node was
+                    # sampled". The older phrasing said "Nothing measured" and
+                    # satisfied neither, so this row read as a gate that broke
+                    # rather than as a resource nobody supplied a reading for.
+                    "no headroom reading was supplied, so this resource was not "
+                    "measured and no limit was shown to have room left. Nothing "
+                    "measured is not room to spare"
                 ),
                 threshold=threshold,
             )
@@ -1909,6 +1986,251 @@ def resource_trend_gates(
     ]
 
 
+# --------------------------------------------------------------------------
+# Hypervisor network allowances: throttling no application metric explains
+# --------------------------------------------------------------------------
+#
+# A cloud host does not drop your traffic when you exceed an allowance, it
+# QUEUES it, and the queue is invisible from inside the guest. It presents to a
+# caller as jitter and one-way audio that CPU, memory and application latency
+# all decline to explain. The ethtool allowance counters are the only place the
+# hypervisor admits it happened, which is what makes them worth a gate of their
+# own rather than a footnote under headroom.
+#
+# This gate answers "were you throttled", never "how close were you". The
+# second question is the headroom gate's, and for three of these five counters
+# it has no answer at all: see :data:`HEADROOM_PPS`.
+
+
+#: The five counters, in the order a row prints them, split by WHAT A NON-ZERO
+#: READING PROVES. The split is the reason this gate exists, so it is data here
+#: rather than a branch inside the gate: the sentence a reader gets has to
+#: follow from which counter fired.
+#:
+#: bw_in, bw_out and pps count packets QUEUED OR DROPPED, and the hypervisor
+#: never separates the two. A delta there is proof of SHAPING and is not proof
+#: of loss, and a report that says "packets dropped" off this counter has
+#: claimed something the counter cannot tell it.
+_ALLOWANCE_SHAPED: tuple[str, ...] = ("bw_in", "bw_out", "pps")
+#: conntrack and linklocal count DROPS ONLY. There is no queue behind these: a
+#: non-zero delta is traffic that did not arrive, which is an unambiguous
+#: failure and has to read differently from the three above.
+_ALLOWANCE_DROPPED: tuple[str, ...] = ("conntrack", "linklocal")
+_ALLOWANCE_COUNTERS: tuple[str, ...] = _ALLOWANCE_SHAPED + _ALLOWANCE_DROPPED
+
+
+@dataclass(frozen=True)
+class AllowanceReading:
+    """One node's five hypervisor allowance counters as DELTAS over the window.
+
+    **Deltas, never absolutes, and the gate depends on the caller honouring
+    that.** ``node_ethtool_*_allowance_exceeded`` is cumulative since driver
+    reset, so an absolute reading carries every throttling event since the
+    instance booted. This is not theoretical: one real SIP node reads 9613 on
+    ``bw_in`` from before the engagement started while its twin, same instance
+    type behind the same load balancer, reads 0. Gating the absolute would fail
+    a node for shaping it never suffered during the test and pass its twin, and
+    the report would name the wrong box.
+
+    The caller supplies the subtraction because the caller is the one holding
+    both endpoints of the window. This gate therefore treats a large value as a
+    large delta and nothing else, and a NEGATIVE value as a counter reset rather
+    than as traffic being handed back.
+
+    ``None`` means that counter was not measured. It is never read as zero: a
+    counter nobody scraped says nothing about whether the instance was
+    throttled, and scoring it 0 would manufacture a clean window out of a scrape
+    gap.
+    """
+
+    node: str
+    source: str | None = None
+    # delta over the window per counter; None means not measured
+    bw_in: float | None = None
+    bw_out: float | None = None
+    pps: float | None = None
+    conntrack: float | None = None
+    linklocal: float | None = None
+
+
+def _allowance_subject(reading: AllowanceReading) -> str:
+    """``node`` or ``node/source``, and never blank.
+
+    Same rule as :func:`_headroom_gate`: one node is commonly scraped by several
+    exporters, and dropping the source produced rows with identical subjects and
+    different answers. The fleet fallback covers a reading built with no node
+    name at all, because an empty cell in a table where every other row
+    identifies itself reads as a rendering fault rather than as a finding.
+    """
+    node = reading.node.strip() if reading.node else ""
+    if not node:
+        return FLEET_SUBJECT
+    return f"{node}/{reading.source}" if reading.source else node
+
+
+def _allowance_names(names: Sequence[str]) -> str:
+    """``a``, ``a and b``, ``a, b and c``. Prose, because the detail is prose."""
+    if len(names) == 1:
+        return names[0]
+    return f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def network_allowance_gate(reading: AllowanceReading) -> GateResult:
+    """Did the hypervisor throttle this node during the window?
+
+    PASS is every measured counter at a delta of zero. FAIL is any measured
+    counter above zero. UNKNOWN is no counter measured at all, which is not a
+    pass: an instance nobody asked about its allowances is not an instance that
+    stayed inside them.
+
+    **The detail is the deliverable here, more than the status is.** A bare
+    "FAIL, 9613" invites exactly one wrong reading, that 9613 packets were lost,
+    and the number does not support it. Two facts change what the number means
+    and both are stated on every row that carries one:
+
+    * ``bw_in``, ``bw_out`` and ``pps`` count packets QUEUED OR DROPPED, with no
+      way to tell which. Non-zero is evidence of shaping. It is not evidence of
+      loss, and a client who is told it is will go looking for a fault that
+      leaves no other trace.
+    * ``conntrack`` and ``linklocal`` count DROPS ONLY. Non-zero there is
+      traffic that did not arrive, full stop, and it must not be softened into
+      the same sentence as the first three.
+
+    A partial window still PASSES on what it measured and SAYS what it did not,
+    because "three of five counters were clean" and "the node was clean" are
+    different claims and only the first one was earned.
+    """
+    subject = _allowance_subject(reading)
+    values = {name: getattr(reading, name) for name in _ALLOWANCE_COUNTERS}
+
+    fired = [(n, v) for n, v in values.items() if v is not None and v > 0]
+    clean = [n for n, v in values.items() if v is not None and v == 0]
+    # A delta below zero is not traffic being credited back, it is the counter
+    # having reset under the window (driver reload, live migration, an instance
+    # replaced mid-run). The window's true delta is then unknowable, so the
+    # counter is dropped from the evidence rather than scored as clean.
+    reset = [n for n, v in values.items() if v is not None and v < 0]
+    unmeasured = [n for n, v in values.items() if v is None]
+
+    if fired:
+        named = ", ".join(f"{n} {v:+g}" for n, v in fired)
+        shaped = [n for n, _ in fired if n in _ALLOWANCE_SHAPED]
+        dropped = [n for n, _ in fired if n in _ALLOWANCE_DROPPED]
+        clauses = []
+        if shaped:
+            verb = "counts" if len(shaped) == 1 else "count"
+            clauses.append(
+                f"{_allowance_names(shaped)} {verb} packets QUEUED OR DROPPED "
+                "and the hypervisor never separates the two, so a non-zero "
+                "delta there is evidence of shaping, not necessarily loss."
+            )
+        if dropped:
+            verb = "counts" if len(dropped) == 1 else "count"
+            clauses.append(
+                f"{_allowance_names(dropped)} {verb} outright drops, so a "
+                "non-zero delta there is traffic that did not arrive rather "
+                "than traffic that was delayed."
+            )
+        return GateResult(
+            gate=NETWORK_ALLOWANCE_GATE,
+            status=FAIL,
+            subject=subject,
+            detail=(
+                f"{subject} exceeded a hypervisor network allowance during the "
+                f"window: {named} (delta over the window, not an absolute). "
+                + " ".join(clauses)
+            ),
+            metric="allowance_events",
+            value=float(sum(v for _, v in fired)),
+            threshold=0.0,
+        )
+
+    if clean:
+        gaps = ""
+        if unmeasured:
+            gaps = (
+                f" Not measured: {_allowance_names(unmeasured)}, so those were "
+                "not ruled out."
+            )
+        resets = ""
+        if reset:
+            resets = (
+                f" Excluded as counter resets: {_allowance_names(reset)}, which "
+                "fell over the window and cannot yield a delta."
+            )
+        return GateResult(
+            gate=NETWORK_ALLOWANCE_GATE,
+            status=PASS,
+            subject=subject,
+            detail=(
+                f"{subject} recorded no hypervisor allowance event during the "
+                f"window: {_allowance_names(clean)} held at a delta of 0."
+                f"{gaps}{resets}"
+            ),
+            metric="allowance_events",
+            value=0.0,
+            threshold=0.0,
+        )
+
+    if reset:
+        return GateResult(
+            gate=NETWORK_ALLOWANCE_GATE,
+            status=UNKNOWN,
+            subject=subject,
+            detail=(
+                f"{subject} was not measured: every counter that reported "
+                f"({_allowance_names(reset)}) fell across the window, which "
+                "means the counter reset rather than that traffic was allowed, "
+                "so the window's real delta is unknowable. A reset counter is "
+                "not a quiet network"
+            ),
+            threshold=0.0,
+        )
+
+    return GateResult(
+        gate=NETWORK_ALLOWANCE_GATE,
+        status=UNKNOWN,
+        subject=subject,
+        detail=(
+            f"{subject} was not measured: none of the five ethtool allowance "
+            f"counters ({_allowance_names(_ALLOWANCE_COUNTERS)}) carried a "
+            "delta for this window, so neither shaping nor drops were ruled "
+            "out. A counter nobody read is not a quiet network"
+        ),
+        threshold=0.0,
+    )
+
+
+def network_allowance_gates(
+    readings: Sequence[AllowanceReading],
+) -> list[GateResult]:
+    """One row per node per source. Never collapsed.
+
+    Collapsing would lose the finding. On a real fleet one SIP node carries
+    a non-zero ``bw_in`` and its twin carries zero, and which box was shaped is
+    the entire actionable content of the row.
+    """
+    if not readings:
+        return [
+            GateResult(
+                gate=NETWORK_ALLOWANCE_GATE,
+                status=UNKNOWN,
+                # Fleet-scoped for the same reason as _resource_gates: the
+                # finding is that nothing reported, so naming a node would be
+                # wrong and naming nothing prints an empty cell.
+                subject=FLEET_SUBJECT,
+                detail=(
+                    "no node was sampled in the window, so no hypervisor "
+                    "allowance counter was read and no node was shown to have "
+                    "escaped throttling. A window with no samples is not a "
+                    "quiet fleet"
+                ),
+                threshold=0.0,
+            )
+        ]
+    return [network_allowance_gate(r) for r in readings]
+
+
 __all__ = [
     "AGENTS_GATE",
     "BASELINE_GOROUTINES",
@@ -1918,7 +2240,9 @@ __all__ = [
     "FAIL",
     "HEADROOM_FILE_DESCRIPTORS",
     "HEADROOM_GATE",
-    "HEADROOM_NETWORK",
+    "HEADROOM_NETWORK_IN",
+    "HEADROOM_NETWORK_OUT",
+    "HEADROOM_PPS",
     "HEADROOM_RTP_PORTS",
     "LATENCY_GATE",
     "MAX_NODE_CPU_UTILISATION",
@@ -1935,6 +2259,10 @@ __all__ = [
     "SUSTAINED_HEALTH_GATE",
     "PROCESS_LIFECYCLE_GATE",
     "RESOURCE_TREND_GATE",
+    "NETWORK_ALLOWANCE_GATE",
+    "AllowanceReading",
+    "network_allowance_gate",
+    "network_allowance_gates",
     "MIN_TREND_SAMPLES",
     "MIN_TREND_DRIFT_FRACTION",
     "LifecycleReading",

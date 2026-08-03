@@ -35,6 +35,7 @@ from typer.testing import CliRunner
 
 from voicegateway.cli._app import app
 from voicegateway.livekit_diag import gates
+from voicegateway.loadtest import judge
 from voicegateway.repository import node_samples_repository as node_samples
 from voicegateway.services.storage_service import StorageService
 
@@ -48,6 +49,28 @@ NODE = "sfu-1"
 SOURCE = "node-exporter"
 CORES = 4.0
 TOTAL_BYTES = 16 * 2**30
+
+# The media-port range this node was configured with, and how much of it the run
+# occupied. Seeded because RTP-port headroom is a MEASUREMENT now: it comes from
+# the media_ports_in_use / media_ports_total pair rather than being emitted as a
+# scope exclusion, which is what it was when this file was written.
+MEDIA_PORTS_TOTAL = 10001.0
+MEDIA_PORTS_IN_USE = 1200.0
+
+# Throughput, as the cumulative byte counters a node_exporter publishes. Read as
+# a RATE over the window, so the value has to be monotonic in absolute time
+# rather than restarting per window: a counter that goes backwards is a reset,
+# and read_counter_rate reports a reset as "cannot say" rather than as a number.
+COUNTER_ORIGIN_S = 1_785_661_200
+RX_BYTES_PER_SECOND = 50_000_000.0
+TX_BYTES_PER_SECOND = 60_000_000.0
+
+# The instance type's PUBLISHED baseline, in bits per second, both directions.
+# Declared rather than scraped, and that is the whole design: the ENA driver
+# reports no link speed, so there is no measurable denominator and an operator
+# writes the published figure down at import. 400 Mbps in and 480 Mbps out
+# against 3.125 Gbps leaves 87% and 85% headroom, comfortably over the 20% floor.
+DECLARED_BASELINE_BPS = 3_125_000_000.0
 
 
 async def _samples(
@@ -65,11 +88,13 @@ async def _samples(
     rows = []
     for index in range(0, (end_ms - start_ms) // 10_000 + 1):
         elapsed = index * 10
+        at_ms = start_ms + elapsed * 1000
+        since_origin = at_ms // 1000 - COUNTER_ORIGIN_S
         rows.append(
             node_samples.NodeSampleInput(
                 node=NODE,
                 source=SOURCE,
-                at_ms=start_ms + elapsed * 1000,
+                at_ms=at_ms,
                 outcome="ok",
                 values={
                     "cpu_seconds_total": 1000.0 + CORES * elapsed,
@@ -81,6 +106,27 @@ async def _samples(
                     # what is left UNKNOWN is only what nothing can scrape.
                     "process_open_fds": 1200.0,
                     "process_max_fds": 524287.0,
+                    # Media ports and network, seeded for the SAME reason and
+                    # this is what changed: both used to be scraped by nothing
+                    # and reported as scope exclusions, so a perfect run could
+                    # never reach PASS. Both are real columns now, so the run
+                    # that demonstrates the acceptance criteria has to carry
+                    # them or it is demonstrating less than it claims.
+                    "media_ports_in_use": MEDIA_PORTS_IN_USE,
+                    "media_ports_total": MEDIA_PORTS_TOTAL,
+                    "network_receive_bytes_total": RX_BYTES_PER_SECOND
+                    * since_origin,
+                    "network_transmit_bytes_total": TX_BYTES_PER_SECOND
+                    * since_origin,
+                    # The hypervisor's five shaping counters, flat at zero: this
+                    # node was never throttled during the window. Flat rather
+                    # than absent, because an unread counter is UNKNOWN and a
+                    # zero DELTA is a measured clean window.
+                    "ethtool_bw_in_allowance_exceeded": 0.0,
+                    "ethtool_bw_out_allowance_exceeded": 0.0,
+                    "ethtool_pps_allowance_exceeded": 0.0,
+                    "ethtool_conntrack_allowance_exceeded": 0.0,
+                    "ethtool_linklocal_allowance_exceeded": 0.0,
                 },
             )
         )
@@ -103,8 +149,15 @@ def _run(
     *,
     plan: Path | None = None,
     waive: Path | None = None,
+    declare_network_baseline: bool = False,
 ):
-    """Seed node samples, import, report. Returns the payload and the exits."""
+    """Seed node samples, import, report. Returns the payload and the exits.
+
+    ``declare_network_baseline`` writes the per-node published link baseline and
+    passes it to the import, which is the only way a bandwidth headroom figure
+    can exist: nothing on the host reports link speed, so an undeclared node
+    reaches the gate as UNKNOWN rather than being divided by a guess.
+    """
     import asyncio
 
     db = tmp_path / "throwaway.db"
@@ -119,6 +172,19 @@ def _run(
     argv = ["loadtest", "import", str(fixture), "--captured", "--config", str(config)]
     if plan is not None:
         argv += ["--plan", str(plan)]
+    if declare_network_baseline:
+        baseline = tmp_path / "network-baseline.json"
+        baseline.write_text(
+            json.dumps(
+                {
+                    NODE: {
+                        "in_bps": DECLARED_BASELINE_BPS,
+                        "out_bps": DECLARED_BASELINE_BPS,
+                    }
+                }
+            )
+        )
+        argv += ["--network-baseline", str(baseline)]
     imported = runner.invoke(app, argv)
 
     out = tmp_path / "out"
@@ -155,8 +221,17 @@ def _gate(payload, name: str):
 @pytest.fixture(scope="module")
 def acceptance(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("acceptance")
-    # One window, the whole run, comfortably inside both ceilings.
-    return _run(tmp, ACCEPTANCE, [(1_785_661_201_000, 1_785_661_320_000, 0.66, 0.61)])
+    # One window, the whole run, comfortably inside both ceilings. The network
+    # baseline is declared, so the bandwidth denominator exists and the two
+    # network gates are judged rather than reported as having nothing to divide
+    # by. That declaration is the operator's job and this is the run that shows
+    # what it buys.
+    return _run(
+        tmp,
+        ACCEPTANCE,
+        [(1_785_661_201_000, 1_785_661_320_000, 0.66, 0.61)],
+        declare_network_baseline=True,
+    )
 
 
 def test_the_fixture_is_shaped_like_a_real_capture() -> None:
@@ -184,28 +259,34 @@ def test_every_measurable_gate_passes(acceptance) -> None:
 def test_the_verdict_is_still_not_pass_and_here_is_why(acceptance) -> None:
     """THE FINDING, and the most important line in this file.
 
-    A verdict of PASS is UNREACHABLE. Two of the three contracted headroom
-    resources, RTP ports and network, are scraped by nothing, so they are
-    emitted as unmeasured on every run; UNKNOWN outranks PASS, so the run's
-    verdict is UNKNOWN however well it went.
+    WHAT CHANGED. The finding used to be that PASS was unreachable because two
+    of the three contracted headroom resources, RTP ports and network, were
+    scraped by NOTHING and therefore reported unmeasured on every run. Both are
+    measured now, from real columns, and on this run both are green. So the old
+    assertion that ``rtp_ports`` and ``network`` are in the UNKNOWN set is false
+    for the best possible reason, and asserting it would now be asserting that
+    the coverage is missing.
 
-    That is honest rather than broken: the criteria require 20% headroom on
-    those resources and nothing demonstrated it. But it means a perfect
-    500-concurrent run still reports UNKNOWN and exits non-zero, which somebody
-    needs to know BEFORE they hand the report over, not after.
+    What survives is the same shape of finding at a smaller size. A verdict of
+    PASS is STILL unreachable on this fixture, and the reasons are now of three
+    kinds, none of them a pass:
 
-    Closing it needs either a scraper for those two, or a written waiver.
+    * ``pps``, which is permanent. No per-instance-type packets-per-second
+      allowance is published by anyone, so there is no denominator. Wiring an
+      exporter does not lift it.
+    * two dependencies nobody configured on this fixture.
+    * four lifecycle criteria whose columns this fixture's samples do not carry.
+
+    That still means a perfect 500-concurrent run reports UNKNOWN and exits
+    non-zero, which somebody needs to know BEFORE they hand the report over.
+    Closing it needs a written waiver, and pps can only ever be closed that way.
     """
     payload = acceptance["payload"]
     assert payload["verdict"]["status"] == gates.UNKNOWN
     unknown = [g for g in payload["gates"] if g["status"] == gates.UNKNOWN]
-    # Four now. rtp_ports and network are unmeasurable by anything; redis and
-    # health_endpoint are unconfigured on this fixture. Different reasons, same
-    # honest status, and none of them is a pass.
     assert {g["subject"].split("/")[-1] for g in unknown} == {
-        # Unmeasurable by anything in the system.
-        "rtp_ports",
-        "network",
+        # PERMANENTLY unmeasurable: the denominator is published by nobody.
+        gates.HEADROOM_PPS,
         # Unconfigured on this fixture: no exporter, no health endpoint.
         "redis",
         "health_endpoint",
@@ -220,30 +301,94 @@ def test_the_verdict_is_still_not_pass_and_here_is_why(acceptance) -> None:
         "filefd_allocated",
         "sockstat_udp_inuse",
     }
-    # File descriptors ARE measurable and pass here, which is what makes the
-    # other two stand out as the gap rather than as more of the same.
-    [fds] = [
+    # THE COMPANION, and the reason the set above got shorter. The three
+    # resources that left it are PASSING measurements on this run, not silent
+    # omissions, and each carries the number that decided it.
+    measured = {
+        g["subject"]: g
+        for g in payload["gates"]
+        if g["gate"] == gates.HEADROOM_GATE and g["status"] == gates.PASS
+    }
+    assert set(measured) == {
+        f"{NODE}/{SOURCE}/file_descriptors",
+        f"{NODE}/{SOURCE}/{gates.HEADROOM_RTP_PORTS}",
+        f"{NODE}/{gates.HEADROOM_NETWORK_IN}",
+        f"{NODE}/{gates.HEADROOM_NETWORK_OUT}",
+    }
+    for subject, gate in measured.items():
+        assert gate["value"] >= gates.MIN_HEADROOM_FRACTION, subject
+    # And the hypervisor never throttled this node, measured as a zero DELTA
+    # rather than assumed from an unread counter.
+    [allowance] = [
+        g for g in payload["gates"] if g["gate"] == gates.NETWORK_ALLOWANCE_GATE
+    ]
+    assert allowance["status"] == gates.PASS
+    assert allowance["value"] == 0.0
+
+
+def test_both_network_directions_are_measured_separately(acceptance) -> None:
+    """Ingress and egress are separate credit buckets, so separate rows.
+
+    This replaces a test that asserted nothing could measure either resource.
+    The stronger claim now available is that they are measured, judged
+    INDEPENDENTLY, and cannot collide: one combined ``network`` row would have
+    had to pick a direction, and whichever it picked is the one nobody asked
+    about. The two values here differ, which is what makes the split non-vacuous.
+    """
+    payload = acceptance["payload"]
+    inbound = [
         g
         for g in payload["gates"]
-        if g["subject"] and g["subject"].endswith("/file_descriptors")
+        if g["subject"] == f"{NODE}/{gates.HEADROOM_NETWORK_IN}"
     ]
-    assert fds["status"] == gates.PASS
+    outbound = [
+        g
+        for g in payload["gates"]
+        if g["subject"] == f"{NODE}/{gates.HEADROOM_NETWORK_OUT}"
+    ]
+    assert len(inbound) == 1
+    assert len(outbound) == 1
+    # 400 Mbps in and 480 Mbps out against the same declared 3.125 Gbps.
+    assert inbound[0]["value"] == pytest.approx(0.872)
+    assert outbound[0]["value"] == pytest.approx(0.8464)
+    assert inbound[0]["value"] != outbound[0]["value"]
+    assert gates.HEADROOM_NETWORK_IN != gates.HEADROOM_NETWORK_OUT
+    # And UNKNOWN really does outrank PASS, which is what makes any remaining
+    # unmeasured criterion decisive for the verdict.
+    assert gates.worst_status([gates.PASS, gates.UNKNOWN]) == gates.UNKNOWN
 
 
-def test_nothing_measures_those_two_resources() -> None:
+def test_pps_is_the_one_resource_nothing_will_ever_measure() -> None:
     """Structural, so it holds beyond this fixture.
 
-    unscraped_headroom_readings emits them unmeasured and no code path anywhere
-    supplies a real reading for either.
+    The old test here asserted that nothing measured RTP ports or network. That
+    is exactly the fact that changed, so it is replaced by the one exclusion
+    that no exporter can lift, with its reason asserted to say the denominator
+    is UNPUBLISHED rather than merely uncollected. A reason phrased as "nothing
+    scrapes it" would read as work somebody could do.
     """
-    readings = gates.unscraped_headroom_readings("sfu-1")
+    excluded = judge.excluded_headroom_resources()
+    assert sorted(excluded) == [gates.HEADROOM_PPS]
+    reason = excluded[gates.HEADROOM_PPS]
+    assert "no denominator" in reason
+    assert "not a gap awaiting work" in reason
+    assert "no per-instance-type PPS allowance is published" in reason
+    # THE COMPANION. The three that used to be here are measurable, and the
+    # unmeasured-reading helper still files them for a caller that scraped
+    # none of them, so an absent scrape is still visible rather than silent.
+    for resource in (
+        gates.HEADROOM_RTP_PORTS,
+        gates.HEADROOM_NETWORK_IN,
+        gates.HEADROOM_NETWORK_OUT,
+    ):
+        assert resource not in excluded, resource
+    readings = gates.unscraped_headroom_readings(NODE)
     assert [r.resource for r in readings] == [
         gates.HEADROOM_RTP_PORTS,
-        gates.HEADROOM_NETWORK,
+        gates.HEADROOM_NETWORK_IN,
+        gates.HEADROOM_NETWORK_OUT,
     ]
     assert all(r.used is None and r.limit is None for r in readings)
-    # And UNKNOWN really does outrank PASS, which is what makes it decisive.
-    assert gates.worst_status([gates.PASS, gates.UNKNOWN]) == gates.UNKNOWN
 
 
 def test_the_establishment_gate_passes(acceptance) -> None:
@@ -403,27 +548,32 @@ def test_a_capacity_figure_requires_breaching_the_ceiling(
 def waived(tmp_path_factory):
     """The acceptance run with every unmeasured criterion declared.
 
-    Four now, not two. This still asserts what it always asserted, that a fully
-    satisfied run reaches a clean verdict; it just declares two dependencies
-    that did not exist when it was written.
+    SEVEN now, not eight, and the one that left is the point. The old map
+    waived ``resource_headroom/fleet/rtp_ports`` and
+    ``resource_headroom/fleet/network``, two fleet-level rows that existed
+    because nothing could measure either resource. RTP ports and network are
+    measured on this run and PASS, so those keys match no gate, and a waiver key
+    matching no gate is REFUSED by design (see
+    :func:`test_a_waiver_naming_no_gate_is_refused`): leaving them in would exit
+    2 and write no report at all.
 
-    The subject is fleet-level because the gate is: nothing measures either on
-    any node, so they are emitted once per run rather than once per node per
-    test. The waiver still attaches to a real gate, which is why they remained
-    gates rather than becoming a note.
+    What replaces them is nothing. A resource that is measured needs no waiver,
+    which is the improvement stated as a diff in this file.
+
+    ``resource_headroom/fleet/pps`` is the one headroom key still here, and it is
+    the only one that can NEVER be retired by wiring an exporter: no
+    per-instance-type PPS allowance is published anywhere, so a written waiver
+    is the only way that criterion is ever closed.
     """
     tmp = tmp_path_factory.mktemp("waived")
     waiver = tmp / "waivers.json"
     waiver.write_text(
         json.dumps(
             {
-                "resource_headroom/fleet/rtp_ports": (
-                    "no RTP-port exporter was funded for this run, agreed in "
-                    "writing before test day"
-                ),
-                "resource_headroom/fleet/network": (
-                    "no network-headroom exporter was funded for this run, "
-                    "agreed in writing before test day"
+                "resource_headroom/fleet/pps": (
+                    "packets-per-second headroom has no published denominator on "
+                    "any instance type, agreed in writing before test day as "
+                    "permanently outside scope"
                 ),
                 # Declared, not silent. The Redis and health-check criteria were
                 # added after this fixture was written, and an unconfigured
@@ -465,6 +615,7 @@ def waived(tmp_path_factory):
         ACCEPTANCE,
         [(1_785_661_201_000, 1_785_661_320_000, 0.66, 0.61)],
         waive=waiver,
+        declare_network_baseline=True,
     )
 
 
@@ -472,7 +623,11 @@ def test_a_waiver_records_the_reason_rather_than_hiding_the_gate(waived) -> None
     """The checklist's requirement: waived in writing, never a silent pass."""
     payload = waived["payload"]
     waived_gates = [g for g in payload["gates"] if g["status"] == gates.WAIVED]
-    assert len(waived_gates) == 8
+    # Seven, down from eight, and every one of them names a real gate: the CLI
+    # exits 2 on a waiver key that matches nothing, so this count is also the
+    # assertion that no key here is stale.
+    assert len(waived_gates) == 7
+    assert waived["exported"].exit_code != 2
     for gate in waived_gates:
         # The property, rather than one phrase: a waiver carries a human reason
         # and that reason is visible in the rendered detail. A waiver a reviewer

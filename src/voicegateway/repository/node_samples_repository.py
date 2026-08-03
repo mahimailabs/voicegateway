@@ -91,6 +91,19 @@ COUNTER_COLUMNS: frozenset[str] = frozenset(
         # about whether any were rejected during THIS window.
         "redis_rejected_connections_total",
         "redis_evicted_keys_total",
+        # Cumulative since DRIVER reset, not since the run started. One live SIP
+        # node carries 9613 on bw_in from before the engagement while its twin
+        # carries 0, so only the delta over the window is attributable; an
+        # absolute would fail a node for throttling it never suffered here.
+        "ethtool_bw_in_allowance_exceeded",
+        "ethtool_bw_out_allowance_exceeded",
+        "ethtool_pps_allowance_exceeded",
+        "ethtool_conntrack_allowance_exceeded",
+        "ethtool_linklocal_allowance_exceeded",
+        # The throughput the allowances cap. Read as a rate; the absolute is
+        # bytes since boot and says nothing about this window.
+        "network_receive_bytes_total",
+        "network_transmit_bytes_total",
     }
 )
 
@@ -138,6 +151,14 @@ GAUGE_COLUMNS: frozenset[str] = frozenset(
         "health_ok",
         "health_status_code",
         "health_timed_out",
+        # Media port headroom. Both are point-in-time: in_use is the count of
+        # UDP sockets bound inside the range right now, and total is the
+        # declared size of that range, republished on every scrape so a ratio is
+        # taken against the range in force at that instant. total NULL means the
+        # headroom is UNKNOWN, never "assume the usual range": a guessed
+        # denominator invents a saturation percentage nobody measured.
+        "media_ports_total",
+        "media_ports_in_use",
     }
 )
 
@@ -217,6 +238,18 @@ _INT_COLUMNS: frozenset[str] = frozenset(
         "health_ok",
         "health_status_code",
         "health_timed_out",
+        # Port counts and byte/event counters. All integral: a fractional port
+        # or a fractional throttling event is not a thing the exposition can
+        # mean, so truncation here loses nothing.
+        "media_ports_total",
+        "media_ports_in_use",
+        "ethtool_bw_in_allowance_exceeded",
+        "ethtool_bw_out_allowance_exceeded",
+        "ethtool_pps_allowance_exceeded",
+        "ethtool_conntrack_allowance_exceeded",
+        "ethtool_linklocal_allowance_exceeded",
+        "network_receive_bytes_total",
+        "network_transmit_bytes_total",
     }
 )
 
@@ -320,6 +353,21 @@ class NodeSampleRow:
     health_timed_out: int | None
     vmstat_oom_kill: int | None
 
+    # Media port and network headroom. media_ports_total is the declared range
+    # size, so NULL here makes the headroom UNKNOWN rather than assumable, and
+    # the ethtool counters are cumulative since driver reset, so a reader must
+    # take a delta over its window rather than the value it is handed.
+    media_ports_total: int | None
+    media_ports_in_use: int | None
+    ethtool_bw_in_allowance_exceeded: int | None
+    ethtool_bw_out_allowance_exceeded: int | None
+    ethtool_pps_allowance_exceeded: int | None
+    ethtool_conntrack_allowance_exceeded: int | None
+    ethtool_linklocal_allowance_exceeded: int | None
+    network_receive_bytes_total: int | None
+    network_transmit_bytes_total: int | None
+
+
 @dataclass(frozen=True)
 class CounterRate:
     """A per-second rate at ``at_ms``, or ``None`` when it is unknowable.
@@ -414,6 +462,19 @@ def _row(sample: NodeSample) -> NodeSampleRow:
         health_status_code=sample.health_status_code,
         health_timed_out=sample.health_timed_out,
         vmstat_oom_kill=sample.vmstat_oom_kill,
+        media_ports_total=sample.media_ports_total,
+        media_ports_in_use=sample.media_ports_in_use,
+        ethtool_bw_in_allowance_exceeded=sample.ethtool_bw_in_allowance_exceeded,
+        ethtool_bw_out_allowance_exceeded=sample.ethtool_bw_out_allowance_exceeded,
+        ethtool_pps_allowance_exceeded=sample.ethtool_pps_allowance_exceeded,
+        ethtool_conntrack_allowance_exceeded=(
+            sample.ethtool_conntrack_allowance_exceeded
+        ),
+        ethtool_linklocal_allowance_exceeded=(
+            sample.ethtool_linklocal_allowance_exceeded
+        ),
+        network_receive_bytes_total=sample.network_receive_bytes_total,
+        network_transmit_bytes_total=sample.network_transmit_bytes_total,
     )
 
 

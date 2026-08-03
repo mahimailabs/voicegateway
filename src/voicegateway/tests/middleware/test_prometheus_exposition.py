@@ -109,3 +109,112 @@ def test_sum_series_where_filters_on_a_label_value() -> None:
 def test_sum_series_where_matching_nothing_is_none_not_zero() -> None:
     samples = parse_exposition('node_cpu_seconds_total{mode="user"} 5\n')
     assert sum_series(samples, "node_cpu_seconds_total", where={"mode": "idle"}) is None
+
+
+# --------------------------------------------------------------------------
+# exclude: sum every label value EXCEPT a named one
+# --------------------------------------------------------------------------
+#
+# The shape `where` cannot express. A node's real NIC is enp39s0 on one host and
+# ens5 on another, so the devices to KEEP cannot be named; loopback is lo
+# everywhere, so the one to drop can be.
+
+
+def _nic_body() -> str:
+    return (
+        'node_network_receive_bytes_total{device="lo"} 1000\n'
+        'node_network_receive_bytes_total{device="enp39s0"} 40\n'
+        'node_network_receive_bytes_total{device="ens5"} 2\n'
+    )
+
+
+def test_sum_series_exclude_drops_the_matching_series_and_sums_the_rest() -> None:
+    samples = parse_exposition(_nic_body())
+    # Non-vacuous: loopback dominates the unfiltered total, so an exclusion that
+    # did nothing would be visible rather than coincidentally right.
+    assert sum_series(samples, "node_network_receive_bytes_total") == 1042.0
+    assert (
+        sum_series(
+            samples, "node_network_receive_bytes_total", exclude={"device": "lo"}
+        )
+        == 42.0
+    )
+
+
+def test_sum_series_exclude_of_an_absent_label_value_changes_nothing() -> None:
+    """A host whose loopback is spelled differently still gets a real total.
+
+    The counterpart of the pinning failure: an exclusion that matches nothing
+    over-counts by one interface, which is a wrong number. A `where` that
+    matches nothing stores NULL forever, which is a missing column. Excluding is
+    the safer direction, and this pins that it degrades that way.
+    """
+    samples = parse_exposition(_nic_body())
+    assert (
+        sum_series(
+            samples, "node_network_receive_bytes_total", exclude={"device": "lo0"}
+        )
+        == 1042.0
+    )
+
+
+def test_sum_series_exclude_needs_every_pair_to_match() -> None:
+    """ALL pairs, not any: more keys excludes LESS, never more."""
+    samples = parse_exposition(
+        'x{device="lo",kind="virtual"} 5\nx{device="lo",kind="real"} 3\n'
+    )
+    assert sum_series(samples, "x", exclude={"device": "lo"}) is None
+    assert sum_series(samples, "x", exclude={"device": "lo", "kind": "virtual"}) == 3.0
+    # A pair whose key is absent from the sample cannot match, so nothing drops.
+    assert sum_series(samples, "x", exclude={"device": "lo", "nope": "1"}) == 8.0
+
+
+def test_sum_series_exclude_and_where_apply_together() -> None:
+    samples = parse_exposition(
+        'x{device="lo",mode="idle"} 100\n'
+        'x{device="ens5",mode="idle"} 7\n'
+        'x{device="ens5",mode="user"} 500\n'
+    )
+    assert (
+        sum_series(samples, "x", where={"mode": "idle"}, exclude={"device": "lo"})
+        == 7.0
+    )
+
+
+def test_sum_series_exclude_that_removes_everything_is_none_not_zero() -> None:
+    """The absent-is-not-zero rule survives exclusion.
+
+    A node exposing only loopback has not reported zero bytes on the wire; it
+    has reported nothing about the wire at all, and the column must stay NULL so
+    a reader suppresses it rather than drawing a flat healthy line.
+    """
+    samples = parse_exposition('node_network_receive_bytes_total{device="lo"} 900\n')
+    assert (
+        sum_series(
+            samples, "node_network_receive_bytes_total", exclude={"device": "lo"}
+        )
+        is None
+    )
+
+
+def test_sum_series_exclude_leaves_an_absent_series_none() -> None:
+    samples = parse_exposition('node_network_receive_bytes_total{device="lo"} 1\n')
+    assert sum_series(samples, "not_there", exclude={"device": "lo"}) is None
+
+
+def test_sum_series_default_exclude_keeps_every_sample() -> None:
+    """The 51 existing entries pass no exclude, so the default must be inert.
+
+    An empty mapping matches vacuously, so an unguarded `all()` would read it as
+    "drop everything" and turn a whole column NULL.
+    """
+    samples = parse_exposition(_nic_body())
+    unfiltered = sum_series(samples, "node_network_receive_bytes_total")
+    assert (
+        sum_series(samples, "node_network_receive_bytes_total", exclude=None)
+        == unfiltered
+    )
+    assert (
+        sum_series(samples, "node_network_receive_bytes_total", exclude={})
+        == unfiltered
+    )

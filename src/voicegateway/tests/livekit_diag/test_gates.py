@@ -963,22 +963,53 @@ def test_the_sizing_margin_is_not_this_threshold():
     assert gate.value == pytest.approx(0.20)
 
 
-def test_rtp_ports_and_network_are_emitted_as_not_measured():
-    """The criterion names three resources and nothing scrapes two of them.
+def test_a_caller_that_scraped_nothing_files_three_not_measured_rows():
+    """A caller with no scrape for these files them as unmeasured, not absent.
 
-    Omitting them would show one green row and read as full coverage.
+    WHAT CHANGED. This used to assert TWO rows, ``rtp_ports`` and a single
+    ``network``, on the reasoning that nothing in the system could ever scrape
+    either. Both halves of that became false. RTP ports are now measured from
+    ``media_ports_in_use``/``media_ports_total``, and ``network`` was split into
+    :data:`gates.HEADROOM_NETWORK_IN` and :data:`gates.HEADROOM_NETWORK_OUT`
+    because a cloud instance meters ingress and egress against SEPARATE credit
+    buckets and one row sharing a subject would have to silently pick a
+    direction. So the old two-element assertion is now wrong in its membership
+    AND in its length.
+
+    What this helper still is, and what is still asserted exactly: the fallback
+    a caller uses when it scraped none of them, so an unmeasured resource files
+    a row saying so instead of vanishing. Omitting them would show one green row
+    and read as full coverage of a three-part requirement.
     """
     readings = gates.unscraped_headroom_readings("sfu-1")
     assert [r.resource for r in readings] == [
         gates.HEADROOM_RTP_PORTS,
-        gates.HEADROOM_NETWORK,
+        gates.HEADROOM_NETWORK_IN,
+        gates.HEADROOM_NETWORK_OUT,
     ]
     results = gates.headroom_gates(readings)
-    assert [g.status for g in results] == [gates.UNKNOWN, gates.UNKNOWN]
+    assert [g.status for g in results] == [
+        gates.UNKNOWN,
+        gates.UNKNOWN,
+        gates.UNKNOWN,
+    ]
     for gate in results:
         assert "nothing measures it" in gate.detail
         assert "not spare capacity" in gate.detail
         assert gate.value is None
+    # Every row identifies itself, which is the reason the direction split is
+    # two resources rather than one: two subjects, two answers, no collision.
+    assert [g.subject for g in results] == [
+        "sfu-1/rtp_ports",
+        "sfu-1/network_in",
+        "sfu-1/network_out",
+    ]
+    assert len({g.subject for g in results}) == 3
+    # THE COMPANION. pps is a PERMANENT scope exclusion (no per-instance-type
+    # allowance is published by anyone, so there is no denominator), and it must
+    # never be filed here: an unmeasured-headroom row puts a resource in the
+    # queue of things somebody could fix by wiring an exporter, and nobody can.
+    assert gates.HEADROOM_PPS not in {r.resource for r in readings}
     assert gates.exit_code(gates.verdict(results)) == 1
 
 
@@ -1011,17 +1042,23 @@ def test_no_readings_at_all_is_unknown_not_room_to_spare():
 
 
 def test_one_gate_per_node_and_resource():
+    # FIVE, not four. unscraped_headroom_readings grew a third row when network
+    # split into an inbound and an outbound resource, and one gate per (node,
+    # resource) means the row count follows the resource count exactly.
     results = gates.headroom_gates(
         [_fd("sfu-1", 10, 100), _fd("sfu-2", 95, 100)]
         + gates.unscraped_headroom_readings("sfu-1")
     )
-    assert len(results) == 4
+    assert len(results) == 5
     assert [g.status for g in results] == [
         gates.PASS,
         gates.FAIL,
         gates.UNKNOWN,
         gates.UNKNOWN,
+        gates.UNKNOWN,
     ]
+    # One gate per (node, resource) means no two rows share a subject.
+    assert len({g.subject for g in results}) == len(results)
     assert gates.verdict(results) == gates.FAIL
 
 

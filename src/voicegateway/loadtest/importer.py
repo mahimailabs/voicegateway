@@ -250,6 +250,118 @@ def plan_from_notes(notes: str | None) -> dict[str, dict[str, float]]:
     return out
 
 
+#: Heading under which a DECLARED per-node network baseline is recorded in
+#: ``load_runs.notes``, the prefix each node carries, and the sentence written
+#: under them. Same mechanism and same reason as :data:`PLAN_HEADING`: the report
+#: is exported by a later command reading the row, and a figure nothing measured
+#: has no column to live in.
+#:
+#: This one is declared because there is nothing to measure it WITH. The ENA
+#: driver on these instances reports no link speed, so ``node_network_speed_bytes``
+#: yields nothing for the interface the traffic actually crosses, and a bandwidth
+#: utilisation without a denominator is not a number. The only figure available
+#: is the one AWS publishes per instance type, and it is published in a document
+#: rather than on the host, so an operator is the only thing that can carry it
+#: across.
+#:
+#: Published, for orientation only: c7i.2xlarge is a 3.125 Gbps baseline with a
+#: 12.5 Gbps burst peak, c6i.xlarge is 1.562 Gbps with the same 12.5 peak.
+#:
+#: There is deliberately NO instance-type-to-bandwidth mapping anywhere in this
+#: code. Writing one would mean a node whose type nobody checked still gets a
+#: denominator, from a table that was never confirmed against the machine the run
+#: was on, and the gate would then print a confident percentage where it owes an
+#: UNKNOWN. A node with no line under this heading has no baseline, and that has
+#: to stay visible.
+NETWORK_BASELINE_HEADING = (
+    "Declared network baseline (operator-supplied published figure, not measured):"
+)
+_NETWORK_BASELINE_PREFIX = "- "
+_NETWORK_BASELINE_CAVEAT = (
+    "These are the instance type's PUBLISHED baseline, in bits per second, "
+    "declared by an operator at import. Nothing here measured them. The instance "
+    "can burst above its baseline, so each figure is a FLOOR on the link and not "
+    "a ceiling: utilisation computed against it over-reads rather than under-reads."
+)
+
+
+def network_baselines_to_notes(baselines: dict[str, dict[str, float]]) -> str:
+    """The declared network baselines as the text appended to a run's notes.
+
+    Keyed by NODE, not by test. A ramp step is a slice of time and every node in
+    the fleet is under it; the link is a property of the machine, and two nodes
+    in one run are routinely different instance types with different baselines.
+
+    Both directions are always written. Ingress and egress are separate
+    allowances on these instances and separate counters on the host, and one
+    figure standing in for both would be an assumption in the middle of a
+    declaration whose whole purpose is to carry no assumptions.
+
+    The float is written as-is rather than rounded into Gbps, because the read
+    side has to return the same number the operator declared: a report that
+    quotes a denominator different from the one the gate divided by is worse than
+    one that quotes none.
+    """
+    lines = []
+    for node in sorted(baselines):
+        declared = baselines[node]
+        lines.append(
+            f"{_NETWORK_BASELINE_PREFIX}{node}: "
+            f"in_bps={declared['in_bps']} out_bps={declared['out_bps']}"
+        )
+    return (
+        f"\n\n{NETWORK_BASELINE_HEADING}\n"
+        + "\n".join(lines)
+        + f"\n{_NETWORK_BASELINE_CAVEAT}"
+    )
+
+
+def network_baselines_from_notes(notes: str | None) -> dict[str, dict[str, float]]:
+    """The declared network baselines, read back out of ``load_runs.notes``.
+
+    Returns {} when nothing was declared, which is what makes the headroom gate
+    report UNKNOWN for a node rather than divide its throughput by a number
+    nobody supplied. Nothing in this function invents, defaults or infers a
+    baseline for an undeclared node, and nothing may be added that does: the
+    absent case is the common one, and it is the one an operator has to be able
+    to see in the report.
+
+    An unparseable line is skipped rather than raising, exactly as in
+    :func:`plan_from_notes`: a malformed note must not stop a report exporting.
+
+    A node is kept only when BOTH directions parsed. Half a declaration would
+    let ingress be judged while egress quietly vanished, and in a report "nothing
+    scraped this" and "nothing declared a denominator for this" would then look
+    identical. Dropping the node reports UNKNOWN for both directions, which
+    under-claims in the safe direction.
+    """
+    if not notes or NETWORK_BASELINE_HEADING not in notes:
+        return {}
+    _, _, tail = notes.partition(NETWORK_BASELINE_HEADING)
+    out: dict[str, dict[str, float]] = {}
+    for line in tail.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if not stripped.startswith(_NETWORK_BASELINE_PREFIX):
+            # The caveat sentence, or a later section. Either way this one ended.
+            break
+        body = stripped[len(_NETWORK_BASELINE_PREFIX) :]
+        name, _, rest = body.partition(":")
+        entry: dict[str, float] = {}
+        for token in rest.split():
+            key, _, raw = token.partition("=")
+            if key not in ("in_bps", "out_bps"):
+                continue
+            try:
+                entry[key] = float(raw)
+            except ValueError:
+                continue
+        if "in_bps" in entry and "out_bps" in entry:
+            out[name.strip()] = entry
+    return out
+
+
 def limitations_from_notes(notes: str | None) -> list[str]:
     """The run's own gaps, read back out of ``load_runs.notes``.
 
@@ -352,6 +464,7 @@ def build_plan(
     captured: bool = False,
     now_ms: int,
     declared_targets: dict[str, dict[str, float]] | None = None,
+    declared_network_baselines: dict[str, dict[str, float]] | None = None,
 ) -> ImportPlan:
     """Read a directory of artifacts and plan the rows it would become.
 
@@ -361,6 +474,12 @@ def build_plan(
     ``captured`` is the operator asserting these artifacts came from a real run.
     Left False, the checksum is computed and recorded in the notes but not
     promoted to ``artifact_sha256``, so every report stamps itself synthetic.
+
+    ``declared_network_baselines`` is the published per-node link baseline, keyed
+    by node. It is an operator's declaration for the same reason
+    ``declared_targets`` is: nothing in the artifacts or on the host carries it.
+    Left None, no baseline is recorded and none is invented, so the bandwidth
+    headroom gate has no denominator and says so.
     """
     directory = Path(directory)
     test_dirs = discover_tests(directory)
@@ -398,6 +517,12 @@ def build_plan(
                 for name, step in declared_targets.items()
             }
         )
+
+    # Only written when something was declared. An empty section would read as a
+    # fleet whose baselines are all known to be nothing, and the gate would have
+    # to tell that apart from a run imported before this existed.
+    if declared_network_baselines:
+        notes += network_baselines_to_notes(declared_network_baselines)
 
     limitations: list[str] = []
     for p in parsed:

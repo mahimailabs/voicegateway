@@ -32,6 +32,8 @@ from voicegateway.loadtest.aggregation import (
     BASELINE_METRICS,
     FD_LIMIT_COLUMN,
     FD_USED_COLUMN,
+    MEDIA_PORTS_TOTAL_COLUMN,
+    MEDIA_PORTS_USED_COLUMN,
     TestAggregate,
 )
 from voicegateway.middleware.node_samples_worker_middleware import (
@@ -103,10 +105,39 @@ def _fd_reading(
 #: exclusion by itself and the resource returns to being a real per-node gate.
 HEADROOM_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     gates.HEADROOM_FILE_DESCRIPTORS: (FD_USED_COLUMN, FD_LIMIT_COLUMN),
-    gates.HEADROOM_RTP_PORTS: ("sockstat_udp_inuse", "rtp_port_range_size"),
-    gates.HEADROOM_NETWORK: (
-        "network_throughput_bytes",
-        "network_link_capacity_bytes",
+    # A real measurement now, and it replaces the sockstat_udp_inuse proxy
+    # entirely. That counted every UDP socket in the network namespace,
+    # including the SFU's own ICE range, so it was an upper bound rather than a
+    # count of media ports. media_ports_total is a DECLARED range size, which is
+    # why a node publishing occupancy without it reaches the gate as UNKNOWN.
+    gates.HEADROOM_RTP_PORTS: (
+        MEDIA_PORTS_USED_COLUMN,
+        MEDIA_PORTS_TOTAL_COLUMN,
+    ),
+    # Only the NUMERATOR is a column. There is no measurable link capacity: the
+    # ENA driver reports no speed, so node_network_speed_bytes yields nothing
+    # for the real interface. The denominator is the instance type's published
+    # baseline, declared by an operator at import, so it can never appear here.
+    # A node with throughput and no declaration is UNKNOWN at the gate, which is
+    # a different and more useful answer than the whole resource being excluded.
+    gates.HEADROOM_NETWORK_IN: ("network_receive_bytes_total",),
+    gates.HEADROOM_NETWORK_OUT: ("network_transmit_bytes_total",),
+}
+
+#: Resources excluded for a reason no exporter can ever lift.
+#:
+#: Distinct from :data:`HEADROOM_REQUIREMENTS`, whose exclusions are DERIVED
+#: from whether a column is published and therefore self-healing. This one is
+#: not waiting on work: the denominator does not exist anywhere to be collected.
+PERMANENT_HEADROOM_EXCLUSIONS: dict[str, str] = {
+    gates.HEADROOM_PPS: (
+        "packets-per-second headroom cannot be expressed as a percentage by "
+        "anyone, including AWS: no per-instance-type PPS allowance is published "
+        "under any API or document, so there is no denominator to divide by. "
+        "This is not a gap awaiting work. PPS saturation is still DETECTED as an "
+        "event by the network_allowance gate, which reads the "
+        "pps_allowance_exceeded counter; what cannot be quantified is how much "
+        "headroom remained."
     ),
 }
 
@@ -125,7 +156,7 @@ def excluded_headroom_resources() -> dict[str, str]:
     off UNKNOWN and a headline that improves while the disclosure shrinks is the
     one outcome this must not produce.
     """
-    excluded: dict[str, str] = {}
+    excluded: dict[str, str] = dict(PERMANENT_HEADROOM_EXCLUSIONS)
     for resource, columns in HEADROOM_REQUIREMENTS.items():
         if any_source_publishes(*columns):
             continue
@@ -209,6 +240,7 @@ def judge_test(
     *,
     aggregate: TestAggregate | None = None,
     node: str | None = None,
+    network_baselines: dict[str, dict[str, float]] | None = None,
 ) -> list[GateResult]:
     """Every acceptance gate for one test, in report order.
 
@@ -260,7 +292,78 @@ def judge_test(
     results.extend(_health_gates_for(aggregate))
     results.extend(gates.process_lifecycle_gates(aggregate.lifecycle_readings))
     results.extend(gates.resource_trend_gates(aggregate.trend_readings))
+    # Guarded, because headroom_gates([]) returns ONE row with no subject at
+    # all, and calling it twice on a window that measured neither produced two
+    # identical unidentified rows per step. That is the subject collision this
+    # file has already fixed twice: once by putting the source in the subject,
+    # once by adding the step. A criterion nothing measured is reported ONCE per
+    # run instead, by unmeasured_resource_gates below.
+    if aggregate.rtp_port_readings:
+        results.extend(gates.headroom_gates(aggregate.rtp_port_readings))
+    if aggregate.allowance_readings:
+        results.extend(gates.network_allowance_gates(aggregate.allowance_readings))
+    results.extend(_bandwidth_gates_for(aggregate, network_baselines or {}))
     return results
+
+
+#: How much of a declared baseline may be used before headroom is breached.
+#: The contracted criterion is 20% remaining, and the headroom gate expresses
+#: that as a floor on what is LEFT, so nothing here restates 0.80.
+def _bandwidth_gates_for(
+    aggregate: TestAggregate,
+    baselines: dict[str, dict[str, float]],
+) -> list[GateResult]:
+    """Peak throughput against the instance type's PUBLISHED baseline.
+
+    The only way the contracted "20% remaining" is obtainable for network. There
+    is no measurable link capacity: the ENA driver reports no speed, so
+    node_network_speed_bytes yields nothing for the real interface.
+
+    So the denominator is DECLARED, and a node nobody declared one for is
+    UNKNOWN rather than measured against an inferred figure. The instance type
+    is never read from a string to look a number up: that would be a guess
+    wearing a measurement's clothes.
+
+    Inbound and outbound are separate rows because the hypervisor maintains
+    separate credit buckets, and a node can saturate one direction while the
+    other idles.
+    """
+    if not aggregate.bandwidth_peaks:
+        return []
+    readings: list[gates.HeadroomReading] = []
+    for (node, direction), peak_bps in sorted(aggregate.bandwidth_peaks.items()):
+        resource = (
+            gates.HEADROOM_NETWORK_IN
+            if direction == "in"
+            else gates.HEADROOM_NETWORK_OUT
+        )
+        declared = baselines.get(node) or {}
+        baseline_bps = declared.get(f"{direction}_bps")
+        if not baseline_bps:
+            readings.append(
+                gates.HeadroomReading(
+                    node=node,
+                    resource=resource,
+                    used=None,
+                    limit=None,
+                    unmeasured_reason=(
+                        f"{node} carried throughput but no "
+                        f"{direction}bound baseline was declared for it, and "
+                        "there is nothing to measure link capacity against. The "
+                        "instance type is deliberately not read to infer one"
+                    ),
+                )
+            )
+            continue
+        readings.append(
+            gates.HeadroomReading(
+                node=node,
+                resource=resource,
+                used=peak_bps,
+                limit=baseline_bps,
+            )
+        )
+    return gates.headroom_gates(readings)
 
 
 #: The most a resource may end at, as a MULTIPLE of its idle baseline.
@@ -451,6 +554,7 @@ def judge_run(
     tests: list[dict[str, Any]],
     *,
     aggregates: dict[str, TestAggregate | None] | None = None,
+    network_baselines: dict[str, dict[str, float]] | None = None,
 ) -> list[GateResult]:
     """Every gate for every test in a run, flattened in test order.
 
@@ -467,7 +571,11 @@ def judge_run(
         # of seven. Identity only, so nothing about the verdict moves.
         out.extend(
             replace(result, step=name)
-            for result in judge_test(test, aggregate=aggregates.get(name))
+            for result in judge_test(
+                test,
+                aggregate=aggregates.get(name),
+                network_baselines=network_baselines,
+            )
         )
     # ONCE PER RUN, not once per node per test. Nothing measures these on any
     # node, so eighteen identical rows on a three-step ramp said the same two
@@ -497,7 +605,65 @@ def judge_run(
     # recreated by a run whose samples carried none of the needed columns.
     out.extend(_run_baseline_gates(aggregates))
     out.extend(unevaluated_criteria_gates({g.gate for g in out}))
+    out.extend(unmeasured_resource_gates(out))
     return out
+
+
+def unmeasured_resource_gates(emitted: list[GateResult]) -> list[GateResult]:
+    """One fleet row per newly measurable criterion that measured nothing.
+
+    These resources stopped being scope exclusions the moment the columns were
+    wired, which is correct: they ARE measurable now. But a run whose scrape
+    carried none of the new series would then have emitted no row for them at
+    all, and a contracted criterion that produces no row reads as one nobody
+    agreed to. That is the defect these gates exist to remove, recreated one
+    level down.
+
+    Once per RUN, not per step, and keyed on the SUBJECT rather than the gate
+    id: resource_headroom is shared with file descriptors, which always emits,
+    so a gate-id check would never fire.
+    """
+    seen = {(g.subject or "").rsplit("/", 1)[-1] for g in emitted}
+    results: list[GateResult] = []
+    missing = [
+        resource
+        for resource in (
+            gates.HEADROOM_RTP_PORTS,
+            gates.HEADROOM_NETWORK_IN,
+            gates.HEADROOM_NETWORK_OUT,
+        )
+        if resource not in seen
+    ]
+    if missing:
+        results.extend(
+            gates.headroom_gates(
+                [
+                    gates.HeadroomReading(
+                        node=gates.FLEET_SUBJECT,
+                        resource=resource,
+                        used=None,
+                        limit=None,
+                        # No "not measured" prefix here: headroom_gate already
+                        # opens with "was not measured:", and carrying it twice
+                        # printed the phrase back to back in a client report.
+                        unmeasured_reason=(
+                            "nothing in this run's scrape carried the series it "
+                            "needs. The criterion is measurable, so this is a "
+                            "gap in what was collected rather than a limit of "
+                            "the system"
+                        ),
+                    )
+                    for resource in missing
+                ]
+            )
+        )
+    if not any(g.gate == gates.NETWORK_ALLOWANCE_GATE for g in emitted):
+        results.append(
+            gates.network_allowance_gate(
+                gates.AllowanceReading(node=gates.FLEET_SUBJECT)
+            )
+        )
+    return results
 
 
 def unevaluated_criteria_gates(seen: set[str]) -> list[GateResult]:
