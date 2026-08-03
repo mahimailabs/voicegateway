@@ -344,11 +344,15 @@ def test_the_reading_comes_from_the_gate_and_not_from_a_second_comparison(
             profiled["payload"], run_report._profile_rows(profiled["payload"])[0]
         )
     }
+    checked = 0
     for key in over_keys:
         name = run_report._GLANCE_NAMES.get(key)
         if name is None or name not in rows:
             continue
         assert rows[name]["reading"] == "over", key
+        checked += 1
+    # Or the loop above proves nothing: every key skipping would pass silently.
+    assert checked, f"no over-reading key reached the glance table: {over_keys}"
 
 
 def test_a_waived_gate_gets_no_reading_rather_than_a_favourable_one() -> None:
@@ -475,6 +479,29 @@ def test_two_way_media_is_reported_from_the_rtp_totals() -> None:
     assert media["value"].startswith("0.935")
     assert "ramp" in media["why"]
     assert "not that every call carried it" in media["why"]
+
+
+def test_the_test_name_in_the_media_row_is_escaped() -> None:
+    """It comes off disk, as the imported artifacts' directory name.
+
+    The glance renderer inserts `why` raw, because every other producer of that
+    field escapes its own interpolations. This one is the exception that has to
+    keep the rule.
+    """
+    media = run_report._glance_media_row(
+        {
+            "tests": [
+                {
+                    "name": "<script>alert(1)</script>",
+                    "rtp_packets_sent": 10,
+                    "rtp_packets_received": 9,
+                }
+            ]
+        }
+    )
+    assert media is not None
+    assert "<script>" not in media["why"]
+    assert "&lt;script&gt;" in media["why"]
 
 
 def test_a_zero_denominator_produces_no_media_row_rather_than_a_zero() -> None:

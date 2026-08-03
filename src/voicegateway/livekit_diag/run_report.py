@@ -2517,10 +2517,15 @@ def _glance_media_row(payload: dict[str, Any]) -> dict[str, Any] | None:
     return {
         "what": "Two-way media",
         "value": f"{worst:.3f}",
+        # ESCAPED. The test name comes from the imported artifacts (a directory
+        # name), and the glance renderer inserts `why` raw because every other
+        # producer of it already escaped its own interpolations. Nothing else in
+        # this document trusts a value that came off disk and this must not
+        # either.
         "why": (
             f"Packets received per packet sent. Worst of {len(ratios)} test(s), "
-            f"on {where}. Run totals from the generator, so this shows media "
-            "returned across the test and not that every call carried it."
+            f"on {_esc(where)}. Run totals from the generator, so this shows "
+            "media returned across the test and not that every call carried it."
         ),
         "reference": "",
         "reading": "",
