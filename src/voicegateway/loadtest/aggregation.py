@@ -53,6 +53,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from voicegateway.livekit_diag import gates
 from voicegateway.livekit_diag.gates import (
     MIN_PERCENTILE_SAMPLES,
+    AllowanceReading,
     BaselineComparison,
     HeadroomReading,
     HealthSeriesReading,
@@ -124,6 +125,21 @@ class TestAggregate:
     # Idle before against settled after, per node. Populated only when idle
     # samples exist on BOTH sides; a missing side is an UNKNOWN, not a pass.
     baseline_comparisons: list[BaselineComparison] = field(default_factory=list)
+    # Media-port occupancy per node per source, already in headroom shape. This
+    # is a real measurement and replaces the sockstat_udp_inuse proxy, which
+    # counted every UDP socket in the namespace including the SFU's own ICE
+    # range and was therefore an upper bound rather than a count.
+    rtp_port_readings: list[HeadroomReading] = field(default_factory=list)
+    # Hypervisor allowance events per node per source, as DELTAS over the
+    # window. Never absolutes: these counters are cumulative since driver reset
+    # and one real SIP node carries 9613 from before the engagement.
+    allowance_readings: list[AllowanceReading] = field(default_factory=list)
+    # Peak observed throughput in BITS per second, keyed by (node, direction)
+    # where direction is "in" or "out". The denominator is not here on purpose:
+    # there is no measurable link capacity, so the ratio is completed in the
+    # judge against a baseline the operator DECLARED, and a node with no
+    # declaration must reach the gate as UNKNOWN rather than as a guess.
+    bandwidth_peaks: dict[tuple[str, str], float] = field(default_factory=dict)
     # File-descriptor headroom per node, already in the shape the gate judges.
     # Carried here rather than rebuilt in the judge so the measurement lives in
     # one place and the judge stays a thing that only decides.
@@ -390,6 +406,153 @@ async def _baseline_comparisons(
     return out
 
 
+#: The five hypervisor allowance counters, and the AllowanceReading field each
+#: lands on. Read as a delta over the window, never as an absolute.
+ALLOWANCE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("ethtool_bw_in_allowance_exceeded", "bw_in"),
+    ("ethtool_bw_out_allowance_exceeded", "bw_out"),
+    ("ethtool_pps_allowance_exceeded", "pps"),
+    ("ethtool_conntrack_allowance_exceeded", "conntrack"),
+    ("ethtool_linklocal_allowance_exceeded", "linklocal"),
+)
+
+MEDIA_PORTS_USED_COLUMN = "media_ports_in_use"
+MEDIA_PORTS_TOTAL_COLUMN = "media_ports_total"
+
+#: Throughput counters and the direction each answers for. Inbound and outbound
+#: are kept apart because the hypervisor maintains SEPARATE credit buckets, so
+#: one combined figure would hide a node saturating in one direction only.
+THROUGHPUT_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("network_receive_bytes_total", "in"),
+    ("network_transmit_bytes_total", "out"),
+)
+
+_BITS_PER_BYTE = 8
+
+
+async def _rtp_port_reading(
+    db: AsyncSession, *, node: str, source: str, window: NodeWindow, limit: int
+) -> HeadroomReading | None:
+    """One subject's WORST media-port headroom over the window.
+
+    Worst, not last, and the drain matters as much as the load: occupancy can
+    peak AFTER the last call ends, while sockets linger in the range.
+
+    The measured shape on a real fleet is about 3.4 in-range sockets per call,
+    not one, which is why this is counted rather than inferred from call count.
+
+    ``media_ports_total`` is a DECLARED configuration value rather than a
+    measurement, so a node publishing occupancy without it is unmeasured with a
+    reason naming which half is missing. Dividing by a guessed range size would
+    put a fabricated ratio in a client report.
+    """
+    rows = await list_samples(
+        db,
+        node=node,
+        source=source,
+        since_ms=window.start_ms,
+        until_ms=window.end_ms,
+        limit=limit,
+    )
+    used = [
+        float(v)
+        for row in rows
+        if (v := getattr(row, MEDIA_PORTS_USED_COLUMN)) is not None
+    ]
+    totals = [
+        float(v)
+        for row in rows
+        if (v := getattr(row, MEDIA_PORTS_TOTAL_COLUMN)) is not None and v > 0
+    ]
+    if not used and not totals:
+        return None
+    if not used or not totals:
+        missing = (
+            MEDIA_PORTS_TOTAL_COLUMN if not totals else MEDIA_PORTS_USED_COLUMN
+        )
+        return HeadroomReading(
+            node=node,
+            source=source,
+            resource=gates.HEADROOM_RTP_PORTS,
+            used=None,
+            limit=None,
+            unmeasured_reason=(
+                f"the window carried {MEDIA_PORTS_USED_COLUMN} or "
+                f"{MEDIA_PORTS_TOTAL_COLUMN} but not both, and {missing} is the "
+                "half that was missing"
+            ),
+        )
+    return HeadroomReading(
+        node=node,
+        source=source,
+        resource=gates.HEADROOM_RTP_PORTS,
+        used=max(used),
+        limit=max(totals),
+    )
+
+
+async def _allowance_reading(
+    db: AsyncSession, *, node: str, source: str, window: NodeWindow, limit: int
+) -> AllowanceReading | None:
+    """Deltas of the five hypervisor allowance counters over the window.
+
+    A DELTA, because these are cumulative since driver reset and the absolute
+    says nothing about this run: one real SIP node reads 9613 from before the
+    engagement while its twin reads 0. They were confirmed static across a two
+    minute idle window, which is what makes a delta attributable to the load.
+
+    A negative delta is passed through rather than clamped. It means the counter
+    reset under the window, and the gate reports that as unknowable rather than
+    as a quiet network.
+    """
+    rows = await list_samples(
+        db,
+        node=node,
+        source=source,
+        since_ms=window.start_ms,
+        until_ms=window.end_ms,
+        limit=limit,
+    )
+    deltas: dict[str, float | None] = {}
+    for column, field_name in ALLOWANCE_COLUMNS:
+        seen = [
+            float(v) for row in rows if (v := getattr(row, column)) is not None
+        ]
+        deltas[field_name] = seen[-1] - seen[0] if len(seen) >= 2 else None
+    if all(v is None for v in deltas.values()):
+        return None
+    return AllowanceReading(node=node, source=source, **deltas)
+
+
+async def _bandwidth_peaks(
+    db: AsyncSession, *, node: str, source: str, window: NodeWindow, limit: int
+) -> dict[tuple[str, str], float]:
+    """Peak throughput per direction, in BITS per second.
+
+    The peak rather than the mean: a link allowance is breached at the peak, and
+    an average over a ten minute window hides a minute of saturation.
+
+    Rates come from :func:`read_counter_rate`, so a counter reset arrives as
+    None and is skipped rather than becoming a negative or a zero.
+    """
+    peaks: dict[tuple[str, str], float] = {}
+    for column, direction in THROUGHPUT_COLUMNS:
+        rates = await read_counter_rate(
+            db,
+            node=node,
+            source=source,
+            column=column,
+            since_ms=window.start_ms,
+            until_ms=window.end_ms,
+            limit=limit,
+        )
+        measured = [r.per_second for r in rates if r.per_second is not None]
+        if not measured:
+            continue
+        peaks[(node, direction)] = max(measured) * _BITS_PER_BYTE
+    return peaks
+
+
 async def _health_readings(
     db: AsyncSession, *, node: str, source: str, window: NodeWindow, limit: int
 ) -> list[HealthSeriesReading]:
@@ -517,6 +680,9 @@ async def aggregate_test_window(
     lifecycle: list[LifecycleReading] = []
     trends: list[TrendReading] = []
     baselines: list[BaselineComparison] = []
+    rtp_ports: list[HeadroomReading] = []
+    allowances: list[AllowanceReading] = []
+    peaks: dict[tuple[str, str], float] = {}
     for target in targets:
         cpu.append(
             await _cpu_reading(
@@ -553,6 +719,21 @@ async def aggregate_test_window(
                 db, node=target.node, source=target.source, window=window, limit=limit
             )
         )
+        rtp = await _rtp_port_reading(
+            db, node=target.node, source=target.source, window=window, limit=limit
+        )
+        if rtp is not None:
+            rtp_ports.append(rtp)
+        allowance = await _allowance_reading(
+            db, node=target.node, source=target.source, window=window, limit=limit
+        )
+        if allowance is not None:
+            allowances.append(allowance)
+        peaks.update(
+            await _bandwidth_peaks(
+                db, node=target.node, source=target.source, window=window, limit=limit
+            )
+        )
 
     return TestAggregate(
         window=window,
@@ -568,6 +749,9 @@ async def aggregate_test_window(
         lifecycle_readings=lifecycle,
         trend_readings=trends,
         baseline_comparisons=baselines,
+        rtp_port_readings=rtp_ports,
+        allowance_readings=allowances,
+        bandwidth_peaks=peaks,
     )
 
 

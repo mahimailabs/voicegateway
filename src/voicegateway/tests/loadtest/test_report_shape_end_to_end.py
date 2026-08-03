@@ -97,13 +97,14 @@ def test_the_gate_table_is_materially_smaller(exported) -> None:
     """
     payload = exported["payload"]
     tests = max(1, len(payload["tests"]))
-    # Per test: establishment, node CPU and memory per measured node, and file
-    # descriptors per measured node. Then a FIXED run-level tail that does not
-    # scale with steps: two headroom exclusions, two dependency criteria, one
-    # restart/OOM row, one staleness row and three return-to-baseline rows.
-    # The tail is the point of reporting those once per run rather than per
-    # step, so it is stated as a constant here.
-    assert len(payload["gates"]) <= tests * 6 + 9
+    # Per test: establishment, node CPU and memory per measured node, file
+    # descriptors per measured node, the media-port and bandwidth headroom rows
+    # and the hypervisor allowance row. Then a FIXED run-level tail that does
+    # not scale with steps: the one permanent headroom exclusion (pps), two
+    # dependency criteria, one restart/OOM row, one staleness row and three
+    # return-to-baseline rows. The tail is the point of reporting those once per
+    # run rather than per step, so it is stated as a constant here.
+    assert len(payload["gates"]) <= tests * 6 + 13
 
 
 def test_every_unknown_names_an_attempt_or_a_scope_exclusion(exported) -> None:
@@ -149,13 +150,45 @@ def test_no_gate_grades_a_source_for_a_metric_it_does_not_report(exported) -> No
         assert "livekit-server" not in subject, gate
 
 
-def test_the_two_unmeasurable_resources_appear_once_each(exported) -> None:
+def test_the_unmeasured_resources_appear_once_each(exported) -> None:
+    """WHAT CHANGED: two fleet exclusion rows became one, by measurement.
+
+    This asserted an exact list of ``["fleet/network", "fleet/rtp_ports"]``. Both
+    are measured resources now, per node, so a fleet-level "nothing can measure
+    this" row for either would be a second, contradictory answer to a question
+    the per-node rows already answer. ``pps`` is the only one left, and it is
+    still asserted as an exact list of exactly one element.
+    """
     rows = [
         g["subject"]
         for g in exported["payload"]["gates"]
-        if (g["subject"] or "").endswith(("/rtp_ports", "/network"))
+        if (g["subject"] or "").endswith(
+            ("/rtp_ports", "/network_in", "/network_out", "/pps")
+        )
     ]
-    assert sorted(rows) == ["fleet/network", "fleet/rtp_ports"]
+    # Four rows, and they are two DIFFERENT claims. pps is permanently
+    # unmeasurable: nobody publishes a denominator. The other three are
+    # measurable and appear here only because this capture predates the series
+    # being collected, so their row says the collection was missing rather than
+    # that the system cannot measure them. Collapsing the two would let a
+    # collection regression read as a permanent limit.
+    assert sorted(rows) == [
+        f"{gates.FLEET_SUBJECT}/{gates.HEADROOM_NETWORK_IN}",
+        f"{gates.FLEET_SUBJECT}/{gates.HEADROOM_NETWORK_OUT}",
+        f"{gates.FLEET_SUBJECT}/{gates.HEADROOM_PPS}",
+        f"{gates.FLEET_SUBJECT}/{gates.HEADROOM_RTP_PORTS}",
+    ]
+    # THE COMPANION. Only pps is an EXCLUSION; the other three left that list
+    # because something measures them, which is what makes this an improvement
+    # rather than a loss.
+    excluded = judge.excluded_headroom_resources()
+    assert sorted(excluded) == [gates.HEADROOM_PPS]
+    for resource in (
+        gates.HEADROOM_RTP_PORTS,
+        gates.HEADROOM_NETWORK_IN,
+        gates.HEADROOM_NETWORK_OUT,
+    ):
+        assert resource not in excluded, resource
 
 
 # --------------------------------------------------------------------------
@@ -180,9 +213,18 @@ def test_the_exclusions_sit_above_the_results(exported) -> None:
 # --------------------------------------------------------------------------
 
 
-def test_both_exclusions_are_present_with_reasons(exported) -> None:
+def test_the_exclusion_is_present_with_its_reason(exported) -> None:
+    """WHAT CHANGED: an exact two-key set became an exact one-key set.
+
+    Still exact, and the reason still has to reach the rendered page. The extra
+    assertion is the one the permanent exclusion needs and the derived ones did
+    not: the reason must say the denominator is UNPUBLISHED, not uncollected, or
+    a reader files a permanent boundary as a to-do item.
+    """
     exclusions = exported["payload"]["scope_exclusions"]
-    assert sorted(exclusions) == ["network", "rtp_ports"]
+    assert sorted(exclusions) == [gates.HEADROOM_PPS]
+    assert "no denominator" in exclusions[gates.HEADROOM_PPS]
+    assert "not a gap awaiting work" in exclusions[gates.HEADROOM_PPS]
     for reason in exclusions.values():
         assert run_report._esc(reason) in exported["html"]
 

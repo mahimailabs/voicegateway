@@ -42,12 +42,32 @@ Every wired entry has since been read off a running binary. **Nothing in
 map degrades is one plausible entry added from documentation.
 
 MEASURED against livekit-sip 1.10.1 and node_exporter, with a real inbound call
-placed so every counter was populated: all 22 ``livekit-sip`` entries and all 12
+placed so every counter was populated: all 22 ``livekit-sip`` entries and all 21
 ``node-exporter`` entries. Every one resolves, asserted per entry against a
 captured exposition and again in
 ``tests/integration/test_live_node_scrape.py`` against the running exporters.
 
-The last two ``node-exporter`` entries are its own ``process_open_fds`` /
+The nine network and media-port entries were read off the fleet hosts
+themselves, not off documentation, and each is published on ALL FOUR nodes.
+``media_ports_total`` / ``media_ports_in_use`` come from a node-exporter
+textfile collector and carry a ``role`` label that is ``sip`` or ``sfu``; a node
+runs one role, so summing across the label is the node total (a SIP node reads
+10001 total, 0 in use at rest). The five ``node_ethtool_*_allowance_exceeded``
+counters are UNTYPED, one ``device`` label each, and are the hypervisor's
+per-instance shaping counters: bandwidth in, bandwidth out, packets per second,
+conntrack and link-local. ``node_network_receive_bytes_total`` /
+``node_network_transmit_bytes_total`` are the per-device byte counters.
+
+None of the seven device-labelled entries names its device, because the device
+name is not stable across the fleet: it is ``enp39s0`` on the SIP nodes and
+``ens5`` on the SFU nodes, so a ``where`` pin would store NULL for the life of
+the deployment on half of them while ``series_found`` still read high. The two
+byte counters use ``exclude={"device": "lo"}`` instead, which is the only shape
+that both drops loopback and survives a node whose NIC is named differently:
+``lo`` is stable on every Linux host, so the device to LEAVE OUT is nameable
+where the ones to keep are not.
+
+Two ``node-exporter`` entries are its own ``process_open_fds`` /
 ``process_max_fds``, read off a live exporter as 8 and 524287. They were left
 unwired for a while on the reasoning that an exporter's own handles say nothing
 about a service under test, which is true. What made that untenable is that the
@@ -104,7 +124,11 @@ names that could not be found on a live server under any spelling. An unwired
 column is honest; a guessed one is invisible.
 
 node_exporter names come from its filefd / loadavg / cpu / meminfo / sockstat /
-netstat collectors and have been stable since node_exporter 0.18 (current 1.9).
+netstat / netdev / ethtool collectors and have been stable since node_exporter
+0.18 (current 1.9), plus the textfile collector, which is the one source here
+whose content an operator writes rather than node_exporter: ``media_ports_*``
+exists only where that file is being written, and a node without it stores NULL
+rather than 0.
 
 A metric name can still be renamed by a release, which is why an unmatched
 series stores NULL and why every row records ``series_found``: an operator on a
@@ -227,6 +251,12 @@ class _Series:
     # definition (``mode="idle"``). Everything else sums across labels, so a
     # renamed label value cannot silently empty a column.
     where: Mapping[str, str] | None = None
+    # The complement of `where`, for the case where the label values that BELONG
+    # in the total cannot be named but the one that does not can. A sample is
+    # dropped when it matches every pair here. Used for device="lo": the real
+    # NIC name differs per node (enp39s0 / ens5) so pinning it would empty the
+    # column on half the fleet, while loopback is called lo on every Linux host.
+    exclude: Mapping[str, str] | None = None
 
 
 # The metric map. See the module docstring for where these names came from and
@@ -361,6 +391,78 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         # which at 500 concurrent is a likelier wall than CPU.
         _Series("node_sockstat_UDP_inuse", "sockstat_udp_inuse"),
         _Series("node_netstat_Udp_NoPorts", "udp_no_ports_total"),
+        # ---- media port headroom --------------------------------------------
+        # The RTP port range a node was given, and how much of it is currently
+        # taken. Published by a node-exporter textfile collector on all four
+        # fleet nodes, so it is the range the operator actually configured
+        # rather than a default this product assumed: a SIP node reads 10001
+        # total. in_use against total is the headroom that decides how many
+        # concurrent calls the box can carry, and it is a different wall from
+        # udp_no_ports_total (which is the kernel refusing an ephemeral port).
+        #
+        # `role` is sip or sfu and a node runs exactly ONE of them, so summing
+        # across the label is the node total and no `where` is needed. Pinning
+        # role would need two entries and would empty one of them on every node
+        # of the other kind.
+        _Series("media_ports_total", "media_ports_total"),
+        _Series("media_ports_in_use", "media_ports_in_use"),
+        # ---- cloud NIC allowances -------------------------------------------
+        # UNTYPED counters from the ethtool collector, one `device` label each.
+        # These are the hypervisor's per-instance shaping counters: they tick
+        # when the instance exceeded its inbound bandwidth, outbound bandwidth,
+        # packets-per-second, connection-tracking or link-local (DNS/NTP/IMDS)
+        # allowance and traffic was DROPPED for it. That is a ceiling no CPU or
+        # memory chart shows, and at 500 concurrent calls it is a likelier wall
+        # than either.
+        #
+        # Summed across `device` for the same reason the two byte counters
+        # below are: the NIC is enp39s0 on the SIP nodes and ens5 on the SFU
+        # nodes, so a device pin would store NULL for half the fleet.
+        _Series(
+            "node_ethtool_bw_in_allowance_exceeded",
+            "ethtool_bw_in_allowance_exceeded",
+        ),
+        _Series(
+            "node_ethtool_bw_out_allowance_exceeded",
+            "ethtool_bw_out_allowance_exceeded",
+        ),
+        _Series(
+            "node_ethtool_pps_allowance_exceeded",
+            "ethtool_pps_allowance_exceeded",
+        ),
+        _Series(
+            "node_ethtool_conntrack_allowance_exceeded",
+            "ethtool_conntrack_allowance_exceeded",
+        ),
+        _Series(
+            "node_ethtool_linklocal_allowance_exceeded",
+            "ethtool_linklocal_allowance_exceeded",
+        ),
+        # ---- NIC throughput --------------------------------------------------
+        # Cumulative per-device byte counters, read as a rate. Together with the
+        # allowance counters above they answer "was the box near its network
+        # ceiling", which is the question a media fleet fails on before it fails
+        # on CPU.
+        #
+        # EXCLUDED rather than pinned with a `where`, and the distinction is the
+        # point. The real interface is enp39s0 on the SIP nodes and ens5 on the
+        # SFU nodes, so `where={"device": "enp39s0"}` would store NULL forever on
+        # every SFU node while series_found still read high because its siblings
+        # matched. Loopback is `lo` on every Linux host, so naming the ONE device
+        # to leave out is expressible where naming the ones to keep is not. It
+        # has to be left out: lo carries this process's own traffic and a node
+        # talking to itself would inflate the number that is supposed to measure
+        # the wire.
+        _Series(
+            "node_network_receive_bytes_total",
+            "network_receive_bytes_total",
+            exclude={"device": "lo"},
+        ),
+        _Series(
+            "node_network_transmit_bytes_total",
+            "network_transmit_bytes_total",
+            exclude={"device": "lo"},
+        ),
         # ---- this exporter's own process ------------------------------------
         # Wired because the descriptor headroom gate asks every scraped source
         # for this pair, and a gate that is asked but not fed produced seven of
@@ -988,7 +1090,9 @@ class NodeSamplesWorker(AsyncWorker):
         values: dict[str, float | None] = {}
         found = 0
         for series in SERIES.get(target.source, ()):
-            value = sum_series(samples, series.metric, where=series.where)
+            value = sum_series(
+                samples, series.metric, where=series.where, exclude=series.exclude
+            )
             # Absent stays absent: the column is left out entirely, which stores
             # NULL. A 0.0 here would be indistinguishable from a real zero
             # reading and would draw a flat line an operator reads as healthy.

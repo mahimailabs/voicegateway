@@ -78,6 +78,22 @@ def _aggregate() -> _Aggregate:
         )
         for source in SOURCES
     ]
+    # Media ports and throughput, which the fleet's exporters now publish. They
+    # are here because the collision this file is about is a property of a
+    # window that CORRELATED something: a step that measured nothing produces
+    # different rows, so a fixture without them would be checking a shape the
+    # real run does not have. Media ports are per (node, source); bandwidth is
+    # per (node, direction), because the byte counters are the node's.
+    rtp_ports = [
+        gates.HeadroomReading(
+            node=NODE,
+            source=source,
+            resource=gates.HEADROOM_RTP_PORTS,
+            used=340.0,
+            limit=10001.0,
+        )
+        for source in SOURCES
+    ]
     return _Aggregate(
         window=WINDOW,
         peak_cpu_utilisation=0.42,
@@ -86,6 +102,8 @@ def _aggregate() -> _Aggregate:
         cpu_readings=cpu,
         memory_readings=list(cpu),
         fd_readings=fds,
+        rtp_port_readings=rtp_ports,
+        bandwidth_peaks={(NODE, "in"): 480_000_000.0, (NODE, "out"): 505_000_000.0},
     )
 
 
@@ -139,11 +157,19 @@ def test_run_level_rows_carry_no_step() -> None:
 
     Stamping a step on them would claim seven evaluations where there was one,
     which is the same lie in the opposite direction.
+
+    WHAT CHANGED: ``fleet/network`` and ``fleet/rtp_ports`` used to be in this
+    set and are not any more. They were run-level ONLY because nothing could
+    measure them anywhere, which made them a fact about the system rather than
+    about a step. They are measured per node now, so they moved to the per-step
+    half of this file's contract, and the assertions in
+    :func:`test_every_row_in_a_multi_step_run_is_distinguishable` cover them
+    there. ``fleet/pps`` replaces both: its denominator is published by nobody,
+    so it is the one headroom resource that is still a fact about the system.
     """
     run_level = [g for g in _run() if g.step is None]
     assert {g.subject for g in run_level} == {
-        "fleet/network",
-        "fleet/rtp_ports",
+        f"{gates.FLEET_SUBJECT}/{gates.HEADROOM_PPS}",
         # Same shape, added with the dependency criteria: a dependency nobody
         # wired is a fact about the deployment, not about step four of seven.
         "fleet/redis",
@@ -157,6 +183,13 @@ def test_run_level_rows_carry_no_step() -> None:
         "fleet/filefd_allocated",
         "fleet/sockstat_udp_inuse",
     }
+    # THE COMPANION, so the two that left cannot leave silently: they are gone
+    # from the run-level tail because something measures them, and they are
+    # present per step instead.
+    per_step_subjects = {g.subject for g in _run() if g.step is not None}
+    assert f"{NODE}/network_in" in per_step_subjects
+    assert f"{NODE}/network_out" in per_step_subjects
+    assert f"{NODE}/node-exporter/rtp_ports" in per_step_subjects
 
 
 # --------------------------------------------------------------------------

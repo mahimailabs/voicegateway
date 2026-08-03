@@ -221,6 +221,7 @@ def sum_series(
     name: str,
     *,
     where: Mapping[str, str] | None = None,
+    exclude: Mapping[str, str] | None = None,
 ) -> float | None:
     """Sum every sample of ``name`` matching ``where``; None when there are none.
 
@@ -236,6 +237,17 @@ def sum_series(
     a release spelled it differently. ``where`` is used only where the value is
     part of the definition (``mode="idle"``), never to reconstruct a split this
     schema does not store.
+
+    ``exclude`` is the complement, and it exists for the one shape ``where``
+    cannot express: sum EVERY label value except a named one. A sample is
+    skipped when it matches ALL of the pairs given, so ``{"device": "lo"}``
+    drops loopback and keeps whatever the real NIC happens to be called
+    (``enp39s0`` on one node, ``ens5`` on another). Pinning the device instead
+    would empty the column on every host that spells it differently, which is
+    the failure this whole module is written to avoid; ``lo`` is stable on every
+    Linux host, so excluding it is safe where pinning is not. An exclusion that
+    matches nothing changes nothing, and excluding every sample of a series
+    leaves the result None rather than 0.0, exactly as an absent series does.
 
     Summing across BUCKETS is a different operation and is refused. Prometheus
     buckets are cumulative, so ``le=0.1`` is contained in ``le=0.5`` and so on
@@ -256,6 +268,12 @@ def sum_series(
         if sample.name != name:
             continue
         if where and any(sample.labels.get(k) != v for k, v in where.items()):
+            continue
+        # ALL pairs must match to drop a sample, so an exclusion narrows what it
+        # removes as it gains keys. `and exclude` rather than a bare all(): an
+        # empty mapping matches vacuously, and reading that as "exclude
+        # everything" would turn a caller's `exclude={}` into a NULL column.
+        if exclude and all(sample.labels.get(k) == v for k, v in exclude.items()):
             continue
         total = sample.value if total is None else total + sample.value
     return total
