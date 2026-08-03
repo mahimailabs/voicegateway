@@ -174,6 +174,24 @@ BASELINE_GOROUTINES = "go_goroutines"
 # post-settle sample and this module refuses to read it as one.
 MIN_SETTLE_MS = 300_000
 
+# The smallest baseline a RATIO may be taken against.
+#
+# Observed: monitor-0 finished a run with sockstat_udp_inuse at 7 against an idle
+# baseline of 3 and was reported FAIL at 2.33x, outside the 1.10x tolerance. That
+# is four sockets on the box running the collector, which carried no test load at
+# all. Nothing leaked; the denominator was simply too small for a ratio to mean
+# anything, and at a baseline of 3 the smallest possible movement is already
+# 1.33x.
+#
+# This is the same defect MIN_TREND_DRIFT_FRACTION exists to prevent one gate
+# over, and it is expressed differently for a reason. A trend has a magnitude
+# floor because its metrics share no scale. Here the metrics are all COUNTS or
+# BYTES that only ever grow from a floor of zero, so the honest guard is on the
+# denominator: below this, report that the comparison could not be made rather
+# than inventing a multiple. memory_used_bytes and filefd_allocated clear it by
+# orders of magnitude on any real host; an idle UDP socket count does not.
+MIN_BASELINE_FOR_RATIO = 32
+
 # The share of call attempts that must establish. Inclusive: a run landing
 # exactly on the bar passes. This is an acceptance threshold, not a tuning knob,
 # which is why it lives beside the gate ids rather than in a config file.
@@ -1303,6 +1321,20 @@ def _return_to_baseline_gate(
             ),
             threshold=tolerance,
         )
+    if c.baseline < MIN_BASELINE_FOR_RATIO:
+        return GateResult(
+            gate=RETURN_TO_BASELINE_GATE,
+            status=UNKNOWN,
+            subject=subject,
+            detail=(
+                f"the {c.metric} baseline on {c.node} is {c.baseline:g}, below "
+                f"{MIN_BASELINE_FOR_RATIO}, so a ratio against it is arithmetic "
+                f"rather than evidence: it settled at {c.post_settle:g}, and at "
+                "this baseline the smallest possible movement already exceeds "
+                "the tolerance"
+            ),
+            threshold=tolerance,
+        )
     if c.baseline_at_ms is not None and c.post_settle_at_ms is not None:
         settled_ms = c.post_settle_at_ms - c.baseline_at_ms
         if settled_ms < min_settle_ms:
@@ -1488,7 +1520,6 @@ def summary_lines(gates: Sequence[GateResult]) -> list[str]:
     return [f"  [{g.status}] {g.gate}: {g.detail}" for g in gates]
 
 
-
 # --------------------------------------------------------------------------
 # Sustained Redis and health-check failures
 # --------------------------------------------------------------------------
@@ -1627,9 +1658,7 @@ def sustained_health_gate(
     return GateResult(
         gate=SUSTAINED_HEALTH_GATE,
         status=PASS,
-        detail=(
-            f"{subject} was healthy on all {len(measured)} measured sample(s)."
-        ),
+        detail=(f"{subject} was healthy on all {len(measured)} measured sample(s)."),
         subject=subject,
         metric="consecutive_failed_samples",
         value=0.0,
@@ -1668,7 +1697,6 @@ def sustained_health_gates(
 ) -> list[GateResult]:
     """One gate per node per source. Per-node rows are never collapsed."""
     return [sustained_health_gate(r, threshold=threshold) for r in readings]
-
 
 
 # --------------------------------------------------------------------------
@@ -2251,6 +2279,7 @@ __all__ = [
     "MIN_HEADROOM_FRACTION",
     "ALL_GATES",
     "MIN_PERCENTILE_SAMPLES",
+    "MIN_BASELINE_FOR_RATIO",
     "MIN_SETTLE_MS",
     "NODE_CPU_GATE",
     "NODE_MEMORY_GATE",

@@ -42,7 +42,7 @@ Every wired entry has since been read off a running binary. **Nothing in
 map degrades is one plausible entry added from documentation.
 
 MEASURED against livekit-sip 1.10.1 and node_exporter, with a real inbound call
-placed so every counter was populated: all 22 ``livekit-sip`` entries and all 21
+placed so every counter was populated: all 22 ``livekit-sip`` entries and all 22
 ``node-exporter`` entries. Every one resolves, asserted per entry against a
 captured exposition and again in
 ``tests/integration/test_live_node_scrape.py`` against the running exporters.
@@ -483,8 +483,33 @@ SERIES: Final[dict[str, tuple[_Series, ...]]] = {
         # prove "no OOM": the kernel can kill a sibling or a child without the
         # scraped service restarting.
         _Series("node_vmstat_oom_kill", "vmstat_oom_kill"),
+        # node_exporter's OWN start time, and deliberately so. Read off a live
+        # prom/node-exporter at 1.78577024616e+09.
+        #
+        # Without it this source carried only half of what the lifecycle gate
+        # needs: the OOM counter but no way to tell whether the process
+        # restarted. Every node-exporter subject therefore reported "recorded no
+        # OOM kill but carried no process_start_time_seconds, so a restart could
+        # not be ruled out", which on an eight-host fleet was 16 UNKNOWN rows in
+        # a run where nothing had gone wrong.
+        #
+        # A node-exporter restart is worth gating in its own right rather than as
+        # a proxy for anything else: while it is down, nothing about that host is
+        # scraped, so a restart is a hole in every other measurement taken from
+        # it.
+        _Series("process_start_time_seconds", "process_start_time_seconds"),
     ),
     SOURCE_REDIS_EXPORTER: (
+        # NOT WIRED HERE, deliberately: process_start_time_seconds. The live
+        # exporter does publish it (read at 1.7857702462e+09) and wiring it would
+        # silence this subject's lifecycle UNKNOWN, which is exactly why it is
+        # tempting and exactly why it is wrong. That timestamp is the SIDECAR's
+        # start time. Redis here is ElastiCache: its process is invisible to us,
+        # so "did Redis restart" is not measurable from anything in the scrape
+        # set, and answering a question about Redis with a fact about the
+        # exporter is the same category error this file's docstring already pins
+        # for process_open_fds. The UNKNOWN is the honest state.
+        #
         # Redis is shared state every SIP node depends on, and the acceptance
         # criterion asks whether it stayed healthy for the whole window.
         #
