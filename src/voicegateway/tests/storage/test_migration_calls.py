@@ -127,9 +127,7 @@ async def test_migration_matches_the_model(tmp_path: Path, table: str) -> None:
     db, migrated = await _migrated_engine(tmp_path)
     declared = create_engine(f"sqlite:///{tmp_path / 'declared.db'}")
     try:
-        SQLModel.metadata.create_all(
-            declared, tables=[SQLModel.metadata.tables[table]]
-        )
+        SQLModel.metadata.create_all(declared, tables=[SQLModel.metadata.tables[table]])
         assert _columns(migrated, table) == _columns(declared, table)
     finally:
         declared.dispose()

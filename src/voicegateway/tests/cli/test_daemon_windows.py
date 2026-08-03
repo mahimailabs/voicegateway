@@ -69,7 +69,9 @@ def test_install_uses_schtasks_first(backend, fake_subprocess, monkeypatch):
     assert _powershell_calls(fake_subprocess) == []
 
 
-def test_install_threads_config_path_into_task_run(backend, fake_subprocess, monkeypatch):
+def test_install_threads_config_path_into_task_run(
+    backend, fake_subprocess, monkeypatch
+):
     """A config path becomes ``serve -c "<path>"`` in the schtasks /TR value."""
     monkeypatch.setattr(
         "voicegateway.cli.daemon.windows_daemon.shutil.which",

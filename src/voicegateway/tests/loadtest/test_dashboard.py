@@ -129,9 +129,7 @@ def test_the_four_known_gaps_are_all_present_as_notes() -> None:
 
 def test_redis_is_measured_rather_than_a_note() -> None:
     """The other half of the change above, so the gap cannot quietly return."""
-    measured = " ".join(
-        p.get("title", "") for p in _panels_by_type("timeseries")
-    )
+    measured = " ".join(p.get("title", "") for p in _panels_by_type("timeseries"))
     assert "Redis" in measured
 
 

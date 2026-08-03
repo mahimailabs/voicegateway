@@ -55,7 +55,9 @@ async def test_migration_creates_diagnostics_runs(tmp_path: Path) -> None:
                 f"diagnostics_runs.{column} is {cols[column][0]}; it must stay a "
                 "string so the payload is not re-derived through epoch time"
             )
-        assert cols["created_at"][1] == 1, "created_at must be NOT NULL: every run has an age"
+        assert cols["created_at"][1] == 1, (
+            "created_at must be NOT NULL: every run has an age"
+        )
         assert cols["started_at"][1] == 0, "a queued run has not started"
         assert cols["ended_at"][1] == 0, "a running run has not ended"
         # NULL results means "nothing was recorded", not "{}".

@@ -114,10 +114,8 @@ async def _samples(
                     # them or it is demonstrating less than it claims.
                     "media_ports_in_use": MEDIA_PORTS_IN_USE,
                     "media_ports_total": MEDIA_PORTS_TOTAL,
-                    "network_receive_bytes_total": RX_BYTES_PER_SECOND
-                    * since_origin,
-                    "network_transmit_bytes_total": TX_BYTES_PER_SECOND
-                    * since_origin,
+                    "network_receive_bytes_total": RX_BYTES_PER_SECOND * since_origin,
+                    "network_transmit_bytes_total": TX_BYTES_PER_SECOND * since_origin,
                     # The hypervisor's five shaping counters, flat at zero: this
                     # node was never throttled during the window. Flat rather
                     # than absent, because an unread counter is UNKNOWN and a
@@ -191,6 +189,7 @@ def _run(
     report_argv = [
         "loadtest",
         "report",
+        "--acceptance",
         fixture.name,
         "--config",
         str(config),

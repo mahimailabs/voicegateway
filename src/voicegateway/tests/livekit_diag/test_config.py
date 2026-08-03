@@ -41,7 +41,9 @@ def test_config_home_fallback(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     home_cfg = tmp_path / ".config" / "voicegateway" / "voicegw.yaml"
     home_cfg.parent.mkdir(parents=True)
-    home_cfg.write_text("livekit:\n  url: wss://home\n  api_key: hk\n  api_secret: hs\n")
+    home_cfg.write_text(
+        "livekit:\n  url: wss://home\n  api_key: hk\n  api_secret: hs\n"
+    )
     c = resolve_creds(None, None, None)
     assert c.url == "wss://home" and c.api_key == "hk" and c.api_secret == "hs"
 

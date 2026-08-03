@@ -397,7 +397,9 @@ async def _request_session_id(storage, request_id: str) -> str | None:
 
 
 async def test_pruned_session_nulls_the_request_pointer(storage) -> None:
-    await _seed_session(storage, "s-req-doomed", "acme", call_id=None, ended_days_ago=10)
+    await _seed_session(
+        storage, "s-req-doomed", "acme", call_id=None, ended_days_ago=10
+    )
     await _seed_request(storage, "r-keeps", "acme", session_id="s-req-doomed")
 
     await RetentionWorker(storage, retention_provider=_provider("acme", 5)).tick_now()
@@ -426,7 +428,9 @@ async def test_other_sessions_projects_and_tenants_keep_their_pointers(storage) 
 
     await _seed_request(storage, "r-doomed", "acme", session_id="s-doomed", tenant="t1")
     await _seed_request(storage, "r-alive", "acme", session_id="s-alive", tenant="t2")
-    await _seed_request(storage, "r-foreign", "other", session_id="s-foreign", tenant="t3")
+    await _seed_request(
+        storage, "r-foreign", "other", session_id="s-foreign", tenant="t3"
+    )
     await _seed_request(storage, "r-none", "acme", session_id=None, tenant="t2")
     # A request in another project (and another tenant) pointing at the doomed
     # session: the row itself is out of this tick's scope and must survive, but

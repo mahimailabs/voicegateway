@@ -152,7 +152,10 @@ async def test_latency_probe_runs_end_to_end_without_a_real_agent(creds):
     """
     admin = _admin(creds)
     runner = ProbeRunner(
-        admin, lambda u, t: SyntheticClient(u, t), UtteranceSource(_WAV), ComponentReader()
+        admin,
+        lambda u, t: SyntheticClient(u, t),
+        UtteranceSource(_WAV),
+        ComponentReader(),
     )
     try:
         result = await runner.probe(

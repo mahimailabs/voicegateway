@@ -259,9 +259,7 @@ async def test_unobserved_fields_stay_null(client, gateway):
     call_id = await gateway.storage.upsert_call(
         origin="loadgen", attempt_id="attempt-1"
     )
-    await gateway.storage.upsert_call_leg(
-        call_id=call_id, participant_sid="PA_bare"
-    )
+    await gateway.storage.upsert_call_leg(call_id=call_id, participant_sid="PA_bare")
 
     (call,) = (await client.get(_URL)).json()["calls"]
 
@@ -466,7 +464,7 @@ async def test_a_key_with_no_tenant_reads_the_unattributed_bucket(client, gatewa
 
 
 async def test_storage_disabled_returns_503_not_an_empty_list(tmp_path, monkeypatch):
-    """"No call has been recorded" and "this deployment records nothing" are
+    """ "No call has been recorded" and "this deployment records nothing" are
     different facts."""
     monkeypatch.delenv("VOICEGW_DB_PATH", raising=False)
     config = _write_config(tmp_path, {"cost_tracking": {"enabled": False}})

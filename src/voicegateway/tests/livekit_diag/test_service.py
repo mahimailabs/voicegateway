@@ -489,7 +489,9 @@ async def test_the_run_report_still_renders_after_the_payload_change(monkeypatch
         created_at="2026-07-31T12:00:00+00:00",
     )
 
-    finding = run_report.build_payload(run, livekit_url="wss://x")["findings"]["latency"]
+    finding = run_report.build_payload(run, livekit_url="wss://x")["findings"][
+        "latency"
+    ]
     assert [a["agent"] for a in finding["agents"]] == list(_PROBED)
     assert [a["measured"] for a in finding["agents"]] == [True, False, False]
     # Unmeasured stays null, never zero, for both no-reply agents.
@@ -500,6 +502,7 @@ async def test_the_run_report_still_renders_after_the_payload_change(monkeypatch
     )
     assert "reception" in document and "checkout-voice" in document
     assert "no trial produced a reply" in document
+
 
 # What rtt_ms IS travels with it: a tier that measured nothing says so
 # ---------------------------------------------------------------------------
@@ -559,21 +562,21 @@ async def test_a_measured_smallest_tier_still_passes_through_the_payload(monkeyp
     monkeypatch.setattr(probes, "_diag_cache", _fake_diag(SfuProbe=_MixedSfuProbe))
     out = await probes.RealProbes().sfu(_CREDS, True, probes.clamp_config({}))
 
-    gate = gates.sfu_capacity_gate(
-        out["ramp"], out["target_rtt_ms"], out["resource"]
-    )
+    gate = gates.sfu_capacity_gate(out["ramp"], out["target_rtt_ms"], out["resource"])
     assert gate.status == gates.PASS  # 12.0ms of 2 real round-trips, budget 50ms
 
 
-async def test_a_ramp_that_measured_nothing_does_not_pass_the_capacity_gate(monkeypatch):
+async def test_a_ramp_that_measured_nothing_does_not_pass_the_capacity_gate(
+    monkeypatch,
+):
     """End to end: the probe's own payload, fed to the gate that reads it."""
-    monkeypatch.setattr(probes, "_diag_cache", _fake_diag(SfuProbe=_AllTimedOutSfuProbe))
+    monkeypatch.setattr(
+        probes, "_diag_cache", _fake_diag(SfuProbe=_AllTimedOutSfuProbe)
+    )
     out = await probes.RealProbes().sfu(_CREDS, True, probes.clamp_config({}))
 
     assert [s["rtt_stat"] for s in out["ramp"]] == ["not_measured", "not_measured"]
-    gate = gates.sfu_capacity_gate(
-        out["ramp"], out["target_rtt_ms"], out["resource"]
-    )
+    gate = gates.sfu_capacity_gate(out["ramp"], out["target_rtt_ms"], out["resource"])
     assert gate.status == gates.UNKNOWN
     assert gates.exit_code(gates.verdict([gate])) == 1
 
@@ -625,9 +628,7 @@ async def test_a_measured_baseline_still_passes_the_quality_gate(monkeypatch):
 
 async def test_an_excellent_baseline_that_measured_nothing_does_not_pass(monkeypatch):
     """End to end: the probe's own payload, fed to the gate that reads it."""
-    monkeypatch.setattr(
-        probes, "_diag_cache", _fake_diag(SfuProbe=_SilentPingSfuProbe)
-    )
+    monkeypatch.setattr(probes, "_diag_cache", _fake_diag(SfuProbe=_SilentPingSfuProbe))
     out = await probes.RealProbes().sfu(_CREDS, False, probes.clamp_config({}))
 
     assert out["baseline"]["quality"] == "Excellent"  # the SDK really said this

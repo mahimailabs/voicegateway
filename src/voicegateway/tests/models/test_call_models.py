@@ -109,8 +109,7 @@ def test_sessions_gains_nullable_correlation_columns() -> None:
             "LiveKit room, and there is no backfill by design"
         )
     indexed = {
-        tuple(col.name for col in index.columns)
-        for index in Session.__table__.indexes
+        tuple(col.name for col in index.columns) for index in Session.__table__.indexes
     }
     # Indexed so the sessions<->calls correlation rate is cheap to measure.
     assert ("room_name",) in indexed

@@ -97,5 +97,3 @@ async def test_api_agents_index(gateway):
     assert by_id["agent-x"]["request_count"] == 2
     assert "p95_latency_ms" in by_id["agent-x"]
     assert "unattributed" in body
-
-

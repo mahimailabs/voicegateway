@@ -107,9 +107,7 @@ def test_list_api_keys_filters_revoked_when_include_revoked_false(client) -> Non
     client.post(f"/api/api_keys/{created_id}/revoke")
 
     with_revoked = client.get("/api/api_keys?include_revoked=true").json()["keys"]
-    without_revoked = client.get("/api/api_keys?include_revoked=false").json()[
-        "keys"
-    ]
+    without_revoked = client.get("/api/api_keys?include_revoked=false").json()["keys"]
 
     assert any(k["id"] == created_id for k in with_revoked)
     assert all(k["id"] != created_id for k in without_revoked)

@@ -355,10 +355,16 @@ async def test_probe_surfaces_the_models_it_ran(monkeypatch) -> None:
     _patch(monkeypatch)
     room = "vg-probe-a-ab12cd34"
     rows = [
-        {"modality": "stt", "model_id": "livekit/deepgram/nova-3",
-         "metadata": {"room": room}},
-        {"modality": "llm", "model_id": "livekit/google/gemma-4-31b-it",
-         "metadata": {"room": room}},
+        {
+            "modality": "stt",
+            "model_id": "livekit/deepgram/nova-3",
+            "metadata": {"room": room},
+        },
+        {
+            "modality": "llm",
+            "model_id": "livekit/google/gemma-4-31b-it",
+            "metadata": {"room": room},
+        },
         # No TTS row: that leg's model stays None, not a guess.
     ]
     out = await service.probe_agent(

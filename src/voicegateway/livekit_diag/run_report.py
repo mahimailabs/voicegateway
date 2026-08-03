@@ -1944,3 +1944,766 @@ def _render_appendix(payload: dict[str, Any]) -> str:
         "configuration are referenced by name rather than reproduced here: they "
         "are the work of whoever authored them.</p>" + "".join(sections)
     )
+
+
+# ---------------------------------------------------------------------------
+# Profile view: what was measured, and the range each number is read against
+# ---------------------------------------------------------------------------
+#
+# A second RENDERING of the load payload, not a second payload. It takes exactly
+# what :func:`build_load_payload` produces, so the two views cannot disagree
+# about a number: there is one set of figures and two ways of presenting them.
+#
+# The difference is what each view is FOR. The acceptance view exists because a
+# client engagement contracted thresholds, so it grades every gate and prints a
+# verdict. This one exists because VoiceGateway is a profiler: its default
+# output shows what it measured and the range each number is read against, and
+# then stops. No verdict, no status word, no exit code. A human reads it and
+# decides, because the person accountable for the deployment is the one holding
+# the context a threshold cannot carry.
+#
+# That is why the status field is never rendered here, not even as a colour. A
+# report that grades has to be right about the threshold; a report that measures
+# only has to be right about the measurement, and the second claim is the one
+# this system can actually stand behind.
+
+#: What ``kind`` a consumer matches on to tell this VIEW from the acceptance
+#: view of the same run. The payload's own ``kind`` is unchanged and still says
+#: ``voicegateway.loadtest.run_report``: this is a rendering of that payload,
+#: not a new schema, and the footer prints both so a reader holding the HTML can
+#: tell which document they have.
+PROFILE_KIND = "voicegateway.loadtest.profile_report"
+
+#: Resources that can never be measured by anybody, so their gate rows are
+#: DROPPED from this document entirely rather than listed as not collected.
+#:
+#: A "not collected" row is a promise that somebody could collect it. Nobody
+#: publishes a per-instance-type packets-per-second allowance, under any API or
+#: at any price, so a row saying "unknown" for PPS headroom is an item on a
+#: checklist that can never be ticked. It is noise in a document whose whole job
+#: is to separate what was measured from what was not.
+#:
+#: THE SOURCE OF TRUTH IS :data:`voicegateway.loadtest.judge.
+#: PERMANENT_HEADROOM_EXCLUSIONS`, whose keys are exactly these names and whose
+#: reasoning lives on :data:`gates.HEADROOM_PPS`. It is named here from the
+#: gates constant rather than imported from judge for two reasons, either of
+#: which alone would be enough. This module's docstring promises it touches no
+#: storage, and importing judge pulls in the repository layer through
+#: ``loadtest.aggregation``. And it would make ``livekit_diag`` depend on
+#: ``loadtest``, which already depends on ``livekit_diag.gates``, so the first
+#: loadtest module to import a renderer closes the loop. Naming the shared
+#: ``gates`` constant keeps a rename from silently breaking the match, and a
+#: test can assert this set equals judge's keys without either module importing
+#: the other.
+PROFILE_PERMANENTLY_UNMEASURABLE: frozenset[str] = frozenset({gates.HEADROOM_PPS})
+
+#: Where each measurement is filed, grouped by WHAT THE NUMBER TEACHES rather
+#: than by which gate family produced it. A reader asking "did the boxes have
+#: room" does not care that file descriptors arrive through the headroom gate
+#: and CPU through its own; they care that both describe one node's limits.
+#:
+#: Keys are profile keys, not gate ids. Headroom is one gate id covering several
+#: resources that belong in different groups (file descriptors are a node limit,
+#: RTP ports are a media limit), so a headroom row is keyed
+#: ``resource_headroom/<resource>``. Everything else is keyed by gate id.
+#:
+#: Declared as a mapping so a new gate has to be CLASSIFIED rather than falling
+#: through into whichever branch a renderer happens to reach. Anything unknown
+#: renders under :data:`PROFILE_UNGROUPED_GROUP` where somebody will see it,
+#: which is the point: a measurement that quietly vanishes from a profiler is
+#: worse than one filed under the wrong heading.
+PROFILE_GROUPS: dict[str, tuple[str, ...]] = {
+    "Node resources": (
+        gates.NODE_CPU_GATE,
+        gates.NODE_MEMORY_GATE,
+        f"{gates.HEADROOM_GATE}/{gates.HEADROOM_FILE_DESCRIPTORS}",
+    ),
+    "Media and network": (
+        f"{gates.HEADROOM_GATE}/{gates.HEADROOM_RTP_PORTS}",
+        f"{gates.HEADROOM_GATE}/{gates.HEADROOM_NETWORK_IN}",
+        f"{gates.HEADROOM_GATE}/{gates.HEADROOM_NETWORK_OUT}",
+        gates.NETWORK_ALLOWANCE_GATE,
+    ),
+    "Stability over time": (
+        gates.PROCESS_LIFECYCLE_GATE,
+        gates.RESOURCE_TREND_GATE,
+        gates.RETURN_TO_BASELINE_GATE,
+    ),
+    "Call handling": (
+        gates.ESTABLISHMENT_GATE,
+        gates.SUSTAINED_HEALTH_GATE,
+    ),
+}
+
+#: Where an unclassified measurement lands. Deliberately visible and
+#: deliberately unflattering to read: it is a prompt to classify the gate, not a
+#: permanent home.
+PROFILE_UNGROUPED_GROUP = "Not yet classified"
+
+_CLASSIFIED_GATE_IDS: frozenset[str] = frozenset(
+    key.split("/", 1)[0] for keys in PROFILE_GROUPS.values() for key in keys
+)
+
+#: Gate ids :data:`PROFILE_GROUPS` does not place, computed rather than written
+#: down so it cannot drift from the mapping above.
+#:
+#: Today it is the four DIAGNOSTICS gates: agents, reply latency and the two SFU
+#: gates. A load payload never carries them, because a load run is an external
+#: generator placing calls and not this host probing an SFU, so leaving them
+#: unclassified is the accurate statement rather than an omission. They are
+#: named here so a test can pin the list and a fifth entry appearing is a
+#: question somebody has to answer.
+PROFILE_UNCLASSIFIED_GATES: frozenset[str] = frozenset(
+    gates.ALL_GATES - _CLASSIFIED_GATE_IDS
+)
+
+#: One human name and one "what it means" sentence per measurement, keyed the
+#: same way as :data:`PROFILE_GROUPS`.
+#:
+#: The name is what the number IS, in the words somebody reading a capacity
+#: report already uses. The sentence is what it teaches, and it carries the
+#: caveat that changes how the figure should be read: which denominator it is a
+#: fraction of, whether that denominator was measured or declared, and whether
+#: it is a fraction at all.
+_PROFILE_MEASUREMENTS: dict[str, tuple[str, str]] = {
+    gates.NODE_CPU_GATE: (
+        "Peak node CPU",
+        "How close the busiest node came to using all of its CPU while the test "
+        "ran. The worst node over the window, not a fleet average.",
+    ),
+    gates.NODE_MEMORY_GATE: (
+        "Peak node memory",
+        "How close the busiest node came to using all of its memory while the "
+        "test ran. The worst node over the window, not a fleet average.",
+    ),
+    f"{gates.HEADROOM_GATE}/{gates.HEADROOM_FILE_DESCRIPTORS}": (
+        "File-descriptor headroom",
+        "The share of the process file-descriptor limit that stayed unused. "
+        "Both halves are real counters, so this fraction is measured end to end.",
+    ),
+    f"{gates.HEADROOM_GATE}/{gates.HEADROOM_RTP_PORTS}": (
+        "RTP media-port headroom",
+        "The share of the media port range that stayed free. The range size is "
+        "declared configuration rather than a measurement, so a node that "
+        "publishes occupancy without it reports nothing rather than a guess.",
+    ),
+    f"{gates.HEADROOM_GATE}/{gates.HEADROOM_NETWORK_IN}": (
+        "Inbound network headroom",
+        "Observed inbound throughput against the instance type's DECLARED "
+        "baseline. The instance can burst above that baseline, so this reads "
+        "high rather than low.",
+    ),
+    f"{gates.HEADROOM_GATE}/{gates.HEADROOM_NETWORK_OUT}": (
+        "Outbound network headroom",
+        "Observed outbound throughput against the instance type's DECLARED "
+        "baseline. Judged apart from inbound because the hypervisor meters the "
+        "two against separate credit buckets.",
+    ),
+    gates.HEADROOM_GATE: (
+        "Resource headroom",
+        "Headroom on a limited resource, with no resource named on the row: "
+        "read the recorded detail beside it to find out which one.",
+    ),
+    gates.NETWORK_ALLOWANCE_GATE: (
+        "Hypervisor allowance events",
+        "How many times the hypervisor recorded an allowance as exceeded during "
+        "the window. A count of throttling EVENTS, not a fraction of a limit: "
+        "the limit itself is unpublished.",
+    ),
+    gates.PROCESS_LIFECYCLE_GATE: (
+        "Restarts and OOM kills",
+        "Processes that restarted, and kernel OOM kills, across the window. "
+        "Either one means something died and came back while the test ran.",
+    ),
+    gates.RESOURCE_TREND_GATE: (
+        "Resource drift",
+        "How far a resource moved between the middle and the last third of the "
+        "steady-state window, in that resource's own units.",
+    ),
+    gates.RETURN_TO_BASELINE_GATE: (
+        "Return to baseline",
+        "Where a resource settled after teardown, as a multiple of its own idle "
+        "baseline from before the run. 1.0 is exactly back to where it started.",
+    ),
+    gates.ESTABLISHMENT_GATE: (
+        "Calls established",
+        "The share of call attempts that reached an established call, counted "
+        "from the generator's own records over one network path.",
+    ),
+    gates.SUSTAINED_HEALTH_GATE: (
+        "Consecutive failed health samples",
+        "The longest unbroken run of failed dependency or health-check samples. "
+        "A count of samples, so consecutive rather than cumulative.",
+    ),
+}
+
+#: How a not-collected row is filed, and what to do about it. Ordered: the first
+#: marker that appears in the gate's recorded detail wins.
+#:
+#: Classified from the DETAIL because that is the only cause the payload
+#: carries. The gate records why it could not evaluate in prose and nowhere as a
+#: code, so this matches on the phrases those gates actually write. It is
+#: fragile by construction, which is why the fallback below is a named cause
+#: rather than a silent bucket, and why every row prints its own detail verbatim
+#: underneath: a misfiled row is visible to the reader, not hidden by the
+#: heading it landed under.
+#:
+#: Grouped by cause rather than by gate so the section reads as a setup
+#: checklist. Twelve rows saying "not measured" are one action when they share a
+#: cause, and a reader who has to derive that themselves does not.
+_PROFILE_CAUSES: tuple[tuple[tuple[str, ...], str, str], ...] = (
+    (
+        (
+            "no scrape target",
+            "nothing in the scrape set publishes",
+            "outside scope for this report",
+        ),
+        "Nothing was configured to answer it",
+        "No source in the scrape set can produce this at all, so it was never "
+        "asked. Wire the exporter or endpoint the detail names and run again. "
+        "Until then the measurement does not exist, which is not the same as it "
+        "coming back clean.",
+    ),
+    (
+        ("usable sample",),
+        "The window carried too few samples",
+        "A trend is computed over thirds of the steady-state window and each "
+        f"third needs at least {gates.MIN_TREND_SAMPLES} usable samples. Run for "
+        "longer, or sample more often. Too short to tell is not flat.",
+    ),
+    (
+        (),
+        "The series was not in this run's scrape",
+        "These are collectable and simply were not in the scrape correlated to "
+        "this window: the exporter or the series was wired after the run was "
+        "captured, or nothing was scraped for the window at all. Re-run against "
+        "the current scrape configuration and they fill in.",
+    ),
+)
+
+
+def _headroom_resource(gate: dict[str, Any]) -> str | None:
+    """Which resource a headroom gate is about, from whichever field survived.
+
+    ``metric`` is ``<resource>_headroom`` and is the reliable source, but it is
+    None on every gate that could not evaluate, which is most of the rows this
+    view has to file. The subject is built as ``<node>[/<source>]/<resource>``,
+    so the last segment is the resource on both the measured and the unmeasured
+    row.
+
+    Nothing is validated against a list of known resources on purpose. A
+    resource this build has never heard of must reach
+    :data:`PROFILE_UNGROUPED_GROUP` and be seen, and a whitelist would instead
+    fold it back into the bare headroom key where it looks classified.
+    """
+    metric = gate.get("metric")
+    if isinstance(metric, str) and metric.endswith("_headroom"):
+        return metric[: -len("_headroom")] or None
+    subject = gate.get("subject")
+    if isinstance(subject, str) and "/" in subject:
+        return subject.rsplit("/", 1)[1] or None
+    return None
+
+
+def _profile_key(gate: dict[str, Any]) -> str:
+    """The key a gate is grouped and named by. See :data:`PROFILE_GROUPS`."""
+    gate_id = str(gate.get("gate") or "")
+    if gate_id != gates.HEADROOM_GATE:
+        return gate_id
+    resource = _headroom_resource(gate)
+    return f"{gate_id}/{resource}" if resource else gate_id
+
+
+def _profile_name(key: str) -> tuple[str, str]:
+    """The human name and the "what it means" sentence for one key.
+
+    A key with no entry falls back to the key itself rather than to a blank, and
+    says out loud that this build does not know what it is. An unnamed row is
+    still a measurement somebody took, and dropping it because the renderer has
+    no label for it would be the renderer deciding what counts.
+    """
+    named = _PROFILE_MEASUREMENTS.get(key)
+    if named is not None:
+        return named
+    return (
+        key.replace("_", " ").replace("/", ": "),
+        "This build carries no description for this measurement, so read the "
+        "recorded detail beside it rather than inferring what it means.",
+    )
+
+
+def _profile_cause(detail: str) -> tuple[str, str]:
+    """Why nothing was recorded, and what closes the gap. See
+    :data:`_PROFILE_CAUSES`."""
+    lowered = detail.lower()
+    for markers, title, remedy in _PROFILE_CAUSES:
+        if any(marker in lowered for marker in markers):
+            return title, remedy
+    return _PROFILE_CAUSES[-1][1], _PROFILE_CAUSES[-1][2]
+
+
+def _profile_rows(
+    payload: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split the payload's gates into measured, not-collected and dropped rows.
+
+    Order is the payload's own order throughout, which is the order the run
+    executed in. Re-sorting would break the correspondence with the per-test
+    table above it, and a reader matching a row to a step should not have to
+    hold two orderings in their head.
+
+    Permanently unmeasurable resources are dropped here rather than filtered at
+    render time, so no downstream count includes a row nobody will ever see.
+    """
+    measured: list[dict[str, Any]] = []
+    missing: list[dict[str, Any]] = []
+    dropped: list[dict[str, Any]] = []
+    for gate in payload.get("gates") or []:
+        if not isinstance(gate, dict):
+            continue
+        key = _profile_key(gate)
+        name, meaning = _profile_name(key)
+        detail = str(gate.get("detail") or "")
+        row = {
+            "key": key,
+            "gate": str(gate.get("gate") or ""),
+            "name": name,
+            "meaning": meaning,
+            "subject": gate.get("subject"),
+            "step": gate.get("step"),
+            "value": _as_float(gate.get("value")),
+            "threshold": _as_float(gate.get("threshold")),
+            "detail": detail,
+        }
+        resource = (
+            _headroom_resource(gate) if row["gate"] == gates.HEADROOM_GATE else None
+        )
+        if resource in PROFILE_PERMANENTLY_UNMEASURABLE:
+            dropped.append(row)
+        elif row["value"] is None:
+            missing.append(row)
+        else:
+            measured.append(row)
+    return measured, missing, dropped
+
+
+def _profile_subject(row: dict[str, Any]) -> str:
+    """Which node, source and step a row belongs to.
+
+    The step is part of a row's identity and not decoration, for the same reason
+    it is on the gate table: a seven-step run otherwise renders seven rows with
+    identical subjects and nothing to tell them apart. Suppressed where it
+    merely repeats the subject, which is the establishment row, whose subject IS
+    the step.
+    """
+    subject, step = row.get("subject"), row.get("step")
+    cell = _recorded(subject)
+    if step and step != subject:
+        cell += f'<div class="why">{_esc(step)}</div>'
+    return cell
+
+
+def _profile_band(value: float, threshold: float) -> str:
+    """The reference band: a track, a neutral fill, and a tick at the reference.
+
+    THE FILL IS ONE NEUTRAL COLOUR FOR ITS WHOLE LENGTH, on both sides of the
+    tick, and that is the single most important line in this function. Colouring
+    a bar by which side of a line it lands on is a verdict wearing a chart's
+    clothes: it grades the number before the reader has read it, in the one view
+    that exists to stop doing exactly that. The tick says where the reference
+    sits; whether landing past it is fine is the reader's call, and this
+    document does not have the context to make it for them.
+
+    CSS only. No SVG and no image: three test suites scan the output for those
+    markers, because this file has to render from disk with no network, and a
+    chart library is what somebody reaches for the first time a bar is wanted.
+    """
+    fill = max(0.0, min(100.0, value * 100.0))
+    tick = max(0.0, min(100.0, threshold * 100.0))
+    return (
+        '<div class="band">'
+        f'<div class="band-fill" style="width:{_esc(f"{fill:.1f}")}%"></div>'
+        f'<div class="band-tick" style="left:{_esc(f"{tick:.1f}")}%"></div>'
+        "</div>"
+    )
+
+
+def _profile_reference(row: dict[str, Any]) -> str:
+    """The range a value is read against: a band where one exists, else words.
+
+    A band is drawn ONLY for a gate in :data:`gates.RATIO_GATES` whose value and
+    reference both fall inside 0..1. There the full scale is exactly 1.0, and
+    1.0 is a real thing: the limit the fraction was taken against. The bar's
+    length then means what a reader assumes it means.
+
+    Everything else gets the figure and no bar, and this is the decision the
+    alternative was worse than. Scaling a count against
+    ``max(value, threshold) * 1.25`` would put a fill on the page whose
+    denominator this renderer invented, so its width would mean "some share of a
+    number nobody measured". A reader reads a bar as a fraction of something
+    real. Restarts, OOM kills, allowance events and consecutive failed samples
+    have no maximum, and neither does a return-to-baseline ratio, which is a
+    multiple of a baseline and runs past 1 by design. So no bar is drawn for any
+    of them. It is the same reasoning that drops the PPS rows entirely: where
+    there is no denominator, the honest rendering is the numerator alone.
+    """
+    value, threshold = row["value"], row["threshold"]
+    if threshold is None:
+        return (
+            '<span class="nm">no reference recorded: this run carried no value '
+            "to read the figure against</span>"
+        )
+    reference = _gate_number(threshold, row["gate"])
+    if (
+        row["gate"] in gates.RATIO_GATES
+        and value is not None
+        and 0.0 <= value <= 1.0
+        and 0.0 <= threshold <= 1.0
+    ):
+        return (
+            _profile_band(value, threshold) + '<div class="band-scale"><span>0%</span>'
+            f"<span>reference {reference}</span><span>100%</span></div>"
+        )
+    return (
+        f"reference {reference}"
+        '<div class="why">No bar: this figure is a count, or a multiple of a '
+        "baseline, so there is no full scale to draw it against.</div>"
+    )
+
+
+def _render_profile_measurements(measured: list[dict[str, Any]]) -> str:
+    """Everything this run put a number on, grouped by what the number teaches."""
+    if not measured:
+        return (
+            "<h2>Measurements</h2>"
+            '<div class="note">This run put a number on nothing. Every gate it '
+            "evaluated recorded an absence, and those are listed below with the "
+            "reason each one gives. Read that section as the whole result: there "
+            "is no measured half hiding behind it.</div>"
+        )
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in measured:
+        title = next(
+            (t for t, keys in PROFILE_GROUPS.items() if row["key"] in keys),
+            PROFILE_UNGROUPED_GROUP,
+        )
+        grouped.setdefault(title, []).append(row)
+    out = [
+        "<h2>Measurements</h2>"
+        "<p>Every figure this run recorded, with the range it is read against. "
+        "The reference is the value the number is compared to; nothing here says "
+        "whether landing on either side of it is acceptable, because that "
+        "depends on what the deployment is for.</p>"
+    ]
+    # PROFILE_GROUPS order first, then anything unclassified, so a new gate
+    # surfaces at the bottom of the section instead of shuffling the groups a
+    # reader knows.
+    order = [t for t in PROFILE_GROUPS if t in grouped]
+    order += [t for t in grouped if t not in PROFILE_GROUPS]
+    for title in order:
+        body = "".join(
+            f"<tr><td class='mono'>{_profile_subject(row)}</td>"
+            f"<td>{_esc(row['name'])}"
+            f"<div class='why'>{_esc(row['meaning'])}</div></td>"
+            f"<td class='num'>{_gate_number(row['value'], row['gate'])}</td>"
+            f"<td>{_profile_reference(row)}</td></tr>"
+            for row in grouped[title]
+        )
+        out.append(
+            f"<h3>{_esc(title)}</h3>"
+            "<table><thead><tr><th>Subject</th><th>Measurement</th>"
+            "<th class='num'>Value</th><th>Read against</th></tr></thead>"
+            f"<tbody>{body}</tbody></table>"
+        )
+    if PROFILE_UNGROUPED_GROUP in grouped:
+        out.append(
+            '<div class="note">The measurements above are real and this build '
+            "does not know where to file them. They are shown rather than "
+            "dropped: a profiler that silently loses a number it took is worse "
+            "than one that admits it has no heading for it.</div>"
+        )
+    return "".join(out)
+
+
+def _render_profile_not_collected(
+    payload: dict[str, Any],
+    missing: list[dict[str, Any]],
+    dropped: list[dict[str, Any]],
+) -> str:
+    """The setup checklist: what produced no number, grouped by why.
+
+    Rows for permanently unmeasurable resources are absent from this list on
+    purpose, and a single sentence names them when any were dropped. The list
+    itself is a queue of work somebody can do, and an item nobody can ever do
+    turns it into a queue that never empties. Naming them once keeps the
+    disclosure from shrinking silently, which is the failure mode of collapsing
+    rows into a summary.
+    """
+    run_limits = payload.get("run_limitations") or []
+    out = ["<h2>Not collected in this run</h2>"]
+    if not missing and not run_limits:
+        out.append(
+            "<p>Every gate this run evaluated produced a number, and every "
+            "number is in the section above.</p>"
+        )
+    else:
+        out.append(
+            "<p>These produced no number. They are grouped by cause so the "
+            "section reads as a list of things to fix rather than as a list of "
+            "gaps, and each row carries what the run itself recorded, verbatim. "
+            "An absence is never a zero and never a pass: nothing was compared "
+            "against anything.</p>"
+        )
+    if dropped:
+        names = sorted(
+            {str(r["subject"] or r["key"]).rsplit("/", 1)[-1] for r in dropped}
+        )
+        out.append(
+            f"<p class='sub'>{len(dropped)} row(s) covering "
+            f"{_esc(', '.join(names))} are absent from this list entirely, not "
+            "filed as uncollected: no allowance for them is published by "
+            "anybody, so there is no denominator to divide by and no run will "
+            "ever fill them in.</p>"
+        )
+    grouped: dict[str, tuple[str, list[dict[str, Any]]]] = {}
+    for row in missing:
+        title, remedy = _profile_cause(row["detail"])
+        grouped.setdefault(title, (remedy, []))[1].append(row)
+    for _markers, title, _remedy in _PROFILE_CAUSES:
+        entry = grouped.get(title)
+        if entry is None:
+            continue
+        remedy, rows = entry
+        body = "".join(
+            f"<tr><td class='mono'>{_profile_subject(row)}</td>"
+            f"<td>{_esc(row['name'])}</td>"
+            f"<td>{_esc(row['detail'])}</td></tr>"
+            for row in rows
+        )
+        out.append(
+            f"<h3>{_esc(title)}</h3><p class='sub'>{_esc(remedy)}</p>"
+            "<table><thead><tr><th>Subject</th><th>Measurement</th>"
+            "<th>What the run recorded</th></tr></thead>"
+            f"<tbody>{body}</tbody></table>"
+        )
+    if run_limits:
+        entries = "".join(f"<li>{_esc(item)}</li>" for item in run_limits)
+        out.append(
+            "<h3>From this run's own artifacts</h3>"
+            "<p class='sub'>Gaps in the files this report was built from, rather "
+            "than in the fleet it describes. A later run can close them.</p>"
+            f"<ul>{entries}</ul>"
+        )
+    return "".join(out)
+
+
+def _render_profile_method(payload: dict[str, Any]) -> str:
+    """How to read the figures above, including the reasons they read low or high.
+
+    The structural limits are :data:`_LOAD_REPORT_LIMITS`, reused through the
+    payload rather than restated: a second copy of that list is a second list
+    that goes stale, and the version a client reads would be the stale one. What
+    is added here is the reading rules a profile view needs and a gated view
+    does not, because a gated view hands the reader a verdict and this one hands
+    them the numbers.
+    """
+    structural = "".join(f"<li>{_esc(item)}</li>" for item in payload["not_measured"])
+    method = [
+        "There is no verdict in this document, and that is deliberate. It "
+        "reports what was measured and the range each number is read against, "
+        "then stops. Whether a figure is acceptable depends on what the "
+        "deployment is for, and the person accountable for it holds context "
+        "this file cannot carry.",
+        "A reference bar is ONE neutral colour for its whole length, on both "
+        "sides of the tick. It is never coloured by which side the value lands "
+        "on, because a bar that changes colour at a line has graded the number "
+        "before the reader read it.",
+        "A bar is drawn only where a real full scale exists: a fraction of a "
+        "limit, where 100% is the limit itself. A count has no maximum, so a "
+        "count is shown as a figure with its reference beside it and no bar.",
+        "A gap is NULL, and renders as absent. Nothing unmeasured is shown as "
+        "0, because zero and unmeasured support opposite conclusions and the "
+        "difference cannot be recovered once it is lost.",
+        f"Below {gates.MIN_PERCENTILE_SAMPLES} samples a peak is the max of N "
+        "rather than a percentile. A percentile computed from a handful of "
+        "samples is the maximum wearing a more confident label.",
+    ]
+    items = "".join(f"<li>{_esc(item)}</li>" for item in method)
+    return (
+        "<h2>How to read these numbers</h2>"
+        f"<ul>{items}</ul>"
+        "<h3>What this report structurally does not measure</h3>"
+        "<p>These are limits of the system, not of this run. A later run does "
+        "not close them.</p>"
+        f"<ul>{structural}</ul>"
+    )
+
+
+def _render_profile_identity(payload: dict[str, Any]) -> str:
+    """Which run this is, as a plain definition list.
+
+    No bordered box. The acceptance view boxes its metadata because it sits
+    beside a verdict panel and needs to hold its own against it; here the
+    metadata is the second thing on the page and a border around it only says
+    "this part is separate", which is not true.
+
+    Provenance is the FIRST row, ahead of the identifiers. A reader who stops
+    after one line should have read whether these numbers describe anything
+    real.
+    """
+    run = payload.get("run") or {}
+    started, ended = _utc(run.get("started_at_ms")), _utc(run.get("ended_at_ms"))
+    if started and ended:
+        window = f"{_esc(started)} to {_esc(ended)}"
+    elif started:
+        window = f"{_esc(started)}, end not recorded"
+    elif ended:
+        window = f"start not recorded, ended {_esc(ended)}"
+    else:
+        window = '<span class="nm">not recorded</span>'
+    checksum = run.get("artifact_sha256")
+    rows = [
+        (
+            "Data provenance",
+            f"{_esc(payload.get('data_provenance'))}"
+            f'<div class="why">{_esc(payload.get("provenance_basis") or "")}</div>',
+        ),
+        ("Run id", f'<span class="mono">{_esc(run.get("id"))}</span>'),
+        ("Label", _recorded(run.get("label"))),
+        ("Project", _recorded(run.get("project"))),
+        ("Run window (UTC)", window),
+        (
+            "Artifact checksum",
+            f'<span class="mono">{_esc(str(checksum)[:16])}</span>'
+            if checksum
+            else '<span class="nm">no artifact checksum</span>',
+        ),
+        (
+            "Generator",
+            _recorded(run.get("tool"))
+            + (f" {_esc(run.get('tool_version'))}" if run.get("tool_version") else ""),
+        ),
+        ("Report generated", _esc(payload["generated_at"])),
+        (
+            "Generated by",
+            f"voicegateway {_esc(payload['generator']['version'])}"
+            f" &middot; payload schema v{payload['schema_version']}",
+        ),
+    ]
+    body = "".join(f"<dt>{label}</dt><dd>{value}</dd>" for label, value in rows)
+    return f'<div class="ident"><dl>{body}</dl></div>'
+
+
+#: Appended to :data:`_REPORT_CSS`, never merged into it. That sheet is shared
+#: with the diagnostics and acceptance documents and several suites pin what it
+#: renders, so a class added for this view belongs in its own constant where it
+#: cannot change either of those.
+#:
+#: Carries the print rules the load sheet never had. A capacity report is
+#: printed and filed, and without a repeating table head a page-two row is a
+#: line of numbers with no column names above it, which is worse than useless
+#: because it is still readable.
+_PROFILE_CSS = """
+.ident dl { display: grid; grid-template-columns: 200px 1fr; gap: 5px 18px;
+            margin: 14px 0 6px; font-size: 13px; }
+.ident dt { color: #5b6472; }
+.ident dd { margin: 0; }
+.why { color: #5b6472; font-size: 12px; margin: 2px 0 0; line-height: 1.4; }
+.band { position: relative; height: 12px; min-width: 130px; margin: 4px 0 5px;
+        background: #edeff3; border: 1px solid #dfe2e7; border-radius: 3px; }
+/* ONE neutral fill, both sides of the tick. Colouring it by which side the
+   value lands on would grade the number, which is the whole thing this view
+   exists to remove. See _profile_band. */
+.band-fill { position: absolute; top: 0; bottom: 0; left: 0; background: #9aa3b0;
+             border-radius: 2px; }
+.band-tick { position: absolute; top: -3px; bottom: -3px; width: 2px;
+             margin-left: -1px; background: #16181d; }
+.band-scale { display: flex; justify-content: space-between; gap: 10px;
+              font-size: 11px; color: #5b6472; }
+@page { margin: 16mm 14mm; }
+@media print {
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  h2, h3 { break-after: avoid; }
+}
+"""
+
+
+def profile_filename(run_id: Any) -> str:
+    """A filename that cannot smuggle anything into a header. See
+    :func:`report_filename`.
+
+    A different stem from :func:`load_report_filename` on purpose. The two
+    documents describe the same run and say different things about it, so they
+    have to be able to sit in one directory without one overwriting the other,
+    and somebody holding a file should be able to tell which view it is without
+    opening it.
+    """
+    safe = re.sub(r"[^A-Za-z0-9_-]", "", str(run_id))[:32] or "run"
+    return f"voicegateway-profile-{safe}.html"
+
+
+def render_profile_html(payload: dict[str, Any]) -> str:
+    """Render a load payload as the PROFILE view: measurements, no judgement.
+
+    Takes exactly what :func:`build_load_payload` produces, which is the whole
+    point of the signature. The acceptance view and this one read one payload,
+    so they cannot disagree about a number: only about how much of it they show.
+
+    What this deliberately does NOT render, in a document that has every input
+    needed to render all three. There is no verdict block, no status word on any
+    row, and no gate table. Those are the acceptance view, and it still exists
+    for the engagement that contracted thresholds. Reproducing them here as
+    well, in the profiler's default output, would make the threshold the headline
+    of every run, including the many where nobody agreed to one.
+
+    The measurement rows are derived FROM ``payload["gates"]`` rather than from
+    the findings, because a gate row already carries the four things a profile
+    row needs: what it is about, the number, the reference, and what the run
+    recorded about it. Deriving them separately would be a second path to the
+    same figures, and two paths is how the two views start to disagree.
+
+    SYNCHRONOUS, and self-contained on the same hard terms as
+    :func:`render_load_html`: no script, no link, no image, no SVG, no external
+    font, no url() and no absolute URL anywhere in the output. This file is
+    opened from disk, possibly offline, possibly years later.
+    """
+    measured, missing, dropped = _profile_rows(payload)
+    run_id = _esc((payload.get("run") or {}).get("id"))
+    body = "".join(
+        [
+            "<h1>Load-test profile</h1>",
+            # Not in the section order this view was specified with, and kept
+            # anyway: the stamp is the element that stops a fixture-built file
+            # being mistaken for a measurement, and it renders nothing at all
+            # when the run was measured. Dropping a disclosure because a layout
+            # list did not mention it is how disclosures disappear.
+            _render_stamp(payload),
+            _render_profile_identity(payload),
+            # Reused verbatim from the acceptance view rather than reimplemented.
+            # These two sections carry no status and no verdict, so they are
+            # already the profile rendering of those numbers, and a second
+            # implementation would be a second set of figures to keep in step.
+            _render_load_tests(payload),
+            _render_profile_measurements(measured),
+            _render_capacity(payload),
+            _render_profile_not_collected(payload, missing, dropped),
+            _render_profile_method(payload),
+            "<footer>Generated by voicegateway "
+            f"{_esc(payload['generator']['version'])} on "
+            f"{_esc(payload['generated_at'])} &middot; "
+            f"{_esc(PROFILE_KIND)}, rendered from payload schema v"
+            f"{payload['schema_version']} ({_esc(payload.get('kind'))}). This is "
+            "the profile view: it reports what was measured and stops. This file "
+            "is self-contained: it loads nothing over the network and reads the "
+            "same offline.</footer>",
+        ]
+    )
+    return (
+        "<!DOCTYPE html>\n"
+        '<html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f"<title>Load-test profile {run_id}</title>"
+        f"<style>{_REPORT_CSS}{_LOAD_REPORT_CSS}{_PROFILE_CSS}</style></head>"
+        f"<body>{body}</body></html>\n"
+    )

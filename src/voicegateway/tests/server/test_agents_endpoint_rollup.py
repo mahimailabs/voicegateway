@@ -138,9 +138,7 @@ async def _insert_worker(gw: Gateway, **cols) -> None:
     keys = ", ".join(cols)
     vals = ", ".join(f":{k}" for k in cols)
     async with gw.storage._conn.session() as db:
-        await db.execute(
-            text(f"INSERT INTO workers ({keys}) VALUES ({vals})"), cols
-        )
+        await db.execute(text(f"INSERT INTO workers ({keys}) VALUES ({vals})"), cols)
         await db.commit()
 
 
@@ -194,26 +192,41 @@ async def test_list_memory_pct_null_when_no_worker(tmp_path, monkeypatch) -> Non
 async def test_list_attaches_last_seen_model_cascade(tmp_path, monkeypatch) -> None:
     gw = _gateway(tmp_path, monkeypatch)
     await _insert_obs(
-        gw, agent_id="cascade-agent", request_count=3, total_cost_usd=0.0,
-        error_count=0, last_seen=1000.0, window_start="ws", window_end="we",
+        gw,
+        agent_id="cascade-agent",
+        request_count=3,
+        total_cost_usd=0.0,
+        error_count=0,
+        last_seen=1000.0,
+        window_start="ws",
+        window_end="we",
     )
     # two llm requests: the later timestamp wins
-    for i, (mod, model, ts) in enumerate([
-        ("stt", "deepgram/nova-3", 100.0),
-        ("llm", "openai/gpt-4o-mini", 100.0),
-        ("llm", "openai/gpt-4o", 200.0),
-        ("tts", "cartesia/sonic", 100.0),
-    ]):
-        await gw.storage.log_request(RequestRecord(
-            id=f"r{i}", timestamp=ts, modality=mod, model_id=model,
-            provider=model.split("/")[0], project="default", agent_id="cascade-agent",
-        ))
+    for i, (mod, model, ts) in enumerate(
+        [
+            ("stt", "deepgram/nova-3", 100.0),
+            ("llm", "openai/gpt-4o-mini", 100.0),
+            ("llm", "openai/gpt-4o", 200.0),
+            ("tts", "cartesia/sonic", 100.0),
+        ]
+    ):
+        await gw.storage.log_request(
+            RequestRecord(
+                id=f"r{i}",
+                timestamp=ts,
+                modality=mod,
+                model_id=model,
+                provider=model.split("/")[0],
+                project="default",
+                agent_id="cascade-agent",
+            )
+        )
     async with _client(gw) as c:
         data = (await c.get("/api/agents")).json()
     entry = next(x for x in data["agents"] if x["agent_id"] == "cascade-agent")
     assert entry["models"] == {
         "stt": "deepgram/nova-3",
-        "llm": "openai/gpt-4o",   # last-seen (ts 200 > 100)
+        "llm": "openai/gpt-4o",  # last-seen (ts 200 > 100)
         "tts": "cartesia/sonic",
     }
 
@@ -251,7 +264,9 @@ async def test_list_includes_registered_worker_without_telemetry(tmp_path, monke
     assert entry["agent_name"] == "idle-bot"
 
 
-async def test_list_registered_agent_gets_status_and_fresher_last_seen(tmp_path, monkeypatch):
+async def test_list_registered_agent_gets_status_and_fresher_last_seen(
+    tmp_path, monkeypatch
+):
     gw = _gateway(tmp_path, monkeypatch)
     now = time.time()
     await _insert_obs(
@@ -290,12 +305,22 @@ async def test_list_dedups_same_agent_id_across_tenants_keeping_freshest(
     now = time.time()
     # The full-fleet read (tenant_id=None) returns both tenant rows for one id.
     await _insert_worker(
-        gw, agent_id="dup", agent_name="dup", project="default",
-        tenant_id=None, status="idle", last_seen=now - 10,
+        gw,
+        agent_id="dup",
+        agent_name="dup",
+        project="default",
+        tenant_id=None,
+        status="idle",
+        last_seen=now - 10,
     )
     await _insert_worker(
-        gw, agent_id="dup", agent_name="dup", project="default",
-        tenant_id="t1", status="busy", last_seen=now,
+        gw,
+        agent_id="dup",
+        agent_name="dup",
+        project="default",
+        tenant_id="t1",
+        status="busy",
+        last_seen=now,
     )
     async with _client(gw) as c:
         data = (await c.get("/api/agents")).json()
@@ -327,8 +352,12 @@ async def test_list_skips_offline_roster_only_worker(tmp_path, monkeypatch):
     # A registered worker gone offline (ancient heartbeat) with no telemetry:
     # read_roster derives 'offline', and it must not clutter the fleet index.
     await _insert_worker(
-        gw, agent_id="dead", agent_name="dead", project="default",
-        status="idle", last_seen=1000.0,
+        gw,
+        agent_id="dead",
+        agent_name="dead",
+        project="default",
+        status="idle",
+        last_seen=1000.0,
     )
     async with _client(gw) as c:
         data = (await c.get("/api/agents")).json()
@@ -339,21 +368,36 @@ async def test_list_includes_avg_ttfb_latency_stack(tmp_path, monkeypatch):
     gw = _gateway(tmp_path, monkeypatch)
     now = time.time()
     await _insert_obs(
-        gw, agent_id="lat-agent", request_count=4, total_cost_usd=0.0,
-        error_count=0, last_seen=now, window_start="ws", window_end="we",
+        gw,
+        agent_id="lat-agent",
+        request_count=4,
+        total_cost_usd=0.0,
+        error_count=0,
+        last_seen=now,
+        window_start="ws",
+        window_end="we",
     )
     # STT avg = 100, LLM = 200, TTS = 50 (first-byte per modality).
-    for i, (mod, model, ttfb) in enumerate([
-        ("stt", "deepgram/nova-3", 80.0),
-        ("stt", "deepgram/nova-3", 120.0),
-        ("llm", "openai/gpt-4o", 200.0),
-        ("tts", "cartesia/sonic", 50.0),
-    ]):
-        await gw.storage.log_request(RequestRecord(
-            id=f"r{i}", timestamp=now, modality=mod, model_id=model,
-            provider=model.split("/")[0], project="default", agent_id="lat-agent",
-            ttfb_ms=ttfb,
-        ))
+    for i, (mod, model, ttfb) in enumerate(
+        [
+            ("stt", "deepgram/nova-3", 80.0),
+            ("stt", "deepgram/nova-3", 120.0),
+            ("llm", "openai/gpt-4o", 200.0),
+            ("tts", "cartesia/sonic", 50.0),
+        ]
+    ):
+        await gw.storage.log_request(
+            RequestRecord(
+                id=f"r{i}",
+                timestamp=now,
+                modality=mod,
+                model_id=model,
+                provider=model.split("/")[0],
+                project="default",
+                agent_id="lat-agent",
+                ttfb_ms=ttfb,
+            )
+        )
     async with _client(gw) as c:
         data = (await c.get("/api/agents")).json()
     entry = next(x for x in data["agents"] if x["agent_id"] == "lat-agent")
@@ -366,19 +410,41 @@ async def test_list_latency_stack_is_windowed_to_24h(tmp_path, monkeypatch):
     gw = _gateway(tmp_path, monkeypatch)
     now = time.time()
     await _insert_obs(
-        gw, agent_id="win-agent", request_count=2, total_cost_usd=0.0,
-        error_count=0, last_seen=now, window_start="ws", window_end="we",
+        gw,
+        agent_id="win-agent",
+        request_count=2,
+        total_cost_usd=0.0,
+        error_count=0,
+        last_seen=now,
+        window_start="ws",
+        window_end="we",
     )
     # An ancient STT call (26h ago) must not drag the average; only the recent
     # one counts.
-    await gw.storage.log_request(RequestRecord(
-        id="old", timestamp=now - 93600, modality="stt", model_id="deepgram/nova-3",
-        provider="deepgram", project="default", agent_id="win-agent", ttfb_ms=999.0,
-    ))
-    await gw.storage.log_request(RequestRecord(
-        id="new", timestamp=now, modality="stt", model_id="deepgram/nova-3",
-        provider="deepgram", project="default", agent_id="win-agent", ttfb_ms=100.0,
-    ))
+    await gw.storage.log_request(
+        RequestRecord(
+            id="old",
+            timestamp=now - 93600,
+            modality="stt",
+            model_id="deepgram/nova-3",
+            provider="deepgram",
+            project="default",
+            agent_id="win-agent",
+            ttfb_ms=999.0,
+        )
+    )
+    await gw.storage.log_request(
+        RequestRecord(
+            id="new",
+            timestamp=now,
+            modality="stt",
+            model_id="deepgram/nova-3",
+            provider="deepgram",
+            project="default",
+            agent_id="win-agent",
+            ttfb_ms=100.0,
+        )
+    )
     async with _client(gw) as c:
         data = (await c.get("/api/agents")).json()
     entry = next(x for x in data["agents"] if x["agent_id"] == "win-agent")
@@ -389,8 +455,12 @@ async def test_list_latency_stack_null_for_roster_only_worker(tmp_path, monkeypa
     gw = _gateway(tmp_path, monkeypatch)
     now = time.time()
     await _insert_worker(
-        gw, agent_id="idle-lat", agent_name="idle-lat", project="default",
-        status="idle", last_seen=now,
+        gw,
+        agent_id="idle-lat",
+        agent_name="idle-lat",
+        project="default",
+        status="idle",
+        last_seen=now,
     )
     async with _client(gw) as c:
         data = (await c.get("/api/agents")).json()
@@ -403,8 +473,12 @@ async def test_list_q_filter_covers_roster_only_workers(tmp_path, monkeypatch):
     now = time.time()
     for name in ("alpha", "beta"):
         await _insert_worker(
-            gw, agent_id=name, agent_name=name, project="default",
-            status="idle", last_seen=now,
+            gw,
+            agent_id=name,
+            agent_name=name,
+            project="default",
+            status="idle",
+            last_seen=now,
         )
     async with _client(gw) as c:
         data = (await c.get("/api/agents?q=alph")).json()

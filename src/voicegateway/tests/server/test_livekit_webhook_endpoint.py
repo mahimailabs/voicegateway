@@ -101,7 +101,9 @@ async def _send(gw: Gateway, event: WebhookEvent):
     return await _post(gw, body, _sign(body))
 
 
-def _room(sid: str = "RM_test", name: str = "call-1", created_ms: int = 1_800_000_000_000):
+def _room(
+    sid: str = "RM_test", name: str = "call-1", created_ms: int = 1_800_000_000_000
+):
     return lkm.Room(sid=sid, name=name, creation_time_ms=created_ms)
 
 
@@ -137,7 +139,9 @@ async def _calls(gw: Gateway) -> list[dict]:
 
 async def test_request_with_no_signature_is_rejected_and_writes_nothing(gateway):
     """No Authorization header at all: the public internet gets nothing."""
-    resp = await _post(gateway, _body(WebhookEvent(event="room_started", room=_room())), None)
+    resp = await _post(
+        gateway, _body(WebhookEvent(event="room_started", room=_room())), None
+    )
 
     assert resp.status_code == 401
     assert await _calls(gateway) == []
@@ -214,7 +218,9 @@ async def test_rejection_does_not_echo_the_body_or_the_reason(gateway):
     assert "hash" not in resp.text.lower()
 
 
-async def test_credentials_from_the_config_file_verify(tmp_path, monkeypatch, no_livekit_env):
+async def test_credentials_from_the_config_file_verify(
+    tmp_path, monkeypatch, no_livekit_env
+):
     """An operator who configured LiveKit in voicegw.yaml, not the env.
 
     ``VOICEGW_CONFIG`` is how the daemon publishes the config it was served
@@ -222,7 +228,8 @@ async def test_credentials_from_the_config_file_verify(tmp_path, monkeypatch, no
     """
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "webhook-yaml.db"))
     config = _write_config(
-        tmp_path, {"livekit": {"url": "wss://x", "api_key": _KEY, "api_secret": _SECRET}}
+        tmp_path,
+        {"livekit": {"url": "wss://x", "api_key": _KEY, "api_secret": _SECRET}},
     )
     monkeypatch.setenv("VOICEGW_CONFIG", config)
     gw = Gateway(config_path=config)

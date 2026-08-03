@@ -221,7 +221,11 @@ async def test_overview_rooms_grouped_and_cost_annotated(client, gateway, monkey
                 {"timestamp": now, "cost_usd": 0.01, "total_latency_ms": 100.0},
                 {"timestamp": now, "cost_usd": 0.02, "total_latency_ms": 300.0},
                 # A stale row outside the 24h window: the SQL `since` bound drops it.
-                {"timestamp": now - 200_000, "cost_usd": 5.0, "total_latency_ms": 900.0},
+                {
+                    "timestamp": now - 200_000,
+                    "cost_usd": 5.0,
+                    "total_latency_ms": 900.0,
+                },
             ]
         }.get(room, [])
         # Mirror the repository's `since` semantics so this test exercises that
