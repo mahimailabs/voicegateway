@@ -191,6 +191,18 @@ class NodeSample(SQLModel, table=True):
     sip_rtp_packets_recv: int | None = Field(default=None, sa_type=BigInteger)
     sip_rtp_packets_send: int | None = Field(default=None, sa_type=BigInteger)
 
+    # ---- kernel OOM kills ---------------------------------------------------
+    # VERIFIED on a live prom/node-exporter: node_vmstat_oom_kill reads 0 on a
+    # healthy box. Cumulative since boot, so only an INCREASE inside a window
+    # means the kernel killed something during the run.
+    #
+    # Gated separately from process restarts on purpose. A crash presents as a
+    # restart, so the restart gate covers crashes; but "no restart" does not
+    # prove "no OOM", because the kernel can kill a child or a sibling process
+    # without the scraped service ever restarting. Folding them together would
+    # let one clean signal vouch for a criterion it does not cover.
+    vmstat_oom_kill: int | None = Field(default=None, sa_type=BigInteger)
+
     # ---- Redis, the shared state every SIP node depends on ------------------
     # VERIFIED against a live oliver006/redis_exporter against redis:7, not
     # inferred: every name below was read off its exposition before wiring.

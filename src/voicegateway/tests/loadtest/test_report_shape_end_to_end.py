@@ -97,9 +97,13 @@ def test_the_gate_table_is_materially_smaller(exported) -> None:
     """
     payload = exported["payload"]
     tests = max(1, len(payload["tests"]))
-    # One establishment gate per test, node CPU and memory per measured node,
-    # file descriptors per measured node, and two fleet-wide exclusions.
-    assert len(payload["gates"]) <= tests * 6 + 2
+    # Per test: establishment, node CPU and memory per measured node, and file
+    # descriptors per measured node. Then a FIXED run-level tail that does not
+    # scale with steps: two headroom exclusions, two dependency criteria, one
+    # restart/OOM row, one staleness row and three return-to-baseline rows.
+    # The tail is the point of reporting those once per run rather than per
+    # step, so it is stated as a constant here.
+    assert len(payload["gates"]) <= tests * 6 + 9
 
 
 def test_every_unknown_names_an_attempt_or_a_scope_exclusion(exported) -> None:
@@ -124,7 +128,11 @@ def test_every_unknown_names_an_attempt_or_a_scope_exclusion(exported) -> None:
         # along with the two ways to resolve it. Omitting it would put the
         # report back where it started, silently missing a contracted line.
         unconfigured = "was not evaluated" in gate["detail"]
-        assert attempted or unconfigured or resource in excluded, gate
+        # A fourth kind, added with the lifecycle criteria: a criterion whose
+        # columns nothing in this run carried. Same honesty as the others, and
+        # the detail names the column that was missing rather than shrugging.
+        uncollected = "not measured" in gate["detail"]
+        assert attempted or unconfigured or uncollected or resource in excluded, gate
 
 
 def test_no_gate_grades_a_source_for_a_metric_it_does_not_report(exported) -> None:

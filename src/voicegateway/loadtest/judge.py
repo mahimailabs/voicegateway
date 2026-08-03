@@ -29,6 +29,7 @@ from typing import Any
 from voicegateway.livekit_diag import gates
 from voicegateway.livekit_diag.gates import GateResult
 from voicegateway.loadtest.aggregation import (
+    BASELINE_METRICS,
     FD_LIMIT_COLUMN,
     FD_USED_COLUMN,
     TestAggregate,
@@ -245,6 +246,9 @@ def judge_test(
         results.extend(gates.node_memory_gates([unmeasured]))
         target = node or subject
         results.extend(gates.headroom_gates([_fd_reading(target)]))
+        # The three lifecycle criteria are NOT emitted per test here. They are
+        # run-level facts, reported once by unevaluated_criteria_gates, which is
+        # what stops a seven-step run repeating the same absence seven times.
         return results
 
     # Filtered by what the SOURCE can publish, not by what this run produced.
@@ -254,7 +258,72 @@ def judge_test(
     results.extend(_graded(aggregate.memory_readings, gates.node_memory_gates))
     results.extend(_headroom_gates_for(aggregate))
     results.extend(_health_gates_for(aggregate))
+    results.extend(gates.process_lifecycle_gates(aggregate.lifecycle_readings))
+    results.extend(gates.resource_trend_gates(aggregate.trend_readings))
     return results
+
+
+#: The most a resource may end at, as a MULTIPLE of its idle baseline.
+#:
+#: An absolute ratio ceiling, not a percentage band, because that is what
+#: return_to_baseline_gates compares against: it computes post/baseline and
+#: fails above this. Reading it as "within 10%" and passing 0.10 means "must
+#: fall to a tenth of baseline", which fails a node that ended exactly where it
+#: started. That mistake was made here and it produced twenty-one FAIL rows on
+#: a real run, including 4 sockets against a baseline of 4.
+#:
+#: 1.10 is OURS, not contracted. The criterion says "close to baseline" and
+#: never quantifies it, and return_to_baseline_gates refuses to default a
+#: tolerance precisely so a number nobody agreed to cannot look like one that
+#: was agreed. This is the caller stating it out loud.
+BASELINE_TOLERANCE = 1.10
+
+
+def _run_baseline_gates(
+    aggregates: dict[str, TestAggregate | None],
+) -> list[GateResult]:
+    """Did the fleet give its resources back after the CALLS ended?
+
+    Once per run, and this is not tidying: per test it compared each step
+    against the step before it, so "baseline" for step four was step three under
+    load. The criterion is about idle before the run against settled after it.
+
+    So the BEFORE side is taken from the earliest test's aggregate and the AFTER
+    side from the latest, matched per node and metric. Anything with only one
+    side stays UNKNOWN, which is the honest reading: nobody established what
+    baseline was, so nothing can be shown to have returned to it.
+    """
+    ordered = [a for a in aggregates.values() if a is not None]
+    if not ordered:
+        return []
+    ordered.sort(key=lambda a: a.window.start_ms)
+    first, last = ordered[0], ordered[-1]
+    befores = {(c.node, c.metric): c for c in first.baseline_comparisons}
+    afters = {(c.node, c.metric): c for c in last.baseline_comparisons}
+    keys = sorted(set(befores) | set(afters))
+    if not keys:
+        return []
+    merged = []
+    for key in keys:
+        before, after = befores.get(key), afters.get(key)
+        node, metric = key
+        merged.append(
+            gates.BaselineComparison(
+                node=node,
+                metric=metric,
+                baseline=before.baseline if before else None,
+                post_settle=after.post_settle if after else None,
+                baseline_at_ms=before.baseline_at_ms if before else None,
+                post_settle_at_ms=after.post_settle_at_ms if after else None,
+                unmeasured_reason=(
+                    (before.unmeasured_reason if before else None)
+                    or (after.unmeasured_reason if after else None)
+                ),
+            )
+        )
+    return list(
+        gates.return_to_baseline_gates(merged, tolerance=BASELINE_TOLERANCE)
+    )
 
 
 def _health_gates_for(aggregate: TestAggregate) -> list[GateResult]:
@@ -422,7 +491,61 @@ def judge_run(
             }
         )
     )
+    # Same rule for the three lifecycle criteria: a contracted line that
+    # produced no row anywhere in the run is reported once, as unmeasured. This
+    # is the defect these gates exist to remove, and it would be quietly
+    # recreated by a run whose samples carried none of the needed columns.
+    out.extend(_run_baseline_gates(aggregates))
+    out.extend(unevaluated_criteria_gates({g.gate for g in out}))
     return out
+
+
+def unevaluated_criteria_gates(seen: set[str]) -> list[GateResult]:
+    """One fleet-level row per contracted criterion that produced nothing.
+
+    ``seen`` is the set of gate IDS already emitted for the run. A criterion
+    that produced even one row somewhere is not reported here: the rows it did
+    produce are the answer, including any UNKNOWN ones.
+
+    Once per RUN, not once per step, for the reason the dependency rows are:
+    "nothing carried the columns for this" is a fact about the deployment.
+    """
+    results: list[GateResult] = []
+    if gates.PROCESS_LIFECYCLE_GATE not in seen:
+        results.append(
+            gates.process_lifecycle_gate(
+                gates.LifecycleReading(node=gates.FLEET_SUBJECT)
+            )
+        )
+    if gates.RESOURCE_TREND_GATE not in seen:
+        results.append(
+            gates.resource_trend_gate(
+                gates.TrendReading(
+                    node=gates.FLEET_SUBJECT, metric="stale_resources"
+                )
+            )
+        )
+    if gates.RETURN_TO_BASELINE_GATE not in seen:
+        results.extend(
+            gates.return_to_baseline_gates(
+                [
+                    gates.BaselineComparison(
+                        node=gates.FLEET_SUBJECT,
+                        metric=metric,
+                        baseline=None,
+                        post_settle=None,
+                        unmeasured_reason=(
+                            "not measured: no sample outside the test window "
+                            "carried this resource, so no baseline was "
+                            "established and nothing shows it came back"
+                        ),
+                    )
+                    for metric in BASELINE_METRICS
+                ],
+                tolerance=BASELINE_TOLERANCE,
+            )
+        )
+    return results
 
 
 def unmeasurable_headroom_gates() -> list[GateResult]:

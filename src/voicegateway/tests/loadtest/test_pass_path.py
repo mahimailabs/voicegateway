@@ -203,10 +203,22 @@ def test_the_verdict_is_still_not_pass_and_here_is_why(acceptance) -> None:
     # health_endpoint are unconfigured on this fixture. Different reasons, same
     # honest status, and none of them is a pass.
     assert {g["subject"].split("/")[-1] for g in unknown} == {
+        # Unmeasurable by anything in the system.
         "rtp_ports",
         "network",
+        # Unconfigured on this fixture: no exporter, no health endpoint.
         "redis",
         "health_endpoint",
+        # Restarts and OOM: the fixture's samples carry no process start time
+        # and no OOM counter, so neither could be ruled out. Staleness IS
+        # evaluated here and passes.
+        "node-exporter",
+        # Return to baseline: this fixture records nothing outside the test
+        # window, so no baseline was established and nothing shows the
+        # resources came back.
+        "memory_used_bytes",
+        "filefd_allocated",
+        "sockstat_udp_inuse",
     }
     # File descriptors ARE measurable and pass here, which is what makes the
     # other two stand out as the gap rather than as more of the same.
@@ -428,6 +440,23 @@ def waived(tmp_path_factory):
                     "no health endpoint configured on this deployment, declared "
                     "before test day rather than left unevaluated"
                 ),
+                "process_lifecycle/sfu-1/node-exporter": (
+                    "no process start time or OOM counter in this scrape set, "
+                    "declared before test day"
+                ),
+                # Return to baseline, declared for the same reason: this
+                # fixture records nothing outside the test window, so no
+                # baseline was ever established to return to. Restarts and
+                # staleness ARE evaluated on this fixture and are not waived.
+                "return_to_baseline/fleet/memory_used_bytes": (
+                    "no idle samples outside the window, declared before test day"
+                ),
+                "return_to_baseline/fleet/filefd_allocated": (
+                    "no idle samples outside the window, declared before test day"
+                ),
+                "return_to_baseline/fleet/sockstat_udp_inuse": (
+                    "no idle samples outside the window, declared before test day"
+                ),
             }
         )
     )
@@ -443,7 +472,7 @@ def test_a_waiver_records_the_reason_rather_than_hiding_the_gate(waived) -> None
     """The checklist's requirement: waived in writing, never a silent pass."""
     payload = waived["payload"]
     waived_gates = [g for g in payload["gates"] if g["status"] == gates.WAIVED]
-    assert len(waived_gates) == 4
+    assert len(waived_gates) == 8
     for gate in waived_gates:
         # The property, rather than one phrase: a waiver carries a human reason
         # and that reason is visible in the rendered detail. A waiver a reviewer

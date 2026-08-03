@@ -148,6 +148,14 @@ def test_run_level_rows_carry_no_step() -> None:
         # wired is a fact about the deployment, not about step four of seven.
         "fleet/redis",
         "fleet/health_endpoint",
+        # The three lifecycle criteria, reported once per run for the same
+        # reason: "nothing carried the columns for this" is a fact about the
+        # deployment, not about step four of seven.
+        "fleet",
+        "fleet/stale_resources",
+        "fleet/memory_used_bytes",
+        "fleet/filefd_allocated",
+        "fleet/sockstat_udp_inuse",
     }
 
 

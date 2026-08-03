@@ -53,9 +53,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from voicegateway.livekit_diag import gates
 from voicegateway.livekit_diag.gates import (
     MIN_PERCENTILE_SAMPLES,
+    BaselineComparison,
     HeadroomReading,
     HealthSeriesReading,
+    LifecycleReading,
     NodeUtilisationReading,
+    TrendReading,
 )
 from voicegateway.repository.node_correlation_repository import (
     DEFAULT_WINDOW_PAD_MS,
@@ -114,6 +117,13 @@ class TestAggregate:
     # one per node per source. Ordered because the criterion is about a RUN of
     # consecutive failures, which a peak or an average cannot express.
     health_readings: list[HealthSeriesReading] = field(default_factory=list)
+    # Restarts, crashes and OOM kills per node per source.
+    lifecycle_readings: list[LifecycleReading] = field(default_factory=list)
+    # Resources that should be flat once the ramp is over.
+    trend_readings: list[TrendReading] = field(default_factory=list)
+    # Idle before against settled after, per node. Populated only when idle
+    # samples exist on BOTH sides; a missing side is an UNKNOWN, not a pass.
+    baseline_comparisons: list[BaselineComparison] = field(default_factory=list)
     # File-descriptor headroom per node, already in the shape the gate judges.
     # Carried here rather than rebuilt in the judge so the measurement lives in
     # one place and the judge stays a thing that only decides.
@@ -244,6 +254,142 @@ async def _memory_reading(
     )
 
 
+#: What a leak looks like per metric. Occupancy climbs; FREE memory falls, and
+#: reading that backwards would report a memory leak as healthy.
+TREND_METRICS: tuple[tuple[str, bool], ...] = (
+    ("sip_calls_active", True),
+    ("rooms", True),
+    ("participants", True),
+    ("memory_available_bytes", False),
+)
+
+#: What must come back after teardown. Deliberately not heap or goroutines,
+#: which the diagnostics probe already covers: these are the host-level
+#: resources a load test exhausts.
+#: Every one of these must be a metric where HIGHER IS WORSE, because
+#: return_to_baseline compares post/baseline against a ceiling. Free memory is
+#: the trap: it is higher-is-better, so comparing memory_available_bytes here
+#: reports a node that ENDED WITH MORE FREE MEMORY as having failed to return.
+#: Memory is therefore carried as USED, derived from the total/available pair.
+BASELINE_METRICS: tuple[str, ...] = (
+    "memory_used_bytes",
+    "filefd_allocated",
+    "sockstat_udp_inuse",
+)
+
+
+async def _lifecycle_reading(
+    db: AsyncSession, *, node: str, source: str, window: NodeWindow, limit: int
+) -> LifecycleReading:
+    """Process start times and OOM counter for one subject, in time order."""
+    rows = await list_samples(
+        db,
+        node=node,
+        source=source,
+        since_ms=window.start_ms,
+        until_ms=window.end_ms,
+        limit=limit,
+    )
+    return LifecycleReading(
+        node=node,
+        source=source,
+        start_times=tuple(row.process_start_time_seconds for row in rows),
+        oom_kills=tuple(row.vmstat_oom_kill for row in rows),
+    )
+
+
+async def _trend_readings(
+    db: AsyncSession, *, node: str, source: str, window: NodeWindow, limit: int
+) -> list[TrendReading]:
+    """One reading per trendable metric this subject actually carried."""
+    rows = await list_samples(
+        db,
+        node=node,
+        source=source,
+        since_ms=window.start_ms,
+        until_ms=window.end_ms,
+        limit=limit,
+    )
+    out: list[TrendReading] = []
+    for metric, rising_is_bad in TREND_METRICS:
+        values = tuple(getattr(row, metric) for row in rows)
+        if all(v is None for v in values):
+            continue
+        out.append(
+            TrendReading(
+                node=node,
+                source=source,
+                metric=metric,
+                values=values,
+                rising_is_bad=rising_is_bad,
+                window_ms=window.end_ms - window.start_ms,
+            )
+        )
+    return out
+
+
+async def _baseline_comparisons(
+    db: AsyncSession, *, node: str, source: str, window: NodeWindow, limit: int
+) -> list[BaselineComparison]:
+    """Idle before the test against settled after it, for one node.
+
+    Reads OUTSIDE the test window on purpose: the samples are all in one table,
+    so the report can look either side without a second collection pass.
+
+    A missing side yields an UNKNOWN comparison rather than being skipped. No
+    pre-run idle sample means nobody established what baseline WAS, and a run
+    that never measured its starting point cannot show it returned to it.
+    """
+    before = await list_samples(
+        db, node=node, source=source, until_ms=window.start_ms - 1, limit=limit
+    )
+    after = await list_samples(
+        db, node=node, source=source, since_ms=window.end_ms + 1, limit=limit
+    )
+    def _value(row, metric: str) -> float | None:
+        # Derived, because there is no memory_used_bytes column and the raw
+        # available figure runs the wrong way for this gate.
+        if metric == "memory_used_bytes":
+            total = row.memory_total_bytes
+            available = row.memory_available_bytes
+            if total is None or available is None:
+                return None
+            return float(total - available)
+        value = getattr(row, metric)
+        return None if value is None else float(value)
+
+    out: list[BaselineComparison] = []
+    for metric in BASELINE_METRICS:
+        pre = [r for r in before if _value(r, metric) is not None]
+        post = [r for r in after if _value(r, metric) is not None]
+        if not pre and not post:
+            continue
+        reason = None
+        if not pre:
+            reason = (
+                "not measured: no idle sample was recorded before the test, "
+                "so no baseline was ever established to return to"
+            )
+        elif not post:
+            reason = (
+                "not measured: no sample was recorded after the test window, "
+                "so nothing shows the resource came back"
+            )
+        out.append(
+            BaselineComparison(
+                node=node,
+                source=source,
+                metric=metric,
+                baseline=_value(pre[-1], metric) if pre else None,
+                post_settle=_value(post[-1], metric) if post else None,
+                baseline_at_ms=pre[-1].at_ms if pre else None,
+                post_settle_at_ms=post[-1].at_ms if post else None,
+                unmeasured_reason=reason,
+            )
+        )
+    return out
+
+
 async def _health_readings(
     db: AsyncSession, *, node: str, source: str, window: NodeWindow, limit: int
 ) -> list[HealthSeriesReading]:
@@ -368,6 +514,9 @@ async def aggregate_test_window(
     memory: list[NodeUtilisationReading] = []
     fds: list[HeadroomReading] = []
     health: list[HealthSeriesReading] = []
+    lifecycle: list[LifecycleReading] = []
+    trends: list[TrendReading] = []
+    baselines: list[BaselineComparison] = []
     for target in targets:
         cpu.append(
             await _cpu_reading(
@@ -389,6 +538,21 @@ async def aggregate_test_window(
                 db, node=target.node, source=target.source, window=window, limit=limit
             )
         )
+        lifecycle.append(
+            await _lifecycle_reading(
+                db, node=target.node, source=target.source, window=window, limit=limit
+            )
+        )
+        trends.extend(
+            await _trend_readings(
+                db, node=target.node, source=target.source, window=window, limit=limit
+            )
+        )
+        baselines.extend(
+            await _baseline_comparisons(
+                db, node=target.node, source=target.source, window=window, limit=limit
+            )
+        )
 
     return TestAggregate(
         window=window,
@@ -401,6 +565,9 @@ async def aggregate_test_window(
         memory_readings=memory,
         fd_readings=fds,
         health_readings=health,
+        lifecycle_readings=lifecycle,
+        trend_readings=trends,
+        baseline_comparisons=baselines,
     )
 
 

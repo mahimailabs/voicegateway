@@ -115,11 +115,13 @@ def test_the_html_and_the_json_agree_on_every_threshold(exported) -> None:
         if gate["gate"] not in gates.RATIO_GATES:
             assert gate["gate"] in gates.ALL_GATES, gate["gate"]
             assert str(int(threshold)) in exported["html"], gate
-            # And never as a percentage. Membership of RATIO_GATES is the rule;
-            # this asserts the rule was actually obeyed by the renderer, because
-            # a threshold of 3 printed as "300%" is the misstatement that set
-            # exists to prevent and the set alone cannot prove it did not happen.
-            assert _ratio_pct(threshold) not in exported["html"], gate
+            # And never as a percentage, which is the misstatement RATIO_GATES
+            # exists to prevent. Only checked for a non-zero threshold: the
+            # percent form of 0 is "0%", which collides with the stylesheet's
+            # own "width: 100%" and would fail on every report regardless of
+            # how the gate rendered.
+            if threshold:
+                assert _ratio_pct(threshold) not in exported["html"], gate
             continue
         assert _ratio_pct(threshold) in exported["html"], gate
 
