@@ -1354,3 +1354,55 @@ def test_the_report_renders_waived_distinctly_from_unknown():
     assert gates.WAIVED in run_report._VERDICT_MEANING
     assert "NOT a pass" in run_report._VERDICT_MEANING[gates.WAIVED]
     assert ".tag.waived" in run_report._CSS if hasattr(run_report, "_CSS") else True
+
+
+# ---------------------------------------------------------------------------
+# return_to_baseline: a ratio needs a denominator worth dividing by
+# ---------------------------------------------------------------------------
+
+
+def _settled_cmp(metric: str, baseline: float, post: float):
+    """A comparison whose post sample is well outside the settle window.
+
+    Named apart from the _cmp above rather than reusing it: that helper leaves
+    the timestamps unset, and these cases must reach the ratio arithmetic
+    instead of stopping at the settle-window guard.
+    """
+    return gates.BaselineComparison(
+        node="monitor-0",
+        metric=metric,
+        baseline=baseline,
+        post_settle=post,
+        baseline_at_ms=0,
+        post_settle_at_ms=gates.MIN_SETTLE_MS * 2,
+    )
+
+
+def test_a_tiny_baseline_is_unknown_not_a_failure() -> None:
+    """Observed: monitor-0 finished at 7 UDP sockets against an idle 3.
+
+    Reported FAIL at 2.33x on the box running the collector, which carried no
+    test load at all. Four sockets is not a leak; the denominator was too small
+    for a ratio to carry meaning, and at a baseline of 3 the smallest possible
+    movement already exceeds the 1.10x tolerance.
+    """
+    result = gates.return_to_baseline_gates(
+        [_settled_cmp("sockstat_udp_inuse", 3, 7)], tolerance=1.10
+    )[0]
+    assert result.status == gates.UNKNOWN
+    assert "below" in result.detail
+
+
+def test_a_real_denominator_still_fails_when_it_should() -> None:
+    """The guard must not become a way to pass a genuine leak."""
+    result = gates.return_to_baseline_gates(
+        [_settled_cmp("filefd_allocated", 4096, 40960)], tolerance=1.10
+    )[0]
+    assert result.status == gates.FAIL
+
+
+def test_a_real_denominator_still_passes_when_it_should() -> None:
+    result = gates.return_to_baseline_gates(
+        [_settled_cmp("filefd_allocated", 4096, 4100)], tolerance=1.10
+    )[0]
+    assert result.status == gates.PASS
