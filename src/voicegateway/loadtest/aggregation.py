@@ -61,6 +61,9 @@ from voicegateway.livekit_diag.gates import (
     NodeUtilisationReading,
     TrendReading,
 )
+from voicegateway.middleware.node_samples_worker_middleware import (
+    SOURCE_NODE_EXPORTER,
+)
 from voicegateway.repository.node_correlation_repository import (
     DEFAULT_WINDOW_PAD_MS,
     NodeWindow,
@@ -297,7 +300,31 @@ BASELINE_METRICS: tuple[str, ...] = (
 async def _lifecycle_reading(
     db: AsyncSession, *, node: str, source: str, window: NodeWindow, limit: int
 ) -> LifecycleReading:
-    """Process start times and OOM counter for one subject, in time order."""
+    """Process start times and OOM counter for one subject, in time order.
+
+    The two halves come from DIFFERENT sources on purpose.
+
+    ``process_start_time_seconds`` is per-process, so it must come from the
+    subject's own exporter: livekit-sip's start time is the only thing that says
+    whether livekit-sip restarted.
+
+    ``node_vmstat_oom_kill`` is a KERNEL counter for the whole box. Only
+    node_exporter publishes it, and livekit-sip and livekit-server never will,
+    because it is not theirs to report. Reading it from the subject's own rows
+    therefore left every livekit subject reporting "did not restart but carried
+    no node_vmstat_oom_kill, so an OOM kill could not be ruled out" forever, and
+    no scrape configuration could ever have fixed it.
+
+    That was wrong on its own terms as well as noisy. An OOM kill on the host is
+    a fact ABOUT THE HOST: if the kernel killed something while livekit-sip was
+    running there, that is evidence bearing on livekit-sip's run whether or not
+    livekit-sip was the victim, which is exactly why the gate keeps the two
+    signals separate instead of treating "no restart" as "no OOM".
+
+    So the OOM series is read from the node's node_exporter rows, for every
+    subject on that node. When the node has no node_exporter in the scrape set
+    the tuple stays empty and the gate reports it unmeasured, as before.
+    """
     rows = await list_samples(
         db,
         node=node,
@@ -306,11 +333,22 @@ async def _lifecycle_reading(
         until_ms=window.end_ms,
         limit=limit,
     )
+    if source == SOURCE_NODE_EXPORTER:
+        oom_rows = rows
+    else:
+        oom_rows = await list_samples(
+            db,
+            node=node,
+            source=SOURCE_NODE_EXPORTER,
+            since_ms=window.start_ms,
+            until_ms=window.end_ms,
+            limit=limit,
+        )
     return LifecycleReading(
         node=node,
         source=source,
         start_times=tuple(row.process_start_time_seconds for row in rows),
-        oom_kills=tuple(row.vmstat_oom_kill for row in rows),
+        oom_kills=tuple(row.vmstat_oom_kill for row in oom_rows),
     )
 
 
@@ -362,6 +400,7 @@ async def _baseline_comparisons(
     after = await list_samples(
         db, node=node, source=source, since_ms=window.end_ms + 1, limit=limit
     )
+
     def _value(row, metric: str) -> float | None:
         # Derived, because there is no memory_used_bytes column and the raw
         # available figure runs the wrong way for this gate.
@@ -467,9 +506,7 @@ async def _rtp_port_reading(
     if not used and not totals:
         return None
     if not used or not totals:
-        missing = (
-            MEDIA_PORTS_TOTAL_COLUMN if not totals else MEDIA_PORTS_USED_COLUMN
-        )
+        missing = MEDIA_PORTS_TOTAL_COLUMN if not totals else MEDIA_PORTS_USED_COLUMN
         return HeadroomReading(
             node=node,
             source=source,
@@ -515,9 +552,7 @@ async def _allowance_reading(
     )
     deltas: dict[str, float | None] = {}
     for column, field_name in ALLOWANCE_COLUMNS:
-        seen = [
-            float(v) for row in rows if (v := getattr(row, column)) is not None
-        ]
+        seen = [float(v) for row in rows if (v := getattr(row, column)) is not None]
         deltas[field_name] = seen[-1] - seen[0] if len(seen) >= 2 else None
     if all(v is None for v in deltas.values()):
         return None
