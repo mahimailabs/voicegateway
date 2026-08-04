@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from voicegateway.core.config import GatewayConfig
-from voicegateway.core.database import Database
+from voicegateway.core.database import Database, DatabaseAheadOfCode
 from voicegateway.models.request_model import RequestRecord
 from voicegateway.services.billing_service import BillingService
 from voicegateway.services.cost_service import CostService
@@ -49,7 +49,16 @@ class StorageService:
         async with self._init_lock:
             if self._initialized:  # double-checked after lock
                 return
-            await self._conn.run_migrations()
+            try:
+                await self._conn.run_migrations()
+            except DatabaseAheadOfCode as exc:
+                # A newer build already migrated this file, so its schema is a
+                # superset of ours: every table and column we write to exists,
+                # and only migrating further is impossible. Marking initialized
+                # anyway keeps writes working and, more importantly, stops the
+                # attempt from repeating on every request-log write for the life
+                # of the process. Warn once, here, instead of per write.
+                _logger.warning("%s Writing anyway; the schema is a superset.", exc)
             self._initialized = True
 
     async def aclose(self) -> None:

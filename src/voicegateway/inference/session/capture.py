@@ -308,6 +308,10 @@ class MetricCapture:
         self._channel = channel
         self._dispatch_name = dispatch_name
         self._pending: set[asyncio.Task[None]] = set()
+        # Exception types already reported in full. A sink that cannot write
+        # fails on every metric event, and one traceback per event buries the
+        # host agent's own console; see _on_done.
+        self._traced_sink_failures: set[type[BaseException]] = set()
         # Set at bind(): the session, so a session-level metric can resolve the
         # active Agent's component identity, and the modalities bound
         # per-component, so the session-level handler skips them (no double count).
@@ -565,12 +569,27 @@ class MetricCapture:
         task.add_done_callback(self._on_done)
 
     def _on_done(self, task: asyncio.Task[None]) -> None:
+        """Report a failed sink write: in full once per kind, then quietly.
+
+        Telemetry is never load-bearing, so a sink that cannot write must stay
+        visible without drowning the host. A storage backend that fails does so
+        for every metric event, and an alembic traceback runs a couple of
+        hundred lines. First occurrence of each exception type gets the full
+        trace at WARNING; repeats get one DEBUG line, still countable in a log
+        search. Mirrors the local heartbeat's suppression in fleet.worker.
+        """
         self._pending.discard(task)
         if task.cancelled():
             return
         exc = task.exception()
-        if exc is not None:
-            logger.warning("attach: sink write failed", exc_info=exc)
+        if exc is None:
+            return
+        kind = type(exc)
+        if kind in self._traced_sink_failures:
+            logger.debug("attach: sink write failed (suppressed trace): %s", exc)
+            return
+        self._traced_sink_failures.add(kind)
+        logger.warning("attach: sink write failed", exc_info=exc)
 
     async def drain(self) -> None:
         """Await any in-flight sink writes scheduled by the bound handlers."""
