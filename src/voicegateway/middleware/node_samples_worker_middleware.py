@@ -831,9 +831,7 @@ def parse_targets(raw: str, *, where: str = TARGETS_ENV_VAR) -> list[ScrapeTarge
         # been parsed out yet, so the warning about it is a leak of its own.
         shown = redact_url(item)
         if not sep or not colon or not url.strip() or not node.strip():
-            logger.warning(
-                "%s: ignoring %r; expected 'source:name=url'", where, shown
-            )
+            logger.warning("%s: ignoring %r; expected 'source:name=url'", where, shown)
             continue
         if source not in SOURCES:
             logger.warning(
