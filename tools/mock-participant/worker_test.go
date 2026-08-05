@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -371,6 +373,220 @@ func TestAnUnparseableFrameDoesNotKillTheWorker(t *testing.T) {
 	}
 	runWorker(t, w)
 	waitFor(t, func() bool { mu.Lock(); defer mu.Unlock(); return seen })
+}
+
+// jobUpdates returns every UpdateJobStatus the worker has sent.
+func jobUpdates(f *fakeServer) []*livekit.UpdateJobStatus {
+	var out []*livekit.UpdateJobStatus
+	for _, m := range f.messages() {
+		if u := m.GetUpdateJob(); u != nil {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+func TestAFinishedJobIsReportedEndedToTheServer(t *testing.T) {
+	// Not cosmetic. livekit-server registers a psrpc terminate topic per assigned
+	// job and releases it only on an UpdateJobStatus carrying a terminal status,
+	// or when the worker disconnects entirely. A load-test worker holds ONE
+	// connection for the whole run, so without this message every job it has ever
+	// been given stays allocated on the node: measured at ~3.3 leaked goroutines
+	// per job, 37k to 124k over a 24 hour soak.
+	f := newFakeServer(t, sendJob("loadtest"))
+	w := newWorker(f)
+	release := make(chan struct{})
+	w.OnAssignment = func(_ context.Context, _ Assignment) error {
+		<-release
+		return nil
+	}
+	runWorker(t, w)
+
+	waitFor(t, func() bool { return w.ActiveJobs() == 1 })
+	if got := jobUpdates(f); len(got) != 0 {
+		t.Fatalf("reported the job ended while it was still running: %+v", got)
+	}
+
+	close(release)
+	waitFor(t, func() bool { return len(jobUpdates(f)) == 1 })
+
+	got := jobUpdates(f)[0]
+	if got.GetJobId() != "JOB_1" {
+		t.Errorf("job id = %q, want JOB_1", got.GetJobId())
+	}
+	if got.GetStatus() != livekit.JobStatus_JS_SUCCESS {
+		t.Errorf("status = %v, want JS_SUCCESS", got.GetStatus())
+	}
+	if got.GetError() != "" {
+		t.Errorf("error = %q, want empty on a clean end", got.GetError())
+	}
+}
+
+func TestAFailedJobIsAlsoReportedEnded(t *testing.T) {
+	// A job that errored leaks exactly as much server-side state as one that
+	// hung, so the report goes out on the failure path too. The server treats
+	// SUCCESS and FAILED identically for cleanup: what matters is that the
+	// status is terminal.
+	f := newFakeServer(t, sendJob("loadtest"))
+	w := newWorker(f)
+	w.OnAssignment = func(_ context.Context, _ Assignment) error {
+		return errors.New("join refused")
+	}
+	runWorker(t, w)
+	waitFor(t, func() bool { return len(jobUpdates(f)) == 1 })
+
+	got := jobUpdates(f)[0]
+	if got.GetStatus() != livekit.JobStatus_JS_FAILED {
+		t.Errorf("status = %v, want JS_FAILED", got.GetStatus())
+	}
+	if !strings.Contains(got.GetError(), "join refused") {
+		t.Errorf("error = %q, want it to carry the reason", got.GetError())
+	}
+}
+
+func TestAJobTerminatedByTheServerIsStillReportedEnded(t *testing.T) {
+	// The server sending Termination does NOT release the job's terminate topic
+	// on its own; it waits for the worker's terminal status. Cancelling the job
+	// without reporting would fix this worker's load accounting and leave the
+	// leak exactly where it was.
+	f := newFakeServer(t, func(conn *websocket.Conn) {
+		sendJob("loadtest")(conn)
+		term, _ := proto.Marshal(&livekit.ServerMessage{
+			Message: &livekit.ServerMessage_Termination{
+				Termination: &livekit.JobTermination{JobId: "JOB_1"},
+			},
+		})
+		_ = conn.WriteMessage(websocket.BinaryMessage, term)
+	})
+	w := newWorker(f)
+	w.OnAssignment = func(ctx context.Context, _ Assignment) error {
+		<-ctx.Done() // what streamTone does: run until the job's context ends
+		return nil
+	}
+	runWorker(t, w)
+
+	waitFor(t, func() bool { return len(jobUpdates(f)) == 1 })
+	if got := jobUpdates(f)[0]; got.GetStatus() != livekit.JobStatus_JS_SUCCESS {
+		t.Errorf("status = %v, want JS_SUCCESS after a server termination", got.GetStatus())
+	}
+	waitFor(t, func() bool { return w.ActiveJobs() == 0 })
+}
+
+func TestTerminationCancelsOnlyTheJobItNames(t *testing.T) {
+	// The cancel map is keyed by job id for a reason. A termination that ended
+	// every in-flight job would drop live calls belonging to other callers, and
+	// on a load-test host that is most of the run. This is the guard on the
+	// keying, which nothing else covers: the other tests all run one job.
+	conns := make(chan *websocket.Conn, 1)
+	f := newFakeServer(t, func(conn *websocket.Conn) {
+		for _, id := range []string{"JOB_A", "JOB_B"} {
+			job := &livekit.Job{Id: id, Room: &livekit.Room{Name: "loadtest"}}
+			assign, _ := proto.Marshal(&livekit.ServerMessage{
+				Message: &livekit.ServerMessage_Assignment{
+					Assignment: &livekit.JobAssignment{Job: job, Token: "t"},
+				},
+			})
+			_ = conn.WriteMessage(websocket.BinaryMessage, assign)
+		}
+		conns <- conn
+	})
+	w := newWorker(f)
+	var mu sync.Mutex
+	ended := map[string]bool{}
+	w.OnAssignment = func(ctx context.Context, a Assignment) error {
+		<-ctx.Done()
+		mu.Lock()
+		defer mu.Unlock()
+		ended[a.JobID] = true
+		return nil
+	}
+	runWorker(t, w)
+
+	// Terminate from the test rather than from the server callback, so the
+	// message provably lands after both jobs are in flight. Sleeping for it
+	// instead would make this pass on a fast machine and flake on a loaded one.
+	waitFor(t, func() bool { return w.ActiveJobs() == 2 })
+	conn := <-conns
+	term, _ := proto.Marshal(&livekit.ServerMessage{
+		Message: &livekit.ServerMessage_Termination{
+			Termination: &livekit.JobTermination{JobId: "JOB_A"},
+		},
+	})
+	if err := conn.WriteMessage(websocket.BinaryMessage, term); err != nil {
+		t.Fatalf("write termination: %v", err)
+	}
+
+	// Wait on the end state the deferred cleanup produces, NOT on the marker the
+	// job sets before returning. `ended[JOB_A]` is written inside OnAssignment,
+	// so it goes true a moment BEFORE the status report is sent and before
+	// activeJobs is decremented. Waiting on it and then asserting either of
+	// those races both.
+	waitFor(t, func() bool { return w.ActiveJobs() == 1 && len(jobUpdates(f)) == 1 })
+
+	mu.Lock()
+	endedB := ended["JOB_B"]
+	mu.Unlock()
+	if endedB {
+		t.Error("terminating JOB_A also ended JOB_B")
+	}
+	if got := jobUpdates(f)[0]; got.GetJobId() != "JOB_A" {
+		t.Errorf("reported job %q ended, want JOB_A", got.GetJobId())
+	}
+
+	// JOB_B's cancel must still be registered and must still work. This also
+	// closes the remaining hole above: had the first termination ended both
+	// jobs, two updates would already exist by now, so the wait could only have
+	// passed by catching a transient one-update state.
+	term2, _ := proto.Marshal(&livekit.ServerMessage{
+		Message: &livekit.ServerMessage_Termination{
+			Termination: &livekit.JobTermination{JobId: "JOB_B"},
+		},
+	})
+	if err := conn.WriteMessage(websocket.BinaryMessage, term2); err != nil {
+		t.Fatalf("write second termination: %v", err)
+	}
+	waitFor(t, func() bool { return w.ActiveJobs() == 0 && len(jobUpdates(f)) == 2 })
+	if got := jobUpdates(f)[1]; got.GetJobId() != "JOB_B" {
+		t.Errorf("second update was for %q, want JOB_B", got.GetJobId())
+	}
+}
+
+func TestEveryJobIsReportedEndedExactlyOnce(t *testing.T) {
+	// The leak is per job, so one missed report per N jobs is still a leak that
+	// grows with the length of the run. Reporting twice would be its own bug:
+	// the second arrives after the server has forgotten the job.
+	const jobs = 25
+	f := newFakeServer(t, func(conn *websocket.Conn) {
+		for i := range jobs {
+			job := &livekit.Job{
+				Id:   fmt.Sprintf("JOB_%d", i),
+				Type: livekit.JobType_JT_ROOM,
+				Room: &livekit.Room{Name: "loadtest"},
+			}
+			assign, _ := proto.Marshal(&livekit.ServerMessage{
+				Message: &livekit.ServerMessage_Assignment{
+					Assignment: &livekit.JobAssignment{Job: job, Token: "t"},
+				},
+			})
+			_ = conn.WriteMessage(websocket.BinaryMessage, assign)
+		}
+	})
+	w := newWorker(f)
+	w.OnAssignment = func(_ context.Context, _ Assignment) error { return nil }
+	runWorker(t, w)
+
+	waitFor(t, func() bool { return len(jobUpdates(f)) >= jobs })
+
+	seen := map[string]int{}
+	for _, u := range jobUpdates(f) {
+		seen[u.GetJobId()]++
+	}
+	for i := range jobs {
+		id := fmt.Sprintf("JOB_%d", i)
+		if seen[id] != 1 {
+			t.Errorf("job %s reported ended %d times, want exactly 1", id, seen[id])
+		}
+	}
 }
 
 func TestRunBeforeConnectIsAnErrorNotAPanic(t *testing.T) {
