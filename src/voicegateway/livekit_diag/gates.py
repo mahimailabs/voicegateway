@@ -985,17 +985,22 @@ def two_way_media_gate(
     """
     with_in = _as_count(answered_with_inbound)
     without_in = _as_count(answered_without_inbound)
-    if with_in is None or without_in is None:
+    # Negative counts are guarded for the same reason establishment_gate guards
+    # its own: they do not describe a run. Without this a stray -1 grades as a
+    # confident FAIL reporting an impossible number of silent calls, and a
+    # nonsense verdict is worse than an honest UNKNOWN.
+    if with_in is None or without_in is None or with_in < 0 or without_in < 0:
         return GateResult(
             gate=TWO_WAY_MEDIA_GATE,
             status=UNKNOWN,
             subject=subject,
             detail=(
                 "per-call media was not measured: the run carried no readable "
-                "call records, so whether each answered call received audio is "
-                "unknown. Run totals cannot substitute, because they average a "
-                "silent call against a loud one. Collect calls.jsonl from the "
-                "generator to answer it"
+                "call records, or counts that cannot describe a run, so "
+                "whether each answered call received audio is unknown. Run "
+                "totals cannot substitute, because they average a silent call "
+                "against a loud one. Collect calls.jsonl from the generator to "
+                "answer it"
             ),
             threshold=0,
         )
@@ -2347,6 +2352,7 @@ __all__ = [
     "BASELINE_GOROUTINES",
     "BASELINE_HEAP",
     "ESTABLISHMENT_GATE",
+    "TWO_WAY_MEDIA_GATE",
     "FLEET_SUBJECT",
     "FAIL",
     "HEADROOM_FILE_DESCRIPTORS",
@@ -2403,6 +2409,7 @@ __all__ = [
     "NodeUtilisationReading",
     "agents_gate",
     "establishment_gate",
+    "two_way_media_gate",
     "evaluate_checks",
     "exit_code",
     "headroom_gates",

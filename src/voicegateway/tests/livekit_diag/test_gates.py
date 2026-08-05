@@ -1456,6 +1456,33 @@ class TestTwoWayMediaGate:
         )
         assert result.status == gates.UNKNOWN
 
+    def test_a_negative_count_is_unknown_not_a_confident_fail(self) -> None:
+        # A count below zero does not describe a run. Grading it would report
+        # an impossible number of silent calls with a straight face, which is
+        # worse than admitting the input was not a measurement.
+        result = gates.two_way_media_gate(
+            answered_with_inbound=10, answered_without_inbound=-1
+        )
+        assert result.status == gates.UNKNOWN
+        result = gates.two_way_media_gate(
+            answered_with_inbound=-5, answered_without_inbound=0
+        )
+        assert result.status == gates.UNKNOWN
+
+    def test_a_flag_is_not_a_count(self) -> None:
+        # bool is an int subclass in Python, so True would otherwise arrive as
+        # a count of 1 and grade a run off a flag.
+        result = gates.two_way_media_gate(
+            answered_with_inbound=True, answered_without_inbound=False
+        )
+        assert result.status == gates.UNKNOWN
+
+    def test_exported(self) -> None:
+        # Star imports must expose it like every other gate, or a caller
+        # reaching for it by the module's own advertised surface finds nothing.
+        assert "TWO_WAY_MEDIA_GATE" in gates.__all__
+        assert "two_way_media_gate" in gates.__all__
+
     def test_registered_and_not_a_ratio(self) -> None:
         # The value is a count of calls. Rendering 12198 as "1219800%" is the
         # exact misstatement RATIO_GATES exists to prevent.

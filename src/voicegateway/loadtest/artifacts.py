@@ -704,7 +704,10 @@ def _read_call_records(path: Path) -> CallRecords:
         return CallRecords(status="absent")
     try:
         lines = [ln for ln in path.read_text().splitlines() if ln.strip()]
-    except OSError:
+    except (OSError, UnicodeError):
+        # UnicodeDecodeError is a ValueError, NOT an OSError, so catching only
+        # the latter let a non-UTF-8 file abort the whole import from a surface
+        # this function's own docstring promises never raises.
         return CallRecords(status="unreadable")
 
     count = 0

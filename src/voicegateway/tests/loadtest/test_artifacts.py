@@ -744,6 +744,27 @@ class TestCallRecordMedia:
         assert parsed.call_records_count == 1
         assert parsed.calls_answered_without_inbound is None
 
+    def test_a_non_utf8_file_is_unreadable_not_an_import_failure(
+        self, tmp_path: Path
+    ) -> None:
+        # UnicodeDecodeError is a ValueError, not an OSError. Catching only the
+        # latter let a mis-encoded file abort the whole import from a surface
+        # that is meant to be optional enrichment.
+        (tmp_path / "calls.jsonl").write_bytes(b"\xff\xfe not valid utf-8\n")
+        (tmp_path / "summary.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "gossipper_summary_v1",
+                    "total_calls": 1,
+                    "success_calls": 1,
+                    "failed_calls": 0,
+                }
+            )
+        )
+        parsed = art.parse_test_directory(tmp_path)
+        assert parsed.call_records_status == "unreadable"
+        assert parsed.calls_answered_without_inbound is None
+
     def test_absent_records_are_unmeasured_not_clean(self, tmp_path: Path) -> None:
         (tmp_path / "summary.json").write_text(
             json.dumps(
