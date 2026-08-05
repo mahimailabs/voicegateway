@@ -1406,3 +1406,85 @@ def test_a_real_denominator_still_passes_when_it_should() -> None:
         [_settled_cmp("filefd_allocated", 4096, 4100)], tolerance=1.10
     )[0]
     assert result.status == gates.PASS
+
+
+class TestTwoWayMediaGate:
+    """A call that answered and carried no audio is a failure, not a success."""
+
+    def test_all_calls_received_audio_passes(self) -> None:
+        result = gates.two_way_media_gate(
+            answered_with_inbound=500, answered_without_inbound=0
+        )
+        assert result.status == gates.PASS
+        assert result.value == 0
+        assert "500" in result.detail
+
+    def test_one_silent_call_fails(self) -> None:
+        # Zero is the bar, not a percentage. One silent call is one caller who
+        # heard nothing, and there is no budget for that anywhere in this
+        # project's definition of a successful call.
+        result = gates.two_way_media_gate(
+            answered_with_inbound=999, answered_without_inbound=1
+        )
+        assert result.status == gates.FAIL
+        assert result.value == 1
+
+    def test_reproduces_the_24_hour_soak(self) -> None:
+        # The run this gate was written for: 100% establishment, zero failed
+        # calls, and 12,198 of 28,804 answered calls that received nothing.
+        # Every other gate passed it on media.
+        result = gates.two_way_media_gate(
+            answered_with_inbound=16606, answered_without_inbound=12198
+        )
+        assert result.status == gates.FAIL
+        assert "42.3%" in result.detail
+
+    def test_unmeasured_is_unknown_never_pass(self) -> None:
+        # The blind spot this gate closes must not reopen as a silent PASS when
+        # the per-call records are missing.
+        for with_in, without_in in ((None, None), (5, None), (None, 5)):
+            result = gates.two_way_media_gate(
+                answered_with_inbound=with_in, answered_without_inbound=without_in
+            )
+            assert result.status == gates.UNKNOWN, (with_in, without_in)
+
+    def test_no_answered_calls_is_unknown_not_pass(self) -> None:
+        # Zero silent calls out of zero calls is not a demonstration of
+        # anything. This is the same trap the establishment gate guards.
+        result = gates.two_way_media_gate(
+            answered_with_inbound=0, answered_without_inbound=0
+        )
+        assert result.status == gates.UNKNOWN
+
+    def test_a_negative_count_is_unknown_not_a_confident_fail(self) -> None:
+        # A count below zero does not describe a run. Grading it would report
+        # an impossible number of silent calls with a straight face, which is
+        # worse than admitting the input was not a measurement.
+        result = gates.two_way_media_gate(
+            answered_with_inbound=10, answered_without_inbound=-1
+        )
+        assert result.status == gates.UNKNOWN
+        result = gates.two_way_media_gate(
+            answered_with_inbound=-5, answered_without_inbound=0
+        )
+        assert result.status == gates.UNKNOWN
+
+    def test_a_flag_is_not_a_count(self) -> None:
+        # bool is an int subclass in Python, so True would otherwise arrive as
+        # a count of 1 and grade a run off a flag.
+        result = gates.two_way_media_gate(
+            answered_with_inbound=True, answered_without_inbound=False
+        )
+        assert result.status == gates.UNKNOWN
+
+    def test_exported(self) -> None:
+        # Star imports must expose it like every other gate, or a caller
+        # reaching for it by the module's own advertised surface finds nothing.
+        assert "TWO_WAY_MEDIA_GATE" in gates.__all__
+        assert "two_way_media_gate" in gates.__all__
+
+    def test_registered_and_not_a_ratio(self) -> None:
+        # The value is a count of calls. Rendering 12198 as "1219800%" is the
+        # exact misstatement RATIO_GATES exists to prevent.
+        assert gates.TWO_WAY_MEDIA_GATE in gates.ALL_GATES
+        assert gates.TWO_WAY_MEDIA_GATE not in gates.RATIO_GATES

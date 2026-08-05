@@ -41,3 +41,18 @@ the check never ran rather than that the ramp kept climbing. `plan.json` beside
 this file is the operator declaring what each step asked for, and it is passed
 with `--plan`. It is a declaration, not a measurement: the peak concurrency each
 step REACHED still comes from the stat file.
+
+## calls.jsonl
+
+Added when two-way media became its own gate. Establishment and media are
+separate criteria: a call can connect perfectly and then carry no audio, so a
+fixture that asserts the happy path has to demonstrate the audio came back and
+not only that the calls connected. Without these records the gate reads UNKNOWN,
+and unmeasured is not a pass.
+
+One record per call, in the shape `capture-01` carries. Every established call
+receives 14,997 of the 15,000 packets it sent; the three-packet shortfall
+matches the real capture, because a lossless call is rarer than a counter that
+forgot to decrement. Failed calls carry zeroes both ways, which is what keeps
+them out of the silent-call count: they never answered, so the establishment
+gate already owns them.

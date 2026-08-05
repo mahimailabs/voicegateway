@@ -177,7 +177,7 @@ def test_the_recorded_schema_matches_the_capture() -> None:
         if line.strip()
     ]
     assert records
-    doc = artifacts._count_call_records.__doc__ or ""
+    doc = artifacts._read_call_records.__doc__ or ""
     for record in records:
         assert record["schema_version"] == "gossipper_call_record_v1"
         for key in ("call_id", "call_number", "success", "duration_ms", "error"):

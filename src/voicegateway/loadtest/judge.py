@@ -260,7 +260,18 @@ def judge_test(
             succeeded=test.get("succeeded_calls"),
             threshold=gates.MIN_ESTABLISHMENT_RATIO,
             subject=subject,
-        )
+        ),
+        # Establishment and two-way media are SEPARATE criteria and both are
+        # emitted for every test. A call that answered and then carried no audio
+        # passes the first and fails the second, and a run reporting only the
+        # first calls that success. That is not hypothetical: a 24 hour run
+        # scored 100% establishment with zero failures while 42% of its calls
+        # received nothing.
+        gates.two_way_media_gate(
+            answered_with_inbound=test.get("calls_answered_with_inbound"),
+            answered_without_inbound=test.get("calls_answered_without_inbound"),
+            subject=subject,
+        ),
     ]
 
     if aggregate is None:

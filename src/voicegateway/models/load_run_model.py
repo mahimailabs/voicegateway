@@ -140,4 +140,12 @@ class LoadRunTest(SQLModel, table=True):
     rtp_packets_sent: int | None = Field(default=None, sa_type=BigInteger)
     rtp_packets_received: int | None = Field(default=None, sa_type=BigInteger)
 
+    # How many answered calls received audio back, and how many received none.
+    # PER-CALL counts, which is the whole point: the RTP totals above cannot
+    # distinguish a test where every call carried audio from one where half
+    # carried none and half carried double. NULL means the per-call records
+    # were absent or of an unmapped schema, and is never read as zero.
+    calls_answered_with_inbound: int | None = None
+    calls_answered_without_inbound: int | None = None
+
     created_at_ms: int = Field(sa_type=BigInteger)

@@ -90,6 +90,8 @@ class LoadRunTestInput:
     node_samples_in_window: int | None = None
     rtp_packets_sent: int | None = None
     rtp_packets_received: int | None = None
+    calls_answered_with_inbound: int | None = None
+    calls_answered_without_inbound: int | None = None
 
 
 @dataclass(frozen=True)
@@ -149,6 +151,8 @@ class LoadRunTestRow:
     node_samples_in_window: int | None
     rtp_packets_sent: int | None
     rtp_packets_received: int | None
+    calls_answered_with_inbound: int | None
+    calls_answered_without_inbound: int | None
     created_at_ms: int
 
     @property
@@ -222,6 +226,8 @@ _TEST_FIELDS = (
     "node_samples_in_window",
     "rtp_packets_sent",
     "rtp_packets_received",
+    "calls_answered_with_inbound",
+    "calls_answered_without_inbound",
     "created_at_ms",
 )
 

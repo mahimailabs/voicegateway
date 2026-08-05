@@ -2051,6 +2051,11 @@ PROFILE_GROUPS: dict[str, tuple[str, ...]] = {
     ),
     "Call handling": (
         gates.ESTABLISHMENT_GATE,
+        # Next to establishment deliberately. The two are a pair and reading
+        # either alone misstates the run: a call can establish perfectly and
+        # then carry no audio, which is a failure this group must show beside
+        # the success it would otherwise be counted as.
+        gates.TWO_WAY_MEDIA_GATE,
         gates.SUSTAINED_HEALTH_GATE,
     ),
 }
@@ -2149,6 +2154,12 @@ _PROFILE_MEASUREMENTS: dict[str, tuple[str, str]] = {
         "Calls established",
         "The share of call attempts that reached an established call, counted "
         "from the generator's own records over one network path.",
+    ),
+    gates.TWO_WAY_MEDIA_GATE: (
+        "Answered calls with no audio back",
+        "How many calls answered, sent audio, and received none. A count of "
+        "calls, not a packet ratio: run totals average a silent call against a "
+        "loud one and report the pair as merely degraded.",
     ),
     gates.SUSTAINED_HEALTH_GATE: (
         "Consecutive failed health samples",
@@ -2252,6 +2263,9 @@ _GLANCE_DIRECTION: dict[str, str] = {
     gates.PROCESS_LIFECYCLE_GATE: _GLANCE_CEILING,
     gates.RETURN_TO_BASELINE_GATE: _GLANCE_CEILING,
     gates.SUSTAINED_HEALTH_GATE: _GLANCE_CEILING,
+    # A ceiling whose bar is zero. Lower is better and anything above the bar
+    # is a caller who heard silence.
+    gates.TWO_WAY_MEDIA_GATE: _GLANCE_CEILING,
 }
 
 #: The order the glance table reads in: what an operator decides on, worst
@@ -2264,6 +2278,9 @@ _GLANCE_DIRECTION: dict[str, str] = {
 #: reasoning covers :data:`PROFILE_UNGROUPED_GROUP` in the detail section.
 _GLANCE_ORDER: tuple[str, ...] = (
     gates.ESTABLISHMENT_GATE,
+    # Second, directly under establishment. A reader who sees 100% established
+    # and stops there has been misled unless this line is the next one.
+    gates.TWO_WAY_MEDIA_GATE,
     gates.NODE_CPU_GATE,
     gates.NODE_MEMORY_GATE,
     f"{gates.HEADROOM_GATE}/{gates.HEADROOM_RTP_PORTS}",
@@ -2282,6 +2299,7 @@ _GLANCE_ORDER: tuple[str, ...] = (
 #: the sentence explaining it is one line below.
 _GLANCE_NAMES: dict[str, str] = {
     gates.ESTABLISHMENT_GATE: "Calls established",
+    gates.TWO_WAY_MEDIA_GATE: "Answered calls, no audio",
     gates.NODE_CPU_GATE: "Peak CPU, worst node",
     gates.NODE_MEMORY_GATE: "Peak memory, worst node",
     f"{gates.HEADROOM_GATE}/{gates.HEADROOM_RTP_PORTS}": "RTP media ports free",

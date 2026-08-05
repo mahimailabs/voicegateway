@@ -571,6 +571,8 @@ def build_plan(
             failed_cancelled=p.failures_by_cause.get("cancelled"),
             rtp_packets_sent=p.rtp_packets_sent,
             rtp_packets_received=p.rtp_packets_received,
+            calls_answered_with_inbound=p.calls_answered_with_inbound,
+            calls_answered_without_inbound=p.calls_answered_without_inbound,
             # What the step ASKED for is not in any artifact: it lives in the
             # generator's scenario file. It is None unless the operator declared
             # it, and a declaration is kept apart from a measurement: the peak

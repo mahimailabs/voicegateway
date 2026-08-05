@@ -52,8 +52,12 @@ The generator's own ``success_ratio`` IS parsed, but only as
 caller can cross-check it against the ratio the counts imply and notice an import
 that misread one of them.
 
-``calls.jsonl`` is optional enrichment. Its per-record schema is documented
-nowhere, so no field mapping is applied to it and its absence is never an error.
+``calls.jsonl`` is optional enrichment and its absence is never an error. Its
+per-record schema was recovered by capturing a real run and is now mapped, but
+only far enough to answer one question the aggregates cannot: how many calls
+answered, sent audio, and got NONE back. A run total of packets received hides
+that completely, because half the calls carrying full audio and half carrying
+none averages to a ratio that looks merely degraded.
 """
 
 from __future__ import annotations
@@ -71,6 +75,12 @@ from typing import Any
 # schema is far more likely to have moved a field than to have kept every one
 # this module needs, and a half-read summary produces numbers nobody can trace.
 SUPPORTED_SUMMARY_SCHEMA = "gossipper_summary_v1"
+
+# The only per-call record shape whose FIELDS are read. Unlike the summary, an
+# unrecognised version here does not raise: this surface is enrichment and an
+# import must survive without it. It does mean the media tallies below stay
+# None, which every consumer must render as not-measured rather than as zero.
+SUPPORTED_CALL_RECORD_SCHEMA = "gossipper_call_record_v1"
 
 # The canonical cause names, matching the ``failed_*`` columns on
 # ``load_run_tests``. Both surfaces normalise onto these.
@@ -354,6 +364,19 @@ class ParsedTest:
     call_records_status: str = "absent"
     call_records_count: int | None = None
 
+    # Per-call media, from calls.jsonl. None means the records were absent,
+    # unreadable, or of a schema this parser does not map; it NEVER means zero.
+    #
+    # These exist because the run totals cannot answer the question. A test
+    # where every call carries full audio and one where half the calls carry
+    # none and half carry double produce the same rtp_packets_received. The
+    # second is a failed run and the first is not, and only a per-call count
+    # tells them apart. Observed: a 24 hour run reported 100% establishment,
+    # zero failures and a 0.496 packet ratio while 12,198 of 28,804 calls had
+    # received nothing at all.
+    calls_answered_with_inbound: int | None = None
+    calls_answered_without_inbound: int | None = None
+
     @property
     def establishment_ratio(self) -> float | None:
         """Succeeded over attempted, computed from the counts.
@@ -624,12 +647,27 @@ def _find_stat_file(directory: Path) -> Path | None:
     return None
 
 
-def _count_call_records(path: Path) -> tuple[str, int | None]:
-    """Count readable records in ``calls.jsonl`` without interpreting them.
+@dataclass(frozen=True)
+class CallRecords:
+    """What ``calls.jsonl`` yielded, or why it yielded nothing."""
 
-    NO field mapping is applied, still. The schema is now KNOWN, recovered by
-    capturing a real run rather than by reading AGPL source, and is recorded
-    here so the next person does not have to capture one:
+    #: "absent" | "present" | "unreadable"
+    status: str
+    count: int | None = None
+    #: Calls that answered, sent RTP, and received some back.
+    answered_with_inbound: int | None = None
+    #: Calls that answered and sent RTP and received NONE. The number that
+    #: matters: by this project's own definition a call that answered and
+    #: carried no audio is a failure, not a success.
+    answered_without_inbound: int | None = None
+
+
+def _read_call_records(path: Path) -> CallRecords:
+    """Read ``calls.jsonl``, tallying calls that answered but got no audio back.
+
+    The schema was recovered by capturing a real run rather than by reading
+    AGPL source, and is recorded here so the next person does not have to
+    capture one:
 
         schema_version  "gossipper_call_record_v1"
         call_id         str      e.g. "gossip-1-1-8e31bd2e"
@@ -646,27 +684,71 @@ def _count_call_records(path: Path) -> tuple[str, int | None]:
                         RTPRecvMaxCumulativeLost,
                         RTPRecvInterarrivalJitterPeak
 
-    Mapping it is a separate change from recording it, and this function is not
-    where it belongs: the per-call surface feeds observations and jitter, not
-    the per-test row this module builds. Knowing the shape is what unblocks
-    that; guessing at it was what stopped it.
+    ONLY THREE FIELDS ARE READ, deliberately. Per-call jitter and loss belong to
+    the observation surface, not to the per-test row this module builds, and
+    mapping them here would put two owners on the same data. What is read is the
+    minimum that answers a question no aggregate can: did this call get audio
+    back at all.
 
-    Never raises: this surface is enrichment, and an import must not fail on it.
+    A call counts as silent only if it answered AND sent RTP AND received none.
+    Each clause earns its place. A call that never answered is already counted
+    by the establishment gate and counting it twice would double-punish one
+    failure. A call that sent nothing has not demonstrated the return path was
+    even exercised, so its silence is not evidence about the return path.
+
+    Never raises, and an unknown schema_version is not an error: this surface is
+    enrichment. It does leave the tallies None, which is not zero, and every
+    consumer must render it as not-measured.
     """
     if not path.is_file():
-        return "absent", None
+        return CallRecords(status="absent")
     try:
         lines = [ln for ln in path.read_text().splitlines() if ln.strip()]
-    except OSError:
-        return "unreadable", None
+    except (OSError, UnicodeError):
+        # UnicodeDecodeError is a ValueError, NOT an OSError, so catching only
+        # the latter let a non-UTF-8 file abort the whole import from a surface
+        # this function's own docstring promises never raises.
+        return CallRecords(status="unreadable")
+
     count = 0
+    with_inbound = 0
+    without_inbound = 0
+    mapped = True
     for line in lines:
         try:
-            json.loads(line)
+            record = json.loads(line)
         except json.JSONDecodeError:
-            return "unreadable", None
+            return CallRecords(status="unreadable")
         count += 1
-    return "present", count
+        if not isinstance(record, dict):
+            mapped = False
+            continue
+        if record.get("schema_version") != SUPPORTED_CALL_RECORD_SCHEMA:
+            # One unrecognised record disqualifies the tally rather than
+            # silently reducing it. A partial count read as a total is the
+            # failure mode this whole surface exists to catch.
+            mapped = False
+            continue
+        media = _nested(record, "media")
+        sent = _as_int(media.get("RTPPacketsSent"), where="media.RTPPacketsSent")
+        received = _as_int(
+            media.get("RTPPacketsReceived"), where="media.RTPPacketsReceived"
+        )
+        if record.get("success") is not True or not sent:
+            continue
+        if received:
+            with_inbound += 1
+        else:
+            without_inbound += 1
+
+    if not mapped:
+        return CallRecords(status="present", count=count)
+    return CallRecords(
+        status="present",
+        count=count,
+        answered_with_inbound=with_inbound,
+        answered_without_inbound=without_inbound,
+    )
 
 
 def parse_test_directory(directory: Path, *, name: str | None = None) -> ParsedTest:
@@ -746,7 +828,7 @@ def parse_test_directory(directory: Path, *, name: str | None = None) -> ParsedT
         tool = parts[0]
         tool_version = parts[1] if len(parts) > 1 else None
 
-    status, record_count = _count_call_records(directory / CALL_RECORDS_FILENAME)
+    records = _read_call_records(directory / CALL_RECORDS_FILENAME)
 
     return ParsedTest(
         name=name or directory.name,
@@ -766,6 +848,8 @@ def parse_test_directory(directory: Path, *, name: str | None = None) -> ParsedT
         answer_latency=summary.answer_latency if summary else None,
         reported_success_ratio=summary.reported_success_ratio if summary else None,
         samples=tuple(samples),
-        call_records_status=status,
-        call_records_count=record_count,
+        call_records_status=records.status,
+        call_records_count=records.count,
+        calls_answered_with_inbound=records.answered_with_inbound,
+        calls_answered_without_inbound=records.answered_without_inbound,
     )
