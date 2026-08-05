@@ -81,6 +81,11 @@ type Worker struct {
 	// default.
 	StatusInterval time.Duration
 
+	jobsSeen atomic.Int64
+	// jobCancels holds one cancel per in-flight job, keyed by job id, so a
+	// server-initiated termination can actually stop the job it names.
+	jobsMu     sync.Mutex
+	jobCancels map[string]context.CancelFunc
 	conn       *websocket.Conn
 	writeMu    sync.Mutex
 	workerID   string
@@ -254,7 +259,19 @@ func (w *Worker) handle(ctx context.Context, msg *livekit.ServerMessage) error {
 	case *livekit.ServerMessage_Assignment:
 		return w.handleAssignment(ctx, m.Assignment)
 	case *livekit.ServerMessage_Termination:
-		w.logf("job %s terminated by the server", m.Termination.GetJobId())
+		// Logging this is not handling it. Until the job's context is cancelled
+		// the job goroutine runs on, its deferred activeJobs decrement never
+		// fires, and this worker's reported load climbs monotonically. Once that
+		// load crosses the server's dispatch threshold the worker stops being
+		// given work while still looking healthy: registered, connected, silent.
+		id := m.Termination.GetJobId()
+		w.logf("job %s terminated by the server", id)
+		w.jobsMu.Lock()
+		cancelJob := w.jobCancels[id]
+		w.jobsMu.Unlock()
+		if cancelJob != nil {
+			cancelJob()
+		}
 	case *livekit.ServerMessage_Pong:
 		// Nothing to do. Presence is the point.
 	default:
@@ -304,21 +321,47 @@ func (w *Worker) handleAssignment(ctx context.Context, a *livekit.JobAssignment)
 	}
 	w.logf("assigned job %s -> room %q", assignment.JobID, assignment.RoomName)
 	if w.OnAssignment == nil {
-		return nil
+		// Nothing to run, but the server has already registered this job's
+		// terminate topic and will hold it until told the job ended. Say so
+		// rather than leaving it allocated for a job that never started.
+		return w.reportJobEnded(assignment.JobID, nil)
 	}
 	// Off the read loop: a slow join must not stall the connection the next job
 	// arrives on.
+	// The job gets its own context so ServerMessage_Termination can end THIS
+	// job. Without it the only cancel in the process is the process-wide one,
+	// and a terminated job runs until shutdown while still counting against
+	// this worker's reported load.
+	jobCtx, cancelJob := context.WithCancel(ctx)
+	w.jobsMu.Lock()
+	if w.jobCancels == nil {
+		w.jobCancels = make(map[string]context.CancelFunc)
+	}
+	w.jobCancels[assignment.JobID] = cancelJob
+	w.jobsMu.Unlock()
+
 	w.activeJobs.Add(1)
+	w.jobsSeen.Add(1)
 	go func() {
+		var jobErr error
 		defer func() {
+			cancelJob()
+			w.jobsMu.Lock()
+			delete(w.jobCancels, assignment.JobID)
+			w.jobsMu.Unlock()
+			// Before the local bookkeeping, because this is the message the
+			// SERVER is waiting for. See reportJobEnded.
+			if err := w.reportJobEnded(assignment.JobID, jobErr); err != nil {
+				w.logf("job %s: end status not reported: %v", assignment.JobID, err)
+			}
 			w.activeJobs.Add(-1)
 			// Report immediately on the way out rather than waiting for the next
 			// tick, so capacity that has just freed up is visible to the
 			// scheduler now.
 			_ = w.reportStatus()
 		}()
-		if err := w.OnAssignment(ctx, assignment); err != nil {
-			w.logf("job %s failed: %v", assignment.JobID, err)
+		if jobErr = w.OnAssignment(jobCtx, assignment); jobErr != nil {
+			w.logf("job %s failed: %v", assignment.JobID, jobErr)
 		}
 	}()
 	// And immediately on the way in, so a burst of assignments cannot look like
@@ -328,6 +371,46 @@ func (w *Worker) handleAssignment(ctx context.Context, a *livekit.JobAssignment)
 
 // ActiveJobs is how many assignments are currently in flight.
 func (w *Worker) ActiveJobs() int64 { return w.activeJobs.Load() }
+
+// reportJobEnded tells the server that one job is over.
+//
+// THIS IS SERVER-SIDE CLEANUP, NOT BOOKKEEPING, and omitting it leaks memory on
+// the LiveKit node this worker registered with. On accepting an assignment the
+// server calls RegisterJobTerminateTopic for the job (pkg/service/agentservice.go)
+// and holds a psrpc handler plus its bus subscriptions open. It releases them in
+// exactly two places: when the worker disconnects entirely, and when it receives
+// an UpdateJobStatus whose status is SUCCESS or FAILED. A worker that keeps one
+// long-lived connection for a whole load test and never sends this hits neither,
+// so every job it has ever been given stays allocated until the process exits.
+// The same message is what removes the job from the worker's runningJobs map
+// server-side (pkg/agent/worker.go), so that grows without bound too.
+//
+// Measured on the 24 hour soak at 100 concurrent: the SFU holding this worker's
+// registration climbed from 37,364 to 123,662 goroutines over 26,000 calls, about
+// 3.3 per job, while the second SFU carrying identical call load stayed flat at
+// ~19,000. Locally, with all rooms deleted, the same 3.3 per dispatch reproduced
+// against livekit-server 1.13.5 and the stacks were psrpc bus subscription reads.
+//
+// Sent on EVERY exit path including failure, because the server does not care
+// which of SUCCESS or FAILED it gets; it cares that the status is a terminal one.
+// A job that errored and reports nothing leaks exactly as much as one that hung.
+func (w *Worker) reportJobEnded(jobID string, jobErr error) error {
+	status := livekit.JobStatus_JS_SUCCESS
+	detail := ""
+	if jobErr != nil {
+		status = livekit.JobStatus_JS_FAILED
+		detail = jobErr.Error()
+	}
+	return w.send(&livekit.WorkerMessage{
+		Message: &livekit.WorkerMessage_UpdateJob{
+			UpdateJob: &livekit.UpdateJobStatus{
+				JobId:  jobID,
+				Status: status,
+				Error:  detail,
+			},
+		},
+	})
+}
 
 // reportedLoad is the load this worker declares, in 0..1.
 //
@@ -386,7 +469,26 @@ func (w *Worker) reportStatusUntil(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if err := w.reportStatus(); err != nil {
-				// The read loop owns connection errors; this one just stops.
+				// Returning silently here assumes the read loop will notice
+				// the same failure. It will not always: ReadMessage has no
+				// deadline, so a connection dead only in the write direction
+				// leaves the read loop blocked while this goroutine exits. The
+				// worker then stays registered and receives nothing, because a
+				// worker that stops reporting is drained to zero capacity.
+				//
+				// This was NOT the cause of the load-threshold stall that
+				// prompted the change (that was jobs never being cancelled, see
+				// ServerMessage_Termination above; this path was instrumented
+				// during that investigation and never fired). It is fixed
+				// anyway, because the failure mode it allows is the same one:
+				// silent, permanent, and invisible to every health signal.
+				//
+				// Say what happened, then close the connection so the read loop
+				// fails and the supervisor restarts us. A visible restart beats
+				// a silent zombie.
+				w.logf("STATUS REPORT FAILED after %d jobs (active=%d): %v",
+					w.jobsSeen.Load(), w.activeJobs.Load(), err)
+				_ = w.conn.Close()
 				return
 			}
 		}
