@@ -11,7 +11,6 @@ import asyncio
 import httpx
 import pytest
 
-import voicegateway.middleware.node_samples_worker_middleware as nsw
 from voicegateway.middleware.node_samples_worker_middleware import (
     OUTCOME_HTTP_ERROR,
     OUTCOME_OK,
@@ -25,9 +24,12 @@ from voicegateway.middleware.node_samples_worker_middleware import (
     SOURCE_NODE_EXPORTER,
     SOURCE_REDIS_EXPORTER,
     TARGETS_ENV_VAR,
+    TARGETS_FILE_ENV_VAR,
     NodeSamplesWorker,
     ScrapeTarget,
+    _default_target_provider,
     targets_from_env,
+    targets_from_file,
 )
 from voicegateway.repository import node_samples_repository as repo
 from voicegateway.services.storage_service import StorageService
@@ -548,7 +550,7 @@ class TestTargetsFromFile:
             "node-exporter:sip-1=http://10.0.0.1:9100/metrics,"
             "node-exporter:sip-2=http://10.0.0.2:9100/metrics",
         )
-        targets = nsw.targets_from_file(p)
+        targets = targets_from_file(p)
         assert [t.node for t in targets] == ["sip-1", "sip-2"]
 
     def test_reads_one_target_per_line(self, tmp_path) -> None:
@@ -559,22 +561,22 @@ class TestTargetsFromFile:
             "node-exporter:sip-1=http://10.0.0.1:9100/metrics\n"
             "node-exporter:sip-2=http://10.0.0.2:9100/metrics\n",
         )
-        assert [t.node for t in nsw.targets_from_file(p)] == ["sip-1", "sip-2"]
+        assert [t.node for t in targets_from_file(p)] == ["sip-1", "sip-2"]
 
     def test_a_missing_file_is_empty_not_an_exception(self, tmp_path) -> None:
         # This runs on every tick of a background worker. A file that has not
         # been written yet must cost one tick, never the process.
-        assert nsw.targets_from_file(tmp_path / "nope") == []
+        assert targets_from_file(tmp_path / "nope") == []
 
     def test_a_rewrite_is_seen_without_a_restart(self, tmp_path) -> None:
         # THE reason this exists. Same path, new content, new targets.
         p = self._write(tmp_path, "node-exporter:sip-1=http://10.0.0.1:9100/metrics")
-        assert [t.node for t in nsw.targets_from_file(p)] == ["sip-1"]
+        assert [t.node for t in targets_from_file(p)] == ["sip-1"]
         p.write_text(
             "node-exporter:sip-9=http://10.0.9.9:9100/metrics\n"
             "node-exporter:sip-8=http://10.0.8.8:9100/metrics\n"
         )
-        assert [t.node for t in nsw.targets_from_file(p)] == ["sip-9", "sip-8"]
+        assert [t.node for t in targets_from_file(p)] == ["sip-9", "sip-8"]
 
     def test_one_bad_line_does_not_discard_the_good_ones(self, tmp_path) -> None:
         p = self._write(
@@ -583,7 +585,7 @@ class TestTargetsFromFile:
             "this-is-not-a-target\n"
             "node-exporter:sip-2=http://10.0.0.2:9100/metrics\n",
         )
-        assert [t.node for t in nsw.targets_from_file(p)] == ["sip-1", "sip-2"]
+        assert [t.node for t in targets_from_file(p)] == ["sip-1", "sip-2"]
 
     def test_credentials_are_split_out_of_the_url(self, tmp_path) -> None:
         # Same guarantee the env path already gives: httpx logs the request
@@ -591,7 +593,7 @@ class TestTargetsFromFile:
         p = self._write(
             tmp_path, "node-exporter:sip-1=http://user:pw@10.0.0.1:9100/metrics"
         )
-        target = nsw.targets_from_file(p)[0]
+        target = targets_from_file(p)[0]
         assert target.auth == ("user", "pw")
         assert "pw" not in target.url
 
@@ -603,19 +605,19 @@ class TestTargetsFromFile:
         # in that window would scrape addresses that have already been replaced,
         # which is the failure this option exists to end.
         p = self._write(tmp_path, "")
-        monkeypatch.setenv(nsw.TARGETS_FILE_ENV_VAR, str(p))
+        monkeypatch.setenv(TARGETS_FILE_ENV_VAR, str(p))
         monkeypatch.setenv(
-            nsw.TARGETS_ENV_VAR, "node-exporter:stale=http://10.9.9.9:9100/metrics"
+            TARGETS_ENV_VAR, "node-exporter:stale=http://10.9.9.9:9100/metrics"
         )
-        assert await nsw._default_target_provider() == []
+        assert await _default_target_provider() == []
 
     @pytest.mark.asyncio
     async def test_the_env_is_used_when_no_file_is_configured(
         self, tmp_path, monkeypatch
     ) -> None:
-        monkeypatch.delenv(nsw.TARGETS_FILE_ENV_VAR, raising=False)
+        monkeypatch.delenv(TARGETS_FILE_ENV_VAR, raising=False)
         monkeypatch.setenv(
-            nsw.TARGETS_ENV_VAR, "node-exporter:sip-1=http://10.0.0.1:9100/metrics"
+            TARGETS_ENV_VAR, "node-exporter:sip-1=http://10.0.0.1:9100/metrics"
         )
-        got = await nsw._default_target_provider()
+        got = await _default_target_provider()
         assert [t.node for t in got] == ["sip-1"]

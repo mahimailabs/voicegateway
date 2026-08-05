@@ -923,7 +923,13 @@ async def _default_target_provider() -> list[ScrapeTarget]:
     """
     configured = os.environ.get(TARGETS_FILE_ENV_VAR, "").strip()
     if configured:
-        targets = targets_from_file(configured)
+        # Off the event loop. This provider runs on every tick inside a process
+        # that is also serving the dashboard, and a target list on a network
+        # mount or a FIFO would otherwise stall every HTTP request it is
+        # handling for as long as the read took. A local file costs a fraction
+        # of a millisecond, which is precisely why the pathological case would
+        # never be found in testing.
+        targets = await asyncio.to_thread(targets_from_file, configured)
         if not targets:
             logger.debug(
                 "NodeSamplesWorker: %s (%s) yielded no targets this tick",
