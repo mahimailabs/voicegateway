@@ -1424,6 +1424,19 @@ def _load_test_row(test: dict[str, Any]) -> dict[str, Any]:
         "node_samples_in_window": _as_int(test.get("node_samples_in_window")),
         "rtp_packets_sent": _as_int(test.get("rtp_packets_sent")),
         "rtp_packets_received": _as_int(test.get("rtp_packets_received")),
+        # The counts the two-way media gate judges. The gate already reported
+        # the right verdict without these, which is exactly why they were
+        # missed: a reader saw "all 900 answered calls received audio" in the
+        # gate detail and null in the row it came from, with no way to check
+        # one against the other.
+        #
+        # None is not zero here either. It means the run carried no readable
+        # per-call records, which is the same thing that makes the gate return
+        # UNKNOWN rather than PASS.
+        "calls_answered_with_inbound": _as_int(test.get("calls_answered_with_inbound")),
+        "calls_answered_without_inbound": _as_int(
+            test.get("calls_answered_without_inbound")
+        ),
     }
 
 

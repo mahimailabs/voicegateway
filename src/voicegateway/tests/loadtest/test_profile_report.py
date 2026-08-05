@@ -644,3 +644,80 @@ def test_the_measurements_a_reader_came_for_are_present(profiled) -> None:
     html = profiled["html"]
     for section in ("Per test", "Measurements", "How to read these numbers"):
         assert section in html, section
+
+
+class TestPerCallMediaCountsReachThePayload:
+    """The counts the two-way media gate judges must be in the row it judged.
+
+    Shipped without this once. The gate reported the correct verdict and said
+    "all 900 answered calls received audio back", while the test row it came
+    from carried null for both counts. The verdict was right and unverifiable,
+    which is the combination this whole report exists to avoid.
+    """
+
+    def test_the_counts_are_carried_through(self) -> None:
+        row = run_report._load_test_row(
+            {
+                "name": "g0",
+                "attempted_calls": 900,
+                "succeeded_calls": 900,
+                "calls_answered_with_inbound": 899,
+                "calls_answered_without_inbound": 1,
+            }
+        )
+        assert row["calls_answered_with_inbound"] == 899
+        assert row["calls_answered_without_inbound"] == 1
+
+    def test_absent_counts_stay_none_and_never_become_zero(self) -> None:
+        # Zero silent calls is a pass. Not having counted them is not, and a
+        # row that renders None as 0 turns the second into the first.
+        row = run_report._load_test_row({"name": "g0", "attempted_calls": 10})
+        assert row["calls_answered_with_inbound"] is None
+        assert row["calls_answered_without_inbound"] is None
+
+    def test_a_measured_zero_stays_zero(self) -> None:
+        # THE case that matters most, and the one the other tests did not pin.
+        # Zero silent calls is the passing result. If it came through as None
+        # the gate would read the run as never counted and return UNKNOWN, so
+        # a clean run would report as unmeasured.
+        row = run_report._load_test_row(
+            {
+                "name": "g0",
+                "attempted_calls": 900,
+                "succeeded_calls": 900,
+                "calls_answered_with_inbound": 900,
+                "calls_answered_without_inbound": 0,
+            }
+        )
+        assert row["calls_answered_without_inbound"] == 0
+        assert row["calls_answered_without_inbound"] is not None
+
+    def test_persisted_strings_become_integers(self) -> None:
+        # The row arrives from a database driver, not from this process. A
+        # count that came back as text would otherwise reach a gate that
+        # compares it against 0 with >, and "12" > 0 is a TypeError rather
+        # than a verdict.
+        row = run_report._load_test_row(
+            {
+                "name": "g0",
+                "calls_answered_with_inbound": "899",
+                "calls_answered_without_inbound": "1",
+            }
+        )
+        assert row["calls_answered_with_inbound"] == 899
+        assert row["calls_answered_without_inbound"] == 1
+
+    def test_a_silent_run_shows_its_count_in_the_row(self) -> None:
+        # The 24 hour soak: 16,606 answered calls with audio and 12,198
+        # without, on a run whose establishment ratio was 1.0.
+        row = run_report._load_test_row(
+            {
+                "name": "soak",
+                "attempted_calls": 28804,
+                "succeeded_calls": 28804,
+                "calls_answered_with_inbound": 16606,
+                "calls_answered_without_inbound": 12198,
+            }
+        )
+        assert row["establishment_ratio"] == 1.0
+        assert row["calls_answered_without_inbound"] == 12198
