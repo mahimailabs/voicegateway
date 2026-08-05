@@ -28,6 +28,23 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_DB_PATH = "~/.config/voicegateway/voicegw.db"
 
+# One worker for the whole process, and one on purpose. Alembic's
+# EnvironmentContext installs ``config``, ``script`` and friends as module
+# globals and deletes them again on exit, so two upgrades overlapping anywhere in
+# this process tear down each other's state and the loser raises
+# ``KeyError: 'config'``. Serializing every upgrade through a single thread is
+# the only thing that makes that safe; separate Database objects on separate
+# files are still the same interpreter, so per-instance isolation buys nothing.
+#
+# Deliberately not the event loop's default executor. ``asyncio.to_thread``
+# borrows that, and the loop shuts it down during teardown: a write landing after
+# that point died with ``RuntimeError: Executor shutdown has been called``. The
+# thread is spawned on first submit, so importing this module costs nothing, and
+# concurrent.futures joins it at interpreter exit.
+_MIGRATION_EXECUTOR = ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="voicegw-migrate"
+)
+
 
 class DatabaseAheadOfCode(RuntimeError):
     """The database is stamped at a revision this build ships no script for.
@@ -199,7 +216,6 @@ class Database:
         # A migration that failed once will fail the same way every time. Cache
         # it so run_migrations stops re-running alembic; see run_migrations.
         self._migration_error: Exception | None = None
-        self._migration_executor: ThreadPoolExecutor | None = None
 
     @property
     def db_file_path(self) -> Path:
@@ -219,13 +235,8 @@ class Database:
             await conn.run_sync(SQLModel.metadata.create_all)
 
     async def dispose(self) -> None:
-        """Tear down the connection pool and the migration thread."""
+        """Tear down the connection pool."""
         await self._engine.dispose()
-        if self._migration_executor is not None:
-            # wait=False: dispose runs on the event loop and a migration still
-            # in flight here means the process is already going down.
-            self._migration_executor.shutdown(wait=False)
-            self._migration_executor = None
 
     @asynccontextmanager
     async def session(self) -> AsyncGenerator[AsyncSession, None]:
@@ -250,12 +261,9 @@ class Database:
         own traceback through the attach sink. The first failure is cached and
         re-raised instead, which costs one dictionary lookup per write.
 
-        The work runs on a private single-thread executor, not
-        ``asyncio.to_thread``. ``to_thread`` borrows the event loop's default
-        executor, which the loop shuts down during teardown; a write landing
-        after that point raised ``RuntimeError: Executor shutdown has been
-        called`` instead of doing anything useful. env.py opens its own
-        ``asyncio.run``, so this genuinely cannot run on the loop thread.
+        The work runs on ``_MIGRATION_EXECUTOR``, not ``asyncio.to_thread``.
+        env.py opens its own ``asyncio.run``, so this genuinely cannot run on
+        the loop thread.
         """
         if self._migrations_applied:
             return
@@ -263,19 +271,11 @@ class Database:
             raise self._migration_error
         loop = asyncio.get_running_loop()
         try:
-            await loop.run_in_executor(self._executor(), self._run_alembic_upgrade)
+            await loop.run_in_executor(_MIGRATION_EXECUTOR, self._run_alembic_upgrade)
         except Exception as exc:
             self._migration_error = exc
             raise
         self._migrations_applied = True
-
-    def _executor(self) -> ThreadPoolExecutor:
-        """The private thread migrations run on. Built on first use."""
-        if self._migration_executor is None:
-            self._migration_executor = ThreadPoolExecutor(
-                max_workers=1, thread_name_prefix="voicegw-migrate"
-            )
-        return self._migration_executor
 
     def _run_alembic_upgrade(self) -> None:
         from alembic.config import Config

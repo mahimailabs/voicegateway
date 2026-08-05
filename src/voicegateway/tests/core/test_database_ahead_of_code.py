@@ -95,6 +95,34 @@ async def test_failure_is_remembered_not_retried(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_concurrent_migrations_do_not_race(tmp_path: Path) -> None:
+    """Two upgrades must never be inside alembic at the same time.
+
+    ``EnvironmentContext`` installs ``config``, ``script`` and friends as module
+    globals and deletes them again on exit, so overlapping upgrades in one
+    process tear down each other's state and the loser raises ``KeyError:
+    'config'``. Different Database objects on different files are still the same
+    process, so isolation per instance buys nothing here.
+    """
+
+    async def migrate(index: int) -> None:
+        db = Database(_build_config(tmp_path / f"db{index}.db"))
+        try:
+            await db.run_migrations()
+        finally:
+            await db.dispose()
+
+    await asyncio.gather(*(migrate(i) for i in range(8)))
+
+    for index in range(8):
+        with sqlite3.connect(str(tmp_path / f"db{index}.db")) as conn:
+            row = conn.execute(
+                "SELECT version_num FROM alembic_version_voicegateway"
+            ).fetchone()
+        assert row is not None, f"db{index} was never stamped"
+
+
+@pytest.mark.asyncio
 async def test_migrations_survive_default_executor_shutdown(tmp_path: Path) -> None:
     """A write landing during teardown must not hit the loop's dead executor.
 
