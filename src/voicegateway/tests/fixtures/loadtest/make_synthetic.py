@@ -36,6 +36,7 @@ runs and the report is right to describe them differently.
 
 from __future__ import annotations
 
+import json
 import pathlib
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -120,6 +121,45 @@ def _stat_file(
     path.write_text("\n".join(lines) + "\n")
 
 
+def _call_records(path: pathlib.Path, *, established: int, failed: int) -> None:
+    """One ``calls.jsonl`` record per call, in the shape ``capture-01`` carries.
+
+    Needed because two-way media is a SEPARATE criterion from establishment and
+    is judged per call. Without these records the gate reads UNKNOWN, and
+    unmeasured is not a pass, so a fixture asserting the happy path has to
+    demonstrate the audio came back rather than only that the calls connected.
+
+    Every established call receives 14,997 of the 15,000 packets it sent. Not
+    15,000: a lossless call is rarer than a counter that forgot to decrement,
+    and the real capture shows the same three-packet shortfall. Failed calls
+    carry zeroes both ways, which is what makes them not count as silent: they
+    never answered, so the establishment gate already owns them.
+    """
+    sent = 15_000
+    lines = []
+    for number in range(1, established + failed + 1):
+        ok = number <= established
+        lines.append(
+            json.dumps(
+                {
+                    "schema_version": "gossipper_call_record_v1",
+                    "call_id": f"gossip-{number}-{number}-5f2a1c9d",
+                    "call_number": number,
+                    "success": ok,
+                    "duration_ms": 300_000 if ok else 0,
+                    "error": "" if ok else "timeout",
+                    "media": {
+                        "RTPPacketsSent": sent if ok else 0,
+                        "RTPOctetsSent": sent * 160 if ok else 0,
+                        "RTPPacketsReceived": sent - 3 if ok else 0,
+                        "RTCPSenderReports": 599 if ok else 0,
+                    },
+                }
+            )
+        )
+    path.write_text("\n".join(lines) + "\n")
+
+
 def main() -> None:
     # ---- acceptance-500: one step, inside every threshold ------------------
     # 15000 attempted, 14985 established. 99.9%, above the 99.5% floor and not
@@ -134,6 +174,9 @@ def main() -> None:
         target=500,
         established=14_985,
         failed=15,
+    )
+    _call_records(
+        HERE / "acceptance-500" / "calls.jsonl", established=14_985, failed=15
     )
 
     # ---- saturation-ramp: four steps, the last one over the ceiling --------
@@ -155,6 +198,11 @@ def main() -> None:
             start_ms=BASE_MS + index * 390_000,
             seconds=360,
             target=target,
+            established=established,
+            failed=round(established * 0.001),
+        )
+        _call_records(
+            HERE / "saturation-ramp" / f"ramp-{target}" / "calls.jsonl",
             established=established,
             failed=round(established * 0.001),
         )

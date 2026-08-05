@@ -101,6 +101,7 @@ SUSTAINED_HEALTH_GATE = "sustained_health"
 PROCESS_LIFECYCLE_GATE = "process_lifecycle"
 RESOURCE_TREND_GATE = "resource_trend"
 NETWORK_ALLOWANCE_GATE = "network_allowance"
+TWO_WAY_MEDIA_GATE = "two_way_media"
 
 #: The subject a gate is filed under when it describes the whole fleet rather
 #: than one node. Used where nothing was sampled at all: the finding is that NO
@@ -158,6 +159,9 @@ ALL_GATES: frozenset[str] = frozenset(
         # misstatement RATIO_GATES exists to prevent, and this gate is one where
         # the number is quoted back to a client as evidence of throttling.
         NETWORK_ALLOWANCE_GATE,
+        # A count of calls, not a fraction, so excluded from RATIO_GATES for the
+        # same reason as the three above.
+        TWO_WAY_MEDIA_GATE,
     }
 )
 
@@ -946,6 +950,85 @@ def establishment_gate(
         metric="establishment_ratio",
         value=ratio,
         threshold=threshold,
+    )
+
+
+def two_way_media_gate(
+    *,
+    answered_with_inbound: Any,
+    answered_without_inbound: Any,
+    subject: str | None = None,
+) -> GateResult:
+    """Did the calls that answered actually carry audio back?
+
+    THE THRESHOLD IS ZERO, and it is not an invented bar. This project already
+    defines a call that answered and carried no audio as a failure rather than a
+    success, and says so in its own reports. This gate is that definition made
+    enforceable. Every other threshold in this module was contracted for; this
+    one is a definition, which is why it is not configurable.
+
+    WHY A COUNT AND NOT THE PACKET RATIO. The run totals cannot answer this. A
+    test where every call carries full audio and a test where half the calls
+    carry none and half carry double report the same packets received. Observed
+    on a 24 hour run: 100% establishment, zero failed calls, a 0.496 received
+    per sent ratio, and 12,198 of 28,804 calls that had received nothing at all.
+    The ratio was in the report the whole time and no gate read it, so the run
+    was presented as clean.
+
+    UNMEASURED IS NOT A PASS, following this module's rule everywhere else. If
+    the per-call records were absent, unreadable, or of an unmapped schema the
+    caller passes None and this returns UNKNOWN. A run whose media nobody
+    counted has not demonstrated two-way media, and returning PASS for it would
+    reintroduce exactly the blind spot this gate closes.
+
+    Synchronous, like every gate in this module. Do not await it.
+    """
+    with_in = _as_count(answered_with_inbound)
+    without_in = _as_count(answered_without_inbound)
+    if with_in is None or without_in is None:
+        return GateResult(
+            gate=TWO_WAY_MEDIA_GATE,
+            status=UNKNOWN,
+            subject=subject,
+            detail=(
+                "per-call media was not measured: the run carried no readable "
+                "call records, so whether each answered call received audio is "
+                "unknown. Run totals cannot substitute, because they average a "
+                "silent call against a loud one. Collect calls.jsonl from the "
+                "generator to answer it"
+            ),
+            threshold=0,
+        )
+    total = with_in + without_in
+    if total <= 0:
+        return GateResult(
+            gate=TWO_WAY_MEDIA_GATE,
+            status=UNKNOWN,
+            subject=subject,
+            detail=(
+                "the return path was not measured: no answered call reported "
+                "sending any RTP, so there was no outbound stream whose reply "
+                "could be checked"
+            ),
+            threshold=0,
+        )
+    status = PASS if without_in == 0 else FAIL
+    if status == PASS:
+        detail = f"all {total} answered calls received audio back from the fleet"
+    else:
+        detail = (
+            f"{without_in} of {total} answered calls ({without_in / total * 100:.1f}%) "
+            "sent audio and received NONE back. A call that answered and "
+            "carried no audio is a failure, not a success"
+        )
+    return GateResult(
+        gate=TWO_WAY_MEDIA_GATE,
+        status=status,
+        subject=subject,
+        detail=detail,
+        metric="calls_without_inbound_media",
+        value=without_in,
+        threshold=0,
     )
 
 

@@ -651,3 +651,110 @@ def test_a_repeated_column_is_refused_rather_than_silently_collapsed(
     with pytest.raises(art.UnknownArtifactSchema) as excinfo:
         art.parse_stat_csv(directory / "s.csv")
     assert "total_calls" in str(excinfo.value)
+
+
+def _call_record(number: int, *, sent: int, received: int, success: bool = True) -> str:
+    """One record in the shape a captured gossipper run actually writes."""
+    return json.dumps(
+        {
+            "schema_version": "gossipper_call_record_v1",
+            "call_id": f"gossip-{number}-{number}-3e3d7839",
+            "call_number": number,
+            "success": success,
+            "duration_ms": 300277,
+            "media": {
+                "RTPPacketsSent": sent,
+                "RTPOctetsSent": sent * 160,
+                "RTPPacketsReceived": received,
+                "RTCPSenderReports": 599,
+            },
+        }
+    )
+
+
+class TestCallRecordMedia:
+    """Per-call inbound media, which no run total can reconstruct."""
+
+    def _write(self, tmp_path: Path, lines: list[str]) -> art.ParsedTest:
+        (tmp_path / "calls.jsonl").write_text("\n".join(lines) + "\n")
+        (tmp_path / "summary.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "gossipper_summary_v1",
+                    "total_calls": len(lines),
+                    "success_calls": len(lines),
+                    "failed_calls": 0,
+                }
+            )
+        )
+        return art.parse_test_directory(tmp_path)
+
+    def test_counts_calls_that_got_nothing_back(self, tmp_path: Path) -> None:
+        parsed = self._write(
+            tmp_path,
+            [
+                _call_record(1, sent=15000, received=14997),
+                _call_record(2, sent=15000, received=0),
+                _call_record(3, sent=15000, received=0),
+            ],
+        )
+        assert parsed.calls_answered_with_inbound == 1
+        assert parsed.calls_answered_without_inbound == 2
+
+    def test_the_totals_cannot_see_what_this_sees(self, tmp_path: Path) -> None:
+        # THE POINT OF THE WHOLE CHANGE. These two runs report identical
+        # received-per-sent ratios. One is healthy and one lost half its calls
+        # entirely, and only the per-call counts tell them apart.
+        (tmp_path / "even").mkdir()
+        (tmp_path / "split").mkdir()
+        even = self._write(
+            tmp_path / "even",
+            [_call_record(n, sent=1000, received=500) for n in range(1, 5)],
+        )
+        split = self._write(
+            tmp_path / "split",
+            [_call_record(1, sent=1000, received=1000)] * 2
+            + [_call_record(2, sent=1000, received=0)] * 2,
+        )
+        assert even.calls_answered_without_inbound == 0
+        assert split.calls_answered_without_inbound == 2
+
+    def test_a_failed_call_is_not_counted_as_silent(self, tmp_path: Path) -> None:
+        # It never answered, so the establishment gate already owns it.
+        # Counting it here would punish one failure twice.
+        parsed = self._write(
+            tmp_path, [_call_record(1, sent=0, received=0, success=False)]
+        )
+        assert parsed.calls_answered_without_inbound == 0
+        assert parsed.calls_answered_with_inbound == 0
+
+    def test_a_call_that_sent_nothing_is_not_counted(self, tmp_path: Path) -> None:
+        # It never exercised the return path, so its silence says nothing
+        # about the return path.
+        parsed = self._write(tmp_path, [_call_record(1, sent=0, received=0)])
+        assert parsed.calls_answered_without_inbound == 0
+
+    def test_unknown_schema_leaves_the_tally_unmeasured(self, tmp_path: Path) -> None:
+        # None, never zero. Zero would read as "every call got audio".
+        parsed = self._write(
+            tmp_path,
+            [json.dumps({"schema_version": "something_else_v9", "call_number": 1})],
+        )
+        assert parsed.call_records_status == "present"
+        assert parsed.call_records_count == 1
+        assert parsed.calls_answered_without_inbound is None
+
+    def test_absent_records_are_unmeasured_not_clean(self, tmp_path: Path) -> None:
+        (tmp_path / "summary.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "gossipper_summary_v1",
+                    "total_calls": 1,
+                    "success_calls": 1,
+                    "failed_calls": 0,
+                }
+            )
+        )
+        parsed = art.parse_test_directory(tmp_path)
+        assert parsed.call_records_status == "absent"
+        assert parsed.calls_answered_without_inbound is None
