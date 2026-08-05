@@ -50,9 +50,9 @@ def build_task(transport_input, transport_output):
     stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"])
     # guard() wraps ONE service for control; it returns a drop-in service.
     llm = voicegateway.guard(
-        OpenAILLMService(api_key=os.environ["OPENAI_API_KEY"], model="gpt-4o-mini"),
+        OpenAILLMService(api_key=os.environ["OPENAI_API_KEY"], model="gpt-4.1-mini"),
         fallback=[
-            OpenAILLMService(api_key=os.environ["OPENAI_API_KEY"], model="gpt-4o")
+            OpenAILLMService(api_key=os.environ["OPENAI_API_KEY"], model="gpt-4.1")
         ],
         budget="$5.00/day",
         project=PROJECT,

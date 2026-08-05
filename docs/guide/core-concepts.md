@@ -42,8 +42,8 @@ The full signature is documented in [attach()](/guide/attach). The key points he
 from voicegateway import guard
 
 llm = guard(
-    openai.LLM(model="gpt-4o-mini"),
-    fallback=[openai.LLM(model="gpt-4o")],
+    openai.LLM(model="gpt-4.1-mini"),
+    fallback=[openai.LLM(model="gpt-4.1")],
     rate_limit="60/min",
     budget="$5.00/day",
 )

@@ -58,7 +58,7 @@ together, so you can echo it into your own logs.
 
         session = AgentSession(
             stt=deepgram.STT(model="nova-3"),
-            llm=openai.LLM(model="gpt-4o-mini"),
+            llm=openai.LLM(model="gpt-4.1-mini"),
             tts=cartesia.TTS(model="sonic-3"),
         )
 
@@ -96,7 +96,7 @@ together, so you can echo it into your own logs.
     import voicegateway
 
     stt = DeepgramSTTService(api_key=DEEPGRAM_API_KEY)
-    llm = OpenAILLMService(api_key=OPENAI_API_KEY, model="gpt-4o-mini")
+    llm = OpenAILLMService(api_key=OPENAI_API_KEY, model="gpt-4.1-mini")
     tts = CartesiaTTSService(api_key=CARTESIA_API_KEY, voice_id=VOICE_ID)
 
     pipeline = Pipeline([transport.input(), stt, llm, tts, transport.output()])

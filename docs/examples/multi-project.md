@@ -78,7 +78,7 @@ async def production_entrypoint(ctx: JobContext):
     session = AgentSession(
         vad=silero.VAD.load(),
         stt=deepgram.STT(model="nova-3"),
-        llm=openai.LLM(model="gpt-4o-mini"),
+        llm=openai.LLM(model="gpt-4.1-mini"),
         tts=cartesia.TTS(model="sonic-3"),
     )
 
@@ -97,7 +97,7 @@ async def staging_entrypoint(ctx: JobContext):
     session = AgentSession(
         vad=silero.VAD.load(),
         stt=deepgram.STT(model="nova-3"),
-        llm=openai.LLM(model="gpt-4o-mini"),
+        llm=openai.LLM(model="gpt-4.1-mini"),
         tts=cartesia.TTS(model="sonic-3"),
     )
 
@@ -123,7 +123,7 @@ from pipecat.services.openai.llm import OpenAILLMService
 
 def build_task(transport_input, transport_output, *, project: str):
     stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"])
-    llm = OpenAILLMService(api_key=os.environ["OPENAI_API_KEY"], model="gpt-4o-mini")
+    llm = OpenAILLMService(api_key=os.environ["OPENAI_API_KEY"], model="gpt-4.1-mini")
     tts = CartesiaTTSService(api_key=os.environ["CARTESIA_API_KEY"])
 
     pipeline = Pipeline([transport_input, stt, llm, tts, transport_output])

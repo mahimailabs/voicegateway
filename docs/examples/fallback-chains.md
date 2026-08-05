@@ -61,7 +61,7 @@ def build_session():
             project="prod",
         ),
         llm=guard(
-            openai.LLM(model="gpt-4o-mini"),
+            openai.LLM(model="gpt-4.1-mini"),
             fallback=[
                 groq_plugin.LLM(model="llama-3.3-70b-versatile"),
             ],
@@ -102,7 +102,7 @@ async def entrypoint(ctx: JobContext):
             project=PROJECT,
         ),
         llm=guard(
-            openai.LLM(model="gpt-4o-mini"),
+            openai.LLM(model="gpt-4.1-mini"),
             fallback=[groq_plugin.LLM(model="llama-3.3-70b-versatile")],
             project=PROJECT,
         ),
@@ -150,7 +150,7 @@ fallbacks:
     - openai/whisper-1
     - local/whisper-large-v3
   llm:
-    - openai/gpt-4o-mini
+    - openai/gpt-4.1-mini
     - groq/llama-3.3-70b-versatile
     - ollama/qwen2.5:3b
   tts:

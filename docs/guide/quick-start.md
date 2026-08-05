@@ -71,7 +71,7 @@ minimal agent, and cost rows appearing in the dashboard.
 
             session = AgentSession(
                 stt=deepgram.STT(model="nova-3"),
-                llm=openai.LLM(model="gpt-4o-mini"),
+                llm=openai.LLM(model="gpt-4.1-mini"),
                 tts=cartesia.TTS(model="sonic-3"),
             )
 
@@ -105,7 +105,7 @@ minimal agent, and cost rows appearing in the dashboard.
             stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"])
             llm = OpenAILLMService(
                 api_key=os.environ["OPENAI_API_KEY"],
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
             )
             tts = CartesiaTTSService(
                 api_key=os.environ["CARTESIA_API_KEY"],
@@ -226,8 +226,8 @@ on the specific providers where you want control:
     from livekit.plugins import openai
 
     guarded_llm = voicegateway.guard(
-        openai.LLM(model="gpt-4o-mini"),
-        fallback=[openai.LLM(model="gpt-4o")],
+        openai.LLM(model="gpt-4.1-mini"),
+        fallback=[openai.LLM(model="gpt-4.1")],
         rate_limit="60/min",
         budget="$5.00/day",
     )
@@ -242,8 +242,8 @@ on the specific providers where you want control:
     from pipecat.services.openai.llm import OpenAILLMService
 
     guarded_llm = voicegateway.guard(
-        OpenAILLMService(model="gpt-4o-mini"),
-        fallback=[OpenAILLMService(model="gpt-4o")],
+        OpenAILLMService(model="gpt-4.1-mini"),
+        fallback=[OpenAILLMService(model="gpt-4.1")],
         rate_limit="60/min",
         budget="$5.00/day",
     )

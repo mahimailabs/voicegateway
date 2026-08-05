@@ -80,8 +80,8 @@ voicegateway.guard(
         session = AgentSession(
             stt=deepgram.STT(model="nova-3"),
             llm=voicegateway.guard(
-                openai.LLM(model="gpt-4o-mini"),
-                fallback=[openai.LLM(model="gpt-4o")],
+                openai.LLM(model="gpt-4.1-mini"),
+                fallback=[openai.LLM(model="gpt-4.1")],
                 rate_limit="60/min",
                 budget="$5.00/day",
             ),
@@ -113,8 +113,8 @@ voicegateway.guard(
 
     stt = DeepgramSTTService(api_key=DEEPGRAM_API_KEY)
     guarded_llm = voicegateway.guard(
-        OpenAILLMService(api_key=OPENAI_API_KEY, model="gpt-4o-mini"),
-        fallback=[OpenAILLMService(api_key=OPENAI_API_KEY, model="gpt-4o")],
+        OpenAILLMService(api_key=OPENAI_API_KEY, model="gpt-4.1-mini"),
+        fallback=[OpenAILLMService(api_key=OPENAI_API_KEY, model="gpt-4.1")],
         rate_limit="60/min",
         budget="$5.00/day",
     )
