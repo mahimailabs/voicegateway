@@ -516,20 +516,38 @@ func TestTerminationCancelsOnlyTheJobItNames(t *testing.T) {
 		t.Fatalf("write termination: %v", err)
 	}
 
-	waitFor(t, func() bool { mu.Lock(); defer mu.Unlock(); return ended["JOB_A"] })
-	if w.ActiveJobs() != 1 {
-		t.Errorf("ActiveJobs = %d after terminating one of two jobs, want 1", w.ActiveJobs())
-	}
+	// Wait on the end state the deferred cleanup produces, NOT on the marker the
+	// job sets before returning. `ended[JOB_A]` is written inside OnAssignment,
+	// so it goes true a moment BEFORE the status report is sent and before
+	// activeJobs is decremented. Waiting on it and then asserting either of
+	// those races both.
+	waitFor(t, func() bool { return w.ActiveJobs() == 1 && len(jobUpdates(f)) == 1 })
+
 	mu.Lock()
-	if ended["JOB_B"] {
+	endedB := ended["JOB_B"]
+	mu.Unlock()
+	if endedB {
 		t.Error("terminating JOB_A also ended JOB_B")
 	}
-	mu.Unlock()
+	if got := jobUpdates(f)[0]; got.GetJobId() != "JOB_A" {
+		t.Errorf("reported job %q ended, want JOB_A", got.GetJobId())
+	}
 
-	// And only the terminated job was reported ended.
-	got := jobUpdates(f)
-	if len(got) != 1 || got[0].GetJobId() != "JOB_A" {
-		t.Errorf("job updates = %+v, want exactly one for JOB_A", got)
+	// JOB_B's cancel must still be registered and must still work. This also
+	// closes the remaining hole above: had the first termination ended both
+	// jobs, two updates would already exist by now, so the wait could only have
+	// passed by catching a transient one-update state.
+	term2, _ := proto.Marshal(&livekit.ServerMessage{
+		Message: &livekit.ServerMessage_Termination{
+			Termination: &livekit.JobTermination{JobId: "JOB_B"},
+		},
+	})
+	if err := conn.WriteMessage(websocket.BinaryMessage, term2); err != nil {
+		t.Fatalf("write second termination: %v", err)
+	}
+	waitFor(t, func() bool { return w.ActiveJobs() == 0 && len(jobUpdates(f)) == 2 })
+	if got := jobUpdates(f)[1]; got.GetJobId() != "JOB_B" {
+		t.Errorf("second update was for %q, want JOB_B", got.GetJobId())
 	}
 }
 
