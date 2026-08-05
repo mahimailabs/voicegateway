@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 from collections.abc import AsyncGenerator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,68 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_DB_PATH = "~/.config/voicegateway/voicegw.db"
+
+# One worker for the whole process, and one on purpose. Alembic's
+# EnvironmentContext installs ``config``, ``script`` and friends as module
+# globals and deletes them again on exit, so two upgrades overlapping anywhere in
+# this process tear down each other's state and the loser raises
+# ``KeyError: 'config'``. Serializing every upgrade through a single thread is
+# the only thing that makes that safe; separate Database objects on separate
+# files are still the same interpreter, so per-instance isolation buys nothing.
+#
+# Deliberately not the event loop's default executor. ``asyncio.to_thread``
+# borrows that, and the loop shuts it down during teardown: a write landing after
+# that point died with ``RuntimeError: Executor shutdown has been called``. The
+# thread is spawned on first submit, so importing this module costs nothing, and
+# concurrent.futures joins it at interpreter exit.
+_MIGRATION_EXECUTOR = ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="voicegw-migrate"
+)
+
+
+class DatabaseAheadOfCode(RuntimeError):
+    """The database is stamped at a revision this build ships no script for.
+
+    Raised when a newer build already migrated the file: a dev checkout and a
+    released wheel sharing ``~/.config/voicegateway/voicegw.db`` is the usual
+    way in. The schema is then a superset of what this build expects, so reads
+    and writes still work and only migrating further is impossible. Callers on
+    a telemetry path should log this once and carry on rather than failing the
+    host application, which is why it is typed rather than a bare
+    ``alembic.util.exc.CommandError``.
+    """
+
+    def __init__(self, revision: str, url: str) -> None:
+        self.revision = revision
+        self.url = url
+        super().__init__(
+            f"database is stamped at alembic revision {revision!r}, which this "
+            f"build of voicegateway does not ship ({url}). It was migrated by a "
+            "newer build; upgrade voicegateway or point this process at its own "
+            "database with VOICEGW_DB_PATH."
+        )
+
+
+def _unresolvable_revision(exc: Exception) -> str | None:
+    """Return the revision alembic could not resolve, if that is why it failed.
+
+    ``upgrade(cfg, "head")`` resolves its target from the scripts on disk, so a
+    ``ResolutionError`` underneath is never about the target: it is about the
+    revision read out of the database. Matching on the exception chain rather
+    than the message keeps this from breaking on an alembic wording change.
+    """
+    from alembic.script.revision import ResolutionError
+
+    cause: BaseException | None = exc
+    seen = 0
+    while cause is not None and seen < 5:  # the chain here is 2 deep; bound it anyway
+        if isinstance(cause, ResolutionError):
+            argument = getattr(cause, "argument", None)
+            return argument if isinstance(argument, str) and argument else None
+        cause = cause.__cause__
+        seen += 1
+    return None
+
 
 # aiosqlite and alembic both log every operation at DEBUG. Embedded in a LiveKit
 # agent (voicegateway.attach, or the fleet heartbeat thread), a ``console``/``dev``
@@ -150,6 +213,9 @@ class Database:
             expire_on_commit=False,
         )
         self._migrations_applied = False
+        # A migration that failed once will fail the same way every time. Cache
+        # it so run_migrations stops re-running alembic; see run_migrations.
+        self._migration_error: Exception | None = None
 
     @property
     def db_file_path(self) -> Path:
@@ -185,14 +251,35 @@ class Database:
                 await session.close()
 
     async def run_migrations(self) -> None:
-        """Run ``alembic upgrade head``. Idempotent."""
+        """Run ``alembic upgrade head``. Idempotent, and fails at most once.
+
+        Every request-log write goes through
+        ``StorageService._ensure_initialized`` -> here, and that flag is only
+        set once migrations succeed. So a migration that fails used to be
+        retried on every single write: the full alembic upgrade, env.py import
+        and connection included, several times a second, each one logging its
+        own traceback through the attach sink. The first failure is cached and
+        re-raised instead, which costs one dictionary lookup per write.
+
+        The work runs on ``_MIGRATION_EXECUTOR``, not ``asyncio.to_thread``.
+        env.py opens its own ``asyncio.run``, so this genuinely cannot run on
+        the loop thread.
+        """
         if self._migrations_applied:
             return
-        await asyncio.to_thread(self._run_alembic_upgrade)
+        if self._migration_error is not None:
+            raise self._migration_error
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.run_in_executor(_MIGRATION_EXECUTOR, self._run_alembic_upgrade)
+        except Exception as exc:
+            self._migration_error = exc
+            raise
         self._migrations_applied = True
 
     def _run_alembic_upgrade(self) -> None:
         from alembic.config import Config
+        from alembic.util.exc import CommandError
 
         from alembic import command
 
@@ -213,7 +300,13 @@ class Database:
             # silently migrates the operator's default DB and leaves its own
             # unmigrated.
             cfg.attributes["voicegw_url"] = url
-            command.upgrade(cfg, "head")
+            try:
+                command.upgrade(cfg, "head")
+            except CommandError as exc:
+                revision = _unresolvable_revision(exc)
+                if revision is None:
+                    raise
+                raise DatabaseAheadOfCode(revision, url) from exc
         finally:
             if prev is None:
                 os.environ.pop("VOICEGW_ALEMBIC_SKIP_LOGGING", None)
