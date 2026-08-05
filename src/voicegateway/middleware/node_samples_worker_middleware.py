@@ -141,6 +141,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import pathlib
 import re
 import time
 import urllib.parse
@@ -205,6 +206,23 @@ OUTCOME_UNPARSEABLE: Final[str] = "unparseable"
 # The same ``name`` on two sources is the point: it is what puts an SFU's own
 # counters and its host's file descriptors on one time axis.
 TARGETS_ENV_VAR: Final[str] = "VOICEGW_NODE_SCRAPE_TARGETS"
+
+# The same entries, read from a FILE instead, and re-read on every tick.
+#
+# An environment variable cannot change inside a running process, so a fleet
+# whose node addresses change means editing a unit file and restarting the
+# collector. Autoscaling changes them routinely: every replacement and every
+# scale-out arrives on an address nobody listed, and the run that follows
+# reports UNKNOWN for that node rather than failing, so it looks complete.
+#
+# With a file, whatever keeps the list current (a timer querying the cloud
+# provider for instances carrying a tag, a config management run, a person) just
+# rewrites it, and the next tick picks it up. This module stays cloud-agnostic:
+# it reads a file, and knows nothing about who wrote it.
+#
+# Entries are separated by commas OR newlines, so a generated file can put one
+# target per line. Same `source:name=url` grammar either way.
+TARGETS_FILE_ENV_VAR: Final[str] = "VOICEGW_NODE_SCRAPE_TARGETS_FILE"
 
 
 @dataclass(frozen=True)
@@ -771,8 +789,38 @@ def targets_from_env(
     dashboard, and a bad env var must not take that process down.
     """
     raw = (environ if environ is not None else os.environ).get(TARGETS_ENV_VAR, "")
+    return parse_targets(raw, where=TARGETS_ENV_VAR)
+
+
+def targets_from_file(path: str | os.PathLike[str]) -> list[ScrapeTarget]:
+    """Parse a targets FILE, returning empty when it cannot be read.
+
+    Never raises. This runs on every tick of a background worker, and a file
+    that is missing, unreadable, or half-written by whatever regenerates it must
+    cost one tick rather than the process. An empty result is already the
+    "nothing to scrape" case the worker handles.
+
+    A partially written file is the interesting one: a writer that truncates and
+    then writes leaves a window where the file is short. That yields fewer
+    targets for one tick, and the next tick recovers, which is why this is read
+    fresh each time rather than cached.
+    """
+    try:
+        raw = pathlib.Path(path).read_text()
+    except (OSError, UnicodeError) as exc:
+        logger.warning("%s: cannot read %s: %s", TARGETS_FILE_ENV_VAR, path, exc)
+        return []
+    return parse_targets(raw, where=str(path))
+
+
+def parse_targets(raw: str, *, where: str = TARGETS_ENV_VAR) -> list[ScrapeTarget]:
+    """Parse ``source:name=url`` entries separated by commas or newlines.
+
+    ``where`` names the source in warnings, so an operator reading the log can
+    tell a bad env var from a bad file.
+    """
     targets: list[ScrapeTarget] = []
-    for entry in raw.split(","):
+    for entry in raw.replace("\n", ",").split(","):
         item = entry.strip()
         if not item:
             continue
@@ -784,13 +832,13 @@ def targets_from_env(
         shown = redact_url(item)
         if not sep or not colon or not url.strip() or not node.strip():
             logger.warning(
-                "%s: ignoring %r; expected 'source:name=url'", TARGETS_ENV_VAR, shown
+                "%s: ignoring %r; expected 'source:name=url'", where, shown
             )
             continue
         if source not in SOURCES:
             logger.warning(
                 "%s: ignoring %r; unknown source %r (known: %s)",
-                TARGETS_ENV_VAR,
+                where,
                 shown,
                 source,
                 ", ".join(SOURCES),
@@ -800,7 +848,7 @@ def targets_from_env(
         if not metrics_url.strip():
             logger.warning(
                 "%s: ignoring %r; no metrics url before %r",
-                TARGETS_ENV_VAR,
+                where,
                 shown,
                 HEALTH_SUFFIX,
             )
@@ -861,7 +909,28 @@ def split_userinfo(url: str) -> tuple[str, tuple[str, str] | None]:
 
 
 async def _default_target_provider() -> list[ScrapeTarget]:
-    """Targets from the environment. Empty (a no-op worker) when unset."""
+    """Targets from the file if one is configured, otherwise the environment.
+
+    Called on EVERY tick, which is what makes the file worth having: an
+    environment variable is fixed for the life of the process, and a file is
+    re-read, so a fleet whose addresses change no longer needs a restart to be
+    seen.
+
+    The file wins when set, including when it currently yields nothing. A file
+    that is empty right now is not the same as no file, because the thing that
+    writes it may not have run yet, and falling back to a stale env var in that
+    window would scrape addresses that have already been replaced.
+    """
+    configured = os.environ.get(TARGETS_FILE_ENV_VAR, "").strip()
+    if configured:
+        targets = targets_from_file(configured)
+        if not targets:
+            logger.debug(
+                "NodeSamplesWorker: %s (%s) yielded no targets this tick",
+                TARGETS_FILE_ENV_VAR,
+                configured,
+            )
+        return targets
     targets = targets_from_env()
     if not targets:
         logger.debug(
@@ -1207,4 +1276,7 @@ __all__ = [
     "redact_url",
     "split_userinfo",
     "targets_from_env",
+    "targets_from_file",
+    "parse_targets",
+    "TARGETS_FILE_ENV_VAR",
 ]

@@ -15,6 +15,7 @@ never sets the variable behaves exactly as it did before the worker existed.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
@@ -31,6 +32,7 @@ from voicegateway.middleware.latency_observations_worker_middleware import (
 )
 from voicegateway.middleware.node_samples_worker_middleware import (
     TARGETS_ENV_VAR,
+    TARGETS_FILE_ENV_VAR,
     NodeSamplesWorker,
     targets_from_env,
 )
@@ -85,8 +87,15 @@ def _build_workers(gateway: Gateway) -> list[Any]:
     # into this code must not start talking to the network on its own. No
     # targets, no worker at all (rather than a worker idling on empty ticks), so
     # the default process has exactly the tasks it had before.
+    # Naming a targets FILE also opts in, and does so even when the file is
+    # empty or absent right now. That is the difference between the two sources:
+    # an env var is everything there will ever be, while a file is whatever the
+    # thing that writes it has got to so far. Refusing to start on an empty file
+    # would mean the collector had to be restarted once the file filled, which is
+    # the restart this whole option exists to remove.
+    targets_file = os.environ.get(TARGETS_FILE_ENV_VAR, "").strip()
     node_targets = targets_from_env()
-    if node_targets:
+    if targets_file or node_targets:
         workers.append(
             NodeSamplesWorker(
                 storage,
@@ -95,11 +104,18 @@ def _build_workers(gateway: Gateway) -> list[Any]:
         )
         # Logged because the alternative is silence: an operator who typos the
         # variable otherwise cannot tell "not read" from "read and empty".
-        logger.info(
-            "Node scrape enabled: %d target(s) from %s",
-            len(node_targets),
-            TARGETS_ENV_VAR,
-        )
+        if targets_file:
+            logger.info(
+                "Node scrape enabled: targets re-read from %s (%s) every tick",
+                TARGETS_FILE_ENV_VAR,
+                targets_file,
+            )
+        else:
+            logger.info(
+                "Node scrape enabled: %d target(s) from %s",
+                len(node_targets),
+                TARGETS_ENV_VAR,
+            )
     return workers
 
 
