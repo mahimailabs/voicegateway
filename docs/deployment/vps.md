@@ -9,25 +9,25 @@ Choose this path when you already control a server (cheapest option; ideal for c
 The installer script handles Docker, secrets, image pinning, health checking, and HTTPS in a single command:
 
 ```bash
-curl -fsSL https://voicegateway.mahimai.ca/collector.sh | bash
+curl -fsSL https://voicegateway.dev/collector.sh | bash
 ```
 
 It prompts for backend (SQLite or Postgres) and whether to set up HTTPS. For non-interactive use:
 
 ```bash
 # SQLite (single collector, no external database)
-curl -fsSL https://voicegateway.mahimai.ca/collector.sh | bash -s -- --sqlite --yes
+curl -fsSL https://voicegateway.dev/collector.sh | bash -s -- --sqlite --yes
 
 # Postgres (fleet / production), expose via https://collector.example.com
-curl -fsSL https://voicegateway.mahimai.ca/collector.sh | bash -s -- --postgres --domain example.com --yes
+curl -fsSL https://voicegateway.dev/collector.sh | bash -s -- --postgres --domain example.com --yes
 ```
 
 The script:
 - Installs Docker if not present (with confirmation)
-- Generates and persists the ingest key and Postgres password on first run, reuses them on subsequent runs (no password-regen footgun)
+- Generates and persists the ingest key and Postgres password on first run, reuses them on later runs (no password-regen footgun)
 - Pins the image to the latest release version (never `:latest`)
 - Health-checks the container before returning
-- If ports 80/443 are free and a domain is given, installs Caddy and issues a certificate automatically; otherwise prints the reverse-proxy snippet for your existing proxy
+- Installs Caddy and issues a certificate automatically if ports 80/443 are free and a domain is given; otherwise prints a reverse-proxy snippet for your existing proxy
 
 The ingest key is printed to your terminal and saved to the deploy directory (`/opt/voicegateway/voicegw.yaml` by default). Use it as the `api_key` when connecting agents.
 
@@ -42,7 +42,7 @@ Prerequisites: Docker and Compose installed (`curl -fsSL https://get.docker.com 
 ```bash
 mkdir -p ~/voicegw && cd ~/voicegw
 curl -fsSLO https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docker-compose.collector.yml
-sed -i 's#mahimairaja/voicegateway:latest#mahimairaja/voicegateway:0.9.2#' docker-compose.collector.yml
+sed -i 's#mahimairaja/voicegateway:latest#mahimairaja/voicegateway:0.22.3#' docker-compose.collector.yml
 
 printf 'VOICEGW_PG_PASSWORD=%s\n' "$(openssl rand -hex 24)" > .env
 ```
@@ -112,7 +112,7 @@ For safety, bind the daemon to localhost only by changing the compose port mappi
 
 ### Reuse an existing reverse proxy
 
-If the box already runs a reverse proxy on 80/443 (for example a self-hosted LiveKit server whose Caddy runs with host networking), that proxy reaches the daemon at `localhost:8080` with no extra wiring. The daemon publishes 8080 on the host; a host-networked proxy shares the host's network namespace. Add a vhost or TLS-SNI route for `collector.<your-domain>` pointing to `localhost:8080`. Back up the proxy config first and reload it gracefully.
+If the box already runs a reverse proxy on 80/443 (for example a self-hosted LiveKit server whose Caddy runs with host networking), it reaches the daemon at `localhost:8080` with no extra wiring: the daemon publishes 8080 on the host, and a host-networked proxy shares the host's network namespace. Add a vhost or TLS-SNI route for `collector.<your-domain>` pointing to `localhost:8080`. Back up the proxy config first and reload it gracefully.
 
 For LiveKit's layer-4 Caddy (structured `caddy.yaml`), add a TLS-SNI route and include the hostname in `apps.tls.certificates.automate`:
 

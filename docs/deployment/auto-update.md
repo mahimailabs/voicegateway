@@ -15,13 +15,13 @@ Two honest caveats:
 
 ## The release channel: pin to a minor, never `:latest`
 
-The release workflow publishes three Docker tags per version, for example `0.10.0`, `0.10`, and `latest`. The overlay pins the daemon to the minor channel `:0.10`:
+The release workflow publishes three Docker tags per version, for example `0.22.3`, `0.22`, and `latest`. The overlay pins the daemon to the minor channel `:0.22`:
 
-- `:0.10` auto-gets bug-fix patches (`0.10.1`, `0.10.2`, ...) but never a breaking major. You move to `:0.11` deliberately.
+- `:0.22` auto-gets bug-fix patches (`0.22.4`, `0.22.5`, ...) but never a breaking major. You move to `:0.23` deliberately.
 - `:latest` would auto-pull the next major and run its migrations unattended. Do not auto-track `:latest` in production.
 
 <Note>
-The `:0.10` channel exists once v0.10.0 is published. Until then, pin to the highest released minor.
+A minor channel tag exists for every published minor. If you're running an older minor than `0.22`, pin the overlay to that minor's channel instead (for example `:0.21`) until you deliberately move up.
 </Note>
 
 ## Turn it on
@@ -33,12 +33,19 @@ curl -fsSLO https://raw.githubusercontent.com/mahimailabs/voicegateway/main/dock
 docker compose -f docker-compose.collector.yml -f docker-compose.autoupdate.yml up -d
 ```
 
+<Warning>
+The overlay file in the repository still pins `mahimairaja/voicegateway:0.10`. Until that
+is bumped, the file you just downloaded puts you on a channel twelve minors behind what
+this page describes. Edit its `image:` line to `:0.22` after downloading, and re-check it
+on your next pull.
+</Warning>
+
 That starts three things alongside the daemon:
 
 | Service | What it does |
 | :-- | :-- |
-| `collector` (relabeled) | Now tracks `mahimairaja/voicegateway:0.10` and carries the Watchtower-enable label. |
-| `watchtower` | Checks hourly and recreates only the labeled daemon when `:0.10` advances, then removes the old image. Postgres and the backup sidecar are never auto-updated. |
+| `collector` (relabeled) | Now tracks `mahimairaja/voicegateway:0.22` and carries the Watchtower-enable label. |
+| `watchtower` | Checks hourly and recreates only the labeled daemon when `:0.22` advances, then removes the old image. Postgres and the backup sidecar are never auto-updated. |
 | `db-backup` | A `postgres:16-alpine` sidecar that dumps the database on a schedule (matching server version, so `pg_dump` never refuses), keeping the most recent N dumps in a named volume. |
 
 Always pass both `-f` files together for later `up`, `down`, and `logs`, so Compose keeps the merged definition.
@@ -84,7 +91,7 @@ docker compose -f docker-compose.collector.yml -f docker-compose.autoupdate.yml 
 
 ### Pin to the known-good version and restart
 
-Edit the image tag in `docker-compose.autoupdate.yml` (for example `:0.10.1`), then bring the stack up:
+Edit the image tag in `docker-compose.autoupdate.yml` (for example `:0.22.2`), then bring the stack up:
 
 ```bash
 docker compose -f docker-compose.collector.yml -f docker-compose.autoupdate.yml up -d

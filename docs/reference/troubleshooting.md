@@ -272,10 +272,12 @@ pip list | grep livekit
    ```bash
    echo $OPENAI_API_KEY  # Should not be empty
    ```
-4. **Compare against the example config:**
+4. **Compare against the annotated reference config:**
    ```bash
-   voicegw init --diff
+   voicegw init --full --output /tmp/voicegw.reference.yaml
+   diff /tmp/voicegw.reference.yaml voicegw.yaml
    ```
+   `init` takes only `--output`/`-o` and `--full`; there is no `--diff`.
 5. **Common mistakes:**
    - Using tabs instead of spaces (YAML requires spaces)
    - Missing colon after a key

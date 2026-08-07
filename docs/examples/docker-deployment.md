@@ -84,16 +84,18 @@ rate_limits:
     requests_per_minute: 100
 ```
 
+<Warning>
+`budget_action` (here `throttle`) does not change gateway behavior by itself: it's a status label, not an enforcement switch. `attach()` only records spend against `daily_budget`. See [Projects](/configuration/projects#budgets) for what `warn`/`throttle`/`block` actually do, and use [`guard()`](/guide/guard) if you need a call actually stopped or rerouted once a cap is hit.
+</Warning>
+
 ## Docker Compose
 
-```yaml
-version: "3.8"
+This uses the published image, so the project directory above (just `docker-compose.yml`, `voicegw.yaml`, `.env`) is all you need. `VOICEGW_CONFIG` and the `voicegw.yaml` mount are both required: the image bakes a default `VOICEGW_CONFIG` pointing at a path nothing creates, so without a mounted config file at the path you set, the daemon exits at boot before serving `/health`.
 
+```yaml
 services:
   voicegateway:
-    build:
-      context: .
-      dockerfile: src/voicegateway/Dockerfile
+    image: mahimairaja/voicegateway:0.22.3
     container_name: voicegateway
     ports:
       - "8080:8080"
@@ -146,6 +148,23 @@ networks:
     driver: bridge
 ```
 
+### Building from source instead
+
+The image above is the right choice for the 3-file project directory above. To build from source instead, you need the full repo, not just those 3 files: the Dockerfile's build context COPYs `pyproject.toml`, `src/`, `alembic.ini`, and `alembic/`, none of which exist in a standalone project directory.
+
+```bash
+git clone https://github.com/mahimailabs/voicegateway
+cd voicegateway
+```
+
+Then put your `voicegw.yaml` and `.env` at the repo root, and replace the `image:` line in the Compose file above with:
+
+```yaml
+    build:
+      context: .
+      dockerfile: src/voicegateway/Dockerfile
+```
+
 ## Starting the services
 
 ### Cloud-only (API + Dashboard)
@@ -177,9 +196,11 @@ providers:
 ### Fleet collector (Postgres)
 
 To run the self-hosted collector that many LiveKit agents push telemetry to,
-use the Postgres-backed stack:
+use the Postgres-backed stack. That compose file ships in the repository and is
+not one of the three files above, so fetch it first:
 
 ```bash
+curl -fsSLO https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docker-compose.collector.yml
 docker compose -f docker-compose.collector.yml up -d
 ```
 
@@ -207,7 +228,7 @@ curl http://localhost:8080/health
 {
   "status": "ok",
   "uptime_seconds": 42.3,
-  "version": "0.1.0"
+  "version": "0.22.3"
 }
 ```
 
@@ -278,9 +299,18 @@ For TLS termination, put Nginx or Caddy in front:
 
 ## Updating
 
+Bump the image tag in `docker-compose.yml` (see [Auto-update the daemon](/deployment/auto-update) to automate this on a self-hosted box), then:
+
+```bash
+docker compose pull
+docker compose up -d
+# The SQLite database auto-migrates on startup.
+```
+
+If you're building from source instead, pull the repo and rebuild:
+
 ```bash
 git pull
 docker compose build
 docker compose up -d
-# The SQLite database auto-migrates on startup.
 ```
