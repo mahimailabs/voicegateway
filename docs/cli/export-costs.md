@@ -1,15 +1,8 @@
 ---
 title: voicegw export-costs
-description: Export per-request cost line items for a date window in CSV or JSON.
+description: Export per-request cost line items for a date window as CSV or JSON.
 ---
-
-# voicegw export-costs
-
-Export per-request cost line items for a date window in CSV or JSON.
-
-## Synopsis
-
-`voicegw export-costs` writes one row per recorded request, suitable for spreadsheet review or as the input to a downstream reconciliation step. Pair with [`voicegw reconcile`](/cli/reconcile) to compare the exported numbers against a provider's invoice. The full reconciliation workflow lives at [Cost Reconciliation](/guide/cost-reconciliation).
+Export per-request cost line items for a date window in CSV or JSON. One row per recorded request: open it in a spreadsheet, or feed it into [`voicegw reconcile`](/cli/reconcile) as the VoiceGateway side of a reconciliation. The full workflow is at [Cost reconciliation](/guide/cost-reconciliation).
 
 ## Usage
 
@@ -21,64 +14,50 @@ voicegw export-costs --start <YYYY-MM-DD> --end <YYYY-MM-DD> [OPTIONS]
 
 | Flag | Short | Type | Default | Description |
 |---|---|---|---|---|
-| `--start` | | `string` | required | Start date in `YYYY-MM-DD` (UTC, inclusive). |
-| `--end` | | `string` | required | End date in `YYYY-MM-DD` (UTC, inclusive day; advanced one day internally for the exclusive upper bound). |
-| `--project` | `-p` | `string` | `null` | Optional project filter. |
-| `--format` | `-f` | `string` | `csv` | Output format: `csv` or `json`. |
-| `--output` | `-o` | `string` | `-` | Output path; `-` writes to stdout. |
-| `--config` | `-c` | `string` | `null` | Path to `voicegw.yaml`. Auto-discovered if omitted. |
+| `--start` | | string | required | Start date `YYYY-MM-DD`, UTC, inclusive. |
+| `--end` | | string | required | End date `YYYY-MM-DD`, UTC, inclusive. |
+| `--project` | `-p` | string | `null` | Optional project filter. |
+| `--format` | `-f` | string | `csv` | `csv` or `json`. |
+| `--output` | `-o` | string | `-` | Output path; `-` writes to stdout. |
+| `--config` | `-c` | string | `null` | Path to `voicegw.yaml`. Auto-discovered if omitted. |
 
-<Note>
-Cost tracking must be enabled in `voicegw.yaml`. If storage is not configured, the command prints a warning and exits with code 1.
-</Note>
+`--end` is inclusive of the whole day (advanced one day internally for the exclusive upper bound). The storage backend must be enabled (`cost_tracking.enabled: true`, or `VOICEGW_DB_PATH`/`VOICEGW_DB_URL`); otherwise the command prints an error and exits `1`.
 
 ## Output columns
 
-Both formats use the same 10-column schema (locked by design §2.1).
+Both formats share this 10-column schema, rows ordered by timestamp ascending:
 
-| Column | Type | Notes |
-|---|---|---|
-| `timestamp` | string | ISO-8601 UTC (e.g., `2026-04-15T09:30:00+00:00`). |
-| `project` | string | Project ID; `default` if no project routing. |
-| `modality` | string | `stt`, `llm`, or `tts`. |
-| `provider` | string | e.g., `openai`, `deepgram`, `cartesia`. |
-| `model` | string | Full `provider/model` string. |
-| `input_units` | float | Modality-dependent: tokens (LLM input), minutes (STT), characters (TTS). |
-| `output_units` | float | Tokens (LLM output); 0 for STT and TTS. |
-| `calculated_cost_usd` | string | Decimal-stable USD, fixed-point (no scientific notation), priced through `voice-prices`. |
-| `pricing_source` | string | What priced this record: `voice-prices@<version>` for cloud models (e.g., `voice-prices@0.0.8`), `voicegateway-local` for self-hosted models (`local/*` and `ollama/*`), or empty for unknown models. |
-| `status` | string | `ok` or an error tag from the wrapper. |
+| Column | Notes |
+|---|---|
+| `timestamp` | ISO-8601 UTC, e.g. `2026-04-15T09:30:00+00:00`. |
+| `project` | Project id. |
+| `modality` | `stt`, `llm`, or `tts`. |
+| `provider` | e.g. `openai`, `deepgram`, `cartesia`. |
+| `model` | Full `provider/model` string. |
+| `input_units` | Tokens (LLM input), minutes (STT), or characters (TTS). |
+| `output_units` | Tokens (LLM output); `0` for STT/TTS. |
+| `calculated_cost_usd` | Fixed-point USD string, priced through `voice-prices`. |
+| `pricing_source` | `voice-prices@<version>` for cloud models, `voicegateway-local` for `local/*`/`ollama/*`, empty for unknown. |
+| `status` | `ok` or an error tag. |
 
-Rows are ordered by timestamp ascending.
-
-### JSON format (JSONL)
-
-`--format json` emits JSONL: one JSON object per line, no outer array, no indent. Streamable; downstream consumers iterate `for line in f: row = json.loads(line)`. The schema matches the CSV column set 1:1.
+`--format json` writes JSONL (one object per line, no outer array).
 
 ## Examples
-
-### Export May 2026 to stdout as CSV
 
 ```bash
 voicegw export-costs --start 2026-05-01 --end 2026-05-31
 ```
 
-### Export to a file
-
 ```bash
 voicegw export-costs --start 2026-05-01 --end 2026-05-31 --output may-2026.csv
 ```
 
-A green confirmation line prints to stdout: `Wrote N record(s) to may-2026.csv`.
-
-### Export as JSON for one project
+Prints `Wrote N record(s) to may-2026.csv` on success.
 
 ```bash
 voicegw export-costs \
   --start 2026-05-01 --end 2026-05-31 \
-  --project production \
-  --format json \
-  --output may-2026-production.json
+  --project production --format json --output may-2026-production.json
 ```
 
 ## Exit codes
@@ -86,14 +65,9 @@ voicegw export-costs \
 | Code | Meaning |
 |---|---|
 | `0` | Success. |
-| `1` | Cost tracking is not enabled. |
-| `2` | Bad input: malformed date or unknown format. |
+| `1` | Storage backend not configured. |
+| `2` | Bad input: malformed date or unknown `--format`. |
 
 ## Related
 
-[`voicegw reconcile`](/cli/reconcile) | [`voicegw costs`](/cli/costs) | [`voicegw logs`](/cli/logs)
-
-## See also
-
-- [Cost Reconciliation](/guide/cost-reconciliation): the full reconciliation workflow.
-- [Reconcile File Formats](/reference/reconcile-formats): per-provider schemas the reconcile step expects.
+[`voicegw reconcile`](/cli/reconcile) | [`voicegw costs`](/cli/costs) | [`voicegw logs`](/cli/logs) | [Cost reconciliation](/guide/cost-reconciliation)

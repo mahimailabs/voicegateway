@@ -2,9 +2,6 @@
 title: "Code Style"
 description: "Linting with ruff, type checking with mypy, docstring conventions, Conventional Commits, and naming rules for VoiceGateway."
 ---
-
-# Code Style
-
 VoiceGateway enforces consistent code style through automated tooling. This page documents the rules and conventions.
 
 ## Tooling overview

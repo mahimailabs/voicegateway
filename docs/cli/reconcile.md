@@ -2,9 +2,6 @@
 title: voicegw reconcile
 description: Diff VoiceGateway's recorded costs against a provider's usage export.
 ---
-
-# voicegw reconcile
-
 Diff VoiceGateway's recorded costs against a provider's usage export.
 
 ## Synopsis

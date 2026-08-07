@@ -1,15 +1,8 @@
 ---
 title: voicegw costs
-description: Display cost summaries from the gateway's request log, broken down by provider and model.
+description: Display a cost summary from the gateway's request log, broken down by provider and model.
 ---
-
-# voicegw costs
-
-Display cost summaries from the gateway's request log.
-
-## Synopsis
-
-`voicegw costs` queries the SQLite database to show how much you have spent on voice AI requests. It breaks costs down by provider and by model, and can be filtered by project and time period.
+Display a cost summary from the gateway's request log.
 
 ## Usage
 
@@ -21,14 +14,12 @@ voicegw costs [OPTIONS]
 
 | Flag | Short | Type | Default | Description |
 |---|---|---|---|---|
-| `--config` | `-c` | `string` | `null` | Path to `voicegw.yaml`. Auto-discovered if omitted. |
-| `--project` | `-p` | `string` | `null` | Filter costs to a specific project ID. |
-| `--week` | | `boolean` | `false` | Show the weekly summary instead of today. |
-| `--month` | | `boolean` | `false` | Show the monthly summary instead of today. |
+| `--config` | `-c` | string | `null` | Path to `voicegw.yaml`. Auto-discovered if omitted. |
+| `--project` | `-p` | string | `null` | Filter to a specific project id. |
+| `--week` | | boolean | `false` | Show the weekly summary instead of today. |
+| `--month` | | boolean | `false` | Show the monthly summary instead of today. |
 
-<Note>
-When both `--week` and `--month` are omitted, the default period is `today`. If both are provided, `--month` takes precedence.
-</Note>
+If both `--week` and `--month` are omitted, the period is `today`. If both are passed, `--month` wins.
 
 ## Prerequisites
 
@@ -40,22 +31,19 @@ cost_tracking:
   db_path: ~/.config/voicegateway/voicegw.db
 ```
 
-If cost tracking is disabled, the command prints a warning and exits.
+If it isn't, the command prints a warning and exits `0`.
 
 ## Output
 
-The command displays:
+- A header with the period and, if passed, the project filter.
+- **Total** in USD.
+- A **By Provider** table (cost, request count).
+- A **By Model** table (cost, request count).
+- A footer line naming the pricing source in effect for each modality (e.g. `LLM: voice-prices@0.1.0`), and a reminder to run `voicegw reconcile` to verify against a provider invoice.
 
-1. A header with the period and optional project filter.
-2. The total cost in USD.
-3. A **By Provider** table with cost and request count per provider.
-4. A **By Model** table with cost and request count per model.
-
-If no requests have been recorded, it prints "No requests recorded yet."
+If nothing has been recorded, it prints "No requests recorded yet."
 
 ## Examples
-
-### Show today's costs
 
 ```bash
 voicegw costs
@@ -72,23 +60,14 @@ Total: $1.2345
 │ deepgram │ $0.5123 │ 42       │
 │ openai   │ $0.7222 │ 18       │
 └──────────┴─────────┴──────────┘
-```
 
-### Show weekly costs for a project
+Pricing sources: LLM: voice-prices@0.1.0 | STT: voice-prices@0.1.0 | TTS: voice-prices@0.1.0
+Costs are estimates. Run `voicegw reconcile --provider <name> --provider-usage-file <file>` to verify against your provider invoice.
+```
 
 ```bash
 voicegw costs --week --project tonys-pizza
-```
-
-### Show monthly costs
-
-```bash
 voicegw costs --month
-```
-
-### Use a custom config path
-
-```bash
 voicegw costs -c /etc/voicegateway/voicegw.yaml --week
 ```
 
@@ -96,9 +75,9 @@ voicegw costs -c /etc/voicegateway/voicegw.yaml --week
 
 | Code | Meaning |
 |---|---|
-| `0` | Success (including when cost tracking is disabled; prints warning). |
+| `0` | Success, including when cost tracking is disabled (prints a warning). |
 | `1` | Config failed to load. |
 
 ## Related
 
-[`voicegw status`](/cli/status) | [`voicegw logs`](/cli/logs) | [`voicegw projects`](/cli/projects)
+[`voicegw reconcile`](/cli/reconcile) | [`voicegw logs`](/cli/logs) | [`voicegw export-costs`](/cli/export-costs) | [Projects](/configuration/projects)

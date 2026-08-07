@@ -2,9 +2,6 @@
 title: Storage
 description: The SQLite backend that persists every inference request, managed configuration row, and audit event. Covers the RequestRecord schema, SQL views for daily and per-project cost aggregation, indexes, and the remote ClickHouse sink for cloud deployments.
 ---
-
-# Storage
-
 VoiceGateway uses SQLite via `aiosqlite` for all persistent data: request logs, cost tracking, managed configuration, and audit trails.
 
 **File:** `src/voicegateway/storage/sqlite.py`

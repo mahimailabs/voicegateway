@@ -2,9 +2,6 @@
 title: "Deploy to a VPS"
 description: "Run the VoiceGateway daemon on your own server with Docker Compose and Caddy for automatic HTTPS."
 ---
-
-# Deploy to a VPS
-
 Choose this path when you already control a server (cheapest option; ideal for co-locating with a self-hosted LiveKit server).
 
 ## One-line installer (recommended)

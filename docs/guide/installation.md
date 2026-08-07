@@ -2,9 +2,6 @@
 title: Installation
 description: Install VoiceGateway with uv or pip. Pick the framework extra for LiveKit or Pipecat, then bring your own provider plugins. Python 3.11+ required.
 ---
-
-# Installation
-
 ## Requirements
 
 - Python 3.11 or later

@@ -2,9 +2,6 @@
 title: Cloud quickstart
 description: Send your LiveKit or Pipecat agent's telemetry to VoiceGateway Hosted Cloud in three environment variables. You keep your own provider keys; we store telemetry rows only.
 ---
-
-# Cloud quickstart
-
 VoiceGateway Hosted Cloud is a managed collector, ClickHouse-backed storage, and shared dashboard at [dash.voicegateway.dev](https://dash.voicegateway.dev). You bring your own provider API keys (OpenAI, Deepgram, Cartesia, and the rest). Your agent pushes per-call telemetry (spend, latency, call counts) to the hosted ingest endpoint, and the dashboard renders it. We store the telemetry rows, nothing else.
 
 The same `attach()` and `guard()` calls you use for self-hosting work identically here. Only the sink changes: a remote collector instead of a local SQLite file.

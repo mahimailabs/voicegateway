@@ -2,14 +2,11 @@
 title: voicegw calls
 description: List recent calls with per-call cost and activity, the unit an operator thinks in.
 ---
-
-# voicegw calls
-
 List recent calls with per-call cost and activity.
 
 ## Synopsis
 
-`voicegw calls` shows one row per call (a session), not per model request. Where [`voicegw costs`](/cli/costs) rolls spend up by provider and model, and [`voicegw logs`](/cli/logs) tails individual STT/LLM/TTS requests, `calls` answers the operator's question: what did each call cost, and how busy was it?
+`voicegw calls` shows one row per call (a session), not per model request. [`voicegw costs`](/cli/costs) rolls spend up by provider and model; [`voicegw logs`](/cli/logs) tails individual STT/LLM/TTS requests; `calls` answers what each call cost and how busy it was.
 
 ## Usage
 
@@ -61,16 +58,10 @@ voicegw calls
 20 calls · $1.1942 total · $0.0543 avg/call
 ```
 
-### The most expensive calls
+### The 10 most expensive calls, one project
 
 ```bash
-voicegw calls --sort cost -n 10
-```
-
-### One project
-
-```bash
-voicegw calls --project tonys-pizza
+voicegw calls --sort cost -n 10 --project tonys-pizza
 ```
 
 ## Exit codes

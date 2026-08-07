@@ -2,9 +2,6 @@
 title: voicegw check
 description: Verify metering and storage end to end by driving one synthetic request.
 ---
-
-# voicegw check
-
 Verify that VoiceGateway's metering and storage pipeline works end to end. `check` drives one synthetic instrumented request and confirms a request row and a session row land in storage. It is framework-agnostic: no providers, no models, no network. Use it as a pre-deploy check after touching `voicegw.yaml`, or when triaging a "the dashboard says zero costs" report.
 
 VoiceGateway meters the native provider instances you build in your agent (via `attach()`), so `check` does not construct providers from config. It proves the path a real `attach()`ed call writes through: cost resolution (voice-prices), the SQLite store, and session correlation.

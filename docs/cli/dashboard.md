@@ -2,9 +2,6 @@
 title: voicegw dashboard
 description: Open the VoiceGateway dashboard in your browser. The daemon already serves it; this command just launches the URL.
 ---
-
-# voicegw dashboard
-
 Open the VoiceGateway dashboard in your browser.
 
 ## Synopsis

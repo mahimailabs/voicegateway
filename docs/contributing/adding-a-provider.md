@@ -2,9 +2,6 @@
 title: "Adding a Provider"
 description: "Step-by-step guide to implementing a new provider that extends BaseProvider and wires into the VoiceGateway registry."
 ---
-
-# Adding a Provider
-
 VoiceGateway uses a provider registry pattern that makes adding new providers straightforward. Each provider is a single Python file that extends `BaseProvider`. This guide walks through the full process.
 
 ## Prerequisites

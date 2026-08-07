@@ -2,9 +2,6 @@
 title: Troubleshooting
 description: Common VoiceGateway issues and their fixes, covering missing config, unconfigured providers, budget limits, Ollama connections, decryption errors, Docker dashboard crashes, MCP tooling, asyncio loops, missing plugins, config validation, rate limits, and database locks.
 ---
-
-# Troubleshooting
-
 Common issues and their solutions. If your problem is not listed here, [open an issue](https://github.com/mahimailabs/voicegateway/issues) or check the [FAQ](/reference/faq).
 
 ## "No voicegw.yaml found"

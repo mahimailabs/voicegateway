@@ -2,9 +2,6 @@
 title: "Deploy to Railway"
 description: "Run the VoiceGateway daemon on Railway with managed Postgres and automatic HTTPS."
 ---
-
-# Deploy to Railway
-
 Lowest ops: Railway handles managed Postgres, TLS, and a public URL automatically.
 
 <Tip>

@@ -1,307 +1,146 @@
 ---
 title: First agent
-description: A complete worked agent for LiveKit and Pipecat with attach() for cost metering and a guard() fallback example. Copy, set your keys, run.
+description: A complete, runnable LiveKit voice agent using attach() for cost metering and guard() for an LLM fallback and spend cap.
 ---
-
-# First agent
-
-This page gives you a complete agent file for each framework. Each example uses
-`attach()` to meter cost and latency, and `guard()` to add a fallback LLM. Copy
-the file for your framework, set your environment variables, and run it.
+One runnable LiveKit agent file. Copy it, set your keys, run it.
 
 ## Prerequisites
 
 - Python 3.11 or later
-- VoiceGateway installed for your framework (see [Installation](/guide/installation))
-- API keys for Deepgram, OpenAI, and Cartesia (or swap for your own providers)
+- VoiceGateway installed for LiveKit (see [Installation](/guide/installation))
+- A LiveKit server: a LiveKit Cloud project, or `livekit-server --dev` locally
+- API keys for Deepgram, OpenAI, and Cartesia (swap in your own providers)
 
-<Tabs>
-  <Tab title="LiveKit">
-    ### Install
+## Install
 
-    <CodeGroup>
-    ```bash uv
-    uv pip install "voicegateway[livekit]"
-    pip install "livekit-agents[silero]"
-    pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
-    ```
-    ```bash pip
-    pip install "voicegateway[livekit]"
-    pip install "livekit-agents[silero]"
-    pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
-    ```
-    </CodeGroup>
+<CodeGroup>
+```bash uv
+uv pip install "voicegateway[livekit]"
+uv pip install livekit-agents livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
+```
+```bash pip
+pip install "voicegateway[livekit]"
+pip install livekit-agents livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
+```
+</CodeGroup>
 
-    VoiceGateway is framework-agnostic and no longer bundles provider wheels. You
-    install the LiveKit plugins your agent uses (you likely already have them), and
-    VoiceGateway meters them by model_id via voice-prices.
+VoiceGateway is framework-agnostic and does not bundle provider wheels. You
+install the LiveKit plugins your agent uses, and VoiceGateway meters them by
+`model_id` through `voice-prices`.
 
-    ### Set environment variables
+## Set environment variables
 
-    ```bash
-    export LIVEKIT_URL=wss://your-project.livekit.cloud
-    export LIVEKIT_API_KEY=your-livekit-key
-    export LIVEKIT_API_SECRET=your-livekit-secret
+```bash
+export LIVEKIT_URL=wss://your-project.livekit.cloud
+export LIVEKIT_API_KEY=your-livekit-key
+export LIVEKIT_API_SECRET=your-livekit-secret
 
-    export DEEPGRAM_API_KEY=your-deepgram-key
-    export OPENAI_API_KEY=your-openai-key
-    export CARTESIA_API_KEY=your-cartesia-key
-    ```
+export DEEPGRAM_API_KEY=your-deepgram-key
+export OPENAI_API_KEY=your-openai-key
+export CARTESIA_API_KEY=your-cartesia-key
+```
 
-    For local development with `livekit-server --dev`, use:
+For local development with `livekit-server --dev`, use:
 
-    ```bash
-    export LIVEKIT_URL=ws://localhost:7880
-    export LIVEKIT_API_KEY=devkey
-    export LIVEKIT_API_SECRET=secret
-    ```
+```bash
+export LIVEKIT_URL=ws://localhost:7880
+export LIVEKIT_API_KEY=devkey
+export LIVEKIT_API_SECRET=secret
+```
 
-    ### agent.py
+The worker exits at startup without `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and
+`LIVEKIT_API_SECRET` set.
 
-    ```python
-    """LiveKit voice agent with VoiceGateway cost metering and LLM fallback."""
+## agent.py
 
-    import os
+```python
+"""LiveKit voice agent with VoiceGateway cost metering and LLM fallback."""
 
-    from livekit.agents import Agent, AgentSession, WorkerOptions, cli
-    from livekit.plugins import cartesia, deepgram, openai
+from livekit.agents import Agent, AgentSession, WorkerOptions, cli
+from livekit.plugins import cartesia, deepgram, openai
 
-    import voicegateway
+import voicegateway
 
 
-    class MyAgent(Agent):
-        def __init__(self) -> None:
-            super().__init__(
-                instructions=(
-                    "You are a friendly voice assistant. Keep your answers short "
-                    "and clear. One or two sentences unless asked for more."
-                ),
-            )
-
-
-    async def entrypoint(ctx) -> None:
-        await ctx.connect()
-
-        # guard() wraps the LLM with a fallback and a daily budget.
-        # It returns a drop-in openai.LLM, so AgentSession sees no difference.
-        guarded_llm = voicegateway.guard(
-            openai.LLM(model="gpt-4o-mini"),
-            fallback=[openai.LLM(model="gpt-4o")],
-            rate_limit="60/min",
-            budget="$5.00/day",
-            project="my-agent",
+class MyAgent(Agent):
+    def __init__(self) -> None:
+        super().__init__(
+            instructions=(
+                "You are a friendly voice assistant. Keep your answers short "
+                "and clear. One or two sentences unless asked for more."
+            ),
         )
 
-        session = AgentSession(
-            stt=deepgram.STT(model="nova-3"),
-            llm=guarded_llm,
-            tts=cartesia.TTS(model="sonic-3"),
-        )
 
-        # attach() is the single meter. Call it once, before session.start().
-        voicegateway.attach(session, project="my-agent")
+async def entrypoint(ctx) -> None:
+    await ctx.connect()
 
-        await session.start(agent=MyAgent(), room=ctx.room)
-
-
-    if __name__ == "__main__":
-        cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
-    ```
-
-    ### Run the agent
-
-    ```bash
-    python agent.py dev
-    ```
-
-    Connect to your LiveKit room from a browser or the LiveKit Playground
-    (`https://playground.livekit.io`), say something, and watch the dashboard.
-
-    ### What happens
-
-    1. `deepgram.STT` transcribes speech. `attach()` meters audio minutes and cost.
-    2. `guard(openai.LLM(...))` sends the transcript to GPT-4o mini. If GPT-4o mini
-       returns an error, `guard()` retries with GPT-4o automatically. `attach()`
-       meters prompt tokens, completion tokens, and cost.
-    3. `cartesia.TTS` synthesizes speech. `attach()` meters characters and cost.
-    4. Every row lands in the dashboard at `http://localhost:8080`.
-  </Tab>
-
-  <Tab title="Pipecat">
-    ### Install
-
-    <CodeGroup>
-    ```bash uv
-    uv pip install "voicegateway[pipecat]"
-    uv pip install "pipecat-ai[openai,deepgram,cartesia,daily]"
-    ```
-    ```bash pip
-    pip install "voicegateway[pipecat]"
-    pip install "pipecat-ai[openai,deepgram,cartesia,daily]"
-    ```
-    </CodeGroup>
-
-    ### Set environment variables
-
-    ```bash
-    export DEEPGRAM_API_KEY=your-deepgram-key
-    export OPENAI_API_KEY=your-openai-key
-    export CARTESIA_API_KEY=your-cartesia-key
-    export DAILY_API_KEY=your-daily-key
-    export DAILY_ROOM_URL=https://your-domain.daily.co/your-room
-    ```
-
-    ### agent.py
-
-    ```python
-    """Pipecat voice agent with VoiceGateway cost metering and LLM fallback."""
-
-    import asyncio
-    import os
-
-    from pipecat.audio.vad.silero import SileroVADAnalyzer
-    from pipecat.pipeline.pipeline import Pipeline
-    from pipecat.pipeline.runner import PipelineRunner
-    from pipecat.pipeline.task import PipelineParams, PipelineTask
-    from pipecat.processors.aggregators.openai_llm_context import (
-        OpenAILLMContext,
+    # guard() wraps the LLM with a fallback and a daily budget.
+    # It returns a drop-in openai.LLM, so AgentSession sees no difference.
+    guarded_llm = voicegateway.guard(
+        openai.LLM(model="gpt-4o-mini"),
+        fallback=[openai.LLM(model="gpt-4o")],
+        rate_limit="60/min",
+        budget="$5.00/day",
+        project="my-agent",
     )
-    from pipecat.services.cartesia.tts import CartesiaTTSService
-    from pipecat.services.deepgram.stt import DeepgramSTTService
-    from pipecat.services.openai.llm import OpenAILLMService
-    from pipecat.transports.services.daily import DailyParams, DailyTransport
 
-    import voicegateway
+    session = AgentSession(
+        stt=deepgram.STT(model="nova-3"),
+        llm=guarded_llm,
+        tts=cartesia.TTS(model="sonic-3"),
+    )
 
+    # attach() is the single meter. Call it once, before session.start().
+    voicegateway.attach(session, project="my-agent")
 
-    async def main() -> None:
-        transport = DailyTransport(
-            os.environ["DAILY_ROOM_URL"],
-            token=None,
-            bot_name="VoiceBot",
-            params=DailyParams(audio_out_enabled=True, vad_analyzer=SileroVADAnalyzer()),
-        )
-
-        stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"])
-
-        # guard() wraps the LLM with a fallback and a daily budget.
-        # It returns a drop-in OpenAILLMService, so the Pipeline sees no difference.
-        llm = voicegateway.guard(
-            OpenAILLMService(
-                api_key=os.environ["OPENAI_API_KEY"],
-                model="gpt-4o-mini",
-            ),
-            fallback=[
-                OpenAILLMService(
-                    api_key=os.environ["OPENAI_API_KEY"],
-                    model="gpt-4o",
-                )
-            ],
-            rate_limit="60/min",
-            budget="$5.00/day",
-            project="my-agent",
-        )
-
-        tts = CartesiaTTSService(
-            api_key=os.environ["CARTESIA_API_KEY"],
-            voice_id="your-voice-id",
-        )
-
-        context = OpenAILLMContext(
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a friendly voice assistant. Keep your answers short "
-                        "and clear. One or two sentences unless asked for more."
-                    ),
-                }
-            ]
-        )
-        context_aggregator = llm.create_context_aggregator(context)
-
-        pipeline = Pipeline(
-            [
-                transport.input(),
-                stt,
-                context_aggregator.user(),
-                llm,
-                tts,
-                transport.output(),
-                context_aggregator.assistant(),
-            ]
-        )
-
-        task = PipelineTask(
-            pipeline,
-            params=PipelineParams(
-                allow_interruptions=True,
-                enable_metrics=True,
-                enable_usage_metrics=True,
-            ),
-        )
-
-        # attach() is the single meter. Call it once, before runner.run(task).
-        voicegateway.attach(task, project="my-agent")
-
-        runner = PipelineRunner()
-        await runner.run(task)
+    await session.start(agent=MyAgent(), room=ctx.room)
 
 
-    if __name__ == "__main__":
-        asyncio.run(main())
-    ```
-
-    ### Run the agent
-
-    ```bash
-    python agent.py
-    ```
-
-    Join your Daily room from a browser. After the call ends, the dashboard at
-    `http://localhost:8080` shows a cost row per modality.
-
-    ### What happens
-
-    1. `DeepgramSTTService` transcribes speech. `attach()` accumulates audio bytes,
-       converts them to minutes, and prices the STT.
-    2. `guard(OpenAILLMService(...))` sends the transcript to GPT-4o mini. If it
-       returns an error, `guard()` retries with GPT-4o automatically. `attach()`
-       meters tokens and cost from the `LLMTokenUsage` frame.
-    3. `CartesiaTTSService` synthesizes speech. `attach()` meters characters and cost.
-    4. On pipeline end, `attach()` flushes all pending rows to the local SQLite sink
-       and the dashboard updates.
-
-    <Warning>
-      Pipecat fallback switches providers before the first output frame only. If the
-      primary service fails partway through a token stream, the error is surfaced
-      rather than patched mid-stream. Size your fallback list for "primary is down
-      or rejecting", not "primary died halfway".
-    </Warning>
-  </Tab>
-</Tabs>
-
-## View costs in the dashboard
-
-```bash
-voicegw dashboard
+if __name__ == "__main__":
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
 ```
 
-Opens your browser at `http://localhost:8080`. Cost rows appear in real time as
-calls complete.
-
-In the terminal:
+## Run the agent
 
 ```bash
-voicegw costs    # tabular cost summary
-voicegw logs     # recent request stream
-voicegw status   # daemon and provider health
+python agent.py dev
 ```
+
+Connect from a browser or the [LiveKit Playground](https://playground.livekit.io),
+say something, and watch the dashboard.
+
+## What happens
+
+1. `deepgram.STT` transcribes speech. `attach()` meters audio minutes and cost.
+2. `guard(openai.LLM(...))` sends the transcript to GPT-4o mini. On an error,
+   `guard()` retries with GPT-4o automatically. `attach()` meters prompt
+   tokens, completion tokens, and cost.
+3. `cartesia.TTS` synthesizes speech. `attach()` meters characters and cost.
+4. Every row lands in the dashboard at `http://localhost:8080`.
+
+## View costs
+
+```bash
+voicegw dashboard              # opens the browser at http://localhost:8080
+voicegw costs --project my-agent
+voicegw logs  --project my-agent
+voicegw status
+```
+
+## Notes
+
+- `attach()` alone, without `guard()`, is a complete and valid setup: you get
+  cost and latency tracking with no change to how the call behaves. Reach for
+  `guard()` only on the providers where you want fallback, a rate limit, or a
+  spend cap.
+- `guard()` returns the same type it wraps, so `guarded_llm` slots into
+  `AgentSession` exactly like a plain `openai.LLM`.
 
 ## Next steps
 
-- [attach()](/guide/attach): full reference, including `tenant_id` for multi-tenant attribution.
-- [guard()](/guide/guard): full reference, including per-framework fallback scope.
-- [Core concepts](/guide/core-concepts): how attach, guard, projects, and sinks fit together.
+- [attach()](/guide/attach): full signature, including `tenant_id` for multi-tenant attribution.
+- [guard()](/guide/guard): full signature, including per-framework fallback scope.
+- [Frameworks and extras](/guide/frameworks): the framework-neutral core.
 - [Configuration reference](/configuration/voicegw-yaml): every YAML key.
 - [Providers](/configuration/providers): all supported providers and model IDs.

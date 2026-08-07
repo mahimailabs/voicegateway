@@ -2,9 +2,6 @@
 title: Quickstart
 description: Install VoiceGateway next to an existing LiveKit or Pipecat agent, call attach() once, and see what your first call cost.
 ---
-
-# Quickstart
-
 By the end of this page you have VoiceGateway installed, one `attach()` call in your
 agent, and a per-modality cost row on screen for a real call.
 

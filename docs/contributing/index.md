@@ -2,9 +2,6 @@
 title: "Contributing to VoiceGateway"
 description: "How to report bugs, suggest features, and submit pull requests to the VoiceGateway project."
 ---
-
-# Contributing to VoiceGateway
-
 Thank you for your interest in contributing to VoiceGateway. This guide covers everything you need to get started, whether you are reporting a bug, suggesting a feature, or submitting code.
 
 ## Code of Conduct

@@ -2,9 +2,6 @@
 title: "Deploy VoiceGateway"
 description: "Ship the self-hosted VoiceGateway daemon to production: HTTP API and dashboard on one port, backed by Postgres or SQLite."
 ---
-
-# Deploy VoiceGateway
-
 The VoiceGateway daemon is a single container that serves:
 
 - `POST /v1/ingest` (agents push cost telemetry, Bearer-keyed)

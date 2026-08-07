@@ -2,9 +2,6 @@
 title: Configuration layers
 description: How VoiceGateway merges voicegw.yaml, SQLite managed tables, and environment variables into a single resolved GatewayConfig, with clear priority rules and a live refresh cycle.
 ---
-
-# Configuration layers
-
 VoiceGateway merges configuration from three sources with a clear priority order. You can pin critical settings in YAML, manage everything else through the dashboard or MCP server, and override individual values at runtime with environment variables.
 
 ## Priority order

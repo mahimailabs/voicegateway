@@ -2,9 +2,6 @@
 title: voicegw mcp
 description: Start the VoiceGateway MCP server so coding agents can inspect and manage the gateway via stdio or HTTP/SSE.
 ---
-
-# voicegw mcp
-
 Start the VoiceGateway MCP (Model Context Protocol) server.
 
 ## Synopsis
