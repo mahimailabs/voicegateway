@@ -146,8 +146,18 @@ staging_task = build_task(transport_in, transport_out, project="staging")
 </Tabs>
 
 <Note>
-There is no `VOICEGW_PROJECT` env var. Pass `project=` explicitly to `attach()`
-or `guard()` so the attribution is always unambiguous in code.
+`VOICEGW_PROJECT` exists and is honoured. Attribution resolves in three steps,
+first match wins:
+
+1. an explicit `project=` on `attach()` or `guard()`
+2. the `VOICEGW_PROJECT` environment variable
+3. `"default"`
+
+Prefer the explicit argument when one process serves several projects, since
+that is the case an environment variable cannot express: it is per-process, so
+every session in that process lands under the same project. Use the variable to
+label a whole deployment without editing code, which is how the
+[VPS](/deployment/vps) and [hosted quickstart](/hosted/quickstart) guides set it.
 </Note>
 
 ## Querying per-project costs

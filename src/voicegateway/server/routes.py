@@ -33,6 +33,7 @@ from voicegateway.server.api import (
     models,
     projects,
     providers,
+    rooms,
     sessions,
     system,
 )
@@ -96,6 +97,9 @@ api_router.include_router(models.router)
 api_router.include_router(costs.router)
 api_router.include_router(billing.router)
 api_router.include_router(latency.router)
+# GET /v1/rooms/{room}/latency: the per-stage split, keyed on the LiveKit room
+# name so a caller that never sees a VoiceGateway session_id can still read it.
+api_router.include_router(rooms.router)
 api_router.include_router(logs.router)
 api_router.include_router(sessions.router)
 api_router.include_router(projects.router)

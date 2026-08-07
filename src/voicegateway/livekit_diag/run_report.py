@@ -37,6 +37,7 @@ not in the room when it ran. That drives every decision below.
 from __future__ import annotations
 
 import html
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -518,7 +519,69 @@ def _report_target(livekit_url: str | None) -> dict[str, Any]:
     }
 
 
-def build_payload(run: RunRecord, *, livekit_url: str | None) -> dict[str, Any]:
+#: Where the environment label comes from when a caller does not pass one.
+#: An operator DECLARES this; nothing can derive it. See :func:`_report_basis`.
+ENVIRONMENT_ENV_VAR = "VOICEGW_ENVIRONMENT"
+
+
+def _report_basis(
+    run: RunRecord, checks: dict[str, Any], environment: str | None
+) -> dict[str, Any]:
+    """How much the report is based on, and where the numbers were taken.
+
+    Three facts a reader needs before they can weigh anything else in the
+    document, and which it did not previously state:
+
+    ``turns`` and ``sessions``. The per-agent findings carry ``trials_answered``
+    each, so the totals were derivable and never derived, which left a reader to
+    add up a table to learn the sample size. ``sessions`` counts the DISTINCT
+    PROBE ROOMS the latency check recorded, which is what a session is here: the
+    room a probed agent's counted turns ran in. An agent that answered nothing
+    records no room and is not counted, so this is a count of sessions that
+    produced a measurement rather than of attempts.
+
+    ``environment``. This one cannot be derived and is not guessed. The LiveKit
+    URL in ``target`` is close but is a different claim: it says which server was
+    probed, not whether the probe ran from the deployed environment or from
+    somebody's laptop against it, and those produce different network latency.
+    So it is an operator DECLARATION, from the caller or from
+    :data:`ENVIRONMENT_ENV_VAR`, and when nobody declared one the report says so
+    in as many words rather than implying either answer.
+    """
+    declared = environment or os.environ.get(ENVIRONMENT_ENV_VAR) or None
+    latency = _check_state(run, checks, "latency")
+    result = latency["result"] or {}
+    agents = result.get("agents") or []
+    turns = 0
+    rooms: set[str] = set()
+    for raw in agents:
+        if not isinstance(raw, dict):
+            continue
+        stats = raw.get("stats")
+        if isinstance(stats, dict):
+            turns += _as_int(stats.get("trials")) or 0
+        room = raw.get("room")
+        if isinstance(room, str) and room:
+            rooms.add(room)
+    return {
+        "environment": declared,
+        "environment_declared": declared is not None,
+        "environment_source": (
+            "declared by the operator at export time" if declared is not None else None
+        ),
+        "sessions": len(rooms),
+        "sessions_basis": (
+            "distinct probe rooms recorded by the latency check; an agent that "
+            "answered nothing records no room and is not counted"
+        ),
+        "turns": turns,
+        "turns_basis": "trials that answered, summed across probed agents",
+    }
+
+
+def build_payload(
+    run: RunRecord, *, livekit_url: str | None, environment: str | None = None
+) -> dict[str, Any]:
     """The one report payload. The JSON export IS this; the HTML renders it.
 
     Nothing here judges the run. ``verdict`` and ``gates`` are read back out of
@@ -552,6 +615,10 @@ def build_payload(run: RunRecord, *, livekit_url: str | None) -> dict[str, Any]:
             "error": run.error,
         },
         "target": _report_target(livekit_url),
+        # How much this rests on, and where it was measured from. See
+        # :func:`_report_basis`: the sample size was derivable from the per-agent
+        # findings and never stated, and the environment cannot be derived at all.
+        "basis": _report_basis(run, checks, environment),
         "verdict": {
             "status": run.verdict,
             "recorded": run.verdict is not None,
@@ -736,6 +803,41 @@ def _state_note(finding: dict[str, Any]) -> str | None:
     return None
 
 
+def _render_environment(payload: dict[str, Any]) -> str:
+    """The declared environment, or an explicit statement that nobody declared one.
+
+    Never inferred. "Probed a production URL" and "probed it from production" are
+    different claims, and only the second one says whether the network path in
+    these numbers is the one real callers traverse. So an undeclared report says
+    it is undeclared, rather than letting a reader assume either answer.
+    """
+    basis = payload.get("basis") or {}
+    label = basis.get("environment")
+    if not label:
+        return (
+            '<span class="nm">not declared</span><br>'
+            '<span class="nm">nothing here can tell whether this ran inside the '
+            f"deployed environment or against it from elsewhere. Set "
+            f"{_esc(ENVIRONMENT_ENV_VAR)} on the exporting host to say so.</span>"
+        )
+    return (
+        f"{_esc(label)}<br>"
+        f'<span class="nm">{_esc(basis.get("environment_source") or "")}</span>'
+    )
+
+
+def _render_basis_counts(payload: dict[str, Any]) -> str:
+    """Sessions and turns, so the sample size is stated and not added up by hand."""
+    basis = payload.get("basis") or {}
+    sessions = _as_int(basis.get("sessions")) or 0
+    turns = _as_int(basis.get("turns")) or 0
+    return (
+        f"{sessions:,} session(s), {turns:,} turn(s)<br>"
+        f'<span class="nm">{_esc(basis.get("sessions_basis") or "")}; '
+        f"{_esc(basis.get('turns_basis') or '')}</span>"
+    )
+
+
 def _render_meta(payload: dict[str, Any]) -> str:
     run = payload["run"]
     target = payload["target"]
@@ -765,6 +867,8 @@ def _render_meta(payload: dict[str, Any]) -> str:
             + '<br><span class="nm">read on the exporting host at export time: '
             "the run record does not store the server it probed</span>",
         ),
+        ("Environment", _render_environment(payload)),
+        ("Measured over", _render_basis_counts(payload)),
         (
             "Reply-latency target",
             _recorded(None if target_ms is None else f"{target_ms:,.0f} ms"),

@@ -202,6 +202,79 @@ curl "http://localhost:8080/v1/sessions/vg-8f1c"
 
 ---
 
+## Rooms
+
+The per-stage latency split for one LiveKit room, over HTTP.
+
+The same split is available in-process to `voicegw livekit latency`, but only when the prober and the agent share one local store. A deployment that runs the agent in one container and the collector in another holds every row needed and cannot reach the computation. This endpoint is that computation, reachable. No new measurement happens here.
+
+Keyed on the **room name**, deliberately, not on `session_id`. A caller mints the room name when it signs the LiveKit token, so the room is the only identifier both sides hold at call time; `session_id` is minted inside VoiceGateway and a caller never observes it.
+
+**Authentication:** read authentication, the same as [Sessions](#sessions). Tenant comes from the key and never from the request.
+
+### GET /v1/rooms/{room_name}/latency
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `since_turn` | `integer` | `null` | Return only turns with `turn_index` greater than this. Filters `turns` **only**. |
+
+`since_turn` is a cursor over `turns` and nothing else. `components` and `e2e_ms` are whole-call aggregates and always come back whole, so successive polls cannot disagree with each other.
+
+**Four answers that mean different things:**
+
+| Response | Meaning |
+|---|---|
+| `404` | This collector has never seen that room, **or** the room belongs to another tenant. Identical on purpose: a `403` would confirm the room is real. |
+| `200`, `components: null` | The room is known and nothing correlated: an uninstrumented agent, or no completed turn yet. |
+| `200`, `complete: false` | A real split, still partial because the agent process is mid-flush. **Poll again rather than rendering it.** |
+| `200`, a component is `null` | That stage produced no measurement. It is never `0`: a stage shown as `0.00` reads as "instant". |
+
+All times are in **milliseconds**.
+
+**Example:**
+
+```bash
+curl -H "Authorization: Bearer vk_..." \
+  "http://localhost:8080/v1/rooms/demo-a1b2c3/latency?since_turn=5"
+```
+
+```json
+{
+  "room": "demo-a1b2c3",
+  "project": "acme-w1",
+  "turn_count": 7,
+  "complete": true,
+  "components": {
+    "eou_ms": 302.0,
+    "stt_ttfp_ms": 121.0,
+    "stt_transcription_delay_ms": 88.0,
+    "stt_ms": 209.0,
+    "llm_ttft_ms": 447.0,
+    "tts_ttfb_ms": 92.0
+  },
+  "e2e_ms": {
+    "p50": 1041.0, "p95": 1288.0, "avg": 1074.0,
+    "min": 902.0, "max": 1301.0, "n": 7
+  },
+  "turns": [
+    {
+      "turn_index": 6,
+      "caller_speak_end_ms": 1800000012345,
+      "agent_speak_start_ms": 1800000013386,
+      "response_speed_ms": 1041
+    }
+  ]
+}
+```
+
+`e2e_ms` is computed by the same `summarize()` the CLI reports through, so the two surfaces cannot drift on what `p95` means. It is `null`, rather than a row of zeros, when no turn completed.
+
+**Not provided, on purpose:** no CORS and no browser-facing key (a read-scoped key in a browser can read every session and cost row for the tenant, so proxy it server-side); no WebSocket or SSE (ingest is batched behind a bounded queue, so freshness is inherently seconds, and a socket would deliver seconds-stale data faster while adding a stateful fan-out surface); no per-turn component split.
+
+---
+
 ## Billing
 
 The rating layer's read surface. VoiceGateway rates each recorded request at write time (`rated_price_usd` + `rate_rule`); these endpoints roll that up per tenant and expose the rate card in effect. See [Rating](/architecture/rating) for the model.
