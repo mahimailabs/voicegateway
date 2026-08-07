@@ -27,7 +27,7 @@ You can still track spend alongside them:
 1. **Point the framework at providers directly** and read costs out of band from the [HTTP API](/api/http-api) (`/v1/costs`, `/v1/logs`) or the [MCP server](/mcp/index).
 2. **For a voice agent**, build it on LiveKit or Pipecat and meter it with `attach()` as shown in the [quickstart](/get-started).
 
-See the [decision tree](/guide/decision-tree) for when VoiceGateway is the right fit. The MCP server's tools work with any agent framework that supports MCP (Claude Code, Cursor, Codex, Cline, etc.).
+See [what you can profile](/guide/what-you-can-profile) for when VoiceGateway is the right fit. The MCP server's tools work with any agent framework that supports MCP (Claude Code, Cursor, Codex, Cline, etc.).
 
 ---
 

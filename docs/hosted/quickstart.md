@@ -9,6 +9,16 @@ VoiceGateway Hosted Cloud is a managed collector, ClickHouse-backed storage, and
 
 The same `attach()` and `guard()` calls you use for self-hosting work identically here. Only the sink changes: a remote collector instead of a local SQLite file.
 
+| | Self-Host (OSS) | Hosted Cloud |
+|---|---|---|
+| Storage | SQLite, single process | ClickHouse, multi-tenant |
+| Ingest | local sink, no network hop | push to `VOICEGW_COLLECTOR_URL` |
+| Dashboard | `voicegw serve` on port 8080 | `dash.voicegateway.dev` |
+| Setup | `pip install` plus `voicegw.yaml` | three env vars |
+| Right for | local dev, small teams, self-managed infra | multi-agent fleets, SaaS products, agency work |
+
+The SFU and SIP layers run from your own CLI either way.
+
 <Note>
 The hosted cloud never receives your call audio or transcripts. `attach()` reads per-component metrics events (cost, latency, errors) and pushes only those numeric rows to the collector.
 </Note>
@@ -128,8 +138,5 @@ See [voicegateway.dev](https://voicegateway.dev) for the full breakdown and curr
   </Card>
   <Card title="Quickstart" href="/get-started">
     Run the collector locally or on your own infra instead of using hosted cloud.
-  </Card>
-  <Card title="Which path fits?" href="/guide/decision-tree">
-    Not sure whether cloud or self-host is right? Use the decision tree.
   </Card>
 </CardGroup>

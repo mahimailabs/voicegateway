@@ -9,7 +9,7 @@ By the end of this page you have VoiceGateway installed, one `attach()` call in 
 agent, and a per-modality cost row on screen for a real call.
 
 This is the agent layer. The SFU and SIP layers have different prerequisites and are
-covered in [What you need](/guide/prerequisites).
+covered in [what you can profile](/guide/what-you-can-profile).
 
 ## Before you start
 
@@ -46,7 +46,7 @@ covered in [What you need](/guide/prerequisites).
       The `livekit` extra is in the Pipecat command on purpose. The `voicegw` CLI
       imports its LiveKit diagnostics at startup, so every subcommand needs that
       extra even on a Pipecat-only deployment. Your agent still imports no LiveKit
-      code. See [What you need](/guide/prerequisites).
+      code. See [what you can profile](/guide/what-you-can-profile).
     </Note>
 
     [Installation](/guide/installation) has the full extras table, Docker, and source
@@ -256,17 +256,5 @@ More cases in [Troubleshooting](/reference/troubleshooting).
 
 ## Next
 
-<CardGroup cols={2}>
-  <Card title="What you can profile" icon="layer-group" href="/guide/what-you-can-profile">
-    The agent layer is one of three. See the SFU and SIP layers.
-  </Card>
-  <Card title="First agent" icon="code" href="/guide/first-agent">
-    A complete worked agent file with `attach()` and a `guard()` fallback.
-  </Card>
-  <Card title="attach()" icon="eye" href="/guide/attach">
-    Full signature: projects, tenants, channels, and fleet push.
-  </Card>
-  <Card title="guard()" icon="shield" href="/guide/guard">
-    Add fallback chains, rate limits, and daily spend caps.
-  </Card>
-</CardGroup>
+Next: [attach()](/guide/attach) for the full signature, [guard()](/guide/guard) for fallback
+and budgets, or [first agent](/guide/first-agent) for a complete worked file.
