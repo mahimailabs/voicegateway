@@ -30,6 +30,35 @@ def temp_config(tmp_path):
     return cfg
 
 
+@pytest.fixture(autouse=True)
+def no_provider_network(monkeypatch):
+    """No test in this file may dial a provider's API. Autouse, so none can.
+
+    ``temp_config`` configures ``providers.openai``, which makes the doctor's
+    "Provider key valid" check run for real: it builds the OpenAI provider and
+    calls ``health_check``, which issues a live HTTPS GET to
+    ``api.openai.com/v1/models`` carrying the fake ``sk-test`` key.
+
+    That made two tests here depend on the public internet. When the request
+    answered quickly they passed in 0.4s; when it did not, the 5s validation
+    deadline fired and the test failed. Measured on an untouched tree: three
+    failures in thirty runs, and the same rate in CI on a different network.
+
+    ``all_pass`` already stubbed this for the tests that use it, which is why
+    only the two tests WITHOUT ``all_pass`` ever flaked. Making it autouse
+    closes the hole for every test in the file, including ones added later.
+    ``all_pass`` still installs its own "ok" stub over the top; this is the
+    floor, not a replacement.
+    """
+
+    async def _no_network(provider, key):
+        return "skipped", "provider validation stubbed: tests never dial out"
+
+    monkeypatch.setattr(
+        "voicegateway.utils.cli.doctor._validate_provider_key", _no_network
+    )
+
+
 @pytest.fixture
 def all_pass(monkeypatch):
     """Stub the slow / OS-side calls so all 10 checks return ok or skip."""
