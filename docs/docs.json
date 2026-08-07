@@ -32,7 +32,6 @@
             "group": "Get started",
             "pages": [
               "index",
-              "guide/prerequisites",
               "get-started"
             ]
           },
@@ -40,15 +39,7 @@
             "group": "Understanding VoiceGateway",
             "pages": [
               "guide/what-is-voicegateway",
-              "guide/what-you-can-profile",
-              "guide/decision-tree"
-            ]
-          },
-          {
-            "group": "Resources",
-            "pages": [
-              "guide/comparison",
-              "reference/faq"
+              "guide/what-you-can-profile"
             ]
           }
         ]
@@ -205,6 +196,7 @@
           {
             "group": "Reference",
             "pages": [
+              "reference/faq",
               "reference/troubleshooting",
               "reference/reconcile-formats"
             ]

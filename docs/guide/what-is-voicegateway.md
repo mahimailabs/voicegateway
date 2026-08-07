@@ -142,19 +142,19 @@ Records flow to:
 VoiceGateway does not sit in the audio or inference path. There is no proxy hop and
 no added latency on happy-path calls.
 
-## Next steps
+## When something else is the better fit
 
-<CardGroup cols={2}>
-  <Card title="What you can profile" icon="layer-group" href="/guide/what-you-can-profile">
-    The three layers: agent, SFU, and SIP, and what each one measures.
-  </Card>
-  <Card title="Quickstart" icon="bolt" href="/get-started">
-    Install, attach, and read your first cost row.
-  </Card>
-  <Card title="attach()" icon="eye" href="/guide/attach">
-    Full reference for the passive observability seam.
-  </Card>
-  <Card title="guard()" icon="shield" href="/guide/guard">
-    Add fallback, rate limiting, and budget caps to any provider.
-  </Card>
-</CardGroup>
+Most tools VoiceGateway gets compared to are LLM proxies. They sit in the request path and
+route text completions, which is a different problem.
+
+| If you are... | Use |
+|---|---|
+| Building a LiveKit or Pipecat voice agent and want per-modality cost | VoiceGateway |
+| Profiling a LiveKit SFU or SIP path you operate | VoiceGateway |
+| Building a text-only LLM app | [LiteLLM](https://docs.litellm.ai/) |
+| Wanting a hosted multi-tenant LLM proxy with no infrastructure | [OpenRouter](https://openrouter.ai/) |
+| At scale on Cloudflare and wanting a gateway in that stack | [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/) |
+| On LiveKit Cloud and happy with bundled inference pricing | LiveKit Inference |
+
+Next: [what you can profile](/guide/what-you-can-profile), or go straight to the
+[quickstart](/get-started).
