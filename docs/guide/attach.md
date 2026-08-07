@@ -26,6 +26,7 @@ voicegateway.attach(
     room: str | None = None,          # LiveKit room name for probe correlation; auto-resolved
     heartbeat: bool = False,          # register + heartbeat this process in the fleet roster
     transcript: bool = True,          # capture the call transcript (LiveKit only for now)
+    snapshots: bool = False,          # capture conversation-state snapshots for replay (opt-in)
 ) -> str                              # correlation session id stamped on every row
 ```
 
@@ -132,13 +133,25 @@ same async context inherits it too, with no argument needed.
 **Tenant** attribution is opt-in: pass `tenant_id=` when one deployment
 serves several customers. See [Tenant attribution](/guide/multi-tenant-quickstart).
 
-## room, heartbeat, transcript (LiveKit)
+## room, heartbeat, transcript, snapshots (LiveKit)
 
 | Param | Behavior |
 |---|---|
 | `room` | LiveKit room name stamped on each row, so `voicegw livekit latency` can read the STT/LLM/TTS split back by room. Auto-resolved from the running job context. |
 | `heartbeat=True` | Registers this process in the fleet roster and heartbeats its presence (the dashboard's Fleet/Agents view). Best for single-process agents where `attach()` is the sole writer. In LiveKit's per-call subprocess model (`agent dev`), call `register_worker(agent_id, local=True)` at your `__main__` boot instead, and skip `heartbeat=True` there — the subprocess would become a second writer of the same roster row. |
 | `transcript=True` (default) | On close, user/agent turns are read from the framework's conversation history and written to local storage for the Calls page. `transcript=False` disables it per attach; `VOICEGW_TRANSCRIPTS=0` kills it fleet-wide (the env var wins over the argument). Pipecat accepts the flag but does not capture transcripts yet. |
+| `snapshots=True` | Captures conversation-state snapshots for [session replay](/cli/replay). **Off by default**, the one place this differs from `transcript`. `VOICEGW_SNAPSHOTS=0` kills it fleet-wide and beats the argument. Pipecat accepts the flag and does not capture yet. |
+
+<Warning>
+`snapshots` defaults off because it is a strictly larger disclosure than a transcript. A
+transcript is what the caller said. A snapshot carries your **system prompt**, the full
+message history, and every tool call's arguments and result, so it captures your own
+prompt and whatever payloads your tools handle. That should be asked for, not assumed.
+</Warning>
+
+Snapshots need a local sink. When `VOICEGW_COLLECTOR_URL` is set, capture is skipped:
+a collector has no replay tables, and the dashboard reads replay from the local store, so
+capturing there would buffer rows nothing could flush.
 
 ## Config: what actually gates writes
 
