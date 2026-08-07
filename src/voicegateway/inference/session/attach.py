@@ -341,6 +341,7 @@ def attach(
     room: str | None = None,
     heartbeat: bool = False,
     transcript: bool = True,
+    snapshots: bool = False,
 ) -> str:
     """Attach VoiceGateway to a LiveKit ``AgentSession`` or Pipecat ``PipelineTask``.
 
@@ -392,6 +393,20 @@ def attach(
             kill-switch wins over the argument). Captures to the local SQLite the
             co-located dashboard reads; currently LiveKit-only (the Pipecat path
             accepts the flag but does not capture transcripts yet).
+        snapshots: capture conversation-state snapshots (default OFF). When on,
+            a snapshot is written at each completed message and each resolved
+            tool call, carrying the system prompt, the message history, and the
+            tool's arguments and result. ``voicegw replay`` and the dashboard's
+            replay view read these back. Off by default because that is a
+            strictly larger disclosure than ``transcript``: it captures the
+            operator's own prompt and whatever payloads their tools handle, not
+            only what the caller said. Set ``VOICEGW_SNAPSHOTS=0`` to force it
+            off fleet-wide (the kill-switch wins over the argument). Message
+            snapshots are rate-capped to one per second; tool-call snapshots
+            bypass that cap because they are rare and are the point. Requires a
+            local sink: a remote collector has no replay tables, so capture is
+            skipped there rather than buffering rows nothing can flush.
+            LiveKit-only, like transcripts.
 
     Returns:
         The correlation session id stamped on every captured row.
@@ -412,6 +427,7 @@ def attach(
             sink=sink,
             heartbeat=heartbeat,
             transcript=transcript,
+            snapshots=snapshots,
         )
     return _attach_livekit(
         session,
@@ -424,6 +440,7 @@ def attach(
         room=room,
         heartbeat=heartbeat,
         transcript=transcript,
+        snapshots=snapshots,
     )
 
 
@@ -434,6 +451,104 @@ def _transcripts_enabled(param: bool) -> bool:
     if env is not None and env.strip().lower() in ("0", "false", "no", "off"):
         return False
     return param
+
+
+def _snapshots_enabled(param: bool) -> bool:
+    """Whether to capture state snapshots. Same shape as transcripts above.
+
+    DEFAULT OFF, which is the one place this deliberately differs from
+    transcripts. A transcript is what the caller said, which the operator
+    already has. A snapshot is the SYSTEM PROMPT plus the whole message history
+    plus every tool call's arguments and result, so it captures the operator's
+    own prompt and whatever payloads their tools handle. That is a strictly
+    larger disclosure than a transcript and should be asked for, not assumed.
+
+    The kill-switch still wins over the argument, so a fleet can force it off
+    centrally even where an agent passes ``snapshots=True``.
+    """
+    env = os.environ.get("VOICEGW_SNAPSHOTS")
+    if env is not None and env.strip().lower() in ("0", "false", "no", "off"):
+        return False
+    return param
+
+
+def _history_items(session: Any) -> list[dict[str, Any]]:
+    """The conversation so far, as plain role/text dicts. Never raises."""
+    out: list[dict[str, Any]] = []
+    try:
+        items = getattr(getattr(session, "history", None), "items", None) or []
+        for item in items:
+            role = getattr(item, "role", None)
+            text = getattr(item, "text_content", None)
+            if isinstance(role, str) and isinstance(text, str) and text.strip():
+                out.append({"role": role, "text": text})
+    except Exception:  # noqa: BLE001 - snapshots are never load-bearing
+        logger.debug("attach: reading history for snapshot failed", exc_info=True)
+    return out
+
+
+def _system_prompt(session: Any) -> str:
+    """The active agent's instructions, or "" when not readable. Never raises."""
+    try:
+        agent = getattr(session, "current_agent", None) or getattr(
+            session, "_agent", None
+        )
+        instructions = getattr(agent, "instructions", None)
+        return instructions if isinstance(instructions, str) else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _emit_conversation_item(session_id: str, session: Any, snapshotter: Any) -> Any:
+    """LiveKit ``conversation_item_added`` -> one rate-capped state snapshot."""
+
+    async def _handler(*_args: Any, **_kwargs: Any) -> None:
+        try:
+            await snapshotter.on_message_added(
+                system_prompt=_system_prompt(session),
+                message_history=_history_items(session),
+                session_id=session_id,
+            )
+        except Exception:  # noqa: BLE001 - never let capture break the agent
+            logger.debug("attach: snapshot on message add failed", exc_info=True)
+
+    return _handler
+
+
+def _emit_tools_executed(session_id: str, session: Any, snapshotter: Any) -> Any:
+    """LiveKit ``function_tools_executed`` -> one snapshot per resolved call.
+
+    Uses ``on_tool_resolved``, which bypasses the rate cap on purpose: tool
+    calls are rare and are the single most useful thing in a replay, so they
+    must never be the sample the 1/s cap happens to drop.
+    """
+
+    async def _handler(event: Any = None, *_args: Any, **_kwargs: Any) -> None:
+        try:
+            zipped = getattr(event, "zipped", None)
+            pairs = zipped() if callable(zipped) else []
+            for call, output in pairs:
+                raw = getattr(call, "arguments", "") or ""
+                try:
+                    import json
+
+                    args = json.loads(raw) if raw else {}
+                except (ValueError, TypeError):
+                    # Providers send arguments as a JSON string; keep the raw
+                    # text rather than dropping the call when it will not parse.
+                    args = {"_raw": raw}
+                await snapshotter.on_tool_resolved(
+                    tool_name=getattr(call, "name", "") or "",
+                    tool_args=args if isinstance(args, dict) else {"_raw": raw},
+                    result=getattr(output, "output", None),
+                    system_prompt=_system_prompt(session),
+                    message_history=_history_items(session),
+                    session_id=session_id,
+                )
+        except Exception:  # noqa: BLE001 - never let capture break the agent
+            logger.debug("attach: snapshot on tools executed failed", exc_info=True)
+
+    return _handler
 
 
 async def _capture_transcript_from_history(
@@ -463,6 +578,49 @@ async def _capture_transcript_from_history(
         logger.debug("attach: transcript capture failed", exc_info=True)
 
 
+def _build_snapshot_capture(
+    sink: Any, tenant_id: str | None, session_id: str
+) -> tuple[Any | None, Any | None]:
+    """Build the (ReplayCapture, StateSnapshotter) pair, or (None, None).
+
+    These two were written to plug into each other and never were, and the seam
+    has a gap that only shows up once they are actually joined.
+    ``StateSnapshotter._emit`` resolves the session id, then calls
+    ``self._on_snapshot(snapshot.model_dump())`` with that one argument and
+    drops it. ``ReplayCapture.record_state_snapshot`` therefore takes
+    ``session_id=None`` and falls back to the session ContextVar, so the
+    snapshot buffers under whatever id that happens to hold. LiveKit dispatches
+    event handlers on tasks that need not carry it, and the id attach() was
+    given can differ from the ambient one, so the buffer ends up keyed
+    differently from the ``close_session`` that flushes it and the rows are
+    silently dropped.
+
+    Rather than widen either component's callback type (nine existing tests pin
+    the one-argument shape, and it is a reasonable shape), the id is bound HERE,
+    where it is known and unambiguous. attach() builds one pair per session, so
+    a closure is exactly the right scope.
+
+    Returns (None, None) when the sink has no local storage. A remote collector
+    sink has no replay tables to write into, and the dashboard reads replay from
+    the local store, so capturing there would buffer rows nothing could flush.
+    """
+    storage = getattr(sink, "_storage", None)
+    if storage is None:
+        return None, None
+    from voicegateway.middleware.replay_capture_middleware import ReplayCapture
+    from voicegateway.middleware.state_snapshotter_middleware import StateSnapshotter
+
+    async def _flush(events: list[Any]) -> None:
+        await storage.write_replay_events(events, tenant_id=tenant_id)
+
+    capture = ReplayCapture(flush_callback=_flush)
+
+    async def _on_snapshot(snapshot: dict[str, Any]) -> None:
+        await capture.record_state_snapshot(snapshot, session_id=session_id)
+
+    return capture, StateSnapshotter(on_snapshot=_on_snapshot)
+
+
 def _attach_livekit(
     session: Any,
     *,
@@ -475,6 +633,7 @@ def _attach_livekit(
     room: str | None = None,
     heartbeat: bool = False,
     transcript: bool = True,
+    snapshots: bool = False,
 ) -> str:
     """LiveKit ``attach()`` body: bind ``MetricCapture`` to an ``AgentSession``."""
     import asyncio
@@ -516,6 +675,11 @@ def _attach_livekit(
         logger.debug("attach: could not stash capture on session", exc_info=True)
 
     transcript_on = _transcripts_enabled(transcript)
+    snapshot_capture, snapshotter = (
+        _build_snapshot_capture(sink, tenant_id, session_id)
+        if _snapshots_enabled(snapshots)
+        else (None, None)
+    )
 
     async def _finish() -> None:
         # Reconcile cumulative session.usage against the per-call rows, drain
@@ -525,6 +689,14 @@ def _attach_livekit(
         await capture.reconcile(session)
         await capture.drain()
         await sink.flush()
+        if snapshot_capture is not None:
+            # Final flush of anything still buffered under the flush-size
+            # threshold, then drop the per-session state. Before sink.flush()
+            # would be wrong: this writes through storage, not the sink.
+            try:
+                await snapshot_capture.close_session(session_id)
+            except Exception:  # noqa: BLE001 - snapshots are never load-bearing
+                logger.debug("attach: snapshot flush on close failed", exc_info=True)
         if transcript_on:
             # LocalSqliteSink exposes the storage the co-located dashboard reads;
             # remote/ClickHouse sinks have no local transcript store (None -> skip).
@@ -574,6 +746,21 @@ def _attach_livekit(
         # (No-op unless register_worker/ensure_registered ran.)
         bump_active(1)
         on("close", _on_close)
+        if snapshotter is not None:
+            # The two events that carry what a state snapshot needs. Neither is
+            # in the audio path: conversation_item_added fires once per
+            # completed message and function_tools_executed once per resolved
+            # tool batch, so this stays a passive observer like the rest of
+            # attach(). Capturing per-token or per-frame replay would NOT be,
+            # which is why the other three ReplayCapture modalities stay unwired.
+            on(
+                "conversation_item_added",
+                _emit_conversation_item(session_id, session, snapshotter),
+            )
+            on(
+                "function_tools_executed",
+                _emit_tools_executed(session_id, session, snapshotter),
+            )
 
     return session_id
 
@@ -674,6 +861,7 @@ def _attach_pipecat(
     sink: Sink | None = None,
     heartbeat: bool = False,
     transcript: bool = True,
+    snapshots: bool = False,
 ) -> str:
     """Register a ``VoiceGatewayObserver`` on a Pipecat ``PipelineTask``.
 
@@ -681,11 +869,15 @@ def _attach_pipecat(
     ContextVar, and returns the correlation session id. The observer is the sole
     meter; it finalizes itself on the pipeline ``EndFrame`` (drain + flush).
 
-    ``transcript`` is accepted for signature parity with the LiveKit path but is
-    not captured on Pipecat yet (its transcript would come from transcription
-    frames, a separate hook); it is a no-op here.
+    ``transcript`` and ``snapshots`` are accepted for signature parity with the
+    LiveKit path but are not captured on Pipecat yet. A Pipecat transcript would
+    come from transcription frames, and snapshots would need the equivalent of
+    LiveKit's ``conversation_item_added`` / ``function_tools_executed``; both are
+    separate hooks. They are no-ops here rather than errors, so the same
+    ``attach(...)`` call works against either framework.
     """
     _ = transcript  # reserved: Pipecat transcript capture is a future step
+    _ = snapshots  # reserved: needs a Pipecat message/tool-call hook
     from voicegateway.inference.pipecat.observer import VoiceGatewayObserver
 
     resolved_agent_id = agent_id or _default_agent_id()

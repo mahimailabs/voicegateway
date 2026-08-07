@@ -433,6 +433,32 @@ class StorageService:
             )
 
     # ------------------------------------------------------------------
+    # Replay
+    # ------------------------------------------------------------------
+
+    async def write_replay_events(
+        self,
+        events: list[Any],
+        *,
+        tenant_id: str | None = None,
+    ) -> int:
+        """Persist captured replay events into their per-modality tables.
+
+        The passthrough ``replay_repository`` was missing, which is why the
+        replay tables shipped in the initial schema and stayed empty: the
+        repository, the read path, the retention prune and the ``voicegw
+        replay`` CLI all existed, and nothing could reach the writer from the
+        capture side without going through a StorageService it was not on.
+        """
+        from voicegateway.repository import replay_repository
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            return await replay_repository.bulk_write_events(
+                db, events, tenant_id=tenant_id
+            )
+
+    # ------------------------------------------------------------------
     # Transcripts
     # ------------------------------------------------------------------
 
