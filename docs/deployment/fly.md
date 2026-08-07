@@ -4,8 +4,21 @@ description: "Run the VoiceGateway daemon on Fly.io with managed Postgres, autom
 ---
 Low ops. Automatic HTTPS. Deploy in multiple regions to sit near your agents.
 
+<Note>
+Everything specific to VoiceGateway on this page is verified against this repository.
+Everything specific to Fly (flyctl flags, `fly.toml` fields, managed Postgres, generated
+hostnames) is written from Fly's documented behavior and is not verified here. Fly changes
+on its own schedule; check their docs if a step does not match what you see.
+</Note>
+
+<Warning>
+**Boot requirement.** The image bakes `VOICEGW_CONFIG=/data/voicegw.yaml`. The daemon loads that file unconditionally at startup, before it binds a port. If nothing exists at that path it raises `ConfigError` and exits inside `main()`: `/health` never comes up, and Fly restarts the machine forever. Setting secrets alone does not satisfy this; you need an actual file at `VOICEGW_CONFIG`. Provide a `voicegw.yaml` and point `VOICEGW_CONFIG` at it, the same way this repo's `docker-compose.yml` and `docker-compose.collector.yml` do (mount the file, then set `VOICEGW_CONFIG` to its in-container path).
+
+The documented Fly mechanism for getting that file onto the machine is a `[[files]]` block in `fly.toml`, which writes literal file content into the container at boot. This has not been confirmed against a live Fly deploy in this pass: verify it on your first deploy, and if the machine keeps restarting, `fly logs` will show the `ConfigError` line.
+</Warning>
+
 <Tip>
-Deploy in a region close to where your agents run to cut ingest latency. Fly lets you place machines in specific regions with `--region` on `fly deploy` or via the `primary_region` key in `fly.toml`.
+Deploy in a region close to where your agents run to cut ingest latency: `--region` on `fly deploy`, or `primary_region` in `fly.toml`.
 </Tip>
 
 ## Prerequisites
@@ -23,7 +36,7 @@ Create `fly.toml` in a working directory:
 app = "<your-app-name>"
 
 [build]
-  image = "mahimairaja/voicegateway:0.9.2"
+  image = "mahimairaja/voicegateway:0.22.3"
 
 [http_service]
   internal_port = 8080
@@ -41,7 +54,7 @@ fly postgres create --name <pg-app-name>
 fly postgres attach <pg-app-name> --app <your-app-name>
 ```
 
-`fly postgres attach` sets `DATABASE_URL` on your app automatically in `postgres://...` form.
+`fly postgres attach` sets `DATABASE_URL` automatically, in `postgres://...` form.
 
 **Option B: Neon or another managed provider**
 
