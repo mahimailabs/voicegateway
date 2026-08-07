@@ -73,7 +73,8 @@
             "pages": [
               "guide/turns",
               "guide/dead-air",
-              "cli/calls"
+              "cli/calls",
+              "cli/replay"
             ]
           },
           {
@@ -174,8 +175,7 @@
             "group": "CLI",
             "pages": [
               "cli/index",
-              "cli/mcp",
-              "cli/replay"
+              "cli/mcp"
             ]
           },
           {
