@@ -156,5 +156,3 @@ These are deliberate scope decisions, not bugs.
     Set daily budgets and routing rosters per project in voicegw.yaml.
   </Card>
 </CardGroup>
-</content>
-</invoke>
