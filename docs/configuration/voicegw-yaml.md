@@ -2,9 +2,6 @@
 title: voicegw.yaml reference
 description: Every top-level section and key in the VoiceGateway config file, validated with pydantic extra=forbid so typos fail fast at startup.
 ---
-
-# voicegw.yaml reference
-
 `voicegw.yaml` is the central config file for VoiceGateway. It is validated at startup using a Pydantic schema with `extra="forbid"`, so any typo or unknown key produces a clear error before your gateway starts.
 
 ## Discovery order
@@ -126,7 +123,7 @@ stacks:
     tts: local/kokoro
 ```
 
-See [Stacks](/configuration/stacks).
+See [Stacks](/configuration/models).
 
 ---
 
@@ -195,7 +192,7 @@ observability:
   request_logging: true
 ```
 
-See [Observability](/configuration/observability).
+See [Observability](/guide/attach).
 
 ---
 
@@ -390,7 +387,7 @@ Any string value in the config can use `${VAR_NAME}` syntax. VoiceGateway substi
   <Card title="Models" href="/configuration/models">
     Model ID format, language and voice suffixes, and custom alias registration.
   </Card>
-  <Card title="Stacks" href="/configuration/stacks">
+  <Card title="Stacks" href="/configuration/models">
     Named STT + LLM + TTS bundles for quality tiers.
   </Card>
   <Card title="Projects" href="/configuration/projects">
@@ -399,7 +396,7 @@ Any string value in the config can use `${VAR_NAME}` syntax. VoiceGateway substi
   <Card title="Environment variables" href="/configuration/environment-variables">
     All VOICEGW_ and provider API key variables, plus substitution rules.
   </Card>
-  <Card title="Observability" href="/configuration/observability">
+  <Card title="Observability" href="/guide/attach">
     Latency tracking, cost recording, and request logging middleware.
   </Card>
 </CardGroup>

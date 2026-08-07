@@ -2,9 +2,6 @@
 title: CLI reference
 description: Every voicegw command, what it does, and where to read more.
 ---
-
-# CLI reference
-
 VoiceGateway ships a command-line interface called `voicegw`. It is
 the primary way to onboard, run the daemon, inspect gateway state,
 and reconcile costs.
@@ -46,7 +43,7 @@ After installation, the `voicegw` command is available globally. See
 | [`livekit`](/cli/livekit) | Diagnostics against a LiveKit server: agents, latency, SFU health, combined check. |
 | [`logs`](/cli/logs) | Recent request logs. |
 | [`costs`](/cli/costs) | Cost summaries per provider, project, and period. |
-| [`projects`](/cli/projects) | List configured projects. |
+| [`projects`](/configuration/projects) | List configured projects. |
 | [`dashboard`](/cli/dashboard) | Open the dashboard in your browser. |
 | [`replay`](/cli/replay) | Print the dashboard replay URL for a session. |
 

@@ -2,9 +2,6 @@
 title: OpenRTC Multi-Agent
 description: Track every agent in one OpenRTC worker with VoiceGateway's SessionObserver seam for per-call cost attribution.
 ---
-
-# OpenRTC Multi-Agent
-
 [OpenRTC](https://github.com/mahimailabs/openrtc-runtime) runs N LiveKit voice
 agents in one worker. VoiceGateway plugs into its `SessionObserver` seam, so a
 single line gives every session per-call cost tracking, attributed per agent
@@ -86,5 +83,5 @@ so one session ending never disrupts the others.
 
 ## Related
 
-- [Multi-Project Setup](/examples/multi-project): explicit per-project attribution using `attach(..., project=...)`.
+- [Multi-Project Setup](/configuration/projects): explicit per-project attribution using `attach(..., project=...)`.
 - [Hosted quickstart](/hosted/quickstart): the hosted fleet collector you can push to from any worker.

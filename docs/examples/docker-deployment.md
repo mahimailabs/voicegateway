@@ -2,9 +2,6 @@
 title: Docker Deployment
 description: Production-ready Docker Compose configuration with health checks, persistent storage, and an optional Ollama sidecar.
 ---
-
-# Docker Deployment
-
 Deploy VoiceGateway in production with Docker Compose. The
 daemon serves the HTTP API and the web dashboard on the same port,
 so one service is enough. Includes persistent storage, health checks,

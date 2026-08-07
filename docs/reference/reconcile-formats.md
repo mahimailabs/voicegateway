@@ -2,9 +2,6 @@
 title: Reconcile File Formats
 description: Schemas the voicegw reconcile command expects when reading provider usage exports.
 ---
-
-# Reconcile File Formats
-
 `voicegw reconcile` compares VoiceGateway's recorded costs against a
 provider's usage export. Different providers ship different exports,
 so VoiceGateway defines one canonical reconcile-input format per

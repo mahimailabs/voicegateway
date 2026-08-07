@@ -2,9 +2,6 @@
 title: "Development Setup"
 description: "Set up a local development environment for VoiceGateway: clone, install, run tests, and work on the dashboard."
 ---
-
-# Development Setup
-
 This guide walks you through setting up a local development environment for VoiceGateway.
 
 ## Prerequisites

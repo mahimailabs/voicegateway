@@ -1,13 +1,8 @@
 ---
 title: voicegw livekit
-description: Diagnostics commands for inspecting agents, measuring end-to-end latency, and probing SFU health against a LiveKit server.
+description: "Diagnose a LiveKit deployment: list agents, measure latency, probe SFU health, gate CI, and export a recorded run."
 ---
-
-# voicegw livekit
-
-Diagnostics for a running LiveKit deployment. Five subcommands cover agent listing, end-to-end latency measurement, SFU health, an all-in-one check report, and exporting a recorded dashboard run as one self-contained HTML file.
-
-## Usage
+Five subcommands against a running LiveKit deployment: `agents`, `latency`, `sfu`, `check`, `report`. For how this fits with the agent and SIP layers, and what a correlated result can and cannot claim, see [What you can profile](/guide/what-you-can-profile). For a live view of the same rooms and agents from a browser, see the dashboard's [Server page](/guide/server-page).
 
 ```bash
 voicegw livekit <subcommand> [OPTIONS]
@@ -15,439 +10,116 @@ voicegw livekit <subcommand> [OPTIONS]
 
 ## Credentials
 
-All subcommands resolve LiveKit credentials in the same order:
+Every subcommand resolves LiveKit credentials in the same order:
 
-1. **CLI flags**: `--url`, `--api-key`, `--api-secret` (highest priority).
-2. **Environment variables**: `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`.
-3. **Config file**: a `livekit:` block in `voicegw.yaml` (lowest priority).
-
-If credentials are missing after all three layers, the command exits with an error before making any network calls. The one exception is `report`, which talks to no server: it reads a run that already happened, so missing credentials cost it one labelled line in the output ("not recorded") rather than the export.
+1. **Flags**: `--url`, `--api-key`, `--api-secret`.
+2. **Env**: `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`.
+3. **Config**: a `livekit:` block in `voicegw.yaml`.
 
 ```yaml
-# voicegw.yaml
 livekit:
   url: wss://my-project.livekit.cloud
   api_key: ${LIVEKIT_API_KEY}
   api_secret: ${LIVEKIT_API_SECRET}
 ```
 
+Missing credentials exit with an error before any network call, except for `report`: it exports a stored run rather than talking to a server, so missing credentials just print "not recorded" in the file instead of blocking the export.
+
+Every subcommand also accepts `--config`/`-c` to point at a specific `voicegw.yaml`.
+
+All five need the `livekit` extra installed (`voicegateway[livekit]`), not just the ones that place calls: the CLI package imports LiveKit at module scope, so even `voicegw --help` fails without it. See [Installation](/guide/installation).
+
 ---
 
 ## voicegw livekit agents
 
-List agents that are currently active in rooms on the LiveKit server.
+Lists agents currently active in rooms: identity, room, state (`active` or `dispatched`), joined time. `--json` emits the same data as JSON.
 
-```bash
-voicegw livekit agents [OPTIONS]
-```
-
-### What it reports
-
-Queries the LiveKit server API for all active rooms and the participants currently inside them. For each participant identified as an agent (dispatched or joined), the command reports:
-
-| Column | Description |
-|---|---|
-| **Agent** | Participant identity string. |
-| **Room** | Room name the agent is currently in. |
-| **State** | `active` or `dispatched`. |
-| **Joined** | Timestamp the participant joined. |
-
-### Idle workers: the heartbeat roster
-
-The LiveKit server API exposes in-room participants only. Agents that are registered and waiting for dispatch (the idle worker pool) are not returned by any server API. To close that gap, instrument your agents with `voicegateway.register_worker(...)`: each worker then heartbeats its presence (idle / busy / offline) to the collector.
-
-When `VOICEGW_COLLECTOR_URL` and `VOICEGW_API_KEY` are set, `agents` also fetches that roster and prints it below the in-room table. Without the collector, only the in-room view is shown, plus a note on how to enable the roster. The roster fetch is best-effort: if the collector is unreachable, the in-room table still renders.
-
-```
-Registered workers (heartbeat roster):
-AGENT            STATUS    REGION     VERSION
-realty           busy      iad        0.13.0
-concierge        idle      -          0.13.0
-3 workers registered (1 idle, 1 busy, 1 offline).
-```
-
-### Example output
-
-```
-AGENT            ROOM                   STATE       IN-CALL  AGE
-agent-7f4a       demo-room              active      1        42s
-agent-2c9b       qa-room                dispatched  0        8s
-
-2 agents active in 2 rooms.
-Idle/registered workers are not reported by LiveKit's server API. Set VOICEGW_COLLECTOR_URL + VOICEGW_API_KEY (and run register_worker in your agents) to also list the heartbeat roster.
-```
-
-### Options
-
-| Flag | Type | Default | Description |
-|---|---|---|---|
-| `--url` | `string` | (see Credentials) | LiveKit server WebSocket URL. |
-| `--api-key` | `string` | (see Credentials) | LiveKit API key. |
-| `--api-secret` | `string` | (see Credentials) | LiveKit API secret. |
-| `--json` | flag | off | Emit JSON instead of plain text. With the collector set, the JSON is `{"in_room": [...], "roster": [...]}`. |
+The LiveKit server API only sees in-room participants; idle, pre-dispatch workers are invisible to it. Instrument agents with `voicegateway.register_worker(...)` to close that gap. When `VOICEGW_COLLECTOR_URL` and `VOICEGW_API_KEY` are set, `agents` also fetches that heartbeat roster and prints it below the in-room table (best-effort: if the collector is unreachable, the in-room table still renders). Without the collector, only the in-room view shows.
 
 ---
 
 ## voicegw livekit latency
 
-Measure end-to-end voice latency by placing real synthetic test calls to each agent.
-
-```bash
-voicegw livekit latency [OPTIONS]
-```
-
-### What it measures
-
-Always reports **end-to-end latency**: the time from the end of the caller's speech to the first reply audio frame received from the agent. This is the number users perceive.
-
-For each probe turn the command:
-
-1. Joins a test room as a synthetic caller.
-2. Plays a short utterance and waits for end-of-utterance (EOU).
-3. Records the time from speech-end to the first reply audio frame arriving from the agent.
-
-| Metric | Description |
-|---|---|
-| **E2E latency** | Caller speech-end to first reply audio (seconds). This is the number users perceive. |
-
-### Per-component breakdown (turn-detect / STT / LLM / TTS)
-
-When the probed agent is instrumented with `voicegateway.attach(session)`, the command also shows the latency split across turn detection, STT, LLM (time-to-first-token), and TTS. The correlation key is the probe room name: `attach` stamps it on every captured row, and the probe reads those rows back by room after the turns finish.
-
-This read-back is co-located in this version: the agent and the prober must share the same local VoiceGateway store (`~/.config/voicegateway/voicegw.db`, or `VOICEGW_DB_PATH`). In collector mode (`VOICEGW_COLLECTOR_URL` set) the rows go to the collector rather than this host, so the split is not shown from the CLI. When no split is available, the command prints a one-line note explaining what is needed.
+Places real synthetic test calls and measures **end-to-end latency**: the time from the caller's speech ending to the agent's first reply audio frame. This is the number a caller perceives.
 
 <Warning>
-Each probe is a real agent turn. The agent's STT, LLM, and TTS providers are invoked with live credentials and will incur real provider charges. Run with a low `--trials` value (`1` or `2`) unless you are deliberately benchmarking. Keep `--agent` scoped to avoid probing every agent.
+Each probe is a real agent turn. STT, LLM, and TTS providers are invoked with live credentials and billed. Keep `--trials` low (1 or 2) and `--agent` scoped unless you are deliberately benchmarking.
 </Warning>
 
-### Options
+When the probed agent runs `voicegateway.attach(session)`, `latency` also reports the split across turn-detection, STT, LLM (time-to-first-token), and TTS, correlated by room name. The read-back is co-located: the agent and the prober must share the same local store (`~/.config/voicegateway/voicegw.db`, or `VOICEGW_DB_PATH`). In collector mode (`VOICEGW_COLLECTOR_URL` set) the rows go to the collector instead, so the CLI cannot show the split.
 
-| Flag | Type | Default | Description |
-|---|---|---|---|
-| `--agent` | `string` | all agents | Probe only the named agent identity. |
-| `--trials` | `integer` | `3` | Number of probe turns per agent. |
-| `--warmup/--no-warmup` | flag | warmup on | Discard first trial as cold-start warmup. |
-| `--target-ms` | `integer` | `1500` | Mark agent SLOW if avg E2E exceeds this threshold (ms). |
-| `--url` | `string` | (see Credentials) | LiveKit server WebSocket URL. |
-| `--api-key` | `string` | (see Credentials) | LiveKit API key. |
-| `--api-secret` | `string` | (see Credentials) | LiveKit API secret. |
-
-### Example output
-
-```
-agent-7f4a     E2E avg 0.82s  p50 0.82s  p95 0.84s   GOOD (<1.5s)
-  turn-detect 0.30 . STT 0.12 . LLM-ttft 0.45 . TTS 0.09
-agent-2c9b     E2E avg 1.14s  p50 1.14s  p95 1.18s   SLOW (<1.5s)
-  breakdown (turn-detect/STT/LLM/TTS) needs an instrumented agent (voicegateway.attach) writing to the same local store, co-located
-```
+Options: `--agent` (default: every agent), `--trials` (default `3`), `--warmup/--no-warmup` (default on), `--target-ms` (default `1500`; marks an agent SLOW above this).
 
 ---
 
 ## voicegw livekit sfu
 
-Measure SFU connection quality from the host running `voicegw`.
+Measures SFU connection quality from the host running `voicegw`.
+
+**Baseline** (no flags): connects to the SFU, sends data-channel pings, reports round-trip time and LiveKit's connection quality score. If the host is co-located with the SFU, this is the real agent-to-SFU signal.
+
+**Load ramp** (`--load`): ramps concurrent prober connections through `--ramp` (default `2,10,25,50`), holding each level for `--duration` (default `20s`), and reports the concurrency where RTT degrades or quality drops (the capacity knee). A resource monitor watches the prober host's own CPU and memory and flags saturation, so a bottleneck on the prober is not mistaken for one on the SFU.
+
+### Distributed (multi-vantage)
+
+One host only shows what one machine can push. Run one coordinator and N probers to ramp the same room concurrently from several regions:
 
 ```bash
-voicegw livekit sfu [OPTIONS]
-```
-
-### What it measures
-
-Baseline mode (no flags):
-
-- Connects to the LiveKit SFU and sends data-channel pings.
-- Reports round-trip time (RTT) and the LiveKit connection quality score.
-- Runs from wherever `voicegw` is executing. If that host is co-located with the SFU (the typical self-hosted setup), the result represents the real agent-to-SFU signal.
-
-Load-ramp mode (`--load`):
-
-- Ramps concurrent prober connections through the levels in `--ramp`.
-- At each concurrency level, runs for `--duration` and records RTT and quality score.
-- Identifies the capacity knee: the concurrency level at which RTT degrades or quality drops.
-- A resource monitor watches CPU and memory on the prober host. If the host itself saturates during the ramp, the output flags this so results are not mistaken for SFU limits.
-
-### Distributed load (multi-vantage)
-
-A single host only shows what one machine can push. To load the SFU concurrently from several regions, run one coordinator and N probers:
-
-<CodeGroup>
-```bash Coordinator
-# Needs the [dashboard] extra: uv pip install 'voicegateway[dashboard]'
+# coordinator - needs the dashboard extra: pip install 'voicegateway[dashboard]'
 voicegw livekit sfu --coordinator --expect 3 --ramp 10,25,50 --duration 20s
-```
 
-```bash Probers
-# Each prober needs only the base install
+# each prober - needs the livekit extra: pip install 'voicegateway[livekit]'
 voicegw livekit sfu --report-to http://<coordinator-host>:8787 --vantage iad
-voicegw livekit sfu --report-to http://<coordinator-host>:8787 --vantage sjc
-voicegw livekit sfu --report-to http://<coordinator-host>:8787 --vantage lhr
-```
-</CodeGroup>
-
-Each prober registers, waits at a shared barrier so every vantage starts its ramp at the same instant, ramps the same room, and reports its per-tier measurements back. The coordinator aggregates: at each tier the SFU sees the sum of all vantages' clients, while rtt / loss / quality report the worst any single vantage saw.
-
-```
-SFU  distributed: 3 vantages
-  combined: 30(3v)-> 14.0ms 0.0% Good . 75(3v)-> 22.0ms 0.1% Good . 150(3v)-> 55.0ms 1.4% Poor   combined knee ~75 clients
-  iad         : 10-> 12.0ms 0.0% . 25-> 20.0ms 0.0% . 50-> 48.0ms 1.1%
-  sjc         : 10-> 14.0ms 0.0% . 25-> 22.0ms 0.1% . 50-> 55.0ms 1.4%
-  lhr         : 10-> 11.0ms 0.0% . 25-> 18.0ms 0.0% . 50-> 41.0ms 0.9%
 ```
 
-To deploy probers across regions (for example on Fly.io), see [Distributed SFU probers](/deployment/distributed-sfu).
+Each prober registers, waits at a shared barrier so every vantage starts its ramp at the same instant, ramps the shared room, and reports its per-tier measurements back. The coordinator sums clients per tier and reports the worst rtt/loss/quality any vantage saw.
 
-### Limitations
+For deploying probers across regions, including the fix the shipped prober image needs, see [Distributed SFU probers](/deployment/distributed-sfu). For per-node CPU, memory, and file-descriptor metrics scraped during a ramp, see [Node metrics](/guide/node-metrics). `voicegw loadtest` correlates the same node scrape against SIP-side call evidence; see [voicegw loadtest](/cli/loadtest) rather than treating the two as one run.
 
-**Prober host saturation.** Under high `--ramp` concurrency, the machine running `voicegw` can become the bottleneck before the SFU does. The resource monitor flags CPU or memory saturation in the output so you can distinguish host limits from SFU limits. Distributing across several smaller prober hosts (above) sidesteps this.
-
-### Options
-
-| Flag | Type | Default | Description |
-|---|---|---|---|
-| `--load` | flag | off | Enable concurrency ramp mode (single host). |
-| `--ramp` | `string` | `2,10,25,50` | Comma-separated concurrency levels for the ramp. |
-| `--duration` | `string` | `20s` | How long to hold each concurrency level. |
-| `--coordinator` | flag | off | Run as the distributed coordinator (needs `[dashboard]` extra). |
-| `--expect` | `integer` | `0` | Number of probers the coordinator waits for. |
-| `--coordinator-port` | `integer` | `8787` | Port the coordinator listens on. |
-| `--report-to` | `string` | (none) | Run as a prober reporting to this coordinator URL. |
-| `--vantage` | `string` | `$VOICEGW_REGION` | Label for this prober's vantage. |
-| `--url` | `string` | (see Credentials) | LiveKit server WebSocket URL. |
-| `--api-key` | `string` | (see Credentials) | LiveKit API key. |
-| `--api-secret` | `string` | (see Credentials) | LiveKit API secret. |
-
-### Example: baseline
-
-```bash
-voicegw livekit sfu
-```
-
-```
-SFU  vantage: co-located   baseline: rtt 11ms . loss 0.0% . Excellent
-```
-
-### Example: load ramp
-
-```bash
-voicegw livekit sfu --load --ramp 2,10,25,50 --duration 20s
-```
-
-```
-SFU  vantage: co-located   baseline: rtt 11ms . loss 0.0% . Excellent
-  ramp: 2-> 11ms 0.0% . 10-> 12ms 0.0% . 25-> 18ms 0.1% . 50-> 41ms 1.2%   knee ~25 clients
-  prober: ~12% CPU + ~80 kbps up per client; host sustains ~40 before CPU-bound
-```
+Options: `--load`, `--ramp`, `--duration`, `--coordinator` (needs `[dashboard]`), `--expect` (probers to wait for), `--coordinator-port` (default `8787`), `--report-to` (prober mode: coordinator URL), `--vantage` (label, default `$VOICEGW_REGION`).
 
 ---
 
 ## voicegw livekit check
 
-Run all three diagnostics, gate the results, and print one verdict. Built to be run in CI: it exits non-zero unless every gate passed.
+Runs `agents`, `latency` (two trials per agent), and `sfu` baseline in sequence, gates each result, and prints one verdict. Built for CI: exits non-zero unless every gate passed.
 
-```bash
-voicegw livekit check [OPTIONS]
-```
+<Warning>
+`check` runs the same real, billed probe as `latency`, two agent turns per agent invoking live STT/LLM/TTS, but does not print a cost warning when it runs. Treat it exactly like `latency` for cost.
+</Warning>
 
-### What it runs
-
-Executes `agents`, `latency` (two trials per agent), and `sfu` (baseline) in sequence, then evaluates a **gate** over each result. The run verdict is the worst gate:
+The verdict is the worst gate:
 
 | Status | Meaning |
 |---|---|
-| **PASS** | The gate was evaluated and the metric is within budget. |
-| **WARN** | The gate was evaluated and the metric is degraded (e.g. latency above `--target-ms`). |
-| **UNKNOWN** | The gate could **not** be evaluated: no agent was probed, a probe measured nothing, or the SFU reported no connection quality. |
-| **FAIL** | A check errored or timed out, or a hard threshold was breached (SFU connection quality `Poor` / `Lost`). |
+| **PASS** | Evaluated, within budget. |
+| **WARN** | Evaluated, degraded (e.g. latency over `--target-ms`). |
+| **UNKNOWN** | Could not be evaluated: no agent probed, or SFU returned no quality. |
+| **FAIL** | Errored/timed out, or SFU quality was `Poor`/`Lost`. |
 
-`UNKNOWN` is not a pass. A gate that could not run has not demonstrated anything, and reporting success for it would make this command lie to CI. Every gate is printed on its own line under the verdict, naming the metric that decided it.
+`UNKNOWN` is not a pass: a gate that never ran has not demonstrated anything. Gates: `agents_listing` (the server API answered; does **not** assert any agent is online, since idle workers are invisible to it), `agent_reply_latency` (per agent, within `--target-ms`), `sfu_connection_quality` (baseline not `Poor`/`Lost`). Packet loss is never gated: the LiveKit SDK exposes no per-connection loss, so `loss_pct` is a hardcoded `0.0`.
 
-The gates are:
+`--strict` gates the slowest measured turn instead of the average, named `agent_reply_latency_max_of_2_ms` (never `p95`; that needs 10+ samples).
 
-| Gate | Asserts |
-|---|---|
-| `agents_listing` | LiveKit's server API answered with a list. It does **not** assert that any agent is online: an idle registered worker is invisible to that API, so a count check would fail a healthy fleet between calls. |
-| `agent_reply_latency` | Reply latency is within `--target-ms`, per agent. |
-| `sfu_connection_quality` | The SFU baseline connection quality is not `Poor` or `Lost`. |
+Options: `--strict`, `--target-ms` (default `1500`), `--json`.
 
-Packet loss is deliberately **not** gated: the LiveKit SDK does not expose per-connection loss, so the `loss_pct` field is a hardcoded `0.0`. Gating on a constant would produce a permanently clean bill of health.
-
-### Strict mode
-
-`--strict` gates the **slowest measured turn** instead of the average. An average under target hides a tail well over it, and the tail is what a caller who hung up actually experienced.
-
-The metric name says which statistic was thresholded. `check` places two probe turns per agent, so the tail is the max of two samples and the metric is named accordingly:
-
-```
-  [WARN] agent_reply_latency: agent-2c9b: agent_reply_latency_max_of_2_ms 2400 is over the 1500ms target
-```
-
-It is never called `p95`. A percentile needs at least 10 samples; below that the name states how many samples the max is the max of.
-
-### Options
-
-| Flag | Type | Default | Description |
-|---|---|---|---|
-| `--strict` | flag | off | Gate the slowest measured turn instead of the average. |
-| `--target-ms` | `integer` | `1500` | Latency threshold (ms) for the WARN boundary. |
-| `--url` | `string` | (see Credentials) | LiveKit server WebSocket URL. |
-| `--api-key` | `string` | (see Credentials) | LiveKit API key. |
-| `--api-secret` | `string` | (see Credentials) | LiveKit API secret. |
-| `--json` | flag | off | Emit a structured JSON record instead of plain text. |
-
-### Example: plain text output
-
-```bash
-voicegw livekit check --target-ms 1000
-```
-
-```
-VERDICT: WARN
-  [PASS] agents_listing: 2 agent(s) in rooms
-  [PASS] agent_reply_latency: agent-7f4a: agent_reply_latency_avg_ms 820 is within the 1000ms target
-  [WARN] agent_reply_latency: agent-2c9b: agent_reply_latency_avg_ms 1140 is over the 1000ms target
-  [PASS] sfu_connection_quality: SFU baseline connection quality is Excellent (rtt 11.0ms)
-
-AGENT            ROOM                   STATE       IN-CALL  AGE
-agent-7f4a       demo-room              active      1        42s
-agent-2c9b       qa-room                dispatched  0        8s
-
-2 agents active in 2 rooms.
-Idle/registered workers are not reported by LiveKit's server API. Set VOICEGW_COLLECTOR_URL + VOICEGW_API_KEY (and run register_worker in your agents) to also list the heartbeat roster.
-
-agent-7f4a     E2E avg 0.82s  p50 0.82s  p95 0.84s   GOOD (<1.0s)
-  breakdown (turn-detect/STT/LLM/TTS) needs an instrumented agent (voicegateway.attach) writing to the same local store, co-located
-agent-2c9b     E2E avg 1.14s  p50 1.14s  p95 1.18s   SLOW (<1.0s)
-  breakdown (turn-detect/STT/LLM/TTS) needs an instrumented agent (voicegateway.attach) writing to the same local store, co-located
-
-SFU  vantage: co-located   baseline: rtt 11ms . loss 0.0% . Excellent
-```
-
-### Example: JSON output
-
-```bash
-voicegw livekit check --json --target-ms 1000
-```
-
-```json
-{
-  "agents": [
-    {"agent_name": "agent-7f4a", "room": "demo-room", "identity": "agent-7f4a", "state": "active", "humans": 1, "age_s": 42.0},
-    {"agent_name": "agent-2c9b", "room": "qa-room", "identity": "agent-2c9b", "state": "dispatched", "humans": 0, "age_s": 8.0}
-  ],
-  "latency": [
-    {"agent": "agent-7f4a", "stats": {"avg": 0.82, "p50": 0.82, "p95": 0.84, "min": 0.80, "max": 0.84, "trials": 2}, "components": null},
-    {"agent": "agent-2c9b", "stats": {"avg": 1.14, "p50": 1.14, "p95": 1.18, "min": 1.10, "max": 1.18, "trials": 2}, "components": null}
-  ],
-  "sfu": {
-    "baseline": {"clients": 1, "rtt_ms": 11.0, "loss_pct": 0.0, "quality": "Excellent"},
-    "ramp": [],
-    "knee": null
-  },
-  "gates": [
-    {"gate": "agents_listing", "status": "PASS", "detail": "2 agent(s) in rooms", "subject": null, "metric": null, "value": null, "threshold": null},
-    {"gate": "agent_reply_latency", "status": "PASS", "detail": "agent-7f4a: agent_reply_latency_avg_ms 820 is within the 1000ms target", "subject": "agent-7f4a", "metric": "agent_reply_latency_avg_ms", "value": 820.0, "threshold": 1000.0},
-    {"gate": "agent_reply_latency", "status": "WARN", "detail": "agent-2c9b: agent_reply_latency_avg_ms 1140 is over the 1000ms target", "subject": "agent-2c9b", "metric": "agent_reply_latency_avg_ms", "value": 1140.0, "threshold": 1000.0},
-    {"gate": "sfu_connection_quality", "status": "PASS", "detail": "SFU baseline connection quality is Excellent (rtt 11.0ms)", "subject": null, "metric": "sfu_baseline_quality", "value": null, "threshold": null}
-  ],
-  "verdict": "WARN"
-}
-```
-
-### Exit codes
-
-| Code | Meaning |
-|---|---|
-| `0` | Every gate was evaluated and every gate passed. |
-| `1` | Any gate is WARN, UNKNOWN or FAIL; the run crashed; or credentials were not resolved. |
-
-There is one non-zero code on purpose, so an existing pipeline that tests for `1` keeps catching everything it caught before.
+Exit codes: `0` only when every gate was evaluated and passed. `1` for any WARN, UNKNOWN, or FAIL, a crash, or unresolved credentials.
 
 <Warning>
-**Exit codes changed.** `check` previously reported `PASS` (exit 0) for a run that had measured nothing — most notably when no agent was in any room, so the latency gate never ran. That case is now `UNKNOWN` and exits 1. If you run this command in CI, your pipeline may start failing on conditions it previously passed. That is the gate working, not a regression. See the CHANGELOG for the full list.
+**Exit codes changed.** `check` used to report PASS for a run that measured nothing, most notably when no agent was in any room and the latency gate never ran. That case is now UNKNOWN and exits 1. A pipeline that passed on that condition before will start failing. That is the gate working, not a regression.
 </Warning>
 
 ---
 
 ## voicegw livekit report
 
-Export a diagnostics run the dashboard already recorded as **one self-contained HTML file**. Built for CI: it collects the artifact on a host that never runs the dashboard.
+Exports a diagnostics run the dashboard already recorded as one self-contained HTML file, rendered through the same code path the dashboard's own download button uses: byte-identical to `GET /api/diagnostics/runs/{id}/report.html` for the same run.
 
-```bash
-voicegw livekit report [OPTIONS]
-```
+Probes nothing. No call is placed, nothing is billed, and the verdict in the file is whatever the run recorded, not a fresh judgement. The document carries its own CSS inline and loads nothing external, so it renders identically from `file://` with no internet.
 
-### What it does
+A run whose checks never completed still exports: every check states whether it was never requested, requested but never recorded, or errored. No unmeasured value renders as `0`; `--json` reports the same absences as `null`.
 
-Reads a run out of this host's VoiceGateway store (the dashboard writes one row per diagnostics run) and renders it through the same code path the dashboard's own download button uses. The output is **byte-identical** to `GET /api/diagnostics/runs/{id}/report.html` for the same run on the same host: there is one renderer, not a CLI copy that drifts from the web copy.
+Options: `--run` (default: most recent), `--out` (default `./voicegateway-diagnostics-<run>.html`), `--json` (payload to stdout, or to `--out`).
 
-This command probes nothing. No call is placed, no provider is billed, and the verdict in the file is the one the run recorded when it ran, not a fresh judgement of old numbers.
-
-**Self-contained means self-contained.** The document carries its own CSS inline and references nothing external: no script, no stylesheet, no font, no image, no CDN. It renders identically from `file://` on a laptop with no internet, which is the state it is usually read in.
-
-The file carries the context a number needs out of band: when the run was queued, started and ended, which checks were requested, the thresholds it was measured against, the LiveKit server, the tool version and the report schema version. It also carries a "what this report does not measure" section, because a single-vantage snapshot has structural limits that are not this run's bad luck.
-
-### A run that failed still exports
-
-A run whose checks never completed still produces a report. It reads as a run that measured nothing, not as a run that measured zeros: every check says whether it was never requested, requested but never recorded a result, or errored, and no unmeasured value is rendered as `0`. `--json` reports the same absences as `null`.
-
-### Options
-
-| Flag | Type | Default | Description |
-|---|---|---|---|
-| `--run` | `string` | most recent run | Run id to export. |
-| `--out` | `string` | `./voicegateway-diagnostics-<run>.html` | Where to write the file. The default is the same filename the dashboard offers on download. |
-| `--json` | flag | off | Emit the machine-readable payload (carrying `schema_version`) instead of the HTML. Printed to stdout, or written to `--out` when that is given. |
-| `--url` | `string` | (see Credentials) | LiveKit server WebSocket URL, named in the report. |
-| `--api-key` | `string` | (see Credentials) | LiveKit API key. |
-| `--api-secret` | `string` | (see Credentials) | LiveKit API secret. |
-| `--config` / `-c` | `string` | search path | Path to `voicegw.yaml` (this is also how the command finds the store). |
-
-### Example
-
-```bash
-voicegw livekit report --run 6a1c9f2b4d7e --out artifacts/diagnostics.html
-```
-
-```
-Wrote artifacts/diagnostics.html (28,410 bytes).
-run 6a1c9f2b4d7e · status done · verdict UNKNOWN
-```
-
-### The JSON payload
-
-`--json` emits the payload the HTML is rendered from, so the file and the JSON cannot say different things about the same run. It is versioned:
-
-- `schema_version` is `1`. Within a major version the payload is **additive only**: new keys may appear, but an existing key never changes meaning, type or nesting, and never disappears. Parsers must ignore keys they do not recognise.
-- A value nobody measured is `null` (or the string `"not_measured"` for a field that is structurally always absent, such as packet loss). It is never `0`, and a consumer must not coerce it to one.
-- Anything that would break a v1 parser lands as `schema_version: 2`.
-
-### Exit codes
-
-| Code | Meaning |
-|---|---|
-| `0` | The report was written. **Whatever the verdict says**: this command exports a run, it does not gate one. |
-| `1` | There was nothing to export (no run recorded, or no such run id), storage is not configured, or the file could not be written. |
-
-Gating CI on a deployment's health is [`voicegw livekit check`](#voicegw-livekit-check)'s job. Exiting non-zero here on a `FAIL` run would throw away the report that explains it.
-
----
-
-## Shared limitations
-
-The following limitations apply across the four probing subcommands (`report` measures nothing itself; it re-renders what a run recorded):
-
-**In-room agents only, unless workers heartbeat.** The LiveKit server API does not expose idle (pre-dispatch) workers. `agents` shows the idle/registered roster only when your agents call `voicegateway.register_worker(...)` and the collector is configured; otherwise it (and `latency`) see only agents currently in rooms.
-
-**Real provider cost on latency probes.** Every `latency` probe invokes the agent's actual STT, LLM, and TTS pipeline. Charges are incurred. Use low `--trials` counts for routine checks.
-
-**Per-component breakdown needs an instrumented, co-located agent.** The split across turn-detection, STT, LLM, and TTS requires agents instrumented with `voicegateway.attach(session)` writing to the same local store as the prober. In collector mode the split is not shown from the CLI.
-
-**SFU vantage.** `sfu` measures from the host running `voicegw`. For a self-hosted setup where the gateway and SFU share a network, the co-located result is the right signal; for end-user latency in other regions, use the distributed coordinator/prober mode above.
-
-**Prober host saturation.** During `sfu --load`, the prober machine can saturate before the SFU does. The resource monitor flags this in the output.
-
----
-
-## Related
-
-[`voicegw check`](/cli/check) | [`voicegw status`](/cli/status) | [`voicegw logs`](/cli/logs) | [`voicegw costs`](/cli/costs)
+Exit codes: `0` whenever the artifact was written, whatever the verdict says. `1` when there is nothing to export (no run, or no such run id) or the file could not be written. Gating CI on deployment health is `check`'s job; exiting non-zero here on a FAIL would throw away the report that explains it.

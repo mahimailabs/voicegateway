@@ -2,9 +2,6 @@
 title: Claude Code Integration
 description: Use VoiceGateway's MCP server with Claude Code to manage providers, projects, and costs through natural language.
 ---
-
-# Claude Code Integration
-
 VoiceGateway includes an MCP (Model Context Protocol) server that lets you manage providers, models, projects, and monitor costs directly from Claude Code using natural language.
 
 ## Setup

@@ -2,9 +2,6 @@
 title: "Refreshing Model Pricing"
 description: "How to update rates in voice-prices and bump the VoiceGateway pin when provider pricing changes or a model is missing."
 ---
-
-# Refreshing Model Pricing
-
 VoiceGateway prices every modality (LLM, STT, and TTS) through
 [voice-prices](https://github.com/mahimailabs/voice-prices), a fork of
 `pydantic/genai-prices` that covers all three modalities. VoiceGateway no

@@ -2,9 +2,6 @@
 title: Replay storage costs
 description: On-disk footprint of VoiceGateway's conversation replay tables. Understand the per-minute byte budget across STT, LLM, TTS, and state snapshot events before setting per-project retention.
 ---
-
-# Replay storage costs
-
 VoiceGateway's conversation replay captures every STT chunk, LLM token, TTS frame, and conversation-state snapshot for every session. This page surfaces the on-disk storage cost so the trade-off between fidelity and footprint is visible before you set per-project retention.
 
 ## What gets stored

@@ -2,9 +2,6 @@
 title: voicegw init
 description: Scaffold a voicegw.yaml configuration file from the bundled template.
 ---
-
-# voicegw init
-
 Create a `voicegw.yaml` configuration file from the bundled template.
 
 ## Synopsis

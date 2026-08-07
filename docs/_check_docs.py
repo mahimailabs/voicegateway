@@ -37,6 +37,10 @@ Rules:
      special char must be quoted. Unquoted, YAML reads the colon as a key separator and
      `mint dev` fails to render the page ("syntax error in your frontmatter"). `mint
      broken-links` does NOT catch this, so it is gated here.
+ 10. No page body may open with an `# H1`. Mintlify renders the frontmatter `title:` as
+     the page heading, so a leading H1 in the body prints the title twice. This is
+     invisible in the Markdown and only shows up in a browser, which is how it survived
+     on 61 of 84 pages. Use `##` for the first in-page section.
 """
 
 from __future__ import annotations
@@ -286,6 +290,15 @@ def main(argv: list[str]) -> int:
             errors.append(
                 f"[rule 8] '{slug}' uses a {{#anchor}} heading id "
                 f"(MDX cannot parse it): {m.group(0).strip()!r}"
+            )
+
+        # Rule 10: no leading `# H1` in the body; Mintlify already renders title:.
+        first_line = next((ln for ln in body.splitlines() if ln.strip()), "")
+        if first_line.startswith("# "):
+            errors.append(
+                f"[rule 10] '{slug}' body opens with an H1 ({first_line.strip()!r}); "
+                f"Mintlify renders the frontmatter title, so this prints it twice. "
+                f"Use '##' for the first section."
             )
 
         # Rule 9: quote frontmatter title/description values that would misparse as YAML.

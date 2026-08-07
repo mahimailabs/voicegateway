@@ -1,13 +1,10 @@
 ---
-title: Models
-description: How VoiceGateway identifies every model with a provider/model string, including language and voice suffixes, custom alias registration, and example model IDs for STT, LLM, and TTS.
+title: Models and stacks
+description: The provider/model id VoiceGateway uses to price every request, how to register named aliases and stack presets in voicegw.yaml, and how those bundles wire into attach().
 ---
-
-# Models
-
 ## Model ID format
 
-Every model in VoiceGateway is identified by a `provider/model` string:
+Every model is identified by a `provider/model` string:
 
 ```
 deepgram/nova-3
@@ -15,42 +12,17 @@ openai/gpt-4.1-mini
 cartesia/sonic-3
 ```
 
-### Language suffixes (STT)
+This is the exact string cost tracking prices. When `attach()`/`guard()` wraps a plugin, VoiceGateway reads its `provider` and `model` attributes off the live instance (`f"{provider}/{model}"`) and passes that straight to `voice-prices`. Nothing is parsed or stripped from it.
 
-STT model IDs accept an optional language code after a colon:
-
-```
-deepgram/nova-3:en
-deepgram/nova-3:es
-```
-
-### Voice suffixes (TTS)
-
-TTS model IDs accept an optional voice ID after a colon:
-
-```
-cartesia/sonic-3:narrator-male
-openai/tts-1:nova
-```
-
-### Ollama tags (LLM)
-
-LLM model IDs preserve trailing colons verbatim, so Ollama version tags pass through intact:
-
-```
-ollama/qwen2.5:3b
-ollama/llama3.2:3b
-```
-
-<Note>
-STT and TTS strip the last colon segment at parse time. LLM does not. This asymmetry mirrors how LiveKit agents handle the model string.
-</Note>
+<Warning>
+Language and voice selection belong to your framework's native constructor kwargs (`language="en"` on a Deepgram STT plugin, `voice_id="..."` on a Cartesia TTS plugin), not to the model string. If a colon-suffixed value like `nova-3:en` ends up as the plugin's `model`, that suffix becomes part of the literal `model_id` VoiceGateway records, and the pricing lookup for that exact string fails for most cloud providers (cost records as unpriced). Local/self-hosted models (`local/*`, `ollama/*`) are unaffected: they price at $0 regardless of what follows the model name, which is why an Ollama tag (`ollama/llama3.2:3b`) or a Piper voice (`local/piper:en_US-lessac-medium`) is safe to write as-is.
+</Warning>
 
 ---
 
 ## Registering custom model aliases
 
-Register aliases under `models` in `voicegw.yaml`. Aliases surface in the dashboard and CLI. They group models by modality with an optional `default_voice` for TTS entries.
+Register aliases under `models` in `voicegw.yaml`. Aliases surface in the dashboard and CLI as friendlier names; they group models by modality with an optional `default_voice` for TTS entries.
 
 ```yaml
 models:
@@ -58,47 +30,30 @@ models:
     fast-stt:
       provider: deepgram
       model: nova-3
-    accurate-stt:
-      provider: assemblyai
-      model: universal-2
   llm:
     reasoning:
       provider: anthropic
       model: claude-sonnet-4-5
-    fast-chat:
-      provider: groq
-      model: llama-3.1-8b-instant
   tts:
     narrator:
       provider: cartesia
       model: sonic-3
       default_voice: narrator-male
-    cheap-tts:
-      provider: piper
-      model: en_US-lessac-medium
 ```
-
-Each entry supports:
 
 | Field | Required | Description |
 |---|---|---|
 | `provider` | yes | Provider identifier (e.g. `deepgram`, `anthropic`) |
 | `model` | yes | Model name at the provider |
-| `default_voice` | no | Default voice for TTS model aliases |
+| `default_voice` | no | Display-only default voice for TTS aliases |
 
-### Via the dashboard
-
-Models can also be registered through the web dashboard at the daemon URL (default `http://localhost:8080`). Dashboard-registered models are persisted in SQLite and merged with YAML config at startup.
-
-### Via MCP
-
-If the MCP server is running (`voicegw mcp`), you can register models through MCP tool calls from your IDE.
+Models can also be registered through the dashboard or, if `voicegw mcp` is running, through MCP tool calls from your IDE. Dashboard/MCP-registered models persist in SQLite and merge with YAML at startup (a YAML entry with the same id wins).
 
 ---
 
 ## Model reference
 
-### STT models
+### STT
 
 | Model ID | Provider | Notes |
 |---|---|---|
@@ -107,23 +62,20 @@ If the MCP server is running (`voicegw mcp`), you can register models through MC
 | `openai/whisper-1` | OpenAI | OpenAI-hosted Whisper |
 | `groq/whisper-large-v3` | Groq | Fast Whisper via Groq |
 | `assemblyai/universal-2` | AssemblyAI | High accuracy, single tier |
-| `local/whisper-large-v3` | Whisper (local) | Best local STT |
-| `local/whisper-base` | Whisper (local) | Fastest local STT |
+| `local/whisper-large-v3` | Whisper (local) | Best local STT; always $0 |
 
-### LLM models
+### LLM
 
 | Model ID | Provider | Notes |
 |---|---|---|
 | `openai/gpt-4.1-mini` | OpenAI | Good cost/quality balance |
 | `openai/gpt-4.1` | OpenAI | Best quality |
-| `anthropic/claude-sonnet-4-20250514` | Anthropic | Strong reasoning |
+| `anthropic/claude-sonnet-4-5` | Anthropic | Strong reasoning |
 | `anthropic/claude-haiku-4-5` | Anthropic | Fast and cheap |
 | `groq/llama-3.3-70b-versatile` | Groq | Fast open-source LLM |
-| `groq/llama-3.1-8b-instant` | Groq | Ultra-fast, smaller model |
-| `ollama/llama3.2:3b` | Ollama (local) | Local LLM via Ollama |
-| `ollama/mistral:7b` | Ollama (local) | Local Mistral |
+| `ollama/llama3.2:3b` | Ollama (local) | Always $0; tag after `:` passes through untouched |
 
-### TTS models
+### TTS
 
 | Model ID | Provider | Notes |
 |---|---|---|
@@ -131,13 +83,49 @@ If the MCP server is running (`voicegw mcp`), you can register models through MC
 | `openai/tts-1` | OpenAI | Fast cloud TTS |
 | `openai/tts-1-hd` | OpenAI | High quality cloud TTS |
 | `elevenlabs/eleven_multilingual_v2` | ElevenLabs | 29 languages |
-| `elevenlabs/eleven_turbo_v2` | ElevenLabs | Faster, English-focused |
 | `deepgram/aura-asteria-en` | Deepgram | Deepgram TTS |
-| `local/kokoro` | Kokoro (local) | Lightweight local TTS |
-| `local/piper:en_US-lessac-medium` | Piper (local) | Fast offline TTS; voice ID after `:` |
+| `local/kokoro` | Kokoro (local) | Always $0 |
+| `local/piper:en_US-lessac-medium` | Piper (local) | Always $0; voice id after `:` |
 
 ---
 
-See [Providers](/configuration/providers) for which providers support each modality.
-See [Stacks](/configuration/stacks) for bundling model IDs into named tiers.
+## Stacks
+
+A stack is a named bundle mapping one name to an STT, LLM, and TTS model id: exactly those three keys, nothing else.
+
+```yaml
+stacks:
+  premium:
+    stt: deepgram/nova-3
+    llm: anthropic/claude-sonnet-4-5
+    tts: cartesia/sonic-3
+  budget:
+    stt: groq/whisper-large-v3
+    llm: groq/llama-3.3-70b-versatile
+    tts: local/piper:en_US-lessac-medium
+```
+
+Reference a stack from a project with `default_stack: premium` (see [Projects](/configuration/projects)).
+
+<Note>
+A stack is a dashboard and documentation hint only. Nothing reads `default_stack` at runtime to construct a provider. Pick the model ids from your chosen stack and pass them to your framework's native provider constructors yourself, then wrap with `attach()`/`guard()`:
+
+```python
+from livekit.agents import AgentSession
+from livekit.plugins import deepgram, anthropic, cartesia
+from voicegateway import attach
+
+session = AgentSession(
+    stt=deepgram.STT(model="nova-3"),
+    llm=anthropic.LLM(model="claude-sonnet-4-5"),
+    tts=cartesia.TTS(model="sonic-3"),
+)
+attach(session, project="acme")
+```
+</Note>
+
+---
+
+See [Projects](/configuration/projects) for `default_stack` and budget configuration.
+See [attach()](/guide/attach) for wiring native providers so cost tracking sees them.
 See [voicegw.yaml reference](/configuration/voicegw-yaml) for the full config file shape.

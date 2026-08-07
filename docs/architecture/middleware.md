@@ -173,7 +173,7 @@ def first_resolvable_stt(chain):
     raise RuntimeError("every STT model in the chain failed to resolve")
 ```
 
-Once a resolved model is wired into `AgentSession`, the call uses it for its lifetime. VoiceGateway does not swap providers mid-call. For runtime or mid-call failover, compose LiveKit's `FallbackAdapter` around instances created via `guard()`. See the [livekit-fallback-adapter example](/examples/livekit-fallback-adapter).
+Once a resolved model is wired into `AgentSession`, the call uses it for its lifetime. VoiceGateway does not swap providers mid-call. For runtime or mid-call failover, compose LiveKit's `FallbackAdapter` around instances created via `guard()`. See the [livekit-fallback-adapter example](/guide/guard).
 
 ## RequestLogger
 
@@ -217,5 +217,5 @@ The three wrapper classes (`InstrumentedSTT`, `InstrumentedLLM`, `InstrumentedTT
 The `guard()` helper also uses `wrap_provider` internally when it creates a new plugin instance on your behalf, so both the passive (`attach()`) and active (`guard()`) paths go through the same instrumentation. Disable it via `observability.latency_tracking: false` in config.
 
 <Tip>
-You can use `from voicegateway import attach, guard` together on the same session. `attach()` instruments the existing instances; `guard()` enforces budgets before new calls start. See [Core Concepts](/guide/core-concepts).
+You can use `from voicegateway import attach, guard` together on the same session. `attach()` instruments the existing instances; `guard()` enforces budgets before new calls start. See [Core Concepts](/guide/what-is-voicegateway).
 </Tip>

@@ -2,9 +2,6 @@
 title: voicegw serve / start / stop / restart
 description: Run the VoiceGateway daemon. serve runs in the foreground; start, stop, restart, daemon-logs, and uninstall-daemon manage the OS-installed service.
 ---
-
-# voicegw serve / start / stop / restart
-
 The daemon is the single long-lived process behind VoiceGateway. It serves the HTTP API (`/v1/*`), the dashboard API (`/api/*`), and the React SPA (`/`) on a single port. Five lifecycle commands manage it.
 
 ## `voicegw serve`

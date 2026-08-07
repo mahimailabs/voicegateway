@@ -2,9 +2,6 @@
 title: Fleet worker heartbeat
 description: The canonical heartbeat contract that every agent process produces and every roster backend (hosted cloud and self-hosted engine) must ingest identically, so the two worker stores cannot silently drift.
 ---
-
-# Fleet worker heartbeat
-
 VoiceGateway has one producer of worker presence and two stores that consume it. This page is the canonical contract between them. Any change to how either store ingests a heartbeat must update this page and match it, or the two rosters silently diverge (a worker judged "online" in one and "offline" in the other, or attributed to different tenants).
 
 ## The one producer, the two stores

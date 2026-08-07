@@ -2,9 +2,6 @@
 title: Security model
 description: How VoiceGateway protects provider API keys with Fernet encryption, masks secrets in API responses, enforces tenant isolation in multi-tenant deployments, and authenticates the MCP server.
 ---
-
-# Security model
-
 VoiceGateway encrypts all API keys stored in its database, masks secrets in API responses, and maintains an audit log of configuration changes.
 
 ## Fernet encryption

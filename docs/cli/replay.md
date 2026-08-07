@@ -2,9 +2,6 @@
 title: voicegw replay
 description: Print the dashboard Replay page URL for a recorded session.
 ---
-
-# voicegw replay
-
 Print the dashboard Replay page URL for a recorded session.
 
 ## Synopsis

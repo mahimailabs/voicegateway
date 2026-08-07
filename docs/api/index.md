@@ -46,4 +46,4 @@ Agent code
   -> Dashboard UI + external monitoring
 ```
 
-See [Architecture](/architecture/index) and [Core concepts](/guide/core-concepts) for a deeper walkthrough.
+See [Architecture](/architecture/index) and [Core concepts](/guide/what-is-voicegateway) for a deeper walkthrough.

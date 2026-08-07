@@ -2,9 +2,6 @@
 title: Frequently Asked Questions
 description: Common questions about VoiceGateway covering production readiness, agent-framework integration, performance overhead, Kubernetes and metrics, S2S, MCP, custom voices, backups, and key rotation.
 ---
-
-# Frequently Asked Questions
-
 ## Is VoiceGateway production-ready?
 
 VoiceGateway is in alpha. It is suitable for development, staging, and low-to-medium traffic production workloads. The core routing, cost tracking, and fallback features are stable and covered by 200+ tests with 75%+ code coverage enforced by CI (`pyproject.toml` sets `fail_under = 75`). For high-traffic production, you should:

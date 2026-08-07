@@ -2,9 +2,6 @@
 title: "Deploy to Fly.io"
 description: "Run the VoiceGateway daemon on Fly.io with managed Postgres, automatic HTTPS, and multi-region placement."
 ---
-
-# Deploy to Fly.io
-
 Low ops. Automatic HTTPS. Deploy in multiple regions to sit near your agents.
 
 <Tip>

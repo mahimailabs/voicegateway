@@ -2,9 +2,6 @@
 title: Providers
 description: All 11 providers VoiceGateway supports, with modality coverage, recommended models, per-provider config blocks, and project-level key overrides.
 ---
-
-# Providers
-
 VoiceGateway supports 11 providers across cloud and local deployments. Each provider extends the `BaseProvider` interface and is instantiated lazily on first use.
 
 ## Common fields

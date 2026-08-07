@@ -1,15 +1,12 @@
 ---
 title: Projects
-description: Per-project cost tracking, budget enforcement, and provider key overrides for attributing VoiceGateway costs to specific agents, teams, or customers.
+description: Define projects in voicegw.yaml for per-agent, per-team, or per-customer cost attribution, and read them back from the CLI, HTTP API, and dashboard.
 ---
-
-# Projects
-
-Projects are the primary mechanism for attributing costs to specific agents, teams, or customers. Each project can carry a daily budget and override provider keys.
+A project attributes cost to one agent, team, or customer. Every request `attach()` or `guard()` records carries a project id; querying costs, logs, or exports by project is how you split a shared deployment's bill.
 
 ## Defining projects
 
-Projects live under `projects:` in `voicegw.yaml`. The key is the project ID used everywhere (CLI, API, dashboard).
+Projects live under `projects:` in `voicegw.yaml`. The key is the project id used everywhere (CLI, API, dashboard, and the `project=` argument to `attach()`/`guard()`).
 
 ```yaml
 projects:
@@ -17,108 +14,75 @@ projects:
     name: Customer Support Bot
     description: Production customer-facing support agent
     daily_budget: 50.00
-    budget_action: throttle
+    budget_action: warn
     tags: [prod, support]
     providers:
       deepgram:
         api_key: ${SUPPORT_DEEPGRAM_KEY}
       openai:
         api_key: ${SUPPORT_OPENAI_KEY}
-      cartesia:
-        api_key: ${SUPPORT_CARTESIA_KEY}
-  internal-testing:
-    name: Internal Testing
-    description: QA and development testing
-    daily_budget: 10.00
-    budget_action: warn
-    tags: [dev, qa]
-    providers:
-      openai:
-        api_key: ${TEST_OPENAI_KEY}
-
-default_project: customer-support
 ```
-
-## Fields
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `name` | string | required | Human-readable project name |
 | `description` | string | `""` | Free-text description |
-| `daily_budget` | float | `0.0` | Daily spending limit in USD. `0.0` means no limit. |
-| `budget_action` | string | `"warn"` | Action when budget is exceeded: `warn`, `throttle`, or `block` |
-| `tags` | list of strings | `[]` | Arbitrary tags for filtering and dashboard display |
-| `providers` | mapping | `{}` | Per-project provider keys. Overrides the top-level `providers:` block for this project. |
-| `default_stack` | string | `""` | Dashboard display hint. See [Stacks](/configuration/stacks). |
+| `daily_budget` | float | `0.0` | Daily spend used for the budget status badge. `0` means no cap tracked. |
+| `budget_action` | string | `"warn"` | One of `warn`, `throttle`, `block`. See [Budgets](#budgets) below: it's currently a label, not an enforcement switch. |
+| `tags` | list of strings | `[]` | Arbitrary tags for filtering and dashboard accent color |
+| `providers` | mapping | `{}` | Per-project provider keys, overriding the top-level `providers:` block for this project |
+| `default_stack` | string | `""` | Dashboard display hint. See [Models](/configuration/models). |
 
-## Budget actions
+Projects also accept `routing`, `branding`, `replay`, and `metrics` blocks; those aren't cost-tracking concerns and are covered in the [voicegw.yaml reference](/configuration/voicegw-yaml).
 
-The `budget_action` field controls what happens when a project's daily spend exceeds `daily_budget`:
+Unknown keys under a project fail config validation (typos are caught at startup, not silently ignored).
 
-- `warn`: a warning is logged but requests continue. Use for development or low-risk projects.
-- `throttle`: requests are artificially slowed to reduce the consumption rate.
-- `block`: requests are rejected until the next calendar day when the budget resets.
+## Budgets
 
-```yaml
-projects:
-  strict-budget:
-    name: Strict Budget Project
-    daily_budget: 25.00
-    budget_action: block
-```
+`daily_budget` is a dollar cap; `budget_action` (`warn` / `throttle` / `block`) records what you *want* to happen once spend crosses it.
 
 <Warning>
-Budget enforcement requires `cost_tracking: true` in the `observability` block. If cost tracking is disabled, `budget_action` never triggers because there is no spend data to compare against.
+Today none of the three `budget_action` values change gateway behavior on their own. `attach()` only records spend against the cap. The dashboard, `voicegw project <id>`, and the MCP project tools read that spend back as a status of `ok`, `warning` (≥80% of `daily_budget`), or `exceeded` (≥100%): identical regardless of which action is configured. No call is slowed, rerouted, or rejected by `budget_action` alone.
 </Warning>
 
-## Active project resolution
+To actually stop or reroute a call once a cap is hit, wrap the provider with [`guard()`](/guide/guard) and pass its own `budget="$X/day"` argument. That check is a separate mechanism scoped to the `guard()` call itself; it does not read a project's `daily_budget`/`budget_action`.
 
-The active project for a call resolves in this order:
+Budget tracking (the spend that powers the status badge) requires the storage backend to be on: top-level `cost_tracking.enabled: true` in `voicegw.yaml`, or `VOICEGW_DB_PATH` / `VOICEGW_DB_URL` set. Without storage, spend always reads as `$0`.
 
-1. The `tenant_id` carried in the `attach()` call or agent metadata.
-2. `VOICEGW_ACTIVE_PROJECT` environment variable.
-3. `default_project` in `voicegw.yaml`.
-4. The literal `"default"` (auto-created on first run).
+## Which project a call lands under
 
-See [attach()](/guide/attach) for how to bind a tenant to a call.
+Pass `project="<id>"` to `attach()` or `guard()` to tag every record from that session. Omit it and records land under the `default` project (auto-created on first run, `$0` budget). See [attach()](/guide/attach) for the exact resolution order between the argument and the `VOICEGW_PROJECT` environment variable.
 
-## Querying project data
+## Reading project data
 
-### From the CLI
+### CLI
 
 ```bash
 voicegw projects                         # list all projects
-voicegw project customer-support         # project details
-voicegw costs --project customer-support # costs today
-voicegw logs --project customer-support  # recent requests
+voicegw project customer-support         # one project's details + today's spend
 ```
 
-### From the HTTP API
+`voicegw projects` prints a table: **ID**, **Name**, **Tags**, **Budget/day** (`-` if unlimited), **Default Stack** (`-` if none). With no projects configured it warns and exits `0`.
+
+`voicegw project <id>` prints a panel with the name, description, tags, default stack, and daily budget, plus a `Today: $X.XXXX (N requests)` line when the storage backend is enabled. Exits `1` if the id isn't found.
+
+Both accept `--config`/`-c` to point at a non-default `voicegw.yaml`.
+
+### HTTP API and dashboard
 
 ```bash
 curl http://localhost:8080/v1/projects
-curl http://localhost:8080/v1/costs?project=customer-support
+curl "http://localhost:8080/v1/costs?project=customer-support"
 ```
 
-### From the dashboard
-
-The web dashboard (`voicegw dashboard`) shows per-project cost breakdowns, daily spend trends, and budget utilization.
+The web dashboard (`voicegw dashboard`) shows a per-project spend bar against `daily_budget` and the `budget_action` value as a label. Projects can also be created at runtime from the dashboard, the MCP server (`voicegw mcp`), or `POST /v1/projects`; runtime-created projects persist in SQLite and merge with YAML on startup (YAML wins on id conflicts).
 
 ## Tags
 
-Tags are arbitrary strings for filtering and visual organization. The dashboard uses the first tag to choose an accent color:
-
-- Tags containing `prod`: green accent
-- Tags containing `stag`: yellow accent
-- Tags containing `dev` or `test`: blue accent
-- All other tags: pink accent
-
-## Runtime project management
-
-Projects can also be created at runtime through the dashboard, the MCP server (`voicegw mcp`), or the HTTP API (`/v1/projects`). Runtime-created projects are persisted in SQLite and merged with YAML-defined projects on startup. YAML-defined projects take precedence on conflicts.
+Tags are arbitrary strings for filtering. The dashboard picks an accent color from the first tag (substring match, case-insensitive): contains `prod` → green, contains `stag` → yellow, contains `dev` or `test` → blue, anything else → pink.
 
 ---
 
-See [Stacks](/configuration/stacks) for the `default_stack` field.
-See [Observability](/configuration/observability) for `cost_tracking` and budget enforcement.
+See [Models](/configuration/models) for the `provider/model` id format and the `default_stack` bundles.
+See [Tenant attribution](/guide/multi-tenant-quickstart) for per-end-user attribution *within* a project.
 See [voicegw.yaml reference](/configuration/voicegw-yaml) for the full config file shape.

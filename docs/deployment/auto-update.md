@@ -2,9 +2,6 @@
 title: "Auto-update the daemon"
 description: "Keep a self-hosted VoiceGateway daemon on the latest patch release automatically, with rolling Postgres backups and effectively no interruption to your agents."
 ---
-
-# Auto-update the daemon
-
 Once the daemon runs on your own box (see [Deploy to a VPS](/deployment/vps)), you can have it pull and apply new patch releases on its own. This page sets that up with an opt-in Compose overlay that adds a release-channel pin, [Watchtower](https://containrrr.dev/watchtower/), and rolling Postgres backups.
 
 ## Is it really "no interruption"?

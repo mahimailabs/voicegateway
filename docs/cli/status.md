@@ -2,9 +2,6 @@
 title: voicegw status
 description: Show provider configuration status. Useful for verifying setup after editing voicegw.yaml or adding providers via the API.
 ---
-
-# voicegw status
-
 Show the configuration status of all providers.
 
 ## Synopsis
@@ -81,4 +78,4 @@ voicegw doctor
 
 ## Related
 
-[`voicegw init`](/cli/init) | [`voicegw onboard`](/cli/onboard) | [`voicegw costs`](/cli/costs) | [`voicegw projects`](/cli/projects) | [`voicegw check`](/cli/check)
+[`voicegw init`](/cli/init) | [`voicegw onboard`](/cli/onboard) | [`voicegw costs`](/cli/costs) | [`voicegw projects`](/configuration/projects) | [`voicegw check`](/cli/check)
