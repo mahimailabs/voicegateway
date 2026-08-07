@@ -1,43 +1,58 @@
 ---
-title: Which path?
-description: "A decision guide for developers arriving from LiveKit Agents or Pipecat. Two axes: self-host vs Cloud, and attach-only vs attach + guard."
+title: Which layer do you need?
+description: "Three decisions before you write code: which layer you are profiling, where VoiceGateway runs, and whether you need control as well as measurement."
 ---
 
-This page helps you pick the right combination before you write any code. Two decisions:
+Three decisions, in this order. The first one matters most, because the three layers
+need different things already running.
 
-1. Where does VoiceGateway run? (self-host the OSS daemon vs use Hosted Cloud)
-2. How much do you need? (cost visibility only vs control over fallback, rate limits, and budgets)
+1. Which layer are you profiling: the agent, the SFU, or the SIP path?
+2. Where does VoiceGateway run: self-hosted, or Hosted Cloud?
+3. How much do you need: measurement only, or control as well?
 
-## Axis 1: self-host or Hosted Cloud
+## Decision 1: which layer
+
+| | Agent | SFU | SIP |
+|---|---|---|---|
+| Answers | What did this call cost, and where did latency go? | Is the media server healthy, and what is its capacity? | Did the telephony path answer, and how fast? |
+| You need | A pip install and provider API keys | A LiveKit deployment you operate, with credentials | A SIP load generator you run yourself |
+| Entry point | [`attach()`](/guide/attach) | [`voicegw livekit`](/cli/livekit) | [`voicegw loadtest`](/cli/loadtest) |
+| Start at | [Quickstart](/get-started) | [Distributed SFU](/deployment/distributed-sfu) | [Load test evidence](/cli/loadtest) |
+
+The agent layer stands alone. You can profile cost and latency without operating any
+infrastructure beyond your own agent process. The SFU and SIP layers assume you already
+run the deployment under test, which is a different job and often a different person.
+
+Most people start at the agent layer and stay there. That is a complete use of the
+tool, not a partial one. Full detail in
+[What you can profile](/guide/what-you-can-profile).
+
+## Decision 2: self-host or Hosted Cloud
 
 | | Self-Host (OSS) | Hosted Cloud |
 |---|---|---|
 | Storage | SQLite, single process | ClickHouse, multi-tenant |
-| Ingest | local sink (no network hop) | push to `VOICEGW_COLLECTOR_URL` |
-| Dashboard | `voicegw dashboard` (port 9090) | `dash.voicegateway.dev` |
-| Setup | `pip install voicegateway` + `voicegw.yaml` | 3 env vars (`VOICEGW_COLLECTOR_URL`, `VOICEGW_API_KEY`, `VOICEGW_PROJECT`) |
-| Horizontal scale | single instance | managed, no ops |
+| Ingest | local sink, no network hop | push to `VOICEGW_COLLECTOR_URL` |
+| Dashboard | `voicegw serve` on port 8080 | `dash.voicegateway.dev` |
+| Setup | `pip install voicegateway` plus `voicegw.yaml` | three env vars |
+| Horizontal scale | single instance | managed |
 | Right for | local dev, small teams, self-managed infra | multi-agent fleets, SaaS products, agency work |
 
 <Note>
-The `attach()` and `guard()` seams work identically on both paths. The only difference is which sink receives the records.
+`attach()` and `guard()` behave identically on both. Only the sink that receives the
+records changes. The SFU and SIP layers are self-host tools: they run from your CLI
+against infrastructure you control.
 </Note>
 
-### Choose self-host when
+**Choose self-host when** you need data on your own infrastructure, you are building a
+single-team product, or you want to iterate locally before paying for cloud ingest.
 
-- You need data on your own infrastructure (compliance, air-gap, cost control).
-- You are building a single-team product or a personal project.
-- You want to iterate locally before paying for cloud ingest.
+**Choose Hosted Cloud when** you run agents across several machines and want one
+dashboard, you need per-tenant cost isolation for a SaaS product, or you want no ops.
 
-### Choose Hosted Cloud when
+See [Hosted Cloud quickstart](/hosted/quickstart) for the three-variable setup.
 
-- You run multiple agents across machines and want a single dashboard.
-- You are building a SaaS product and need per-tenant cost isolation.
-- You want zero ops: no SQLite file to manage, no dashboard process to keep running.
-
-See [Hosted Cloud quickstart](/hosted/quickstart) for the three-env-var setup.
-
-## Axis 2: observe-only or observe + control
+## Decision 3: measure only, or control too
 
 | | `attach()` only | `attach()` + `guard()` |
 |---|---|---|
@@ -45,63 +60,46 @@ See [Hosted Cloud quickstart](/hosted/quickstart) for the three-env-var setup.
 | Per-modality latency | Yes | Yes |
 | Fallback on provider error | No | Yes |
 | Rate limiting | No | Yes |
-| Spend caps (warn/throttle/block) | No | Yes |
-| Code change to provider setup | None | Wrap provider in `guard(...)` |
+| Spend caps | No | Yes |
+| Change to your provider setup | None | Wrap the provider in `guard(...)` |
 
-### Use `attach()` only when
+**Use `attach()` alone when** you want visibility without changing provider behavior,
+or you are adding VoiceGateway to an existing agent and want the smallest diff.
 
-- You want cost and latency visibility without changing provider behavior.
-- You are adding VoiceGateway to an existing agent and want the smallest diff.
-- You trust your providers to be reliable and have no budget enforcement requirement.
-
-### Add `guard()` when
-
-- You need a fallback provider (primary goes down, switch to backup).
-- You want to enforce a per-project or per-day spend cap.
-- You need to rate-limit calls to a provider that has strict quota limits.
+**Add `guard()` when** you need a fallback provider, a per-project spend cap, or a rate
+limit against a provider with strict quota.
 
 ## Decision flow
 
 ```mermaid
 flowchart TD
-    A[Building a LiveKit or Pipecat voice agent?] -->|yes| B[Need data on your own infra?]
-    A -->|no, text-only LLM| Z1[LiteLLM is the right fit]
+    A[What are you profiling?] -->|a voice agent| B[Need data on your own infra?]
+    A -->|a LiveKit media server| S[SFU layer: voicegw livekit]
+    A -->|a telephony path| P[SIP layer: voicegw loadtest]
+    A -->|a text-only LLM app| Z[LiteLLM is the better fit]
     B -->|yes| C[Self-Host OSS]
     B -->|no, want zero ops| D[Hosted Cloud]
-    C --> E[Need fallback / rate limits / budget caps?]
+    C --> E[Need fallback, rate limits, or budget caps?]
     D --> E
-    E -->|cost visibility only| F[attach only]
-    E -->|yes to any control| G[attach + guard]
+    E -->|measurement only| F[attach only]
+    E -->|yes to any| G[attach + guard]
+    S --> H[You must already operate the LiveKit deployment]
+    P --> I[You must run the load generator yourself]
 ```
 
-## Quick-start paths
+## Where to go next
 
 <CardGroup cols={2}>
-  <Card title="Self-host: Quick start" icon="server" href="/guide/quick-start">
-    Install the OSS package, write a voicegw.yaml, and attach to your first agent.
+  <Card title="Quickstart" icon="bolt" href="/get-started">
+    Agent layer, self-hosted. Install, attach, first cost row.
+  </Card>
+  <Card title="What you need" icon="list-check" href="/guide/prerequisites">
+    Prerequisites for all three layers, side by side.
   </Card>
   <Card title="Hosted Cloud" icon="cloud" href="/hosted/quickstart">
-    Three env vars and your agent is sending data to the cloud dashboard.
+    Three env vars and your agent reports to the cloud dashboard.
   </Card>
-  <Card title="attach() reference" icon="eye" href="/guide/attach">
-    Full signature, options, and LiveKit / Pipecat examples.
-  </Card>
-  <Card title="guard() reference" icon="shield" href="/guide/guard">
-    Fallback chains, rate limits, and spend caps: full reference.
+  <Card title="How VoiceGateway compares" icon="scale-balanced" href="/guide/comparison">
+    Against LiteLLM, OpenRouter, Cloudflare AI Gateway, and LiveKit Inference.
   </Card>
 </CardGroup>
-
-## Comparison to other tools
-
-| If you are... | Use |
-|---|---|
-| Building a LiveKit or Pipecat voice agent and want per-modality cost tracking | VoiceGateway |
-| Self-hosting voice with local + cloud model unification | VoiceGateway |
-| Building a text-only LLM app (chatbot, RAG, code generation) | [LiteLLM](https://docs.litellm.ai/) |
-| Wanting a hosted multi-tenant LLM proxy with no infrastructure | [OpenRouter](https://openrouter.ai/) |
-| At production scale on Cloudflare and want a gateway in that stack | [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/) |
-| On managed LiveKit Cloud and happy with bundled inference pricing | LiveKit Inference (built into LiveKit Cloud) |
-
-<Tip>
-Jump to the [quick start](/guide/quick-start) to try VoiceGateway in five minutes. The integration is small enough that finding the right shape is cheap.
-</Tip>

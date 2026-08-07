@@ -1,79 +1,54 @@
 ---
 title: VoiceGateway
-description: Cost tracking, observability, and control for LiveKit and Pipecat voice agents. Attach one line to your existing agent and see per-modality spend land in the dashboard.
+description: The open-source profiler for voice agents. Meter per-call cost and latency on LiveKit and Pipecat, then profile the SFU and SIP path underneath, from one dashboard.
 ---
 
-VoiceGateway meters what your voice agents actually cost. It attaches to an agent you
-already run on **LiveKit Agents** or **Pipecat**, records LLM tokens, STT audio-minutes,
-and TTS characters per request, prices them through `voice-prices`, and reconciles the
-totals against your provider invoices.
+VoiceGateway profiles voice agents and the infrastructure they run on. Attach one line
+to an agent you already run and per-modality spend lands in the dashboard. Point the
+same tool at your LiveKit deployment for SFU health and node capacity, and hand it a
+load generator's output to judge the telephony path.
 
-The core is framework-neutral: `import voicegateway` pulls neither framework. Two seams do
-the work. [`attach()`](/guide/attach) observes (passive: cost and latency).
-[`guard()`](/guide/guard) controls (active: fallback, rate limits, budgets).
+The core is framework-neutral: `import voicegateway` pulls neither LiveKit nor
+Pipecat. Two seams do the work. [`attach()`](/guide/attach) observes (passive: cost
+and latency). [`guard()`](/guide/guard) controls (active: fallback, rate limits,
+budgets).
+
+```python
+from voicegateway import attach
+
+attach(session, project="my-agent")   # LiveKit AgentSession or Pipecat PipelineTask
+```
+
+## Three layers, one call
+
+| Layer | What it answers | Needs |
+|---|---|---|
+| [Agent](/guide/attach) | What did this conversation cost, and where did the latency go? | A pip install and your provider keys |
+| [SFU](/cli/livekit) | Is the media server healthy, and how many calls will it hold? | A LiveKit deployment you operate |
+| [SIP](/cli/loadtest) | Did the telephony path answer, and how fast? | A load generator you run yourself |
+
+The layers have genuinely different prerequisites. [What you need](/guide/prerequisites)
+sets out all three before you install anything.
+
+## Start here
 
 <CardGroup cols={2}>
-  <Card title="What is VoiceGateway" icon="circle-question" href="/guide/what-is-voicegateway">
-    The problem it solves and where it fits in a voice stack.
+  <Card title="Quickstart" icon="bolt" href="/get-started">
+    Install, attach to your agent, and read your first cost row.
   </Card>
-  <Card title="Self-host quickstart" icon="rocket" href="/guide/quick-start">
-    Install, attach to your LiveKit or Pipecat agent, see costs in minutes.
+  <Card title="What is VoiceGateway" icon="circle-question" href="/guide/what-is-voicegateway">
+    The problem it solves and the two-seam model behind it.
+  </Card>
+  <Card title="What you can profile" icon="layer-group" href="/guide/what-you-can-profile">
+    Agent, SFU, and SIP: what each layer measures and what it cannot.
+  </Card>
+  <Card title="Which layer do you need?" icon="signs-post" href="/guide/decision-tree">
+    Route by layer, then by self-host or Cloud.
   </Card>
   <Card title="Hosted Cloud" icon="cloud" href="/hosted/quickstart">
-    Skip the daemon. Point your agent at the hosted collector.
+    Skip the local daemon. Point your agent at the hosted collector.
   </Card>
   <Card title="CLI reference" icon="terminal" href="/cli/index">
-    Every `voicegw` command: serve, dashboard, costs, reconcile.
-  </Card>
-  <Card title="API reference" icon="code" href="/api/index">
-    Python SDK, HTTP API, MCP server, dashboard API, architecture.
-  </Card>
-  <Card title="Decision tree" icon="signs-post" href="/guide/decision-tree">
-    Self-host or Cloud, attach or guard: pick the right path.
+    The `voicegw` commands, one page each: serve, costs, livekit, loadtest, reconcile, and the rest.
   </Card>
 </CardGroup>
-
-## Install
-
-Install the extra for the framework you run. Provider plugin extras imply the framework, so
-one line pulls the runtime and the plugins you name.
-
-<CodeGroup>
-
-```bash uv
-uv pip install "voicegateway[livekit]"     # or [pipecat]
-```
-
-```bash pip
-pip install "voicegateway[livekit]"        # or [pipecat]
-```
-
-</CodeGroup>
-
-## Attach in one line
-
-Build your agent exactly as you do today, then hand the session (LiveKit) or task
-(Pipecat) to `attach()`. It detects the framework, meters every request, and writes the
-records. Nothing else in your agent changes.
-
-<Tabs>
-  <Tab title="LiveKit">
-    ```python
-    from voicegateway import attach
-
-    session = AgentSession(stt=stt, llm=llm, tts=tts)
-    attach(session, project="my-agent")   # meters cost + latency
-    ```
-  </Tab>
-  <Tab title="Pipecat">
-    ```python
-    from voicegateway import attach
-
-    task = PipelineTask(pipeline)
-    attach(task, project="my-agent")      # meters cost + latency
-    ```
-  </Tab>
-</Tabs>
-
-Ready to go deeper? Start with [Self-host quickstart](/guide/quick-start), or read how
-[`attach()`](/guide/attach) and [`guard()`](/guide/guard) split observe from control.

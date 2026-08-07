@@ -126,7 +126,7 @@ See [voicegateway.dev](https://voicegateway.dev) for the full breakdown and curr
   <Card title="guard() reference" href="/guide/guard">
     Add real-time budget enforcement and per-call spend limits on top of attach.
   </Card>
-  <Card title="Self-host quickstart" href="/guide/quick-start">
+  <Card title="Quickstart" href="/get-started">
     Run the collector locally or on your own infra instead of using hosted cloud.
   </Card>
   <Card title="Which path fits?" href="/guide/decision-tree">

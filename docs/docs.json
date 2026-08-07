@@ -26,15 +26,29 @@
   "navigation": {
     "tabs": [
       {
-        "tab": "Overview",
+        "tab": "Introduction",
         "groups": [
           {
-            "group": "Overview",
+            "group": "Get started",
             "pages": [
               "index",
+              "guide/prerequisites",
+              "get-started"
+            ]
+          },
+          {
+            "group": "Understanding VoiceGateway",
+            "pages": [
               "guide/what-is-voicegateway",
-              "guide/frameworks",
+              "guide/what-you-can-profile",
               "guide/decision-tree"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "guide/comparison",
+              "reference/faq"
             ]
           }
         ]
@@ -43,11 +57,9 @@
         "tab": "Self-Host",
         "groups": [
           {
-            "group": "Get started",
+            "group": "Install and first agent",
             "pages": [
-              "get-started",
               "guide/installation",
-              "guide/quick-start",
               "guide/first-agent"
             ]
           },
@@ -55,6 +67,7 @@
             "group": "Core concepts",
             "pages": [
               "guide/core-concepts",
+              "guide/frameworks",
               "guide/attach",
               "guide/guard"
             ]
@@ -192,7 +205,6 @@
           {
             "group": "Reference",
             "pages": [
-              "reference/faq",
               "reference/troubleshooting",
               "reference/reconcile-formats"
             ]
