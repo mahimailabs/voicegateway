@@ -117,5 +117,5 @@ If `event.error.recoverable` is `True`, the chain advanced to the next provider 
 ## Related
 
 - [Fallback Chains](/examples/fallback-chains): `guard()` resolver-time fallback. Complementary to `FallbackAdapter`. Resolver-time picks the first available provider at agent startup; runtime fallback handles failures during a call.
-- [Quick Start](/guide/quick-start)
+- [Quickstart](/get-started)
 - [LiveKit Agents events reference](https://docs.livekit.io/reference/agents/events/)

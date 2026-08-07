@@ -124,7 +124,7 @@ the file for your framework, set your environment variables, and run it.
        returns an error, `guard()` retries with GPT-4o automatically. `attach()`
        meters prompt tokens, completion tokens, and cost.
     3. `cartesia.TTS` synthesizes speech. `attach()` meters characters and cost.
-    4. Every row lands in the dashboard at `http://127.0.0.1:9090`.
+    4. Every row lands in the dashboard at `http://localhost:8080`.
   </Tab>
 
   <Tab title="Pipecat">
@@ -259,7 +259,7 @@ the file for your framework, set your environment variables, and run it.
     ```
 
     Join your Daily room from a browser. After the call ends, the dashboard at
-    `http://127.0.0.1:9090` shows a cost row per modality.
+    `http://localhost:8080` shows a cost row per modality.
 
     ### What happens
 
@@ -287,7 +287,7 @@ the file for your framework, set your environment variables, and run it.
 voicegw dashboard
 ```
 
-Opens your browser at `http://127.0.0.1:9090`. Cost rows appear in real time as
+Opens your browser at `http://localhost:8080`. Cost rows appear in real time as
 calls complete.
 
 In the terminal:

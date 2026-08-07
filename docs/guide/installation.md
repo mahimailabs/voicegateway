@@ -209,6 +209,6 @@ starter config.
 
 ## Next steps
 
-- [Quick start](/guide/quick-start): five-minute path from install to first cost row.
+- [Quickstart](/get-started): five-minute path from install to first cost row.
 - [First agent](/guide/first-agent): a complete worked agent with `attach()` and `guard()`.
 - [Frameworks and extras](/guide/frameworks): framework-neutral core explained.

@@ -336,6 +336,6 @@ pip list | grep livekit
 
 - [FAQ](/reference/faq)
 - [Installation](/guide/installation)
-- [Quick Start](/guide/quick-start)
+- [Quickstart](/get-started)
 - [Contributing](/contributing/index)
 - [Changelog](https://github.com/mahimailabs/voicegateway/blob/main/CHANGELOG.md)
