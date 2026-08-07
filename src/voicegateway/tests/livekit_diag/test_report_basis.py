@@ -167,3 +167,26 @@ def test_an_undeclared_environment_is_not_left_blank(monkeypatch) -> None:
     html = run_report.render_html(_payload(_run([])))
     assert "not declared" in html
     assert run_report.ENVIRONMENT_ENV_VAR in html
+
+
+def test_a_room_with_zero_trials_is_not_a_measured_session() -> None:
+    """The count is read off the MEASUREMENTS, not off a field being present.
+
+    ``LatencyResult.room`` is documented as None when no turn completed, so in
+    practice a zero-trial agent carries no room and the two agree. This pins the
+    stated contract ("sessions that produced a measurement") against the case
+    where a caller upstream leaves the room populated anyway, rather than
+    trusting a field it does not own to be cleared.
+    """
+    basis = _payload(_run([_agent("a", 0, "vg-probe-a")]))["basis"]
+    assert basis["sessions"] == 0
+    assert basis["turns"] == 0
+
+
+def test_a_zero_trial_agent_does_not_hide_a_real_one() -> None:
+    """Non-vacuous: the guard drops the empty room, not the measured one."""
+    basis = _payload(
+        _run([_agent("quiet", 0, "vg-probe-quiet"), _agent("busy", 5, "vg-probe-busy")])
+    )["basis"]
+    assert basis["sessions"] == 1
+    assert basis["turns"] == 5

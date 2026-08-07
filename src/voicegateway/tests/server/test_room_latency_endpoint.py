@@ -221,18 +221,29 @@ async def test_a_mid_flush_split_is_incomplete_and_zeroes_nothing(harness):
         "stt_ttfp_ms",
         "stt_transcription_delay_ms",
         "stt_ms",
-        "llm_ttft_ms",
         "tts_ttfb_ms",
     ],
 )
-async def test_no_component_is_ever_a_fabricated_zero(harness, field):
-    """Every field is present and null, never 0.0, when nothing produced it."""
+async def test_an_unproduced_component_is_null_not_zero(harness, field):
+    """Present and NULL. "not 0.0" alone would pass on any garbage value.
+
+    ``llm_ttft_ms`` is excluded because this fixture measures it, and asserted
+    separately below, so the parametrisation cannot go green by measuring
+    nothing at all.
+    """
     await harness.gateway.storage.log_request(_req(ROOM, SESSION, "llm", ttfb_ms=1.0))
     c = (await _get(harness, f"/v1/rooms/{ROOM}/latency")).json()["components"]
     assert field in c, (
         "the field must be present so a consumer can render a fixed strip"
     )
-    assert c[field] != 0.0
+    assert c[field] is None
+
+
+async def test_the_one_measured_component_really_did_measure(harness):
+    """The non-vacuous half of the test above."""
+    await harness.gateway.storage.log_request(_req(ROOM, SESSION, "llm", ttfb_ms=1.0))
+    c = (await _get(harness, f"/v1/rooms/{ROOM}/latency")).json()["components"]
+    assert c["llm_ttft_ms"] == pytest.approx(1.0)
 
 
 # --------------------------------------------------------------------------
@@ -379,13 +390,134 @@ async def test_it_lives_under_v1_not_the_dashboard_router(harness):
     assert (await _get(harness, f"/api/rooms/{ROOM}/latency")).status_code == 404
 
 
-async def test_turns_carry_the_four_documented_fields(harness):
+async def test_turns_carry_the_documented_fields(harness):
+    """``seq`` and ``session_id`` are here because ``turn_index`` alone cannot
+    identify a turn in a room that carried more than one session."""
     await _seed_complete(harness.gateway.storage)
     await _seed_turns(harness.gateway.storage, SESSION, [1041])
     turn = (await _get(harness, f"/v1/rooms/{ROOM}/latency")).json()["turns"][0]
     assert set(turn) == {
+        "seq",
         "turn_index",
+        "session_id",
         "caller_speak_end_ms",
         "agent_speak_start_ms",
         "response_speed_ms",
     }
+
+
+# --------------------------------------------------------------------------
+# A room can carry more than one session
+# --------------------------------------------------------------------------
+
+
+async def test_two_sessions_in_one_room_neither_omit_nor_repeat_a_turn(harness):
+    """``turn_index`` is SESSION-local, so it cannot be the cursor.
+
+    A room carries two sessions when an agent reconnects, when two agents share
+    a room, or when a probe reuses a fixed --room-name. Both sessions then count
+    their turns 0, 1, 2..., so a cursor on turn_index would return two turns
+    called "3" and drop one of them on the next poll. ``seq`` is room-wide.
+    """
+    storage = harness.gateway.storage
+    await _seed_complete(storage, session="sess-a")
+    await storage.log_request(_req(ROOM, "sess-b", "llm", ttfb_ms=400.0))
+    # sess-b runs after sess-a, and both number their turns from zero.
+    await _seed_turns(storage, "sess-a", [900, 950])
+    async with storage._conn.session() as db:
+        await turns.create_turns_bulk(
+            db,
+            [
+                TurnRow(
+                    session_id="sess-b",
+                    turn_index=i,
+                    caller_speak_start_ms=1_900_000_000_000 + i * 5000,
+                    caller_speak_end_ms=1_900_000_002_000 + i * 5000,
+                    agent_speak_start_ms=1_900_000_002_000 + i * 5000 + s,
+                    agent_speak_end_ms=None,
+                    response_speed_ms=s,
+                )
+                for i, s in enumerate([1100, 1150])
+            ],
+        )
+
+    whole = (await _get(harness, f"/v1/rooms/{ROOM}/latency")).json()
+    assert whole["turn_count"] == 4
+    # seq is room-wide and unique; turn_index repeats across the two sessions.
+    assert [t["seq"] for t in whole["turns"]] == [0, 1, 2, 3]
+    assert [t["turn_index"] for t in whole["turns"]] == [0, 1, 0, 1]
+    assert [t["session_id"] for t in whole["turns"]] == [
+        "sess-a",
+        "sess-a",
+        "sess-b",
+        "sess-b",
+    ]
+    # Chronological, so the two sessions are not interleaved.
+    ends = [t["caller_speak_end_ms"] for t in whole["turns"]]
+    assert ends == sorted(ends)
+
+    # The cursor advances cleanly across the session boundary: every turn is
+    # returned exactly once across successive polls, and none twice.
+    seen: list[int] = []
+    cursor: int | None = None
+    for _ in range(4):
+        q = "" if cursor is None else f"?since_turn={cursor}"
+        page = (await _get(harness, f"/v1/rooms/{ROOM}/latency{q}")).json()["turns"]
+        if not page:
+            break
+        seen.append(page[0]["seq"])
+        cursor = page[0]["seq"]
+    assert seen == [0, 1, 2, 3]
+
+
+async def test_a_cursor_on_turn_index_would_have_been_ambiguous(harness):
+    """Non-vacuous: prove turn_index really does repeat, so seq is not
+    ceremony."""
+    storage = harness.gateway.storage
+    await _seed_complete(storage, session="sess-a")
+    await storage.log_request(_req(ROOM, "sess-b", "llm", ttfb_ms=400.0))
+    await _seed_turns(storage, "sess-a", [900])
+    await _seed_turns(storage, "sess-b", [1100])
+
+    indices = [
+        t["turn_index"]
+        for t in (await _get(harness, f"/v1/rooms/{ROOM}/latency")).json()["turns"]
+    ]
+    assert indices == [0, 0], "both sessions number from zero, so it repeats"
+
+
+# --------------------------------------------------------------------------
+# Auth enforces once keys exist
+# --------------------------------------------------------------------------
+
+
+async def test_no_credential_is_refused_once_api_keys_are_configured(harness):
+    """The other half of the self-hosted no-op default.
+
+    The read gate is deliberately a no-op while no API keys are configured, so
+    the tests above call with no Authorization header and that is correct
+    behaviour, not a gap. Once a key exists the gate enforces, and this asserts
+    it does: room data must never come back unauthenticated on a deployment
+    that has turned auth on.
+    """
+    await _seed_complete(harness.gateway.storage)
+    # Before: the self-hosted default (no configured keys) serves it.
+    assert (await _get(harness, f"/v1/rooms/{ROOM}/latency")).status_code == 200
+
+    # Auth turns on when keys are CONFIGURED, which is app.state.api_keys, not
+    # the presence of a minted vk_ row in the database. A non-vk_ token takes
+    # the static-key path, the same way test_dashboard_api_keys sets it up.
+    from voicegateway.core.auth import ApiKey
+
+    harness.app.state.api_keys = [
+        ApiKey(token="static-secret", name="ops", scopes=("read",))
+    ]
+
+    r = await _get(harness, f"/v1/rooms/{ROOM}/latency")
+    assert r.status_code == 401, r.text
+    assert "components" not in r.text
+
+    # Non-vacuous: the configured key still gets the data.
+    ok = await _get(harness, f"/v1/rooms/{ROOM}/latency", "static-secret")
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["components"]["llm_ttft_ms"] == pytest.approx(447.0)

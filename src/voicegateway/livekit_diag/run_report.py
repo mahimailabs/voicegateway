@@ -558,10 +558,18 @@ def _report_basis(
         if not isinstance(raw, dict):
             continue
         stats = raw.get("stats")
+        answered = 0
         if isinstance(stats, dict):
-            turns += _as_int(stats.get("trials")) or 0
+            answered = _as_int(stats.get("trials")) or 0
+        turns += answered
         room = raw.get("room")
-        if isinstance(room, str) and room:
+        # Gated on the trial count, not only on the room being present.
+        # ``LatencyResult.room`` is documented as None when no turn completed,
+        # so in practice the two agree, but this function's own contract is
+        # "sessions that produced a measurement". Reading that off the number of
+        # measurements makes it true here rather than true because a caller
+        # upstream happened to clear a field.
+        if answered > 0 and isinstance(room, str) and room:
             rooms.add(room)
     return {
         "environment": declared,
@@ -590,9 +598,19 @@ def build_payload(
     keeps its stored verdict, instead of being re-judged against today's rules
     and disagreeing with the log it printed at the time.
 
-    ``livekit_url`` is the server the exporting host resolves right now, or None
-    when it cannot resolve one: it is not read off the run, because no run record
-    has ever carried it.
+    Args:
+        run: the stored run this report describes.
+        livekit_url: the server the exporting host resolves right now, or None
+            when it cannot resolve one. It is not read off the run, because no
+            run record has ever carried it.
+        environment: an operator's label for where the probe RAN, which nothing
+            can derive. Overrides :data:`ENVIRONMENT_ENV_VAR`; when neither is
+            supplied the report says the environment was not declared rather
+            than implying one. See :func:`_report_basis`.
+
+    Returns:
+        The payload, including a ``basis`` block stating how many sessions and
+        turns the report rests on and which environment it was measured from.
     """
     results: dict[str, Any] = run.results if isinstance(run.results, dict) else {}
     raw_checks = results.get("checks")

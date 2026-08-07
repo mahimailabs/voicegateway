@@ -192,8 +192,9 @@ async def get_room_latency(
     since_turn: int | None = Query(
         None,
         description=(
-            "Return only turns with turn_index greater than this. Filters the "
-            "turns list ONLY: components and e2e_ms stay whole-call aggregates."
+            "Return only turns whose room-wide `seq` is greater than this. "
+            "Filters the turns list ONLY; components and e2e_ms are whole-call "
+            "aggregates and are never narrowed by it."
         ),
     ),
     gateway: Gateway = Depends(get_gateway),
@@ -201,11 +202,39 @@ async def get_room_latency(
 ) -> dict[str, Any]:
     """The per-stage latency split and per-turn timings for one LiveKit room.
 
-    ``since_turn`` is a cursor over ``turns`` and nothing else. ``components``
-    and ``e2e_ms`` are aggregates over the whole call and always come back
-    whole: a cursor that quietly narrowed them would make each poll disagree
-    with the one before it, which is exactly the bug a polling consumer cannot
-    see.
+    Args:
+        room_name: the LiveKit room, as the caller minted it when it signed the
+            token. This is the key the whole endpoint is built on; see the
+            module docstring for why it is not ``session_id``.
+        since_turn: a cursor over ``turns``. Returns only turns whose room-wide
+            ``seq`` exceeds it; pass back the ``seq`` of the last turn you saw.
+            It is NOT ``turn_index``, which is session-local and repeats when a
+            room carries more than one session.
+        gateway: injected; supplies the storage this reads.
+        principal: injected; supplies the tenant this may read. Never taken
+            from the request.
+
+    Returns:
+        A dict with ``room``, ``project``, ``turn_count``, ``complete``,
+        ``components``, ``e2e_ms`` and ``turns``.
+
+        ``components`` (the per-stage split, milliseconds) and ``e2e_ms`` (the
+        summarised response speed) are aggregates over the WHOLE call and are
+        never narrowed by ``since_turn``. They are recomputed from the rows
+        present at request time, so they do move as a call progresses; what
+        ``since_turn`` guarantees is only that it is not the thing moving them.
+        A cursor that quietly narrowed an aggregate would make each poll
+        disagree with the last for a reason the consumer could not see.
+
+        ``turns`` is the filtered list. ``turn_count`` counts the whole call
+        regardless, so a cursored poll still knows what the aggregates cover.
+
+        Each turn carries ``seq`` (room-wide, unique, the cursor), plus
+        ``turn_index`` and ``session_id`` (session-local, and the numbers the
+        agent's own logs show), ``caller_speak_end_ms`` and
+        ``agent_speak_start_ms`` (epoch milliseconds), and
+        ``response_speed_ms`` (an elapsed duration, null when the agent never
+        answered that turn).
     """
     if gateway.storage is None:
         raise HTTPException(status_code=503, detail="Storage not configured")
@@ -237,14 +266,29 @@ async def get_room_latency(
     async with gateway.storage._conn.session() as db:
         for sid in session_ids:
             turn_rows.extend(await turns.list_turns_by_session(db, sid))
-    turn_rows.sort(key=lambda t: t.turn_index)
+    # Room-wide chronological order, fully determined. ``turn_index`` is
+    # SESSION-local: a room that carries two sessions (an agent that
+    # reconnected, two agents in one room, or a probe reusing a fixed
+    # --room-name) has two turns numbered 0, two numbered 1, and so on. Sorting
+    # on it alone interleaves the sessions, and using it as the cursor makes
+    # "turn 3" ambiguous, so a poll would repeat one turn and drop another.
+    # session_id and turn_index break every tie, so the order never depends on
+    # the order rows came back in.
+    turn_rows.sort(key=lambda t: (t.caller_speak_start_ms, t.session_id, t.turn_index))
 
     # Computed ONCE; both `components` and `complete` are read off it.
     split = aggregate_components(visible)
     samples = [
         float(t.response_speed_ms) for t in turn_rows if t.response_speed_ms is not None
     ]
-    shown = [t for t in turn_rows if since_turn is None or t.turn_index > since_turn]
+    # ``seq`` is the room-wide position and is what ``since_turn`` cuts on. It is
+    # the only identifier here that is unique across the whole room; turn_index
+    # travels alongside it because it is what the agent's own logs show.
+    shown = [
+        (seq, t)
+        for seq, t in enumerate(turn_rows)
+        if since_turn is None or seq > since_turn
+    ]
     return {
         "room": room_name,
         "project": project,
@@ -258,11 +302,16 @@ async def get_room_latency(
         "e2e_ms": _e2e_ms(samples),
         "turns": [
             {
+                # Room-wide and unique; pass the last one back as since_turn.
+                "seq": seq,
+                # Session-local, and NOT unique across a multi-session room. It
+                # is here because it is the number the agent's own logs carry.
                 "turn_index": t.turn_index,
+                "session_id": t.session_id,
                 "caller_speak_end_ms": t.caller_speak_end_ms,
                 "agent_speak_start_ms": t.agent_speak_start_ms,
                 "response_speed_ms": t.response_speed_ms,
             }
-            for t in shown
+            for seq, t in shown
         ],
     }

@@ -218,9 +218,11 @@ Keyed on the **room name**, deliberately, not on `session_id`. A caller mints th
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `since_turn` | `integer` | `null` | Return only turns with `turn_index` greater than this. Filters `turns` **only**. |
+| `since_turn` | `integer` | `null` | Return only turns whose room-wide `seq` is greater than this. Filters `turns` **only**. |
 
-`since_turn` is a cursor over `turns` and nothing else. `components` and `e2e_ms` are whole-call aggregates and always come back whole, so successive polls cannot disagree with each other.
+`since_turn` is a cursor over `turns` and nothing else. It cuts on `seq`, the room-wide position, **not** on `turn_index`: `turn_index` is session-local, so a room carrying more than one session has two turns numbered `0`, two numbered `1`, and so on. Pass back the `seq` of the last turn you saw.
+
+`components` and `e2e_ms` are whole-call aggregates and are never narrowed by `since_turn`. They are recomputed from the rows present at request time, so they **do** move as a call progresses and successive polls will differ; what `since_turn` guarantees is only that it is not the thing moving them.
 
 **Four answers that mean different things:**
 
@@ -231,7 +233,10 @@ Keyed on the **room name**, deliberately, not on `session_id`. A caller mints th
 | `200`, `complete: false` | A real split, still partial because the agent process is mid-flush. **Poll again rather than rendering it.** |
 | `200`, a component is `null` | That stage produced no measurement. It is never `0`: a stage shown as `0.00` reads as "instant". |
 
-All times are in **milliseconds**.
+Every value is in **milliseconds**, but of two different kinds, and the field names do not distinguish them:
+
+- **Epoch timestamps** (a point in time): `caller_speak_end_ms`, `agent_speak_start_ms`. Unix epoch, milliseconds.
+- **Elapsed durations** (a length of time): `response_speed_ms`, every member of `components`, and every member of `e2e_ms`.
 
 **Example:**
 
@@ -260,7 +265,9 @@ curl -H "Authorization: Bearer vk_..." \
   },
   "turns": [
     {
+      "seq": 6,
       "turn_index": 6,
+      "session_id": "vg-8f1c",
       "caller_speak_end_ms": 1800000012345,
       "agent_speak_start_ms": 1800000013386,
       "response_speed_ms": 1041
@@ -269,7 +276,9 @@ curl -H "Authorization: Bearer vk_..." \
 }
 ```
 
-`e2e_ms` is computed by the same `summarize()` the CLI reports through, so the two surfaces cannot drift on what `p95` means. It is `null`, rather than a row of zeros, when no turn completed.
+`e2e_ms` is computed by the same `summarize()` the CLI reports through, so the two surfaces cannot drift on what `p95` means. It is `null`, rather than a row of zeros, when **no turn carries a measured `response_speed_ms`**.
+
+That is not the same as "no turns": `turn_count` can be non-zero while `e2e_ms` is `null`. A turn the agent never answered records a null `response_speed_ms`, and such turns are listed in `turns` but contribute no sample. Averaging them in as `0` would drag every percentile down and report a call as faster than it was.
 
 **Not provided, on purpose:** no CORS and no browser-facing key (a read-scoped key in a browser can read every session and cost row for the tenant, so proxy it server-side); no WebSocket or SSE (ingest is batched behind a bounded queue, so freshness is inherently seconds, and a socket would deliver seconds-stale data faster while adding a stateful fan-out surface); no per-turn component split.
 
