@@ -98,13 +98,29 @@ converts them to a dollar cost per call:
 | TTS | characters | characters sent to synthesis |
 
 Rates come from [`voice-prices`](https://github.com/mahimailabs/voice-prices), a fork of
-`pydantic/genai-prices` extended for audio modalities. Run `voicegw prices` to see the
-rate your install will actually apply, rather than trusting a number printed in docs that
-went stale. `voicegw reconcile` then verifies the calculated totals against your provider
-invoice.
+`pydantic/genai-prices` extended for audio modalities. `voicegw reconcile` verifies the
+calculated totals against your provider invoice.
 
-Local models (Whisper, Kokoro, Piper, Ollama) are recorded as zero-cost, so
-per-project totals reflect what you actually pay.
+### What gets priced
+
+There is no list of supported providers. `attach()` meters whatever your framework
+emits, and the model id decides what happens next:
+
+| Model id | Cost | Pricing source |
+|---|---|---|
+| starts with `local/` or `ollama/` | always `0` | `voicegateway-local` |
+| known to `voice-prices` | the catalog rate | `voice-prices@<version>` |
+| anything else | none, the row is metered but unpriced | empty |
+
+The Costs page shows that source per row, so you can always tell which case you landed
+in. The distinction between the first and third rows is deliberate: free because you
+host it yourself is not the same as unpriced because nobody recognised the model.
+
+<Warning>
+Self-hosted models are matched on the `local/` and `ollama/` prefixes, not by name. An
+agent reporting `whisper-large-v3` is unpriced; the same model reported as
+`local/whisper-large-v3` prices at zero.
+</Warning>
 
 ## Where it fits
 
@@ -124,32 +140,6 @@ Records flow to:
 
 VoiceGateway does not sit in the audio or inference path. There is no proxy hop and
 no added latency on happy-path calls.
-
-## Supported providers
-
-**Cloud:**
-
-| Provider | STT | LLM | TTS |
-|---|---|---|---|
-| Deepgram | Yes | | Yes |
-| OpenAI | Yes | Yes | Yes |
-| Anthropic | | Yes | |
-| Groq | Yes | Yes | |
-| Cartesia | | | Yes |
-| ElevenLabs | | | Yes |
-| AssemblyAI | Yes | | |
-
-**Local:**
-
-| Provider | STT | LLM | TTS |
-|---|---|---|---|
-| Whisper (faster-whisper) | Yes | | |
-| Ollama | | Yes | |
-| Kokoro | | | Yes |
-| Piper | | | Yes |
-
-You install these plugins yourself. VoiceGateway bundles no provider wheels and
-prices whatever `model_id` your native instance reports.
 
 ## Next steps
 
