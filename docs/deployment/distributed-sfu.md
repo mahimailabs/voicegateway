@@ -44,8 +44,10 @@ The file is generated from the live column sets by `voicegateway.loadtest.dashbo
 
 `tools/mock-participant/` is a Go module that joins a room as a LiveKit agent worker and reports per-call observations to the collector, which is what puts calls on the SFU while the probers measure it.
 
+It is a standalone Go module with no `go.mod` at the repository root, so build it from its own directory:
+
 ```bash
-go build ./tools/mock-participant
+(cd tools/mock-participant && go build .)
 ```
 
 ## Probers on Fly.io

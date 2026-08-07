@@ -52,7 +52,9 @@ docker compose --profile local up -d     # + Ollama
 
 **HTTP API (`src/voicegateway/server/main.py`):** FastAPI with endpoints at `/health`, `/v1/status`, `/v1/models`, `/v1/costs`, `/v1/projects`, `/v1/logs`, `/v1/metrics`.
 
-**Dashboard (`src/dashboard/`):** two SPAs plus branding assets. `frontend/` is the React/TypeScript/Vite dashboard (Recharts, Neo-Brutalism aesthetic); `console/` is a smaller SPA built on `@openorca-ui/react`. `api/` holds only `static/branding/` images and no routes. There is no separate dashboard FastAPI process: the combined server in `src/voicegateway/server/` serves the built SPA at `/` (see `server/static.py`), and the legacy dashboard backend was removed in 2026-05, taking its `/api/*` endpoints with it.
+**Dashboard API (`/api/*`):** served by the COMBINED server, not by a separate process. `server/routes.py` builds `dashboard_router = APIRouter(prefix="/api")` from the modules in `server/api/dashboard/` (status, costs, projects, sessions, calls, correlation, nodes, metrics, agents, diagnostics, loadtest, replay, api_keys, branding, health, auth_status), and `server/main.py` includes it. Read endpoints go here under `require_principal`; `/v1/*` above is the write and ingest surface. The standalone dashboard FastAPI at `src/dashboard/api/main.py` was deleted in 2026-05; the routes moved, they did not go away.
+
+**Dashboard UI (`src/dashboard/`):** two SPAs plus branding assets. `frontend/` is the React/TypeScript/Vite dashboard (Recharts, Neo-Brutalism aesthetic); `console/` is a smaller SPA built on `@openorca-ui/react`. `api/` now holds only `static/branding/` images and no Python. The combined server serves the built SPA at `/` (see `server/static.py`).
 
 **Public API:** `voicegateway/__init__.py` exports `Gateway`, `ModelId`, `GatewayConfig`.
 
