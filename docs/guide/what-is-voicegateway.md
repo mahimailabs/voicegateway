@@ -133,7 +133,8 @@ Your agent code (LiveKit or Pipecat)
 
 Records flow to:
   └── storage (SQLite, or Cloud ClickHouse)
-       ├── voicegw dashboard        # per-call cost, latency, provider breakdown
+       ├── voicegw serve            # the daemon: HTTP API and the dashboard
+       ├── voicegw logs / costs     # per-request rows and totals in the terminal
        ├── voicegw reconcile        # verify against provider invoices
        └── MCP server               # query from your AI editor
 ```

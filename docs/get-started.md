@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Install VoiceGateway next to an existing LiveKit or Pipecat agent, call attach() once, and read your first per-call cost row in the dashboard.
+description: Install VoiceGateway next to an existing LiveKit or Pipecat agent, call attach() once, and see what your first call cost.
 ---
 
 # Quickstart
@@ -33,16 +33,24 @@ covered in [What you need](/guide/prerequisites).
       </Tab>
       <Tab title="Pipecat">
         ```bash
-        pip install "voicegateway[pipecat,dashboard]"
+        pip install "voicegateway[pipecat,livekit,dashboard]"
         pip install "pipecat-ai[openai,deepgram,cartesia,daily]"
         ```
       </Tab>
     </Tabs>
 
-    The `dashboard` extra pulls FastAPI and uvicorn. Without it `voicegw serve`
-    in step 4 exits and tells you to install it. See
-    [Installation](/guide/installation) for the full extras table, Docker, and
-    source builds.
+    The `dashboard` extra pulls FastAPI and uvicorn, which `voicegw serve` needs in
+    step 4.
+
+    <Note>
+      The `livekit` extra is in the Pipecat command on purpose. The `voicegw` CLI
+      imports its LiveKit diagnostics at startup, so every subcommand needs that
+      extra even on a Pipecat-only deployment. Your agent still imports no LiveKit
+      code. See [What you need](/guide/prerequisites).
+    </Note>
+
+    [Installation](/guide/installation) has the full extras table, Docker, and source
+    builds.
   </Step>
 
   <Step title="Set your environment variables">
@@ -223,12 +231,11 @@ covered in [What you need](/guide/prerequisites).
     | Cost | USD, priced through `voice-prices` |
     | Pricing source | which catalog entry produced that number |
 
-    For the per-request view, with the modality, provider, usage units, and latency of
-    each individual call, use the terminal:
+    For one row per request, use the terminal:
 
     ```bash
-    voicegw logs     # one row per request: modality, provider, model, usage, cost
-    voicegw costs    # totals per provider, project, and period
+    voicegw logs     # time, project, modality, model, cost, latency, status
+    voicegw costs    # totals per provider and project, plus the pricing source in use
     voicegw status   # daemon and provider health
     ```
   </Step>
