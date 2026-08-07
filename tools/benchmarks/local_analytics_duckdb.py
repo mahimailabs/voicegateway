@@ -4,7 +4,7 @@ DuckDB-over-Parquet, on the real `requests` schema + real dashboard queries.
 Reproduces the decision behind the opt-in DuckDB read path
 (``voicegateway.analytics.duckdb_reader``). Run::
 
-    uv run --with duckdb --with pytz python benchmarks/local_analytics_duckdb.py
+    uv run --with duckdb python tools/benchmarks/local_analytics_duckdb.py
 
 Audited headline (7-day window, warm, median of 5; DuckDB attached to the live
 SQLite, no write-path change). A full dashboard load (4 queries) drops from

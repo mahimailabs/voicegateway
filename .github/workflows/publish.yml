@@ -45,7 +45,7 @@ jobs:
         node-version: '22'
 
     - name: Build wheel (bundles dashboard SPA)
-      run: bash scripts/build_wheel.sh
+      run: bash tools/scripts/build_wheel.sh
 
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # release/v1

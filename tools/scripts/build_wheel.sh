@@ -7,13 +7,14 @@
 # exit (success, failure, or Ctrl-C alike).
 #
 # Usage:
-#   bash scripts/build_wheel.sh
+#   bash tools/scripts/build_wheel.sh
 #
 # Output:
 #   dist/voicegateway-*.whl  (sdist + wheel via `uv build`)
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Two levels up: this script lives at tools/scripts/, not at the repo root.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 # Pin the version from the release tag. This script rebuilds the dashboard SPA

@@ -10,7 +10,7 @@ discovered in one of the two candidate locations:
 
 Two candidate locations are tried in priority order: installed-wheel
 layout (``voicegateway/_dashboard_dist``, populated by
-``scripts/build_wheel.sh``) wins over editable-install layout
+``tools/scripts/build_wheel.sh``) wins over editable-install layout
 (``src/dashboard/frontend/dist``, populated by ``npm run build``).
 The tests stub ``_CANDIDATE_DIRS`` with monkeypatch so each case
 isolates its own filesystem state.
