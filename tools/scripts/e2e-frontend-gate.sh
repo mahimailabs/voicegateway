@@ -9,9 +9,9 @@
 # cards on a page contain real visible text.
 #
 # Usage:
-#   scripts/e2e-frontend-gate.sh                  # gate the Diagnostics page
-#   scripts/e2e-frontend-gate.sh calls            # gate another route
-#   MIN_CARDS=5 scripts/e2e-frontend-gate.sh      # require at least 5 cards
+#   tools/scripts/e2e-frontend-gate.sh                  # gate the Diagnostics page
+#   tools/scripts/e2e-frontend-gate.sh calls            # gate another route
+#   MIN_CARDS=5 tools/scripts/e2e-frontend-gate.sh      # require at least 5 cards
 #
 # Exit 0 = gate green. Non-zero = gate red (message on stderr).
 set -euo pipefail
@@ -21,7 +21,8 @@ MIN_CARDS="${MIN_CARDS:-1}"
 MIN_CHARS="${MIN_CHARS:-20}"
 PORT="${PORT:-4173}"
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Two levels up: this script lives at tools/scripts/, not at the repo root.
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FRONTEND="$REPO/src/dashboard/frontend"
 
 B="$REPO/.claude/skills/gstack/browse/dist/browse"

@@ -166,7 +166,7 @@ source = "vcs"
 version-file = "src/voicegateway/_version.py"
 
 # Opt the staged dashboard bundle back in for both sdist and wheel
-# targets. The path is gitignored (scripts/build_wheel.sh stages it
+# targets. The path is gitignored (tools/scripts/build_wheel.sh stages it
 # only during a build), so hatchling's default VCS-aware filter would
 # drop it. `artifacts` is the documented escape hatch for "build
 # output that should ship even though git ignores it." Hatchling
@@ -263,13 +263,13 @@ exclude = [
 
 # Note on shipping the React bundle: the wheel published to PyPI
 # carries the dashboard SPA inside the voicegateway package itself,
-# at voicegateway/_dashboard_dist/. scripts/build_wheel.sh runs the
+# at voicegateway/_dashboard_dist/. tools/scripts/build_wheel.sh runs the
 # npm build, copies dist/ into that staging path, invokes `uv build`,
 # and removes the staging path on exit via trap. Hatchling picks it
 # up automatically through the existing `packages = ["src/voicegateway"]`
 # entry above (the pipecat-prebuilt pattern adapted to hatchling).
 # Distribution paths for the frontend today:
-#  - PyPI wheel: scripts/build_wheel.sh stages and ships dist/ inside
+#  - PyPI wheel: tools/scripts/build_wheel.sh stages and ships dist/ inside
 #    the wheel. The daemon's mount_frontend prefers this location.
 #  - Docker: the Dockerfile's frontend-builder stage still runs npm
 #    build and copies dist/ into /app/dashboard/frontend/dist; the

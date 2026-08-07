@@ -16,7 +16,7 @@ rather than the index HTML.
 Two candidate locations are tried in priority order:
 
 1. Installed-wheel layout (``voicegateway/_dashboard_dist``): the
-   ``scripts/build_wheel.sh`` script copies the React build here at
+   ``tools/scripts/build_wheel.sh`` script copies the React build here at
    wheel-build time and hatchling ships it inside the wheel. This is
    what users see after ``pip install voicegateway``.
 2. Editable-install / dev layout (``src/dashboard/frontend/dist``):

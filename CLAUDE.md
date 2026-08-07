@@ -52,7 +52,7 @@ docker compose --profile local up -d     # + Ollama
 
 **HTTP API (`src/voicegateway/server/main.py`):** FastAPI with endpoints at `/health`, `/v1/status`, `/v1/models`, `/v1/costs`, `/v1/projects`, `/v1/logs`, `/v1/metrics`.
 
-**Dashboard (`dashboard/`):** FastAPI backend (`api/`) + React/TypeScript/Vite frontend (`frontend/`). Uses Recharts for visualization. Neo-Brutalism design aesthetic.
+**Dashboard (`src/dashboard/`):** two SPAs plus branding assets. `frontend/` is the React/TypeScript/Vite dashboard (Recharts, Neo-Brutalism aesthetic); `console/` is a smaller SPA built on `@openorca-ui/react`. `api/` holds only `static/branding/` images and no routes. There is no separate dashboard FastAPI process: the combined server in `src/voicegateway/server/` serves the built SPA at `/` (see `server/static.py`), and the legacy dashboard backend was removed in 2026-05.
 
 **Docs:** The Mintlify documentation site (<https://docs.voicegateway.dev>) lives in this repo under `docs/` (config in `docs/docs.json`, pages as `.md`, shared brand assets under `docs/assets/`). Docs version with the code: change the docs in the same PR as any behavior or API change. Mintlify deploys `docs/` from this repo's default branch.
 

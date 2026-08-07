@@ -26,7 +26,7 @@ from voicegateway.repository.node_samples_repository import (
     GAUGE_COLUMNS,
 )
 
-CHECKED_IN = Path(__file__).resolve().parents[3].parent / "dashboards"
+CHECKED_IN = Path(__file__).resolve().parents[3].parent / "deploy" / "grafana"
 
 
 def _panels_by_type(kind: str) -> list[dict]:
@@ -174,7 +174,7 @@ def test_the_checked_in_json_matches_the_generator() -> None:
     path = CHECKED_IN / "voicegateway-load-test.json"
     assert path.is_file(), f"{path} is missing; regenerate it"
     assert path.read_text() == dashboard.dashboard_json(), (
-        "dashboards/voicegateway-load-test.json is stale. Regenerate with "
+        "deploy/grafana/voicegateway-load-test.json is stale. Regenerate with "
         "voicegateway.loadtest.dashboard.dashboard_json()."
     )
 

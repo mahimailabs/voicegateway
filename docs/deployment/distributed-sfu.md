@@ -32,6 +32,22 @@ voicegw livekit sfu --coordinator --expect 3 \
 
 It blocks until all three probers report, then prints the combined report and exits.
 
+## Watching the run in Grafana
+
+`deploy/grafana/voicegateway-load-test.json` is an importable Grafana dashboard for these runs: per-node CPU and memory, file descriptors against the limit, Go heap and goroutines, rooms and active calls, and Redis reachability, all read from the `node_samples` table.
+
+Four of its fourteen panels render as **NOT MEASURED** notes rather than as graphs, because nothing in the current scrape set produces those series and an empty graph reads as nothing happening when it means nobody measured.
+
+The file is generated from the live column sets by `voicegateway.loadtest.dashboard`, so a panel can never name a series that does not exist. Regenerate it with `dashboard_json()` rather than editing it by hand; a test fails if the two disagree.
+
+## Placing load with the mock participant
+
+`tools/mock-participant/` is a Go module that joins a room as a LiveKit agent worker and reports per-call observations to the collector, which is what puts calls on the SFU while the probers measure it.
+
+```bash
+go build ./tools/mock-participant
+```
+
 ## Probers on Fly.io
 
 The `deploy/prober/` directory ships a `Dockerfile` and an example `fly.toml`. The image is a run-to-completion job that runs one prober and exits.
