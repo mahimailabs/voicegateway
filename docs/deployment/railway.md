@@ -9,10 +9,6 @@ usage-based and higher than a self-managed VPS.
 Use `0.24.0` or newer.
 </Warning>
 
-## Prerequisites
-
-- A [Railway](https://railway.com) account
-
 <Steps>
   <Step title="Create the service">
     Choose **New**, then **Docker Image**, and enter `mahimairaja/voicegateway:0.24.0`.
@@ -31,9 +27,8 @@ Use `0.24.0` or newer.
     | `VOICEGW_DB_URL` | `postgresql+asyncpg://${{Postgres.PGUSER}}:${{Postgres.PGPASSWORD}}@${{Postgres.RAILWAY_PRIVATE_DOMAIN}}:5432/${{Postgres.PGDATABASE}}` |
     | `VOICEGW_API_KEY` | your ingest key (`openssl rand -hex 32`; must not start with `vk_`) |
 
-    Paste the `VOICEGW_DB_URL` value literally. Railway resolves the `${{Postgres.*}}`
-    references at deploy time, so there is nothing to copy by hand and the password never
-    leaves Railway.
+    Paste `VOICEGW_DB_URL` literally: Railway resolves the `${{Postgres.*}}` references at
+    deploy time, so the password never leaves Railway.
 
     <Warning>
     Keep the `+asyncpg`, and do not substitute Railway's own `DATABASE_URL`. It is plain
@@ -45,8 +40,7 @@ Use `0.24.0` or newer.
   </Step>
   <Step title="Deploy">
     Redeploy after setting variables. HTTPS is automatic at
-    `https://<your-service>.<your-project>.up.railway.app`; attach a custom domain in the
-    service's **Settings** tab if you want one.
+    `https://<your-service>.<your-project>.up.railway.app`.
   </Step>
 </Steps>
 
@@ -114,19 +108,15 @@ requests. Run the check before you point real agents at the deploy and it stays 
 ignore.
 </Note>
 
-## Connect your agent
-
-See [Connect your agent](/deployment/index#connect-your-agent). Use the Railway URL as
-`collector_url` and `VOICEGW_API_KEY` as `api_key`.
+To point an agent at it, use the Railway URL as `collector_url` and `VOICEGW_API_KEY` as
+`api_key`. See [Connect your agent](/deployment/index#connect-your-agent).
 
 ## Deploying from source instead
 
-Pointing Railway at a clone or fork works too, and needs no build configuration:
-`railway.json` at the repository root supplies the Dockerfile builder, the path
-`src/voicegateway/Dockerfile`, and `healthcheckPath: /health`.
-
-A source deploy reports `0.0.0.dev0` at `/health`: the build is current, just unstamped,
-because Railway passes no `VERSION` build argument. Image deploys report their real version.
+A clone or fork works too, with no build configuration: `railway.json` at the repository
+root supplies the Dockerfile builder, its path, and `healthcheckPath`. Such a build
+reports `0.0.0.dev0` at `/health`, because Railway passes no `VERSION` argument. It is
+current, just unstamped.
 
 ## Or let a coding agent do it
 
