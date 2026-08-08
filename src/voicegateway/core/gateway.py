@@ -27,9 +27,17 @@ DEFAULT_DB_PATH = "~/.config/voicegateway/voicegw.db"
 class Gateway:
     """Shared internal container for the inference module, server, CLI, and MCP."""
 
-    def __init__(self, config_path: str | None = None):
-        """Initialize the gateway."""
-        self._config = GatewayConfig.load(config_path)
+    def __init__(self, config_path: str | None = None, *, require_config: bool = True):
+        """Initialize the gateway.
+
+        ``require_config=False`` boots on built-in defaults when no config file
+        exists, instead of raising. The server entrypoint passes it so the
+        published image starts on a host that mounts no ``voicegw.yaml``; see
+        :meth:`GatewayConfig.load`. Every other caller keeps the strict default,
+        so a mistyped ``--config`` is still an error rather than a silent start
+        with no providers.
+        """
+        self._config = GatewayConfig.load(config_path, required=require_config)
 
         # Resolve DB path: env var > config > default
         cost_cfg = self._config.cost_tracking

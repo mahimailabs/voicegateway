@@ -164,9 +164,17 @@ def main() -> None:
 
     config_path = os.environ.get("VOICEGW_CONFIG")
     host = os.environ.get("VOICEGW_HOST", "0.0.0.0")
-    port = int(os.environ.get("VOICEGW_PORT", "8080"))
+    # PORT is the platform convention: Railway, Render, Heroku and Cloud Run all
+    # inject it and route to whatever the process binds. Honouring it means the
+    # image needs no port configuration on any of them. VOICEGW_PORT still wins,
+    # so an operator who set it keeps their value, and 8080 stays the default
+    # the Dockerfile EXPOSEs and healthchecks.
+    port = int(os.environ.get("VOICEGW_PORT") or os.environ.get("PORT") or "8080")
 
-    gw = Gateway(config_path=config_path)
+    # A missing config file must not stop the daemon binding a port: the image
+    # bakes VOICEGW_CONFIG=/data/voicegw.yaml and creates no such file, so
+    # requiring it crash-looped every host that mounts nothing there.
+    gw = Gateway(config_path=config_path, require_config=False)
     app = build_app(gw)
 
     logger.info("Starting VoiceGateway server on %s:%d", host, port)
