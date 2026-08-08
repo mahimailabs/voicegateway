@@ -254,3 +254,62 @@ async def test_node_scrape_shutdown_is_not_blocked_by_a_hanging_target(
     # Well inside the worker's 5 s per-target scrape deadline: shutdown cancels
     # the in-flight request rather than waiting for it to time out.
     assert elapsed < 3.0
+
+
+async def test_shutdown_disposes_the_sql_engine(tmp_path, monkeypatch) -> None:
+    """Shutdown must release the SQL connections, not just stop the workers.
+
+    Shutdown already closes the ClickHouse client. Leaving the SQL engine open
+    was the same obligation, missed. On SQLite it is load-bearing rather than
+    tidy: ``_engine_kwargs`` gives Postgres a NullPool but leaves SQLite on the
+    default pool, so the connection stays checked in after shutdown, and every
+    aiosqlite connection owns a worker thread that hands results back through
+    ``future.get_loop().call_soon_threadsafe(...)``. Once the loop is closed
+    that thread raises "Event loop is closed", pytest turns the dead thread into
+    a PytestUnhandledThreadExceptionWarning, and the run stays green while
+    printing a stack trace nobody can act on.
+
+    Asserted on the pool object rather than on a thread count. ``dispose()``
+    replaces the pool, which is synchronous and exact, whereas waiting for the
+    worker thread to actually exit is a race and would trade one flaky warning
+    for a flaky test.
+    """
+    gw = _gateway(tmp_path, monkeypatch, {"cost_tracking": {"enabled": True}})
+    assert gw.storage is not None
+    engine = gw.storage._conn._engine
+
+    app = build_app(gw)
+    async with lifespan(app):
+        # Force a real checkout so the pool is holding a live connection, and
+        # the assertion below cannot pass simply because nothing ever connected.
+        await gw.storage.get_cost_summary()
+        pool_in_use = engine.pool
+
+    assert engine.pool is not pool_in_use, (
+        "lifespan shutdown left the SQL engine undisposed; its pooled aiosqlite "
+        "connection outlives the event loop"
+    )
+
+
+async def test_shutdown_survives_a_storage_that_fails_to_close(
+    tmp_path, monkeypatch
+) -> None:
+    """A failing dispose must not turn a clean shutdown into a crash.
+
+    Teardown is best-effort everywhere else in this block (the ClickHouse close
+    swallows too), and a server that has already stopped its workers should not
+    raise out of shutdown because a socket was uncooperative.
+    """
+    gw = _gateway(tmp_path, monkeypatch, {"cost_tracking": {"enabled": True}})
+    assert gw.storage is not None
+
+    async def _boom() -> None:
+        raise RuntimeError("dispose failed")
+
+    monkeypatch.setattr(gw.storage, "aclose", _boom)
+
+    app = build_app(gw)
+    async with lifespan(app):
+        pass
+
+    assert all(w._task is None for w in app.state.workers)
