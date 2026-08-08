@@ -157,6 +157,27 @@ default_project: customer-support
 
 `budget_action` is one of `warn`, `throttle`, or `block`. Project-level `providers` override the top-level block for that project. See [Projects](/configuration/projects).
 
+### `projects.<id>.metrics`
+
+Conversation-metric tuning, per project rather than global:
+
+```yaml
+projects:
+  customer-support:
+    metrics:
+      turn_buffer_flush_size: 25
+      talk_over_min_overlap_ms: 100
+      dead_air_threshold_seconds: 3.0
+```
+
+| Key | Default | Effect |
+|---|---|---|
+| `turn_buffer_flush_size` | `25` | Turn rows buffered before the tracker writes. See [Turns and transcripts](/guide/turns). |
+| `talk_over_min_overlap_ms` | `100` | Minimum caller/agent speech overlap counted as a talk-over. Changes a published rate, not just a threshold: the query previously counted any overlap at all, so figures either side of this are not comparable. |
+| `dead_air_threshold_seconds` | `3.0` | Silence, in seconds, before a dead-air event is written. Aggressive for a slow LLM; raise it if thinking time fires events. See [Dead air](/guide/dead-air). |
+
+The dead-air poll interval is a constructor argument, not a config key.
+
 ---
 
 ## `fallbacks`

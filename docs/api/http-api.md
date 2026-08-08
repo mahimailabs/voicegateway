@@ -1165,3 +1165,37 @@ curl -X POST http://localhost:8080/v1/ingest \
   -H "Content-Type: application/json" \
   -d '[{"id":"...", "timestamp":1752460800.0, "modality":"stt", "provider":"deepgram", "model":"nova-3", "cost_usd":0.0021}]'
 ```
+
+### POST /v1/ingest/turns
+
+Push a batch of conversation turns. Same bearer auth and batch cap as `/v1/ingest`, returns `{"accepted": n}`.
+
+Each object needs `session_id`, `turn_index`, `caller_speak_start_ms`, and `caller_speak_end_ms`. `agent_speak_start_ms`, `agent_speak_end_ms`, and `response_speed_ms` are optional. Unknown keys are ignored, and one malformed row does not reject the batch.
+
+```bash
+curl -X POST http://localhost:8080/v1/ingest/turns \
+  -H "Authorization: Bearer vk_..." \
+  -H "Content-Type: application/json" \
+  -d '[{"session_id":"vg-123","turn_index":0,"caller_speak_start_ms":1000,"caller_speak_end_ms":2400,"agent_speak_start_ms":2847,"response_speed_ms":447}]'
+```
+
+<Note>
+A separate route rather than a record type on `/v1/ingest`. That handler builds a `RequestRecord` from every object it receives and counts anything that fails to build as malformed, so a turn posted there is answered `200` and silently dropped.
+
+Turns are always written to SQL, even where ClickHouse is configured for requests: ClickHouse has no turns table, and every reader of turns (`/v1/rooms/{room}/latency`, `/api/sessions/{id}/turns`, the session aggregates) reads from SQL.
+</Note>
+
+### POST /v1/ingest/dead-air
+
+Push a batch of dead-air events. Same bearer auth and batch cap, returns `{"accepted": n}`.
+
+Each object needs `session_id`, `started_at_ms`, `duration_ms`, and `threshold_used_ms`. Unknown keys are ignored, and one malformed row does not reject the batch.
+
+```bash
+curl -X POST http://localhost:8080/v1/ingest/dead-air \
+  -H "Authorization: Bearer vk_..." \
+  -H "Content-Type: application/json" \
+  -d '[{"session_id":"vg-123","started_at_ms":1752460800000,"duration_ms":4200,"threshold_used_ms":3000}]'
+```
+
+A separate route for the same reason as `/v1/ingest/turns`.

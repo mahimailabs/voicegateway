@@ -27,6 +27,8 @@ voicegateway.attach(
     heartbeat: bool = False,          # register + heartbeat this process in the fleet roster
     transcript: bool = True,          # capture the call transcript (LiveKit only for now)
     snapshots: bool = False,          # capture conversation-state snapshots for replay (opt-in)
+    turns: bool = True,               # capture per-exchange turn timing (LiveKit only)
+    dead_air: bool = True,            # watch for silence longer than the threshold (LiveKit only)
 ) -> str                              # correlation session id stamped on every row
 ```
 
@@ -135,13 +137,15 @@ same async context inherits it too, with no argument needed.
 **Tenant** attribution is opt-in: pass `tenant_id=` when one deployment
 serves several customers. See [Tenant attribution](/guide/multi-tenant-quickstart).
 
-## room, heartbeat, transcript, snapshots (LiveKit)
+## room, heartbeat, transcript, snapshots, turns, dead_air (LiveKit)
 
 | Param | Behavior |
 |---|---|
 | `room` | LiveKit room name stamped on each row, so `voicegw livekit latency` can read the STT/LLM/TTS split back by room. Auto-resolved from the running job context. |
 | `heartbeat=True` | Registers this process in the fleet roster and heartbeats its presence (the dashboard's Fleet/Agents view). Best for single-process agents where `attach()` is the sole writer. In LiveKit's per-call subprocess model (`agent dev`), call `register_worker(agent_id, local=True)` at your `__main__` boot instead, and skip `heartbeat=True` there, because the subprocess would become a second writer of the same roster row. |
 | `transcript=True` (default) | On close, user/agent turns are read from the framework's conversation history and written to local storage for the Calls page. `transcript=False` disables it per attach; `VOICEGW_TRANSCRIPTS=0` kills it fleet-wide (the env var wins over the argument). Pipecat accepts the flag but does not capture transcripts yet. |
+| `turns=True` (default) | Captures one row per caller/agent exchange: turn index and four speech timestamps, from which `response_speed_ms` is derived. `VOICEGW_TURNS=0` kills it fleet-wide. Pipecat accepts the flag and captures nothing. See [Turns and transcripts](/guide/turns). |
+| `dead_air=True` (default) | Runs a per-session watchdog that writes an event when neither party speaks for longer than the threshold. `VOICEGW_DEAD_AIR=0` kills it fleet-wide. A separate flag from `turns` because it polls once a second for the life of the call. See [Dead air](/guide/dead-air). |
 | `snapshots=True` | Captures conversation-state snapshots for [session replay](/cli/replay). **Off by default**, the one place this differs from `transcript`. `VOICEGW_SNAPSHOTS=0` kills it fleet-wide and beats the argument. Pipecat accepts the flag and does not capture yet. |
 
 <Warning>

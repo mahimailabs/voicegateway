@@ -2,13 +2,13 @@
 title: Dead air
 description: What counts as a dead-air event, the default threshold, and where detected events surface.
 ---
-Dead air is silence on a call that outlasts a threshold: no activity from the caller or the agent, as the wired probe reports it, for longer than expected. VoiceGateway's `DeadAirDetector` is a per-session watchdog that polls for it and fires an event when it crosses that threshold, written only if a callback is wired to catch it.
+Dead air is silence on a call that outlasts a threshold: neither the caller nor the agent speaking for longer than expected. `attach()` runs a per-session watchdog that polls for it and writes one event per silence stretch.
 
 ## What counts as dead air
 
 `DeadAirDetector` polls once a second (`poll_interval_seconds`, default `1.0`) and asks an `activity_probe` callback for the session's last-known activity timestamp. If the gap since that timestamp is at least `threshold_seconds` (default `3.0`), it emits one `DeadAirEvent` and latches so it won't fire again until activity resumes and the gap re-crosses the threshold: one event per silence stretch, not one per poll (`src/voicegateway/middleware/dead_air_detector_middleware.py:17-18,43-124`).
 
-What counts as "activity" is entirely up to whatever supplies the probe: the detector itself has no notion of speech, VAD, or audio frames.
+The probe `attach()` supplies is driven by the same four speech-boundary events that feed [turn capture](/guide/turns). While either party is speaking the clock reports now, so **a long utterance cannot trip a dead-air event**. That is a guarantee of the wiring, not a tuning artifact.
 
 An event row carries:
 
@@ -19,17 +19,36 @@ An event row carries:
 | `duration_ms` | How long the silence had run when it crossed threshold. |
 | `threshold_used_ms` | The threshold in effect for this detector, in milliseconds. |
 
-Rows land in `dead_air_events` (`session_id`, `started_at_ms`, `duration_ms`, `threshold_used_ms`, `created_at`, `tenant_id`) via `create_event`; `list_events_by_session` reads them oldest-first and `count_events_by_filter` counts by session or time window (`src/voicegateway/models/dead_air_event_model.py`, `src/voicegateway/repository/dead_air_repository.py`). Without a callback wired, a fired event is dropped and only logged at debug (`dead_air_detector_middleware.py:35-40`).
+Rows land in `dead_air_events` and are read back oldest-first by session, or counted by session or time window.
 
-## Is the threshold configurable?
+## Turning it on
 
-In code, yes: `threshold_seconds` and `poll_interval_seconds` are constructor arguments on `DeadAirDetector` (both must be `> 0`). In `voicegw.yaml`, there's a `dead_air_threshold_seconds` key under `projects.<id>.metrics` that parses and validates (default `3.0`, same as the code default). Nothing in the codebase reads it back to configure a running detector, though, so setting it in YAML today has no effect (`src/voicegateway/schemas/config_schema.py:43-47`, `src/voicegateway/core/config.py:56-61,236-244`).
+On by default:
 
-## When the detector doesn't start
+```python
+voicegateway.attach(session, project="my-agent")                 # dead air watched
+voicegateway.attach(session, project="my-agent", dead_air=False) # not watched
+```
 
-Starting a session's watcher is scheduled with `loop.create_task(...)`, which requires a running asyncio event loop at the moment the session is wired up. When there isn't one (synchronous code, a sync test rig), the auto-start is skipped outright: nothing crashes, but no watcher runs for that session, and the skip is logged once at debug: *"no running event loop, skipping DeadAirDetector auto-start. Call detector.start(sid) explicitly."* The caller has to start it by hand in that case (`src/voicegateway/inference/session/attach.py:169-187`).
+`VOICEGW_DEAD_AIR=0` forces it off fleet-wide and beats the argument.
 
-Binding a live session to `DeadAirDetector` at all is a lower-level integration point than [`attach()`](/guide/attach)/[`guard()`](/guide/guard): `attach()`'s own metric path never touches `dead_air_events`, so dead-air capture is opt-in, not automatic.
+It is a separate flag from `turns` even though both ride the same speech events, because dead air **polls**: one task per session, once a second, for the life of the call. That is a standing per-session cost, so it is switchable on its own.
+
+<Warning>
+LiveKit only. Pipecat accepts `dead_air=` for signature parity but has no equivalent speech-boundary events, so its dead-air view stays empty.
+</Warning>
+
+Events can also be pushed directly with `POST /v1/ingest/dead-air`; see the [HTTP API](/api/http-api).
+
+## Tuning the threshold
+
+`dead_air_threshold_seconds` under `projects.<id>.metrics` in `voicegw.yaml`, default `3.0`, per project rather than global. Three seconds is aggressive for an agent with a slow LLM: raise it if normal thinking time is firing events.
+
+The one-second poll interval is a constructor argument with no config key.
+
+## When the watcher doesn't start
+
+The watcher is scheduled with `loop.create_task(...)`, which needs a running asyncio event loop when the session is wired up. Without one (synchronous code, a sync test rig) the auto-start is skipped: nothing crashes, no watcher runs, and the skip is logged once at debug.
 
 ## Where you see it
 
