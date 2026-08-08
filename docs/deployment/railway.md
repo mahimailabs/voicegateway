@@ -6,7 +6,7 @@ Lowest ops: Railway handles managed Postgres, TLS, and a public URL automaticall
 usage-based and higher than a self-managed VPS.
 
 <Warning>
-Use `0.24.0` or newer. Earlier images restart-loop on Railway.
+Use `0.24.0` or newer.
 </Warning>
 
 ## Prerequisites
