@@ -2,15 +2,12 @@
 title: "Deploy to Railway"
 description: "Run the VoiceGateway daemon on Railway with managed Postgres and automatic HTTPS, from the published image."
 ---
-Lowest ops: Railway handles managed Postgres, TLS, and a public URL automatically.
+Lowest ops: Railway handles managed Postgres, TLS, and a public URL automatically. Cost is
+usage-based and higher than a self-managed VPS.
 
 <Warning>
 Use `0.24.0` or newer. Earlier images restart-loop on Railway.
 </Warning>
-
-<Tip>
-This is the least-ops path. Cost is usage-based and higher than a self-managed VPS.
-</Tip>
 
 ## Prerequisites
 
@@ -20,13 +17,11 @@ This is the least-ops path. Cost is usage-based and higher than a self-managed V
   <Step title="Create the service">
     Choose **New**, then **Docker Image**, and enter `mahimairaja/voicegateway:0.24.0`.
 
-    The exposed port is optional. The image binds `$PORT` when the platform sets one, which
-    Railway does, and the container healthcheck resolves the same way. `VOICEGW_PORT`
-    overrides both; the default is `8080`.
+    The exposed port is optional: the image binds `$PORT`, which Railway sets, and the
+    healthcheck follows it. `VOICEGW_PORT` overrides both.
   </Step>
   <Step title="Add Postgres">
-    Choose **New** in the same project and add the **PostgreSQL** plugin. Railway provisions a
-    managed instance and exposes its connection details to the other services in the project.
+    Choose **New** in the same project and add the **PostgreSQL** plugin.
   </Step>
   <Step title="Configure environment variables">
     In the app service's **Variables** tab, add:
@@ -41,9 +36,9 @@ This is the least-ops path. Cost is usage-based and higher than a self-managed V
     leaves Railway.
 
     <Warning>
-    The `+asyncpg` is the part that matters. Railway hands out a `postgresql://` URL, and
-    VoiceGateway reads only `VOICEGW_DB_URL` and does not normalise the scheme. A plain
-    `postgresql://` fails because it wants `psycopg2`, which the image does not carry.
+    The `+asyncpg` is the part that matters. Railway's own `DATABASE_URL` is
+    `postgresql://`, which fails at boot because it wants a driver the image does not
+    carry. VoiceGateway reads only `VOICEGW_DB_URL` and does not rewrite the scheme.
     </Warning>
 
     `VOICEGW_API_KEY` registers a wildcard ingest key without needing an `auth.api_keys:`
@@ -81,9 +76,8 @@ Four checks, in order. Each rules out a different failure, so run them all.
       -H "Authorization: Bearer <your-key>" https://<your-domain>/v1/rooms/x/latency
     ```
 
-    Returns **`404`, not `503`**. This is the one worth reading carefully. `404` means storage
-    answered and that room simply has no data, so Postgres connected and migrations ran.
-    `503` means `VOICEGW_DB_URL` never took.
+    Returns **`404`, not `503`**. `404` means storage answered and that room has no data
+    yet, so Postgres connected and migrations ran. `503` means `VOICEGW_DB_URL` never took.
   </Step>
   <Step title="A row survives a round trip">
     ```bash
@@ -116,12 +110,8 @@ Pointing Railway at a clone or fork works too, and needs no build configuration:
 `railway.json` at the repository root supplies the Dockerfile builder, the path
 `src/voicegateway/Dockerfile`, and `healthcheckPath: /health`.
 
-<Note>
-A source deploy reports version `0.0.0.dev0` at `/health`. `.dockerignore` excludes
-`.git`, so the build cannot derive a version and takes it from a `VERSION` build argument
-that Railway does not pass. The build is current; it is simply unstamped, and says so.
-Image deploys report their real version.
-</Note>
+A source deploy reports `0.0.0.dev0` at `/health`: the build is current, just unstamped,
+because Railway passes no `VERSION` build argument. Image deploys report their real version.
 
 ## Or let a coding agent do it
 
