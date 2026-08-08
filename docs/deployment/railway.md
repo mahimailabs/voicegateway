@@ -52,39 +52,17 @@ Use `0.24.0` or newer.
 
 ## Verify
 
-Four checks, in order. Each rules out a different failure, so run them all.
+Two checks. The first proves the deploy works, the second proves it is not open to the
+internet. Run both.
 
 <Steps>
-  <Step title="The process is alive">
-    ```bash
-    curl -fsS https://<your-domain>/health
-    ```
-
-    Returns `200` and `{"status":"ok"}`.
-  </Step>
-  <Step title="Authentication is enforced">
-    ```bash
-    curl -s -o /dev/null -w '%{http_code}\n' https://<your-domain>/v1/rooms/x/latency
-    ```
-
-    Returns `401`. Anything else means `VOICEGW_API_KEY` did not register.
-  </Step>
-  <Step title="Postgres is connected">
-    ```bash
-    curl -s -o /dev/null -w '%{http_code}\n' \
-      -H "Authorization: Bearer <your-key>" https://<your-domain>/v1/rooms/x/latency
-    ```
-
-    Returns **`404`, not `503`**. `404` means storage answered and that room has no data
-    yet, so Postgres connected and migrations ran. `503` means `VOICEGW_DB_URL` never took.
-  </Step>
   <Step title="A row survives a round trip">
     ```bash
     curl -s -X POST -H "Authorization: Bearer <your-key>" \
       -H 'Content-Type: application/json' \
       -d '[{"id":"verify-1","timestamp":'"$(date +%s)"',"project":"verify",
            "modality":"llm","model_id":"openai/gpt-4o-mini","provider":"openai",
-           "input_units":100,"output_units":50,"cost_usd":0.00042,
+           "input_units":100,"output_units":50,
            "pricing_source":"test","ttfb_ms":447.0,"status":"success",
            "session_id":"verify-1","metadata":{"room":"verify-room"}}]' \
       https://<your-domain>/v1/ingest
@@ -93,10 +71,48 @@ Four checks, in order. Each rules out a different failure, so run them all.
       https://<your-domain>/v1/rooms/verify-room/latency
     ```
 
-    Returns `{"accepted":1}`, then a body whose `components.llm_ttft_ms` is `447.0`. This is
-    the only check that proves persistence rather than that the process is merely running.
+    Returns `{"accepted":1}`, then a body whose `components.llm_ttft_ms` is `447.0`.
+
+    This is the check that matters. Passing it proves the process runs, your key is
+    accepted, Postgres connected, migrations ran, and a write survives a read. Nothing
+    else needs to pass for the deploy to be good.
+  </Step>
+  <Step title="The endpoint is not open to the internet">
+    ```bash
+    curl -s -o /dev/null -w '%{http_code}\n' https://<your-domain>/v1/rooms/x/latency
+    ```
+
+    Returns `401`. The check above proves your key is accepted; this one proves a request
+    *without* it is refused. `/v1/ingest` has to be publicly reachable for agents to push
+    to it, so anything other than `401` means anyone can write to your telemetry.
   </Step>
 </Steps>
+
+### If the round trip failed
+
+Two commands tell you where.
+
+```bash
+curl -fsS https://<your-domain>/health
+
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer <your-key>" https://<your-domain>/v1/rooms/x/latency
+```
+
+| Result | Meaning |
+|---|---|
+| `/health` is not `200` | The process is not up. Railway gates its own healthcheck on this path, so the deploy log is the place to look, not the network. |
+| `503` | `VOICEGW_DB_URL` never took. Re-read step 3, including the `+asyncpg`. |
+| `401` | The key you are sending is not the one in `VOICEGW_API_KEY`. |
+| `404` | Storage answered and that room has no data, so Postgres is fine and migrations ran. The failure is in the POST, not the deploy. |
+
+<Note>
+The round trip leaves one row behind, under project `verify`. It carries no cost, so it
+does not move your totals, but it does count as one request. No API call removes it:
+`DELETE /v1/projects/verify` deletes a project's configuration, not its recorded
+requests. Run the check before you point real agents at the deploy and it stays easy to
+ignore.
+</Note>
 
 ## Connect your agent
 
@@ -115,7 +131,7 @@ because Railway passes no `VERSION` build argument. Image deploys report their r
 ## Or let a coding agent do it
 
 <Prompt
-  description="Runs every step on this page against the Railway CLI, including the four checks."
+  description="Runs every step on this page against the Railway CLI, including both checks."
   icon="rocket"
   actions={["copy"]}
 >
@@ -133,7 +149,7 @@ Step 4. Set the variables on the voicegateway service with `railway variables`. 
 
 Step 5. Run `railway redeploy --service voicegateway --yes`, then `railway domain --service voicegateway`. Read the public hostname from RAILWAY_PUBLIC_DOMAIN via `railway variables --service voicegateway --json`.
 
-Step 6. Verify. Run all four and report the actual status codes. (a) GET /health expects 200 and a body with status ok. (b) GET /v1/rooms/x/latency with no Authorization header expects 401. (c) GET /v1/rooms/x/latency with the bearer key expects 404 and NOT 503: 404 means Postgres connected and migrations ran and that room has no data, while 503 means step 4 did not take. (d) POST one row to /v1/ingest as a JSON array holding a single object with id verify-1, timestamp as the current unix time integer, project verify, modality llm, model_id openai/gpt-4o-mini, provider openai, input_units 100, output_units 50, cost_usd 0.00042, pricing_source test, ttfb_ms 447.0, status success, session_id verify-1, and metadata holding room set to verify-room. Expect a response of accepted 1. Then GET /v1/rooms/verify-room/latency and expect a body whose components.llm_ttft_ms is 447.0. This is the only check that proves persistence rather than that the process is merely running.
+Step 6. Verify with two checks, and report the actual status codes for both. First, the round trip: POST one row to /v1/ingest as a JSON array holding a single object with id verify-1, timestamp as the current unix time integer, project verify, modality llm, model_id openai/gpt-4o-mini, provider openai, input_units 100, output_units 50, pricing_source test, ttfb_ms 447.0, status success, session_id verify-1, and metadata holding room set to verify-room. Do NOT send cost_usd: it defaults to zero, which keeps this verification row from moving my cost totals. Expect a response of accepted 1, then GET /v1/rooms/verify-room/latency and expect a body whose components.llm_ttft_ms is 447.0. That one check proves the process runs, the key is accepted, Postgres connected, migrations ran, and a write survives a read. Second, GET /v1/rooms/x/latency with NO Authorization header and expect 401, which proves the ingest surface is not open to the internet. If and only if the round trip fails, localize it: GET /health expects 200, and GET /v1/rooms/x/latency with the bearer key returns 503 when VOICEGW_DB_URL never took, 401 when the key is wrong, and 404 when Postgres is fine and the failure is in the POST.
 
-Step 7. Report the public URL, where the key is saved, the four status codes, what it costs to leave running, and that `railway delete` tears it down.
+Step 7. Report the public URL, where the key is saved, the status codes from step 6, what it costs to leave running, and that `railway delete` tears it down.
 </Prompt>
