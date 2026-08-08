@@ -52,7 +52,14 @@ COPY src/dashboard/ ./src/dashboard/
 COPY alembic.ini ./
 COPY alembic/ ./alembic/
 
-ARG VERSION=0.5.0
+# Deliberately not a plausible release number. .dockerignore excludes .git,
+# so hatch-vcs cannot derive a version inside the build and this ARG is the
+# only source. The release workflow passes --build-arg VERSION=<tag>; any
+# build that does not (a Railway source deploy, a local docker build) falls
+# back to this. The old default was 0.5.0, which reads as a real release and
+# sends anyone checking /health to the wrong changelog. An obvious placeholder
+# makes an unstamped build self-identifying instead.
+ARG VERSION=0.0.0.dev0+unstamped
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 
 # The `collector` extra bundles the dashboard/server stack (web UI + TUI + MCP
@@ -64,7 +71,7 @@ RUN pip install --prefix=/install ".[collector]"
 # -------- Stage 3: Runtime --------
 FROM python:3.12-slim AS runtime
 
-ARG VERSION=0.5.0
+ARG VERSION=0.0.0.dev0+unstamped
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

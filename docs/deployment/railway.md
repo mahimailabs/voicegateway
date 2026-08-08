@@ -5,10 +5,7 @@ description: "Run the VoiceGateway daemon on Railway with managed Postgres and a
 Lowest ops: Railway handles managed Postgres, TLS, and a public URL automatically.
 
 <Warning>
-Use `0.24.0` or newer. Images at or below `0.22.3` require a config file at
-`VOICEGW_CONFIG` and exit at boot without one, so they restart-loop on Railway with
-`ConfigError: Config file not found: /data/voicegw.yaml`. From `0.24.0` the daemon starts
-without a config file, binds the port Railway assigns, and needs no build configuration.
+Use `0.24.0` or newer. Earlier images restart-loop on Railway.
 </Warning>
 
 <Tip>
@@ -120,9 +117,10 @@ Pointing Railway at a clone or fork works too, and needs no build configuration:
 `src/voicegateway/Dockerfile`, and `healthcheckPath: /health`.
 
 <Note>
-A source deploy reports version `0.5.0` at `/health`. Railway passes no `VERSION` build
-argument, so the Dockerfile's `ARG` default shows. The build is current; only the reported
-string is wrong. Image deploys report their real version.
+A source deploy reports version `0.0.0.dev0` at `/health`. `.dockerignore` excludes
+`.git`, so the build cannot derive a version and takes it from a `VERSION` build argument
+that Railway does not pass. The build is current; it is simply unstamped, and says so.
+Image deploys report their real version.
 </Note>
 
 ## Or let a coding agent do it
