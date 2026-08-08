@@ -199,3 +199,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await ch_client.close()
         except Exception:  # noqa: BLE001 - best-effort teardown
             pass
+
+    # Release the SQL connections. Shutdown already closes the ClickHouse client
+    # above; the SQL backend carries the same obligation and was simply missed.
+    #
+    # It is not merely tidiness on SQLite. ``_engine_kwargs`` gives Postgres a
+    # NullPool but leaves SQLite on the default pool, so an aiosqlite connection
+    # stays checked in after shutdown, and every aiosqlite connection owns a
+    # worker thread that delivers results via ``future.get_loop()
+    # .call_soon_threadsafe(...)``. Once the loop that ran the server is closed,
+    # that thread raises "Event loop is closed" the moment it touches the future
+    # again, and aiosqlite's own error handler raises identically trying to
+    # report it. Disposing here ends the thread while its loop is still alive.
+    #
+    # Last on purpose: the workers above write through this engine, so they stop
+    # first. Disposing is safe regardless, since SQLAlchemy rebuilds the pool on
+    # next use, which is what lets a test keep querying after lifespan exits.
+    if gateway is not None and gateway.storage is not None:
+        try:
+            await gateway.storage.aclose()
+        except Exception:  # noqa: BLE001 - best-effort teardown
+            logger.warning("storage dispose failed on shutdown", exc_info=True)

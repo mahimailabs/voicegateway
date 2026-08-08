@@ -120,6 +120,31 @@ testpaths = ["src/voicegateway/tests"]
 markers = [
     "integration: marks tests that run only in the integration CI job",
 ]
+# Silence one specific teardown race, and nothing else.
+#
+# Every aiosqlite connection owns a worker thread that returns results through
+# ``future.get_loop().call_soon_threadsafe(...)``. pytest-asyncio gives each test
+# its own event loop and closes it at teardown, so a connection still pooled at
+# that point holds a future bound to a dead loop; the thread raises "Event loop
+# is closed", aiosqlite's own handler raises identically trying to report it, and
+# pytest turns the dead thread into a warning naming whichever test happened to
+# be running rather than the one that leaked the connection.
+#
+# Suppressed rather than fixed, deliberately, and only after measuring. On one
+# file the count swings 10 to 18 across identical runs, so it is a race, not a
+# deterministic leak. Disposing the engine at lifespan shutdown (which this
+# release also does, because a server owes it regardless) and disposing every
+# engine at fixture teardown both landed inside that noise band. Giving SQLite a
+# NullPool did cut it to 0 to 4, but it costs 2x to 4x on the write path, which
+# is per STT/LLM/TTS call, so it is not worth paying to quiet a warning.
+#
+# The pattern is deliberately narrow: it matches only this thread and only this
+# error, so a genuine unhandled thread exception anywhere else, including from an
+# aiosqlite thread for any other reason, still surfaces. That is the whole point,
+# since the noise is otherwise shaped exactly like the signal.
+filterwarnings = [
+    "ignore:(?s)Exception in thread .*_connection_worker_thread.*Event loop is closed:pytest.PytestUnhandledThreadExceptionWarning",
+]
 
 [tool.coverage.run]
 source = ["voicegateway", "dashboard"]
