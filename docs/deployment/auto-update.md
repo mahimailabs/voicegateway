@@ -69,37 +69,32 @@ Watchtower's cadence is `WATCHTOWER_POLL_INTERVAL` (default `3600`, hourly) in t
 Dumps live in the `voicegw-backups` volume as `voicegw-<timestamp>.sql`. To roll back after a bad update:
 
 <Steps>
+  <Step title="Stop the daemon">
+    Stop the daemon so nothing writes during the restore.
 
-### Stop the daemon
+    ```bash
+    docker compose -f docker-compose.collector.yml -f docker-compose.autoupdate.yml stop collector watchtower
+    ```
+  </Step>
+  <Step title="List available dumps">
+    ```bash
+    docker compose -f docker-compose.collector.yml -f docker-compose.autoupdate.yml \
+      exec db-backup sh -c 'ls -1t /backups/voicegw-*.sql'
+    ```
+  </Step>
+  <Step title="Restore the chosen dump">
+    ```bash
+    docker compose -f docker-compose.collector.yml -f docker-compose.autoupdate.yml \
+      exec -T db-backup sh -c 'psql -h postgres -U voicegw -d voicegw < /backups/voicegw-<timestamp>.sql'
+    ```
+  </Step>
+  <Step title="Pin to the known-good version and restart">
+    Edit the image tag in `docker-compose.autoupdate.yml` (for example `:0.24.1`), then bring the stack up:
 
-Stop the daemon so nothing writes during the restore.
-
-```bash
-docker compose -f docker-compose.collector.yml -f docker-compose.autoupdate.yml stop collector watchtower
-```
-
-### List available dumps
-
-```bash
-docker compose -f docker-compose.collector.yml -f docker-compose.autoupdate.yml \
-  exec db-backup sh -c 'ls -1t /backups/voicegw-*.sql'
-```
-
-### Restore the chosen dump
-
-```bash
-docker compose -f docker-compose.collector.yml -f docker-compose.autoupdate.yml \
-  exec -T db-backup sh -c 'psql -h postgres -U voicegw -d voicegw < /backups/voicegw-<timestamp>.sql'
-```
-
-### Pin to the known-good version and restart
-
-Edit the image tag in `docker-compose.autoupdate.yml` (for example `:0.24.1`), then bring the stack up:
-
-```bash
-docker compose -f docker-compose.collector.yml -f docker-compose.autoupdate.yml up -d
-```
-
+    ```bash
+    docker compose -f docker-compose.collector.yml -f docker-compose.autoupdate.yml up -d
+    ```
+  </Step>
 </Steps>
 
 <Warning>

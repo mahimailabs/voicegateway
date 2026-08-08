@@ -36,46 +36,42 @@ The ingest key is printed to your terminal and saved to the deploy directory (`/
 Prerequisites: Docker and Compose installed (`curl -fsSL https://get.docker.com | sh`).
 
 <Steps>
+  <Step title="Download Compose file and generate secrets">
+    ```bash
+    mkdir -p ~/voicegw && cd ~/voicegw
+    curl -fsSLO https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docker-compose.collector.yml
+    sed -i 's#mahimairaja/voicegateway:latest#mahimairaja/voicegateway:0.24.0#' docker-compose.collector.yml
 
-### Download Compose file and generate secrets
+    printf 'VOICEGW_PG_PASSWORD=%s\n' "$(openssl rand -hex 24)" > .env
+    ```
+  </Step>
+  <Step title="Create the ingest key">
+    The ingest key must not start with `vk_`.
 
-```bash
-mkdir -p ~/voicegw && cd ~/voicegw
-curl -fsSLO https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docker-compose.collector.yml
-sed -i 's#mahimairaja/voicegateway:latest#mahimairaja/voicegateway:0.24.0#' docker-compose.collector.yml
+    ```bash
+    INGEST_KEY="$(openssl rand -hex 32)"
+    cat > voicegw.yaml <<EOF
+    auth:
+      api_keys:
+        - token: "${INGEST_KEY}"
+          name: fleet-agents
+          scopes: [write]
+    EOF
+    echo "AGENT KEY (use as the agent api_key): ${INGEST_KEY}"
+    ```
+  </Step>
+  <Step title="Start the stack">
+    ```bash
+    docker compose -f docker-compose.collector.yml up -d
+    sleep 10 && curl -fsS http://localhost:8080/health && echo     # -> ok
+    ```
 
-printf 'VOICEGW_PG_PASSWORD=%s\n' "$(openssl rand -hex 24)" > .env
-```
+    <Warning>
+    Run the above exactly once. Re-running it regenerates the Postgres password but the existing volume keeps the old one, causing authentication failures. If you need to re-run, bring the stack down first and remove the volume: `docker compose down -v`. The one-line installer avoids this footgun by persisting secrets across runs.
+    </Warning>
 
-### Create the ingest key
-
-The ingest key must not start with `vk_`.
-
-```bash
-INGEST_KEY="$(openssl rand -hex 32)"
-cat > voicegw.yaml <<EOF
-auth:
-  api_keys:
-    - token: "${INGEST_KEY}"
-      name: fleet-agents
-      scopes: [write]
-EOF
-echo "AGENT KEY (use as the agent api_key): ${INGEST_KEY}"
-```
-
-### Start the stack
-
-```bash
-docker compose -f docker-compose.collector.yml up -d
-sleep 10 && curl -fsS http://localhost:8080/health && echo     # -> ok
-```
-
-<Warning>
-Run the above exactly once. Re-running it regenerates the Postgres password but the existing volume keeps the old one, causing authentication failures. If you need to re-run, bring the stack down first and remove the volume: `docker compose down -v`. The one-line installer avoids this footgun by persisting secrets across runs.
-</Warning>
-
-Postgres runs as a service in this Compose (self-hosted). To use a managed database instead, drop the `postgres` service and set `VOICEGW_DB_URL=postgresql+asyncpg://...` (for example a Neon URL) on the `collector` service.
-
+    Postgres runs as a service in this Compose (self-hosted). To use a managed database instead, drop the `postgres` service and set `VOICEGW_DB_URL=postgresql+asyncpg://...` (for example a Neon URL) on the `collector` service.
+  </Step>
 </Steps>
 
 ## Expose over HTTPS

@@ -36,61 +36,56 @@ Deploy in a region close to where your agents run to cut ingest latency: `--regi
 - A Fly account: `fly auth login`
 
 <Steps>
+  <Step title="Create fly.toml">
+    Create `fly.toml` in a working directory:
 
-### Create fly.toml
+    ```toml
+    app = "<your-app-name>"
 
-Create `fly.toml` in a working directory:
+    [build]
+      image = "mahimairaja/voicegateway:0.24.0"
 
-```toml
-app = "<your-app-name>"
+    [http_service]
+      internal_port = 8080  # optional: the image binds $PORT when the platform sets one
+      force_https = true
+      auto_stop_machines = false
+      min_machines_running = 1
+    ```
+  </Step>
+  <Step title="Add Postgres">
+    **Option A: Fly Postgres (unmanaged)**
 
-[build]
-  image = "mahimairaja/voicegateway:0.24.0"
+    ```bash
+    fly postgres create --name <pg-app-name>
+    fly postgres attach <pg-app-name> --app <your-app-name>
+    ```
 
-[http_service]
-  internal_port = 8080  # optional: the image binds $PORT when the platform sets one
-  force_https = true
-  auto_stop_machines = false
-  min_machines_running = 1
-```
+    `fly postgres attach` sets `DATABASE_URL` automatically, in `postgres://...` form.
 
-### Add Postgres
+    **Option B: Neon or another managed provider**
 
-**Option A: Fly Postgres (unmanaged)**
+    Skip `fly postgres create` and supply the connection string directly in the next step.
+  </Step>
+  <Step title="Set secrets">
+    <Warning>
+    Fly's `DATABASE_URL` (from `fly postgres attach`) uses the `postgres://` scheme. VoiceGateway requires `postgresql+asyncpg://`. Copy the connection string and rewrite the scheme; everything after `://` stays the same.
+    </Warning>
 
-```bash
-fly postgres create --name <pg-app-name>
-fly postgres attach <pg-app-name> --app <your-app-name>
-```
+    ```bash
+    fly secrets set \
+      VOICEGW_DB_URL="postgresql+asyncpg://<user>:<pass>@<host>:<port>/<db>" \
+      VOICEGW_API_KEY="<your-ingest-key>"
+    ```
 
-`fly postgres attach` sets `DATABASE_URL` automatically, in `postgres://...` form.
+    `VOICEGW_API_KEY` must not start with `vk_`. Generate it with `openssl rand -hex 32`. No volume is needed since data is stored in Postgres.
+  </Step>
+  <Step title="Deploy">
+    ```bash
+    fly deploy
+    ```
 
-**Option B: Neon or another managed provider**
-
-Skip `fly postgres create` and supply the connection string directly in the next step.
-
-### Set secrets
-
-<Warning>
-Fly's `DATABASE_URL` (from `fly postgres attach`) uses the `postgres://` scheme. VoiceGateway requires `postgresql+asyncpg://`. Copy the connection string and rewrite the scheme; everything after `://` stays the same.
-</Warning>
-
-```bash
-fly secrets set \
-  VOICEGW_DB_URL="postgresql+asyncpg://<user>:<pass>@<host>:<port>/<db>" \
-  VOICEGW_API_KEY="<your-ingest-key>"
-```
-
-`VOICEGW_API_KEY` must not start with `vk_`. Generate it with `openssl rand -hex 32`. No volume is needed since data is stored in Postgres.
-
-### Deploy
-
-```bash
-fly deploy
-```
-
-HTTPS is automatic at `https://<your-app-name>.fly.dev`.
-
+    HTTPS is automatic at `https://<your-app-name>.fly.dev`.
+  </Step>
 </Steps>
 
 ## Verify
