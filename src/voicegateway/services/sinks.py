@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from voicegateway.middleware.dead_air_detector_middleware import DeadAirEvent
     from voicegateway.middleware.turn_tracker_middleware import TurnRow
     from voicegateway.models.request_model import RequestRecord
     from voicegateway.services.storage_service import StorageService
@@ -43,8 +44,9 @@ class Sink(Protocol):
     """Narrow write target for captured telemetry.
 
     ``log_request`` persists one record. ``log_turns`` persists a batch of
-    conversation turns. ``flush`` drains any buffered writes (a no-op for
-    synchronous sinks). ``aclose`` releases resources.
+    conversation turns, ``log_dead_air`` a batch of observed silences. ``flush``
+    drains any buffered writes (a no-op for synchronous sinks). ``aclose``
+    releases resources.
 
     ``log_turns`` takes a batch rather than one row because TurnTracker already
     buffers to ``turn_buffer_flush_size`` before calling out, so a per-row
@@ -54,6 +56,8 @@ class Sink(Protocol):
     async def log_request(self, record: RequestRecord) -> None: ...
 
     async def log_turns(self, rows: list[TurnRow]) -> None: ...
+
+    async def log_dead_air(self, events: list[DeadAirEvent]) -> None: ...
 
     async def flush(self) -> None: ...
 
@@ -77,6 +81,9 @@ class LocalSqliteSink:
 
     async def log_turns(self, rows: list[TurnRow]) -> None:
         await self._storage.log_turns(rows)
+
+    async def log_dead_air(self, events: list[DeadAirEvent]) -> None:
+        await self._storage.log_dead_air(events)
 
     async def flush(self) -> None:
         return None
@@ -149,6 +156,7 @@ class RemoteCollectorSink:
         # Turns get their own route off the same base. See _post for why they
         # cannot share /v1/ingest.
         self._turns_url = self._ingest_url + "/turns"
+        self._dead_air_url = self._ingest_url + "/dead-air"
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self._batch_size = max(1, batch_size)
         self._flush_interval = flush_interval
@@ -169,6 +177,9 @@ class RemoteCollectorSink:
         # spooling them would mean a schema change to outbox files already on
         # disk in deployed agents. Dropped turns are counted and logged.
         self._turn_buffer: list[dict[str, Any]] = []
+        # Same reasoning as turns: batched in memory, never in the durable
+        # outbox, which exists to prove cost completeness for reconcile.
+        self._dead_air_buffer: list[dict[str, Any]] = []
         self._flusher: asyncio.Task[None] | None = None
         self._closed = False
         # Durable outbox (opt-in).
@@ -396,6 +407,35 @@ class RemoteCollectorSink:
             # buffer cap above is what bounds this.
             self._turn_buffer = batch + self._turn_buffer
 
+    async def log_dead_air(self, events: list[DeadAirEvent]) -> None:
+        """Buffer observed silences for the collector's ``/v1/ingest/dead-air``.
+
+        Best-effort like the rest of this sink: it runs off the detector's watch
+        loop, so it never blocks and never raises.
+        """
+        if not events:
+            return
+        self._dead_air_buffer.extend(asdict(event) for event in events)
+        if len(self._dead_air_buffer) > self._max_buffer:
+            overflow = len(self._dead_air_buffer) - self._max_buffer
+            del self._dead_air_buffer[:overflow]
+            self._dropped += overflow
+            logger.warning(
+                "RemoteCollectorSink dead-air buffer full; dropped %d oldest", overflow
+            )
+        self._maybe_start_flusher()
+        if len(self._dead_air_buffer) >= self._batch_size:
+            await self._flush_dead_air()
+
+    async def _flush_dead_air(self) -> None:
+        """Drain the dead-air buffer to the collector. Requeues on failure."""
+        if not self._dead_air_buffer:
+            return
+        batch = self._dead_air_buffer
+        self._dead_air_buffer = []
+        if not await self._post(batch, self._dead_air_url):
+            self._dead_air_buffer = batch + self._dead_air_buffer
+
     def _maybe_start_flusher(self) -> None:
         if not self._flush_interval or self._flusher is not None or self._closed:
             return
@@ -418,6 +458,7 @@ class RemoteCollectorSink:
         # periodic flusher and aclose with requests, but not the outbox, so this
         # runs regardless of which request path is taken below.
         await self._flush_turns()
+        await self._flush_dead_air()
         if self._spool_path is not None:
             if not self._spooled:
                 return

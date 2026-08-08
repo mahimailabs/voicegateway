@@ -19,6 +19,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 
+from voicegateway.middleware.dead_air_detector_middleware import DeadAirEvent
 from voicegateway.middleware.turn_tracker_middleware import TurnRow
 from voicegateway.models.request_model import RequestRecord
 from voicegateway.server.api._deps import get_gateway, require_scope
@@ -32,6 +33,10 @@ _RECORD_FIELDS: frozenset[str] = frozenset(
 )
 
 _TURN_FIELDS: frozenset[str] = frozenset(f.name for f in dataclasses.fields(TurnRow))
+
+_DEAD_AIR_FIELDS: frozenset[str] = frozenset(
+    f.name for f in dataclasses.fields(DeadAirEvent)
+)
 
 
 def _record_from_payload(raw: dict[str, Any]) -> RequestRecord | None:
@@ -244,6 +249,74 @@ async def ingest_turns(
 
     if rejected:
         logger.warning("ingest/turns: skipped %d malformed turn(s)", rejected)
+    return {"accepted": accepted}
+
+
+def _dead_air_from_payload(raw: dict[str, Any]) -> DeadAirEvent | None:
+    """Build a DeadAirEvent from a payload dict, ignoring unknown keys."""
+    filtered = {k: v for k, v in raw.items() if k in _DEAD_AIR_FIELDS}
+    try:
+        return DeadAirEvent(**filtered)
+    except TypeError:
+        return None
+
+
+@router.post("/ingest/dead-air")
+async def ingest_dead_air(
+    events: list[dict[str, Any]],
+    request: Request,
+    _auth: None = Depends(require_scope("write")),
+) -> dict[str, int]:
+    """Persist observed dead-air events pushed by a fleet agent.
+
+    Its own route for the same reason as ``/ingest/turns``: the request handler
+    builds a RequestRecord out of every dict it receives, so anything else sent
+    there is answered ``200`` and dropped.
+
+    Always SQL, even under ClickHouse, because
+    ``GET /api/sessions/{id}/dead_air`` reads them from SQL.
+    """
+    gateway = get_gateway(request)
+    storage = gateway.storage
+    if storage is None:
+        raise HTTPException(
+            status_code=503,
+            detail="cost tracking storage is disabled on this collector",
+        )
+
+    max_batch = gateway.config.ingest.max_batch_size
+    if len(events) > max_batch:
+        raise HTTPException(
+            status_code=413,
+            detail=f"batch too large: {len(events)} events exceeds max {max_batch}",
+        )
+
+    parsed: list[DeadAirEvent] = []
+    rejected = 0
+    for raw in events:
+        event = _dead_air_from_payload(raw)
+        if event is None:
+            rejected += 1
+            continue
+        parsed.append(event)
+
+    accepted = 0
+    if parsed:
+        try:
+            accepted = await storage.log_dead_air(parsed)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "ingest/dead-air: failed to persist %d event(s)",
+                len(parsed),
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="telemetry store temporarily unavailable",
+            ) from exc
+
+    if rejected:
+        logger.warning("ingest/dead-air: skipped %d malformed event(s)", rejected)
     return {"accepted": accepted}
 
 

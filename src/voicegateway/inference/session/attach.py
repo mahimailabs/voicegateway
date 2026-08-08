@@ -404,6 +404,7 @@ def attach(
     transcript: bool = True,
     snapshots: bool = False,
     turns: bool = True,
+    dead_air: bool = True,
 ) -> str:
     """Attach VoiceGateway to a LiveKit ``AgentSession`` or Pipecat ``PipelineTask``.
 
@@ -482,6 +483,19 @@ def attach(
             ``VOICEGW_TURNS=0`` to force it off fleet-wide (the kill-switch wins
             over the argument). LiveKit-only: the Pipecat path accepts the flag
             but has no equivalent speech-boundary events yet.
+        dead_air: watch for silences longer than the threshold (default ON).
+            Writes one row per observed silence, which
+            ``GET /api/sessions/{id}/dead_air`` and the dashboard read back.
+            Driven by the same four speech events as ``turns``, but its own flag
+            because it POLLS: a task per session at one second for the life of
+            the call, where turn capture costs nothing between events. A
+            dead-air row is also an alert rather than a chart cell, so wanting
+            one feature without the other is coherent in both directions.
+            Threshold comes from the project's
+            ``metrics.dead_air_threshold_seconds`` (default 3.0s). Speech is
+            never dead air: while either party is speaking the clock reports
+            now, so a long utterance cannot trip it. Set ``VOICEGW_DEAD_AIR=0``
+            to force it off fleet-wide. LiveKit-only, like ``turns``.
 
     Returns:
         The correlation session id stamped on every captured row.
@@ -504,6 +518,7 @@ def attach(
             transcript=transcript,
             snapshots=snapshots,
             turns=turns,
+            dead_air=dead_air,
         )
     return _attach_livekit(
         session,
@@ -518,6 +533,7 @@ def attach(
         transcript=transcript,
         snapshots=snapshots,
         turns=turns,
+        dead_air=dead_air,
     )
 
 
@@ -545,6 +561,135 @@ def _turns_enabled(param: bool) -> bool:
     if env is not None and env.strip().lower() in ("0", "false", "no", "off"):
         return False
     return param
+
+
+def _dead_air_enabled(param: bool) -> bool:
+    """Whether to watch for dead air. Same shape as turns above.
+
+    Its own flag rather than riding ``turns``, although both are driven by the
+    same four speech events, because this one POLLS: it runs a task per session
+    at ``poll_interval_seconds`` for the life of the call, where turn capture
+    costs nothing between events. A standing per-session cost should be
+    switchable on its own. A dead-air row is also an alert someone acts on
+    rather than a cell on a chart, so wanting one without the other is coherent
+    in both directions.
+    """
+    env = os.environ.get("VOICEGW_DEAD_AIR")
+    if env is not None and env.strip().lower() in ("0", "false", "no", "off"):
+        return False
+    return param
+
+
+_DEFAULT_DEAD_AIR_THRESHOLD_S = 3.0
+_dead_air_threshold_cache: dict[str | None, float] = {}
+
+
+def _dead_air_threshold_s(project: str | None) -> float:
+    """Seconds of silence before a dead-air event fires, for this project.
+
+    ``metrics`` hangs off ProjectConfig, so ``dead_air_threshold_seconds`` is
+    per project, exactly like the two knobs beside it. Same best-effort load and
+    per-project cache as ``_turn_flush_size``.
+    """
+    if project in _dead_air_threshold_cache:
+        return _dead_air_threshold_cache[project]
+    threshold = _DEFAULT_DEAD_AIR_THRESHOLD_S
+    try:
+        from voicegateway.core.config import GatewayConfig
+
+        cfg = GatewayConfig.load(required=False)
+        pcfg = (cfg.projects or {}).get(project) if project else None
+        if pcfg is not None:
+            threshold = float(pcfg.metrics.dead_air_threshold_seconds)
+    except Exception:  # noqa: BLE001 - a bad config must not break attach()
+        logger.debug("attach: reading dead_air_threshold_seconds failed", exc_info=True)
+    if threshold <= 0:
+        threshold = _DEFAULT_DEAD_AIR_THRESHOLD_S
+    _dead_air_threshold_cache[project] = threshold
+    return threshold
+
+
+class _SpeechActivity:
+    """Last-activity clock for dead-air detection, in the detector's own units.
+
+    Returns ``time.monotonic() * 1000``, which is exactly what
+    ``DeadAirDetector._watch`` compares against and what ``TurnTracker._now_ms``
+    already produces, so no conversion and no clock mismatch.
+
+    The part that matters: **while anyone is speaking, activity is now**. A
+    probe that only recorded discrete events would keep reporting the onset
+    timestamp for the whole utterance, so a caller talking for longer than the
+    threshold would trip a dead-air event mid-sentence. Speech is not dead air,
+    and a false alert is worse than a missing one because somebody acts on it.
+
+    Two booleans rather than a counter, so a duplicated event is harmless. That
+    is not hypothetical: LiveKit 1.6 signals onset through
+    ``user_state_changed`` while older builds emit the discrete event, and a
+    build emitting both would leave a counter permanently above zero, which
+    would silently mean dead air could never fire again.
+    """
+
+    def __init__(self) -> None:
+        self._last_ms = self._now_ms()
+        self._caller_speaking = False
+        self._agent_speaking = False
+
+    @staticmethod
+    def _now_ms() -> int:
+        import time
+
+        return int(time.monotonic() * 1000)
+
+    def _touch(self) -> None:
+        self._last_ms = self._now_ms()
+
+    def caller_started(self) -> None:
+        self._caller_speaking = True
+        self._touch()
+
+    def caller_stopped(self) -> None:
+        self._caller_speaking = False
+        self._touch()
+
+    def agent_started(self) -> None:
+        self._agent_speaking = True
+        self._touch()
+
+    def agent_stopped(self) -> None:
+        self._agent_speaking = False
+        self._touch()
+
+    def probe(self, _session_id: str) -> int | None:
+        """The ActivityProbe. Sync by contract, so it only reads memory."""
+        if self._caller_speaking or self._agent_speaking:
+            return self._now_ms()
+        return self._last_ms
+
+
+def _build_dead_air_detector(sink: Sink, project: str | None) -> tuple[Any, Any]:
+    """A detector whose events persist through the sink, and its activity clock.
+
+    Returns ``(detector, activity)``; the caller binds ``activity`` to the same
+    speech events turn capture uses. Without an ``on_event`` the detector falls
+    back to a no-op that logs "dropped (no repository wired)" at debug, which is
+    why ``dead_air_events`` was always empty.
+    """
+    from voicegateway.middleware.dead_air_detector_middleware import (
+        DeadAirDetector,
+        DeadAirEvent,
+    )
+
+    activity = _SpeechActivity()
+
+    async def _on_event(event: DeadAirEvent) -> None:
+        await sink.log_dead_air([event])
+
+    detector = DeadAirDetector(
+        activity_probe=activity.probe,
+        on_event=_on_event,
+        threshold_seconds=_dead_air_threshold_s(project),
+    )
+    return detector, activity
 
 
 _DEFAULT_TURN_FLUSH_SIZE = 25
@@ -596,7 +741,12 @@ def _build_turn_tracker(sink: Sink, project: str | None) -> Any:
     return TurnTracker(flush_callback=_flush, flush_size=_turn_flush_size(project))
 
 
-def _bind_turn_events(session: Any, session_id: str, tracker: Any) -> None:
+def _bind_turn_events(
+    session: Any,
+    session_id: str,
+    tracker: Any,
+    activity: Any = None,
+) -> None:
     """Wire the speech-boundary events onto an AgentSession.
 
     Onset is hooked twice on purpose. LiveKit 1.6 dropped the discrete
@@ -608,24 +758,70 @@ def _bind_turn_events(session: Any, session_id: str, tracker: Any) -> None:
     First-wins needs no latch here: ``on_user_started_speaking`` only sets
     ``pending_caller_start_ms`` when it is None, so whichever event arrives
     first anchors the turn and the other is a no-op.
+
+    ``activity`` is the optional dead-air clock. It rides these same four events
+    because they are exactly the signal it needs, but it is updated
+    independently of ``tracker`` so the two features stay separately
+    switchable. ``tracker`` may be None when only dead air is on.
+
+    Note the non-speaking branch of ``user_state_changed``: on a build that
+    emits no discrete ``user_stopped_speaking``, that transition is the only
+    signal the caller went quiet, and without it the activity clock would stay
+    "speaking" forever and dead air could never fire.
     """
     on = getattr(session, "on", None)
     if not callable(on):
-        logger.debug("attach: session has no .on(); turn events not bound")
+        logger.debug("attach: session has no .on(); speech events not bound")
         return
 
-    started = _emit_user_started(session_id, tracker)
+    started = _emit_user_started(session_id, tracker) if tracker is not None else None
+    stopped = _emit_user_stopped(session_id, tracker) if tracker is not None else None
+    agent_started = (
+        _emit_agent_started(session_id, tracker) if tracker is not None else None
+    )
+    agent_stopped = (
+        _emit_agent_stopped(session_id, tracker) if tracker is not None else None
+    )
+
+    def _user_started(event: Any = None, *_a: Any, **_k: Any) -> None:
+        if activity is not None:
+            activity.caller_started()
+        if started is not None:
+            started(event)
+
+    def _user_stopped(event: Any = None, *_a: Any, **_k: Any) -> None:
+        if activity is not None:
+            activity.caller_stopped()
+        if stopped is not None:
+            stopped(event)
+
+    def _agent_started(event: Any = None, *_a: Any, **_k: Any) -> None:
+        if activity is not None:
+            activity.agent_started()
+        if agent_started is not None:
+            agent_started(event)
+
+    def _agent_stopped(event: Any = None, *_a: Any, **_k: Any) -> None:
+        if activity is not None:
+            activity.agent_stopped()
+        if agent_stopped is not None:
+            agent_stopped(event)
 
     def _on_state_changed(event: Any = None, *_a: Any, **_k: Any) -> None:
-        if getattr(event, "new_state", None) != "speaking":
+        if getattr(event, "new_state", None) == "speaking":
+            _user_started(event)
             return
-        started(event)
+        # listening / away: the caller stopped. Only the activity clock cares;
+        # the tracker's own stop is driven by user_stopped_speaking, and calling
+        # it here would close turns on an "away" transition.
+        if activity is not None:
+            activity.caller_stopped()
 
-    on("user_started_speaking", started)
+    on("user_started_speaking", _user_started)
     on("user_state_changed", _on_state_changed)
-    on("user_stopped_speaking", _emit_user_stopped(session_id, tracker))
-    on("agent_started_speaking", _emit_agent_started(session_id, tracker))
-    on("agent_stopped_speaking", _emit_agent_stopped(session_id, tracker))
+    on("user_stopped_speaking", _user_stopped)
+    on("agent_started_speaking", _agent_started)
+    on("agent_stopped_speaking", _agent_stopped)
 
 
 def _snapshots_enabled(param: bool) -> bool:
@@ -810,6 +1006,7 @@ def _attach_livekit(
     transcript: bool = True,
     snapshots: bool = False,
     turns: bool = True,
+    dead_air: bool = True,
 ) -> str:
     """LiveKit ``attach()`` body: bind ``MetricCapture`` to an ``AgentSession``."""
     import asyncio
@@ -862,8 +1059,52 @@ def _attach_livekit(
     turn_tracker = (
         _build_turn_tracker(sink, project) if _turns_enabled(turns) else None
     )
-    if turn_tracker is not None:
-        _bind_turn_events(session, session_id, turn_tracker)
+    dead_air_detector, activity = (
+        _build_dead_air_detector(sink, project)
+        if _dead_air_enabled(dead_air)
+        else (None, None)
+    )
+    # One binding for both: the activity clock rides the same four events the
+    # tracker does, and either half may be None.
+    if turn_tracker is not None or activity is not None:
+        _bind_turn_events(session, session_id, turn_tracker, activity)
+    # Expose for tests and for graceful shutdown, as with _vg_capture above.
+    for _attr, _value in (
+        ("_vg_dead_air", dead_air_detector),
+        ("_vg_activity", activity),
+    ):
+        try:
+            setattr(session, _attr, _value)
+        except Exception:  # noqa: BLE001 - real session may forbid attribute set
+            logger.debug("attach: could not stash %s on session", _attr, exc_info=True)
+    if dead_air_detector is not None:
+
+        async def _start_dead_air() -> None:
+            # Warm the store BEFORE the watcher can fire. Otherwise the first
+            # dead-air event is what triggers migrations, from inside the poll
+            # loop, and a "database is locked" there loses that event for good:
+            # the detector sets _already_fired before awaiting the callback, so
+            # it will not re-fire for the same silence. Reproduced, not feared.
+            warm = getattr(sink, "_storage", None)
+            if warm is not None:
+                try:
+                    await warm._ensure_initialized()
+                except Exception:  # noqa: BLE001 - dead air is never load-bearing
+                    logger.debug("attach: storage warm-up failed", exc_info=True)
+            await dead_air_detector.start(session_id)
+
+        # start() spawns the watcher task, so it needs a running loop. attach()
+        # is routinely called from sync setup code; there the watcher simply
+        # does not start, said out loud rather than failing silently.
+        try:
+            task = asyncio.get_running_loop().create_task(_start_dead_air())
+            _close_tasks.add(task)
+            task.add_done_callback(_close_tasks.discard)
+        except RuntimeError:
+            logger.debug(
+                "attach(%s): no running event loop, dead-air watcher not started",
+                session_id,
+            )
 
     async def _finish() -> None:
         # Reconcile cumulative session.usage against the per-call rows, drain
@@ -872,6 +1113,13 @@ def _attach_livekit(
         bump_active(-1)
         await capture.reconcile(session)
         await capture.drain()
+        if dead_air_detector is not None:
+            # Before the flush below, so an event observed in the last poll is
+            # already in the sink's buffer when it drains.
+            try:
+                await dead_air_detector.stop(session_id)
+            except Exception:  # noqa: BLE001 - dead air is never load-bearing
+                logger.debug("attach: dead-air stop on close failed", exc_info=True)
         if turn_tracker is not None:
             # Before sink.flush(): close_session emits the tail turn and pushes
             # everything under the flush-size threshold into the sink, so the
@@ -1055,6 +1303,7 @@ def _attach_pipecat(
     transcript: bool = True,
     snapshots: bool = False,
     turns: bool = True,
+    dead_air: bool = True,
 ) -> str:
     """Register a ``VoiceGatewayObserver`` on a Pipecat ``PipelineTask``.
 
@@ -1070,14 +1319,16 @@ def _attach_pipecat(
     rather than errors, so the same ``attach(...)`` call works against either
     framework.
 
-    ``turns`` specifically needs Pipecat speech-boundary events equivalent to
-    LiveKit's user/agent started/stopped, which the observer does not surface
-    today. Accepting it silently is the deliberate choice over raising, but it
-    does mean a Pipecat agent gets no turn rows, so ``e2e_ms`` stays null there.
+    ``turns`` and ``dead_air`` both need Pipecat speech-boundary events
+    equivalent to LiveKit's user/agent started/stopped, which the observer does
+    not surface today. Accepting them silently is the deliberate choice over
+    raising, but it does mean a Pipecat agent gets no turn rows and no dead-air
+    events, so ``e2e_ms`` stays null there and the dead-air view stays empty.
     """
     _ = transcript  # reserved: Pipecat transcript capture is a future step
     _ = snapshots  # reserved: needs a Pipecat message/tool-call hook
     _ = turns  # reserved: needs Pipecat speech-boundary events
+    _ = dead_air  # reserved: same missing events as turns above
     from voicegateway.inference.pipecat.observer import VoiceGatewayObserver
 
     resolved_agent_id = agent_id or _default_agent_id()
