@@ -30,38 +30,44 @@ Each agent process needs three environment variables to participate in the fleet
 {
   "agent_id": "worker-host-1",
   "agent_name": "myvoiceagents",
+  "dispatch_name": "myvoiceagents",
   "status": "idle",
   "active_sessions": 0,
-  "version": "0.13.0",
+  "version": "0.22.3",
   "project": "mahimai-realty",
   "tenant_id": null,
   "region": "iad",
   "host": "worker-host-1",
   "started_at": 1783200000.0,
+  "memory_rss_bytes": 184320000,
+  "memory_total_bytes": 8589934592,
+  "cpu_pct": 3.2,
   "ts": 1783200015.0
 }
 ```
+
+`dispatch_name` is the LiveKit `agent_name` this worker dispatches under (defaults to `agent_name`; `None` for a worker with no LiveKit dispatch, e.g. Pipecat). The dashboard's play-button probe dispatches by this field; it is not part of the `(tenant, agent_id)` identity key.
 
 ## Ingestion rules (both stores must follow)
 
 1. **Tenant is derived server-side from the `vk_` key, never from the body.** The `tenant_id` in the payload is advisory only. A worker can only ever be written under the key's tenant, so it can never appear under another tenant.
 2. **Identity is `(tenant, agent_id)`.** `agent_id` is the node identity for upsert, roster keys, and any UI node id. Do not key identity on `agent_name` (it groups workers, it does not identify one).
 3. **`last_seen` is stamped server-side at ingest** (`now()` / `time.time()` on the receiving server). The payload `ts` is informational metadata only and must not drive liveness: a client clock that is skewed or forged would otherwise read perpetually online or offline.
-4. **Upsert atomically** on `(tenant, agent_id)` via a native `INSERT ... ON CONFLICT DO UPDATE`. A get-then-insert races two concurrent first beats into duplicate rows (and a subsequent read that expects one row).
+4. **Upsert atomically** on `(tenant, agent_id)`; a naive get-then-insert races two concurrent first beats into duplicate rows. A native `ON CONFLICT DO UPDATE` works when tenant is never NULL (key-authenticated writes). When tenant can be NULL (the self-hosted, no-credential operator), `NULL != NULL` under the unique constraint breaks `ON CONFLICT`, so select first, update or insert, and retry on `IntegrityError` from a concurrent first insert.
 5. **Offline TTL is 45 seconds** (three missed ~15s beats). A worker whose server-stamped `last_seen` is older than the TTL reports `status: "offline"` and `active_sessions: 0`, regardless of the last status it sent.
 6. **Status vocabulary is `idle | busy | offline`.** Constrain to this set on ingest; do not store or serve arbitrary client-supplied status strings.
 
 ## Compatibility matrix
 
-Field or behavior as of the two current implementations. `cloud_workers` is the reference; the engine `workers` table (introduced with the OpenOrca console) must align to it.
+Field or behavior as of the two current implementations. `cloud_workers` is the reference; the engine `workers` table (introduced with the OpenOrca console) must satisfy the same rules, though not always with the same mechanism.
 
 | Aspect | `cloud_workers` (cloud) | Engine `workers` | Status |
 |---|---|---|---|
 | Primary key | `(tenant_id, agent_id)` | Surrogate `id` + `UniqueConstraint(tenant_id, agent_id)` | Equivalent uniqueness (OK) |
-| `tenant_id` | NOT NULL (from key) | Nullable (for the no-credential operator) | Engine NULL path enables the duplicate-row race in rule 4 |
+| `tenant_id` | NOT NULL (from key) | Nullable (for the no-credential operator) | Structural difference; it's why the engine can't use a plain `ON CONFLICT` (see the Upsert row) |
 | Tenant source | Key only, body ignored | Key, but falls back to body `tenant_id` when the key tenant is NULL | Align to rule 1 |
 | `last_seen` | Server-stamped `DateTime(tz)` | Client `ts` stored as `float` | Primary drift: align to rule 3 (server-stamp) |
-| Upsert | Native `ON CONFLICT DO UPDATE` | Get-then-insert with `IntegrityError` retry | Align to rule 4 (matches only for non-null tenants) |
+| Upsert | Native `ON CONFLICT DO UPDATE` (tenant always non-null) | Select-then-update, `IntegrityError` retry on races | Both satisfy rule 4; the engine can't use `ON CONFLICT` because `tenant_id` is nullable |
 | Offline TTL | 45s | 45s | OK |
 | Status vocab | idle / busy / offline | idle / busy / offline (but client status passed through unvalidated) | Add rule 6 validation |
 | Node identity | `agent_id` | Roster keys `agent_id`, but the OpenOrca mapper keys nodes on `agent_name` | Align to rule 2 |
@@ -74,7 +80,7 @@ The most impactful drift today is `last_seen` source. The engine stores the clie
 
 - This page is the single source of truth. A PR that changes ingestion in either store must update this page in the same change and satisfy every rule above.
 - Prefer sharing semantics rather than re-deriving them: the offline TTL, the status vocabulary, and the payload field names should have one definition the engine owns (it is the producer), which the cloud consumes.
-- The engine-side alignment items (rules 1-4, 6) are tracked against the OpenOrca console backend PR; the cloud side already satisfies the contract.
+- The engine-side alignment items (rules 1, 2, 3, 6) are tracked against the OpenOrca console backend PR; the cloud side already satisfies the contract. Rule 4 (atomic upsert) is already satisfied by both, just via different mechanisms (see the compatibility matrix).
 
 ## Related pages
 

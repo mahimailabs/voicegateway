@@ -26,6 +26,10 @@ Rating a request resolves the single most specific matching rule. Specificity ra
 
 Among rules that tie on specificity, the one that appears later in the list wins. That ordering is deliberate: a DB override layered after the YAML seed takes precedence over the seed rule it shadows. When no rule matches, the request falls back to a cost-plus pass at the card's `default_markup`.
 
+<Warning>
+`plan` is a real scope field, settable when a rule is created (CLI, HTTP, MCP, or dashboard), but nothing on the live write path attaches a plan to a request being rated: `CostTracker._rate()` calls `rating.price(..., tenant=current_tenant())` and never passes `plan`, so resolution always runs with `plan=None`. A plan-scoped rule can be created and will show up in `voicegw prices ls`, but it cannot currently match a real request. `tenant` has no such gap: it's read from the same `current_tenant()` `ContextVar` `attach(tenant_id=...)` sets.
+</Warning>
+
 ## Write-time, immutable rating
 
 Rating happens at write time, once, on the same path that records cost. Every request row stores two fields:
@@ -55,7 +59,7 @@ Once every row carries `rated_price_usd`, two surfaces read it:
 - **`voicegw prices` commands.** `voicegw prices ls` prints the effective card, `voicegw prices reconcile` flags tenants with thin or negative margins over a window, `voicegw prices sync` checks fixed rules against the current base cost, and `voicegw prices set` / `rm` edit the DB overrides. See [voicegw prices](/cli/prices).
 
 <Note>
-The rate card is one store with three surfaces: the `rate_card:` seed in `voicegw.yaml` plus DB overrides edited from the CLI (`voicegw prices set` / `rm`), over HTTP (`POST` / `DELETE /v1/billing/rate-card/rules`), or from the dashboard (Configure -> Rate card). Each override is one rule per scope (keyed by `tenant|plan|modality|provider|model`), and a DB override wins a specificity tie against the seed rule it shadows.
+The rate card is one store with four write surfaces: the `rate_card:` seed in `voicegw.yaml` plus DB overrides edited from the CLI (`voicegw prices set` / `rm`), over HTTP (`POST` / `DELETE /v1/billing/rate-card/rules`), over MCP (`set_rate_card_override` / `delete_rate_card_override`), or from the dashboard (Configure -> Rate card). Each override is one rule per scope (keyed by `tenant|plan|modality|provider|model`), and a DB override wins a specificity tie against the seed rule it shadows.
 </Note>
 
 ## Where to find each piece

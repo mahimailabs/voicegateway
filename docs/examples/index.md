@@ -19,7 +19,4 @@ agent uses; see [Installation](/guide/installation).
   <Card title="Docker Deployment" icon="docker" href="/examples/docker-deployment">
     Production-ready Docker Compose with health checks and optional Ollama.
   </Card>
-  <Card title="Claude Code Integration" icon="robot" href="/examples/claude-code-integration">
-    Manage providers, projects, and costs from Claude Code via the MCP server.
-  </Card>
 </CardGroup>

@@ -1,6 +1,6 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
+  "theme": "sequoia",
   "name": "VoiceGateway",
   "colors": {
     "primary": "#1F96AA",
@@ -21,6 +21,18 @@
       "mcp",
       "cursor",
       "vscode"
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "type": "github",
+        "href": "https://github.com/mahimailabs/voicegateway"
+      },
+      {
+        "type": "discord",
+        "href": "https://discord.gg/ysFaF4uSB"
+      }
     ]
   },
   "navigation": {
@@ -165,7 +177,6 @@
           {
             "group": "API",
             "pages": [
-              "api/index",
               "api/python-sdk",
               "api/http-api",
               "api/dashboard-api"
@@ -183,13 +194,9 @@
             "pages": [
               "mcp/index",
               "mcp/setup",
-              "mcp/authentication",
               "mcp/transports",
-              "mcp/tools/models",
-              "mcp/tools/providers",
-              "mcp/tools/projects",
-              "mcp/tools/observability",
-              "examples/claude-code-integration"
+              "mcp/tools",
+              "mcp/tools-admin"
             ]
           },
           {
@@ -230,5 +237,11 @@
         ]
       }
     ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/mahimailabs/voicegateway",
+      "discord": "https://discord.gg/ysFaF4uSB"
+    }
   }
 }

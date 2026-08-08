@@ -93,16 +93,29 @@ Empty strings pass through `encrypt()` and `decrypt()` unchanged.
 
 ### Key rotation
 
-If `VOICEGW_SECRET` changes or the `.secret` file is deleted, existing encrypted values fail to decrypt. The `decrypt()` function raises a clear `ValueError`:
+Rotating the Fernet key does not mean re-adding every provider by hand. Set the new key, keep the old one reachable as a fallback, and run `voicegw rotate-secret`:
+
+```bash
+export VOICEGW_SECRET_FALLBACK="<the old VOICEGW_SECRET>"
+export VOICEGW_SECRET="<a newly generated Fernet key>"
+voicegw rotate-secret --yes
+```
+
+`voicegw rotate-secret` refuses to run unless both variables are set: `VOICEGW_SECRET` is the new primary key, `VOICEGW_SECRET_FALLBACK` is the previous one. It re-encrypts every row in `managed_providers` under the new primary and reports how many rows were rotated, skipped (empty), or failed (no configured key could decrypt them). A nonzero failure count exits with status 2 and lists the affected provider IDs.
+
+Until rotation runs, `VOICEGW_SECRET_FALLBACK` also keeps `decrypt()` working on rows still encrypted under the old key: the gateway builds a `MultiFernet` from the primary key plus every comma-separated key in `VOICEGW_SECRET_FALLBACK` and tries them in order. If none of them decrypt a value, `decrypt()` raises:
 
 ```
 Failed to decrypt managed credential. This typically means VOICEGW_SECRET
-changed since the value was stored. Re-add the affected providers via the
-dashboard or MCP.
+changed since the value was stored. Set VOICEGW_SECRET_FALLBACK to the
+previous key and run `voicegw rotate-secret` to re-encrypt under the new
+primary.
 ```
 
+Remove `VOICEGW_SECRET_FALLBACK` once rotation succeeds. Leaving it set keeps the old key acceptable for decryption, which defeats the point of rotating.
+
 <Warning>
-Losing the Fernet key means losing all managed provider credentials stored in SQLite. Back up `VOICEGW_SECRET` or the `.secret` file the same way you back up any other secret.
+Losing every key that can decrypt a row (no primary, no fallback) is unrecoverable for that row: `rotate-secret` reports it under `failed`, and it must be re-added via the dashboard or `vg_add_provider` (MCP).
 </Warning>
 
 ## API key masking
@@ -122,26 +135,6 @@ Examples:
 - `""` becomes `""`
 
 Masking is applied in the HTTP API and MCP server responses. Plaintext keys never appear in API output.
-
-## Plaintext key migration
-
-When VoiceGateway opens a database created before encryption was added, it automatically detects and migrates plaintext API keys:
-
-```python
-async def _migrate_plaintext_keys(self, db):
-    cursor = await db.execute(
-        "SELECT provider_id, api_key_encrypted FROM managed_providers "
-        "WHERE api_key_encrypted != ''"
-    )
-    for row in rows:
-        if not is_fernet_token(raw_key):
-            encrypted = encrypt(raw_key)
-            await db.execute("UPDATE ... SET api_key_encrypted = ?", (encrypted,))
-    if migrated:
-        logger.warning("Migrated %d plaintext API key(s) to encrypted storage.", migrated)
-```
-
-This runs on first connection and logs a warning for each migrated key.
 
 ## MCP token authentication
 
@@ -169,11 +162,11 @@ Every create, update, or delete on managed resources is recorded.
 | Field | Description |
 |---|---|
 | `timestamp` | When the change was made |
-| `entity_type` | `"provider"`, `"model"`, or `"project"` |
+| `entity_type` | `"provider"`, `"model"`, `"project"`, or `"rate_rule"` |
 | `entity_id` | ID of the affected resource |
-| `action` | `"create"`, `"update"`, or `"delete"` |
+| `action` | `"create"`, `"update"`, `"delete"`, or `"set"` |
 | `changes_json` | JSON describing what changed |
-| `source` | `"api"`, `"mcp"`, or `"dashboard"` |
+| `source` | `"api"` or `"mcp"` (dashboard writes go through the same `/api` routes, so they're also tagged `"api"`) |
 
 ### Querying the audit log
 
@@ -201,7 +194,7 @@ The audit log write is best-effort: it never raises exceptions, to avoid blockin
 | Secret key storage | `chmod 600` file or `VOICEGW_SECRET` env var |
 | API key exposure in responses | `mask()` applied to all API/MCP output |
 | Configuration changes | Audit log with timestamp, actor, and changes |
-| Plaintext key migration | Auto-detected and encrypted on startup |
+| Key rotation | `VOICEGW_SECRET_FALLBACK` + `voicegw rotate-secret` re-encrypts under a new primary |
 | Atomic secret file creation | `os.replace()` prevents partial writes |
 | Secret key change detection | Clear error message with recovery instructions |
 | MCP access control | Bearer token via `VOICEGW_MCP_TOKEN` |

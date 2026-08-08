@@ -94,7 +94,7 @@ The MCP server exposes 17 tools across four categories:
 | Models | `list_models`, `register_model`, `delete_model` |
 | Projects | `list_projects`, `get_project`, `create_project`, `delete_project` |
 
-See the [MCP tools reference](/mcp/tools/observability) for full documentation.
+See the [MCP tools reference](/mcp/tools) for full documentation.
 
 ## Related
 

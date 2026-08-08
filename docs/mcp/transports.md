@@ -1,122 +1,81 @@
 ---
-title: Transports
-description: VoiceGateway's MCP server supports stdio (local subprocess) and HTTP/SSE (network). Choose based on whether your agent runs locally or connects remotely.
+title: Transports & Authentication
+description: VoiceGateway's MCP server runs over stdio or HTTP/SSE. HTTP/SSE takes an optional VOICEGW_MCP_TOKEN bearer token; stdio has no network boundary to authenticate.
 ---
 
-The MCP server supports two transport modes: stdio and HTTP/SSE. The right choice depends on where your agent runs and how many agents share the gateway.
-
 ## stdio
-
-The stdio transport communicates over the process's standard input and output streams. The agent launches the MCP server as a subprocess and exchanges MCP protocol messages directly over stdin/stdout.
 
 ```bash
 voicegw mcp --transport stdio
 ```
 
-### Characteristics
-
-- No network involved. Communication is over stdin/stdout pipes.
-- No authentication. The agent owns the process, so there is no untrusted network boundary.
-- Single agent per process. One process serves one agent session.
-- Automatic lifecycle. The agent starts and stops the server as needed.
-
-### When to use stdio
-
-- Local development with Claude Code, Cursor, or Codex.
-- Single-developer workflows.
-- CI/CD scripts that need to query gateway state.
-
-### How it works
-
-1. The agent starts `voicegw mcp --transport stdio` as a subprocess.
-2. The agent writes MCP JSON-RPC messages to the process's stdin.
-3. The MCP server writes responses to stdout.
-4. When the agent session ends, the process exits.
+The agent launches the MCP server as a subprocess and exchanges MCP JSON-RPC messages over stdin/stdout. No network, no authentication (the agent already owns the process), one agent per process. This is the default transport: `voicegw mcp` with no flags uses it. Use it for local development with Claude Code, Cursor, or Codex.
 
 ## HTTP/SSE
 
-The HTTP/SSE transport runs a web server that agents connect to over the network. It uses Server-Sent Events (SSE) for the server-to-client stream and HTTP POST for client-to-server messages.
-
 ```bash
 voicegw mcp --transport http --host 0.0.0.0 --port 8090
 ```
 
-### Endpoints
+Runs a Starlette/uvicorn server. Agents open a long-lived `GET /sse` connection for the server-to-client stream and `POST /messages/` to send tool calls. Multiple agents can connect at once; the server runs until you stop it. Use it for a shared team gateway, or a remote agent that can't launch a local subprocess.
 
-| Endpoint | Method | Description |
+<Note>
+`voicegw serve` (the main API, `0.0.0.0:8080` by default) mounts this same MCP surface too, at `/mcp/sse` and `/mcp/messages/`, gated by the same `VOICEGW_MCP_TOKEN`. If `voicegw serve` is already running, you don't need a second `voicegw mcp` process for HTTP/SSE access.
+</Note>
+
+### Authentication
+
+Controlled by `VOICEGW_MCP_TOKEN`. Unset (the default): every request is accepted. Set: every request needs a matching `Authorization: Bearer <token>` header, checked with `hmac.compare_digest` for constant-time comparison. A missing or malformed header gets `401` with body `Missing bearer token`; a wrong token gets `401 Invalid token`. Only the `Bearer` scheme is accepted. stdio ignores this variable entirely: there's no network boundary to protect.
+
+```bash
+export VOICEGW_MCP_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+voicegw mcp --transport http --host 0.0.0.0 --port 8090
+```
+
+```json
+{
+  "mcpServers": {
+    "voicegateway": {
+      "url": "http://your-server:8090/sse",
+      "headers": { "Authorization": "Bearer <the-token>" }
+    }
+  }
+}
+```
+
+<Warning>
+Set `VOICEGW_MCP_TOKEN` and put the HTTP transport behind a reverse proxy with TLS before exposing it beyond localhost. Leaving it unset is appropriate for local development, an internal network already behind a VPN, or when a reverse proxy handles auth upstream.
+</Warning>
+
+Example proxy config (buffering off, so SSE actually streams):
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name mcp.yourdomain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8090;
+        proxy_set_header Host $host;
+        proxy_set_header Connection '';
+        proxy_http_version 1.1;
+        chunked_transfer_encoding off;
+        proxy_buffering off;
+    }
+}
+```
+
+## Comparison
+
+| | stdio | HTTP/SSE |
 |---|---|---|
-| `/sse` | GET | SSE connection point. The agent opens a long-lived connection here to receive messages. |
-| `/messages/` | POST | The agent sends tool calls and other MCP messages here. |
-
-### Characteristics
-
-- Network-based. Agents connect over HTTP.
-- Optional bearer token authentication. Controlled by `VOICEGW_MCP_TOKEN`. See [Authentication](/mcp/authentication).
-- Multiple simultaneous agents. Several agents can connect at the same time.
-- Persistent. The server runs until you stop it manually.
-
-### When to use HTTP/SSE
-
-- Shared team gateways where multiple developers need access.
-- Remote agents that cannot launch local processes.
-- Production environments behind a reverse proxy with TLS.
-
-## Transport comparison
-
-| Feature | stdio | HTTP/SSE |
-|---|---|---|
-| Network required | No | Yes |
-| Authentication | None | Bearer token (optional) |
+| Network | No | Yes |
+| Auth | None | Bearer token (optional, `VOICEGW_MCP_TOKEN`) |
 | Concurrent agents | 1 | Many |
-| Agent launches server | Yes | No (run separately) |
-| Setup complexity | Minimal | Moderate |
-| Best for | Local dev | Team / production |
-
-## Configuration examples
-
-### stdio with Claude Code
-
-```json
-{
-  "mcpServers": {
-    "voicegateway": {
-      "command": "voicegw",
-      "args": ["mcp", "--transport", "stdio"]
-    }
-  }
-}
-```
-
-### HTTP/SSE with authentication
-
-Start the server:
-
-```bash
-export VOICEGW_MCP_TOKEN=my-secret-token
-voicegw mcp --transport http --host 0.0.0.0 --port 8090
-```
-
-Agent config:
-
-```json
-{
-  "mcpServers": {
-    "voicegateway": {
-      "url": "http://gateway.internal:8090/sse",
-      "headers": {
-        "Authorization": "Bearer my-secret-token"
-      }
-    }
-  }
-}
-```
-
-<Tip>
-The default transport when you run `voicegw mcp` with no flags is stdio. You only need to pass `--transport stdio` explicitly when the agent config requires the flag.
-</Tip>
+| Who starts the server | The agent | You, separately |
 
 ## Next steps
 
-- [Authentication](/mcp/authentication): secure the HTTP transport with a bearer token.
-- [Setup](/mcp/setup): full per-agent configuration examples.
+- [Setup](/mcp/setup): per-agent configuration.
 - [CLI reference: mcp](/cli/mcp): all flags for `voicegw mcp`.
+- [Environment variables](/configuration/environment-variables): the full VoiceGateway env var list.

@@ -1,22 +1,17 @@
 ---
 title: "Development Setup"
-description: "Set up a local development environment for VoiceGateway: clone, install, run tests, and work on the dashboard."
+description: "Clone, install, and run the VoiceGateway test suite locally."
 ---
-This guide walks you through setting up a local development environment for VoiceGateway.
-
 ## Prerequisites
 
-- **Python 3.11+** -- check with `python --version`
-- **Node.js 18+** -- for the dashboard frontend (`node --version`)
-- **Git** -- for version control
-- **Docker** (optional) -- for running containerized tests or local Ollama
+- **Python 3.11+** (`python --version`)
+- **Git**
+- **Node.js 18+** if you are working on the dashboard frontend (`src/dashboard/frontend/`)
 
 ## Clone and install
 
 <Steps>
   <Step title="Fork and clone">
-    Fork the repo on GitHub, then clone your fork:
-
     ```bash
     git clone https://github.com/<your-username>/voicegateway.git
     cd voicegateway
@@ -28,7 +23,6 @@ This guide walks you through setting up a local development environment for Voic
     uv venv
     source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-    # Install with all development extras
     uv pip install -e ".[dev]"
     ```
 
@@ -40,29 +34,26 @@ This guide walks you through setting up a local development environment for Voic
     ```
     </CodeGroup>
 
-    This installs:
-    - All 11 provider SDKs (`all`)
-    - Dashboard dependencies (`dashboard`)
-    - MCP server dependencies (`mcp`)
-    - Test tools: pytest, pytest-asyncio, pytest-cov (`dev`)
+    The `dev` extra pulls in the `livekit` and `dashboard` extras plus pytest, ruff-adjacent tooling not covered by pre-commit (mypy is installed separately, see below), and the ClickHouse/DuckDB test dependencies. Every `voicegw` subcommand needs the `livekit` extra: `cli/__init__.py` imports the LiveKit CLI module at package load time, so an editable install without it fails to import `voicegateway.cli` at all.
   </Step>
 </Steps>
 
 ## Pre-commit hooks
-
-Install pre-commit hooks to catch issues before committing:
 
 ```bash
 pip install pre-commit
 pre-commit install
 ```
 
-The hooks run:
-- **ruff check** -- linting (pycodestyle, pyflakes, isort, bugbear, comprehensions, pyupgrade)
-- **ruff format** -- code formatting (Black-compatible)
-- **mypy** -- type checking
+The hooks run `ruff check --fix` and `ruff format` on every commit (`.pre-commit-config.yaml`). They do not run mypy: mypy runs in CI only. Run it locally before pushing:
 
-To run hooks manually on all files:
+```bash
+uv run --with 'mypy<2' --with types-PyYAML mypy
+```
+
+See [Code Style](/contributing/code-style) for why mypy is pinned below 2.
+
+To run the pre-commit hooks manually on all files:
 
 ```bash
 pre-commit run --all-files
@@ -71,142 +62,58 @@ pre-commit run --all-files
 ## Running tests
 
 ```bash
-# Run all tests
-pytest
-
-# Run a specific file
-pytest src/voicegateway/tests/core/test_config.py
-
-# Run a specific test
-pytest src/voicegateway/tests/core/test_config.py::test_name
-
-# Run with coverage report
-pytest --cov
-
-# Run with verbose output
-pytest -v
+pytest                                                          # everything
+pytest src/voicegateway/tests/core/test_config.py               # one file
+pytest src/voicegateway/tests/core/test_config.py::test_name    # one test
+pytest --cov                                                     # with coverage
+pytest -v                                                         # verbose
 ```
 
-Tests use `asyncio_mode = "auto"` so you do not need `@pytest.mark.asyncio` decorators. See the [testing guide](/contributing/testing) for details on writing tests and using fixtures.
+`asyncio_mode = "auto"` is set in `pyproject.toml`, so async test functions run without a `@pytest.mark.asyncio` decorator. See [Testing](/contributing/testing) for fixtures and patterns.
 
 ## Verify everything works
 
 ```bash
-# Linting
 ruff check .
-
-# Type checking
-mypy
-
-# Tests
+uv run --with 'mypy<2' --with types-PyYAML mypy
 pytest
-
-# CLI
 voicegw --version
 voicegw status
 ```
 
-## Dashboard development
+## Dashboard frontend
 
-The dashboard has a FastAPI backend and a React/TypeScript/Vite frontend.
+There is no separate dashboard backend process. `voicegw serve` (the daemon) serves both `/v1/*` and `/api/*` plus the built React SPA at `/`, all on one port (`0.0.0.0:8080` by default). `voicegw dashboard` does not start anything; it opens your browser at that same address.
 
-### Backend
-
-The dashboard API lives in `src/dashboard/api/`. It starts automatically when you run:
+To work on the frontend with hot reload:
 
 ```bash
-voicegw dashboard
-```
-
-This serves the API on port 9090 and the frontend (if built) from `src/dashboard/frontend/dist/`.
-
-### Frontend
-
-```bash
+voicegw serve            # in one terminal
 cd src/dashboard/frontend
-
-# Install dependencies
 npm install
-
-# Start dev server (hot reload)
-npm run dev
-
-# Build for production
-npm run build
+npm run dev              # in another terminal
 ```
 
-The dev server runs on `http://localhost:5173` and proxies API requests to the dashboard backend on port 9090.
-
-The frontend uses:
-- **React 18** with TypeScript
-- **Vite** for bundling
-- **Recharts** for cost and latency visualizations
-- **Neo-Brutalism** design aesthetic (bold borders, solid shadows, high contrast)
+The Vite dev server runs on `http://localhost:5173` and proxies `/api`, `/v1`, and `/static/branding` to `http://localhost:8080`. `npm run build` produces the production bundle the daemon serves from disk.
 
 ## Documentation site
 
-VoiceGateway owns the Markdown source under `docs/`. The rendered docs site is published at `https://docs.voicegateway.dev` via Mintlify.
-
-When docs changes reach `main`, `.github/workflows/docs.yml` triggers a Mintlify rebuild through the configured deploy hook secret.
-
-## Project structure
-
-```
-voicegateway/
-  voicegateway/
-    __init__.py          # Public API: Gateway, ModelId, GatewayConfig
-    core/
-      gateway.py         # Main orchestrator
-      config.py          # YAML config parser
-      router.py          # provider/model resolution
-      registry.py        # Provider name -> class mapping
-      model_id.py        # "provider/model" string parser
-    providers/
-      base.py            # BaseProvider ABC
-      openai_provider.py # One file per provider (11 total)
-      ...
-    middleware/
-      cost_tracker.py    # Per-request cost calculation
-      budget_enforcer.py # Daily budget checks
-      fallback.py        # Fallback chain logic
-      rate_limiter.py    # Per-provider rate limiting
-      latency_monitor.py # TTFB + total latency
-      logger.py          # Request metadata logging
-    storage/
-      sqlite.py          # SQLite backend
-      models.py          # RequestRecord dataclass
-    pricing/
-      catalog.py         # Per-model pricing data
-    server.py            # FastAPI HTTP API
-    cli.py               # Typer CLI
-    mcp/                 # MCP server (17 tools)
-  dashboard/
-    api/                 # Dashboard FastAPI backend
-    frontend/            # React/TypeScript/Vite frontend
-  tests/
-    conftest.py          # Shared fixtures
-    test_*.py            # Test files
-  docs/                  # Markdown docs source
-  pyproject.toml         # Project metadata, dependencies, tool config
-```
-
-The starter config template that `voicegw init` writes lives at `src/voicegateway/data/voicegw.example.yaml` (loaded via `importlib.resources` so the wheel ships it).
+Docs source lives in this repo under `docs/`. Mintlify renders it at `https://docs.voicegateway.dev` from the default branch. Change the docs in the same PR as any behavior or API change; see [Contributing](/contributing/index).
 
 ## Environment variables for development
 
-Tests use fake API keys set by the `_test_env` autouse fixture, so you do not need real keys to run the test suite. For manual testing against real providers, set:
+The `_test_env` autouse fixture sets fake API keys for the whole test suite, so you do not need real provider keys to run `pytest`. For manual testing against real providers:
 
 ```bash
 export OPENAI_API_KEY=sk-...
 export DEEPGRAM_API_KEY=...
 export ANTHROPIC_API_KEY=...
 export CARTESIA_API_KEY=...
-# etc.
 ```
 
 ## Related pages
 
-- [Contributing](/contributing/index)
 - [Code Style](/contributing/code-style)
 - [Testing](/contributing/testing)
 - [Adding a Provider](/contributing/adding-a-provider)
+- [Refreshing Pricing](/contributing/refreshing-pricing)
