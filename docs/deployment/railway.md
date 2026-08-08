@@ -11,11 +11,9 @@ hostnames) is written from Railway's documented behavior and is not verified her
 UI changes; check their docs if a step does not match what you see.
 </Note>
 
-<Warning>
-**Boot requirement.** The image bakes `VOICEGW_CONFIG=/data/voicegw.yaml`. The daemon loads that file unconditionally at startup, before it binds a port. If nothing exists at that path it raises `ConfigError` and exits inside `main()`: `/health` never comes up, and Railway restarts the container forever. Env vars alone (including `VOICEGW_API_KEY`) do not satisfy this: you need an actual file at `VOICEGW_CONFIG`. Provide a `voicegw.yaml` and point `VOICEGW_CONFIG` at it, the same way this repo's `docker-compose.yml` and `docker-compose.collector.yml` do (mount the file, then set `VOICEGW_CONFIG` to its in-container path).
-
-The documented Railway mechanism for getting that file onto the container is a Railway volume, mounted at a fixed path and populated with the file (for example via a release command, or a custom image build that copies it in). This has not been confirmed against a live Railway deploy in this pass: verify it on your first deploy, and check the deploy logs for the `ConfigError` line if the service still restart-loops.
-</Warning>
+<Note>
+**Config is optional at boot.** The image bakes `VOICEGW_CONFIG=/data/voicegw.yaml`, but the server no longer requires that file. When it is absent the loader warns once and boots on built-in defaults, so `/health` comes up and the service does not restart-loop. A config file is how you declare providers, models, and projects; it is not a precondition for starting. Add one on a Railway volume and point `VOICEGW_CONFIG` at it when you want those.
+</Note>
 
 <Tip>
 This is the least-ops path. Cost is usage-based and higher than a self-managed VPS.
@@ -31,7 +29,7 @@ This is the least-ops path. Cost is usage-based and higher than a self-managed V
 
 1. In your Railway project, click **New** and choose **Docker Image**.
 2. Enter `mahimairaja/voicegateway:0.22.3` as the image.
-3. In the service settings, set the **exposed port** (also shown as "Port" or "Target Port") to `8080`.
+3. The exposed port is optional: the image binds `$PORT` when the platform sets one, which Railway does. Set it to `8080` only if you want to pin it. `VOICEGW_PORT` overrides both.
 
 ### Add Postgres
 

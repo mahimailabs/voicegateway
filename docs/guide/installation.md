@@ -140,16 +140,21 @@ a `.env` file Compose reads automatically. This repo's `docker-compose.yml`
 does both already: it mounts `./voicegw.yaml` and reads keys like
 `${DEEPGRAM_API_KEY}` from the environment.
 
-<Warning>
-  The image bakes a default `VOICEGW_CONFIG` pointing at a path nothing
-  creates, so the daemon exits at boot without a mounted config. Create one
-  first:
-</Warning>
-
 ```bash
 voicegw init
 docker compose up -d
 ```
+
+<Note>
+  The container itself boots without a config file: it warns once and falls back
+  to built-in defaults. `voicegw init` is still worth running first, because a
+  default-config daemon has no providers, models, or projects declared.
+
+  The CLI is stricter than the container. `voicegw serve`, `costs`, `logs`, and
+  `status` all resolve a config and raise `ConfigError` when there is none, so a
+  mistyped `--config` stays a hard error rather than silently starting on
+  defaults.
+</Note>
 
 Full production setup (published image, `.env`, health checks, persistent
 storage): [Docker deployment](/examples/docker-deployment).

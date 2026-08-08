@@ -11,11 +11,9 @@ hostnames) is written from Fly's documented behavior and is not verified here. F
 on its own schedule; check their docs if a step does not match what you see.
 </Note>
 
-<Warning>
-**Boot requirement.** The image bakes `VOICEGW_CONFIG=/data/voicegw.yaml`. The daemon loads that file unconditionally at startup, before it binds a port. If nothing exists at that path it raises `ConfigError` and exits inside `main()`: `/health` never comes up, and Fly restarts the machine forever. Setting secrets alone does not satisfy this; you need an actual file at `VOICEGW_CONFIG`. Provide a `voicegw.yaml` and point `VOICEGW_CONFIG` at it, the same way this repo's `docker-compose.yml` and `docker-compose.collector.yml` do (mount the file, then set `VOICEGW_CONFIG` to its in-container path).
-
-The documented Fly mechanism for getting that file onto the machine is a `[[files]]` block in `fly.toml`, which writes literal file content into the container at boot. This has not been confirmed against a live Fly deploy in this pass: verify it on your first deploy, and if the machine keeps restarting, `fly logs` will show the `ConfigError` line.
-</Warning>
+<Note>
+**Config is optional at boot.** The image bakes `VOICEGW_CONFIG=/data/voicegw.yaml`, but the server no longer requires that file. When it is absent the loader warns once and boots on built-in defaults, so `/health` comes up and the machine does not restart-loop. A config file is how you declare providers, models, and projects; it is not a precondition for starting. Mount or write one when you want those, using a `[[files]]` block in `fly.toml` or a volume, and point `VOICEGW_CONFIG` at it.
+</Note>
 
 <Tip>
 Deploy in a region close to where your agents run to cut ingest latency: `--region` on `fly deploy`, or `primary_region` in `fly.toml`.
@@ -39,7 +37,7 @@ app = "<your-app-name>"
   image = "mahimairaja/voicegateway:0.22.3"
 
 [http_service]
-  internal_port = 8080
+  internal_port = 8080  # optional: the image binds $PORT when the platform sets one
   force_https = true
   auto_stop_machines = false
   min_machines_running = 1
