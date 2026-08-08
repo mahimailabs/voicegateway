@@ -122,7 +122,13 @@ WORKDIR /app
 
 EXPOSE 8080
 
+# Resolves the port EXACTLY as server.main does: VOICEGW_PORT, else the
+# platform's PORT, else 8080. Hardcoding 8080 here made the container
+# permanently unhealthy the moment a platform injected PORT, because the app
+# then listened somewhere this probe never looked. That is not cosmetic:
+# docker-compose.yml gates the dashboard on `condition: service_healthy`, so an
+# unhealthy daemon means the dashboard never starts at all.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -fsS http://localhost:8080/health || exit 1
+    CMD curl -fsS "http://localhost:${VOICEGW_PORT:-${PORT:-8080}}/health" || exit 1
 
 CMD ["python", "-m", "voicegateway.server.main"]
