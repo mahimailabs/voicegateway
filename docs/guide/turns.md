@@ -2,7 +2,7 @@
 title: Turns and transcripts
 description: What VoiceGateway records per caller-agent exchange, how that differs from the call transcript, and where both surface.
 ---
-A **turn** is one caller-agent exchange: the caller speaks, the caller stops, the agent responds. VoiceGateway can capture the timing of that exchange in a `turns` table, separate from the call **transcript** (the text of what was said) in `transcript_turns`. The two are captured by different code paths and are not row-aligned.
+A **turn** is one caller-agent exchange: the caller speaks, the caller stops, the agent responds. VoiceGateway captures the timing of that exchange in a `turns` table, separate from the call **transcript** (the text of what was said) in `transcript_turns`. The two are captured by different code paths and are not row-aligned.
 
 ## What a turn is
 
@@ -30,9 +30,40 @@ The transcript is a separate capture: at session close, [`attach()`](/guide/atta
 
 Because a `TurnRow` measures speech timing and a transcript row carries text from the framework's own history, nothing joins them 1:1: a session can have a transcript with no turns, or turns with no transcript, depending on what's wired up.
 
-## Is it on by default?
+## Turning it on
 
-Transcript capture is: `attach()` turns it on unless you opt out. Turn capture is not: nothing in `attach()`'s metric path writes to `turns`, and there's no `voicegw.yaml` switch for it either. A `metrics:` block does exist under `projects.<id>` (`turn_buffer_flush_size`, `talk_over_min_overlap_ms`) and validates, but nothing in the codebase currently reads it back at runtime (`src/voicegateway/schemas/config_schema.py:43-47`). Populating `turns` requires binding a `TurnTracker` (`voicegateway.middleware.turn_tracker_middleware`) to the live session yourself, a lower-level integration point than [`attach()`](/guide/attach)/[`guard()`](/guide/guard) and outside the scope of this page.
+On by default, like the transcript:
+
+```python
+voicegateway.attach(session, project="my-agent")            # turns captured
+voicegateway.attach(session, project="my-agent", turns=False)  # not captured
+```
+
+`VOICEGW_TURNS=0` forces it off fleet-wide and beats the argument, the same shape as
+`VOICEGW_TRANSCRIPTS`. It defaults on because a turn row is four timestamps and an index:
+no utterance, no prompt, no tool payload, so it is not the disclosure that
+[`snapshots`](/cli/replay) is.
+
+<Warning>
+LiveKit only. Pipecat accepts `turns=` for signature parity but has no equivalent
+speech-boundary events, so no rows are written there and `e2e_ms` stays null.
+</Warning>
+
+### Two knobs, per project
+
+Both live under `projects.<id>.metrics` in `voicegw.yaml`, not at the top level:
+
+| Key | Default | Effect |
+|---|---|---|
+| `turn_buffer_flush_size` | `25` | Rows buffered before the tracker writes |
+| `talk_over_min_overlap_ms` | `100` | Minimum caller/agent overlap counted as a talk-over |
+
+`talk_over_min_overlap_ms` changes a published number rather than just a threshold: the
+query used to count any overlap at all, so talk-over rates measured before and after are
+not comparable.
+
+Feeding turns from outside a LiveKit session is possible too. `POST /v1/ingest/turns`
+takes a batch directly; see the [HTTP API](/api/http-api).
 
 ## Where you see it
 
