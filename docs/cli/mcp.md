@@ -2,9 +2,6 @@
 title: voicegw mcp
 description: Start the VoiceGateway MCP server so coding agents can inspect and manage the gateway via stdio or HTTP/SSE.
 ---
-
-# voicegw mcp
-
 Start the VoiceGateway MCP (Model Context Protocol) server.
 
 ## Synopsis
@@ -97,7 +94,7 @@ The MCP server exposes 17 tools across four categories:
 | Models | `list_models`, `register_model`, `delete_model` |
 | Projects | `list_projects`, `get_project`, `create_project`, `delete_project` |
 
-See the [MCP tools reference](/mcp/tools/observability) for full documentation.
+See the [MCP tools reference](/mcp/tools) for full documentation.
 
 ## Related
 

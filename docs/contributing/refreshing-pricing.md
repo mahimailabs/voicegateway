@@ -2,9 +2,6 @@
 title: "Refreshing Model Pricing"
 description: "How to update rates in voice-prices and bump the VoiceGateway pin when provider pricing changes or a model is missing."
 ---
-
-# Refreshing Model Pricing
-
 VoiceGateway prices every modality (LLM, STT, and TTS) through
 [voice-prices](https://github.com/mahimailabs/voice-prices), a fork of
 `pydantic/genai-prices` that covers all three modalities. VoiceGateway no
@@ -51,7 +48,7 @@ lives upstream rather than in this repo.
     Publish a new `voice-prices` version to PyPI.
   </Step>
   <Step title="Bump the pin and run pricing tests">
-    Update the pin in VoiceGateway's `pyproject.toml` (`voice-prices>=<new-version>,<0.1`) and re-run the pricing tests:
+    Update the lower bound in VoiceGateway's `pyproject.toml` dependency spec (currently `voice-prices>=0.1.0,<0.2`) to the new version, and re-run the pricing tests:
 
     ```bash
     pytest src/voicegateway/tests/pricing/ -q

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from dataclasses import dataclass, field
@@ -29,6 +30,9 @@ _CONFIG_PATHS = [
     Path.home() / ".config" / "voicegateway" / "voicegw.yaml",
     Path("/etc/voicegateway/voicegw.yaml"),
 ]
+
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigError(Exception):
@@ -164,12 +168,38 @@ class GatewayConfig:
     rate_card: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def load(cls, config_path: str | Path | None = None) -> GatewayConfig:
-        """Load configuration from a YAML file."""
+    def load(
+        cls, config_path: str | Path | None = None, *, required: bool = True
+    ) -> GatewayConfig:
+        """Load configuration from a YAML file.
+
+        ``required=False`` returns built-in defaults instead of raising when no
+        file can be found, and is how the SERVER entrypoint loads.
+
+        That distinction is the difference between a container that boots and
+        one that crash-loops. The published image bakes
+        ``VOICEGW_CONFIG=/data/voicegw.yaml``, and nothing in the image creates
+        that file, so on any host that does not mount one this raised
+        ``ConfigError`` inside ``main()`` BEFORE uvicorn bound a port. The
+        platform then reports a failing healthcheck or no healthy upstream, and
+        the actual cause (one missing file) appears nowhere in that message.
+        Railway and Fly both hit it.
+
+        An empty config is entirely valid: no providers, no auth, storage still
+        resolvable from ``VOICEGW_DB_URL`` / ``VOICEGW_DB_PATH``. A collector
+        started from the image with a database URL and an API key needs nothing
+        from a YAML file, so requiring one bought nothing and cost the deploy.
+
+        ``required=True`` stays the default so an explicit ``--config`` typo is
+        still a hard error rather than a silent fall back to defaults, which
+        would start an agent with none of the providers its operator wrote down.
+        """
         if config_path is None:
             config_path = os.environ.get("VOICEGW_CONFIG")
 
-        path = cls._resolve_path(config_path)
+        path = cls._resolve_path(config_path, required=required)
+        if path is None:
+            return cls._parse({})
         raw = cls._read_yaml(path)
         raw = _substitute_env_vars(raw)
         cls._validate(raw)
@@ -193,18 +223,38 @@ class GatewayConfig:
             raise ConfigError("\n".join(lines)) from None
 
     @classmethod
-    def _resolve_path(cls, config_path: str | Path | None) -> Path:
+    def _resolve_path(
+        cls, config_path: str | Path | None, *, required: bool = True
+    ) -> Path | None:
+        """The config file to read, or None when there is none and that is allowed.
+
+        Returns None only when ``required`` is False and nothing was found. The
+        caller then builds defaults. See :meth:`load`.
+        """
         if config_path is not None:
             p = Path(config_path)
-            if not p.exists():
+            if p.exists():
+                return p
+            if required:
                 raise ConfigError(f"Config file not found: {p}")
-            return p
+            # Named but absent, and the caller can live without one. Say so
+            # once, loudly, and keep looking: the image bakes a path it does
+            # not create, so this is the normal container start, not an error.
+            logger.warning(
+                "VOICEGW_CONFIG points at %s, which does not exist. Continuing "
+                "without it. Providers and auth come from that file, so an "
+                "empty config means none are configured; storage still reads "
+                "VOICEGW_DB_URL / VOICEGW_DB_PATH.",
+                p,
+            )
 
         for p in _CONFIG_PATHS:
             if p.exists():
                 return p
 
-        raise ConfigError("No voicegw.yaml found. Create one with: voicegw init")
+        if required:
+            raise ConfigError("No voicegw.yaml found. Create one with: voicegw init")
+        return None
 
     @classmethod
     def _read_yaml(cls, path: Path) -> dict:

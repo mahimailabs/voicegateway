@@ -1,11 +1,8 @@
 ---
 title: "Testing"
-description: "pytest setup, shared fixtures, async test patterns, mocking strategies, and coverage expectations for VoiceGateway."
+description: "pytest setup, shared fixtures, async test patterns, and coverage expectations for VoiceGateway."
 ---
-
-# Testing
-
-VoiceGateway has 200+ tests with over 70% code coverage. This guide covers running tests, writing new ones, and using the shared fixtures.
+Tests live under `src/voicegateway/tests/`, mirroring the package layout (`tests/middleware/` for `middleware/`, `tests/core/` for `core/`, and so on). The coverage gate is `fail_under` under `[tool.coverage.report]` in `pyproject.toml`.
 
 ## Running tests
 
@@ -25,137 +22,117 @@ pytest --cov
 # Run with coverage and show missing lines
 pytest --cov --cov-report=term-missing
 
-# Run verbose (see each test name)
-pytest -v
-
 # Stop at first failure
 pytest -x
 ```
 
 ## pytest configuration
 
-VoiceGateway uses `asyncio_mode = "auto"` in `pyproject.toml`:
+`pyproject.toml` sets:
 
 ```toml
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["src/voicegateway/tests"]
 ```
 
-This means:
-- **No `@pytest.mark.asyncio` needed** -- async test functions are detected automatically
-- **All tests run in the same event loop policy** -- no loop conflicts
-- Test files live in the `src/voicegateway/tests/` directory
+`asyncio_mode = "auto"` means async `def test_...` functions run without a `@pytest.mark.asyncio` decorator.
 
 ## Shared fixtures
 
-The `src/voicegateway/tests/conftest.py` file provides four key fixtures:
+`src/voicegateway/tests/conftest.py` defines:
 
 ### `_test_env` (autouse)
 
-Runs automatically for every test. Sets fake API keys so provider constructors do not fail:
+Sets fake API keys (`OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `CARTESIA_API_KEY`, `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `ELEVENLABS_API_KEY`, `ASSEMBLYAI_API_KEY`) via `monkeypatch` so provider constructors never fail on a missing key. Runs for every test automatically.
 
-```python
-@pytest.fixture(autouse=True)
-def _test_env(monkeypatch):
-    for key in [
-        "OPENAI_API_KEY",
-        "DEEPGRAM_API_KEY",
-        "CARTESIA_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "GROQ_API_KEY",
-        "ELEVENLABS_API_KEY",
-        "ASSEMBLYAI_API_KEY",
-    ]:
-        monkeypatch.setenv(key, "test-key-value")
-```
+### `_isolate_db_path_env` (autouse)
 
-You never need to call this fixture explicitly -- it is autouse.
+Snapshots and restores `VOICEGW_DB_PATH` around each test. `VOICEGW_DB_PATH` beats every other DB path source, so a test that sets it and forgets to unset it redirects every later `StorageService` in the run into one shared file. If you see `no such table` on a test's own tmp database, or a UNIQUE-constraint collision between unrelated tests, this is usually the cause: check for a leaked `monkeypatch.setenv("VOICEGW_DB_PATH", ...)` outside this fixture's protection.
 
 ### `example_config_path`
 
-Writes the bundled starter config (sourced from `src/voicegateway/data/voicegw.example.yaml`) to a tmp file and returns its path. Use this to test config loading against the shipped example:
+Writes the bundled starter config (`src/voicegateway/data/voicegw.example.yaml`) to a tmp file and returns its path:
 
 ```python
-def test_load_example(example_config_path):
+def test_load_example_config(example_config_path):
+    from voicegateway.core.config import GatewayConfig
+
     config = GatewayConfig.load(example_config_path)
     assert config.providers
 ```
 
 ### `temp_config`
 
-Writes a minimal `voicegw.yaml` to a temporary directory and returns its path. The config includes OpenAI and Deepgram providers, one STT model, one LLM model, two projects (`test-project` and `blocked-project`), and cost tracking enabled:
+Writes a minimal `voicegw.yaml` (OpenAI + Deepgram providers, one STT model, one LLM model, a `test-project` and `blocked-project`, cost tracking on) to a tmp directory, points `VOICEGW_DB_PATH` at an isolated file, and returns the config path:
 
 ```python
 def test_gateway_init(temp_config):
+    from voicegateway.core.gateway import Gateway
+
     gw = Gateway(config_path=temp_config)
     assert gw is not None
 ```
 
 ### `seeded_storage`
 
-Creates a `SQLiteStorage` instance pre-loaded with three sample `RequestRecord` entries:
+Async fixture. Creates a `StorageService` (`src/voicegateway/services/storage_service.py`) pre-loaded with three sample `RequestRecord` rows:
 
-| Record | Modality | Model | Project | Cost |
-|---|---|---|---|---|
-| 1 | stt | deepgram/nova-3 | test-project | $0.0043 |
-| 2 | llm | openai/gpt-4o-mini | test-project | $0.015 |
-| 3 | llm | openai/gpt-4o-mini | default | $0.008 |
+| Modality | Model | Project | Cost |
+|---|---|---|---|
+| stt | deepgram/nova-3 | test-project | $0.0043 |
+| llm | openai/gpt-4o-mini | test-project | $0.015 |
+| llm | openai/gpt-4o-mini | default | $0.008 |
 
 ```python
 async def test_query_costs(seeded_storage):
-    costs = await seeded_storage.get_costs(project="test-project")
-    assert len(costs) == 2
+    summary = await seeded_storage.get_cost_summary("today", project="test-project")
+    assert summary["total"] == pytest.approx(0.0043 + 0.015)
 ```
 
 ## Writing tests
 
-### Test file naming
-
-- Test files: `src/voicegateway/tests/test_<module>.py`
-- Test functions: `test_<what_it_tests>`
-- Test classes (grouping related tests): `TestClassName`
+File-name pattern: `test_<module>.py`. Function-name pattern: `test_<behaviour>`.
 
 ### Async tests
 
-Write async tests as regular `async def` functions. The `asyncio_mode = "auto"` setting handles the rest:
+Write plain `async def test_...` functions; `asyncio_mode = "auto"` picks them up without a decorator. The next section has a full example.
+
+### Mocking a provider's health check
+
+`BaseProvider.health_check()` is the only method a provider subclass exercises in production (the health-check surface: dashboard **Test Connection**, `voicegw doctor`, the MCP server's admin `test_provider` tool). Follow `src/voicegateway/tests/providers/test_cartesia_health_check.py`: mock `httpx.AsyncClient`, not the provider method itself.
 
 ```python
-async def test_health_check():
-    provider = OpenAIProvider({"api_key": "test-key"})
-    # Mock the HTTP call
-    result = await provider.health_check()
-    assert result is True
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from voicegateway.inference.providers.cartesia_provider import CartesiaProvider
+
+
+async def test_health_check_returns_false_on_400():
+    provider = CartesiaProvider({"api_key": "sk_car_test"})
+    response = MagicMock(status_code=400)
+    client = MagicMock()
+    client.get = AsyncMock(return_value=response)
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=client)
+    ctx.__aexit__ = AsyncMock(return_value=None)
+    with patch("httpx.AsyncClient", return_value=ctx):
+        assert await provider.health_check() is False
 ```
 
-### Mocking providers
-
-Providers make HTTP calls to external APIs. Always mock these in tests:
+### Resolving a `provider/model` string
 
 ```python
-from unittest.mock import AsyncMock, patch
+from voicegateway.core.model_resolution import ModelResolutionError, resolve_model
 
 
-async def test_stt_fallback():
-    with patch(
-        "voicegateway.providers.deepgram_provider.DeepgramProvider.health_check",
-        new_callable=AsyncMock,
-        return_value=False,
-    ):
-        # Deepgram is "down", fallback should kick in
-        ...
-```
+def test_resolve_model():
+    assert resolve_model("deepgram/nova-3") == ("deepgram", "nova-3")
 
-### Mocking the config
 
-Use `temp_config` for tests that need a Gateway instance, or construct configs directly:
-
-```python
-def test_router_resolution(temp_config):
-    config = GatewayConfig.load(temp_config)
-    router = Router(config)
-    provider, model = router.resolve("openai/gpt-4o-mini", "llm")
-    assert model == "gpt-4o-mini"
+def test_resolve_model_unknown_provider():
+    with pytest.raises(ModelResolutionError, match="Unknown provider"):
+        resolve_model("made-up-co/whisper-1")
 ```
 
 ### Testing cost calculations
@@ -163,69 +140,58 @@ def test_router_resolution(temp_config):
 ```python
 from decimal import Decimal
 
-from voicegateway.inference.pricing import catalog
+from voicegateway.inference.pricing import stt
 
 
 def test_deepgram_nova3_pricing():
-    """One minute of Deepgram Nova-3 STT prices at $0.0043 via the catalog."""
-    cost = catalog.calculate_cost("stt", "deepgram/nova-3", audio_seconds=60)
-    assert cost == Decimal("0.0043")
+    assert stt.calculate_stt_cost("deepgram/nova-3", 60) == Decimal("0.0048")
 ```
 
-### Testing middleware
+`voicegateway.inference.pricing.catalog.calculate_cost(modality, model, **units)` is the modality-dispatching entry point; `stt.py` / `llm.py` / `tts.py` do the actual voice-prices lookup per modality. See [Refreshing Pricing](/contributing/refreshing-pricing).
 
-Middleware wraps provider calls. Test the wrapping behavior:
+### Testing storage directly
 
 ```python
-async def test_budget_enforcer_blocks():
-    """Budget enforcer should raise when project exceeds daily budget."""
-    enforcer = BudgetEnforcer(storage=seeded_storage, config=config)
-    with pytest.raises(BudgetExceededError):
-        await enforcer.check("blocked-project")
-```
+import time
+import uuid
 
-## Mock patterns
+from voicegateway.models.request_model import RequestRecord
+from voicegateway.services.storage_service import StorageService
+
+
+async def test_log_request(tmp_path):
+    storage = StorageService(str(tmp_path / "test.db"))
+    await storage.log_request(
+        RequestRecord(
+            id=str(uuid.uuid4()),
+            timestamp=time.time(),
+            modality="stt",
+            model_id="deepgram/nova-3",
+            provider="deepgram",
+            project="test",
+            cost_usd=0.01,
+        )
+    )
+    rows = await storage.get_recent_requests(limit=10)
+    assert rows[0]["model_id"] == "deepgram/nova-3"
+```
 
 ### `monkeypatch.setenv` for environment variables
 
 ```python
-def test_custom_db_path(monkeypatch, tmp_path):
-    db_path = str(tmp_path / "custom.db")
-    monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
+def test_custom_db_path(monkeypatch, tmp_path, temp_config):
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "custom.db"))
+    from voicegateway.core.gateway import Gateway
+
     gw = Gateway(config_path=temp_config)
-    assert gw._storage is not None
-```
-
-### `tmp_path` for temporary files
-
-pytest's built-in `tmp_path` fixture provides a temporary directory unique to each test:
-
-```python
-async def test_sqlite_storage(tmp_path):
-    storage = SQLiteStorage(str(tmp_path / "test.db"))
-    await storage.log_request(record)
-```
-
-### `patch` for external HTTP calls
-
-```python
-from unittest.mock import patch, MagicMock
-
-def test_provider_creation():
-    with patch("voicegateway.providers.openai_provider.openai") as mock_openai:
-        provider = OpenAIProvider({"api_key": "test"})
-        llm = provider.create_llm("gpt-4o-mini")
-        assert llm is not None
+    assert gw.storage is not None
 ```
 
 ## Coverage expectations
 
-- New features must include tests
-- Bug fixes should include a regression test
-- Target: maintain above 70% overall coverage
-- Critical paths (Gateway, Router, CostTracker, BudgetEnforcer) should be above 90%
-
-Check coverage for specific modules:
+- New features must include tests.
+- Bug fixes should include a regression test.
+- The suite must stay at or above `fail_under` in `pyproject.toml`'s `[tool.coverage.report]`.
 
 ```bash
 pytest --cov=voicegateway.core --cov-report=term-missing

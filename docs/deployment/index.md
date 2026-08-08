@@ -2,9 +2,6 @@
 title: "Deploy VoiceGateway"
 description: "Ship the self-hosted VoiceGateway daemon to production: HTTP API and dashboard on one port, backed by Postgres or SQLite."
 ---
-
-# Deploy VoiceGateway
-
 The VoiceGateway daemon is a single container that serves:
 
 - `POST /v1/ingest` (agents push cost telemetry, Bearer-keyed)
@@ -55,7 +52,7 @@ For a single-node / SQLite setup (just yourself, no fleet), see [Docker deployme
 
 ## Connect your agent
 
-Once the daemon has a public HTTPS URL and you have the ingest key, point your agents at it. The explicit form:
+Point your agents at the daemon's public HTTPS URL and the ingest key. Explicit form:
 
 ```python
 from voicegateway import attach
@@ -64,7 +61,7 @@ from voicegateway import attach
 await attach(session, collector_url="https://<your-daemon-url>", api_key="<your-ingest-key>")
 ```
 
-The env-var form: set `VOICEGW_COLLECTOR_URL` and `VOICEGW_API_KEY` in the agent's environment, then call `attach(session)` with no extra arguments. The project is passed as `attach(session, project="prod")`.
+Env-var form: set `VOICEGW_COLLECTOR_URL` and `VOICEGW_API_KEY` on the agent, then call `attach(session)` with no extra arguments. Pass a project with `attach(session, project="prod")`.
 
 ## Verify
 
@@ -84,5 +81,5 @@ curl -s -o /dev/null -w "with-key: %{http_code}  (expect 2xx)\n" \
 Then open the daemon URL in a browser for the dashboard.
 
 <Note>
-The Postgres-backed daemon path works as of v0.9.2 (pin `>= 0.9.2`; the image is `mahimairaja/voicegateway:0.9.2`). The ingest key must not start with `vk_`. Only `/v1/ingest` and `/health` need to be public; all other endpoints can be firewall-restricted to your internal network.
+Current release: `v0.24.0`. Pin the image to a specific release or a minor channel (see [Auto-update](/deployment/auto-update)); never track `:latest` in production. The ingest key must not start with `vk_`. Only `/v1/ingest` and `/health` need to be public; the rest can be firewall-restricted to your internal network.
 </Note>

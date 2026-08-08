@@ -2,9 +2,6 @@
 title: voicegw onboard
 description: Four-question wizard that writes voicegw.yaml, registers the daemon, and prints the one line to add to your agent.
 ---
-
-# voicegw onboard
-
 Four-question wizard that gets VoiceGateway running from a fresh install.
 
 ## Synopsis

@@ -2,9 +2,6 @@
 title: Installation
 description: Install VoiceGateway with uv or pip. Pick the framework extra for LiveKit or Pipecat, then bring your own provider plugins. Python 3.11+ required.
 ---
-
-# Installation
-
 ## Requirements
 
 - Python 3.11 or later
@@ -42,8 +39,6 @@ native instances by `model_id` through `voice-prices`.
 
 <CodeGroup>
 ```bash uv
-uv pip install "voicegateway[livekit]"
-
 # One provider
 uv pip install livekit-plugins-openai
 
@@ -51,8 +46,6 @@ uv pip install livekit-plugins-openai
 uv pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
 ```
 ```bash pip
-pip install "voicegateway[livekit]"
-
 pip install livekit-plugins-openai
 
 pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
@@ -83,28 +76,28 @@ already configure.
 
 <CodeGroup>
 ```bash uv
-uv pip install "voicegateway[pipecat]"
 uv pip install "pipecat-ai[openai,deepgram,cartesia]"
 ```
 ```bash pip
-pip install "voicegateway[pipecat]"
 pip install "pipecat-ai[openai,deepgram,cartesia]"
 ```
 </CodeGroup>
 
 ## Additional extras
 
-VoiceGateway ships exactly five extras.
+VoiceGateway ships four runtime extras (`dev` is separate, for contributors:
+see [Install from source](#install-from-source)).
 
 | Extra | What it adds |
 |---|---|
 | `livekit` | LiveKit Agents seam for `attach()` / `guard()` |
 | `pipecat` | Pipecat seam for `attach()` / `guard()` |
-| `dashboard` | Prebuilt React dashboard bundle (`voicegw dashboard`) plus the HTTP API server |
-| `mcp` | MCP server for IDE integration |
-| `collector` | Self-hosted fleet collector (Postgres + DuckDB backend) |
+| `dashboard` | HTTP API server, the prebuilt React dashboard (`voicegw dashboard`), and the MCP server (`voicegw mcp`) |
+| `collector` | Self-hosted fleet collector: `dashboard` plus the Postgres + DuckDB backend |
 
-There are no per-provider or local-model extras. VoiceGateway meters native
+There is no standalone `mcp` extra: `voicegw mcp` ships inside `dashboard`
+(and so inside `collector` too). There are no per-provider or local-model
+extras either. VoiceGateway meters native
 provider instances and `local/*` and `ollama/*` model ids for free by
 `model_id`, so you bring the provider plugins and local runtimes yourself. For
 local models install the runtime directly: Whisper with
@@ -141,22 +134,31 @@ npm run build
 
 ## Docker
 
+`docker compose up` has no `-e` or `-v` flags. Provider keys and volume
+mounts belong in the compose file's `environment:`/`volumes:` blocks, or in
+a `.env` file Compose reads automatically. This repo's `docker-compose.yml`
+does both already: it mounts `./voicegw.yaml` and reads keys like
+`${DEEPGRAM_API_KEY}` from the environment.
+
 ```bash
-# HTTP API + dashboard on port 8080
+voicegw init
 docker compose up -d
-
-# Plus Ollama for local LLM
-docker compose --profile local up -d
 ```
 
-Mount your config and pass provider keys as environment variables:
+<Note>
+  Run `voicegw init` first. On images at or below `0.22.3` a missing config file
+  is fatal: the container exits at boot. From `0.24.0` it is only a warning and the
+  daemon boots on built-in defaults, but a default-config daemon has no providers,
+  models, or projects declared, so you want the file regardless.
 
-```bash
-docker compose up -d \
-  -e DEEPGRAM_API_KEY=your-key \
-  -e OPENAI_API_KEY=your-key \
-  -v ./voicegw.yaml:/app/voicegw.yaml
-```
+  The CLI is stricter than the container either way. `voicegw serve`, `costs`,
+  `logs`, and `status` all resolve a config and raise `ConfigError` when there is
+  none, so a mistyped `--config` stays a hard error rather than silently starting
+  on defaults.
+</Note>
+
+Full production setup (published image, `.env`, health checks, persistent
+storage): [Docker deployment](/examples/docker-deployment).
 
 ## Verify
 
@@ -166,7 +168,8 @@ voicegw status
 ```
 
 If `voicegw` is not on your PATH after a `uv pip install`, activate the
-environment or use `python -m voicegateway.cli --version`.
+environment, or call the entry point directly: `./.venv/bin/voicegw --version`
+(`.venv\Scripts\voicegw.exe --version` on Windows).
 
 ## Upgrading
 
@@ -179,11 +182,16 @@ pip install --upgrade voicegateway
 ```
 </CodeGroup>
 
-After upgrading, check for config schema changes:
+After upgrading, check for config schema changes by diffing your config
+against a fresh reference copy:
 
 ```bash
-voicegw init --diff
+voicegw init --full --output /tmp/voicegw.reference.yaml
+diff voicegw.yaml /tmp/voicegw.reference.yaml
 ```
+
+`voicegw init` only takes `--output`/`-o` and `--full`; there is no `--diff`
+flag.
 
 ## Troubleshooting
 
@@ -198,17 +206,13 @@ pip install livekit-plugins-deepgram
 
 **`ConfigError: No voicegw.yaml found`**
 
-VoiceGateway searches in this order:
-
-1. `./voicegw.yaml` (current directory)
-2. `~/.config/voicegateway/voicegw.yaml`
-3. `/etc/voicegateway/voicegw.yaml`
-
-Set `VOICEGW_CONFIG` to an explicit path, or run `voicegw init` to generate a
-starter config.
+Run `voicegw init` to generate a starter config, or set `VOICEGW_CONFIG` to
+an explicit path. See [config discovery
+order](/configuration/environment-variables#config-discovery-order) for the
+default search path.
 
 ## Next steps
 
-- [Quick start](/guide/quick-start): five-minute path from install to first cost row.
+- [Quickstart](/get-started): five-minute path from install to first cost row.
 - [First agent](/guide/first-agent): a complete worked agent with `attach()` and `guard()`.
 - [Frameworks and extras](/guide/frameworks): framework-neutral core explained.

@@ -37,6 +37,16 @@ Rules:
      special char must be quoted. Unquoted, YAML reads the colon as a key separator and
      `mint dev` fails to render the page ("syntax error in your frontmatter"). `mint
      broken-links` does NOT catch this, so it is gated here.
+ 10. No page body may open with an `# H1`. Mintlify renders the frontmatter `title:` as
+     the page heading, so a leading H1 in the body prints the title twice. This is
+     invisible in the Markdown and only shows up in a browser, which is how it survived
+     on 61 of 84 pages. Use `##` for the first in-page section.
+ 11. A `<Steps>` block must not contain a bare Markdown heading. Steps renders its
+     `<Step title="...">` children and nothing else, so a block built from `### Title`
+     renders EMPTY: the headings still reach the right-hand table of contents, so the
+     page looks populated while the body between them is simply absent. Same shape of
+     defect as rule 10, invisible in the Markdown and visible only in a browser. It hid
+     an entire deploy procedure and verification section on three pages.
 """
 
 from __future__ import annotations
@@ -73,6 +83,13 @@ _HREF_RE = re.compile(r"""href\s*=\s*["']([^"']+)["']""")
 # `## Heading {#anchor}` custom-id syntax: valid in some markdown flavors, but MDX parses
 # the `{...}` as a JS expression and acorn fails ("Could not parse expression").
 _HEADING_ANCHOR_RE = re.compile(r"^#{1,6}\s.*\{#[^}]+\}\s*$", re.MULTILINE)
+# `<Steps>` renders only its `<Step title=...>` children. A bare heading inside one
+# renders nothing at all, while still reaching the table of contents.
+_STEPS_BLOCK_RE = re.compile(r"<Steps>(.*?)</Steps>", re.DOTALL)
+_BARE_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+\S", re.MULTILINE)
+# A body-opening H1: up to three leading spaces (CommonMark's allowance), a single `#`
+# (not `##`+, which is a lower heading level), then a space or tab before the text.
+_H1_RE = re.compile(r"^ {0,3}#(?!#)[ \t]")
 
 
 def _iter_page_refs(nav_node) -> list[str]:
@@ -286,6 +303,26 @@ def main(argv: list[str]) -> int:
             errors.append(
                 f"[rule 8] '{slug}' uses a {{#anchor}} heading id "
                 f"(MDX cannot parse it): {m.group(0).strip()!r}"
+            )
+
+        # Rule 11: no bare heading inside a <Steps> block; it renders empty.
+        # Fences are stripped first so a `#` comment in a shell block is not a hit.
+        for block in _STEPS_BLOCK_RE.findall(_FENCE_RE.sub("\n", body)):
+            for m in _BARE_HEADING_RE.finditer(block):
+                errors.append(
+                    f"[rule 11] '{slug}' has a bare heading inside <Steps> "
+                    f"({m.group(0).strip()!r}); Steps renders only <Step title=...> "
+                    f"children, so this block renders EMPTY while its headings still "
+                    f"reach the table of contents. Wrap each step in <Step title=...>."
+                )
+
+        # Rule 10: no leading `# H1` in the body; Mintlify already renders title:.
+        first_line = next((ln for ln in body.splitlines() if ln.strip()), "")
+        if _H1_RE.match(first_line):
+            errors.append(
+                f"[rule 10] '{slug}' body opens with an H1 ({first_line.strip()!r}); "
+                f"Mintlify renders the frontmatter title, so this prints it twice. "
+                f"Use '##' for the first section."
             )
 
         # Rule 9: quote frontmatter title/description values that would misparse as YAML.

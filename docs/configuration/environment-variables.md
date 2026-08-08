@@ -2,9 +2,6 @@
 title: Environment variables
 description: Every environment variable VoiceGateway reads (config path, database, daemon bind, Fernet keys, MCP token, cloud ingest) and how ${VAR_NAME} substitution works in voicegw.yaml.
 ---
-
-# Environment variables
-
 VoiceGateway reads environment variables for configuration overrides, secret material, and daemon binding. Variables can also be referenced in `voicegw.yaml` using `${VAR_NAME}` syntax.
 
 ## VoiceGateway variables

@@ -388,6 +388,43 @@ Return the rate card **in effect**: the global default markup plus every rule, m
 curl http://localhost:8080/v1/billing/rate-card
 ```
 
+### GET /v1/billing/rate-card/models
+
+Distinct models seen in telemetry, each with its `voice-prices` unit cost and the rate rule that currently applies to it. Lets an operator spot stale prices and see which rule matches a model without cross-referencing `/rate-card/rules` by hand.
+
+**Response:**
+
+```json
+{
+  "models": [
+    {
+      "modality": "stt",
+      "provider": "deepgram",
+      "model": "nova-3",
+      "unit": "minute",
+      "voice_price_usd": 0.0043,
+      "effective": {
+        "modality": "stt",
+        "provider": "deepgram",
+        "model": "nova-3",
+        "kind": "fixed",
+        "unit_price_usd": 0.006,
+        "unit": "minute",
+        "rule": "fixed:0.006/minute"
+      }
+    }
+  ]
+}
+```
+
+`unit` is the canonical unit `voice_price_usd` is priced per: `minute` for STT, `1k_char` for TTS, `1m_token` for LLM. `voice_price_usd` is `null` when the model is not in the `voice-prices` catalog. `effective` is the matching rate-card rule (seed or DB override), or `null` when no explicit rule matches and the default markup applies.
+
+**Example:**
+
+```bash
+curl http://localhost:8080/v1/billing/rate-card/models
+```
+
 ### GET /v1/billing/rate-card/rules
 
 Return the editable DB override rules, each with its `rule_id`. Use this to drive an editor (the seed rules in `GET /rate-card` have no `rule_id`; only DB overrides are mutable).
@@ -713,6 +750,30 @@ Test connectivity to a provider by running its health check.
 curl -X POST http://localhost:8080/v1/providers/deepgram/test
 ```
 
+### POST /v1/providers/test
+
+Test connectivity for a provider type + credential **before** saving it, for an "add provider" form that wants to validate a key first. Unlike the route above, this takes no `provider_id`: nothing has to exist yet.
+
+**Request body:**
+
+```json
+{
+  "provider_type": "deepgram",
+  "api_key": "sk-your-api-key",
+  "base_url": null
+}
+```
+
+**Response:** same shape as `POST /v1/providers/{provider_id}/test`: `{"status": "ok" | "failed", "latency_ms": <int>, "message"?: <str>}`.
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:8080/v1/providers/test \
+  -H "Content-Type: application/json" \
+  -d '{"provider_type":"deepgram","api_key":"sk-your-api-key"}'
+```
+
 ---
 
 ## Models
@@ -1012,3 +1073,95 @@ curl -X POST http://localhost:8080/v1/calls/observations \
 **Writes are idempotent.** Reports are merged with the same upserts the webhook uses, keyed on `room_sid`/`attempt_id` (and `participant_sid` for legs), so a re-sent report is a no-op and a report that arrives before any webhook creates the row.
 
 **Configuration:** set `VG_DISABLE_CALL_OBSERVATIONS` to any value (other than `0`/`false`/`no`/`off`) to turn the path off: the endpoint then answers `503`, queues nothing, and starts no flusher. It is read per request, so it takes effect without a restart.
+
+## Fleet
+
+Two endpoints an agent process (not an operator) calls directly: presence for the dashboard's Fleet/Agents view, and telemetry ingest for a self-hosted collector. Both are written by [`register_worker`](/api/python-sdk#register_worker) and `attach(collector_url=...)` / `attach(heartbeat=True)`; you would only call them by hand when scripting a non-Python worker.
+
+### GET /v1/agents
+
+Return the live worker roster: processes that registered via `register_worker` or `attach(heartbeat=True)` and heartbeated recently. A worker ages out of the roster 45 seconds after its last heartbeat.
+
+This is presence only (idle/busy, version, host, memory), not cost or latency telemetry. For the fleet index with cost, p95 latency, and the probe button, see `GET /api/agents` on the [Dashboard API](/api/dashboard-api); the two are deliberately separate surfaces (roster vs. telemetry).
+
+**Response:**
+
+```json
+{
+  "workers": [
+    {
+      "agent_id": "order-taker",
+      "agent_name": "order-taker",
+      "project": "default",
+      "region": null,
+      "version": "0.22.3",
+      "host": "ip-10-0-1-4",
+      "active_sessions": 1,
+      "status": "busy",
+      "started_at": 1752460000.0,
+      "last_seen": 1752460800.0,
+      "memory_rss_bytes": 214958080,
+      "memory_total_bytes": 8589934592,
+      "memory_pct": 2.5
+    }
+  ]
+}
+```
+
+**Authentication:** read scope. Tenant-scoped like the other reads: an admin/operator sees every worker, a tenant-scoped key sees only its own, and a non-admin key with no tenant maps to the unattributed bucket. There is no `tenant` query parameter; scoping comes entirely from the caller's credential.
+
+**Example:**
+
+```bash
+curl http://localhost:8080/v1/agents
+```
+
+### POST /v1/agents/heartbeat
+
+Upsert the caller's own worker presence row. This is what `register_worker`'s collector-mode pusher and `attach(heartbeat=True)` POST every 15 seconds by default when a `collector_url` is configured; a `vk_` key can only write its own tenant (any `tenant_id` in the body is overridden by the authenticated key's tenant).
+
+**Request body:** the worker's presence snapshot: `agent_id`, `agent_name`, `dispatch_name`, `status`, `active_sessions`, `version`, `project`, `tenant_id`, `region`, `host`, `started_at`, `memory_rss_bytes`, `memory_total_bytes`, `cpu_pct`, `ts`.
+
+**Response:** `202` with `{"status": "accepted"}`.
+
+**Authentication:** `write` scope.
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:8080/v1/agents/heartbeat \
+  -H "Authorization: Bearer vk_..." \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id":"order-taker","agent_name":"order-taker","status":"idle","active_sessions":0,"version":"0.22.3","project":"default","host":"ip-10-0-1-4","ts":1752460800.0}'
+```
+
+### POST /v1/ingest
+
+Persist a batch of request records pushed by a fleet agent's `RemoteCollectorSink` (used when `attach(collector_url=...)` / `VOICEGW_COLLECTOR_URL` is set). This is the self-hosted collector's write path; a single-node deployment with no `collector_url` never calls it.
+
+**Request body:** a JSON array of request-record dicts (not wrapped in an object). Unknown keys are ignored; a record missing required fields is skipped and counted, not rejected as a batch. Each record is re-rated against the collector's own rate card before it is stored, so an agent-supplied `rated_price_usd` / `rate_rule` is overwritten: agents rate at cost pass-through, the collector is the source of truth for margins. See [Rating](/architecture/rating).
+
+**Response:**
+
+```json
+{ "accepted": 42, "duplicates": 0 }
+```
+
+A duplicate is a record `id` (UUID) already stored, from a sink retry; it is counted, not double-written.
+
+**Authentication:** `write` scope.
+
+| Status | Meaning |
+|---|---|
+| `413` | Batch larger than `ingest.max_batch_size` in `voicegw.yaml` (default 1000). |
+| `429` | Ingest rate limit exceeded (`ingest.requests_per_minute` / `ingest.burst`, defaults 120/240), keyed by virtual key, else API-key hash, else client IP. Carries `Retry-After`. |
+| `503` | Cost-tracking storage is disabled on this collector. |
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:8080/v1/ingest \
+  -H "Authorization: Bearer vk_..." \
+  -H "Content-Type: application/json" \
+  -d '[{"id":"...", "timestamp":1752460800.0, "modality":"stt", "provider":"deepgram", "model":"nova-3", "cost_usd":0.0021}]'
+```

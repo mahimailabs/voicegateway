@@ -46,6 +46,26 @@ Returns the configuration status of all providers, registered models, and fallba
 curl http://localhost:8080/api/status
 ```
 
+## GET /api/auth-status
+
+Report whether the deployment requires a token for mutating endpoints. The frontend calls this on load to decide whether to show the login gate; it never exposes key material.
+
+**Response:**
+
+```json
+{ "auth_required": true }
+```
+
+`auth_required` is `true` when `auth.api_keys` is set in `voicegw.yaml` or `VOICEGW_API_KEY` is set in the environment; `false` on the self-hosted default of neither. It does not look at `vk_` keys minted via the API: a deployment with only minted `vk_` keys and no static key reports `auth_required: false`, since the no-op auth gate throughout this API stays open until a static key exists.
+
+**Authentication:** none. This endpoint has to answer before the caller can present a token.
+
+**Example:**
+
+```bash
+curl http://localhost:8080/api/auth-status
+```
+
 ## GET /api/overview
 
 Return aggregated dashboard overview statistics. This endpoint combines multiple queries into a single response for the dashboard's summary cards.
@@ -114,6 +134,34 @@ curl "http://localhost:8080/api/costs?period=week"
 curl "http://localhost:8080/api/costs?period=today&project=tonys-pizza"
 ```
 
+## GET /api/costs/by-day
+
+Day-bucketed cost and request counts for the Overview trend chart.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `period` | `string` | `"week"` | One of: `today`, `week`, `month`, `all`. |
+| `project` | `string` | `null` | Filter by project ID. |
+| `tenant` | `string` | `null` | Same scoping as `/api/costs`: a non-admin caller cannot read a foreign tenant. |
+| `agent` | `string` | `null` | Filter to one agent ID. |
+
+**Response:** an array, ascending by day, each entry `{"day": <epoch seconds, UTC start-of-day>, "cost": <float>, "requests": <int>}`.
+
+```json
+[
+  { "day": 1752364800, "cost": 3.4521, "requests": 127 },
+  { "day": 1752451200, "cost": 2.1090, "requests": 88 }
+]
+```
+
+**Example:**
+
+```bash
+curl "http://localhost:8080/api/costs/by-day?period=month"
+```
+
 ## GET /api/latency
 
 Return latency statistics, optionally filtered by project.
@@ -132,6 +180,44 @@ Return latency statistics, optionally filtered by project.
 ```bash
 curl "http://localhost:8080/api/latency?period=today"
 curl "http://localhost:8080/api/latency?project=my-app"
+```
+
+## GET /api/metrics
+
+Aggregated voice-conversation quality metrics (talk time, per-minute cost, response speed, dead air) over a trailing window, for the dashboard's Metrics page.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `project` | `string` | `null` | Filter by project. |
+| `days` | `integer` | `7` | Trailing window in days (1-365). |
+| `tenant` | `string` | `null` | Same scoping as the other dashboard reads. |
+| `agent` | `string` | `null` | Filter to one agent ID. |
+
+**Response:**
+
+```json
+{
+  "window": { "days": 7, "since": "2026-07-31T00:00:00+00:00", "until": "2026-08-07T00:00:00+00:00" },
+  "filter": { "project": null, "tenant": null, "agent": null },
+  "session_count": 214,
+  "measured_session_count": 198,
+  "per_minute_cost_usd_avg": 0.0412,
+  "response_speed_ms": { "p50": 812.0, "p95": 1904.0 },
+  "talk_over_rate": 0.03,
+  "dead_air_event_count": 41
+}
+```
+
+Averages are computed only over `sessions` rows that carry the measured columns (`measured_session_count`); older sessions recorded before these columns existed still count toward `session_count` but are excluded from the averages, so the two counts can differ.
+
+**Authentication:** read scope, same as `/api/costs`. `503` when storage is disabled.
+
+**Example:**
+
+```bash
+curl "http://localhost:8080/api/metrics?days=30"
 ```
 
 ## GET /api/calls
@@ -284,6 +370,44 @@ Requires the node scrape to be running (`VOICEGW_NODE_SCRAPE_TARGETS`); with it 
 A series the scrape did not return is named and counted rather than dropped or zeroed, and a counter with no sourceable rate reports as not measured rather than `0/s`. Peak statistics carry their own label (`p95`, `max_of_n`, `not_measured`), so a peak over fewer than ten samples is never presented as a p95.
 
 Authentication matches `/api/correlation`, including the 403 for a tenant-scoped key: a node is infrastructure serving every tenant at once, so there is no tenant-scoped answer to give.
+
+## GET /api/server/overview
+
+A read-only, non-billing snapshot of the LiveKit deployment the metered agents run on, annotated with VoiceGateway's own cost and latency: rooms, egress, ingress, SIP trunks/dispatch rules (from the LiveKit control plane), plus the local fleet roster. This is a control-plane list and a local DB read on every field: **no synthetic probe and no billed call**, unlike Diagnostics.
+
+Each section (`rooms`, `egress`, `ingress`, `sip`, `fleet`) is shaped `{"ok": <bool>, "error": <str|null>, ...}` independently, so one failing LiveKit read never blanks the whole page.
+
+**Response (abridged):**
+
+```json
+{
+  "generated_at": 1752460800.0,
+  "connection": { "configured": true, "url": "wss://my-project.livekit.cloud", "reachable": true },
+  "rooms": { "ok": true, "error": null, "rooms": [
+    { "name": "call-4821", "humans": 1, "agents": [{"agent_name": "order-taker", "identity": "AG_1", "state": "active", "age_s": 42.1}],
+      "cost_usd": 0.031, "request_count": 6, "p95_latency_ms": 812.0 }
+  ] },
+  "egress": { "ok": true, "error": null, "items": [] },
+  "ingress": { "ok": true, "error": null, "items": [] },
+  "sip": { "ok": true, "error": null, "inbound": [], "outbound": [], "dispatch_rules": [] },
+  "fleet": { "ok": true, "error": null, "workers": [ { "agent_id": "order-taker", "status": "busy", "active_sessions": 1 } ],
+    "counts": { "total": 3, "idle": 2, "busy": 1, "offline": 0 } }
+}
+```
+
+`connection.reachable` is `true`/`false` only when a control-plane read was actually attempted, and stays `null` when nothing probed the deployment (no LiveKit credentials configured, or the `[livekit]` extra is not installed), so an unmeasured deployment is never reported as "unreachable". Room `cost_usd`/`request_count`/`p95_latency_ms` are VG's own metered totals for that room over the trailing 24 hours, joined in because LiveKit's own console has no cost concept.
+
+**Authentication:** `admin` scope (a no-op until API keys are configured): the response includes the LiveKit URL and full control-plane topology.
+
+**Example:**
+
+```bash
+curl http://localhost:8080/api/server/overview \
+  -H "Authorization: Bearer $VG_ADMIN_KEY"
+```
+
+See [Server page](/guide/server-page) for how the dashboard renders this.
+
 ## Session reads
 
 The list endpoint plus five reads that hang off a session id back the dashboard's call drill-down:
@@ -393,6 +517,31 @@ curl http://localhost:8080/api/agents
 curl "http://localhost:8080/api/agents?q=order&limit=10"
 ```
 
+## GET /api/agents/{agent_id}
+
+Aggregates for a single agent: the same rollup row `GET /api/agents` returns for it, plus `p95_latency_ms`. `404` when the agent has no telemetry (unseen or storage disabled).
+
+**Response:**
+
+```json
+{
+  "agent_id": "order-taker",
+  "request_count": 412,
+  "total_cost_usd": 1.8421,
+  "last_seen": 1752460800.0,
+  "error_rate": 0.0,
+  "p95_latency_ms": 940.0
+}
+```
+
+Unlike the index endpoint, this does not merge in the live fleet roster (no `fleet_status`, `models`, `latency_ms`, `probe`, or `resources`): it is a plain read of the `agent_observations` rollup for one id. Use `GET /api/agents` for the fuller per-card shape.
+
+**Example:**
+
+```bash
+curl http://localhost:8080/api/agents/order-taker
+```
+
 ## POST /api/agents/{agent_id}/probe
 
 Place one real call to this agent and report its latency split and cost.
@@ -495,15 +644,118 @@ For the equivalent endpoints on the public API, see the [HTTP API](/api/http-api
 
 **Authentication:** both POSTs require the `admin` scope; the GET does not. White-label branding is an operator/agency setting: the write stamps the `logo_url` every dashboard page renders and the `product_name` it renders as its own name. The **GET stays open to any authenticated reader on purpose**: every dashboard layout mount calls it to apply the brand, and the frontend treats a `403` exactly like a `401` (it clears the stored token and shows the login gate), so gating it behind the admin scope would log out a read-scoped operator on page load. That is why the gate sits on the two write routes and not on the router. Both gates are no-ops while no API keys are configured.
 
-See [Agency quickstart](/guide/agency-quickstart) for what the logo upload accepts.
+The logo upload accepts PNG or SVG, capped at 256 KB on the wire; a PNG is also capped at 512x512 pixels (SVG is vector, so no dimension check applies). An uploaded SVG is rejected if it contains script, an event-handler attribute, or an executable URL scheme.
 
-## Static File Serving
+## GET /api/loadtest/runs
 
-The dashboard also serves the React frontend's built assets. If the frontend has been built (`src/dashboard/frontend/dist/` exists), the daemon serves:
+Imported load-test runs, newest first, each with its per-test rows embedded (no second call per run: a load run is a handful of rows, and the dashboard's demo mode answers by pathname only, which a parameterised `/runs/{id}/tests` path cannot fixture).
 
-## GET /api/diagnostics/runs/{run_id}
+**Query parameters:**
 
-Return one recorded diagnostics run: its status, verdict, gates, and one entry per check that ran. Requires the `admin` scope, like every other diagnostics endpoint, because a run can place billed calls.
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `limit` | `integer` | `20` | Number of runs (1-100). |
+| `project` | `string` | `null` | Filter by project. |
+
+**Response (abridged):**
+
+```json
+{
+  "runs": [
+    {
+      "id": "run-2026-08-01",
+      "project": "default",
+      "label": "pre-launch capacity check",
+      "tool": "sipp",
+      "tool_version": "3.7.2",
+      "started_at_ms": 1785600000000,
+      "ended_at_ms": 1785603600000,
+      "artifact_sha256": "3a7f...",
+      "artifact_source": "./artifacts/run.json",
+      "notes": null,
+      "created_at_ms": 1785603650000,
+      "data_provenance": "measured",
+      "tests": [ { "name": "ramp-200", "sequence": 0, "attempted_calls": 200, "succeeded_calls": 197, "failed_calls": 3 } ]
+    }
+  ]
+}
+```
+
+`data_provenance` is derived, not stored: `"measured"` when the run carries a real `artifact_sha256`, `"synthetic"` otherwise. It is computed by the same helper the load-test report uses, so a run cannot read as measured on one surface and not the other.
+
+**Authentication:** read scope (`require_principal`), not the `write` scope `/v1/calls/observations` carries: this is a read and does not inherit that router's scope. `503` (not an empty array) when storage is disabled, since "nothing imported" and "this deployment records nothing" are different facts.
+
+**Example:**
+
+```bash
+curl "http://localhost:8080/api/loadtest/runs?limit=5"
+```
+
+See [`voicegw loadtest import`](/cli/loadtest) for how a run gets here.
+
+## Diagnostics
+
+Single-vantage LiveKit deployment checks, run from this host and persisted to storage so history survives a restart. Every route below requires the `admin` scope (a no-op until API keys are configured): a run places real, billed calls against your own LiveKit project and providers.
+
+### GET /api/diagnostics/creds
+
+Whether LiveKit credentials are configured on this host, and the server URL if so. The dashboard checks this before offering the "run a diagnostic" UI.
+
+**Response:**
+
+```json
+{ "configured": true, "url": "wss://my-project.livekit.cloud" }
+```
+
+**Example:**
+
+```bash
+curl http://localhost:8080/api/diagnostics/creds \
+  -H "Authorization: Bearer $VG_ADMIN_KEY"
+```
+
+### POST /api/diagnostics/runs
+
+Start a new diagnostics run: a background task executes the requested checks (up to 360 seconds) and the run is persisted at every state transition (queued -> running -> done/failed), so its last observed state survives a restart or a killed process.
+
+**Request body:**
+
+```json
+{ "checks": ["agents", "sfu", "latency"], "config": {} }
+```
+
+`checks` must be a non-empty subset of `agents`, `sfu`, `sfu_load`, `latency` (see [`voicegw livekit check`](/cli/livekit) for what each verifies). `config` is check-specific and optional.
+
+**Response:** `{"run_id": "<hex>", "status": "queued"}`.
+
+| Status | Meaning |
+|---|---|
+| `400` | `checks` is empty or not a valid subset, or LiveKit is not configured on this host. |
+| `409` | A diagnostics run is already active. Only one runs at a time **per process**: the lock is in-memory, not a stored claim, so a run left `running` by a killed process cannot block a new one forever, and a genuinely active run on a different replica is not visible to this check either. |
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:8080/api/diagnostics/runs \
+  -H "Authorization: Bearer $VG_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"checks": ["agents", "latency"]}'
+```
+
+### GET /api/diagnostics/runs
+
+The run history, newest first: stored rows merged with any run still live in this process (the in-process copy wins on overlap, since a status flip is written to storage right after it happens, not atomically with it). Each entry has the same shape as `GET /api/diagnostics/runs/{run_id}` below.
+
+**Example:**
+
+```bash
+curl http://localhost:8080/api/diagnostics/runs \
+  -H "Authorization: Bearer $VG_ADMIN_KEY"
+```
+
+### GET /api/diagnostics/runs/{run_id}
+
+Return one recorded diagnostics run: its status, verdict, gates, and one entry per check that ran.
 
 Only the `latency` check's per-agent entry is specified here; every check is exported in full by the report endpoints below.
 
@@ -537,9 +789,9 @@ All probe times are **seconds**. `trials` counts the trials that **answered**, s
 
 The string is written by the LiveKit server or a provider, not by VoiceGateway. Treat it as untrusted remote text: render it as text, never as markup.
 
-## GET /api/diagnostics/runs/{run_id}/report
+### GET /api/diagnostics/runs/{run_id}/report
 
-Export one stored diagnostics run as a versioned JSON payload. Requires the `admin` scope, like every other diagnostics endpoint, because a run can place billed calls.
+Export one stored diagnostics run as a versioned JSON payload.
 
 The payload carries `schema_version` (currently `1`) and `kind: "voicegateway.diagnostics.run_report"`. Within a major version the payload is **additive only**: no key changes meaning, type or nesting, none disappears, and parsers must ignore keys they do not recognise. Anything that would break a v1 parser ships as `schema_version: 2`.
 
@@ -547,15 +799,17 @@ Unmeasured is `null`, never `0`. A check that was not part of the run, one that 
 
 The run's verdict is read from what the run stored, not recomputed: `livekit_diag/gates.py` is the only place in the product that decides a verdict. A run recorded before gates existed reports `gates_recorded: false` rather than being re-judged after the fact.
 
-## GET /api/diagnostics/runs/{run_id}/report.html
+### GET /api/diagnostics/runs/{run_id}/report.html
 
-The same report as a **single self-contained HTML file**, served with `Content-Disposition: attachment`. Requires the `admin` scope.
+The same report as a **single self-contained HTML file**, served with `Content-Disposition: attachment`.
 
 Self-contained means exactly that: no script, no external stylesheet, no remote font, no image, no network request of any kind. It renders correctly from `file://` on a machine with no internet, months later, which is the point of handing it to a client or attaching it to a ticket.
 
 A verdict of `UNKNOWN` renders as the word `UNKNOWN` on neutral grey with the line "This is NOT a pass", never a green tick. Each gate prints its status as text rather than colour alone, so a printed or monochrome copy still carries it.
 
-## Static files
+## Static File Serving
+
+The dashboard also serves the React frontend's built assets on the same port as `/v1/*` and `/api/*`. If the frontend has been built (`src/dashboard/frontend/dist/` exists), the daemon serves:
 
 - `GET /` -- the React app's `index.html`
 - `GET /assets/*` -- bundled JavaScript, CSS, and other static files

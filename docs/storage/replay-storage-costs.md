@@ -2,23 +2,20 @@
 title: Replay storage costs
 description: On-disk footprint of VoiceGateway's conversation replay tables. Understand the per-minute byte budget across STT, LLM, TTS, and state snapshot events before setting per-project retention.
 ---
-
-# Replay storage costs
-
-VoiceGateway's conversation replay captures every STT chunk, LLM token, TTS frame, and conversation-state snapshot for every session. This page surfaces the on-disk storage cost so the trade-off between fidelity and footprint is visible before you set per-project retention.
+VoiceGateway's conversation replay captures every STT chunk, LLM token, TTS frame, and conversation-state snapshot for a session, when capture is turned on. See [CLI: replay](/cli/replay) for how to enable capture (`attach(snapshots=True)`, LiveKit only, default off) and inspect a captured session. This page surfaces the on-disk storage cost so the trade-off between fidelity and footprint is visible before you set per-project retention.
 
 ## What gets stored
 
-Four tables per the migration 0004 schema:
+Four tables (`src/voicegateway/models/replay_event_model.py`), one row per captured event. Each table serializes its event fields into a single `payload` TEXT column rather than separate typed columns:
 
-| Table | Row payload | Typical row size |
+| Table | `payload` JSON keys | Typical payload size |
 |---|---|---|
-| `replay_stt_events` | JSON: `text`, `is_final`, `alternatives` | 100-400 bytes |
-| `replay_llm_tokens` | JSON: `token_text`, `role`, `is_tool_invoke`, `tool_args_partial` | 80-200 bytes |
-| `replay_tts_frames` | JSON: `frame_duration_ms`, `underrun`, `voice_id` | 80-120 bytes |
-| `replay_state_snapshots` | JSON: `system_prompt`, `message_history`, `tool_call_in_flight`, `structured_output_collected` | 500-5000 bytes (depends on prompt and history size) |
+| `replay_stt_events` | `text`, `is_final`, `alternatives` | 100-400 bytes |
+| `replay_llm_tokens` | `token_text`, `role`, `is_tool_invoke`, `tool_args_partial` | 80-200 bytes |
+| `replay_tts_frames` | `frame_duration_ms`, `underrun`, `voice_id` | 80-120 bytes |
+| `replay_state_snapshots` | `system_prompt`, `message_history`, `tool_call_in_flight`, `structured_output_collected` | 500-5000 bytes (depends on prompt and history size) |
 
-Every row also carries boilerplate columns: `id`, `session_id`, `t_ms`, `provider`, `cost_usd`, `created_at`. Add roughly 80-120 bytes of column overhead per row. Indexes on `(session_id, t_ms)` add another 30-50% of payload size.
+`replay_stt_events`, `replay_llm_tokens`, and `replay_tts_frames` also carry `id`, `session_id`, `t_ms`, `provider`, `cost_usd`, `created_at`, `tenant_id`. `replay_state_snapshots` is narrower: no `provider` or `cost_usd` column. Column overhead runs roughly 80-120 bytes/row; the index on `(session_id, t_ms)` that each table carries adds an estimated 30-50% on top of payload size.
 
 ## Per-minute estimate
 
@@ -68,7 +65,7 @@ Three per-project knobs in `voicegw.yaml`'s `replay:` block influence storage:
 | `enabled` | `true` | Set `false` to skip capture entirely for this project. |
 | `retention_days` | `90` | Age replay rows out after this window. Lower to reduce footprint linearly. |
 | `flush_size_events` | `500` | Batched writes. Smaller flushes more often; larger holds more memory. No effect on long-term storage volume. |
-| `buffer_size_events` | `5000` | In-memory cap. Above this limit, the oldest events are dropped and the dashboard surfaces a "events dropped here" marker rather than silently misleading you. |
+| `buffer_size_events` | `5000` | Per-session in-memory cap. Above this limit, the oldest buffered events are dropped and a warning is logged server-side every 100 drops. Nothing in the dashboard currently surfaces the drop count. |
 
 The `enabled` toggle is the binary on/off. The `retention_days` knob is the gradient lever. The `buffer_size_events` and `flush_size_events` knobs trade off memory pressure and write batching but do not change long-term storage volume.
 

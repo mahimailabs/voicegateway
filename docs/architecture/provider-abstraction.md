@@ -1,39 +1,41 @@
 ---
 title: Provider Abstraction
-description: How VoiceGateway's BaseProvider ABC unifies 11 cloud and local implementations behind a single interface, and how attach() and guard() sit above that layer as framework-neutral observers and gates.
+description: BaseProvider is a health-check mechanism, not the inference path. attach() and guard() meter and wrap native plugin instances directly and never consult it.
 ---
 
-VoiceGateway does not replace your LiveKit plugin instances or Pipecat services. You keep creating them directly. `attach()` observes them as a passive hook on the `AgentSession` event stream. `guard()` gates calls before they start. The provider layer underneath exists to support the CLI health-check and the resolver-time fallback walk, not to intercept inference traffic. VoiceGateway is framework-agnostic: it never bundles the provider wheels itself. You install the plugin wheels your agent uses (you likely already have them), and VoiceGateway meters those instances by `model_id` via voice-prices.
+`src/voicegateway/inference/providers/` holds a `BaseProvider` ABC and 11 provider classes. Their only production use is health-checking: `POST /v1/providers/{id}/test`, `voicegw doctor`'s legacy key-validation check, and the MCP server's provider-test tools all construct one via `create_provider()` and call `await instance.health_check()`. Their `create_stt()` / `create_llm()` / `create_tts()` methods have zero production callers; only two test files exercise them.
+
+`attach()` and `guard()` never touch this layer. You construct native `livekit.plugins.*` / `pipecat.services.*` instances yourself; `attach()` reads their `.provider`/`.model` attributes off the live instance to build `provider/model`, and `guard()` type-checks the instance against `livekit.agents.{stt,llm,tts}` base classes. Neither looks the provider up in the registry.
 
 ## BaseProvider ABC
 
-**File:** `src/voicegateway/providers/base.py`
+**File:** `src/voicegateway/inference/providers/base_provider.py`
 
 ```python
 class BaseProvider(ABC):
 
     @abstractmethod
     def create_stt(self, model: str, **kwargs: Any) -> Any:
-        """Return a LiveKit-compatible STT instance."""
+        """Create an STT instance. Return None if provider doesn't support STT."""
         ...
 
     @abstractmethod
     def create_llm(self, model: str, **kwargs: Any) -> Any:
-        """Return a LiveKit-compatible LLM instance."""
+        """Create an LLM instance. Return None if provider doesn't support LLM."""
         ...
 
     @abstractmethod
     def create_tts(self, model: str, voice: str | None = None, **kwargs: Any) -> Any:
-        """Return a LiveKit-compatible TTS instance."""
+        """Create a TTS instance. Return None if provider doesn't support TTS."""
         ...
 
     @abstractmethod
     async def health_check(self) -> bool:
-        """Return True if the provider is reachable."""
+        """Check if the provider is reachable."""
         ...
 
     def _unsupported(self, modality: str) -> None:
-        """Raise NotImplementedError for unsupported modalities."""
+        """Raise error for unsupported modality."""
         raise NotImplementedError(
             f"{self.__class__.__name__} does not support {modality}"
         )
@@ -41,43 +43,45 @@ class BaseProvider(ABC):
 
 ### Method contracts
 
-| Method | Returns | Unsupported behavior |
-|--------|---------|---------------------|
-| `create_stt(model, **kwargs)` | LiveKit-compatible STT instance | Call `self._unsupported("stt")` |
-| `create_llm(model, **kwargs)` | LiveKit-compatible LLM instance | Call `self._unsupported("llm")` |
-| `create_tts(model, voice, **kwargs)` | LiveKit-compatible TTS instance | Call `self._unsupported("tts")` |
-| `health_check()` | `True` if reachable, `False` otherwise | Must always be implemented |
+| Method | Production callers | Unsupported behavior |
+|--------|---------------------|---------------------|
+| `create_stt(model, **kwargs)` | None (2 test files only) | Calls `self._unsupported("stt")` |
+| `create_llm(model, **kwargs)` | None (2 test files only) | Calls `self._unsupported("llm")` |
+| `create_tts(model, voice, **kwargs)` | None (2 test files only) | Calls `self._unsupported("tts")` |
+| `health_check()` | `/v1/providers/{id}/test`, `/v1/providers/test`, `voicegw doctor`, MCP provider-test tools | Must always be implemented |
 
-Pricing is not a provider-level concern. Rates for all three modalities resolve via `voice-prices` inside `src/voicegateway/pricing/catalog.py`. Providers return plain plugin instances; the cost layer wraps them separately.
+Pricing is not a provider-level concern. It resolves via `voice_prices.calc_price` inside `src/voicegateway/inference/pricing/`, keyed entirely on the `provider/model` string; a provider class never participates.
 
-## How attach() and guard() relate to providers
+## How attach() and guard() actually relate to providers
 
 ```mermaid
 graph TD
     subgraph YourCode["Your agent code"]
-        PI["livekit.plugins.deepgram.STT(...)"]
-        ATT["attach(session, tenant_id=...)"]
-        GRD["guard('deepgram/nova-3', project='prod')"]
+        PI["livekit.plugins.deepgram.STT(...)<br/>a native plugin instance you built"]
     end
 
-    subgraph VG["VoiceGateway layer"]
-        BP["BaseProvider (registry lookup)"]
-        CT["CostTracker"]
-        BE["BudgetEnforcer"]
+    subgraph Attach["attach(session)"]
+        CI["component_identity(component)<br/>reads .provider / .model off the instance"]
+        MC["MetricCapture: subscribes to<br/>metrics_collected on session.stt/llm/tts"]
     end
 
-    PI -->|your existing instance| ATT
-    ATT -->|hooks session events| CT
-    GRD -->|budget + rate check| BE
-    BE -->|OK| BP
-    BP -->|creates a new plugin instance| YourCode
+    subgraph Guard["guard(provider) -- optional"]
+        TC["isinstance check against<br/>livekit.agents.stt/llm/tts.{STT,LLM,TTS}"]
+        WRAP["subclass wrapper: preflight (rate_limit, budget)<br/>then delegates to the primary or a fallback"]
+    end
+
+    PI -->|attach binds directly, no wrapping| MC
+    MC --> CI
+    PI -->|guard wraps, returns a same-type drop-in| TC
+    TC --> WRAP
+    WRAP -->|delegates the call| PI
 ```
 
-`attach()` is the passive path: you hand it the session you already have; it records cost from the event stream without touching the plugin instance. `guard()` is the active path: it checks limits and optionally resolves a new plugin instance for you via the registry. See [attach](/guide/attach) and [guard](/guide/guard) for usage.
+`attach()` is the passive path: it subscribes to the events the plugin already emits and never constructs or wraps anything. `guard()` is the active path: it wraps the *instance you pass it*, checking rate limit and budget before delegating, and falling back to the next instance in its `fallback=[...]` list on a pre-first-token error. Neither path calls `registry.create_provider()` or consults `BaseProvider`. See [attach()](/guide/attach) and [guard()](/guide/guard) for the full signatures.
 
 ## Provider registry
 
-All 11 providers are registered in `src/voicegateway/core/registry.py` as `(module_path, class_name)` tuples. The Registry uses `importlib.import_module()` for lazy loading: a provider's SDK is only imported when that provider is first used.
+All 11 providers are registered in `src/voicegateway/core/registry.py` as `(module_path, class_name)` tuples, loaded lazily via `importlib.import_module()`. See [Gateway Core](/architecture/gateway-core#registry) for the registry table and its three health-check callers.
 
 ```mermaid
 graph LR
@@ -106,18 +110,18 @@ graph LR
 | Provider | STT | LLM | TTS | Wheel you install |
 |----------|-----|-----|-----|--------------|
 | OpenAI | Yes | Yes | Yes | `livekit-plugins-openai` |
-| Deepgram | Yes | -- | -- | `livekit-plugins-deepgram` |
+| Deepgram | Yes | -- | Yes | `livekit-plugins-deepgram` |
 | Cartesia | -- | -- | Yes | `livekit-plugins-cartesia` |
 | Anthropic | -- | Yes | -- | `livekit-plugins-anthropic` |
-| Groq | Yes | Yes | -- | `livekit-plugins-openai` |
+| Groq | Yes | Yes | -- | `livekit-plugins-openai` (OpenAI-compatible endpoint) |
 | ElevenLabs | -- | -- | Yes | `livekit-plugins-elevenlabs` |
 | AssemblyAI | Yes | -- | -- | `livekit-plugins-assemblyai` |
-| Ollama | -- | Yes | -- | your Ollama runtime |
+| Ollama | -- | Yes | -- | `livekit-plugins-openai` + a running Ollama server |
 | Whisper | Yes | -- | -- | `faster-whisper` |
 | Kokoro | -- | -- | Yes | `kokoro-onnx onnxruntime` |
 | Piper | -- | -- | Yes | `piper-tts` |
 
-When a provider does not support a modality, its `create_*` method calls `self._unsupported()`, which raises `NotImplementedError`. This propagates cleanly through the resolver and surfaces as a clear error before the call starts.
+When a provider does not support a modality, its `create_*` method calls `self._unsupported()`, raising `NotImplementedError`. Since nothing in production calls `create_*`, this only surfaces in the two test files that exercise it directly.
 
 ## Implementation pattern
 
@@ -147,39 +151,16 @@ class DeepgramProvider(BaseProvider):
 Key patterns:
 
 1. **API key resolution.** `config.get("api_key")` first (from YAML or managed providers), then the standard environment variable (`DEEPGRAM_API_KEY`, `OPENAI_API_KEY`, etc.).
-
-2. **LiveKit plugin wrapping.** Each `create_*` method returns a `livekit.plugins.<provider>` instance directly, making it a drop-in replacement for direct LiveKit plugin construction.
-
-3. **Lazy SDK import.** The `from livekit.plugins.deepgram import STT` import happens inside the method, not at module level, so you pay the import cost only when the provider is first used.
-
-## Bring your own wheels
-
-VoiceGateway no longer bundles provider or local-model wheels. You install the plugin wheels your agent uses in your own project (you likely already have them), and VoiceGateway meters those instances by `model_id` via voice-prices:
-
-```bash
-# Install the provider plugins your agent uses
-pip install livekit-plugins-openai livekit-plugins-deepgram livekit-plugins-cartesia
-
-# Local runtimes install the same way (VoiceGateway meters local/* and ollama/* for free by model_id)
-pip install faster-whisper kokoro-onnx onnxruntime
-```
-
-The five VoiceGateway extras (`livekit`, `pipecat`, `dashboard`, `mcp`, `collector`) select framework hooks and surfaces, not provider SDKs.
-
-If a provider's plugin wheel is missing, the Registry raises a clear `ImportError` that points at the upstream wheel, not a VoiceGateway extra:
-
-```
-Could not import provider 'deepgram': No module named 'deepgram'.
-Install with: pip install livekit-plugins-deepgram
-```
+2. **Lazy SDK import.** The `from livekit.plugins.deepgram import STT` import happens inside the method, not at module level, so the health-check path only pays the import cost for providers it actually touches.
+3. **`health_check()`** makes a minimal live request (for example, listing models) so a failed or missing key is caught at test time, not mid-call.
 
 ## Adding a new provider
 
-1. Create `src/voicegateway/providers/myprovider_provider.py` extending `BaseProvider`.
-2. Implement the five abstract methods (use `_unsupported()` for unsupported modalities).
+1. Create `src/voicegateway/inference/providers/myprovider_provider.py` extending `BaseProvider`.
+2. Implement `create_stt`/`create_llm`/`create_tts` (call `_unsupported()` for modalities it doesn't support) and `health_check()`.
 3. Register it in `src/voicegateway/core/registry.py`:
    ```python
-   "myprovider": ("voicegateway.providers.myprovider_provider", "MyProviderProvider"),
+   "myprovider": ("voicegateway.inference.providers.myprovider_provider", "MyProviderProvider"),
    ```
-4. Add pricing data to `src/voicegateway/pricing/catalog.py`.
-5. Point the `ImportError` install hint at the upstream plugin wheel. There is no per-provider extra to add to `pyproject.toml`, since VoiceGateway does not bundle provider wheels.
+4. No pricing step is needed: `voice_prices.calc_price` resolves cost from the `provider/model` string at request time, not from a per-provider table in this repo.
+5. Point the `ImportError` install hint at the upstream plugin wheel. There is no per-provider extra in `pyproject.toml`, since VoiceGateway does not bundle provider wheels.

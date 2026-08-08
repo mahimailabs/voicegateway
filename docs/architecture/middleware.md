@@ -1,141 +1,34 @@
 ---
 title: Middleware Pipeline
-description: "The middleware components that sit between attach()/guard() and the storage layer: CostTracker, LatencyMonitor, RateLimiter, BudgetEnforcer, RequestLogger, and InstrumentedProvider."
+description: "What's actually live in src/voicegateway/middleware/: CostTracker and RateLimiter. BudgetEnforcer.check_budget(), LatencyMonitor, and RequestLogger are constructed but never called."
 ---
 
-The middleware layer provides cross-cutting concerns: cost tracking, latency monitoring, rate limiting, fallback chains, budget enforcement, and request logging. `attach()` feeds completed call events through this pipeline. `guard()` runs the budget and rate checks before a call starts.
-
-## Pipeline overview
-
-```mermaid
-graph TD
-    subgraph ActivePath["guard() - active gate (pre-call)"]
-        BE["BudgetEnforcer.check_budget()"]
-        RL["RateLimiter.acquire()"]
-    end
-
-    subgraph PassivePath["attach() - passive observer (post-call)"]
-        IP["InstrumentedProvider.wrap_provider()"]
-        CT["CostTracker.create_record()"]
-        LM["LatencyMonitor"]
-        LG["RequestLogger"]
-    end
-
-    subgraph Storage["Storage"]
-        REC["RequestRecord -> SQLite / remote sink"]
-    end
-
-    BE -->|under budget| RL
-    BE -->|over budget + block| ERR["BudgetExceededError"]
-    BE -->|over budget + throttle| THR["BudgetThrottleSignal"]
-    RL -->|OK| PassivePath
-    IP --> CT
-    IP --> LM
-    CT --> LG
-    LG --> REC
-```
-
-## Execution order
-
-| Step | Component | Path | Action |
-|------|-----------|------|--------|
-| 1 | **BudgetEnforcer** | guard() | Checks project daily spend against budget |
-| 2 | **RateLimiter** | guard() | Ensures provider RPM limit is not exceeded |
-| 3 | **InstrumentedProvider** | attach() | Wraps the instance to record metrics |
-| 4 | **CostTracker** | attach() | Calculates cost when the call completes |
-| 5 | **LatencyMonitor** | attach() | Records TTFB and total latency |
-| 6 | **RequestLogger** | attach() | Writes structured log entry |
-
-## BudgetEnforcer
-
-**File:** `src/voicegateway/middleware/budget_enforcer.py`
-
-Enforces per-project daily spending limits. Budget checks are cached in memory with a 30-second TTL to avoid hitting the database on every request.
-
-### Three modes
-
-| Mode | `budget_action` | Behavior |
-|------|-----------------|----------|
-| **Warn** | `"warn"` | Logs a warning, allows the request to proceed |
-| **Throttle** | `"throttle"` | Raises `BudgetThrottleSignal` -- caller should fall back to local models |
-| **Block** | `"block"` | Raises `BudgetExceededError` -- request is rejected |
-
-```python
-class BudgetEnforcer:
-    def __init__(self, config, storage, cache_ttl_seconds=30.0):
-        self._cache: dict[str, tuple[float, float]] = {}
-
-    async def check_budget(self, project: str) -> None:
-        pcfg = self._get_project_config(project)
-        if pcfg is None or pcfg.daily_budget <= 0:
-            return  # No budget configured = unlimited
-
-        today_spend = await self._get_today_spend(project)
-        if today_spend < pcfg.daily_budget:
-            return  # Under budget
-
-        if pcfg.budget_action == "warn":
-            logger.warning(...)
-        elif pcfg.budget_action == "throttle":
-            raise BudgetThrottleSignal(project, today_spend, pcfg.daily_budget)
-        elif pcfg.budget_action == "block":
-            raise BudgetExceededError(project, today_spend, pcfg.daily_budget)
-```
-
-`get_budget_status()` returns a status string for API responses: `"ok"`, `"warning"` (>80% spent), or `"exceeded"`.
+`src/voicegateway/middleware/` has more files than the request path uses. This page covers what `attach()` and `guard()` actually exercise, and says plainly where a class is constructed but never invoked.
 
 ## CostTracker
 
-**File:** `src/voicegateway/middleware/cost_tracker.py`
+**File:** `src/voicegateway/middleware/cost_tracker_middleware.py`
 
-Calculates per-request costs based on the pricing catalog and writes request records to SQLite.
+The one middleware class every write path uses. `attach()` constructs a fresh `CostTracker` per session; `guard()` constructs a no-op one (`storage=None`) purely to satisfy its wrapper's constructor, since `guard()` writes no records. The Gateway singleton's own `gw.cost_tracker` is a third, separate instance, used only by the fleet-ingest endpoint to re-rate rows submitted by remote agents.
 
 ### Pricing
 
-Costs are delegated to `voice-prices`. The cost tracker maps the recorded units onto a `voice_prices.Usage` per modality (STT: `audio_input_seconds`, LLM: `input_tokens` / `output_tokens` / `cache_read_tokens`, TTS: `characters`) and calls `voice_prices.calc_price`. Self-hosted `local/*` and `ollama/*` models price at `$0`.
+Costs delegate to `voice_prices.calc_price`. `_catalog_cost()` maps the recorded units onto the modality's `Usage` shape (STT: `audio_input_seconds`, LLM: `input_tokens` / `output_tokens` / `cache_read_tokens`, TTS: `characters`). Self-hosted `local/*` and `ollama/*` models price at `$0` without a catalog lookup.
 
 See [Cost Tracking](/architecture/cost-tracking) for the full per-modality flow.
 
 ### Key methods
 
-- `CostTracker.calculate_cost(model_id, modality, input_units, output_units, cached_input_units)` returns cost in USD (0.0 for unknown or self-hosted).
-- `create_record(...)` builds a `RequestRecord` with cost, latency, and metadata.
-- `log_request(record)` persists the record to SQLite (async).
-
-## LatencyMonitor
-
-**File:** `src/voicegateway/middleware/latency_monitor.py`
-
-Tracks two timing metrics:
-
-- **TTFB (Time to First Byte).** Measured from request start to the first result or token.
-- **Total latency.** Measured from request start to completion.
-
-```python
-class LatencyMonitor:
-    def __init__(self, ttfb_warning_ms: float = 500.0):
-        self._ttfb_warning_ms = ttfb_warning_ms
-
-    def start(self) -> _LatencyTimer:
-        return _LatencyTimer(self._ttfb_warning_ms)
-```
-
-The `_LatencyTimer` logs a warning when TTFB exceeds the configured threshold (default 500 ms). Configure via `latency.ttfb_warning_ms` in `voicegw.yaml`.
+- `create_record(...)` builds a `RequestRecord`: resolves cost, then rates it against the active `RateCard` (see [Rating](/architecture/rating)).
+- `log_request(record)` persists the record via `storage.log_request()`, then calls `notify_spend()`.
+- `notify_spend(record)` calls `BudgetEnforcer.record_spend()` (below) so the cached daily-spend figure stays current for the status badge.
+- `close_session(session_id)` finalizes session-aggregate metrics and replay tables on session close.
 
 ## RateLimiter
 
-**File:** `src/voicegateway/middleware/rate_limiter.py`
+**File:** `src/voicegateway/middleware/rate_limiter_middleware.py`
 
-A sliding-window rate limiter using a token bucket pattern, enforced per provider.
-
-```yaml
-# voicegw.yaml
-rate_limits:
-  openai:
-    requests_per_minute: 60
-  deepgram:
-    requests_per_minute: 100
-```
+A token-bucket limiter: `acquire(provider)` raises `RateLimitExceeded` if the provider's requests-in-the-last-60-seconds count is at or over its configured `requests_per_minute`.
 
 ```python
 class RateLimiter:
@@ -143,79 +36,46 @@ class RateLimiter:
         """Raises RateLimitExceeded if the provider's RPM limit is hit."""
 ```
 
-The limiter maintains a list of timestamps for each provider. On each `acquire()` call, it removes entries older than 60 seconds and checks whether the count exceeds the configured RPM. Uses `asyncio.Lock` for thread safety.
+This class has two call sites, and they are not the same instance:
 
-## Resolver-time fallback (manual walk)
+- **`guard(provider, rate_limit="60/min")`** builds its own `RateLimiter`, seeded from the parsed DSL string, keyed to that one provider. This is the limiter that actually runs on a call. See [guard()](/guide/guard).
+- **`Gateway.__init__`** also builds a `RateLimiter` from `voicegw.yaml`'s top-level `rate_limits:` block, and stores it as `gw._rate_limiter`. Nothing calls `.acquire()` on it. The YAML block is parsed and held, not enforced.
 
-VoiceGateway does not run automatic fallback middleware. Resolver-time fallback is a startup-walk pattern: you enumerate the chain and call `attach()` or `guard()` with each model ID until one succeeds, then pass the resolved instance to `AgentSession`. The chain lives in `voicegw.yaml` under `fallbacks:`.
+## BudgetEnforcer
 
-```yaml
-# voicegw.yaml
-fallbacks:
-  stt:
-    - deepgram/nova-3
-    - openai/whisper-1
-    - local/whisper-large-v3
-  tts:
-    - cartesia/sonic-3
-    - elevenlabs/turbo-v2.5
-```
+**File:** `src/voicegateway/middleware/budget_enforcer_middleware.py`
 
-```python
-from voicegateway import guard
+Two of its methods are live, one is not:
 
-def first_resolvable_stt(chain):
-    for model_id in chain:
-        try:
-            return guard(model_id)
-        except Exception:
-            continue
-    raise RuntimeError("every STT model in the chain failed to resolve")
-```
+- **`record_spend(project, cost_usd)`**: live. `CostTracker.notify_spend()` calls this after every logged request, updating a 30-second-TTL in-memory cache of today's spend per project.
+- **`get_budget_status(project, today_spend)`**: live. Returns `"ok"` / `"warning"` (≥80% of `daily_budget`) / `"exceeded"` (≥100%). The dashboard, `voicegw project <id>`, and the MCP project tools call this to render the budget badge.
+- **`check_budget(project)`**: not called anywhere outside its own class and its tests. This is the method that would dispatch on `budget_action` (`warn` / `throttle` / `block`) and raise `BudgetThrottleSignal` or `BudgetExceededError`. It never runs, so `budget_action` currently has no effect on gateway behavior; see [Projects: Budgets](/configuration/projects#budgets) for the full caveat.
 
-Once a resolved model is wired into `AgentSession`, the call uses it for its lifetime. VoiceGateway does not swap providers mid-call. For runtime or mid-call failover, compose LiveKit's `FallbackAdapter` around instances created via `guard()`. See the [livekit-fallback-adapter example](/examples/livekit-fallback-adapter).
+To actually stop or reroute a call on spend, use `guard()`'s own `budget="$X/day"` argument instead. That is a separate mechanism (`GuardControl.check_budget()` in `inference/livekit/guard_livekit.py` / `inference/pipecat/guard_pipecat.py`): it reads accumulated spend straight from storage and raises `BudgetExceededError`, without going through this class at all.
 
-## RequestLogger
+## InstrumentedSTT / InstrumentedLLM / InstrumentedTTS
 
-**File:** `src/voicegateway/middleware/logger.py`
+**File:** `src/voicegateway/middleware/instrumented_provider_middleware.py`
 
-Structured logging for all gateway operations under the `gateway.requests` logger name.
+`attach()` does not use these. It subscribes directly to the `metrics_collected` events a plugin already emits (see [Architecture Overview](/architecture/index)); there is nothing to wrap. These three classes have two callers instead:
 
-| Method | Log level | Format |
-|--------|-----------|--------|
-| `log_request(model_id, modality)` | INFO | `[STT] deepgram/nova-3` |
-| `log_response(model_id, modality, latency_ms, cost_usd)` | INFO | `[STT] deepgram/nova-3 -> success (142ms, $0.000430)` |
-| `log_fallback(original, fallback, reason)` | WARNING | `[FALLBACK] deepgram/nova-3 -> openai/whisper-1 (reason: ...)` |
-| `log_error(model_id, error)` | ERROR | `[ERROR] deepgram/nova-3: Connection timeout` |
+- **`guard()`** subclasses them with `metering=False`: a control-only shell that forwards the inner plugin's events transparently (so an `attach()` on the same session still sees them once) but writes no `RequestRecord` itself.
+- **`voicegw check`** is the sole caller of the module-level `wrap_provider()` helper, with `metering=True`, to drive one synthetic instrumented request through storage as a self-test.
 
-## InstrumentedProvider
-
-**File:** `src/voicegateway/middleware/instrumented_provider.py`
-
-Transparent proxy wrappers that record TTFB, total latency, and cost without changing the provider's API surface. `attach()` applies these wrappers automatically when it hooks a session.
-
-### How it works
+Each class extends the matching `livekit.agents` base (`InstrumentedSTT(lk_stt.STT, ...)`, etc.) and overrides the methods that matter (`chat`, `recognize`, `synthesize`, `stream`) to delegate to the wrapped instance. `__getattr__` only fires as a fallback, for provider-specific attributes the LiveKit base class doesn't declare (a Cartesia-only `set_voice`, for example): it is not the primary mechanism, just a safety net after normal attribute lookup fails.
 
 ```mermaid
-graph LR
-    A["User code: stt.transcribe()"] --> B["InstrumentedSTT.__getattr__('transcribe')"]
-    B --> C["getattr(wrapped_stt, 'transcribe')"]
-    C --> D["Actual Deepgram STT.transcribe()"]
-    D --> E["_mark_first_byte()"]
-    E --> F["_log_request() -> CostTracker -> SQLite"]
+graph TD
+    A["guard() wraps: GuardedSTT(InstrumentedSTT, metering=False)"] --> B["preflight(): rate_limit + budget check"]
+    B --> C["delegates to the wrapped plugin's own method"]
+    C --> D["metrics_collected fires on the wrapped plugin"]
+    D --> E["forwarded transparently to any attach() listening on the same session"]
 ```
 
-The three wrapper classes (`InstrumentedSTT`, `InstrumentedLLM`, `InstrumentedTTS`) extend `_InstrumentedBase`, which:
+## Fallback
 
-1. Uses `object.__setattr__` in `__init__` to store internal state without triggering the proxy.
-2. Implements `__getattr__` to delegate all attribute access to the wrapped instance.
-3. Implements `__setattr__` to delegate attribute writes to the wrapped instance.
-4. Records `_start_time` at construction via `time.perf_counter()`.
-5. Provides `_mark_first_byte()` to record TTFB.
-6. Provides `_log_request()` to write a `RequestRecord` to storage (with a `_logged` guard to prevent duplicates).
+`guard()` takes a `fallback=[...]` list of already-constructed provider instances and tries them in order on a pre-first-token error, via `GuardControl.run_with_fallback()` (STT) or `iterate_with_fallback()` (streaming LLM/TTS). There is no separate "resolver-time fallback" mechanism in this package: the walk lives entirely inside `guard()`. See [guard()](/guide/guard#fallback-only-covers-pre-output-failures) for the exact semantics and its pre-first-token limitation.
 
-The `guard()` helper also uses `wrap_provider` internally when it creates a new plugin instance on your behalf, so both the passive (`attach()`) and active (`guard()`) paths go through the same instrumentation. Disable it via `observability.latency_tracking: false` in config.
+## Constructed but unused
 
-<Tip>
-You can use `from voicegateway import attach, guard` together on the same session. `attach()` instruments the existing instances; `guard()` enforces budgets before new calls start. See [Core Concepts](/guide/core-concepts).
-</Tip>
+Two more classes are wired into `Gateway.__init__` and never called again: `LatencyMonitor` (`middleware/latency_monitor_middleware.py`, stored as `gw._latency_monitor`) and `RequestLogger` (`middleware/logger_middleware.py`, stored as `gw._logger`). Real TTFB/latency numbers come from LiveKit's and Pipecat's own metric fields, read directly by `MetricCapture` and `InstrumentedSTT`/`LLM`/`TTS`, not through `LatencyMonitor`.

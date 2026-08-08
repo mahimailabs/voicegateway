@@ -52,7 +52,14 @@ COPY src/dashboard/ ./src/dashboard/
 COPY alembic.ini ./
 COPY alembic/ ./alembic/
 
-ARG VERSION=0.5.0
+# Deliberately not a plausible release number. .dockerignore excludes .git,
+# so hatch-vcs cannot derive a version inside the build and this ARG is the
+# only source. The release workflow passes --build-arg VERSION=<tag>; any
+# build that does not (a Railway source deploy, a local docker build) falls
+# back to this. The old default was 0.5.0, which reads as a real release and
+# sends anyone checking /health to the wrong changelog. An obvious placeholder
+# makes an unstamped build self-identifying instead.
+ARG VERSION=0.0.0.dev0+unstamped
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 
 # The `collector` extra bundles the dashboard/server stack (web UI + TUI + MCP
@@ -64,7 +71,7 @@ RUN pip install --prefix=/install ".[collector]"
 # -------- Stage 3: Runtime --------
 FROM python:3.12-slim AS runtime
 
-ARG VERSION=0.5.0
+ARG VERSION=0.0.0.dev0+unstamped
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -122,7 +129,13 @@ WORKDIR /app
 
 EXPOSE 8080
 
+# Resolves the port EXACTLY as server.main does: VOICEGW_PORT, else the
+# platform's PORT, else 8080. Hardcoding 8080 here made the container
+# permanently unhealthy the moment a platform injected PORT, because the app
+# then listened somewhere this probe never looked. That is not cosmetic:
+# docker-compose.yml gates the dashboard on `condition: service_healthy`, so an
+# unhealthy daemon means the dashboard never starts at all.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -fsS http://localhost:8080/health || exit 1
+    CMD curl -fsS "http://localhost:${VOICEGW_PORT:-${PORT:-8080}}/health" || exit 1
 
 CMD ["python", "-m", "voicegateway.server.main"]

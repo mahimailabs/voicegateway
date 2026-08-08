@@ -2,9 +2,6 @@
 title: "Code Style"
 description: "Linting with ruff, type checking with mypy, docstring conventions, Conventional Commits, and naming rules for VoiceGateway."
 ---
-
-# Code Style
-
 VoiceGateway enforces consistent code style through automated tooling. This page documents the rules and conventions.
 
 ## Tooling overview
@@ -109,7 +106,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from voicegateway.providers.base import BaseProvider
+    from voicegateway.inference.providers.base_provider import BaseProvider
 ```
 
 ## Docstrings
@@ -167,19 +164,19 @@ All commit messages must follow [Conventional Commits](https://www.conventionalc
 
 Use the module or area affected:
 
-- `core`, `providers`, `middleware`, `storage`, `pricing`
-- `dashboard`, `mcp`, `cli`, `server`
+- `core`, `inference`, `middleware`, `services`, `repository`, `billing`
+- `dashboard`, `mcp`, `cli`, `server`, `fleet`
 - `config`, `docker`
 - Provider names: `openai`, `deepgram`, etc.
 
 ### Examples
 
 ```
-feat(providers): add ElevenLabs TTS support
+feat(elevenlabs): confirm voice-prices entry for a new TTS model
 fix(middleware): prevent double cost tracking on fallback
 docs(mcp): add authentication examples
-test(storage): cover edge case in daily aggregation query
-refactor(core): extract model resolution from gateway to router
+test(services): cover edge case in daily aggregation query
+refactor(core): extract provider/model parsing into model_resolution.py
 chore(deps): bump livekit-agents to 1.6.0
 ```
 
@@ -239,29 +236,21 @@ The codebase converged on a small set of patterns. New code should follow them u
 
 ### `typing.Protocol` vs ABC
 
-Prefer `typing.Protocol` for structural typing where multiple implementations need to satisfy an interface without sharing helper code (see `src/voicegateway/cli/daemon/base_daemon.py` for a real example -- the `DaemonBackend` Protocol is satisfied by `MacOSBackend`, `LinuxBackend`, and `WindowsBackend` without inheritance). Use an abstract base class only when the base genuinely supplies shared behaviour (`src/voicegateway/providers/base.py`'s `BaseProvider` is the canonical example: every concrete provider inherits real helper methods).
+Prefer `typing.Protocol` for structural typing where multiple implementations need to satisfy an interface without sharing helper code (see `src/voicegateway/cli/daemon/base_daemon.py` for a real example -- the `DaemonBackend` Protocol is satisfied by `MacOSBackend`, `LinuxBackend`, and `WindowsBackend` without inheritance). Use an abstract base class only when the base genuinely supplies shared behaviour (`src/voicegateway/inference/providers/base_provider.py`'s `BaseProvider` is the canonical example: every concrete provider inherits the `_unsupported()` helper).
 
 ### Pydantic for config
 
-Anything parsed from YAML or environment variables is a Pydantic model. See `src/voicegateway/core/config.py` and `src/voicegateway/core/schema.py` for the project-wide config shape; the validators there are the single source of truth for what `voicegw.yaml` accepts.
+Anything parsed from YAML or environment variables is a Pydantic model. See `src/voicegateway/core/config.py` and `src/voicegateway/schemas/config_schema.py` for the project-wide config shape; the validators there are the single source of truth for what `voicegw.yaml` accepts.
 
 ### Async throughout
 
-Every I/O path uses `async` / `await`. Storage reads, provider calls, HTTP handlers, MCP tools, the dashboard backend -- all async. Synchronous helpers exist only for pure data transformation (parsing, formatting). When in doubt, make it async; mixing sync and async boundaries is the most common source of subtle bugs in this codebase.
+Every I/O path uses `async` / `await`. Storage reads, provider calls, HTTP handlers, MCP tools -- all async. Synchronous helpers exist only for pure data transformation (parsing, formatting). When in doubt, make it async; mixing sync and async boundaries is the most common source of subtle bugs in this codebase.
 
 ### Exception handling
 
-Catch specific exception types where possible. `except Exception` is acceptable at top-level boundaries (provider call sites, MCP tool dispatch, middleware fallback) where the catch is paired with structured logging and a controlled fallback. Avoid broad excepts in narrow code paths -- they hide real bugs and bypass the type system.
+Catch specific exception types where possible. `except Exception` is acceptable at top-level boundaries (provider call sites, MCP tool dispatch, `guard()`'s fallback dispatch) where the catch is paired with structured logging and a controlled fallback. Avoid broad excepts in narrow code paths -- they hide real bugs and bypass the type system.
 
-## Test patterns
-
-See [Testing](/contributing/testing) for the full guide. Quick reference:
-
-- Tests live under `src/voicegateway/tests/` mirroring the package layout (`src/voicegateway/tests/middleware/` for `src/voicegateway/middleware/` tests, etc.).
-- `pytest` + `pytest-asyncio` with `asyncio_mode = "auto"` (configured in `pyproject.toml`). No `@pytest.mark.asyncio` is needed; async tests are detected automatically.
-- Shared fixtures live in `src/voicegateway/tests/conftest.py`. Per-subpackage fixtures live in that subpackage's `conftest.py`.
-- File-name pattern: `test_<thing-under-test>.py`. Function-name pattern: `test_<behaviour>`.
-- Coverage stays at or above the project gate (see `[tool.coverage.run]` in `pyproject.toml`).
+See [Testing](/contributing/testing) for fixtures, async patterns, and coverage expectations.
 
 ## Naming conventions
 

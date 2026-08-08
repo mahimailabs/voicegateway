@@ -2,27 +2,24 @@
 title: "Distributed SFU probers"
 description: "Load-test a LiveKit SFU concurrently from several regions using a coordinator and per-region prober containers."
 ---
+`voicegw livekit sfu --load` measures SFU capacity from one host. Distributed mode asks a harder question: does the SFU hold up when clients from several regions join the same room at once. A coordinator synchronizes N probers, one per region, ramping that room together.
 
-# Distributed SFU probers
-
-`voicegw livekit sfu --load` measures SFU capacity from a single host. That answers "what can this one machine push," not "does my SFU hold up when clients from several regions join the same room at once." Distributed mode answers the second question: one coordinator synchronizes N probers, each running from a different region, all ramping the same room together.
-
-See the [`voicegw livekit sfu`](/cli/livekit#voicegw-livekit-sfu) reference for the combined-report format. This page covers deploying the probers.
+See [`voicegw livekit sfu`](/cli/livekit#voicegw-livekit-sfu) for the combined-report format; this page covers deploying probers.
 
 ## How it works
 
-1. The coordinator (`sfu --coordinator --expect N`) serves a small HTTP barrier. It hands every prober the same job (room, ramp tiers, duration, thresholds) and a shared `start_at` timestamp once all N have registered.
-2. Each prober (`sfu --report-to <url> --vantage <label>`) registers, waits for the barrier so all vantages start at the same instant, ramps the shared room, and posts its per-tier measurements back.
-3. When every prober has reported, the coordinator aggregates (summing clients per tier, taking the worst rtt / loss / quality), prints the combined capacity, and deletes the shared rooms.
+1. The coordinator (`sfu --coordinator --expect N`) hands every prober the same job (room, ramp tiers, duration, thresholds) over a small HTTP barrier, and a shared `start_at` once all N have registered.
+2. Each prober (`sfu --report-to <url> --vantage <label>`) registers, waits for the barrier, ramps the shared room, and posts its per-tier measurements back.
+3. Once every prober has reported, the coordinator aggregates (sum clients per tier, worst rtt / loss / quality), prints the combined capacity, and deletes the shared rooms.
 
-The coordinator needs the `[dashboard]` extra (`pip install 'voicegateway[dashboard]'`) for its HTTP layer. Probers need only the base install.
+Coordinator: `[dashboard,livekit]` extras (`pip install 'voicegateway[dashboard,livekit]'`). Probers: `[livekit]`, not the base install. The CLI imports the LiveKit diagnostics modules at startup, so even `voicegw --help` fails with `ModuleNotFoundError` without it.
 
 ## Coordinator
 
-Run the coordinator somewhere the probers can reach over HTTP (a bastion host, a small VM, or a Fly machine with an internal address):
+Run the coordinator somewhere probers can reach over HTTP:
 
 ```bash
-pip install 'voicegateway[dashboard]'
+pip install 'voicegateway[dashboard,livekit]'
 export LIVEKIT_URL=wss://your.livekit.cloud
 export LIVEKIT_API_KEY=... LIVEKIT_API_SECRET=...
 
@@ -34,17 +31,13 @@ It blocks until all three probers report, then prints the combined report and ex
 
 ## Watching the run in Grafana
 
-`deploy/grafana/voicegateway-load-test.json` is an importable Grafana dashboard for these runs: per-node CPU and memory, file descriptors against the limit, Go heap and goroutines, rooms and active calls, and Redis reachability, all read from the `node_samples` table.
-
-Four of its fourteen panels render as **NOT MEASURED** notes rather than as graphs, because nothing in the current scrape set produces those series and an empty graph reads as nothing happening when it means nobody measured.
-
-The file is generated from the live column sets by `voicegateway.loadtest.dashboard`, so a panel can never name a series that does not exist. Regenerate it with `dashboard_json()` rather than editing it by hand; a test fails if the two disagree.
+`deploy/grafana/voicegateway-load-test.json` is an importable Grafana dashboard reading from the same `node_samples` table a run writes to, so ramp metrics land on the same panels as everything else. See [Node metrics](/guide/node-metrics) for the scrape configuration, data sources, and panel inventory.
 
 ## Placing load with the mock participant
 
-`tools/mock-participant/` is a Go module that joins a room as a LiveKit agent worker and reports per-call observations to the collector, which is what puts calls on the SFU while the probers measure it.
+`tools/mock-participant/` is a Go module that joins a room as a LiveKit agent worker and reports per-call observations to the collector: it puts calls on the SFU while the probers measure it.
 
-It is a standalone Go module with no `go.mod` at the repository root, so build it from its own directory:
+No root `go.mod` covers it, so build it from its own directory:
 
 ```bash
 (cd tools/mock-participant && go build .)
@@ -52,50 +45,36 @@ It is a standalone Go module with no `go.mod` at the repository root, so build i
 
 ## Probers on Fly.io
 
-The `deploy/prober/` directory ships a `Dockerfile` and an example `fly.toml`. The image is a run-to-completion job that runs one prober and exits.
+`deploy/prober/` ships a `Dockerfile` and an example `fly.toml`: a run-to-completion image, one prober per machine.
 
-<Steps>
-
-### Create the Fly app
+The shipped `Dockerfile` has no extras in its `pip install`, so the entrypoint crashes on start. Change that line to install `voicegateway[livekit]` before you build.
 
 ```bash
 cd deploy/prober
 fly apps create vg-sfu-prober
-```
-
-### Set secrets
-
-```bash
 fly secrets set -a vg-sfu-prober \
     LIVEKIT_URL=wss://your.livekit.cloud \
     LIVEKIT_API_KEY=... LIVEKIT_API_SECRET=... \
     COORDINATOR_URL=http://<coordinator-host>:8787
-```
-
-### Deploy and scale across regions
-
-```bash
 fly deploy -a vg-sfu-prober
 fly scale count 3 --region iad,sjc,lhr -a vg-sfu-prober
 ```
 
-</Steps>
-
-Each machine reads its region from Fly's `FLY_REGION` and reports it as its vantage label, so a machine in `sjc` shows up as the `sjc` vantage with no per-region config. The ramp and duration are dictated by the coordinator (every vantage runs the same job), so there is nothing to set for them on the prober.
-
-Any host that can run a container works the same way: set `COORDINATOR_URL`, the LiveKit creds, and `VOICEGW_REGION`, then run the image. Fly is just a convenient way to place probers in specific regions.
+Each machine reads its vantage label from `VOICEGW_REGION`, which the entrypoint passes to `--vantage`. Fly injects `FLY_REGION`, not `VOICEGW_REGION`, so map one to the other in `fly.toml` or every prober reports an empty vantage. Ramp and duration come from the coordinator's job. Any container host works the same way, given the same env vars and a `[livekit]`-built image.
 
 ## Limitations
 
-- The coordinator endpoint is unauthenticated. `/register`, `/report`, and `/result` have no auth, so anyone who can reach the port can inject fake reports or read the result. Run the coordinator on a private network the probers can reach (a VPC, Fly private networking, an SSH tunnel), not a public interface, and only for the duration of the run.
-- Per-tier concurrency drifts after the first tier. The barrier synchronizes only the shared start; each vantage then advances to its next ramp tier as soon as its own measurement finishes. Vantages stay aligned at the first tier, but faster ones run ahead on later tiers, so the combined per-tier client sums are exact at tier one and an upper bound thereafter. Read the combined knee as approximate, and lean on the baseline and first-tier numbers for the tightest signal.
-- If a prober dies, the run degrades rather than hangs. The coordinator stops after its timeout (default 10 minutes) and aggregates whatever reported; a prober that never clears the barrier gives up after its own timeout. A missing vantage shows up under `dropped` in the report.
+- Per-tier concurrency drifts after the first tier: the barrier synchronizes only the shared start, and each vantage advances to its next tier as soon as its own measurement finishes. Combined per-tier sums are exact at tier one, an upper bound after. Lean on baseline and first-tier numbers for the tightest signal.
+- If a prober dies, the run degrades instead of hanging. The coordinator stops after its timeout (default 10 minutes) and aggregates whatever reported; a missing vantage shows up under `dropped` in the report.
 
 ## Cost and safety
 
-Distributed probing opens real SFU connections from many hosts at once. Unlike `latency`, it does not invoke STT/LLM/TTS providers (there is no agent in the loop), so there is no per-turn provider cost. It does consume SFU capacity for the duration of the ramp, so run it against a test project or during a maintenance window, not against production traffic.
+- The coordinator listens on port 8787 by default with no authentication on `/register`, `/report/{prover_id}`, or `/result`: anyone who can reach the port can inject fake reports or read the result. Run it on a private network (a VPC, Fly private networking, an SSH tunnel), not a public interface, only for the run's duration.
+- Distributed probing opens real SFU connections from many hosts at once. Unlike `latency`, it does not invoke STT/LLM/TTS providers, so there is no per-turn cost. It does consume SFU capacity for the ramp's duration: use a test project or a maintenance window, not production traffic.
 
 ## Related
 
 - [`voicegw livekit sfu`](/cli/livekit#voicegw-livekit-sfu): the command reference and combined-report format.
+- [Node metrics](/guide/node-metrics): the Grafana dashboard this page's runs feed.
+- [SIP load testing](/cli/loadtest): correlate a call-volume ramp against these same node metrics.
 - [Deploy on Fly.io](/deployment/fly): deploying the VoiceGateway daemon itself.

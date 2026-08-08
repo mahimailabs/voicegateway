@@ -1,43 +1,40 @@
 ---
 title: MCP Server
-description: VoiceGateway's built-in Model Context Protocol server lets AI coding agents configure providers, manage projects, and query costs without leaving their workflow.
+description: VoiceGateway's built-in Model Context Protocol server for inspecting and configuring the gateway from Claude Code, Cursor, Codex, or any MCP-compatible agent.
 ---
 
-VoiceGateway ships a built-in [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server. Connect Claude Code, Cursor, Codex, or Cline to the gateway and manage it conversationally. No dashboard required.
+VoiceGateway ships a built-in [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server (`voicegw mcp`). Connect an MCP-compatible coding agent and check gateway health, query costs and latency, or create and read back projects, in natural language.
 
-## What the MCP server does
+## Tool surface
 
-The server exposes 17 tools across four categories. Your AI editor can:
+The server exposes 25 tools across five categories. Ten are visible by default; the rest need `VOICEGW_MCP_ADMIN=1` set on the server process.
 
-- Check gateway health and provider connectivity.
-- Register new providers and models.
-- Create projects with budgets and routing rules.
-- Query cost summaries and request logs.
+The default set is the framework-agnostic surface: reads (health, costs, latency, logs, models, projects) plus project and rate-card writes. The admin set is the legacy provider-config surface (`add_provider`, `test_provider`, the per-project `vg_*` key tools) plus every destructive delete. It stays admin-gated because VoiceGateway no longer constructs a provider class to route a request: `attach()`/`guard()` meter the native STT/LLM/TTS instance you pass in, by `model_id`, and never touch these classes. What still runs in production is `health_check()` (reached here through `test_provider` / `vg_test_provider_key`, and also by `voicegw doctor` and `POST /v1/providers/{id}/test`).
 
-All destructive tools (`delete_provider`, `delete_model`, `delete_project`) use a two-phase confirmation pattern. The agent always shows you the impact before applying the change.
-
-## Tool categories
-
-| Category | Tools | Purpose |
+| Category | Default | Admin-only (`VOICEGW_MCP_ADMIN=1`) |
 |---|---|---|
-| Observability | `get_health`, `get_provider_status`, `get_costs`, `get_latency_stats`, `get_logs` | Read-only health, cost, and log queries |
-| Providers | `list_providers`, `get_provider`, `test_provider`, `add_provider`, `delete_provider` | Configure and test voice AI providers |
-| Models | `list_models`, `register_model`, `delete_model` | Manage model registrations |
-| Projects | `list_projects`, `get_project`, `create_project`, `delete_project` | Create and track projects with budgets |
+| Observability | `get_health`, `get_costs`, `get_latency_stats`, `get_logs` | `get_provider_status` |
+| Models | `list_models` | `register_model`, `delete_model` |
+| Projects | `list_projects`, `get_project`, `create_project` | `delete_project` |
+| Rate card | `get_rate_card`, `set_rate_card_override` | `delete_rate_card_override` |
+| Providers | none | `list_providers`, `get_provider`, `test_provider`, `add_provider`, `delete_provider`, `vg_add_provider`, `vg_remove_provider`, `vg_list_providers`, `vg_set_provider_key`, `vg_test_provider_key` |
+
+Every `delete_*` tool uses a two-phase confirmation: call it with `confirm=false` (the default) to get a `CONFIRMATION_REQUIRED` error carrying an impact preview, then call again with `confirm=true`.
 
 ## Quick start
 
 <CodeGroup>
 ```bash pip
-pip install "voicegateway[dashboard]"
+pip install "voicegateway[dashboard,livekit]"
 voicegw mcp --transport stdio
 ```
-
 ```bash uv
-uv add "voicegateway[dashboard]"
+uv add "voicegateway[dashboard,livekit]"
 voicegw mcp --transport stdio
 ```
 </CodeGroup>
+
+There is no standalone `mcp` extra: the server ships inside `dashboard`. `livekit` is required too, even for Pipecat-only agents: every `voicegw` subcommand imports it at CLI startup. See [Installation](/guide/installation) for the full extras matrix.
 
 For HTTP/SSE (team or remote setup):
 
@@ -52,25 +49,13 @@ voicegw mcp --transport http --host 0.0.0.0 --port 8090
   <Card title="Setup" href="/mcp/setup">
     Register the server in Claude Code, Cursor, or Codex.
   </Card>
-  <Card title="Transports" href="/mcp/transports">
-    Choose between stdio (local) and HTTP/SSE (remote).
+  <Card title="Transports & auth" href="/mcp/transports">
+    stdio vs. HTTP/SSE, and securing the HTTP transport with a bearer token.
   </Card>
-  <Card title="Authentication" href="/mcp/authentication">
-    Secure the HTTP transport with a bearer token.
+  <Card title="Default tools" href="/mcp/tools">
+    The ten tools visible without `VOICEGW_MCP_ADMIN`.
   </Card>
-  <Card title="Observability tools" href="/mcp/tools/observability">
-    Health, cost, latency, and log query tools.
-  </Card>
-  <Card title="Provider tools" href="/mcp/tools/providers">
-    Add, test, and remove provider configurations.
-  </Card>
-  <Card title="Model tools" href="/mcp/tools/models">
-    Register and delete model entries.
-  </Card>
-  <Card title="Project tools" href="/mcp/tools/projects">
-    Create projects with budgets and routing stacks.
-  </Card>
-  <Card title="Claude Code example" href="/examples/claude-code-integration">
-    Full walkthrough with Claude Code.
+  <Card title="Admin tools" href="/mcp/tools-admin">
+    Provider config, registration, and delete tools.
   </Card>
 </CardGroup>

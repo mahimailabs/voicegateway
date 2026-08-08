@@ -2,9 +2,6 @@
 title: Frequently Asked Questions
 description: Common questions about VoiceGateway covering production readiness, agent-framework integration, performance overhead, Kubernetes and metrics, S2S, MCP, custom voices, backups, and key rotation.
 ---
-
-# Frequently Asked Questions
-
 ## Is VoiceGateway production-ready?
 
 VoiceGateway is in alpha. It is suitable for development, staging, and low-to-medium traffic production workloads. The core routing, cost tracking, and fallback features are stable and covered by 200+ tests with 75%+ code coverage enforced by CI (`pyproject.toml` sets `fail_under = 75`). For high-traffic production, you should:
@@ -25,9 +22,9 @@ Not as a wrapper. `attach()` and `guard()` target voice-agent runtimes: a LiveKi
 You can still track spend alongside them:
 
 1. **Point the framework at providers directly** and read costs out of band from the [HTTP API](/api/http-api) (`/v1/costs`, `/v1/logs`) or the [MCP server](/mcp/index).
-2. **For a voice agent**, build it on LiveKit or Pipecat and meter it with `attach()` as shown in the [quick start](/guide/quick-start).
+2. **For a voice agent**, build it on LiveKit or Pipecat and meter it with `attach()` as shown in the [quickstart](/get-started).
 
-See the [decision tree](/guide/decision-tree) for when VoiceGateway is the right fit. The MCP server's tools work with any agent framework that supports MCP (Claude Code, Cursor, Codex, Cline, etc.).
+See [what you can profile](/guide/what-you-can-profile) for when VoiceGateway is the right fit. The MCP server's tools work with any agent framework that supports MCP (Claude Code, Cursor, Codex, Cline, etc.).
 
 ---
 
@@ -261,7 +258,7 @@ For the SQLite storage layer, writes are serialized (one writer at a time), but 
 ## Related pages
 
 - [Troubleshooting](/reference/troubleshooting)
-- [Quick Start](/guide/quick-start)
+- [Quickstart](/get-started)
 - [MCP Server](/mcp/index)
 - [Changelog](https://github.com/mahimailabs/voicegateway/blob/main/CHANGELOG.md)
 - [Contributing](/contributing/index)

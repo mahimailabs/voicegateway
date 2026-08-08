@@ -2,9 +2,6 @@
 title: voicegw prices
 description: Inspect the billing rate card, reconcile rated revenue against recorded cost per tenant, and sync fixed-price rules against the current base cost.
 ---
-
-# voicegw prices
-
 Inspect and reconcile the billing rate card that turns recorded provider cost into a billable price.
 
 ## Synopsis

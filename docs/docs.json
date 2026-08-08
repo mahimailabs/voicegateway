@@ -1,6 +1,6 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
+  "theme": "sequoia",
   "name": "VoiceGateway",
   "colors": {
     "primary": "#1F96AA",
@@ -23,141 +23,170 @@
       "vscode"
     ]
   },
+  "navbar": {
+    "links": [
+      {
+        "type": "github",
+        "href": "https://github.com/mahimailabs/voicegateway"
+      },
+      {
+        "type": "discord",
+        "href": "https://discord.gg/ysFaF4uSB"
+      }
+    ]
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Overview",
+        "tab": "Introduction",
         "groups": [
           {
-            "group": "Overview",
+            "group": "Get started",
             "pages": [
               "index",
+              "get-started"
+            ]
+          },
+          {
+            "group": "Understanding VoiceGateway",
+            "pages": [
               "guide/what-is-voicegateway",
-              "guide/frameworks",
-              "guide/decision-tree"
+              "guide/what-you-can-profile"
             ]
           }
         ]
       },
       {
-        "tab": "Self-Host",
+        "tab": "Agents",
         "groups": [
           {
-            "group": "Get started",
+            "group": "Instrument",
             "pages": [
-              "get-started",
-              "guide/installation",
-              "guide/quick-start",
-              "guide/first-agent"
-            ]
-          },
-          {
-            "group": "Core concepts",
-            "pages": [
-              "guide/core-concepts",
               "guide/attach",
-              "guide/guard"
+              "guide/guard",
+              "guide/frameworks"
             ]
           },
           {
-            "group": "Configure",
+            "group": "Cost tracking",
             "pages": [
-              "configuration/voicegw-yaml",
-              "configuration/providers",
-              "configuration/models",
-              "configuration/stacks",
               "configuration/projects",
-              "configuration/environment-variables",
-              "configuration/observability"
-            ]
-          },
-          {
-            "group": "Advanced",
-            "pages": [
+              "configuration/models",
               "guide/multi-tenant-quickstart",
-              "guide/agency-quickstart",
-              "guide/cost-reconciliation"
+              "cli/costs",
+              "cli/logs",
+              "cli/export-costs",
+              "guide/cost-reconciliation",
+              "cli/reconcile"
             ]
           },
           {
-            "group": "Deploy",
+            "group": "Conversations",
             "pages": [
-              "deployment/index",
-              "deployment/fly",
-              "deployment/railway",
-              "deployment/vps",
-              "deployment/auto-update",
-              "deployment/distributed-sfu"
+              "guide/turns",
+              "guide/dead-air",
+              "cli/calls",
+              "cli/replay"
             ]
           },
           {
             "group": "Examples",
             "pages": [
               "examples/index",
-              "examples/basic-voice-agent",
-              "examples/livekit-attach-guard",
+              "guide/first-agent",
               "examples/pipecat-attach-guard",
-              "examples/budget-enforcement",
-              "examples/fallback-chains",
-              "examples/livekit-fallback-adapter",
               "examples/local-only",
-              "examples/multi-project",
-              "examples/docker-deployment",
-              "examples/claude-code-integration",
               "examples/openrtc-multi-agent"
             ]
           }
         ]
       },
       {
-        "tab": "Cloud",
+        "tab": "SFU",
         "groups": [
           {
-            "group": "Hosted cloud",
+            "group": "Diagnose",
             "pages": [
-              "hosted/quickstart"
+              "cli/livekit",
+              "guide/server-page"
+            ]
+          },
+          {
+            "group": "Capacity",
+            "pages": [
+              "guide/node-metrics",
+              "deployment/distributed-sfu"
             ]
           }
         ]
       },
       {
-        "tab": "CLI",
+        "tab": "SIP",
         "groups": [
           {
-            "group": "CLI",
+            "group": "Telephony",
             "pages": [
-              "cli/index",
-              "cli/init",
-              "cli/onboard",
-              "cli/serve",
-              "cli/dashboard",
-              "cli/status",
-              "cli/costs",
-              "cli/calls",
-              "cli/export-costs",
-              "cli/projects",
-              "cli/logs",
-              "cli/reconcile",
-              "cli/prices",
-              "cli/replay",
-              "cli/mcp",
-              "cli/check",
-              "cli/livekit",
+              "guide/phone-calls",
+              "guide/trunks",
               "cli/loadtest"
             ]
           }
         ]
       },
       {
-        "tab": "API Reference",
+        "tab": "Manage & Deploy",
         "groups": [
           {
-            "group": "Python & HTTP API",
+            "group": "Setup",
             "pages": [
-              "api/index",
+              "guide/installation",
+              "configuration/voicegw-yaml",
+              "configuration/environment-variables",
+              "configuration/providers"
+            ]
+          },
+          {
+            "group": "Run it",
+            "pages": [
+              "cli/onboard",
+              "cli/init",
+              "cli/serve",
+              "cli/dashboard",
+              "cli/status",
+              "cli/check",
+              "cli/prices"
+            ]
+          },
+          {
+            "group": "Deploy",
+            "pages": [
+              "deployment/index",
+              "examples/docker-deployment",
+              "deployment/fly",
+              "deployment/railway",
+              "deployment/vps",
+              "deployment/auto-update",
+              "hosted/quickstart"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "API",
+            "pages": [
               "api/python-sdk",
               "api/http-api",
               "api/dashboard-api"
+            ]
+          },
+          {
+            "group": "CLI",
+            "pages": [
+              "cli/index",
+              "cli/mcp"
             ]
           },
           {
@@ -165,12 +194,9 @@
             "pages": [
               "mcp/index",
               "mcp/setup",
-              "mcp/authentication",
               "mcp/transports",
-              "mcp/tools/models",
-              "mcp/tools/providers",
-              "mcp/tools/projects",
-              "mcp/tools/observability"
+              "mcp/tools",
+              "mcp/tools-admin"
             ]
           },
           {
@@ -190,7 +216,7 @@
             ]
           },
           {
-            "group": "Reference",
+            "group": "Help",
             "pages": [
               "reference/faq",
               "reference/troubleshooting",
@@ -211,5 +237,11 @@
         ]
       }
     ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/mahimailabs/voicegateway",
+      "discord": "https://discord.gg/ysFaF4uSB"
+    }
   }
 }
