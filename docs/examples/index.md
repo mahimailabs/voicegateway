@@ -2,9 +2,9 @@
 title: Examples
 description: Complete, runnable VoiceGateway agents for LiveKit and Pipecat, plus the local-only deployment pattern.
 ---
-Two complete agent files, plus the local-only pattern. Before running any
-example, install VoiceGateway for your framework and the provider plugins your
-agent uses; see [Installation](/guide/installation).
+Two complete agent files, plus the local-only and Docker deployment patterns.
+Before running any example, install VoiceGateway for your framework and the
+provider plugins your agent uses; see [Installation](/guide/installation).
 
 <CardGroup cols={2}>
   <Card title="First agent (LiveKit)" icon="microphone" href="/guide/first-agent">

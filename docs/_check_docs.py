@@ -77,6 +77,9 @@ _HREF_RE = re.compile(r"""href\s*=\s*["']([^"']+)["']""")
 # `## Heading {#anchor}` custom-id syntax: valid in some markdown flavors, but MDX parses
 # the `{...}` as a JS expression and acorn fails ("Could not parse expression").
 _HEADING_ANCHOR_RE = re.compile(r"^#{1,6}\s.*\{#[^}]+\}\s*$", re.MULTILINE)
+# A body-opening H1: up to three leading spaces (CommonMark's allowance), a single `#`
+# (not `##`+, which is a lower heading level), then a space or tab before the text.
+_H1_RE = re.compile(r"^ {0,3}#(?!#)[ \t]")
 
 
 def _iter_page_refs(nav_node) -> list[str]:
@@ -294,7 +297,7 @@ def main(argv: list[str]) -> int:
 
         # Rule 10: no leading `# H1` in the body; Mintlify already renders title:.
         first_line = next((ln for ln in body.splitlines() if ln.strip()), "")
-        if first_line.startswith("# "):
+        if _H1_RE.match(first_line):
             errors.append(
                 f"[rule 10] '{slug}' body opens with an H1 ({first_line.strip()!r}); "
                 f"Mintlify renders the frontmatter title, so this prints it twice. "

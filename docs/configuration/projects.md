@@ -47,7 +47,7 @@ Today none of the three `budget_action` values change gateway behavior on their 
 
 To actually stop or reroute a call once a cap is hit, wrap the provider with [`guard()`](/guide/guard) and pass its own `budget="$X/day"` argument. That check is a separate mechanism scoped to the `guard()` call itself; it does not read a project's `daily_budget`/`budget_action`.
 
-Budget tracking (the spend that powers the status badge) requires the storage backend to be on: top-level `cost_tracking.enabled: true` in `voicegw.yaml`, or `VOICEGW_DB_PATH` / `VOICEGW_DB_URL` set. Without storage, spend always reads as `$0`.
+Budget tracking (the spend that powers the status badge) requires the storage backend to be on. For `attach()`/`guard()`, that means `VOICEGW_DB_PATH` (local SQLite) or `VOICEGW_COLLECTOR_URL` + `VOICEGW_API_KEY` (fleet collector) set as environment variables: `attach()` does not read `cost_tracking.enabled` from `voicegw.yaml`. For the Gateway behind `voicegw serve`, `cost_tracking.enabled: true` in `voicegw.yaml` (or `VOICEGW_DB_PATH` / `VOICEGW_DB_URL`) turns storage on instead. Without storage, spend always reads as `$0`.
 
 ## Which project a call lands under
 

@@ -66,7 +66,7 @@ Measures SFU connection quality from the host running `voicegw`.
 One host only shows what one machine can push. Run one coordinator and N probers to ramp the same room concurrently from several regions:
 
 ```bash
-# coordinator - needs the dashboard extra: pip install 'voicegateway[dashboard]'
+# coordinator - needs both the dashboard and livekit extras: pip install 'voicegateway[dashboard,livekit]'
 voicegw livekit sfu --coordinator --expect 3 --ramp 10,25,50 --duration 20s
 
 # each prober - needs the livekit extra: pip install 'voicegateway[livekit]'

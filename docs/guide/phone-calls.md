@@ -25,7 +25,7 @@ The **LiveKit webhook** (`POST /v1/livekit/webhook`) is the baseline. On `partic
 
 `VOICEGW_LOADTEST_TRUNK_IDS` is a comma-separated list of SIP trunk ids treated as synthetic load. A joining leg whose `sip.trunkID` matches one stamps the call `is_probe=true`. Never `false`: a webhook that can't see the trunk id leaves the flag alone rather than clearing one another writer set. Probe traffic is never marked from a header or caller-supplied field, since anything on the wire can be forged.
 
-**`POST /v1/calls/observations`** is the second writer: an agent or load worker's own self-report, for the part of the timeline only a process inside the call can see. A posted leg with `kind: "SIP"` is the caller leg as that reporter saw it, on its own clock. The endpoint is fire-and-forget (202, a background flusher writes it) and rejects, rather than silently drops, anything with no column: per-call SIP response codes, RTP loss/jitter/MOS, and a reported call duration are all refused.
+**`POST /v1/calls/observations`** is the second writer: an agent or load worker's own self-report, for the part of the timeline only a process inside the call can see. A posted leg with `kind: "SIP"` is the caller leg as that reporter saw it, on its own clock. The endpoint is fire-and-forget (202, a background flusher writes it) and rejects, rather than silently drops, anything with no column: per-call SIP response codes, RTP loss/jitter/MOS, and a reported call duration are all refused. That refusal is a 422 on the field itself, and is distinct from a 429 (the queue is full, the report is dropped) or a 503 (observations are disabled, or this collector has no call storage).
 
 ## Answer latency precision
 

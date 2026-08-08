@@ -121,6 +121,8 @@ say something, and watch the dashboard.
 
 ## View costs
 
+The daemon must be running first: `voicegw init` once, then `voicegw serve` in another terminal (see [Quickstart](/get-started)).
+
 ```bash
 voicegw dashboard              # opens the browser at http://localhost:8080
 voicegw costs --project my-agent

@@ -80,6 +80,8 @@ path silently: no error, no rows written. Pass a real `AgentSession` or
 
     import voicegateway
 
+    transport = ...  # your Pipecat transport: DailyTransport, a SIP serializer, LocalAudioTransport, etc.
+
     pipeline = Pipeline([
         transport.input(),
         DeepgramSTTService(api_key=DEEPGRAM_API_KEY),

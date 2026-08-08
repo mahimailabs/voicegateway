@@ -6,7 +6,7 @@ description: The provider/model id VoiceGateway uses to price every request, how
 
 Every model is identified by a `provider/model` string:
 
-```
+```text
 deepgram/nova-3
 openai/gpt-4.1-mini
 cartesia/sonic-3

@@ -2,7 +2,7 @@
 title: Dead air
 description: What counts as a dead-air event, the default threshold, and where detected events surface.
 ---
-Dead air is silence on a call that outlasts a threshold: nobody speaking, the caller or the agent, for longer than expected. VoiceGateway's `DeadAirDetector` is a per-session watchdog that polls for it and writes an event when it fires.
+Dead air is silence on a call that outlasts a threshold: no activity from the caller or the agent, as the wired probe reports it, for longer than expected. VoiceGateway's `DeadAirDetector` is a per-session watchdog that polls for it and fires an event when it crosses that threshold, written only if a callback is wired to catch it.
 
 ## What counts as dead air
 

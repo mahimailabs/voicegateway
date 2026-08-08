@@ -1,6 +1,6 @@
 ---
 title: voicegw loadtest
-description: Import an external SIP load generator's run artifacts, correlate them with scraped node metrics, and report on them with provenance that cannot be faked.
+description: Import an external SIP load generator's run artifacts, correlate them with scraped node metrics, and report on them with provenance that defaults to synthetic unless the operator declares the run captured.
 ---
 VoiceGateway does not place calls, and `loadtest` does not either. An external SIP load generator drives the load: this reads what it left on disk, correlates it against scraped fleet metrics, and writes a report. VoiceGateway vendors no such generator. See [What you can profile](/guide/what-you-can-profile) for how this fits the rest of the stack.
 
@@ -14,7 +14,7 @@ voicegw loadtest report ramp-500 --acceptance
 
 ## import
 
-`voicegw loadtest import DIRECTORY` reads one test's artifacts. A directory of subdirectories imports one test per subdirectory, sequenced by name so a ramp's steps stay in order. Re-importing the same directory updates that run (id defaults to the directory name) rather than creating a second one.
+`voicegw loadtest import DIRECTORY` reads one test's artifacts. A directory of subdirectories imports one test per subdirectory, sorted lexicographically by name, not numerically. Pad step numbers to equal width (`ramp-0250`, not `ramp-250`): unpadded, `ramp-1000` sorts before `ramp-250`. Re-importing the same directory updates that run (id defaults to the directory name) rather than creating a second one.
 
 **What the directory must hold.** Either surface below is enough alone; both absent, nothing imports:
 

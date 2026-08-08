@@ -12,14 +12,14 @@ See [`voicegw livekit sfu`](/cli/livekit#voicegw-livekit-sfu) for the combined-r
 2. Each prober (`sfu --report-to <url> --vantage <label>`) registers, waits for the barrier, ramps the shared room, and posts its per-tier measurements back.
 3. Once every prober has reported, the coordinator aggregates (sum clients per tier, worst rtt / loss / quality), prints the combined capacity, and deletes the shared rooms.
 
-Coordinator: `[dashboard]` extra (`pip install 'voicegateway[dashboard]'`). Probers: `[livekit]`, not the base install. The CLI imports the LiveKit diagnostics modules at startup, so even `voicegw --help` fails with `ModuleNotFoundError` without it.
+Coordinator: `[dashboard,livekit]` extras (`pip install 'voicegateway[dashboard,livekit]'`). Probers: `[livekit]`, not the base install. The CLI imports the LiveKit diagnostics modules at startup, so even `voicegw --help` fails with `ModuleNotFoundError` without it.
 
 ## Coordinator
 
 Run the coordinator somewhere probers can reach over HTTP:
 
 ```bash
-pip install 'voicegateway[dashboard]'
+pip install 'voicegateway[dashboard,livekit]'
 export LIVEKIT_URL=wss://your.livekit.cloud
 export LIVEKIT_API_KEY=... LIVEKIT_API_SECRET=...
 
@@ -65,7 +65,7 @@ Each machine reads its vantage label from `VOICEGW_REGION`, which the entrypoint
 ## Limitations
 
 - Per-tier concurrency drifts after the first tier: the barrier synchronizes only the shared start, and each vantage advances to its next tier as soon as its own measurement finishes. Combined per-tier sums are exact at tier one, an upper bound after. Lean on baseline and first-tier numbers for the tightest signal.
-- If a prober dies, the run degrades rather than hangs. The coordinator stops after its timeout (default 10 minutes) and aggregates whatever reported; a missing vantage shows up under `dropped` in the report.
+- If a prober dies, the run degrades instead of hanging. The coordinator stops after its timeout (default 10 minutes) and aggregates whatever reported; a missing vantage shows up under `dropped` in the report.
 
 ## Cost and safety
 

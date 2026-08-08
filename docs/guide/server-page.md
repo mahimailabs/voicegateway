@@ -63,7 +63,8 @@ idle, registered-but-undispatched workers. It comes from your agents calling
 `register_worker(...)`, heartbeating to this collector (`VOICEGW_COLLECTOR_URL` +
 `VOICEGW_API_KEY`). Columns: agent, status (idle/busy/offline), region, host, version, active
 sessions, memory percent (RSS over the worker's memory ceiling), last seen. Empty when nothing has
-heartbeated.
+heartbeated, but also when the roster read itself fails: a failed read degrades to the same empty
+list, and the dashboard doesn't currently surface which one happened.
 
 ## What this page cannot show you
 

@@ -644,7 +644,7 @@ For the equivalent endpoints on the public API, see the [HTTP API](/api/http-api
 
 **Authentication:** both POSTs require the `admin` scope; the GET does not. White-label branding is an operator/agency setting: the write stamps the `logo_url` every dashboard page renders and the `product_name` it renders as its own name. The **GET stays open to any authenticated reader on purpose**: every dashboard layout mount calls it to apply the brand, and the frontend treats a `403` exactly like a `401` (it clears the stored token and shows the login gate), so gating it behind the admin scope would log out a read-scoped operator on page load. That is why the gate sits on the two write routes and not on the router. Both gates are no-ops while no API keys are configured.
 
-The logo upload accepts SVG and PNG; see the branding endpoint above for the size and content limits.
+The logo upload accepts PNG or SVG, capped at 256 KB on the wire; a PNG is also capped at 512x512 pixels (SVG is vector, so no dimension check applies). An uploaded SVG is rejected if it contains script, an event-handler attribute, or an executable URL scheme.
 
 ## GET /api/loadtest/runs
 

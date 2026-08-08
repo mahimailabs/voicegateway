@@ -30,15 +30,18 @@ The overlay ([`docker-compose.autoupdate.yml`](https://github.com/mahimailabs/vo
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docker-compose.autoupdate.yml
-docker compose -f docker-compose.collector.yml -f docker-compose.autoupdate.yml up -d
 ```
 
 <Warning>
 The overlay file in the repository still pins `mahimairaja/voicegateway:0.10`. Until that
 is bumped, the file you just downloaded puts you on a channel twelve minors behind what
-this page describes. Edit its `image:` line to `:0.22` after downloading, and re-check it
-on your next pull.
+this page describes. Edit its `image:` line to `:0.22` before you bring the stack up, and
+re-check it on your next pull.
 </Warning>
+
+```bash
+docker compose -f docker-compose.collector.yml -f docker-compose.autoupdate.yml up -d
+```
 
 That starts three things alongside the daemon:
 

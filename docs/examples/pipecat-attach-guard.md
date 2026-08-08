@@ -128,6 +128,8 @@ if __name__ == "__main__":
 
 ## Run
 
+Before this, start the daemon in another terminal: `voicegw init` once, then `voicegw serve` (see [Quickstart](/get-started)).
+
 ```bash
 python agent.py
 ```
@@ -154,7 +156,11 @@ Both do the same thing; pick whichever reads cleaner:
 voicegateway.attach(task, project=PROJECT)
 
 # Or in the constructor:
-task = PipelineTask(pipeline, params=params, observers=[voicegateway.Observer(project=PROJECT)])
+task = PipelineTask(
+    pipeline,
+    params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
+    observers=[voicegateway.Observer(project=PROJECT)],
+)
 ```
 
 ## Fallback scope on Pipecat

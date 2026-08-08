@@ -214,7 +214,7 @@ docker run -p 8080:8080 \
   -e VOICEGW_DB_URL="postgresql+asyncpg://user:pass@host:5432/voicegw" \
   -v $(pwd)/voicegw.yaml:/app/voicegw.yaml:ro \
   -e VOICEGW_CONFIG=/app/voicegw.yaml \
-  mahimairaja/voicegateway:latest
+  mahimairaja/voicegateway:0.22.3
 ```
 
 ## Verifying the deployment

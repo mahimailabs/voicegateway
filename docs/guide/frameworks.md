@@ -39,7 +39,7 @@ Calling `attach()` or `guard()` with a target whose framework extra isn't
 installed raises a clear, actionable error instead of a raw
 `ModuleNotFoundError`:
 
-```
+```text
 ImportError: voicegateway[pipecat] is required for this operation.
 Install it with: pip install voicegateway[pipecat]
 ```
