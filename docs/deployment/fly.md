@@ -11,9 +11,17 @@ hostnames) is written from Fly's documented behavior and is not verified here. F
 on its own schedule; check their docs if a step does not match what you see.
 </Note>
 
-<Note>
-**Config is optional at boot.** The image bakes `VOICEGW_CONFIG=/data/voicegw.yaml`, but the server no longer requires that file. When it is absent the loader warns once and boots on built-in defaults, so `/health` comes up and the machine does not restart-loop. A config file is how you declare providers, models, and projects; it is not a precondition for starting. Mount or write one when you want those, using a `[[files]]` block in `fly.toml` or a volume, and point `VOICEGW_CONFIG` at it.
-</Note>
+<Warning>
+**Provide a config file.** The image bakes `VOICEGW_CONFIG=/data/voicegw.yaml`. Write or
+mount a `voicegw.yaml` there, using a `[[files]]` block in `fly.toml` or a volume, and
+point `VOICEGW_CONFIG` at it if you use a different path.
+
+On `0.22.3`, the version pinned below, a missing file is fatal: the daemon raises
+`ConfigError` before binding a port, so `/health` never comes up and Fly restarts the
+machine forever. A later release relaxes this to a warning and boots on built-in
+defaults, but a default-config daemon has no providers, models, or projects declared, so
+you want the file either way.
+</Warning>
 
 <Tip>
 Deploy in a region close to where your agents run to cut ingest latency: `--region` on `fly deploy`, or `primary_region` in `fly.toml`.

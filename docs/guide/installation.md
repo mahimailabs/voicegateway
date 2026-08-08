@@ -146,14 +146,15 @@ docker compose up -d
 ```
 
 <Note>
-  The container itself boots without a config file: it warns once and falls back
-  to built-in defaults. `voicegw init` is still worth running first, because a
-  default-config daemon has no providers, models, or projects declared.
+  Run `voicegw init` first. On the published `0.22.3` image a missing config file
+  is fatal: the container exits at boot. A later release relaxes that to a warning
+  and boots on built-in defaults, but a default-config daemon has no providers,
+  models, or projects declared, so you want the file regardless.
 
-  The CLI is stricter than the container. `voicegw serve`, `costs`, `logs`, and
-  `status` all resolve a config and raise `ConfigError` when there is none, so a
-  mistyped `--config` stays a hard error rather than silently starting on
-  defaults.
+  The CLI is stricter than the container either way. `voicegw serve`, `costs`,
+  `logs`, and `status` all resolve a config and raise `ConfigError` when there is
+  none, so a mistyped `--config` stays a hard error rather than silently starting
+  on defaults.
 </Note>
 
 Full production setup (published image, `.env`, health checks, persistent
