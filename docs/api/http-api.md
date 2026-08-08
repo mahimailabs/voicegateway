@@ -202,6 +202,88 @@ curl "http://localhost:8080/v1/sessions/vg-8f1c"
 
 ---
 
+## Rooms
+
+The per-stage latency split for one LiveKit room, over HTTP.
+
+The same split is available in-process to `voicegw livekit latency`, but only when the prober and the agent share one local store. A deployment that runs the agent in one container and the collector in another holds every row needed and cannot reach the computation. This endpoint is that computation, reachable. No new measurement happens here.
+
+Keyed on the **room name**, deliberately, not on `session_id`. A caller mints the room name when it signs the LiveKit token, so the room is the only identifier both sides hold at call time; `session_id` is minted inside VoiceGateway and a caller never observes it.
+
+**Authentication:** read authentication, the same as [Sessions](#sessions). Tenant comes from the key and never from the request.
+
+### GET /v1/rooms/{room_name}/latency
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `since_turn` | `integer` | `null` | Return only turns whose room-wide `seq` is greater than this. Filters `turns` **only**. |
+
+`since_turn` is a cursor over `turns` and nothing else. It cuts on `seq`, the room-wide position, **not** on `turn_index`: `turn_index` is session-local, so a room carrying more than one session has two turns numbered `0`, two numbered `1`, and so on. Pass back the `seq` of the last turn you saw.
+
+`components` and `e2e_ms` are whole-call aggregates and are never narrowed by `since_turn`. They are recomputed from the rows present at request time, so they **do** move as a call progresses and successive polls will differ; what `since_turn` guarantees is only that it is not the thing moving them.
+
+**Four answers that mean different things:**
+
+| Response | Meaning |
+|---|---|
+| `404` | This collector has never seen that room, **or** the room belongs to another tenant. Identical on purpose: a `403` would confirm the room is real. |
+| `200`, `components: null` | The room is known and nothing correlated: an uninstrumented agent, or no completed turn yet. |
+| `200`, `complete: false` | A real split, still partial because the agent process is mid-flush. **Poll again rather than rendering it.** |
+| `200`, a component is `null` | That stage produced no measurement. It is never `0`: a stage shown as `0.00` reads as "instant". |
+
+Every value is in **milliseconds**, but of two different kinds, and the field names do not distinguish them:
+
+- **Epoch timestamps** (a point in time): `caller_speak_end_ms`, `agent_speak_start_ms`. Unix epoch, milliseconds.
+- **Elapsed durations** (a length of time): `response_speed_ms`, every member of `components`, and every member of `e2e_ms`.
+
+**Example:**
+
+```bash
+curl -H "Authorization: Bearer vk_..." \
+  "http://localhost:8080/v1/rooms/demo-a1b2c3/latency?since_turn=5"
+```
+
+```json
+{
+  "room": "demo-a1b2c3",
+  "project": "acme-w1",
+  "turn_count": 7,
+  "complete": true,
+  "components": {
+    "eou_ms": 302.0,
+    "stt_ttfp_ms": 121.0,
+    "stt_transcription_delay_ms": 88.0,
+    "stt_ms": 209.0,
+    "llm_ttft_ms": 447.0,
+    "tts_ttfb_ms": 92.0
+  },
+  "e2e_ms": {
+    "p50": 1041.0, "p95": 1288.0, "avg": 1074.0,
+    "min": 902.0, "max": 1301.0, "n": 7
+  },
+  "turns": [
+    {
+      "seq": 6,
+      "turn_index": 6,
+      "session_id": "vg-8f1c",
+      "caller_speak_end_ms": 1800000012345,
+      "agent_speak_start_ms": 1800000013386,
+      "response_speed_ms": 1041
+    }
+  ]
+}
+```
+
+`e2e_ms` is computed by the same `summarize()` the CLI reports through, so the two surfaces cannot drift on what `p95` means. It is `null`, rather than a row of zeros, when **no turn carries a measured `response_speed_ms`**.
+
+That is not the same as "no turns": `turn_count` can be non-zero while `e2e_ms` is `null`. A turn the agent never answered records a null `response_speed_ms`, and such turns are listed in `turns` but contribute no sample. Averaging them in as `0` would drag every percentile down and report a call as faster than it was.
+
+**Not provided, on purpose:** no CORS and no browser-facing key (a read-scoped key in a browser can read every session and cost row for the tenant, so proxy it server-side); no WebSocket or SSE (ingest is batched behind a bounded queue, so freshness is inherently seconds, and a socket would deliver seconds-stale data faster while adding a stateful fan-out surface); no per-turn component split.
+
+---
+
 ## Billing
 
 The rating layer's read surface. VoiceGateway rates each recorded request at write time (`rated_price_usd` + `rate_rule`); these endpoints roll that up per tenant and expose the rate card in effect. See [Rating](/architecture/rating) for the model.
