@@ -36,9 +36,8 @@ Use `0.24.0` or newer.
     leaves Railway.
 
     <Warning>
-    The `+asyncpg` is the part that matters. Railway's own `DATABASE_URL` is
-    `postgresql://`, which fails at boot because it wants a driver the image does not
-    carry. VoiceGateway reads only `VOICEGW_DB_URL` and does not rewrite the scheme.
+    Keep the `+asyncpg`, and do not substitute Railway's own `DATABASE_URL`. It is plain
+    `postgresql://`, which fails at boot: the image carries no driver for it.
     </Warning>
 
     `VOICEGW_API_KEY` registers a wildcard ingest key without needing an `auth.api_keys:`
