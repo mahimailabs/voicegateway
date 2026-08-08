@@ -19,6 +19,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 
+from voicegateway.middleware.turn_tracker_middleware import TurnRow
 from voicegateway.models.request_model import RequestRecord
 from voicegateway.server.api._deps import get_gateway, require_scope
 
@@ -29,6 +30,8 @@ router = APIRouter()
 _RECORD_FIELDS: frozenset[str] = frozenset(
     f.name for f in dataclasses.fields(RequestRecord)
 )
+
+_TURN_FIELDS: frozenset[str] = frozenset(f.name for f in dataclasses.fields(TurnRow))
 
 
 def _record_from_payload(raw: dict[str, Any]) -> RequestRecord | None:
@@ -168,6 +171,80 @@ async def ingest(
     if rejected:
         logger.warning("ingest: skipped %d malformed record(s)", rejected)
     return {"accepted": accepted, "duplicates": duplicates}
+
+
+def _turn_from_payload(raw: dict[str, Any]) -> TurnRow | None:
+    """Build a TurnRow from a payload dict, ignoring unknown keys.
+
+    Returns None for a malformed row so one bad turn does not reject the batch,
+    matching ``_record_from_payload``.
+    """
+    filtered = {k: v for k, v in raw.items() if k in _TURN_FIELDS}
+    try:
+        return TurnRow(**filtered)
+    except TypeError:
+        return None
+
+
+@router.post("/ingest/turns")
+async def ingest_turns(
+    rows: list[dict[str, Any]],
+    request: Request,
+    _auth: None = Depends(require_scope("write")),
+) -> dict[str, int]:
+    """Persist a batch of conversation turns pushed by a fleet agent.
+
+    Its own route rather than a discriminated record on ``/v1/ingest``. That
+    handler builds a RequestRecord out of every dict it receives and counts
+    anything that fails to build as malformed, so a turn row posted there would
+    be answered ``200`` and silently dropped, which is the exact failure this
+    endpoint exists to end.
+
+    Always SQL, even when ClickHouse is configured for requests: ClickHouse has
+    no turns table, and every reader of turns (``/v1/rooms/{room}/latency``,
+    ``/api/sessions/{id}/turns``, the session aggregates) reads them from SQL.
+    Splitting the write would make those readers empty again.
+    """
+    gateway = get_gateway(request)
+    storage = gateway.storage
+    if storage is None:
+        raise HTTPException(
+            status_code=503,
+            detail="cost tracking storage is disabled on this collector",
+        )
+
+    max_batch = gateway.config.ingest.max_batch_size
+    if len(rows) > max_batch:
+        raise HTTPException(
+            status_code=413,
+            detail=f"batch too large: {len(rows)} turns exceeds max {max_batch}",
+        )
+
+    turns: list[TurnRow] = []
+    rejected = 0
+    for raw in rows:
+        turn = _turn_from_payload(raw)
+        if turn is None:
+            rejected += 1
+            continue
+        turns.append(turn)
+
+    accepted = 0
+    if turns:
+        try:
+            accepted = await storage.log_turns(turns)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "ingest/turns: failed to persist %d turn(s)", len(turns), exc_info=True
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="telemetry store temporarily unavailable",
+            ) from exc
+
+    if rejected:
+        logger.warning("ingest/turns: skipped %d malformed turn(s)", rejected)
+    return {"accepted": accepted}
 
 
 __all__ = ["router"]

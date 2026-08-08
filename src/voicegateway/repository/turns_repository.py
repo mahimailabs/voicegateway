@@ -13,6 +13,11 @@ from voicegateway.middleware.turn_tracker_middleware import TurnRow
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+# Mirrors MetricsConfig.talk_over_min_overlap_ms. Restated rather than imported
+# so the repository layer does not pull in config; the guard test asserts the
+# two stay equal.
+DEFAULT_TALK_OVER_MIN_OVERLAP_MS = 100
+
 
 _INSERT_TURN = text(
     "INSERT INTO turns ("
@@ -122,8 +127,20 @@ async def aggregate_response_speed(
     }
 
 
-async def count_overlap_turns(session: AsyncSession, session_id: str) -> int:
-    """Return the number of turn pairs that overlap (talk-over events)."""
+async def count_overlap_turns(
+    session: AsyncSession,
+    session_id: str,
+    *,
+    min_overlap_ms: int = DEFAULT_TALK_OVER_MIN_OVERLAP_MS,
+) -> int:
+    """Return the number of turn pairs that overlap (talk-over events).
+
+    ``min_overlap_ms`` is how much the caller must cut into the agent's speech
+    before it counts. Any overlap at all used to count, which made a caller
+    starting a few milliseconds early indistinguishable from one talking over
+    the agent, and is what ``metrics.talk_over_min_overlap_ms`` was declared to
+    control before anything read it.
+    """
     result = await session.execute(
         text(
             "SELECT COUNT(*) FROM turns t1 "
@@ -132,15 +149,17 @@ async def count_overlap_turns(session: AsyncSession, session_id: str) -> int:
             " AND t0.turn_index = t1.turn_index - 1 "
             "WHERE t1.session_id = :session_id "
             "  AND t0.agent_speak_end_ms IS NOT NULL "
-            "  AND t1.caller_speak_start_ms < t0.agent_speak_end_ms"
+            "  AND (t0.agent_speak_end_ms - t1.caller_speak_start_ms) "
+            "      >= :min_overlap_ms"
         ),
-        {"session_id": session_id},
+        {"session_id": session_id, "min_overlap_ms": max(1, min_overlap_ms)},
     )
     row = result.fetchone()
     return int(row[0]) if row is not None else 0
 
 
 __all__ = [
+    "DEFAULT_TALK_OVER_MIN_OVERLAP_MS",
     "aggregate_response_speed",
     "count_overlap_turns",
     "create_turn",

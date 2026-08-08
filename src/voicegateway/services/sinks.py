@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from voicegateway.middleware.turn_tracker_middleware import TurnRow
     from voicegateway.models.request_model import RequestRecord
     from voicegateway.services.storage_service import StorageService
 
@@ -39,13 +40,20 @@ def _now() -> float:
 
 @runtime_checkable
 class Sink(Protocol):
-    """Narrow write target for request records.
+    """Narrow write target for captured telemetry.
 
-    ``log_request`` persists one record. ``flush`` drains any buffered
-    writes (a no-op for synchronous sinks). ``aclose`` releases resources.
+    ``log_request`` persists one record. ``log_turns`` persists a batch of
+    conversation turns. ``flush`` drains any buffered writes (a no-op for
+    synchronous sinks). ``aclose`` releases resources.
+
+    ``log_turns`` takes a batch rather than one row because TurnTracker already
+    buffers to ``turn_buffer_flush_size`` before calling out, so a per-row
+    method would only unpick batching the caller has already done.
     """
 
     async def log_request(self, record: RequestRecord) -> None: ...
+
+    async def log_turns(self, rows: list[TurnRow]) -> None: ...
 
     async def flush(self) -> None: ...
 
@@ -66,6 +74,9 @@ class LocalSqliteSink:
 
     async def log_request(self, record: RequestRecord) -> None:
         await self._storage.log_request(record)
+
+    async def log_turns(self, rows: list[TurnRow]) -> None:
+        await self._storage.log_turns(rows)
 
     async def flush(self) -> None:
         return None
@@ -135,6 +146,9 @@ class RemoteCollectorSink:
         sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
         self._ingest_url = _normalize_ingest_url(url)
+        # Turns get their own route off the same base. See _post for why they
+        # cannot share /v1/ingest.
+        self._turns_url = self._ingest_url + "/turns"
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self._batch_size = max(1, batch_size)
         self._flush_interval = flush_interval
@@ -149,6 +163,12 @@ class RemoteCollectorSink:
         # ``(seq, payload)`` so an ack can delete exactly those outbox rows.
         self._buffer: list[dict[str, Any]] = []
         self._spooled: list[tuple[int, dict[str, Any]]] = []
+        # Turns batch in memory and are never written to the durable outbox.
+        # The outbox exists so ``voicegw reconcile`` can prove no COST row was
+        # lost; turns are timing metadata that reconcile does not read, and
+        # spooling them would mean a schema change to outbox files already on
+        # disk in deployed agents. Dropped turns are counted and logged.
+        self._turn_buffer: list[dict[str, Any]] = []
         self._flusher: asyncio.Task[None] | None = None
         self._closed = False
         # Durable outbox (opt-in).
@@ -342,6 +362,40 @@ class RemoteCollectorSink:
         if len(self._buffer) >= self._batch_size:
             await self.flush()
 
+    async def log_turns(self, rows: list[TurnRow]) -> None:
+        """Buffer a batch of turns for the collector's ``/v1/ingest/turns``.
+
+        Best-effort by the same rule as ``log_request``: this runs on the
+        agent's hot path at the end of a turn, so it never blocks and never
+        raises. Overflow drops oldest, counted and logged rather than silent.
+        """
+        if not rows:
+            return
+        self._turn_buffer.extend(asdict(row) for row in rows)
+        if len(self._turn_buffer) > self._max_buffer:
+            overflow = len(self._turn_buffer) - self._max_buffer
+            del self._turn_buffer[:overflow]
+            self._dropped += overflow
+            logger.warning(
+                "RemoteCollectorSink turn buffer full; dropped %d oldest turn(s)",
+                overflow,
+            )
+        self._maybe_start_flusher()
+        if len(self._turn_buffer) >= self._batch_size:
+            await self._flush_turns()
+
+    async def _flush_turns(self) -> None:
+        """Drain the turn buffer to the collector. Requeues on failure."""
+        if not self._turn_buffer:
+            return
+        batch = self._turn_buffer
+        self._turn_buffer = []
+        if not await self._post(batch, self._turns_url):
+            # Put them back so the next flush (or aclose) retries. _post has
+            # already exhausted its own retries and logged the reason; the
+            # buffer cap above is what bounds this.
+            self._turn_buffer = batch + self._turn_buffer
+
     def _maybe_start_flusher(self) -> None:
         if not self._flush_interval or self._flusher is not None or self._closed:
             return
@@ -360,6 +414,10 @@ class RemoteCollectorSink:
             pass
 
     async def flush(self) -> None:
+        # Turns drain on every flush, including the spool path. They share the
+        # periodic flusher and aclose with requests, but not the outbox, so this
+        # runs regardless of which request path is taken below.
+        await self._flush_turns()
         if self._spool_path is not None:
             if not self._spooled:
                 return
@@ -381,20 +439,24 @@ class RemoteCollectorSink:
         self._buffer = []
         await self._post(batch)
 
-    async def _post(self, batch: list[dict[str, Any]]) -> bool:
+    async def _post(self, batch: list[dict[str, Any]], url: str | None = None) -> bool:
         """POST a batch; return True on ack (2xx), False if it was not delivered.
 
         The return value drives the durable-spool ack/requeue decision. The
         legacy (no-spool) caller ignores it, preserving best-effort behavior.
+
+        ``url`` defaults to the ingest endpoint. Turns pass their own, because
+        the ingest handler builds a RequestRecord out of every dict it is given
+        and counts anything that fails to build as malformed. A turn row sent
+        there would be answered 200 and dropped.
         """
+        target = url if url is not None else self._ingest_url
         client = self._ensure_client()
         attempt = 0
         while True:
             reason: Any
             try:
-                resp = await client.post(
-                    self._ingest_url, json=batch, headers=self._headers
-                )
+                resp = await client.post(target, json=batch, headers=self._headers)
                 if resp.status_code < 400:
                     return True
                 if resp.status_code == 429:
