@@ -151,8 +151,17 @@ async def get_session(session: AsyncSession, session_id: str) -> dict[str, Any] 
     return out
 
 
-async def finalize_session_metrics(session: AsyncSession, session_id: str) -> None:
-    """Recompute and upsert the five aggregate columns on a session row."""
+async def finalize_session_metrics(
+    session: AsyncSession,
+    session_id: str,
+    *,
+    min_overlap_ms: int = turns.DEFAULT_TALK_OVER_MIN_OVERLAP_MS,
+) -> None:
+    """Recompute and upsert the five aggregate columns on a session row.
+
+    ``min_overlap_ms`` reaches ``count_overlap_turns``, which is what makes
+    ``metrics.talk_over_min_overlap_ms`` mean something.
+    """
     session_turns = await turns.list_turns_by_session(session, session_id)
     if not session_turns:
         return
@@ -177,7 +186,9 @@ async def finalize_session_metrics(session: AsyncSession, session_id: str) -> No
     )
 
     pcts = await turns.aggregate_response_speed(session, session_id)
-    overlap_count = await turns.count_overlap_turns(session, session_id)
+    overlap_count = await turns.count_overlap_turns(
+        session, session_id, min_overlap_ms=min_overlap_ms
+    )
     total_turns = len(session_turns)
     talk_over_rate = overlap_count / total_turns if total_turns > 0 else None
 

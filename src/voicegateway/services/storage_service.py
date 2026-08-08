@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -25,12 +26,24 @@ _logger = logging.getLogger(__name__)
 class StorageService:
     """Aggregates per-domain services over one SQLite database."""
 
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(
+        self, db_path: str | Path, *, config: GatewayConfig | None = None
+    ) -> None:
         # Database.__init__ quiets the noisy aiosqlite/alembic loggers now, so this
         # facade no longer needs its own call.
         self._db_path = Path(db_path).expanduser()
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg = GatewayConfig(cost_tracking={"db_path": str(self._db_path)})
+        # ``config`` carries the caller's loaded voicegw.yaml so knobs the
+        # services read (metrics.talk_over_min_overlap_ms) are the user's rather
+        # than built-in defaults. db_path still wins: it is the path this facade
+        # was explicitly opened on, and callers pass it separately.
+        if config is not None:
+            cfg = replace(
+                config,
+                cost_tracking={**config.cost_tracking, "db_path": str(self._db_path)},
+            )
+        else:
+            cfg = GatewayConfig(cost_tracking={"db_path": str(self._db_path)})
         self._conn = Database(cfg)
         self._initialized = False
         # Serialize concurrent _ensure_initialized calls so alembic's
@@ -349,6 +362,25 @@ class StorageService:
                 db, project=project, since=since, warn_threshold=warn_threshold
             )
         return dataclasses.asdict(row)
+
+    # ------------------------------------------------------------------
+    # Turns
+    # ------------------------------------------------------------------
+
+    async def log_turns(self, rows: list[Any]) -> int:
+        """Bulk-write captured turns. Returns the number inserted.
+
+        A passthrough for the same reason as the load-run writes above: the
+        repository owns the insert and the tenant resolution, and a second copy
+        of that here is how the two drift.
+        """
+        from voicegateway.repository import turns_repository as turns
+
+        if not rows:
+            return 0
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            return await turns.create_turns_bulk(db, rows)
 
     # ------------------------------------------------------------------
     # Load runs

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import TYPE_CHECKING, Any
@@ -57,32 +58,86 @@ def reset_components() -> None:
     _active_cost_tracker = None
 
 
-def _emit_user_started(session_id: str, tracker: TurnTracker) -> Any:
-    """Return an event-handler coroutine that forwards user-started events."""
+# Strong refs to in-flight turn-event tasks. asyncio only weak-refs scheduled
+# tasks, so without this a turn write can be collected mid-flight, exactly as
+# _close_tasks below guards the close-time finalize.
+_turn_tasks: set[Any] = set()
 
-    async def _handler(*_args: Any, **_kwargs: Any) -> None:
-        await tracker.on_user_started_speaking(session_id=session_id)
+
+def _schedule_turn_event(coro: Any, what: str) -> None:
+    """Run a tracker coroutine from a SYNCHRONOUS event callback.
+
+    LiveKit does not accept coroutine functions as event handlers. Its
+    ``EventEmitter.on`` raises outright:
+
+        ValueError: Cannot register an async callback with `.on()`.
+        Use `asyncio.create_task` within your synchronous callback instead.
+
+    So every handler here is a plain ``def`` that schedules the await, which is
+    what that message asks for. Registering ``async def`` handlers, as this
+    module used to, raised on any real ``AgentSession``; it survived only
+    because the test doubles accept anything from ``.on()``.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop: a synchronous test rig, or a callback fired off-loop.
+        # Dropping is correct here, and saying so beats a silent no-op.
+        logger.debug("attach: no running loop, dropping turn event %s", what)
+        coro.close()
+        return
+    task = loop.create_task(coro)
+    _turn_tasks.add(task)
+    task.add_done_callback(_on_turn_task_done)
+
+
+def _on_turn_task_done(task: Any) -> None:
+    _turn_tasks.discard(task)
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.warning("attach: turn event failed", exc_info=exc)
+
+
+def _emit_user_started(session_id: str, tracker: TurnTracker) -> Any:
+    """Return a sync event handler that forwards user-started events."""
+
+    def _handler(*_args: Any, **_kwargs: Any) -> None:
+        _schedule_turn_event(
+            tracker.on_user_started_speaking(session_id=session_id),
+            "user_started_speaking",
+        )
 
     return _handler
 
 
 def _emit_user_stopped(session_id: str, tracker: TurnTracker) -> Any:
-    async def _handler(*_args: Any, **_kwargs: Any) -> None:
-        await tracker.on_user_stopped_speaking(session_id=session_id)
+    def _handler(*_args: Any, **_kwargs: Any) -> None:
+        _schedule_turn_event(
+            tracker.on_user_stopped_speaking(session_id=session_id),
+            "user_stopped_speaking",
+        )
 
     return _handler
 
 
 def _emit_agent_started(session_id: str, tracker: TurnTracker) -> Any:
-    async def _handler(*_args: Any, **_kwargs: Any) -> None:
-        await tracker.on_agent_audio_first_frame(session_id=session_id)
+    def _handler(*_args: Any, **_kwargs: Any) -> None:
+        _schedule_turn_event(
+            tracker.on_agent_audio_first_frame(session_id=session_id),
+            "agent_started_speaking",
+        )
 
     return _handler
 
 
 def _emit_agent_stopped(session_id: str, tracker: TurnTracker) -> Any:
-    async def _handler(*_args: Any, **_kwargs: Any) -> None:
-        await tracker.on_agent_audio_last_frame(session_id=session_id)
+    def _handler(*_args: Any, **_kwargs: Any) -> None:
+        _schedule_turn_event(
+            tracker.on_agent_audio_last_frame(session_id=session_id),
+            "agent_stopped_speaking",
+        )
 
     return _handler
 
@@ -93,9 +148,13 @@ def _emit_close(
     detector: DeadAirDetector | None,
     cost_tracker: CostTracker | None,
 ) -> Any:
-    """Close handler: flush tracker, stop detector, finalize cost_tracker."""
+    """Close handler: flush tracker, stop detector, finalize cost_tracker.
 
-    async def _handler(*_args: Any, **_kwargs: Any) -> None:
+    Sync wrapper for the same reason as the emitters above: LiveKit refuses a
+    coroutine function at ``.on()``.
+    """
+
+    async def _run() -> None:
         try:
             await tracker.close_session(session_id)
         except Exception:
@@ -122,6 +181,9 @@ def _emit_close(
                     session_id,
                     exc_info=True,
                 )
+
+    def _handler(*_args: Any, **_kwargs: Any) -> None:
+        _schedule_turn_event(_run(), "close")
 
     return _handler
 
@@ -153,17 +215,16 @@ def attach_session(
 
     if tracker is None:
         logger.warning(
-            "attach_session(%s): no TurnTracker registered; "
-            "events will be dropped. Call register_components(...) "
-            "from the Gateway startup path first.",
+            "attach_session(%s): no TurnTracker; turn events will be dropped. "
+            "Pass turn_tracker=..., or use attach(session, turns=True), which "
+            "builds one wired to the sink for you.",
             sid,
         )
         return sid
 
-    agent_session.on("user_started_speaking", _emit_user_started(sid, tracker))
-    agent_session.on("user_stopped_speaking", _emit_user_stopped(sid, tracker))
-    agent_session.on("agent_started_speaking", _emit_agent_started(sid, tracker))
-    agent_session.on("agent_stopped_speaking", _emit_agent_stopped(sid, tracker))
+    # Shared with attach(turns=True) so both paths get the same event set,
+    # including the LiveKit 1.6 onset fallback.
+    _bind_turn_events(agent_session, sid, tracker)
     agent_session.on("close", _emit_close(sid, tracker, detector, ct))
 
     if detector is not None:
@@ -342,6 +403,7 @@ def attach(
     heartbeat: bool = False,
     transcript: bool = True,
     snapshots: bool = False,
+    turns: bool = True,
 ) -> str:
     """Attach VoiceGateway to a LiveKit ``AgentSession`` or Pipecat ``PipelineTask``.
 
@@ -407,6 +469,19 @@ def attach(
             local sink: a remote collector has no replay tables, so capture is
             skipped there rather than buffering rows nothing can flush.
             LiveKit-only, like transcripts.
+        turns: capture per-turn speech boundaries (default ON). One row per
+            caller/agent exchange: the turn index and the four speech timestamps,
+            from which ``response_speed_ms`` is derived. This is what
+            ``e2e_ms`` and the ``turns`` list on ``/v1/rooms/{room}/latency``
+            are computed from, along with the Conversation tab's response-speed
+            and talk-over columns; all of them read empty without it. On by
+            default because a turn row is six integers and carries no utterance,
+            no prompt and no tool payload, so the disclosure argument that keeps
+            ``snapshots`` off does not apply. Unlike transcripts it works
+            against a remote collector too, via ``POST /v1/ingest/turns``. Set
+            ``VOICEGW_TURNS=0`` to force it off fleet-wide (the kill-switch wins
+            over the argument). LiveKit-only: the Pipecat path accepts the flag
+            but has no equivalent speech-boundary events yet.
 
     Returns:
         The correlation session id stamped on every captured row.
@@ -428,6 +503,7 @@ def attach(
             heartbeat=heartbeat,
             transcript=transcript,
             snapshots=snapshots,
+            turns=turns,
         )
     return _attach_livekit(
         session,
@@ -441,6 +517,7 @@ def attach(
         heartbeat=heartbeat,
         transcript=transcript,
         snapshots=snapshots,
+        turns=turns,
     )
 
 
@@ -451,6 +528,104 @@ def _transcripts_enabled(param: bool) -> bool:
     if env is not None and env.strip().lower() in ("0", "false", "no", "off"):
         return False
     return param
+
+
+def _turns_enabled(param: bool) -> bool:
+    """Whether to capture conversation turns. Same shape as transcripts above.
+
+    DEFAULT ON, like transcripts and unlike snapshots. A turn row is six
+    integers: session id, turn index, and the caller/agent speech boundaries.
+    It carries no utterance, no prompt and no tool payload, so the disclosure
+    argument that makes snapshots opt-in does not apply. It is what
+    ``e2e_ms`` on ``/v1/rooms/{room}/latency`` and the Conversation tab's
+    response-speed and talk-over columns are computed from, and all of them
+    read empty without it.
+    """
+    env = os.environ.get("VOICEGW_TURNS")
+    if env is not None and env.strip().lower() in ("0", "false", "no", "off"):
+        return False
+    return param
+
+
+_DEFAULT_TURN_FLUSH_SIZE = 25
+_turn_flush_size_cache: dict[str | None, int] = {}
+
+
+def _turn_flush_size(project: str | None) -> int:
+    """How many turns TurnTracker buffers before writing through the sink.
+
+    ``metrics`` hangs off ProjectConfig rather than GatewayConfig, so
+    ``turn_buffer_flush_size`` is a per-project knob and needs the project
+    ``attach()`` was called with. Loaded with ``required=False`` because
+    ``attach()`` is library-side and must work with no config file at all;
+    absent one, this is the schema default, which is the same number.
+
+    Cached per project: a busy worker calls ``attach()`` once per session and
+    should not stat the filesystem each time.
+    """
+    if project in _turn_flush_size_cache:
+        return _turn_flush_size_cache[project]
+    size = _DEFAULT_TURN_FLUSH_SIZE
+    try:
+        from voicegateway.core.config import GatewayConfig
+
+        cfg = GatewayConfig.load(required=False)
+        pcfg = (cfg.projects or {}).get(project) if project else None
+        if pcfg is not None:
+            size = int(pcfg.metrics.turn_buffer_flush_size)
+    except Exception:  # noqa: BLE001 - a bad config must not break attach()
+        logger.debug("attach: reading turn_buffer_flush_size failed", exc_info=True)
+    if size < 1:
+        size = _DEFAULT_TURN_FLUSH_SIZE
+    _turn_flush_size_cache[project] = size
+    return size
+
+
+def _build_turn_tracker(sink: Sink, project: str | None) -> Any:
+    """A TurnTracker whose flush writes turns through the sink.
+
+    The flush callback is what was missing: TurnTracker's default is a no-op
+    that logs "turns dropped (no repository wired)" at debug, so every reader of
+    the turns table read empty no matter how the tracker was bound.
+    """
+    from voicegateway.middleware.turn_tracker_middleware import TurnRow, TurnTracker
+
+    async def _flush(rows: list[TurnRow]) -> None:
+        await sink.log_turns(rows)
+
+    return TurnTracker(flush_callback=_flush, flush_size=_turn_flush_size(project))
+
+
+def _bind_turn_events(session: Any, session_id: str, tracker: Any) -> None:
+    """Wire the speech-boundary events onto an AgentSession.
+
+    Onset is hooked twice on purpose. LiveKit 1.6 dropped the discrete
+    ``user_started_speaking`` and signals onset as ``user_state_changed`` ->
+    ``speaking``; older builds emit the discrete event. ``capture.py`` already
+    hooks both for the first-partial latency, and turn capture needs the same
+    treatment or turn starts go uncaptured on 1.6 with a tracker bound.
+
+    First-wins needs no latch here: ``on_user_started_speaking`` only sets
+    ``pending_caller_start_ms`` when it is None, so whichever event arrives
+    first anchors the turn and the other is a no-op.
+    """
+    on = getattr(session, "on", None)
+    if not callable(on):
+        logger.debug("attach: session has no .on(); turn events not bound")
+        return
+
+    started = _emit_user_started(session_id, tracker)
+
+    def _on_state_changed(event: Any = None, *_a: Any, **_k: Any) -> None:
+        if getattr(event, "new_state", None) != "speaking":
+            return
+        started(event)
+
+    on("user_started_speaking", started)
+    on("user_state_changed", _on_state_changed)
+    on("user_stopped_speaking", _emit_user_stopped(session_id, tracker))
+    on("agent_started_speaking", _emit_agent_started(session_id, tracker))
+    on("agent_stopped_speaking", _emit_agent_stopped(session_id, tracker))
 
 
 def _snapshots_enabled(param: bool) -> bool:
@@ -634,6 +809,7 @@ def _attach_livekit(
     heartbeat: bool = False,
     transcript: bool = True,
     snapshots: bool = False,
+    turns: bool = True,
 ) -> str:
     """LiveKit ``attach()`` body: bind ``MetricCapture`` to an ``AgentSession``."""
     import asyncio
@@ -680,6 +856,14 @@ def _attach_livekit(
         if _snapshots_enabled(snapshots)
         else (None, None)
     )
+    # Same session_id the RequestRecords above are stamped with. rooms.py joins
+    # room -> session_id -> turns, so a tracker keyed on anything else produces
+    # turns that exist but never appear in /v1/rooms/{room}/latency.
+    turn_tracker = (
+        _build_turn_tracker(sink, project) if _turns_enabled(turns) else None
+    )
+    if turn_tracker is not None:
+        _bind_turn_events(session, session_id, turn_tracker)
 
     async def _finish() -> None:
         # Reconcile cumulative session.usage against the per-call rows, drain
@@ -688,6 +872,14 @@ def _attach_livekit(
         bump_active(-1)
         await capture.reconcile(session)
         await capture.drain()
+        if turn_tracker is not None:
+            # Before sink.flush(): close_session emits the tail turn and pushes
+            # everything under the flush-size threshold into the sink, so the
+            # flush below is what actually puts them on the wire.
+            try:
+                await turn_tracker.close_session(session_id)
+            except Exception:  # noqa: BLE001 - turns are never load-bearing
+                logger.debug("attach: turn flush on close failed", exc_info=True)
         await sink.flush()
         if snapshot_capture is not None:
             # Final flush of anything still buffered under the flush-size
@@ -862,6 +1054,7 @@ def _attach_pipecat(
     heartbeat: bool = False,
     transcript: bool = True,
     snapshots: bool = False,
+    turns: bool = True,
 ) -> str:
     """Register a ``VoiceGatewayObserver`` on a Pipecat ``PipelineTask``.
 
@@ -869,15 +1062,22 @@ def _attach_pipecat(
     ContextVar, and returns the correlation session id. The observer is the sole
     meter; it finalizes itself on the pipeline ``EndFrame`` (drain + flush).
 
-    ``transcript`` and ``snapshots`` are accepted for signature parity with the
-    LiveKit path but are not captured on Pipecat yet. A Pipecat transcript would
-    come from transcription frames, and snapshots would need the equivalent of
-    LiveKit's ``conversation_item_added`` / ``function_tools_executed``; both are
-    separate hooks. They are no-ops here rather than errors, so the same
-    ``attach(...)`` call works against either framework.
+    ``transcript``, ``snapshots`` and ``turns`` are accepted for signature parity
+    with the LiveKit path but are not captured on Pipecat yet. A Pipecat
+    transcript would come from transcription frames, and snapshots would need the
+    equivalent of LiveKit's ``conversation_item_added`` /
+    ``function_tools_executed``; both are separate hooks. They are no-ops here
+    rather than errors, so the same ``attach(...)`` call works against either
+    framework.
+
+    ``turns`` specifically needs Pipecat speech-boundary events equivalent to
+    LiveKit's user/agent started/stopped, which the observer does not surface
+    today. Accepting it silently is the deliberate choice over raising, but it
+    does mean a Pipecat agent gets no turn rows, so ``e2e_ms`` stays null there.
     """
     _ = transcript  # reserved: Pipecat transcript capture is a future step
     _ = snapshots  # reserved: needs a Pipecat message/tool-call hook
+    _ = turns  # reserved: needs Pipecat speech-boundary events
     from voicegateway.inference.pipecat.observer import VoiceGatewayObserver
 
     resolved_agent_id = agent_id or _default_agent_id()

@@ -50,7 +50,7 @@ class Gateway:
         self._storage: StorageService | None
         if enabled:
             db_path = env_db or cost_cfg.get("db_path", DEFAULT_DB_PATH)
-            self._storage = StorageService(db_path)
+            self._storage = StorageService(db_path, config=self._config)
         else:
             self._storage = None
 
