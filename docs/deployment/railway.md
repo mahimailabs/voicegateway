@@ -15,6 +15,22 @@ builds current code and works today.
 This is the least-ops path. Cost is usage-based and higher than a self-managed VPS.
 </Tip>
 
+## Hand it to a coding agent instead
+
+[`deploy/railway/agent-prompt.md`](https://github.com/mahimailabs/voicegateway/blob/main/deploy/railway/agent-prompt.md)
+is a copy-paste prompt that runs this whole deploy and verifies it, for Claude Code,
+Cursor, or any agent that can run shell commands.
+
+It is worth using over the manual steps below if you have an agent to hand, because it
+carries guardrails a page of instructions cannot enforce: create a new project only,
+never print a key or a password, never run `railway login` for you, and show the cost
+shape before creating anything. Your Railway CLI session reaches every project in every
+workspace you belong to, so those constraints matter.
+
+It also carries the CLI traps the dashboard hides, including `railway init` refusing
+non-interactively without a workspace id once you have more than one, and
+`railway add --database postgres` silently creating a second Postgres when run twice.
+
 ## Prerequisites
 
 - A [Railway](https://railway.com) account
