@@ -90,7 +90,7 @@ rate_limits:
 
 ## Docker Compose
 
-This uses the published image, so the project directory above (just `docker-compose.yml`, `voicegw.yaml`, `.env`) is all you need. `VOICEGW_CONFIG` and the `voicegw.yaml` mount are both required: the image bakes a default `VOICEGW_CONFIG` pointing at a path nothing creates, so without a mounted config file at the path you set, the daemon exits at boot before serving `/health`.
+This uses the published image, so the project directory above (just `docker-compose.yml`, `voicegw.yaml`, `.env`) is all you need. Mount `voicegw.yaml` and point `VOICEGW_CONFIG` at it. The container boots without a config file (it warns once and falls back to built-in defaults), but a default-config daemon has no providers, models, or projects declared, which is not what you want in a deployment.
 
 ```yaml
 services:
