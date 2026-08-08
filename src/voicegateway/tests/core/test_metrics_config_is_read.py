@@ -1,10 +1,12 @@
-"""``metrics.talk_over_min_overlap_ms`` and ``turn_buffer_flush_size`` are read.
+"""Every knob in the per-project ``metrics:`` block is read by something.
 
-Both were declared in the schema and parsed by the config loader, and neither
-had a consumer. Setting either in ``voicegw.yaml`` validated and did nothing,
-which is worse than not offering the knob: it reads as configured behaviour.
+All three were declared in the schema and parsed by the config loader, and none
+had a consumer. Setting any of them in ``voicegw.yaml`` validated and did
+nothing, which is worse than not offering the knob: it reads as configured
+behaviour.
 
-Both hang off ProjectConfig, not GatewayConfig, so both are per project.
+All three hang off ProjectConfig, not GatewayConfig, so all three are per
+project.
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ def _config(tmp_path, *, overlap_ms: int, flush_size: int) -> str:
                         "metrics": {
                             "talk_over_min_overlap_ms": overlap_ms,
                             "turn_buffer_flush_size": flush_size,
+                            "dead_air_threshold_seconds": 7.5,
                         },
                     }
                 },
@@ -132,3 +135,47 @@ async def test_talk_over_threshold_changes_the_overlap_count(tmp_path) -> None:
         assert await turns.count_overlap_turns(db, "s", min_overlap_ms=100) == 0
 
     await storage.aclose()
+
+
+def test_the_dead_air_default_matches_the_schema_default() -> None:
+    attach_mod = importlib.import_module("voicegateway.inference.session.attach")
+    assert (
+        attach_mod._DEFAULT_DEAD_AIR_THRESHOLD_S
+        == SchemaMetrics().dead_air_threshold_seconds
+    )
+
+
+def test_dead_air_threshold_is_read_from_the_project(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("VOICEGW_CONFIG", _config(tmp_path, overlap_ms=250, flush_size=7))
+    attach_mod = importlib.import_module("voicegateway.inference.session.attach")
+    attach_mod._dead_air_threshold_cache.clear()
+
+    assert attach_mod._dead_air_threshold_s("tuned") == 7.5
+    assert (
+        attach_mod._dead_air_threshold_s("nope")
+        == attach_mod._DEFAULT_DEAD_AIR_THRESHOLD_S
+    )
+    attach_mod._dead_air_threshold_cache.clear()
+
+
+def test_the_dead_air_threshold_reaches_the_detector(tmp_path, monkeypatch) -> None:
+    """Reading the number is not the same as using it."""
+    monkeypatch.setenv("VOICEGW_CONFIG", _config(tmp_path, overlap_ms=250, flush_size=7))
+    attach_mod = importlib.import_module("voicegateway.inference.session.attach")
+    attach_mod._dead_air_threshold_cache.clear()
+
+    class _Sink:
+        async def log_dead_air(self, events):  # noqa: ANN001, ANN202
+            return None
+
+    detector, _activity = attach_mod._build_dead_air_detector(_Sink(), "tuned")
+    assert detector._threshold_ms == 7500
+    attach_mod._dead_air_threshold_cache.clear()
+
+
+def test_the_project_metrics_block_parses_all_three(tmp_path) -> None:
+    cfg = GatewayConfig.load(_config(tmp_path, overlap_ms=250, flush_size=7))
+    metrics = cfg.projects["tuned"].metrics
+    assert metrics.talk_over_min_overlap_ms == 250
+    assert metrics.turn_buffer_flush_size == 7
+    assert metrics.dead_air_threshold_seconds == 7.5

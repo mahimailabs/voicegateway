@@ -382,6 +382,24 @@ class StorageService:
         async with self._conn.session() as db:
             return await turns.create_turns_bulk(db, rows)
 
+    async def log_dead_air(self, events: list[Any]) -> int:
+        """Write observed dead-air events. Returns the number inserted.
+
+        Looped rather than bulk-inserted: the repository exposes one insert per
+        event and dead air is rare by construction (one per silence window, and
+        the detector latches so a continuing silence does not re-fire), so a
+        bulk path would be machinery for a batch that is almost always one row.
+        """
+        from voicegateway.repository import dead_air_repository as dead_air
+
+        if not events:
+            return 0
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            for event in events:
+                await dead_air.create_event(db, event)
+        return len(events)
+
     # ------------------------------------------------------------------
     # Load runs
     # ------------------------------------------------------------------
