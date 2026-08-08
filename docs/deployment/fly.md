@@ -12,16 +12,19 @@ on its own schedule; check their docs if a step does not match what you see.
 </Note>
 
 <Warning>
-**Provide a config file.** The image bakes `VOICEGW_CONFIG=/data/voicegw.yaml`. Write or
-mount a `voicegw.yaml` there, using a `[[files]]` block in `fly.toml` or a volume, and
-point `VOICEGW_CONFIG` at it if you use a different path.
-
-On `0.22.3`, the version pinned below, a missing file is fatal: the daemon raises
-`ConfigError` before binding a port, so `/health` never comes up and Fly restarts the
-machine forever. A later release relaxes this to a warning and boots on built-in
-defaults, but a default-config daemon has no providers, models, or projects declared, so
-you want the file either way.
+Use `0.24.0` or newer. Images at or below `0.22.3` require a config file at
+`VOICEGW_CONFIG` and exit at boot without one, raising
+`ConfigError: Config file not found: /data/voicegw.yaml` before the port binds, so Fly
+restarts the machine forever.
 </Warning>
+
+<Note>
+**Provide a config file anyway.** From `0.24.0` a missing one is only a warning and the
+daemon boots on built-in defaults, but a default-config daemon has no providers, models,
+or projects declared. The image bakes `VOICEGW_CONFIG=/data/voicegw.yaml`; write or mount
+a `voicegw.yaml` there with a `[[files]]` block in `fly.toml` or a volume, and repoint
+`VOICEGW_CONFIG` if you use a different path.
+</Note>
 
 <Tip>
 Deploy in a region close to where your agents run to cut ingest latency: `--region` on `fly deploy`, or `primary_region` in `fly.toml`.
@@ -42,7 +45,7 @@ Create `fly.toml` in a working directory:
 app = "<your-app-name>"
 
 [build]
-  image = "mahimairaja/voicegateway:0.22.3"
+  image = "mahimairaja/voicegateway:0.24.0"
 
 [http_service]
   internal_port = 8080  # optional: the image binds $PORT when the platform sets one

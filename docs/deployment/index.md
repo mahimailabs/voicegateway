@@ -81,5 +81,5 @@ curl -s -o /dev/null -w "with-key: %{http_code}  (expect 2xx)\n" \
 Then open the daemon URL in a browser for the dashboard.
 
 <Note>
-Current release: `v0.22.3`. Pin the image to a specific release or a minor channel (see [Auto-update](/deployment/auto-update)); never track `:latest` in production. The ingest key must not start with `vk_`. Only `/v1/ingest` and `/health` need to be public; the rest can be firewall-restricted to your internal network.
+Current release: `v0.24.0`. Pin the image to a specific release or a minor channel (see [Auto-update](/deployment/auto-update)); never track `:latest` in production. The ingest key must not start with `vk_`. Only `/v1/ingest` and `/health` need to be public; the rest can be firewall-restricted to your internal network.
 </Note>

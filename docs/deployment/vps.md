@@ -42,7 +42,7 @@ Prerequisites: Docker and Compose installed (`curl -fsSL https://get.docker.com 
 ```bash
 mkdir -p ~/voicegw && cd ~/voicegw
 curl -fsSLO https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docker-compose.collector.yml
-sed -i 's#mahimairaja/voicegateway:latest#mahimairaja/voicegateway:0.22.3#' docker-compose.collector.yml
+sed -i 's#mahimairaja/voicegateway:latest#mahimairaja/voicegateway:0.24.0#' docker-compose.collector.yml
 
 printf 'VOICEGW_PG_PASSWORD=%s\n' "$(openssl rand -hex 24)" > .env
 ```

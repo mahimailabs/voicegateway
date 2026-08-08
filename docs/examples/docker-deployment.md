@@ -90,12 +90,12 @@ rate_limits:
 
 ## Docker Compose
 
-This uses the published image, so the project directory above (just `docker-compose.yml`, `voicegw.yaml`, `.env`) is all you need. Mount `voicegw.yaml` and point `VOICEGW_CONFIG` at it. On `0.22.3` that mount is required: without a file at `VOICEGW_CONFIG` the daemon exits at boot before serving `/health`. A later release boots on built-in defaults instead, but a default-config daemon declares no providers, models, or projects, so mount the file either way.
+This uses the published image, so the project directory above (just `docker-compose.yml`, `voicegw.yaml`, `.env`) is all you need. Mount `voicegw.yaml` and point `VOICEGW_CONFIG` at it. Use `0.24.0` or newer: images at or below `0.22.3` exit at boot without a config file. From `0.24.0` a missing file is only a warning, but a default-config daemon declares no providers, models, or projects, so mount it either way.
 
 ```yaml
 services:
   voicegateway:
-    image: mahimairaja/voicegateway:0.22.3
+    image: mahimairaja/voicegateway:0.24.0
     container_name: voicegateway
     ports:
       - "8080:8080"
@@ -214,7 +214,7 @@ docker run -p 8080:8080 \
   -e VOICEGW_DB_URL="postgresql+asyncpg://user:pass@host:5432/voicegw" \
   -v $(pwd)/voicegw.yaml:/app/voicegw.yaml:ro \
   -e VOICEGW_CONFIG=/app/voicegw.yaml \
-  mahimairaja/voicegateway:0.22.3
+  mahimairaja/voicegateway:0.24.0
 ```
 
 ## Verifying the deployment
@@ -228,7 +228,7 @@ curl http://localhost:8080/health
 {
   "status": "ok",
   "uptime_seconds": 42.3,
-  "version": "0.22.3"
+  "version": "0.24.0"
 }
 ```
 
