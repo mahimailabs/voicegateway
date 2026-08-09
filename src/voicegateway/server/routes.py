@@ -74,6 +74,9 @@ from voicegateway.server.api.dashboard import (
     nodes as dashboard_nodes,
 )
 from voicegateway.server.api.dashboard import (
+    nodes_live as dashboard_nodes_live,
+)
+from voicegateway.server.api.dashboard import (
     projects as dashboard_projects,
 )
 from voicegateway.server.api.dashboard import (
@@ -142,6 +145,12 @@ dashboard_router.include_router(dashboard_correlation.router)
 # is a weaker claim than "during this call" and a window nobody scraped is not a
 # healthy node.
 dashboard_router.include_router(dashboard_nodes.router)
+# GET /api/nodes/live. The same rows as /api/nodes above, asked the other
+# question: newest per (node, source) rather than overlapping a call's window,
+# so a caller polling during a load campaign can see the fleet now. Registered
+# after /api/nodes because both routers carry the /nodes prefix and the literal
+# /live path must not be shadowed by a parameterised sibling later.
+dashboard_router.include_router(dashboard_nodes_live.router)
 # GET /api/loadtest/runs. Read-only, so it belongs here behind
 # require_principal and NOT on the /v1/calls router, which carries
 # require_scope("write") on the router itself. Tests are embedded in each run

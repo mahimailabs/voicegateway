@@ -38,7 +38,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select, text
+from sqlalchemy import and_, func, select, text
 
 from voicegateway.models.node_sample_model import NodeSample
 
@@ -790,6 +790,110 @@ async def trim_older_than(
     return removed
 
 
+@dataclass(frozen=True)
+class LatestNodeSample:
+    """The newest sample for one ``(node, source)`` target, with its age.
+
+    ``age_ms`` is measured against a caller-supplied ``now_ms`` rather than a
+    clock read in here, so every target in one response is aged against ONE
+    instant. Reading the clock per row would let the first and last target in a
+    large fleet be judged against different nows, and a target could be reported
+    fresh or stale depending on where it happened to sit in the list.
+
+    ``stale`` is the whole reason this dataclass exists rather than a bare row.
+    The newest sample for a dead target is still a sample: it has real numbers
+    in it and no field that says they stopped being true. A caller polling a
+    live view would render the last reading a crashed node ever produced
+    exactly like a healthy one, and the longer the node stays dead the more
+    confidently wrong the view gets.
+    """
+
+    sample: NodeSampleRow
+    age_ms: int
+    stale: bool
+
+
+async def latest_per_target(
+    db: AsyncSession,
+    *,
+    now_ms: int,
+    stale_after_ms: int,
+) -> list[LatestNodeSample]:
+    """The newest sample for every ``(node, source)``, ordered by node then source.
+
+    One row per target, never a window: this answers "what is the fleet doing
+    right now", where :func:`list_samples` answers "what did this target do over
+    this span".
+
+    The newest row is selected by ``(at_ms, id)``, the same ordering
+    ``list_samples`` uses, so two samples sharing a timestamp resolve the same
+    way in both. Without the ``id`` tiebreak "the latest" would be whichever the
+    backend happened to return first, which is not stable across backends or
+    even across runs.
+
+    Done as one grouped query rather than discovering targets and then reading
+    each: a fleet scraped by three exporters is 3N round trips the other way,
+    against a SQLite writer that is also absorbing scrapes.
+
+    ``stale_after_ms`` is the caller's definition of "should have been replaced
+    by now", not a policy decided here. A row is stale when nothing has arrived
+    for longer than the scrape interval, because by then the next scrape was
+    already due and did not land.
+    """
+    # Grouped max on at_ms, not on id: id alone would pick the highest rowid
+    # rather than the newest sample, and those differ whenever a scrape is
+    # written out of order. The (node, source, at_ms) index leads with the pair,
+    # so this is an index scan rather than a table scan.
+    at_max = (
+        select(
+            NodeSample.node.label("n"),  # type: ignore[attr-defined]
+            NodeSample.source.label("s"),  # type: ignore[attr-defined]
+            func.max(NodeSample.at_ms).label("max_at_ms"),
+        )
+        .group_by(
+            NodeSample.node,
+            NodeSample.source,
+        )
+        .subquery()
+    )
+    stmt = (
+        select(NodeSample)
+        .join(
+            at_max,
+            and_(
+                NodeSample.node == at_max.c.n,  # type: ignore[arg-type]
+                NodeSample.source == at_max.c.s,  # type: ignore[arg-type]
+                NodeSample.at_ms == at_max.c.max_at_ms,  # type: ignore[arg-type]
+            ),
+        )
+        .order_by(
+            NodeSample.node.asc(),  # type: ignore[attr-defined]
+            NodeSample.source.asc(),  # type: ignore[attr-defined]
+            NodeSample.id.desc(),  # type: ignore[union-attr]
+        )
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+
+    out: list[LatestNodeSample] = []
+    seen: set[tuple[str, str]] = set()
+    for sample in rows:
+        key = (sample.node, sample.source)
+        if key in seen:
+            # Two samples share the newest at_ms; the id DESC ordering above put
+            # the tiebreak winner first, so the rest are skipped.
+            continue
+        seen.add(key)
+        age_ms = now_ms - sample.at_ms
+        out.append(
+            LatestNodeSample(
+                sample=_row(sample),
+                age_ms=age_ms,
+                stale=age_ms > stale_after_ms,
+            )
+        )
+    return out
+
+
 async def count_samples(db: AsyncSession, *, node: str | None = None) -> int:
     """How many samples are stored (optionally for one node). For tests and ops."""
     if node is None:
@@ -810,12 +914,14 @@ __all__ = [
     "GAUGE_COLUMNS",
     "VALUE_COLUMNS",
     "CounterRate",
+    "LatestNodeSample",
     "NodeSampleInput",
     "NodeSampleRow",
     "UtilisationPoint",
     "count_samples",
     "counter_rates",
     "insert_samples",
+    "latest_per_target",
     "list_samples",
     "read_counter_rate",
     "trim_older_than",
