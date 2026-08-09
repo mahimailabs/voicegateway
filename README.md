@@ -230,3 +230,8 @@ Built by [Mahimai Raja](https://mahimai.dev), founder of [Mahimai AI](https://ma
 
 
 <!-- GitAds-Verify: B26PKZL6HHS6F2ZU9NAHRIA9OQHS919R -->
+
+
+## GitAds Sponsored
+[![Sponsored by GitAds](https://gitads.dev/v1/ad-serve?source=mahimailabs/voicegateway@github)](https://gitads.dev/v1/ad-track?source=mahimailabs/voicegateway@github)
+
