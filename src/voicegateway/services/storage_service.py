@@ -793,6 +793,50 @@ class StorageService:
                 )
         return {"pad_ms": resolved_pad, "samples_stored": stored, "calls": out}
 
+    async def latest_node_samples(
+        self, *, now_ms: int, stale_after_ms: int
+    ) -> dict[str, Any]:
+        """The newest sample per ``(node, source)``, for a live fleet view.
+
+        Shape: ``{"stale_after_seconds": float, "samples_stored": int,
+        "nodes": [{"node", "source", "at_ms", "age_seconds", "stale", ...the
+        stored columns unchanged}]}``.
+
+        A passthrough: the repository decides which row is newest and whether it
+        is stale, and this flattens the row onto the entry so a reader gets the
+        stored columns under their own names rather than nested a level down.
+        Every value stays exactly as stored, so a NULL arrives as ``null`` and
+        never as 0.
+
+        ``samples_stored`` is the whole table's row count, carried for the same
+        reason ``correlate_recent_calls_to_nodes`` carries it: with no scrape
+        target configured the node list is honestly empty, and only the row
+        count separates "this deployment scrapes nothing" from "the fleet is
+        quiet right now".
+        """
+        import dataclasses
+
+        from voicegateway.repository import node_samples_repository as node_samples
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            stored = await node_samples.count_samples(db)
+            latest = await node_samples.latest_per_target(
+                db, now_ms=now_ms, stale_after_ms=stale_after_ms
+            )
+        return {
+            "stale_after_seconds": stale_after_ms / 1000.0,
+            "samples_stored": stored,
+            "nodes": [
+                {
+                    **dataclasses.asdict(entry.sample),
+                    "age_seconds": entry.age_ms / 1000.0,
+                    "stale": entry.stale,
+                }
+                for entry in latest
+            ],
+        }
+
     # ------------------------------------------------------------------
     # Diagnostics runs (LiveKit probe runs started from the dashboard)
     # ------------------------------------------------------------------
