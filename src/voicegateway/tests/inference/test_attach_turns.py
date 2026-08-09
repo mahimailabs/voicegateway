@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import inspect
+import time
 from typing import Any
 
 import pytest
@@ -74,6 +75,27 @@ class _StateChanged(_Event):
 
     def __init__(self, new_state: str) -> None:
         self.new_state = new_state
+
+
+class _EOU:
+    """An EOUMetrics on ``metrics_collected``.
+
+    Needed for a turn to carry a response speed: the caller's stop is recovered
+    from ``end_of_utterance_delay`` because the state change fires a VAD silence
+    window after the real stop. Turns without it keep their boundaries and
+    report ``response_speed_ms = None`` rather than a flattering number. See
+    test_response_speed_anchor.py.
+    """
+
+    def __init__(self, end_of_utterance_delay: float = 0.3) -> None:
+        self.end_of_utterance_delay = end_of_utterance_delay
+        self.transcription_delay = 0.1
+        self.timestamp = time.time()
+
+
+class _MetricsCollected:
+    def __init__(self, metrics: Any) -> None:
+        self.metrics = metrics
 
 
 async def _drain() -> None:
@@ -163,6 +185,8 @@ async def test_a_turn_reaches_storage(tmp_path) -> None:
     session.emit("user_started_speaking")
     await _drain()
     session.emit("user_stopped_speaking")
+    await _drain()
+    session.emit("metrics_collected", _MetricsCollected(_EOU()))
     await _drain()
     session.emit("agent_started_speaking")
     await _drain()
