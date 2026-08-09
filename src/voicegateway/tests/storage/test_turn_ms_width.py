@@ -17,11 +17,13 @@ declared type is enforced.
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 from sqlalchemy import BigInteger
 
 from voicegateway.middleware.turn_tracker_middleware import TurnRow, TurnTracker
+from voicegateway.models.dead_air_event_model import DeadAirEvent as DeadAirRow
 from voicegateway.models.turn_model import Turn
 from voicegateway.repository import turns_repository as turns
 from voicegateway.services.storage_service import StorageService
@@ -131,3 +133,70 @@ def test_epoch_milliseconds_do_not_fit_in_int32() -> None:
     on any host up for 25 days. One migration covers both.
     """
     assert int(time.time() * 1000) > 2147483647
+
+
+# --- the same defect, one table over -------------------------------------
+
+_DEAD_AIR_MS_COLUMNS = ("started_at_ms", "duration_ms", "threshold_used_ms")
+
+
+def test_dead_air_ms_columns_are_also_64_bit() -> None:
+    """``dead_air_events`` had the identical bug and would have hit it later.
+
+    ``started_at_ms`` is a millisecond timestamp in what was an INTEGER column,
+    so dead-air inserts fail on Postgres exactly like turn inserts did and
+    ``GET /api/sessions/{id}/dead_air`` returns nothing. It was not reported
+    only because a monotonic stamp stays under int32 until the host has been up
+    24.9 days, so it was waiting on uptime rather than on anything a user does.
+    """
+    for name in _DEAD_AIR_MS_COLUMNS:
+        column = DeadAirRow.__table__.columns[name]
+        assert isinstance(column.type, BigInteger), (
+            f"dead_air_events.{name} is {column.type!r}, not BigInteger"
+        )
+
+
+async def test_a_dead_air_event_stamps_epoch_not_time_since_boot() -> None:
+    """``started_at_ms`` is persisted, so it cannot be a monotonic absolute.
+
+    The detector still measures the silence itself in monotonic, which is the
+    right clock for a delta. Only the stored instant is epoch, derived as
+    "now minus the silence just measured", so the two clocks are never
+    subtracted from each other.
+    """
+    from voicegateway.middleware.dead_air_detector_middleware import (
+        DeadAirDetector,
+        DeadAirEvent,
+    )
+
+    seen: list[DeadAirEvent] = []
+
+    async def _on_event(event: DeadAirEvent) -> None:
+        seen.append(event)
+
+    # A probe pinned far enough back that the threshold is already crossed.
+    import time as _time
+
+    stopped_at = int(_time.monotonic() * 1000) - 400
+
+    detector = DeadAirDetector(
+        activity_probe=lambda _sid: stopped_at,
+        on_event=_on_event,
+        threshold_seconds=0.05,
+        poll_interval_seconds=0.01,
+    )
+    await detector.start("s-epoch")
+    deadline = time.monotonic() + 10.0
+    while not seen and time.monotonic() < deadline:
+        await asyncio.sleep(0.01)
+    await detector.stop("s-epoch")
+
+    assert seen, "the detector never fired"
+    now_epoch_ms = int(time.time() * 1000)
+    # Within the silence window of now, on the epoch clock. A monotonic stamp
+    # would be time since boot and nowhere near this.
+    assert abs(seen[0].started_at_ms - (now_epoch_ms - seen[0].duration_ms)) < 5_000, (
+        f"started_at_ms is {seen[0].started_at_ms}, which is not epoch "
+        f"milliseconds (now is {now_epoch_ms}). A monotonic absolute here is "
+        "meaningless once stored, and overflows int32 after 24.9 days of uptime"
+    )

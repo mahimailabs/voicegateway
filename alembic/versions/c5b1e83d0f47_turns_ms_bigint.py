@@ -1,4 +1,4 @@
-"""widen the turns millisecond columns to BIGINT
+"""widen the turns and dead_air_events millisecond columns to BIGINT
 
 Revision ID: c5b1e83d0f47
 Revises: e4a7c2b9d013
@@ -26,6 +26,13 @@ about the same field.
 row is uniform and no future reader has to remember which of five sibling
 columns is the narrow one.
 
+``dead_air_events`` carries the identical defect and is fixed here rather than
+left for the next host to hit: ``started_at_ms`` is also a millisecond timestamp
+in an INTEGER column, so dead-air inserts fail the same way and
+``GET /api/sessions/{id}/dead_air`` returns nothing. It has not been reported
+only because a monotonic stamp stays under int32 until the host has been up
+24.9 days.
+
 SQLite is skipped, not because it is safe to skip, but because it is already
 correct: the column type is advisory there, the values round-trip today, and
 ``ALTER COLUMN TYPE`` does not exist in its dialect. Attempting it would break
@@ -46,26 +53,34 @@ down_revision: str | None = "e4a7c2b9d013"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-_COLUMNS = (
-    ("caller_speak_start_ms", False),
-    ("caller_speak_end_ms", False),
-    ("agent_speak_start_ms", True),
-    ("agent_speak_end_ms", True),
-    ("response_speed_ms", True),
-)
+_TABLES: dict[str, tuple[tuple[str, bool], ...]] = {
+    "turns": (
+        ("caller_speak_start_ms", False),
+        ("caller_speak_end_ms", False),
+        ("agent_speak_start_ms", True),
+        ("agent_speak_end_ms", True),
+        ("response_speed_ms", True),
+    ),
+    "dead_air_events": (
+        ("started_at_ms", False),
+        ("duration_ms", False),
+        ("threshold_used_ms", False),
+    ),
+}
 
 
 def upgrade() -> None:
     if op.get_bind().dialect.name == "sqlite":
         return
-    for name, nullable in _COLUMNS:
-        op.alter_column(
-            "turns",
-            name,
-            existing_type=sa.Integer(),
-            type_=sa.BigInteger(),
-            existing_nullable=nullable,
-        )
+    for table, columns in _TABLES.items():
+        for name, nullable in columns:
+            op.alter_column(
+                table,
+                name,
+                existing_type=sa.Integer(),
+                type_=sa.BigInteger(),
+                existing_nullable=nullable,
+            )
 
 
 def downgrade() -> None:
@@ -76,11 +91,12 @@ def downgrade() -> None:
     # every timestamp.
     if op.get_bind().dialect.name == "sqlite":
         return
-    for name, nullable in _COLUMNS:
-        op.alter_column(
-            "turns",
-            name,
-            existing_type=sa.BigInteger(),
-            type_=sa.Integer(),
-            existing_nullable=nullable,
-        )
+    for table, columns in _TABLES.items():
+        for name, nullable in columns:
+            op.alter_column(
+                table,
+                name,
+                existing_type=sa.BigInteger(),
+                type_=sa.Integer(),
+                existing_nullable=nullable,
+            )
