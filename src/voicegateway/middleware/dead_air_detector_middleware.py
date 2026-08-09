@@ -105,9 +105,17 @@ class DeadAirDetector(PerSessionWatcher):
                     continue
                 if self._already_fired.get(session_id, False):
                     continue
+                # The silence is measured in monotonic, which is right for a
+                # delta and immune to NTP. The STORED instant must not be, since
+                # a monotonic absolute is time since boot and means nothing to a
+                # later reader or another process. Epoch now, minus the silence
+                # just measured, is when the silence began, on a clock anyone
+                # can interpret. Delta from one clock, absolute on the other,
+                # and the two are never subtracted from each other.
+                started_at_ms = int(time.time() * 1000) - silence_ms
                 event = DeadAirEvent(
                     session_id=session_id,
-                    started_at_ms=last_activity_ms,
+                    started_at_ms=started_at_ms,
                     duration_ms=silence_ms,
                     threshold_used_ms=self._threshold_ms,
                 )

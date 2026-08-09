@@ -263,7 +263,33 @@ class TurnTracker(SessionScopedComponent):
 
     @staticmethod
     def _now_ms() -> int:
-        return int(time.monotonic() * 1000)
+        """Epoch milliseconds. Deliberately NOT ``time.monotonic()``.
+
+        These values are written to disk and read back by other processes.
+        Monotonic is time since an arbitrary origin (the host boot on Linux and
+        macOS), so a stored absolute monotonic value means nothing outside the
+        process that produced it, and nothing at all after a reboot.
+
+        ``rooms.py`` is where that bites: it gathers turns from every session in
+        a room and sorts them on ``caller_speak_start_ms`` to build one
+        chronological order. Its own comment names the cases, "an agent that
+        reconnected, two agents in one room", which are exactly the cases where
+        the values come from different processes on possibly different hosts.
+        Sorting them together was ordering by two unrelated clocks.
+
+        Epoch also makes the end-of-utterance correction exact instead of
+        approximate. LiveKit computes its anchor as
+        ``last_speaking_time = metric.timestamp - end_of_utterance_delay``, both
+        in ``time.time()``, so subtracting in the same units reproduces LiveKit's
+        own number rather than estimating it through a monotonic bridge.
+
+        The trade is NTP. A wall clock can step, where monotonic cannot, which
+        would corrupt a delta spanning the step. Within one turn a slew is
+        microseconds, a step is rare and isolated to that turn, and
+        ``response_speed`` already clamps at zero. A rare, bounded error beats a
+        systematic one on every cross-session read.
+        """
+        return int(time.time() * 1000)
 
     @staticmethod
     def _resolve_session_id(session_id: str | None) -> str | None:
