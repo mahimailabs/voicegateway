@@ -98,7 +98,15 @@ class TurnTracker(SessionScopedComponent):
             state = self._sessions.get(sid)
             if state is None or state.pending_caller_start_ms is None:
                 return
-            state.pending_caller_end_ms = end_ms
+            # First-wins, matching on_user_started_speaking. Two events can
+            # report the same boundary (a discrete ``user_stopped_speaking`` on
+            # one build, the ``user_state_changed`` transition out of
+            # ``speaking`` on another), and both are bound so either kind of
+            # build works. Overwriting would let the later of the two stretch
+            # the caller's speech and shrink the response_speed_ms derived from
+            # it; the first report is the accurate one.
+            if state.pending_caller_end_ms is None:
+                state.pending_caller_end_ms = end_ms
 
     async def on_agent_audio_first_frame(
         self,
