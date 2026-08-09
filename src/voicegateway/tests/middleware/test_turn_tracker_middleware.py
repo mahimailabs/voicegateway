@@ -155,3 +155,29 @@ async def test_active_sessions_lists_in_flight() -> None:
 
     await tracker.close_session("s1")
     assert tracker.active_sessions() == []
+
+
+async def test_first_user_stopped_wins() -> None:
+    """The caller's speech END latches, mirroring the start.
+
+    Both a discrete ``user_stopped_speaking`` and the ``user_state_changed``
+    transition out of ``speaking`` are bound, so on a build emitting both this
+    is reported twice. Overwriting would let the later report stretch the
+    caller's speech and shrink the ``response_speed_ms`` derived from it.
+    """
+    captured: list[list[TurnRow]] = []
+
+    async def flush(rows: list[TurnRow]) -> None:
+        captured.append(rows)
+
+    tracker = TurnTracker(flush_callback=flush, flush_size=100)
+    await tracker.on_user_started_speaking(session_id="s1", at_ms=1000)
+    await tracker.on_user_stopped_speaking(session_id="s1", at_ms=1500)
+    await tracker.on_user_stopped_speaking(session_id="s1", at_ms=1900)
+    await tracker.on_agent_audio_first_frame(session_id="s1", at_ms=2000)
+    await tracker.close_session("s1")
+
+    [turn] = captured[0]
+    assert turn.caller_speak_end_ms == 1500, "a later stop overwrote the first"
+    # Measured from the first stop, not the second.
+    assert turn.response_speed_ms == 500

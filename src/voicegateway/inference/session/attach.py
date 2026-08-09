@@ -749,25 +749,42 @@ def _bind_turn_events(
 ) -> None:
     """Wire the speech-boundary events onto an AgentSession.
 
-    Onset is hooked twice on purpose. LiveKit 1.6 dropped the discrete
-    ``user_started_speaking`` and signals onset as ``user_state_changed`` ->
-    ``speaking``; older builds emit the discrete event. ``capture.py`` already
-    hooks both for the first-partial latency, and turn capture needs the same
-    treatment or turn starts go uncaptured on 1.6 with a tracker bound.
+    **Every boundary is driven by a state-change event, because the discrete
+    ones do not exist.** ``user_started_speaking``, ``user_stopped_speaking``,
+    ``agent_started_speaking`` and ``agent_stopped_speaking`` are absent from
+    ``EventTypes`` in livekit-agents 1.5.7 AND 1.6.9, and the names appear
+    nowhere in the package on either. This is not a 1.6 regression; nothing in
+    the supported ``>=1.5,<1.7`` range has ever emitted them.
 
-    First-wins needs no latch here: ``on_user_started_speaking`` only sets
-    ``pending_caller_start_ms`` when it is None, so whichever event arrives
-    first anchors the turn and the other is a no-op.
+    Turn capture previously bridged only the caller's ONSET, which is why the
+    table came back empty rather than partially filled: a turn is closed by
+    ``on_agent_audio_first_frame``, so with no agent-start signal no turn ever
+    closed and nothing was ever buffered.
 
-    ``activity`` is the optional dead-air clock. It rides these same four events
-    because they are exactly the signal it needs, but it is updated
-    independently of ``tracker`` so the two features stay separately
-    switchable. ``tracker`` may be None when only dead air is on.
+    What LiveKit does emit is ``user_state_changed`` and
+    ``agent_state_changed``, each carrying ``old_state`` and ``new_state``:
 
-    Note the non-speaking branch of ``user_state_changed``: on a build that
-    emits no discrete ``user_stopped_speaking``, that transition is the only
-    signal the caller went quiet, and without it the activity clock would stay
-    "speaking" forever and dead air could never fire.
+    - ``UserState``  = speaking | listening | away
+    - ``AgentState`` = initializing | idle | listening | thinking | speaking
+
+    So a boundary is a transition INTO or OUT OF ``speaking``. Stops guard on
+    ``old_state == "speaking"`` rather than on a specific destination: the
+    caller can go speaking -> away as well as speaking -> listening, and both
+    are the same event (they stopped talking), while listening -> away is not a
+    stop at all because no speech was in flight. Keying on the origin gets all
+    three right; keying on the destination drops the away case.
+
+    The four discrete names stay bound. They cost nothing on LiveKit, where they
+    never fire, and they are the path for any other framework or future build
+    that does emit them. Double-binding is safe because every tracker entry
+    point is first-wins: ``on_user_started_speaking`` and
+    ``on_user_stopped_speaking`` only set their field when it is None,
+    ``on_agent_audio_first_frame`` returns early once the turn is closed, and
+    ``on_agent_audio_last_frame`` only fills an unset end.
+
+    ``activity`` is the optional dead-air clock, updated independently of
+    ``tracker`` so the two features stay separately switchable. ``tracker`` may
+    be None when only dead air is on.
     """
     on = getattr(session, "on", None)
     if not callable(on):
@@ -807,18 +824,40 @@ def _bind_turn_events(
         if agent_stopped is not None:
             agent_stopped(event)
 
-    def _on_state_changed(event: Any = None, *_a: Any, **_k: Any) -> None:
-        if getattr(event, "new_state", None) == "speaking":
+    def _on_user_state_changed(event: Any = None, *_a: Any, **_k: Any) -> None:
+        old = getattr(event, "old_state", None)
+        new = getattr(event, "new_state", None)
+        if new == "speaking":
             _user_started(event)
             return
-        # listening / away: the caller stopped. Only the activity clock cares;
-        # the tracker's own stop is driven by user_stopped_speaking, and calling
-        # it here would close turns on an "away" transition.
-        if activity is not None:
-            activity.caller_stopped()
+        if old == "speaking":
+            # Out of speaking, to listening OR away: the caller stopped talking.
+            # An earlier version routed this to the activity clock only, on the
+            # worry that it would close a turn on an "away" transition. It does
+            # not: on_user_stopped_speaking records the caller's speech END, and
+            # the turn is closed by on_agent_audio_first_frame. Withholding it
+            # left response_speed_ms measured from the wrong instant.
+            _user_stopped(event)
 
+    def _on_agent_state_changed(event: Any = None, *_a: Any, **_k: Any) -> None:
+        old = getattr(event, "old_state", None)
+        new = getattr(event, "new_state", None)
+        if new == "speaking":
+            # The boundary that closes a turn. Without it nothing is ever
+            # buffered, which is why the table was empty and not merely partial.
+            _agent_started(event)
+            return
+        if old == "speaking":
+            # speaking -> idle/listening/thinking are all the agent finishing.
+            _agent_stopped(event)
+
+    # State changes: the only ones LiveKit actually emits.
+    on("user_state_changed", _on_user_state_changed)
+    on("agent_state_changed", _on_agent_state_changed)
+    # Discrete events: absent from LiveKit in the supported range, kept for
+    # other frameworks and any build that does emit them. Harmless when they
+    # never fire, and safe alongside the above because the tracker is first-wins.
     on("user_started_speaking", _user_started)
-    on("user_state_changed", _on_state_changed)
     on("user_stopped_speaking", _user_stopped)
     on("agent_started_speaking", _agent_started)
     on("agent_stopped_speaking", _agent_stopped)
