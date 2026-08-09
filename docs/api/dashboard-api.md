@@ -371,6 +371,53 @@ A series the scrape did not return is named and counted rather than dropped or z
 
 Authentication matches `/api/correlation`, including the 403 for a tenant-scoped key: a node is infrastructure serving every tenant at once, so there is no tenant-scoped answer to give.
 
+## GET /api/nodes/live
+
+The newest sample per `(node, source)`, for watching a fleet **while** something is happening to it. `/api/nodes` above answers "what did the boxes look like during this call" and is keyed by recent calls; this answers "what is the fleet doing now" and is keyed by the targets themselves.
+
+It adds no collection. The collector already scrapes every target on its interval and writes `node_samples`; this is a read of rows that are already on disk. There is no WebSocket: a caller that wants a live view polls this.
+
+**Query parameters**
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `stale_after_seconds` | `15` (one scrape interval) | How old a target's newest sample may be before it is reported `stale`. Max `300`. |
+
+**Response:**
+
+```json
+{
+  "stale_after_seconds": 15.0,
+  "samples_stored": 4210,
+  "nodes": [
+    {
+      "node": "sfu-1",
+      "source": "livekit-server",
+      "at_ms": 1786276490564,
+      "age_seconds": 3.1,
+      "stale": false,
+      "outcome": "ok",
+      "rooms": 12,
+      "participants": 48,
+      "packet_bytes_total": 91823741,
+      "load1": null
+    }
+  ]
+}
+```
+
+Every stored column keeps its own name and value. A column the scrape did not return arrives as `null`, never `0`: an idle node and an unwatched one must stay distinguishable, and the unwatched one is the emergency.
+
+One entry per `(node, source)` pair, not per node. The same box is usually scraped twice per tick (once as `livekit-server`, once as `node-exporter`), and each exporter sees a different set of series.
+
+`stale` says only that nothing has been written for that target for longer than `stale_after_seconds`. It is **not a health verdict**: it cannot distinguish a dead node from a stopped exporter from a collector that is not running. `outcome` on the row is what says why a scrape failed when one did happen. The reading itself is still served when stale rather than withheld, because the last thing a node reported is often what you want to see; it is labelled so it cannot be mistaken for current.
+
+An empty `nodes` with a non-zero `samples_stored` means every target has aged out of the table. With `samples_stored` at `0`, nothing has ever been scraped here.
+
+`503` when storage is disabled, rather than an empty fleet: "nothing is scraped" and "this deployment records nothing" are different facts.
+
+Authentication matches `/api/nodes`, including the 403 for a tenant-scoped key, and for the same reason.
+
 ## GET /api/server/overview
 
 A read-only, non-billing snapshot of the LiveKit deployment the metered agents run on, annotated with VoiceGateway's own cost and latency: rooms, egress, ingress, SIP trunks/dispatch rules (from the LiveKit control plane), plus the local fleet roster. This is a control-plane list and a local DB read on every field: **no synthetic probe and no billed call**, unlike Diagnostics.
