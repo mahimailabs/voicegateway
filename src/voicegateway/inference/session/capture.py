@@ -494,17 +494,21 @@ class MetricCapture:
         window (0.55s with Silero's default) and every response speed measured
         from it is understated by the same amount.
 
-        LiveKit backdates the true stop internally
-        (``on_end_of_speech`` subtracts ``silence_duration`` and
-        ``inference_duration``, then passes it as ``last_speaking_time``), but
-        ``UserStateChangedEvent`` carries only ``old_state``, ``new_state`` and
-        ``created_at``, so it never reaches a subscriber. What does reach us is
-        ``end_of_utterance_delay``, which LiveKit computes as
-        ``max(now - last_speaking_time, 0)``. Subtracting it from the moment the
-        metric was produced recovers the anchor without hardcoding any VAD
-        setting, so it tracks whatever the deployment configured.
+        LiveKit backdates the true stop internally (``on_end_of_speech``
+        subtracts ``silence_duration`` and ``inference_duration``, then passes it
+        as ``last_speaking_time``), but ``UserStateChangedEvent`` carries only
+        ``old_state``, ``new_state`` and ``created_at``, so it never reaches a
+        subscriber. What does reach us is ``end_of_utterance_delay``, which
+        LiveKit computes as ``max(now - last_speaking_time, 0)``.
 
-        Two things this is careful about:
+        Both that delay and the metric's ``timestamp`` are ``time.time()``, and
+        TurnTracker now stores epoch milliseconds too, so this reconstructs
+        LiveKit's own ``last_speaking_time`` in the same units:
+
+            last_speaking_time = metric.timestamp - end_of_utterance_delay
+
+        No VAD setting is hardcoded, so it tracks whatever the deployment
+        configured, and no clock is bridged.
 
         ``end_of_utterance_delay`` is published as
         ``info.metrics.end_of_turn_delay or 0.0``, so ``0.0`` means "could not
@@ -512,22 +516,16 @@ class MetricCapture:
         stale or missing anchor). Treating it as a real zero would quietly
         re-stamp the biased value and label it corrected, which is worse than
         leaving it alone. Non-positive is therefore ignored.
-
-        The clocks differ: the metric's ``timestamp`` is ``time.time()`` while
-        TurnTracker works in ``time.monotonic()``. Only the DELTA crosses
-        between them, never an absolute, so the two are never mixed.
         """
         if self._on_caller_end is None or eou <= 0:
             return
         produced_at = getattr(metric, "timestamp", None)
-        lag = 0.0
-        if isinstance(produced_at, int | float) and produced_at > 0:
-            # How long ago the metric was produced, so handler scheduling does
-            # not get charged to the caller's silence. A wall-clock difference,
-            # not a wall-clock instant.
-            lag = max(0.0, time.time() - float(produced_at))
-        now_ms = int(time.monotonic() * 1000)
-        self._on_caller_end(now_ms - int((lag + eou) * 1000))
+        if not isinstance(produced_at, int | float) or produced_at <= 0:
+            # No timestamp on the metric: fall back to now, which charges
+            # handler scheduling to the caller's silence but is far closer than
+            # the uncorrected value.
+            produced_at = time.time()
+        self._on_caller_end(int((float(produced_at) - eou) * 1000))
 
     def _on_session_metric(self, metric: object, *_a: Any, **_k: Any) -> None:
         metric = getattr(metric, "metrics", metric)
