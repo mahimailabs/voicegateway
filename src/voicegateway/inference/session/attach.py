@@ -738,7 +738,16 @@ def _build_turn_tracker(sink: Sink, project: str | None) -> Any:
     async def _flush(rows: list[TurnRow]) -> None:
         await sink.log_turns(rows)
 
-    return TurnTracker(flush_callback=_flush, flush_size=_turn_flush_size(project))
+    # precise_end_required: on LiveKit the stop event lags the caller's true
+    # stop by the VAD silence window, so a turn whose end was never corrected
+    # from the EOU metric reports no response speed rather than one that is
+    # flatteringly short. See TurnTracker.__init__ and
+    # MetricCapture._caller_end_from_eou.
+    return TurnTracker(
+        flush_callback=_flush,
+        flush_size=_turn_flush_size(project),
+        precise_end_required=True,
+    )
 
 
 def _bind_turn_events(
@@ -1066,6 +1075,28 @@ def _attach_livekit(
     if sink is None:
         sink = _build_default_sink(resolved_collector, resolved_key)
 
+    # Built before MetricCapture, which needs the correction hook below.
+    turn_tracker = (
+        _build_turn_tracker(sink, project) if _turns_enabled(turns) else None
+    )
+
+    def _correct_caller_end(at_ms: int) -> None:
+        """Re-stamp the caller's speech end from the EOU-derived anchor.
+
+        Scheduled, not awaited: this runs from MetricCapture's synchronous
+        metric handler. ``precise=True`` is what lets it overwrite the value the
+        state change already wrote, which is the whole point; a plain
+        first-wins report here would be discarded and nothing would change.
+        """
+        if turn_tracker is None:
+            return
+        _schedule_turn_event(
+            turn_tracker.on_user_stopped_speaking(
+                session_id=session_id, at_ms=at_ms, precise=True
+            ),
+            "caller_end_correction",
+        )
+
     cost_tracker = CostTracker(sink)
     capture = MetricCapture(
         cost_tracker=cost_tracker,
@@ -1077,6 +1108,7 @@ def _attach_livekit(
         room=resolved_room,
         channel=resolved_channel,
         dispatch_name=resolved_dispatch_name,
+        on_caller_end=_correct_caller_end if turn_tracker is not None else None,
     )
     capture.bind(session)
 
@@ -1095,9 +1127,6 @@ def _attach_livekit(
     # Same session_id the RequestRecords above are stamped with. rooms.py joins
     # room -> session_id -> turns, so a tracker keyed on anything else produces
     # turns that exist but never appear in /v1/rooms/{room}/latency.
-    turn_tracker = (
-        _build_turn_tracker(sink, project) if _turns_enabled(turns) else None
-    )
     dead_air_detector, activity = (
         _build_dead_air_detector(sink, project)
         if _dead_air_enabled(dead_air)

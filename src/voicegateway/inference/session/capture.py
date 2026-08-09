@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Any
 from voicegateway.models.request_model import RequestRecord
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
     from voicegateway.middleware.cost_tracker_middleware import CostTracker
     from voicegateway.services.sinks import Sink
@@ -297,6 +297,7 @@ class MetricCapture:
         room: str | None = None,
         channel: str | None = None,
         dispatch_name: str | None = None,
+        on_caller_end: Callable[[int], None] | None = None,
     ) -> None:
         self._cost_tracker = cost_tracker
         self._sink = sink
@@ -307,6 +308,10 @@ class MetricCapture:
         self._room = room
         self._channel = channel
         self._dispatch_name = dispatch_name
+        # Called with the caller's true speech-end, in TurnTracker's monotonic
+        # milliseconds, whenever an EOU metric makes it recoverable. See
+        # _caller_end_from_eou.
+        self._on_caller_end = on_caller_end
         self._pending: set[asyncio.Task[None]] = set()
         # Exception types already reported in full. A sink that cannot write
         # fails on every metric event, and one traceback per event buries the
@@ -481,6 +486,49 @@ class MetricCapture:
             return component_identity(component)
         return "unknown", "unknown"
 
+    def _caller_end_from_eou(self, metric: object, eou: float) -> None:
+        """Recover when the caller ACTUALLY stopped, and report it.
+
+        ``user_state_changed -> listening`` fires only once the VAD has waited
+        out its silence window, so a stop stamped at that event is late by that
+        window (0.55s with Silero's default) and every response speed measured
+        from it is understated by the same amount.
+
+        LiveKit backdates the true stop internally
+        (``on_end_of_speech`` subtracts ``silence_duration`` and
+        ``inference_duration``, then passes it as ``last_speaking_time``), but
+        ``UserStateChangedEvent`` carries only ``old_state``, ``new_state`` and
+        ``created_at``, so it never reaches a subscriber. What does reach us is
+        ``end_of_utterance_delay``, which LiveKit computes as
+        ``max(now - last_speaking_time, 0)``. Subtracting it from the moment the
+        metric was produced recovers the anchor without hardcoding any VAD
+        setting, so it tracks whatever the deployment configured.
+
+        Two things this is careful about:
+
+        ``end_of_utterance_delay`` is published as
+        ``info.metrics.end_of_turn_delay or 0.0``, so ``0.0`` means "could not
+        be measured" far more often than "no delay" (LiveKit returns None for a
+        stale or missing anchor). Treating it as a real zero would quietly
+        re-stamp the biased value and label it corrected, which is worse than
+        leaving it alone. Non-positive is therefore ignored.
+
+        The clocks differ: the metric's ``timestamp`` is ``time.time()`` while
+        TurnTracker works in ``time.monotonic()``. Only the DELTA crosses
+        between them, never an absolute, so the two are never mixed.
+        """
+        if self._on_caller_end is None or eou <= 0:
+            return
+        produced_at = getattr(metric, "timestamp", None)
+        lag = 0.0
+        if isinstance(produced_at, int | float) and produced_at > 0:
+            # How long ago the metric was produced, so handler scheduling does
+            # not get charged to the caller's silence. A wall-clock difference,
+            # not a wall-clock instant.
+            lag = max(0.0, time.time() - float(produced_at))
+        now_ms = int(time.monotonic() * 1000)
+        self._on_caller_end(now_ms - int((lag + eou) * 1000))
+
     def _on_session_metric(self, metric: object, *_a: Any, **_k: Any) -> None:
         metric = getattr(metric, "metrics", metric)
         eou = getattr(metric, "end_of_utterance_delay", None)
@@ -495,6 +543,11 @@ class MetricCapture:
                 provider, model_id = self._agent_component_identity(modality)
                 self._record_metric(metric, modality, provider, model_id)
             return
+        try:
+            self._caller_end_from_eou(metric, float(eou))
+        except Exception:  # noqa: BLE001 - turn timing must not break metering
+            logger.debug("capture: caller-end correction failed", exc_info=True)
+
         record = RequestRecord(
             id=str(uuid.uuid4()),
             timestamp=time.time(),
