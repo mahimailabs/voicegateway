@@ -50,6 +50,9 @@ class _SessionState:
     turn_index: int = 0
     pending_caller_start_ms: int | None = None
     pending_caller_end_ms: int | None = None
+    # Whether pending_caller_end_ms came from a source that knows when the
+    # caller ACTUALLY stopped, rather than when something noticed.
+    caller_end_is_precise: bool = False
     buffered_turns: list[TurnRow] = field(default_factory=list)
 
 
@@ -60,11 +63,28 @@ class TurnTracker(SessionScopedComponent):
         self,
         flush_callback: FlushCallback | None = None,
         flush_size: int = _DEFAULT_FLUSH_SIZE,
+        *,
+        precise_end_required: bool = False,
     ) -> None:
+        """``precise_end_required`` gates ``response_speed_ms`` on a real anchor.
+
+        Set it on transports whose stop event is known to lag the caller's true
+        stop, which is every LiveKit build: ``user_state_changed -> listening``
+        fires only after the VAD has waited out its silence window, so a stop
+        stamped there is late by that window and the response speed derived from
+        it is understated by the same amount. Flatteringly, which is why it
+        would not have been noticed.
+
+        With this set, a turn whose end was never corrected reports
+        ``response_speed_ms = None`` rather than a number half a second too
+        good. Mixing corrected and uncorrected turns in one percentile is worse
+        than a gap: the gap is visible.
+        """
         if flush_size < 1:
             raise ValueError(f"flush_size must be >= 1, got {flush_size}")
         self._flush_callback: FlushCallback = flush_callback or _noop_flush
         self._flush_size = flush_size
+        self._precise_end_required = precise_end_required
         self._sessions: dict[str, _SessionState] = {}
         self._lock = asyncio.Lock()
 
@@ -88,8 +108,15 @@ class TurnTracker(SessionScopedComponent):
         self,
         session_id: str | None = None,
         at_ms: int | None = None,
+        *,
+        precise: bool = False,
     ) -> None:
-        """Record the caller-speech end for the in-flight turn."""
+        """Record the caller-speech end for the in-flight turn.
+
+        ``precise=True`` means ``at_ms`` is when the caller actually stopped,
+        not when a listener noticed. A precise report may overwrite an imprecise
+        one exactly once; nothing overwrites a precise one.
+        """
         sid = self._resolve_session_id(session_id)
         if sid is None:
             return
@@ -98,15 +125,26 @@ class TurnTracker(SessionScopedComponent):
             state = self._sessions.get(sid)
             if state is None or state.pending_caller_start_ms is None:
                 return
-            # First-wins, matching on_user_started_speaking. Two events can
-            # report the same boundary (a discrete ``user_stopped_speaking`` on
-            # one build, the ``user_state_changed`` transition out of
-            # ``speaking`` on another), and both are bound so either kind of
-            # build works. Overwriting would let the later of the two stretch
-            # the caller's speech and shrink the response_speed_ms derived from
-            # it; the first report is the accurate one.
+            # First-wins AMONG EQUALS, matching on_user_started_speaking. Two
+            # events can report the same boundary (a discrete
+            # ``user_stopped_speaking`` on one build, the ``user_state_changed``
+            # transition out of ``speaking`` on another), and both are bound so
+            # either kind of build works. Between two imprecise reports the
+            # first is the accurate one; overwriting would let the later stretch
+            # the caller's speech.
+            #
+            # A precise report is the exception and MUST be able to overwrite,
+            # because the imprecise one always arrives first: the state change
+            # fires when the VAD gives up on more speech, while the corrected
+            # anchor is only recoverable from the end-of-utterance metric that
+            # follows. A plain first-wins guard here silently discards the
+            # correction and leaves every number exactly as wrong as before.
             if state.pending_caller_end_ms is None:
                 state.pending_caller_end_ms = end_ms
+                state.caller_end_is_precise = precise
+            elif precise and not state.caller_end_is_precise:
+                state.pending_caller_end_ms = end_ms
+                state.caller_end_is_precise = True
 
     async def on_agent_audio_first_frame(
         self,
@@ -128,6 +166,11 @@ class TurnTracker(SessionScopedComponent):
             if caller_end is None:
                 caller_end = agent_start
                 response_speed = None
+            elif self._precise_end_required and not state.caller_end_is_precise:
+                # The boundary is still useful for talk time, where the VAD
+                # window is noise. It is not usable as a latency headline, where
+                # that same window is most of the number. Absent, not guessed.
+                response_speed = None
             else:
                 response_speed = max(0, agent_start - caller_end)
             turn = TurnRow(
@@ -142,6 +185,7 @@ class TurnTracker(SessionScopedComponent):
             state.turn_index += 1
             state.pending_caller_start_ms = None
             state.pending_caller_end_ms = None
+            state.caller_end_is_precise = False
             flush_now = len(state.buffered_turns) >= self._flush_size
         if flush_now:
             await self.flush_session(sid)
@@ -207,6 +251,7 @@ class TurnTracker(SessionScopedComponent):
                 state.turn_index += 1
                 state.pending_caller_start_ms = None
                 state.pending_caller_end_ms = None
+                state.caller_end_is_precise = False
         flushed = await self.flush_session(session_id)
         async with self._lock:
             self._sessions.pop(session_id, None)

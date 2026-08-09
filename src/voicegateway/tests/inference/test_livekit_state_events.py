@@ -32,6 +32,27 @@ attach_mod = importlib.import_module("voicegateway.inference.session.attach")
 
 # The exact set a 1.5/1.6 AgentSession can emit for speech boundaries.
 _LIVEKIT_SPEECH_EVENTS = ("user_state_changed", "agent_state_changed")
+_LIVEKIT_TURN_EVENTS = (*_LIVEKIT_SPEECH_EVENTS, "metrics_collected")
+
+
+class _EOU:
+    """An EOUMetrics as delivered on ``metrics_collected``.
+
+    Part of the real turn sequence, not scenery: the caller's stop is recovered
+    from ``end_of_utterance_delay``, because the state change fires a VAD
+    silence window late. Without this a turn has boundaries but no response
+    speed. See test_response_speed_anchor.py.
+    """
+
+    def __init__(self, end_of_utterance_delay: float = 0.35) -> None:
+        self.end_of_utterance_delay = end_of_utterance_delay
+        self.transcription_delay = 0.1
+        self.timestamp = __import__("time").time()
+
+
+class _MetricsCollected:
+    def __init__(self, metrics: Any) -> None:
+        self.metrics = metrics
 
 
 class _StrictSession:
@@ -182,6 +203,8 @@ async def test_a_full_turn_from_only_the_real_event_set(tmp_path) -> None:
     await _drain()
     session.emit("user_state_changed", _UserState("speaking", "listening"))
     await _drain()
+    session.emit("metrics_collected", _MetricsCollected(_EOU()))
+    await _drain()
     session.emit("agent_state_changed", _AgentState("thinking", "speaking"))
     await _drain()
     session.emit("agent_state_changed", _AgentState("speaking", "listening"))
@@ -233,6 +256,8 @@ async def test_speaking_to_away_still_counts_as_a_stop(tmp_path) -> None:
     session.emit("user_state_changed", _UserState("listening", "speaking"))
     await _drain()
     session.emit("user_state_changed", _UserState("speaking", "away"))
+    await _drain()
+    session.emit("metrics_collected", _MetricsCollected(_EOU()))
     await _drain()
     session.emit("agent_state_changed", _AgentState("thinking", "speaking"))
     await _drain()
@@ -293,6 +318,8 @@ async def test_two_turns_in_one_session(tmp_path) -> None:
         session.emit("user_state_changed", _UserState("listening", "speaking"))
         await _drain()
         session.emit("user_state_changed", _UserState("speaking", "listening"))
+        await _drain()
+        session.emit("metrics_collected", _MetricsCollected(_EOU()))
         await _drain()
         session.emit("agent_state_changed", _AgentState("thinking", "speaking"))
         await _drain()
