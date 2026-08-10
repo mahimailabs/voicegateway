@@ -147,10 +147,17 @@ def test_a_plateaued_ramp_yields_no_figure_at_all() -> None:
 
 
 def test_a_node_never_saturated_yields_a_floor_not_a_measure() -> None:
-    """Sizing from an unsaturated node under-provisions.
+    """Sizing from an unsaturated node OVER-provisions.
 
     Every step stayed well under the ceiling, so the largest concurrency seen is
-    a lower bound on capacity, not capacity.
+    a lower bound on capacity, not capacity. Treating that floor as the maximum
+    divides the target by too small a number, so it buys MORE nodes than the run
+    showed were needed. ``nodes_for`` demonstrates it: a 500-call target sized
+    from a true 300/node needs 3 nodes, and sized from a 200/node floor needs 4.
+
+    The assertion below read "under-provision" until 2026-08, matching the
+    wording in the message it checked. Both were backwards, and the report told
+    operators the opposite of what over-sizing does to their bill.
     """
     gentle = [
         RampStep(target_concurrency=n, peak_concurrency=n, peak_cpu_utilisation=cpu)
@@ -159,7 +166,8 @@ def test_a_node_never_saturated_yields_a_floor_not_a_measure() -> None:
     value, reason = capacity.derive_calls_per_node(gentle, cpu_ceiling=0.70)
     assert value is None
     assert "AT LEAST 200" in reason
-    assert "under-provision" in reason
+    assert "over-provisions" in reason
+    assert "under-provision" not in reason
 
 
 def test_a_properly_saturated_ramp_yields_the_highest_sustained_concurrency() -> None:
@@ -517,3 +525,128 @@ def test_the_duration_filter_runs_before_the_plateau_scan() -> None:
     _value, reason = capacity.derive_calls_per_node(steps, cpu_ceiling=0.70)
     assert "ran for under 300s" in reason
     assert "stopped scaling" not in reason
+
+
+# --- parallel generators are not a ramp -------------------------------------
+
+
+def _parallel_generators(
+    count: int = 12,
+    *,
+    per_process_peak: int = 51,
+    cpu: float = 0.5465968586387453,
+    samples: int = 1374,
+) -> list[RampStep]:
+    """Rows shaped like a real churn run: N generators, one shared window.
+
+    Every field that varies between genuine ramp steps is identical here, which
+    is the point. The processes all watched the same fleet for the same 20
+    minutes, so they report the same peak CPU from the same sample count, and
+    only ``peak_concurrency`` is theirs alone.
+    """
+    return [
+        RampStep(
+            target_concurrency=per_process_peak,
+            peak_concurrency=per_process_peak,
+            peak_cpu_utilisation=cpu,
+            duration_seconds=1200.0,
+            samples_in_window=samples,
+        )
+        for _ in range(count)
+    ]
+
+
+def test_parallel_generators_are_detected_as_one_window() -> None:
+    steps = _parallel_generators()
+    assert capacity.concurrent_generators(steps) == 12
+
+
+def test_a_real_ramp_is_not_mistaken_for_parallel_generators() -> None:
+    """Sequential steps see different windows, so they must still derive.
+
+    The detector keys on the pair, so a ramp whose steps happen to share a CPU
+    reading is safe as long as their sample counts differ, which for genuinely
+    separate stretches of time they do.
+    """
+    ramp = [
+        RampStep(
+            target_concurrency=n,
+            peak_concurrency=n,
+            peak_cpu_utilisation=cpu,
+            duration_seconds=600.0,
+            samples_in_window=samples,
+        )
+        for n, cpu, samples in (
+            (100, 0.31, 300),
+            (150, 0.48, 305),
+            (200, 0.66, 298),
+            (250, 0.79, 301),
+        )
+    ]
+    assert capacity.concurrent_generators(ramp) == 0
+    value, _reason = capacity.derive_calls_per_node(ramp, cpu_ceiling=0.70)
+    assert value == 200
+
+
+def test_parallel_generators_do_not_yield_a_per_node_capacity() -> None:
+    """The regression this exists for.
+
+    Twelve generator processes each peaked at 51 while the fleet carried 612
+    across four SIP nodes, which is 153 per node. The report used to answer
+    "it carries AT LEAST 51 calls", a per-generator number in a sentence about
+    a node. An operator sizing from 51 buys three times the nodes the run
+    showed were needed.
+    """
+    value, reason = capacity.derive_calls_per_node(
+        _parallel_generators(), cpu_ceiling=0.70
+    )
+
+    assert value is None, f"a per-node capacity was derived from 12 generators: {value}"
+    assert "51" not in reason.replace("612", ""), (
+        "the per-generator concurrency is still quoted in the refusal, which is "
+        f"how it was read as a per-node figure: {reason}"
+    )
+    assert "AT LEAST" not in reason
+    # It must say WHY, and name the missing input rather than implying the run
+    # was fine.
+    assert "parallel" in reason
+    assert "612" in reason, "the fleet total is what a reader needs to size from"
+    assert "node" in reason
+
+
+def test_the_refusal_names_the_missing_divisor() -> None:
+    """A refusal that does not say what would fix it just looks like a bug."""
+    _value, reason = capacity.derive_calls_per_node(
+        _parallel_generators(), cpu_ceiling=0.70
+    )
+    assert "node count" in reason or "number of nodes" in reason
+
+
+def test_one_generator_is_not_treated_as_parallel() -> None:
+    """A single row shares a window with nothing, so the ramp path still runs."""
+    single = _parallel_generators(count=1)
+    assert capacity.concurrent_generators(single) == 0
+    value, reason = capacity.derive_calls_per_node(single, cpu_ceiling=0.70)
+    # Unsaturated, so it still refuses, but by the floor path rather than this
+    # one: the two refusals are different facts.
+    assert value is None
+    assert "parallel" not in reason
+
+
+def test_steps_missing_the_fingerprint_are_not_guessed_at() -> None:
+    """No sample count means the question cannot be answered, so it is not.
+
+    Older artifacts carry no window fingerprint. Treating absence as "not
+    parallel" is the existing behaviour and is the safe direction here: it
+    leaves those runs exactly as they were rather than refusing retroactively.
+    """
+    unfingerprinted = [
+        RampStep(
+            target_concurrency=51,
+            peak_concurrency=51,
+            peak_cpu_utilisation=0.54,
+            duration_seconds=1200.0,
+        )
+        for _ in range(12)
+    ]
+    assert capacity.concurrent_generators(unfingerprinted) == 0

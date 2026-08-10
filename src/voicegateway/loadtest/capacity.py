@@ -156,6 +156,16 @@ class RampStep:
     # turn a missing field into a missing capacity table. The derivation says so
     # in its reason instead, so the gap is visible rather than acted on.
     duration_seconds: float | None = None
+    # How many node samples the step's window covered. Not used to measure
+    # anything: it is the WINDOW FINGERPRINT, and it exists so concurrent
+    # generators can be told apart from sequential ramp steps.
+    #
+    # Two steps that ran one after another looked at different stretches of
+    # time, so they cannot have seen the same number of samples AND the same
+    # peak CPU. Two generator processes running side by side over one window
+    # see exactly that, because both are reading the same fleet. Without this
+    # the two are indistinguishable and a parallel run is sized as a ramp.
+    samples_in_window: int | None = None
 
 
 @dataclass(frozen=True)
@@ -404,6 +414,34 @@ def _steady_state_steps(
     return eligible, too_short, unrecorded
 
 
+def concurrent_generators(steps: list[RampStep]) -> int:
+    """How many steps share one measurement window, or 0 if none do.
+
+    A sequential ramp holds one concurrency, measures, then moves to the next.
+    Its steps therefore look at DIFFERENT stretches of time, and cannot report
+    the same peak CPU from the same number of node samples.
+
+    Generator processes running side by side report exactly that, because each
+    one is reading the whole fleet over the whole run. When they do, the rows
+    are not ramp steps at all: each ``peak_concurrency`` is what ONE GENERATOR
+    carried, and the fleet carried their sum, spread over however many nodes
+    were serving. None of those three numbers is the same thing, and only the
+    first is in the artifact.
+
+    Matched on the pair rather than on CPU alone: two genuinely separate steps
+    can coincidentally peak at the same utilisation, but not while also covering
+    an identical sample count.
+    """
+    windows: dict[tuple[float, int], int] = {}
+    for step in steps:
+        if step.peak_cpu_utilisation is None or step.samples_in_window is None:
+            continue
+        key = (step.peak_cpu_utilisation, step.samples_in_window)
+        windows[key] = windows.get(key, 0) + 1
+    largest = max(windows.values(), default=0)
+    return largest if largest > 1 else 0
+
+
 def derive_calls_per_node(
     steps: list[RampStep],
     *,
@@ -424,7 +462,8 @@ def derive_calls_per_node(
       generator's limit sized as a node's limit buys the wrong fleet.
     * No step reached the CPU ceiling. The node was never saturated, so the
       largest concurrency observed is a floor on its capacity, not a measure of
-      it, and sizing from it would UNDER-provision.
+      it. Sizing from a floor treats it as a maximum and buys MORE nodes than
+      the run showed were needed, so it OVER-provisions.
     * Nothing measured CPU at all. An unscraped ramp demonstrates nothing.
     * No step declared what it asked for, so a plateau could not be ruled out.
       "No plateau detected" from a ramp that recorded neither targets nor rates
@@ -485,6 +524,28 @@ def derive_calls_per_node(
             "rather than the node's, and sizing from it would be a guess" + tail
         )
 
+    # Concurrent generators, checked BEFORE any concurrency is quoted. Every
+    # branch below reads a step's peak_concurrency as a number one node carried,
+    # and on a parallel run that is a per-GENERATOR figure. Quoting it in a
+    # sentence about a node is the whole defect: a reader sizes a fleet from a
+    # number that is smaller than the truth by the generator count, deploys more
+    # nodes than the run showed were needed, and the report never says so.
+    shared = concurrent_generators(steps)
+    if shared > 1:
+        carried = sum(s.peak_concurrency or 0 for s in steps)
+        return None, (
+            f"{shared} of these {len(steps)} entries report the same peak CPU "
+            f"over the same {steps[0].samples_in_window} node samples, so they "
+            "measured ONE window rather than a sequence of capacity steps. They "
+            "are generator processes running in parallel, not a ramp. Each "
+            "peak concurrency is what one GENERATOR carried"
+            + (f" (summing to {carried} across the fleet)" if carried else "")
+            + ", and per-node capacity is that total divided by the number of "
+            "nodes that served it, which this artifact does not record. Re-run "
+            "as a ramp that raises concurrency in held steps, or supply the "
+            "serving node count, and this can be derived" + tail
+        )
+
     # Narrowed into concrete pairs rather than filtered in place: a step is only
     # evidence when it carries BOTH halves, and pulling them out here means
     # nothing downstream has to re-assert that they are present.
@@ -517,7 +578,8 @@ def derive_calls_per_node(
             f"no step reached the {cpu_ceiling:.0%} CPU ceiling (peak observed "
             f"{highest:.1%}), so the node was never saturated. It carries AT "
             f"LEAST {best} calls, which is a floor on its capacity and not a "
-            "measure of it: sizing from it would under-provision" + tail
+            "measure of it: sizing from a floor buys MORE nodes than the run "
+            "showed were needed, so it over-provisions" + tail
         )
 
     return best, (
@@ -570,6 +632,7 @@ __all__ = [
     "PlateauFinding",
     "RampStep",
     "capacity_table",
+    "concurrent_generators",
     "derive_calls_per_node",
     "detect_plateau",
     "nodes_for",
