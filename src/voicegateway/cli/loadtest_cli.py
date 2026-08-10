@@ -565,6 +565,11 @@ def _capacity_for(tests: list[dict], plan: dict | None = None) -> dict:
             # artifact can answer. A row missing either end reports None, which
             # the derivation treats as unrecorded rather than as short.
             duration_seconds=_step_duration_seconds(test),
+            # The window fingerprint. Rows written by parallel generators all
+            # report the same fleet over the same window, and this is what lets
+            # the derivation notice rather than sizing a node from one
+            # generator's share.
+            samples_in_window=test.get("node_samples_in_window"),
         )
         for test in tests
     ]
