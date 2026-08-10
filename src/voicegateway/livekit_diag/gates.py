@@ -1797,8 +1797,21 @@ class LifecycleReading:
     """One subject's process-start times and OOM counter across a window.
 
     ``start_times`` is ``process_start_time_seconds`` in time order. It is a
-    CONSTANT for the life of a process, so any increase inside a window means
-    that process restarted mid-run, and a crash presents exactly that way.
+    CONSTANT for the life of one process, so an increase means the series is no
+    longer being served by the process that was serving it.
+
+    That is NOT the same as "it restarted mid-run", and the difference is
+    decidable: compare the new start time against ``window_start_s``. A process
+    that restarted during the window started during the window, so its new start
+    time falls inside it. A new start time that PREDATES the window belongs to a
+    process that was already running before the run began, which means the
+    series moved to a different process rather than one process restarting. A
+    scrape target list refreshed mid-run does exactly that, and both machines
+    can have been up for hours.
+
+    Both are findings, because counter rates across the change are unusable
+    either way, and both fail. Only the claim differs, and the gate must make
+    the one it can support.
 
     ``oom_kills`` is ``node_vmstat_oom_kill``, cumulative since boot, so an
     increase inside the window means the kernel killed something DURING the run.
@@ -1812,6 +1825,10 @@ class LifecycleReading:
     source: str | None = None
     start_times: tuple[float | None, ...] = ()
     oom_kills: tuple[float | None, ...] = ()
+    # When the window opened, epoch seconds, so a new start time can be placed
+    # inside or before it. None means the caller did not supply it, and the gate
+    # then makes the weaker claim rather than guessing which case it has.
+    window_start_s: float | None = None
 
 
 def _rose(values: Sequence[float | None]) -> tuple[bool, float | None, float | None]:
@@ -1847,15 +1864,50 @@ def process_lifecycle_gate(reading: LifecycleReading) -> GateResult:
     measured_ooms = [v for v in reading.oom_kills if v is not None]
 
     if restarted:
+        # What is MEASURED is that the series stopped being served by the
+        # process that was serving it. Whether that was a restart depends on
+        # where the new start time falls, and saying "restarted during the
+        # window" without checking asserts a cause the data may contradict.
+        started_inside = (
+            reading.window_start_s is not None
+            and last_start is not None
+            and last_start >= reading.window_start_s
+        )
+        predates_window = (
+            reading.window_start_s is not None
+            and last_start is not None
+            and last_start < reading.window_start_s
+        )
+        if started_inside:
+            claim = (
+                f"{subject} restarted during the window: the process serving it "
+                f"changed and the new process started at {last_start}, inside "
+                "the window. A crash presents this way too, so this covers both"
+            )
+        elif predates_window:
+            ago = reading.window_start_s - last_start  # type: ignore[operator]
+            claim = (
+                f"the process serving {subject} changed during the window, and "
+                f"it did NOT restart inside it: the new process reports a start "
+                f"time of {last_start}, which is {ago:.0f}s BEFORE the window "
+                "opened, so it was already running when the run began. The "
+                "series moved between processes, which a scrape target list "
+                "refreshed mid-run will do"
+            )
+        else:
+            claim = (
+                f"the process serving {subject} changed during the window: "
+                "whether it restarted cannot be said, because the window start "
+                "was not supplied to compare the new start time against"
+            )
         return GateResult(
             gate=PROCESS_LIFECYCLE_GATE,
             status=FAIL,
             subject=subject,
             detail=(
-                f"{subject} restarted during the window: "
-                f"process_start_time_seconds rose from {first_start} to "
-                f"{last_start}. A crash presents this way too, so this covers "
-                "both, and every counter rate across the restart is unusable."
+                f"{claim}. process_start_time_seconds rose from {first_start} "
+                f"to {last_start}, and every counter rate across the change is "
+                "unusable whichever of the two it was."
             ),
             metric="process_restarts",
             value=1.0,
