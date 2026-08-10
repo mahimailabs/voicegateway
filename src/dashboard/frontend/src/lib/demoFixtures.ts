@@ -66,7 +66,7 @@ const AUTH_STATUS = { auth_required: false } as const;
 // ---------------------------------------------------------------------------
 
 const STATUS: StatusResponse = {
-  version: '0.20.1',
+  version: '0.24.5',
   providers: {
     openai: { configured: true, type: 'llm' },
     deepgram: { configured: true, type: 'stt' },
@@ -556,7 +556,7 @@ const SERVER_OVERVIEW: ServerOverview = {
         agent_name: 'support-voice',
         region: 'us-east-1',
         host: 'worker-01',
-        version: '0.20.1',
+        version: '0.24.5',
         status: 'busy',
         active_sessions: 2,
         last_seen: BASE_EPOCH - 45,
@@ -567,7 +567,7 @@ const SERVER_OVERVIEW: ServerOverview = {
         agent_name: 'reception',
         region: 'us-east-1',
         host: 'worker-02',
-        version: '0.20.1',
+        version: '0.24.5',
         status: 'busy',
         active_sessions: 1,
         last_seen: BASE_EPOCH - 12,
@@ -1195,7 +1195,7 @@ const DIAG_RUNS: DiagnosticRun[] = [
                 status: 'busy',
                 region: 'us-east-1',
                 host: 'worker-01',
-                version: '0.20.1',
+                version: '0.24.5',
                 active_sessions: 2,
                 last_seen: BASE_EPOCH - 45,
               },
@@ -1205,7 +1205,7 @@ const DIAG_RUNS: DiagnosticRun[] = [
                 status: 'busy',
                 region: 'us-east-1',
                 host: 'worker-02',
-                version: '0.20.1',
+                version: '0.24.5',
                 active_sessions: 1,
                 last_seen: BASE_EPOCH - 12,
               },
@@ -1385,7 +1385,7 @@ const DIAG_RUNS: DiagnosticRun[] = [
                 status: 'busy',
                 region: 'us-east-1',
                 host: 'worker-01',
-                version: '0.20.1',
+                version: '0.24.5',
                 active_sessions: 1,
                 last_seen: BASE_EPOCH - 90 * MIN,
               },

@@ -10,7 +10,13 @@
   <a href="LICENSE"><img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/badges/license.svg" height="30" alt="MIT License"/></a>
 </p>
 
-[**Docs**](https://docs.voicegateway.dev) · [**Quick start**](#quick-start) · [**Dashboard**](#the-dashboard) · [**Fleet collector**](#fleet-collector) · [**MCP**](#manage-from-your-coding-agent-mcp)
+<p>
+  <a href="https://discord.gg/ysFaF4uSB"><img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white" alt="Join the VoiceGateway Discord"/></a>
+  <a href="https://x.com/voicexprt"><img src="https://img.shields.io/badge/Follow-%40voicexprt-000000?logo=x&logoColor=white" alt="Follow @voicexprt on X"/></a>
+  <a href="https://deepwiki.com/mahimailabs/voicegateway"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki about the codebase"/></a>
+</p>
+
+[**Docs**](https://docs.voicegateway.dev) · [**Quick start**](#quick-start) · [**Dashboard**](#the-dashboard) · [**Fleet collector**](#fleet-collector) · [**MCP**](#coding-agents-mcp)
 
 </div>
 
@@ -28,7 +34,7 @@ voicegateway.attach(session)   # one line. profile every call.
 # logged per call: provider, model, tokens, $cost, latency, session_id
 ```
 
-**The open-source profiler for voice agents.** Add one line and every STT, LLM, and TTS call is priced and timed: cost to the cent, latency p50/p95, and conversation quality. `attach()` takes a [LiveKit](https://docs.livekit.io/agents) `AgentSession` or a [Pipecat](https://github.com/pipecat-ai/pipecat) `PipelineTask`; `import voicegateway` pulls neither framework until you use it. Prices come from [voice-prices](https://github.com/mahimailabs/voice-prices) and reconcile against your real provider invoices with one command. Self-hosted. Your keys. No data leaves your infra.
+**The open-source profiler for voice agents.** Add one line and every STT, LLM, and TTS call is priced and timed: cost to the cent, latency p50/p95, and conversation quality. `attach()` takes a [LiveKit](https://docs.livekit.io/agents) `AgentSession` or a [Pipecat](https://github.com/pipecat-ai/pipecat) `PipelineTask`, and `import voicegateway` pulls neither framework until you use it. Prices come from [voice-prices](https://github.com/mahimailabs/voice-prices) and reconcile against your real provider invoices with one command. Self-hosted, your keys, no data leaves your infra.
 
 <details>
 <summary><b>Using Pipecat?</b> Same one line.</summary>
@@ -43,17 +49,50 @@ voicegateway.attach(task)   # profile every call, Pipecat
 
 </details>
 
-## Why VoiceGateway
+## Quick start
 
-Voice AI vendors hide three numbers. VoiceGateway exposes them, per call.
+```bash
+# Local SQLite + the dashboard at http://localhost:8080
+pip install "voicegateway[dashboard]"
+voicegw init && voicegw serve
+```
 
-- **Is it working?** Latency p50/p95 across the STT → LLM → TTS loop, interruption rate, dead air, talk-over: the metrics text stacks never have to think about.
-- **What does it cost?** STT bills by audio seconds, LLM by tokens, TTS by characters. Every call is broken down by modality and totaled to the cent. `voicegw reconcile` checks recorded numbers against your actual provider invoices.
-- **How do I make it cheaper?** See cost per provider and model so you know what to change. Cap daily spend and fall back on errors with `guard()`. Attribute cost per tenant so agency clients see only their own usage.
+Add the `voicegateway.attach(session)` line above to your agent and every call is tracked. Provider plugins install with your framework: `pip install "voicegateway[livekit,deepgram,openai,cartesia]"` or `"voicegateway[pipecat]"`.
 
-Building a text-only LLM app with no voice component? [LiteLLM](https://docs.litellm.ai/) is the better fit. See the [decision tree](https://docs.voicegateway.dev/guide/decision-tree).
+Python 3.11+. The full extras matrix, the zero-install [uvx](https://uvx.sh) path, and the OS daemon installer are in the [get-started docs](https://docs.voicegateway.dev/get-started).
 
-## One more line: `guard()`
+## What you get
+
+Voice AI vendors hide three numbers: whether it works, what it costs, and how to make it cheaper. VoiceGateway exposes all three, per call.
+
+| Capability                     | What it gives you                                                                          |
+| :----------------------------- | :----------------------------------------------------------------------------------------- |
+| **Framework-neutral**          | One `attach()` for LiveKit or Pipecat. Your keys, your plugins, no lock-in                  |
+| **Voice-conversation metrics** | Per-minute cost, latency p50/p95, interruptions, dead air, talk-over                        |
+| **Cost to the cent**           | STT by audio seconds, LLM by tokens, TTS by characters, broken down per call and per model  |
+| **Reconciliation**             | `voicegw reconcile` checks recorded cost against your real provider invoices                |
+| **Spend control**              | `guard()`: daily budget cap, fallback on error, rate limit, per project                     |
+| **Conversation replay**        | Scrub any past call: STT chunks, LLM tokens, TTS frames, with timing and cost               |
+| **Multi-tenant attribution**   | Per-tenant cost, scoped API keys per team, agency-ready                                     |
+| **Fleet collector**            | One-line installer. N agents push to one collector. Slice by agent, project, tenant         |
+
+Building a text-only LLM app with no voice? [LiteLLM](https://docs.litellm.ai/) is the better fit. See the [decision table](https://docs.voicegateway.dev/guide/what-is-voicegateway#when-something-else-is-the-better-fit). Release history: [CHANGELOG.md](CHANGELOG.md).
+
+## The dashboard
+
+Self-hosted at `http://localhost:8080`. Bundled, no SaaS account, no data leaves your stack.
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/dashboard.png" alt="VoiceGateway dashboard: cost by provider and model" width="100%" />
+  <br/>
+  <sub>Example numbers. Click through the real thing, no login, at <a href="https://voicegateway.dev/demo">voicegateway.dev/demo</a>.</sub>
+</div>
+
+**Overview** (7-day spend and request trend), **Agents** (per-agent cost, model stack, worker memory), **Costs** (per provider, model, project, tenant, plus latency p50/p95), **Calls** (replay any conversation), **Latency**, **Server** (your LiveKit rooms, SIP, egress, cost-annotated), and **Diagnostics** (probe your LiveKit deployment).
+
+White-label it per project: upload a logo, set an accent color and product name, and the whole UI re-skins. One-key light/dark.
+
+## Spend control with `guard()`
 
 `attach()` watches. `guard()` acts. Wrap one provider to cap spend, fall back on errors, and rate-limit. It returns a drop-in of the same type, so it slots into your session unchanged.
 
@@ -68,51 +107,15 @@ llm = voicegateway.guard(
 
 `guard()` writes no metrics and `attach()` never double-counts, so use both together.
 
-## Features
-
-| Capability                     | What it gives you                                                                         |
-| :----------------------------- | :---------------------------------------------------------------------------------------- |
-| **Framework-neutral**          | One `attach()` for LiveKit or Pipecat. Your keys, your plugins, no lock-in                 |
-| **Voice-conversation metrics** | Per-minute cost, latency p50/p95, interruptions, dead air, talk-over                       |
-| **Conversation replay**        | Scrub any past call: STT chunks, LLM tokens, TTS frames with timing and cost              |
-| **Spend control**              | `guard()`: daily budget cap, fallback on error, rate limit, per project                   |
-| **Reconciliation**             | `voicegw reconcile` checks recorded cost against your real provider invoices              |
-| **Multi-tenant attribution**   | Per-tenant cost, scoped API keys per team, agency-ready                                    |
-| **Fleet collector**            | One-line installer. N agents push to one collector. Slice costs by agent, project, tenant |
-
-Full release history: [CHANGELOG.md](CHANGELOG.md).
-
-## Quick start
-
-```bash
-# Single node: local SQLite + the dashboard at http://localhost:8080
-pip install "voicegateway[dashboard]"
-voicegw init && voicegw serve
-```
-
-Add the one `voicegateway.attach(session)` line from the snippet above to your agent and every call is tracked. Provider plugins install with your framework (`pip install "voicegateway[livekit,deepgram,openai,cartesia]"` or `"voicegateway[pipecat]"`). The full extras matrix, the zero-install [uvx](https://uvx.sh) path, and the OS daemon installer (LaunchAgent / systemd / Scheduled Task) are in the [get-started docs](https://docs.voicegateway.dev/get-started). Python 3.11+.
-
-## The dashboard
-
-A self-hosted web UI at `http://localhost:8080`. Bundled. No SaaS account. No data leaves your stack.
-
-<div align="center">
-  <img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/dashboard.png" alt="VoiceGateway dashboard: cost by provider and model" width="100%" />
-  <br/>
-  <sub>Total spend, cost by provider and model, latency p50/p95, per-call replay, and one-key light/dark.</sub>
-</div>
-
-Overview with a 7-day spend and requests trend, Agents (per-agent cost, model stack, worker memory), Costs (per provider / model / project / tenant, plus latency p50/p95), Calls (replay any conversation), Latency, and Diagnostics (probe your LiveKit deployment). Configure projects and a rate card for billing reconciliation. One-key light/dark theme. White-label it per project: upload a logo, set an accent color and product name, and the whole UI re-skins.
-
 ## Fleet collector
 
-Run one shared collector on your VPS. Every agent on your fleet pushes telemetry to it: one dashboard, one cost view, across all of them.
+Run one shared collector on your VPS. Every agent pushes to it: one dashboard, one cost view, across all of them.
 
 ```bash
 curl -fsSL https://voicegateway.dev/collector.sh | bash
 ```
 
-The script installs Docker if needed, generates and persists secrets, pins the image version, and health-checks the container before returning. Point your agents at it with three environment variables:
+The script installs Docker if needed, generates and persists secrets, pins the image version, and health-checks the container before returning. Point your agents at it:
 
 ```bash
 export VOICEGW_COLLECTOR_URL="https://collector.example.com"
@@ -120,22 +123,22 @@ export VOICEGW_API_KEY="<your-ingest-key>"
 export VOICEGW_PROJECT="my-agent"
 ```
 
-`attach()` reads them and batches every call to the collector instead of local SQLite. SQLite and Postgres backends, plus HTTPS via Caddy: [fleet collector docs →](https://docs.voicegateway.dev/deployment/vps)
+`attach()` reads those and batches every call to the collector instead of local SQLite. SQLite and Postgres backends, Docker Compose, and HTTPS via Caddy: [deployment docs](https://docs.voicegateway.dev/deployment/vps).
 
-## Manage from your coding agent (MCP)
+## Coding agents (MCP)
 
-VoiceGateway ships a first-class [Model Context Protocol](https://modelcontextprotocol.io) server. Claude Code, Cursor, Codex, and Cline create projects, check costs, and inspect calls through natural language.
+VoiceGateway ships a [Model Context Protocol](https://modelcontextprotocol.io) server, so Claude Code, Cursor, Codex, and Cline can create projects, check costs, and inspect calls in natural language.
 
 ```bash
 pipx inject voicegateway "voicegateway[dashboard]"
 claude mcp add voicegateway --command "voicegw mcp --transport stdio"
 ```
 
-Tools across observability, projects, and costs. Destructive ops (`delete_*`) require explicit `confirm=True` after a preview. Remote HTTP/SSE transport with bearer auth and the full tool list: [MCP reference →](https://docs.voicegateway.dev/mcp/)
+Destructive ops (`delete_*`) require an explicit `confirm=True` after a preview. Remote HTTP/SSE transport and the full tool list: [MCP reference](https://docs.voicegateway.dev/mcp/).
 
-## Priced providers
+## Providers
 
-VoiceGateway prices calls from any provider [voice-prices](https://github.com/mahimailabs/voice-prices) covers. You bring your own native plugins; VoiceGateway meters and prices them. The common ones:
+Any provider [voice-prices](https://github.com/mahimailabs/voice-prices) covers. You bring your own native plugins; VoiceGateway meters and prices them.
 
 | Modality | Cloud                                         | Local                   |
 | :------- | :-------------------------------------------- | :---------------------- |
@@ -144,64 +147,6 @@ VoiceGateway prices calls from any provider [voice-prices](https://github.com/ma
 | **TTS**  | Cartesia, ElevenLabs, Deepgram Aura-2, OpenAI | Kokoro, Piper           |
 
 A price it does not recognize records at zero and flags for a rate-card entry, so nothing is silently dropped. Per-model IDs: [configuration/providers](https://docs.voicegateway.dev/configuration/providers).
-
-## Architecture
-
-```mermaid
-flowchart TB
-    A[Voice Agent · LiveKit or Pipecat] --> B["voicegateway.attach()"]
-    B --> F[Middleware Pipeline]
-    F --> F1[Cost Tracker]
-    F --> F2[Latency Monitor]
-    F --> F3[Rate Limiter]
-    F --> F4[Multi-tenant Attribution]
-    F --> G[(SQLite · encrypted)]
-    G --> H[Dashboard UI]
-    G --> I[MCP Server]
-    I --> J[Claude Code · Cursor · Codex]
-```
-
-Async throughout. `import voicegateway` stays framework-neutral: the LiveKit and Pipecat integrations import their framework only on first use. YAML config with `${ENV_VAR}` substitution. SQLite at the bottom for portability, encrypted with Fernet at rest. [Architecture deep dive →](https://docs.voicegateway.dev/architecture/)
-
-## Deploy
-
-<details>
-<summary><b>Docker Compose</b> (Postgres + collector)</summary>
-
-```yaml
-services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: voicegw
-      POSTGRES_PASSWORD: ${VOICEGW_PG_PASSWORD}
-      POSTGRES_DB: voicegw
-    volumes:
-      - voicegw-pgdata:/var/lib/postgresql/data
-    restart: unless-stopped
-
-  collector:
-    image: mahimairaja/voicegateway:latest
-    ports:
-      - "8080:8080"
-    environment:
-      VOICEGW_DB_URL: postgresql+asyncpg://voicegw:${VOICEGW_PG_PASSWORD}@postgres/voicegw
-    volumes:
-      - ./voicegw.yaml:/app/voicegw.yaml:ro
-    depends_on: [postgres]
-    restart: unless-stopped
-
-volumes:
-  voicegw-pgdata:
-```
-
-```bash
-docker compose up -d
-```
-
-</details>
-
-For production, the [fleet collector installer](#fleet-collector) handles secrets, image pinning, and health checks for you.
 
 ## Contributing
 
@@ -212,11 +157,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before opening a PR. Security issues go through the disclosure flow in [SECURITY.md](SECURITY.md), not a public issue.
-
-## Community
-
-[![Star History Chart](https://api.star-history.com/svg?repos=mahimailabs/voicegateway&type=Date)](https://star-history.com/#mahimailabs/voicegateway&Date)
+Read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before opening a PR. Security issues go through [SECURITY.md](SECURITY.md), not a public issue. Questions and ideas are welcome in [Discord](https://discord.gg/ysFaF4uSB).
 
 <a href="https://github.com/mahimailabs/voicegateway/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=mahimailabs/voicegateway&max=40&columns=10&anon=0" alt="Contributors" />
@@ -226,12 +167,9 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT
 
 [MIT](LICENSE). Fork it, ship it.
 
-Built by [Mahimai Raja](https://mahimai.dev), founder of [Mahimai AI](https://mahimai.ca), a voice AI company, in public. Standing on [LiveKit Agents](https://github.com/livekit/agents), [Pipecat](https://github.com/pipecat-ai/pipecat), [FastAPI](https://fastapi.tiangolo.com/), [Pydantic](https://docs.pydantic.dev/), and [voice-prices](https://github.com/mahimailabs/voice-prices).
-
+Built in public by [Mahimai Raja](https://mahimai.dev), founder of [Mahimai AI](https://mahimai.ca), a voice AI company. Standing on [LiveKit Agents](https://github.com/livekit/agents), [Pipecat](https://github.com/pipecat-ai/pipecat), [FastAPI](https://fastapi.tiangolo.com/), [Pydantic](https://docs.pydantic.dev/), and [voice-prices](https://github.com/mahimailabs/voice-prices).
 
 <!-- GitAds-Verify: B26PKZL6HHS6F2ZU9NAHRIA9OQHS919R -->
 
-
 ## GitAds Sponsored
 [![Sponsored by GitAds](https://gitads.dev/v1/ad-serve?source=mahimailabs/voicegateway@github)](https://gitads.dev/v1/ad-track?source=mahimailabs/voicegateway@github)
-
