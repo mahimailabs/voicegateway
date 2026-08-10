@@ -251,9 +251,31 @@ async def test_a_real_zero_is_stored_as_zero(storage) -> None:
 
 
 async def test_a_hanging_target_times_out_and_records_the_gap(storage) -> None:
-    """The tick must end on its own deadline, with a row that says why."""
+    """The tick must end on its own deadline, with a row that says why.
+
+    Asserted on what the CODE recorded, not on the test's wall clock. The
+    deadline is an ``asyncio.wait_for`` around the fetch, so an outcome of
+    ``timeout`` is proof it fired: had it not, the handler's 30s sleep would
+    have completed and the outcome would be ``ok``. That evidence does not move
+    with machine load.
+
+    The wall-clock bound this used to carry (``elapsed < 3``) was a proxy for
+    the same thing and a worse one. It failed in CI at 4.2s inside a 3446-test
+    coverage run, on behaviour that was entirely correct: the log recorded
+    ``sfu-1/livekit-server=timeout`` exactly as intended. In isolation the same
+    test takes 0.36s, and 0.43s under coverage, so the number was measuring
+    runner contention rather than the deadline.
+
+    The one thing the wall clock did catch that the outcome does not is a retry
+    storm: a deadline enforced ten times still ends in ``timeout``. That is now
+    checked directly by counting scrapes, which is deterministic where a
+    stopwatch is not, and stricter than any threshold would be.
+    """
+    attempts = 0
 
     async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
         await asyncio.sleep(30)  # never answers within the deadline
         return httpx.Response(200, text="livekit_room_total 1\n")
 
@@ -263,15 +285,21 @@ async def test_a_hanging_target_times_out_and_records_the_gap(storage) -> None:
         scrape_timeout_seconds=0.15,
         transport=_transport(handler),
     )
-    started = asyncio.get_running_loop().time()
-    await asyncio.wait_for(worker.tick_now(), timeout=5)
-    elapsed = asyncio.get_running_loop().time() - started
-    assert elapsed < 3, "a hanging target held the tick open"
+    # The hang guard, and the only timing left. Generous on purpose: it exists
+    # to fail a tick that waits out the handler's 30s sleep, not to time the
+    # deadline, which the outcome below does exactly.
+    await asyncio.wait_for(worker.tick_now(), timeout=10)
 
     row = (await _rows(storage, "sfu-1", SOURCE_LIVEKIT_SERVER))[0]
-    assert row.outcome == OUTCOME_TIMEOUT
+    assert row.outcome == OUTCOME_TIMEOUT, (
+        "the scrape deadline did not fire: the tick waited for the target"
+    )
     assert row.series_found is None
     assert row.rooms is None
+    assert attempts == 1, (
+        f"the target was scraped {attempts} times for one tick. The deadline "
+        "fired, but a retry loop around it costs the tick a multiple of it"
+    )
 
 
 async def test_a_hanging_target_does_not_hold_up_a_healthy_one(storage) -> None:
