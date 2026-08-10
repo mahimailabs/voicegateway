@@ -175,10 +175,25 @@ _DEFAULT_SCRAPE_TIMEOUT_SECONDS: Final[float] = 5.0
 # cardinality is larger but nowhere near this. A target that streams forever is
 # stopped by this and by the deadline above.
 _DEFAULT_MAX_RESPONSE_BYTES: Final[int] = 4 * 1024 * 1024
-# How long a raw sample lives. Seven days is the observation window the scope
-# commits to (§7: "the client's 7-day requirement is an observation window, met
-# by the scrape worker"), and at ~57k rows/day it caps the table around 400k
-# rows instead of the 5.2M that the 90-day project default would allow.
+# How long a raw sample lives, when the operator has not said. Configurable via
+# workers.node_sample_max_age_days; this is only the fallback.
+#
+# Seven days because it has always been seven days, so upgrading changes nobody's
+# retention. It is NOT a recommendation, and the budget below is the operator's
+# to spend rather than a settled answer.
+#
+# What it costs. One target at the default 15s interval writes 5,760 rows a day,
+# so N targets write N x 5,760 x days. A thirteen-target fleet is roughly 75k
+# rows a day at full coverage and less in practice, since a target that fails a
+# scrape still writes one row rather than one per series. Order of magnitude:
+# ten days of a mid-sized fleet is a few hundred thousand rows and around a
+# hundred megabytes.
+#
+# The trap this default walks into: retention equal to the observation window is
+# self-defeating. A run held for exactly the retention period loses its first
+# day before it ends, so the report cannot cover the span the run existed to
+# demonstrate. Retention has to EXCEED the longest run you intend to report on,
+# and the margin is the operator's call because only they know the run.
 _DEFAULT_MAX_AGE_SECONDS: Final[float] = 7 * 24 * 3600.0
 
 SOURCE_LIVEKIT_SERVER: Final[str] = "livekit-server"
