@@ -192,3 +192,180 @@ def test_no_generator_scenario_or_config_lives_in_this_repo() -> None:
         if ".venv" not in p.parts and "node_modules" not in p.parts
     ]
     assert not offenders, f"generator scenario files in the repo: {offenders}"
+
+
+# ---------------------------------------------------------------------------
+# The appendix must not read as a description of the run
+# ---------------------------------------------------------------------------
+
+
+def _appendix_html(entries, *, generated_at="2026-08-10T15:39:43+00:00") -> str:
+    from voicegateway.livekit_diag import run_report
+
+    return run_report._render_appendix(
+        {"appendix": {"toolchain": entries}, "generated_at": generated_at}
+    )
+
+
+def test_the_appendix_says_it_is_not_a_description_of_the_run() -> None:
+    """The harm this prevents is a reader taking background as configuration.
+
+    A toolchain entry reading "two nodes, max_active_calls 150 per node" is a
+    fact somebody recorded on a day, not a statement about the run it is
+    attached to. Shipped unlabelled next to measured sections, it reads as the
+    topology under test, and a reader sizing from it believes the wrong fleet
+    was measured.
+    """
+    from voicegateway.livekit_diag import run_report
+
+    html = _appendix_html(
+        [
+            run_report.appendix_entry(
+                label="livekit-sip",
+                detail="v1.8.0, two nodes, max_active_calls 150 per node",
+                citation="docker inspect, 2026-08-02",
+            )
+        ]
+    )
+    assert "not a description of the run" in html
+    assert "the measured sections above are the authority" in html
+
+
+def test_an_entry_recorded_before_the_run_is_marked() -> None:
+    """A date that can be compared is worth more than one buried in prose."""
+    from voicegateway.livekit_diag import run_report
+
+    html = _appendix_html(
+        [
+            run_report.appendix_entry(
+                label="livekit-sip",
+                detail="v1.8.0, two nodes",
+                citation="docker inspect",
+                recorded_at="2026-08-02",
+            )
+        ]
+    )
+    assert "recorded 2026-08-02, before this run" in html
+
+
+def test_an_entry_recorded_during_the_run_is_not_marked() -> None:
+    from voicegateway.livekit_diag import run_report
+
+    html = _appendix_html(
+        [
+            run_report.appendix_entry(
+                label="livekit-sip",
+                detail="v1.8.0",
+                citation="docker inspect",
+                recorded_at="2026-08-10",
+            )
+        ]
+    )
+    assert "before this run" not in html
+
+
+def test_an_undated_entry_is_left_alone_rather_than_guessed_at() -> None:
+    """Dates inside citation prose cannot be compared.
+
+    Parsing them out to mark entries would mark the wrong ones, and a wrong
+    staleness badge is worse than none: it teaches a reader to ignore the badge.
+    """
+    from voicegateway.livekit_diag import run_report
+
+    html = _appendix_html(
+        [
+            run_report.appendix_entry(
+                label="livekit-sip",
+                detail="v1.8.0, two nodes",
+                citation="docker inspect on i-027deaece242ba587, 2026-08-02",
+            )
+        ]
+    )
+    assert "before this run" not in html
+    # The disclaimer still covers it, which is why not marking is survivable.
+    assert "not a description of the run" in html
+
+
+def test_recorded_at_is_optional_and_absent_when_not_given() -> None:
+    """Existing callers pass three keyword arguments and must keep working."""
+    from voicegateway.livekit_diag import run_report
+
+    entry = run_report.appendix_entry(
+        label="l", detail="d", citation="c"
+    )
+    assert "recorded_at" not in entry
+    assert set(entry) == {"label", "detail", "citation"}
+
+
+def test_a_run_with_no_generated_at_marks_nothing() -> None:
+    """No run date means no comparison, so nothing is claimed about staleness."""
+    from voicegateway.livekit_diag import run_report
+
+    html = run_report._render_appendix(
+        {
+            "appendix": {
+                "toolchain": [
+                    run_report.appendix_entry(
+                        label="l", detail="d", citation="c",
+                        recorded_at="2020-01-01",
+                    )
+                ]
+            }
+        }
+    )
+    assert "before this run" not in html
+
+
+def test_the_anchor_is_the_run_not_the_report_generation() -> None:
+    """A run that crosses midnight must not mislabel its own entries.
+
+    generated_at is when the report was WRITTEN, which is later than the run and
+    can land on the next day. Anchoring on it would label an entry recorded
+    during the run as "before this run", which is a wrong badge, and one wrong
+    badge teaches a reader to ignore every badge.
+
+    Here the run started 2026-08-09 23:50 UTC and the report was generated after
+    midnight. The entry was recorded on the run's own day.
+    """
+    from voicegateway.livekit_diag import run_report
+
+    html = run_report._render_appendix(
+        {
+            "appendix": {
+                "toolchain": [
+                    run_report.appendix_entry(
+                        label="livekit-sip",
+                        detail="v1.8.0",
+                        citation="docker inspect",
+                        recorded_at="2026-08-09",
+                    )
+                ]
+            },
+            "run": {"started_at_ms": 1786319400000},  # 2026-08-09 23:50 UTC
+            "generated_at": "2026-08-10T00:05:00+00:00",
+        }
+    )
+    assert "before this run" not in html, (
+        "an entry recorded on the run's own day was marked stale because the "
+        "report was generated after midnight"
+    )
+
+
+def test_generated_at_is_the_fallback_when_no_run_timestamp() -> None:
+    """Payloads carrying no run timestamp still date their entries."""
+    from voicegateway.livekit_diag import run_report
+
+    html = run_report._render_appendix(
+        {
+            "appendix": {
+                "toolchain": [
+                    run_report.appendix_entry(
+                        label="l", detail="d", citation="c",
+                        recorded_at="2026-08-02",
+                    )
+                ]
+            },
+            "generated_at": "2026-08-10T15:39:43+00:00",
+        }
+    )
+    assert "recorded 2026-08-02, before this run" in html
