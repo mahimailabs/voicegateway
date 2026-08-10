@@ -2611,6 +2611,46 @@ def _glance_reference(key: str, gate: str, threshold: float | None) -> str:
     return figure
 
 
+def distinct_facts(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The rows that state something different, in their original order.
+
+    A gate row is emitted once per STEP, and on a run whose steps are parallel
+    generator processes every one of them reads the same fleet over the same
+    window. Twelve processes then produce twelve identical rows: same subject,
+    same value, same verdict. They are one fact echoed twelve times.
+
+    Counting those as twelve is where the damage is. A headline of "worst of 192
+    measured" is really the worst of 16, and a reader counting FAIL rows
+    concludes something is widespread when four facts are being repeated.
+
+    Distinctness is (subject, value), not the row count, because that is what
+    separates the two cases the report must not conflate:
+
+    * A genuine ramp measures the same subject at each step and gets a DIFFERENT
+      value each time. Those are real repeated measurements and all of them
+      count, which is why this cannot simply collapse per subject.
+    * Parallel generators measure one thing and report it N times. Same subject,
+      identical value, so they collapse to the one fact they are.
+
+    Two ramp steps that happen to measure the same subject at exactly the same
+    value also collapse, and that is correct rather than a compromise: they are
+    one measurement, stated twice.
+
+    The rows themselves are kept everywhere they are rendered. A row per step is
+    arguably the right DATA, carrying which step saw what, and it is only the
+    counting that was lying.
+    """
+    seen: set[tuple[Any, Any]] = set()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        key = (row.get("subject"), row.get("value"))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return out
+
+
 def _glance_trend_row(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Steady-state drift, as a COUNT of resources rather than as one figure.
 
@@ -2624,7 +2664,10 @@ def _glance_trend_row(rows: list[dict[str, Any]]) -> dict[str, Any]:
     whether anything moved at all, so the value is how many measured resources
     the gate found drifting.
     """
-    over = [row for row in rows if row["reading"] == "over"]
+    # Distinct on both sides of the ratio, so "2 of 5" cannot become "24 of 60"
+    # on a run with twelve generators saying the same thing.
+    facts = distinct_facts(rows)
+    over = [row for row in facts if row["reading"] == "over"]
     threshold = next((r["threshold"] for r in rows if r["threshold"] is not None), None)
     floor = "its own steady-state baseline"
     if threshold is not None:
@@ -2634,7 +2677,7 @@ def _glance_trend_row(rows: list[dict[str, Any]]) -> dict[str, Any]:
         # Short, because the Value column is a narrow numeric column shared with
         # percentages: a sentence in it wraps and right-aligns into something a
         # reader has to stop and parse, which is the opposite of a glance.
-        "value": f"{len(over)} of {len(rows)}",
+        "value": f"{len(over)} of {len(facts)}",
         "why": (
             "Measured resources drifting. A count, not a figure: drift is in "
             "each resource's own units, so there is no worst one to quote."
@@ -2710,10 +2753,14 @@ def _glance_rows(
         if key == gates.RESOURCE_TREND_GATE:
             out.append(_glance_trend_row(rows))
             continue
+        # The WORST is picked from every row, since a duplicate cannot change
+        # which is worst. The COUNT is of distinct facts, because that is the
+        # number a reader takes as how much evidence is behind the figure.
         pick = _glance_pick(rows, key)
+        facts = distinct_facts(rows)
         why = _esc(str(pick["subject"] or "")) or "no subject recorded"
-        if len(rows) > 1:
-            why += f", worst of {len(rows)} measured"
+        if len(facts) > 1:
+            why += f", worst of {len(facts)} measured"
         out.append(
             {
                 "what": _GLANCE_NAMES.get(key, pick["name"]),
@@ -2871,6 +2918,22 @@ def _render_profile_measurements(measured: list[dict[str, Any]]) -> str:
         "whether landing on either side of it is acceptable, because that "
         "depends on what the deployment is for.</p>"
     ]
+    # Say so when the table repeats itself. A gate is evaluated once per step,
+    # and on a run whose steps are parallel generator processes each fact is
+    # recorded once per process, so the same subject and value appear many times
+    # over. The rows are kept because which step saw what is real data, but a
+    # reader scanning the table counts rows, and without this a handful of
+    # findings echoed across a dozen processes reads as a widespread problem.
+    facts = len(distinct_facts(measured))
+    if facts < len(measured):
+        out.append(
+            f'<div class="note">These {len(measured)} rows state {facts} '
+            "distinct findings. A gate is evaluated once per step, so a run "
+            "whose steps ran in parallel records every finding once per "
+            "process. Rows repeating a subject and a value are the same "
+            "finding, not separate ones, and the counts in the summary above "
+            "are of distinct findings rather than of rows.</div>"
+        )
     # PROFILE_GROUPS order first, then anything unclassified, so a new gate
     # surfaces at the bottom of the section instead of shuffling the groups a
     # reader knows.
