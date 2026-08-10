@@ -721,3 +721,132 @@ class TestPerCallMediaCountsReachThePayload:
         )
         assert row["establishment_ratio"] == 1.0
         assert row["calls_answered_without_inbound"] == 12198
+
+
+# ---------------------------------------------------------------------------
+# One fact echoed per generator process is one fact
+# ---------------------------------------------------------------------------
+
+
+def _fact(subject: str, value: float, *, reading: str = "ok") -> dict:
+    """A glance row as _profile_glance_rows builds them."""
+    return {
+        "key": "resource_trend",
+        "gate": "resource_trend",
+        "name": "n",
+        "meaning": "m",
+        "subject": subject,
+        "step": None,
+        "value": value,
+        "threshold": 1.1,
+        "detail": "",
+        "reading": reading,
+    }
+
+
+def test_identical_rows_from_parallel_generators_are_one_fact() -> None:
+    """Twelve processes reading one fleet report one thing twelve times.
+
+    Same subject, byte-identical value, same verdict. Counting them as twelve
+    is what turns "worst of 16" into "worst of 192".
+    """
+    rows = [_fact("sip-1/livekit-sip", 0.5465968586387453) for _ in range(12)]
+    assert len(run_report.distinct_facts(rows)) == 1
+
+
+def test_a_real_ramp_keeps_every_step() -> None:
+    """Steps measuring the same subject at DIFFERENT values are real repeats.
+
+    This is why distinctness cannot collapse per subject: a seven-step ramp
+    measures one node seven times and all seven count.
+    """
+    rows = [_fact("sip-1/livekit-sip", v) for v in (0.31, 0.48, 0.55, 0.66)]
+    assert len(run_report.distinct_facts(rows)) == 4
+
+
+def test_different_subjects_at_the_same_value_are_different_facts() -> None:
+    """Four nodes all sitting at 55% is four findings, not one."""
+    rows = [_fact(f"sip-{n}/livekit-sip", 0.55) for n in (1, 2, 3, 4)]
+    assert len(run_report.distinct_facts(rows)) == 4
+
+
+def test_order_is_preserved_so_the_first_of_a_group_survives() -> None:
+    rows = [_fact("a", 1.0), _fact("b", 2.0), _fact("a", 1.0), _fact("c", 3.0)]
+    assert [r["subject"] for r in run_report.distinct_facts(rows)] == ["a", "b", "c"]
+
+
+def test_the_worst_of_count_is_distinct_not_row_count() -> None:
+    """The headline a reader takes as how much evidence is behind the figure.
+
+    Sixteen distinct facts echoed across twelve processes rendered as 192.
+    """
+    measured = []
+    for subject in (f"sip-{n}/livekit-sip" for n in (1, 2, 3, 4)):
+        for _ in range(12):
+            measured.append(
+                {
+                    "key": "node_cpu",
+                    "gate": "node_cpu",
+                    "name": "File descriptors",
+                    "meaning": "m",
+                    "subject": subject,
+                    "step": None,
+                    "value": 0.42,
+                    "threshold": 0.2,
+                    "detail": "",
+                    "reading": "ok",
+                }
+            )
+    assert len(measured) == 48
+
+    rows = run_report._glance_rows({"tests": []}, measured)
+
+    [row] = [r for r in rows if r["what"] == run_report._GLANCE_NAMES["node_cpu"]]
+    assert "worst of 4 measured" in row["why"], (
+        f"the count still includes the echoes: {row['why']}"
+    )
+    assert "worst of 48" not in row["why"]
+
+
+def test_the_trend_ratio_counts_distinct_on_both_sides() -> None:
+    """"2 of 5" must not inflate to "24 of 60" on a twelve-generator run."""
+    measured = []
+    for subject, reading in (
+        ("sip-1/memory", "over"),
+        ("sip-2/memory", "over"),
+        ("sip-3/memory", "ok"),
+        ("sip-4/memory", "ok"),
+        ("sfu-1/memory", "ok"),
+    ):
+        for _ in range(12):
+            measured.append(_fact(subject, 1.16 if reading == "over" else 1.01,
+                                  reading=reading))
+
+    rows = run_report._glance_rows({"tests": []}, measured)
+
+    [row] = [
+        r for r in rows
+        if r["what"] == run_report._GLANCE_NAMES[gates.RESOURCE_TREND_GATE]
+    ]
+    assert row["value"] == "2 of 5", f"inflated by the echoes: {row['value']}"
+
+
+def test_the_measurements_table_says_when_it_repeats_itself() -> None:
+    """A reader scanning the table counts rows, not findings.
+
+    The rows are kept, because which step saw what is real data. But four
+    findings echoed across twelve processes render as forty-eight rows, and
+    without a note that reads as a widespread problem.
+    """
+    measured = [
+        _fact(f"sip-{n}/livekit-sip", 0.55) for n in (1, 2, 3, 4) for _ in range(12)
+    ]
+    html = run_report._render_profile_measurements(measured)
+    assert "These 48 rows state 4 distinct findings" in html
+
+
+def test_a_table_with_no_repeats_carries_no_note() -> None:
+    """A normal ramp report must not gain an explanation it does not need."""
+    measured = [_fact(f"sip-{n}/livekit-sip", 0.1 * n) for n in (1, 2, 3, 4)]
+    html = run_report._render_profile_measurements(measured)
+    assert "distinct findings" not in html
