@@ -349,6 +349,12 @@ async def _lifecycle_reading(
         source=source,
         start_times=tuple(row.process_start_time_seconds for row in rows),
         oom_kills=tuple(row.vmstat_oom_kill for row in oom_rows),
+        # Epoch SECONDS: process_start_time_seconds is in seconds and the two
+        # are compared directly, where the window is carried in milliseconds.
+        # Without this the gate cannot tell a process that restarted inside the
+        # window from a series that moved to a process which was already
+        # running before it, and it used to call both a restart.
+        window_start_s=window.start_ms / 1000.0,
     )
 
 
