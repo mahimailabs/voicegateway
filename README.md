@@ -84,6 +84,8 @@ Self-hosted at `http://localhost:8080`. Bundled, no SaaS account, no data leaves
 
 <div align="center">
   <img src="https://raw.githubusercontent.com/mahimailabs/voicegateway/main/docs/assets/dashboard.png" alt="VoiceGateway dashboard: cost by provider and model" width="100%" />
+  <br/>
+  <sub>Example numbers. Click through the real thing, no login, at <a href="https://voicegateway.dev/demo">voicegateway.dev/demo</a>.</sub>
 </div>
 
 **Overview** (7-day spend and request trend), **Agents** (per-agent cost, model stack, worker memory), **Costs** (per provider, model, project, tenant, plus latency p50/p95), **Calls** (replay any conversation), **Latency**, **Server** (your LiveKit rooms, SIP, egress, cost-annotated), and **Diagnostics** (probe your LiveKit deployment).
