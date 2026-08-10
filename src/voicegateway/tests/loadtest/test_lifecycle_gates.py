@@ -50,12 +50,23 @@ def _trend(values, *, rising_is_bad=True, metric="sip_calls_active"):
 
 
 def test_a_rising_start_time_is_a_restart() -> None:
-    """process_start_time_seconds is constant for a process's life."""
+    """process_start_time_seconds is constant for a process's life.
+
+    ``window_start_s`` is supplied so this exercises the restart it is named
+    for. The new start time (1900) falls inside the window (opened at 1700), so
+    the process started during the run. Without the window the gate makes the
+    weaker claim instead, which this test would still have passed on a
+    substring while asserting nothing.
+    """
     gate = gates.process_lifecycle_gate(
-        _life(start_times=(1785.0, 1785.0, 1900.0), oom_kills=(0.0, 0.0, 0.0))
+        _life(
+            start_times=(1785.0, 1785.0, 1900.0),
+            oom_kills=(0.0, 0.0, 0.0),
+            window_start_s=1700.0,
+        )
     )
     assert gate.status == gates.FAIL
-    assert "restarted" in gate.detail
+    assert "restarted during the window" in gate.detail
 
 
 def test_a_steady_start_time_across_the_window_passes() -> None:
@@ -397,3 +408,87 @@ def test_count_gates_are_registered_and_are_not_ratios(gate) -> None:
     """A count rendered as a percentage is what RATIO_GATES exists to prevent."""
     assert gate in gates.ALL_GATES
     assert gate not in gates.RATIO_GATES
+
+
+# --------------------------------------------------------------------------
+# What a rising start time actually proves
+# --------------------------------------------------------------------------
+
+
+def test_a_new_start_time_predating_the_window_is_not_a_restart() -> None:
+    """The claim the gate used to make, and could not support.
+
+    A process that restarted during the window started during the window. A new
+    start time from BEFORE the window belongs to a process that was already
+    running when the run began, so the series moved between processes rather
+    than one process restarting. A scrape target list refreshed mid-run does
+    exactly this, and both machines can have been up for hours.
+
+    The numbers are the ones from a real run: the window opened at
+    1786374592.118 and the incoming process reported a start of 1786373687.16,
+    905s earlier. The gate called that "restarted during the window".
+    """
+    gate = gates.process_lifecycle_gate(
+        _life(
+            start_times=(1786373510.14, 1786373510.14, 1786373687.16),
+            oom_kills=(0.0, 0.0, 0.0),
+            window_start_s=1786374592.118,
+        )
+    )
+    assert gate.status == gates.FAIL, "the change is still a finding"
+    assert "did NOT restart inside it" in gate.detail
+    assert "restarted during the window" not in gate.detail
+    # It must say how far outside, so a reader can check rather than trust.
+    assert "905s BEFORE" in gate.detail
+    assert "moved between processes" in gate.detail
+
+
+def test_without_a_window_the_gate_makes_the_weaker_claim() -> None:
+    """Older callers supply no window, so the question cannot be decided.
+
+    The honest answer is the one true in both cases: the process serving the
+    series changed. Guessing "restart" to keep the old wording would be
+    asserting a cause on no evidence.
+    """
+    gate = gates.process_lifecycle_gate(
+        _life(start_times=(1785.0, 1785.0, 1900.0), oom_kills=(0.0, 0.0, 0.0))
+    )
+    assert gate.status == gates.FAIL
+    assert "the process serving" in gate.detail
+    assert "cannot be said" in gate.detail
+    assert "restarted during the window" not in gate.detail
+
+
+def test_every_branch_says_the_rates_are_unusable() -> None:
+    """Whichever it was, counter rates across the change cannot be trusted.
+
+    That is the operational consequence and it does not depend on the cause, so
+    no branch may drop it while arguing about which happened.
+    """
+    readings = (
+        _life(start_times=(100.0, 200.0), oom_kills=(0.0,), window_start_s=150.0),
+        _life(start_times=(100.0, 200.0), oom_kills=(0.0,), window_start_s=900.0),
+        _life(start_times=(100.0, 200.0), oom_kills=(0.0,)),
+    )
+    for reading in readings:
+        gate = gates.process_lifecycle_gate(reading)
+        assert gate.status == gates.FAIL
+        assert "unusable" in gate.detail
+
+
+def test_the_pass_branch_still_claims_only_what_it_measured() -> None:
+    """The PASS side was already accurate and must stay that way.
+
+    It says the start time HELD, which is what was observed. The two branches
+    disagreeing about what the metric means is what this change fixes, so the
+    accurate one is pinned too.
+    """
+    gate = gates.process_lifecycle_gate(
+        _life(
+            start_times=(1785.0, 1785.0, 1785.0),
+            oom_kills=(0.0, 0.0, 0.0),
+            window_start_s=1700.0,
+        )
+    )
+    assert gate.status == gates.PASS
+    assert "held one process start time" in gate.detail
