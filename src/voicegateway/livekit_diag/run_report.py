@@ -2063,6 +2063,30 @@ def appendix_entry(
     return entry
 
 
+def _run_day(payload: dict[str, Any]) -> str | None:
+    """The day the RUN happened, for dating appendix entries against.
+
+    ``run.started_at_ms`` first, because that is when the thing being reported
+    actually ran. ``generated_at`` is when the report was WRITTEN, which is
+    later (minutes, on a normal import) and can land on the next day for a run
+    that finishes near midnight. Anchoring on it would label an entry recorded
+    during such a run as "before this run", which is a wrong badge, and a
+    staleness badge that is sometimes wrong is worse than none: the first time
+    a reader sees one on a current entry they stop believing it everywhere.
+
+    Falls back to ``generated_at`` for payloads carrying no run timestamp, and
+    to None when neither is readable, which marks nothing rather than
+    everything.
+    """
+    started = (payload.get("run") or {}).get("started_at_ms")
+    if isinstance(started, (int, float)) and started > 0:
+        return (
+            datetime.fromtimestamp(started / 1000.0, tz=UTC).date().isoformat()
+        )
+    generated = payload.get("generated_at")
+    return str(generated)[:10] if isinstance(generated, str) else None
+
+
 def _recorded_before(item: dict[str, Any], run_day: str | None) -> str:
     """Mark an entry whose recorded date precedes the run it is attached to.
 
@@ -2082,10 +2106,7 @@ def _recorded_before(item: dict[str, Any], run_day: str | None) -> str:
 def _render_appendix(payload: dict[str, Any]) -> str:
     """The reproducible-assets appendix, or a statement that there is none."""
     appendix = payload.get("appendix") or {}
-    # The day the report was generated, used only to mark entries recorded
-    # earlier. Absent or malformed, nothing is marked rather than everything.
-    generated = payload.get("generated_at")
-    run_day = str(generated)[:10] if isinstance(generated, str) else None
+    run_day = _run_day(payload)
     sections = []
     for key, heading, blurb in (
         (

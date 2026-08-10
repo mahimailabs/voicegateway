@@ -314,3 +314,58 @@ def test_a_run_with_no_generated_at_marks_nothing() -> None:
         }
     )
     assert "before this run" not in html
+
+
+def test_the_anchor_is_the_run_not_the_report_generation() -> None:
+    """A run that crosses midnight must not mislabel its own entries.
+
+    generated_at is when the report was WRITTEN, which is later than the run and
+    can land on the next day. Anchoring on it would label an entry recorded
+    during the run as "before this run", which is a wrong badge, and one wrong
+    badge teaches a reader to ignore every badge.
+
+    Here the run started 2026-08-09 23:50 UTC and the report was generated after
+    midnight. The entry was recorded on the run's own day.
+    """
+    from voicegateway.livekit_diag import run_report
+
+    html = run_report._render_appendix(
+        {
+            "appendix": {
+                "toolchain": [
+                    run_report.appendix_entry(
+                        label="livekit-sip",
+                        detail="v1.8.0",
+                        citation="docker inspect",
+                        recorded_at="2026-08-09",
+                    )
+                ]
+            },
+            "run": {"started_at_ms": 1786319400000},  # 2026-08-09 23:50 UTC
+            "generated_at": "2026-08-10T00:05:00+00:00",
+        }
+    )
+    assert "before this run" not in html, (
+        "an entry recorded on the run's own day was marked stale because the "
+        "report was generated after midnight"
+    )
+
+
+def test_generated_at_is_the_fallback_when_no_run_timestamp() -> None:
+    """Payloads carrying no run timestamp still date their entries."""
+    from voicegateway.livekit_diag import run_report
+
+    html = run_report._render_appendix(
+        {
+            "appendix": {
+                "toolchain": [
+                    run_report.appendix_entry(
+                        label="l", detail="d", citation="c",
+                        recorded_at="2026-08-02",
+                    )
+                ]
+            },
+            "generated_at": "2026-08-10T15:39:43+00:00",
+        }
+    )
+    assert "recorded 2026-08-02, before this run" in html
