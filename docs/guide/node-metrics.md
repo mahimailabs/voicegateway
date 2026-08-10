@@ -24,7 +24,7 @@ If both are set, the file wins, even when currently empty: an empty file differs
 
 Whether to build the worker is decided once, at `voicegw serve` startup. Exporting `VOICEGW_NODE_SCRAPE_TARGETS` (or `_FILE`) afterward does nothing until restarted.
 
-It also runs only inside that long-lived process (including the daemon's `start`/`restart`), never inside a one-shot CLI command: `voicegw livekit check`, `voicegw livekit latency`, and `voicegw loadtest report` all exit without touching `node_samples`. Poll cadence is `workers.node_scrape_interval_seconds` in [`voicegw.yaml`](/configuration/voicegw-yaml) (default 15s).
+It also runs only inside that long-lived process (including the daemon's `start`/`restart`), never inside a one-shot CLI command: `voicegw livekit check`, `voicegw livekit latency`, and `voicegw loadtest report` all exit without touching `node_samples`. Poll cadence is `workers.node_scrape_interval_seconds` in [`voicegw.yaml`](/configuration/voicegw-yaml) (default 15s), and how long a row survives is `workers.node_sample_max_age_days` (default 7). Raise the retention before a run you mean to report on for longer than a week: at seven days the first day of a seven-day run is pruned before the run ends.
 
 ## A bad entry costs one target, not the process
 

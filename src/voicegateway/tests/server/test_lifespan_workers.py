@@ -213,6 +213,80 @@ async def test_node_scrape_interval_is_applied(tmp_path, monkeypatch) -> None:
         assert [w._poll_interval for w in _node_workers(app.state.workers)] == [333]
 
 
+# --- retention: the window the operator configured, not the one we assumed ---
+#
+# The field parsing and the pruning itself were both already correct and both
+# already tested (``test_node_samples_worker_middleware`` proves a tick trims
+# past ``max_age_seconds``). What was missing is the wire between them: the
+# lifespan constructed the worker without passing the value at all, so retention
+# was seven days no matter what the config said, and every test on either side
+# of the gap still passed. These assert on the wire.
+
+
+async def test_node_sample_retention_is_applied(tmp_path, monkeypatch) -> None:
+    """The configured window must reach the worker, not stop at the schema."""
+    monkeypatch.setenv(TARGETS_ENV_VAR, _TARGET)
+    gw = _gateway(
+        tmp_path,
+        monkeypatch,
+        {
+            "cost_tracking": {"enabled": True},
+            "workers": {"node_sample_max_age_days": 30},
+        },
+    )
+    app = build_app(gw)
+    async with lifespan(app):
+        assert [w._max_age_seconds for w in _node_workers(app.state.workers)] == [
+            30 * 86400
+        ]
+
+
+async def test_node_sample_retention_defaults_to_seven_days(
+    tmp_path, monkeypatch
+) -> None:
+    """Upgrading into a configurable field must not move anyone's retention."""
+    monkeypatch.setenv(TARGETS_ENV_VAR, _TARGET)
+    gw = _gateway(tmp_path, monkeypatch, {"cost_tracking": {"enabled": True}})
+    app = build_app(gw)
+    async with lifespan(app):
+        assert [w._max_age_seconds for w in _node_workers(app.state.workers)] == [
+            7 * 86400
+        ]
+
+
+def test_the_config_default_and_the_worker_default_agree() -> None:
+    """Two defaults for one number, so they have to be pinned to each other.
+
+    The worker keeps its own fallback for callers that construct it directly.
+    If the two drift, the wired path and the direct path silently disagree about
+    how long a sample lives, which is the kind of difference nobody notices
+    until a report is missing its first day.
+    """
+    from voicegateway.middleware.node_samples_worker_middleware import (
+        _DEFAULT_MAX_AGE_SECONDS,
+    )
+    from voicegateway.schemas.config_schema import WorkersConfig
+
+    assert WorkersConfig().node_sample_max_age_days * 86400 == _DEFAULT_MAX_AGE_SECONDS
+
+
+def test_a_zero_or_negative_retention_is_refused_at_parse_time() -> None:
+    """``ge=1`` here rather than a ValueError from the worker at startup.
+
+    The worker rejects a non-positive ``max_age_seconds``, but that raises
+    inside the lifespan, which means a typo takes the process down on boot
+    instead of failing the config that caused it.
+    """
+    import pytest as _pytest
+    from pydantic import ValidationError
+
+    from voicegateway.schemas.config_schema import WorkersConfig
+
+    for bad in (0, -1):
+        with _pytest.raises(ValidationError):
+            WorkersConfig.model_validate({"node_sample_max_age_days": bad})
+
+
 async def test_node_scrape_shutdown_is_not_blocked_by_a_hanging_target(
     tmp_path, monkeypatch
 ) -> None:

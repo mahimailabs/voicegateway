@@ -354,12 +354,25 @@ workers:
   rollup_interval_seconds: 900
   retention_interval_seconds: 3600
   node_scrape_interval_seconds: 15
+  node_sample_max_age_days: 7
 ```
 
 - `enabled` (bool, default `true`): start the background workers.
 - `rollup_interval_seconds` (int, default `900`): how often the latency and agent rollups refresh.
 - `retention_interval_seconds` (int, default `3600`): how often retention runs.
 - `node_scrape_interval_seconds` (int, default `15`): how often the node scrape polls, when it runs at all.
+- `node_sample_max_age_days` (int, default `7`): how long a raw `node_samples` row is kept. Every scrape tick deletes rows older than this, so the table stays bounded whether or not per-project retention is on.
+
+Raise `node_sample_max_age_days` before running anything you intend to report on
+for longer than a week. Retention equal to the observation window prunes the
+window's first day before the run ends, and the report then cannot cover the
+span the run was performed to demonstrate. It has to exceed the run, not match
+it.
+
+The cost is rows: one target at the default 15s interval writes 5,760 rows a
+day, so N targets over D days is roughly `N x 5760 x D`. A thirteen-target fleet
+held for ten days is a few hundred thousand rows and on the order of a hundred
+megabytes.
 
 The node scrape is the one worker that is off by default. It is built only when
 `VOICEGW_NODE_SCRAPE_TARGETS` names at least one target, so an install that does
