@@ -424,9 +424,13 @@ def test_a_new_start_time_predating_the_window_is_not_a_restart() -> None:
     than one process restarting. A scrape target list refreshed mid-run does
     exactly this, and both machines can have been up for hours.
 
-    The numbers are the ones from a real run: the window opened at
-    1786374592.118 and the incoming process reported a start of 1786373687.16,
-    905s earlier. The gate called that "restarted during the window".
+    The values below are ILLUSTRATIVE, shaped like a real run rather than quoted
+    from one, and the assertion checks the gap this test's own arithmetic
+    produces (1786374592.118 - 1786373687.16 = 904.958, rendered "905s"). When
+    the real artifact was regenerated it rendered 891s, so the two differ
+    slightly, most likely in which instant is taken as the window start. Do not
+    read 905 as a figure from any artifact; what is under test is that the gate
+    reports the gap it computed, not the size of any particular gap.
     """
     gate = gates.process_lifecycle_gate(
         _life(
@@ -439,6 +443,7 @@ def test_a_new_start_time_predating_the_window_is_not_a_restart() -> None:
     assert "did NOT restart inside it" in gate.detail
     assert "restarted during the window" not in gate.detail
     # It must say how far outside, so a reader can check rather than trust.
+    # Derived from the inputs above, not copied from an artifact.
     assert "905s BEFORE" in gate.detail
     assert "moved between processes" in gate.detail
 

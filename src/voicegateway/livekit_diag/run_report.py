@@ -2029,28 +2029,84 @@ def redact_urls(text: str) -> str:
     return _SCHEMELESS_RE.sub(lambda m: m.group(1), reduced)
 
 
-def appendix_entry(*, label: str, detail: str, citation: str) -> dict[str, str]:
+def appendix_entry(
+    *,
+    label: str,
+    detail: str,
+    citation: str,
+    recorded_at: str | None = None,
+) -> dict[str, str]:
     """One cited fact for the appendix.
 
     ``citation`` is required for the same reason a machine type needs one: this
     module cannot derive a command line, so an uncited one would be an invented
     instruction presented as a record of what was run.
+
+    ``recorded_at`` is the ISO date the fact was OBSERVED, and it is what lets
+    the renderer mark an entry that predates the run it is attached to. Optional
+    because the appendix is assembled by the caller and older ones carry the
+    date inside the citation prose, where nothing can compare it. Supplying it
+    is how a fact stops silently reading as current.
     """
     if not citation.strip():
         raise ValueError(
             f"appendix entry {label!r} needs a citation: an uncited command is "
             "indistinguishable from one this report invented"
         )
-    return {
+    entry = {
         "label": label,
         "detail": redact_urls(detail),
         "citation": citation,
     }
+    if recorded_at:
+        entry["recorded_at"] = recorded_at
+    return entry
+
+
+def _run_day(payload: dict[str, Any]) -> str | None:
+    """The day the RUN happened, for dating appendix entries against.
+
+    ``run.started_at_ms`` first, because that is when the thing being reported
+    actually ran. ``generated_at`` is when the report was WRITTEN, which is
+    later (minutes, on a normal import) and can land on the next day for a run
+    that finishes near midnight. Anchoring on it would label an entry recorded
+    during such a run as "before this run", which is a wrong badge, and a
+    staleness badge that is sometimes wrong is worse than none: the first time
+    a reader sees one on a current entry they stop believing it everywhere.
+
+    Falls back to ``generated_at`` for payloads carrying no run timestamp, and
+    to None when neither is readable, which marks nothing rather than
+    everything.
+    """
+    started = (payload.get("run") or {}).get("started_at_ms")
+    if isinstance(started, (int, float)) and started > 0:
+        return (
+            datetime.fromtimestamp(started / 1000.0, tz=UTC).date().isoformat()
+        )
+    generated = payload.get("generated_at")
+    return str(generated)[:10] if isinstance(generated, str) else None
+
+
+def _recorded_before(item: dict[str, Any], run_day: str | None) -> str:
+    """Mark an entry whose recorded date precedes the run it is attached to.
+
+    Only fires when the entry carries ``recorded_at``. A date buried in citation
+    prose cannot be compared, so an undated entry is left alone rather than
+    guessed at: the alternative is parsing free text and marking the wrong ones.
+    """
+    recorded = item.get("recorded_at")
+    if not recorded or not run_day or str(recorded)[:10] >= run_day:
+        return ""
+    return (
+        f" <span class='sub'>(recorded {_esc(str(recorded)[:10])}, "
+        "before this run)</span>"
+    )
 
 
 def _render_appendix(payload: dict[str, Any]) -> str:
     """The reproducible-assets appendix, or a statement that there is none."""
     appendix = payload.get("appendix") or {}
+    run_day = _run_day(payload)
     sections = []
     for key, heading, blurb in (
         (
@@ -2075,7 +2131,7 @@ def _render_appendix(payload: dict[str, Any]) -> str:
         rows = "".join(
             "<tr>"
             f"<td class='mono'>{_esc(item['label'])}</td>"
-            f"<td>{_esc(item['detail'])}</td>"
+            f"<td>{_esc(item['detail'])}{_recorded_before(item, run_day)}</td>"
             f"<td class='sub'>{_esc(item['citation'])}</td>"
             "</tr>"
             for item in entries
@@ -2097,7 +2153,14 @@ def _render_appendix(payload: dict[str, Any]) -> str:
         "<h2>Reproducible test assets</h2>"
         "<p>What it takes to run this again. Scenario files and generator "
         "configuration are referenced by name rather than reproduced here: they "
-        "are the work of whoever authored them.</p>" + "".join(sections)
+        "are the work of whoever authored them.</p>"
+        "<p class='sub'><b>This is background, not a description of the run "
+        "above.</b> Each item is a fact somebody recorded when the Source "
+        "column says, and nothing here is re-verified against this run. Where "
+        "an item names a fleet size, a version or a limit, read it as what was "
+        "true when it was recorded: the deployment may have changed since, and "
+        "the measured sections above are the authority on what actually "
+        "ran.</p>" + "".join(sections)
     )
 
 
