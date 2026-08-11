@@ -124,6 +124,22 @@ follows [Semantic Versioning](https://semver.org/) and
   artifact, whatever the verdict was: gating CI on a deployment's health stays
   `voicegw livekit check`'s job.
 
+- **`workers.node_sample_max_age_days`** sets how long a raw `node_samples` row
+  is kept. Default `7`, unchanged from when it was hardcoded, so upgrading moves
+  nobody's retention.
+
+  Raise it before running anything you intend to report on for longer than a
+  week: retention equal to the observation window prunes the window's first day
+  before the run ends, and the report then cannot cover the span the run was
+  performed to demonstrate. Retention has to exceed the run, not match it.
+
+  The cost is rows. One target at the default 15s interval writes 5,760 a day,
+  so N targets over D days is roughly `N x 5760 x D`.
+
+  **`workers` is `extra: forbid`**, so writing this key on an earlier version is
+  a startup validation error rather than an ignored setting. The key has to ship
+  before anyone puts it in `voicegw.yaml`.
+
 ### Removed
 
 - **The `voicegw tui` terminal UI is gone.** The four-tab Textual UI (~4,900 LOC
