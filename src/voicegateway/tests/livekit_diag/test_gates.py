@@ -1572,15 +1572,21 @@ def test_a_drop_below_baseline_is_not_dragged_into_the_floor_branch():
 
 
 def test_memory_is_deliberately_not_floored():
-    """A marginal memory verdict must stay a verdict.
+    """Memory does not have the defect the floor exists to correct.
 
-    A delivered 500-concurrent report turns on a memory ratio sitting at exactly
-    1.10x. A floor on this metric would silently move that to a pass, which is
-    the one direction this gate must never move on its own. Memory is continuous
-    and large-magnitude, so the ratio means what it says.
+    Its series come from node_exporter's meminfo collector, which reads
+    /proc/meminfo in kB and multiplies by 1024, so the smallest change it can
+    express is 1024 bytes: about 0.0001% of a 1e9 reading, four orders of
+    magnitude below any tolerance. Three ticks of it can never come to 11% the
+    way three ticks of a 32-descriptor counter do at 864.
+
+    A floor here would therefore buy nothing while being able to turn a measured
+    failure into a pass, which is the one direction this gate must never move on
+    its own.
     """
     assert "memory_used_bytes" not in gates.MIN_ABSOLUTE_CHANGE
-    # A 74 MB move on a 0.74 GB baseline: the real marginal case, still judged.
+    # A 74 MB move on a 0.74 GB baseline: judged by its ratio, and nothing
+    # rescues it.
     [gate] = gates.return_to_baseline_gates(
         [_cmp("memory_used_bytes", 740_500_000.0, 814_700_000.0)], tolerance=1.09
     )
