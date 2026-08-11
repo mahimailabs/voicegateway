@@ -188,6 +188,12 @@ ALL_GATES: frozenset[str] = frozenset(
 #: cannot report a change smaller than one batch, so at 320 descriptors a single
 #: unavoidable tick of the counter is a 10% move and fails the gate on its own.
 #:
+#: Measured against that prediction afterwards, on a twelve-node fleet across
+#: five instance types: the GCD of each node's distinct values is 32, on every
+#: one. Every instance type there is at or below 8 vCPU, so ``max(32, 2 x vCPU)``
+#: is 32 throughout, and the mechanism and the measurement were arrived at
+#: separately.
+#:
 #: 128 is four of those ticks on the common case. It suppresses the tick-level
 #: noise that fails small nodes while staying far below any leak worth
 #: reporting: a run leaking descriptors per call over hundreds of calls moves
@@ -199,11 +205,23 @@ ALL_GATES: frozenset[str] = frozenset(
 #: is 1.25x. Unlike the descriptor floor this value is a judgement rather than a
 #: measurement, and it is deliberately small.
 #:
-#: ``memory_used_bytes`` is ABSENT on purpose. It is continuous and large, so
-#: the ratio means what it says, and a real run has already been delivered whose
-#: memory verdict sits at a marginal 1.10x. A floor here would silently turn
-#: that into a pass, which is the direction this gate must never move on its
-#: own.
+#: ``memory_used_bytes`` is ABSENT on purpose, and the reason is that it does
+#: not have the defect the floor exists to correct. Both its series come from
+#: node_exporter's meminfo collector, which reads ``/proc/meminfo`` in kB and
+#: multiplies by 1024, so the smallest change it can express is 1024 bytes:
+#: against readings around 1e9 that is roughly 0.0001%, four orders of magnitude
+#: below any tolerance anyone would set. The situation that produced the
+#: descriptor bug, where three ticks of a counter that cannot express less than
+#: one tick came to 11%, cannot arise here.
+#:
+#: So a floor on memory buys nothing and costs something: it could only ever
+#: turn a measured failure into a pass, silently, which is the one direction
+#: this gate must never move on its own. That holds whatever the verdicts on any
+#: particular run happen to be, which is the point. An earlier version of this
+#: comment justified it by a delivered run's memory verdict sitting on the line;
+#: that number was computed before the settle window was bounded, the bounded
+#: window moved it, and a reason that can be falsified by re-rendering a report
+#: invites someone to reopen a decision that is correct for a different reason.
 MIN_ABSOLUTE_CHANGE: Final[dict[str, float]] = {
     "filefd_allocated": 128.0,
     "sockstat_udp_inuse": 8.0,
