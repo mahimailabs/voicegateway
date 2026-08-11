@@ -26,8 +26,11 @@ follows [Semantic Versioning](https://semver.org/) and
 
   The floor is 128 descriptors, four ticks on the common case, and 8 for
   `sockstat_udp_inuse`, which is not quantized but is a small integer count with
-  the same magnitude problem. `memory_used_bytes` is **deliberately unfloored**:
-  it is continuous and large, so its ratio means what it says.
+  the same magnitude problem. `memory_used_bytes` is **deliberately unfloored**,
+  because it does not have the defect the floor exists to correct: its readings
+  come from `/proc/meminfo` in kB, so the smallest change it can express is 1024
+  bytes, roughly 0.0001% of a 1e9 reading. A floor there would buy nothing while
+  being able to turn a measured failure into a pass.
 
   A suppressed failure says so. The detail reports the ratio that would have
   failed and the floor that stopped it, and the ratio stays on the result.
