@@ -53,6 +53,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime
 from typing import Any
 
 from voicegateway.utils.percentiles import compute_percentiles
@@ -1395,6 +1396,12 @@ class BaselineComparison:
     #: than claiming a sample count it does not have.
     baseline_samples: int | None = None
     post_settle_samples: int | None = None
+    #: When the RUN ended. The only correct anchor for "has teardown been left
+    #: long enough to settle": the gap between the two samples answers a
+    #: different question and can be arbitrarily large while teardown is still
+    #: draining. None keeps the older sample-to-sample check rather than
+    #: dropping the guard entirely.
+    run_end_ms: int | None = None
 
 
 def _over(samples: int | None) -> str:
@@ -1411,6 +1418,20 @@ def _over(samples: int | None) -> str:
         # rests on a single scrape.
         return " (a single sample)"
     return f" (median of {samples} samples)"
+
+
+def _at(at_ms: int | None) -> str:
+    """" ending <UTC instant>", so a reader can go and check the sample.
+
+    The whole reason the 21-hour-old baseline went unnoticed through two
+    delivered reports is that no artifact said WHICH samples produced the
+    numbers, so verifying a verdict meant querying the database. A report that
+    names its own window is checkable by the person holding it.
+    """
+    if at_ms is None:
+        return ""
+    stamp = datetime.fromtimestamp(at_ms / 1000, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return f" ending {stamp}"
 
 
 def _return_to_baseline_gate(
@@ -1455,16 +1476,18 @@ def _return_to_baseline_gate(
             ),
             threshold=tolerance,
         )
-    if c.baseline_at_ms is not None and c.post_settle_at_ms is not None:
-        settled_ms = c.post_settle_at_ms - c.baseline_at_ms
+    anchor = c.run_end_ms if c.run_end_ms is not None else c.baseline_at_ms
+    if anchor is not None and c.post_settle_at_ms is not None:
+        settled_ms = c.post_settle_at_ms - anchor
+        since = "the run ended" if c.run_end_ms is not None else "the first"
         if settled_ms < min_settle_ms:
             return GateResult(
                 gate=RETURN_TO_BASELINE_GATE,
                 status=UNKNOWN,
                 subject=subject,
                 detail=(
-                    f"the second {c.metric} sample on {c.node} was taken "
-                    f"{settled_ms / 1000:.0f}s after the first, inside the "
+                    f"the settled {c.metric} sample on {c.node} was taken "
+                    f"{settled_ms / 1000:.0f}s after {since}, inside the "
                     f"{min_settle_ms / 1000:.0f}s settle window, so it is not a "
                     "post-settle reading and a return cannot be claimed from it"
                 ),
@@ -1479,9 +1502,10 @@ def _return_to_baseline_gate(
         subject=subject,
         detail=(
             f"{c.metric} on {c.node} settled at {c.post_settle:g}"
-            f"{_over(c.post_settle_samples)} against a baseline of "
-            f"{c.baseline:g}{_over(c.baseline_samples)} ({ratio:.2f}x), "
-            f"{relation} the {tolerance:.2f}x tolerance"
+            f"{_over(c.post_settle_samples)}{_at(c.post_settle_at_ms)} against "
+            f"a baseline of {c.baseline:g}{_over(c.baseline_samples)}"
+            f"{_at(c.baseline_at_ms)} ({ratio:.2f}x), {relation} the "
+            f"{tolerance:.2f}x tolerance"
         ),
         metric=f"{c.metric}_baseline_ratio",
         value=ratio,
