@@ -372,3 +372,221 @@ def test_a_gauge_is_refused_as_a_counter(db: AsyncSession) -> None:
     assert aggregation.MEMORY_TOTAL_COLUMN in GAUGE_COLUMNS
     # Memory is never diffed, so asking for its rate is a caller bug.
     assert aggregation.MEMORY_AVAILABLE_COLUMN not in COUNTER_COLUMNS
+
+
+# --------------------------------------------------------------------------
+# Return to baseline: one sample must not decide a verdict
+# --------------------------------------------------------------------------
+#
+# The settle side used to be the single newest row in the table. A report
+# generated straight after a run (the documented flow) therefore read the scrape
+# that had just caught the collector host running the import and the report
+# generator, and failed that node for the reporting tool's own footprint. The
+# same run regenerated an hour later passed, because by then the newest row was
+# an ordinary one. A verdict that depends on when someone typed a command is not
+# a verdict.
+#
+# The numbers below are a real 15-second trace of that: flat at 1312 to 1344
+# descriptors and about 1.02 GB across eight minutes, with one sample carrying
+# 1408 and 1.118 GB.
+
+_TOLERANCE = 1.10
+
+# (fd, memory_used_bytes) per 15s scrape after the run.
+_SETTLE_TRACE = [
+    (1344, 999_000_000),
+    (1312, 1_040_000_000),
+    (1408, 1_118_040_000),  # the report generator's own process, and nothing else
+    (1312, 1_040_000_000),
+    (1312, 1_027_000_000),
+    (1344, 1_051_000_000),
+    (1344, 1_008_000_000),
+]
+_BASELINE_FD = 1248
+_BASELINE_MEM = 958_685_000
+_MEM_TOTAL = 4_000_000_000
+_RUN_S = 600  # ten minutes, so the settle check has real time to read
+
+
+def _under_load() -> list:
+    """Samples DURING the run. A node is correlated to a test by having been
+    sampled inside its window, so without these there is no node to compare and
+    no gate at all. Their values do not feed this gate: it reads idle-before
+    against settled-after, never the load itself."""
+    return [
+        _sample(
+            i * 60,
+            filefd_allocated=1400.0,
+            memory_total_bytes=float(_MEM_TOTAL),
+            memory_available_bytes=float(_MEM_TOTAL - 1_800_000_000),
+        )
+        for i in range(_RUN_S // 60 + 1)
+    ]
+
+
+async def _flat_baseline_then(db: AsyncSession, settle) -> None:
+    """Flat idle before the run, then the given (fd, mem_used) trace after it."""
+    rows = [
+        _sample(
+            -600 + i * 15,
+            filefd_allocated=float(_BASELINE_FD),
+            memory_total_bytes=float(_MEM_TOTAL),
+            memory_available_bytes=float(_MEM_TOTAL - _BASELINE_MEM),
+        )
+        for i in range(8)
+    ]
+    rows += [
+        _sample(
+            _RUN_S + 60 + i * 15,
+            filefd_allocated=float(fd),
+            memory_total_bytes=float(_MEM_TOTAL),
+            memory_available_bytes=float(_MEM_TOTAL - used),
+        )
+        for i, (fd, used) in enumerate(settle)
+    ]
+    await insert_samples(db, rows + _under_load())
+
+
+async def _baseline_gates(db: AsyncSession):
+    agg = await aggregation.aggregate_test_window(
+        db, started_at_ms=T0, ended_at_ms=T0 + _RUN_S * SEC
+    )
+    assert agg is not None
+    return {
+        g.subject: g
+        for g in gates.return_to_baseline_gates(
+            agg.baseline_comparisons, tolerance=_TOLERANCE
+        )
+    }
+
+
+async def test_one_spike_in_a_flat_settle_window_is_not_a_failure(
+    db: AsyncSession,
+) -> None:
+    """The production case: the reporting tool measuring itself.
+
+    Under the old single-sample reading both of these were FAIL, at 1.13x and
+    1.17x, from the one scrape that overlapped the report generator.
+    """
+    await _flat_baseline_then(db, _SETTLE_TRACE)
+    results = await _baseline_gates(db)
+
+    fd = results["sfu-1/filefd_allocated"]
+    assert fd.status == gates.PASS, fd.detail
+    assert fd.value == pytest.approx(1344 / _BASELINE_FD, rel=1e-3)
+
+    mem = results["sfu-1/memory_used_bytes"]
+    assert mem.status == gates.PASS, mem.detail
+    assert mem.value == pytest.approx(1_040_000_000 / _BASELINE_MEM, rel=1e-3)
+
+
+async def test_a_sustained_leak_still_fails(db: AsyncSession) -> None:
+    """The median must not be a way to pass a real leak.
+
+    Every settle sample is held up, not one, which is what a descriptor or
+    memory leak looks like. The median moves with it.
+    """
+    leaked = [(1500, 1_400_000_000) for _ in _SETTLE_TRACE]
+    await _flat_baseline_then(db, leaked)
+    results = await _baseline_gates(db)
+
+    assert results["sfu-1/filefd_allocated"].status == gates.FAIL
+    assert results["sfu-1/memory_used_bytes"].status == gates.FAIL
+
+
+async def test_a_leak_that_starts_midway_through_settle_still_fails(
+    db: AsyncSession,
+) -> None:
+    """A median over N is not a majority vote that a leak has to win outright.
+
+    Four of seven samples elevated is a resource that went up and stayed up, and
+    it must read as one even though three earlier samples were clean.
+    """
+    climbing = [
+        (1312, 1_000_000_000),
+        (1312, 1_000_000_000),
+        (1344, 1_020_000_000),
+        (1600, 1_500_000_000),
+        (1600, 1_500_000_000),
+        (1600, 1_500_000_000),
+        (1600, 1_500_000_000),
+    ]
+    await _flat_baseline_then(db, climbing)
+    results = await _baseline_gates(db)
+
+    assert results["sfu-1/filefd_allocated"].status == gates.FAIL
+    assert results["sfu-1/memory_used_bytes"].status == gates.FAIL
+
+
+async def test_a_spike_in_the_baseline_cannot_hide_a_leak(db: AsyncSession) -> None:
+    """The dangerous direction, and why the baseline is a median too.
+
+    A spike on the BEFORE side inflates the denominator, which drags the ratio
+    down and turns a genuine leak into a clean bill of health. One reading of
+    1600 among seven flat ones must not do that.
+
+    The spike is on the LAST sample before the run deliberately: that is the one
+    the single-sample reading took, so anywhere else in the window the test
+    would pass against the old code and prove nothing.
+    """
+    rows = [
+        _sample(
+            -600 + i * 15,
+            filefd_allocated=float(1600 if i == 7 else _BASELINE_FD),
+            memory_total_bytes=float(_MEM_TOTAL),
+            memory_available_bytes=float(_MEM_TOTAL - _BASELINE_MEM),
+        )
+        for i in range(8)
+    ]
+    rows += [
+        _sample(
+            _RUN_S + 60 + i * 15,
+            filefd_allocated=1500.0,
+            memory_total_bytes=float(_MEM_TOTAL),
+            memory_available_bytes=float(_MEM_TOTAL - _BASELINE_MEM),
+        )
+        for i in range(7)
+    ]
+    await insert_samples(db, rows + _under_load())
+    results = await _baseline_gates(db)
+
+    fd = results["sfu-1/filefd_allocated"]
+    assert fd.status == gates.FAIL, fd.detail
+    # 1500/1248, not 1500/1600: the spike did not become the baseline.
+    assert fd.value == pytest.approx(1500 / _BASELINE_FD, rel=1e-3)
+
+
+async def test_the_detail_says_what_the_number_is_a_median_of(
+    db: AsyncSession,
+) -> None:
+    """A reader must not go hunting for a sample carrying the quoted value.
+
+    "settled at 1344" with no qualifier sends someone looking for a scrape that
+    read 1344 at a particular instant, which for a median need not exist at all.
+    """
+    await _flat_baseline_then(db, _SETTLE_TRACE)
+    detail = (await _baseline_gates(db))["sfu-1/filefd_allocated"].detail
+    assert "median of 7 samples" in detail
+    assert "median of 8 samples" in detail
+
+
+def test_a_single_sample_says_so_rather_than_calling_itself_a_median() -> None:
+    """One reading either side is still allowed, and must be labelled as one."""
+    [result] = gates.return_to_baseline_gates(
+        [
+            gates.BaselineComparison(
+                node="sfu-1",
+                metric="filefd_allocated",
+                baseline=1000.0,
+                post_settle=1010.0,
+                baseline_at_ms=T0,
+                post_settle_at_ms=T0 + 900_000,
+                baseline_samples=1,
+                post_settle_samples=1,
+            )
+        ],
+        tolerance=_TOLERANCE,
+    )
+    assert result.status == gates.PASS
+    assert "a single sample" in result.detail
+    assert "median" not in result.detail

@@ -429,6 +429,14 @@ def _run_baseline_gates(
                 post_settle=after.post_settle if after else None,
                 baseline_at_ms=before.baseline_at_ms if before else None,
                 post_settle_at_ms=after.post_settle_at_ms if after else None,
+                # Forwarded, not recomputed: the medians and their counts are
+                # decided once, in _baseline_comparisons. Dropping them here
+                # would leave the report quoting a median with nothing saying
+                # what it was taken over.
+                baseline_samples=before.baseline_samples if before else None,
+                post_settle_samples=(
+                    after.post_settle_samples if after else None
+                ),
                 unmeasured_reason=(
                     (before.unmeasured_reason if before else None)
                     or (after.unmeasured_reason if after else None)
