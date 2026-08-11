@@ -106,6 +106,18 @@ class WorkersConfig(_StrictBase):
     # does NOT turn the scrape on: the worker exists only when
     # VOICEGW_NODE_SCRAPE_TARGETS names at least one target.
     node_scrape_interval_seconds: int = Field(default=15, ge=1)
+    # How long a raw node sample is kept. The default is 7 days, unchanged from
+    # when it was hardcoded, so upgrading alters nobody's retention.
+    #
+    # Raise it when the observation window you need to REPORT on equals the
+    # window you are running: a soak whose retention matches its own duration
+    # prunes its first day before it ends, and the report cannot then cover the
+    # span the run existed to demonstrate. Retention must exceed the run, not
+    # match it.
+    #
+    # The cost is rows. See _DEFAULT_MAX_AGE_SECONDS in
+    # node_samples_worker_middleware for the arithmetic.
+    node_sample_max_age_days: int = Field(default=7, ge=1)
 
 
 class ProjectConfig(_StrictBase):

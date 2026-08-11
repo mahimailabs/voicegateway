@@ -100,6 +100,11 @@ def _build_workers(gateway: Gateway) -> list[Any]:
             NodeSamplesWorker(
                 storage,
                 poll_interval_seconds=workers_cfg.node_scrape_interval_seconds,
+                # Retention was hardcoded at 7 days, which is self-defeating for
+                # anyone whose observation window IS 7 days: day one is pruned
+                # before the run ends, so the report cannot cover the span the
+                # run was performed to prove.
+                max_age_seconds=workers_cfg.node_sample_max_age_days * 86400,
             )
         )
         # Logged because the alternative is silence: an operator who typos the
