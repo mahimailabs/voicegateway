@@ -31,6 +31,38 @@ follows [Semantic Versioning](https://semver.org/) and
   sample counts still reads as before, and a window holding one reading says
   `(a single sample)` rather than calling itself a median.
 
+- **The `return_to_baseline` gate takes its baseline from the run, not from
+  whatever the table still holds.** Both windows are now anchored to the run
+  window: the 5 minutes before it starts, and 5 to 10 minutes after it ends.
+
+  The selection was "everything before the run" and "everything after it", each
+  capped at 5,000 rows **ascending**. At a 15s cadence that cap spans about 20.8
+  hours, so the rows it returned were the oldest retained history rather than
+  anything near the run. On a real hour-long 500-concurrent run it produced a
+  baseline from 21 hours earlier and reported a true 1.10x as **0.51x**: a
+  marginal FAIL rendered as a confident PASS.
+
+  It also coupled verdicts to retention. Which rows survive is
+  `workers.node_sample_max_age_days`, so changing retention moved every baseline
+  on every re-rendered report, with nothing connecting the two. Anchoring to the
+  run window breaks that link, which is why this ships in the same release as
+  that setting.
+
+- **The settle window is measured from the end of the run.** It was measured
+  from the baseline sample to the settled sample, which answers a different
+  question and can be arbitrarily large while teardown is still draining, so
+  `MIN_SETTLE_MS` could never fail.
+
+  **Behaviour change**: a report generated before the settle window has elapsed
+  now reports `UNKNOWN` rather than a verdict. Nothing has settled a minute
+  after teardown, so there is no return to report either way. This is what
+  `MIN_SETTLE_MS` always intended.
+
+- **Gate details name the instant their numbers came from**, as
+  `ending 2026-08-05T15:27:00Z`. Two reports carried a 21-hour-old baseline
+  without anyone noticing, because no artifact said which samples produced the
+  numbers and checking one meant querying the database.
+
 ### Changed
 
 - **`voicegw_cost_usd_total` and `voicegw_requests_total` on `GET /v1/metrics`

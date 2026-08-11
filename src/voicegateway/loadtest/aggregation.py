@@ -291,6 +291,16 @@ TREND_METRICS: tuple[tuple[str, bool], ...] = (
 #: the trap: it is higher-is-better, so comparing memory_available_bytes here
 #: reports a node that ENDED WITH MORE FREE MEMORY as having failed to return.
 #: Memory is therefore carried as USED, derived from the total/available pair.
+#: How far before the run start an idle baseline may be taken from. Five
+#: minutes: near enough that it describes the same hour as the run, wide enough
+#: that a median has samples to work with at the default 15s cadence.
+BASELINE_WINDOW_MS = 300_000
+
+#: How wide the settle window is, starting at :data:`gates.MIN_SETTLE_MS` after
+#: the run ends. Together those give the 5 to 10 minutes past teardown the
+#: runbook specifies.
+SETTLE_WINDOW_MS = 300_000
+
 BASELINE_METRICS: tuple[str, ...] = (
     "memory_used_bytes",
     "filefd_allocated",
@@ -417,12 +427,50 @@ async def _baseline_comparisons(
     transient cannot carry a verdict on its own. The baseline side gets the same
     treatment and needs it more: a spike there inflates the DENOMINATOR, which
     drags the ratio down and turns a genuine leak into a PASS.
+
+    Both windows are BOUNDED, and anchored to the run rather than to the table.
+    The selection used to be "everything before the run" and "everything after
+    it", each capped at ``limit`` rows ASCENDING. That cap is what made the
+    baseline arbitrary: at 5,000 rows and a 15s cadence it spans about 20.8
+    hours, so the rows it returned were the OLDEST retained history rather than
+    anything near the run. On a real hour-long 500-concurrent run the baseline
+    it produced came from 21 hours before the run started, reporting a true
+    1.10x as 0.51x: a marginal FAIL rendered as a confident PASS, which is the
+    worst direction for an evidence tool.
+
+    It also coupled the verdict to retention. Which rows survive is
+    ``workers.node_sample_max_age_days``, so changing retention silently moved
+    every baseline and therefore every re-rendered verdict, with nothing
+    connecting the two. Anchoring both windows to the run window breaks that
+    link: the same run re-rendered on a differently-pruned table now selects the
+    same samples or none, never different ones.
+
+    The settle window is 5 to 10 minutes after teardown, which is the range the
+    runbook specifies and past LiveKit's reap timeouts. Samples inside the first
+    five minutes are excluded rather than averaged in: teardown that has not
+    finished draining looks like a clean return, and that reads as evidence when
+    it is the absence of it. A report generated before that window has elapsed
+    now says UNKNOWN, which is the honest answer and is what
+    :data:`gates.MIN_SETTLE_MS` always intended. It could not enforce it because
+    it measured from the baseline sample rather than from the end of the run.
     """
     before = await list_samples(
-        db, node=node, source=source, until_ms=window.start_ms - 1, limit=limit
+        db,
+        node=node,
+        source=source,
+        since_ms=window.start_ms - BASELINE_WINDOW_MS,
+        until_ms=window.start_ms - 1,
+        limit=limit,
     )
+    settle_from = window.end_ms + gates.MIN_SETTLE_MS
+    settle_to = settle_from + SETTLE_WINDOW_MS
     after = await list_samples(
-        db, node=node, source=source, since_ms=window.end_ms + 1, limit=limit
+        db,
+        node=node,
+        source=source,
+        since_ms=settle_from,
+        until_ms=settle_to,
+        limit=limit,
     )
 
     def _value(row, metric: str) -> float | None:
@@ -450,13 +498,20 @@ async def _baseline_comparisons(
         reason = None
         if not pre:
             reason = (
-                "not measured: no idle sample was recorded before the test, "
-                "so no baseline was ever established to return to"
+                "not measured: no idle sample was recorded in the "
+                f"{BASELINE_WINDOW_MS // 60_000} minutes before the test, so no "
+                "baseline was established near the run to return to. An older "
+                "sample is not a substitute: it describes a different hour"
             )
         elif not post:
             reason = (
-                "not measured: no sample was recorded after the test window, "
-                "so nothing shows the resource came back"
+                "not measured: no sample was recorded in the settle window, "
+                f"{gates.MIN_SETTLE_MS // 60_000} to "
+                f"{(gates.MIN_SETTLE_MS + SETTLE_WINDOW_MS) // 60_000} minutes "
+                "after the test ended, so nothing shows the resource came back. "
+                "A report generated before that window elapsed cannot answer "
+                "this, and reporting it as a clean return would be evidence of "
+                "nothing"
             )
         out.append(
             BaselineComparison(
@@ -472,6 +527,11 @@ async def _baseline_comparisons(
                 post_settle_at_ms=post[-1].at_ms if post else None,
                 baseline_samples=len(pre) or None,
                 post_settle_samples=len(post) or None,
+                # The anchor the settle check needs. Measured from the end of
+                # the RUN, never from the baseline sample: the distance between
+                # the two samples says nothing about how long teardown was left
+                # to drain.
+                run_end_ms=window.end_ms,
                 unmeasured_reason=reason,
             )
         )
