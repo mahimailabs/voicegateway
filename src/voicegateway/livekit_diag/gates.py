@@ -54,7 +54,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Final
 
 from voicegateway.utils.percentiles import compute_percentiles
 
@@ -170,6 +170,45 @@ ALL_GATES: frozenset[str] = frozenset(
 # Go hands freed heap back to the OS lazily, so a drained process holds its
 # resident size long after the heap emptied, and gating on it would report a leak
 # on healthy runs.
+#: Absolute change a metric must move before a ratio outside tolerance counts
+#: as a failure. A metric absent from here is governed by the ratio alone.
+#:
+#: A pure ratio makes the gate's sensitivity depend on the MAGNITUDE of the
+#: counter rather than on anything about the node. At 2,688 descriptors a 10%
+#: tolerance allows 268; at 864 it allows 86; at 320 it allows 32. So a node
+#: holding few descriptors is gated an order of magnitude more tightly than a
+#: busy one, for no reason connected to health.
+#:
+#: ``filefd_allocated`` makes that concrete because it is QUANTIZED. Observed
+#: across a real fleet: 256 distinct values, every one a multiple of 32, with a
+#: smallest gap of exactly 32. That is the kernel's doing, not the exporter's:
+#: ``/proc/sys/fs/file-nr``'s allocated count is a percpu_counter read without
+#: folding in the per-CPU deltas, and the fold happens per
+#: ``percpu_counter_batch``, which is ``max(32, 2 x online CPUs)``. A machine
+#: cannot report a change smaller than one batch, so at 320 descriptors a single
+#: unavoidable tick of the counter is a 10% move and fails the gate on its own.
+#:
+#: 128 is four of those ticks on the common case. It suppresses the tick-level
+#: noise that fails small nodes while staying far below any leak worth
+#: reporting: a run leaking descriptors per call over hundreds of calls moves
+#: this by hundreds or thousands, not by 96. Note the resolution is coarser on a
+#: machine with more than 16 CPUs, where 128 is two ticks rather than four.
+#:
+#: ``sockstat_udp_inuse`` is not quantized, but it is a small integer count with
+#: the same magnitude problem: a node idling on 4 UDP sockets and settling on 5
+#: is 1.25x. Unlike the descriptor floor this value is a judgement rather than a
+#: measurement, and it is deliberately small.
+#:
+#: ``memory_used_bytes`` is ABSENT on purpose. It is continuous and large, so
+#: the ratio means what it says, and a real run has already been delivered whose
+#: memory verdict sits at a marginal 1.10x. A floor here would silently turn
+#: that into a pass, which is the direction this gate must never move on its
+#: own.
+MIN_ABSOLUTE_CHANGE: Final[dict[str, float]] = {
+    "filefd_allocated": 128.0,
+    "sockstat_udp_inuse": 8.0,
+}
+
 BASELINE_HEAP = "heap_inuse_bytes"
 BASELINE_GOROUTINES = "go_goroutines"
 
@@ -1494,6 +1533,31 @@ def _return_to_baseline_gate(
                 threshold=tolerance,
             )
     ratio = c.post_settle / c.baseline
+    floor = MIN_ABSOLUTE_CHANGE.get(c.metric)
+    increase = c.post_settle - c.baseline
+    if ratio > tolerance and floor is not None and increase < floor:
+        # Outside the tolerance, but by less than this counter can meaningfully
+        # express. Reported as a pass that SAYS SO, never as a silent one: the
+        # ratio stays on the result, so a reader sees the number that would have
+        # failed and why it did not.
+        return GateResult(
+            gate=RETURN_TO_BASELINE_GATE,
+            status=PASS,
+            subject=subject,
+            detail=(
+                f"{c.metric} on {c.node} settled at {c.post_settle:g}"
+                f"{_over(c.post_settle_samples)}{_at(c.post_settle_at_ms)} "
+                f"against a baseline of {c.baseline:g}"
+                f"{_over(c.baseline_samples)}{_at(c.baseline_at_ms)} "
+                f"({ratio:.2f}x, outside the {tolerance:.2f}x tolerance), but "
+                f"the change of {increase:g} is under the {floor:g} this "
+                "counter needs before a difference means anything, so it is not "
+                "a failure to return"
+            ),
+            metric=f"{c.metric}_baseline_ratio",
+            value=ratio,
+            threshold=tolerance,
+        )
     status = PASS if ratio <= tolerance else FAIL
     relation = "within" if status == PASS else "outside"
     return GateResult(
