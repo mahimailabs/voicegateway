@@ -437,6 +437,10 @@ def _run_baseline_gates(
                 post_settle_samples=(
                     after.post_settle_samples if after else None
                 ),
+                # From the LAST test's window: the settle check asks how long
+                # after the run finished the settled sample was taken, and the
+                # run finished when its last test did.
+                run_end_ms=after.run_end_ms if after else None,
                 unmeasured_reason=(
                     (before.unmeasured_reason if before else None)
                     or (after.unmeasured_reason if after else None)
