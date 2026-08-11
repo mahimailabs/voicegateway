@@ -1488,3 +1488,116 @@ class TestTwoWayMediaGate:
         # exact misstatement RATIO_GATES exists to prevent.
         assert gates.TWO_WAY_MEDIA_GATE in gates.ALL_GATES
         assert gates.TWO_WAY_MEDIA_GATE not in gates.RATIO_GATES
+
+
+# ---------------------------------------------------------------------------
+# A change the counter cannot meaningfully express must not decide a verdict
+#
+# filefd_allocated is quantized: observed across a real fleet, 256 distinct
+# values, every one a multiple of 32, smallest gap exactly 32. The kernel reads
+# /proc/sys/fs/file-nr's allocated count from a percpu_counter without folding
+# in the per-CPU deltas, and folds per percpu_counter_batch = max(32, 2 x CPUs).
+#
+# A pure ratio therefore gates a node by the MAGNITUDE of its counter: at 320
+# descriptors one unavoidable tick is 10% and fails on its own, while at 2,688 a
+# tick is 1.2% and three of them pass.
+# ---------------------------------------------------------------------------
+
+# The real failure this came from, verbatim: a load generator that finished
+# BELOW its own steady state (median 1184 in the half hour before the run) and
+# was failed anyway on a 96-descriptor move, which is three ticks of a counter
+# that cannot express less than one.
+_FD = "filefd_allocated"
+_FD_BASELINE = 864.0
+_FD_SETTLE = 960.0
+
+
+def test_a_few_ticks_of_a_quantized_counter_is_not_a_failure():
+    [gate] = gates.return_to_baseline_gates(
+        [_cmp(_FD, _FD_BASELINE, _FD_SETTLE)], tolerance=1.10
+    )
+    assert gate.status == gates.PASS, gate.detail
+    # The ratio that would have failed is still on the result. Suppressing the
+    # verdict must not also suppress the number a reader would want to see.
+    assert gate.value == pytest.approx(_FD_SETTLE / _FD_BASELINE, rel=1e-3)
+    assert gate.value > 1.10
+    assert "under the 128" in gate.detail
+
+
+def test_the_same_ratio_at_a_real_magnitude_still_fails():
+    """The floor must not be a way to disable the gate.
+
+    Ten times the descriptors, the identical 1.11x, and now the move is 960:
+    far past anything the counter's resolution can explain.
+    """
+    [gate] = gates.return_to_baseline_gates(
+        [_cmp(_FD, _FD_BASELINE * 10, _FD_SETTLE * 10)], tolerance=1.10
+    )
+    assert gate.status == gates.FAIL, gate.detail
+    assert gate.value == pytest.approx(_FD_SETTLE / _FD_BASELINE, rel=1e-3)
+
+
+def test_a_descriptor_leak_just_past_the_floor_still_fails():
+    """The boundary is a real edge, so it is pinned rather than assumed."""
+    [under] = gates.return_to_baseline_gates(
+        [_cmp(_FD, 864.0, 864.0 + 127.0)], tolerance=1.10
+    )
+    [over] = gates.return_to_baseline_gates(
+        [_cmp(_FD, 864.0, 864.0 + 128.0)], tolerance=1.10
+    )
+    assert under.status == gates.PASS
+    assert over.status == gates.FAIL
+
+
+def test_the_floor_never_turns_a_passing_ratio_into_anything_else():
+    """It only ever suppresses a FAIL; it cannot manufacture one."""
+    [gate] = gates.return_to_baseline_gates(
+        [_cmp(_FD, 864.0, 880.0)], tolerance=1.10
+    )
+    assert gate.status == gates.PASS
+    assert "under the" not in gate.detail  # the ordinary within-tolerance detail
+
+
+def test_a_drop_below_baseline_is_not_dragged_into_the_floor_branch():
+    """A node that settled LOWER than it started is inside tolerance anyway.
+
+    Pinned because the floor compares a signed increase: a large decrease is a
+    small number in the wrong direction, and must not be read as "a small move".
+    """
+    [gate] = gates.return_to_baseline_gates(
+        [_cmp(_FD, 2000.0, 800.0)], tolerance=1.10
+    )
+    assert gate.status == gates.PASS
+    assert gate.value == pytest.approx(0.4)
+
+
+def test_memory_is_deliberately_not_floored():
+    """A marginal memory verdict must stay a verdict.
+
+    A delivered 500-concurrent report turns on a memory ratio sitting at exactly
+    1.10x. A floor on this metric would silently move that to a pass, which is
+    the one direction this gate must never move on its own. Memory is continuous
+    and large-magnitude, so the ratio means what it says.
+    """
+    assert "memory_used_bytes" not in gates.MIN_ABSOLUTE_CHANGE
+    # A 74 MB move on a 0.74 GB baseline: the real marginal case, still judged.
+    [gate] = gates.return_to_baseline_gates(
+        [_cmp("memory_used_bytes", 740_500_000.0, 814_700_000.0)], tolerance=1.09
+    )
+    assert gate.status == gates.FAIL
+
+
+def test_every_baseline_metric_has_a_decision_recorded():
+    """Each metric is either floored or explicitly not, never overlooked.
+
+    A metric added to BASELINE_METRICS without thinking about magnitude inherits
+    the pure-ratio behaviour silently, which is exactly how the descriptor case
+    reached a client report.
+    """
+    from voicegateway.loadtest.aggregation import BASELINE_METRICS
+
+    decided = set(gates.MIN_ABSOLUTE_CHANGE) | {"memory_used_bytes"}
+    assert set(BASELINE_METRICS) <= decided, (
+        f"no floor decision recorded for {set(BASELINE_METRICS) - decided}: add "
+        "it to MIN_ABSOLUTE_CHANGE, or to this test's exemption with a reason"
+    )
