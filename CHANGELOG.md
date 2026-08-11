@@ -8,6 +8,24 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ### Fixed
 
+- **The PyPI publish works again. `0.24.10` never reached PyPI**; install it from
+  PyPI and you get `0.24.9`. The Docker images and the GitHub release for
+  `0.24.10` published normally, so only the PyPI artifact is missing, and this
+  release carries the same code plus this fix.
+
+  Nothing was wrong with the wheel. `pyproject.toml` requires `hatchling` with no
+  upper bound, so the build resolved hatchling 1.32.0, which writes
+  `Metadata-Version: 2.5` unconditionally (a package with nothing but a name and
+  a version gets it). The publish action was pinned to v1.14.0, whose bundled
+  twine validates only up to 2.4, so `twine check` failed before upload with
+  `InvalidDistribution: '2.5' is not a valid metadata version`. `0.24.9` shipped
+  `Metadata-Version: 2.4` from an older hatchling, which dates the drift.
+
+  Fixed by moving the pin to v1.14.2, which bundles twine v7 precisely to accept
+  metadata 2.5. **Not** by pinning hatchling backwards: PyPI already accepts 2.5
+  (hatchling's own wheel on PyPI carries it), so the stale checker was the whole
+  defect and capping the builder would have been working around it.
+
 - **A report no longer tells an operator to re-run a scrape that was already
   complete.** A gate that could not divide because nothing declared its
   denominator is now filed apart from a gate whose series was never scraped, and
