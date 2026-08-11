@@ -1369,6 +1369,17 @@ class BaselineComparison:
     The two ``*_at_ms`` timestamps are optional but load-bearing when present:
     they are what lets the gate refuse a "post-settle" sample that was taken
     before the settle window elapsed.
+
+    ``baseline`` and ``post_settle`` are each a MEDIAN over their side of the
+    run, never a single reading, and the two ``*_samples`` counts say how many
+    readings went into them. One scrape landing during a GC pause, a log
+    rotation or any other momentary spike must not be able to decide a verdict
+    on its own: a real leak holds the value up across the whole window and so
+    moves the median with it, while a transient does not.
+
+    The counts are what make that legible downstream. Without them a report says
+    "settled at 1344" and a reader goes looking for a sample carrying 1344 that
+    may not exist, so the gate quotes the count alongside the value.
     """
 
     node: str
@@ -1379,6 +1390,27 @@ class BaselineComparison:
     post_settle_at_ms: int | None = None
     source: str | None = None
     unmeasured_reason: str | None = None
+    #: How many readings the medians above were taken over. None means the
+    #: caller did not say, and the gate then quotes the values plainly rather
+    #: than claiming a sample count it does not have.
+    baseline_samples: int | None = None
+    post_settle_samples: int | None = None
+
+
+def _over(samples: int | None) -> str:
+    """" (median of N samples)", or nothing when the caller did not say.
+
+    Separated so the value and its provenance cannot drift apart: any detail
+    quoting a median quotes what it is a median OF, in the same breath.
+    """
+    if samples is None:
+        return ""
+    if samples == 1:
+        # Not "median of 1 sample", which reads as a statistic when it is just
+        # the one reading. Saying so is the point: it tells a reader the verdict
+        # rests on a single scrape.
+        return " (a single sample)"
+    return f" (median of {samples} samples)"
 
 
 def _return_to_baseline_gate(
@@ -1446,9 +1478,10 @@ def _return_to_baseline_gate(
         status=status,
         subject=subject,
         detail=(
-            f"{c.metric} on {c.node} settled at {c.post_settle:g} against a "
-            f"baseline of {c.baseline:g} ({ratio:.2f}x), {relation} the "
-            f"{tolerance:.2f}x tolerance"
+            f"{c.metric} on {c.node} settled at {c.post_settle:g}"
+            f"{_over(c.post_settle_samples)} against a baseline of "
+            f"{c.baseline:g}{_over(c.baseline_samples)} ({ratio:.2f}x), "
+            f"{relation} the {tolerance:.2f}x tolerance"
         ),
         metric=f"{c.metric}_baseline_ratio",
         value=ratio,

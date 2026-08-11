@@ -6,6 +6,31 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ## Unreleased
 
+### Fixed
+
+- **The `return_to_baseline` gate no longer lets one scrape decide a node's
+  verdict.** Both sides of the ratio are now a median over their window, and the
+  gate detail says how many samples each was taken over.
+
+  The settle side used to be the newest row in `node_samples`. Generating the
+  report straight after a run, which is the documented flow, therefore read the
+  scrape that had just caught the collector host running the import and the
+  report generator, and failed that node for the reporting tool's own footprint.
+  The same run regenerated later passed, because by then the newest row was an
+  ordinary one, so the verdict depended on when someone typed a command.
+
+  The baseline side had the same fragility in the more dangerous direction: a
+  spike there inflates the denominator, drags the ratio down and turns a real
+  leak into a PASS. Both are now medians.
+
+  Detection is not weakened. A leak holds the value up across the whole window,
+  so the median moves with it; a transient cannot carry a verdict alone.
+
+  **Gate details change wording**: `settled at 1344 (median of 7 samples)
+  against a baseline of 1248 (median of 8 samples)`. A comparison built without
+  sample counts still reads as before, and a window holding one reading says
+  `(a single sample)` rather than calling itself a median.
+
 ### Changed
 
 - **`voicegw_cost_usd_total` and `voicegw_requests_total` on `GET /v1/metrics`
