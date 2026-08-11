@@ -47,6 +47,7 @@ turn it into UNKNOWN rather than PASS.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from statistics import median
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -399,6 +400,23 @@ async def _baseline_comparisons(
     A missing side yields an UNKNOWN comparison rather than being skipped. No
     pre-run idle sample means nobody established what baseline WAS, and a run
     that never measured its starting point cannot show it returned to it.
+
+    Both sides are MEDIANS, not the single nearest reading on each end. Taking
+    one sample per side meant any momentary spike that a 15-second scrape
+    happened to catch became the verdict for the whole node. That is not
+    hypothetical: the settle side took the newest row in the table, so a report
+    generated straight after a run (the documented flow) read the sample that
+    caught the collector host running the import and the report generator
+    themselves, and failed the node for the reporting tool's own footprint.
+    Regenerating the same run later passed, because by then the newest row was
+    an ordinary one, which is a verdict that depends on when someone typed a
+    command.
+
+    A median does not weaken detection. A real descriptor or memory leak holds
+    the value up across the settle window, so it moves the median with it; a
+    transient cannot carry a verdict on its own. The baseline side gets the same
+    treatment and needs it more: a spike there inflates the DENOMINATOR, which
+    drags the ratio down and turns a genuine leak into a PASS.
     """
     before = await list_samples(
         db, node=node, source=source, until_ms=window.start_ms - 1, limit=limit
@@ -418,6 +436,10 @@ async def _baseline_comparisons(
             return float(total - available)
         value = getattr(row, metric)
         return None if value is None else float(value)
+
+    def _median(rows: list, metric: str) -> float | None:
+        values = [v for r in rows if (v := _value(r, metric)) is not None]
+        return median(values) if values else None
 
     out: list[BaselineComparison] = []
     for metric in BASELINE_METRICS:
@@ -441,10 +463,15 @@ async def _baseline_comparisons(
                 node=node,
                 source=source,
                 metric=metric,
-                baseline=_value(pre[-1], metric) if pre else None,
-                post_settle=_value(post[-1], metric) if post else None,
+                baseline=_median(pre, metric),
+                post_settle=_median(post, metric),
+                # The timestamps stay the nearest reading on each side: they
+                # anchor the settle-window check, which asks how much time
+                # elapsed and not what the level was.
                 baseline_at_ms=pre[-1].at_ms if pre else None,
                 post_settle_at_ms=post[-1].at_ms if post else None,
+                baseline_samples=len(pre) or None,
+                post_settle_samples=len(post) or None,
                 unmeasured_reason=reason,
             )
         )
