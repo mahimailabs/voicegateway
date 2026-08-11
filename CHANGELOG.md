@@ -8,6 +8,30 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ### Fixed
 
+- **The `return_to_baseline` gate no longer fails a node over a change its
+  counter cannot meaningfully express.** A ratio outside tolerance is now a
+  failure only when the absolute change also clears a per-metric floor.
+
+  A pure ratio made the gate's sensitivity depend on the magnitude of the
+  counter rather than on anything about the node. At 2,688 descriptors a 10%
+  tolerance allows 268; at 864 it allows 86; at 320 it allows 32.
+
+  `filefd_allocated` is quantized, which makes that concrete. Observed across a
+  real fleet: 256 distinct values, every one a multiple of 32, smallest gap
+  exactly 32. That is the kernel, not the exporter: `/proc/sys/fs/file-nr`'s
+  allocated count is a percpu_counter read without folding in the per-CPU
+  deltas, and the fold happens per `percpu_counter_batch`, which is
+  `max(32, 2 x online CPUs)`. At 320 descriptors a single unavoidable tick of
+  that counter is a 10% move and failed the gate on its own.
+
+  The floor is 128 descriptors, four ticks on the common case, and 8 for
+  `sockstat_udp_inuse`, which is not quantized but is a small integer count with
+  the same magnitude problem. `memory_used_bytes` is **deliberately unfloored**:
+  it is continuous and large, so its ratio means what it says.
+
+  A suppressed failure says so. The detail reports the ratio that would have
+  failed and the floor that stopped it, and the ratio stays on the result.
+
 - **The `return_to_baseline` gate no longer lets one scrape decide a node's
   verdict.** Both sides of the ratio are now a median over their window, and the
   gate detail says how many samples each was taken over.
