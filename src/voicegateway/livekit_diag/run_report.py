@@ -2380,6 +2380,17 @@ _PROFILE_MEASUREMENTS: dict[str, tuple[str, str]] = {
 #: Grouped by cause rather than by gate so the section reads as a setup
 #: checklist. Twelve rows saying "not measured" are one action when they share a
 #: cause, and a reader who has to derive that themselves does not.
+#:
+#: A MISSING DENOMINATOR IS NOT A MISSING SERIES, and the two are separate
+#: entries because their remediations point opposite ways. A series nobody
+#: scraped needs the fleet run again; a node nobody declared a baseline for
+#: needs two lines of JSON and a re-import of the artifacts already on disk.
+#: These were one bucket, and the fallback told an operator holding 257 good
+#: samples per node to "re-run against the current scrape configuration": an
+#: hour of 500-concurrent fleet time that could not have changed the outcome,
+#: while the gate's own detail line sitting beside it said the true thing. When
+#: a row's remedy is wrong it is worse than absent, because absent makes
+#: somebody look.
 _PROFILE_CAUSES: tuple[tuple[tuple[str, ...], str, str], ...] = (
     (
         (
@@ -2399,6 +2410,15 @@ _PROFILE_CAUSES: tuple[tuple[tuple[str, ...], str, str], ...] = (
         "A trend is computed over thirds of the steady-state window and each "
         f"third needs at least {gates.MIN_TREND_SAMPLES} usable samples. Run for "
         "longer, or sample more often. Too short to tell is not flat.",
+    ),
+    (
+        ("baseline was declared for",),
+        "Nothing declared the denominator it divides by",
+        "The series WAS collected. What is missing is the operator-declared "
+        "figure it would be measured against, and each row's detail names the "
+        "node that wants one. Add that node to the --network-baseline file and "
+        "RE-IMPORT THE SAME ARTIFACTS. Re-capturing cannot help and costs a "
+        "fleet-hour: nothing was absent from the scrape.",
     ),
     (
         (),
