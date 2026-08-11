@@ -407,6 +407,14 @@ _BASELINE_MEM = 958_685_000
 _MEM_TOTAL = 4_000_000_000
 _RUN_S = 600  # ten minutes, so the settle check has real time to read
 
+# The window is padded 15s on each side, so the run occupies
+# [T0 - 15s, T0 + _RUN_S + 15s]. These offsets put the fixtures inside the two
+# windows the gate reads: the 5 minutes before the run, and 5 to 10 minutes
+# after it. Sample timing is part of what is under test here, not scaffolding:
+# a settle sample taken a minute after teardown is not a post-settle reading.
+_BASELINE_AT = -300  # seconds, first of eight at 15s -> -300 to -195
+_SETTLE_AT = _RUN_S + 315  # 5m15s past the padded end, first of seven
+
 
 def _under_load() -> list:
     """Samples DURING the run. A node is correlated to a test by having been
@@ -428,7 +436,7 @@ async def _flat_baseline_then(db: AsyncSession, settle) -> None:
     """Flat idle before the run, then the given (fd, mem_used) trace after it."""
     rows = [
         _sample(
-            -600 + i * 15,
+            _BASELINE_AT + i * 15,
             filefd_allocated=float(_BASELINE_FD),
             memory_total_bytes=float(_MEM_TOTAL),
             memory_available_bytes=float(_MEM_TOTAL - _BASELINE_MEM),
@@ -437,7 +445,7 @@ async def _flat_baseline_then(db: AsyncSession, settle) -> None:
     ]
     rows += [
         _sample(
-            _RUN_S + 60 + i * 15,
+            _SETTLE_AT + i * 15,
             filefd_allocated=float(fd),
             memory_total_bytes=float(_MEM_TOTAL),
             memory_available_bytes=float(_MEM_TOTAL - used),
@@ -531,7 +539,7 @@ async def test_a_spike_in_the_baseline_cannot_hide_a_leak(db: AsyncSession) -> N
     """
     rows = [
         _sample(
-            -600 + i * 15,
+            _BASELINE_AT + i * 15,
             filefd_allocated=float(1600 if i == 7 else _BASELINE_FD),
             memory_total_bytes=float(_MEM_TOTAL),
             memory_available_bytes=float(_MEM_TOTAL - _BASELINE_MEM),
@@ -540,7 +548,7 @@ async def test_a_spike_in_the_baseline_cannot_hide_a_leak(db: AsyncSession) -> N
     ]
     rows += [
         _sample(
-            _RUN_S + 60 + i * 15,
+            _SETTLE_AT + i * 15,
             filefd_allocated=1500.0,
             memory_total_bytes=float(_MEM_TOTAL),
             memory_available_bytes=float(_MEM_TOTAL - _BASELINE_MEM),
@@ -590,3 +598,164 @@ def test_a_single_sample_says_so_rather_than_calling_itself_a_median() -> None:
     assert result.status == gates.PASS
     assert "a single sample" in result.detail
     assert "median" not in result.detail
+
+
+# --------------------------------------------------------------------------
+# The baseline comes from the run, not from whatever the table still holds
+# --------------------------------------------------------------------------
+#
+# The selection used to be "everything before the run", ascending, capped at
+# 5,000 rows. At a 15s cadence that cap spans about 20.8 hours, so the rows it
+# returned were the OLDEST retained history rather than anything near the run.
+#
+# The numbers below are a real hour-long 500-concurrent run. Its true ratio was
+# marginal, 1.10x against a 1.10x tolerance. The old selection reported 0.51x,
+# because it took its baseline from 21 hours earlier when the box was carrying
+# 1.94 GB. A marginal FAIL rendered as a confident PASS.
+
+_GB = 1_000_000_000
+_TRUE_BASELINE = 0.7405 * _GB
+_TRUE_SETTLE = 0.8147 * _GB
+_STALE_BASELINE = 1.9362 * _GB  # 21 hours before the run, and irrelevant to it
+_HOUR_S = 3600
+
+
+async def test_an_old_sample_cannot_become_the_baseline(db: AsyncSession) -> None:
+    """The regression, in one test: a true 1.10x must not report as 0.51x.
+
+    The stale block is deliberately large. Under the old ascending-with-a-limit
+    selection the oldest rows are exactly the ones that win, so a fixture with
+    only a few of them would pass against the broken code and prove nothing.
+    """
+    stale = [
+        _sample(
+            -21 * _HOUR_S + i * 15,
+            memory_total_bytes=float(_MEM_TOTAL),
+            memory_available_bytes=float(_MEM_TOTAL - _STALE_BASELINE),
+        )
+        for i in range(240)  # an hour of it, 21 hours before the run
+    ]
+    near = [
+        _sample(
+            _BASELINE_AT + i * 15,
+            memory_total_bytes=float(_MEM_TOTAL),
+            memory_available_bytes=float(_MEM_TOTAL - _TRUE_BASELINE),
+        )
+        for i in range(20)
+    ]
+    settled = [
+        _sample(
+            _SETTLE_AT + i * 15,
+            memory_total_bytes=float(_MEM_TOTAL),
+            memory_available_bytes=float(_MEM_TOTAL - _TRUE_SETTLE),
+        )
+        for i in range(20)
+    ]
+    await insert_samples(db, stale + near + settled + _under_load())
+
+    result = (await _baseline_gates(db))["sfu-1/memory_used_bytes"]
+    assert result.value == pytest.approx(_TRUE_SETTLE / _TRUE_BASELINE, rel=1e-3)
+    # What the old selection produced. Named so the failure message says which
+    # bug came back rather than just quoting two floats.
+    assert result.value != pytest.approx(_TRUE_SETTLE / _STALE_BASELINE, rel=1e-2), (
+        "the baseline came from the stale block 21 hours before the run"
+    )
+
+
+async def test_retention_does_not_move_the_verdict(db: AsyncSession) -> None:
+    """The coupling that made the retention setting a silent verdict-changer.
+
+    Which rows survive is ``workers.node_sample_max_age_days``, and the old
+    selection read the oldest of them, so changing retention moved every
+    baseline on every re-rendered report with nothing connecting the two. The
+    same run must now read the same, pruned or not.
+    """
+    near = [
+        _sample(
+            _BASELINE_AT + i * 15,
+            memory_total_bytes=float(_MEM_TOTAL),
+            memory_available_bytes=float(_MEM_TOTAL - _TRUE_BASELINE),
+        )
+        for i in range(20)
+    ]
+    settled = [
+        _sample(
+            _SETTLE_AT + i * 15,
+            memory_total_bytes=float(_MEM_TOTAL),
+            memory_available_bytes=float(_MEM_TOTAL - _TRUE_SETTLE),
+        )
+        for i in range(20)
+    ]
+    await insert_samples(db, near + settled + _under_load())
+    pruned = (await _baseline_gates(db))["sfu-1/memory_used_bytes"]
+
+    # Now the same run on a table that kept a day of older history.
+    await insert_samples(
+        db,
+        [
+            _sample(
+                -21 * _HOUR_S + i * 15,
+                memory_total_bytes=float(_MEM_TOTAL),
+                memory_available_bytes=float(_MEM_TOTAL - _STALE_BASELINE),
+            )
+            for i in range(240)
+        ],
+    )
+    retained = (await _baseline_gates(db))["sfu-1/memory_used_bytes"]
+
+    assert retained.value == pytest.approx(pruned.value, rel=1e-9)
+    assert retained.status == pruned.status
+
+
+async def test_a_report_generated_before_the_settle_window_says_unknown(
+    db: AsyncSession,
+) -> None:
+    """Not a PASS, and this is a behaviour change worth stating plainly.
+
+    Running the report a minute after teardown used to produce a verdict from
+    whatever the newest row happened to be. Nothing has settled a minute after
+    teardown, so there is no return to report either way, and UNKNOWN is what
+    ``MIN_SETTLE_MS`` always intended. It could not enforce it because it
+    measured from the baseline sample rather than from the end of the run.
+    """
+    rows = [
+        _sample(
+            _BASELINE_AT + i * 15,
+            memory_total_bytes=float(_MEM_TOTAL),
+            memory_available_bytes=float(_MEM_TOTAL - _TRUE_BASELINE),
+        )
+        for i in range(20)
+    ]
+    rows += [
+        _sample(
+            _RUN_S + 60 + i * 15,  # one minute after teardown, still draining
+            memory_total_bytes=float(_MEM_TOTAL),
+            memory_available_bytes=float(_MEM_TOTAL - _TRUE_SETTLE),
+        )
+        for i in range(4)
+    ]
+    await insert_samples(db, rows + _under_load())
+
+    result = (await _baseline_gates(db))["sfu-1/memory_used_bytes"]
+    assert result.status == gates.UNKNOWN
+    assert "settle window" in result.detail
+
+
+async def test_the_detail_names_the_instant_its_baseline_came_from(
+    db: AsyncSession,
+) -> None:
+    """A verdict nobody can check is not evidence.
+
+    Two reports carried a 21-hour-old baseline without anyone noticing, because
+    no artifact said which samples produced the numbers: verifying one meant
+    querying the database.
+    """
+    await _flat_baseline_then(db, _SETTLE_TRACE)
+    detail = (await _baseline_gates(db))["sfu-1/filefd_allocated"].detail
+
+    from datetime import UTC, datetime
+
+    expected = datetime.fromtimestamp(
+        (T0 + (_BASELINE_AT + 7 * 15) * SEC) / 1000, tz=UTC
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert expected in detail, detail
