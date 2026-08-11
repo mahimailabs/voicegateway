@@ -54,6 +54,8 @@ COUNTER_ORIGIN_S = 1_785_661_200
 RX_BYTES_PER_SECOND = 50_000_000.0
 TX_BYTES_PER_SECOND = 60_000_000.0
 DECLARED_BASELINE_BPS = 3_125_000_000.0
+CORES = 4.0
+TOTAL_BYTES = 16 * 2**30
 
 
 # --------------------------------------------------------------------------
@@ -144,40 +146,57 @@ def test_a_baseline_that_was_never_ESTABLISHED_is_not_a_missing_denominator() ->
 # --------------------------------------------------------------------------
 
 
-async def _seed(db_path: Path) -> None:
-    """One node whose window carries the throughput counters and nothing else
-    interesting. The rate is what makes a bandwidth peak exist, so the counters
-    have to climb in absolute time rather than restart per window."""
+async def _seed(db_path: Path, *, throughput: bool) -> None:
+    """One node's window, with or without the network byte counters.
+
+    CPU and memory are seeded either way, so the node is in the scrape and
+    correlates in both variants. That is what makes the idle case below a real
+    assertion rather than a test of an empty database: the node is present and
+    measured, it simply moved no traffic.
+
+    The throughput counters are cumulative and have to climb in ABSOLUTE time
+    rather than restart per window, because a bandwidth peak is read as a rate
+    and a counter that goes backwards is a reset rather than a number.
+    """
     storage = StorageService(db_path=str(db_path))
     await storage._ensure_initialized()
     start_ms, end_ms = WINDOW
+    idle_rate = CORES * (1.0 - 0.4)
+    available = int(TOTAL_BYTES * 0.6)
     async with storage._conn.session() as db:
         rows = []
         for index in range(0, (end_ms - start_ms) // 10_000 + 1):
             at_ms = start_ms + index * 10_000
+            elapsed = index * 10
             since_origin = at_ms // 1000 - COUNTER_ORIGIN_S
+            values = {
+                "cpu_seconds_total": 1000.0 + CORES * elapsed,
+                "cpu_idle_seconds_total": 800.0 + idle_rate * elapsed,
+                "memory_total_bytes": float(TOTAL_BYTES),
+                "memory_available_bytes": float(available),
+            }
+            if throughput:
+                values["network_receive_bytes_total"] = (
+                    RX_BYTES_PER_SECOND * since_origin
+                )
+                values["network_transmit_bytes_total"] = (
+                    TX_BYTES_PER_SECOND * since_origin
+                )
             rows.append(
                 node_samples.NodeSampleInput(
                     node=NODE,
                     source=SOURCE,
                     at_ms=at_ms,
                     outcome="ok",
-                    values={
-                        "network_receive_bytes_total": (
-                            RX_BYTES_PER_SECOND * since_origin
-                        ),
-                        "network_transmit_bytes_total": (
-                            TX_BYTES_PER_SECOND * since_origin
-                        ),
-                    },
+                    values=values,
                 )
             )
         await node_samples.insert_samples(db, rows)
     await storage.aclose()
 
 
-def _import(tmp_path: Path, *, declare: bool):
-    """Seed a scrape carrying throughput, then import with or without a baseline."""
+def _import(tmp_path: Path, *, declare: bool, throughput: bool = True):
+    """Seed a scrape, then import with or without a declared baseline."""
     import asyncio
 
     db = tmp_path / "throwaway.db"
@@ -187,7 +206,7 @@ def _import(tmp_path: Path, *, declare: bool):
     )
     # Before the import: correlation happens at import time, so a sample written
     # afterwards would never reach the row.
-    asyncio.run(_seed(db))
+    asyncio.run(_seed(db, throughput=throughput))
 
     argv = [
         "loadtest",
@@ -243,6 +262,40 @@ def test_a_declared_node_is_not_warned_about(tmp_path: Path) -> None:
     result = _import(tmp_path, declare=True)
     assert result.exit_code == 0, result.output
     assert "no declared baseline" not in result.output
+
+
+def test_an_idle_scraped_node_with_no_baseline_is_not_warned_about(
+    tmp_path: Path,
+) -> None:
+    """A WARNING THAT FIRES ON NON-PROBLEMS IS ONE PEOPLE LEARN TO SKIP.
+
+    This is the case with nothing else asserting it, and it sits between the two
+    that do: throughput with no baseline warns, throughput with a baseline stays
+    silent. Here the node is scraped, correlates, and carries no throughput at
+    all, and it has no baseline either. It must still produce NO warning.
+
+    The reason is not that the node is uninteresting. It is that a node with no
+    measured rate produces no `bandwidth_peaks` entry, so the bandwidth gate
+    emits no headroom row for it, so there is no UNKNOWN for a warning to be
+    warning ABOUT. Warning here would be noise with no corresponding defect.
+
+    This is exactly what a well-meaning change would break. Sourcing the warning
+    from the scrape TARGET LIST instead of from `bandwidth_peaks` reads as the
+    more thorough option and would fire on every idle node in the fleet. That is
+    the failure this test exists to catch, and it is invisible from the
+    assertion alone, which is why it is written down here.
+    """
+    result = _import(tmp_path, declare=False, throughput=False)
+    assert result.exit_code == 0, result.output
+    # The node really was scraped and correlated. Without this the test would
+    # pass just as well against an empty database, proving nothing.
+    assert "node samples overlap" in result.output
+    assert "across 1 targets" in result.output
+    # And no warning, despite having no baseline entry. The node's NAME is
+    # absent from the output entirely, which is the tell: this command prints a
+    # node name only when it is warning about one.
+    assert "no declared baseline" not in result.output
+    assert NODE not in result.output
 
 
 # --------------------------------------------------------------------------

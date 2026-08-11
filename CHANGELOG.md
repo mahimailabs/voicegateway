@@ -6,6 +6,21 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ## Unreleased
 
+### Added
+
+- **The import warning's silence on an idle node is now pinned by a test.** No
+  behaviour changes: this records an existing guarantee that nothing was
+  asserting.
+
+  A node that is scraped, correlates, carries no measured network throughput and
+  has no `--network-baseline` entry produces no warning, because it produces no
+  headroom row either and so has no UNKNOWN to warn about. Sourcing the warning
+  from the scrape target list instead of from `bandwidth_peaks` reads as the more
+  thorough option and would fire on every idle node in the fleet, and a warning
+  that fires on non-problems is one operators learn to skip. Verified by
+  mutation: widening the set to the correlated node list turns this test red and
+  leaves the rest of the suite green.
+
 ### Fixed
 
 - **The PyPI publish works again. `0.24.10` never reached PyPI**; install it from
