@@ -8,6 +8,45 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ### Fixed
 
+- **A report no longer tells an operator to re-run a scrape that was already
+  complete.** A gate that could not divide because nothing declared its
+  denominator is now filed apart from a gate whose series was never scraped, and
+  is sent to a re-import rather than a re-capture.
+
+  The two read identically in the report and their remedies point opposite ways.
+  On a real 500-concurrent hour, 32 `resource_headroom` gates went UNKNOWN
+  because a SIP tier had scaled to 4 while the `--network-baseline` file still
+  stopped at sip-2. `network_receive_bytes_total` was present in 257 of 257
+  node_exporter samples for both nodes: nothing was missing from the scrape.
+  `not_collected` said "the series was not in this run's scrape" and advised
+  re-running against the current scrape configuration, an hour of fleet time
+  that could not have changed the outcome. The gate's own detail line beside it
+  said the true thing the whole time. Adding two lines of JSON and re-importing
+  the same artifacts took 908 PASS / 51 UNKNOWN to 940 PASS / 19 UNKNOWN.
+
+- **`voicegw loadtest import` now names the scraped nodes that have no declared
+  network baseline.** Import is the only point where the declared names and the
+  scraped names are both in hand, so it is the only place a tier that scaled
+  since the baseline file was written can be caught.
+
+  ```
+  1 scraped node(s) carried network throughput with no declared baseline (sip-3),
+  so their network headroom gates will read UNKNOWN.
+  ```
+
+  Warned on the nodes the bandwidth gate will actually iterate, so a node with
+  no measured throughput produces no row and no warning. This is the fix that
+  catches the class: the two above are the same omission found weeks later, in a
+  report, one release before delivery.
+
+- **`--network-baseline` and `--plan` ignore top-level keys starting with `_`,**
+  so a declaration can carry its own provenance. Every top-level key was parsed
+  as an entry, so a `"_comment"` naming where the published figures came from
+  was refused as a malformed node. The documented copy in a repo therefore could
+  not be loaded, a stripped duplicate got hand-placed on the collector, and the
+  two drifted with nothing comparing them. That drift is what let the missing
+  SIP tier above survive to the report.
+
 - **The `return_to_baseline` gate no longer fails a node over a change its
   counter cannot meaningfully express.** A ratio outside tolerance is now a
   failure only when the absolute change also clears a per-metric floor.

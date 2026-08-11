@@ -61,6 +61,22 @@ The peak a step actually reached still comes from the artifacts, never overwritt
 
 It is the only source for the bandwidth-headroom gate's denominator. A node with no entry reports UNKNOWN, never a percentage of a guess. It is a floor, not a ceiling: an instance bursts above it, so utilisation computed against it reads high, the safe direction for a headroom check.
 
+Both files ignore top-level keys starting with `_`, so a declaration can carry its own provenance and the copy in your repo can be the copy that runs:
+
+```json
+{"_comment": "published c7i.2xlarge figure, AWS docs, checked 2026-08",
+ "sip-1": {"in_bps": 3125000000, "out_bps": 3125000000}}
+```
+
+**Import warns about nodes you did not declare.** When the scrape shows a node carrying throughput and no baseline was declared for it, the import names it:
+
+```
+1 scraped node(s) carried network throughput with no declared baseline (sip-3),
+so their network headroom gates will read UNKNOWN.
+```
+
+Import is the only point where the declared names and the scraped names are both in hand, so it is the only place a tier that scaled since the file was written can be caught. Fix it by adding the node and re-importing the **same** artifacts: nothing was missing from the scrape, so re-capturing the run cannot help.
+
 ## runs
 
 `voicegw loadtest runs` lists imported runs, newest first, with each row's provenance read off whether `artifact_sha256` is set. Flags: `--config, -c`; `--project, -p` to filter; `--limit, -n` for how many (default 20).

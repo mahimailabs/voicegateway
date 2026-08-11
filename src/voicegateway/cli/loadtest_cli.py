@@ -208,9 +208,15 @@ def import_run(
     gw = _cli.require_gateway(config)
     storage = _cli.require_storage(gw)
 
-    async def _write() -> list[str]:
+    async def _write() -> tuple[list[str], set[str]]:
         await storage.upsert_load_run(plan.run)
         correlated: list[str] = []
+        # Every node the scrape showed carrying throughput, so the undeclared
+        # ones can be named below. Collected from bandwidth_peaks rather than
+        # from the scrape target list because that is the exact set the
+        # bandwidth gate will iterate: a node with no measured rate produces no
+        # headroom row at all and must not be warned about.
+        throughput_nodes: set[str] = set()
         for test in plan.tests:
             # Correlate BEFORE writing, so the row lands complete rather than
             # being written once without the fleet columns and again with them.
@@ -231,6 +237,7 @@ def import_run(
                     node_samples_in_window=aggregate.node_samples_in_window,
                 )
             )
+            throughput_nodes.update(name for name, _dir in aggregate.bandwidth_peaks)
             if aggregate.node_samples_in_window:
                 correlated.append(
                     f"{test.name}: {aggregate.node_samples_in_window} node samples "
@@ -239,9 +246,9 @@ def import_run(
                     f"({peak_label(_cpu_samples(aggregate))}), "
                     f"memory {_pct(aggregate.peak_memory_utilisation)}"
                 )
-        return correlated
+        return correlated, throughput_nodes
 
-    correlated = _cli.async_run(_write())
+    correlated, throughput_nodes = _cli.async_run(_write())
     if correlated:
         console.print("\n[dim]Fleet during each test (overlap, not attribution):[/dim]")
         for line in correlated:
@@ -250,6 +257,23 @@ def import_run(
         _cli.warn(
             "No node samples overlap these test windows, so peak CPU and memory "
             "are not measured. They stay NULL rather than reading 0."
+        )
+
+    # THE ONLY PLACE BOTH LISTS ARE IN ONE HAND. The baseline file is written by
+    # an operator and the node names come out of the scrape, so nothing before
+    # this point can compare them and nothing after it still has the file. Left
+    # unsaid, a tier that scaled after the file was written turns into UNKNOWN
+    # headroom rows in a report read weeks later, which is where this was
+    # actually found: a SIP tier grew to 4 while the file still stopped at
+    # sip-2, and 32 gates went UNKNOWN for want of two lines of JSON.
+    undeclared = sorted(throughput_nodes - set(baselines))
+    if undeclared:
+        _cli.warn(
+            f"{len(undeclared)} scraped node(s) carried network throughput with "
+            f"no declared baseline ({', '.join(undeclared)}), so their network "
+            "headroom gates will read UNKNOWN. The series is here and only the "
+            "denominator is missing: add them to --network-baseline and "
+            "re-import these same artifacts. Nothing needs re-capturing."
         )
     _cli.success(f"Imported {plan.run.id}: {len(plan.tests)} tests.")
 
@@ -284,6 +308,24 @@ def list_runs(
             "[green]measured[/green]" if measured else "[yellow]synthetic[/yellow]",
         )
     console.print(table)
+
+
+def _is_annotation_key(name: str) -> bool:
+    """Whether a top-level key is the file documenting itself, not a declaration.
+
+    Both option files below are hand-written by an operator and every top-level
+    key in them is otherwise parsed as an entry, so a ``"_comment"`` explaining
+    where the figures came from is refused as a malformed node. That has a cost
+    worth naming: the copy kept in a repo cannot be the copy that runs, so a
+    stripped duplicate gets hand-placed on the collector, the two drift, and
+    nothing compares them. One engagement lost a whole SIP tier's baseline that
+    way and did not find out until the report.
+
+    JSON has no comment syntax, so the convention has to come from here. An
+    underscore prefix is the usual one, and a node named with a leading
+    underscore is not a hostname anybody has.
+    """
+    return name.startswith("_")
 
 
 def _plan_from_file(path: Path) -> dict[str, dict[str, float]]:
@@ -329,6 +371,8 @@ def _plan_from_file(path: Path) -> dict[str, dict[str, float]]:
 
     plan: dict[str, dict[str, float]] = {}
     for name, value in raw.items():
+        if _is_annotation_key(name):
+            continue
         step = value if isinstance(value, dict) else {"target_concurrency": value}
         target = step.get("target_concurrency")
         if not isinstance(target, int) or isinstance(target, bool) or target <= 0:
@@ -388,6 +432,10 @@ def _network_baselines_from_file(path: Path) -> dict[str, dict[str, float]]:
     number cover both would put an assumption inside a declaration that exists to
     hold none.
 
+    Top-level keys starting with an underscore are the file's own documentation
+    and are skipped: see :func:`_is_annotation_key` for why that is worth a
+    convention.
+
     THIS FILE IS THE ONLY SOURCE. No instance type is mapped to a bandwidth
     anywhere in this code, and none may be added. A lookup table would hand a
     denominator to a node whose instance type nobody verified, and the report
@@ -419,6 +467,8 @@ def _network_baselines_from_file(path: Path) -> dict[str, dict[str, float]]:
 
     baselines: dict[str, dict[str, float]] = {}
     for node, value in raw.items():
+        if _is_annotation_key(node):
+            continue
         if not isinstance(value, dict):
             raise typer.BadParameter(
                 f"{path}: {node!r} must be an object carrying in_bps and "
