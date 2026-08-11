@@ -47,8 +47,16 @@ jobs:
     - name: Build wheel (bundles dashboard SPA)
       run: bash tools/scripts/build_wheel.sh
 
+    # Twine v7 lives inside this action, and v7 is what accepts core
+    # packaging metadata 2.5. THAT IS WHY THIS PIN MOVED, and moving it
+    # is the fix rather than pinning the builder backwards: hatchling
+    # 1.32 emits Metadata-Version 2.5 unconditionally, PyPI already
+    # accepts 2.5 (hatchling's own wheel on PyPI carries it), and the
+    # only component that refused it was the twine frozen inside the
+    # v1.14.0 pin below. v0.24.10 built a valid wheel and never
+    # published because of it.
     - name: Publish to PyPI
-      uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # release/v1
+      uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2
       with:
         password: ${{ secrets.PYPI_API_TOKEN }}
         packages-dir: dist/
