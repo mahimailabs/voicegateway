@@ -6,6 +6,34 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ## Unreleased
 
+### Fixed
+
+- **`voicegw` now runs on a bare `pip install voicegateway`.** It did not:
+  `voicegw --help` raised `ModuleNotFoundError: No module named 'livekit'`
+  before printing anything.
+
+  `cli/__init__` imported every command module eagerly, and `livekit_cli`
+  reaches `livekit_diag.admin`, which imports the LiveKit SDK at module scope.
+  So a Pipecat or OpenRTC user could not reach `voicegw costs`, which needs no
+  framework at all, without installing a framework they do not use. On a tool
+  whose claim is that it is framework-agnostic, that is the claim failing at the
+  first command.
+
+  `livekit_cli` is the only command module affected: every other one was checked
+  individually and imports clean, so exactly one import is guarded rather than
+  all of them. With the SDK absent, `voicegw livekit` (and `voicegw livekit
+  <anything>`) exits 2 naming the extra to install, rather than vanishing from
+  the command list as though the feature did not exist.
+
+- **Pricing no longer installs three weeks stale.** The `voice-prices>=0.1.0,<0.2`
+  cap silently held new installs on the 0.1.0 dataset (2026-07-24) while 0.2.0
+  and 0.3.0 shipped in August, so a freshly installed VoiceGateway costed calls
+  against old prices. Now `>=0.3.0,<1`.
+
+  The remaining `<1` is not caution about 0.x releases. It is the one guard
+  against a deliberate breaking release landing in users' installs unannounced,
+  which an unbounded runtime dependency cannot prevent.
+
 ### Added
 
 - **The import warning's silence on an idle node is now pinned by a test.** No
