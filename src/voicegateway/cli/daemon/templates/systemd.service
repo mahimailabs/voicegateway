@@ -41,7 +41,7 @@
 # files (no file-log paths in the variable list, intentionally).
 
 [Unit]
-Description=VoiceGateway daemon (cost tracking for LiveKit voice agents)
+Description=VoiceGateway daemon (cost tracking for LiveKit, Pipecat and OpenRTC voice agents)
 Documentation=https://vg.openrtc.tech
 After=network-online.target
 Wants=network-online.target
