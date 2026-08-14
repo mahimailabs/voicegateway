@@ -1,7 +1,7 @@
 [project]
 name = "voicegateway"
 dynamic = ["version"]
-description = "Cost tracking and reconciliation for LiveKit voice agents: modality-aware unit accounting (audio-minutes, tokens, characters) backed by voice-prices."
+description = "Cost tracking and reconciliation for voice agents on LiveKit, Pipecat and OpenRTC: modality-aware unit accounting (audio-minutes, tokens, characters) backed by voice-prices."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
