@@ -29,6 +29,7 @@ from typing import Any
 import pytest
 
 from voicegateway.clickhouse import read_repository as ch_read
+from voicegateway.middleware.cost_tracker_middleware import CostTracker
 from voicegateway.repository import cost_repository
 from voicegateway.services.storage_service import StorageService
 
@@ -46,19 +47,36 @@ COST_SUMMARY_CONTRACT = frozenset(
     }
 )
 
+#: One entry of the day-bucketed cost series.
+COST_BY_DAY_CONTRACT = frozenset({"day", "cost", "requests"})
+
+#: One per-model entry of the latency rollup.
+LATENCY_ENTRY_CONTRACT = frozenset(
+    {
+        "avg_ttfb_ms",
+        "avg_latency_ms",
+        "request_count",
+        "ttfb_percentiles",
+        "latency_percentiles",
+    }
+)
+
 
 class _Row:
-    """A query result carrying no rows, which is all the shape check needs."""
+    """A query result carrying whatever rows the stub decided to hand back."""
 
-    result_rows: list[Any] = []
+    def __init__(self, rows: list[Any] | None = None) -> None:
+        self.result_rows = rows or []
 
 
 class _StubClient:
-    """Answers every query with nothing, and remembers what it was asked.
+    """Answers each query with a row shaped like what that query selects.
 
     The readers only call ``await client.query(sql, parameters=...)`` and read
-    ``.result_rows``, so an empty answer exercises every branch that builds the
-    response dict without needing ClickHouse running.
+    ``.result_rows``, so no ClickHouse is needed. Rows are NOT empty for the
+    per-entry queries: an empty result builds an empty dict, and an empty dict
+    has no entry whose keys can be checked, so the shape that actually drifts
+    would go unexamined. The values are arbitrary; only the arity matters.
     """
 
     def __init__(self) -> None:
@@ -66,6 +84,22 @@ class _StubClient:
 
     async def query(self, sql: str, parameters: Any = None) -> _Row:
         self.queries.append(sql)
+        if "quantilesTDigest" in sql:
+            # model_id, avg_ttfb, avg_latency, count, ttfb_pcts, lat_pcts
+            return _Row(
+                [
+                    (
+                        "openai/gpt-4o-mini",
+                        120.0,
+                        300.0,
+                        7,
+                        (1.0, 2.0, 3.0),
+                        (4.0, 5.0, 6.0),
+                    )
+                ]
+            )
+        if "toStartOfDay" in sql or "day" in sql.lower():
+            return _Row([(1_785_661_200, 0.42, 7)])
         return _Row()
 
 
@@ -139,3 +173,71 @@ async def test_neither_reader_reports_more_billable_than_total(
             result = await cost_repository.get_cost_summary(db, period="all")
         await storage.aclose()
     assert result["billable_requests"] <= result["requests"]
+
+
+# --------------------------------------------------------------------------
+# The other two multi-producer numbers
+# --------------------------------------------------------------------------
+#
+# cost_by_day and latency_stats also have three implementations each. They
+# AGREE today, checked field by field. Nothing pinned that, which is exactly
+# the state cost_summary was in before it drifted, so these exist to keep an
+# agreement that currently holds rather than to repair one that broke.
+
+
+async def test_clickhouse_cost_by_day_entries_match_the_contract() -> None:
+    client = _StubClient()
+    series = await ch_read.get_cost_by_day(
+        client, tenant="t1", since=0.0, until=None, project=None
+    )
+    assert series, "the stub returned no row, so no entry shape was checked"
+    assert COST_BY_DAY_CONTRACT <= set(series[0])
+
+
+async def test_sqlite_cost_by_day_entries_match_the_contract(tmp_path: Path) -> None:
+    storage = StorageService(str(tmp_path / "byday.db"))
+    await storage._ensure_initialized()
+    tracker = CostTracker()
+    rec = tracker.create_record(
+        model_id="openai/gpt-4o-mini",
+        modality="llm",
+        provider="openai",
+        project="default",
+        input_units=100.0,
+        output_units=10.0,
+    )
+    rec.cost_usd = 0.05
+    await storage.log_request(rec)
+    async with storage._conn.session() as db:
+        series = await cost_repository.get_cost_by_day(db, period="all")
+    await storage.aclose()
+    assert series, "seeded one request, expected one day bucket"
+    assert COST_BY_DAY_CONTRACT <= set(series[0])
+
+
+async def test_clickhouse_latency_entries_match_the_contract() -> None:
+    client = _StubClient()
+    stats = await ch_read.get_latency_stats(
+        client, tenant="t1", since=0.0, until=None, project=None
+    )
+    assert stats, "the stub returned no row, so no entry shape was checked"
+    entry = next(iter(stats.values()))
+    assert LATENCY_ENTRY_CONTRACT <= set(entry)
+
+
+def test_duckdb_entries_match_the_contract() -> None:
+    """Asserted on the source: the DuckDB reader needs a real database file.
+
+    Its VALUES are already compared against SQLite by the equivalence tests in
+    tests/analytics. This only pins that the same entry keys are constructed.
+    """
+    import inspect
+
+    from voicegateway.analytics import duckdb_reader
+
+    day_src = inspect.getsource(duckdb_reader.cost_by_day)
+    for key in COST_BY_DAY_CONTRACT:
+        assert f'"{key}"' in day_src, f"DuckDB cost_by_day is missing {key!r}"
+    lat_src = inspect.getsource(duckdb_reader.latency_stats)
+    for key in LATENCY_ENTRY_CONTRACT:
+        assert f'"{key}"' in lat_src, f"DuckDB latency_stats is missing {key!r}"
