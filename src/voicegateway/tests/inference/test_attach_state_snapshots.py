@@ -250,12 +250,19 @@ async def test_a_storage_failure_does_not_raise_out_of_the_handler(wired) -> Non
 
 def test_snapshots_are_off_by_default() -> None:
     """A snapshot carries the system prompt and every tool payload, which is a
-    strictly larger disclosure than a transcript. It is asked for, not assumed."""
-    import inspect
+    strictly larger disclosure than a transcript. It is asked for, not assumed.
 
-    assert inspect.signature(attach_mod.attach).parameters["snapshots"].default is False
+    Asserted through the RESOLVER rather than the signature default. The four
+    capture parameters became tri-state so a named policy can be overridden in
+    one place without silently ignoring it everywhere, which makes their raw
+    default None. The guarantee did not move; where it is expressed did, and
+    reading the resolved value is the stronger check anyway because it is what
+    the capture actually uses.
+    """
+    resolved = attach_mod._resolve_capture(None, None, None, None, None)
+    assert resolved["snapshots"] is False
     # Non-vacuous: transcripts really are the other way round.
-    assert inspect.signature(attach_mod.attach).parameters["transcript"].default is True
+    assert resolved["transcript"] is True
 
 
 def test_the_kill_switch_beats_the_argument(monkeypatch) -> None:

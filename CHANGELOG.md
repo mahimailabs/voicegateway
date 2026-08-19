@@ -8,6 +8,38 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ### Added
 
+- **`attach(policy=...)`: one named capture policy instead of four booleans.**
+  `standard`, `timing_only`, `lean`, `debug`, `off`. The four flags stay and
+  behave identically, with no deprecation warning in this change.
+
+  The set was the interesting thing and there was no way to name it. An operator
+  who wanted "timing only, nothing the caller said" had to know that means three
+  of the four off, get each right, repeat it at every call site, and know which
+  environment variable overrides which. That is a policy expressed as four
+  independent booleans, which is how a wrong combination ships without anybody
+  deciding to ship it.
+
+  The flags also mixed two unrelated questions. **What it costs to run**: dead
+  air polls once a second for the life of every session, where turn capture
+  costs nothing between events, and `lean` is `timing_only` without that
+  standing cost. **What it discloses**: a transcript is what the caller said, a
+  snapshot is the operator's own prompt and every tool payload, and `debug` is
+  the only policy carrying snapshots.
+
+  An explicit argument overrides the policy, so the four parameters are now
+  tri-state: with plain boolean defaults there is no way to tell `transcript=True`
+  passed deliberately from the default that happens to be True. An unknown
+  policy name is refused rather than defaulted, because a typo that silently
+  selected `standard` would turn "nothing the caller said" into transcript
+  capture. Environment kill-switches still beat everything.
+
+### Fixed
+
+- **Tool-call rows now ride the `turns` flag.** They correlate to a turn and
+  their `turn_index` is meaningless without one, so capturing them for somebody
+  who asked not to capture turns wrote a row type they did not ask for and could
+  not join to anything.
+
 - **One row per tool call, from `tool_execution_updated`.** Tool name, start,
   duration and outcome (completed, failed, cancelled), correlated to the turn
   and session it belongs to, with per-tool aggregates on the read path.
