@@ -77,7 +77,8 @@
               "cli/logs",
               "cli/export-costs",
               "guide/cost-reconciliation",
-              "cli/reconcile"
+              "cli/reconcile",
+              "cli/baseline"
             ]
           },
           {
