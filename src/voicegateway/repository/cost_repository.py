@@ -127,6 +127,37 @@ async def get_cost_summary(
     row = result.fetchone()
     total = row[0] if row else 0.0
 
+    # TWO COUNTS, BECAUSE `requests` HOLDS THREE KINDS OF ROW and only one of
+    # them can cost anything:
+    #
+    #   * billable calls, where a vendor charged us,
+    #   * error rows, where the call failed and nothing was billed,
+    #   * end-of-utterance rows, which are local timing and involve no vendor
+    #     call at all.
+    #
+    # Dividing `total` by the count of ALL of them produces a cost-per-call with
+    # a denominator padded by rows that could never contribute to the numerator.
+    # On one real collector that was 151 rows in 1,000, and it read as 15% of
+    # traffic being "unpriced" when nothing was wrong: a wrong conclusion built
+    # in minutes on a dataset where every individual row was honest.
+    #
+    # `total` is unchanged. Summing cost over rows that contribute zero is
+    # harmless; it is the DENOMINATOR that was never right.
+    result = await session.execute(
+        text(
+            f"""SELECT COUNT(*),
+                       SUM(CASE WHEN status != 'error'
+                                 AND (COALESCE(input_units, 0)
+                                      + COALESCE(output_units, 0)) > 0
+                                THEN 1 ELSE 0 END)
+                FROM requests {where}"""
+        ),
+        params,
+    )
+    counts = result.fetchone()
+    request_count = int(counts[0]) if counts else 0
+    billable_count = int(counts[1] or 0) if counts else 0
+
     result = await session.execute(
         text(
             f"""SELECT provider, SUM(cost_usd) as cost, COUNT(*) as count
@@ -181,6 +212,12 @@ async def get_cost_summary(
         "period": period,
         "project": project,
         "total": total,
+        # Every row stored in the window, which is what `requests` has always
+        # meant here. Kept so nothing reading it changes.
+        "requests": request_count,
+        # The rows that could cost money. Divide `total` by THIS for a
+        # cost per call; dividing by `requests` counts telemetry as traffic.
+        "billable_requests": billable_count,
         "by_provider": by_provider,
         "by_model": by_model,
     }
