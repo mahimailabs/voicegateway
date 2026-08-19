@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-VoiceGateway: cost tracking and reconciliation for LiveKit voice agents. Returns native LiveKit STT, LLM, and TTS plugin instances across cloud providers (OpenAI, Deepgram, Anthropic, Groq, Cartesia, ElevenLabs, AssemblyAI) and local models (Whisper, Kokoro, Piper). LLM, STT, and TTS prices all flow through `voice-prices` (a fork of `pydantic/genai-prices`). Ships `voicegw reconcile` for verifying recorded numbers against provider invoices, plus per-modality cost tracking, resolver-time fallback chains, rate limiting, and a web dashboard.
+VoiceGateway: cost tracking and reconciliation for voice agents on LiveKit, Pipecat and OpenRTC. Meters the native STT, LLM, and TTS instances you pass to `attach()` / `guard()` across cloud providers (OpenAI, Deepgram, Anthropic, Groq, Cartesia, ElevenLabs, AssemblyAI) and local models (Whisper, Kokoro, Piper). LLM, STT, and TTS prices all flow through `voice-prices` (a fork of `pydantic/genai-prices`). Ships `voicegw reconcile` for verifying recorded numbers against provider invoices, plus per-modality cost tracking, resolver-time fallback chains, rate limiting, and a web dashboard.
 
 ## Commands
 
@@ -44,7 +44,7 @@ docker compose --profile local up -d     # + Ollama
 - `registry.py` — Lazy provider factory (instantiates on first use)
 - `model_id.py` — Parses `provider/model` format strings
 
-**Providers (`src/voicegateway/providers/`):** Each extends `BaseProvider` from `base.py`. 11 implementations covering cloud and local models.
+**Providers (`src/voicegateway/inference/providers/`):** Each extends `BaseProvider` from `base_provider.py`. 11 implementations covering cloud and local models.
 
 **Middleware (`src/voicegateway/middleware/`):** Cost tracking, latency monitoring, rate limiting, request logging, fallback chains. All wrap provider calls.
 
@@ -60,7 +60,7 @@ docker compose --profile local up -d     # + Ollama
 
 **Marketing site:** Only the Next.js landing page at <https://voicegateway.dev> lives in the separate [`mahimailabs/voicegateway-web`](https://github.com/mahimailabs/voicegateway-web) repo (deployed on Vercel). The engine repo has no Vercel connection.
 
-**Public API:** `voicegateway/__init__.py` exports `Gateway`, `ModelId`, `GatewayConfig`.
+**Public API:** `voicegateway/__init__.py` exports `attach`, `guard`, `Observer`, `register_worker`, `inference`, `__version__`. There is no `Gateway` / `ModelId` factory surface: it was removed in the framework-agnostic reshape, and metering now happens by wrapping instances you construct.
 
 ## Key Patterns
 

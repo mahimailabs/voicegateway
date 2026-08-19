@@ -9,7 +9,10 @@ from voicegateway import __version__
 
 app = typer.Typer(
     name="voicegw",
-    help="VoiceGateway: cost tracking and reconciliation for LiveKit voice agents",
+    help=(
+        "VoiceGateway: cost tracking and reconciliation for voice agents "
+        "(LiveKit, Pipecat, OpenRTC)"
+    ),
     no_args_is_help=True,
 )
 console = Console()
