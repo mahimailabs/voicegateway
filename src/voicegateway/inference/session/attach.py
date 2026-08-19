@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from typing import TYPE_CHECKING, Any
 
 from voicegateway.inference.session.context import (
@@ -18,7 +19,8 @@ if TYPE_CHECKING:
     from voicegateway.middleware.cost_tracker_middleware import CostTracker
     from voicegateway.middleware.dead_air_detector_middleware import DeadAirDetector
     from voicegateway.middleware.turn_tracker_middleware import TurnTracker
-    from voicegateway.services.sinks import Sink
+    from voicegateway.models.tool_call_model import ToolCall
+from voicegateway.services.sinks import Sink
 
 DEFAULT_DB_PATH = "~/.config/voicegateway/voicegw.db"
 
@@ -782,6 +784,8 @@ def _bind_turn_events(
     session_id: str,
     tracker: Any,
     activity: Any = None,
+    sink: Any = None,
+    revision: str | None = None,
 ) -> None:
     """Wire the speech-boundary events onto an AgentSession.
 
@@ -887,6 +891,37 @@ def _bind_turn_events(
             # speaking -> idle/listening/thinking are all the agent finishing.
             _agent_stopped(event)
 
+    # In-flight tool calls awaiting their terminal event, by call_id. Holds only
+    # the name and the start instant: no arguments, ever. The dict is what pairs
+    # a start with its end, and it is bounded by the calls actually dispatched.
+    open_tools: dict[str, tuple[str, int]] = {}
+
+    _OUTCOME = {"done": "completed", "error": "failed", "cancelled": "cancelled"}
+
+    def _write_tool_call(call_id: str, status: str | None) -> None:
+        """Emit one finished tool call, correlated to the turn it belongs to."""
+        started = open_tools.pop(call_id, None)
+        if sink is None or started is None:
+            # An end with no start: the subscription began mid-call, or the SDK
+            # reported a terminal event twice. Writing a row with an invented
+            # start would put a fabricated duration into the aggregate.
+            return
+        name, started_at_ms = started
+        ended_at_ms = int(time.time() * 1000)
+        row = ToolCall(
+            session_id=session_id,
+            call_id=call_id,
+            tool_name=name,
+            started_at_ms=started_at_ms,
+            duration_ms=max(0, ended_at_ms - started_at_ms),
+            outcome=_OUTCOME.get(status or "", None),
+            turn_index=(
+                tracker.current_turn_index(session_id) if tracker is not None else None
+            ),
+            revision=revision,
+        )
+        _schedule_turn_event(sink.log_tool_calls([row]), "tool_call_row")
+
     def _on_tool_execution_updated(event: Any = None, *_a: Any, **_k: Any) -> None:
         """Hold the turn open across a tool call so filler does not close it.
 
@@ -909,6 +944,13 @@ def _bind_turn_events(
             call = getattr(update, "function_call", None)
             call_id = getattr(call, "call_id", None)
             if call_id is not None:
+                # The NAME only. `call.arguments` is right there and is never
+                # read: a tool's payload is the operator's data, and this
+                # capture defaults on precisely because it takes none of it.
+                open_tools[call_id] = (
+                    str(getattr(call, "name", "") or "unknown"),
+                    int(time.time() * 1000),
+                )
                 _schedule_turn_event(
                     tracker.on_tool_started(session_id=session_id, call_id=call_id),
                     "tool_call_started",
@@ -916,6 +958,7 @@ def _bind_turn_events(
         elif kind == "tool_call_ended":
             call_id = getattr(update, "call_id", None)
             if call_id is not None:
+                _write_tool_call(call_id, getattr(update, "status", None))
                 _schedule_turn_event(
                     tracker.on_tool_ended(session_id=session_id, call_id=call_id),
                     "tool_call_ended",
@@ -1202,7 +1245,9 @@ def _attach_livekit(
     # One binding for both: the activity clock rides the same four events the
     # tracker does, and either half may be None.
     if turn_tracker is not None or activity is not None:
-        _bind_turn_events(session, session_id, turn_tracker, activity)
+        _bind_turn_events(
+            session, session_id, turn_tracker, activity, sink, resolved_revision
+        )
     # Expose for tests and for graceful shutdown, as with _vg_capture above.
     for _attr, _value in (
         ("_vg_dead_air", dead_air_detector),

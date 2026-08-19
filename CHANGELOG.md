@@ -8,6 +8,28 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ### Added
 
+- **One row per tool call, from `tool_execution_updated`.** Tool name, start,
+  duration and outcome (completed, failed, cancelled), correlated to the turn
+  and session it belongs to, with per-tool aggregates on the read path.
+
+  On agents that call tools the tool is usually the largest term in a slow turn,
+  and it was the one term the views could not show. `llm_ttft_ms` and
+  `tts_ttfb_ms` are both small and both visible; the multi-second external call
+  sitting between them was neither.
+
+  **No arguments and no results are captured anywhere.** There is no column for
+  either, the capture reads the tool's name and never its `arguments`, and the
+  collector wire shape is written field by field rather than dumping the model,
+  so a payload column added later cannot start leaving the agent by accident.
+  A name and a duration are a timing measurement; the payload is a disclosure,
+  and keeping them apart is exactly what lets this default on. All three are
+  asserted by tests rather than promised in comments.
+
+  A call still in flight counts toward its tool's call count but not its
+  average: treating a missing duration as zero would pull the average toward
+  "instant" precisely when a tool hung, which is the case somebody went looking
+  for.
+
 - **`voicegw baseline pin` and `voicegw baseline check`: a drift gate for CI.**
   Pin a known-good window's figures to a file, recompute over a later window,
   exit non-zero when something moved.
