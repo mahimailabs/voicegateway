@@ -1,6 +1,6 @@
 # mahimairaja/voicegateway-dashboard
 
-Web dashboard for [VoiceGateway](https://hub.docker.com/r/mahimairaja/voicegateway) -- cost tracking and reconciliation for LiveKit voice agents.
+Web dashboard for [VoiceGateway](https://hub.docker.com/r/mahimairaja/voicegateway) -- cost tracking and reconciliation for voice agents on LiveKit, Pipecat and OpenRTC.
 
 Full documentation: **[docs.voicegateway.dev](https://docs.voicegateway.dev)**
 

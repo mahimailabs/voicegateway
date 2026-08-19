@@ -75,7 +75,7 @@ class ApplicationBuilder:
             version=__version__,
             description=(
                 "HTTP API for VoiceGateway: cost tracking and reconciliation "
-                "for LiveKit voice agents."
+                "for voice agents on LiveKit, Pipecat and OpenRTC."
             ),
             lifespan=lifespan,
         )
