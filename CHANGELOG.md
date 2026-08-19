@@ -32,6 +32,35 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ### Fixed
 
+- **Tool-call rows are no longer dropped by a remote collector.**
+  `/v1/ingest/tool-calls` did not exist, so every batch the agent posted was
+  answered 405 and discarded.
+
+  Reported by a consumer running against a collector. The sink is best-effort
+  and requeues quietly, so nothing surfaced anywhere: a collector deployment
+  simply had no tool rows and no error explaining why. Local-store deployments
+  were unaffected.
+
+  The route drops unknown keys and has no field for arguments or results, so a
+  payload cannot enter the store through it even if an agent sent one. That
+  keeps the guarantee on the collector side of the wire rather than trusting
+  every agent that posts. An agent-supplied `id` is ignored, since honouring it
+  would let one agent overwrite another's row.
+
+### Added
+
+- **A test that an older collector accepts a newer row shape.** Forward
+  compatibility across a version-skewed fleet was already true, because every
+  ingest parser drops unknown keys, but it held by accident rather than by
+  contract.
+
+  Agents and collectors upgrade at different times whether or not anyone intends
+  it, and if that ever tightened the failure would be total (every cost and
+  latency row rejected) rather than partial (one row type). `revision` is the
+  concrete case: 0.25 agents send it and 0.24 collectors have never heard of it.
+
+### Fixed
+
 - **The `attach()` docstring no longer contradicts its own signature.** Shipped
   in 0.25.0 and reported by a consumer who read the API rather than the release
   notes.
