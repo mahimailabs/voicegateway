@@ -166,3 +166,52 @@ def test_the_environment_still_beats_a_policy() -> None:
         os.environ.pop("VOICEGW_TRANSCRIPTS", None)
         if before is not None:
             os.environ["VOICEGW_TRANSCRIPTS"] = before
+
+
+# --------------------------------------------------------------------------
+# The docstring must not contradict the signature
+# --------------------------------------------------------------------------
+
+
+def test_every_public_parameter_is_documented() -> None:
+    """`revision` and `policy` shipped in 0.25.0 undocumented.
+
+    They are the two headline parameters of that release, and a reader who
+    checked the docstring concluded they did not exist. Cheap to assert, and
+    the failure mode is silent.
+    """
+    import inspect
+
+    doc = inspect.getdoc(attach_mod.attach) or ""
+    params = inspect.signature(attach_mod.attach).parameters
+    # Names taken from the part of each Args line BEFORE the colon, so a
+    # combined entry ("collector_url / api_key: ...") counts for both. Matching
+    # on "\nname:" alone would report a documented pair as missing.
+    documented: set[str] = set()
+    for line in doc.splitlines():
+        head, sep, _ = line.partition(":")
+        if not sep or head != head.rstrip():
+            continue
+        documented.update(w.strip("`*, ") for w in head.replace("/", " ").split())
+    undocumented = sorted(
+        name for name in params if name != "session" and name not in documented
+    )
+    assert not undocumented, f"undocumented attach parameters: {undocumented}"
+
+
+def test_the_docstring_does_not_claim_a_default_the_signature_dropped() -> None:
+    """The four capture flags became tri-state and the prose did not follow.
+
+    It still read "(default on)" and "(default OFF)", which were the
+    pre-0.25.0 values. A reader who passed nothing and trusted it believed
+    transcript capture was on when the policy decides. A doc that is merely
+    absent is a gap; one that states the opposite of the code is a trap.
+    """
+    import inspect
+
+    doc = inspect.getdoc(attach_mod.attach) or ""
+    params = inspect.signature(attach_mod.attach).parameters
+    for flag in CAPTURE_SWITCHES:
+        assert params[flag].default is None, f"{flag} is no longer tri-state"
+    for claim in ("(default on)", "(default OFF)", "(default ON)"):
+        assert claim not in doc, f"docstring still claims {claim}"

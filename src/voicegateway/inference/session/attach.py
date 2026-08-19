@@ -453,6 +453,32 @@ def attach(
             variable, then ``"default"``.
         agent_id: fleet label; defaults to ``VOICEGW_AGENT_ID`` or hostname.
         tenant_id: optional tenant attribution.
+        revision: which build of THIS AGENT'S CONFIGURATION is running: the
+            prompt, the model ids, the voice, the interruption thresholds.
+            Stamped on every cost, latency, turn, dead-air and tool-call row, so
+            "this got slower last Tuesday" is answerable without joining deploy
+            logs by hand, and so two revisions live in one window separate
+            instead of blending into one p95 of two different agents. Opaque: a
+            content hash, a git sha, a semver string and a deploy id are all
+            valid, and nothing parses it. Falls back to
+            ``VOICEGW_AGENT_REVISION``; the ARGUMENT WINS, unlike the capture
+            kill-switches, because this is the agent reporting a fact about
+            itself rather than a fleet overriding what it asked for. Absent when
+            neither is set: no hostname, no timestamp, no invented default,
+            because a made-up revision splits aggregates that belong together.
+        policy: a named capture policy, which is how to say what you want
+            instead of spelling it out in four booleans. One of ``"standard"``
+            (today's defaults), ``"timing_only"`` (nothing the caller said),
+            ``"lean"`` (``timing_only`` without dead air's per-session polling
+            cost), ``"debug"`` (everything, including your own prompt and tool
+            payloads), or ``"off"``. An unknown name RAISES rather than falling
+            back to ``standard``: a typo that silently selected the default
+            would turn "nothing the caller said" into transcript capture.
+
+            PRECEDENCE, since there are three layers: an environment
+            kill-switch beats everything, then an explicitly passed flag, then
+            the policy. So ``policy="timing_only", dead_air=False`` is ``lean``,
+            and ``VOICEGW_TRANSCRIPTS=0`` still wins over ``policy="debug"``.
         channel: ``"telephony"`` | ``"web"``; auto-detected from the transport
             when omitted.
         collector_url / api_key: fleet push target (env fallbacks).
@@ -472,7 +498,8 @@ def attach(
             ``register_worker("agent", local=True)`` at your ``__main__`` boot
             instead, and do not also pass ``heartbeat=True`` there (the subprocess
             would become a second writer of the same roster row).
-        transcript: capture the call transcript (default on). On close, the
+        transcript: capture the call transcript. ``None`` (the default) means
+            the policy decides; an explicit value overrides it. On close, the
             user/agent text turns are read from the framework's conversation
             history and written to the local store, so the Calls page can show
             the conversation. Pass ``transcript=False`` to disable per attach, or
@@ -480,7 +507,9 @@ def attach(
             kill-switch wins over the argument). Captures to the local SQLite the
             co-located dashboard reads; currently LiveKit-only (the Pipecat path
             accepts the flag but does not capture transcripts yet).
-        snapshots: capture conversation-state snapshots (default OFF). When on,
+        snapshots: capture conversation-state snapshots. ``None`` (the default)
+            means the policy decides, and only ``debug`` turns this on; an
+            explicit value overrides it. When on,
             a snapshot is written at each completed message and each resolved
             tool call, carrying the system prompt, the message history, and the
             tool's arguments and result. ``voicegw replay`` and the dashboard's
@@ -494,7 +523,10 @@ def attach(
             local sink: a remote collector has no replay tables, so capture is
             skipped there rather than buffering rows nothing can flush.
             LiveKit-only, like transcripts.
-        turns: capture per-turn speech boundaries (default ON). One row per
+        turns: capture per-turn speech boundaries. ``None`` (the default) means
+            the policy decides; an explicit value overrides it. Tool-call rows
+            ride this flag, because their ``turn_index`` is meaningless without
+            a turn. One row per
             caller/agent exchange: the turn index and the four speech timestamps,
             from which ``response_speed_ms`` is derived. This is what
             ``e2e_ms`` and the ``turns`` list on ``/v1/rooms/{room}/latency``
@@ -507,7 +539,10 @@ def attach(
             ``VOICEGW_TURNS=0`` to force it off fleet-wide (the kill-switch wins
             over the argument). LiveKit-only: the Pipecat path accepts the flag
             but has no equivalent speech-boundary events yet.
-        dead_air: watch for silences longer than the threshold (default ON).
+        dead_air: watch for silences longer than the threshold. ``None`` (the
+            default) means the policy decides; an explicit value overrides it.
+            This is the only capture with a standing per-session cost, which is
+            what ``lean`` exists to drop.
             Writes one row per observed silence, which
             ``GET /api/sessions/{id}/dead_air`` and the dashboard read back.
             Driven by the same four speech events as ``turns``, but its own flag
