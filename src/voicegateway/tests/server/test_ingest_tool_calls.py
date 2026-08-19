@@ -72,16 +72,30 @@ def test_the_tool_calls_route_accepts_a_post(client) -> None:
     assert result.json() == {"accepted": 0}
 
 
-def test_a_405_alone_never_proved_the_route_existed(client) -> None:
+def test_two_paths_that_cannot_exist_answer_identically(client) -> None:
     """The control that settles a 405, pinned so the reasoning is not lost.
 
-    A path that cannot exist in any version answers exactly as the tool-calls
-    path did before the fix. So 405-on-POST is a fact about this app having a
-    GET-only catch-all, not evidence that anything is registered at the path.
+    A 405 on POST where GET gives 404 looks like proof that SOMETHING is
+    registered at the path, which points at a misregistered route rather than a
+    missing one. It is neither. When the built SPA is present, its fallback
+    ``/{full_path:path}`` is registered GET-only, so any non-GET matches the
+    path, fails the method check, and gets 405.
+
+    THE ASSERTION IS THAT TWO IMPOSSIBLE PATHS AGREE, not that either returns a
+    particular code. The code itself depends on whether the SPA was built: 405
+    with it, 404 without, which is why a developer machine and CI disagree and
+    why two people probing different collectors reached opposite conclusions
+    about the same fault. Pinning 405 here would be asserting one deployment's
+    shape, which is the mistake this test exists to describe.
     """
-    bogus = "/v1/ingest/definitely-not-a-route-" + uuid.uuid4().hex
-    assert client.get(bogus).status_code == 404
-    assert client.post(bogus, json=[]).status_code == 405
+    one = "/v1/ingest/definitely-not-a-route-" + uuid.uuid4().hex
+    two = "/v1/ingest/also-not-a-route-" + uuid.uuid4().hex
+    assert (
+        client.post(one, json=[]).status_code == client.post(two, json=[]).status_code
+    )
+    # And whatever that is, it is NOT what a real route answers.
+    assert client.post(one, json=[]).status_code != 200
+    assert client.post("/v1/ingest/tool-calls", json=[]).status_code == 200
 
 
 # --------------------------------------------------------------------------
