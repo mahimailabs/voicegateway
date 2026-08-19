@@ -424,12 +424,28 @@ class MetricCapture:
     def _on_error(self, event: object, *_args: Any, **_kwargs: Any) -> None:
         source = getattr(event, "source", None)
         error = getattr(event, "error", event)
+        # RESOLVE THE IDENTITY, do not blank it. This used to record
+        # model_id="" and provider="" while the success path called
+        # component_identity on the same kind of object, so the one row type
+        # that exists to answer "which provider is failing" was the one row
+        # type that could not. The identity was never missing: it sits on
+        # `source`, and the error message already carried it as
+        # label='livekit.plugins.cerebras.llm.LLM'.
+        #
+        # Falls back to the empty strings when there is no source, rather than
+        # to "unknown": an error with no component attached is genuinely
+        # unattributed, and inventing a name for it would be worse than the
+        # blank this replaces. component_identity's own "unknown" is reserved
+        # for a component that WAS present and could not be read.
+        provider, model_id = (
+            component_identity(source) if source is not None else ("", "")
+        )
         record = RequestRecord(
             id=str(uuid.uuid4()),
             timestamp=time.time(),
             modality=_error_modality(source),
-            model_id="",
-            provider="",
+            model_id=model_id,
+            provider=provider,
             project=self._project,
             status="error",
             error_message=str(error),
@@ -700,7 +716,7 @@ class MetricCapture:
                 cached_input_units=max(0.0, d_cached),
                 session_id=self._session_id,
                 agent_id=self._agent_id,
-            revision=self._revision,
+                revision=self._revision,
             )
             record.metadata = {"reconciled": True}
             self._stamp_context(record)

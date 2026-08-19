@@ -6,6 +6,56 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ## Unreleased
 
+### Fixed
+
+- **The per-model unit price no longer shows one number for a two-sided
+  price.** `voice_price_usd` prices 1,000,000 **input** tokens and labels the
+  result `1m_token`, which reads as covering both legs.
+
+  Measured against voice-prices 0.3.0, output is **4.0x** input on
+  `openai/gpt-4o-mini`, 2.5x on `anthropic/claude-sonnet-4-5` and 1.3x on
+  `groq/llama-3.3-70b-versatile`. A conversational agent is output-heavy, so a
+  UI rendering the single number understates exactly the choice the field
+  exists to inform.
+
+  `/billing/rate-card/models` now also carries a `price` object with
+  `input_price_usd` and `output_price_usd` for llm, and a single
+  `unit_price_usd` for stt and tts, which are genuinely one-sided. The existing
+  `voice_price_usd` key is unchanged and is still the input leg, so nothing
+  reading it has a number move underneath it.
+
+- **Error rows now name the provider and model that failed.** `_on_error`
+  recorded an empty `model_id` and `provider` while the success path resolved
+  both from the same kind of object, so the one row type that exists to answer
+  "which provider is failing" was the one row type that could not.
+
+  Reported from a live collector: 20 such rows across 4 sessions. The identity
+  was never missing, it sits on `event.source`, and the error text already
+  carried it as `label='livekit.plugins.cerebras.llm.LLM'`. An error with no
+  source attached stays blank rather than becoming "unknown": genuinely
+  unattributed is a different fact from a component that was present and could
+  not be read.
+
+### Added
+
+- **`GET /billing/rate-card/quote`: price a model that has not run yet.** With
+  a bulk `POST` form taking several `{modality, model}` pairs in one request.
+
+  The only route reaching the pricing catalogue was fed by
+  `SELECT DISTINCT ... FROM requests`, so it answered only for models already
+  billed. An agent-configuration editor picks a model before a single call
+  exists and had nothing to ask.
+
+  Returns the catalogue price and, separately, the override that would apply,
+  so an editor can show what will actually be charged while still being able to
+  compare it against the price the override replaced.
+
+  `priced` is explicit rather than inferred from a null. A bare null could not
+  be told apart from "this endpoint does not handle this modality", and an
+  unpriced model is common: 6 of 10 sampled STT refs have no entry at
+  voice-prices 0.3.0, including every `deepgram/nova-2-*` and
+  `deepgram/enhanced-*`.
+
 ### Added
 
 - **`GET /api/turns/response-speed`: p50/p95/p99 over TURNS, with the sample
