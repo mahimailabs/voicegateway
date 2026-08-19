@@ -8,6 +8,26 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ### Fixed
 
+- **The turns guide no longer documents a bug that was fixed, and now states
+  which number answers "what did the caller wait".**
+
+  It carried a note saying turn capture had not been given the
+  `user_state_changed` fallback, so a caller's turn start could go uncaptured on
+  `livekit-agents` 1.6. That stopped being true in `980cd8d`, and the page kept
+  telling readers their turn data was unreliable.
+
+  It also described `response_speed_ms` without saying that
+  `caller_speak_end_ms` is corrected from `EOUMetrics.end_of_utterance_delay`,
+  which is the only reason the figure means anything. Measured from the stop
+  event instead, it would be short by the whole VAD silence window (0.55s on
+  Silero's default) on every turn, always flatteringly, and the size of that
+  error moves with each operator's `min_silence_duration`. The page now says so,
+  and says why there is deliberately no second uncorrected column: absent reads
+  as "not measured", where the uncorrected value would read as "fast".
+
+  The turn-close description also now covers holding the turn open across tool
+  calls.
+
 - **A turn covering a tool call now reports the time to the answer, not to the
   holding line.** The turn is held open while any tool call is in flight, so the
   agent's filler audio no longer closes it.
