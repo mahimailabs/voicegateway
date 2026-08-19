@@ -59,17 +59,18 @@ DEFAULT_MIN_SAMPLES = 10
 EXIT_OK = 0
 EXIT_DRIFT = 1
 EXIT_INSUFFICIENT = 2
-#: The gate could not READ. Distinct from EXIT_INSUFFICIENT on purpose: 2 says
-#: "I compared what I could and one metric had nothing behind it", which is a
-#: fact about the data. This says "I could not look at all", which is a fact
-#: about the plumbing. They want different responses from whoever is on call,
-#: and folding the second into the first is not absent information, it is WRONG
-#: information: a code that already means something specific, reported for a
-#: situation it does not describe.
-EXIT_UNREADABLE = 3
-#: The baseline and the window come from different stores. Refused rather than
-#: warned: see :func:`check_source_matches`.
-EXIT_SOURCE_MISMATCH = 4
+#: The baseline and the window come from different stores, so no comparison was
+#: attempted. Its own code rather than folding into EXIT_INSUFFICIENT: 2 says "I
+#: compared what I could and one metric had nothing behind it", a fact about the
+#: DATA, where this is a fact about what was pointed at. Reusing 2 would not be
+#: absent information, it would be WRONG information: a code that already means
+#: something specific, reported for a situation it does not describe.
+#:
+#: 4 is deliberately NOT taken here for "the collector was unreachable". Nothing
+#: in this change can return it, and an exit code that cannot occur is a
+#: documented promise the code does not keep. It arrives with the read path that
+#: can raise it.
+EXIT_SOURCE_MISMATCH = 3
 
 
 @dataclass
@@ -250,7 +251,6 @@ def compare(
 __all__ = [
     "BASELINE_VERSION",
     "EXIT_SOURCE_MISMATCH",
-    "EXIT_UNREADABLE",
     "SourceMismatch",
     "check_source_matches",
     "describe_source",

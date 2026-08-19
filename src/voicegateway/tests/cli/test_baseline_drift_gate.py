@@ -315,9 +315,46 @@ def test_unreadable_and_insufficient_are_different_exit_codes() -> None:
     behind it" is a fact about the data. They want different responses from
     whoever is on call, and 2 already carries the second meaning."""
     from voicegateway.services.baseline_service import (
+        EXIT_DRIFT,
         EXIT_INSUFFICIENT,
+        EXIT_OK,
         EXIT_SOURCE_MISMATCH,
-        EXIT_UNREADABLE,
     )
 
-    assert len({EXIT_INSUFFICIENT, EXIT_UNREADABLE, EXIT_SOURCE_MISMATCH}) == 3
+    codes = {EXIT_OK, EXIT_DRIFT, EXIT_INSUFFICIENT, EXIT_SOURCE_MISMATCH}
+    assert len(codes) == 4, "two outcomes share an exit code"
+    # Contiguous from zero: a gap would be a code reserved for behaviour that
+    # does not exist, which is a promise the command cannot keep.
+    assert codes == {0, 1, 2, 3}
+
+
+def test_the_docs_list_every_exit_code_the_command_can_return() -> None:
+    """Exit codes are API here, and the docs say so.
+
+    #256 shipped a docstring that contradicted its signature, which is the
+    failure this guards against one layer out: a stable contract documented
+    incompletely is worse than one documented not at all, because CI is written
+    against the page rather than the source.
+    """
+    from pathlib import Path
+
+    from voicegateway.services import baseline_service as svc
+
+    page = (
+        Path(__file__).resolve().parents[4] / "docs" / "cli" / "baseline.md"
+    ).read_text()
+    codes = {
+        svc.EXIT_OK,
+        svc.EXIT_DRIFT,
+        svc.EXIT_INSUFFICIENT,
+        svc.EXIT_SOURCE_MISMATCH,
+    }
+    # Matched against the exit-code LIST, not the whole page. A first version
+    # looked for "**3**" anywhere and passed on a page whose list entry had been
+    # deleted, because the prose below it mentions the same number. A guard
+    # satisfied by an unrelated sentence is not a guard.
+    listed = {
+        line.split("**")[1] for line in page.splitlines() if line.startswith("- **")
+    }
+    for code in sorted(codes):
+        assert str(code) in listed, f"exit code {code} is not in the documented list"

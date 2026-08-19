@@ -28,8 +28,9 @@ The file records **what identifies the window**, not just the numbers, so a base
 - **0** every compared metric is within tolerance
 - **1** at least one metric drifted, named with its delta
 - **2** nothing drifted, but at least one metric could not be compared
+- **3** the baseline and the window came from different sources, so nothing was compared
 
-Anything added later takes a new number rather than renumbering these.
+Anything added later takes a new number rather than renumbering these. No number is reserved ahead of the behaviour that returns it: a code that cannot occur is a promise the command does not keep.
 </Note>
 
 ## What it refuses to call a pass
@@ -43,6 +44,20 @@ A comparison that cannot be made must not read as a pass, because a green exit i
 - **Drift outranks insufficiency.** If one metric regressed and another had too few samples, the exit code is 1, so the real finding is not buried behind a warning.
 
 A metric the new window *grew* is not a failure. Only metrics present in the pinned file are compared, otherwise every measurement added to VoiceGateway would break every existing baseline on upgrade, which trains people to delete the gate.
+
+## The baseline records where it came from
+
+A pinned file carries its **source** as well as its window: the local store, or a collector URL, and the project scope.
+
+`check` **refuses** when that source does not match the window it is about to read, and exits **3** without comparing anything.
+
+<Note>
+Refused rather than warned, deliberately. A local-pinned baseline checked against a collector produces numbers, produces a verdict, and produces a green tick, while being a comparison that never happened. A warning in CI output is read once and then never again.
+
+The whole value of a pinned baseline is that a comparison either happened or it did not. A third state that resembles the first is worse than an error, because an error stops the build and a warning does not.
+</Note>
+
+The **project** is part of that identity, not just the store. A collector aggregates many agents, so the same URL at a different project scope is a different population, and a sample count that looks healthy can be somebody else's traffic.
 
 ## Tolerances
 
