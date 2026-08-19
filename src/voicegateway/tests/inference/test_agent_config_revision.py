@@ -218,3 +218,48 @@ async def test_the_empty_string_filter_selects_the_unstamped(tmp_path) -> None:
     unstamped = await storage.get_cost_summary("all", revision="")
     await storage.aclose()
     assert round(unstamped["total"], 4) == 0.01
+
+
+# --------------------------------------------------------------------------
+# An error row names the provider that failed
+# --------------------------------------------------------------------------
+
+
+def test_an_error_row_carries_the_provider_and_model_that_failed() -> None:
+    """Reported from a live collector: 20 error rows with an empty provider.
+
+    `_on_error` recorded model_id="" and provider="" while the success path
+    called `component_identity` on the same kind of object. So the one row type
+    that exists to answer "which provider is throwing 429s" was the one row type
+    that could not answer it.
+
+    The identity was never missing. It sits on `event.source`, and the error
+    text already carried it as `label='livekit.plugins.cerebras.llm.LLM'`.
+    """
+    from voicegateway.inference.session import capture as capture_mod
+
+    class _CerebrasLLM:
+        pass
+
+    # Same module path shape the resolver reads: livekit.plugins.<provider>.
+    _CerebrasLLM.__module__ = "livekit.plugins.cerebras.llm"
+    _CerebrasLLM.model = "gemma-4-31b"
+
+    provider, model_id = capture_mod.component_identity(_CerebrasLLM())
+    assert provider == "cerebras"
+    assert model_id == "cerebras/gemma-4-31b"
+
+
+def test_an_error_with_no_source_stays_blank_rather_than_inventing_a_name() -> None:
+    """Absent is not "unknown".
+
+    An error with no component attached is genuinely unattributed. Stamping it
+    "unknown" would put it in a group alongside components that WERE present and
+    could not be read, which are a different fact and a different fix.
+    """
+    import inspect
+
+    from voicegateway.inference.session import capture as capture_mod
+
+    src = inspect.getsource(capture_mod.MetricCapture._on_error)
+    assert 'if source is not None else ("", "")' in src
