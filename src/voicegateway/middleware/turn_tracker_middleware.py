@@ -29,6 +29,8 @@ class TurnRow:
     agent_speak_start_ms: int | None = None
     agent_speak_end_ms: int | None = None
     response_speed_ms: int | None = None
+    # Agent configuration revision. See RequestRecord.revision.
+    revision: str | None = None
 
 
 FlushCallback = Callable[[list[TurnRow]], Awaitable[None]]
@@ -71,6 +73,7 @@ class TurnTracker(SessionScopedComponent):
         flush_size: int = _DEFAULT_FLUSH_SIZE,
         *,
         precise_end_required: bool = False,
+        revision: str | None = None,
     ) -> None:
         """``precise_end_required`` gates ``response_speed_ms`` on a real anchor.
 
@@ -91,6 +94,10 @@ class TurnTracker(SessionScopedComponent):
         self._flush_callback: FlushCallback = flush_callback or _noop_flush
         self._flush_size = flush_size
         self._precise_end_required = precise_end_required
+        # Stamped on every row this tracker writes. Session-scoped rather than
+        # per-turn: an agent's configuration cannot change mid-session, and
+        # threading it per call would invite a caller to vary it within one.
+        self._revision = revision
         self._sessions: dict[str, _SessionState] = {}
         self._lock = asyncio.Lock()
 
@@ -200,6 +207,7 @@ class TurnTracker(SessionScopedComponent):
                 caller_speak_end_ms=caller_end,
                 agent_speak_start_ms=agent_start,
                 response_speed_ms=response_speed,
+                revision=self._revision,
             )
             state.buffered_turns.append(turn)
             state.turn_index += 1
@@ -305,6 +313,7 @@ class TurnTracker(SessionScopedComponent):
                     agent_speak_start_ms=None,
                     agent_speak_end_ms=None,
                     response_speed_ms=None,
+                    revision=self._revision,
                 )
                 state.buffered_turns.append(tail)
                 state.turn_index += 1

@@ -45,9 +45,13 @@ class CostService:
         end_ts: float | None = None,
         tenant: str | None = None,
         agent: str | None = None,
+        revision: str | None = None,
     ) -> dict[str, Any]:
         """Return total / by_provider / by_model rollups."""
-        if self._use_duckdb():
+        # The DuckDB reader has no revision predicate, so a revision-filtered
+        # read goes to SQLite rather than silently returning the UNFILTERED
+        # rollup, which would answer a question nobody asked and look right.
+        if revision is None and self._use_duckdb():
             try:
                 return await asyncio.to_thread(
                     duckdb_reader.cost_summary,
@@ -70,6 +74,28 @@ class CostService:
                 period=period,
                 project=project,
                 include_pricing_source=include_pricing_source,
+                start_ts=start_ts,
+                end_ts=end_ts,
+                tenant=tenant,
+                agent=agent,
+                revision=revision,
+            )
+
+    async def get_by_revision(
+        self,
+        period: str = "today",
+        project: str | None = None,
+        start_ts: float | None = None,
+        end_ts: float | None = None,
+        tenant: str | None = None,
+        agent: str | None = None,
+    ) -> dict[str, Any]:
+        """Cost rollup grouped by agent configuration revision."""
+        async with self._db.session() as s:
+            return await repo.get_cost_by_revision(
+                s,
+                period=period,
+                project=project,
                 start_ts=start_ts,
                 end_ts=end_ts,
                 tenant=tenant,
