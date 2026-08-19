@@ -26,8 +26,25 @@ follows [Semantic Versioning](https://semver.org/) and
   aggregate was what lied, and it took a raw-row pull to unwind.
 
   `total` is unchanged. Summing cost over rows that contribute zero is
-  harmless; only the denominator was ever wrong. Mirrored in the DuckDB reader,
-  which is the same contract with a second implementation.
+  harmless; only the denominator was ever wrong.
+
+  Mirrored in **all three** readers: SQLite, DuckDB and ClickHouse. Which one
+  answers depends on how a deployment is configured and a caller cannot tell
+  them apart, so a field in one and not another is the same endpoint giving
+  different operators different answers.
+
+- **A contract test pinning that the three cost-summary readers agree**, and it
+  needs no ClickHouse server.
+
+  The DuckDB reader already had equivalence tests, and they caught this change
+  when only SQLite was updated. Nothing covered ClickHouse, which is the
+  collector path, so that reader would have kept the old shape silently.
+
+  Written without a container on purpose: no CI workflow provides ClickHouse,
+  so the existing container-based tests error rather than run, and a guard that
+  never executes is not a guard. This asserts the response contract, which is
+  what drifted, and separately asserts the count query still carries its
+  predicate so it cannot be wired up while meaning nothing.
 
 ### Fixed
 
