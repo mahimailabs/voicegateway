@@ -62,6 +62,7 @@ def _build_where(
     project: str | None,
     tenant: str | None,
     agent: str | None = None,
+    revision: str | None = None,
     include_project: bool = True,
 ) -> tuple[str, dict[str, Any]]:
     """Compose the WHERE clause + named params for a window-+-filter query."""
@@ -85,6 +86,16 @@ def _build_where(
         else:
             where += " AND agent_id = :agent"
             params["agent"] = agent
+    if revision is not None:
+        # Empty string selects rows that declared NO revision, matching the
+        # tenant and agent filters above. Without it there is no way to ask
+        # "what did the un-stamped agents do", which is the population you most
+        # want to find right after rolling the stamp out.
+        if revision == "":
+            where += " AND revision IS NULL"
+        else:
+            where += " AND revision = :revision"
+            params["revision"] = revision
     return where, params
 
 
@@ -97,11 +108,17 @@ async def get_cost_summary(
     end_ts: float | None = None,
     tenant: str | None = None,
     agent: str | None = None,
+    revision: str | None = None,
 ) -> dict[str, Any]:
     """Return total / by_provider / by_model cost rollups for the window."""
     since, until = resolve_window(period, start_ts, end_ts)
     where, params = _build_where(
-        since=since, until=until, project=project, tenant=tenant, agent=agent
+        since=since,
+        until=until,
+        project=project,
+        tenant=tenant,
+        agent=agent,
+        revision=revision,
     )
 
     result = await session.execute(
@@ -242,6 +259,44 @@ async def get_cost_by_project(
             f"""SELECT project, SUM(cost_usd) as cost, COUNT(*) as count
                 FROM requests {where}
                 GROUP BY project ORDER BY cost DESC"""
+        ),
+        params,
+    )
+    return {r[0]: {"cost": r[1], "requests": r[2]} for r in result}
+
+
+async def get_cost_by_revision(
+    session: AsyncSession,
+    period: str = "today",
+    project: str | None = None,
+    start_ts: float | None = None,
+    end_ts: float | None = None,
+    tenant: str | None = None,
+    agent: str | None = None,
+) -> dict[str, Any]:
+    """Return cost rollup grouped by agent configuration revision.
+
+    THE POINT OF THE COLUMN. Two revisions live in one window is what every
+    canary and every gradual rollout looks like, and a p95 computed across that
+    boundary is a p95 of two different agents with nothing saying so. Grouping
+    separates them instead of blending them.
+
+    Rows that declared no revision group under the empty string rather than
+    being dropped. Dropping them would make the totals here disagree with the
+    unfiltered summary for no visible reason, and during a rollout the
+    un-stamped population is exactly the half being migrated away from.
+    """
+    since, until = resolve_window(period, start_ts, end_ts)
+    where, params = _build_where(
+        since=since, until=until, project=project, tenant=tenant, agent=agent
+    )
+    result = await session.execute(
+        text(
+            f"""SELECT COALESCE(revision, '') AS rev,
+                       SUM(cost_usd) AS cost,
+                       COUNT(*) AS count
+                FROM requests {where}
+                GROUP BY rev ORDER BY cost DESC"""
         ),
         params,
     )

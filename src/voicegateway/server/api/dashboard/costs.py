@@ -39,6 +39,13 @@ async def get_costs(
     project: str | None = Query(None),
     tenant: str | None = Query(None),
     agent: str | None = Query(None),
+    revision: str | None = Query(
+        None,
+        description=(
+            "Agent configuration revision. Pass an empty string to select rows "
+            "that declared none."
+        ),
+    ),
     gateway: Gateway = Depends(get_gateway),
     principal: Principal = Depends(require_principal),
 ) -> dict:
@@ -78,6 +85,13 @@ async def get_costs(
         include_pricing_source=True,
         tenant=resolved,
         agent=agent,
+        revision=revision,
+    )
+    # Always present, so a caller can see a rollout split without knowing to ask
+    # for it. A p95 computed across a configuration change is a p95 of two
+    # different agents, and this is what says so.
+    summary["by_revision"] = await gateway.storage.get_cost_by_revision(
+        period, project=project, tenant=resolved, agent=agent
     )
     if project is None:
         summary["by_project"] = await gateway.storage.get_cost_by_project(
