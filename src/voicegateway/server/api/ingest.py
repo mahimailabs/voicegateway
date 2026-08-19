@@ -22,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from voicegateway.middleware.dead_air_detector_middleware import DeadAirEvent
 from voicegateway.middleware.turn_tracker_middleware import TurnRow
 from voicegateway.models.request_model import RequestRecord
+from voicegateway.models.tool_call_model import ToolCall
 from voicegateway.server.api._deps import get_gateway, require_scope
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,15 @@ _TURN_FIELDS: frozenset[str] = frozenset(f.name for f in dataclasses.fields(Turn
 _DEAD_AIR_FIELDS: frozenset[str] = frozenset(
     f.name for f in dataclasses.fields(DeadAirEvent)
 )
+
+#: ToolCall is a SQLModel, not a dataclass, so its fields come from the model
+#: rather than ``dataclasses.fields``. ``id`` and ``created_at`` are excluded:
+#: they are the collector's to assign, and honouring an agent-supplied primary
+#: key would let one agent overwrite another's row.
+_TOOL_CALL_FIELDS: frozenset[str] = frozenset(ToolCall.model_fields) - {
+    "id",
+    "created_at",
+}
 
 
 def _record_from_payload(raw: dict[str, Any]) -> RequestRecord | None:
@@ -259,6 +269,89 @@ def _dead_air_from_payload(raw: dict[str, Any]) -> DeadAirEvent | None:
         return DeadAirEvent(**filtered)
     except TypeError:
         return None
+
+
+def _tool_call_from_payload(raw: dict[str, Any]) -> ToolCall | None:
+    """Build a ToolCall from a payload dict, ignoring unknown keys.
+
+    Unknown keys are DROPPED rather than rejected, exactly as turns and dead air
+    do, and that is what makes an agent newer than its collector keep working:
+    a field this build has never heard of costs the row nothing. The reverse
+    also holds, since every column is nullable.
+    """
+    filtered = {k: v for k, v in raw.items() if k in _TOOL_CALL_FIELDS}
+    try:
+        return ToolCall(**filtered)
+    except (TypeError, ValueError):
+        return None
+
+
+@router.post("/ingest/tool-calls")
+async def ingest_tool_calls(
+    rows: list[dict[str, Any]],
+    request: Request,
+    _auth: None = Depends(require_scope("write")),
+) -> dict[str, int]:
+    """Persist per-tool-call rows pushed by a fleet agent.
+
+    MISSING UNTIL NOW, which is the defect this fixes. ``RemoteCollectorSink``
+    has posted here since tool-call capture shipped, and with no route the
+    request fell through to the SPA fallback and came back 405, so every batch
+    was dropped. The sink is best-effort and requeues quietly, so nothing
+    surfaced anywhere: a collector deployment simply had no tool rows and no
+    error to explain why.
+
+    NO ARGUMENTS AND NO RESULTS are accepted, because ``_TOOL_CALL_FIELDS``
+    contains no such name and unknown keys are dropped. A payload cannot enter
+    the store through this route even if an agent sent one, which keeps the
+    guarantee on the collector side of the wire rather than trusting the agent
+    to have withheld it.
+
+    Always SQL, like turns and dead air, because the per-tool aggregates read
+    from SQL.
+    """
+    gateway = get_gateway(request)
+    storage = gateway.storage
+    if storage is None:
+        raise HTTPException(
+            status_code=503,
+            detail="cost tracking storage is disabled on this collector",
+        )
+
+    max_batch = gateway.config.ingest.max_batch_size
+    if len(rows) > max_batch:
+        raise HTTPException(
+            status_code=413,
+            detail=f"batch too large: {len(rows)} rows exceeds max {max_batch}",
+        )
+
+    parsed: list[ToolCall] = []
+    rejected = 0
+    for raw in rows:
+        row = _tool_call_from_payload(raw)
+        if row is None:
+            rejected += 1
+            continue
+        parsed.append(row)
+
+    accepted = 0
+    if parsed:
+        try:
+            accepted = await storage.log_tool_calls(parsed)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "ingest/tool-calls: failed to persist %d row(s)",
+                len(parsed),
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="telemetry store temporarily unavailable",
+            ) from exc
+
+    if rejected:
+        logger.warning("ingest/tool-calls: skipped %d malformed row(s)", rejected)
+    return {"accepted": accepted}
 
 
 @router.post("/ingest/dead-air")
