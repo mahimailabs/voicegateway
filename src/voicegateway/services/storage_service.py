@@ -404,6 +404,28 @@ class StorageService:
         async with self._conn.session() as db:
             return await turns.create_turns_bulk(db, rows)
 
+    async def log_tool_calls(self, rows: list[Any]) -> int:
+        """Write per-tool-call rows. Returns the number inserted.
+
+        Bulk, unlike dead air: a single turn can dispatch several tools and the
+        capture hands them over together.
+        """
+        from voicegateway.repository import tool_calls_repository as tool_calls
+
+        if not rows:
+            return 0
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            return await tool_calls.create_tool_calls(db, rows)
+
+    async def aggregate_tool_calls(self, session_id: str | None = None) -> dict:
+        """Per-tool call count, total and average duration, failures."""
+        from voicegateway.repository import tool_calls_repository as tool_calls
+
+        await self._ensure_initialized()
+        async with self._conn.session() as db:
+            return await tool_calls.aggregate_by_tool(db, session_id=session_id)
+
     async def log_dead_air(self, events: list[Any]) -> int:
         """Write observed dead-air events. Returns the number inserted.
 

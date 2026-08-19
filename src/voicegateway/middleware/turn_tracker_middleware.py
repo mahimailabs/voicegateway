@@ -218,6 +218,25 @@ class TurnTracker(SessionScopedComponent):
         if flush_now:
             await self.flush_session(sid)
 
+    def current_turn_index(self, session_id: str | None = None) -> int | None:
+        """Which turn a tool call dispatched right now belongs to.
+
+        Read WITHOUT the lock and deliberately so: this is called from the
+        synchronous event handler that writes a tool row, and taking the lock
+        there would need an await the caller does not have. The value is a
+        monotonically increasing int written under the lock elsewhere, so the
+        worst case is attributing a call to the turn either side of a boundary,
+        which is a correlation hint rather than a measurement.
+
+        None when nothing is tracked for the session, so a caller stamps absent
+        rather than 0, which would claim the first turn.
+        """
+        sid = self._resolve_session_id(session_id)
+        if sid is None:
+            return None
+        state = self._sessions.get(sid)
+        return None if state is None else state.turn_index
+
     async def on_tool_started(
         self,
         session_id: str | None = None,
