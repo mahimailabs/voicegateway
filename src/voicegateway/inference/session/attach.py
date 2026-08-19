@@ -860,8 +860,43 @@ def _bind_turn_events(
             # speaking -> idle/listening/thinking are all the agent finishing.
             _agent_stopped(event)
 
+    def _on_tool_execution_updated(event: Any = None, *_a: Any, **_k: Any) -> None:
+        """Hold the turn open across a tool call so filler does not close it.
+
+        ``tool_execution_updated`` carries ONE flat update discriminated on
+        ``update.type``: tool_call_started -> tool_call_updated ->
+        tool_call_ended -> tool_reply_updated. Only the first and third are
+        boundaries; the progress updates and the deferred-reply lifecycle are
+        not, and treating them as such would clear a tool that is still running.
+
+        The started id lives on ``update.function_call.call_id`` while the ended
+        id is ``update.call_id`` directly. That asymmetry is the SDK's, and
+        reading the wrong one silently never matches, which leaves every turn
+        open rather than failing loudly.
+        """
+        if tracker is None:
+            return
+        update = getattr(event, "update", None)
+        kind = getattr(update, "type", None)
+        if kind == "tool_call_started":
+            call = getattr(update, "function_call", None)
+            call_id = getattr(call, "call_id", None)
+            if call_id is not None:
+                _schedule_turn_event(
+                    tracker.on_tool_started(session_id=session_id, call_id=call_id),
+                    "tool_call_started",
+                )
+        elif kind == "tool_call_ended":
+            call_id = getattr(update, "call_id", None)
+            if call_id is not None:
+                _schedule_turn_event(
+                    tracker.on_tool_ended(session_id=session_id, call_id=call_id),
+                    "tool_call_ended",
+                )
+
     # State changes: the only ones LiveKit actually emits.
     on("user_state_changed", _on_user_state_changed)
+    on("tool_execution_updated", _on_tool_execution_updated)
     on("agent_state_changed", _on_agent_state_changed)
     # Discrete events: absent from LiveKit in the supported range, kept for
     # other frameworks and any build that does emit them. Harmless when they
@@ -1076,9 +1111,7 @@ def _attach_livekit(
         sink = _build_default_sink(resolved_collector, resolved_key)
 
     # Built before MetricCapture, which needs the correction hook below.
-    turn_tracker = (
-        _build_turn_tracker(sink, project) if _turns_enabled(turns) else None
-    )
+    turn_tracker = _build_turn_tracker(sink, project) if _turns_enabled(turns) else None
 
     def _correct_caller_end(at_ms: int) -> None:
         """Re-stamp the caller's speech end from the EOU-derived anchor.
