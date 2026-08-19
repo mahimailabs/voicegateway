@@ -54,6 +54,12 @@ class _SessionState:
     # caller ACTUALLY stopped, rather than when something noticed.
     caller_end_is_precise: bool = False
     buffered_turns: list[TurnRow] = field(default_factory=list)
+    # Tool calls dispatched and not yet terminal, by call_id. While this is
+    # non-empty the agent's first audio frame is a HOLDING LINE, not the answer,
+    # so it must not close the turn. A set rather than a counter because
+    # tool_call_ended is keyed by call_id and can arrive out of order or twice;
+    # discarding an id is idempotent where decrementing a counter is not.
+    tools_in_flight: set[str] = field(default_factory=set)
 
 
 class TurnTracker(SessionScopedComponent):
@@ -161,6 +167,20 @@ class TurnTracker(SessionScopedComponent):
             state = self._sessions.get(sid)
             if state is None or state.pending_caller_start_ms is None:
                 return
+            if state.tools_in_flight:
+                # FILLER, NOT THE ANSWER. An agent covering a slow tool call
+                # with a holding line ("let me pull that up") emits its first
+                # audio frame here, and closing on it reports the time to the
+                # holding line. That understates the wait by however long the
+                # tool took, and because filler turns report fast numbers they
+                # pull p50 DOWN rather than showing up as outliers: the error
+                # hides in the aggregate everyone reads.
+                #
+                # Returning leaves the turn open, so the next first frame after
+                # the last tool goes terminal closes it on the answer. A turn
+                # with no tool in flight never reaches this branch and is
+                # byte-identical to before.
+                return
             caller_start = state.pending_caller_start_ms
             caller_end = state.pending_caller_end_ms
             if caller_end is None:
@@ -189,6 +209,45 @@ class TurnTracker(SessionScopedComponent):
             flush_now = len(state.buffered_turns) >= self._flush_size
         if flush_now:
             await self.flush_session(sid)
+
+    async def on_tool_started(
+        self,
+        session_id: str | None = None,
+        call_id: str | None = None,
+    ) -> None:
+        """Mark a tool call in flight, holding the turn open past any filler."""
+        sid = self._resolve_session_id(session_id)
+        if sid is None or call_id is None:
+            return
+        async with self._lock:
+            # setdefault, not get: the tool can be dispatched before any caller
+            # speech was seen on this session, and dropping the id there would
+            # leave a turn that closes on filler with nothing to explain why.
+            state = self._sessions.setdefault(sid, _SessionState())
+            state.tools_in_flight.add(call_id)
+
+    async def on_tool_ended(
+        self,
+        session_id: str | None = None,
+        call_id: str | None = None,
+    ) -> None:
+        """Clear a tool call, whatever its outcome.
+
+        DONE, ERROR AND CANCELLED ARE THE SAME EVENT HERE. The turn is held open
+        only because an answer is still coming; once the call is terminal no
+        answer is coming from it, and a cancelled tool that stayed in flight
+        would leave the turn open to swallow the caller's next utterance. One
+        cancelled tool would then corrupt every later row in the call, which is
+        worse than the mistimed row this whole change exists to fix.
+        """
+        sid = self._resolve_session_id(session_id)
+        if sid is None or call_id is None:
+            return
+        async with self._lock:
+            state = self._sessions.get(sid)
+            if state is None:
+                return
+            state.tools_in_flight.discard(call_id)
 
     async def on_agent_audio_last_frame(
         self,
