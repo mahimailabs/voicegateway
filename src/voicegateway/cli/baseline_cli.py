@@ -85,11 +85,11 @@ async def _collect(storage: Any, period: str, project: str | None) -> dict[str, 
 
     async with storage._conn.session() as db:
         speed = await turns.aggregate_response_speed(db)
-        result = await db.execute(
-            turns.text("SELECT COUNT(*) FROM turns WHERE response_speed_ms IS NOT NULL")
-        )
-        row = result.fetchone()
-        turn_samples = int(row[0]) if row else 0
+    # The count comes from the aggregate itself rather than a second query.
+    # Two statements counting the same rows are two things that can disagree,
+    # and the one place they would show it is a baseline claiming a sample count
+    # that does not match the percentile it sits beside.
+    turn_samples = int(speed.get("samples") or 0)
     metrics["response_speed_p50_ms"] = {
         "value": speed.get("p50_ms"),
         "samples": turn_samples,
