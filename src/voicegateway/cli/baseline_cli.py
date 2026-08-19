@@ -21,7 +21,11 @@ from voicegateway.services.baseline_service import (
     EXIT_DRIFT,
     EXIT_INSUFFICIENT,
     EXIT_OK,
+    EXIT_SOURCE_MISMATCH,
+    SourceMismatch,
+    check_source_matches,
     compare,
+    describe_source,
 )
 
 _cli = BaseCli()
@@ -115,6 +119,11 @@ async def _collect(storage: Any, period: str, project: str | None) -> dict[str, 
         # What identifies the window, so a baseline is reproducible rather than
         # a snapshot of an unnamed moment.
         "window": {"period": period, "project": project},
+        # WHERE the figures came from, which is part of the same claim. A
+        # baseline pinned locally and checked against a collector produces
+        # numbers and a verdict while being a comparison that never happened,
+        # so `check` refuses on a mismatch rather than warning.
+        "source": {"kind": "local", "base_url": None, "project": project},
         "metrics": metrics,
     }
 
@@ -182,10 +191,18 @@ def check(
     gw = _cli.require_gateway(config)
     storage = _cli.require_storage(gw)
     current = _cli.async_run(_collect(storage, resolved_period, resolved_project))
+    try:
+        check_source_matches(pinned, current)
+    except SourceMismatch as exc:
+        _cli.fail(str(exc), code=EXIT_SOURCE_MISMATCH)
     report = compare(pinned, current, min_samples=min_samples)
 
     console.print(
-        f"\n[bold]Baseline check[/bold] ({resolved_period}) against {baseline}\n"
+        f"\n[bold]Baseline check[/bold] against {baseline}\n"
+        f"  source:  {describe_source(current.get('source'))}\n"
+        f"  window:  {resolved_period}\n"
+        f"  project: {resolved_project!r}\n"
+        f"  minimum samples: {min_samples}\n"
     )
     for finding in report.findings:
         colour = {
