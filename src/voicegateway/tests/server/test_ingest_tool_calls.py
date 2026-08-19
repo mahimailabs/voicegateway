@@ -28,16 +28,36 @@ import uuid
 import warnings
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from voicegateway.core.gateway import Gateway
 from voicegateway.server.main import build_app
 
+_CFG = {
+    "providers": {},
+    "projects": {},
+    "fallbacks": {"stt": [], "llm": [], "tts": []},
+    "cost_tracking": {"enabled": True},
+}
+
 
 @pytest.fixture
-def client():
+def client(tmp_path, monkeypatch):
+    """A collector built from an EXPLICIT config.
+
+    Not ``Gateway()``: that resolves a voicegw.yaml from the ambient
+    environment, which exists on a developer machine and does not in CI, so the
+    tests passed locally and failed on all three Python versions. A fixture that
+    depends on where it is run is not a fixture.
+    """
     warnings.filterwarnings("ignore")
-    return TestClient(build_app(Gateway(), enable_mcp_sse=False))
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "ingest.db"))
+    monkeypatch.delenv("VOICEGW_API_KEY", raising=False)
+    cfg = tmp_path / "voicegw.yaml"
+    cfg.write_text(yaml.dump(_CFG))
+    gateway = Gateway(config_path=str(cfg))
+    return TestClient(build_app(gateway, enable_mcp_sse=False))
 
 
 # --------------------------------------------------------------------------
