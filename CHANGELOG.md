@@ -6,6 +6,29 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ## Unreleased
 
+### Added
+
+- **The cost summary now reports `billable_requests` beside `requests`.**
+  Divide `total` by the first for a cost per call; the second counts every
+  stored row.
+
+  `requests` holds three kinds of row and only one can cost anything: billable
+  calls, error rows where nothing was billed, and end-of-utterance rows which
+  are local timing with no vendor call at all. Counting all three as one
+  population gives a cost per call whose denominator is padded with rows that
+  could never contribute to the numerator, and the padding always makes it read
+  LOW.
+
+  This is the failure that bit a careful reader. A consumer read `/v1/costs` on
+  a live collector, saw 151 rows in 1,000 with no model and no price, and
+  reported 15% of traffic as unattributable spend. Every individual row was
+  honest: 131 were end-of-utterance records that correctly carry no model. The
+  aggregate was what lied, and it took a raw-row pull to unwind.
+
+  `total` is unchanged. Summing cost over rows that contribute zero is
+  harmless; only the denominator was ever wrong. Mirrored in the DuckDB reader,
+  which is the same contract with a second implementation.
+
 ### Fixed
 
 - **The per-model unit price no longer shows one number for a two-sided
