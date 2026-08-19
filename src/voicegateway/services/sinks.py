@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from voicegateway.middleware.dead_air_detector_middleware import DeadAirEvent
     from voicegateway.middleware.turn_tracker_middleware import TurnRow
     from voicegateway.models.request_model import RequestRecord
+    from voicegateway.models.tool_call_model import ToolCall
     from voicegateway.services.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,8 @@ class Sink(Protocol):
 
     async def log_dead_air(self, events: list[DeadAirEvent]) -> None: ...
 
+    async def log_tool_calls(self, rows: list[ToolCall]) -> None: ...
+
     async def flush(self) -> None: ...
 
     async def aclose(self) -> None: ...
@@ -84,6 +87,9 @@ class LocalSqliteSink:
 
     async def log_dead_air(self, events: list[DeadAirEvent]) -> None:
         await self._storage.log_dead_air(events)
+
+    async def log_tool_calls(self, rows: list[ToolCall]) -> None:
+        await self._storage.log_tool_calls(rows)
 
     async def flush(self) -> None:
         return None
@@ -157,6 +163,7 @@ class RemoteCollectorSink:
         # cannot share /v1/ingest.
         self._turns_url = self._ingest_url + "/turns"
         self._dead_air_url = self._ingest_url + "/dead-air"
+        self._tool_calls_url = self._ingest_url + "/tool-calls"
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self._batch_size = max(1, batch_size)
         self._flush_interval = flush_interval
@@ -180,6 +187,7 @@ class RemoteCollectorSink:
         # Same reasoning as turns: batched in memory, never in the durable
         # outbox, which exists to prove cost completeness for reconcile.
         self._dead_air_buffer: list[dict[str, Any]] = []
+        self._tool_call_buffer: list[dict[str, Any]] = []
         self._flusher: asyncio.Task[None] | None = None
         self._closed = False
         # Durable outbox (opt-in).
@@ -436,6 +444,50 @@ class RemoteCollectorSink:
         if not await self._post(batch, self._dead_air_url):
             self._dead_air_buffer = batch + self._dead_air_buffer
 
+    async def log_tool_calls(self, rows: list[ToolCall]) -> None:
+        """Buffer tool calls for the collector's ``/v1/ingest/tool-calls``.
+
+        Best-effort like the rest of this sink. Rows are serialised field by
+        field rather than by dumping the model, so a payload column added to
+        ``ToolCall`` in future cannot start leaving the agent by accident: the
+        wire shape here is a decision, not a reflection of the ORM.
+        """
+        if not rows:
+            return
+        self._tool_call_buffer.extend(
+            {
+                "session_id": r.session_id,
+                "call_id": r.call_id,
+                "tool_name": r.tool_name,
+                "started_at_ms": r.started_at_ms,
+                "duration_ms": r.duration_ms,
+                "outcome": r.outcome,
+                "turn_index": r.turn_index,
+                "tenant_id": r.tenant_id,
+                "revision": r.revision,
+            }
+            for r in rows
+        )
+        if len(self._tool_call_buffer) > self._max_buffer:
+            overflow = len(self._tool_call_buffer) - self._max_buffer
+            del self._tool_call_buffer[:overflow]
+            self._dropped += overflow
+            logger.warning(
+                "RemoteCollectorSink tool-call buffer full; dropped %d oldest", overflow
+            )
+        self._maybe_start_flusher()
+        if len(self._tool_call_buffer) >= self._batch_size:
+            await self._flush_tool_calls()
+
+    async def _flush_tool_calls(self) -> None:
+        """Drain the tool-call buffer to the collector. Requeues on failure."""
+        if not self._tool_call_buffer:
+            return
+        batch = self._tool_call_buffer
+        self._tool_call_buffer = []
+        if not await self._post(batch, self._tool_calls_url):
+            self._tool_call_buffer = batch + self._tool_call_buffer
+
     def _maybe_start_flusher(self) -> None:
         if not self._flush_interval or self._flusher is not None or self._closed:
             return
@@ -459,6 +511,7 @@ class RemoteCollectorSink:
         # runs regardless of which request path is taken below.
         await self._flush_turns()
         await self._flush_dead_air()
+        await self._flush_tool_calls()
         if self._spool_path is not None:
             if not self._spooled:
                 return
