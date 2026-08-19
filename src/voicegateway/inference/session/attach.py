@@ -315,6 +315,25 @@ def _resolve_dispatch_name(session: Any) -> str | None:
     return name if isinstance(name, str) else None
 
 
+def _resolve_revision(revision: str | None) -> str | None:
+    """Which build of the agent's configuration is running.
+
+    ARGUMENT WINS over the environment, which is the opposite precedence to the
+    capture kill-switches and deliberately so. Those are a fleet-wide operator
+    override of what an agent asked for; this is the agent REPORTING a fact
+    about itself, and a process knows its own revision better than the
+    environment it was launched into. The environment is the fallback for
+    deployments that stamp it at rollout rather than in code.
+
+    Returns None when neither is set, and that must stay cheap: no default, no
+    hostname, no timestamp. An invented revision would silently split
+    aggregates that belong together, which is worse than not grouping at all.
+    """
+    if revision:
+        return revision
+    return os.environ.get("VOICEGW_AGENT_REVISION") or None
+
+
 def _resolve_channel(session: Any) -> str | None:
     """Best-effort telephony-vs-web classification for the dashboard's per-call chip.
 
@@ -395,6 +414,7 @@ def attach(
     project: str | None = None,
     agent_id: str | None = None,
     tenant_id: str | None = None,
+    revision: str | None = None,
     channel: str | None = None,
     collector_url: str | None = None,
     api_key: str | None = None,
@@ -525,6 +545,7 @@ def attach(
         project=resolved_project,
         agent_id=agent_id,
         tenant_id=tenant_id,
+        revision=revision,
         collector_url=collector_url,
         api_key=api_key,
         sink=sink,
@@ -666,7 +687,9 @@ class _SpeechActivity:
         return self._last_ms
 
 
-def _build_dead_air_detector(sink: Sink, project: str | None) -> tuple[Any, Any]:
+def _build_dead_air_detector(
+    sink: Sink, project: str | None, revision: str | None = None
+) -> tuple[Any, Any]:
     """A detector whose events persist through the sink, and its activity clock.
 
     Returns ``(detector, activity)``; the caller binds ``activity`` to the same
@@ -688,6 +711,7 @@ def _build_dead_air_detector(sink: Sink, project: str | None) -> tuple[Any, Any]
         activity_probe=activity.probe,
         on_event=_on_event,
         threshold_seconds=_dead_air_threshold_s(project),
+        revision=revision,
     )
     return detector, activity
 
@@ -726,7 +750,9 @@ def _turn_flush_size(project: str | None) -> int:
     return size
 
 
-def _build_turn_tracker(sink: Sink, project: str | None) -> Any:
+def _build_turn_tracker(
+    sink: Sink, project: str | None, revision: str | None = None
+) -> Any:
     """A TurnTracker whose flush writes turns through the sink.
 
     The flush callback is what was missing: TurnTracker's default is a no-op
@@ -747,6 +773,7 @@ def _build_turn_tracker(sink: Sink, project: str | None) -> Any:
         flush_callback=_flush,
         flush_size=_turn_flush_size(project),
         precise_end_required=True,
+        revision=revision,
     )
 
 
@@ -1081,6 +1108,7 @@ def _attach_livekit(
     project: str = "default",
     agent_id: str | None = None,
     tenant_id: str | None = None,
+    revision: str | None = None,
     collector_url: str | None = None,
     api_key: str | None = None,
     sink: Sink | None = None,
@@ -1104,6 +1132,7 @@ def _attach_livekit(
     resolved_room = room or _resolve_room(session)
     resolved_channel = _resolve_channel(session)
     resolved_dispatch_name = _resolve_dispatch_name(session)
+    resolved_revision = _resolve_revision(revision)
     session_id = get_or_create_session_id()
     if tenant_id is not None:
         set_tenant(tenant_id)
@@ -1111,7 +1140,11 @@ def _attach_livekit(
         sink = _build_default_sink(resolved_collector, resolved_key)
 
     # Built before MetricCapture, which needs the correction hook below.
-    turn_tracker = _build_turn_tracker(sink, project) if _turns_enabled(turns) else None
+    turn_tracker = (
+        _build_turn_tracker(sink, project, resolved_revision)
+        if _turns_enabled(turns)
+        else None
+    )
 
     def _correct_caller_end(at_ms: int) -> None:
         """Re-stamp the caller's speech end from the EOU-derived anchor.
@@ -1141,6 +1174,7 @@ def _attach_livekit(
         room=resolved_room,
         channel=resolved_channel,
         dispatch_name=resolved_dispatch_name,
+        revision=resolved_revision,
         on_caller_end=_correct_caller_end if turn_tracker is not None else None,
     )
     capture.bind(session)
@@ -1161,7 +1195,7 @@ def _attach_livekit(
     # room -> session_id -> turns, so a tracker keyed on anything else produces
     # turns that exist but never appear in /v1/rooms/{room}/latency.
     dead_air_detector, activity = (
-        _build_dead_air_detector(sink, project)
+        _build_dead_air_detector(sink, project, resolved_revision)
         if _dead_air_enabled(dead_air)
         else (None, None)
     )

@@ -26,6 +26,8 @@ class DeadAirEvent:
     started_at_ms: int
     duration_ms: int
     threshold_used_ms: int
+    # Agent configuration revision. See RequestRecord.revision.
+    revision: str | None = None
 
 
 ActivityProbe = Callable[[str], int | None]
@@ -49,6 +51,7 @@ class DeadAirDetector(PerSessionWatcher):
         on_event: EventCallback | None = None,
         threshold_seconds: float = _DEFAULT_THRESHOLD_SECONDS,
         poll_interval_seconds: float = _DEFAULT_POLL_INTERVAL_SECONDS,
+        revision: str | None = None,
     ) -> None:
         if threshold_seconds <= 0:
             raise ValueError(f"threshold_seconds must be > 0, got {threshold_seconds}")
@@ -60,6 +63,9 @@ class DeadAirDetector(PerSessionWatcher):
         self._on_event: EventCallback = on_event or _noop_callback
         self._threshold_ms = int(threshold_seconds * 1000)
         self._poll_interval = poll_interval_seconds
+        # Agent configuration revision, stamped on every event. See
+        # _resolve_revision in attach.py.
+        self._revision = revision
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._already_fired: dict[str, bool] = {}
 
@@ -118,6 +124,7 @@ class DeadAirDetector(PerSessionWatcher):
                     started_at_ms=started_at_ms,
                     duration_ms=silence_ms,
                     threshold_used_ms=self._threshold_ms,
+                    revision=self._revision,
                 )
                 self._already_fired[session_id] = True
                 try:

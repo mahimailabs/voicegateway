@@ -34,3 +34,6 @@ class DeadAirEvent(SQLModel, table=True):
 
     # 0005: tenant attribution
     tenant_id: str | None = None
+
+    # Agent configuration revision. See RequestRecord.revision.
+    revision: str | None = None
