@@ -292,6 +292,7 @@ class MetricCapture:
         sink: Sink,
         project: str,
         agent_id: str | None,
+        revision: str | None = None,
         session_id: str | None,
         tenant_id: str | None = None,
         room: str | None = None,
@@ -303,6 +304,9 @@ class MetricCapture:
         self._sink = sink
         self._project = project
         self._agent_id = agent_id
+        # Agent configuration revision, stamped on every row this capture
+        # writes. See _resolve_revision in attach.py for precedence.
+        self._revision = revision
         self._session_id = session_id
         self._tenant_id = tenant_id
         self._room = room
@@ -403,6 +407,7 @@ class MetricCapture:
             fallback_from=fallback_from,
             session_id=self._session_id,
             agent_id=self._agent_id,
+            revision=self._revision,
         )
         network = _network_meta(metric)
         if network:
@@ -430,6 +435,7 @@ class MetricCapture:
             error_message=str(error),
             session_id=self._session_id,
             agent_id=self._agent_id,
+            revision=self._revision,
         )
         self._stamp_context(record)
         self._schedule(self._sink.log_request(record))
@@ -556,6 +562,7 @@ class MetricCapture:
             status="success",
             session_id=self._session_id,
             agent_id=self._agent_id,
+            revision=self._revision,
         )
         eou_meta: dict[str, Any] = {
             "end_of_utterance_delay": float(eou),
@@ -693,6 +700,7 @@ class MetricCapture:
                 cached_input_units=max(0.0, d_cached),
                 session_id=self._session_id,
                 agent_id=self._agent_id,
+            revision=self._revision,
             )
             record.metadata = {"reconciled": True}
             self._stamp_context(record)

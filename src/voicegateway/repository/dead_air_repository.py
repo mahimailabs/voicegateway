@@ -15,8 +15,9 @@ if TYPE_CHECKING:
 
 _INSERT_EVENT = text(
     "INSERT INTO dead_air_events ("
-    "session_id, started_at_ms, duration_ms, threshold_used_ms, tenant_id"
-    ") VALUES (:session_id, :started_at_ms, :duration_ms, :threshold_used_ms, :tenant_id)"
+    "session_id, started_at_ms, duration_ms, threshold_used_ms, tenant_id, revision"
+    ") VALUES (:session_id, :started_at_ms, :duration_ms, :threshold_used_ms, "
+    ":tenant_id, :revision)"
 )
 
 
@@ -36,6 +37,7 @@ async def create_event(
             "duration_ms": event.duration_ms,
             "threshold_used_ms": event.threshold_used_ms,
             "tenant_id": resolved,
+            "revision": event.revision,
         },
     )
     await session.commit()

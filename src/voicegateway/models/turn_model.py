@@ -46,6 +46,8 @@ class Turn(SQLModel, table=True):
     response_speed_ms: int | None = Field(
         default=None, sa_column=Column(BigInteger(), nullable=True)
     )
+    # Agent configuration revision (opaque; grouped, never parsed).
+    revision: str | None = None
     created_at: str = Field(
         sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")}
     )
