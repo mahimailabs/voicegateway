@@ -8,6 +8,30 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ### Added
 
+- **`voicegw baseline pin` and `voicegw baseline check`: a drift gate for CI.**
+  Pin a known-good window's figures to a file, recompute over a later window,
+  exit non-zero when something moved.
+
+  Latency and cost regressions are the ones that ship, because nothing fails
+  when they do. A test suite catches an agent that is broken; nothing caught an
+  agent that got 300ms slower or 40% more expensive per call, and the caller
+  feels the first while the bill shows the second.
+
+  **Exit codes are stable API**: `0` within tolerance, `1` drifted (named, with
+  the delta), `2` could not compare. Tolerance is per metric rather than one
+  global number, because cost and p95 do not move for the same reasons.
+
+  What it refuses to call a pass: too few samples, a metric missing from the new
+  window, a pinned zero, and an improvement beyond tolerance (a 50% drop is
+  either very good news or a measurement that broke). Drift outranks
+  insufficiency, so a real regression is never buried behind a warning about a
+  different metric. A metric the new window *grew* is not a failure, otherwise
+  every measurement added here would break every baseline on upgrade.
+
+  Each metric carries the sample count it was taken over, and the file records
+  what identifies the window, so a baseline is reproducible rather than a
+  snapshot of an unnamed moment.
+
 - **`attach(revision=...)` stamps which build of the agent's configuration
   produced every row.** Optional, with a `VOICEGW_AGENT_REVISION` fallback, on
   cost, latency, turn and dead-air rows.

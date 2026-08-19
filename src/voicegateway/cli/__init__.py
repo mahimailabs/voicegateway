@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import typer
 
+from voicegateway.cli import baseline_cli as _baseline  # noqa: F401, E402
 from voicegateway.cli import brand_cli as _brand  # noqa: F401, E402
 from voicegateway.cli import calls_cli as _calls  # noqa: F401, E402
 from voicegateway.cli import check_cli as _check  # noqa: F401, E402
