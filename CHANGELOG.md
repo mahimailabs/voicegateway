@@ -6,6 +6,25 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ## Unreleased
 
+### Fixed
+
+- **The `attach()` docstring no longer contradicts its own signature.** Shipped
+  in 0.25.0 and reported by a consumer who read the API rather than the release
+  notes.
+
+  `revision` and `policy` were in the signature and absent from `Args`, so a
+  reader checking the docstring concluded the release's two headline parameters
+  did not exist. Worse, the four capture flags became `bool | None = None` while
+  their entries still read "(default on)" and "(default OFF)", which were the
+  pre-0.25.0 values: somebody passing nothing and trusting the docstring would
+  believe transcript capture was on when the policy decides. A doc that is
+  merely absent is a gap; one that states the opposite of the code is a trap.
+
+  The three-layer precedence (environment kill-switch, then explicit flag, then
+  policy) is now stated once, in `policy`. Two tests pin it: every public
+  parameter is documented, and the docstring claims no default the signature
+  dropped.
+
 ### Added
 
 - **`attach(policy=...)`: one named capture policy instead of four booleans.**
