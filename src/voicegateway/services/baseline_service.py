@@ -28,7 +28,7 @@ from typing import Any
 #: Bumped when the pinned file's shape changes incompatibly. A baseline pinned
 #: by an older version is refused rather than silently compared against fields
 #: that have moved underneath it.
-BASELINE_VERSION = 1
+BASELINE_VERSION = 2
 
 #: Fractional drift allowed per metric before it counts as a regression.
 #:
@@ -59,6 +59,18 @@ DEFAULT_MIN_SAMPLES = 10
 EXIT_OK = 0
 EXIT_DRIFT = 1
 EXIT_INSUFFICIENT = 2
+#: The baseline and the window come from different stores, so no comparison was
+#: attempted. Its own code rather than folding into EXIT_INSUFFICIENT: 2 says "I
+#: compared what I could and one metric had nothing behind it", a fact about the
+#: DATA, where this is a fact about what was pointed at. Reusing 2 would not be
+#: absent information, it would be WRONG information: a code that already means
+#: something specific, reported for a situation it does not describe.
+#:
+#: 4 is deliberately NOT taken here for "the collector was unreachable". Nothing
+#: in this change can return it, and an exit code that cannot occur is a
+#: documented promise the code does not keep. It arrives with the read path that
+#: can raise it.
+EXIT_SOURCE_MISMATCH = 3
 
 
 @dataclass
@@ -111,6 +123,50 @@ class Report:
         if any(f.status in ("unmeasured", "insufficient") for f in self.findings):
             return EXIT_INSUFFICIENT
         return EXIT_OK
+
+
+class SourceMismatch(Exception):
+    """A pinned baseline and the current window came from different stores."""
+
+
+def describe_source(source: dict[str, Any] | None) -> str:
+    """One phrase naming where a set of figures came from."""
+    if not source:
+        return "an unrecorded source"
+    kind = source.get("kind") or "unknown"
+    if kind == "collector":
+        return f"the collector at {source.get('base_url') or 'an unnamed URL'}"
+    return "the local store"
+
+
+def check_source_matches(pinned: dict[str, Any], current: dict[str, Any]) -> None:
+    """Raise unless the pinned figures and the new window share a store.
+
+    REFUSED, NOT WARNED. A warning in CI output is read once and then never
+    again, and this is the failure that looks most like success: a local-pinned
+    baseline checked against a collector produces numbers, produces a verdict,
+    and produces a green tick, while being a comparison that never happened.
+
+    The whole value of a pinned baseline is that a comparison either happened or
+    it did not. A third state that resembles the first is worse than an error,
+    because an error stops the build and this would not.
+
+    The PROJECT is part of the identity, not only the store. A collector
+    aggregates many agents, so the same URL with a different project scope is a
+    different population and comparing across it silently answers a question
+    nobody asked.
+    """
+    want = pinned.get("source") or {}
+    have = current.get("source") or {}
+    for key in ("kind", "base_url", "project"):
+        if want.get(key) != have.get(key):
+            raise SourceMismatch(
+                f"this baseline was pinned against {describe_source(want)} "
+                f"(project {want.get('project')!r}) and the window was read from "
+                f"{describe_source(have)} (project {have.get('project')!r}). "
+                "That is not a comparison. Re-pin against the source you intend "
+                "to check, rather than comparing two different populations."
+            )
 
 
 def compare(
@@ -194,6 +250,10 @@ def compare(
 
 __all__ = [
     "BASELINE_VERSION",
+    "EXIT_SOURCE_MISMATCH",
+    "SourceMismatch",
+    "check_source_matches",
+    "describe_source",
     "DEFAULT_MIN_SAMPLES",
     "DEFAULT_TOLERANCES",
     "EXIT_DRIFT",

@@ -13,6 +13,8 @@ pass to the CI job reading it.
 
 from __future__ import annotations
 
+import pytest
+
 from voicegateway.services.baseline_service import (
     EXIT_DRIFT,
     EXIT_INSUFFICIENT,
@@ -203,10 +205,13 @@ def test_pin_and_check_round_trip(tmp_path) -> None:
     )
     assert pinned.exit_code == 0, pinned.output
     payload = json.loads(out.read_text())
-    assert payload["version"] == 1
+    assert payload["version"] == 2
     # The window is recorded, so a baseline is reproducible rather than a
     # snapshot of an unnamed moment.
     assert payload["window"]["period"] == "all"
+    # The SOURCE travels with the window: a local-pinned baseline checked
+    # against a collector is not a comparison, and check refuses on a mismatch.
+    assert payload["source"]["kind"] == "local"
     assert "response_speed_p95_ms" in payload["metrics"]
 
     checked = runner.invoke(
@@ -241,3 +246,115 @@ def test_a_baseline_from_another_version_is_refused(tmp_path) -> None:
     )
     assert result.exit_code == 2
     assert "999" in result.output
+
+
+# --------------------------------------------------------------------------
+# The source is part of the claim, and a mismatch is refused
+# --------------------------------------------------------------------------
+
+
+def _sourced(kind: str, base_url: str | None, project: str | None) -> dict:
+    return {
+        "version": 2,
+        "window": {"period": "week", "project": project},
+        "source": {"kind": kind, "base_url": base_url, "project": project},
+        "metrics": {},
+    }
+
+
+def test_a_local_baseline_checked_against_a_collector_is_refused() -> None:
+    """The failure that looks most like success.
+
+    It produces numbers, a verdict and a green tick while being a comparison
+    that never happened. Warned, that line is read once and then never again;
+    the whole value of a pinned baseline is that a comparison either happened
+    or it did not.
+    """
+    from voicegateway.services.baseline_service import (
+        SourceMismatch,
+        check_source_matches,
+    )
+
+    with pytest.raises(SourceMismatch) as excinfo:
+        check_source_matches(
+            _sourced("local", None, "default"),
+            _sourced("collector", "https://collector.example", "default"),
+        )
+    assert "not a comparison" in str(excinfo.value)
+
+
+def test_the_same_collector_with_a_different_project_is_also_refused() -> None:
+    """A collector aggregates many agents, so the project IS the population.
+
+    Same URL, different scope, is a different set of traffic, and comparing
+    across it silently answers a question nobody asked.
+    """
+    from voicegateway.services.baseline_service import (
+        SourceMismatch,
+        check_source_matches,
+    )
+
+    url = "https://collector.example"
+    with pytest.raises(SourceMismatch):
+        check_source_matches(
+            _sourced("collector", url, "checkout"),
+            _sourced("collector", url, "support"),
+        )
+
+
+def test_a_matching_source_passes() -> None:
+    """Non-vacuous: the guard must not refuse everything."""
+    from voicegateway.services.baseline_service import check_source_matches
+
+    same = _sourced("collector", "https://c.example", "default")
+    check_source_matches(same, dict(same))
+
+
+def test_unreadable_and_insufficient_are_different_exit_codes() -> None:
+    """ "I could not look" is a fact about the plumbing; "one metric had nothing
+    behind it" is a fact about the data. They want different responses from
+    whoever is on call, and 2 already carries the second meaning."""
+    from voicegateway.services.baseline_service import (
+        EXIT_DRIFT,
+        EXIT_INSUFFICIENT,
+        EXIT_OK,
+        EXIT_SOURCE_MISMATCH,
+    )
+
+    codes = {EXIT_OK, EXIT_DRIFT, EXIT_INSUFFICIENT, EXIT_SOURCE_MISMATCH}
+    assert len(codes) == 4, "two outcomes share an exit code"
+    # Contiguous from zero: a gap would be a code reserved for behaviour that
+    # does not exist, which is a promise the command cannot keep.
+    assert codes == {0, 1, 2, 3}
+
+
+def test_the_docs_list_every_exit_code_the_command_can_return() -> None:
+    """Exit codes are API here, and the docs say so.
+
+    #256 shipped a docstring that contradicted its signature, which is the
+    failure this guards against one layer out: a stable contract documented
+    incompletely is worse than one documented not at all, because CI is written
+    against the page rather than the source.
+    """
+    from pathlib import Path
+
+    from voicegateway.services import baseline_service as svc
+
+    page = (
+        Path(__file__).resolve().parents[4] / "docs" / "cli" / "baseline.md"
+    ).read_text()
+    codes = {
+        svc.EXIT_OK,
+        svc.EXIT_DRIFT,
+        svc.EXIT_INSUFFICIENT,
+        svc.EXIT_SOURCE_MISMATCH,
+    }
+    # Matched against the exit-code LIST, not the whole page. A first version
+    # looked for "**3**" anywhere and passed on a page whose list entry had been
+    # deleted, because the prose below it mentions the same number. A guard
+    # satisfied by an unrelated sentence is not a guard.
+    listed = {
+        line.split("**")[1] for line in page.splitlines() if line.startswith("- **")
+    }
+    for code in sorted(codes):
+        assert str(code) in listed, f"exit code {code} is not in the documented list"

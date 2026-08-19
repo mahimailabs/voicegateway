@@ -6,6 +6,30 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ## Unreleased
 
+### Added
+
+- **A pinned baseline now records where its figures came from, and
+  `voicegw baseline check` refuses when that does not match.** Exit code **3**,
+  documented and stable.
+
+  A local-pinned baseline checked against a collector produces numbers, a
+  verdict and a green tick while being a comparison that never happened.
+  Refused rather than warned, because a warning in CI output is read once and
+  then never again: the whole value of a pinned baseline is that a comparison
+  either happened or it did not, and a third state resembling the first is
+  worse than an error, since an error stops the build.
+
+  The project is part of that identity, not only the store. A collector
+  aggregates many agents, so the same URL at a different project scope is a
+  different population and a healthy-looking sample count can be somebody
+  else's traffic. `check` output now names the source, window, project and
+  minimum sample count it used.
+
+  `BASELINE_VERSION` is 2, because the file shape changed. A v1 file is refused
+  rather than compared against fields that moved.
+
+  Groundwork for reading a remote collector, which is **not** in this release.
+
 ### Fixed
 
 - **The `attach()` docstring no longer contradicts its own signature.** Shipped
