@@ -46,6 +46,11 @@ follows [Semantic Versioning](https://semver.org/) and
   what drifted, and separately asserts the count query still carries its
   predicate so it cannot be wired up while meaning nothing.
 
+  Extended to the other two multi-producer numbers, `cost_by_day` and
+  `latency_stats`. Those agree across all three readers today, checked field by
+  field, so nothing needed repairing. Nothing pinned that agreement either,
+  which is precisely the state `cost_summary` was in before it drifted.
+
 ### Fixed
 
 - **The per-model unit price no longer shows one number for a two-sided
