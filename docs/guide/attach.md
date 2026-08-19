@@ -137,6 +137,35 @@ same async context inherits it too, with no argument needed.
 **Tenant** attribution is opt-in: pass `tenant_id=` when one deployment
 serves several customers. See [Tenant attribution](/guide/multi-tenant-quickstart).
 
+## policy: naming the set instead of spelling it out
+
+The four capture flags below are the mechanism. `policy=` is the way to say what you actually want, because the interesting thing is the **set** and four independent booleans cannot name one.
+
+```python
+vg.attach(session, policy="timing_only")   # nothing the caller said
+```
+
+| Policy | transcript | snapshots | turns | dead_air |
+|---|---|---|---|---|
+| `standard` (default) | on | off | on | on |
+| `timing_only` | off | off | on | on |
+| `lean` | off | off | on | off |
+| `debug` | on | **on** | on | on |
+| `off` | off | off | off | off |
+
+The flags mix two unrelated questions, and the policies separate them:
+
+- **What does it cost to run?** Dead air polls once a second for the life of every session. Turn capture costs nothing between events. `lean` is `timing_only` without that standing cost.
+- **What does it disclose?** A transcript is what the caller said. A snapshot is your own system prompt and every tool payload. `debug` is the only policy that carries snapshots, and it is named for when that trade is worth making.
+
+Tool-call rows ride `turns`: they correlate to a turn and their `turn_index` is meaningless without one. Both are timing-only and neither carries a payload.
+
+An **explicit argument overrides the policy**, so `attach(session, policy="timing_only", dead_air=False)` is `lean`. An unknown policy name is refused rather than defaulting, because a typo that silently selected `standard` would turn "nothing the caller said" into transcript capture.
+
+<Note>
+The environment kill-switches still beat everything, including a policy. A fleet-wide override that a policy could cancel would not be a kill-switch.
+</Note>
+
 ## room, heartbeat, transcript, snapshots, turns, dead_air (LiveKit)
 
 | Param | Behavior |

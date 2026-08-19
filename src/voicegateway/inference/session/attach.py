@@ -19,7 +19,8 @@ if TYPE_CHECKING:
     from voicegateway.middleware.cost_tracker_middleware import CostTracker
     from voicegateway.middleware.dead_air_detector_middleware import DeadAirDetector
     from voicegateway.middleware.turn_tracker_middleware import TurnTracker
-    from voicegateway.models.tool_call_model import ToolCall
+from voicegateway.inference.session.policy import resolve_policy
+from voicegateway.models.tool_call_model import ToolCall
 from voicegateway.services.sinks import Sink
 
 DEFAULT_DB_PATH = "~/.config/voicegateway/voicegw.db"
@@ -423,10 +424,11 @@ def attach(
     sink: Sink | None = None,
     room: str | None = None,
     heartbeat: bool = False,
-    transcript: bool = True,
-    snapshots: bool = False,
-    turns: bool = True,
-    dead_air: bool = True,
+    policy: str | None = None,
+    transcript: bool | None = None,
+    snapshots: bool | None = None,
+    turns: bool | None = None,
+    dead_air: bool | None = None,
 ) -> str:
     """Attach VoiceGateway to a LiveKit ``AgentSession`` or Pipecat ``PipelineTask``.
 
@@ -523,6 +525,14 @@ def attach(
         The correlation session id stamped on every captured row.
     """
     resolved_project = project or os.environ.get("VOICEGW_PROJECT") or "default"
+    # Resolved BEFORE the framework dispatch, so Pipecat and LiveKit get the
+    # same answer. Resolving inside one branch would make `policy=` mean
+    # something on one framework and nothing on the other, silently.
+    capture = _resolve_capture(policy, transcript, snapshots, turns, dead_air)
+    transcript = capture["transcript"]
+    snapshots = capture["snapshots"]
+    turns = capture["turns"]
+    dead_air = capture["dead_air"]
 
     from voicegateway._frameworks import detect_framework
 
@@ -558,6 +568,42 @@ def attach(
         turns=turns,
         dead_air=dead_air,
     )
+
+
+def _resolve_capture(
+    policy: str | None,
+    transcript: bool | None,
+    snapshots: bool | None,
+    turns: bool | None,
+    dead_air: bool | None,
+) -> dict[str, bool]:
+    """The four capture switches, from a named policy and any explicit override.
+
+    Precedence is explicit argument > policy > the standard set. The four
+    parameters are tri-state for exactly this reason: with plain ``bool``
+    defaults there is no way to tell ``transcript=True`` passed deliberately
+    from the default that happens to be True, so a policy could not be
+    overridden in one place without silently ignoring it everywhere.
+
+    Passing NOTHING resolves to the standard set, which is the values the four
+    parameters used to default to. That is what makes every existing call site
+    behave identically.
+
+    The environment kill-switches are NOT applied here. They stay where they
+    are, downstream of this, so they keep beating both the policy and the
+    argument: a fleet-wide override that a policy could cancel would not be a
+    kill-switch.
+    """
+    resolved = resolve_policy(policy)
+    for name, value in (
+        ("transcript", transcript),
+        ("snapshots", snapshots),
+        ("turns", turns),
+        ("dead_air", dead_air),
+    ):
+        if value is not None:
+            resolved[name] = value
+    return resolved
 
 
 def _transcripts_enabled(param: bool) -> bool:
@@ -901,7 +947,12 @@ def _bind_turn_events(
     def _write_tool_call(call_id: str, status: str | None) -> None:
         """Emit one finished tool call, correlated to the turn it belongs to."""
         started = open_tools.pop(call_id, None)
-        if sink is None or started is None:
+        # TOOL ROWS RIDE THE TURN FLAG. They correlate to a turn and their
+        # turn_index is meaningless without one, so capturing them for somebody
+        # who asked not to capture turns would write a row type they did not ask
+        # for and could not join to anything. Both are timing-only and neither
+        # carries a payload, which is why one switch is right for the pair.
+        if sink is None or tracker is None or started is None:
             # An end with no start: the subscription began mid-call, or the SDK
             # reported a terminal event twice. Writing a row with an invented
             # start would put a fabricated duration into the aggregate.
