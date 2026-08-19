@@ -131,6 +131,7 @@ class StorageService:
         end_ts: float | None = None,
         tenant: str | None = None,
         agent: str | None = None,
+        revision: str | None = None,
     ) -> dict[str, Any]:
         """Delegate to CostService.get_summary."""
         await self._ensure_initialized()
@@ -138,6 +139,27 @@ class StorageService:
             period=period,
             project=project,
             include_pricing_source=include_pricing_source,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            tenant=tenant,
+            agent=agent,
+            revision=revision,
+        )
+
+    async def get_cost_by_revision(
+        self,
+        period: str = "today",
+        project: str | None = None,
+        start_ts: float | None = None,
+        end_ts: float | None = None,
+        tenant: str | None = None,
+        agent: str | None = None,
+    ) -> dict[str, Any]:
+        """Delegate to CostService.get_by_revision."""
+        await self._ensure_initialized()
+        return await self._cost_service.get_by_revision(
+            period=period,
+            project=project,
             start_ts=start_ts,
             end_ts=end_ts,
             tenant=tenant,

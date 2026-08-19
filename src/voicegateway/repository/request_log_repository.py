@@ -45,13 +45,13 @@ _INSERT_REQUEST = text(
         rated_price_usd, rate_rule,
         ttfb_ms, total_latency_ms, status,
         fallback_from, error_message, metadata, session_id,
-        tenant_id, agent_id)
+        tenant_id, agent_id, revision)
        VALUES (:id, :timestamp, :project, :modality, :model_id, :provider,
                :input_units, :output_units, :cached_input_units, :cost_usd, :pricing_source,
                :rated_price_usd, :rate_rule,
                :ttfb_ms, :total_latency_ms, :status,
                :fallback_from, :error_message, :metadata, :session_id,
-               :tenant_id, :agent_id)"""
+               :tenant_id, :agent_id, :revision)"""
 )
 
 
@@ -186,6 +186,7 @@ async def log_request(session: AsyncSession, record: RequestRecord) -> None:
             "session_id": record.session_id,
             "tenant_id": request_tenant_id,
             "agent_id": record.agent_id,
+            "revision": record.revision,
         },
     )
     if record.session_id:

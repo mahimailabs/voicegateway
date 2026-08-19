@@ -6,6 +6,33 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ## Unreleased
 
+### Added
+
+- **`attach(revision=...)` stamps which build of the agent's configuration
+  produced every row.** Optional, with a `VOICEGW_AGENT_REVISION` fallback, on
+  cost, latency, turn and dead-air rows.
+
+  Rows carried `project`, `agent_id` and `tenant_id`, none of which says which
+  version of the agent was running: the prompt, the model ids, the voice, the
+  interruption thresholds. So "this got slower last Tuesday" was answerable only
+  by joining deploy logs kept elsewhere against timestamps by hand, and that
+  join stops working the moment two versions run at once, which is every canary
+  and every gradual rollout.
+
+  The value is **opaque**: a content hash, a git sha, a semver string and a
+  deploy id are all valid, nothing parses it, it is only grouped and filtered
+  by. The argument beats the environment, which is the opposite precedence to
+  the capture kill-switches and deliberate: those override what an agent asked
+  for, where this is the agent reporting a fact about itself.
+
+  Absent stays absent. No hostname, no timestamp, no default, because an
+  invented revision would silently split aggregates that belong together.
+
+  Readable as `?revision=` on `/api/costs` (empty string selects rows that
+  declared none) and as a `by_revision` rollup present on every cost summary, so
+  a p95 spanning a configuration change shows as two agents rather than one
+  blended figure.
+
 ### Fixed
 
 - **The turns guide no longer documents a bug that was fixed, and now states
