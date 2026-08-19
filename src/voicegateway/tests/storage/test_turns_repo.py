@@ -83,7 +83,14 @@ async def test_aggregate_response_speed_empty_returns_nulls(tmp_path) -> None:
     storage = await _fresh_storage(tmp_path)
     async with storage._conn.session() as db:
         agg = await turns.aggregate_response_speed(db, "no-such-session")
-        assert agg == {"p50_ms": None, "p95_ms": None, "p99_ms": None}
+        # Not exact-dict: the aggregate also carries `samples`, because a
+        # percentile over three turns and one over two hundred are different
+        # claims. Asserting the shape rather than the values would break on
+        # every additive field.
+        assert agg["p50_ms"] is None
+        assert agg["p95_ms"] is None
+        assert agg["p99_ms"] is None
+        assert agg["samples"] == 0
 
 
 async def test_aggregate_response_speed_single_value(tmp_path) -> None:
@@ -91,7 +98,10 @@ async def test_aggregate_response_speed_single_value(tmp_path) -> None:
     async with storage._conn.session() as db:
         await turns.create_turn(db, _row("s1", 0, 0, 0, 0, 0, response_speed=250))
         agg = await turns.aggregate_response_speed(db, "s1")
-        assert agg == {"p50_ms": 250, "p95_ms": 250, "p99_ms": 250}
+        assert agg["p50_ms"] == 250
+        assert agg["p95_ms"] == 250
+        assert agg["p99_ms"] == 250
+        assert agg["samples"] == 1
 
 
 async def test_count_overlap_turns(tmp_path) -> None:

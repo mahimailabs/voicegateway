@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from voicegateway.clickhouse import read_repository as ch_read
+from voicegateway.repository import turns_repository as turns_repo
 from voicegateway.repository.cost_repository import resolve_window
 from voicegateway.server.api._deps import (
     Principal,
@@ -134,6 +135,49 @@ async def get_costs_by_day(
     )
 
 
+@router.get("/turns/response-speed")
+async def get_turn_response_speed(
+    request: Request,
+    period: str = Query("week", enum=["today", "week", "month", "all"]),
+    project: str | None = Query(None),
+    tenant: str | None = Query(None),
+    gateway: Gateway = Depends(get_gateway),
+    principal: Principal = Depends(require_principal),
+) -> dict:
+    """p50/p95/p99 of ``response_speed_ms`` OVER TURNS, with the sample count.
+
+    Deliberately not the same statistic as ``response_speed_ms`` on
+    ``GET /api/metrics``, which is the MEAN OF PER-SESSION PERCENTILES. On two
+    sessions with turn latencies [100,110,120,130,900] and [200,210,220] this
+    returns 662 where that returns 482, and only one of them is a p95.
+
+    It exists so a drift gate reading a remote collector pins the same
+    mathematics a local one does. Without it, collector mode would have to read
+    the per-session mean into a field named for a percentile, and a baseline
+    pinned locally and checked remotely would compare two different statistics
+    under one name while looking exactly like a comparison.
+    """
+    resolved = resolve_read_tenant(principal, tenant)
+    if gateway.storage is None:
+        return {"p50_ms": None, "p95_ms": None, "p99_ms": None, "samples": 0}
+    since, until = resolve_window(period)
+    # SECONDS -> MILLISECONDS. resolve_window speaks epoch seconds, because
+    # `requests.timestamp` is seconds; turns are windowed on
+    # `caller_speak_start_ms`, which is epoch MILLISECONDS. Passing the seconds
+    # straight through would put every window in 1970 and return every turn ever
+    # recorded, which reads as a healthy sample count rather than as an error.
+    since_ms = int(since * 1000)
+    until_ms = int(until * 1000) if until is not None else None
+    async with gateway.storage._conn.session() as db:
+        return await turns_repo.aggregate_response_speed(
+            db,
+            since_ms=since_ms,
+            until_ms=until_ms,
+            project=project,
+            tenant=resolved,
+        )
+
+
 @router.get("/latency")
 async def get_latency(
     request: Request,
@@ -160,5 +204,3 @@ async def get_latency(
     return await gateway.storage.get_latency_stats(
         period, project=project, percentiles=pcts, tenant=resolved, agent=agent
     )
-
-
