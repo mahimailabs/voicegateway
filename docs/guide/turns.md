@@ -10,7 +10,7 @@ A turn's boundary is speech events, not dialogue turns in the conversational sen
 
 1. The caller starts speaking: `caller_speak_start_ms` is latched.
 2. The caller stops speaking: `caller_speak_end_ms` is latched.
-3. The agent's first audio frame plays: the turn closes and a row is appended, with `response_speed_ms = max(0, agent_speak_start_ms - caller_speak_end_ms)`.
+3. The agent's first audio frame plays: the turn closes and a row is appended, with `response_speed_ms = max(0, agent_speak_start_ms - caller_speak_end_ms)`. A turn with a tool call still in flight does **not** close here: that first frame is filler ("let me pull that up"), and closing on it would report the wait to the holding line rather than to the answer. The turn closes on the first frame after every tool call goes terminal, whether it completed, failed or was cancelled (`src/voicegateway/middleware/turn_tracker_middleware.py`).
 4. The agent's last audio frame play sets `agent_speak_end_ms` on that same row.
 
 If the agent starts responding before the caller's stop event lands, `caller_speak_end_ms` backfills to the agent's start time and `response_speed_ms` is `null` rather than negative. A caller turn that never gets an agent response (session ends first) is still written, with `agent_speak_start_ms` / `agent_speak_end_ms` / `response_speed_ms` all `null`
@@ -20,9 +20,19 @@ Turns buffer in memory per session and flush to storage at 25 buffered rows or o
 
 The `turns` table also backs two aggregates: `aggregate_response_speed` (p50/p95/p99 over non-null `response_speed_ms`) and `count_overlap_turns`, a talk-over/barge-in count where the caller started before the prior turn's agent finished (`src/voicegateway/repository/turns_repository.py:90-140`). When turns exist for a session, these feed five columns back onto that session's row: `talk_time_seconds`, `per_minute_cost_usd`, `response_speed_p50_ms`, `response_speed_p95_ms`, `talk_over_rate` (`src/voicegateway/repository/session_repository.py:154-201`).
 
+## Which number answers "what did the caller wait"
+
+`response_speed_ms` does, and it is the only one, because it is measured from when the caller **actually** stopped rather than from when the pipeline noticed.
+
+Those differ by the whole VAD silence window, 0.55s on Silero's default. LiveKit raises the stop only after voice activity has waited that window out, so a speed measured from it is short by the same amount on every turn, always in the flattering direction. It reads as good latency rather than as a bug, and the size of the error moves with each operator's `min_silence_duration`, so two deployments could not compare numbers.
+
+The correction comes from `EOUMetrics.end_of_utterance_delay`, which LiveKit measures from the caller's real stop. Subtracting it lands back on the true anchor and tracks any VAD configuration, where adding a constant would not.
+
 <Note>
-Turn boundaries are anchored to the discrete `user_started_speaking` / `agent_started_speaking` LiveKit events. `livekit-agents` 1.6 stopped emitting `user_started_speaking` (onset moved to `user_state_changed`); VoiceGateway's own latency capture had to add that event as a fallback (`src/voicegateway/inference/session/capture.py:344-354`). Turn capture has not been given the same fallback, so on 1.6 a caller's turn start can go uncaptured.
+There is deliberately **no second, uncorrected column**. When a turn carries no end-of-utterance measurement, `response_speed_ms` is `null` rather than falling back to the uncorrected figure. A number that is systematically half a second optimistic is worse than no number, because somebody tuning toward a target answer time would tune against it without knowing. Absent says "not measured"; the uncorrected value would say "fast".
 </Note>
+
+Turn boundaries come from `user_state_changed` / `agent_state_changed`, which are the events `livekit-agents` in the supported range actually emits; the four discrete `*_started_speaking` events stay bound for other frameworks and cost nothing where they never fire (`src/voicegateway/inference/session/attach.py`).
 
 ## How the transcript differs
 
