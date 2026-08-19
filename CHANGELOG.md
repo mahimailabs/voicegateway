@@ -8,6 +8,29 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ### Fixed
 
+- **A turn covering a tool call now reports the time to the answer, not to the
+  holding line.** The turn is held open while any tool call is in flight, so the
+  agent's filler audio no longer closes it.
+
+  `response_speed_ms` is `agent_speak_start_ms - caller_speak_end_ms` and the
+  turn closed on the agent's first audio frame. When an agent covers a slow tool
+  call with "let me pull that up", that filler IS the first frame, so the row
+  measured the wait to the filler. Filler during tool calls is a standard
+  pattern, not an exotic one: `livekit-agents` ships `RunContext.with_filler`
+  for exactly it.
+
+  The error had the worst possible shape for an aggregate. Filler turns report
+  fast numbers, so they pulled p50 DOWN rather than standing out as outliers,
+  and the one turn somebody opened the latency view to investigate was the one
+  that lied.
+
+  Tools are tracked by `call_id` from `tool_execution_updated`, which was not
+  previously bound at all. Done, error and cancelled all release the turn: a
+  cancelled tool left in flight would hold the turn open and swallow the
+  caller's next utterance, corrupting every later row in the call, which is
+  worse than the mistimed row being fixed. A turn with no tool in flight never
+  reaches the new branch and is byte-identical to before.
+
 - **`voicegw` now runs on a bare `pip install voicegateway`.** It did not:
   `voicegw --help` raised `ModuleNotFoundError: No module named 'livekit'`
   before printing anything.
