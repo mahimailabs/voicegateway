@@ -48,6 +48,11 @@ class RequestRecord:
     metadata: dict[str, Any] = field(default_factory=dict)
     session_id: str | None = None  # ContextVar-derived session correlation
     agent_id: str | None = None  # fleet: self-reported agent/instance label
+    # Which build of the agent's CONFIGURATION produced this row: prompt, model
+    # ids, voice, thresholds. Opaque: a content hash, a git sha, a semver string
+    # and a deploy id are all valid and the collector never parses it, it only
+    # groups by it. Choosing between them is the operator's business.
+    revision: str | None = None
     # Billing: the rate card in effect stamps a billable price + audit token
     # at write time. Immutable once written; defaults are a cost pass-through.
     rated_price_usd: float = 0.0
@@ -124,3 +129,5 @@ class Request(SQLModel, table=True):
 
     # Phase 1 fleet: per-agent/instance attribution (self-reported label)
     agent_id: str | None = None
+    # Agent configuration revision (opaque; grouped, never parsed).
+    revision: str | None = None

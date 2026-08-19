@@ -24,12 +24,12 @@ _INSERT_TURN = text(
     "session_id, turn_index, "
     "caller_speak_start_ms, caller_speak_end_ms, "
     "agent_speak_start_ms, agent_speak_end_ms, "
-    "response_speed_ms, tenant_id"
+    "response_speed_ms, tenant_id, revision"
     ") VALUES ("
     ":session_id, :turn_index, "
     ":caller_speak_start_ms, :caller_speak_end_ms, "
     ":agent_speak_start_ms, :agent_speak_end_ms, "
-    ":response_speed_ms, :tenant_id"
+    ":response_speed_ms, :tenant_id, :revision"
     ")"
 )
 
@@ -44,6 +44,7 @@ def _turn_to_params(turn: TurnRow, tenant_id: str | None) -> dict[str, object]:
         "agent_speak_end_ms": turn.agent_speak_end_ms,
         "response_speed_ms": turn.response_speed_ms,
         "tenant_id": tenant_id,
+        "revision": turn.revision,
     }
 
 
@@ -83,7 +84,7 @@ async def list_turns_by_session(
             "SELECT session_id, turn_index, "
             "caller_speak_start_ms, caller_speak_end_ms, "
             "agent_speak_start_ms, agent_speak_end_ms, "
-            "response_speed_ms "
+            "response_speed_ms, revision "
             "FROM turns WHERE session_id = :session_id "
             "ORDER BY turn_index ASC"
         ),
