@@ -8,6 +8,29 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ### Added
 
+- **`GET /api/turns/response-speed`: p50/p95/p99 over TURNS, with the sample
+  count.** So a drift gate reading a remote collector pins the same mathematics
+  a local one does.
+
+  `GET /api/metrics` reports `response_speed_ms` as the **mean of per-session
+  percentiles**, which is a different statistic from the percentile over all
+  turns that `voicegw baseline pin` computes. On two sessions with turn
+  latencies `[100,110,120,130,900]` and `[200,210,220]` the first is 662 and the
+  second is 482. Both are defensible numbers and only one is a p95.
+
+  Without this, collector mode would have had to read the per-session mean into
+  a field named for a percentile, and a baseline pinned locally then checked
+  remotely would have compared two different statistics under one name while
+  looking exactly like a comparison.
+
+  Windowed on `caller_speak_start_ms`, the turn's own instant, rather than on
+  `created_at`, which is when the row was written and lags by the buffer flush.
+
+  `aggregate_response_speed` gains a `samples` key, additively. A percentile
+  over three turns and one over two hundred are different claims.
+
+### Added
+
 - **A pinned baseline now records where its figures came from, and
   `voicegw baseline check` refuses when that does not match.** Exit code **3**,
   documented and stable.

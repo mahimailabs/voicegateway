@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import statistics
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 
@@ -96,35 +96,76 @@ async def list_turns_by_session(
 async def aggregate_response_speed(
     session: AsyncSession,
     session_id: str | None = None,
+    *,
+    since_ms: int | None = None,
+    until_ms: int | None = None,
+    project: str | None = None,
+    tenant: str | None = None,
 ) -> dict[str, int | None]:
-    """Compute p50/p95/p99 of ``response_speed_ms`` over the filtered turns."""
+    """p50/p95/p99 of ``response_speed_ms`` over the filtered turns, and the count.
+
+    A PERCENTILE OVER TURNS, which is not the same statistic as the mean of
+    per-session percentiles that ``GET /api/metrics`` reports. On two sessions
+    with turn latencies [100,110,120,130,900] and [200,210,220] this returns 662
+    where that returns 482. Both are defensible numbers and only one of them is
+    a p95, so they must not be read into the same field: a baseline pinned from
+    one and checked against the other would compare two different mathematics
+    under one name.
+
+    Windowed on ``caller_speak_start_ms``, the turn's own epoch instant, rather
+    than on ``created_at``. The latter is when the row was WRITTEN, which lags by
+    the buffer flush and would move a turn between windows depending on when the
+    agent got round to sending it.
+
+    ``samples`` travels with the values because a percentile over three turns and
+    one over two hundred are different claims, and a caller reading only the
+    number cannot tell them apart.
+    """
+    where = ["response_speed_ms IS NOT NULL"]
+    params: dict[str, Any] = {}
     if session_id is not None:
-        result = await session.execute(
-            text(
-                "SELECT response_speed_ms FROM turns "
-                "WHERE session_id = :session_id AND response_speed_ms IS NOT NULL"
-            ),
-            {"session_id": session_id},
-        )
-    else:
-        result = await session.execute(
-            text(
-                "SELECT response_speed_ms FROM turns "
-                "WHERE response_speed_ms IS NOT NULL"
-            )
-        )
+        where.append("t.session_id = :session_id")
+        params["session_id"] = session_id
+    if since_ms is not None:
+        where.append("t.caller_speak_start_ms >= :since_ms")
+        params["since_ms"] = since_ms
+    if until_ms is not None:
+        where.append("t.caller_speak_start_ms < :until_ms")
+        params["until_ms"] = until_ms
+    if tenant is not None:
+        if tenant == "":
+            where.append("t.tenant_id IS NULL")
+        else:
+            where.append("t.tenant_id = :tenant")
+            params["tenant"] = tenant
+    # Project lives on sessions, not on turns, so it needs the join. Only taken
+    # when asked for: an unconditional join would make every unfiltered read pay
+    # for a column it does not use.
+    join = ""
+    if project is not None:
+        join = " JOIN sessions s ON s.id = t.session_id"
+        where.append("s.project = :project")
+        params["project"] = project
+
+    result = await session.execute(
+        text(
+            f"SELECT t.response_speed_ms FROM turns t{join} WHERE {' AND '.join(where)}"
+        ),
+        params,
+    )
     values = [int(row[0]) for row in result]
     if not values:
-        return {"p50_ms": None, "p95_ms": None, "p99_ms": None}
+        return {"p50_ms": None, "p95_ms": None, "p99_ms": None, "samples": 0}
     if len(values) == 1:
         v = values[0]
-        return {"p50_ms": v, "p95_ms": v, "p99_ms": v}
+        return {"p50_ms": v, "p95_ms": v, "p99_ms": v, "samples": 1}
     cuts = statistics.quantiles(values, n=100, method="inclusive")
     # cuts[49] = p50, cuts[94] = p95, cuts[98] = p99
     return {
         "p50_ms": int(cuts[49]),
         "p95_ms": int(cuts[94]),
         "p99_ms": int(cuts[98]),
+        "samples": len(values),
     }
 
 
