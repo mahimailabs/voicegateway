@@ -136,6 +136,21 @@ def cost_summary(
             f"SELECT COALESCE(SUM(cost_usd), 0) FROM vg.requests {where}", params
         ).fetchone()
         total = row[0] if row else 0.0
+        # Mirrors cost_repository.get_cost_summary. The two readers are one
+        # contract with two implementations, and tests assert they agree; a
+        # field added to only one means a DuckDB-backed deployment silently
+        # loses the honest denominator.
+        counts = con.execute(
+            "SELECT COUNT(*), "
+            "SUM(CASE WHEN status != 'error' "
+            "          AND (COALESCE(input_units, 0) "
+            "               + COALESCE(output_units, 0)) > 0 "
+            "         THEN 1 ELSE 0 END) "
+            f"FROM vg.requests {where}",
+            params,
+        ).fetchone()
+        request_count = int(counts[0]) if counts else 0
+        billable_count = int(counts[1] or 0) if counts else 0
         by_provider = {
             r[0]: {"cost": r[1], "requests": r[2]}
             for r in con.execute(
@@ -171,6 +186,8 @@ def cost_summary(
         "period": period,
         "project": project,
         "total": total,
+        "requests": request_count,
+        "billable_requests": billable_count,
         "by_provider": by_provider,
         "by_model": by_model,
     }
