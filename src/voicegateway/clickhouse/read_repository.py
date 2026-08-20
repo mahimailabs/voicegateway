@@ -59,6 +59,23 @@ WHERE tenant_id = {tenant:String}
   __PROJECT__
 """
 
+# Two counts, mirroring cost_repository.get_cost_summary. `requests` holds
+# billable calls, error rows and end-of-utterance telemetry, and only the first
+# can cost anything, so a cost per call divided by count() has a denominator
+# padded with rows that could never contribute to the numerator.
+_SQL_COST_SUMMARY_COUNTS = """\
+SELECT
+    count() AS request_count,
+    countIf(status != 'error'
+            AND (ifNull(input_units, 0) + ifNull(output_units, 0)) > 0)
+        AS billable_count
+FROM telemetry.requests
+WHERE tenant_id = {tenant:String}
+  AND timestamp >= fromUnixTimestamp64Milli({since_ms:Int64})
+  __UNTIL__
+  __PROJECT__
+"""
+
 _SQL_COST_BY_PROVIDER = """\
 SELECT
     provider,
@@ -365,6 +382,15 @@ async def get_cost_summary(
         raw_total = total_result.result_rows[0][0]
         total = float(raw_total) if raw_total is not None else 0.0
 
+    counts_sql = _render(_SQL_COST_SUMMARY_COUNTS, until=until, project=project)
+    counts_result = await client.query(counts_sql, parameters=params)
+    request_count = 0
+    billable_count = 0
+    if counts_result.result_rows:
+        row = counts_result.result_rows[0]
+        request_count = int(row[0] or 0)
+        billable_count = int(row[1] or 0)
+
     prov_sql = _render(_SQL_COST_BY_PROVIDER, until=until, project=project)
     prov_result = await client.query(prov_sql, parameters=params)
     by_provider: dict[str, dict[str, Any]] = {
@@ -391,6 +417,8 @@ async def get_cost_summary(
         "period": period_label,
         "project": project,
         "total": total,
+        "requests": request_count,
+        "billable_requests": billable_count,
         "by_provider": by_provider,
         "by_model": by_model,
         "by_project": by_project,
