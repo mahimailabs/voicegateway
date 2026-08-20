@@ -48,7 +48,7 @@ def _req(
     *,
     ttfb_ms: float | None = None,
     eou: dict[str, Any] | None = None,
-    project: str = "pixis-w1",
+    project: str = "acme-w1",
 ) -> RequestRecord:
     """One request row as ``attach`` writes it: the room lives on metadata."""
     metadata: dict[str, Any] = {"room": room}
@@ -185,7 +185,7 @@ async def test_a_complete_split_returns_every_component(harness):
     body = r.json()
 
     assert body["room"] == ROOM
-    assert body["project"] == "pixis-w1"
+    assert body["project"] == "acme-w1"
     assert body["complete"] is True
     c = body["components"]
     # aggregate_components works in SECONDS; the wire is milliseconds.

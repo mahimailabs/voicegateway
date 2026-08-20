@@ -248,7 +248,7 @@ curl -H "Authorization: Bearer vk_..." \
 ```json
 {
   "room": "demo-a1b2c3",
-  "project": "pixis-w1",
+  "project": "acme-w1",
   "turn_count": 7,
   "complete": true,
   "components": {

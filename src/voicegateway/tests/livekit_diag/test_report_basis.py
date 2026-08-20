@@ -101,8 +101,8 @@ def test_a_run_that_probed_nothing_reports_zero_not_null() -> None:
 
 
 def test_a_declared_environment_is_carried_and_labelled_as_declared() -> None:
-    basis = _payload(_run([]), environment="pixis-prod-iad")["basis"]
-    assert basis["environment"] == "pixis-prod-iad"
+    basis = _payload(_run([]), environment="acme-prod-iad")["basis"]
+    assert basis["environment"] == "acme-prod-iad"
     assert basis["environment_declared"] is True
     assert "declared" in basis["environment_source"]
 
@@ -155,9 +155,9 @@ def test_the_rendered_report_states_both_counts(monkeypatch) -> None:
 
 
 def test_the_rendered_report_names_the_declared_environment() -> None:
-    html = run_report.render_html(_payload(_run([]), environment="pixis-prod-iad"))
+    html = run_report.render_html(_payload(_run([]), environment="acme-prod-iad"))
     assert "Environment" in html
-    assert "pixis-prod-iad" in html
+    assert "acme-prod-iad" in html
 
 
 def test_an_undeclared_environment_is_not_left_blank(monkeypatch) -> None:
