@@ -8,6 +8,31 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ### Added
 
+- **A test asserting every telemetry table's INSERT writes every one of its
+  columns.** The differential form of the `revision` defect.
+
+  `revision` was added to the model, added to the migration, and accepted by
+  both. `_INSERT_REQUEST` names its 23 columns explicitly and nobody added it
+  there, so every row wrote NULL. The field existed in the model, existed in
+  the schema, was in the changelog, and was never once stored. Every test
+  asserting on the in-memory record passed the whole time.
+
+  A schema and an INSERT are two producers of one truth, and they drift
+  silently, so something has to compare them mechanically rather than rely on a
+  reviewer noticing a missing name in a twenty-three column list.
+
+  `requests`, `turns`, `tool_calls` and `dead_air_events` get no exemptions at
+  all. Columns filled by a later UPDATE are listed per table with a reason, and
+  that list is the only place a column may be excused, so excusing one is a
+  visible edit. A second test fails if an excuse names a column that no longer
+  exists, since a stale excuse would pre-excuse the next column to take that
+  name.
+
+  Verified by reproducing the original defect: removing `revision` from
+  `_INSERT_REQUEST` fails this test by name.
+
+### Added
+
 - **The cost summary now reports `billable_requests` beside `requests`.**
   Divide `total` by the first for a cost per call; the second counts every
   stored row.
