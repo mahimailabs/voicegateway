@@ -98,11 +98,28 @@ def test_an_unknown_model_says_it_is_not_priced_and_why(client) -> None:
     """A bare null could not be told apart from "this endpoint does not handle
     this modality", and those want different UI.
 
-    deepgram/nova-2-phonecall is a real model that voice-prices 0.3.0 does not
-    carry, which is the common case: 6 of 10 sampled STT refs are unpriced.
+    THIS TEST USED TO NAME A REAL UNPRICED MODEL, deepgram/nova-2-phonecall,
+    and that made it a test of the catalogue rather than of this endpoint. The
+    catalogue matches by prefix clause, not by exact id, so what the choice
+    actually encoded was the SHAPE of one version's Deepgram matchers. When
+    voice-prices went 0.3.0 -> 0.6.0 those matchers were rewritten and the
+    domain-suffixed forms began resolving to their tier: nova-2-phonecall now
+    matches nova-2 and prices at 0.00583332/minute. The test then failed with
+    no code change, on a machine where the only difference was which version
+    a resolve had landed on.
+
+    The contract under test is that an unpriced answer is EXPLICIT: it carries
+    a reason and still names the unit, so a UI can render "unpriced, per
+    minute" rather than a blank. That contract does not need a real model, so
+    the ref below is under a real provider and cannot be claimed by any
+    matcher in any catalogue build.
     """
-    catalog = _quote(client, "stt", "deepgram/nova-2-phonecall")["catalog"]
-    assert catalog["priced"] is False
+    catalog = _quote(client, "stt", "deepgram/not-a-real-model-xyzzy")["catalog"]
+    assert catalog["priced"] is False, (
+        "a ref no matcher can claim must report unpriced; if this fails the "
+        "catalogue has started matching arbitrary strings, which is a "
+        "catalogue bug rather than an endpoint one"
+    )
     assert catalog["reason"]
     assert catalog["unit"] == "minute"
 

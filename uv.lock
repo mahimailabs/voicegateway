@@ -3835,15 +3835,15 @@ wheels = [
 
 [[package]]
 name = "voice-prices"
-version = "0.3.0"
+version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx2" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1f/db/d619c99888c08eec6decdc0b72967f9fb70ade814f156f2de66e81921ba9/voice_prices-0.3.0.tar.gz", hash = "sha256:2a8059ea694e5f237dcbbad8d1b06bb76503ed12b764e4daee239d5ec458e069", size = 84882, upload-time = "2026-08-08T17:00:25.282Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3f/44/373d130c8cbcecf6af78978ee115dc172a996ad15ac20039d82f8a96c484/voice_prices-0.6.0.tar.gz", hash = "sha256:eb21b5df70fd8608dcc5832d764c92f36fb807a6ff8b0c0c896727a746f49965", size = 99268, upload-time = "2026-08-21T00:29:17.132Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/db/1b/1cd363519500da90ea98a5442ce9f31015260aafbeb44b27a4aeff2d248a/voice_prices-0.3.0-py3-none-any.whl", hash = "sha256:0e7d1430123623596c4a9265ec1dbbe8eded9ceddf6f69a5e1abc8ee31f3bbcc", size = 89439, upload-time = "2026-08-08T17:00:23.698Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/6a/23ed98f399f0bdd1bc2a4953cc1531ae86829ee28d2a48a4619804734c51/voice_prices-0.6.0-py3-none-any.whl", hash = "sha256:5bd86b6cb5cb9243a3aa984dc20fbb5c9c62bf3761e0f8cd6f16ae345d572540", size = 104161, upload-time = "2026-08-21T00:29:15.826Z" },
 ]
 
 [[package]]
