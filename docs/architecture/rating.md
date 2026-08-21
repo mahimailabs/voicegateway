@@ -15,6 +15,10 @@ A rate card is a global `default_markup` fallback plus an ordered list of rules.
 
 **Rule kind** is one of two:
 
+Each rule also names **which side of the ledger it sets** via `sets`: `price` (the default, what the tenant is charged) or `cost` (what the operator pays, replacing the catalogue figure on the recorded row). The two resolve independently, so a model-specific cost and a global markup both apply rather than the more specific one winning outright. A cost rule must be `fixed`, because `cost_plus` multiplies a recorded cost and so cannot produce one. See [`rate_card`](/configuration/voicegw-yaml).
+
+A cost rule is what makes `cost_plus` honest. Without one, the number being marked up is always the `voice-prices` list price, so anyone on a negotiated contract has a margin computed against a figure they do not pay.
+
 - **cost_plus** (`markup`): the billable price is the recorded provider cost multiplied by `markup`. Because it multiplies the recorded cost, a cost-plus rule auto-follows voice-prices base movement: when the base price changes, the rated price tracks it with no edit.
 - **fixed** (`fixed` + `unit`): the billable price is an advertised `$/unit` multiplied by the request's billable quantity in that unit. A fixed rule is decoupled from the base cost, so it holds a stable advertised price even as the base moves. Single-sided units: `minute`, `second` (stt), `char`, `1k_char` (tts), `request` (any).
 - **fixed, per leg** (`input_price_usd` + `output_price_usd` + a token `unit`): the LLM form. Token units (`token`, `1k_token`, `1m_token`) carry a rate per leg, because input and output bill at different rates on every provider in the catalogue and one blended rate cannot express either. `cached_input_price_usd` is optional and defaults to the input rate. Cached prompt tokens are a **subset** of the prompt, so the uncached leg is `input - cached`. A fixed rule describes a flat contract and cannot express context-window tiers; use `cost_plus` to track a tiered list price.

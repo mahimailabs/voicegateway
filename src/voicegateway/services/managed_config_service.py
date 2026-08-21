@@ -171,6 +171,7 @@ class ManagedConfigService:
         input_price_usd: float | None = None,
         cached_input_price_usd: float | None = None,
         output_price_usd: float | None = None,
+        sets: str = "price",
     ) -> str:
         async with self._db.session() as s:
             return await rate_rule_repo.upsert_rule(
@@ -186,6 +187,7 @@ class ManagedConfigService:
                 input_price_usd=input_price_usd,
                 cached_input_price_usd=cached_input_price_usd,
                 output_price_usd=output_price_usd,
+                sets=sets,
             )
 
     async def delete_rate_rule(self, rule_id: str) -> bool:

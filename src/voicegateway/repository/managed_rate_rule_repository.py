@@ -15,7 +15,11 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import text
 from sqlmodel import delete, select
 
-from voicegateway.billing.rate_card import WILDCARD, validate_fixed_pricing
+from voicegateway.billing.rate_card import (
+    WILDCARD,
+    validate_fixed_pricing,
+    validate_sets,
+)
 from voicegateway.models.managed_rate_rule_model import ManagedRateRule
 
 if TYPE_CHECKING:
@@ -29,9 +33,20 @@ def scope_key(
     model: str,
     tenant: str | None,
     plan: str | None,
+    sets: str = "price",
 ) -> str:
-    """Deterministic primary key for a rule's scope (one row per scope)."""
-    return "|".join(
+    """Deterministic primary key for a rule's scope (one row per scope).
+
+    A cost rule and a price rule at the SAME scope are the ordinary
+    configuration ("this is what I pay for nova-3, and charge 1.3x on top"),
+    so the ledger side has to be part of the identity or the second write
+    would overwrite the first.
+
+    Price keys keep the historical format exactly. Only cost rules take the
+    prefix, so every row written before ``sets`` existed keeps its id and an
+    upsert against it still updates rather than duplicating.
+    """
+    scope = "|".join(
         [
             tenant or WILDCARD,
             plan or WILDCARD,
@@ -40,6 +55,7 @@ def scope_key(
             model,
         ]
     )
+    return scope if sets == "price" else f"{sets}|{scope}"
 
 
 def validate_rule(
@@ -48,6 +64,7 @@ def validate_rule(
     fixed: float | None,
     unit: str | None,
     modality: str = WILDCARD,
+    sets: str = "price",
     input_price_usd: float | None = None,
     cached_input_price_usd: float | None = None,
     output_price_usd: float | None = None,
@@ -62,6 +79,7 @@ def validate_rule(
     """
     legs = (input_price_usd, cached_input_price_usd, output_price_usd)
     has_fixed = fixed is not None or any(leg is not None for leg in legs)
+    validate_sets(sets, "fixed" if has_fixed else "cost_plus")
     if markup is not None and has_fixed:
         raise ValueError("a rate rule sets either markup or a fixed price, not both")
     if has_fixed:
@@ -85,16 +103,17 @@ _RULE_UPSERT = text(
     """
     INSERT INTO managed_rate_rules (
         rule_id, modality, provider, model, tenant, plan,
-        kind, markup, unit_price_usd, unit,
+        sets, kind, markup, unit_price_usd, unit,
         input_price_usd, cached_input_price_usd, output_price_usd,
         created_at, updated_at
     ) VALUES (
         :rule_id, :modality, :provider, :model, :tenant, :plan,
-        :kind, :markup, :unit_price_usd, :unit,
+        :sets, :kind, :markup, :unit_price_usd, :unit,
         :input_price_usd, :cached_input_price_usd, :output_price_usd,
         :now, :now
     )
     ON CONFLICT(rule_id) DO UPDATE SET
+        sets=excluded.sets,
         kind=excluded.kind,
         markup=excluded.markup,
         unit_price_usd=excluded.unit_price_usd,
@@ -116,6 +135,7 @@ def _row_to_dict(r: ManagedRateRule) -> dict[str, Any]:
         "model": r.model,
         "tenant": r.tenant,
         "plan": r.plan,
+        "sets": r.sets,
         "kind": r.kind,
         "markup": r.markup,
         "unit_price_usd": r.unit_price_usd,
@@ -150,6 +170,7 @@ async def upsert_rule(
     input_price_usd: float | None = None,
     cached_input_price_usd: float | None = None,
     output_price_usd: float | None = None,
+    sets: str = "price",
 ) -> str:
     """Insert or update one rule (keyed by scope). Returns the ``rule_id``."""
     kind = validate_rule(
@@ -157,12 +178,18 @@ async def upsert_rule(
         fixed=fixed,
         unit=unit,
         modality=modality,
+        sets=sets,
         input_price_usd=input_price_usd,
         cached_input_price_usd=cached_input_price_usd,
         output_price_usd=output_price_usd,
     )
     rid = scope_key(
-        modality=modality, provider=provider, model=model, tenant=tenant, plan=plan
+        modality=modality,
+        provider=provider,
+        model=model,
+        tenant=tenant,
+        plan=plan,
+        sets=sets,
     )
     await session.execute(
         _RULE_UPSERT,
@@ -173,6 +200,7 @@ async def upsert_rule(
             "model": model,
             "tenant": tenant,
             "plan": plan,
+            "sets": sets,
             "kind": kind,
             "markup": markup if kind == "cost_plus" else None,
             "unit_price_usd": fixed if kind == "fixed" else None,

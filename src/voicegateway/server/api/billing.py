@@ -115,6 +115,7 @@ def _serialize_rule(rule: Any) -> dict[str, Any]:
         "model": rule.model,
         "tenant": rule.tenant,
         "plan": rule.plan,
+        "sets": rule.sets,
         "kind": rule.kind,
         "markup": rule.markup,
         "unit_price_usd": rule.unit_price_usd,
@@ -186,6 +187,7 @@ async def upsert_rate_card_rule(
             input_price_usd=body.get("input_price_usd"),
             cached_input_price_usd=body.get("cached_input_price_usd"),
             output_price_usd=body.get("output_price_usd"),
+            sets=body.get("sets", "price"),
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -233,7 +235,9 @@ def _voice_price(modality: str, model: str) -> float | None:
     return float(cost) if cost is not None else None
 
 
-def _serviceability(catalog: dict[str, Any], rule: Any, gate: str) -> dict[str, Any]:
+def _serviceability(
+    catalog: dict[str, Any], rule: Any, gate: str, cost_rule: Any = None
+) -> dict[str, Any]:
     """Can this model be offered, on whose number, and under which rule?
 
     The gate a consumer UI needs before it lists a model. It was answerable
@@ -257,7 +261,11 @@ def _serviceability(catalog: dict[str, Any], rule: Any, gate: str) -> dict[str, 
     rate for, so a rateless match lands on ``none`` under either policy rather
     than being offered as free.
     """
-    if rule is not None:
+    if cost_rule is not None or rule is not None:
+        # Either declaration counts. A cost rule is the one this design asks
+        # the operator for ("what do you actually pay"), and it alone is
+        # enough: the row can be metered, costed and billed off it. A price
+        # rule alone also counts, since a number has been stated either way.
         return {"serviceable": True, "priced_by": "operator", "gate": gate}
     if catalog.get("priced"):
         return {
@@ -371,23 +379,36 @@ async def rate_card_quote(
     provider, _ = _split_ref(model)
     price = _voice_prices(modality, model)
     rule = None
+    cost_rule = None
     if gateway.storage is not None:
         card = await _effective_card(gateway)
+        # Two independent resolutions, never one over a merged list: a
+        # model-specific cost and a global markup must both apply.
         rule = card.resolve(
             modality=modality,
             provider=provider,
             model_id=model,
             tenant=tenant,
             plan=plan,
+            sets="price",
+        )
+        cost_rule = card.resolve(
+            modality=modality,
+            provider=provider,
+            model_id=model,
+            tenant=tenant,
+            plan=plan,
+            sets="cost",
         )
     return {
         "modality": modality,
         "provider": provider,
         "model": model,
         "pricing_source": catalog_pricing_source(modality),
-        **_serviceability(price, rule, gateway.config.pricing.gate),
+        **_serviceability(price, rule, gateway.config.pricing.gate, cost_rule),
         "catalog": price,
         "effective": _serialize_rule(rule) if rule is not None else None,
+        "cost_basis": _serialize_rule(cost_rule) if cost_rule is not None else None,
     }
 
 
@@ -415,17 +436,23 @@ async def rate_card_quote_bulk(
         modality = str(item.get("modality") or "")
         model = str(item.get("model") or "")
         provider, _ = _split_ref(model)
-        rule = (
-            card.resolve(
-                modality=modality,
-                provider=provider,
-                model_id=model,
-                tenant=item.get("tenant"),
-                plan=item.get("plan"),
-            )
-            if card is not None
-            else None
-        )
+        item_tenant = item.get("tenant")
+        item_plan = item.get("plan")
+        rule = cost_rule = None
+        if card is not None:
+            for side in ("price", "cost"):
+                resolved = card.resolve(
+                    modality=modality,
+                    provider=provider,
+                    model_id=model,
+                    tenant=item_tenant,
+                    plan=item_plan,
+                    sets=side,
+                )
+                if side == "price":
+                    rule = resolved
+                else:
+                    cost_rule = resolved
         catalog_price = _voice_prices(modality, model)
         out.append(
             {
@@ -433,9 +460,12 @@ async def rate_card_quote_bulk(
                 "provider": provider,
                 "model": model,
                 "pricing_source": catalog_pricing_source(modality),
-                **_serviceability(catalog_price, rule, gate),
+                **_serviceability(catalog_price, rule, gate, cost_rule),
                 "catalog": catalog_price,
                 "effective": _serialize_rule(rule) if rule is not None else None,
+                "cost_basis": (
+                    _serialize_rule(cost_rule) if cost_rule is not None else None
+                ),
             }
         )
     return {"models": out}

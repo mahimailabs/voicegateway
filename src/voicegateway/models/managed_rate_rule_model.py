@@ -28,6 +28,10 @@ class ManagedRateRule(SQLModel, table=True):
     model: str = Field(default="*", sa_column_kwargs={"server_default": "*"})
     tenant: str | None = None
     plan: str | None = None
+    # Which ledger side the rule sets: "price" (what the tenant is charged,
+    # the historical behaviour and the default) or "cost" (what the operator
+    # pays, replacing the catalogue figure).
+    sets: str = Field(default="price", sa_column_kwargs={"server_default": "price"})
     kind: str = Field(
         default="cost_plus", sa_column_kwargs={"server_default": "cost_plus"}
     )

@@ -142,6 +142,57 @@ def apply_rule(
     return RatedResult(rated_price_usd=cost_usd * markup, rate_rule=rule.describe())
 
 
+def declared_cost(
+    card: RateCard,
+    *,
+    modality: str,
+    provider: str,
+    model_id: str,
+    input_units: float = 0.0,
+    output_units: float = 0.0,
+    cached_input_units: float = 0.0,
+    tenant: str | None = None,
+    plan: str | None = None,
+) -> tuple[float, RateRule] | None:
+    """The operator's own cost for this request, or None if none is declared.
+
+    This is the number the catalogue cannot know. A published rate is a list
+    price, and anyone at volume is on a negotiated contract that differs from
+    it by a margin nobody outside the contract can see, so a cost-plus markup
+    over the catalogue figure produces a margin that is wrong in a direction
+    the operator cannot detect.
+
+    Resolved on the ``cost`` side only, independently of whatever price rule
+    applies, so a model-specific cost and a global markup compose instead of
+    the more specific one winning outright.
+    """
+    rule = card.resolve(
+        modality=modality,
+        provider=provider,
+        model_id=model_id,
+        tenant=tenant,
+        plan=plan,
+        sets="cost",
+    )
+    if rule is None:
+        return None
+    if rule.unit in TOKEN_UNITS:
+        total = token_leg_price(
+            rule,
+            input_units=input_units,
+            output_units=output_units,
+            cached_input_units=cached_input_units,
+        )
+    else:
+        total = (rule.unit_price_usd or 0.0) * billable_quantity(
+            str(rule.unit),
+            modality=modality,
+            input_units=input_units,
+            output_units=output_units,
+        )
+    return total, rule
+
+
 def price(
     card: RateCard,
     *,
@@ -184,6 +235,7 @@ def price(
 
 __all__ = [
     "RatedResult",
+    "declared_cost",
     "apply_rule",
     "billable_quantity",
     "price",
