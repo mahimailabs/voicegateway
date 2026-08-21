@@ -52,11 +52,27 @@ jobs:
           # broke this workflow, which is why mcp is capped in pyproject.toml.
           # Revisit when livekit ships packaging mypy 2.x resolves, then drop
           # the cap here and in the local gate command.
-          uv pip install -e ".[dev,dashboard]" ruff 'mypy<2' types-PyYAML
+          #
+          # `uv sync`, NOT `uv pip install -e`. The two resolve differently and
+          # the job used to do both: `uv pip install -e` resolved fresh against
+          # the pyproject pins, then every `uv run` below re-synced the project
+          # environment from uv.lock. So the install step and the test step
+          # could run against different dependency trees in the same job.
+          #
+          # That is not theoretical. `voice-prices>=0.3.0,<1` resolves to 0.6.0
+          # while uv.lock pinned 0.3.0, and 0.6.0 rewrote the Deepgram matchers
+          # so a model that was unpriced became priced. A test asserting that
+          # model was unpriced then passed or failed depending on which command
+          # had touched the environment last, with no code change between.
+          #
+          # Tools that are not project dependencies come in as `--with`
+          # overlays on the step that needs them, so nothing outside the lock
+          # is ever installed into the synced environment.
+          uv sync --extra dev --extra dashboard
       - name: Ruff
-        run: uv run ruff check src
+        run: uv run --with ruff ruff check src
       - name: Mypy
-        run: uv run mypy
+        run: uv run --with 'mypy<2' --with types-PyYAML mypy
       - name: Pytest
         # Integration tests (testcontainers ClickHouse, real Postgres) run in
         # their dedicated jobs; the unit matrix deselects them by marker.
