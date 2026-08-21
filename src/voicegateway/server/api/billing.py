@@ -119,6 +119,9 @@ def _serialize_rule(rule: Any) -> dict[str, Any]:
         "markup": rule.markup,
         "unit_price_usd": rule.unit_price_usd,
         "unit": rule.unit,
+        "input_price_usd": rule.input_price_usd,
+        "cached_input_price_usd": rule.cached_input_price_usd,
+        "output_price_usd": rule.output_price_usd,
         "rule": rule.describe(),
     }
 
@@ -162,8 +165,11 @@ async def upsert_rate_card_rule(
     """Upsert a DB rate-card override for a scope (one rule per scope).
 
     Body: ``{modality?, provider?, model?, tenant?, plan?}`` scope plus either
-    ``markup`` (cost-plus) or ``fixed`` + ``unit``. Takes effect on the next
-    config refresh, which this triggers.
+    ``markup`` (cost-plus) or a fixed price. A fixed price is ``fixed`` +
+    ``unit`` for stt and tts; for an llm token unit it is ``input_price_usd``
+    + ``output_price_usd`` (+ optional ``cached_input_price_usd``, which
+    defaults to the input rate), because input and output bill differently.
+    Takes effect on the next config refresh, which this triggers.
     """
     if gateway.storage is None:
         raise HTTPException(400, "Storage not enabled")
@@ -177,6 +183,9 @@ async def upsert_rate_card_rule(
             markup=body.get("markup"),
             fixed=body.get("fixed"),
             unit=body.get("unit"),
+            input_price_usd=body.get("input_price_usd"),
+            cached_input_price_usd=body.get("cached_input_price_usd"),
+            output_price_usd=body.get("output_price_usd"),
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

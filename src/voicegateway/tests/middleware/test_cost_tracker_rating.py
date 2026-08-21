@@ -89,3 +89,69 @@ def test_zero_cost_local_model_rates_to_zero() -> None:
     )
     assert record.cost_usd == 0.0
     assert record.rated_price_usd == 0.0
+
+
+# --------------------------------------------------------------------------
+# Cached prompt tokens must survive the trip from the record to the arithmetic
+# --------------------------------------------------------------------------
+
+
+def _llm_card() -> RateCard:
+    """$10/M input, $1/M cached, $30/M output."""
+    return RateCard(
+        rules=[
+            RateRule(
+                modality="llm",
+                kind="fixed",
+                unit="1m_token",
+                input_price_usd=10.0,
+                cached_input_price_usd=1.0,
+                output_price_usd=30.0,
+            )
+        ]
+    )
+
+
+def test_create_record_bills_cached_prompt_tokens_at_the_cached_rate() -> None:
+    """``cached_input_units`` reaches the rating math from ``create_record``.
+
+    It is a defaulted keyword at four call sites between here and
+    ``token_leg_price``, so dropping it anywhere along the way is silent: the
+    price stays finite and plausible and every cached token bills at the full
+    input rate. This asserts the discount actually lands.
+    """
+    tracker = CostTracker(rate_card=_llm_card())
+    record = tracker.create_record(
+        model_id="openai/gpt-4o",
+        modality="llm",
+        provider="openai",
+        input_units=1_000_000,
+        output_units=100_000,
+        cached_input_units=800_000,
+    )
+    # 200k uncached @ $10/M + 800k cached @ $1/M + 100k output @ $30/M
+    assert record.rated_price_usd == pytest.approx(2.0 + 0.8 + 3.0)
+
+    # Had cached been dropped on the way, the whole prompt would bill at input.
+    assert record.rated_price_usd != pytest.approx(10.0 + 3.0)
+
+
+def test_rate_record_bills_cached_prompt_tokens_at_the_cached_rate() -> None:
+    """The collector's re-rating path carries cached too.
+
+    ``rate_record`` re-rates an ingested row against the collector's own card,
+    and it reads the units off the record rather than from arguments, so it is
+    a separate way to lose the same field.
+    """
+    tracker = CostTracker()
+    record = tracker.create_record(
+        model_id="openai/gpt-4o",
+        modality="llm",
+        provider="openai",
+        input_units=1_000_000,
+        output_units=100_000,
+        cached_input_units=800_000,
+    )
+    tracker.set_rate_card(_llm_card())
+    tracker.rate_record(record)
+    assert record.rated_price_usd == pytest.approx(2.0 + 0.8 + 3.0)

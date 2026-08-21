@@ -27,8 +27,6 @@ from voicegateway.billing.rating import apply_rule, billable_quantity, price
         ("second", "stt", 2.0, 0.0, 120.0),
         ("char", "tts", 500.0, 0.0, 500.0),
         ("1k_char", "tts", 500.0, 0.0, 0.5),
-        ("token", "llm", 1000.0, 200.0, 1200.0),
-        ("1m_token", "llm", 500000.0, 500000.0, 1.0),
         ("request", "llm", 1234.0, 99.0, 1.0),
     ],
 )
@@ -42,6 +40,38 @@ def test_billable_quantity(unit, modality, in_units, out_units, expected) -> Non
 def test_billable_quantity_rejects_unknown_unit() -> None:
     with pytest.raises(ValueError):
         billable_quantity("furlong", modality="stt", input_units=1.0, output_units=0.0)
+
+
+@pytest.mark.parametrize("unit", ["token", "1k_token", "1m_token"])
+def test_billable_quantity_refuses_token_units(unit) -> None:
+    """A token unit has no single billable quantity, so it must not return one.
+
+    It used to return ``input + output``, which charged both legs at whichever
+    single rate the operator typed. No provider prices that way, so there was
+    no value that made the old answer correct.
+    """
+    with pytest.raises(ValueError, match="input and output separately"):
+        billable_quantity(unit, modality="llm", input_units=1000.0, output_units=200.0)
+
+
+@pytest.mark.parametrize(
+    ("unit", "modality"),
+    [
+        ("minute", "tts"),  # would price a CHARACTER COUNT per minute
+        ("1k_char", "stt"),  # would price MINUTES per thousand characters
+        ("second", "llm"),
+    ],
+)
+def test_billable_quantity_refuses_a_unit_from_another_modality(unit, modality) -> None:
+    """``input_units`` means a different thing per modality, so the pair matters.
+
+    ``modality`` was accepted by this function and never read, so a ``minute``
+    rule meeting a tts request multiplied a character count by a per-minute
+    rate and reported the product as money. Nothing in the stack noticed:
+    the number was finite, positive and plausible.
+    """
+    with pytest.raises(ValueError, match="not billable for modality"):
+        billable_quantity(unit, modality=modality, input_units=500.0, output_units=0.0)
 
 
 # ----- apply_rule: cost_plus -------------------------------------------

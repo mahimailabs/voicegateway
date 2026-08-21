@@ -433,7 +433,11 @@ Return the editable DB override rules, each with its `rule_id`. Use this to driv
 
 Upsert a DB rate-card override for a scope (one rule per scope, keyed by `tenant|plan|modality|provider|model`). Requires the `write` scope. Takes effect on the next config refresh, which the call triggers.
 
-**Body:** a scope (`modality?`, `provider?`, `model?`, `tenant?`, `plan?`) plus either `markup` (cost-plus) or `fixed` + `unit`.
+**Body:** a scope (`modality?`, `provider?`, `model?`, `tenant?`, `plan?`) plus one of:
+
+- `markup` (cost-plus), or
+- `fixed` + `unit` for a single-sided unit (`minute`, `second`, `char`, `1k_char`, `request`), or
+- `input_price_usd` + `output_price_usd` (+ optional `cached_input_price_usd`) with a token `unit` for LLM.
 
 ```bash
 curl -X POST http://localhost:8080/v1/billing/rate-card/rules \
@@ -443,7 +447,19 @@ curl -X POST http://localhost:8080/v1/billing/rate-card/rules \
 # -> {"rule_id": "acme|*|*|deepgram|*", "created": true}
 ```
 
-A rule that sets both `markup` and `fixed`, or a fixed rule with a missing/invalid `unit`, returns `400`.
+An LLM rule prices each leg, because input and output bill at different rates on every provider:
+
+```bash
+curl -X POST http://localhost:8080/v1/billing/rate-card/rules \
+  -H "Authorization: Bearer $VG_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"modality": "llm", "provider": "openai", "model": "gpt-4o", "unit": "1m_token",
+       "input_price_usd": 2.50, "cached_input_price_usd": 1.25, "output_price_usd": 10.00}'
+```
+
+`cached_input_price_usd` is optional and defaults to the input rate. Cached prompt tokens are a **subset** of the prompt, so a 1M prompt with 800k cached bills 200k at the input rate plus 800k at the cached rate.
+
+`400` is returned for: both `markup` and a fixed price; a missing or invalid `unit`; a bare `fixed` on a token unit (it cannot express two legs); a token unit missing either leg; leg prices on a non-token unit; or a `modality` that contradicts the `unit`.
 
 ### DELETE /v1/billing/rate-card/rules/{rule_id}
 

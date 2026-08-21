@@ -48,6 +48,7 @@ class CostTracker:
         cost_usd: float,
         input_units: float,
         output_units: float,
+        cached_input_units: float = 0.0,
     ) -> rating.RatedResult:
         """Rate a request against the active card, resolving the current tenant.
 
@@ -64,6 +65,7 @@ class CostTracker:
                 cost_usd=cost_usd,
                 input_units=input_units,
                 output_units=output_units,
+                cached_input_units=cached_input_units,
                 tenant=current_tenant(),
             )
         except Exception:
@@ -91,6 +93,7 @@ class CostTracker:
             record.cost_usd,
             record.input_units,
             record.output_units,
+            record.cached_input_units,
         )
         record.rated_price_usd = rated.rated_price_usd
         record.rate_rule = rated.rate_rule
@@ -214,7 +217,13 @@ class CostTracker:
             elif cost_dec is not None:
                 pricing_source = catalog.pricing_source(modality)
         rated = self._rate(
-            model_id, modality, provider, cost, input_units, output_units
+            model_id,
+            modality,
+            provider,
+            cost,
+            input_units,
+            output_units,
+            cached_input_units,
         )
         return RequestRecord(
             id=str(uuid.uuid4()),
