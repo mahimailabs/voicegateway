@@ -16,8 +16,15 @@ The pricing wrappers that call into it are:
 
 Each resolves a `provider/model` id against `voice-prices` and returns the
 computed cost. The per-request attribution string is `voice-prices@<version>`
-for priced models and `voicegateway-local` for self-hosted (`local/*`,
-`ollama/*`) models.
+for priced models, `voicegateway-local` for self-hosted (`local/*`, `ollama/*`)
+models, and empty when the model is unknown.
+
+A fourth value, `voice-prices-unrated`, means the catalogue matched the model
+and carries no rate for it, so the zero it returned is not a price. Some
+entries match by prefix and hold no rates at all: `deepgram/nova-general`
+matches the entry `nova`, whose price fields are empty. Those are the entries
+a refresh should prioritise, because unlike an unknown model they already have
+a home in the catalogue and only need a rate put on them.
 
 ## When a refresh is required
 
