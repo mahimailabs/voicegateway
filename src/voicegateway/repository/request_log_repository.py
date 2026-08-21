@@ -342,6 +342,7 @@ _REQUEST_COLUMNS = (
     "tenant_id",
     "agent_id",
     "turn_index",
+    "revision",
 )
 
 

@@ -155,3 +155,21 @@ async def test_the_column_survives_the_write_and_read_round_trip(store) -> None:
     stored = [r for r in rows if r.get("session_id") == sid]
     assert stored, "the row was not written at all"
     assert stored[0]["turn_index"] == 7
+
+
+async def test_revision_is_readable_on_a_row_not_only_in_aggregate(store) -> None:
+    """The gap the read-column guard was added for.
+
+    ``revision`` stored correctly and no row reader returned it, so
+    ``get_cost_by_revision`` could total two revisions apart while nothing
+    could tell you which individual requests belonged to either. Written and
+    unreadable looks, to a caller, exactly like never added.
+    """
+    rec = _record("sess-rev", turn=0, cost=0.05)
+    rec.revision = "deploy-42"
+    await store.log_request(rec)
+
+    rows = await store.get_requests_in_window()
+    stored = [r for r in rows if r.get("session_id") == "sess-rev"]
+    assert stored, "the row was not written at all"
+    assert stored[0]["revision"] == "deploy-42"

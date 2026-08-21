@@ -21,7 +21,7 @@ Args: `period` (`"today"` default, `"week"`, `"month"`), `project`, `modality` (
 
 ### get_logs
 
-Args: `project`, `modality`, `model_id`, `status` (`"success"` | `"error"` | `"fallback"`), `limit` (1-1000, default 50). Returns up to `limit` request rows, newest first, each with `timestamp`, `project`, `modality`, `model_id`, `provider`, `cost_usd`, `pricing_source`, `ttfb_ms`, `total_latency_ms`, `status`, `error_message`, plus rating fields (`rated_price_usd`, `rate_rule`; see [Rating](/architecture/rating)) and `session_id`/`tenant_id`/`agent_id`.
+Args: `project`, `modality`, `model_id`, `status` (`"success"` | `"error"` | `"fallback"`), `limit` (1-1000, default 50). Returns up to `limit` request rows, newest first, each with `timestamp`, `project`, `modality`, `model_id`, `provider`, `cost_usd`, `pricing_source`, `ttfb_ms`, `total_latency_ms`, `status`, `error_message`, plus rating fields (`rated_price_usd`, `rate_rule`; see [Rating](/architecture/rating)), `session_id`/`tenant_id`/`agent_id`, `revision`, and `turn_index`.
 
 ## Models
 
