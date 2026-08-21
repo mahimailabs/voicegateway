@@ -281,6 +281,7 @@ class CostTracker:
         session_id: str | None = None,
         agent_id: str | None = None,
         revision: str | None = None,
+        turn_index: int | None = None,
     ) -> RequestRecord:
         """Create a request record with cost calculated."""
         resolved = self._resolve_cost(
@@ -325,6 +326,7 @@ class CostTracker:
             fallback_from=fallback_from,
             error_message=error_message,
             revision=revision,
+            turn_index=turn_index,
             session_id=session_id,
             agent_id=agent_id,
         )

@@ -68,6 +68,21 @@ All three modalities return `None` for unknown models (never silent zero), so ca
 
 A fourth case sits between them. A model can *match* the catalogue and still carry no rate for the units recorded, in which case `calc_price` applies nothing and returns a total of zero. `calculate_cost_detail` reports those units alongside the total, and `CostTracker` tags the row `voice-prices-unrated` instead of `voice-prices@<version>` so it never reads as a priced figure. Use `calculate_cost_detail` rather than `calculate_cost` anywhere the answer feeds a price display or a gate.
 
+
+## Per-turn cost
+
+`requests.turn_index` says which conversational turn a metered call belongs to, within its `session_id`. It exists so that "that turn took four seconds" and "that turn cost this much" can be asked together, which they could not be before: cost rolled up by model, project, session or agent, but never by turn, so an expensive turn and a slow turn could not be shown to be the same one.
+
+It is stamped in `capture.py` at the instant the metric fires, from the turn tracker, the same way `tool_calls.turn_index` is. **It cannot be reconstructed later.** Once the metric has been handled nothing knows which turn was open, so this is not a join that could have been deferred to read time.
+
+<Warning>
+`turn_index` is a **correlation hint, not a measurement.** The tracker's index is read without its lock, so a call landing on a turn boundary can be attributed to the turn either side. That is fine for "which turn was expensive" and wrong for anything requiring exactness.
+</Warning>
+
+**NULL means no turn, not turn zero.** A Pipecat session, or a LiveKit agent running with turn capture off, has no turn for a call to belong to. Defaulting to `0` would pile every such row onto the first turn.
+
+**Cost with no turn is reported, not dropped.** A session-close reconcile row spans the whole call by construction, so `get_cost_by_turn` excludes it and `get_unattributed_cost` reports it separately. Per-turn plus unattributed reconstructs the session total exactly; a per-turn view that presented itself as complete would understate the session in precisely the case worth noticing.
+
 ## Per-request flow
 
 Every wrapped request flows through `InstrumentationMixin._log_request` (`src/voicegateway/middleware/base_middleware.py`, the mixin behind `InstrumentedSTT`/`InstrumentedLLM`/`InstrumentedTTS`):

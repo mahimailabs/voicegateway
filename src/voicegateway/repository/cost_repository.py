@@ -393,7 +393,84 @@ async def get_project_stats(session: AsyncSession, project: str) -> dict[str, An
     }
 
 
+async def get_cost_by_turn(
+    session: AsyncSession,
+    *,
+    session_id: str,
+) -> list[dict[str, Any]]:
+    """Per-turn cost for one session, cheapest question this column enables.
+
+    "That turn took four seconds" and "that turn cost this much" were two
+    questions about the same moment that could not be asked together, so an
+    expensive turn and a slow turn could never be shown to be the same one.
+
+    Scoped to a single session because ``turn_index`` only means anything
+    inside one: turn 3 of two different calls are unrelated.
+
+    Rows with no ``turn_index`` are EXCLUDED rather than bucketed under a
+    null turn. They are real spend, and the caller is told how much via
+    ``unattributed`` from :func:`get_unattributed_cost`, so a total built from
+    this never silently under-counts.
+    """
+    result = await session.execute(
+        text("""
+            SELECT turn_index,
+                   COUNT(*) AS requests,
+                   SUM(COALESCE(cost_usd, 0)) AS cost_usd,
+                   SUM(COALESCE(rated_price_usd, 0)) AS rated_price_usd,
+                   GROUP_CONCAT(DISTINCT modality) AS modalities
+            FROM requests
+            WHERE session_id = :session_id AND turn_index IS NOT NULL
+            GROUP BY turn_index
+            ORDER BY turn_index ASC
+        """),
+        {"session_id": session_id},
+    )
+    return [
+        {
+            "turn_index": int(r["turn_index"]),
+            "requests": int(r["requests"]),
+            "cost_usd": float(r["cost_usd"] or 0.0),
+            "rated_price_usd": float(r["rated_price_usd"] or 0.0),
+            "modalities": sorted(str(r["modalities"] or "").split(","))
+            if r["modalities"]
+            else [],
+        }
+        for r in result.mappings()
+    ]
+
+
+async def get_unattributed_cost(
+    session: AsyncSession,
+    *,
+    session_id: str,
+) -> dict[str, Any]:
+    """Spend in this session that belongs to no turn.
+
+    Reported separately rather than folded in or dropped. A session-close
+    reconcile row spans the whole call by construction, and a Pipecat session
+    has no turns at all, so a per-turn view that pretended to be complete
+    would be wrong in exactly the cases the operator most needs to notice.
+    """
+    result = await session.execute(
+        text("""
+            SELECT COUNT(*) AS requests,
+                   SUM(COALESCE(cost_usd, 0)) AS cost_usd
+            FROM requests
+            WHERE session_id = :session_id AND turn_index IS NULL
+        """),
+        {"session_id": session_id},
+    )
+    row = result.mappings().first()
+    return {
+        "requests": int(row["requests"] or 0) if row else 0,
+        "cost_usd": float(row["cost_usd"] or 0.0) if row else 0.0,
+    }
+
+
 __all__ = [
+    "get_cost_by_turn",
+    "get_unattributed_cost",
     "get_cost_by_day",
     "get_cost_by_modality",
     "get_cost_by_project",
