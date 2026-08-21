@@ -66,6 +66,8 @@ pricing_source(modality: str) -> str
 
 All three modalities return `None` for unknown models (never silent zero), so callers can distinguish "free" from "unknown."
 
+A fourth case sits between them. A model can *match* the catalogue and still carry no rate for the units recorded, in which case `calc_price` applies nothing and returns a total of zero. `calculate_cost_detail` reports those units alongside the total, and `CostTracker` tags the row `voice-prices-unrated` instead of `voice-prices@<version>` so it never reads as a priced figure. Use `calculate_cost_detail` rather than `calculate_cost` anywhere the answer feeds a price display or a gate.
+
 ## Per-request flow
 
 Every wrapped request flows through `InstrumentationMixin._log_request` (`src/voicegateway/middleware/base_middleware.py`, the mixin behind `InstrumentedSTT`/`InstrumentedLLM`/`InstrumentedTTS`):
@@ -91,7 +93,7 @@ Each `RequestRecord` carries the same `pricing_source` string the catalog return
 | `output_units` | `float` | Output tokens (LLM only) |
 | `cached_input_units` | `float` | Cached prompt tokens (LLM only; 0 for STT/TTS) |
 | `cost_usd` | `float` | Recorded provider cost, from `calculate_cost()` |
-| `pricing_source` | `str` | `voice-prices@<version>` or `voicegateway-local` |
+| `pricing_source` | `str` | `voice-prices@<version>`, `voice-prices-unrated`, `voicegateway-local`, or `""` when the model is unknown |
 | `rated_price_usd` | `float` | Billable price the active rate card stamped at write time; see [Rating](/architecture/rating) |
 | `rate_rule` | `str` | Audit token for the rule applied, e.g. `"cost_plus:1.3"` |
 | `ttfb_ms` | `float \| None` | Time to first byte in milliseconds |

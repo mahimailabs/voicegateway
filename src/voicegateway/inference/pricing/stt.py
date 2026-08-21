@@ -5,7 +5,9 @@ from __future__ import annotations
 from decimal import Decimal
 
 import voice_prices
-from voice_prices import Usage, calc_price
+from voice_prices import Usage
+
+from voicegateway.inference.pricing._calc import price_usage
 
 PRICING_SOURCE = f"voice-prices@{voice_prices.__version__}"
 
@@ -16,19 +18,18 @@ def calculate_stt_cost(model: str, audio_seconds: float) -> Decimal | None:
     Self-hosted ``local/*`` models are intercepted as free upstream in the
     catalog facade and never reach here.
     """
+    return calculate_stt_cost_detail(model, audio_seconds)[0]
+
+
+def calculate_stt_cost_detail(
+    model: str, audio_seconds: float
+) -> tuple[Decimal | None, tuple[str, ...]]:
+    """As :func:`calculate_stt_cost`, plus the units that carry no rate.
+
+    See :func:`voicegateway.inference.pricing._calc.price_usage`: a non-empty
+    second element means the total is not fully rate-backed.
+    """
     if audio_seconds < 0:
         raise ValueError(f"audio_seconds must be non-negative, got {audio_seconds}")
-    if "/" in model:
-        provider, _, ref = model.partition("/")
-    else:
-        provider, ref = "", model
-
     usage = Usage(audio_input_seconds=Decimal(str(audio_seconds)))
-    try:
-        price = calc_price(usage, model_ref=ref, provider_id=provider or None)
-    except LookupError:
-        return None
-    if price is None:
-        return None
-
-    return Decimal(str(price.total_price))
+    return price_usage(usage, model)
