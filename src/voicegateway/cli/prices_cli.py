@@ -7,9 +7,12 @@ Subcommands:
                   thin or negative margins.
 * ``sync``      - check each fixed ($/unit) rule against the current
                   voice-prices base cost; cost-plus rules auto-follow.
+* ``gaps``      - models that have run and cannot be priced, heaviest first.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 import typer
 from rich.table import Table
@@ -19,6 +22,7 @@ from voicegateway.billing.reconcile import margin_reconcile, sync_fixed_rules
 from voicegateway.cli._app import app, console
 from voicegateway.cli.base_cli import BaseCli
 from voicegateway.inference.pricing import catalog
+from voicegateway.repository import request_log_repository
 from voicegateway.repository.managed_rate_rule_repository import scope_key
 from voicegateway.utils.cli._shared import _parse_iso_date_arg
 
@@ -252,3 +256,69 @@ def rm_cmd(
         console.print(f"[green]removed[/green] rule [bold]{rid}[/bold]")
     else:
         _cli.fail(f"no DB override for scope {rid!r}", code=2)
+
+
+@prices_app.command("gaps")
+def gaps_cmd(
+    config: str | None = typer.Option(
+        None, "--config", "-c", help="Path to voicegw.yaml."
+    ),
+    tenant: str | None = typer.Option(None, "--tenant", help="Limit to one tenant."),
+    project: str | None = typer.Option(None, "--project", help="Limit to one project."),
+    since: str | None = typer.Option(
+        None, "--since", help="ISO date; only count rows at or after it."
+    ),
+    limit: int = typer.Option(20, "--limit", help="Rows to show."),
+) -> None:
+    """Models that have run and cannot be priced, heaviest first.
+
+    The work list for operator-declared pricing: which models still need a
+    rate typed in, ordered by how much traffic is going unpriced, so the job
+    is finite instead of discovered one dashboard row at a time.
+    """
+    gw = _cli.require_gateway(config)
+    storage = gw.storage
+    if storage is None:
+        console.print("Storage is not enabled; there is nothing to report.")
+        return
+    since_ts = _parse_iso_date_arg(since, end_of_day=False) if since else None
+
+    async def _read() -> list[dict[str, Any]]:
+        await storage._ensure_initialized()
+        async with storage._conn.session() as db:
+            return await request_log_repository.read_pricing_gaps(
+                db, tenant=tenant, project=project, since_ts=since_ts
+            )
+
+    rows = _cli.async_run(_read())
+    if not rows:
+        console.print("[bold]No pricing gaps.[/bold] Every metered model has a rate.")
+        return
+
+    table = Table(title="Pricing gaps (heaviest first)")
+    for col in ("model", "modality", "requests", "units in/out", "gap"):
+        table.add_column(col)
+    for row in rows[:limit]:
+        # The two gaps have different remedies, so the table names which one
+        # rather than collapsing both into "unpriced".
+        if row["unknown_requests"] and row["unrated_requests"]:
+            gap = "not in catalog + no rate"
+        elif row["unrated_requests"]:
+            gap = "matched, no rate"
+        else:
+            gap = "not in catalog"
+        table.add_row(
+            row["model"],
+            row["modality"],
+            str(row["requests"]),
+            f"{row['input_units']:.0f}/{row['output_units']:.0f}",
+            gap,
+        )
+    console.print(table)
+    if len(rows) > limit:
+        console.print(f"... and {len(rows) - limit} more; raise --limit to see them.")
+    console.print(
+        "\n[dim]Rows whose model matched the catalog but carried no rate were "
+        "recorded as priced before v0.25.6, so a window spanning that release "
+        "under-reports the 'matched, no rate' column.[/dim]"
+    )

@@ -667,8 +667,94 @@ async def read_models_in_use(session: AsyncSession) -> list[dict[str, str]]:
     return rows
 
 
+async def read_pricing_gaps(
+    session: AsyncSession,
+    *,
+    tenant: str | None = None,
+    project: str | None = None,
+    since_ts: float | None = None,
+) -> list[dict[str, Any]]:
+    """Models that have run and cannot be priced, heaviest first.
+
+    The operator-declared-pricing design asks a person to type a rate per
+    model. This is the list telling them WHICH models, ordered by how much
+    traffic is currently going unpriced, so the work is finite and prioritised
+    rather than discovered one dashboard row at a time.
+
+    Two distinct gaps, reported separately because the remedies differ:
+
+    * ``unknown_requests`` - the catalogue does not carry the model at all.
+    * ``unrated_requests`` - the catalogue MATCHED the model and holds no rate
+      for it (``deepgram/nova-general`` matching the rateless ``nova`` entry).
+
+    The second kind was invisible before ``voice-prices-unrated`` existed: those
+    rows carried full ``voice-prices@<version>`` provenance, so a gap report
+    would have counted them as priced and under-reported exactly the prefix
+    catch-alls that swallow the most traffic.
+
+    Filtered to BILLABLE rows, using the same predicate as the billable count
+    in ``cost_repository``: a non-error row that moved units. Without it the
+    list is dominated by ``eou`` timing rows, which carry no model and an empty
+    ``pricing_source`` and are not something anyone can put a price on.
+    """
+    where = [
+        "pricing_source IN ('', 'voice-prices-unrated')",
+        "modality IN ('stt', 'llm', 'tts')",
+        "model_id != ''",
+        "status != 'error'",
+        "(COALESCE(input_units, 0) + COALESCE(output_units, 0)) > 0",
+    ]
+    params: dict[str, Any] = {}
+    if tenant is not None:
+        where.append("tenant_id = :tenant")
+        params["tenant"] = tenant
+    if project is not None:
+        where.append("project = :project")
+        params["project"] = project
+    if since_ts is not None:
+        where.append("timestamp >= :since_ts")
+        params["since_ts"] = since_ts
+
+    sql = text(f"""
+        SELECT modality, provider, model_id,
+               COUNT(*) AS requests,
+               SUM(COALESCE(input_units, 0)) AS input_units,
+               SUM(COALESCE(output_units, 0)) AS output_units,
+               MAX(timestamp) AS last_seen,
+               SUM(CASE WHEN pricing_source = '' THEN 1 ELSE 0 END)
+                   AS unknown_requests,
+               SUM(CASE WHEN pricing_source = 'voice-prices-unrated'
+                        THEN 1 ELSE 0 END) AS unrated_requests
+        FROM requests
+        WHERE {" AND ".join(where)}
+        GROUP BY modality, provider, model_id
+        ORDER BY requests DESC, last_seen DESC
+    """)
+    result = await session.execute(sql, params)
+    rows: list[dict[str, Any]] = []
+    for r in result.mappings():
+        model = r["model_id"]
+        if r["provider"] and "/" not in model:
+            model = f"{r['provider']}/{model}"
+        rows.append(
+            {
+                "modality": r["modality"],
+                "provider": r["provider"] or "",
+                "model": model,
+                "requests": int(r["requests"]),
+                "input_units": float(r["input_units"] or 0.0),
+                "output_units": float(r["output_units"] or 0.0),
+                "last_seen": float(r["last_seen"] or 0.0),
+                "unknown_requests": int(r["unknown_requests"] or 0),
+                "unrated_requests": int(r["unrated_requests"] or 0),
+            }
+        )
+    return rows
+
+
 __all__ = [
     "get_audit_log",
+    "read_pricing_gaps",
     "get_recent_requests",
     "get_requests_for_room",
     "get_requests_in_window",

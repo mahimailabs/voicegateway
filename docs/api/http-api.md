@@ -425,6 +425,43 @@ Distinct models seen in telemetry, each with its `voice-prices` unit cost and th
 curl http://localhost:8080/v1/billing/rate-card/models
 ```
 
+### GET /v1/billing/rate-card/quote
+
+Price a model **before it has run**. `/rate-card/models` answers only for models already in telemetry, because it is fed by the requests table, and an agent-config editor picks a model before any call exists.
+
+Query: `modality`, `model` (`provider/model`), `tenant?`, `plan?`.
+
+```json
+{
+  "modality": "stt",
+  "provider": "deepgram",
+  "model": "deepgram/nova-3",
+  "serviceable": false,
+  "priced_by": "catalog",
+  "gate": "declared_only",
+  "catalog": { "priced": true, "unit": "minute", "unit_price_usd": 0.0043 },
+  "effective": null
+}
+```
+
+- **`serviceable`** — can this model be offered to end users. This is the field a consumer UI gates enablement on.
+- **`priced_by`** — `operator` (a rate someone declared), `catalog` (a published list price), or `none`.
+- **`gate`** — the policy that produced `serviceable`, from [`pricing.gate`](/configuration/voicegw-yaml). Echoed because `serviceable` is a policy answer rather than a fact: under the default `declared_only` a catalogue price does **not** make a model serviceable, and a consumer written against `permissive` would otherwise misread it.
+- **`catalog`** — what `voice-prices` says, for prefilling the operator's input. `priced` is `false` both for an unknown model and for one the catalogue matched but holds no rate for.
+- **`effective`** — the rate rule that would apply, or `null`.
+
+`POST /v1/billing/rate-card/quote` takes `{"models": [{modality, model, tenant?, plan?}, ...]}` (max 200) and returns the same shape per entry under `models`, so an editor prices a whole dropdown in one call and gets the same gate.
+
+### GET /v1/billing/rate-card/gaps
+
+Models that have run and cannot be priced, heaviest first. The work list for operator-declared pricing.
+
+Query: `tenant?`, `project?`, `since?` (ISO date). Each entry carries `requests`, `input_units`, `output_units`, `last_seen`, and the two gap kinds split apart: `unknown_requests` (the catalogue does not carry the model) and `unrated_requests` (it matched the model and holds no rate for it).
+
+Only billable rows count: non-error requests that moved units, so end-of-utterance timing rows do not appear.
+
+The response carries `caveat_before`, stating that rows which matched the catalogue with no rate were recorded as priced before v0.25.6, so a window spanning that release under-reports `unrated_requests`. A gap list that was ever silently short is one nobody trusts twice, and a reader cannot tell that from the numbers.
+
 ### GET /v1/billing/rate-card/rules
 
 Return the editable DB override rules, each with its `rule_id`. Use this to drive an editor (the seed rules in `GET /rate-card` have no `rule_id`; only DB overrides are mutable).

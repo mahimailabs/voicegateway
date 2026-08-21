@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import difflib
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -77,6 +77,35 @@ class TenantConfig(_StrictBase):
     """Multi-tenant attribution knobs."""
 
     api_key_stale_days: int = Field(default=90, ge=1)
+
+
+class PricingConfig(_StrictBase):
+    """Whether a model can be offered before someone has declared its rate.
+
+    ``gate`` decides what ``serviceable`` means on the rate-card quote
+    endpoints, which is the single field a consumer UI will gate enablement
+    on. The two values encode a product decision, not a preference:
+
+    ``declared_only`` (default)
+        Only a rate an operator entered counts. A model nobody has priced is
+        not offerable. This is the design's actual claim: a catalogue list
+        price is wrong by an unknown margin for anyone on a negotiated
+        contract, so treating one as sufficient defeats the purpose of asking.
+        The cost is a blank slate on day one, which ``voicegw prices gaps``
+        and catalogue prefill exist to make short.
+
+    ``permissive``
+        Any rate counts, including the catalogue's. Everything works
+        immediately, and an operator who declares nothing bills off list
+        prices without being stopped. ``priced_by`` still reports which rows
+        came from the catalogue so a UI can badge them.
+
+    The default is strict because the default propagates: every consumer that
+    gates on ``serviceable`` inherits it, and a permissive default would ship
+    list-price billing to all of them unless each independently noticed.
+    """
+
+    gate: Literal["declared_only", "permissive"] = "declared_only"
 
 
 class IngestConfig(_StrictBase):
@@ -319,6 +348,7 @@ _VALID_TOP_LEVEL_KEYS = {
     "workers",
     "clickhouse",
     "rate_card",
+    "pricing",
 }
 
 
@@ -346,6 +376,7 @@ class VoiceGatewayConfig(BaseModel):
     workers: WorkersConfig = Field(default_factory=WorkersConfig)
     clickhouse: ClickHouseConfig = Field(default_factory=ClickHouseConfig)
     rate_card: RateCardConfig = Field(default_factory=RateCardConfig)
+    pricing: PricingConfig = Field(default_factory=PricingConfig)
 
     @model_validator(mode="before")
     @classmethod

@@ -233,6 +233,41 @@ def _voice_price(modality: str, model: str) -> float | None:
     return float(cost) if cost is not None else None
 
 
+def _serviceability(catalog: dict[str, Any], rule: Any, gate: str) -> dict[str, Any]:
+    """Can this model be offered, on whose number, and under which rule?
+
+    The gate a consumer UI needs before it lists a model. It was answerable
+    already, by checking ``effective is not None`` and falling back to reading
+    ``catalog.priced``, but every caller had to reconstruct it and each one
+    could reconstruct it differently.
+
+    ``priced_by`` matters as much as ``serviceable``. A rate the operator
+    declared is what they actually pay; a catalogue rate is a public list
+    price that is wrong by an unknown margin for anyone on a negotiated
+    contract. A UI that cannot tell them apart cannot tell the operator which
+    models still need their attention.
+
+    ``gate`` is echoed back because ``serviceable`` is a policy answer, not a
+    fact, and a boolean whose meaning is configurable is a boolean that gets
+    misread. Under ``declared_only`` a catalogue price does NOT make a model
+    serviceable; under ``permissive`` it does. Returning the policy alongside
+    the verdict means a consumer can never mistake one for the other.
+
+    ``catalog.priced`` is false for a model the catalogue matched but holds no
+    rate for, so a rateless match lands on ``none`` under either policy rather
+    than being offered as free.
+    """
+    if rule is not None:
+        return {"serviceable": True, "priced_by": "operator", "gate": gate}
+    if catalog.get("priced"):
+        return {
+            "serviceable": gate == "permissive",
+            "priced_by": "catalog",
+            "gate": gate,
+        }
+    return {"serviceable": False, "priced_by": "none", "gate": gate}
+
+
 def _unrated(unit: str, units: tuple[str, ...]) -> dict[str, Any]:
     """The catalogue matched the model and put no rate to it.
 
@@ -350,6 +385,7 @@ async def rate_card_quote(
         "provider": provider,
         "model": model,
         "pricing_source": catalog_pricing_source(modality),
+        **_serviceability(price, rule, gateway.config.pricing.gate),
         "catalog": price,
         "effective": _serialize_rule(rule) if rule is not None else None,
     }
@@ -371,6 +407,7 @@ async def rate_card_quote_bulk(
     if len(items) > 200:
         raise HTTPException(413, f"too many models: {len(items)} exceeds 200")
     card = await _effective_card(gateway) if gateway.storage is not None else None
+    gate = gateway.config.pricing.gate
     out: list[dict[str, Any]] = []
     for item in items:
         if not isinstance(item, dict):
@@ -389,17 +426,60 @@ async def rate_card_quote_bulk(
             if card is not None
             else None
         )
+        catalog_price = _voice_prices(modality, model)
         out.append(
             {
                 "modality": modality,
                 "provider": provider,
                 "model": model,
                 "pricing_source": catalog_pricing_source(modality),
-                "catalog": _voice_prices(modality, model),
+                **_serviceability(catalog_price, rule, gate),
+                "catalog": catalog_price,
                 "effective": _serialize_rule(rule) if rule is not None else None,
             }
         )
     return {"models": out}
+
+
+@router.get("/rate-card/gaps")
+async def rate_card_gaps(
+    tenant: str | None = Query(None),
+    project: str | None = Query(None),
+    since: str | None = Query(None, description="ISO date; only rows at or after"),
+    gateway: Gateway = Depends(get_gateway),
+) -> dict[str, Any]:
+    """Models that have run and cannot be priced, heaviest first.
+
+    The work list for operator-declared pricing. Someone has to type a rate per
+    model; this says which models, ordered by how much traffic is currently
+    going unpriced, so the task is finite and prioritised instead of being
+    discovered one dashboard row at a time.
+
+    Each entry splits the two kinds of gap, because the remedies differ:
+    ``unknown_requests`` means the catalogue does not carry the model at all,
+    ``unrated_requests`` means it matched the model and holds no rate for it.
+
+    ``caveat_before`` is part of the response on purpose. Rateless matches used
+    to be stamped with full catalogue provenance, so this report would have
+    counted them as priced. A gap list that was ever silently short is one
+    nobody trusts twice, and the reader cannot know that from the numbers.
+    """
+    if gateway.storage is None:
+        return {"gaps": [], "unpriced_source_version": None}
+    await gateway.storage._ensure_initialized()
+    since_ts = parse_iso_date(since, end_of_day=False) if since else None
+    async with gateway.storage._conn.session() as db:
+        gaps = await request_log_repository.read_pricing_gaps(
+            db, tenant=tenant, project=project, since_ts=since_ts
+        )
+    return {
+        "gaps": gaps,
+        "caveat_before": (
+            "Rows whose model matched the catalog but carried no rate were "
+            "recorded as priced before voicegateway 0.25.6, so a window "
+            "spanning that release under-reports unrated_requests."
+        ),
+    }
 
 
 @router.get("/rate-card/models")
