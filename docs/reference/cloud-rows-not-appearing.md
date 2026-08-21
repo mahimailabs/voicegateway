@@ -23,15 +23,20 @@ See the [hosted quickstart](/hosted/quickstart) for the full setup.
 
 ## Rows arrive but every cost is `$0.00`
 
-A `$0.00` row is a real row. **Three different things produce one**, and they are not distinguished by the cost column, which is why the cost column is the wrong place to look:
+A `$0.00` row is a real row. **Four different things produce one**, and they are not distinguished by the cost column, which is why the cost column is the wrong place to look:
 
 | What happened | `cost_usd` | `pricing_source` |
 |---|---|---|
 | Self-hosted model (`local/*`, `ollama/*`) | `0.0` | `voicegateway-local` |
 | Model not in the pricing catalogue | `0.0` | `""` (empty) |
+| Model matched, but the catalogue has no rate for it | `0.0` | `voice-prices-unrated` |
 | Genuinely free or trivial usage | `0.0` | `voice-prices@<version>` |
 
 **`pricing_source` is what tells them apart.** An empty `pricing_source` means VoiceGateway priced nothing because it did not recognise the model, and it logs a warning when that happens: `No pricing data for <modality> model '<model>'; cost recorded as $0`.
+
+`voice-prices-unrated` is the subtle one. Some catalogue entries match a model and carry no rate at all: `deepgram/nova-general` matches the entry `nova`, whose price fields are all empty. The lookup succeeds, no rate is applied, and the total is zero. That zero is not a price, so the row is tagged `voice-prices-unrated` rather than `voice-prices@<version>` and logs `matched the catalog but it carries no rate for <units>`. The remedy differs from an unknown model: the entry exists already and needs a rate, rather than needing to be added.
+
+The tag makes no claim about *why* there is no rate. A deliberately free tier and a missing rate are identical in the catalogue data, so VoiceGateway reports what it observed instead of guessing which one you have.
 
 Self-hosted models are not a defect. They run on hardware you already pay for, and VoiceGateway records the usage without inventing a price for it.
 

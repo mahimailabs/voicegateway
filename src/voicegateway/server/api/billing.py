@@ -15,7 +15,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from voicegateway.billing.rate_card import RateCard
 from voicegateway.clickhouse import read_repository as ch_read
-from voicegateway.inference.pricing.catalog import calculate_cost
+from voicegateway.inference.pricing.catalog import (
+    calculate_cost,
+    calculate_cost_detail,
+)
 from voicegateway.inference.pricing.catalog import (
     pricing_source as catalog_pricing_source,
 )
@@ -230,6 +233,25 @@ def _voice_price(modality: str, model: str) -> float | None:
     return float(cost) if cost is not None else None
 
 
+def _unrated(unit: str, units: tuple[str, ...]) -> dict[str, Any]:
+    """The catalogue matched the model and put no rate to it.
+
+    Reported as unpriced rather than as ``$0.00``, because a zero the
+    catalogue never priced is indistinguishable downstream from a model that
+    genuinely costs nothing, and an editor gating on ``priced`` would let the
+    first one through as free. The reason names the units so the remedy is
+    obvious: the entry exists, it needs a rate.
+    """
+    return {
+        "priced": False,
+        "unit": unit,
+        "reason": (
+            f"matched the voice-prices catalog, which carries no rate for "
+            f"{', '.join(units)}"
+        ),
+    }
+
+
 def _voice_prices(modality: str, model: str) -> dict[str, Any]:
     """Unit prices for a model, split by leg where the modality has two.
 
@@ -252,27 +274,33 @@ def _voice_prices(modality: str, model: str) -> dict[str, Any]:
         return {"priced": False, "unit": None, "reason": "unknown modality"}
     unit = spec[0]
     if modality == "llm":
-        inp = calculate_cost(modality, model, input_tokens=1_000_000)
-        out = calculate_cost(modality, model, output_tokens=1_000_000)
+        inp, inp_unrated = calculate_cost_detail(
+            modality, model, input_tokens=1_000_000
+        )
+        out, _ = calculate_cost_detail(modality, model, output_tokens=1_000_000)
         if inp is None and out is None:
             return {
                 "priced": False,
                 "unit": unit,
                 "reason": "not in the voice-prices catalog",
             }
+        if inp_unrated:
+            return _unrated(unit, inp_unrated)
         return {
             "priced": True,
             "unit": unit,
             "input_price_usd": float(inp) if inp is not None else None,
             "output_price_usd": float(out) if out is not None else None,
         }
-    cost = calculate_cost(modality, model, **spec[1])
+    cost, unrated = calculate_cost_detail(modality, model, **spec[1])
     if cost is None:
         return {
             "priced": False,
             "unit": unit,
             "reason": "not in the voice-prices catalog",
         }
+    if unrated:
+        return _unrated(unit, unrated)
     return {"priced": True, "unit": unit, "unit_price_usd": float(cost)}
 
 

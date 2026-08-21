@@ -105,14 +105,18 @@ class CostTracker:
         input_units: float,
         output_units: float,
         cached_input_units: float,
-    ) -> Decimal | None:
-        """Map recorded units onto the catalog call for ``modality``."""
+    ) -> tuple[Decimal | None, tuple[str, ...]]:
+        """Map recorded units onto the catalog call for ``modality``.
+
+        Returns the catalog's ``(total, unrated_units)`` pair: a non-empty
+        second element means the model matched but no rate was applied.
+        """
         if modality == "stt":
-            return catalog.calculate_cost(
+            return catalog.calculate_cost_detail(
                 "stt", model_id, audio_seconds=input_units * 60
             )
         if modality == "llm":
-            return catalog.calculate_cost(
+            return catalog.calculate_cost_detail(
                 "llm",
                 model_id,
                 input_tokens=int(input_units),
@@ -120,10 +124,10 @@ class CostTracker:
                 cached_input_tokens=int(cached_input_units),
             )
         if modality == "tts":
-            return catalog.calculate_cost(
+            return catalog.calculate_cost_detail(
                 "tts", model_id, character_count=int(input_units)
             )
-        return None
+        return None, ()
 
     def _resolve_cost(
         self,
@@ -132,14 +136,20 @@ class CostTracker:
         input_units: float,
         output_units: float,
         cached_input_units: float,
-    ) -> tuple[float, Decimal | None]:
-        """Return ``(float_cost, raw_decimal_or_None)`` for a request.
+    ) -> tuple[float, Decimal | None, tuple[str, ...]]:
+        """Return ``(float_cost, raw_decimal_or_None, unrated_units)``.
 
-        ``None`` means voice-prices did not recognize the model. A warning is
-        logged for unpriced cloud models; self-hosted ``local/``/``ollama/``
-        models are expected to be free and are not warned about.
+        ``None`` means voice-prices did not recognize the model. A non-empty
+        ``unrated_units`` means it DID recognize the model and applied no rate
+        to those units, so the total is a zero the catalogue never priced.
+        Both are warned about, in different words, because the remedies
+        differ: an unknown model needs a catalogue entry, a rateless match
+        needs a rate on an entry that already exists.
+
+        Self-hosted ``local/``/``ollama/`` models are expected to be free and
+        are not warned about.
         """
-        cost = self._catalog_cost(
+        cost, unrated = self._catalog_cost(
             model_id, modality, input_units, output_units, cached_input_units
         )
         if cost is None:
@@ -149,8 +159,18 @@ class CostTracker:
                     modality,
                     model_id,
                 )
-            return 0.0, None
-        return float(cost), cost
+            return 0.0, None, ()
+        if unrated:
+            logger.warning(
+                "%s model %r matched the catalog but it carries no rate for "
+                "%s; cost recorded as $%s and tagged %r rather than as priced.",
+                modality,
+                model_id,
+                ", ".join(unrated),
+                cost,
+                catalog.UNRATED_SOURCE,
+            )
+        return float(cost), cost, unrated
 
     def calculate_cost(
         self,
@@ -161,7 +181,7 @@ class CostTracker:
         cached_input_units: float = 0.0,
     ) -> float:
         """Calculate cost for a request."""
-        cost, _ = self._resolve_cost(
+        cost, _, _ = self._resolve_cost(
             model_id, modality, input_units, output_units, cached_input_units
         )
         return cost
@@ -186,12 +206,14 @@ class CostTracker:
         revision: str | None = None,
     ) -> RequestRecord:
         """Create a request record with cost calculated."""
-        cost, cost_dec = self._resolve_cost(
+        cost, cost_dec, unrated = self._resolve_cost(
             model_id, modality, input_units, output_units, cached_input_units
         )
         if not pricing_source:
             if model_id.startswith(("local/", "ollama/")):
                 pricing_source = catalog.SELF_HOSTED_SOURCE
+            elif unrated:
+                pricing_source = catalog.UNRATED_SOURCE
             elif cost_dec is not None:
                 pricing_source = catalog.pricing_source(modality)
         rated = self._rate(
