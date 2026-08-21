@@ -1305,6 +1305,7 @@ def _attach_livekit(
         dispatch_name=resolved_dispatch_name,
         revision=resolved_revision,
         on_caller_end=_correct_caller_end if turn_tracker is not None else None,
+        turn_tracker=turn_tracker,
     )
     capture.bind(session)
 

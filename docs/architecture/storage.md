@@ -65,6 +65,7 @@ The primary table for every completed (or failed) inference request. ORM class `
 | `cached_input_units` | REAL | Prompt tokens served from the provider's cache (LLM only; 0 for STT/TTS) |
 | `cost_usd` | REAL | Recorded provider cost |
 | `pricing_source` | TEXT | `"rate-card:<rule_id>"` operator-declared, `"voice-prices@<version>"` catalogue-priced, `"voice-prices-unrated"` matched with no rate, `"voicegateway-local"` self-hosted, `""` unknown model |
+| `turn_index` | INTEGER | Which conversational turn within `session_id` this call belongs to. NULL when no turn was tracked, never `0`. A correlation hint, not a measurement: see below. |
 | `rated_price_usd` | REAL | Billable price the rate card stamped at write time; see [Rating](/architecture/rating) |
 | `rate_rule` | TEXT | Audit token for the rule applied, e.g. `"cost_plus:1.3"` |
 | `ttfb_ms` | REAL | Time to first byte in milliseconds |

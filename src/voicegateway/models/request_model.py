@@ -53,6 +53,17 @@ class RequestRecord:
     # and a deploy id are all valid and the collector never parses it, it only
     # groups by it. Choosing between them is the operator's business.
     revision: str | None = None
+    # WHICH CONVERSATIONAL TURN THIS CALL BELONGS TO, within ``session_id``.
+    #
+    # A CORRELATION HINT, NOT A MEASUREMENT. It is read from the turn tracker
+    # at the instant the metric fires, without the lock, so a call landing on
+    # a turn boundary can be attributed to the turn either side. That is fine
+    # for "which turn was expensive" and wrong for anything needing exactness.
+    #
+    # None, never 0, when no turn is being tracked: Pipecat sessions and any
+    # agent with turn capture off have no turn to belong to, and 0 would claim
+    # the first one.
+    turn_index: int | None = None
     # Billing: the rate card in effect stamps a billable price + audit token
     # at write time. Immutable once written; defaults are a cost pass-through.
     rated_price_usd: float = 0.0
@@ -78,6 +89,8 @@ class Request(SQLModel, table=True):
         Index("idx_requests_session_id", "session_id"),
         Index("idx_requests_agent_id", "agent_id"),
         Index("idx_requests_agent_id_timestamp", "agent_id", "timestamp"),
+        # Every per-turn question is scoped to one session first.
+        Index("idx_requests_session_turn", "session_id", "turn_index"),
     )
 
     id: str = Field(primary_key=True)
@@ -131,3 +144,6 @@ class Request(SQLModel, table=True):
     agent_id: str | None = None
     # Agent configuration revision (opaque; grouped, never parsed).
     revision: str | None = None
+    # Which conversational turn within session_id produced this call. Nullable
+    # by design: absent means no turn was tracked, not turn zero.
+    turn_index: int | None = None

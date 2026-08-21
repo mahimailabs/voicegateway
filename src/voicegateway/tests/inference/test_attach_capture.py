@@ -1027,3 +1027,111 @@ async def test_non_speaking_user_state_change_does_not_anchor_onset():
 
     eou = next(r for r in sink.records if r.modality == "eou")
     assert "time_to_first_partial_ms" not in eou.metadata["eou"]
+
+
+# --------------------------------------------------------------------------
+# Which turn a metered call belongs to
+# --------------------------------------------------------------------------
+
+
+class _FakeTracker:
+    """Stands in for TurnTracker.current_turn_index."""
+
+    def __init__(self, index: int | None) -> None:
+        self.index = index
+        self.asked_for: list[str | None] = []
+
+    def current_turn_index(self, session_id: str | None = None) -> int | None:
+        self.asked_for.append(session_id)
+        return self.index
+
+
+async def test_a_metered_call_records_the_turn_it_belongs_to(tmp_path):
+    """The wiring that makes per-turn cost possible at all.
+
+    The correlation exists only while the metric is firing: afterwards nothing
+    knows which turn was open, so this cannot be recovered by a later join.
+    """
+    storage = StorageService(str(tmp_path / "turn.db"))
+    sink = LocalSqliteSink(storage)
+    tracker = _FakeTracker(4)
+    llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
+    session = _FakeSession(llm=llm)
+
+    capture = MetricCapture(
+        cost_tracker=CostTracker(sink),
+        sink=sink,
+        project="fleet",
+        agent_id="agent-3",
+        session_id="vg-turn",
+        turn_tracker=tracker,
+    )
+    capture.bind(session)
+    llm.emit("metrics_collected", _LLMMetric())
+    await capture.drain()
+
+    rows = await storage.get_recent_requests(limit=10)
+    assert rows[0]["turn_index"] == 4
+    # Scoped by session: turn 4 of another call is a different turn.
+    assert tracker.asked_for == ["vg-turn"]
+
+
+async def test_no_tracker_records_absent_rather_than_turn_zero(tmp_path):
+    """Pipecat, and any agent with turn capture off, has no turn to belong to.
+
+    0 would claim the first turn for every row those agents ever write, and a
+    per-turn view would then show all of their spend piled onto turn 0.
+    """
+    storage = StorageService(str(tmp_path / "noturn.db"))
+    sink = LocalSqliteSink(storage)
+    llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
+    session = _FakeSession(llm=llm)
+
+    capture = MetricCapture(
+        cost_tracker=CostTracker(sink),
+        sink=sink,
+        project="fleet",
+        agent_id="agent-3",
+        session_id="vg-noturn",
+        turn_tracker=None,
+    )
+    capture.bind(session)
+    llm.emit("metrics_collected", _LLMMetric())
+    await capture.drain()
+
+    rows = await storage.get_recent_requests(limit=10)
+    assert rows[0]["turn_index"] is None
+
+
+async def test_a_broken_tracker_never_breaks_the_cost_write(tmp_path):
+    """A correlation hint must not be able to lose a cost row.
+
+    The turn index is a convenience; the cost is the measurement. If reading
+    the hint raises, the row still has to be written without it.
+    """
+
+    class _Exploding:
+        def current_turn_index(self, session_id=None):
+            raise RuntimeError("tracker is having a bad day")
+
+    storage = StorageService(str(tmp_path / "boom.db"))
+    sink = LocalSqliteSink(storage)
+    llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
+    session = _FakeSession(llm=llm)
+
+    capture = MetricCapture(
+        cost_tracker=CostTracker(sink),
+        sink=sink,
+        project="fleet",
+        agent_id="agent-3",
+        session_id="vg-boom",
+        turn_tracker=_Exploding(),
+    )
+    capture.bind(session)
+    llm.emit("metrics_collected", _LLMMetric())
+    await capture.drain()
+
+    rows = await storage.get_recent_requests(limit=10)
+    assert len(rows) == 1, "the cost row was lost to a failing hint"
+    assert rows[0]["turn_index"] is None
+    assert rows[0]["cost_usd"] > 0

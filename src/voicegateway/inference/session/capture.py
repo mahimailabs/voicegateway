@@ -299,6 +299,7 @@ class MetricCapture:
         channel: str | None = None,
         dispatch_name: str | None = None,
         on_caller_end: Callable[[int], None] | None = None,
+        turn_tracker: Any = None,
     ) -> None:
         self._cost_tracker = cost_tracker
         self._sink = sink
@@ -316,6 +317,12 @@ class MetricCapture:
         # milliseconds, whenever an EOU metric makes it recoverable. See
         # _caller_end_from_eou.
         self._on_caller_end = on_caller_end
+        # Read at metric time to say WHICH TURN a call belongs to. The
+        # correlation exists only at that instant: nothing downstream can
+        # reconstruct which turn was open when a metric fired, which is why
+        # the tracker has to be here rather than the join being done later.
+        # Same mechanism tool-call rows already use.
+        self._turn_tracker = turn_tracker
         self._pending: set[asyncio.Task[None]] = set()
         # Exception types already reported in full. A sink that cannot write
         # fails on every metric event, and one traceback per event buries the
@@ -388,6 +395,7 @@ class MetricCapture:
             current_guard_fallback_from,
         )
 
+        turn_index = self._current_turn_index()
         fallback_from = current_guard_fallback_from()
         if fallback_from is not None and fallback_from != provider:
             status = "fallback"
@@ -408,6 +416,7 @@ class MetricCapture:
             session_id=self._session_id,
             agent_id=self._agent_id,
             revision=self._revision,
+            turn_index=turn_index,
         )
         network = _network_meta(metric)
         if network:
@@ -632,6 +641,29 @@ class MetricCapture:
         if extra:
             record.metadata = {**record.metadata, **extra}
 
+    def _current_turn_index(self) -> int | None:
+        """Which turn is open right now, or None when nothing is tracked.
+
+        A CORRELATION HINT. ``current_turn_index`` reads without the lock, so a
+        metric landing on a turn boundary can be attributed to the turn either
+        side. Good enough to answer "which turn was expensive", not good
+        enough for anything requiring exactness, and the column's docstring
+        says so rather than leaving a reader to assume precision.
+
+        Absent rather than 0 when no tracker is wired (Pipecat, or turn
+        capture off), because 0 would claim the first turn for every row on
+        every agent that never tracks turns.
+        """
+        tracker = self._turn_tracker
+        if tracker is None:
+            return None
+        try:
+            index = tracker.current_turn_index(self._session_id)
+        except Exception:  # pragma: no cover - a hint must never break a write
+            logger.debug("turn index unavailable", exc_info=True)
+            return None
+        return int(index) if index is not None else None
+
     def _schedule(self, coro: Any) -> None:
         try:
             task = asyncio.ensure_future(coro)
@@ -706,6 +738,11 @@ class MetricCapture:
                 and d_cached <= _RECONCILE_EPSILON
             ):
                 continue
+            # NO turn_index on a reconcile row, deliberately. This is the
+            # close-time sweep for usage the per-metric path never saw, so the
+            # delta spans the whole session and belongs to no single turn.
+            # Stamping whichever turn happened to be open at close would
+            # attribute an entire session's missed usage to its last turn.
             record = self._cost_tracker.create_record(
                 model_id=model_id,
                 modality=modality,
