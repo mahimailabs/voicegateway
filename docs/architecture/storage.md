@@ -64,7 +64,7 @@ The primary table for every completed (or failed) inference request. ORM class `
 | `output_units` | REAL | Output tokens (LLM only) |
 | `cached_input_units` | REAL | Prompt tokens served from the provider's cache (LLM only; 0 for STT/TTS) |
 | `cost_usd` | REAL | Recorded provider cost |
-| `pricing_source` | TEXT | `"voice-prices@<version>"` priced, `"voice-prices-unrated"` matched with no rate, `"voicegateway-local"` self-hosted, `""` unknown model |
+| `pricing_source` | TEXT | `"rate-card:<rule_id>"` operator-declared, `"voice-prices@<version>"` catalogue-priced, `"voice-prices-unrated"` matched with no rate, `"voicegateway-local"` self-hosted, `""` unknown model |
 | `rated_price_usd` | REAL | Billable price the rate card stamped at write time; see [Rating](/architecture/rating) |
 | `rate_rule` | TEXT | Audit token for the rule applied, e.g. `"cost_plus:1.3"` |
 | `ttfb_ms` | REAL | Time to first byte in milliseconds |
@@ -98,6 +98,7 @@ DB-side rate-card overrides layered after the YAML `rate_card:` seed. See [Ratin
 | `rule_id` | TEXT PK | Deterministic key built from `(tenant, plan, modality, provider, model)`, so an upsert for the same scope updates rather than duplicates |
 | `modality`, `provider`, `model` | TEXT | Scope; `"*"` means "any" |
 | `tenant`, `plan` | TEXT, nullable | Scope; `NULL` means "any" |
+| `sets` | TEXT | `"price"` (what the tenant is charged) or `"cost"` (what the operator pays) |
 | `kind` | TEXT | `"cost_plus"` or `"fixed"` |
 | `input_price_usd` | REAL | LLM input leg, $/token-unit (fixed token rules only) |
 | `cached_input_price_usd` | REAL | LLM cached-input leg; NULL means "same as input" |

@@ -25,6 +25,7 @@ This module is pure data + resolution; the arithmetic lives in
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 WILDCARD = "*"
 
@@ -103,6 +104,26 @@ def _model_matches(rule_model: str, model_id: str) -> bool:
     return rule_model == bare
 
 
+VALID_SETS = frozenset({"cost", "price"})
+
+
+def validate_sets(sets: str, kind: str) -> None:
+    """Raise unless the ledger side and the arithmetic are compatible.
+
+    A cost rule must be ``fixed``. ``cost_plus`` multiplies a recorded cost to
+    produce a price; asking it to produce the cost would be asking what to
+    multiply, and the only available answer is the catalogue figure the rule
+    exists to replace.
+    """
+    if sets not in VALID_SETS:
+        raise ValueError(f"a rate rule sets one of {sorted(VALID_SETS)}, got {sets!r}")
+    if sets == "cost" and kind != "fixed":
+        raise ValueError(
+            "a cost rule must carry a fixed price: cost_plus multiplies the "
+            "recorded cost, so it cannot produce one"
+        )
+
+
 def validate_fixed_pricing(
     *,
     modality: str,
@@ -176,6 +197,25 @@ class RateRule:
     model: str = WILDCARD
     tenant: str | None = None
     plan: str | None = None
+    # WHICH SIDE OF THE LEDGER THIS RULE SETS.
+    #
+    # ``price`` (the default, and what every rule was before this existed)
+    # sets what the tenant is CHARGED, starting from the recorded cost.
+    #
+    # ``cost`` sets what the operator PAYS, replacing the catalogue figure.
+    # It exists because a catalogue price is a public list price and every
+    # negotiated contract differs from it by an unknown margin, so marking up
+    # the catalogue number produces a margin nobody can see is wrong.
+    #
+    # The two resolve INDEPENDENTLY (see ``RateCard.resolve``). A model-level
+    # cost rule and a global markup are the ordinary configuration, and one
+    # resolution over a merged list would let the more specific cost rule win
+    # and silently drop the markup.
+    sets: str = "price"
+    # Set when the rule came from the DB override store, so a row can name the
+    # exact rule that priced it. Seed rules from YAML have no id and fall back
+    # to ``describe()``.
+    rule_id: str | None = None
     kind: str = "cost_plus"
     markup: float | None = None
     unit_price_usd: float | None = None
@@ -234,6 +274,10 @@ class RateRule:
             return False
         return _model_matches(self.model, model_id)
 
+    def audit_token(self) -> str:
+        """How a recorded row names the rule that set its number."""
+        return self.rule_id or self.describe()
+
     def specificity(self) -> int:
         """Higher means more specific. Tenant > plan > model > provider > modality."""
         score = 0
@@ -264,6 +308,11 @@ class RateRule:
         return f"cost_plus:{_fmt(self.markup)}"
 
 
+def _opt_float(value: Any) -> float | None:
+    """``float(value)`` unless it is absent."""
+    return None if value is None else float(value)
+
+
 def _fmt(value: float | None) -> str:
     """Format a float compactly (``1.30`` -> ``1.3``, ``0.0060`` -> ``0.006``)."""
     if value is None:
@@ -278,6 +327,8 @@ def rate_rule_from_row(row: dict) -> RateRule:
     (used when merging DB overrides onto the YAML seed).
     """
     return RateRule(
+        sets=row.get("sets") or "price",
+        rule_id=row.get("rule_id"),
         modality=row.get("modality", WILDCARD),
         provider=row.get("provider", WILDCARD),
         model=row.get("model", WILDCARD),
@@ -332,6 +383,7 @@ class RateCard:
         model = str(raw.get("model", WILDCARD))
         tenant = raw.get("tenant")
         plan = raw.get("plan")
+        sets = str(raw.get("sets", "price"))
         fixed = raw.get("fixed")
         legs = {
             "input_price_usd": raw.get("input_price_usd"),
@@ -340,6 +392,7 @@ class RateCard:
         }
         if fixed is not None or any(v is not None for v in legs.values()):
             unit = raw.get("unit")
+            validate_sets(sets, "fixed")
             validate_fixed_pricing(
                 modality=modality,
                 unit=unit,
@@ -347,6 +400,7 @@ class RateCard:
                 **{k: (None if v is None else float(v)) for k, v in legs.items()},
             )
             return RateRule(
+                sets=sets,
                 modality=modality,
                 provider=provider,
                 model=model,
@@ -355,10 +409,14 @@ class RateCard:
                 kind="fixed",
                 unit_price_usd=None if fixed is None else float(fixed),
                 unit=str(unit),
-                **{k: (None if v is None else float(v)) for k, v in legs.items()},
+                input_price_usd=_opt_float(legs["input_price_usd"]),
+                cached_input_price_usd=_opt_float(legs["cached_input_price_usd"]),
+                output_price_usd=_opt_float(legs["output_price_usd"]),
             )
         markup = float(raw.get("markup", default_markup))
+        validate_sets(sets, "cost_plus")
         return RateRule(
+            sets=sets,
             modality=modality,
             provider=provider,
             model=model,
@@ -387,15 +445,27 @@ class RateCard:
         model_id: str,
         tenant: str | None = None,
         plan: str | None = None,
+        sets: str = "price",
     ) -> RateRule | None:
         """Return the most specific matching rule, or ``None`` if none match.
 
         Ties on specificity are broken in favour of the rule that appears
         later in :attr:`rules` (DB overrides layered after the seed).
+
+        ``sets`` selects which ledger side to resolve, and the two are
+        SEPARATE resolutions over the same list rather than one resolution
+        over a merged one. That distinction is the whole design: the ordinary
+        configuration is a model-specific cost ("what I pay Deepgram for
+        nova-3") plus a global markup ("charge 1.3x"), and a single
+        most-specific-wins pass would let the cost rule win outright and drop
+        the markup, producing a bill at cost with no margin and nothing in the
+        output saying so.
         """
         best: RateRule | None = None
         best_score = -1
         for rule in self.rules:
+            if rule.sets != sets:
+                continue
             if not rule.matches(
                 modality=modality,
                 provider=provider,
@@ -414,6 +484,8 @@ class RateCard:
 __all__ = [
     "WILDCARD",
     "VALID_UNITS",
+    "VALID_SETS",
+    "validate_sets",
     "TOKEN_UNITS",
     "UNITS_BY_MODALITY",
     "unit_matches_modality",

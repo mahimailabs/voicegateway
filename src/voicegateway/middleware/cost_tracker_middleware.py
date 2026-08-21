@@ -6,7 +6,7 @@ import logging
 import time
 import uuid
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from voicegateway.billing import rating
 from voicegateway.billing.rate_card import RateCard
@@ -18,6 +18,22 @@ if TYPE_CHECKING:
     from voicegateway.middleware.budget_enforcer_middleware import BudgetEnforcer
 
 logger = logging.getLogger(__name__)
+
+
+class ResolvedCost(NamedTuple):
+    """What a request cost, and which authority produced the number.
+
+    ``source`` is set only when an operator-declared rate produced the cost,
+    and becomes the row's ``pricing_source``. ``raw`` is None when nothing
+    could price the request at all. ``unrated`` names units the catalogue
+    matched and had no rate for, which is a zero that is not a price.
+    """
+
+    cost: float
+    raw: Decimal | None
+    unrated: tuple[str, ...]
+    source: str | None
+
 
 # When no rate card is wired in, rate every request as a cost pass-through
 # (default_markup 1.0 -> rated == cost, rule "default:1").
@@ -86,6 +102,28 @@ class CostTracker:
         resolved from the context var (ingest sets it from the verified key),
         matching the ``tenant_id`` stamped at write time.
         """
+        # The collector is the source of truth for what things cost: agents
+        # record the catalogue figure because they carry no card. If this
+        # collector declares a cost for the model, the ingested row is
+        # corrected to it before the markup is applied, so a margin is never
+        # computed against a list price the operator does not pay.
+        card = self._rate_card
+        if card is not None and not record.model_id.startswith(("local/", "ollama/")):
+            declared = rating.declared_cost(
+                card,
+                modality=record.modality,
+                provider=record.provider,
+                model_id=record.model_id,
+                input_units=record.input_units,
+                output_units=record.output_units,
+                cached_input_units=record.cached_input_units,
+                tenant=current_tenant(),
+            )
+            if declared is not None:
+                total, rule = declared
+                record.cost_usd = total
+                record.pricing_source = f"rate-card:{rule.audit_token()}"
+
         rated = self._rate(
             record.model_id,
             record.modality,
@@ -97,6 +135,17 @@ class CostTracker:
         )
         record.rated_price_usd = rated.rated_price_usd
         record.rate_rule = rated.rate_rule
+
+    @staticmethod
+    def _provider_of(model_id: str) -> str:
+        """Provider half of a ``provider/model`` id, for rule matching.
+
+        ``create_record`` takes the provider as its own argument, but
+        ``_resolve_cost`` is also reached from ``calculate_cost``, which does
+        not. Deriving it keeps both paths matching the same rules rather than
+        one of them silently missing every provider-scoped rule.
+        """
+        return model_id.split("/", 1)[0] if "/" in model_id else ""
 
     def _catalog_cost(
         self,
@@ -136,8 +185,8 @@ class CostTracker:
         input_units: float,
         output_units: float,
         cached_input_units: float,
-    ) -> tuple[float, Decimal | None, tuple[str, ...]]:
-        """Return ``(float_cost, raw_decimal_or_None, unrated_units)``.
+    ) -> ResolvedCost:
+        """Return the request's cost, and where the number came from.
 
         ``None`` means voice-prices did not recognize the model. A non-empty
         ``unrated_units`` means it DID recognize the model and applied no rate
@@ -148,7 +197,36 @@ class CostTracker:
 
         Self-hosted ``local/``/``ollama/`` models are expected to be free and
         are not warned about.
+
+        AN OPERATOR-DECLARED COST WINS OVER THE CATALOGUE, and is checked
+        first. The catalogue holds published list prices; anyone at volume is
+        on a negotiated contract that differs from them by a margin nobody
+        outside the contract can see. When a cost rule matches, the row records
+        what the operator actually pays and names the rule that said so, so
+        ``reconcile`` can point at the entry rather than at the usage when the
+        invoice disagrees.
         """
+        card = self._rate_card
+        if card is not None and not model_id.startswith(("local/", "ollama/")):
+            declared = rating.declared_cost(
+                card,
+                modality=modality,
+                provider=self._provider_of(model_id),
+                model_id=model_id,
+                input_units=input_units,
+                output_units=output_units,
+                cached_input_units=cached_input_units,
+                tenant=current_tenant(),
+            )
+            if declared is not None:
+                total, rule = declared
+                return ResolvedCost(
+                    cost=total,
+                    raw=Decimal(str(total)),
+                    unrated=(),
+                    source=f"rate-card:{rule.audit_token()}",
+                )
+
         cost, unrated = self._catalog_cost(
             model_id, modality, input_units, output_units, cached_input_units
         )
@@ -159,7 +237,7 @@ class CostTracker:
                     modality,
                     model_id,
                 )
-            return 0.0, None, ()
+            return ResolvedCost(cost=0.0, raw=None, unrated=(), source=None)
         if unrated:
             logger.warning(
                 "%s model %r matched the catalog but it carries no rate for "
@@ -170,7 +248,7 @@ class CostTracker:
                 cost,
                 catalog.UNRATED_SOURCE,
             )
-        return float(cost), cost, unrated
+        return ResolvedCost(cost=float(cost), raw=cost, unrated=unrated, source=None)
 
     def calculate_cost(
         self,
@@ -181,10 +259,9 @@ class CostTracker:
         cached_input_units: float = 0.0,
     ) -> float:
         """Calculate cost for a request."""
-        cost, _, _ = self._resolve_cost(
+        return self._resolve_cost(
             model_id, modality, input_units, output_units, cached_input_units
-        )
-        return cost
+        ).cost
 
     def create_record(
         self,
@@ -206,15 +283,18 @@ class CostTracker:
         revision: str | None = None,
     ) -> RequestRecord:
         """Create a request record with cost calculated."""
-        cost, cost_dec, unrated = self._resolve_cost(
+        resolved = self._resolve_cost(
             model_id, modality, input_units, output_units, cached_input_units
         )
+        cost = resolved.cost
         if not pricing_source:
-            if model_id.startswith(("local/", "ollama/")):
+            if resolved.source is not None:
+                pricing_source = resolved.source
+            elif model_id.startswith(("local/", "ollama/")):
                 pricing_source = catalog.SELF_HOSTED_SOURCE
-            elif unrated:
+            elif resolved.unrated:
                 pricing_source = catalog.UNRATED_SOURCE
-            elif cost_dec is not None:
+            elif resolved.raw is not None:
                 pricing_source = catalog.pricing_source(modality)
         rated = self._rate(
             model_id,

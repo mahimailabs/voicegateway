@@ -241,3 +241,88 @@ async def test_gaps_is_empty_when_every_metered_model_has_a_rate(
     await gw.storage._ensure_initialized()
     await _record(gw, "deepgram/nova-3")
     assert client.get("/v1/billing/rate-card/gaps").json()["gaps"] == []
+
+
+# --------------------------------------------------------------------------
+# A declared COST is the declaration the design actually asks for
+# --------------------------------------------------------------------------
+
+
+def test_a_declared_cost_alone_makes_a_model_offerable(tmp_path, monkeypatch) -> None:
+    """What the operator enters on the config page is what they PAY.
+
+    The platform asks "how much does this plugin cost you per model", so a
+    cost rule with no sell-side rule is the ordinary state of a freshly
+    configured model. It has to open the gate on its own, or the page the
+    design describes produces nothing offerable.
+    """
+    client, _ = _client(tmp_path, monkeypatch)
+    r = client.post(
+        "/v1/billing/rate-card/rules",
+        json={
+            "sets": "cost",
+            "modality": "stt",
+            "provider": "deepgram",
+            "model": "nova-3",
+            "fixed": 0.0035,
+            "unit": "minute",
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    body = _quote(client, "stt", "deepgram/nova-3")
+    assert body["serviceable"] is True
+    assert body["priced_by"] == "operator"
+    assert body["cost_basis"]["unit_price_usd"] == pytest.approx(0.0035)
+    assert body["cost_basis"]["sets"] == "cost"
+    # No sell-side rule was declared, so that side stays empty.
+    assert body["effective"] is None
+    # The catalogue answer is still carried, so a UI can show the operator
+    # their negotiated rate against the published one. Asserted structurally:
+    # the published number moves with the catalogue version, and pinning it
+    # would make this a test of voice-prices rather than of the endpoint.
+    assert body["catalog"]["priced"] is True
+    assert body["catalog"]["unit_price_usd"] > 0
+    assert body["catalog"]["unit_price_usd"] != body["cost_basis"]["unit_price_usd"]
+
+
+def test_a_cost_rule_and_a_price_rule_coexist_at_one_scope(
+    tmp_path, monkeypatch
+) -> None:
+    """ "What I pay" and "what I charge" for the same model are both storable.
+
+    They share every scope field, so without the ledger side in the key the
+    second write would overwrite the first and the operator would silently
+    lose one of the two numbers they entered.
+    """
+    client, _ = _client(tmp_path, monkeypatch)
+    scope = {"modality": "stt", "provider": "deepgram", "model": "nova-3"}
+    cost = client.post(
+        "/v1/billing/rate-card/rules",
+        json={**scope, "sets": "cost", "fixed": 0.0035, "unit": "minute"},
+    )
+    sell = client.post(
+        "/v1/billing/rate-card/rules",
+        json={**scope, "sets": "price", "fixed": 0.0060, "unit": "minute"},
+    )
+    assert cost.status_code == 200 and sell.status_code == 200
+    assert cost.json()["rule_id"] != sell.json()["rule_id"]
+
+    rules = client.get("/v1/billing/rate-card/rules").json()["rules"]
+    assert sorted(r["sets"] for r in rules) == ["cost", "price"]
+
+    body = _quote(client, "stt", "deepgram/nova-3")
+    assert body["cost_basis"]["unit_price_usd"] == pytest.approx(0.0035)
+    assert body["effective"]["unit_price_usd"] == pytest.approx(0.0060)
+
+
+def test_a_cost_rule_with_a_markup_is_rejected_by_the_api(
+    tmp_path, monkeypatch
+) -> None:
+    client, _ = _client(tmp_path, monkeypatch)
+    r = client.post(
+        "/v1/billing/rate-card/rules",
+        json={"sets": "cost", "provider": "deepgram", "markup": 1.2},
+    )
+    assert r.status_code == 400
+    assert "cannot produce one" in r.json()["detail"]

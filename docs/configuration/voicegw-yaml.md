@@ -250,7 +250,34 @@ rate_card:
 ```
 
 - `default_markup` (float, default `1.0`): cost-plus multiplier applied when no rule matches a request.
-- `rules` (list): ordered rate rules. Each rule is scoped, and carries exactly one kind of arithmetic.
+- `rules` (list): ordered rate rules. Each rule is scoped, names which side of the ledger it sets, and carries exactly one kind of arithmetic.
+
+### Which side a rule sets
+
+`sets` is `price` (default) or `cost`.
+
+- **`price`**: what the tenant is **charged**, computed from the recorded cost. Every rule written before this field existed sets the price, which is why that is the default.
+- **`cost`**: what the operator **pays**, replacing the `voice-prices` figure on the recorded row. A cost rule must carry a fixed price: `cost_plus` multiplies a recorded cost, so it cannot produce one.
+
+A cost rule exists because the catalogue holds published list prices, and anyone at volume is on a negotiated contract that differs from them by a margin nobody outside the contract can see. Marking up the catalogue number produces a margin that is wrong in a direction you cannot detect from the recorded row.
+
+```yaml
+rate_card:
+  rules:
+    # what you actually pay Deepgram
+    - {sets: cost, modality: stt, provider: deepgram, model: nova-3,
+       fixed: 0.0035, unit: minute}
+    # what you charge on top of it
+    - {sets: price, markup: 1.3}
+```
+
+**The two sides resolve independently.** The example above is the ordinary configuration: a model-specific cost plus a global markup. Resolving one merged list most-specific-wins would return the cost rule, apply it as the price, and bill at cost with no margin and nothing in the output saying so. So `cost` and `price` are two separate resolutions over the same list, and both apply.
+
+A cost rule and a price rule can share a scope, since "what I pay for nova-3" and "what I charge for nova-3" are different numbers about the same model. The stored `rule_id` carries the side, so one does not overwrite the other.
+
+When a cost rule applies, the row's `pricing_source` becomes `rate-card:<rule_id>` instead of `voice-prices@<version>`, so a row never claims the catalogue priced it when an operator did.
+
+The collector re-derives cost on ingest. Agents carry no rate card and record the catalogue figure; the collector holds the contract and is the source of truth, so an ingested row is corrected before the markup is applied.
 
 ### Scope fields
 

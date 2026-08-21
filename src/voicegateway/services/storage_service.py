@@ -1109,6 +1109,7 @@ class StorageService:
         input_price_usd: float | None = None,
         cached_input_price_usd: float | None = None,
         output_price_usd: float | None = None,
+        sets: str = "price",
     ) -> str:
         """Delegate to ManagedConfigService.upsert_rate_rule."""
         await self._ensure_initialized()
@@ -1124,6 +1125,7 @@ class StorageService:
             input_price_usd=input_price_usd,
             cached_input_price_usd=cached_input_price_usd,
             output_price_usd=output_price_usd,
+            sets=sets,
         )
 
     async def delete_rate_rule(self, rule_id: str) -> bool:

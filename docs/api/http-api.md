@@ -448,7 +448,8 @@ Query: `modality`, `model` (`provider/model`), `tenant?`, `plan?`.
 - **`priced_by`** — `operator` (a rate someone declared), `catalog` (a published list price), or `none`.
 - **`gate`** — the policy that produced `serviceable`, from [`pricing.gate`](/configuration/voicegw-yaml). Echoed because `serviceable` is a policy answer rather than a fact: under the default `declared_only` a catalogue price does **not** make a model serviceable, and a consumer written against `permissive` would otherwise misread it.
 - **`catalog`** — what `voice-prices` says, for prefilling the operator's input. `priced` is `false` both for an unknown model and for one the catalogue matched but holds no rate for.
-- **`effective`** — the rate rule that would apply, or `null`.
+- **`effective`** — the price rule that would apply, or `null`.
+- **`cost_basis`** — the cost rule that would apply, or `null`. A declared cost alone makes a model serviceable: it is the number the operator is actually asked for.
 
 `POST /v1/billing/rate-card/quote` takes `{"models": [{modality, model, tenant?, plan?}, ...]}` (max 200) and returns the same shape per entry under `models`, so an editor prices a whole dropdown in one call and gets the same gate.
 
@@ -470,7 +471,7 @@ Return the editable DB override rules, each with its `rule_id`. Use this to driv
 
 Upsert a DB rate-card override for a scope (one rule per scope, keyed by `tenant|plan|modality|provider|model`). Requires the `write` scope. Takes effect on the next config refresh, which the call triggers.
 
-**Body:** a scope (`modality?`, `provider?`, `model?`, `tenant?`, `plan?`) plus one of:
+**Body:** a scope (`modality?`, `provider?`, `model?`, `tenant?`, `plan?`), an optional `sets` (`"price"` default, or `"cost"` for what the operator pays), plus one of:
 
 - `markup` (cost-plus), or
 - `fixed` + `unit` for a single-sided unit (`minute`, `second`, `char`, `1k_char`, `request`), or
