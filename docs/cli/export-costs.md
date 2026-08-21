@@ -37,7 +37,7 @@ Both formats share this 10-column schema, rows ordered by timestamp ascending:
 | `input_units` | Tokens (LLM input), minutes (STT), or characters (TTS). |
 | `output_units` | Tokens (LLM output); `0` for STT/TTS. |
 | `calculated_cost_usd` | Fixed-point USD string, priced through `voice-prices`. |
-| `pricing_source` | `voice-prices@<version>` for cloud models, `voicegateway-local` for `local/*`/`ollama/*`, empty for unknown. |
+| `pricing_source` | `voice-prices@<version>` for priced cloud models, `voice-prices-unrated` when the catalogue matched the model but holds no rate for it, `voicegateway-local` for `local/*`/`ollama/*`, empty for unknown. |
 | `status` | `ok` or an error tag. |
 
 `--format json` writes JSONL (one object per line, no outer array).

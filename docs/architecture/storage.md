@@ -64,7 +64,7 @@ The primary table for every completed (or failed) inference request. ORM class `
 | `output_units` | REAL | Output tokens (LLM only) |
 | `cached_input_units` | REAL | Prompt tokens served from the provider's cache (LLM only; 0 for STT/TTS) |
 | `cost_usd` | REAL | Recorded provider cost |
-| `pricing_source` | TEXT | e.g. `"voice-prices@0.1.0"` or `"voicegateway-local"` |
+| `pricing_source` | TEXT | `"voice-prices@<version>"` priced, `"voice-prices-unrated"` matched with no rate, `"voicegateway-local"` self-hosted, `""` unknown model |
 | `rated_price_usd` | REAL | Billable price the rate card stamped at write time; see [Rating](/architecture/rating) |
 | `rate_rule` | TEXT | Audit token for the rule applied, e.g. `"cost_plus:1.3"` |
 | `ttfb_ms` | REAL | Time to first byte in milliseconds |

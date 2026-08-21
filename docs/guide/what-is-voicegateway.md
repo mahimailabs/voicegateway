@@ -109,7 +109,8 @@ emits, and the model id decides what happens next:
 | Model id | Cost | Pricing source |
 |---|---|---|
 | starts with `local/` or `ollama/` | always `0` | `voicegateway-local` |
-| known to `voice-prices` | the catalog rate | `voice-prices@<version>` |
+| known to `voice-prices`, with a rate | the catalog rate | `voice-prices@<version>` |
+| known to `voice-prices`, no rate recorded | `0`, but not a price | `voice-prices-unrated` |
 | anything else | none, the row is metered but unpriced | empty |
 
 The Costs page shows that source per row, so you can always tell which case you landed
