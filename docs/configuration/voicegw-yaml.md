@@ -288,7 +288,24 @@ The single most specific matching rule wins. Precedence is `tenant > plan > glob
 
 Rating happens once, at write time, on the server (`voicegw serve`). The `rated_price_usd` and `rate_rule` audit token (for example `cost_plus:1.3`, `fixed:0.006/minute`, `fixed:in=2.5,cached=1.25,out=10/1m_token`, or `default:1`) are stamped onto the row and never rewritten: editing the card later never changes historical rows. Inspect and reconcile the card with the [`voicegw prices`](/cli/prices) commands.
 
+
 ---
+
+## `pricing`
+
+```yaml
+pricing:
+  gate: declared_only   # or: permissive
+```
+
+Controls what `serviceable` means on `GET`/`POST /v1/billing/rate-card/quote`, which is the single field a consumer UI gates model enablement on.
+
+- **`declared_only`** (default): only a rate an operator entered counts. A model nobody has priced is not offerable, even when the catalogue carries a published price for it.
+- **`permissive`**: any rate counts, including the catalogue's.
+
+The default is strict because a catalogue price is a public list price, wrong by an unknown margin for anyone on a negotiated contract. Treating one as sufficient means nobody ever has to declare theirs, which is the thing the rate card exists to collect. The cost is an empty slate on day one; [`voicegw prices gaps`](/cli/prices) and the catalogue prefill on the quote endpoint exist to make that short.
+
+The quote response echoes `gate` alongside `serviceable`, because `serviceable` is a policy answer rather than a fact, and a consumer written against the other setting would otherwise misread it. `priced_by` (`operator` / `catalog` / `none`) reports where the rate came from under either policy, so a UI can badge list-priced models rather than presenting them as declared.
 
 ## `latency`
 

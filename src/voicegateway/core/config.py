@@ -14,6 +14,7 @@ import yaml
 from voicegateway.schemas.config_schema import (
     ClickHouseConfig,
     IngestConfig,
+    PricingConfig,
     RetentionConfig,
     VoiceGatewayConfig,
     WorkersConfig,
@@ -166,6 +167,10 @@ class GatewayConfig:
     # Billing: the ``rate_card:`` seed (default_markup + rules). Kept as a raw
     # dict; the gateway builds a RateCard via RateCard.from_config at wiring.
     rate_card: dict[str, Any] = field(default_factory=dict)
+    # Whether a model is offerable before an operator has declared its rate.
+    # See PricingConfig: the default is strict because it propagates to every
+    # consumer that gates on ``serviceable``.
+    pricing: PricingConfig = field(default_factory=PricingConfig)
 
     @classmethod
     def load(
@@ -387,6 +392,7 @@ class GatewayConfig:
             workers=WorkersConfig.model_validate(raw.get("workers") or {}),
             clickhouse=ClickHouseConfig.model_validate(raw.get("clickhouse") or {}),
             rate_card=raw.get("rate_card", {}) or {},
+            pricing=PricingConfig.model_validate(raw.get("pricing") or {}),
         )
 
     def get_provider_config(self, provider_name: str) -> dict[str, Any]:

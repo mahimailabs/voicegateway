@@ -8,6 +8,26 @@ Inspect and reconcile the billing rate card that turns recorded provider cost in
 
 `voicegw prices` is the command group for VoiceGateway's rating layer. The rate card maps recorded cost to a billable price and stamps that price immutably onto every request row (`rated_price_usd` + `rate_rule`). The card has two layers: the `rate_card:` seed in `voicegw.yaml` plus DB overrides you set at runtime with `set` (one store, both surfaces). `ls` prints the effective card (seed + overrides), `reconcile` rolls up rated revenue against recorded cost per tenant, `sync` checks fixed-price rules against the current base cost, and `set` / `rm` edit the DB overrides. The full model (cost-plus vs fixed, tenant->plan->global resolution, write-time immutability) lives at [Rating](/architecture/rating).
 
+## `voicegw prices gaps`
+
+```bash
+voicegw prices gaps [--tenant X] [--project Y] [--since 2026-08-01] [--limit 20]
+```
+
+Models that have run and cannot be priced, heaviest first. This is the work list for operator-declared pricing: which models still need a rate typed in, ordered by how much traffic is currently going unpriced, so the task is finite rather than discovered one dashboard row at a time.
+
+The `gap` column names which of two problems each row has, because the remedies differ:
+
+- **`not in catalog`** — `voice-prices` does not carry the model. It needs a catalogue entry, or an operator rate.
+- **`matched, no rate`** — the catalogue matched the model and holds no rate for it. `deepgram/nova-general` matches the entry `nova`, whose price fields are empty. The entry exists already and only needs a rate put on it, so these are usually the cheapest gaps to close.
+
+Only billable rows count: non-error requests that moved units. End-of-utterance rows carry no model and an empty pricing source, and would otherwise dominate the list with something nobody can put a price on.
+
+<Warning>
+Rows whose model matched the catalogue but carried no rate were recorded as priced before v0.25.6, so a window spanning that release under-reports the `matched, no rate` column.
+</Warning>
+
+
 ## Usage
 
 ```bash
