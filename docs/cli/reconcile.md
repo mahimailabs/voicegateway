@@ -40,7 +40,30 @@ voicegw reconcile --provider <name> --start <YYYY-MM-DD> --end <YYYY-MM-DD> \
 
 An aligned table with one row per model. Columns: model, VG units, provider units, units delta%, VG cost, provider cost, cost delta$, cost delta%. Rows whose absolute cost diff % exceeds `--threshold` are tagged with a trailing ` *` and rendered in ANSI yellow when stdout is a TTY (no color when piped or captured). Models present in only one side carry a `(no vg data)` or `(no provider data)` suffix instead.
 
-A Total row sums VG cost and provider cost across rows where both sides matched (missing-side rows are excluded so their `$0` placeholders do not skew the total). When any rows are flagged, a footer line `(N flagged row(s) marked with *)` follows.
+A Total row sums VG cost and provider cost across rows where both sides matched (missing-side rows are excluded so their `$0` placeholders do not skew the total). When any rows are flagged, a footer line `(N flagged row(s) marked with *)` follows, and then a **What to check** section naming what each disagreement is about.
+
+### What to check
+
+A diff on its own says something is wrong, not what. That matters most when rates are operator-entered: a rule typed as `0.008` instead of `0.08` produces a perfectly plausible bill, and the provider invoice is the only thing in the world that can catch it.
+
+Each flagged row is diagnosed as one of three causes, because they have three different fixes and only one is in your hands:
+
+| Cause | Meaning | Fix |
+|---|---|---|
+| `rate` | The unit counts agree and the money does not. | The per-unit rate is wrong. |
+| `units` | The two sides metered different amounts of work. | A metering gap. No rate change closes it. |
+| `coverage` | Only one side has the model at all. | Either VG never metered it, or the invoice does not itemise it. |
+
+For a `rate` disagreement the report names **which authority produced VG's figure** and what the invoice implies the rate should be:
+
+```
+What to check:
+  nova-3: units agree, cost does not. VG priced this from rate-card rule
+  'cost|*|*|stt|deepgram|nova-3'. Your rate implies $0.00000583/unit; the
+  invoice implies $0.00005833/unit (10.00x).
+```
+
+The rule is named by `rule_id` rather than by its price, because two rules at different scopes can carry the same rate and restating the number identifies nothing. When the catalogue produced the figure instead, the report says so: that is not a rule to edit, it means the published rate is stale or your contract differs from list, and the remedy is to [declare a cost rule](/configuration/voicegw-yaml) rather than to change one.
 
 The unit label adapts to the provider:
 
@@ -50,7 +73,7 @@ The unit label adapts to the provider:
 
 ### CSV
 
-Twelve columns: `model, vg_units, provider_units, units_diff_abs, units_diff_pct, vg_cost_usd, provider_cost_usd, cost_diff_abs, cost_diff_pct, matched_in_vg, matched_in_provider, flagged`. The `flagged` column is `True`/`False` so spreadsheets can filter on it without re-deriving the threshold comparison.
+Sixteen columns: `model, vg_units, provider_units, units_diff_abs, units_diff_pct, vg_cost_usd, provider_cost_usd, cost_diff_abs, cost_diff_pct, matched_in_vg, matched_in_provider, flagged, cause, pricing_sources, vg_rate, provider_rate`. The `flagged` column is `True`/`False` so spreadsheets can filter on it without re-deriving the threshold comparison, and `cause` carries the same diagnosis the text report explains, so a machine reader gets it too. `pricing_sources` is pipe-separated when a model was priced by more than one authority over the window.
 
 ### JSON
 
