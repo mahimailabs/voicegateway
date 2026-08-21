@@ -34,5 +34,10 @@ class ManagedRateRule(SQLModel, table=True):
     markup: float | None = None
     unit_price_usd: float | None = None
     unit: str | None = None
+    # LLM legs. A token unit bills input and output at different rates, so it
+    # carries a rate per leg instead of a single ``unit_price_usd``.
+    input_price_usd: float | None = None
+    cached_input_price_usd: float | None = None
+    output_price_usd: float | None = None
     created_at: float
     updated_at: float

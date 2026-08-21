@@ -99,6 +99,9 @@ DB-side rate-card overrides layered after the YAML `rate_card:` seed. See [Ratin
 | `modality`, `provider`, `model` | TEXT | Scope; `"*"` means "any" |
 | `tenant`, `plan` | TEXT, nullable | Scope; `NULL` means "any" |
 | `kind` | TEXT | `"cost_plus"` or `"fixed"` |
+| `input_price_usd` | REAL | LLM input leg, $/token-unit (fixed token rules only) |
+| `cached_input_price_usd` | REAL | LLM cached-input leg; NULL means "same as input" |
+| `output_price_usd` | REAL | LLM output leg, $/token-unit |
 | `markup` | REAL, nullable | Multiplier, for `cost_plus` |
 | `unit_price_usd`, `unit` | REAL / TEXT, nullable | Advertised rate + billing unit, for `fixed` |
 | `created_at`, `updated_at` | REAL | Unix epoch |
