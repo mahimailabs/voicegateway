@@ -244,6 +244,8 @@ rate_card:
   rules:
     - {provider: openai, markup: 1.5}                                                 # cost_plus: cost x 1.5
     - {modality: stt, provider: deepgram, model: nova-3, fixed: 0.0060, unit: minute} # fixed $/unit
+    - {modality: llm, provider: openai, model: gpt-4o, unit: 1m_token,                # fixed, per leg
+       input_price_usd: 2.50, cached_input_price_usd: 1.25, output_price_usd: 10.00}
     - {tenant: acme, markup: 1.1}                                                      # per-tenant override
 ```
 
@@ -265,7 +267,18 @@ Every scope field is optional and defaults to "any":
 A rule is either cost-plus or fixed:
 
 - **cost-plus** (`markup`): billable price is the recorded cost times `markup`. Because it multiplies the recorded cost, it auto-follows voice-prices base movement (change the base price, the rated price tracks it).
-- **fixed** (`fixed` + `unit`): billable price is an advertised `$/unit` (the `fixed` value) times the request's billable quantity in `unit`. Decoupled from base cost, so it advertises a stable price as the base moves. Valid units: `minute`, `second`, `char`, `1k_char`, `token`, `1k_token`, `1m_token`, `request`.
+- **fixed** (`fixed` + `unit`): billable price is an advertised `$/unit` (the `fixed` value) times the request's billable quantity in `unit`. Decoupled from base cost, so it advertises a stable price as the base moves. Valid units: `minute`, `second` (stt), `char`, `1k_char` (tts), `request` (any modality).
+- **fixed, per leg** (`input_price_usd` + `output_price_usd` + a token `unit`): the LLM form. Token units (`token`, `1k_token`, `1m_token`) take a rate per leg rather than a single `fixed`, because every provider prices input and output differently.
+
+#### LLM legs
+
+`cached_input_price_usd` is optional and **defaults to the input rate**, which is what an operator without a negotiated prompt-cache discount pays. Setting it to `0` would make cached tokens free, which is a different claim.
+
+**Cached prompt tokens are a subset of the prompt, not an addition to it.** A 1M-token prompt of which 800k is cached bills 200k at the input rate and 800k at the cached rate, never 1.8M in total.
+
+A unit belongs to one modality (`input_units` holds minutes for stt, characters for tts, prompt tokens for llm), so a rule that names a unit has already said which modality it is for and `modality` may be omitted. Stating a modality that contradicts the unit is rejected when the config loads, as is putting a bare `fixed` on a token unit.
+
+A fixed rule expresses a **flat** contract. It holds one rate per leg, so it cannot reproduce context-window tiered pricing (for example Anthropic's higher rates above a 200k-token prompt). Use `cost_plus` if you need to track a tiered list price.
 
 ### Resolution
 
@@ -273,7 +286,7 @@ The single most specific matching rule wins. Precedence is `tenant > plan > glob
 
 ### Write-time and immutable
 
-Rating happens once, at write time, on the server (`voicegw serve`). The `rated_price_usd` and `rate_rule` audit token (for example `cost_plus:1.3`, `fixed:0.006/minute`, or `default:1`) are stamped onto the row and never rewritten: editing the card later never changes historical rows. Inspect and reconcile the card with the [`voicegw prices`](/cli/prices) commands.
+Rating happens once, at write time, on the server (`voicegw serve`). The `rated_price_usd` and `rate_rule` audit token (for example `cost_plus:1.3`, `fixed:0.006/minute`, `fixed:in=2.5,cached=1.25,out=10/1m_token`, or `default:1`) are stamped onto the row and never rewritten: editing the card later never changes historical rows. Inspect and reconcile the card with the [`voicegw prices`](/cli/prices) commands.
 
 ---
 

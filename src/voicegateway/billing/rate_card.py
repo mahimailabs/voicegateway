@@ -43,6 +43,50 @@ VALID_UNITS = frozenset(
     }
 )
 
+# Token units price THREE legs, not one quantity, so a single
+# ``unit_price_usd`` cannot express them. See ``TOKEN_UNITS`` handling in
+# :mod:`voicegateway.billing.rating`.
+TOKEN_UNITS = frozenset({"token", "1k_token", "1m_token"})
+
+# Which units a modality can actually be billed in. ``input_units`` means
+# minutes for stt, characters for tts and prompt tokens for llm, so a unit
+# from the wrong row multiplies the right number by the wrong rate and
+# reports it as money. ``request`` is a flat per-call price and belongs to
+# every modality, so it is deliberately absent here.
+UNITS_BY_MODALITY: dict[str, frozenset[str]] = {
+    "stt": frozenset({"minute", "second"}),
+    "tts": frozenset({"char", "1k_char"}),
+    "llm": frozenset(TOKEN_UNITS),
+}
+
+
+def modality_for_unit(unit: str | None) -> str | None:
+    """The one modality ``unit`` can belong to, or None if it is ambiguous.
+
+    Every billing unit except ``request`` names exactly one modality, so a
+    rule that gives a unit has already said which modality it is for. That
+    lets a rule written without an explicit ``modality`` be resolved rather
+    than rejected, which matters because ``{provider: deepgram, fixed: 0.006,
+    unit: minute}`` is the obvious way to write an stt rule.
+    """
+    if unit is None or unit == "request":
+        return None
+    for modality, units in UNITS_BY_MODALITY.items():
+        if unit in units:
+            return modality
+    return None
+
+
+def unit_matches_modality(unit: str, modality: str) -> bool:
+    """True if ``unit`` is a legal billing unit for ``modality``.
+
+    ``request`` matches everything. An unknown modality matches nothing,
+    which is the safe answer: it means the caller cannot vouch for the pair.
+    """
+    if unit == "request":
+        return True
+    return unit in UNITS_BY_MODALITY.get(modality, frozenset())
+
 
 def _model_matches(rule_model: str, model_id: str) -> bool:
     """True if ``rule_model`` matches a request's ``model_id``.
@@ -57,6 +101,65 @@ def _model_matches(rule_model: str, model_id: str) -> bool:
         return True
     bare = model_id.split("/", 1)[-1]
     return rule_model == bare
+
+
+def validate_fixed_pricing(
+    *,
+    modality: str,
+    unit: str | None,
+    fixed: float | None,
+    input_price_usd: float | None = None,
+    cached_input_price_usd: float | None = None,
+    output_price_usd: float | None = None,
+) -> None:
+    """Raise ``ValueError`` unless a fixed rule's pricing fields are coherent.
+
+    Shared by the YAML seed parser and the DB/API upsert so the two cannot
+    drift into accepting different rules. Every failure here is a deploy-time
+    error on purpose: the alternative is a rule that rates every request at a
+    plausible wrong number, which surfaces in a bill instead.
+    """
+    if unit not in VALID_UNITS:
+        raise ValueError(
+            f"a fixed rule needs a valid unit (one of {sorted(VALID_UNITS)}), "
+            f"got {unit!r}"
+        )
+
+    # A unit names its own modality, so a wildcard modality is inferred rather
+    # than rejected (see :func:`modality_for_unit`). A modality that is stated
+    # AND contradicts the unit is a real error: it would bill one modality's
+    # units at another's rate.
+    if unit != "request" and modality != WILDCARD:
+        if not unit_matches_modality(unit, modality):
+            allowed = sorted(UNITS_BY_MODALITY.get(modality, frozenset())) + ["request"]
+            raise ValueError(
+                f"unit {unit!r} is not billable for modality {modality!r}; "
+                f"valid units are {allowed}"
+            )
+
+    legs = (input_price_usd, cached_input_price_usd, output_price_usd)
+    if unit in TOKEN_UNITS:
+        if fixed is not None:
+            raise ValueError(
+                f"unit {unit!r} bills input and output at different rates, so "
+                f"a single 'fixed' price cannot express it; set "
+                f"input_price_usd and output_price_usd instead "
+                f"(cached_input_price_usd is optional and defaults to input)"
+            )
+        if input_price_usd is None or output_price_usd is None:
+            raise ValueError(
+                f"a fixed rule priced per {unit!r} needs both input_price_usd "
+                f"and output_price_usd"
+            )
+        return
+
+    if fixed is None:
+        raise ValueError(f"a fixed rule priced per {unit!r} needs a 'fixed' price")
+    if any(leg is not None for leg in legs):
+        raise ValueError(
+            f"input/cached/output prices only apply to token units "
+            f"{sorted(TOKEN_UNITS)}; unit {unit!r} takes a single 'fixed' price"
+        )
 
 
 @dataclass(frozen=True)
@@ -77,6 +180,39 @@ class RateRule:
     markup: float | None = None
     unit_price_usd: float | None = None
     unit: str | None = None
+    # LLM legs. Input and output bill at different rates on every provider, so
+    # a token-unit rule carries a rate per leg instead of one
+    # ``unit_price_usd``. ``cached_input_price_usd`` is OPTIONAL and defaults
+    # to the input rate, which is the correct default for an operator with no
+    # negotiated cache discount.
+    input_price_usd: float | None = None
+    cached_input_price_usd: float | None = None
+    output_price_usd: float | None = None
+
+    def __post_init__(self) -> None:
+        """Pin a fixed rule's modality from its unit when it was left wildcard.
+
+        Done here rather than in each caller so the YAML seed, a DB row and a
+        directly-constructed rule cannot disagree. Only fills a wildcard: a
+        stated modality is left alone, and a contradiction between the two is
+        rejected by :func:`validate_fixed_pricing` at load.
+        """
+        if self.kind != "fixed" or self.modality != WILDCARD:
+            return
+        inferred = modality_for_unit(self.unit)
+        if inferred is not None:
+            object.__setattr__(self, "modality", inferred)
+
+    def cached_rate(self) -> float:
+        """The rate for cached prompt tokens, defaulting to the input rate.
+
+        A contract without a prompt-cache discount bills cached input at the
+        ordinary input rate, so an omitted ``cached_input_price_usd`` must not
+        read as free.
+        """
+        if self.cached_input_price_usd is not None:
+            return self.cached_input_price_usd
+        return self.input_price_usd or 0.0
 
     def matches(
         self,
@@ -116,6 +252,13 @@ class RateRule:
     def describe(self) -> str:
         """Auditable one-token summary stamped onto each rated request."""
         if self.kind == "fixed":
+            if self.unit in TOKEN_UNITS:
+                legs = (
+                    f"in={_fmt(self.input_price_usd)},"
+                    f"cached={_fmt(self.cached_rate())},"
+                    f"out={_fmt(self.output_price_usd)}"
+                )
+                return f"fixed:{legs}/{self.unit}"
             price = _fmt(self.unit_price_usd)
             return f"fixed:{price}/{self.unit}"
         return f"cost_plus:{_fmt(self.markup)}"
@@ -144,6 +287,9 @@ def rate_rule_from_row(row: dict) -> RateRule:
         markup=row.get("markup"),
         unit_price_usd=row.get("unit_price_usd"),
         unit=row.get("unit"),
+        input_price_usd=row.get("input_price_usd"),
+        cached_input_price_usd=row.get("cached_input_price_usd"),
+        output_price_usd=row.get("output_price_usd"),
     )
 
 
@@ -186,13 +332,20 @@ class RateCard:
         model = str(raw.get("model", WILDCARD))
         tenant = raw.get("tenant")
         plan = raw.get("plan")
-        if "fixed" in raw and raw["fixed"] is not None:
+        fixed = raw.get("fixed")
+        legs = {
+            "input_price_usd": raw.get("input_price_usd"),
+            "cached_input_price_usd": raw.get("cached_input_price_usd"),
+            "output_price_usd": raw.get("output_price_usd"),
+        }
+        if fixed is not None or any(v is not None for v in legs.values()):
             unit = raw.get("unit")
-            if unit not in VALID_UNITS:
-                raise ValueError(
-                    f"fixed rate rule needs a valid unit "
-                    f"(one of {sorted(VALID_UNITS)}), got {unit!r}"
-                )
+            validate_fixed_pricing(
+                modality=modality,
+                unit=unit,
+                fixed=None if fixed is None else float(fixed),
+                **{k: (None if v is None else float(v)) for k, v in legs.items()},
+            )
             return RateRule(
                 modality=modality,
                 provider=provider,
@@ -200,8 +353,9 @@ class RateCard:
                 tenant=tenant,
                 plan=plan,
                 kind="fixed",
-                unit_price_usd=float(raw["fixed"]),
+                unit_price_usd=None if fixed is None else float(fixed),
                 unit=str(unit),
+                **{k: (None if v is None else float(v)) for k, v in legs.items()},
             )
         markup = float(raw.get("markup", default_markup))
         return RateRule(
@@ -260,6 +414,11 @@ class RateCard:
 __all__ = [
     "WILDCARD",
     "VALID_UNITS",
+    "TOKEN_UNITS",
+    "UNITS_BY_MODALITY",
+    "unit_matches_modality",
+    "modality_for_unit",
+    "validate_fixed_pricing",
     "RateRule",
     "RateCard",
     "rate_rule_from_row",

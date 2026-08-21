@@ -16,7 +16,8 @@ A rate card is a global `default_markup` fallback plus an ordered list of rules.
 **Rule kind** is one of two:
 
 - **cost_plus** (`markup`): the billable price is the recorded provider cost multiplied by `markup`. Because it multiplies the recorded cost, a cost-plus rule auto-follows voice-prices base movement: when the base price changes, the rated price tracks it with no edit.
-- **fixed** (`fixed` + `unit`): the billable price is an advertised `$/unit` multiplied by the request's billable quantity in that unit. A fixed rule is decoupled from the base cost, so it holds a stable advertised price even as the base moves. Valid units: `minute`, `second`, `char`, `1k_char`, `token`, `1k_token`, `1m_token`, `request`.
+- **fixed** (`fixed` + `unit`): the billable price is an advertised `$/unit` multiplied by the request's billable quantity in that unit. A fixed rule is decoupled from the base cost, so it holds a stable advertised price even as the base moves. Single-sided units: `minute`, `second` (stt), `char`, `1k_char` (tts), `request` (any).
+- **fixed, per leg** (`input_price_usd` + `output_price_usd` + a token `unit`): the LLM form. Token units (`token`, `1k_token`, `1m_token`) carry a rate per leg, because input and output bill at different rates on every provider in the catalogue and one blended rate cannot express either. `cached_input_price_usd` is optional and defaults to the input rate. Cached prompt tokens are a **subset** of the prompt, so the uncached leg is `input - cached`. A fixed rule describes a flat contract and cannot express context-window tiers; use `cost_plus` to track a tiered list price.
 
 ## How a rule is resolved
 
@@ -39,7 +40,7 @@ Rating happens at write time, once, on the same path that records cost. Every re
 | `rated_price_usd` | `float` | The billable price for this request. |
 | `rate_rule` | `str` | An audit token naming the rule that produced the price. |
 
-The `rate_rule` token is human-readable and self-documenting: `cost_plus:1.3` (recorded cost times 1.3), `fixed:0.006/minute` (an advertised fixed rate), or `default:1` (no rule matched, default markup applied). Because the price and its rule are stamped at write time, they are immutable: editing the card later never rewrites historical rows. Yesterday's usage stays billed at yesterday's card, which is what makes the rated numbers safe to invoice against.
+The `rate_rule` token is human-readable and self-documenting: `cost_plus:1.3` (recorded cost times 1.3), `fixed:0.006/minute` (an advertised fixed rate), `fixed:in=2.5,cached=1.25,out=10/1m_token` (an LLM rate, every leg named), or `default:1` (no rule matched, default markup applied). Because the price and its rule are stamped at write time, they are immutable: editing the card later never rewrites historical rows. Yesterday's usage stays billed at yesterday's card, which is what makes the rated numbers safe to invoice against.
 
 ## Where rating runs
 

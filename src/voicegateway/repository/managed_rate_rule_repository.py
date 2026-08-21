@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import text
 from sqlmodel import delete, select
 
-from voicegateway.billing.rate_card import VALID_UNITS, WILDCARD
+from voicegateway.billing.rate_card import WILDCARD, validate_fixed_pricing
 from voicegateway.models.managed_rate_rule_model import ManagedRateRule
 
 if TYPE_CHECKING:
@@ -47,41 +47,61 @@ def validate_rule(
     markup: float | None,
     fixed: float | None,
     unit: str | None,
+    modality: str = WILDCARD,
+    input_price_usd: float | None = None,
+    cached_input_price_usd: float | None = None,
+    output_price_usd: float | None = None,
 ) -> str:
     """Validate a rule's pricing fields and return its kind.
 
-    Exactly one of ``markup`` (cost_plus) or ``fixed`` (fixed $/unit) must be
-    set. A fixed rule needs a valid ``unit``. Raises ``ValueError`` otherwise.
+    Exactly one of ``markup`` (cost_plus) or a fixed price (``fixed`` for a
+    single-sided unit, or the input/output legs for a token unit) must be set.
+    Fixed-pricing coherence is delegated to
+    :func:`voicegateway.billing.rate_card.validate_fixed_pricing` so the API
+    and the YAML seed cannot drift apart on what they accept.
     """
-    if markup is not None and fixed is not None:
-        raise ValueError("a rate rule sets either markup or fixed, not both")
-    if fixed is not None:
-        if unit not in VALID_UNITS:
-            raise ValueError(
-                f"a fixed rule needs a valid unit (one of {sorted(VALID_UNITS)})"
-            )
+    legs = (input_price_usd, cached_input_price_usd, output_price_usd)
+    has_fixed = fixed is not None or any(leg is not None for leg in legs)
+    if markup is not None and has_fixed:
+        raise ValueError("a rate rule sets either markup or a fixed price, not both")
+    if has_fixed:
+        validate_fixed_pricing(
+            modality=modality,
+            unit=unit,
+            fixed=fixed,
+            input_price_usd=input_price_usd,
+            cached_input_price_usd=cached_input_price_usd,
+            output_price_usd=output_price_usd,
+        )
         return "fixed"
     if markup is not None:
         if markup <= 0:
             raise ValueError("markup must be > 0")
         return "cost_plus"
-    raise ValueError("a rate rule needs either markup or fixed")
+    raise ValueError("a rate rule needs either markup or a fixed price")
 
 
 _RULE_UPSERT = text(
     """
     INSERT INTO managed_rate_rules (
         rule_id, modality, provider, model, tenant, plan,
-        kind, markup, unit_price_usd, unit, created_at, updated_at
+        kind, markup, unit_price_usd, unit,
+        input_price_usd, cached_input_price_usd, output_price_usd,
+        created_at, updated_at
     ) VALUES (
         :rule_id, :modality, :provider, :model, :tenant, :plan,
-        :kind, :markup, :unit_price_usd, :unit, :now, :now
+        :kind, :markup, :unit_price_usd, :unit,
+        :input_price_usd, :cached_input_price_usd, :output_price_usd,
+        :now, :now
     )
     ON CONFLICT(rule_id) DO UPDATE SET
         kind=excluded.kind,
         markup=excluded.markup,
         unit_price_usd=excluded.unit_price_usd,
         unit=excluded.unit,
+        input_price_usd=excluded.input_price_usd,
+        cached_input_price_usd=excluded.cached_input_price_usd,
+        output_price_usd=excluded.output_price_usd,
         updated_at=excluded.updated_at
     """
 )
@@ -100,6 +120,9 @@ def _row_to_dict(r: ManagedRateRule) -> dict[str, Any]:
         "markup": r.markup,
         "unit_price_usd": r.unit_price_usd,
         "unit": r.unit,
+        "input_price_usd": r.input_price_usd,
+        "cached_input_price_usd": r.cached_input_price_usd,
+        "output_price_usd": r.output_price_usd,
         "created_at": r.created_at,
         "updated_at": r.updated_at,
     }
@@ -124,9 +147,20 @@ async def upsert_rule(
     markup: float | None = None,
     fixed: float | None = None,
     unit: str | None = None,
+    input_price_usd: float | None = None,
+    cached_input_price_usd: float | None = None,
+    output_price_usd: float | None = None,
 ) -> str:
     """Insert or update one rule (keyed by scope). Returns the ``rule_id``."""
-    kind = validate_rule(markup=markup, fixed=fixed, unit=unit)
+    kind = validate_rule(
+        markup=markup,
+        fixed=fixed,
+        unit=unit,
+        modality=modality,
+        input_price_usd=input_price_usd,
+        cached_input_price_usd=cached_input_price_usd,
+        output_price_usd=output_price_usd,
+    )
     rid = scope_key(
         modality=modality, provider=provider, model=model, tenant=tenant, plan=plan
     )
@@ -143,6 +177,11 @@ async def upsert_rule(
             "markup": markup if kind == "cost_plus" else None,
             "unit_price_usd": fixed if kind == "fixed" else None,
             "unit": unit if kind == "fixed" else None,
+            "input_price_usd": input_price_usd if kind == "fixed" else None,
+            "cached_input_price_usd": (
+                cached_input_price_usd if kind == "fixed" else None
+            ),
+            "output_price_usd": output_price_usd if kind == "fixed" else None,
             "now": time.time(),
         },
     )
