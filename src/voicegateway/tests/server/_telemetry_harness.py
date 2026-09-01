@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterator
 
 import yaml
 from fastapi.routing import APIRoute
@@ -97,6 +99,9 @@ async def _make_key(gateway, *, tenant_id=None, role="tenant"):
 
 _SCOPE_QUALNAME = "require_scope.<locals>._dep"
 
+#: ``{name:converter}`` -> ``{name}``, matching OpenAPI's normalisation.
+_CONVERTER_RE = re.compile(r":[^{}]+\}")
+
 
 def _collect_dependencies(dependant, out: list) -> None:
     """Collect every callable in the resolved dependency tree."""
@@ -123,25 +128,74 @@ def classify_dependency(fn) -> str | None:
     return None
 
 
+def iter_api_routes(routes) -> Iterator[tuple[str, APIRoute]]:
+    """Yield ``(resolved_path, APIRoute)``, flattening FastAPI's wrappers.
+
+    FastAPI changed how ``include_router`` stores routes, and this project's
+    CI runs both shapes, so both have to work:
+
+    - **<= 0.136** copies each included route onto the parent as a real
+      ``APIRoute`` with its full path already resolved.
+    - **0.141** stores one lazy ``_IncludedRouter`` per inclusion instead. It
+      is not an ``APIRoute``, and it has no ``path``, ``methods`` or
+      ``dependant``, so a check for any of those skips it and everything
+      underneath it. The resolved routes come from
+      ``effective_route_contexts()``, whose entries carry the fully-prefixed
+      ``path`` alongside the ``original_route``.
+
+    This is why Test Coverage failed while the test matrix passed: the two
+    jobs resolved different FastAPI versions, and under 0.141 the inventory
+    collapsed to the four routes declared by decorator rather than by
+    inclusion. A route this function fails to yield vanishes from the
+    authorization matrix, so breadth here is deliberate.
+    """
+    for route in routes:
+        if isinstance(route, APIRoute):
+            yield route.path, route
+        elif hasattr(route, "effective_route_contexts"):
+            for context in route.effective_route_contexts():
+                original = getattr(context, "original_route", None)
+                if isinstance(original, APIRoute):
+                    yield context.path, original
+        elif hasattr(route, "routes"):
+            yield from iter_api_routes(route.routes)
+
+
 def live_route_auth(app) -> dict[tuple[str, str], str]:
     """Map every live ``(method, path)`` to its recovered gating."""
     found: dict[tuple[str, str], str] = {}
-    for route in app.routes:
-        # isinstance rather than a structural hasattr check. A duck-typed
-        # check was tried and reverted: it was introduced to tolerate a
-        # "compatible route subclass from a different import boundary", but
-        # measured against this app no route disagrees between the two, so it
-        # bought nothing and admitted more. Being tight here matters, because
-        # anything this loop skips silently vanishes from the matrix.
-        if not isinstance(route, APIRoute):
-            continue
+    for path, route in iter_api_routes(app.routes):
         calls: list = []
         _collect_dependencies(route.dependant, calls)
         marks = sorted({m for m in (classify_dependency(f) for f in calls) if m})
         auth = "+".join(marks) if marks else "open"
         for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
-            found[(method, route.path)] = auth
+            found[(method, path)] = auth
     return found
+
+
+def normalize_route_key(key: tuple[str, str]) -> tuple[str, str]:
+    """Strip a path converter so a route key can be compared to OpenAPI."""
+    method, path = key
+    return (method, _CONVERTER_RE.sub("}", path))
+
+
+def openapi_route_keys(app) -> set[tuple[str, str]]:
+    """Return ``(method, path)`` for every route in the OpenAPI schema.
+
+    A version-stable second opinion on :func:`iter_api_routes`. The schema is
+    public API and survives the internal restructuring above, so comparing the
+    two catches the next such change as a named failure rather than as a
+    silently short inventory. Path converters are stripped because the schema
+    normalises ``{id:path}`` to ``{id}``.
+    """
+    schema = app.openapi()
+    return {
+        (method.upper(), _CONVERTER_RE.sub("}", path))
+        for path, operations in schema.get("paths", {}).items()
+        for method in operations
+        if method.upper() not in {"HEAD", "OPTIONS"}
+    }
 
 
 def canonical_route_auth() -> dict[tuple[str, str], str]:

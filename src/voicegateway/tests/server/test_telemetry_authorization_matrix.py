@@ -27,7 +27,11 @@ from voicegateway.schemas.telemetry.security_schema import (
     load_threat_model,
 )
 from voicegateway.tests.server._telemetry_harness import (
+    _Harness,
     canonical_route_auth,
+    live_route_auth,
+    normalize_route_key,
+    openapi_route_keys,
 )
 
 # Snapshot the served route inventory once at collection and share it across
@@ -108,6 +112,40 @@ def test_bijection_is_exact(matrix, live):
     """State the cardinality directly, so an off-by-one cannot hide."""
     assert len(matrix.routes) == len(live)
     assert matrix.keys() == set(live)
+
+
+def test_inventory_agrees_with_the_openapi_schema(live):
+    """Cross-check the route walk against a version-stable public source.
+
+    This is the test that would have caught the Test Coverage failure at its
+    cause instead of six confusing symptoms. FastAPI 0.141 replaced the
+    included-route copies that ``include_router`` used to leave on the parent
+    with a lazy wrapper, so a walk that only recognised ``APIRoute`` collapsed
+    an 89-route inventory to 4. The matrix then reported 85 rows as dead
+    routes, which reads like the matrix rotted rather than like the walk
+    broke.
+
+    The OpenAPI schema survived that change untouched, so comparing the two
+    turns the next internal restructuring into one named failure here.
+    """
+    harness = _Harness()
+    try:
+        walked = {normalize_route_key(key) for key in live_route_auth(harness.app)}
+        schema = openapi_route_keys(harness.app)
+    finally:
+        harness.cleanup()
+
+    assert walked == schema, (
+        "the route walk disagrees with the OpenAPI schema, so "
+        "iter_api_routes no longer understands this FastAPI version. "
+        f"missing from the walk: {sorted(schema - walked)}; "
+        f"walked but absent from the schema: {sorted(walked - schema)}"
+    )
+    assert {normalize_route_key(key) for key in live} == schema, (
+        "the collection-time snapshot disagrees with the schema even though "
+        "the walk agrees, so the snapshot is stale or was taken against a "
+        "different application"
+    )
 
 
 def test_canonical_inventory_ignores_parent_router_mutation(live):

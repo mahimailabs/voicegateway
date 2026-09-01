@@ -67,14 +67,35 @@ def classify(fn) -> str | None:
     return None
 
 
-def inspect_routes() -> list[dict]:
-    """Return one dict per ``(method, path)`` with its recovered gating."""
+def _iter_api_routes(routes):
+    """Yield ``(resolved_path, APIRoute)``, flattening FastAPI's wrappers.
+
+    Mirrors ``iter_api_routes`` in tests/server/_telemetry_harness.py, and for
+    the same reason: FastAPI <= 0.136 leaves included routes on the parent as
+    real ``APIRoute`` copies, while 0.141 leaves one lazy wrapper per
+    inclusion that exposes them through ``effective_route_contexts()``.
+    Recognising only ``APIRoute`` collapses this project's 89-route inventory
+    to 4 under 0.141, which would make this generator print a skeleton for
+    every route the matrix already covers.
+    """
     from fastapi.routing import APIRoute
 
+    for route in routes:
+        if isinstance(route, APIRoute):
+            yield route.path, route
+        elif hasattr(route, "effective_route_contexts"):
+            for context in route.effective_route_contexts():
+                original = getattr(context, "original_route", None)
+                if isinstance(original, APIRoute):
+                    yield context.path, original
+        elif hasattr(route, "routes"):
+            yield from _iter_api_routes(route.routes)
+
+
+def inspect_routes() -> list[dict]:
+    """Return one dict per ``(method, path)`` with its recovered gating."""
     rows: list[dict] = []
-    for route in _canonical_routes():
-        if not isinstance(route, APIRoute):
-            continue
+    for path, route in _iter_api_routes(_canonical_routes()):
         calls: list = []
         _walk(route.dependant, calls)
         marks = sorted({m for m in (classify(f) for f in calls) if m})
@@ -82,12 +103,12 @@ def inspect_routes() -> list[dict]:
         # the pair rather than silently picking the first.
         auth = "+".join(marks) if marks else "open"
         params = {p.name for p in route.dependant.query_params}
-        takes_project = "project" in params or "{project_id}" in route.path
+        takes_project = "project" in params or "{project_id}" in path
         for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
             rows.append(
                 {
                     "method": method,
-                    "path": route.path,
+                    "path": path,
                     "auth": auth,
                     "takes_project": takes_project,
                 }
