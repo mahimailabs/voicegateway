@@ -10,7 +10,9 @@ from __future__ import annotations
 import base64
 import math
 import re
+from collections.abc import Mapping
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Any
 
 from pydantic import (
@@ -65,7 +67,7 @@ def _validate_any_value(value: Any, *, path: str = "value") -> None:
         for index, child in enumerate(value):
             _validate_any_value(child, path=f"{path}[{index}]")
         return
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         for key, child in value.items():
             if not isinstance(key, str) or not key:
                 raise TelemetryContractError(
@@ -76,6 +78,17 @@ def _validate_any_value(value: Any, *, path: str = "value") -> None:
     raise TelemetryContractError(
         f"{path} must be an OpenTelemetry AnyValue, got {type(value).__name__}"
     )
+
+
+def _freeze_any_value(value: Any) -> Any:
+    """Recursively detach mutable caller-owned containers from a contract value."""
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_any_value(child) for child in value)
+    if isinstance(value, Mapping):
+        return MappingProxyType(
+            {key: _freeze_any_value(child) for key, child in value.items()}
+        )
+    return value
 
 
 def _json_value(value: Any) -> Any:
@@ -91,7 +104,7 @@ def _json_value(value: Any) -> Any:
         return [_json_value(child) for child in value]
     if isinstance(value, list):
         return [_json_value(child) for child in value]
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {key: _json_value(child) for key, child in value.items()}
     return value
 
@@ -105,7 +118,7 @@ class AnyValue(RootModel[Any]):
     @classmethod
     def _is_any_value(cls, value: Any) -> Any:
         _validate_any_value(value)
-        return value
+        return _freeze_any_value(value)
 
     @model_serializer(mode="plain")
     def _serialize(self) -> Any:

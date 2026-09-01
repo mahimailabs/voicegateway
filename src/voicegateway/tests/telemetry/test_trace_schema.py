@@ -74,6 +74,17 @@ def test_models_are_frozen_and_reject_unknown_fields():
         SpanContext(trace_id=_TRACE_ID, span_id=_SPAN_ID, unexpected=True)
 
 
+def test_any_value_is_deeply_immutable_and_detached_from_input():
+    original = {"nested": ["before"]}
+    attribute = Attribute(key="payload", value=original)
+
+    original["nested"].append("after")
+
+    assert attribute.value.root["nested"] == ("before",)
+    with pytest.raises(TypeError):
+        attribute.value.root["nested"] = ()
+
+
 @pytest.mark.parametrize(
     "changes",
     [

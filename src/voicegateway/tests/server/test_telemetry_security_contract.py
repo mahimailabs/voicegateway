@@ -37,6 +37,8 @@ from voicegateway.schemas.telemetry.security_schema import (
     ScopeName,
     SealedValue,
     SensitiveAccessEvent,
+    ThreatModel,
+    load_threat_model,
     may_transition,
 )
 
@@ -241,6 +243,8 @@ def _event(**overrides) -> dict:
     base = {
         "occurred_at": 1.0,
         "actor_kind": PrincipalKind.TENANT_KEY,
+        "tenant_id": "acme",
+        "resource_tenant_id": "acme",
         "resource_kind": "transcript",
         "resource_id": "s-1",
         "action": "read",
@@ -270,6 +274,21 @@ def test_audit_event_reason_is_bounded():
     """A reason field with no cap is a content field wearing a hat."""
     with pytest.raises(ValidationError):
         SensitiveAccessEvent.model_validate(_event(reason="x" * 201))
+
+
+def test_audit_event_requires_complete_tenant_identity():
+    """A tenant-key read without both tenants cannot be investigated later."""
+    with pytest.raises(ValidationError, match="tenant-key audit events require"):
+        SensitiveAccessEvent.model_validate(_event(tenant_id=None))
+    with pytest.raises(ValidationError):
+        SensitiveAccessEvent.model_validate(_event(resource_tenant_id=None))
+
+
+def test_threat_model_rejects_duplicate_gap_ids():
+    """Duplicate ids would make by_gap_id silently discard one finding."""
+    entry = load_threat_model().root[0]
+    with pytest.raises(ValidationError, match="duplicate threat-model gap ids"):
+        ThreatModel.model_validate([entry, entry])
 
 
 # --------------------------------------------------------------------------

@@ -20,7 +20,9 @@ adds a test here.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
+import json
 import time
 
 import pytest
@@ -72,7 +74,7 @@ async def harness():
         yield h
     finally:
         reset_tenant_id()
-        h.cleanup()
+        await asyncio.to_thread(h.cleanup)
 
 
 async def _headers(harness, fixture: SecurityFixture) -> dict[str, str]:
@@ -192,9 +194,15 @@ async def test_foreign_session_is_indistinguishable_from_a_missing_one(harness):
         foreign = await client.get("/api/sessions/s-beta-1", headers=headers)
         invented = await client.get("/api/sessions/s-does-not-exist", headers=headers)
     assert foreign.status_code == invented.status_code == 404
-    assert set(foreign.json()) == set(invented.json()), (
-        "a foreign session's error body differs in shape from a missing "
-        "one's, which leaks that the id is real"
+    foreign_body = json.dumps(foreign.json(), sort_keys=True).replace(
+        "s-beta-1", "<session_id>"
+    )
+    missing_body = json.dumps(invented.json(), sort_keys=True).replace(
+        "s-does-not-exist", "<session_id>"
+    )
+    assert foreign_body == missing_body, (
+        "a foreign session's error body differs from a missing one's, which "
+        "leaks that the id is real"
     )
 
 

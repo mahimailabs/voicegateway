@@ -271,6 +271,15 @@ class ThreatEntry(BaseModel):
 class ThreatModel(RootModel[list[ThreatEntry]]):
     """Every gap Wave 0 records, keyed by gap id."""
 
+    @model_validator(mode="after")
+    def _gap_ids_are_unique(self) -> ThreatModel:
+        """Reject duplicate ids so an index cannot silently discard a gap."""
+        gap_ids = [entry.gap_id for entry in self.root]
+        duplicates = sorted({gap_id for gap_id in gap_ids if gap_ids.count(gap_id) > 1})
+        if duplicates:
+            raise ValueError(f"duplicate threat-model gap ids: {duplicates}")
+        return self
+
     def gap_ids(self) -> set[str]:
         """Return the full set of minted gap ids."""
         return {entry.gap_id for entry in self.root}
@@ -429,13 +438,20 @@ class SensitiveAccessEvent(BaseModel):
     tenant_id: str | None = None
     #: The tenant that owns the row being read, which is what makes a
     #: cross-tenant access visible in the log.
-    resource_tenant_id: str | None = None
+    resource_tenant_id: str
     resource_kind: Literal["transcript", "replay", "session", "tool_call"]
     resource_id: str
     action: Literal["read", "export", "purge", "redact"]
     decision: Literal["allow", "deny"]
     #: Short machine-readable reason, never free-form content.
     reason: str = Field(default="", max_length=200)
+
+    @model_validator(mode="after")
+    def _tenant_key_audit_identity_is_complete(self) -> SensitiveAccessEvent:
+        """Keep every sensitive read attributable to both actor and resource."""
+        if self.actor_kind is PrincipalKind.TENANT_KEY and self.tenant_id is None:
+            raise ValueError("tenant-key audit events require tenant_id")
+        return self
 
 
 #: Field names Codex's trace contract is expected to expose, held as strings

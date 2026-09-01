@@ -18,7 +18,6 @@ import os
 import tempfile
 
 import yaml
-from fastapi.routing import APIRoute
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
@@ -46,10 +45,16 @@ class _Harness:
         cfg_path = os.path.join(tmp, "voicegw.yaml")
         with open(cfg_path, "w") as handle:
             yaml.dump(cfg, handle)
-        self.gateway = Gateway(config_path=cfg_path)
-        self.app = build_app(self.gateway, enable_mcp_sse=False, enable_dashboard=False)
-        # SQLite path: no ClickHouse client bound.
-        self.app.state.ch_client = None
+        try:
+            self.gateway = Gateway(config_path=cfg_path)
+            self.app = build_app(
+                self.gateway, enable_mcp_sse=False, enable_dashboard=False
+            )
+            # SQLite path: no ClickHouse client bound.
+            self.app.state.ch_client = None
+        except Exception:
+            self.cleanup()
+            raise
 
     def client(self) -> AsyncClient:
         """Return an ASGI client bound to this harness's app."""
@@ -118,7 +123,10 @@ def live_route_auth(app) -> dict[tuple[str, str], str]:
     """Map every live ``(method, path)`` to its recovered gating."""
     found: dict[tuple[str, str], str] = {}
     for route in app.routes:
-        if not isinstance(route, APIRoute):
+        # FastAPI can expose a compatible route subclass from a different
+        # import boundary. The API contract we need is structural: a route
+        # with a path, methods, and a resolved dependency graph.
+        if not all(hasattr(route, field) for field in ("path", "methods", "dependant")):
             continue
         calls: list = []
         _collect_dependencies(route.dependant, calls)
