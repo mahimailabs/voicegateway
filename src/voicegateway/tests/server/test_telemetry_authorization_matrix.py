@@ -23,17 +23,7 @@ from voicegateway.schemas.telemetry.security_schema import (
     load_authorization_matrix,
     load_threat_model,
 )
-from voicegateway.tests.server._telemetry_harness import _Harness, live_route_auth
-
-
-@pytest.fixture(scope="module")
-def app():
-    """One app for the whole module: these tests never mutate it."""
-    harness = _Harness()
-    try:
-        yield harness.app
-    finally:
-        harness.cleanup()
+from voicegateway.tests.server._telemetry_harness import isolated_live_route_auth
 
 
 @pytest.fixture(scope="module")
@@ -42,8 +32,9 @@ def matrix():
 
 
 @pytest.fixture(scope="module")
-def live(app):
-    return live_route_auth(app)
+def live():
+    """Read the production graph without inherited test-process mutations."""
+    return isolated_live_route_auth()
 
 
 # --------------------------------------------------------------------------

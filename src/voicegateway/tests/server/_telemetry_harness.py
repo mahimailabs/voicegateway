@@ -14,7 +14,10 @@ harness is safe to run alongside the rest of the suite.
 
 from __future__ import annotations
 
+import json
 import os
+import subprocess
+import sys
 import tempfile
 
 import yaml
@@ -135,3 +138,27 @@ def live_route_auth(app) -> dict[tuple[str, str], str]:
         for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
             found[(method, route.path)] = auth
     return found
+
+
+def isolated_live_route_auth() -> dict[tuple[str, str], str]:
+    """Snapshot route authorization from an unmodified interpreter.
+
+    Several server tests exercise mutable router wiring.  The authorization
+    matrix is a contract for a newly built production app, so run its route
+    inspection in a fresh interpreter rather than letting prior test state
+    alter the evidence it compares against.
+    """
+    result = subprocess.run(
+        [sys.executable, "-m", "voicegateway.tests.server._telemetry_route_snapshot"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "failed to snapshot the live authorization graph:\n"
+            f"stdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        )
+    loaded = json.loads(result.stdout)
+    return {(method, path): auth for method, path, auth in loaded}
