@@ -14,11 +14,14 @@ harness is safe to run alongside the rest of the suite.
 
 from __future__ import annotations
 
+import json
 import os
+import subprocess
+import sys
 import tempfile
-from itertools import chain
 
 import yaml
+from fastapi.routing import APIRoute
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
@@ -124,10 +127,13 @@ def live_route_auth(app) -> dict[tuple[str, str], str]:
     """Map every live ``(method, path)`` to its recovered gating."""
     found: dict[tuple[str, str], str] = {}
     for route in app.routes:
-        # FastAPI can expose a compatible route subclass from a different
-        # import boundary. The API contract we need is structural: a route
-        # with a path, methods, and a resolved dependency graph.
-        if not all(hasattr(route, field) for field in ("path", "methods", "dependant")):
+        # isinstance rather than a structural hasattr check. A duck-typed
+        # check was tried and reverted: it was introduced to tolerate a
+        # "compatible route subclass from a different import boundary", but
+        # measured against this app no route disagrees between the two, so it
+        # bought nothing and admitted more. Being tight here matters, because
+        # anything this loop skips silently vanishes from the matrix.
+        if not isinstance(route, APIRoute):
             continue
         calls: list = []
         _collect_dependencies(route.dependant, calls)
@@ -141,21 +147,48 @@ def live_route_auth(app) -> dict[tuple[str, str], str]:
 def canonical_route_auth() -> dict[tuple[str, str], str]:
     """Map the route inventory the application builder includes.
 
-    ``ApplicationBuilder`` includes these four routers directly. Inspecting
-    their resolved routes avoids relying on FastAPI's app-level route list,
-    which is intentionally not a stable inventory surface for this project.
+    The route aggregators are module-level singletons. Other test modules may
+    reconfigure them, so the inventory is taken in a clean child interpreter
+    rather than trusting the parent test process's mutable state.
+
+    The child builds the application rather than reading the four routers.
+    That is not a detail. ``include_router`` can attach dependencies at include
+    time, and those land on the app's route objects, never on the router's, so
+    a router-level read reports the pre-inclusion gating. Demonstrated: mount
+    ``api_router`` with ``dependencies=[Depends(require_scope("admin"))]`` and
+    a router-level read still calls ``GET /v1/costs`` open while the app calls
+    it admin-gated. The matrix would then record a live gate as an open route,
+    or the reverse, which inverts what this suite exists to detect.
+
+    ``main.py`` attaches no such dependencies today, so the two agree, and
+    that is exactly why the weaker form survives review until it does not.
+    Building the app designs the failure out instead of leaving a comment.
     """
-    from voicegateway.server.api.openorca.routes import router as openorca_router
-    from voicegateway.server.routes import api_router, dashboard_router, system_router
+    script = """
+import json
 
-    class _RouteInventory:
-        routes = list(
-            chain(
-                system_router.routes,
-                api_router.routes,
-                dashboard_router.routes,
-                openorca_router.routes,
-            )
+from voicegateway.tests.server._telemetry_harness import _Harness, live_route_auth
+
+harness = _Harness()
+try:
+    auth = live_route_auth(harness.app)
+finally:
+    harness.cleanup()
+print(json.dumps([[method, path, value] for (method, path), value in auth.items()]))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if result.returncode != 0:
+        # check=True would raise CalledProcessError with the child's stderr
+        # captured and unshown, at collection time, which reads as "the module
+        # failed to import" and hides the cause. Surface it instead.
+        raise RuntimeError(
+            "route inventory child process failed "
+            f"(exit {result.returncode}):\n{result.stderr.strip()}"
         )
-
-    return live_route_auth(_RouteInventory())
+    rows = json.loads(result.stdout)
+    return {(method, path): auth for method, path, auth in rows}

@@ -138,5 +138,15 @@
     "wave": 2,
     "evidence": "src/voicegateway/repository/request_log_repository.py:268",
     "fixture": null
+  },
+  {
+    "gap_id": "VG-SEC-015",
+    "threat": "VG-THREAT-001",
+    "title": "The trace contract has one tenant slot and no boundary to fill it",
+    "description": "SpanAttributes.tenant_id is documented as internal-authoritative, set from a verified principal at an ingestion boundary, and the observability-contracts page repeats that it must be server-derived at ingest. No such boundary exists yet, and nothing makes the rule executable: no receiver, no test, and no field distinguishing what a payload asserted from what the server decided. The single slot serves both roles, which is structurally the same arrangement that produced VG-SEC-001, where a payload tenant_id won over the tenant resolved from the key on a route that already ships. The trace contract is right to state the rule; Wave 0 records that stating it is all that has happened so far.",
+    "status": "planned",
+    "wave": 1,
+    "evidence": "src/voicegateway/telemetry/trace_schema.py:237",
+    "fixture": null
   }
 ]

@@ -51,9 +51,22 @@ restores the exact prior context.
 
 `SpanAttributes.tenant_id` is internal-authoritative. It is set from a verified
 principal at an ingestion boundary; an arbitrary external attribute with the
-same name never overrides it. This contract does not carry prompt text,
-transcripts, tool arguments, tool results, or encrypted payload bytes. Those
-belong to the security content contract and a later encrypted content plane.
+same name never overrides it. `correlation` is a separate field from the
+free-form `attributes` collection, so that separation is structural rather than
+a convention a receiver has to remember.
+
+The half that is not yet structural is the boundary itself. No receiver exists,
+and this contract has a single tenant slot rather than one field for what the
+payload asserted and another for what the server derived. That is tracked as
+VG-SEC-015 in
+[observability security contracts](/architecture/observability-security), filed
+under the same threat as VG-SEC-001, which is the live defect where a payload
+`tenant_id` beats the tenant resolved from the API key on a route that already
+ships. Read that gap before writing the receiver.
+
+This contract does not carry prompt text, transcripts, tool arguments, tool
+results, or encrypted payload bytes. Those belong to the security content
+contract and a later encrypted content plane.
 
 | Existing field | Wave 0 mapping | Notes |
 | :--- | :--- | :--- |

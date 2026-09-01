@@ -15,20 +15,30 @@ threat model without something going red.
 
 from __future__ import annotations
 
+import importlib.util
+
 import pytest
 
 from voicegateway.schemas.telemetry.security_schema import (
     ContractStatus,
     RouteAuth,
+    ScopeName,
     load_authorization_matrix,
     load_threat_model,
 )
-from voicegateway.tests.server._telemetry_harness import canonical_route_auth
+from voicegateway.tests.server._telemetry_harness import (
+    canonical_route_auth,
+)
 
-# Route modules are intentionally shared process-wide fixtures in this test
-# suite. Take the canonical inventory during collection, before tests that
-# temporarily alter router wiring execute. ApplicationBuilder's ``app.routes``
-# is not a stable inventory surface, so the snapshot comes from its routers.
+# Snapshot the served route inventory once at collection and share it across
+# every test below. The child interpreter that produces it builds the
+# application rather than reading the four routers, because dependencies
+# attached at ``include_router`` time exist only on the app's routes. See
+# canonical_route_auth's docstring for the demonstration.
+#
+# No test in this suite is known to mutate router wiring: the full suite passes
+# with the app built per module. The isolation is belt and braces, kept because
+# it is nearly free, not because a specific polluter was identified.
 _LIVE_ROUTE_AUTH = canonical_route_auth()
 
 
@@ -100,6 +110,21 @@ def test_bijection_is_exact(matrix, live):
     assert matrix.keys() == set(live)
 
 
+def test_canonical_inventory_ignores_parent_router_mutation(live):
+    """The child-process inventory must not inherit altered parent routers."""
+    from voicegateway.server.routes import api_router, dashboard_router, system_router
+
+    routers = (system_router, api_router, dashboard_router)
+    saved = [list(router.routes) for router in routers]
+    try:
+        for router in routers:
+            router.routes.clear()
+        assert canonical_route_auth() == live
+    finally:
+        for router, routes in zip(routers, saved, strict=True):
+            router.routes[:] = routes
+
+
 # --------------------------------------------------------------------------
 # Classification conformance
 # --------------------------------------------------------------------------
@@ -142,9 +167,18 @@ def test_open_routes_are_gap_unless_explicitly_open_by_design(matrix):
 
 
 def test_write_scope_spans_ingest_and_config(matrix):
-    """Evidence for VG-SEC-003: splitting write is semantic, not a rename."""
+    """Evidence for VG-SEC-003: splitting write is semantic, not a rename.
+
+    The count is pinned rather than merely non-empty because 18 is quoted as a
+    fact in the VG-SEC-003 threat entry and on the docs page. A looser
+    assertion lets the code drift away from a number the prose still claims.
+    """
     write_rows = [r for r in matrix.routes if r.auth is RouteAuth.SCOPE_WRITE]
-    assert write_rows, "no route is gated by the write scope"
+    assert len(write_rows) == 18, (
+        f"{len(write_rows)} routes are gated by the write scope, but "
+        "VG-SEC-003 and docs/architecture/observability-security.md both say "
+        "18. Update the count in all three places together."
+    )
     ingest = {r.path for r in write_rows if r.path.startswith("/v1/ingest")}
     config = {
         r.path
@@ -184,6 +218,50 @@ def test_planned_routes_name_a_scope_that_must_exist_first(matrix):
     for planned in matrix.planned_routes:
         assert planned.gap_id in minted
         assert planned.required_scope.value
+
+
+def test_planned_ingest_routes_derive_their_tenant_server_side(matrix):
+    """VG-SEC-015: the trace receiver must not trust a payload tenant.
+
+    The rule is stated in ``SpanAttributes``'s docstring and again on the
+    observability-contracts page, but prose is exactly what VG-SEC-001 already
+    defeated once: docs/architecture/security.md promised the payload could not
+    override the key-derived tenant while the tool-call writer did precisely
+    that. Asserting it against the data means the receiver cannot be written
+    without a row that says where its tenant comes from.
+    """
+    ingest = [
+        planned
+        for planned in matrix.planned_routes
+        if planned.required_scope is ScopeName.INGEST
+    ]
+    assert ingest, "no planned ingest route: VG-SEC-015 has nothing to bind to"
+    for planned in ingest:
+        assert planned.tenant_source == "server_derived", (
+            f"{planned.method} {planned.path} may not accept a payload tenant"
+        )
+
+
+def test_the_trace_contract_can_carry_a_payload_tenant(matrix):
+    """Why VG-SEC-015 exists: the risk is real, not hypothetical.
+
+    ``SpanRecord`` has a single tenant slot and no way to distinguish what a
+    payload asserted from what the server decided, so a receiver that simply
+    validates and stores an incoming span inherits the caller's tenant. Skips
+    until the trace contract exists, then stands as the standing argument for
+    the rule above.
+    """
+    if importlib.util.find_spec("voicegateway.telemetry") is None:
+        pytest.skip("voicegateway.telemetry does not exist yet")
+
+    from voicegateway.telemetry.trace_schema import SpanAttributes
+
+    attacker_controlled = SpanAttributes(tenant_id="victim-tenant")
+    assert attacker_controlled.tenant_id == "victim-tenant", (
+        "SpanAttributes now rejects a caller-supplied tenant. If the contract "
+        "gained a server-derived-only slot, VG-SEC-015 may be closable."
+    )
+    assert "VG-SEC-015" in load_threat_model().gap_ids()
 
 
 @pytest.mark.parametrize(

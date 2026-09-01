@@ -64,9 +64,14 @@ def _minted() -> set[str]:
 
 
 def test_gap_ids_are_contiguous_and_well_formed():
-    """A hole in the numbering usually means a gap was dropped, not renamed."""
+    """A hole in the numbering usually means a gap was dropped, not renamed.
+
+    The count is pinned deliberately. Adding a gap should be a decision, so
+    minting one and bumping this number is meant to be a two-line change made
+    on purpose rather than something that happens by accident.
+    """
     minted = sorted(_minted())
-    assert len(minted) == 14
+    assert len(minted) == 15
     for index, gap_id in enumerate(minted, start=1):
         assert re.fullmatch(GAP_ID_PATTERN, gap_id), gap_id
         assert gap_id == f"VG-SEC-{index:03d}", (

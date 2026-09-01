@@ -64,6 +64,22 @@ This also contradicts a published guarantee. See
 request bodies is advisory only and cannot override the key-derived tenant.
 For this one route, it can.
 
+**VG-SEC-015** (planned, Wave 1) is the same shape, one wave ahead of the code.
+The trace contract in
+[observability contracts](/architecture/observability-contracts) states that
+`SpanAttributes.tenant_id` is internal-authoritative, set from a verified
+principal at an ingestion boundary. No such boundary exists yet, and the
+contract carries a single tenant slot with no way to distinguish what a payload
+asserted from what the server decided. That is structurally the arrangement
+which produced VG-SEC-001, and the lesson of VG-SEC-001 is that writing the
+rule down is not enough: it was written down, in the security page above, while
+the code did the opposite.
+
+So the rule is recorded as data rather than prose. Each planned OTLP route
+carries `tenant_source: server_derived`, and a validator on `PlannedRoute`
+refuses any planned ingest route that does not. The receiver cannot be written
+without a row stating where its tenant comes from.
+
 ### VG-THREAT-002: cross-tenant and unauthenticated read
 
 **VG-SEC-004** (gap, Wave 1): 28 of the 89 routes resolve no auth dependency
@@ -271,9 +287,11 @@ Constants and helpers: `EXISTING_SCOPES`, `PLANNED_SCOPES`,
    roadmap named the same directory for both agents in the same wave. Two
    schemas in one directory is a collision with no upside.
 3. **No `voicegateway.telemetry` import exists, by design.** The binding map
-   is strings. When the trace contract lands, the binding test stops skipping
-   and starts gating. Field names it currently expects are `tenant_id`,
-   `session_id`, `trace_id`, `span_id` and `turn_index`.
+   is strings, and an AST guard enforces the rule. The trace contract has now
+   landed, so the binding test no longer skips: it resolves `tenant_id`,
+   `session_id` and `turn_index` on `SpanAttributes` and `trace_id`, `span_id`
+   on `SpanContext`, and fails if any of them moves. The zero-coupling
+   mechanism worked as intended, and the gate is live.
 4. **Planned routes are namespaced under `/v1/telemetry/`.** The conventional
    OTLP receiver mounts are `/v1/traces`, `/v1/metrics` and `/v1/logs`. Two of
    those already exist here as GET reads, so a bare OTLP mount would collide
