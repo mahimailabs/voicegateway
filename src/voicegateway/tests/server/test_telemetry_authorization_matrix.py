@@ -25,6 +25,12 @@ from voicegateway.schemas.telemetry.security_schema import (
 )
 from voicegateway.tests.server._telemetry_harness import canonical_route_auth
 
+# Route modules are intentionally shared process-wide fixtures in this test
+# suite. Take the canonical inventory during collection, before tests that
+# temporarily alter router wiring execute. ApplicationBuilder's ``app.routes``
+# is not a stable inventory surface, so the snapshot comes from its routers.
+_LIVE_ROUTE_AUTH = canonical_route_auth()
+
 
 @pytest.fixture(scope="module")
 def matrix():
@@ -33,8 +39,8 @@ def matrix():
 
 @pytest.fixture(scope="module")
 def live():
-    """Return the canonical route inventory used by the app builder."""
-    return canonical_route_auth()
+    """Return the collection-time canonical route inventory."""
+    return _LIVE_ROUTE_AUTH
 
 
 # --------------------------------------------------------------------------
