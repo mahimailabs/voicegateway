@@ -213,6 +213,7 @@
               "architecture/storage",
               "architecture/security",
               "architecture/observability-security",
+              "architecture/observability-contracts",
               "architecture/fleet-worker-heartbeat",
               "storage/replay-storage-costs"
             ]
