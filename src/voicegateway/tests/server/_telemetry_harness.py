@@ -151,29 +151,36 @@ def canonical_route_auth() -> dict[tuple[str, str], str]:
     reconfigure them, so the inventory is taken in a clean child interpreter
     rather than trusting the parent test process's mutable state.
 
-    The child builds the application rather than reading the four routers.
-    That is not a detail. ``include_router`` can attach dependencies at include
-    time, and those land on the app's route objects, never on the router's, so
-    a router-level read reports the pre-inclusion gating. Demonstrated: mount
-    ``api_router`` with ``dependencies=[Depends(require_scope("admin"))]`` and
-    a router-level read still calls ``GET /v1/costs`` open while the app calls
-    it admin-gated. The matrix would then record a live gate as an open route,
-    or the reverse, which inverts what this suite exists to detect.
-
-    ``main.py`` attaches no such dependencies today, so the two agree, and
-    that is exactly why the weaker form survives review until it does not.
-    Building the app designs the failure out instead of leaving a comment.
+    The child reads the four routers ApplicationBuilder registers. Its
+    app-level ``routes`` inventory is not portable: on Linux under coverage it
+    can be empty despite those routers containing every endpoint. Main attaches
+    no dependencies at ``include_router`` time, so these resolved router routes
+    are the production inventory today. If that changes, make the dependency
+    explicit on the relevant router rather than relying on app-level state.
     """
     script = """
 import json
+from itertools import chain
 
-from voicegateway.tests.server._telemetry_harness import _Harness, live_route_auth
+from voicegateway.server.api.openorca.routes import router as openorca_router
+from voicegateway.server.routes import api_router, dashboard_router, system_router
+from voicegateway.tests.server._telemetry_harness import live_route_auth
 
-harness = _Harness()
-try:
-    auth = live_route_auth(harness.app)
-finally:
-    harness.cleanup()
+inventory = type(
+    "_RouteInventory",
+    (),
+    {
+        "routes": list(
+            chain(
+                system_router.routes,
+                api_router.routes,
+                dashboard_router.routes,
+                openorca_router.routes,
+            )
+        )
+    },
+)()
+auth = live_route_auth(inventory)
 print(json.dumps([[method, path, value] for (method, path), value in auth.items()]))
 """
     result = subprocess.run(
