@@ -1,0 +1,142 @@
+[
+  {
+    "gap_id": "VG-SEC-001",
+    "threat": "VG-THREAT-001",
+    "title": "Tool-call ingest lets the payload override the authenticated tenant",
+    "description": "POST /v1/ingest/tool-calls admits tenant_id through the field allow-list, and the repository prefers the payload value over the tenant resolved from the API key. A key scoped to tenant A can therefore write rows tagged tenant B. The sibling writers are safe: turns and dead-air apply one tenant resolved from the function argument to every row, and log_request reads current_tenant() and ignores the payload entirely. The comment above the allow-list already argues that an agent-supplied primary key would let one agent overwrite another's row, which is the same argument that should have excluded tenant_id.",
+    "status": "gap",
+    "wave": 1,
+    "evidence": "src/voicegateway/repository/tool_calls_repository.py:54",
+    "fixture": "ingest_tool_calls_tenant_override.json"
+  },
+  {
+    "gap_id": "VG-SEC-002",
+    "threat": "VG-THREAT-003",
+    "title": "Project-level authorization does not exist in any form",
+    "description": "There is no tenant_id on managed_projects, no project column on api_keys, no project field on Principal, and no check on the project query parameter. resolve_read_tenant narrows a read to a tenant and stops there, so any caller who clears the tenant gate sees every project within it.",
+    "status": "planned",
+    "wave": 1,
+    "evidence": "src/voicegateway/server/api/_deps.py:183",
+    "fixture": "project_param_unscoped.json"
+  },
+  {
+    "gap_id": "VG-SEC-003",
+    "threat": "VG-THREAT-004",
+    "title": "No ingest scope: telemetry ingest and config mutation share write",
+    "description": "Ingest routes are gated by require_scope(\"write\"), the same scope that guards provider, model and project mutation across 18 routes in total. An agent key that only needs to post telemetry can therefore rewrite gateway configuration. Splitting the scope is semantic rather than a rename, which is why it is recorded before the endpoints multiply.",
+    "status": "planned",
+    "wave": 1,
+    "evidence": "src/voicegateway/server/api/ingest.py:91",
+    "fixture": null
+  },
+  {
+    "gap_id": "VG-SEC-004",
+    "threat": "VG-THREAT-002",
+    "title": "Twenty-eight routes resolve no auth dependency at all",
+    "description": "Twenty-eight of the 89 API routes declare neither require_scope nor require_principal, so they answer an unauthenticated caller regardless of configured keys. The set includes /v1/audit-log, /v1/costs, /v1/logs, /v1/metrics and the billing rate-card reads. tests/server/test_auth.py::test_reads_open_regardless_of_auth pins this as intended for the current slice, so the pin and this gap must be closed in the same change.",
+    "status": "gap",
+    "wave": 1,
+    "evidence": "src/voicegateway/server/api/costs.py:16",
+    "fixture": "audit_log_open_read.json"
+  },
+  {
+    "gap_id": "VG-SEC-005",
+    "threat": "VG-THREAT-002",
+    "title": "Absence of a credential resolves to a full admin principal",
+    "description": "When no API keys are configured, require_principal returns _OPERATOR, an admin principal with no tenant binding. This is the deliberate self-hosted default and tests/server/test_auth.py pins it, but it means the difference between a locked deployment and an open one is a config block rather than a code path.",
+    "status": "gap",
+    "wave": 2,
+    "evidence": "src/voicegateway/server/api/_deps.py:146",
+    "fixture": null
+  },
+  {
+    "gap_id": "VG-SEC-006",
+    "threat": "VG-THREAT-004",
+    "title": "Every minted key defaults to the wildcard scope",
+    "description": "create_api_key defaults scopes to \"*\", and has_scope short-circuits on the wildcard before comparing the required scope. Scope enforcement is therefore inert for every key the product mints through its own API: the checks run and always pass.",
+    "status": "gap",
+    "wave": 1,
+    "evidence": "src/voicegateway/repository/api_keys_repository.py:121",
+    "fixture": null
+  },
+  {
+    "gap_id": "VG-SEC-007",
+    "threat": "VG-THREAT-004",
+    "title": "Admin is enforced through two independent mechanisms",
+    "description": "require_scope checks the role column for the admin scope and separately requires has_scope(scope) against the scopes CSV. Two sources of truth for one privilege means a key can satisfy one and not the other, and it is not obvious from either call site which governs.",
+    "status": "gap",
+    "wave": 2,
+    "evidence": "src/voicegateway/server/api/_deps.py:97",
+    "fixture": null
+  },
+  {
+    "gap_id": "VG-SEC-008",
+    "threat": "VG-THREAT-004",
+    "title": "MCP authentication is one shared static token with no identity",
+    "description": "The MCP transport compares the bearer token against a single VOICEGW_MCP_TOKEN environment value. There is no per-caller identity, no tenant binding and no mcp:read scope, so MCP callers cannot be told apart in the audit log or constrained to a tenant.",
+    "status": "planned",
+    "wave": 3,
+    "evidence": "src/voicegateway/server/mcp/auth.py:20",
+    "fixture": null
+  },
+  {
+    "gap_id": "VG-SEC-009",
+    "threat": "VG-THREAT-005",
+    "title": "The ingest batch cap is applied after the body is parsed",
+    "description": "max_batch_size is compared against len(records) only once FastAPI has deserialized the whole request body, and no Content-Encoding handling exists anywhere in the server. The cap therefore bounds stored records rather than peak memory, which is precisely the shape a compressed-payload amplification attack exploits.",
+    "status": "gap",
+    "wave": 2,
+    "evidence": "src/voicegateway/server/api/ingest.py:109",
+    "fixture": null
+  },
+  {
+    "gap_id": "VG-SEC-010",
+    "threat": "VG-THREAT-006",
+    "title": "Transcript text is stored and served as plaintext with no redaction",
+    "description": "transcript_turns.text is a plain string column and no PII redaction exists anywhere in the codebase. Voice transcripts routinely carry names, addresses, card numbers and health details, so every downstream reader inherits the full sensitivity of the raw call.",
+    "status": "planned",
+    "wave": 2,
+    "evidence": "src/voicegateway/models/transcript_turn_model.py:27",
+    "fixture": null
+  },
+  {
+    "gap_id": "VG-SEC-011",
+    "threat": "VG-THREAT-006",
+    "title": "The encryption envelope carries no key id, version or AAD",
+    "description": "crypto.encrypt returns a bare MultiFernet token. Key resolution and rotation are solid, but the stored value records neither which key sealed it, nor an envelope version, nor any associated data. A ciphertext can be lifted from one row and pasted into another, and targeted rotation is impossible because no row can say which key it used.",
+    "status": "planned",
+    "wave": 3,
+    "evidence": "src/voicegateway/core/crypto.py:71",
+    "fixture": null
+  },
+  {
+    "gap_id": "VG-SEC-012",
+    "threat": "VG-THREAT-007",
+    "title": "Audit records carry no tenant and no actor",
+    "description": "log_audit_event writes timestamp, entity_type, entity_id, action, changes_json and source. There is no tenant column and no actor column, so the log can say a provider was deleted but not who deleted it or which tenant it belonged to.",
+    "status": "planned",
+    "wave": 2,
+    "evidence": "src/voicegateway/repository/request_log_repository.py:241",
+    "fixture": null
+  },
+  {
+    "gap_id": "VG-SEC-013",
+    "threat": "VG-THREAT-007",
+    "title": "No read of sensitive content is audited",
+    "description": "The audit surface is config_audit_log and it records configuration mutations only. Reading a transcript, exporting a replay or listing another tenant's sessions leaves no trace, so a credential compromise that only reads is invisible after the fact.",
+    "status": "planned",
+    "wave": 3,
+    "evidence": "src/voicegateway/repository/request_log_repository.py:278",
+    "fixture": null
+  },
+  {
+    "gap_id": "VG-SEC-014",
+    "threat": "VG-THREAT-007",
+    "title": "The audit writer swallows every exception",
+    "description": "log_audit_event wraps its insert and commit in a bare except Exception that logs a warning and returns. An audit write can therefore fail silently while the mutation it was meant to record succeeds, which makes the log unusable as evidence: absence of a record does not mean absence of the event.",
+    "status": "gap",
+    "wave": 2,
+    "evidence": "src/voicegateway/repository/request_log_repository.py:268",
+    "fixture": null
+  }
+]

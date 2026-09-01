@@ -1,0 +1,28 @@
+{
+  "case_id": "audit_log_open_read",
+  "title": "The audit log answers a caller with no credential",
+  "kind": "characterization",
+  "gap_id": "VG-SEC-004",
+  "rationale": "GET /v1/audit-log resolves no auth dependency, so it answers an unauthenticated caller. It is the sharpest of the 28 open routes because the audit log is the record of who changed what: a reader who can see it learns the deployment's configuration history, and under VG-SEC-013 there is no second log recording that they read it. tests/server/test_auth.py::test_reads_open_regardless_of_auth pins open reads as intended for the current slice, so that pin and this fixture must change in the same PR.",
+  "actor": {
+    "tenant_id": null,
+    "role": "none"
+  },
+  "request": {
+    "method": "GET",
+    "path": "/v1/audit-log"
+  },
+  "contract": {
+    "status_code": [
+      401,
+      403
+    ],
+    "note": "Once reads are gated, a request with no credential must be refused rather than served."
+  },
+  "observed": {
+    "status_code": [
+      200
+    ],
+    "note": "Answered 200 with a JSON array body on an unmodified checkout."
+  }
+}

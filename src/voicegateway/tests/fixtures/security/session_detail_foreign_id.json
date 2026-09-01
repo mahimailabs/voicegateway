@@ -1,0 +1,22 @@
+{
+  "case_id": "session_detail_foreign_id",
+  "title": "A foreign session id is answered 404, never 403",
+  "kind": "guarantee",
+  "rationale": "The per-session reads take no tenant param: the id is the request. The check therefore runs on the fetched row, and the response for a session that belongs to another tenant must be identical to the response for a session that does not exist. A 403 here would confirm the id is real, turning the endpoint into an existence oracle and letting a caller enumerate another tenant's session ids without reading a single row. This is the request-shaped expression of the same rule ContentState.UNAVAILABLE encodes in the schema.",
+  "victim_tenant_id": "beta",
+  "actor": {
+    "tenant_id": "acme",
+    "role": "tenant"
+  },
+  "request": {
+    "method": "GET",
+    "path": "/api/sessions/s-beta-1"
+  },
+  "contract": {
+    "status_code": [
+      404
+    ],
+    "victim_rows": 0,
+    "note": "Must match the 404 for a wholly invented id, both in status and in body shape."
+  }
+}

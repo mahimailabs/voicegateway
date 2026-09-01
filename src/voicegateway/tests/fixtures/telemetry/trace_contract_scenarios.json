@@ -1,0 +1,161 @@
+{
+  "fixture_version": 1,
+  "scenarios": [
+    {
+      "name": "success",
+      "spans": [
+        {
+          "name": "voice.turn",
+          "context": {"trace_id": "11111111111111111111111111111111", "span_id": "1111111111111111"},
+          "kind": "server",
+          "start_time_unix_nano": 100,
+          "end_time_unix_nano": 200,
+          "instrumentation_scope": {"name": "fixture"},
+          "correlation": {"project_id": "example", "session_id": "session-1", "turn_index": 0}
+        }
+      ]
+    },
+    {
+      "name": "retry",
+      "spans": [
+        {
+          "name": "llm.request",
+          "context": {"trace_id": "22222222222222222222222222222222", "span_id": "2222222222222222"},
+          "start_time_unix_nano": 100,
+          "end_time_unix_nano": 400,
+          "instrumentation_scope": {"name": "fixture"}
+        },
+        {
+          "name": "llm.attempt",
+          "context": {"trace_id": "22222222222222222222222222222222", "span_id": "2222222222222223"},
+          "parent_span_id": "2222222222222222",
+          "start_time_unix_nano": 250,
+          "end_time_unix_nano": 400,
+          "instrumentation_scope": {"name": "fixture"},
+          "events": [{"name": "retry", "timestamp_unix_nano": 250}]
+        }
+      ]
+    },
+    {
+      "name": "fallback",
+      "spans": [
+        {
+          "name": "llm.request",
+          "context": {"trace_id": "33333333333333333333333333333333", "span_id": "3333333333333333"},
+          "start_time_unix_nano": 100,
+          "end_time_unix_nano": 500,
+          "instrumentation_scope": {"name": "fixture"}
+        },
+        {
+          "name": "llm.attempt.fallback",
+          "context": {"trace_id": "33333333333333333333333333333333", "span_id": "3333333333333334"},
+          "parent_span_id": "3333333333333333",
+          "start_time_unix_nano": 300,
+          "end_time_unix_nano": 500,
+          "instrumentation_scope": {"name": "fixture"},
+          "attributes": [{"key": "fallback.from", "value": "primary"}]
+        }
+      ]
+    },
+    {
+      "name": "empty_completion",
+      "spans": [
+        {
+          "name": "llm.attempt",
+          "context": {"trace_id": "44444444444444444444444444444444", "span_id": "4444444444444444"},
+          "status": {"code": "error", "message": "empty completion"},
+          "start_time_unix_nano": 100,
+          "end_time_unix_nano": 150,
+          "instrumentation_scope": {"name": "fixture"}
+        }
+      ]
+    },
+    {
+      "name": "schema_failure",
+      "spans": [
+        {
+          "name": "llm.structured_output",
+          "context": {"trace_id": "55555555555555555555555555555555", "span_id": "5555555555555555"},
+          "status": {"code": "error", "message": "schema invalid"},
+          "start_time_unix_nano": 100,
+          "end_time_unix_nano": 160,
+          "instrumentation_scope": {"name": "fixture"}
+        }
+      ]
+    },
+    {
+      "name": "tool_refusal",
+      "spans": [
+        {
+          "name": "tool.policy",
+          "context": {"trace_id": "66666666666666666666666666666666", "span_id": "6666666666666666"},
+          "status": {"code": "error", "message": "policy refused"},
+          "start_time_unix_nano": 100,
+          "end_time_unix_nano": 120,
+          "instrumentation_scope": {"name": "fixture"}
+        }
+      ]
+    },
+    {
+      "name": "acknowledged_then_verified",
+      "spans": [
+        {
+          "name": "tool.acknowledgement",
+          "context": {"trace_id": "77777777777777777777777777777777", "span_id": "7777777777777777"},
+          "start_time_unix_nano": 100,
+          "end_time_unix_nano": 150,
+          "instrumentation_scope": {"name": "fixture"}
+        },
+        {
+          "name": "tool.verification",
+          "context": {"trace_id": "77777777777777777777777777777777", "span_id": "7777777777777778"},
+          "parent_span_id": "7777777777777777",
+          "start_time_unix_nano": 150,
+          "end_time_unix_nano": 200,
+          "instrumentation_scope": {"name": "fixture"}
+        }
+      ]
+    },
+    {
+      "name": "asynchronous_work",
+      "spans": [
+        {
+          "name": "research.background",
+          "context": {"trace_id": "88888888888888888888888888888888", "span_id": "8888888888888888"},
+          "parent_span_id": null,
+          "start_time_unix_nano": 100,
+          "end_time_unix_nano": 300,
+          "instrumentation_scope": {"name": "fixture"},
+          "links": [{"context": {"trace_id": "99999999999999999999999999999999", "span_id": "9999999999999999", "is_remote": true}}]
+        }
+      ]
+    },
+    {
+      "name": "late_replay",
+      "spans": [
+        {
+          "name": "replay.event",
+          "context": {"trace_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "span_id": "aaaaaaaaaaaaaaaa"},
+          "start_time_unix_nano": 100,
+          "end_time_unix_nano": 101,
+          "instrumentation_scope": {"name": "fixture"},
+          "events": [{"name": "received_late", "timestamp_unix_nano": 200}]
+        }
+      ]
+    },
+    {
+      "name": "cross_tenant_rejection",
+      "spans": [
+        {
+          "name": "telemetry.ingest",
+          "context": {"trace_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "span_id": "bbbbbbbbbbbbbbbb"},
+          "status": {"code": "error", "message": "tenant rejected"},
+          "start_time_unix_nano": 100,
+          "end_time_unix_nano": 101,
+          "instrumentation_scope": {"name": "fixture"},
+          "correlation": {"tenant_id": "server-derived"}
+        }
+      ]
+    }
+  ]
+}
