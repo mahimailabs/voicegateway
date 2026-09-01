@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Print skeleton authorization-matrix rows for routes the matrix is missing.
 
-Read-only. Builds the FastAPI app in-process, enumerates every ``APIRoute``,
-recovers how each one is gated by walking the resolved dependency graph, and
-emits JSON rows for any ``(method, path)`` that ``authorization_matrix.json``
-does not already cover.
+Read-only. Enumerates the canonical routers registered by the application
+builder, recovers how each route is gated by walking the resolved dependency
+graph, and emits JSON rows for any ``(method, path)`` that
+``authorization_matrix.json`` does not already cover.
 
 This exists so the bijection test in
 ``tests/server/test_telemetry_authorization_matrix.py`` never becomes a tax:
@@ -19,37 +19,24 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
-import tempfile
-
-import yaml
+from itertools import chain
 
 # Scope literal recovered from require_scope's closure. Asserted, not assumed:
 # if the helper's shape changes this fails loudly rather than mislabelling.
 _SCOPE_QUALNAME = "require_scope.<locals>._dep"
 
 
-def _build_app():
-    """Build the app over a throwaway SQLite db and a minimal config."""
-    tmp = tempfile.mkdtemp(prefix="vg-matrix-")
-    os.environ["VOICEGW_DB_PATH"] = os.path.join(tmp, "matrix.db")
-    cfg = {
-        "providers": {"openai": {"api_key": "test-key"}},
-        "models": {"stt": {}, "llm": {}, "tts": {}},
-        "projects": {},
-        "fallbacks": {"stt": [], "llm": [], "tts": []},
-        "cost_tracking": {"enabled": True},
-    }
-    cfg_path = os.path.join(tmp, "voicegw.yaml")
-    with open(cfg_path, "w") as handle:
-        yaml.dump(cfg, handle)
+def _canonical_routes():
+    """Return the routers ApplicationBuilder registers on every API app."""
+    from voicegateway.server.api.openorca.routes import router as openorca_router
+    from voicegateway.server.routes import api_router, dashboard_router, system_router
 
-    from voicegateway.core.gateway import Gateway
-    from voicegateway.server import build_app
-
-    return build_app(
-        Gateway(config_path=cfg_path), enable_mcp_sse=False, enable_dashboard=False
+    return chain(
+        system_router.routes,
+        api_router.routes,
+        dashboard_router.routes,
+        openorca_router.routes,
     )
 
 
@@ -84,9 +71,8 @@ def inspect_routes() -> list[dict]:
     """Return one dict per ``(method, path)`` with its recovered gating."""
     from fastapi.routing import APIRoute
 
-    app = _build_app()
     rows: list[dict] = []
-    for route in app.routes:
+    for route in _canonical_routes():
         if not isinstance(route, APIRoute):
             continue
         calls: list = []

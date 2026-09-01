@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from itertools import chain
 
 import yaml
 from httpx import ASGITransport, AsyncClient
@@ -135,3 +136,26 @@ def live_route_auth(app) -> dict[tuple[str, str], str]:
         for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
             found[(method, route.path)] = auth
     return found
+
+
+def canonical_route_auth() -> dict[tuple[str, str], str]:
+    """Map the route inventory the application builder includes.
+
+    ``ApplicationBuilder`` includes these four routers directly. Inspecting
+    their resolved routes avoids relying on FastAPI's app-level route list,
+    which is intentionally not a stable inventory surface for this project.
+    """
+    from voicegateway.server.api.openorca.routes import router as openorca_router
+    from voicegateway.server.routes import api_router, dashboard_router, system_router
+
+    class _RouteInventory:
+        routes = list(
+            chain(
+                system_router.routes,
+                api_router.routes,
+                dashboard_router.routes,
+                openorca_router.routes,
+            )
+        )
+
+    return live_route_auth(_RouteInventory())

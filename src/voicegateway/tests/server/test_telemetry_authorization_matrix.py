@@ -23,17 +23,7 @@ from voicegateway.schemas.telemetry.security_schema import (
     load_authorization_matrix,
     load_threat_model,
 )
-from voicegateway.tests.server._telemetry_harness import _Harness, live_route_auth
-
-# This is intentionally evaluated while pytest collects this module, before
-# the test suite starts exercising mutable router wiring. The authorization
-# matrix describes a newly built production app, not an app altered by another
-# test's temporary router configuration.
-_snapshot_harness = _Harness()
-try:
-    _LIVE_ROUTE_AUTH = live_route_auth(_snapshot_harness.app)
-finally:
-    _snapshot_harness.cleanup()
+from voicegateway.tests.server._telemetry_harness import canonical_route_auth
 
 
 @pytest.fixture(scope="module")
@@ -43,8 +33,8 @@ def matrix():
 
 @pytest.fixture(scope="module")
 def live():
-    """Return the collection-time production route snapshot."""
-    return _LIVE_ROUTE_AUTH
+    """Return the canonical route inventory used by the app builder."""
+    return canonical_route_auth()
 
 
 # --------------------------------------------------------------------------
