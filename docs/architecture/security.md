@@ -148,6 +148,16 @@ In multi-tenant cloud deployments, tenant identity is derived server-side from t
 
 Key rules:
 - A worker or record can only be written under the key's tenant. The `tenant_id` field in request bodies is advisory only and cannot override the key-derived tenant.
+
+<Warning>
+  One route does not currently hold this rule. `POST /v1/ingest/tool-calls`
+  lets a `tenant_id` in the payload override the key-derived tenant, so a key
+  scoped to one tenant can write rows attributed to another. Tracked as
+  VG-SEC-001 and scheduled for Wave 1; see
+  [observability security contracts](/architecture/observability-security).
+  Every other writer on this path behaves as described above.
+</Warning>
+
 - `VOICEGW_API_KEY` is the agent-side variable that holds the `vk_` key. Set it in the agent process environment.
 - The cloud verifies the key and resolves the tenant before any write.
 

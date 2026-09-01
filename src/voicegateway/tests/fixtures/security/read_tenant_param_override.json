@@ -1,0 +1,25 @@
+{
+  "case_id": "read_tenant_param_override",
+  "title": "A tenant-scoped key asking for another tenant's rows is refused",
+  "kind": "guarantee",
+  "rationale": "The read path already does what the write path does not, and this case exists so that stays true. resolve_read_tenant refuses a foreign `tenant` query param with 403 before any data is fetched. Recording a satisfied guarantee in the same format as a defect is deliberate: it proves the fixture format expresses both, and it means a regression here fails as an ordinary red test rather than going unnoticed because no fixture covered the working path.",
+  "victim_tenant_id": "beta",
+  "actor": {
+    "tenant_id": "acme",
+    "role": "tenant"
+  },
+  "request": {
+    "method": "GET",
+    "path": "/api/sessions",
+    "query": {
+      "tenant": "beta"
+    }
+  },
+  "contract": {
+    "status_code": [
+      403
+    ],
+    "victim_rows": 0,
+    "note": "Refused with \"Not authorized to read another tenant's data\" before the query runs."
+  }
+}

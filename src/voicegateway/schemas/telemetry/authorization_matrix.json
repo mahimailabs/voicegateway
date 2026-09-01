@@ -1,0 +1,830 @@
+{
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/_dashboard/health",
+      "auth": "open",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Dashboard liveness probe. No data."
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys."
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/{agent_id}",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys."
+    },
+    {
+      "method": "POST",
+      "path": "/api/agents/{agent_id}/probe",
+      "auth": "scope:admin",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Behind require_scope(\"admin\")."
+    },
+    {
+      "method": "GET",
+      "path": "/api/api_keys",
+      "auth": "scope:admin",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Behind require_scope(\"admin\")."
+    },
+    {
+      "method": "POST",
+      "path": "/api/api_keys",
+      "auth": "scope:admin",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Behind require_scope(\"admin\")."
+    },
+    {
+      "method": "POST",
+      "path": "/api/api_keys/{key_id}/revoke",
+      "auth": "scope:admin",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Behind require_scope(\"admin\")."
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth-status",
+      "auth": "open",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Reports whether auth is configured. Must answer an unauthenticated caller or the dashboard cannot decide whether to show a login."
+    },
+    {
+      "method": "GET",
+      "path": "/api/calls",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant derived from the principal via resolve_read_tenant."
+    },
+    {
+      "method": "GET",
+      "path": "/api/correlation",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant derived from the principal via resolve_read_tenant."
+    },
+    {
+      "method": "GET",
+      "path": "/api/costs",
+      "auth": "principal",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-002",
+      "wave": 1,
+      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+    },
+    {
+      "method": "GET",
+      "path": "/api/costs/by-day",
+      "auth": "principal",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-002",
+      "wave": 1,
+      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+    },
+    {
+      "method": "GET",
+      "path": "/api/diagnostics/creds",
+      "auth": "scope:admin",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Behind require_scope(\"admin\")."
+    },
+    {
+      "method": "GET",
+      "path": "/api/diagnostics/runs",
+      "auth": "scope:admin",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Behind require_scope(\"admin\")."
+    },
+    {
+      "method": "POST",
+      "path": "/api/diagnostics/runs",
+      "auth": "scope:admin",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Behind require_scope(\"admin\")."
+    },
+    {
+      "method": "GET",
+      "path": "/api/diagnostics/runs/{run_id}",
+      "auth": "scope:admin",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Behind require_scope(\"admin\")."
+    },
+    {
+      "method": "GET",
+      "path": "/api/diagnostics/runs/{run_id}/report",
+      "auth": "scope:admin",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Behind require_scope(\"admin\")."
+    },
+    {
+      "method": "GET",
+      "path": "/api/diagnostics/runs/{run_id}/report.html",
+      "auth": "scope:admin",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Behind require_scope(\"admin\")."
+    },
+    {
+      "method": "GET",
+      "path": "/api/latency",
+      "auth": "principal",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-002",
+      "wave": 1,
+      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+    },
+    {
+      "method": "GET",
+      "path": "/api/loadtest/runs",
+      "auth": "principal",
+      "status": "gap",
+      "tenant_scoped": false,
+      "gap_id": "VG-SEC-002",
+      "wave": 1,
+      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+    },
+    {
+      "method": "GET",
+      "path": "/api/metrics",
+      "auth": "principal",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-002",
+      "wave": 1,
+      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+    },
+    {
+      "method": "GET",
+      "path": "/api/nodes",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Tenant derived from the principal via resolve_read_tenant."
+    },
+    {
+      "method": "GET",
+      "path": "/api/nodes/live",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Tenant derived from the principal via resolve_read_tenant."
+    },
+    {
+      "method": "GET",
+      "path": "/api/overview",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys. Also takes a project identifier with no project check (VG-SEC-002)."
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys."
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/{project_id}/branding",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys. Also takes a project identifier with no project check (VG-SEC-002)."
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/{project_id}/branding",
+      "auth": "scope:admin",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-002",
+      "wave": 1,
+      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/{project_id}/branding/logo",
+      "auth": "scope:admin",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-002",
+      "wave": 1,
+      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/{project_id}/replay/retention",
+      "auth": "scope:admin",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-002",
+      "wave": 1,
+      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+    },
+    {
+      "method": "GET",
+      "path": "/api/replay/storage",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Tenant derived from the principal via resolve_read_tenant."
+    },
+    {
+      "method": "GET",
+      "path": "/api/server/overview",
+      "auth": "scope:admin",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Behind require_scope(\"admin\")."
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions",
+      "auth": "principal",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-002",
+      "wave": 1,
+      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant derived from the principal via resolve_read_tenant."
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/dead_air",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant derived from the principal via resolve_read_tenant."
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sessions/{session_id}/replay",
+      "auth": "scope:admin",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Behind require_scope(\"admin\")."
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/replay",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant derived from the principal via resolve_read_tenant."
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/transcript",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant derived from the principal via resolve_read_tenant."
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/turns",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant derived from the principal via resolve_read_tenant."
+    },
+    {
+      "method": "GET",
+      "path": "/api/status",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": false,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys."
+    },
+    {
+      "method": "GET",
+      "path": "/api/turns/response-speed",
+      "auth": "principal",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-002",
+      "wave": 1,
+      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+    },
+    {
+      "method": "GET",
+      "path": "/health",
+      "auth": "open",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Liveness probe. No data."
+    },
+    {
+      "method": "GET",
+      "path": "/openorca/events",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant derived from the principal via resolve_read_tenant."
+    },
+    {
+      "method": "POST",
+      "path": "/openorca/interventions/resolve",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant derived from the principal via resolve_read_tenant."
+    },
+    {
+      "method": "GET",
+      "path": "/openorca/runtime-info",
+      "auth": "open",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Static capability probe. No data."
+    },
+    {
+      "method": "GET",
+      "path": "/openorca/snapshot",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant derived from the principal via resolve_read_tenant."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/agents",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant derived from the principal via resolve_read_tenant."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/agents/heartbeat",
+      "auth": "scope:write",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Config mutation behind require_scope(\"write\")."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/api-keys",
+      "auth": "scope:admin",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Behind require_scope(\"admin\")."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/api-keys",
+      "auth": "scope:admin",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Behind require_scope(\"admin\")."
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/api-keys/{key_id}",
+      "auth": "scope:admin",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Behind require_scope(\"admin\")."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/api-keys/{key_id}",
+      "auth": "scope:admin",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Behind require_scope(\"admin\")."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/audit-log",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/rate-card",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": false,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/rate-card/gaps",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": false,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys. Also takes a project identifier with no project check (VG-SEC-002)."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/rate-card/models",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": false,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/rate-card/quote",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": false,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/rate-card/quote",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": false,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/rate-card/rules",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": false,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/rate-card/rules",
+      "auth": "scope:write",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Config mutation behind require_scope(\"write\")."
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/billing/rate-card/rules/{rule_id}",
+      "auth": "scope:write",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Config mutation behind require_scope(\"write\")."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/usage",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys. Also takes a project identifier with no project check (VG-SEC-002)."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/calls/observations",
+      "auth": "scope:write",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Config mutation behind require_scope(\"write\")."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/costs",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys. Also takes a project identifier with no project check (VG-SEC-002)."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingest",
+      "auth": "scope:write",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-003",
+      "wave": 1,
+      "note": "Telemetry ingest gated by write, the same scope that guards config mutation. Needs a dedicated ingest scope."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingest/dead-air",
+      "auth": "scope:write",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-003",
+      "wave": 1,
+      "note": "Telemetry ingest gated by write, the same scope that guards config mutation. Needs a dedicated ingest scope."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingest/tool-calls",
+      "auth": "scope:write",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-001",
+      "wave": 1,
+      "note": "Live cross-tenant write: the payload's tenant_id overrides the tenant resolved from the key. Also gated by write rather than ingest (VG-SEC-003)."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingest/turns",
+      "auth": "scope:write",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-003",
+      "wave": 1,
+      "note": "Telemetry ingest gated by write, the same scope that guards config mutation. Needs a dedicated ingest scope."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/latency",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys. Also takes a project identifier with no project check (VG-SEC-002)."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/livekit/webhook",
+      "auth": "open",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Authenticated by LiveKit webhook signature, verified before the body is parsed. The signature is the entire auth boundary by design."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/logs",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys. Also takes a project identifier with no project check (VG-SEC-002)."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/metrics",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/models",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": false,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys. Also takes a project identifier with no project check (VG-SEC-002)."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/models",
+      "auth": "scope:write",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Config mutation behind require_scope(\"write\")."
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/models/{model_id:path}",
+      "auth": "scope:write",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Config mutation behind require_scope(\"write\")."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects",
+      "auth": "scope:write",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Config mutation behind require_scope(\"write\")."
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/{project_id}",
+      "auth": "scope:write",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-002",
+      "wave": 1,
+      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/{project_id}",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys. Also takes a project identifier with no project check (VG-SEC-002)."
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/{project_id}",
+      "auth": "scope:write",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-002",
+      "wave": 1,
+      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/providers",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": false,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/providers",
+      "auth": "scope:write",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Config mutation behind require_scope(\"write\")."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/providers/test",
+      "auth": "scope:write",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Config mutation behind require_scope(\"write\")."
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/providers/{provider_id}",
+      "auth": "scope:write",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Config mutation behind require_scope(\"write\")."
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/providers/{provider_id}",
+      "auth": "scope:write",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Config mutation behind require_scope(\"write\")."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/providers/{provider_id}/test",
+      "auth": "scope:write",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Config mutation behind require_scope(\"write\")."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/rooms/{room_name}/latency",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant derived from the principal via resolve_read_tenant."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sessions",
+      "auth": "principal",
+      "status": "gap",
+      "tenant_scoped": true,
+      "gap_id": "VG-SEC-002",
+      "wave": 1,
+      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sessions/{session_id}",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant derived from the principal via resolve_read_tenant."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/status",
+      "auth": "open",
+      "status": "gap",
+      "tenant_scoped": false,
+      "gap_id": "VG-SEC-004",
+      "wave": 1,
+      "note": "Answers an unauthenticated caller regardless of configured keys."
+    }
+  ],
+  "planned_routes": [
+    {
+      "method": "POST",
+      "path": "/v1/telemetry/traces",
+      "gap_id": "VG-SEC-003",
+      "wave": 1,
+      "required_scope": "ingest",
+      "note": "OTLP trace receiver. Namespaced under /v1/telemetry/ deliberately: the conventional OTLP paths /v1/metrics and /v1/logs already exist here as GET reads, so a bare OTLP mount would differ from them by method alone."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/telemetry/metrics",
+      "gap_id": "VG-SEC-003",
+      "wave": 1,
+      "required_scope": "ingest",
+      "note": "OTLP metric receiver. See the traces row on the path collision."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/telemetry/logs",
+      "gap_id": "VG-SEC-003",
+      "wave": 1,
+      "required_scope": "ingest",
+      "note": "OTLP log receiver. See the traces row on the path collision."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sensitive-access",
+      "gap_id": "VG-SEC-013",
+      "wave": 3,
+      "required_scope": "admin",
+      "note": "Read-side audit trail of SensitiveAccessEvent. Nothing audits reads today."
+    }
+  ]
+}

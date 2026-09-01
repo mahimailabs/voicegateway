@@ -1,0 +1,44 @@
+{
+  "case_id": "ingest_tool_calls_tenant_override",
+  "title": "A tenant-scoped key writes a row attributed to another tenant",
+  "kind": "characterization",
+  "gap_id": "VG-SEC-001",
+  "rationale": "The live defect. tool_calls_repository resolves the row tenant as `r.tenant_id if r.tenant_id is not None else resolved`, so a tenant_id present in the payload wins over the tenant resolved from the API key. Measured on an unmodified checkout: the acme key's batch produced one row tagged beta and zero rows tagged acme. The sibling writers do not share this shape, which is what makes it a defect rather than a design: turns and dead-air apply one tenant resolved from the function argument to every row, and log_request reads current_tenant() and ignores the payload entirely.",
+  "victim_tenant_id": "beta",
+  "actor": {
+    "tenant_id": "acme",
+    "role": "tenant"
+  },
+  "request": {
+    "method": "POST",
+    "path": "/v1/ingest/tool-calls",
+    "json_body": [
+      {
+        "session_id": "s-acme-1",
+        "call_id": "c-1",
+        "tool_name": "lookup_account",
+        "started_at_ms": 1,
+        "duration_ms": 2,
+        "outcome": "completed",
+        "turn_index": 0,
+        "tenant_id": "beta"
+      }
+    ]
+  },
+  "contract": {
+    "status_code": [
+      200,
+      400,
+      403
+    ],
+    "victim_rows": 0,
+    "note": "The status is deliberately not pinned: Wave 1 may reject the batch or silently re-attribute it. What the contract fixes is the attribution. A key bound to acme must never cause a row tagged beta, so victim_rows must be 0 under every acceptable choice."
+  },
+  "observed": {
+    "status_code": [
+      200
+    ],
+    "victim_rows": 1,
+    "note": "Answered 200 {\"accepted\":1}, and the tool_calls table held exactly one row, tagged beta."
+  }
+}
