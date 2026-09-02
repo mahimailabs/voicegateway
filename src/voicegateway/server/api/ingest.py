@@ -29,6 +29,19 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
+def _authenticated_tenant(request: Request) -> str | None:
+    """The tenant the verified key stamped on this request, or None.
+
+    Never the payload. VG-SEC-001 was one writer preferring a tenant_id
+    carried on the row over the tenant resolved from the key, so a key scoped
+    to one tenant could write rows tagged another. Task 10 replaces this read
+    with ``principal.tenant_id`` when these routes move onto
+    ``require_ingest_principal``; the value is the same either way.
+    """
+    return getattr(request.state, "api_key_tenant_id", None)
+
+
 _RECORD_FIELDS: frozenset[str] = frozenset(
     f.name for f in dataclasses.fields(RequestRecord)
 )
@@ -172,7 +185,9 @@ async def ingest(
             continue
         gateway.cost_tracker.rate_record(record)
         try:
-            await storage.log_request(record)
+            await storage.log_request_as(
+                record, tenant_id=_authenticated_tenant(request)
+            )
             accepted += 1
         except IntegrityError:
             # Duplicate id: a sink retry re-sent an already-stored row.
@@ -247,7 +262,9 @@ async def ingest_turns(
     accepted = 0
     if turns:
         try:
-            accepted = await storage.log_turns(turns)
+            accepted = await storage.log_turns(
+                turns, tenant_id=_authenticated_tenant(request)
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "ingest/turns: failed to persist %d turn(s)", len(turns), exc_info=True
@@ -337,7 +354,9 @@ async def ingest_tool_calls(
     accepted = 0
     if parsed:
         try:
-            accepted = await storage.log_tool_calls(parsed)
+            accepted = await storage.log_tool_calls(
+                parsed, tenant_id=_authenticated_tenant(request)
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "ingest/tool-calls: failed to persist %d row(s)",
@@ -396,7 +415,9 @@ async def ingest_dead_air(
     accepted = 0
     if parsed:
         try:
-            accepted = await storage.log_dead_air(parsed)
+            accepted = await storage.log_dead_air(
+                parsed, tenant_id=_authenticated_tenant(request)
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "ingest/dead-air: failed to persist %d event(s)",

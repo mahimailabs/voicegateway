@@ -17,10 +17,12 @@ class RequestLogService:
     def __init__(self, database: Database) -> None:
         self._db = database
 
-    async def log_request(self, record: RequestRecord) -> None:
-        """Persist one request row + accumulate the session row."""
+    async def log_request(
+        self, record: RequestRecord, *, tenant_id: str | None
+    ) -> None:
+        """Persist one request row + accumulate the session row under ``tenant_id``."""
         async with self._db.session() as s:
-            await repo.log_request(s, record)
+            await repo.log_request(s, record, tenant_id=tenant_id)
 
     async def log_audit_event(
         self,

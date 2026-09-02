@@ -22,9 +22,7 @@ class ApiKeyRepository(BaseRepository[ApiKey]):
     ) -> list[ApiKey]:
         """Return every row matching the visible 8-char prefix."""
         async with self._session(session) as s:
-            result = await s.execute(
-                select(ApiKey).where(ApiKey.key_prefix == prefix)
-            )
+            result = await s.execute(select(ApiKey).where(ApiKey.key_prefix == prefix))
             return list(result.scalars().all())
 
     async def list_keys(

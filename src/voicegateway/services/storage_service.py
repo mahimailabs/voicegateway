@@ -136,9 +136,26 @@ class StorageService:
     # ------------------------------------------------------------------
 
     async def log_request(self, record: RequestRecord) -> None:
-        """Delegate to RequestLogService.log_request."""
+        """Agent-side entry point: the tenant is the process's ContextVar.
+
+        In-process sinks call this from the task that set the tenant, so
+        reading the ContextVar here, at the service layer, is correct and is
+        the one place it stays legitimate. Server routes must call
+        :meth:`log_request_as` with the authenticated principal's tenant
+        instead: a request handler runs under whatever tenant the *previous*
+        request happened to leave in the context, which is not a tenant
+        boundary at all.
+        """
+        from voicegateway.inference.session.context import current_tenant
+
+        await self.log_request_as(record, tenant_id=current_tenant())
+
+    async def log_request_as(
+        self, record: RequestRecord, *, tenant_id: str | None
+    ) -> None:
+        """Server-side entry point: the tenant is explicit and comes from the key."""
         await self._ensure_initialized()
-        await self._request_log_service.log_request(record)
+        await self._request_log_service.log_request(record, tenant_id=tenant_id)
 
     # ------------------------------------------------------------------
     # Reads
@@ -411,7 +428,7 @@ class StorageService:
     # Turns
     # ------------------------------------------------------------------
 
-    async def log_turns(self, rows: list[Any]) -> int:
+    async def log_turns(self, rows: list[Any], *, tenant_id: str | None) -> int:
         """Bulk-write captured turns. Returns the number inserted.
 
         A passthrough for the same reason as the load-run writes above: the
@@ -424,9 +441,9 @@ class StorageService:
             return 0
         await self._ensure_initialized()
         async with self._conn.session() as db:
-            return await turns.create_turns_bulk(db, rows)
+            return await turns.create_turns_bulk(db, rows, tenant_id=tenant_id)
 
-    async def log_tool_calls(self, rows: list[Any]) -> int:
+    async def log_tool_calls(self, rows: list[Any], *, tenant_id: str | None) -> int:
         """Write per-tool-call rows. Returns the number inserted.
 
         Bulk, unlike dead air: a single turn can dispatch several tools and the
@@ -438,7 +455,7 @@ class StorageService:
             return 0
         await self._ensure_initialized()
         async with self._conn.session() as db:
-            return await tool_calls.create_tool_calls(db, rows)
+            return await tool_calls.create_tool_calls(db, rows, tenant_id=tenant_id)
 
     async def aggregate_tool_calls(self, session_id: str | None = None) -> dict:
         """Per-tool call count, total and average duration, failures."""
@@ -448,7 +465,7 @@ class StorageService:
         async with self._conn.session() as db:
             return await tool_calls.aggregate_by_tool(db, session_id=session_id)
 
-    async def log_dead_air(self, events: list[Any]) -> int:
+    async def log_dead_air(self, events: list[Any], *, tenant_id: str | None) -> int:
         """Write observed dead-air events. Returns the number inserted.
 
         Looped rather than bulk-inserted: the repository exposes one insert per
@@ -463,7 +480,7 @@ class StorageService:
         await self._ensure_initialized()
         async with self._conn.session() as db:
             for event in events:
-                await dead_air.create_event(db, event)
+                await dead_air.create_event(db, event, tenant_id=tenant_id)
         return len(events)
 
     # ------------------------------------------------------------------
@@ -556,7 +573,7 @@ class StorageService:
         self,
         events: list[Any],
         *,
-        tenant_id: str | None = None,
+        tenant_id: str | None,
     ) -> int:
         """Persist captured replay events into their per-modality tables.
 
@@ -583,7 +600,7 @@ class StorageService:
         session_id: str,
         turns: list[tuple[str, str]],
         *,
-        tenant_id: str | None = None,
+        tenant_id: str | None,
     ) -> int:
         """Replace a session's transcript with ``turns`` ((role, text) list)."""
         from voicegateway.repository import transcript_turns_repository

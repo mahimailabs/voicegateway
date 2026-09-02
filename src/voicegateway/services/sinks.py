@@ -67,6 +67,24 @@ class Sink(Protocol):
     async def aclose(self) -> None: ...
 
 
+def _enqueue_tenant() -> str | None:
+    """The tenant to stamp on an agent-side write, read at enqueue time.
+
+    This is the one place the ContextVar stays legitimate. A sink runs in the
+    same task as the session that set the tenant, so reading it here is
+    reading the caller's own identity. ``flush`` may run later in a background
+    task whose context no longer carries it, which is why every write captures
+    the tenant when it is buffered rather than when it lands.
+
+    Server routes never come through here: they pass the authenticated
+    principal's tenant explicitly, because a request handler's context holds
+    whatever the previous request happened to leave behind.
+    """
+    from voicegateway.inference.session.context import current_tenant
+
+    return current_tenant()
+
+
 class LocalSqliteSink:
     """Default single-node sink: writes through the embedded StorageService.
 
@@ -83,13 +101,13 @@ class LocalSqliteSink:
         await self._storage.log_request(record)
 
     async def log_turns(self, rows: list[TurnRow]) -> None:
-        await self._storage.log_turns(rows)
+        await self._storage.log_turns(rows, tenant_id=_enqueue_tenant())
 
     async def log_dead_air(self, events: list[DeadAirEvent]) -> None:
-        await self._storage.log_dead_air(events)
+        await self._storage.log_dead_air(events, tenant_id=_enqueue_tenant())
 
     async def log_tool_calls(self, rows: list[ToolCall]) -> None:
-        await self._storage.log_tool_calls(rows)
+        await self._storage.log_tool_calls(rows, tenant_id=_enqueue_tenant())
 
     async def flush(self) -> None:
         return None

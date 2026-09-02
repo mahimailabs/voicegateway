@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import text
 
-from voicegateway.inference.session.context import current_tenant
 from voicegateway.middleware.dead_air_detector_middleware import DeadAirEvent
 
 if TYPE_CHECKING:
@@ -25,10 +24,9 @@ async def create_event(
     session: AsyncSession,
     event: DeadAirEvent,
     *,
-    tenant_id: str | None = None,
+    tenant_id: str | None,
 ) -> None:
     """Insert one ``DeadAirEvent``. Commits the session."""
-    resolved = tenant_id if tenant_id is not None else current_tenant()
     await session.execute(
         _INSERT_EVENT,
         {
@@ -36,7 +34,7 @@ async def create_event(
             "started_at_ms": event.started_at_ms,
             "duration_ms": event.duration_ms,
             "threshold_used_ms": event.threshold_used_ms,
-            "tenant_id": resolved,
+            "tenant_id": tenant_id,
             "revision": event.revision,
         },
     )

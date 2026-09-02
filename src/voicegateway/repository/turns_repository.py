@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 
-from voicegateway.inference.session.context import current_tenant
 from voicegateway.middleware.turn_tracker_middleware import TurnRow
 
 if TYPE_CHECKING:
@@ -52,11 +51,10 @@ async def create_turn(
     session: AsyncSession,
     turn: TurnRow,
     *,
-    tenant_id: str | None = None,
+    tenant_id: str | None,
 ) -> None:
     """Insert one ``TurnRow``. Commits the session."""
-    resolved = tenant_id if tenant_id is not None else current_tenant()
-    await session.execute(_INSERT_TURN, _turn_to_params(turn, resolved))
+    await session.execute(_INSERT_TURN, _turn_to_params(turn, tenant_id))
     await session.commit()
 
 
@@ -64,13 +62,12 @@ async def create_turns_bulk(
     session: AsyncSession,
     turns: list[TurnRow],
     *,
-    tenant_id: str | None = None,
+    tenant_id: str | None,
 ) -> int:
     """Bulk-insert turns. Returns the number inserted."""
     if not turns:
         return 0
-    resolved = tenant_id if tenant_id is not None else current_tenant()
-    await session.execute(_INSERT_TURN, [_turn_to_params(t, resolved) for t in turns])
+    await session.execute(_INSERT_TURN, [_turn_to_params(t, tenant_id) for t in turns])
     await session.commit()
     return len(turns)
 

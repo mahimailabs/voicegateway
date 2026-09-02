@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import text
 
-from voicegateway.inference.session.context import current_tenant
-
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,7 +33,7 @@ async def create_transcript_bulk(
     session_id: str,
     turns: list[tuple[str, str]],
     *,
-    tenant_id: str | None = None,
+    tenant_id: str | None,
 ) -> int:
     """Replace a session's transcript with ``turns`` (a list of (role, text)).
 
@@ -43,7 +41,6 @@ async def create_transcript_bulk(
     close handler that runs twice) is idempotent rather than doubling the
     transcript. ``seq`` is assigned from list order. Returns the count inserted.
     """
-    resolved = tenant_id if tenant_id is not None else current_tenant()
     await session.execute(
         text("DELETE FROM transcript_turns WHERE session_id = :session_id"),
         {"session_id": session_id},
@@ -57,7 +54,7 @@ async def create_transcript_bulk(
             "seq": i,
             "role": role,
             "text": body,
-            "tenant_id": resolved,
+            "tenant_id": tenant_id,
         }
         for i, (role, body) in enumerate(turns)
     ]

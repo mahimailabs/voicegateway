@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 
-from voicegateway.inference.session.context import current_tenant
 from voicegateway.models.tool_call_model import ToolCall
 
 if TYPE_CHECKING:
@@ -34,12 +33,11 @@ async def create_tool_calls(
     session: AsyncSession,
     rows: list[ToolCall],
     *,
-    tenant_id: str | None = None,
+    tenant_id: str | None,
 ) -> int:
     """Insert tool-call rows. Commits the session. Returns how many landed."""
     if not rows:
         return 0
-    resolved = tenant_id if tenant_id is not None else current_tenant()
     await session.execute(
         _INSERT,
         [
@@ -51,7 +49,7 @@ async def create_tool_calls(
                 "duration_ms": r.duration_ms,
                 "outcome": r.outcome,
                 "turn_index": r.turn_index,
-                "tenant_id": r.tenant_id if r.tenant_id is not None else resolved,
+                "tenant_id": tenant_id,
                 "revision": r.revision,
             }
             for r in rows

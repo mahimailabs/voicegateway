@@ -24,10 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 
-from voicegateway.inference.session.context import (
-    current_routing_decision,
-    current_tenant,
-)
+from voicegateway.inference.session.context import current_routing_decision
 from voicegateway.repository import session_repository as session_repo
 
 if TYPE_CHECKING:
@@ -160,9 +157,11 @@ def _session_upsert_stmt(session: AsyncSession) -> Any:
     return _UPSERT_SESSION_BY_DIALECT.get(name, _UPSERT_SESSION_BY_DIALECT["sqlite"])
 
 
-async def log_request(session: AsyncSession, record: RequestRecord) -> None:
+async def log_request(
+    session: AsyncSession, record: RequestRecord, *, tenant_id: str | None
+) -> None:
     """Insert one request row + accumulate the session row (UPSERT)."""
-    request_tenant_id = current_tenant()
+    request_tenant_id = tenant_id
     await session.execute(
         _INSERT_REQUEST,
         {
