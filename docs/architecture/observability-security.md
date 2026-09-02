@@ -192,18 +192,20 @@ To add a route, run the generator and paste what it prints:
 
 ## Content states
 
-Stored call content moves through five states: pending, stored, redacted,
-purged and unavailable. Transitions are one-way, so a purged recording cannot
-be resurrected by a later ingest replaying an older revision.
+Stored call content moves through five states: captured, redacted, truncated,
+expired and unavailable. These are the roadmap's frozen vocabulary, and Waves 3
+and 4 label content with exactly these words. Transitions are one-way, so an
+expired recording cannot be resurrected by a later ingest replaying an older
+revision, and a truncation is recorded rather than silently served as complete.
 
 `unavailable` is the projection an unauthorized caller sees, and it is the
 load-bearing part of the contract. A descriptor in that state may not report a
-byte count or an expiry. Either one would let a caller distinguish "purged"
+byte count or an expiry. Either one would let a caller distinguish "expired"
 from "not yours", which turns the endpoint into an existence oracle for
 session ids. This is the same rule the 404-not-403 fixture enforces at the
 request level, stated once in the type system so both surfaces inherit it.
 
-The rule is deliberately narrow. An authorized caller reading purged content
+The rule is deliberately narrow. An authorized caller reading expired content
 still gets the truth, including a zero byte count.
 
 ## Encryption envelope

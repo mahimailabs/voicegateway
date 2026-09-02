@@ -24,6 +24,7 @@ from voicegateway.schemas.telemetry.security_schema import (
     CONTENT_STATE_TRANSITIONS,
     EXISTING_SCOPES,
     FORBIDDEN_IMPORT_ROOT,
+    NON_READABLE_CONTENT_STATES,
     PLANNED_SCOPES,
     TELEMETRY_FIELD_BINDINGS,
     AuthorizationRule,
@@ -133,18 +134,36 @@ def test_rows_are_frozen_and_reject_unknown_fields():
 # --------------------------------------------------------------------------
 
 
+def test_content_state_vocabulary_matches_the_roadmap():
+    """Waves 3 and 4 enumerate these five verbatim."""
+    assert [s.value for s in ContentState] == [
+        "captured",
+        "redacted",
+        "truncated",
+        "expired",
+        "unavailable",
+    ]
+
+
 def test_content_transitions_are_one_way():
     """No state may reach a state that precedes it in the lifecycle."""
     order = [
-        ContentState.PENDING,
-        ContentState.STORED,
+        ContentState.CAPTURED,
+        ContentState.TRUNCATED,
         ContentState.REDACTED,
-        ContentState.PURGED,
+        ContentState.EXPIRED,
         ContentState.UNAVAILABLE,
     ]
     for index, source in enumerate(order):
         for target in CONTENT_STATE_TRANSITIONS[source]:
             assert order.index(target) > index, f"{source} -> {target} moves backward"
+
+
+def test_only_captured_is_readable():
+    """Every state but CAPTURED withholds plaintext from every caller."""
+    assert NON_READABLE_CONTENT_STATES == frozenset(ContentState) - {
+        ContentState.CAPTURED
+    }
 
 
 def test_every_state_is_in_the_transition_map():
@@ -155,13 +174,14 @@ def test_every_state_is_in_the_transition_map():
 def test_unavailable_is_terminal():
     """The unauthorized projection cannot become anything else."""
     assert CONTENT_STATE_TRANSITIONS[ContentState.UNAVAILABLE] == frozenset()
-    assert not may_transition(ContentState.UNAVAILABLE, ContentState.STORED)
+    assert not may_transition(ContentState.UNAVAILABLE, ContentState.CAPTURED)
 
 
-def test_purged_content_never_returns():
+def test_expired_content_never_returns():
     """A late ingest replaying an older revision must not resurrect content."""
-    assert not may_transition(ContentState.PURGED, ContentState.STORED)
-    assert not may_transition(ContentState.REDACTED, ContentState.STORED)
+    assert not may_transition(ContentState.EXPIRED, ContentState.CAPTURED)
+    assert not may_transition(ContentState.REDACTED, ContentState.CAPTURED)
+    assert not may_transition(ContentState.TRUNCATED, ContentState.CAPTURED)
 
 
 @pytest.mark.parametrize("field", ["byte_count", "expires_at"])
@@ -178,10 +198,10 @@ def test_unavailable_content_with_no_metadata_is_valid():
     assert descriptor.expires_at is None
 
 
-def test_purged_may_report_zero_bytes():
+def test_expired_may_report_zero_bytes():
     """The oracle rule is narrow: an authorized caller still gets the truth."""
     descriptor = ContentDescriptor.model_validate(
-        {"state": ContentState.PURGED, "byte_count": 0}
+        {"state": ContentState.EXPIRED, "byte_count": 0}
     )
     assert descriptor.byte_count == 0
 

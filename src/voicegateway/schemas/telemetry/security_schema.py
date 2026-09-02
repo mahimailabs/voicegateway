@@ -315,45 +315,56 @@ class ThreatModel(RootModel[list[ThreatEntry]]):
 class ContentState(StrEnum):
     """Lifecycle of stored call content (transcripts, replay audio).
 
+    The five states are the roadmap's frozen vocabulary; Waves 3 and 4
+    enumerate them verbatim, so this module does not get to invent its own.
     :attr:`UNAVAILABLE` is the projection an unauthorized caller sees. It is
     deliberately indistinguishable from every other state, which is why
     :class:`ContentDescriptor` forbids byte counts and expiry on it.
     """
 
-    #: Announced by an agent, not yet durable.
-    PENDING = "pending"
     #: Durable and retrievable by an authorized caller.
-    STORED = "stored"
-    #: Content removed, metadata retained deliberately.
+    CAPTURED = "captured"
+    #: Content removed by policy, metadata retained deliberately.
     REDACTED = "redacted"
+    #: Captured but cut at a size limit. The state records the cut, so a
+    #: partial transcript is never served as though it were complete.
+    TRUNCATED = "truncated"
     #: Content removed by retention. Metadata may survive.
-    PURGED = "purged"
+    EXPIRED = "expired"
     #: The caller may not learn whether this content exists.
     UNAVAILABLE = "unavailable"
 
 
-#: One-way lifecycle. Content never moves back toward a richer state, so a
-#: purged recording can never be resurrected by a later ingest replaying an
-#: older revision. Every state may collapse to ``UNAVAILABLE`` because that
-#: is an authorization projection rather than a storage event.
+#: One-way lifecycle. Content never moves back toward a richer state, so an
+#: expired recording can never be resurrected by a later ingest replaying an
+#: older revision, and a truncation is never silently un-cut. Every state may
+#: collapse to ``UNAVAILABLE`` because that is an authorization projection
+#: rather than a storage event.
 CONTENT_STATE_TRANSITIONS: Mapping[ContentState, frozenset[ContentState]] = {
-    ContentState.PENDING: frozenset(
-        {ContentState.STORED, ContentState.PURGED, ContentState.UNAVAILABLE}
+    ContentState.CAPTURED: frozenset(
+        {
+            ContentState.TRUNCATED,
+            ContentState.REDACTED,
+            ContentState.EXPIRED,
+            ContentState.UNAVAILABLE,
+        }
     ),
-    ContentState.STORED: frozenset(
-        {ContentState.REDACTED, ContentState.PURGED, ContentState.UNAVAILABLE}
+    ContentState.TRUNCATED: frozenset(
+        {ContentState.REDACTED, ContentState.EXPIRED, ContentState.UNAVAILABLE}
     ),
-    ContentState.REDACTED: frozenset({ContentState.PURGED, ContentState.UNAVAILABLE}),
-    ContentState.PURGED: frozenset({ContentState.UNAVAILABLE}),
+    ContentState.REDACTED: frozenset({ContentState.EXPIRED, ContentState.UNAVAILABLE}),
+    ContentState.EXPIRED: frozenset({ContentState.UNAVAILABLE}),
     ContentState.UNAVAILABLE: frozenset(),
 }
 
-#: States in which no plaintext may be returned to any caller.
+#: States in which no plaintext may be returned to any caller as though it
+#: were whole. ``TRUNCATED`` is in here deliberately: its partial bytes are
+#: served through the redaction policy, never as plain captured content.
 NON_READABLE_CONTENT_STATES: frozenset[ContentState] = frozenset(
     {
-        ContentState.PENDING,
         ContentState.REDACTED,
-        ContentState.PURGED,
+        ContentState.TRUNCATED,
+        ContentState.EXPIRED,
         ContentState.UNAVAILABLE,
     }
 )
