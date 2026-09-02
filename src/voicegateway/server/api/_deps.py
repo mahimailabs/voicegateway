@@ -29,6 +29,7 @@ from voicegateway.core.auth import (
 )
 from voicegateway.inference.session.context import set_tenant
 from voicegateway.repository import api_keys_repository as api_keys_repo
+from voicegateway.schemas.telemetry.security_schema import PrincipalKind
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -126,18 +127,25 @@ READ_SCOPE = "read"
 
 @dataclass(frozen=True)
 class Principal:
-    """The authenticated identity behind a read request.
+    """The authenticated identity behind a request.
 
     - ``tenant_id``: the tenant this caller is bound to, or ``None`` for an
       operator/admin who sees every tenant.
     - ``is_admin``: True for an admin vk_ key (role == "admin") or the soft
       operator default (no credential / static config key).
     - ``api_key_id``: the vk_ key id when one authenticated, else ``None``.
+    - ``project_ids``: the projects this key may touch, or ``None`` for
+      unrestricted within its tenant. Loaded from ``api_keys.project_ids``
+      in Task 14; ``None`` until then, which is what every existing key gets.
+    - ``kind``: which auth branch produced this principal. Carried so an
+      audit record can say what authenticated, not just who.
     """
 
     tenant_id: str | None
     is_admin: bool
     api_key_id: int | None
+    project_ids: frozenset[str] | None = None
+    kind: PrincipalKind = PrincipalKind.OPERATOR
 
 
 # The soft default for the self-hosted operator: no credential (or a static
@@ -171,6 +179,11 @@ async def require_principal(request: Request) -> Principal:
             tenant_id=verified.tenant_id,
             is_admin=(verified.role == ADMIN_SCOPE),
             api_key_id=verified.id,
+            kind=(
+                PrincipalKind.ADMIN_KEY
+                if verified.role == ADMIN_SCOPE
+                else PrincipalKind.TENANT_KEY
+            ),
         )
 
     try:
