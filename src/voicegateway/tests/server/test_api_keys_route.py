@@ -50,7 +50,7 @@ async def client(gateway):
 async def test_create_returns_plaintext_and_201(client: AsyncClient) -> None:
     response = await client.post(
         "/v1/api-keys",
-        json={"name": "prod-bot", "tenant_id": "acme"},
+        json={"name": "prod-bot", "scopes": "read", "tenant_id": "acme"},
     )
     assert response.status_code == 201
     body = response.json()
@@ -63,7 +63,9 @@ async def test_create_returns_plaintext_and_201(client: AsyncClient) -> None:
 
 
 async def test_list_includes_created_key(client: AsyncClient) -> None:
-    create_resp = await client.post("/v1/api-keys", json={"name": "list-target"})
+    create_resp = await client.post(
+        "/v1/api-keys", json={"name": "list-target", "scopes": "read"}
+    )
     created_id = create_resp.json()["key"]["id"]
 
     list_resp = await client.get("/v1/api-keys")
@@ -83,7 +85,9 @@ async def test_get_by_id_returns_404_when_missing(client: AsyncClient) -> None:
 async def test_delete_revokes_and_filters_from_active_list(
     client: AsyncClient,
 ) -> None:
-    created = (await client.post("/v1/api-keys", json={"name": "to-revoke"})).json()
+    created = (
+        await client.post("/v1/api-keys", json={"name": "to-revoke", "scopes": "read"})
+    ).json()
     key_id = created["key"]["id"]
 
     delete_resp = await client.delete(f"/v1/api-keys/{key_id}")
@@ -104,6 +108,29 @@ async def test_create_validation_rejects_empty_name(client: AsyncClient) -> None
     assert body["type"] == "RequestValidationError"
 
 
+async def test_create_requires_scopes(client: AsyncClient) -> None:
+    """VG-SEC-006: the field has no default, so pydantic refuses the body."""
+    response = await client.post("/v1/api-keys", json={"name": "no-scopes"})
+    assert response.status_code == 422
+    assert response.json()["type"] == "RequestValidationError"
+
+
+async def test_create_refuses_the_wildcard(client: AsyncClient) -> None:
+    """The mint refuses ``*`` rather than minting an inert key."""
+    response = await client.post("/v1/api-keys", json={"name": "wild", "scopes": "*"})
+    assert response.status_code == 422
+    assert "wildcard" in response.json()["detail"]
+
+
+async def test_create_refuses_an_unknown_scope(client: AsyncClient) -> None:
+    """A typo must not mint a key that authorizes nothing in silence."""
+    response = await client.post(
+        "/v1/api-keys", json={"name": "typo", "scopes": "raed"}
+    )
+    assert response.status_code == 422
+    assert "unknown scope" in response.json()["detail"]
+
+
 # ---------------------------------------------------------------------------
 # Auth: the router is admin-gated once auth is enabled
 # ---------------------------------------------------------------------------
@@ -121,7 +148,9 @@ async def test_mint_stays_open_when_no_keys_are_configured(gateway) -> None:
     assert app.state.api_keys == []
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
-        created = await c.post("/v1/api-keys", json={"name": "local-operator"})
+        created = await c.post(
+            "/v1/api-keys", json={"name": "local-operator", "scopes": "read"}
+        )
         assert created.status_code == 201
         assert created.json()["plaintext"].startswith("vk_")
         assert (await c.get("/v1/api-keys")).status_code == 200
@@ -144,7 +173,9 @@ async def test_router_requires_admin_when_auth_enabled(gateway) -> None:
     ]
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
-        blocked = await c.post("/v1/api-keys", json={"name": "stolen"})
+        blocked = await c.post(
+            "/v1/api-keys", json={"name": "stolen", "scopes": "read"}
+        )
         assert blocked.status_code == 401
         assert (await c.get("/v1/api-keys")).status_code == 401
         assert (await c.get("/v1/api-keys/1")).status_code == 401
@@ -154,14 +185,14 @@ async def test_router_requires_admin_when_auth_enabled(gateway) -> None:
         assert (
             await c.post(
                 "/v1/api-keys",
-                json={"name": "stolen"},
+                json={"name": "stolen", "scopes": "read"},
                 headers={"Authorization": "Bearer wrong-token"},
             )
         ).status_code == 401
 
         ok = await c.post(
             "/v1/api-keys",
-            json={"name": "minted-by-admin"},
+            json={"name": "minted-by-admin", "scopes": "read"},
             headers={"Authorization": "Bearer admin-secret-token"},
         )
         assert ok.status_code == 201
@@ -180,7 +211,7 @@ async def test_router_rejects_key_without_admin_scope(gateway) -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         denied = await c.post(
             "/v1/api-keys",
-            json={"name": "escalation"},
+            json={"name": "escalation", "scopes": "read"},
             headers={"Authorization": "Bearer read-only-token"},
         )
         assert denied.status_code == 403
@@ -201,7 +232,9 @@ async def test_minted_tenant_key_cannot_mint_another_key(gateway) -> None:
     app = build_app(gateway)
     open_transport = ASGITransport(app=app)
     async with AsyncClient(transport=open_transport, base_url="http://test") as c:
-        minted = (await c.post("/v1/api-keys", json={"name": "agent"})).json()
+        minted = (
+            await c.post("/v1/api-keys", json={"name": "agent", "scopes": "read"})
+        ).json()
     plaintext = minted["plaintext"]
 
     app.state.api_keys = [
@@ -211,7 +244,7 @@ async def test_minted_tenant_key_cannot_mint_another_key(gateway) -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         denied = await c.post(
             "/v1/api-keys",
-            json={"name": "self-replication"},
+            json={"name": "self-replication", "scopes": "read"},
             headers={"Authorization": f"Bearer {plaintext}"},
         )
         assert denied.status_code == 403

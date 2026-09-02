@@ -87,8 +87,11 @@ class _Harness:
 async def _make_key(gateway, *, tenant_id=None, role="tenant", scopes="read"):
     """Mint a vk_ key and return its plaintext token.
 
-    ``scopes`` is explicit because Wave 1 stops minting wildcard keys: a test
-    that wants to write must say so, exactly as an operator now must.
+    ``scopes`` is explicit because 0.26.0 stops minting wildcard keys: a test
+    that wants to write must say so, exactly as an operator now must. The
+    default is ``read`` rather than the old ``*`` so that a test which needs
+    write authority fails loudly instead of passing on a scope that matched
+    everything.
     """
     async with gateway.storage.session() as db:
         created = await api_keys.create_api_key(

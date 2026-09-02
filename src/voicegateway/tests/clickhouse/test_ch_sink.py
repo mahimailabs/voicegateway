@@ -675,7 +675,7 @@ class TestIngestCHRouting:
                 await gw.storage._ensure_initialized()
                 async with gw.storage._conn.session() as db:
                     created = await api_keys.create_api_key(
-                        db, name="bot", tenant_id="t1"
+                        db, name="bot", tenant_id="t1", scopes="read,write,ingest,admin"
                     )
 
                 async with AsyncClient(
@@ -766,7 +766,9 @@ class TestIngestCHRouting:
             async def _run():
                 await gw.storage._ensure_initialized()
                 async with gw.storage._conn.session() as db:
-                    created = await api_keys.create_api_key(db, name="bot503")
+                    created = await api_keys.create_api_key(
+                        db, name="bot503", scopes="read,write,ingest,admin"
+                    )
 
                 async with AsyncClient(
                     transport=ASGITransport(app=app), base_url="http://test"
@@ -839,7 +841,9 @@ class TestIngestCHRouting:
             async def _run():
                 await gw.storage._ensure_initialized()
                 async with gw.storage._conn.session() as db:
-                    created = await api_keys.create_api_key(db, name="bot2")
+                    created = await api_keys.create_api_key(
+                        db, name="bot2", scopes="read,write,ingest,admin"
+                    )
 
                 async with AsyncClient(
                     transport=ASGITransport(app=app), base_url="http://test"

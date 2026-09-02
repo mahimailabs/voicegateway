@@ -89,6 +89,18 @@ async def _verify_vk_key(
     try:
         async with storage.session() as session:
             verified = await verify_api_key(authorization, session)
+        if scopes.WILDCARD in verified.scopes.split(","):
+            # Every key minted before 0.26.0 lands here (VG-SEC-006). Warning
+            # at verification rather than inside one gate covers all of them:
+            # require_scope, require_principal and require_ingest_principal
+            # share this function, and a wildcard key is equally inert on any.
+            _logger.warning(
+                "wildcard-scoped key_id=%s used on %s %s; re-mint with explicit "
+                "scopes before 0.27.0 (run: voicegw keys audit)",
+                verified.id,
+                request.method,
+                request.url.path,
+            )
         if authorize is not None:
             result = authorize(verified)
             if result is not None:

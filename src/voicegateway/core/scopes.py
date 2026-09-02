@@ -33,4 +33,49 @@ WILDCARD = "*"
 
 ALL: frozenset[str] = frozenset({INGEST, READ, ADMIN, MCP_READ, WRITE, WILDCARD})
 
-__all__ = ["ADMIN", "ALL", "INGEST", "MCP_READ", "READ", "WILDCARD", "WRITE"]
+#: Everything a key may actually be minted with, which is ALL minus the
+#: wildcard. Named separately because "the scopes that exist" and "the scopes
+#: you may ask for" stopped being the same set in 0.26.0.
+MINTABLE: frozenset[str] = ALL - {WILDCARD}
+
+
+def normalize_scopes(scopes: str) -> str:
+    """Validate a comma-separated scope string and return its canonical form.
+
+    Raises :class:`ValueError` for an empty list, the wildcard, or a name that
+    is not a scope. Returns the requested scopes sorted and de-duplicated, so
+    two keys granting the same authority store the same string.
+
+    This lives in the leaf module because there are two mint paths that must
+    not drift: the function-style repository used by the dashboard and the
+    CLI, and ``ApiKeyService.create_key`` behind ``POST /v1/api-keys``. A rule
+    enforced in one of them is a rule an operator can walk around by picking
+    the other door, which is how VG-SEC-007 (admin checked two ways) happened.
+    """
+    requested = {s.strip() for s in scopes.split(",") if s.strip()}
+    if not requested:
+        raise ValueError("scopes must name at least one scope")
+    if WILDCARD in requested:
+        raise ValueError(
+            "wildcard scope may not be minted; name the scopes explicitly "
+            f"(one or more of: {', '.join(sorted(MINTABLE))})"
+        )
+    unknown = requested - MINTABLE
+    if unknown:
+        raise ValueError(
+            f"unknown scope(s): {sorted(unknown)}; known scopes are {sorted(MINTABLE)}"
+        )
+    return ",".join(sorted(requested))
+
+
+__all__ = [
+    "ADMIN",
+    "ALL",
+    "INGEST",
+    "MCP_READ",
+    "MINTABLE",
+    "READ",
+    "WILDCARD",
+    "WRITE",
+    "normalize_scopes",
+]

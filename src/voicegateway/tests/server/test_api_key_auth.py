@@ -83,7 +83,9 @@ def test_check_tenant_body_conflict_rejects_mismatch():
 async def test_verify_api_key_returns_verified_key(gateway):
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        created = await api_keys.create_api_key(db, name="bot", tenant_id="acme")
+        created = await api_keys.create_api_key(
+            db, name="bot", tenant_id="acme", scopes="read,write,ingest,admin"
+        )
         verified = await verify_api_key(f"Bearer {created.plaintext}", db)
     assert verified.id == created.id
     assert verified.tenant_id == "acme"
@@ -92,7 +94,9 @@ async def test_verify_api_key_returns_verified_key(gateway):
 async def test_verify_api_key_rejects_revoked(gateway):
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        created = await api_keys.create_api_key(db, name="bot")
+        created = await api_keys.create_api_key(
+            db, name="bot", scopes="read,write,ingest,admin"
+        )
         await api_keys.revoke(db, created.id)
         with pytest.raises(AuthError) as ei:
             await verify_api_key(f"Bearer {created.plaintext}", db)
@@ -129,7 +133,9 @@ async def test_api_key_authenticates_write_request(gateway):
     """A valid scoped virtual key satisfies the write dep."""
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        created = await api_keys.create_api_key(db, name="bot", tenant_id="acme")
+        created = await api_keys.create_api_key(
+            db, name="bot", tenant_id="acme", scopes="read,write,ingest,admin"
+        )
 
     client = await _client(gateway)
     async with client as c:
@@ -146,7 +152,9 @@ async def test_api_key_authenticates_write_request(gateway):
 async def test_api_key_revoked_returns_401(gateway):
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        created = await api_keys.create_api_key(db, name="bot")
+        created = await api_keys.create_api_key(
+            db, name="bot", scopes="read,write,ingest,admin"
+        )
         await api_keys.revoke(db, created.id)
 
     client = await _client(gateway)
@@ -166,7 +174,9 @@ async def test_api_key_marks_last_used(gateway):
     """Successful verify bumps last_used_at via mark_used."""
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        created = await api_keys.create_api_key(db, name="bot")
+        created = await api_keys.create_api_key(
+            db, name="bot", scopes="read,write,ingest,admin"
+        )
     assert created.row.last_used_at is None
 
     client = await _client(gateway)
@@ -188,7 +198,9 @@ async def test_unscoped_api_key_does_not_force_tenant(gateway):
     """check_tenant_body_conflict with key_tenant=None lets body pick."""
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        await api_keys.create_api_key(db, name="unscoped")
+        await api_keys.create_api_key(
+            db, name="unscoped", scopes="read,write,ingest,admin"
+        )
 
     # Helper-level check; no app exercise needed because the unscoped
     # behavior is enforced inside check_tenant_body_conflict.
@@ -199,7 +211,9 @@ async def test_api_key_authenticates_write_request_default_scope(gateway):
     """A default (wildcard-scoped) virtual key satisfies the write dep."""
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        created = await api_keys.create_api_key(db, name="bot", tenant_id="acme")
+        created = await api_keys.create_api_key(
+            db, name="bot", tenant_id="acme", scopes="read,write,ingest,admin"
+        )
 
     client = await _client(gateway)
     async with client as c:
@@ -227,7 +241,7 @@ async def test_require_scope_admin_denies_tenant_key(gateway):
         await gateway.storage._ensure_initialized()
         async with gateway.storage._conn.session() as db:
             created = await api_keys.create_api_key(
-                db, name="tenant-bot", role="tenant", scopes="*"
+                db, name="tenant-bot", role="tenant", scopes="read,write,ingest,admin"
             )
         resp = await c.get(
             "/admin-only",

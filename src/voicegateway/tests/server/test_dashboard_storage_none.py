@@ -127,7 +127,9 @@ def test_api_keys_list_returns_empty_when_storage_disabled(storage_disabled_clie
 
 
 def test_api_keys_create_returns_503_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.post("/api/api_keys", json={"name": "test"})
+    resp = storage_disabled_client.post(
+        "/api/api_keys", json={"name": "test", "scopes": "read"}
+    )
     assert resp.status_code == 503
 
 

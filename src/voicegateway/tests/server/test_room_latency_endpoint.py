@@ -161,7 +161,11 @@ async def harness():
 async def _make_key(gateway, *, tenant_id=None, role="tenant"):
     async with gateway.storage._conn.session() as db:
         created = await api_keys.create_api_key(
-            db, name=f"k-{tenant_id}-{role}", tenant_id=tenant_id, role=role
+            db,
+            name=f"k-{tenant_id}-{role}",
+            tenant_id=tenant_id,
+            role=role,
+            scopes="read,write,ingest,admin",
         )
     return created.plaintext
 

@@ -81,13 +81,27 @@ async def create_api_key_endpoint(
     tenant_id = str(tenant_id_raw).strip() if tenant_id_raw not in (None, "") else None
     issued_by_raw = body.get("issued_by")
     issued_by = str(issued_by_raw).strip() if issued_by_raw not in (None, "") else None
+    scopes = str(body.get("scopes") or "").strip()
+    if not scopes:
+        raise HTTPException(
+            status_code=400,
+            detail="`scopes` is required; the wildcard default was removed "
+            "in 0.26.0 (VG-SEC-006)",
+        )
     if gateway.storage is None:
         raise HTTPException(status_code=503, detail="Storage backend not configured")
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        created = await api_keys.create_api_key(
-            db, name=name, tenant_id=tenant_id, issued_by=issued_by
-        )
+        try:
+            created = await api_keys.create_api_key(
+                db,
+                name=name,
+                scopes=scopes,
+                tenant_id=tenant_id,
+                issued_by=issued_by,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
     return {
         "id": created.id,
         "plaintext": created.plaintext,

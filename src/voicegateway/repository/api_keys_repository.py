@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Final
 import bcrypt
 from sqlalchemy import text
 
-from voicegateway.core import scopes
+from voicegateway.core import scopes as scopes_mod
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -79,9 +79,9 @@ class VerifiedKey:
             return True
         if enforce:
             return False
-        if scopes.WILDCARD in granted:
+        if scopes_mod.WILDCARD in granted:
             return True
-        return required == scopes.INGEST and scopes.WRITE in granted
+        return required == scopes_mod.INGEST and scopes_mod.WRITE in granted
 
 
 def _generate_plaintext_key() -> str:
@@ -128,14 +128,27 @@ async def create_api_key(
     session: AsyncSession,
     *,
     name: str,
+    scopes: str,
     tenant_id: str | None = None,
     issued_by: str | None = None,
     role: str = "tenant",
-    scopes: str = "*",
 ) -> CreatedApiKey:
-    """Create a virtual key and return the plaintext once."""
+    """Create a virtual key and return the plaintext once.
+
+    ``scopes`` is required and explicit, and the wildcard is refused
+    (VG-SEC-006). ``*`` short-circuits every scope check, so a wildcard key
+    made enforcement inert while still reporting a scope list: the most
+    misleading of the three possible states.
+
+    The refusal lives here rather than in :meth:`VerifiedKey.has_scope`
+    because those are different populations. Refusing ``*`` at the check
+    would lock out every key already in the field; refusing it at the mint
+    means no new inert key can be created while the existing ones keep
+    working, warning on each use, until 0.27.0 withdraws them.
+    """
     if not name:
         raise ValueError("name must be non-empty")
+    scopes = scopes_mod.normalize_scopes(scopes)
     plaintext = _generate_plaintext_key()
     prefix = _visible_prefix(plaintext)
     digest = _hash_key(plaintext)
@@ -231,6 +244,39 @@ async def verify(session: AsyncSession, plaintext: str) -> VerifiedKey | None:
     return None
 
 
+async def list_wildcard_keys(session: AsyncSession) -> list[VerifiedKey]:
+    """Live keys still carrying the wildcard scope, for ``voicegw keys audit``.
+
+    These are the keys minted before 0.26.0. They still authorize everything
+    and will stop doing so in 0.27.0, so an operator needs a list of exactly
+    what to re-mint. Revoked keys are excluded: nobody needs to re-mint a key
+    that is already dead.
+
+    The three LIKE patterns catch ``*`` alone and ``*`` in any position of a
+    list. ``create_api_key`` now sorts and de-duplicates what it stores, but
+    these rows predate that and were written by hand or by the old default.
+    """
+    result = await session.execute(
+        text(
+            "SELECT id, tenant_id, name, role, scopes FROM api_keys "
+            "WHERE revoked_at IS NULL AND ("
+            "scopes = '*' OR scopes LIKE '%,*' OR scopes LIKE '*,%' "
+            "OR scopes LIKE '%,*,%') "
+            "ORDER BY id ASC"
+        )
+    )
+    return [
+        VerifiedKey(
+            id=int(row[0]),
+            tenant_id=None if row[1] is None else str(row[1]),
+            name=str(row[2]),
+            role=str(row[3]) if row[3] is not None else "tenant",
+            scopes=str(row[4]) if row[4] is not None else "*",
+        )
+        for row in result.all()
+    ]
+
+
 async def mark_used(session: AsyncSession, key_id: int) -> None:
     """Bump ``last_used_at`` to the current timestamp."""
     await session.execute(
@@ -290,6 +336,7 @@ __all__ = [
     "create_api_key",
     "get_by_id",
     "list_keys",
+    "list_wildcard_keys",
     "list_stale",
     "mark_used",
     "revoke",
