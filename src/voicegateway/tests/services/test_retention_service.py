@@ -51,6 +51,7 @@ async def _seed_session(
                     cost_usd=0.0,
                 )
             ],
+            tenant_id=None,
         )
 
 
@@ -114,6 +115,7 @@ async def test_in_flight_sessions_never_deleted(storage) -> None:
                     cost_usd=0.0,
                 )
             ],
+            tenant_id=None,
         )
 
     async def provider():

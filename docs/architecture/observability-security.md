@@ -43,13 +43,20 @@ opening one file at one line.
 
 ### VG-THREAT-001: cross-tenant write
 
-**VG-SEC-001** (gap, Wave 1) is live today. `POST /v1/ingest/tool-calls`
-admits `tenant_id` through its field allow-list, and the repository resolves
-the row tenant as the payload value when one is present, falling back to the
-key-derived tenant only when it is absent. A key scoped to one tenant can
-therefore write rows attributed to another. Measured against an unmodified
-checkout, a batch posted with one tenant's key produced one row tagged the
-other tenant and none tagged its own.
+**VG-SEC-001** (closed in 0.26.0) was live through Wave 0.
+`POST /v1/ingest/tool-calls` admitted `tenant_id` through its field
+allow-list, and the repository resolved the row tenant as the payload value
+when one was present, falling back to the key-derived tenant only when it was
+absent. A key scoped to one tenant could therefore write rows attributed to
+another. Measured against an unmodified checkout, a batch posted with one
+tenant's key produced one row tagged the other tenant and none tagged its own.
+
+Closed by making tenancy explicit rather than ambient. All seven writers now
+take `tenant_id` as a required keyword, `create_tool_calls` no longer reads
+the field off the row, and no module under `repository/` can import
+`current_tenant`. The fixture that characterized the defect is kept as a
+guarantee: it is the exact request that used to succeed, so it is the one
+that must keep failing to write.
 
 The sibling writers do not share this shape, which is what makes it a defect
 rather than a design. The turns and dead-air writers apply a single tenant,

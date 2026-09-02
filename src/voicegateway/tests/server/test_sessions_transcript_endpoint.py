@@ -26,7 +26,7 @@ def _client(gw: Gateway) -> AsyncClient:
 async def test_transcript_endpoint_returns_ordered_turns(tmp_path, monkeypatch):
     gw = _gateway(tmp_path, monkeypatch)
     await gw.storage.write_transcript(
-        "call-1", [("user", "hi"), ("agent", "hello there")]
+        "call-1", [("user", "hi"), ("agent", "hello there")], tenant_id=None
     )
     async with _client(gw) as c:
         data = (await c.get("/api/sessions/call-1/transcript")).json()
@@ -54,7 +54,7 @@ async def test_transcript_stays_open_when_no_keys_are_configured(tmp_path, monke
     gw = _gateway(tmp_path, monkeypatch)
     app = build_app(gw)
     assert app.state.api_keys == []
-    await gw.storage.write_transcript("call-open", [("user", "hi")])
+    await gw.storage.write_transcript("call-open", [("user", "hi")], tenant_id=None)
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -75,7 +75,9 @@ async def test_transcript_requires_auth_when_enabled(tmp_path, monkeypatch):
     gw = _gateway(tmp_path, monkeypatch)
     app = build_app(gw)
     app.state.api_keys = [ApiKey(token="read-token", name="viewer", scopes=("read",))]
-    await gw.storage.write_transcript("call-secret", [("user", "my card number is")])
+    await gw.storage.write_transcript(
+        "call-secret", [("user", "my card number is")], tenant_id=None
+    )
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"

@@ -44,7 +44,7 @@ async def _seed_replay(gateway, session_id: str, n: int = 3) -> None:
             )
             for i in range(n)
         ]
-        await replay.bulk_write_events(db, events)
+        await replay.bulk_write_events(db, events, tenant_id=None)
 
 
 async def test_get_session_replay_returns_ordered_events(client, gateway) -> None:

@@ -143,7 +143,7 @@ async def _seed_turns(storage, session: str, speeds: list[int | None]) -> None:
         for i, s in enumerate(speeds)
     ]
     async with storage._conn.session() as db:
-        await turns.create_turns_bulk(db, rows)
+        await turns.create_turns_bulk(db, rows, tenant_id=None)
 
 
 @pytest.fixture
@@ -439,6 +439,7 @@ async def test_two_sessions_in_one_room_neither_omit_nor_repeat_a_turn(harness):
                 )
                 for i, s in enumerate([1100, 1150])
             ],
+            tenant_id=None,
         )
 
     whole = (await _get(harness, f"/v1/rooms/{ROOM}/latency")).json()

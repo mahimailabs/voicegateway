@@ -3,11 +3,13 @@
     "gap_id": "VG-SEC-001",
     "threat": "VG-THREAT-001",
     "title": "Tool-call ingest lets the payload override the authenticated tenant",
-    "description": "POST /v1/ingest/tool-calls admits tenant_id through the field allow-list, and the repository prefers the payload value over the tenant resolved from the API key. A key scoped to tenant A can therefore write rows tagged tenant B. The sibling writers are safe: turns and dead-air apply one tenant resolved from the function argument to every row, and log_request reads current_tenant() and ignores the payload entirely. The comment above the allow-list already argues that an agent-supplied primary key would let one agent overwrite another's row, which is the same argument that should have excluded tenant_id.",
-    "status": "gap",
+    "description": "POST /v1/ingest/tool-calls admits tenant_id through the field allow-list, and the repository prefers the payload value over the tenant resolved from the API key. A key scoped to tenant A can therefore write rows tagged tenant B. The sibling writers are safe: turns and dead-air apply one tenant resolved from the function argument to every row, and log_request reads current_tenant() and ignores the payload entirely. The comment above the allow-list already argues that an agent-supplied primary key would let one agent overwrite another's row, which is the same argument that should have excluded tenant_id. CLOSED in 0.26.0: create_tool_calls takes tenant_id as a required keyword and no longer reads the field off the row, and the same signature change went to all seven writers so no write decides tenancy from ambient state.",
+    "status": "closed",
     "wave": 1,
     "evidence": "src/voicegateway/repository/tool_calls_repository.py:54",
-    "fixture": "ingest_tool_calls_tenant_override.json"
+    "fixture": "ingest_tool_calls_tenant_override.json",
+    "closed_in": "0.26.0",
+    "closed_by": "f9a86001"
   },
   {
     "gap_id": "VG-SEC-002",

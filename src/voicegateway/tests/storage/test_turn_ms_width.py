@@ -96,7 +96,7 @@ async def test_an_out_of_int32_timestamp_round_trips(tmp_path) -> None:
         agent_speak_end_ms=_OVERFLOWING_MS + 2000,
         response_speed_ms=400,
     )
-    await storage.log_turns([row])
+    await storage.log_turns([row], tenant_id=None)
 
     async with storage._conn.session() as db:
         [read_back] = await turns.list_turns_by_session(db, "s-wide")

@@ -1,9 +1,8 @@
 {
   "case_id": "ingest_tool_calls_tenant_override",
-  "title": "A tenant-scoped key writes a row attributed to another tenant",
-  "kind": "characterization",
-  "gap_id": "VG-SEC-001",
-  "rationale": "The live defect. tool_calls_repository resolves the row tenant as `r.tenant_id if r.tenant_id is not None else resolved`, so a tenant_id present in the payload wins over the tenant resolved from the API key. Measured on an unmodified checkout: the acme key's batch produced one row tagged beta and zero rows tagged acme. The sibling writers do not share this shape, which is what makes it a defect rather than a design: turns and dead-air apply one tenant resolved from the function argument to every row, and log_request reads current_tenant() and ignores the payload entirely.",
+  "title": "A tenant-scoped key cannot write a row attributed to another tenant",
+  "kind": "guarantee",
+  "rationale": "Closed in 0.26.0 by f9a86001. This was the live defect: tool_calls_repository resolved the row tenant as `r.tenant_id if r.tenant_id is not None else resolved`, so a tenant_id present in the payload won over the tenant resolved from the API key, and an acme key's batch produced one row tagged beta and none tagged acme. create_tool_calls now takes tenant_id as a required keyword and never reads the field off the row. Kept as a guarantee rather than deleted: this is the exact request that used to succeed, so it is the one that must keep failing to write.",
   "victim_tenant_id": "beta",
   "actor": {
     "tenant_id": "acme",
@@ -32,13 +31,6 @@
       403
     ],
     "victim_rows": 0,
-    "note": "The status is deliberately not pinned: Wave 1 may reject the batch or silently re-attribute it. What the contract fixes is the attribution. A key bound to acme must never cause a row tagged beta, so victim_rows must be 0 under every acceptable choice."
-  },
-  "observed": {
-    "status_code": [
-      200
-    ],
-    "victim_rows": 1,
-    "note": "Answered 200 {\"accepted\":1}, and the tool_calls table held exactly one row, tagged beta."
+    "note": "The batch may be accepted or refused; what is fixed is the attribution. A key bound to acme must never cause a row tagged beta, so victim_rows is 0 under every acceptable choice."
   }
 }

@@ -27,7 +27,7 @@ async def db():
 
 async def test_create_and_list_preserves_order(db):
     n = await tr.create_transcript_bulk(
-        db, "s1", [("user", "hi"), ("agent", "hello"), ("user", "bye")]
+        db, "s1", [("user", "hi"), ("agent", "hello"), ("user", "bye")], tenant_id=None
     )
     assert n == 3
     rows = await tr.list_transcript_by_session(db, "s1")
@@ -39,21 +39,23 @@ async def test_create_and_list_preserves_order(db):
 
 
 async def test_rewrite_replaces_not_appends(db):
-    await tr.create_transcript_bulk(db, "s1", [("user", "first")])
-    await tr.create_transcript_bulk(db, "s1", [("user", "again"), ("agent", "ok")])
+    await tr.create_transcript_bulk(db, "s1", [("user", "first")], tenant_id=None)
+    await tr.create_transcript_bulk(
+        db, "s1", [("user", "again"), ("agent", "ok")], tenant_id=None
+    )
     rows = await tr.list_transcript_by_session(db, "s1")
     assert [(r.role, r.text) for r in rows] == [("user", "again"), ("agent", "ok")]
 
 
 async def test_empty_turns_clears(db):
-    await tr.create_transcript_bulk(db, "s1", [("user", "hi")])
-    n = await tr.create_transcript_bulk(db, "s1", [])
+    await tr.create_transcript_bulk(db, "s1", [("user", "hi")], tenant_id=None)
+    n = await tr.create_transcript_bulk(db, "s1", [], tenant_id=None)
     assert n == 0
     assert await tr.list_transcript_by_session(db, "s1") == []
 
 
 async def test_scoped_to_session(db):
-    await tr.create_transcript_bulk(db, "s1", [("user", "a")])
-    await tr.create_transcript_bulk(db, "s2", [("user", "b")])
+    await tr.create_transcript_bulk(db, "s1", [("user", "a")], tenant_id=None)
+    await tr.create_transcript_bulk(db, "s2", [("user", "b")], tenant_id=None)
     assert len(await tr.list_transcript_by_session(db, "s1")) == 1
     assert len(await tr.list_transcript_by_session(db, "s2")) == 1

@@ -52,7 +52,7 @@ async def _seed_turns(gateway, session_id: str, count: int = 3) -> None:
                     response_speed_ms=100 + i,
                 )
             )
-        await turns.create_turns_bulk(db, rows)
+        await turns.create_turns_bulk(db, rows, tenant_id=None)
 
 
 async def _seed_dead_air(gateway, session_id: str, count: int = 2) -> None:
@@ -67,6 +67,7 @@ async def _seed_dead_air(gateway, session_id: str, count: int = 2) -> None:
                     duration_ms=3500,
                     threshold_used_ms=3000,
                 ),
+                tenant_id=None,
             )
 
 

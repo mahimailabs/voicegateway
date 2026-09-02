@@ -173,14 +173,14 @@ async def test_ingest_one_failing_record_does_not_fail_batch(gateway, monkeypatc
     async with gateway.storage._conn.session() as db:
         created = await api_keys.create_api_key(db, name="bot")
 
-    real_log = gateway.storage.log_request
+    real_log = gateway.storage.log_request_as
 
-    async def flaky_log(record):
+    async def flaky_log(record, *, tenant_id):
         if record.id == "bad-1":
             raise RuntimeError("simulated persistence failure")
-        return await real_log(record)
+        return await real_log(record, tenant_id=tenant_id)
 
-    monkeypatch.setattr(gateway.storage, "log_request", flaky_log)
+    monkeypatch.setattr(gateway.storage, "log_request_as", flaky_log)
 
     client = await _client(gateway)
     async with client as c:
