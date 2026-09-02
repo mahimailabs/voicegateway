@@ -6,7 +6,12 @@ import typer
 
 from voicegateway.cli._app import app
 from voicegateway.cli.base_cli import BaseCli
-from voicegateway.core.auth import describe_auth, load_api_keys
+from voicegateway.core.auth import (
+    AuthConfigError,
+    describe_auth,
+    load_api_keys,
+    validate_auth_startup,
+)
 from voicegateway.utils.cli.serve import _resolve_bind
 
 _cli = BaseCli()
@@ -47,6 +52,16 @@ def serve_cmd(
 
     gw = _cli.require_gateway(config)
     host, port = _resolve_bind(getattr(gw.config, "serve", None), host, port)
+
+    # Before binding anything: refuse a config that asks for unauthenticated
+    # local mode while looking like a deployment. Checked here rather than at
+    # config load because the bind host is only known once --host and
+    # serve.host have been resolved.
+    try:
+        validate_auth_startup(gw.config.auth, bind_host=host)
+    except AuthConfigError as exc:
+        _cli.fail(str(exc))
+        return
 
     api_app = build_app(gw)
     _cli.success(f"VoiceGateway API starting at http://{host}:{port}")

@@ -32,6 +32,43 @@ class AuthError(Exception):
         super().__init__(message)
 
 
+class AuthConfigError(ValueError):
+    """Raised at startup when the auth block contradicts itself."""
+
+
+#: Hosts that mean "this machine only". Anything else is reachable.
+_LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def validate_auth_startup(auth: AuthConfig, bind_host: str) -> None:
+    """Refuse to start when ``local_development`` meets production shape.
+
+    Unauthenticated mode has to be explicit, and explicit is not enough on its
+    own: a flag set on a laptop travels inside a copied config file. So the
+    flag is only honoured in the company of the other things that make a
+    deployment local. Configured keys contradict disabling auth, a
+    non-loopback bind means someone else can reach it, and ``enforce`` asks
+    for the opposite behaviour in the same breath.
+
+    Every conflict is collected before raising, because finding them one
+    restart at a time is a bad afternoon.
+    """
+    if not auth.local_development:
+        return
+    conflicts: list[str] = []
+    if auth.api_keys:
+        conflicts.append(f"auth.api_keys has {len(auth.api_keys)} entries")
+    if bind_host not in _LOOPBACK:
+        conflicts.append(f"bind host {bind_host!r} is not loopback")
+    if auth.enforcement == "enforce":
+        conflicts.append("auth.enforcement is 'enforce'")
+    if conflicts:
+        raise AuthConfigError(
+            "auth.local_development is true but the configuration is "
+            "production-shaped: " + "; ".join(conflicts)
+        )
+
+
 @dataclass(frozen=True)
 class ApiKey:
     """A single configured API key with a scope allowlist."""
