@@ -128,11 +128,30 @@ project binding would need do not exist yet.
 
 ### VG-THREAT-004: coarse and inert scopes
 
-**VG-SEC-003** (planned, Wave 1): there is no ingest scope. Telemetry ingest
-is gated by the same `write` scope that guards provider, model and project
-mutation, across 18 routes in total. An agent key that only needs to post
-telemetry can rewrite gateway configuration. Splitting this is semantic rather
-than a rename, which is why it is recorded before the endpoints multiply.
+**VG-SEC-003** (closed in 0.26.0): there was no ingest scope. Telemetry
+ingest was gated by the same `write` scope that guards provider, model and
+project mutation, across 18 routes in total, so an agent key that only needed
+to post telemetry could rewrite gateway configuration.
+
+The six ingest routes (`POST /v1/ingest`, `/v1/ingest/turns`,
+`/v1/ingest/tool-calls`, `/v1/ingest/dead-air`, `/v1/agents/heartbeat`,
+`/v1/calls/observations`) now sit behind `require_ingest_principal`, which
+enforces the `ingest` scope and returns the `Principal` whose `tenant_id` the
+handler stamps on every row it writes. `write` is left covering 12 routes, all
+of them config mutation.
+
+Two compatibility grants keep existing keys working and both stop under
+`auth.enforcement: enforce`:
+
+- a key holding `write` but not `ingest` is still admitted, and each such
+  request logs a warning naming the key id;
+- a wildcard (`*`) key still matches, as it always has.
+
+Both are withdrawn in 0.27.0, and until VG-SEC-006 closes there is no way to
+mint a key that would survive that: `POST /v1/api-keys` takes no `scopes`
+field, so every key the product issues is a wildcard. The two gaps therefore
+have to close in that order, and the grants above are what keeps 0.26.0
+shippable in between.
 
 **VG-SEC-006** (gap, Wave 1): every key the product mints defaults to the
 wildcard scope, and the scope check short-circuits on the wildcard. Scope

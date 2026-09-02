@@ -25,11 +25,13 @@
     "gap_id": "VG-SEC-003",
     "threat": "VG-THREAT-004",
     "title": "No ingest scope: telemetry ingest and config mutation share write",
-    "description": "Ingest routes are gated by require_scope(\"write\"), the same scope that guards provider, model and project mutation across 18 routes in total. An agent key that only needs to post telemetry can therefore rewrite gateway configuration. Splitting the scope is semantic rather than a rename, which is why it is recorded before the endpoints multiply.",
-    "status": "planned",
+    "description": "Ingest routes are gated by require_scope(\"write\"), the same scope that guards provider, model and project mutation across 18 routes in total. An agent key that only needs to post telemetry can therefore rewrite gateway configuration. Splitting the scope is semantic rather than a rename, which is why it is recorded before the endpoints multiply. CLOSED in 0.26.0: the six telemetry ingest routes moved behind require_ingest_principal, which enforces a dedicated ingest scope and hands the handler the Principal it stamps rows with. Write now covers 12 routes, all config mutation. Two compatibility grants remain until 0.27.0 and both stop under auth.enforcement == \"enforce\": write covers ingest (logged per request with the key id), and the wildcard covers everything.",
+    "status": "closed",
     "wave": 1,
-    "evidence": "src/voicegateway/server/api/ingest.py:91",
-    "fixture": null
+    "evidence": "src/voicegateway/server/api/_deps.py:244",
+    "fixture": null,
+    "closed_in": "0.26.0",
+    "closed_by": "6548175a"
   },
   {
     "gap_id": "VG-SEC-004",
