@@ -119,6 +119,9 @@ class RouteAuth(StrEnum):
     SCOPE_WRITE = "scope:write"
     #: Guarded by ``require_scope("admin")``.
     SCOPE_ADMIN = "scope:admin"
+    #: Guarded by ``require_ingest_principal``, which enforces the ingest
+    #: scope and yields the Principal the handler writes rows under.
+    SCOPE_INGEST = "scope:ingest"
 
 
 class AuthorizationRule(BaseModel):
