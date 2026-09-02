@@ -59,11 +59,13 @@
     "gap_id": "VG-SEC-006",
     "threat": "VG-THREAT-004",
     "title": "Every minted key defaults to the wildcard scope",
-    "description": "create_api_key defaults scopes to \"*\", and has_scope short-circuits on the wildcard before comparing the required scope. Scope enforcement is therefore inert for every key the product mints through its own API: the checks run and always pass.",
-    "status": "gap",
+    "description": "create_api_key defaults scopes to \"*\", and has_scope short-circuits on the wildcard before comparing the required scope. Scope enforcement is therefore inert for every key the product mints through its own API: the checks run and always pass. CLOSED in 0.26.0: scopes is a required argument at all three mints (voicegw keys create, POST /v1/api-keys, POST /api/api_keys), all three validate through core.scopes.normalize_scopes, and the wildcard is refused there. has_scope still honours an existing wildcard key so an upgrade does not lock anyone out, every such use logs a warning naming the key id, and voicegw keys audit lists them and exits non-zero. The grant stops under auth.enforcement == \"enforce\" and is withdrawn in 0.27.0.",
+    "status": "closed",
     "wave": 1,
-    "evidence": "src/voicegateway/repository/api_keys_repository.py:121",
-    "fixture": null
+    "evidence": "src/voicegateway/core/scopes.py:41",
+    "fixture": null,
+    "closed_in": "0.26.0",
+    "closed_by": "f6d2ec3e"
   },
   {
     "gap_id": "VG-SEC-007",

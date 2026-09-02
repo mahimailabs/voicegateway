@@ -147,15 +147,35 @@ Two compatibility grants keep existing keys working and both stop under
   request logs a warning naming the key id;
 - a wildcard (`*`) key still matches, as it always has.
 
-Both are withdrawn in 0.27.0, and until VG-SEC-006 closes there is no way to
-mint a key that would survive that: `POST /v1/api-keys` takes no `scopes`
-field, so every key the product issues is a wildcard. The two gaps therefore
-have to close in that order, and the grants above are what keeps 0.26.0
-shippable in between.
+Both are withdrawn in 0.27.0. Minting a key that survives that is what
+VG-SEC-006 (below) makes possible: `--scopes` is now required at every mint,
+so an operator can issue `ingest`-only agent keys today.
 
-**VG-SEC-006** (gap, Wave 1): every key the product mints defaults to the
-wildcard scope, and the scope check short-circuits on the wildcard. Scope
-enforcement runs and always passes.
+**VG-SEC-006** (closed in 0.26.0): every key the product minted defaulted to
+the wildcard scope, and the scope check short-circuits on the wildcard, so
+enforcement ran on every request and always passed. That is the worst of the
+three possible states: the key list, the matrix and this page all described a
+system of scopes that decided nothing.
+
+`scopes` is now required at all three mints, and each validates through the
+same `core.scopes.normalize_scopes`, so the doors cannot drift:
+
+| Mint | How scopes arrive |
+| --- | --- |
+| `voicegw keys create` | `--scopes` (required) |
+| `POST /v1/api-keys` | `scopes` on the body (required); a refusal is a 422 |
+| `POST /api/api_keys` | `scopes` on the body (required); a refusal is a 400 |
+
+The wildcard is refused, as is any name that is not a scope. Keys minted
+before 0.26.0 keep working and log a warning on every use naming the key id.
+`voicegw keys audit` lists exactly those keys and exits non-zero when it finds
+any, so it can be a deployment gate rather than only something to read.
+
+The refusal deliberately sits at the mint and not in `has_scope`: those are
+different populations. Refusing `*` at the check would lock out every key
+already in the field on upgrade; refusing it at the mint means no new inert
+key can be created while the existing ones keep working, loudly, until 0.27.0
+withdraws them.
 
 **VG-SEC-007** (gap, Wave 2): admin is enforced two ways, through a role
 column and through the scope list, so a key can satisfy one and not the other.
