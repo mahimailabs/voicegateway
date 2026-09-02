@@ -38,6 +38,7 @@ from voicegateway.schemas.telemetry.security_schema import (
     ScopeName,
     SealedValue,
     SensitiveAccessEvent,
+    ThreatEntry,
     ThreatModel,
     load_threat_model,
     may_transition,
@@ -112,6 +113,17 @@ def test_matrix_row_cannot_be_planned():
         AuthorizationRule.model_validate(_rule(status=ContractStatus.PLANNED))
 
 
+def test_matrix_row_cannot_be_closed():
+    """CLOSED is threat-model history. A closed route's row is ENFORCED.
+
+    Without this, a CLOSED row would fall through to the gap branch, be
+    required to carry a gap_id, and then be counted as open work by
+    everything that reads the matrix.
+    """
+    with pytest.raises(ValidationError, match="belongs to the threat"):
+        AuthorizationRule.model_validate(_rule(status=ContractStatus.CLOSED))
+
+
 def test_gap_id_format_is_enforced():
     """Free-form ids would break the verbatim join across the four places."""
     with pytest.raises(ValidationError):
@@ -127,6 +139,52 @@ def test_rows_are_frozen_and_reject_unknown_fields():
     rule = AuthorizationRule.model_validate(_rule())
     with pytest.raises(ValidationError):
         rule.status = ContractStatus.ENFORCED
+
+
+# --------------------------------------------------------------------------
+# Closing a gap: the entry stays as history
+# --------------------------------------------------------------------------
+
+
+def _entry(**overrides) -> dict:
+    base = {
+        "gap_id": "VG-SEC-001",
+        "threat": "VG-THREAT-001",
+        "title": "t",
+        "description": "d",
+        "status": ContractStatus.GAP,
+        "wave": 1,
+        "evidence": "src/voicegateway/repository/tool_calls_repository.py:54",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_closed_entry_requires_release_and_commit():
+    """A closure with no release or commit is a claim with no receipt."""
+    with pytest.raises(ValidationError, match="closed_in and closed_by"):
+        ThreatEntry.model_validate(_entry(status=ContractStatus.CLOSED))
+    entry = ThreatEntry.model_validate(
+        _entry(status=ContractStatus.CLOSED, closed_in="0.26.0", closed_by="abc1234")
+    )
+    assert entry.closed_in == "0.26.0"
+
+
+def test_open_entry_cannot_carry_closure_fields():
+    """Closure fields on an open gap would read as closed to a skimmer."""
+    with pytest.raises(ValidationError, match="only a closed entry"):
+        ThreatEntry.model_validate(_entry(closed_in="0.26.0"))
+
+
+def test_threat_model_open_gap_ids_excludes_closed():
+    """gap_ids stays complete for the contiguity pin; open_gap_ids is the work."""
+    closed = _entry(
+        status=ContractStatus.CLOSED, closed_in="0.26.0", closed_by="abc1234"
+    )
+    open_entry = _entry(gap_id="VG-SEC-002", status=ContractStatus.PLANNED)
+    model = ThreatModel.model_validate([closed, open_entry])
+    assert model.gap_ids() == {"VG-SEC-001", "VG-SEC-002"}
+    assert model.open_gap_ids() == {"VG-SEC-002"}
 
 
 # --------------------------------------------------------------------------

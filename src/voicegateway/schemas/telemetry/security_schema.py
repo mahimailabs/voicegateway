@@ -48,6 +48,10 @@ class ContractStatus(StrEnum):
     GAP = "gap"
     #: No production surface exists yet. Carries an absence guard.
     PLANNED = "planned"
+    #: Production now meets the row. Threat-model entries only: the entry
+    #: stays as history and keeps its evidence line, while the matrix row
+    #: for the same route becomes ENFORCED with no gap id.
+    CLOSED = "closed"
 
 
 class ScopeName(StrEnum):
@@ -151,6 +155,12 @@ class AuthorizationRule(BaseModel):
             raise ValueError(
                 f"{self.method} {self.path}: a matrix row describes a route "
                 "that exists; use planned_routes for one that does not"
+            )
+        if self.status is ContractStatus.CLOSED:
+            raise ValueError(
+                f"{self.method} {self.path}: CLOSED belongs to the threat "
+                "model, which keeps a gap as history; the row for a closed "
+                "gap becomes ENFORCED with no gap_id"
             )
         if self.status is ContractStatus.ENFORCED:
             if self.gap_id is not None or self.wave is not None:
@@ -275,14 +285,35 @@ class ThreatEntry(BaseModel):
     #: Fixture file that exercises this gap, relative to the fixture root.
     #: ``None`` where the gap has no request-shaped expression.
     fixture: str | None = None
+    #: Release that closed the gap, e.g. ``0.26.0``. Required iff CLOSED.
+    closed_in: str | None = Field(default=None, pattern=r"^\d+\.\d+\.\d+$")
+    #: Commit that closed it. Required iff CLOSED.
+    closed_by: str | None = Field(default=None, pattern=r"^[0-9a-f]{7,40}$")
 
     @model_validator(mode="after")
-    def _planned_and_gap_only(self) -> ThreatEntry:
-        """The threat model records deviations, never satisfied guarantees."""
+    def _status_and_closure_agree(self) -> ThreatEntry:
+        """Enforced guarantees live in the matrix; closed gaps stay as history.
+
+        A closed entry is never deleted: the docs page cites gap ids verbatim
+        and the keystone test asserts the minted set is contiguous from
+        VG-SEC-001, so removing one would break both. It keeps its evidence
+        line and gains a receipt: which release closed it, and which commit.
+        """
         if self.status is ContractStatus.ENFORCED:
             raise ValueError(
-                f"{self.gap_id}: the threat model holds gap and planned rows "
-                "only; an enforced guarantee belongs in the matrix"
+                f"{self.gap_id}: the threat model holds gap, planned and closed "
+                "rows only; an enforced guarantee belongs in the matrix"
+            )
+        has_closure = self.closed_in is not None or self.closed_by is not None
+        if self.status is ContractStatus.CLOSED:
+            if self.closed_in is None or self.closed_by is None:
+                raise ValueError(
+                    f"{self.gap_id}: a closed entry needs closed_in and closed_by"
+                )
+            return self
+        if has_closure:
+            raise ValueError(
+                f"{self.gap_id}: only a closed entry carries closed_in or closed_by"
             )
         return self
 
@@ -300,8 +331,20 @@ class ThreatModel(RootModel[list[ThreatEntry]]):
         return self
 
     def gap_ids(self) -> set[str]:
-        """Return the full set of minted gap ids."""
+        """Return the full set of minted gap ids, closed ones included.
+
+        Deliberately complete: the contiguity pin and the docs cross-reference
+        both check against every id ever minted, not just the open ones.
+        """
         return {entry.gap_id for entry in self.root}
+
+    def open_gap_ids(self) -> set[str]:
+        """Return the ids still open. This is the remaining work."""
+        return {
+            entry.gap_id
+            for entry in self.root
+            if entry.status is not ContractStatus.CLOSED
+        }
 
     def by_gap_id(self) -> dict[str, ThreatEntry]:
         """Index the entries by gap id."""
