@@ -44,7 +44,7 @@ Observing the counters: every response carries ``queue_depth`` and
 ``flusher_running`` for the process, and each drop logs a WARNING (the first,
 then every 100th) so the gap is visible in the log as well as in the response.
 
-Auth: the standard ``require_scope("write")``, declared **once on the router**
+Auth: ``require_ingest_principal`` (the ingest scope), declared **once on the router**
 Unlike the LiveKit webhook -- which LiveKit posts and cannot sign with a
 VoiceGateway key -- this endpoint is called by the operator's own agents and load
 workers, which already carry ``VOICEGW_API_KEY`` for ``/v1/ingest``. So it takes
@@ -135,7 +135,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-from voicegateway.server.api._deps import get_gateway, require_scope
+from voicegateway.server.api._deps import get_gateway, require_ingest_principal
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from voicegateway.services.storage_service import StorageService
@@ -148,7 +148,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/calls",
     tags=["calls"],
-    dependencies=[Depends(require_scope("write"))],
+    dependencies=[Depends(require_ingest_principal)],
 )
 
 # The kill switch. Any value other than an explicit falsy word disables the

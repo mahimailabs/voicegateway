@@ -14,6 +14,7 @@ Two top-level helpers:
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
@@ -21,6 +22,7 @@ from typing import TYPE_CHECKING, cast
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from voicegateway.core import scopes
 from voicegateway.core.auth import (
     ADMIN_SCOPE,
     AuthError,
@@ -32,6 +34,8 @@ from voicegateway.inference.session.context import set_tenant
 from voicegateway.repository import api_keys_repository as api_keys_repo
 from voicegateway.schemas.telemetry.security_schema import PrincipalKind
 from voicegateway.server.api._authz import Decision, decide
+
+_logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -237,6 +241,82 @@ async def require_principal(request: Request) -> Principal:
     return _OPERATOR
 
 
+async def require_ingest_principal(request: Request) -> Principal:
+    """Resolve the principal for a telemetry write, requiring ``ingest``.
+
+    Ingest is deliberately narrower than write (VG-SEC-003): an agent key
+    that only posts telemetry must not also be able to rewrite provider,
+    model and project configuration, which is what sharing one ``write``
+    scope across both meant.
+
+    Yields a :class:`Principal` rather than returning ``None`` like
+    ``require_scope``, because the handler needs ``principal.tenant_id`` to
+    stamp on every row it writes. That is the other half of VG-SEC-001: the
+    tenant has to come from the credential, and the handler has to be handed
+    it rather than going looking.
+    """
+    gateway: Gateway = get_gateway(request)
+    auth_cfg = gateway.config.auth
+    api_keys = getattr(request.app.state, "api_keys", None) or []
+    authorization = request.headers.get("Authorization")
+    enforce = auth_cfg.enforcement == "enforce"
+
+    if is_api_key_token(authorization) and gateway.storage is not None:
+
+        def _authorize(verified: VerifiedKey) -> None:
+            if not verified.has_scope(scopes.INGEST, enforce=enforce):
+                raise AuthError(
+                    f"Token missing required scope: {scopes.INGEST}",
+                    status_code=403,
+                )
+            granted = {s.strip() for s in verified.scopes.split(",") if s.strip()}
+            if scopes.INGEST not in granted and scopes.WRITE in granted:
+                _logger.warning(
+                    "write scope used for ingest by key_id=%s on %s %s; mint an "
+                    "ingest key before 0.27.0, when write stops covering it",
+                    verified.id,
+                    request.method,
+                    request.url.path,
+                )
+
+        verified = await _verify_vk_key(request, gateway, _authorize)
+        return Principal(
+            tenant_id=verified.tenant_id,
+            is_admin=(verified.role == ADMIN_SCOPE),
+            api_key_id=verified.id,
+            kind=(
+                PrincipalKind.ADMIN_KEY
+                if verified.role == ADMIN_SCOPE
+                else PrincipalKind.TENANT_KEY
+            ),
+        )
+
+    try:
+        check_request(authorization, scopes.INGEST, api_keys)
+    except AuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from None
+
+    if api_keys:
+        return Principal(
+            tenant_id=None,
+            is_admin=True,
+            api_key_id=None,
+            kind=PrincipalKind.STATIC_KEY,
+        )
+
+    decision = decide(
+        would_refuse=True,
+        reason=f"no credential for scope {scopes.INGEST}",
+        auth=auth_cfg,
+        request=request,
+        principal_kind=PrincipalKind.OPERATOR,
+        key_id=None,
+    )
+    if decision is Decision.REFUSE:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return _OPERATOR
+
+
 def resolve_read_tenant(principal: Principal, requested: str | None) -> str | None:
     """Derive the tenant a read may touch from the authenticated principal.
 
@@ -262,6 +342,7 @@ __all__ = [
     "Principal",
     "get_gateway",
     "get_session",
+    "require_ingest_principal",
     "require_principal",
     "require_scope",
     "resolve_read_tenant",

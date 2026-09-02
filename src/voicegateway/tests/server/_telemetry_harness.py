@@ -84,11 +84,19 @@ class _Harness:
         self._tmp.cleanup()
 
 
-async def _make_key(gateway, *, tenant_id=None, role="tenant"):
-    """Mint a vk_ key and return its plaintext token."""
-    async with gateway.storage._conn.session() as db:
+async def _make_key(gateway, *, tenant_id=None, role="tenant", scopes="read"):
+    """Mint a vk_ key and return its plaintext token.
+
+    ``scopes`` is explicit because Wave 1 stops minting wildcard keys: a test
+    that wants to write must say so, exactly as an operator now must.
+    """
+    async with gateway.storage.session() as db:
         created = await api_keys.create_api_key(
-            db, name=f"k-{tenant_id}-{role}", tenant_id=tenant_id, role=role
+            db,
+            name=f"k-{tenant_id}-{role}-{scopes}",
+            tenant_id=tenant_id,
+            role=role,
+            scopes=scopes,
         )
     return created.plaintext
 
@@ -130,6 +138,8 @@ def classify_dependency(fn) -> str | None:
         )
         cell = fn.__closure__[code.co_freevars.index("scope")]
         return f"scope:{cell.cell_contents}"
+    if qualname == "require_ingest_principal":
+        return "scope:ingest"
     if qualname == "require_principal":
         return "principal"
     return None

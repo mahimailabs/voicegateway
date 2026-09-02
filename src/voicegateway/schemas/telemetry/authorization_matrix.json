@@ -403,10 +403,10 @@
     {
       "method": "POST",
       "path": "/v1/agents/heartbeat",
-      "auth": "scope:write",
+      "auth": "scope:ingest",
       "status": "enforced",
       "tenant_scoped": true,
-      "note": "Config mutation behind require_scope(\"write\")."
+      "note": "Telemetry ingest behind the ingest scope, which does not cover config mutation (closed VG-SEC-003)."
     },
     {
       "method": "GET",
@@ -539,10 +539,10 @@
     {
       "method": "POST",
       "path": "/v1/calls/observations",
-      "auth": "scope:write",
+      "auth": "scope:ingest",
       "status": "enforced",
       "tenant_scoped": true,
-      "note": "Config mutation behind require_scope(\"write\")."
+      "note": "Telemetry ingest behind the ingest scope, which does not cover config mutation (closed VG-SEC-003)."
     },
     {
       "method": "GET",
@@ -557,40 +557,34 @@
     {
       "method": "POST",
       "path": "/v1/ingest",
-      "auth": "scope:write",
-      "status": "gap",
+      "auth": "scope:ingest",
+      "status": "enforced",
       "tenant_scoped": true,
-      "gap_id": "VG-SEC-003",
-      "wave": 1,
-      "note": "Telemetry ingest gated by write, the same scope that guards config mutation. Needs a dedicated ingest scope."
+      "note": "Telemetry ingest behind the ingest scope, which does not cover config mutation (closed VG-SEC-003)."
     },
     {
       "method": "POST",
       "path": "/v1/ingest/dead-air",
-      "auth": "scope:write",
-      "status": "gap",
+      "auth": "scope:ingest",
+      "status": "enforced",
       "tenant_scoped": true,
-      "gap_id": "VG-SEC-003",
-      "wave": 1,
-      "note": "Telemetry ingest gated by write, the same scope that guards config mutation. Needs a dedicated ingest scope."
+      "note": "Telemetry ingest behind the ingest scope, which does not cover config mutation (closed VG-SEC-003)."
     },
     {
       "method": "POST",
       "path": "/v1/ingest/tool-calls",
-      "auth": "scope:write",
+      "auth": "scope:ingest",
       "status": "enforced",
       "tenant_scoped": true,
-      "note": "Tenant comes from the verified key, never the payload (closed VG-SEC-001). Still gated by the write scope rather than ingest until VG-SEC-003."
+      "note": "Telemetry ingest behind the ingest scope, which does not cover config mutation (closed VG-SEC-003). Tenant comes from the principal, never the payload (closed VG-SEC-001)."
     },
     {
       "method": "POST",
       "path": "/v1/ingest/turns",
-      "auth": "scope:write",
-      "status": "gap",
+      "auth": "scope:ingest",
+      "status": "enforced",
       "tenant_scoped": true,
-      "gap_id": "VG-SEC-003",
-      "wave": 1,
-      "note": "Telemetry ingest gated by write, the same scope that guards config mutation. Needs a dedicated ingest scope."
+      "note": "Telemetry ingest behind the ingest scope, which does not cover config mutation (closed VG-SEC-003)."
     },
     {
       "method": "GET",

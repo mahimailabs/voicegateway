@@ -22,8 +22,8 @@ from voicegateway.repository.workers_repository import DEFAULT_TTL_SECONDS
 from voicegateway.server.api._deps import (
     Principal,
     get_gateway,
+    require_ingest_principal,
     require_principal,
-    require_scope,
     resolve_read_tenant,
 )
 
@@ -41,7 +41,7 @@ def _memory_pct(rss: int | None, total: int | None) -> float | None:
 @router.post(
     "/heartbeat",
     status_code=202,
-    dependencies=[Depends(require_scope("write"))],
+    dependencies=[Depends(require_ingest_principal)],
 )
 async def heartbeat(request: Request) -> dict[str, str]:
     """Upsert the caller's worker presence row."""

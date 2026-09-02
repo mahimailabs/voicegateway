@@ -8,6 +8,8 @@ import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from voicegateway.core import scopes
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -83,8 +85,19 @@ class ApiKey:
     name: str = ""
     scopes: tuple[str, ...] = field(default_factory=lambda: (WILDCARD_SCOPE,))
 
-    def has_scope(self, required: str) -> bool:
-        return WILDCARD_SCOPE in self.scopes or required in self.scopes
+    def has_scope(self, required: str, *, enforce: bool = False) -> bool:
+        """Mirror of :meth:`VerifiedKey.has_scope` for static config keys.
+
+        The same two compatibility grants apply, and stop under ``enforce``:
+        ``write`` covers ``ingest``, and ``*`` covers everything.
+        """
+        if required in self.scopes:
+            return True
+        if enforce:
+            return False
+        if WILDCARD_SCOPE in self.scopes:
+            return True
+        return required == scopes.INGEST and scopes.WRITE in self.scopes
 
 
 def load_api_keys(auth_config: AuthConfig | None) -> list[ApiKey]:
@@ -103,10 +116,13 @@ def load_api_keys(auth_config: AuthConfig | None) -> list[ApiKey]:
 
         if isinstance(raw_scopes, (str, bytes)):
             raw_scopes = [raw_scopes]
-        scopes = tuple(str(s) for s in raw_scopes if str(s))
-        if not scopes:
-            scopes = (WILDCARD_SCOPE,)
-        keys.append(ApiKey(token=token, name=name, scopes=scopes))
+        # Not named ``scopes``: that shadows the module imported above, and a
+        # later reader adding scopes.INGEST here would get a confusing
+        # AttributeError on a tuple.
+        granted = tuple(str(s) for s in raw_scopes if str(s))
+        if not granted:
+            granted = (WILDCARD_SCOPE,)
+        keys.append(ApiKey(token=token, name=name, scopes=granted))
 
     if not keys:
         env_token = os.environ.get(ENV_KEY, "").strip()

@@ -66,7 +66,7 @@ class ScopeName(StrEnum):
     ADMIN = "admin"
     #: Matches every check. Every minted key defaults to this value.
     WILDCARD = "*"
-    #: Target. Does not exist: ingest is gated by ``write`` today.
+    #: Exists as of 0.26.0. Telemetry ingest only; never config mutation.
     INGEST = "ingest"
     #: Target. Does not exist: MCP auth is one shared static token.
     MCP_READ = "mcp:read"
@@ -74,11 +74,17 @@ class ScopeName(StrEnum):
 
 #: The scopes an unmodified checkout can actually enforce right now.
 EXISTING_SCOPES: frozenset[ScopeName] = frozenset(
-    {ScopeName.WRITE, ScopeName.READ, ScopeName.ADMIN, ScopeName.WILDCARD}
+    {
+        ScopeName.WRITE,
+        ScopeName.READ,
+        ScopeName.ADMIN,
+        ScopeName.WILDCARD,
+        ScopeName.INGEST,
+    }
 )
 
 #: The scopes Wave 1 must introduce. Asserted absent by the absence guards.
-PLANNED_SCOPES: frozenset[ScopeName] = frozenset({ScopeName.INGEST, ScopeName.MCP_READ})
+PLANNED_SCOPES: frozenset[ScopeName] = frozenset({ScopeName.MCP_READ})
 
 
 class PrincipalKind(StrEnum):

@@ -401,10 +401,18 @@ def test_planned_scopes_are_absent_from_production():
 
 
 def test_existing_scopes_really_are_used():
-    """The other half of the claim: write and admin are live scope literals."""
+    """The other half of the claim: these scopes are live, not aspirational.
+
+    ``ingest`` joined the list in 0.26.0 and is spelled differently: it is
+    enforced by a named dependency rather than a ``require_scope`` literal,
+    because the route needs the resulting Principal and not just a pass/fail.
+    Asserting the dependency's own name keeps the claim honest without
+    pretending the two gates have the same shape.
+    """
     source = "\n".join(p.read_text(encoding="utf-8") for p in _server_sources())
     assert 'require_scope("write")' in source
     assert "require_scope(ADMIN_SCOPE)" in source
+    assert "require_ingest_principal" in source
 
 
 def test_require_scope_closure_shape_is_stable():

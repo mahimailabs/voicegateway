@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, Final
 import bcrypt
 from sqlalchemy import text
 
+from voicegateway.core import scopes
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,13 +64,24 @@ class VerifiedKey:
     role: str = "tenant"
     scopes: str = "*"
 
-    def has_scope(self, required: str) -> bool:
-        """Return True if this key covers ``required``."""
-        # Lazy import to avoid core.auth -> repository -> core.auth cycle.
-        from voicegateway.core.auth import WILDCARD_SCOPE  # noqa: PLC0415
+    def has_scope(self, required: str, *, enforce: bool = False) -> bool:
+        """Return True if this key covers ``required``.
 
-        csv = [s.strip() for s in self.scopes.split(",") if s.strip()]
-        return WILDCARD_SCOPE in csv or required in csv
+        Two compatibility grants exist during the warn release and stop under
+        ``enforce``: ``write`` covers ``ingest``, so existing agent keys keep
+        posting telemetry after the scope split, and ``*`` covers everything,
+        so keys minted before 0.26.0 keep working. Both are exactly what
+        0.27.0 withdraws, which is why they are conditioned on the same flag
+        rather than left as unconditional behaviour with a comment.
+        """
+        granted = {s.strip() for s in self.scopes.split(",") if s.strip()}
+        if required in granted:
+            return True
+        if enforce:
+            return False
+        if scopes.WILDCARD in granted:
+            return True
+        return required == scopes.INGEST and scopes.WRITE in granted
 
 
 def _generate_plaintext_key() -> str:
