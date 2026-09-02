@@ -14,11 +14,12 @@ Two top-level helpers:
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from fastapi import Depends, HTTPException, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from voicegateway.core.auth import (
     ADMIN_SCOPE,
@@ -44,6 +45,24 @@ def get_gateway(request: Request) -> Gateway:
     return cast("Gateway", gw)
 
 
+async def get_session(
+    gateway: Gateway = Depends(get_gateway),
+) -> AsyncGenerator[AsyncSession, None]:
+    """Yield a database session for the duration of one request.
+
+    Delegates to :meth:`StorageService.session`, which is the only public
+    path to a session and which runs migrations before yielding. Routes
+    declare ``session: AsyncSession = Depends(get_session)`` and never touch
+    storage internals, so there is exactly one place between a handler and
+    the database for a tenant guard to sit.
+    """
+    storage = gateway.storage
+    if storage is None:
+        raise HTTPException(status_code=503, detail="cost tracking storage is disabled")
+    async with storage.session() as session:
+        yield session
+
+
 async def _verify_vk_key(
     request: Request,
     gateway: Gateway,
@@ -63,14 +82,13 @@ async def _verify_vk_key(
     if storage is None:  # pragma: no cover - callers guard storage is not None
         raise HTTPException(status_code=503, detail="cost tracking storage is disabled")
     try:
-        await storage._ensure_initialized()
-        async with storage._conn.session() as session:
+        async with storage.session() as session:
             verified = await verify_api_key(authorization, session)
         if authorize is not None:
             result = authorize(verified)
             if result is not None:
                 await result
-        async with storage._conn.session() as session:
+        async with storage.session() as session:
             await api_keys_repo.mark_used(session, verified.id)
     except AuthError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from None
@@ -217,6 +235,7 @@ __all__ = [
     "Depends",
     "Principal",
     "get_gateway",
+    "get_session",
     "require_principal",
     "require_scope",
     "resolve_read_tenant",
