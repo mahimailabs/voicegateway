@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Print skeleton authorization-matrix rows for routes the matrix is missing.
 
-Read-only. Builds the FastAPI app in-process, enumerates every ``APIRoute``,
-recovers how each one is gated by walking the resolved dependency graph, and
-emits JSON rows for any ``(method, path)`` that ``authorization_matrix.json``
-does not already cover.
+Read-only. Enumerates the canonical routers registered by the application
+builder, recovers how each route is gated by walking the resolved dependency
+graph, and emits JSON rows for any ``(method, path)`` that
+``authorization_matrix.json`` does not already cover.
 
 This exists so the bijection test in
 ``tests/server/test_telemetry_authorization_matrix.py`` never becomes a tax:
@@ -19,37 +19,24 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
-import tempfile
-
-import yaml
+from itertools import chain
 
 # Scope literal recovered from require_scope's closure. Asserted, not assumed:
 # if the helper's shape changes this fails loudly rather than mislabelling.
 _SCOPE_QUALNAME = "require_scope.<locals>._dep"
 
 
-def _build_app():
-    """Build the app over a throwaway SQLite db and a minimal config."""
-    tmp = tempfile.mkdtemp(prefix="vg-matrix-")
-    os.environ["VOICEGW_DB_PATH"] = os.path.join(tmp, "matrix.db")
-    cfg = {
-        "providers": {"openai": {"api_key": "test-key"}},
-        "models": {"stt": {}, "llm": {}, "tts": {}},
-        "projects": {},
-        "fallbacks": {"stt": [], "llm": [], "tts": []},
-        "cost_tracking": {"enabled": True},
-    }
-    cfg_path = os.path.join(tmp, "voicegw.yaml")
-    with open(cfg_path, "w") as handle:
-        yaml.dump(cfg, handle)
+def _canonical_routes():
+    """Return the routers ApplicationBuilder registers on every API app."""
+    from voicegateway.server.api.openorca.routes import router as openorca_router
+    from voicegateway.server.routes import api_router, dashboard_router, system_router
 
-    from voicegateway.core.gateway import Gateway
-    from voicegateway.server import build_app
-
-    return build_app(
-        Gateway(config_path=cfg_path), enable_mcp_sse=False, enable_dashboard=False
+    return chain(
+        system_router.routes,
+        api_router.routes,
+        dashboard_router.routes,
+        openorca_router.routes,
     )
 
 
@@ -80,15 +67,35 @@ def classify(fn) -> str | None:
     return None
 
 
-def inspect_routes() -> list[dict]:
-    """Return one dict per ``(method, path)`` with its recovered gating."""
+def _iter_api_routes(routes):
+    """Yield ``(resolved_path, APIRoute)``, flattening FastAPI's wrappers.
+
+    Mirrors ``iter_api_routes`` in tests/server/_telemetry_harness.py, and for
+    the same reason: FastAPI <= 0.136 leaves included routes on the parent as
+    real ``APIRoute`` copies, while 0.141 leaves one lazy wrapper per
+    inclusion that exposes them through ``effective_route_contexts()``.
+    Recognising only ``APIRoute`` collapses this project's 89-route inventory
+    to 4 under 0.141, which would make this generator print a skeleton for
+    every route the matrix already covers.
+    """
     from fastapi.routing import APIRoute
 
-    app = _build_app()
+    for route in routes:
+        if isinstance(route, APIRoute):
+            yield route.path, route
+        elif hasattr(route, "effective_route_contexts"):
+            for context in route.effective_route_contexts():
+                original = getattr(context, "original_route", None)
+                if isinstance(original, APIRoute):
+                    yield context.path, original
+        elif hasattr(route, "routes"):
+            yield from _iter_api_routes(route.routes)
+
+
+def inspect_routes() -> list[dict]:
+    """Return one dict per ``(method, path)`` with its recovered gating."""
     rows: list[dict] = []
-    for route in app.routes:
-        if not isinstance(route, APIRoute):
-            continue
+    for path, route in _iter_api_routes(_canonical_routes()):
         calls: list = []
         _walk(route.dependant, calls)
         marks = sorted({m for m in (classify(f) for f in calls) if m})
@@ -96,12 +103,12 @@ def inspect_routes() -> list[dict]:
         # the pair rather than silently picking the first.
         auth = "+".join(marks) if marks else "open"
         params = {p.name for p in route.dependant.query_params}
-        takes_project = "project" in params or "{project_id}" in route.path
+        takes_project = "project" in params or "{project_id}" in path
         for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
             rows.append(
                 {
                     "method": method,
-                    "path": route.path,
+                    "path": path,
                     "auth": auth,
                     "takes_project": takes_project,
                 }

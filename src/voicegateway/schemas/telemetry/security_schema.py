@@ -189,7 +189,26 @@ class PlannedRoute(BaseModel):
     wave: int = Field(ge=1)
     #: The scope this route must require the day it is written.
     required_scope: ScopeName
+    #: Where the tenant on a written row must come from. ``server_derived``
+    #: means the authenticated principal wins and any tenant in the payload is
+    #: discarded, never merged. This is a field rather than a sentence in a
+    #: note because VG-SEC-001 is what a prose-only version of this rule looks
+    #: like after it has been ignored once: the guarantee was written down in
+    #: docs/architecture/security.md and the code did the opposite.
+    tenant_source: Literal["server_derived", "not_applicable"]
     note: str = ""
+
+    @model_validator(mode="after")
+    def _writes_must_derive_their_tenant(self) -> PlannedRoute:
+        """Any planned route that ingests rows must derive its own tenant."""
+        if self.required_scope is ScopeName.INGEST and (
+            self.tenant_source != "server_derived"
+        ):
+            raise ValueError(
+                f"{self.method} {self.path}: an ingest route writes rows, so "
+                "tenant_source must be 'server_derived' (see VG-SEC-015)"
+            )
+        return self
 
     @property
     def key(self) -> tuple[str, str]:

@@ -49,9 +49,21 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Install the project
-        run: |
-          uv venv --clear --seed
-          uv pip install -e ".[dev,dashboard]"
+        # `uv sync`, matching ci.yml. This job used to `uv pip install -e`,
+        # which resolves fresh against the pyproject ranges instead of the
+        # lock, so it silently tested a different dependency tree from every
+        # other job. ci.yml's install step carries the long-form rationale and
+        # the voice-prices war story that produced that rule; this job simply
+        # predates it.
+        #
+        # The drift was not theoretical here either. While ci.yml's matrix ran
+        # fastapi 0.136.1 from the lock, this job resolved 0.141.1, which
+        # replaced the included-route copies `include_router` used to leave on
+        # the parent router with a lazy wrapper. The authorization matrix's
+        # route walk saw 4 routes instead of 89 and this job failed on every
+        # commit while the test matrix stayed green. The walk now handles both
+        # shapes, but the jobs should still agree on what they are testing.
+        run: uv sync --extra dev --extra dashboard
 
       - name: Run tests with coverage.py
         run: |

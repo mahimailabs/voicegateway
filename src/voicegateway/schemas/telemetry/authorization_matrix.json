@@ -800,7 +800,8 @@
       "gap_id": "VG-SEC-003",
       "wave": 1,
       "required_scope": "ingest",
-      "note": "OTLP trace receiver. Namespaced under /v1/telemetry/ deliberately: the conventional OTLP paths /v1/metrics and /v1/logs already exist here as GET reads, so a bare OTLP mount would differ from them by method alone."
+      "note": "OTLP trace receiver. Namespaced under /v1/telemetry/ deliberately: the conventional OTLP paths /v1/metrics and /v1/logs already exist here as GET reads, so a bare OTLP mount would differ from them by method alone. Tenant must come from the verified principal, never from correlation.tenant_id in the payload (VG-SEC-015).",
+      "tenant_source": "server_derived"
     },
     {
       "method": "POST",
@@ -808,7 +809,8 @@
       "gap_id": "VG-SEC-003",
       "wave": 1,
       "required_scope": "ingest",
-      "note": "OTLP metric receiver. See the traces row on the path collision."
+      "note": "OTLP metric receiver. See the traces row on the path collision. Tenant must come from the verified principal, never from correlation.tenant_id in the payload (VG-SEC-015).",
+      "tenant_source": "server_derived"
     },
     {
       "method": "POST",
@@ -816,7 +818,8 @@
       "gap_id": "VG-SEC-003",
       "wave": 1,
       "required_scope": "ingest",
-      "note": "OTLP log receiver. See the traces row on the path collision."
+      "note": "OTLP log receiver. See the traces row on the path collision. Tenant must come from the verified principal, never from correlation.tenant_id in the payload (VG-SEC-015).",
+      "tenant_source": "server_derived"
     },
     {
       "method": "GET",
@@ -824,7 +827,8 @@
       "gap_id": "VG-SEC-013",
       "wave": 3,
       "required_scope": "admin",
-      "note": "Read-side audit trail of SensitiveAccessEvent. Nothing audits reads today."
+      "note": "Read-side audit trail of SensitiveAccessEvent. Nothing audits reads today.",
+      "tenant_source": "not_applicable"
     }
   ]
 }

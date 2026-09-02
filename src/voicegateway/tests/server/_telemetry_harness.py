@@ -14,10 +14,16 @@ harness is safe to run alongside the rest of the suite.
 
 from __future__ import annotations
 
+import json
 import os
+import re
+import subprocess
+import sys
 import tempfile
+from collections.abc import Iterator
 
 import yaml
+from fastapi.routing import APIRoute
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
@@ -93,6 +99,9 @@ async def _make_key(gateway, *, tenant_id=None, role="tenant"):
 
 _SCOPE_QUALNAME = "require_scope.<locals>._dep"
 
+#: ``{name:converter}`` -> ``{name}``, matching OpenAPI's normalisation.
+_CONVERTER_RE = re.compile(r":[^{}]+\}")
+
 
 def _collect_dependencies(dependant, out: list) -> None:
     """Collect every callable in the resolved dependency tree."""
@@ -119,19 +128,128 @@ def classify_dependency(fn) -> str | None:
     return None
 
 
+def iter_api_routes(routes) -> Iterator[tuple[str, APIRoute]]:
+    """Yield ``(resolved_path, APIRoute)``, flattening FastAPI's wrappers.
+
+    FastAPI changed how ``include_router`` stores routes, and this project's
+    CI runs both shapes, so both have to work:
+
+    - **<= 0.136** copies each included route onto the parent as a real
+      ``APIRoute`` with its full path already resolved.
+    - **0.141** stores one lazy ``_IncludedRouter`` per inclusion instead. It
+      is not an ``APIRoute``, and it has no ``path``, ``methods`` or
+      ``dependant``, so a check for any of those skips it and everything
+      underneath it. The resolved routes come from
+      ``effective_route_contexts()``, whose entries carry the fully-prefixed
+      ``path`` alongside the ``original_route``.
+
+    This is why Test Coverage failed while the test matrix passed: the two
+    jobs resolved different FastAPI versions, and under 0.141 the inventory
+    collapsed to the four routes declared by decorator rather than by
+    inclusion. A route this function fails to yield vanishes from the
+    authorization matrix, so breadth here is deliberate.
+    """
+    for route in routes:
+        if isinstance(route, APIRoute):
+            yield route.path, route
+        elif hasattr(route, "effective_route_contexts"):
+            for context in route.effective_route_contexts():
+                original = getattr(context, "original_route", None)
+                if isinstance(original, APIRoute):
+                    yield context.path, original
+        elif hasattr(route, "routes"):
+            yield from iter_api_routes(route.routes)
+
+
 def live_route_auth(app) -> dict[tuple[str, str], str]:
     """Map every live ``(method, path)`` to its recovered gating."""
     found: dict[tuple[str, str], str] = {}
-    for route in app.routes:
-        # FastAPI can expose a compatible route subclass from a different
-        # import boundary. The API contract we need is structural: a route
-        # with a path, methods, and a resolved dependency graph.
-        if not all(hasattr(route, field) for field in ("path", "methods", "dependant")):
-            continue
+    for path, route in iter_api_routes(app.routes):
         calls: list = []
         _collect_dependencies(route.dependant, calls)
         marks = sorted({m for m in (classify_dependency(f) for f in calls) if m})
         auth = "+".join(marks) if marks else "open"
         for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
-            found[(method, route.path)] = auth
+            found[(method, path)] = auth
     return found
+
+
+def normalize_route_key(key: tuple[str, str]) -> tuple[str, str]:
+    """Strip a path converter so a route key can be compared to OpenAPI."""
+    method, path = key
+    return (method, _CONVERTER_RE.sub("}", path))
+
+
+def openapi_route_keys(app) -> set[tuple[str, str]]:
+    """Return ``(method, path)`` for every route in the OpenAPI schema.
+
+    A version-stable second opinion on :func:`iter_api_routes`. The schema is
+    public API and survives the internal restructuring above, so comparing the
+    two catches the next such change as a named failure rather than as a
+    silently short inventory. Path converters are stripped because the schema
+    normalises ``{id:path}`` to ``{id}``.
+    """
+    schema = app.openapi()
+    return {
+        (method.upper(), _CONVERTER_RE.sub("}", path))
+        for path, operations in schema.get("paths", {}).items()
+        for method in operations
+        if method.upper() not in {"HEAD", "OPTIONS"}
+    }
+
+
+def canonical_route_auth() -> dict[tuple[str, str], str]:
+    """Map the route inventory the application builder includes.
+
+    The route aggregators are module-level singletons. Other test modules may
+    reconfigure them, so the inventory is taken in a clean child interpreter
+    rather than trusting the parent test process's mutable state.
+
+    The child reads the four routers ApplicationBuilder registers. Its
+    app-level ``routes`` inventory is not portable: on Linux under coverage it
+    can be empty despite those routers containing every endpoint. Main attaches
+    no dependencies at ``include_router`` time, so these resolved router routes
+    are the production inventory today. If that changes, make the dependency
+    explicit on the relevant router rather than relying on app-level state.
+    """
+    script = """
+import json
+from itertools import chain
+
+from voicegateway.server.api.openorca.routes import router as openorca_router
+from voicegateway.server.routes import api_router, dashboard_router, system_router
+from voicegateway.tests.server._telemetry_harness import live_route_auth
+
+inventory = type(
+    "_RouteInventory",
+    (),
+    {
+        "routes": list(
+            chain(
+                system_router.routes,
+                api_router.routes,
+                dashboard_router.routes,
+                openorca_router.routes,
+            )
+        )
+    },
+)()
+auth = live_route_auth(inventory)
+print(json.dumps([[method, path, value] for (method, path), value in auth.items()]))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if result.returncode != 0:
+        # check=True would raise CalledProcessError with the child's stderr
+        # captured and unshown, at collection time, which reads as "the module
+        # failed to import" and hides the cause. Surface it instead.
+        raise RuntimeError(
+            "route inventory child process failed "
+            f"(exit {result.returncode}):\n{result.stderr.strip()}"
+        )
+    rows = json.loads(result.stdout)
+    return {(method, path): auth for method, path, auth in rows}
