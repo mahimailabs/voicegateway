@@ -188,17 +188,25 @@ async def test_two_keys_with_same_tenant_independent(db) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_default_key_is_tenant_role_wildcard_scope(db) -> None:
-    """A key created without explicit role/scopes gets 'tenant' + '*'."""
+async def test_key_defaults_to_tenant_role_and_no_wildcard(db) -> None:
+    """Role still defaults to 'tenant'. Scopes no longer default at all.
+
+    This test used to assert the key came back with ``"*"``. That default was
+    VG-SEC-006: it made every scope check pass. Role keeps its default because
+    'tenant' is the safe one; scopes has none because there is no safe guess.
+    """
     created = await vk.create_api_key(
         db, name="default-key", scopes="read,write,ingest,admin"
     )
     verified = await vk.verify(db, created.plaintext)
     assert verified is not None
     assert verified.role == "tenant"
-    assert verified.scopes == "*"
+    assert verified.scopes == "admin,ingest,read,write"
     assert verified.has_scope("write") is True
-    assert verified.has_scope("admin") is True  # wildcard covers everything
+    assert verified.has_scope("admin") is True
+    # Not by wildcard: each of those is named. A scope nobody asked for is
+    # still refused, which is the whole point of removing the default.
+    assert verified.has_scope("mcp:read") is False
 
 
 async def test_scoped_key_denies_unlisted_scope(db) -> None:
