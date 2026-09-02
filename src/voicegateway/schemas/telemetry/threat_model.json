@@ -45,11 +45,13 @@
     "gap_id": "VG-SEC-005",
     "threat": "VG-THREAT-002",
     "title": "Absence of a credential resolves to a full admin principal",
-    "description": "When no API keys are configured, require_principal returns _OPERATOR, an admin principal with no tenant binding. This is the deliberate self-hosted default and tests/server/test_auth.py pins it, but it means the difference between a locked deployment and an open one is a config block rather than a code path.",
-    "status": "gap",
-    "wave": 2,
+    "description": "When no API keys are configured, require_principal returns _OPERATOR, an admin principal with no tenant binding. This is the deliberate self-hosted default and tests/server/test_auth.py pins it, but it means the difference between a locked deployment and an open one is a config block rather than a code path. CLOSED in 0.26.0: with no keys configured and no credential, require_principal refuses under enforce and serves with a vg.auth.would_refuse warning under warn. Only auth.local_development, which is refused alongside production-shaped config, makes it silent. Moved to wave 1 to match the roadmap, whose first Wave 1 bullet is 'require authenticated principals outside explicit local-development mode'.",
+    "status": "closed",
+    "wave": 1,
     "evidence": "src/voicegateway/server/api/_deps.py:146",
-    "fixture": null
+    "fixture": null,
+    "closed_in": "0.26.0",
+    "closed_by": "1ec564f7"
   },
   {
     "gap_id": "VG-SEC-006",

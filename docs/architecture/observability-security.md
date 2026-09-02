@@ -96,10 +96,16 @@ reads. `tests/server/test_auth.py::test_reads_open_regardless_of_auth` pins
 this as intended for the current slice, so that pin and this gap have to be
 closed in the same change.
 
-**VG-SEC-005** (gap, Wave 2): with no keys configured, the read path resolves
-a full admin principal with no tenant binding. This is the deliberate
-self-hosted default, but it means the difference between a locked deployment
-and an open one is a config block rather than a code path.
+**VG-SEC-005** (closed in 0.26.0) was the soft default: with no keys
+configured, the read path resolved a full admin principal with no tenant
+binding, so the difference between a locked deployment and an open one was
+a config block rather than a code path. It now runs through `decide()`,
+which refuses under `enforce`, serves with a `vg.auth.would_refuse` warning
+under `warn`, and stays silent only under the explicit
+`auth.local_development` flag. That flag is itself refused at startup in
+the company of configured keys, a non-loopback bind, or enforce mode, and
+the check runs in `build_app` as well as the serve CLI so the container
+entry point cannot bypass it.
 
 The read side is not uniformly weak, and the contract records what already
 works. A tenant-scoped key asking for another tenant's rows by query param is
