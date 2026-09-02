@@ -40,7 +40,7 @@ class AuthConfigError(ValueError):
 _LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
-def validate_auth_startup(auth: AuthConfig, bind_host: str) -> None:
+def validate_auth_startup(auth: AuthConfig, bind_host: str | None = None) -> None:
     """Refuse to start when ``local_development`` meets production shape.
 
     Unauthenticated mode has to be explicit, and explicit is not enough on its
@@ -50,6 +50,12 @@ def validate_auth_startup(auth: AuthConfig, bind_host: str) -> None:
     non-loopback bind means someone else can reach it, and ``enforce`` asks
     for the opposite behaviour in the same breath.
 
+    ``bind_host`` is optional so that callers which have not resolved a host
+    can still run the two config-only checks. ``build_app`` does exactly that:
+    it is reachable from more than one entry point, and a guard that lived
+    only in the serve CLI would refuse an unauthenticated public deployment on
+    a laptop while waving the container through.
+
     Every conflict is collected before raising, because finding them one
     restart at a time is a bad afternoon.
     """
@@ -58,7 +64,7 @@ def validate_auth_startup(auth: AuthConfig, bind_host: str) -> None:
     conflicts: list[str] = []
     if auth.api_keys:
         conflicts.append(f"auth.api_keys has {len(auth.api_keys)} entries")
-    if bind_host not in _LOOPBACK:
+    if bind_host is not None and bind_host not in _LOOPBACK:
         conflicts.append(f"bind host {bind_host!r} is not loopback")
     if auth.enforcement == "enforce":
         conflicts.append("auth.enforcement is 'enforce'")

@@ -129,3 +129,88 @@ def test_serve_refuses_to_start_on_a_contradictory_config(tmp_path, monkeypatch)
     assert "local_development" in plain
     assert "api_keys" in plain
     assert "not loopback" in plain
+
+
+# --------------------------------------------------------------------------
+# Defense in depth: serve is not the only door
+# --------------------------------------------------------------------------
+
+
+def test_bind_host_is_optional_so_hostless_callers_can_still_validate():
+    """build_app has no bind host, but can still catch the config conflicts."""
+    from voicegateway.schemas.config_schema import ApiKeyEntry as Entry
+
+    # Loopback check is skipped, the other two still apply.
+    validate_auth_startup(AuthConfig(local_development=True), bind_host=None)
+    with pytest.raises(AuthConfigError, match="api_keys"):
+        validate_auth_startup(
+            AuthConfig(
+                local_development=True,
+                api_keys=[Entry(token="t", name="n", scopes=["read"])],
+            ),
+            bind_host=None,
+        )
+    with pytest.raises(AuthConfigError, match="enforcement"):
+        validate_auth_startup(
+            AuthConfig(local_development=True, enforcement="enforce"), bind_host=None
+        )
+
+
+def test_build_app_refuses_a_contradictory_config(tmp_path, monkeypatch):
+    """serve is not the only door.
+
+    ``python -m voicegateway.server.main`` is what the container runs, and it
+    binds 0.0.0.0 by default. A guard that only lives in the serve CLI would
+    refuse an unauthenticated public deployment on a laptop and wave it
+    through in production, which is the wrong way round.
+    """
+    import yaml
+
+    from voicegateway.core.gateway import Gateway
+    from voicegateway.server import build_app
+
+    config = tmp_path / "voicegw.yaml"
+    config.write_text(
+        yaml.dump(
+            {
+                "providers": {"openai": {"api_key": "k"}},
+                "models": {"stt": {}, "llm": {}, "tts": {}},
+                "projects": {},
+                "fallbacks": {"stt": [], "llm": [], "tts": []},
+                "auth": {
+                    "local_development": True,
+                    "api_keys": [{"token": "t", "name": "n", "scopes": ["read"]}],
+                },
+            }
+        )
+    )
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "build.db"))
+
+    gateway = Gateway(config_path=str(config))
+    with pytest.raises(AuthConfigError, match="api_keys"):
+        build_app(gateway, enable_mcp_sse=False, enable_dashboard=False)
+
+
+def test_build_app_accepts_a_coherent_local_config(tmp_path, monkeypatch):
+    """A genuinely local config must still build, or dev is broken."""
+    import yaml
+
+    from voicegateway.core.gateway import Gateway
+    from voicegateway.server import build_app
+
+    config = tmp_path / "voicegw.yaml"
+    config.write_text(
+        yaml.dump(
+            {
+                "providers": {"openai": {"api_key": "k"}},
+                "models": {"stt": {}, "llm": {}, "tts": {}},
+                "projects": {},
+                "fallbacks": {"stt": [], "llm": [], "tts": []},
+                "auth": {"local_development": True},
+            }
+        )
+    )
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "build_ok.db"))
+
+    gateway = Gateway(config_path=str(config))
+    assert build_app(gateway, enable_mcp_sse=False, enable_dashboard=False) is not None

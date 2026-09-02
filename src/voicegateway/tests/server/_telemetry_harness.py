@@ -34,7 +34,12 @@ from voicegateway.server import build_app
 class _Harness:
     """Builds an app + Gateway over a fresh SQLite db, yields a client maker."""
 
-    def __init__(self) -> None:
+    def __init__(self, config_overrides: dict | None = None) -> None:
+        """Build the app. ``config_overrides`` merges into the yaml top level.
+
+        Used to vary the ``auth`` block per test (enforcement mode, local
+        development, configured keys) without a second harness.
+        """
         self._tmp = tempfile.TemporaryDirectory()
         tmp = self._tmp.name
         # See the module docstring: restoring this is what keeps the harness
@@ -48,6 +53,8 @@ class _Harness:
             "fallbacks": {"stt": [], "llm": [], "tts": []},
             "cost_tracking": {"enabled": True},
         }
+        if config_overrides:
+            cfg.update(config_overrides)
         cfg_path = os.path.join(tmp, "voicegw.yaml")
         with open(cfg_path, "w") as handle:
             yaml.dump(cfg, handle)

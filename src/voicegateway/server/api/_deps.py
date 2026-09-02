@@ -31,6 +31,7 @@ from voicegateway.core.auth import (
 from voicegateway.inference.session.context import set_tenant
 from voicegateway.repository import api_keys_repository as api_keys_repo
 from voicegateway.schemas.telemetry.security_schema import PrincipalKind
+from voicegateway.server.api._authz import Decision, decide
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -208,6 +209,31 @@ async def require_principal(request: Request) -> Principal:
         check_request(authorization, READ_SCOPE, api_keys)
     except AuthError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from None
+
+    if api_keys:
+        # A configured static key matched, or check_request would have raised.
+        # The operator who writes the config is the operator.
+        return Principal(
+            tenant_id=None,
+            is_admin=True,
+            api_key_id=None,
+            kind=PrincipalKind.STATIC_KEY,
+        )
+
+    # No keys configured and no credential presented. This is VG-SEC-005: the
+    # difference between a locked deployment and an open one used to be a
+    # config block rather than a code path, and the code path silently handed
+    # out a full admin.
+    decision = decide(
+        would_refuse=True,
+        reason="no credential and no api_keys configured",
+        auth=gateway.config.auth,
+        request=request,
+        principal_kind=PrincipalKind.OPERATOR,
+        key_id=None,
+    )
+    if decision is Decision.REFUSE:
+        raise HTTPException(status_code=401, detail="Authentication required")
     return _OPERATOR
 
 

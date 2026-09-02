@@ -20,7 +20,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from voicegateway._version import __version__
 from voicegateway.core.app_wiring import attach_layered_stack
-from voicegateway.core.auth import load_api_keys, resolve_cors_origins
+from voicegateway.core.auth import (
+    load_api_keys,
+    resolve_cors_origins,
+    validate_auth_startup,
+)
 from voicegateway.core.events import lifespan
 from voicegateway.server.mcp.transport import mount_sse
 from voicegateway.server.routes import api_router, dashboard_router, system_router
@@ -84,6 +88,11 @@ class ApplicationBuilder:
         attach_layered_stack(self.app, self.gateway)
 
     def _configure_app_state(self) -> None:
+        # Defense in depth: build_app has more than one caller, so the auth
+        # guard cannot live only in the serve CLI. The bind host is not known
+        # here, so this catches the two config-only conflicts; the callers
+        # that do resolve a host pass it and get the loopback check too.
+        validate_auth_startup(self.gateway.config.auth)
         # ``server.api._deps.get_gateway`` and ``require_scope`` read these
         # off app.state instead of closing over them, so each request can
         # resolve the gateway and api_keys without a per-call lookup.
@@ -175,6 +184,11 @@ def main() -> None:
     # bakes VOICEGW_CONFIG=/data/voicegw.yaml and creates no such file, so
     # requiring it crash-looped every host that mounts nothing there.
     gw = Gateway(config_path=config_path, require_config=False)
+    # This is the container's entry point and it binds 0.0.0.0 by default,
+    # so it is the path where an unauthenticated public deployment would
+    # actually happen. build_app checks the config-only conflicts; passing
+    # the resolved host here adds the loopback check.
+    validate_auth_startup(gw.config.auth, bind_host=host)
     app = build_app(gw)
 
     logger.info("Starting VoiceGateway server on %s:%d", host, port)
