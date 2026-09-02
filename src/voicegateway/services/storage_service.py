@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from voicegateway.core.config import GatewayConfig
 from voicegateway.core.database import Database, DatabaseAheadOfCode
@@ -73,6 +77,24 @@ class StorageService:
                 # of the process. Warn once, here, instead of per write.
                 _logger.warning("%s Writing anyway; the schema is a superset.", exc)
             self._initialized = True
+
+    @asynccontextmanager
+    async def session(self) -> AsyncGenerator[AsyncSession, None]:
+        """The one public way to a database session.
+
+        Runs migrations once, then yields a session with rollback-on-error
+        and always-close from :meth:`Database.session`. Routes reach this
+        through the ``get_session`` dependency and never touch ``_conn`` or
+        ``_ensure_initialized``; a structural test enforces that.
+
+        The pairing matters. Every caller that reached in previously had to
+        remember to call ``_ensure_initialized()`` first, and forgetting it
+        was a latent "no such table" on a fresh database. Here it cannot be
+        forgotten, because there is no way to get a session without it.
+        """
+        await self._ensure_initialized()
+        async with self._conn.session() as session:
+            yield session
 
     async def aclose(self) -> None:
         """Dispose the underlying engine."""
