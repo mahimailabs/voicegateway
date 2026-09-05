@@ -7,7 +7,7 @@ VoiceGateway ships a built-in [Model Context Protocol](https://modelcontextproto
 
 ## Tool surface
 
-The server exposes 25 tools across five categories. Ten are visible by default; the rest need `VOICEGW_MCP_ADMIN=1` set on the server process.
+The server exposes 26 tools across six categories. Ten are visible by default; the rest need `VOICEGW_MCP_ADMIN=1` set on the server process.
 
 The default set is the framework-agnostic surface: reads (health, costs, latency, logs, models, projects) plus project and rate-card writes. The admin set is the legacy provider-config surface (`add_provider`, `test_provider`, the per-project `vg_*` key tools) plus every destructive delete. It stays admin-gated because VoiceGateway no longer constructs a provider class to route a request: `attach()`/`guard()` meter the native STT/LLM/TTS instance you pass in, by `model_id`, and never touch these classes. What still runs in production is `health_check()` (reached here through `test_provider` / `vg_test_provider_key`, and also by `voicegw doctor` and `POST /v1/providers/{id}/test`).
 
@@ -17,6 +17,7 @@ The default set is the framework-agnostic surface: reads (health, costs, latency
 | Models | `list_models` | `register_model`, `delete_model` |
 | Projects | `list_projects`, `get_project`, `create_project` | `delete_project` |
 | Rate card | `get_rate_card`, `set_rate_card_override` | `delete_rate_card_override` |
+| Exact accounting | none | `get_accounting_status` |
 | Providers | none | `list_providers`, `get_provider`, `test_provider`, `add_provider`, `delete_provider`, `vg_add_provider`, `vg_remove_provider`, `vg_list_providers`, `vg_set_provider_key`, `vg_test_provider_key` |
 
 Every `delete_*` tool uses a two-phase confirmation: call it with `confirm=false` (the default) to get a `CONFIRMATION_REQUIRED` error carrying an impact preview, then call again with `confirm=true`.
