@@ -118,3 +118,53 @@ def test_missing_is_distinct_from_zero() -> None:
     with pytest.raises(ValidationError):
         Quantity(dimension="requests", value="0", status="missing")
     assert Quantity(dimension="requests", value="0", status="measured").value == "0"
+
+
+@pytest.mark.parametrize(
+    ("dimension", "unit", "quantity"),
+    [
+        (PricingDimension.TEXT_INPUT, Unit.TOKEN, "1"),
+        (PricingDimension.TEXT_OUTPUT, Unit.TOKEN, "1"),
+        (PricingDimension.CACHE_READ, Unit.TOKEN, "1"),
+        (PricingDimension.CACHE_WRITE, Unit.TOKEN, "1"),
+        (PricingDimension.REALTIME_AUDIO_INPUT, Unit.TOKEN, "1"),
+        (PricingDimension.REALTIME_AUDIO_OUTPUT, Unit.TOKEN, "1"),
+        (PricingDimension.REALTIME_AUDIO_CACHE, Unit.TOKEN, "1"),
+        (PricingDimension.CHARACTERS, Unit.CHARACTER, "1"),
+        (PricingDimension.AUDIO_SECONDS, Unit.SECOND, "1.000000001"),
+        (PricingDimension.REQUESTS, Unit.REQUEST, "1"),
+    ],
+)
+def test_all_dimensions_have_exact_fixed_units(dimension, unit, quantity) -> None:
+    rate = DimensionRate(dimension=dimension, unit=unit, rate="0.000000000001")
+    rates = [rate]
+    quantities = [Quantity(dimension=dimension, value=quantity, status="measured")]
+    if dimension in {PricingDimension.CACHE_READ, PricingDimension.CACHE_WRITE}:
+        rates.append(
+            DimensionRate(
+                dimension=PricingDimension.TEXT_INPUT, unit=Unit.TOKEN, rate="0"
+            )
+        )
+        quantities.append(
+            Quantity(
+                dimension=PricingDimension.TEXT_INPUT, value=quantity, status="measured"
+            )
+        )
+    envelope = usage(quantities=tuple(quantities))
+    price = PricingRevisionCreate(
+        revision_id="dimension-v1",
+        side="selling",
+        scope={"offering": "provider/model"},
+        rates=tuple(rates),
+        unsupported_dimensions=tuple(
+            set(PricingDimension) - {item.dimension for item in rates}
+        ),
+    )
+    total, complete = rate_usage(envelope, price)
+    assert Decimal(total or "0") >= 0
+    assert complete
+
+
+def test_non_audio_quantities_must_be_integer() -> None:
+    with pytest.raises(ValidationError, match="integers"):
+        Quantity(dimension="requests", value="0.5", status="measured")

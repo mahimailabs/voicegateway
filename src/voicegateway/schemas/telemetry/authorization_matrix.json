@@ -92,7 +92,7 @@
       "tenant_scoped": true,
       "gap_id": "VG-SEC-002",
       "wave": 1,
-      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
     },
     {
       "method": "GET",
@@ -102,7 +102,7 @@
       "tenant_scoped": true,
       "gap_id": "VG-SEC-002",
       "wave": 1,
-      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
     },
     {
       "method": "GET",
@@ -160,7 +160,7 @@
       "tenant_scoped": true,
       "gap_id": "VG-SEC-002",
       "wave": 1,
-      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
     },
     {
       "method": "GET",
@@ -170,7 +170,7 @@
       "tenant_scoped": false,
       "gap_id": "VG-SEC-002",
       "wave": 1,
-      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
     },
     {
       "method": "GET",
@@ -180,7 +180,7 @@
       "tenant_scoped": true,
       "gap_id": "VG-SEC-002",
       "wave": 1,
-      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
     },
     {
       "method": "GET",
@@ -236,7 +236,7 @@
       "tenant_scoped": true,
       "gap_id": "VG-SEC-002",
       "wave": 1,
-      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
     },
     {
       "method": "POST",
@@ -246,7 +246,7 @@
       "tenant_scoped": true,
       "gap_id": "VG-SEC-002",
       "wave": 1,
-      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
     },
     {
       "method": "POST",
@@ -256,7 +256,7 @@
       "tenant_scoped": true,
       "gap_id": "VG-SEC-002",
       "wave": 1,
-      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
     },
     {
       "method": "GET",
@@ -282,7 +282,7 @@
       "tenant_scoped": true,
       "gap_id": "VG-SEC-002",
       "wave": 1,
-      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
     },
     {
       "method": "GET",
@@ -350,7 +350,7 @@
       "tenant_scoped": true,
       "gap_id": "VG-SEC-002",
       "wave": 1,
-      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
     },
     {
       "method": "GET",
@@ -676,7 +676,7 @@
       "tenant_scoped": true,
       "gap_id": "VG-SEC-002",
       "wave": 1,
-      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
     },
     {
       "method": "GET",
@@ -696,7 +696,7 @@
       "tenant_scoped": true,
       "gap_id": "VG-SEC-002",
       "wave": 1,
-      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
     },
     {
       "method": "GET",
@@ -764,7 +764,7 @@
       "tenant_scoped": true,
       "gap_id": "VG-SEC-002",
       "wave": 1,
-      "note": "Tenant is enforced; the project identifier is not authorized against the caller. No project column exists on api_keys."
+      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
     },
     {
       "method": "GET",
@@ -783,6 +783,78 @@
       "gap_id": "VG-SEC-004",
       "wave": 1,
       "note": "Answers an unauthenticated caller regardless of configured keys."
+    },
+    {
+      "method": "GET",
+      "path": "/api/accounting",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant and optional project scope are derived from the authenticated principal; only selling totals are returned."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounting/capabilities",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": false,
+      "note": "Static capability metadata contains no tenant data."
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounting/ownership",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Operator-only ownership mutation; the target tenant is resolved from the authenticated principal or explicit operator filter."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounting/prepare",
+      "auth": "scope:ingest",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant is server-derived and project allowlists are enforced before preparing a binding."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounting/report",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant and project filters are authorized; acquisition and margin require an operator principal."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounting/revisions",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Operator-only immutable revision creation."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounting/revisions/{side}/activate",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Operator-only scoped revision activation."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounting/revisions/{side}/{revision_id}",
+      "auth": "principal",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Acquisition content requires an operator; tenant selling reads remain tenant-scoped."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounting/usage",
+      "auth": "scope:ingest",
+      "status": "enforced",
+      "tenant_scoped": true,
+      "note": "Tenant is always server-derived and project allowlists are enforced for every envelope."
     }
   ],
   "planned_routes": [

@@ -17,6 +17,7 @@ class ApiKeyCreate(BaseModel):
     scopes: str = Field(min_length=1)
     tenant_id: str | None = None
     issued_by: str | None = None
+    project_ids: tuple[str, ...] | None = None
 
 
 class ApiKeyResponse(BaseModel):
@@ -32,6 +33,7 @@ class ApiKeyResponse(BaseModel):
     issued_at: datetime
     last_used_at: datetime | None = None
     revoked_at: datetime | None = None
+    project_ids: str | None = None
 
 
 class CreatedApiKey(BaseModel):

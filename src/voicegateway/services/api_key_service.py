@@ -35,6 +35,7 @@ class VerifiedKey:
     id: int
     tenant_id: str | None
     name: str
+    project_ids: str | None = None
 
 
 def _generate_plaintext_key() -> str:
@@ -78,6 +79,7 @@ class ApiKeyService(BaseService[ApiKey]):
         scopes: str,
         tenant_id: str | None = None,
         issued_by: str | None = None,
+        project_ids: str | None = None,
     ) -> CreatedKey:
         """Mint a new virtual key. The plaintext is returned exactly once.
 
@@ -98,6 +100,7 @@ class ApiKeyService(BaseService[ApiKey]):
             scopes=granted,
             tenant_id=tenant_id,
             issued_by=issued_by,
+            project_ids=project_ids,
         )
         persisted = await self._repository.create(row)
         return CreatedKey(plaintext=plaintext, row=persisted)
@@ -116,7 +119,12 @@ class ApiKeyService(BaseService[ApiKey]):
                 continue
             if _check(plaintext, row.key_hash):
                 assert row.id is not None
-                return VerifiedKey(id=row.id, tenant_id=row.tenant_id, name=row.name)
+                return VerifiedKey(
+                    id=row.id,
+                    tenant_id=row.tenant_id,
+                    name=row.name,
+                    project_ids=row.project_ids,
+                )
         return None
 
     async def mark_used(self, key_id: int) -> None:

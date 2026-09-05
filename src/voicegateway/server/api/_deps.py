@@ -214,6 +214,11 @@ async def require_principal(request: Request) -> Principal:
             tenant_id=verified.tenant_id,
             is_admin=(verified.role == ADMIN_SCOPE),
             api_key_id=verified.id,
+            project_ids=(
+                frozenset(x for x in (verified.project_ids or "").split(",") if x)
+                if verified.project_ids is not None
+                else None
+            ),
             kind=(
                 PrincipalKind.ADMIN_KEY
                 if verified.role == ADMIN_SCOPE
@@ -296,6 +301,11 @@ async def require_ingest_principal(request: Request) -> Principal:
             tenant_id=verified.tenant_id,
             is_admin=(verified.role == ADMIN_SCOPE),
             api_key_id=verified.id,
+            project_ids=(
+                frozenset(x for x in (verified.project_ids or "").split(",") if x)
+                if verified.project_ids is not None
+                else None
+            ),
             kind=(
                 PrincipalKind.ADMIN_KEY
                 if verified.role == ADMIN_SCOPE

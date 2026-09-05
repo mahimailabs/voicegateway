@@ -247,6 +247,8 @@ def test_ingest_scope_covers_every_telemetry_write(matrix):
         "/v1/ingest/dead-air",
         "/v1/agents/heartbeat",
         "/v1/calls/observations",
+        "/v1/accounting/prepare",
+        "/v1/accounting/usage",
     }
     assert all(r.status is ContractStatus.ENFORCED for r in ingest_rows)
 

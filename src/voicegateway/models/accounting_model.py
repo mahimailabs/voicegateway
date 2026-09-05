@@ -17,6 +17,7 @@ class PricingRevision(SQLModel, table=True):
     revision_id: str = Field(index=True)
     side: str
     scope_json: str = Field(sa_column=Column(Text, nullable=False))
+    scope_key: str = Field(index=True)
     content_json: str = Field(sa_column=Column(Text, nullable=False))
     content_hash: str
     contract_version: int
@@ -45,6 +46,7 @@ class AccountingUsage(SQLModel, table=True):
     turn_id: str | None = None
     producer_id: str
     ownership_mode: str
+    pricing_binding_id: str | None = None
     acquisition_revision_id: str | None = None
     selling_revision_id: str | None = None
     occurred_at_ns: int
@@ -61,9 +63,55 @@ class AccountingUsage(SQLModel, table=True):
 
 class AccountingProjection(SQLModel, table=True):
     __tablename__: ClassVar[str] = "accounting_projection_outbox"
+    __table_args__ = (UniqueConstraint("tenant_id", "project_id", "event_id"),)
 
-    event_id: str = Field(primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
+    tenant_id: str = Field(index=True)
+    project_id: str = Field(index=True)
+    event_id: str = Field(index=True)
     payload_json: str = Field(sa_column=Column(Text, nullable=False))
     attempts: int = 0
     last_error_code: str | None = None
     projected_at_ns: int | None = None
+
+
+class AccountingRejection(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "accounting_rejections"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "project_id", "event_id", "payload_hash"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    tenant_id: str = Field(index=True)
+    project_id: str = Field(index=True)
+    event_id: str
+    payload_hash: str
+    code: str
+    receipt_id: str
+    created_at_ns: int
+
+
+class AccountingOwnership(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "accounting_ownership"
+    __table_args__ = (UniqueConstraint("tenant_id", "project_id", "component"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    tenant_id: str = Field(index=True)
+    project_id: str = Field(index=True)
+    component: str
+    mode: str
+    updated_at_ns: int
+
+
+class PreparedPricingBinding(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "prepared_pricing_bindings"
+
+    binding_id: str = Field(primary_key=True)
+    tenant_id: str = Field(index=True)
+    project_id: str = Field(index=True)
+    component: str
+    offering: str
+    acquisition_revision_id: str | None = None
+    selling_revision_id: str | None = None
+    ownership_mode: str
+    prepared_at_ns: int

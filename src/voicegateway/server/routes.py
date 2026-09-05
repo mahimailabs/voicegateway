@@ -39,6 +39,9 @@ from voicegateway.server.api import (
     system,
 )
 from voicegateway.server.api.dashboard import (
+    accounting as dashboard_accounting,
+)
+from voicegateway.server.api.dashboard import (
     agents as dashboard_agents,
 )
 from voicegateway.server.api.dashboard import (
@@ -126,6 +129,7 @@ api_router.include_router(call_observations.router)
 
 dashboard_router = APIRouter(prefix="/api")
 dashboard_router.include_router(dashboard_health.router)
+dashboard_router.include_router(dashboard_accounting.router)
 dashboard_router.include_router(dashboard_auth_status.router)
 dashboard_router.include_router(dashboard_status.router)
 dashboard_router.include_router(dashboard_costs.router)

@@ -27,7 +27,7 @@ prove:
 | `read_tenant_param_override` | guarantee | none | The read path already refuses a foreign `tenant` param with 403. |
 | `session_detail_foreign_id` | guarantee | none | A foreign session id returns 404, not 403, so it is not an existence oracle. |
 | `audit_log_open_read` | characterization | VG-SEC-004 | The audit log answers a caller with no credential. |
-| `project_param_unscoped` | absence | VG-SEC-002 | No surface exists to authorize a project, so there is nothing to characterize. |
+| `project_param_unscoped` | characterization | VG-SEC-002 | Accounting enforces project allowlists; legacy project-filtered reads do not yet. |
 
 Two of the five record guarantees rather than defects. That is deliberate. A
 format that can only express what is broken cannot tell you when something

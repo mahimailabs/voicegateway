@@ -20,6 +20,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    op.add_column("api_keys", sa.Column("project_ids", sa.Text(), nullable=True))
     op.create_table(
         "pricing_revisions",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -27,6 +28,7 @@ def upgrade() -> None:
         sa.Column("revision_id", sa.String(), nullable=False),
         sa.Column("side", sa.String(), nullable=False),
         sa.Column("scope_json", sa.Text(), nullable=False),
+        sa.Column("scope_key", sa.String(), nullable=False),
         sa.Column("content_json", sa.Text(), nullable=False),
         sa.Column("content_hash", sa.String(64), nullable=False),
         sa.Column("contract_version", sa.Integer(), nullable=False),
@@ -42,6 +44,9 @@ def upgrade() -> None:
         "ix_pricing_revisions_revision_id", "pricing_revisions", ["revision_id"]
     )
     op.create_index("ix_pricing_revisions_active", "pricing_revisions", ["active"])
+    op.create_index(
+        "ix_pricing_revisions_scope_key", "pricing_revisions", ["scope_key"]
+    )
     op.create_table(
         "accounting_usage",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -57,6 +62,7 @@ def upgrade() -> None:
         sa.Column("turn_id", sa.String(), nullable=True),
         sa.Column("producer_id", sa.String(), nullable=False),
         sa.Column("ownership_mode", sa.String(), nullable=False),
+        sa.Column("pricing_binding_id", sa.String(), nullable=True),
         sa.Column("acquisition_revision_id", sa.String(), nullable=True),
         sa.Column("selling_revision_id", sa.String(), nullable=True),
         sa.Column("occurred_at_ns", sa.BigInteger(), nullable=False),
@@ -76,15 +82,85 @@ def upgrade() -> None:
         op.create_index(f"ix_accounting_usage_{column}", "accounting_usage", [column])
     op.create_table(
         "accounting_projection_outbox",
-        sa.Column("event_id", sa.String(), primary_key=True),
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("tenant_id", sa.String(), nullable=False),
+        sa.Column("project_id", sa.String(), nullable=False),
+        sa.Column("event_id", sa.String(), nullable=False),
         sa.Column("payload_json", sa.Text(), nullable=False),
         sa.Column("attempts", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("last_error_code", sa.String(), nullable=True),
         sa.Column("projected_at_ns", sa.BigInteger(), nullable=True),
+        sa.UniqueConstraint("tenant_id", "project_id", "event_id"),
+    )
+    for column in ("tenant_id", "project_id", "event_id"):
+        op.create_index(
+            f"ix_accounting_projection_outbox_{column}",
+            "accounting_projection_outbox",
+            [column],
+        )
+    op.create_table(
+        "accounting_rejections",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("tenant_id", sa.String(), nullable=False),
+        sa.Column("project_id", sa.String(), nullable=False),
+        sa.Column("event_id", sa.String(), nullable=False),
+        sa.Column("payload_hash", sa.String(64), nullable=False),
+        sa.Column("code", sa.String(), nullable=False),
+        sa.Column("receipt_id", sa.String(), nullable=False),
+        sa.Column("created_at_ns", sa.BigInteger(), nullable=False),
+        sa.UniqueConstraint("tenant_id", "project_id", "event_id", "payload_hash"),
+    )
+    op.create_index(
+        "ix_accounting_rejections_tenant_id", "accounting_rejections", ["tenant_id"]
+    )
+    op.create_index(
+        "ix_accounting_rejections_project_id", "accounting_rejections", ["project_id"]
+    )
+    op.create_table(
+        "accounting_ownership",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("tenant_id", sa.String(), nullable=False),
+        sa.Column("project_id", sa.String(), nullable=False),
+        sa.Column("component", sa.String(), nullable=False),
+        sa.Column("mode", sa.String(), nullable=False),
+        sa.Column("updated_at_ns", sa.BigInteger(), nullable=False),
+        sa.UniqueConstraint("tenant_id", "project_id", "component"),
+    )
+    op.create_index(
+        "ix_accounting_ownership_tenant_id", "accounting_ownership", ["tenant_id"]
+    )
+    op.create_index(
+        "ix_accounting_ownership_project_id", "accounting_ownership", ["project_id"]
+    )
+    op.create_table(
+        "prepared_pricing_bindings",
+        sa.Column("binding_id", sa.String(), primary_key=True),
+        sa.Column("tenant_id", sa.String(), nullable=False),
+        sa.Column("project_id", sa.String(), nullable=False),
+        sa.Column("component", sa.String(), nullable=False),
+        sa.Column("offering", sa.String(), nullable=False),
+        sa.Column("acquisition_revision_id", sa.String(), nullable=True),
+        sa.Column("selling_revision_id", sa.String(), nullable=True),
+        sa.Column("ownership_mode", sa.String(), nullable=False),
+        sa.Column("prepared_at_ns", sa.BigInteger(), nullable=False),
+    )
+    op.create_index(
+        "ix_prepared_pricing_bindings_tenant_id",
+        "prepared_pricing_bindings",
+        ["tenant_id"],
+    )
+    op.create_index(
+        "ix_prepared_pricing_bindings_project_id",
+        "prepared_pricing_bindings",
+        ["project_id"],
     )
 
 
 def downgrade() -> None:
+    op.drop_table("prepared_pricing_bindings")
+    op.drop_table("accounting_ownership")
+    op.drop_table("accounting_rejections")
     op.drop_table("accounting_projection_outbox")
     op.drop_table("accounting_usage")
     op.drop_table("pricing_revisions")
+    op.drop_column("api_keys", "project_ids")

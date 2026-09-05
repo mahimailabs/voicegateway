@@ -47,6 +47,11 @@ async def create_api_key(
             scopes=payload.scopes,
             tenant_id=payload.tenant_id,
             issued_by=payload.issued_by,
+            project_ids=(
+                ",".join(sorted(set(payload.project_ids)))
+                if payload.project_ids is not None
+                else None
+            ),
         )
     except ValueError as exc:
         # A refused scope list is a bad request, not a server fault. 422 to

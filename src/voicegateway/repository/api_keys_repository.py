@@ -43,6 +43,7 @@ class ApiKeyRow:
     issued_at: str
     last_used_at: str | None
     revoked_at: str | None
+    project_ids: str | None = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,7 @@ class VerifiedKey:
     name: str
     role: str = "tenant"
     scopes: str = "*"
+    project_ids: str | None = None
 
     def has_scope(self, required: str, *, enforce: bool = False) -> bool:
         """Return True if this key covers ``required``.
@@ -116,12 +118,11 @@ def _row_to_dataclass(row) -> ApiKeyRow:
         issued_at=str(row[5]),
         last_used_at=None if row[6] is None else str(row[6]),
         revoked_at=None if row[7] is None else str(row[7]),
+        project_ids=None if row[8] is None else str(row[8]),
     )
 
 
-_SELECT_ROW_FIELDS = (
-    "id, key_prefix, name, tenant_id, issued_by, issued_at, last_used_at, revoked_at"
-)
+_SELECT_ROW_FIELDS = "id, key_prefix, name, tenant_id, issued_by, issued_at, last_used_at, revoked_at, project_ids"
 
 
 async def create_api_key(
@@ -132,6 +133,7 @@ async def create_api_key(
     tenant_id: str | None = None,
     issued_by: str | None = None,
     role: str = "tenant",
+    project_ids: str | None = None,
 ) -> CreatedApiKey:
     """Create a virtual key and return the plaintext once.
 
@@ -155,9 +157,9 @@ async def create_api_key(
     result = await session.execute(
         text(
             "INSERT INTO api_keys ("
-            "key_prefix, key_hash, name, tenant_id, issued_by, role, scopes, issued_at"
+            "key_prefix, key_hash, name, tenant_id, issued_by, role, scopes, project_ids, issued_at"
             ") VALUES ("
-            ":prefix, :digest, :name, :tenant_id, :issued_by, :role, :scopes,"
+            ":prefix, :digest, :name, :tenant_id, :issued_by, :role, :scopes, :project_ids,"
             " CURRENT_TIMESTAMP"
             ") RETURNING id"
         ),
@@ -169,6 +171,7 @@ async def create_api_key(
             "issued_by": issued_by,
             "role": role,
             "scopes": scopes,
+            "project_ids": project_ids,
         },
     )
     # RETURNING works on both Postgres (asyncpg has no ``lastrowid``) and SQLite
@@ -216,13 +219,13 @@ async def verify(session: AsyncSession, plaintext: str) -> VerifiedKey | None:
     prefix = _visible_prefix(plaintext)
     result = await session.execute(
         text(
-            "SELECT id, key_hash, tenant_id, name, revoked_at, role, scopes "
+            "SELECT id, key_hash, tenant_id, name, revoked_at, role, scopes, project_ids "
             "FROM api_keys WHERE key_prefix = :prefix"
         ),
         {"prefix": prefix},
     )
     for row in result:
-        key_id, stored_hash, tenant_id, name, revoked_at, role, scopes = (
+        key_id, stored_hash, tenant_id, name, revoked_at, role, scopes, project_ids = (
             row[0],
             row[1],
             row[2],
@@ -230,6 +233,7 @@ async def verify(session: AsyncSession, plaintext: str) -> VerifiedKey | None:
             row[4],
             row[5],
             row[6],
+            row[7],
         )
         if revoked_at is not None:
             continue
@@ -240,6 +244,7 @@ async def verify(session: AsyncSession, plaintext: str) -> VerifiedKey | None:
                 name=str(name),
                 role=str(role) if role is not None else "tenant",
                 scopes=str(scopes) if scopes is not None else "*",
+                project_ids=None if project_ids is None else str(project_ids),
             )
     return None
 

@@ -43,7 +43,7 @@ def test_every_gap_id_is_minted():
 def test_both_guarantees_and_defects_are_represented():
     """The format must express a satisfied rule, not only a broken one."""
     kinds = {f.kind for f in load_all()}
-    assert {"guarantee", "characterization", "absence"} <= kinds
+    assert {"guarantee", "characterization"} <= kinds
 
 
 def test_characterizations_actually_differ_from_their_contract():

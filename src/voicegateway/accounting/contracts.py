@@ -97,6 +97,8 @@ def canonical_decimal(value: str) -> str:
         raise ValueError("invalid decimal string") from exc
     if not number.is_finite() or number < 0:
         raise ValueError("decimal value must be finite and non-negative")
+    if number > Decimal("1e18"):
+        raise ValueError("decimal value exceeds supported magnitude")
     if abs(number.as_tuple().exponent) > 18:
         raise ValueError("decimal value has more than 18 fractional digits")
     normalized = format(number, "f")
@@ -183,6 +185,13 @@ class Quantity(StrictModel):
             raise ValueError(
                 "measured/estimated quantities require a value; missing/unsupported forbid one"
             )
+        if self.value is not None:
+            number = Decimal(self.value)
+            if self.dimension is PricingDimension.AUDIO_SECONDS:
+                if max(0, -number.as_tuple().exponent) > 9:
+                    raise ValueError("audio seconds allow at most 9 fractional digits")
+            elif number != number.to_integral_value() or number > 2**63 - 1:
+                raise ValueError("count quantities must be signed-64-bit integers")
         return self
 
 
@@ -199,6 +208,7 @@ class UsageEnvelope(StrictModel):
     model_id: str
     producer_id: str
     ownership_mode: OwnershipMode
+    pricing_binding_id: str | None = None
     acquisition_revision_id: str | None = None
     selling_revision_id: str | None = None
     occurred_at_ns: Annotated[int, Field(ge=0)]
@@ -217,6 +227,7 @@ class UsageEnvelope(StrictModel):
         "producer_id",
         "acquisition_revision_id",
         "selling_revision_id",
+        "pricing_binding_id",
     )
     @classmethod
     def valid_ids(cls, value: str | None) -> str | None:
@@ -262,3 +273,26 @@ class RecordReceipt(StrictModel):
 
 class UsageBatchResponse(StrictModel):
     receipts: tuple[RecordReceipt, ...]
+
+
+class PreparationRequest(StrictModel):
+    project_id: str
+    component: str
+    offering: str
+
+
+class PricingBinding(StrictModel):
+    binding_id: str
+    project_id: str
+    component: str
+    offering: str
+    acquisition_revision_id: str | None
+    selling_revision_id: str | None
+    ownership_mode: OwnershipMode
+    prepared_at_ns: int
+
+
+class OwnershipAssignment(StrictModel):
+    project_id: str
+    component: str
+    mode: OwnershipMode

@@ -82,6 +82,16 @@ async def create_api_key_endpoint(
     issued_by_raw = body.get("issued_by")
     issued_by = str(issued_by_raw).strip() if issued_by_raw not in (None, "") else None
     scopes = str(body.get("scopes") or "").strip()
+    raw_projects = body.get("project_ids")
+    if raw_projects is not None and not isinstance(raw_projects, list):
+        raise HTTPException(status_code=400, detail="`project_ids` must be a list")
+    project_ids = (
+        ",".join(
+            sorted({str(item).strip() for item in raw_projects if str(item).strip()})
+        )
+        if raw_projects is not None
+        else None
+    )
     if not scopes:
         raise HTTPException(
             status_code=400,
@@ -99,6 +109,7 @@ async def create_api_key_endpoint(
                 scopes=scopes,
                 tenant_id=tenant_id,
                 issued_by=issued_by,
+                project_ids=project_ids,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None

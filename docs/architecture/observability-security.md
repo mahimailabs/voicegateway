@@ -89,7 +89,7 @@ without a row stating where its tenant comes from.
 
 ### VG-THREAT-002: cross-tenant and unauthenticated read
 
-**VG-SEC-004** (gap, Wave 1): 28 of the 89 routes resolve no auth dependency
+**VG-SEC-004** (gap, Wave 1): 28 of the 98 routes resolve no auth dependency
 at all and answer an unauthenticated caller regardless of configured keys. The
 set includes the audit log, costs, logs, metrics and the billing rate-card
 reads. `tests/server/test_auth.py::test_reads_open_regardless_of_auth` pins
@@ -116,15 +116,11 @@ regress unnoticed.
 
 ### VG-THREAT-003: missing project authorization
 
-**VG-SEC-002** (planned, Wave 1): project-level authorization does not exist
-in any form. There is no tenant column on managed projects, no project column
-on API keys, no project field on the principal, and no check on the project
-query parameter. 22 of the 89 routes accept a project identifier and none of
-them compares it against anything the caller is entitled to.
-
-Because there is no surface to hold the check, this is recorded as an absence
-guard rather than a characterization: the fixture asserts the two attributes a
-project binding would need do not exist yet.
+**VG-SEC-002** (planned, Wave 1): project authorization is now available to the
+exact-accounting surface: API keys and principals carry optional project
+allowlists, and accounting ingest and reports enforce them. Legacy APIs that
+accept project filters do not yet apply the allowlist, so the gap remains open
+and is recorded as a characterization rather than an absence.
 
 ### VG-THREAT-004: coarse and inert scopes
 
@@ -133,9 +129,10 @@ ingest was gated by the same `write` scope that guards provider, model and
 project mutation, across 18 routes in total, so an agent key that only needed
 to post telemetry could rewrite gateway configuration.
 
-The six ingest routes (`POST /v1/ingest`, `/v1/ingest/turns`,
+The eight ingest routes (`POST /v1/ingest`, `/v1/ingest/turns`,
 `/v1/ingest/tool-calls`, `/v1/ingest/dead-air`, `/v1/agents/heartbeat`,
-`/v1/calls/observations`) now sit behind `require_ingest_principal`, which
+`/v1/calls/observations`, `/v1/accounting/prepare`, and
+`/v1/accounting/usage`) now sit behind `require_ingest_principal`, which
 enforces the `ingest` scope and returns the `Principal` whose `tenant_id` the
 handler stamps on every row it writes. `write` is left covering 12 routes, all
 of them config mutation.
@@ -218,8 +215,8 @@ record does not imply absence of the event.
 
 ## Authorization matrix
 
-`authorization_matrix.json` carries one row per live route: 89 rows against 89
-routes, 49 enforced and 40 gaps. Rows are generated mechanically and then
+`authorization_matrix.json` carries one row per live route: 98 rows against 98
+routes, 62 enforced and 36 gaps. Rows are generated mechanically and then
 hand-classified where the classification carries meaning.
 
 Three tests keep it bound to reality:
@@ -306,7 +303,7 @@ that module exists anywhere in the schema package.
 | :--- | :--- |
 | `src/voicegateway/schemas/telemetry/security_schema.py` | All exported contract types |
 | `src/voicegateway/schemas/telemetry/threat_model.json` | The 14 gaps, with evidence |
-| `src/voicegateway/schemas/telemetry/authorization_matrix.json` | 89 route rows plus planned routes |
+| `src/voicegateway/schemas/telemetry/authorization_matrix.json` | 98 route rows plus planned routes |
 | `src/voicegateway/tests/fixtures/security/` | The five cross-tenant fixtures |
 | `src/voicegateway/tests/server/_telemetry_harness.py` | Shared app harness and route introspection |
 | `src/voicegateway/tests/server/test_telemetry_security_contract.py` | Contract shape and absence guards |

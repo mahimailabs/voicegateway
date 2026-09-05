@@ -25,6 +25,7 @@ class ApiKey(SQLModel, table=True):
     tenant_id: str | None = Field(default=None, index=True)
     role: str = Field(default="tenant")
     scopes: str = Field(default="*")
+    project_ids: str | None = None
     issued_by: str | None = None
     issued_at: datetime = Field(  # type: ignore[call-overload]
         default_factory=_utcnow,
