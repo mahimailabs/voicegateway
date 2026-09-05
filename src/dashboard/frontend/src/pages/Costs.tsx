@@ -9,7 +9,7 @@ import LatencyChart from '../components/LatencyChart';
 import { Skeleton, StatCardSkeleton } from '../components/Skeleton';
 import { fetchJson } from '../lib/api';
 import { formatCost, latencyBadgeClass, formatMs } from '../lib/ui';
-import type { CostsResponse, LatencyResponse, LatencyStats } from '../lib/types';
+import type { AccountingStatusResponse, CostsResponse, LatencyResponse, LatencyStats } from '../lib/types';
 
 /** Return the highest model percentile, or null when no model has that key. */
 function worstP(
@@ -156,6 +156,7 @@ function LatencyContent() {
 
 function CostsContent() {
   const [data, setData] = useState<CostsResponse | null>(null);
+  const [accounting, setAccounting] = useState<AccountingStatusResponse | null>(null);
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
   const tenant = useTenantFilter();
@@ -177,6 +178,15 @@ function CostsContent() {
       })
       .catch(() => {
         if (active) setError(true);
+      });
+    const accountingParams = new URLSearchParams();
+    if (tenant !== null) accountingParams.set('tenant', tenant);
+    fetchJson<AccountingStatusResponse>(`/api/accounting?${accountingParams.toString()}`)
+      .then((value) => {
+        if (active) setAccounting(value);
+      })
+      .catch(() => {
+        if (active) setAccounting(null);
       });
     return () => {
       active = false;
@@ -205,6 +215,14 @@ function CostsContent() {
             <div className="vg-card__label">Total Spend</div>
             <div className="vg-stat" style={{ fontSize: 42, letterSpacing: '-0.025em', marginTop: 6 }}>{formatCost(data.total)}</div>
           </div>
+
+          {accounting && (
+            <div className="grid grid-cols-3 mb-lg">
+              <StatusCard label="Exact selling total" value={`$${accounting.selling_total_usd}`} accent="green" icon="$" />
+              <StatusCard label="Unrated / incomplete" value={`${accounting.counts.unrated + accounting.counts.incomplete}`} accent="pink" icon="!" />
+              <StatusCard label="Pending delivery" value={`${accounting.counts.pending_delivery}`} accent="yellow" icon="↻" />
+            </div>
+          )}
 
       <div className="grid grid-cols-2">
         <CostChart title="By Provider" data={data.by_provider} />

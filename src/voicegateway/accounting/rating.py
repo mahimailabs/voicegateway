@@ -5,6 +5,7 @@ from __future__ import annotations
 from decimal import Decimal, localcontext
 
 from voicegateway.accounting.contracts import (
+    MeasurementStatus,
     PricingDimension,
     PricingRevisionCreate,
     UsageEnvelope,
@@ -18,6 +19,7 @@ def rate_usage(
 ) -> tuple[str | None, bool]:
     """Return the exact rounded total and whether every quantity was rateable."""
     rates = {item.dimension: Decimal(item.rate) for item in revision.rates}
+    unsupported = set(revision.unsupported_dimensions)
     quantities = {item.dimension: item for item in envelope.quantities}
     total = Decimal(0)
     complete = True
@@ -25,7 +27,11 @@ def rate_usage(
         ctx.prec = 60
         for dimension, quantity in quantities.items():
             if quantity.value is None:
-                complete = False
+                if not (
+                    quantity.status is MeasurementStatus.UNSUPPORTED
+                    and dimension in unsupported
+                ):
+                    complete = False
                 continue
             rate = rates.get(dimension)
             if rate is None:

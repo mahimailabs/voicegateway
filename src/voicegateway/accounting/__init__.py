@@ -1,5 +1,6 @@
 """Exact, immutable accounting contracts and services."""
 
+from voicegateway.accounting.adapters import envelope_from_request_record
 from voicegateway.accounting.contracts import (
     AccountingCapabilities,
     MeasurementStatus,
@@ -18,4 +19,5 @@ __all__ = [
     "PricingRevisionCreate",
     "PricingSide",
     "UsageEnvelope",
+    "envelope_from_request_record",
 ]

@@ -198,3 +198,32 @@ async def test_ingest_principal_enforces_project_allowlist(
         )
         assert rejected.status_code == 403
         assert "tenant" not in rejected.text.lower()
+
+
+async def test_tenant_key_cannot_read_acquisition_revision(
+    tmp_path, monkeypatch
+) -> None:
+    gateway, client = await _gateway_client(tmp_path, monkeypatch)
+    from voicegateway.accounting.contracts import PricingRevisionCreate
+    from voicegateway.services.accounting_service import AccountingService
+
+    acquisition = _revision("cost-1", "0.1")
+    acquisition["side"] = "acquisition"
+    acquisition["scope"]["tenant_id"] = "tenant-a"
+    async with gateway.storage.session() as session:
+        await AccountingService(session, tenant_id="tenant-a").create_revision(
+            PricingRevisionCreate.model_validate(acquisition)
+        )
+        key = await create_api_key(
+            session,
+            name="tenant-reader",
+            scopes="read,ingest",
+            tenant_id="tenant-a",
+        )
+    async with client:
+        response = await client.get(
+            "/v1/accounting/revisions/acquisition/cost-1",
+            headers={"Authorization": f"Bearer {key.plaintext}"},
+        )
+        assert response.status_code == 403
+        assert "0.1" not in response.text

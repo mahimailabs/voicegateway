@@ -39,6 +39,18 @@ export interface CostsResponse {
   pricing_sources?: { llm?: string; stt?: string; tts?: string };
 }
 
+export interface AccountingStatusResponse {
+  selling_total_usd: string;
+  records: number;
+  counts: {
+    rated: number;
+    unrated: number;
+    incomplete: number;
+    rejected: number;
+    pending_delivery: number;
+  };
+}
+
 export interface PercentileBucket {
   // Known percentiles are optional — the API only emits what the config
   // asks for, so callers must treat missing keys as "unknown".

@@ -209,6 +209,7 @@
               "architecture/middleware",
               "architecture/cost-tracking",
               "architecture/rating",
+              "architecture/immutable-accounting",
               "architecture/config-layers",
               "architecture/storage",
               "architecture/security",
