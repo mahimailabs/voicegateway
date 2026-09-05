@@ -1,0 +1,111 @@
+"""Immutable accounting API integration tests."""
+
+from __future__ import annotations
+
+import yaml
+from httpx import ASGITransport, AsyncClient
+
+from voicegateway.accounting.contracts import PricingDimension
+from voicegateway.core.gateway import Gateway
+from voicegateway.server import build_app
+
+
+def _revision(revision_id: str = "sell-1", rate: str = "0.25") -> dict:
+    return {
+        "revision_id": revision_id,
+        "side": "selling",
+        "scope": {"offering": "provider/model"},
+        "rates": [{"dimension": "requests", "unit": "request", "rate": rate}],
+        "unsupported_dimensions": [
+            item.value
+            for item in PricingDimension
+            if item is not PricingDimension.REQUESTS
+        ],
+    }
+
+
+def _usage(event_id: str = "event-1", attempt_id: str = "attempt-1") -> dict:
+    return {
+        "event_id": event_id,
+        "attempt_id": attempt_id,
+        "project_id": "default",
+        "session_id": "session-1",
+        "component": "conversation",
+        "modality": "llm",
+        "offering": "provider/model",
+        "model_id": "provider/model",
+        "producer_id": "sdk-1",
+        "ownership_mode": "sdk",
+        "selling_revision_id": "sell-1",
+        "occurred_at_ns": 10,
+        "quantities": [{"dimension": "requests", "value": "1", "status": "measured"}],
+    }
+
+
+async def _client(tmp_path, monkeypatch) -> AsyncClient:
+    config = tmp_path / "voicegw.yaml"
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "providers": {},
+                "models": {"stt": {}, "llm": {}, "tts": {}},
+                "projects": {},
+                "fallbacks": {"stt": [], "llm": [], "tts": []},
+                "cost_tracking": {"enabled": True},
+            }
+        )
+    )
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "accounting.db"))
+    monkeypatch.delenv("VOICEGW_API_KEY", raising=False)
+    return AsyncClient(
+        transport=ASGITransport(app=build_app(Gateway(config_path=str(config)))),
+        base_url="http://test",
+    )
+
+
+async def test_revision_idempotency_conflict_and_usage_receipts(
+    tmp_path, monkeypatch
+) -> None:
+    async with await _client(tmp_path, monkeypatch) as client:
+        created = await client.post("/v1/accounting/revisions", json=_revision())
+        assert created.status_code == 201, created.text
+        assert created.json()["created"] is True
+        retried = await client.post("/v1/accounting/revisions", json=_revision())
+        assert retried.status_code == 201
+        assert retried.json()["created"] is False
+        conflict = await client.post(
+            "/v1/accounting/revisions", json=_revision(rate="0.3")
+        )
+        assert conflict.status_code == 409
+
+        first = await client.post("/v1/accounting/usage", json=[_usage()])
+        assert first.status_code == 200, first.text
+        assert first.json()["receipts"][0]["outcome"] == "accepted"
+        duplicate = await client.post("/v1/accounting/usage", json=[_usage()])
+        assert duplicate.json()["receipts"][0]["outcome"] == "duplicate"
+
+        report = await client.get("/v1/accounting/report")
+        assert report.status_code == 200
+        assert report.json()["selling_total_usd"] == "0.250000000000"
+        assert "acquisition_total_usd" not in report.text
+
+
+async def test_conflicting_event_and_attempt_are_rejected(
+    tmp_path, monkeypatch
+) -> None:
+    async with await _client(tmp_path, monkeypatch) as client:
+        await client.post("/v1/accounting/revisions", json=_revision())
+        assert (
+            await client.post("/v1/accounting/usage", json=[_usage()])
+        ).status_code == 200
+        changed = _usage()
+        changed["producer_id"] = "sdk-2"
+        response = await client.post("/v1/accounting/usage", json=[changed])
+        assert response.json()["receipts"][0]["code"] == "identity_conflict"
+        second_event = await client.post(
+            "/v1/accounting/usage", json=[_usage("event-2", "attempt-1")]
+        )
+        assert (
+            second_event.json()["receipts"][0]["code"]
+            == "attempt_or_ownership_conflict"
+        )

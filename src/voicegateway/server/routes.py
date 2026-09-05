@@ -19,6 +19,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from voicegateway.server.api import (
+    accounting,
     agents,
     api_keys,
     audit_log,
@@ -96,6 +97,7 @@ system_router = APIRouter()
 system_router.include_router(system.router)
 
 api_router = APIRouter(prefix="/v1")
+api_router.include_router(accounting.router)
 api_router.include_router(models.router)
 api_router.include_router(costs.router)
 api_router.include_router(billing.router)
