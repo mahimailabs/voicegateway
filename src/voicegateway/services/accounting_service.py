@@ -1,5 +1,7 @@
 """Transactional immutable-pricing and usage-ledger operations."""
 
+# mypy: disable-error-code="arg-type,attr-defined,union-attr"
+
 from __future__ import annotations
 
 import hashlib

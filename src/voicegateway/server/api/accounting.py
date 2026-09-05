@@ -18,6 +18,7 @@ from voicegateway.accounting.contracts import (
     UsageBatchResponse,
     UsageEnvelope,
 )
+from voicegateway.models.accounting_model import PricingRevision
 from voicegateway.repository.request_log_repository import log_audit_event
 from voicegateway.server.api._deps import (
     Principal,
@@ -49,7 +50,9 @@ def _project(principal: Principal, project_id: str) -> None:
         raise HTTPException(status_code=403, detail="project_not_authorized")
 
 
-def _revision_response(row: object, *, include_content: bool) -> dict[str, object]:
+def _revision_response(
+    row: PricingRevision, *, include_content: bool
+) -> dict[str, object]:
     result: dict[str, object] = {
         "revision_id": row.revision_id,
         "side": row.side,

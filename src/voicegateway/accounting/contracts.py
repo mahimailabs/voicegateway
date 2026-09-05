@@ -99,7 +99,10 @@ def canonical_decimal(value: str) -> str:
         raise ValueError("decimal value must be finite and non-negative")
     if number > Decimal("1e18"):
         raise ValueError("decimal value exceeds supported magnitude")
-    if abs(number.as_tuple().exponent) > 18:
+    exponent = number.as_tuple().exponent
+    if not isinstance(exponent, int):
+        raise ValueError("invalid decimal exponent")
+    if abs(exponent) > 18:
         raise ValueError("decimal value has more than 18 fractional digits")
     normalized = format(number, "f")
     if "." in normalized:
@@ -127,12 +130,12 @@ class DimensionRate(StrictModel):
 
 
 class PricingRevisionCreate(StrictModel):
-    contract_version: Literal[1] = CONTRACT_VERSION
+    contract_version: Literal[1] = 1
     revision_id: str
     side: PricingSide
     scope: RevisionScope
     currency: Literal["USD"] = "USD"
-    rounding_profile: Literal["usd-v1-half-even-12"] = ROUNDING_PROFILE
+    rounding_profile: Literal["usd-v1-half-even-12"] = "usd-v1-half-even-12"
     rates: tuple[DimensionRate, ...]
     unsupported_dimensions: tuple[PricingDimension, ...] = ()
 
@@ -188,7 +191,8 @@ class Quantity(StrictModel):
         if self.value is not None:
             number = Decimal(self.value)
             if self.dimension is PricingDimension.AUDIO_SECONDS:
-                if max(0, -number.as_tuple().exponent) > 9:
+                exponent = number.as_tuple().exponent
+                if not isinstance(exponent, int) or max(0, -exponent) > 9:
                     raise ValueError("audio seconds allow at most 9 fractional digits")
             elif number != number.to_integral_value() or number > 2**63 - 1:
                 raise ValueError("count quantities must be signed-64-bit integers")
@@ -196,7 +200,7 @@ class Quantity(StrictModel):
 
 
 class UsageEnvelope(StrictModel):
-    contract_version: Literal[1] = CONTRACT_VERSION
+    contract_version: Literal[1] = 1
     event_id: str
     attempt_id: str
     project_id: str
@@ -254,7 +258,7 @@ class UsageEnvelope(StrictModel):
 
 
 class AccountingCapabilities(StrictModel):
-    contract_version: Literal[1] = CONTRACT_VERSION
+    contract_version: Literal[1] = 1
     dimensions: tuple[PricingDimension, ...] = tuple(PricingDimension)
     units: tuple[Unit, ...] = tuple(Unit)
     currencies: tuple[Literal["USD"], ...] = ("USD",)

@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import time
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -65,7 +66,9 @@ class AccountingOutbox:
             )
             columns = {
                 row[1]
-                for row in await self._db.execute_fetchall("PRAGMA table_info(pending)")
+                for row in list(
+                    await self._db.execute_fetchall("PRAGMA table_info(pending)")
+                )
             }
             if "enqueued_at_ns" not in columns:
                 await self._db.execute(
@@ -79,14 +82,17 @@ class AccountingOutbox:
         db = await self._open()
         payload = envelope.model_dump_json()
         digest = hashlib.sha256(payload.encode()).hexdigest()
-        existing = await db.execute_fetchall(
-            "SELECT payload_hash FROM pending WHERE event_id = ?", (envelope.event_id,)
+        existing = list(
+            await db.execute_fetchall(
+                "SELECT payload_hash FROM pending WHERE event_id = ?",
+                (envelope.event_id,),
+            )
         )
         if existing:
             if existing[0][0] != digest:
                 raise ValueError("event identity already queued with different content")
             return "duplicate"
-        count = (await db.execute_fetchall("SELECT COUNT(*) FROM pending"))[0][0]
+        count = list(await db.execute_fetchall("SELECT COUNT(*) FROM pending"))[0][0]
         if count >= self._max_records:
             self._capture_failures += 1
             return "full"
@@ -127,8 +133,10 @@ class AccountingOutbox:
 
     async def drain(self, *, limit: int = 100) -> dict[str, int]:
         db = await self._open()
-        rows = await db.execute_fetchall(
-            "SELECT event_id, payload FROM pending ORDER BY rowid LIMIT ?", (limit,)
+        rows = list(
+            await db.execute_fetchall(
+                "SELECT event_id, payload FROM pending ORDER BY rowid LIMIT ?", (limit,)
+            )
         )
         if not rows:
             return {"accepted": 0, "duplicate": 0, "rejected": 0, "retryable": 0}
@@ -208,7 +216,7 @@ class AccountingOutbox:
         return result
 
     async def _mark_retryable(
-        self, db: aiosqlite.Connection, rows: list[tuple[str, str]], code: str
+        self, db: aiosqlite.Connection, rows: Iterable[Any], code: str
     ) -> None:
         await db.executemany(
             "UPDATE pending SET attempts = attempts + 1, last_error_code = ? WHERE event_id = ?",
@@ -218,14 +226,16 @@ class AccountingOutbox:
 
     async def health(self) -> dict[str, int | float | None]:
         db = await self._open()
-        pending = (await db.execute_fetchall("SELECT COUNT(*) FROM pending"))[0][0]
-        rejected = (await db.execute_fetchall("SELECT COUNT(*) FROM rejected"))[0][0]
-        failed_delivery = (
+        pending = list(await db.execute_fetchall("SELECT COUNT(*) FROM pending"))[0][0]
+        rejected = list(await db.execute_fetchall("SELECT COUNT(*) FROM rejected"))[0][
+            0
+        ]
+        failed_delivery = list(
             await db.execute_fetchall("SELECT COUNT(*) FROM pending WHERE attempts > 0")
         )[0][0]
-        oldest = (await db.execute_fetchall("SELECT MIN(enqueued_at_ns) FROM pending"))[
-            0
-        ][0]
+        oldest = list(
+            await db.execute_fetchall("SELECT MIN(enqueued_at_ns) FROM pending")
+        )[0][0]
         return {
             "pending": pending,
             "rejected": rejected,
