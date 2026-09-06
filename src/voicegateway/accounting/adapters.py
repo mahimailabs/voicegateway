@@ -40,7 +40,16 @@ def envelope_from_request_record(
     measured: dict[PricingDimension, str] = {
         PricingDimension.REQUESTS: "1",
     }
-    if record.modality == "llm":
+    realtime = record.metadata.get("accounting_realtime_quantities")
+    if record.modality == "llm" and isinstance(realtime, dict):
+        for raw_dimension, value in realtime.items():
+            try:
+                dimension = PricingDimension(raw_dimension)
+            except ValueError:
+                continue
+            if isinstance(value, int | float | Decimal):
+                measured[dimension] = _decimal(value)
+    elif record.modality == "llm":
         measured.update(
             {
                 PricingDimension.TEXT_INPUT: _decimal(record.input_units),
@@ -55,12 +64,22 @@ def envelope_from_request_record(
     elif record.modality == "tts":
         measured[PricingDimension.CHARACTERS] = _decimal(record.input_units)
 
+    missing = {
+        PricingDimension(item)
+        for item in record.metadata.get("accounting_missing_dimensions", [])
+        if item in PricingDimension._value2member_map_
+    }
+    for dimension in missing:
+        measured.pop(dimension, None)
+
     quantities = tuple(
         Quantity(
             dimension=dimension,
             value=measured.get(dimension),
             status=(
-                MeasurementStatus.MEASURED
+                MeasurementStatus.MISSING
+                if dimension in missing
+                else MeasurementStatus.MEASURED
                 if dimension in measured
                 else MeasurementStatus.UNSUPPORTED
             ),

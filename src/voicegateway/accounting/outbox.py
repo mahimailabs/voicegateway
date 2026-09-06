@@ -322,6 +322,10 @@ class AccountingOutbox:
         except Exception:
             logger.exception("accounting loss counter could not be persisted")
 
+    async def record_capture_failure(self) -> None:
+        """Record an envelope that could not be made durable by a producer."""
+        await self._increment_failure()
+
     async def _persist_failures(self, db: aiosqlite.Connection) -> None:
         async with self._failure_lock:
             pending = self._capture_failures
@@ -378,7 +382,5 @@ class AccountingOutbox:
                 pass
         if self._db is not None:
             await self._db.close()
-        if self._owns_client and self._client is not None:
-            await self._client.aclose()
         if self._owns_client and self._client is not None:
             await self._client.aclose()

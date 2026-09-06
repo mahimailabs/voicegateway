@@ -88,3 +88,24 @@ async def test_capture_sink_does_not_bill_externally_owned_component(tmp_path) -
     assert client.calls == 0
     assert (await outbox.health())["pending"] == 0
     await outbox.aclose()
+
+
+async def test_capture_persistence_failure_is_visible_and_does_not_hide_telemetry(
+    tmp_path, monkeypatch
+) -> None:
+    outbox = AccountingOutbox(
+        tmp_path / "failed.db", "https://collector.invalid", client=Client()
+    )
+    primary = RecordingSink()
+    sink = AccountingCaptureSink(
+        primary, outbox, producer_id="worker-1", binding=_binding(OwnershipMode.SDK)
+    )
+
+    async def fail_submit(_envelope) -> str:
+        raise OSError("synthetic local persistence failure")
+
+    monkeypatch.setattr(outbox, "submit", fail_submit)
+    await sink.log_request(_record())
+    assert [record.id for record in primary.records] == ["provider-attempt-1"]
+    assert (await outbox.health())["capture_failures"] == 1
+    await outbox.aclose()

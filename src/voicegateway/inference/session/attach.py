@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import time
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from voicegateway.inference.session.context import (
@@ -401,7 +402,12 @@ def _build_default_sink(
 def _with_accounting(
     sink: Sink,
     outbox: AccountingOutbox | None,
-    binding: PricingBinding | PricingBindingResponse | None,
+    binding: (
+        PricingBinding
+        | PricingBindingResponse
+        | Mapping[str, PricingBinding | PricingBindingResponse]
+        | None
+    ),
     producer_id: str | None,
 ) -> Sink:
     """Apply the explicit invoice-accounting capture opt-in."""
@@ -448,7 +454,12 @@ def attach(
     turns: bool | None = None,
     dead_air: bool | None = None,
     accounting_outbox: AccountingOutbox | None = None,
-    accounting_binding: PricingBinding | PricingBindingResponse | None = None,
+    accounting_binding: (
+        PricingBinding
+        | PricingBindingResponse
+        | Mapping[str, PricingBinding | PricingBindingResponse]
+        | None
+    ) = None,
     accounting_producer_id: str | None = None,
 ) -> str:
     """Attach VoiceGateway to a LiveKit ``AgentSession`` or Pipecat ``PipelineTask``.
@@ -580,7 +591,9 @@ def attach(
         accounting_outbox: explicit invoice-accounting opt-in. Each captured
             request is persisted to this bounded outbox before delivery.
         accounting_binding: immutable pricing and ownership binding returned by
-            ``POST /v1/accounting/prepare``. The collector remains authoritative.
+            ``POST /v1/accounting/prepare``. For a multi-model session, pass a
+            mapping keyed by normalized model ID (preferred) or modality. The
+            collector remains authoritative.
         accounting_producer_id: stable producer identity. Required whenever an
             ``accounting_outbox`` is supplied.
 
@@ -1282,7 +1295,12 @@ def _attach_livekit(
     turns: bool = True,
     dead_air: bool = True,
     accounting_outbox: AccountingOutbox | None = None,
-    accounting_binding: PricingBinding | PricingBindingResponse | None = None,
+    accounting_binding: (
+        PricingBinding
+        | PricingBindingResponse
+        | Mapping[str, PricingBinding | PricingBindingResponse]
+        | None
+    ) = None,
     accounting_producer_id: str | None = None,
 ) -> str:
     """LiveKit ``attach()`` body: bind ``MetricCapture`` to an ``AgentSession``."""
@@ -1612,7 +1630,12 @@ def _attach_pipecat(
     turns: bool = True,
     dead_air: bool = True,
     accounting_outbox: AccountingOutbox | None = None,
-    accounting_binding: PricingBinding | PricingBindingResponse | None = None,
+    accounting_binding: (
+        PricingBinding
+        | PricingBindingResponse
+        | Mapping[str, PricingBinding | PricingBindingResponse]
+        | None
+    ) = None,
     accounting_producer_id: str | None = None,
 ) -> str:
     """Register a ``VoiceGatewayObserver`` on a Pipecat ``PipelineTask``.
