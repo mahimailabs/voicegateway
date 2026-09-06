@@ -648,10 +648,26 @@ async def test_create_project(client):
         json={
             "project_id": "http-proj",
             "name": "HTTP Project",
+            "budget_action": "block",
         },
     )
     assert resp.status_code == 200
     assert resp.json()["source"] == "db"
+    detail = await client.get("/v1/projects/http-proj")
+    assert detail.json()["budget_action"] == "block"
+
+
+async def test_create_project_rejects_bad_budget_action(client):
+    resp = await client.post(
+        "/v1/projects",
+        json={
+            "project_id": "bad-action",
+            "name": "Invalid",
+            "budget_action": "explode",
+        },
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Invalid budget_action 'explode'"
 
 
 async def test_create_project_conflict(client):
@@ -676,6 +692,23 @@ async def test_patch_project(client):
     resp = await client.patch("/v1/projects/update-me", json={"name": "Updated"})
     assert resp.status_code == 200
     assert resp.json()["updated"] is True
+
+
+async def test_patch_project_rejects_bad_budget_action(client):
+    await client.post(
+        "/v1/projects",
+        json={
+            "project_id": "invalid-update",
+            "name": "Original",
+        },
+    )
+    resp = await client.patch(
+        "/v1/projects/invalid-update", json={"budget_action": "explode"}
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Invalid budget_action 'explode'"
+    detail = await client.get("/v1/projects/invalid-update")
+    assert detail.json()["budget_action"] == "warn"
 
 
 async def test_delete_project_yaml_forbidden(client):

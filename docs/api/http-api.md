@@ -592,6 +592,9 @@ Create a new project (stored in SQLite).
 }
 ```
 
+`budget_action` must be `warn`, `throttle`, or `block`. Both create and update requests
+return `400 Bad Request` for any other value.
+
 **Response:**
 
 ```json

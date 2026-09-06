@@ -13,6 +13,13 @@ if TYPE_CHECKING:
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 write_dep = Depends(require_scope("write"))
+_VALID_BUDGET_ACTIONS = {"warn", "throttle", "block"}
+
+
+def _validate_budget_action(value: object) -> str:
+    if not isinstance(value, str) or value not in _VALID_BUDGET_ACTIONS:
+        raise HTTPException(400, f"Invalid budget_action '{value}'")
+    return value
 
 
 @router.get("")
@@ -70,12 +77,13 @@ async def create_project(
     pid = body.get("project_id", "")
     if pid in gateway.config.projects:
         raise HTTPException(409, f"Project '{pid}' already exists")
+    budget_action = _validate_budget_action(body.get("budget_action", "warn"))
     await gateway.storage.upsert_managed_project(
         project_id=pid,
         name=body.get("name", pid),
         description=body.get("description", ""),
         daily_budget=float(body.get("daily_budget", 0.0)),
-        budget_action=body.get("budget_action", "warn"),
+        budget_action=budget_action,
         default_stack=body.get("default_stack"),
         stt_model=body.get("stt_model"),
         llm_model=body.get("llm_model"),
@@ -98,12 +106,15 @@ async def update_project(
     managed = await gateway.storage.get_managed_project(project_id)
     if managed is None:
         raise HTTPException(404, f"No managed project '{project_id}'")
+    budget_action = _validate_budget_action(
+        body.get("budget_action", managed.get("budget_action", "warn"))
+    )
     await gateway.storage.upsert_managed_project(
         project_id=project_id,
         name=body.get("name", managed["name"]),
         description=body.get("description", managed.get("description", "")),
         daily_budget=float(body.get("daily_budget", managed.get("daily_budget", 0.0))),
-        budget_action=body.get("budget_action", managed.get("budget_action", "warn")),
+        budget_action=budget_action,
         default_stack=body.get("default_stack", managed.get("default_stack")),
         stt_model=body.get("stt_model", managed.get("stt_model")),
         llm_model=body.get("llm_model", managed.get("llm_model")),
