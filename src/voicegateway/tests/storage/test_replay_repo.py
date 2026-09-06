@@ -64,7 +64,7 @@ async def test_bulk_write_round_trip(tmp_path) -> None:
             llm("s1", 500, "hi"),
             _state("s1", 510),
         ]
-        n = await replay.bulk_write_events(db, events)
+        n = await replay.bulk_write_events(db, events, tenant_id=None)
         assert n == 3
 
         listed = await replay.read_full_replay(db, "s1")
@@ -78,7 +78,7 @@ async def test_bulk_write_round_trip(tmp_path) -> None:
 async def test_bulk_write_empty_is_noop(tmp_path) -> None:
     storage = await _fresh_storage(tmp_path)
     async with storage._conn.session() as db:
-        n = await replay.bulk_write_events(db, [])
+        n = await replay.bulk_write_events(db, [], tenant_id=None)
         assert n == 0
 
 
@@ -96,7 +96,7 @@ async def test_delete_replay_cascades_all_four_tables(tmp_path) -> None:
             llm("s1", 100, "b"),
             _state("s1", 200),
         ]
-        await replay.bulk_write_events(db, events)
+        await replay.bulk_write_events(db, events, tenant_id=None)
         await replay.bulk_write_events(
             db,
             [
@@ -113,6 +113,7 @@ async def test_delete_replay_cascades_all_four_tables(tmp_path) -> None:
                     cost_usd=0.00001,
                 )
             ],
+            tenant_id=None,
         )
 
         deleted = await replay.delete_replay(db, "s1")
@@ -125,6 +126,8 @@ async def test_delete_replay_cascades_all_four_tables(tmp_path) -> None:
 async def test_aggregate_storage_per_session(tmp_path) -> None:
     storage = await _fresh_storage(tmp_path)
     async with storage._conn.session() as db:
-        await replay.bulk_write_events(db, [stt("s1", 0, "hello world")])
+        await replay.bulk_write_events(
+            db, [stt("s1", 0, "hello world")], tenant_id=None
+        )
         size = await replay.aggregate_storage_per_session(db, "s1")
         assert 30 <= size <= 500

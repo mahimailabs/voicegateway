@@ -17,12 +17,14 @@ import asyncio
 import hashlib
 import json
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from voicegateway.accounting.contracts import PricingBinding, PricingBindingResponse
+    from voicegateway.accounting.outbox import AccountingOutbox
     from voicegateway.middleware.dead_air_detector_middleware import DeadAirEvent
     from voicegateway.middleware.turn_tracker_middleware import TurnRow
     from voicegateway.models.request_model import RequestRecord
@@ -67,6 +69,24 @@ class Sink(Protocol):
     async def aclose(self) -> None: ...
 
 
+def _enqueue_tenant() -> str | None:
+    """The tenant to stamp on an agent-side write, read at enqueue time.
+
+    This is the one place the ContextVar stays legitimate. A sink runs in the
+    same task as the session that set the tenant, so reading it here is
+    reading the caller's own identity. ``flush`` may run later in a background
+    task whose context no longer carries it, which is why every write captures
+    the tenant when it is buffered rather than when it lands.
+
+    Server routes never come through here: they pass the authenticated
+    principal's tenant explicitly, because a request handler's context holds
+    whatever the previous request happened to leave behind.
+    """
+    from voicegateway.inference.session.context import current_tenant
+
+    return current_tenant()
+
+
 class LocalSqliteSink:
     """Default single-node sink: writes through the embedded StorageService.
 
@@ -83,13 +103,13 @@ class LocalSqliteSink:
         await self._storage.log_request(record)
 
     async def log_turns(self, rows: list[TurnRow]) -> None:
-        await self._storage.log_turns(rows)
+        await self._storage.log_turns(rows, tenant_id=_enqueue_tenant())
 
     async def log_dead_air(self, events: list[DeadAirEvent]) -> None:
-        await self._storage.log_dead_air(events)
+        await self._storage.log_dead_air(events, tenant_id=_enqueue_tenant())
 
     async def log_tool_calls(self, rows: list[ToolCall]) -> None:
-        await self._storage.log_tool_calls(rows)
+        await self._storage.log_tool_calls(rows, tenant_id=_enqueue_tenant())
 
     async def flush(self) -> None:
         return None
@@ -102,6 +122,83 @@ class LocalSqliteSink:
 
     async def finalize_session_replay(self, session_id: str) -> None:
         await self._storage.finalize_session_replay(session_id)
+
+
+class AccountingCaptureSink:
+    """Opt-in decorator that mirrors request measurements to usage v1."""
+
+    def __init__(
+        self,
+        sink: Sink,
+        outbox: AccountingOutbox,
+        *,
+        producer_id: str,
+        binding: (
+            PricingBinding
+            | PricingBindingResponse
+            | Mapping[str, PricingBinding | PricingBindingResponse]
+            | None
+        ) = None,
+    ) -> None:
+        self._sink = sink
+        self._outbox = outbox
+        self._producer_id = producer_id
+        self._binding = binding
+
+    def _binding_for(
+        self, record: RequestRecord
+    ) -> PricingBinding | PricingBindingResponse | None:
+        if isinstance(self._binding, Mapping):
+            return self._binding.get(record.model_id) or self._binding.get(
+                record.modality
+            )
+        return self._binding
+
+    async def log_request(self, record: RequestRecord) -> None:
+        from voicegateway.accounting.adapters import envelope_from_request_record
+        from voicegateway.accounting.contracts import OwnershipMode
+
+        binding = self._binding_for(record)
+        if binding is None or binding.ownership_mode is not OwnershipMode.EXTERNAL:
+            envelope = envelope_from_request_record(
+                record,
+                producer_id=self._producer_id,
+                binding=binding,
+                event_id=f"usage:{record.id}",
+                attempt_id=record.id,
+            )
+            try:
+                outcome = await self._outbox.submit(envelope)
+                if outcome == "full":
+                    logger.error("accounting outbox full; event was not persisted")
+            except Exception:
+                await self._outbox.record_capture_failure()
+                logger.exception("accounting outbox persistence failed")
+        # Legacy observability remains independent: accounting failure cannot
+        # suppress the normal telemetry row, and collector delivery never runs
+        # on this path.
+        await self._sink.log_request(record)
+
+    async def log_turns(self, rows: list[TurnRow]) -> None:
+        await self._sink.log_turns(rows)
+
+    async def log_dead_air(self, events: list[DeadAirEvent]) -> None:
+        await self._sink.log_dead_air(events)
+
+    async def log_tool_calls(self, rows: list[ToolCall]) -> None:
+        await self._sink.log_tool_calls(rows)
+
+    async def flush(self) -> None:
+        await self._sink.flush()
+        await self._outbox.flush_memory()
+        await self._outbox.drain_with_backoff()
+
+    async def aclose(self) -> None:
+        await self._sink.aclose()
+        await self._outbox.aclose()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._sink, name)
 
 
 def _normalize_ingest_url(url: str) -> str:

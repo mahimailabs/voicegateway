@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 
-from voicegateway.inference.session.context import current_tenant
 from voicegateway.middleware.replay_capture_middleware import ReplayEvent
 
 if TYPE_CHECKING:
@@ -55,12 +54,11 @@ async def bulk_write_events(
     session: AsyncSession,
     events: list[ReplayEvent],
     *,
-    tenant_id: str | None = None,
+    tenant_id: str | None,
 ) -> int:
     """Bulk-insert events into their per-modality tables."""
     if not events:
         return 0
-    resolved = tenant_id if tenant_id is not None else current_tenant()
 
     by_modality: dict[str, list[dict[str, Any]]] = {
         "stt": [],
@@ -80,7 +78,7 @@ async def bulk_write_events(
                     "session_id": ev.session_id,
                     "t_ms": ev.t_ms,
                     "payload": _payload_to_text(ev.payload),
-                    "tenant_id": resolved,
+                    "tenant_id": tenant_id,
                 }
             )
         else:
@@ -91,7 +89,7 @@ async def bulk_write_events(
                     "payload": _payload_to_text(ev.payload),
                     "provider": ev.provider,
                     "cost_usd": ev.cost_usd,
-                    "tenant_id": resolved,
+                    "tenant_id": tenant_id,
                 }
             )
 

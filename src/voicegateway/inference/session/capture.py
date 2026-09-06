@@ -110,6 +110,15 @@ def units_from_metric(
     """
     ttfb_ms = _ttfb_ms(metric)
     if modality == "llm":
+        if "realtime" in type(metric).__name__.lower():
+            details = getattr(metric, "input_token_details", None)
+            cached = getattr(details, "cached_tokens", 0) or 0
+            return (
+                float(getattr(metric, "input_tokens", 0) or 0),
+                float(getattr(metric, "output_tokens", 0) or 0),
+                float(cached),
+                ttfb_ms,
+            )
         return (
             float(getattr(metric, "prompt_tokens", 0) or 0),
             float(getattr(metric, "completion_tokens", 0) or 0),
@@ -127,6 +136,82 @@ def units_from_metric(
             ttfb_ms,
         )
     return (0.0, 0.0, 0.0, ttfb_ms)
+
+
+def _accounting_metric_metadata(metric: object, modality: str) -> dict[str, Any]:
+    """Preserve accounting measurement state that legacy float columns cannot.
+
+    RequestRecord predates the exact ledger and uses zero-valued float defaults.
+    This private metadata keeps a genuinely measured zero distinct from an
+    absent measurement, and carries realtime text/audio token splits.  It holds
+    counts and opaque provider correlation IDs only; never content.
+    """
+    result: dict[str, Any] = {}
+    request_id = getattr(metric, "request_id", None)
+    if isinstance(request_id, str) and request_id:
+        result["provider_request_id"] = request_id
+    segment_id = getattr(metric, "segment_id", None)
+    if isinstance(segment_id, str) and segment_id:
+        result["provider_segment_id"] = segment_id
+
+    missing: list[str] = []
+    if modality == "llm" and "realtime" in type(metric).__name__.lower():
+        input_details = getattr(metric, "input_token_details", None)
+        output_details = getattr(metric, "output_token_details", None)
+        cached_details = getattr(input_details, "cached_tokens_details", None)
+        cached_total = getattr(input_details, "cached_tokens", None)
+        cache_text = getattr(cached_details, "text_tokens", None)
+        cache_audio = getattr(cached_details, "audio_tokens", None)
+        if cached_details is None and cached_total == 0:
+            cache_text = cache_audio = 0
+        values = {
+            "text_input": getattr(input_details, "text_tokens", None),
+            "text_output": getattr(output_details, "text_tokens", None),
+            "cache_read": cache_text,
+            "realtime_audio_input": getattr(input_details, "audio_tokens", None),
+            "realtime_audio_output": getattr(output_details, "audio_tokens", None),
+            "realtime_audio_cache": cache_audio,
+        }
+        result["accounting_realtime_quantities"] = {
+            key: int(value) for key, value in values.items() if value is not None
+        }
+        missing.extend(key for key, value in values.items() if value is None)
+    else:
+        fields = {
+            "llm": {
+                "text_input": "prompt_tokens",
+                "text_output": "completion_tokens",
+                "cache_read": "prompt_cached_tokens",
+            },
+            "stt": {"audio_seconds": "audio_duration"},
+            "tts": {"characters": "characters_count"},
+        }.get(modality, {})
+        missing.extend(
+            dimension
+            for dimension, field in fields.items()
+            if getattr(metric, field, None) is None
+        )
+    if missing:
+        result["accounting_missing_dimensions"] = sorted(missing)
+    return result
+
+
+def _stable_metric_record_id(
+    metric: object, *, modality: str, provider: str, model_id: str
+) -> str | None:
+    """Return a replay-stable ID when the native SDK supplies correlation.
+
+    A TTS request can emit several segments with one request ID.  Segment and
+    metric timestamp keep those subrequests distinct; replaying the same metric
+    produces the same ID and therefore one accounting event.
+    """
+    request_id = getattr(metric, "request_id", None)
+    if not isinstance(request_id, str) or not request_id:
+        return None
+    segment = getattr(metric, "segment_id", None) or ""
+    timestamp = getattr(metric, "timestamp", None)
+    material = f"{provider}|{model_id}|{modality}|{request_id}|{segment}|{timestamp}"
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, material))
 
 
 def _provider_name(component: object) -> str:
@@ -418,9 +503,20 @@ class MetricCapture:
             revision=self._revision,
             turn_index=turn_index,
         )
-        network = _network_meta(metric)
-        if network:
-            record.metadata = {**record.metadata, **network}
+        stable_id = _stable_metric_record_id(
+            metric, modality=modality, provider=provider, model_id=model_id
+        )
+        if stable_id is not None:
+            record.id = stable_id
+            metric_timestamp = getattr(metric, "timestamp", None)
+            if isinstance(metric_timestamp, int | float) and metric_timestamp > 0:
+                record.timestamp = float(metric_timestamp)
+        metric_metadata = {
+            **_network_meta(metric),
+            **_accounting_metric_metadata(metric, modality),
+        }
+        if metric_metadata:
+            record.metadata = {**record.metadata, **metric_metadata}
         self._stamp_context(record)
         tally = self._recorded.setdefault(
             (provider, model_id), {"input": 0.0, "output": 0.0, "cached": 0.0}

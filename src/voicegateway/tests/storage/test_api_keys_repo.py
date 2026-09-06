@@ -18,7 +18,11 @@ async def db(tmp_path):
 
 async def test_issuance_returns_plaintext_once(db) -> None:
     created = await vk.create_api_key(
-        db, name="prod-bot", tenant_id="acme", issued_by="ops@vg"
+        db,
+        name="prod-bot",
+        tenant_id="acme",
+        issued_by="ops@vg",
+        scopes="read,write,ingest,admin",
     )
     assert created.plaintext.startswith("vk_")
     assert len(created.plaintext) == 35  # vk_ + 32 base32 chars
@@ -29,7 +33,9 @@ async def test_issuance_returns_plaintext_once(db) -> None:
 
 
 async def test_verify_round_trip_returns_id_and_tenant(db) -> None:
-    created = await vk.create_api_key(db, name="bot", tenant_id="acme")
+    created = await vk.create_api_key(
+        db, name="bot", tenant_id="acme", scopes="read,write,ingest,admin"
+    )
     verified = await vk.verify(db, created.plaintext)
     assert verified is not None
     assert verified.id == created.id
@@ -48,14 +54,14 @@ async def test_verify_rejects_unknown_key(db) -> None:
 
 
 async def test_verify_rejects_revoked_key(db) -> None:
-    created = await vk.create_api_key(db, name="bot")
+    created = await vk.create_api_key(db, name="bot", scopes="read,write,ingest,admin")
     assert await vk.verify(db, created.plaintext) is not None
     assert await vk.revoke(db, created.id) is True
     assert await vk.verify(db, created.plaintext) is None
 
 
 async def test_revoke_is_idempotent_observable(db) -> None:
-    created = await vk.create_api_key(db, name="bot")
+    created = await vk.create_api_key(db, name="bot", scopes="read,write,ingest,admin")
     assert await vk.revoke(db, created.id) is True
     # Second revoke returns False because the row is already revoked.
     assert await vk.revoke(db, created.id) is False
@@ -63,7 +69,7 @@ async def test_revoke_is_idempotent_observable(db) -> None:
 
 async def test_revoke_keeps_row_for_audit(db) -> None:
     """OQ5: soft revoke writes revoked_at, does not delete the row."""
-    created = await vk.create_api_key(db, name="bot")
+    created = await vk.create_api_key(db, name="bot", scopes="read,write,ingest,admin")
     await vk.revoke(db, created.id)
     row = await vk.get_by_id(db, created.id)
     assert row is not None
@@ -71,7 +77,7 @@ async def test_revoke_keeps_row_for_audit(db) -> None:
 
 
 async def test_mark_used_updates_last_used_at(db) -> None:
-    created = await vk.create_api_key(db, name="bot")
+    created = await vk.create_api_key(db, name="bot", scopes="read,write,ingest,admin")
     assert created.row.last_used_at is None
     await vk.mark_used(db, created.id)
     refreshed = await vk.get_by_id(db, created.id)
@@ -81,8 +87,10 @@ async def test_mark_used_updates_last_used_at(db) -> None:
 
 async def test_list_keys_excludes_plaintext_and_hash(db) -> None:
     """The ApiKeyRow dataclass intentionally drops ``key_hash``."""
-    await vk.create_api_key(db, name="bot1", tenant_id="acme")
-    await vk.create_api_key(db, name="bot2")
+    await vk.create_api_key(
+        db, name="bot1", tenant_id="acme", scopes="read,write,ingest,admin"
+    )
+    await vk.create_api_key(db, name="bot2", scopes="read,write,ingest,admin")
     rows = await vk.list_keys(db)
     assert len(rows) == 2
     for row in rows:
@@ -93,8 +101,12 @@ async def test_list_keys_excludes_plaintext_and_hash(db) -> None:
 
 
 async def test_list_keys_filter_revoked(db) -> None:
-    active = await vk.create_api_key(db, name="active")
-    revoked = await vk.create_api_key(db, name="revoked")
+    active = await vk.create_api_key(
+        db, name="active", scopes="read,write,ingest,admin"
+    )
+    revoked = await vk.create_api_key(
+        db, name="revoked", scopes="read,write,ingest,admin"
+    )
     await vk.revoke(db, revoked.id)
 
     all_rows = await vk.list_keys(db, include_revoked=True)
@@ -105,7 +117,9 @@ async def test_list_keys_filter_revoked(db) -> None:
 
 
 async def test_unscoped_key_has_null_tenant(db) -> None:
-    created = await vk.create_api_key(db, name="unscoped")
+    created = await vk.create_api_key(
+        db, name="unscoped", scopes="read,write,ingest,admin"
+    )
     assert created.row.tenant_id is None
     verified = await vk.verify(db, created.plaintext)
     assert verified is not None
@@ -114,7 +128,7 @@ async def test_unscoped_key_has_null_tenant(db) -> None:
 
 async def test_list_stale_includes_never_used_keys(db) -> None:
     """Issued-but-never-used keys past the cutoff are stale."""
-    await vk.create_api_key(db, name="brand-new")
+    await vk.create_api_key(db, name="brand-new", scopes="read,write,ingest,admin")
 
     # ``stale_after_days=0`` means anything issued at or before "now"
     # is considered stale, which captures the just-created row.
@@ -124,7 +138,7 @@ async def test_list_stale_includes_never_used_keys(db) -> None:
 
 
 async def test_list_stale_excludes_recently_used_keys(db) -> None:
-    created = await vk.create_api_key(db, name="busy")
+    created = await vk.create_api_key(db, name="busy", scopes="read,write,ingest,admin")
     await vk.mark_used(db, created.id)
 
     # 365-day threshold means nothing should be stale yet.
@@ -133,7 +147,7 @@ async def test_list_stale_excludes_recently_used_keys(db) -> None:
 
 
 async def test_list_stale_excludes_revoked_keys(db) -> None:
-    created = await vk.create_api_key(db, name="dead")
+    created = await vk.create_api_key(db, name="dead", scopes="read,write,ingest,admin")
     await vk.revoke(db, created.id)
     stale = await vk.list_stale(db, stale_after_days=0)
     assert len(stale) == 0
@@ -146,7 +160,7 @@ async def test_list_stale_rejects_negative_threshold(db) -> None:
 
 async def test_create_rejects_empty_name(db) -> None:
     with pytest.raises(ValueError):
-        await vk.create_api_key(db, name="")
+        await vk.create_api_key(db, name="", scopes="read,write,ingest,admin")
 
 
 async def test_get_by_id_returns_none_for_missing(db) -> None:
@@ -154,8 +168,12 @@ async def test_get_by_id_returns_none_for_missing(db) -> None:
 
 
 async def test_two_keys_with_same_tenant_independent(db) -> None:
-    a = await vk.create_api_key(db, name="a", tenant_id="acme")
-    b = await vk.create_api_key(db, name="b", tenant_id="acme")
+    a = await vk.create_api_key(
+        db, name="a", tenant_id="acme", scopes="read,write,ingest,admin"
+    )
+    b = await vk.create_api_key(
+        db, name="b", tenant_id="acme", scopes="read,write,ingest,admin"
+    )
     assert a.plaintext != b.plaintext
     assert a.row.key_prefix != b.row.key_prefix or a.plaintext != b.plaintext
 
@@ -170,15 +188,25 @@ async def test_two_keys_with_same_tenant_independent(db) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_default_key_is_tenant_role_wildcard_scope(db) -> None:
-    """A key created without explicit role/scopes gets 'tenant' + '*'."""
-    created = await vk.create_api_key(db, name="default-key")
+async def test_key_defaults_to_tenant_role_and_no_wildcard(db) -> None:
+    """Role still defaults to 'tenant'. Scopes no longer default at all.
+
+    This test used to assert the key came back with ``"*"``. That default was
+    VG-SEC-006: it made every scope check pass. Role keeps its default because
+    'tenant' is the safe one; scopes has none because there is no safe guess.
+    """
+    created = await vk.create_api_key(
+        db, name="default-key", scopes="read,write,ingest,admin"
+    )
     verified = await vk.verify(db, created.plaintext)
     assert verified is not None
     assert verified.role == "tenant"
-    assert verified.scopes == "*"
+    assert verified.scopes == "admin,ingest,read,write"
     assert verified.has_scope("write") is True
-    assert verified.has_scope("admin") is True  # wildcard covers everything
+    assert verified.has_scope("admin") is True
+    # Not by wildcard: each of those is named. A scope nobody asked for is
+    # still refused, which is the whole point of removing the default.
+    assert verified.has_scope("mcp:read") is False
 
 
 async def test_scoped_key_denies_unlisted_scope(db) -> None:
@@ -193,7 +221,9 @@ async def test_scoped_key_denies_unlisted_scope(db) -> None:
 
 async def test_admin_role_key_is_created_and_verified(db) -> None:
     """A key created with role='admin' comes back with role='admin'."""
-    created = await vk.create_api_key(db, name="ops-key", role="admin")
+    created = await vk.create_api_key(
+        db, name="ops-key", role="admin", scopes="read,write,ingest,admin"
+    )
     verified = await vk.verify(db, created.plaintext)
     assert verified is not None
     assert verified.role == "admin"

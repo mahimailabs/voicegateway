@@ -100,9 +100,7 @@ async def _insert(
 
 
 def _entry(body: dict, node: str, source: str) -> dict:
-    matches = [
-        e for e in body["nodes"] if e["node"] == node and e["source"] == source
-    ]
+    matches = [e for e in body["nodes"] if e["node"] == node and e["source"] == source]
     assert len(matches) == 1, (
         f"expected exactly one entry for ({node}, {source}), got {len(matches)}"
     )
@@ -368,7 +366,9 @@ async def test_a_tenant_key_is_refused_rather_than_shown_the_fleet(client, gatew
         rooms=1,
     )
     async with gateway.storage._conn.session() as db:
-        created = await api_keys.create_api_key(db, name="acme-ui", tenant_id="acme")
+        created = await api_keys.create_api_key(
+            db, name="acme-ui", tenant_id="acme", scopes="read,write,ingest,admin"
+        )
 
     resp = await client.get(
         _URL, headers={"Authorization": f"Bearer {created.plaintext}"}
@@ -391,8 +391,7 @@ def test_the_default_window_matches_the_scrape_interval() -> None:
     from voicegateway.server.api.dashboard import nodes_live
 
     assert (
-        nodes_live.DEFAULT_STALE_AFTER_SECONDS
-        == worker._DEFAULT_POLL_INTERVAL_SECONDS
+        nodes_live.DEFAULT_STALE_AFTER_SECONDS == worker._DEFAULT_POLL_INTERVAL_SECONDS
     )
 
 

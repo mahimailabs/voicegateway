@@ -600,7 +600,9 @@ async def test_a_tenant_key_is_refused_rather_than_shown_the_whole_fleet(
         gateway.storage, attempt_id="t", started_at_ms=_T0, ended_at_ms=_T0 + _MINUTE
     )
     async with gateway.storage._conn.session() as db:
-        created = await api_keys.create_api_key(db, name="acme-ui", tenant_id="acme")
+        created = await api_keys.create_api_key(
+            db, name="acme-ui", tenant_id="acme", scopes="read,write,ingest,admin"
+        )
 
     resp = await client.get(
         _URL, headers={"Authorization": f"Bearer {created.plaintext}"}

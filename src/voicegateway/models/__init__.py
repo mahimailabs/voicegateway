@@ -7,6 +7,14 @@ both see them.
 
 from __future__ import annotations
 
+from voicegateway.models.accounting_model import (
+    AccountingOwnership,
+    AccountingProjection,
+    AccountingRejection,
+    AccountingUsage,
+    PreparedPricingBinding,
+    PricingRevision,
+)
 from voicegateway.models.agent_observation_model import AgentObservation
 from voicegateway.models.agent_probe_result_model import AgentProbeResult
 from voicegateway.models.api_key_model import ApiKey
@@ -41,6 +49,10 @@ __all__ = [
     "ToolCall",
     "AgentObservation",
     "AgentProbeResult",
+    "AccountingProjection",
+    "AccountingRejection",
+    "AccountingOwnership",
+    "AccountingUsage",
     "BaseModel",
     "BaseUUIDModel",
     "Call",
@@ -60,6 +72,8 @@ __all__ = [
     "ReplaySttEvent",
     "ReplayStateSnapshot",
     "ReplayTtsFrame",
+    "PricingRevision",
+    "PreparedPricingBinding",
     "Request",
     "RequestRecord",
     "Session",

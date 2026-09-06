@@ -19,6 +19,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from voicegateway.server.api import (
+    accounting,
     agents,
     api_keys,
     audit_log,
@@ -36,6 +37,9 @@ from voicegateway.server.api import (
     rooms,
     sessions,
     system,
+)
+from voicegateway.server.api.dashboard import (
+    accounting as dashboard_accounting,
 )
 from voicegateway.server.api.dashboard import (
     agents as dashboard_agents,
@@ -96,6 +100,7 @@ system_router = APIRouter()
 system_router.include_router(system.router)
 
 api_router = APIRouter(prefix="/v1")
+api_router.include_router(accounting.router)
 api_router.include_router(models.router)
 api_router.include_router(costs.router)
 api_router.include_router(billing.router)
@@ -124,6 +129,7 @@ api_router.include_router(call_observations.router)
 
 dashboard_router = APIRouter(prefix="/api")
 dashboard_router.include_router(dashboard_health.router)
+dashboard_router.include_router(dashboard_accounting.router)
 dashboard_router.include_router(dashboard_auth_status.router)
 dashboard_router.include_router(dashboard_status.router)
 dashboard_router.include_router(dashboard_costs.router)

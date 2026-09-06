@@ -31,7 +31,12 @@ def test_list_api_keys_starts_empty(client) -> None:
 def test_create_api_key_returns_plaintext_once(client) -> None:
     resp = client.post(
         "/api/api_keys",
-        json={"name": "demo-key", "tenant_id": "acme", "issued_by": "ops"},
+        json={
+            "name": "demo-key",
+            "scopes": "read",
+            "tenant_id": "acme",
+            "issued_by": "ops",
+        },
     )
     assert resp.status_code == 201 or resp.status_code == 200
     body = resp.json()
@@ -52,10 +57,28 @@ def test_create_api_key_rejects_whitespace_name(client) -> None:
     assert resp.status_code == 400
 
 
+def test_create_api_key_requires_scopes(client):
+    """VG-SEC-006: the dashboard door refuses the same requests as the others."""
+    resp = client.post("/api/api_keys", json={"name": "no-scopes"})
+    assert resp.status_code == 400
+    assert "scopes" in resp.json()["detail"]
+
+
+def test_create_api_key_refuses_the_wildcard(client):
+    resp = client.post("/api/api_keys", json={"name": "wild", "scopes": "*"})
+    assert resp.status_code == 400
+    assert "wildcard" in resp.json()["detail"]
+
+
 def test_create_api_key_strips_empty_optional_fields(client) -> None:
     resp = client.post(
         "/api/api_keys",
-        json={"name": "minimal", "tenant_id": "", "issued_by": None},
+        json={
+            "name": "minimal",
+            "scopes": "read",
+            "tenant_id": "",
+            "issued_by": None,
+        },
     )
     assert resp.status_code in (200, 201)
     row = resp.json()["row"]
@@ -64,7 +87,7 @@ def test_create_api_key_strips_empty_optional_fields(client) -> None:
 
 
 def test_list_api_keys_surfaces_created_key(client) -> None:
-    create = client.post("/api/api_keys", json={"name": "to-list"})
+    create = client.post("/api/api_keys", json={"name": "to-list", "scopes": "read"})
     assert create.status_code in (200, 201)
     created_id = create.json()["id"]
 
@@ -75,7 +98,7 @@ def test_list_api_keys_surfaces_created_key(client) -> None:
 
 
 def test_revoke_api_key_returns_revoked_payload(client) -> None:
-    create = client.post("/api/api_keys", json={"name": "to-revoke"})
+    create = client.post("/api/api_keys", json={"name": "to-revoke", "scopes": "read"})
     created_id = create.json()["id"]
 
     resp = client.post(f"/api/api_keys/{created_id}/revoke")
@@ -92,7 +115,9 @@ def test_revoke_unknown_api_key_returns_404(client) -> None:
 
 
 def test_revoke_already_revoked_key_returns_404(client) -> None:
-    create = client.post("/api/api_keys", json={"name": "double-revoke"})
+    create = client.post(
+        "/api/api_keys", json={"name": "double-revoke", "scopes": "read"}
+    )
     created_id = create.json()["id"]
     client.post(f"/api/api_keys/{created_id}/revoke")
 
@@ -102,7 +127,7 @@ def test_revoke_already_revoked_key_returns_404(client) -> None:
 
 
 def test_list_api_keys_filters_revoked_when_include_revoked_false(client) -> None:
-    create = client.post("/api/api_keys", json={"name": "hide-me"})
+    create = client.post("/api/api_keys", json={"name": "hide-me", "scopes": "read"})
     created_id = create.json()["id"]
     client.post(f"/api/api_keys/{created_id}/revoke")
 
@@ -136,7 +161,9 @@ def test_mint_stays_open_when_no_keys_are_configured(app_under_test) -> None:
     """
     assert app_under_test.state.api_keys == []
     client = TestClient(app_under_test)
-    created = client.post("/api/api_keys", json={"name": "local-operator"})
+    created = client.post(
+        "/api/api_keys", json={"name": "local-operator", "scopes": "read"}
+    )
     assert created.status_code in (200, 201)
     assert created.json()["plaintext"].startswith("vk_")
     assert client.get("/api/api_keys").status_code == 200
@@ -158,13 +185,18 @@ def test_router_requires_admin_when_auth_enabled(app_under_test) -> None:
     ]
     client = TestClient(app_under_test)
 
-    assert client.post("/api/api_keys", json={"name": "stolen"}).status_code == 401
+    assert (
+        client.post(
+            "/api/api_keys", json={"name": "stolen", "scopes": "read"}
+        ).status_code
+        == 401
+    )
     assert client.get("/api/api_keys").status_code == 401
     assert client.post("/api/api_keys/1/revoke").status_code == 401
     assert (
         client.post(
             "/api/api_keys",
-            json={"name": "stolen"},
+            json={"name": "stolen", "scopes": "read"},
             headers={"Authorization": "Bearer wrong-token"},
         ).status_code
         == 401
@@ -172,7 +204,7 @@ def test_router_requires_admin_when_auth_enabled(app_under_test) -> None:
 
     ok = client.post(
         "/api/api_keys",
-        json={"name": "minted-by-admin"},
+        json={"name": "minted-by-admin", "scopes": "read"},
         headers={"Authorization": "Bearer admin-secret-token"},
     )
     assert ok.status_code in (200, 201)
@@ -190,7 +222,7 @@ def test_router_rejects_key_without_admin_scope(app_under_test) -> None:
 
     denied = client.post(
         "/api/api_keys",
-        json={"name": "escalation"},
+        json={"name": "escalation", "scopes": "read"},
         headers={"Authorization": "Bearer read-only-token"},
     )
     assert denied.status_code == 403
@@ -210,14 +242,16 @@ def test_minted_tenant_key_cannot_mint_another_key(app_under_test) -> None:
     from voicegateway.core.auth import ADMIN_SCOPE, ApiKey
 
     client = TestClient(app_under_test)
-    plaintext = client.post("/api/api_keys", json={"name": "agent"}).json()["plaintext"]
+    plaintext = client.post(
+        "/api/api_keys", json={"name": "agent", "scopes": "read"}
+    ).json()["plaintext"]
 
     app_under_test.state.api_keys = [
         ApiKey(token="admin-secret-token", name="ops", scopes=(ADMIN_SCOPE,))
     ]
     denied = client.post(
         "/api/api_keys",
-        json={"name": "self-replication"},
+        json={"name": "self-replication", "scopes": "read"},
         headers={"Authorization": f"Bearer {plaintext}"},
     )
     assert denied.status_code == 403

@@ -1,6 +1,6 @@
 # Cross-tenant security fixtures (Wave 0)
 
-Five cases, each one request by one actor against one victim tenant, plus what
+Six cases, each one request by one actor against one victim tenant, plus what
 the contract says must happen. They are data, not tests: the runner lives in
 `tests/server/test_telemetry_tenant_isolation_contract.py`.
 
@@ -27,7 +27,8 @@ prove:
 | `read_tenant_param_override` | guarantee | none | The read path already refuses a foreign `tenant` param with 403. |
 | `session_detail_foreign_id` | guarantee | none | A foreign session id returns 404, not 403, so it is not an existence oracle. |
 | `audit_log_open_read` | characterization | VG-SEC-004 | The audit log answers a caller with no credential. |
-| `project_param_unscoped` | absence | VG-SEC-002 | No surface exists to authorize a project, so there is nothing to characterize. |
+| `project_param_unscoped` | characterization | VG-SEC-002 | Accounting enforces project allowlists; legacy project-filtered reads do not yet. |
+| `mcp_principal_absent` | absence | VG-SEC-008 | MCP still has no per-caller principal or project allowlist. |
 
 Two of the five record guarantees rather than defects. That is deliberate. A
 format that can only express what is broken cannot tell you when something

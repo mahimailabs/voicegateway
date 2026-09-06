@@ -251,6 +251,16 @@ class ApiKeyEntry(_StrictBase):
 class AuthConfig(_StrictBase):
     api_keys: list[ApiKeyEntry] = Field(default_factory=list)
     cors_origins: list[str] = Field(default_factory=list)
+    #: Explicit local mode: unauthenticated requests are allowed and nothing
+    #: is logged about them. Refused at startup in the company of anything
+    #: production-shaped, so it cannot travel to a server inside a copied
+    #: config file. See ``core.auth.validate_auth_startup``.
+    local_development: bool = False
+    #: ``warn`` serves every request that would be refused and emits one
+    #: ``vg.auth.would_refuse`` event naming it, so an operator can see the
+    #: blast radius before anything breaks. ``enforce`` refuses. 0.26.0
+    #: defaults to warn; 0.27.0 defaults to enforce.
+    enforcement: Literal["warn", "enforce"] = "warn"
 
 
 class FallbackConfig(BaseModel):

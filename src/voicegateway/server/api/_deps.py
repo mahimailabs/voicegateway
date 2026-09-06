@@ -14,12 +14,15 @@ Two top-level helpers:
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import logging
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from fastapi import Depends, HTTPException, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from voicegateway.core import scopes
 from voicegateway.core.auth import (
     ADMIN_SCOPE,
     AuthError,
@@ -29,6 +32,10 @@ from voicegateway.core.auth import (
 )
 from voicegateway.inference.session.context import set_tenant
 from voicegateway.repository import api_keys_repository as api_keys_repo
+from voicegateway.schemas.telemetry.security_schema import PrincipalKind
+from voicegateway.server.api._authz import Decision, decide
+
+_logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from voicegateway.core.gateway import Gateway
@@ -41,6 +48,24 @@ def get_gateway(request: Request) -> Gateway:
     if gw is None:
         raise HTTPException(status_code=503, detail="Gateway not bound to app state")
     return cast("Gateway", gw)
+
+
+async def get_session(
+    gateway: Gateway = Depends(get_gateway),
+) -> AsyncGenerator[AsyncSession, None]:
+    """Yield a database session for the duration of one request.
+
+    Delegates to :meth:`StorageService.session`, which is the only public
+    path to a session and which runs migrations before yielding. Routes
+    declare ``session: AsyncSession = Depends(get_session)`` and never touch
+    storage internals, so there is exactly one place between a handler and
+    the database for a tenant guard to sit.
+    """
+    storage = gateway.storage
+    if storage is None:
+        raise HTTPException(status_code=503, detail="cost tracking storage is disabled")
+    async with storage.session() as session:
+        yield session
 
 
 async def _verify_vk_key(
@@ -62,14 +87,25 @@ async def _verify_vk_key(
     if storage is None:  # pragma: no cover - callers guard storage is not None
         raise HTTPException(status_code=503, detail="cost tracking storage is disabled")
     try:
-        await storage._ensure_initialized()
-        async with storage._conn.session() as session:
+        async with storage.session() as session:
             verified = await verify_api_key(authorization, session)
+        if scopes.WILDCARD in verified.scopes.split(","):
+            # Every key minted before 0.26.0 lands here (VG-SEC-006). Warning
+            # at verification rather than inside one gate covers all of them:
+            # require_scope, require_principal and require_ingest_principal
+            # share this function, and a wildcard key is equally inert on any.
+            _logger.warning(
+                "wildcard-scoped key_id=%s used on %s %s; re-mint with explicit "
+                "scopes before 0.27.0 (run: voicegw keys audit)",
+                verified.id,
+                request.method,
+                request.url.path,
+            )
         if authorize is not None:
             result = authorize(verified)
             if result is not None:
                 await result
-        async with storage._conn.session() as session:
+        async with storage.session() as session:
             await api_keys_repo.mark_used(session, verified.id)
     except AuthError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from None
@@ -126,18 +162,25 @@ READ_SCOPE = "read"
 
 @dataclass(frozen=True)
 class Principal:
-    """The authenticated identity behind a read request.
+    """The authenticated identity behind a request.
 
     - ``tenant_id``: the tenant this caller is bound to, or ``None`` for an
       operator/admin who sees every tenant.
     - ``is_admin``: True for an admin vk_ key (role == "admin") or the soft
       operator default (no credential / static config key).
     - ``api_key_id``: the vk_ key id when one authenticated, else ``None``.
+    - ``project_ids``: the projects this key may touch, or ``None`` for
+      unrestricted within its tenant. Loaded from ``api_keys.project_ids``
+      in Task 14; ``None`` until then, which is what every existing key gets.
+    - ``kind``: which auth branch produced this principal. Carried so an
+      audit record can say what authenticated, not just who.
     """
 
     tenant_id: str | None
     is_admin: bool
     api_key_id: int | None
+    project_ids: frozenset[str] | None = None
+    kind: PrincipalKind = PrincipalKind.OPERATOR
 
 
 # The soft default for the self-hosted operator: no credential (or a static
@@ -171,12 +214,128 @@ async def require_principal(request: Request) -> Principal:
             tenant_id=verified.tenant_id,
             is_admin=(verified.role == ADMIN_SCOPE),
             api_key_id=verified.id,
+            project_ids=(
+                frozenset(x for x in (verified.project_ids or "").split(",") if x)
+                if verified.project_ids is not None
+                else None
+            ),
+            kind=(
+                PrincipalKind.ADMIN_KEY
+                if verified.role == ADMIN_SCOPE
+                else PrincipalKind.TENANT_KEY
+            ),
         )
 
     try:
         check_request(authorization, READ_SCOPE, api_keys)
     except AuthError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from None
+
+    if api_keys:
+        # A configured static key matched, or check_request would have raised.
+        # The operator who writes the config is the operator.
+        return Principal(
+            tenant_id=None,
+            is_admin=True,
+            api_key_id=None,
+            kind=PrincipalKind.STATIC_KEY,
+        )
+
+    # No keys configured and no credential presented. This is VG-SEC-005: the
+    # difference between a locked deployment and an open one used to be a
+    # config block rather than a code path, and the code path silently handed
+    # out a full admin.
+    decision = decide(
+        would_refuse=True,
+        reason="no credential and no api_keys configured",
+        auth=gateway.config.auth,
+        request=request,
+        principal_kind=PrincipalKind.OPERATOR,
+        key_id=None,
+    )
+    if decision is Decision.REFUSE:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return _OPERATOR
+
+
+async def require_ingest_principal(request: Request) -> Principal:
+    """Resolve the principal for a telemetry write, requiring ``ingest``.
+
+    Ingest is deliberately narrower than write (VG-SEC-003): an agent key
+    that only posts telemetry must not also be able to rewrite provider,
+    model and project configuration, which is what sharing one ``write``
+    scope across both meant.
+
+    Yields a :class:`Principal` rather than returning ``None`` like
+    ``require_scope``, because the handler needs ``principal.tenant_id`` to
+    stamp on every row it writes. That is the other half of VG-SEC-001: the
+    tenant has to come from the credential, and the handler has to be handed
+    it rather than going looking.
+    """
+    gateway: Gateway = get_gateway(request)
+    auth_cfg = gateway.config.auth
+    api_keys = getattr(request.app.state, "api_keys", None) or []
+    authorization = request.headers.get("Authorization")
+    enforce = auth_cfg.enforcement == "enforce"
+
+    if is_api_key_token(authorization) and gateway.storage is not None:
+
+        def _authorize(verified: VerifiedKey) -> None:
+            if not verified.has_scope(scopes.INGEST, enforce=enforce):
+                raise AuthError(
+                    f"Token missing required scope: {scopes.INGEST}",
+                    status_code=403,
+                )
+            granted = {s.strip() for s in verified.scopes.split(",") if s.strip()}
+            if scopes.INGEST not in granted and scopes.WRITE in granted:
+                _logger.warning(
+                    "write scope used for ingest by key_id=%s on %s %s; mint an "
+                    "ingest key before 0.27.0, when write stops covering it",
+                    verified.id,
+                    request.method,
+                    request.url.path,
+                )
+
+        verified = await _verify_vk_key(request, gateway, _authorize)
+        return Principal(
+            tenant_id=verified.tenant_id,
+            is_admin=(verified.role == ADMIN_SCOPE),
+            api_key_id=verified.id,
+            project_ids=(
+                frozenset(x for x in (verified.project_ids or "").split(",") if x)
+                if verified.project_ids is not None
+                else None
+            ),
+            kind=(
+                PrincipalKind.ADMIN_KEY
+                if verified.role == ADMIN_SCOPE
+                else PrincipalKind.TENANT_KEY
+            ),
+        )
+
+    try:
+        check_request(authorization, scopes.INGEST, api_keys)
+    except AuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from None
+
+    if api_keys:
+        return Principal(
+            tenant_id=None,
+            is_admin=True,
+            api_key_id=None,
+            kind=PrincipalKind.STATIC_KEY,
+        )
+
+    decision = decide(
+        would_refuse=True,
+        reason=f"no credential for scope {scopes.INGEST}",
+        auth=auth_cfg,
+        request=request,
+        principal_kind=PrincipalKind.OPERATOR,
+        key_id=None,
+    )
+    if decision is Decision.REFUSE:
+        raise HTTPException(status_code=401, detail="Authentication required")
     return _OPERATOR
 
 
@@ -204,6 +363,8 @@ __all__ = [
     "Depends",
     "Principal",
     "get_gateway",
+    "get_session",
+    "require_ingest_principal",
     "require_principal",
     "require_scope",
     "resolve_read_tenant",

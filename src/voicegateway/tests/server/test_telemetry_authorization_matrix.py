@@ -204,29 +204,53 @@ def test_open_routes_are_gap_unless_explicitly_open_by_design(matrix):
             assert rule.gap_id == "VG-SEC-004"
 
 
-def test_write_scope_spans_ingest_and_config(matrix):
-    """Evidence for VG-SEC-003: splitting write is semantic, not a rename.
+def test_write_scope_no_longer_spans_ingest(matrix):
+    """VG-SEC-003 closed: write covers config mutation and nothing else.
 
-    The count is pinned rather than merely non-empty because 18 is quoted as a
-    fact in the VG-SEC-003 threat entry and on the docs page. A looser
-    assertion lets the code drift away from a number the prose still claims.
+    This test is the inverse of the one it replaces. Before 0.26.0 it asserted
+    that ``write`` covered BOTH telemetry ingest and config mutation, which is
+    what made the scope too coarse to hand an agent. The same assertion now
+    reads the other way: no ingest route may be left on ``write``, or the
+    split has regressed and an agent key is back to being able to rewrite
+    provider configuration.
+
+    The count stays pinned because 12 is quoted on the docs page, and because
+    a route silently sliding between the two buckets is exactly the drift
+    worth failing on.
     """
     write_rows = [r for r in matrix.routes if r.auth is RouteAuth.SCOPE_WRITE]
-    assert len(write_rows) == 18, (
+    assert len(write_rows) == 12, (
         f"{len(write_rows)} routes are gated by the write scope, but "
-        "VG-SEC-003 and docs/architecture/observability-security.md both say "
-        "18. Update the count in all three places together."
+        "docs/architecture/observability-security.md says 12. Update both "
+        "together."
     )
     ingest = {r.path for r in write_rows if r.path.startswith("/v1/ingest")}
+    assert not ingest, (
+        f"{sorted(ingest)} are telemetry ingest but still gated by write; "
+        "they belong behind require_ingest_principal (VG-SEC-003)"
+    )
     config = {
         r.path
         for r in write_rows
         if r.path.startswith(("/v1/providers", "/v1/models", "/v1/projects"))
     }
-    assert ingest and config, (
-        "the write scope must be shown to cover both telemetry ingest and "
-        f"config mutation; got ingest={ingest} config={config}"
-    )
+    assert config, "write must still cover config mutation; got none"
+
+
+def test_ingest_scope_covers_every_telemetry_write(matrix):
+    """The other half: every ingest route actually sits behind the new gate."""
+    ingest_rows = [r for r in matrix.routes if r.auth is RouteAuth.SCOPE_INGEST]
+    assert {r.path for r in ingest_rows} == {
+        "/v1/ingest",
+        "/v1/ingest/turns",
+        "/v1/ingest/tool-calls",
+        "/v1/ingest/dead-air",
+        "/v1/agents/heartbeat",
+        "/v1/calls/observations",
+        "/v1/accounting/prepare",
+        "/v1/accounting/usage",
+    }
+    assert all(r.status is ContractStatus.ENFORCED for r in ingest_rows)
 
 
 def test_health_routes_are_not_tenant_scoped(matrix):

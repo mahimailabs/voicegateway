@@ -63,7 +63,9 @@ def test_the_flush_size_default_matches_the_schema_default() -> None:
 
 
 def test_turn_buffer_flush_size_is_read_from_the_project(tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("VOICEGW_CONFIG", _config(tmp_path, overlap_ms=250, flush_size=7))
+    monkeypatch.setenv(
+        "VOICEGW_CONFIG", _config(tmp_path, overlap_ms=250, flush_size=7)
+    )
     attach_mod = importlib.import_module("voicegateway.inference.session.attach")
     attach_mod._turn_flush_size_cache.clear()
 
@@ -75,7 +77,9 @@ def test_turn_buffer_flush_size_is_read_from_the_project(tmp_path, monkeypatch) 
 
 def test_the_flush_size_reaches_the_tracker(tmp_path, monkeypatch) -> None:
     """Reading the number is not the same as using it."""
-    monkeypatch.setenv("VOICEGW_CONFIG", _config(tmp_path, overlap_ms=250, flush_size=3))
+    monkeypatch.setenv(
+        "VOICEGW_CONFIG", _config(tmp_path, overlap_ms=250, flush_size=3)
+    )
     attach_mod = importlib.import_module("voicegateway.inference.session.attach")
     attach_mod._turn_flush_size_cache.clear()
 
@@ -128,7 +132,7 @@ async def test_talk_over_threshold_changes_the_overlap_count(tmp_path) -> None:
         ),
     ]
     async with storage._conn.session() as db:
-        await turns.create_turns_bulk(db, rows)
+        await turns.create_turns_bulk(db, rows, tenant_id=None)
 
     async with storage._conn.session() as db:
         assert await turns.count_overlap_turns(db, "s", min_overlap_ms=25) == 1
@@ -146,7 +150,9 @@ def test_the_dead_air_default_matches_the_schema_default() -> None:
 
 
 def test_dead_air_threshold_is_read_from_the_project(tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("VOICEGW_CONFIG", _config(tmp_path, overlap_ms=250, flush_size=7))
+    monkeypatch.setenv(
+        "VOICEGW_CONFIG", _config(tmp_path, overlap_ms=250, flush_size=7)
+    )
     attach_mod = importlib.import_module("voicegateway.inference.session.attach")
     attach_mod._dead_air_threshold_cache.clear()
 
@@ -160,7 +166,9 @@ def test_dead_air_threshold_is_read_from_the_project(tmp_path, monkeypatch) -> N
 
 def test_the_dead_air_threshold_reaches_the_detector(tmp_path, monkeypatch) -> None:
     """Reading the number is not the same as using it."""
-    monkeypatch.setenv("VOICEGW_CONFIG", _config(tmp_path, overlap_ms=250, flush_size=7))
+    monkeypatch.setenv(
+        "VOICEGW_CONFIG", _config(tmp_path, overlap_ms=250, flush_size=7)
+    )
     attach_mod = importlib.import_module("voicegateway.inference.session.attach")
     attach_mod._dead_air_threshold_cache.clear()
 

@@ -18,12 +18,12 @@ def gateway(temp_config, tmp_path, monkeypatch):
 
 
 async def test_list_tools_protocol(gateway):
-    """In admin mode the client sees all 25 tools (including v0.0.5 vg_* tools)."""
+    """In admin mode the client sees all 26 tools (including exact accounting)."""
     server = create_server(gateway, is_admin=True)
     async with create_connected_server_and_client_session(server) as client:
         await client.initialize()
         result = await client.list_tools()
-        assert len(result.tools) == 25
+        assert len(result.tools) == 26
         names = {t.name for t in result.tools}
         assert "get_health" in names
         assert "add_provider" in names
@@ -33,6 +33,7 @@ async def test_list_tools_protocol(gateway):
         assert "vg_set_provider_key" in names
         assert "vg_test_provider_key" in names
         assert "delete_project" in names
+        assert "get_accounting_status" in names
 
 
 async def test_list_tools_default_hides_admin(gateway):

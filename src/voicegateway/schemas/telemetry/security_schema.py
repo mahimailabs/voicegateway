@@ -48,6 +48,10 @@ class ContractStatus(StrEnum):
     GAP = "gap"
     #: No production surface exists yet. Carries an absence guard.
     PLANNED = "planned"
+    #: Production now meets the row. Threat-model entries only: the entry
+    #: stays as history and keeps its evidence line, while the matrix row
+    #: for the same route becomes ENFORCED with no gap id.
+    CLOSED = "closed"
 
 
 class ScopeName(StrEnum):
@@ -62,7 +66,7 @@ class ScopeName(StrEnum):
     ADMIN = "admin"
     #: Matches every check. Every minted key defaults to this value.
     WILDCARD = "*"
-    #: Target. Does not exist: ingest is gated by ``write`` today.
+    #: Exists as of 0.26.0. Telemetry ingest only; never config mutation.
     INGEST = "ingest"
     #: Target. Does not exist: MCP auth is one shared static token.
     MCP_READ = "mcp:read"
@@ -70,11 +74,17 @@ class ScopeName(StrEnum):
 
 #: The scopes an unmodified checkout can actually enforce right now.
 EXISTING_SCOPES: frozenset[ScopeName] = frozenset(
-    {ScopeName.WRITE, ScopeName.READ, ScopeName.ADMIN, ScopeName.WILDCARD}
+    {
+        ScopeName.WRITE,
+        ScopeName.READ,
+        ScopeName.ADMIN,
+        ScopeName.WILDCARD,
+        ScopeName.INGEST,
+    }
 )
 
 #: The scopes Wave 1 must introduce. Asserted absent by the absence guards.
-PLANNED_SCOPES: frozenset[ScopeName] = frozenset({ScopeName.INGEST, ScopeName.MCP_READ})
+PLANNED_SCOPES: frozenset[ScopeName] = frozenset({ScopeName.MCP_READ})
 
 
 class PrincipalKind(StrEnum):
@@ -111,10 +121,15 @@ class RouteAuth(StrEnum):
     OPEN = "open"
     #: Guarded by ``require_principal``.
     PRINCIPAL = "principal"
+    #: Guarded by both ``require_principal`` and ``require_scope("admin")``.
+    PRINCIPAL_SCOPE_ADMIN = "principal+scope:admin"
     #: Guarded by ``require_scope("write")``.
     SCOPE_WRITE = "scope:write"
     #: Guarded by ``require_scope("admin")``.
     SCOPE_ADMIN = "scope:admin"
+    #: Guarded by ``require_ingest_principal``, which enforces the ingest
+    #: scope and yields the Principal the handler writes rows under.
+    SCOPE_INGEST = "scope:ingest"
 
 
 class AuthorizationRule(BaseModel):
@@ -151,6 +166,12 @@ class AuthorizationRule(BaseModel):
             raise ValueError(
                 f"{self.method} {self.path}: a matrix row describes a route "
                 "that exists; use planned_routes for one that does not"
+            )
+        if self.status is ContractStatus.CLOSED:
+            raise ValueError(
+                f"{self.method} {self.path}: CLOSED belongs to the threat "
+                "model, which keeps a gap as history; the row for a closed "
+                "gap becomes ENFORCED with no gap_id"
             )
         if self.status is ContractStatus.ENFORCED:
             if self.gap_id is not None or self.wave is not None:
@@ -275,14 +296,35 @@ class ThreatEntry(BaseModel):
     #: Fixture file that exercises this gap, relative to the fixture root.
     #: ``None`` where the gap has no request-shaped expression.
     fixture: str | None = None
+    #: Release that closed the gap, e.g. ``0.26.0``. Required iff CLOSED.
+    closed_in: str | None = Field(default=None, pattern=r"^\d+\.\d+\.\d+$")
+    #: Commit that closed it. Required iff CLOSED.
+    closed_by: str | None = Field(default=None, pattern=r"^[0-9a-f]{7,40}$")
 
     @model_validator(mode="after")
-    def _planned_and_gap_only(self) -> ThreatEntry:
-        """The threat model records deviations, never satisfied guarantees."""
+    def _status_and_closure_agree(self) -> ThreatEntry:
+        """Enforced guarantees live in the matrix; closed gaps stay as history.
+
+        A closed entry is never deleted: the docs page cites gap ids verbatim
+        and the keystone test asserts the minted set is contiguous from
+        VG-SEC-001, so removing one would break both. It keeps its evidence
+        line and gains a receipt: which release closed it, and which commit.
+        """
         if self.status is ContractStatus.ENFORCED:
             raise ValueError(
-                f"{self.gap_id}: the threat model holds gap and planned rows "
-                "only; an enforced guarantee belongs in the matrix"
+                f"{self.gap_id}: the threat model holds gap, planned and closed "
+                "rows only; an enforced guarantee belongs in the matrix"
+            )
+        has_closure = self.closed_in is not None or self.closed_by is not None
+        if self.status is ContractStatus.CLOSED:
+            if self.closed_in is None or self.closed_by is None:
+                raise ValueError(
+                    f"{self.gap_id}: a closed entry needs closed_in and closed_by"
+                )
+            return self
+        if has_closure:
+            raise ValueError(
+                f"{self.gap_id}: only a closed entry carries closed_in or closed_by"
             )
         return self
 
@@ -300,8 +342,20 @@ class ThreatModel(RootModel[list[ThreatEntry]]):
         return self
 
     def gap_ids(self) -> set[str]:
-        """Return the full set of minted gap ids."""
+        """Return the full set of minted gap ids, closed ones included.
+
+        Deliberately complete: the contiguity pin and the docs cross-reference
+        both check against every id ever minted, not just the open ones.
+        """
         return {entry.gap_id for entry in self.root}
+
+    def open_gap_ids(self) -> set[str]:
+        """Return the ids still open. This is the remaining work."""
+        return {
+            entry.gap_id
+            for entry in self.root
+            if entry.status is not ContractStatus.CLOSED
+        }
 
     def by_gap_id(self) -> dict[str, ThreatEntry]:
         """Index the entries by gap id."""
@@ -315,45 +369,56 @@ class ThreatModel(RootModel[list[ThreatEntry]]):
 class ContentState(StrEnum):
     """Lifecycle of stored call content (transcripts, replay audio).
 
+    The five states are the roadmap's frozen vocabulary; Waves 3 and 4
+    enumerate them verbatim, so this module does not get to invent its own.
     :attr:`UNAVAILABLE` is the projection an unauthorized caller sees. It is
     deliberately indistinguishable from every other state, which is why
     :class:`ContentDescriptor` forbids byte counts and expiry on it.
     """
 
-    #: Announced by an agent, not yet durable.
-    PENDING = "pending"
     #: Durable and retrievable by an authorized caller.
-    STORED = "stored"
-    #: Content removed, metadata retained deliberately.
+    CAPTURED = "captured"
+    #: Content removed by policy, metadata retained deliberately.
     REDACTED = "redacted"
+    #: Captured but cut at a size limit. The state records the cut, so a
+    #: partial transcript is never served as though it were complete.
+    TRUNCATED = "truncated"
     #: Content removed by retention. Metadata may survive.
-    PURGED = "purged"
+    EXPIRED = "expired"
     #: The caller may not learn whether this content exists.
     UNAVAILABLE = "unavailable"
 
 
-#: One-way lifecycle. Content never moves back toward a richer state, so a
-#: purged recording can never be resurrected by a later ingest replaying an
-#: older revision. Every state may collapse to ``UNAVAILABLE`` because that
-#: is an authorization projection rather than a storage event.
+#: One-way lifecycle. Content never moves back toward a richer state, so an
+#: expired recording can never be resurrected by a later ingest replaying an
+#: older revision, and a truncation is never silently un-cut. Every state may
+#: collapse to ``UNAVAILABLE`` because that is an authorization projection
+#: rather than a storage event.
 CONTENT_STATE_TRANSITIONS: Mapping[ContentState, frozenset[ContentState]] = {
-    ContentState.PENDING: frozenset(
-        {ContentState.STORED, ContentState.PURGED, ContentState.UNAVAILABLE}
+    ContentState.CAPTURED: frozenset(
+        {
+            ContentState.TRUNCATED,
+            ContentState.REDACTED,
+            ContentState.EXPIRED,
+            ContentState.UNAVAILABLE,
+        }
     ),
-    ContentState.STORED: frozenset(
-        {ContentState.REDACTED, ContentState.PURGED, ContentState.UNAVAILABLE}
+    ContentState.TRUNCATED: frozenset(
+        {ContentState.REDACTED, ContentState.EXPIRED, ContentState.UNAVAILABLE}
     ),
-    ContentState.REDACTED: frozenset({ContentState.PURGED, ContentState.UNAVAILABLE}),
-    ContentState.PURGED: frozenset({ContentState.UNAVAILABLE}),
+    ContentState.REDACTED: frozenset({ContentState.EXPIRED, ContentState.UNAVAILABLE}),
+    ContentState.EXPIRED: frozenset({ContentState.UNAVAILABLE}),
     ContentState.UNAVAILABLE: frozenset(),
 }
 
-#: States in which no plaintext may be returned to any caller.
+#: States in which no plaintext may be returned to any caller as though it
+#: were whole. ``TRUNCATED`` is in here deliberately: its partial bytes are
+#: served through the redaction policy, never as plain captured content.
 NON_READABLE_CONTENT_STATES: frozenset[ContentState] = frozenset(
     {
-        ContentState.PENDING,
         ContentState.REDACTED,
-        ContentState.PURGED,
+        ContentState.TRUNCATED,
+        ContentState.EXPIRED,
         ContentState.UNAVAILABLE,
     }
 )

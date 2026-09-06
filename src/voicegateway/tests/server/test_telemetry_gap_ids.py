@@ -30,6 +30,7 @@ import pytest
 
 from voicegateway.schemas.telemetry.security_schema import (
     GAP_ID_PATTERN,
+    ContractStatus,
     ThreatId,
     load_authorization_matrix,
     load_threat_model,
@@ -187,7 +188,15 @@ def test_fixture_paths_named_by_the_threat_model_exist():
 
 
 def test_every_gap_with_a_fixture_agrees_with_that_fixture():
-    """The threat entry and the fixture must cite each other, not just exist."""
+    """The threat entry and the fixture must cite each other, not just exist.
+
+    An open gap and its fixture name each other by gap id. A closed gap keeps
+    naming its fixture, but that fixture is now a guarantee and carries no gap
+    id: it is the case that used to fail and must keep passing, which is what
+    stops the gap reopening. Requiring it to still be a characterization would
+    mean deleting the regression test at the moment it starts protecting
+    something.
+    """
     by_case = {f.case_id: f for f in load_all()}
     mismatched = []
     for entry in load_threat_model().root:
@@ -197,6 +206,17 @@ def test_every_gap_with_a_fixture_agrees_with_that_fixture():
         fixture = by_case.get(case_id)
         if fixture is None:
             mismatched.append(f"{entry.gap_id}: no fixture case {case_id}")
+            continue
+        if entry.status is ContractStatus.CLOSED:
+            if fixture.kind != "guarantee":
+                mismatched.append(
+                    f"{entry.gap_id} is closed, so {case_id} must be a guarantee, "
+                    f"not a {fixture.kind}"
+                )
+            if fixture.gap_id is not None:
+                mismatched.append(
+                    f"{entry.gap_id} is closed, so {case_id} must carry no gap_id"
+                )
         elif fixture.gap_id != entry.gap_id:
             mismatched.append(
                 f"{entry.gap_id} names {case_id}, which cites {fixture.gap_id}"

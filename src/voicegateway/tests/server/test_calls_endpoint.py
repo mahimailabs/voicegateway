@@ -387,7 +387,9 @@ async def test_a_tenant_key_never_reads_another_tenants_calls(client, gateway):
     await _answered_call(gateway.storage, room_sid="RM_acme", tenant_id="acme")
     await _answered_call(gateway.storage, room_sid="RM_beta", tenant_id="beta")
     async with gateway.storage._conn.session() as db:
-        created = await api_keys.create_api_key(db, name="acme-ui", tenant_id="acme")
+        created = await api_keys.create_api_key(
+            db, name="acme-ui", tenant_id="acme", scopes="read,write,ingest,admin"
+        )
 
     resp = await client.get(
         _URL, headers={"Authorization": f"Bearer {created.plaintext}"}
@@ -430,7 +432,9 @@ async def test_a_tenant_key_gets_a_full_page_not_a_short_one(client, gateway):
             started_at_ms=1_750_000_100_000 + i * 1000,
         )
     async with gateway.storage._conn.session() as db:
-        created = await api_keys.create_api_key(db, name="acme-page", tenant_id="acme")
+        created = await api_keys.create_api_key(
+            db, name="acme-page", tenant_id="acme", scopes="read,write,ingest,admin"
+        )
 
     resp = await client.get(
         f"{_URL}?limit=6", headers={"Authorization": f"Bearer {created.plaintext}"}
@@ -450,7 +454,9 @@ async def test_a_key_with_no_tenant_reads_the_unattributed_bucket(client, gatewa
     await _answered_call(gateway.storage, room_sid="RM_unattributed")
     await _answered_call(gateway.storage, room_sid="RM_owned", tenant_id="acme")
     async with gateway.storage._conn.session() as db:
-        created = await api_keys.create_api_key(db, name="no-tenant-ui")
+        created = await api_keys.create_api_key(
+            db, name="no-tenant-ui", scopes="read,write,ingest,admin"
+        )
 
     resp = await client.get(
         _URL, headers={"Authorization": f"Bearer {created.plaintext}"}

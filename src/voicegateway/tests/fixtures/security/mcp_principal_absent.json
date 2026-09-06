@@ -1,0 +1,18 @@
+{
+  "case_id": "mcp_principal_absent",
+  "title": "MCP has no per-caller principal or project allowlist",
+  "kind": "absence",
+  "gap_id": "VG-SEC-008",
+  "rationale": "The shared MCP bearer token still carries no caller identity, tenant binding, or project allowlist. This absence guard keeps that limitation explicit until the planned scoped MCP principal is implemented and the fixture can be rewritten as a live authorization guarantee.",
+  "actor": {
+    "tenant_id": null,
+    "role": "admin"
+  },
+  "absent_surfaces": [
+    {
+      "module": "voicegateway.server.mcp.auth",
+      "attribute": "AuthError",
+      "field": "principal"
+    }
+  ]
+}

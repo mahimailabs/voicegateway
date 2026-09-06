@@ -137,7 +137,8 @@ async def _seeded(tmp_path):
                 outcome=None,
                 turn_index=2,
             ),
-        ]
+        ],
+        tenant_id=None,
     )
     return storage
 

@@ -8,6 +8,8 @@ import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from voicegateway.core import scopes
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +34,49 @@ class AuthError(Exception):
         super().__init__(message)
 
 
+class AuthConfigError(ValueError):
+    """Raised at startup when the auth block contradicts itself."""
+
+
+#: Hosts that mean "this machine only". Anything else is reachable.
+_LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def validate_auth_startup(auth: AuthConfig, bind_host: str | None = None) -> None:
+    """Refuse to start when ``local_development`` meets production shape.
+
+    Unauthenticated mode has to be explicit, and explicit is not enough on its
+    own: a flag set on a laptop travels inside a copied config file. So the
+    flag is only honoured in the company of the other things that make a
+    deployment local. Configured keys contradict disabling auth, a
+    non-loopback bind means someone else can reach it, and ``enforce`` asks
+    for the opposite behaviour in the same breath.
+
+    ``bind_host`` is optional so that callers which have not resolved a host
+    can still run the two config-only checks. ``build_app`` does exactly that:
+    it is reachable from more than one entry point, and a guard that lived
+    only in the serve CLI would refuse an unauthenticated public deployment on
+    a laptop while waving the container through.
+
+    Every conflict is collected before raising, because finding them one
+    restart at a time is a bad afternoon.
+    """
+    if not auth.local_development:
+        return
+    conflicts: list[str] = []
+    if auth.api_keys:
+        conflicts.append(f"auth.api_keys has {len(auth.api_keys)} entries")
+    if bind_host is not None and bind_host not in _LOOPBACK:
+        conflicts.append(f"bind host {bind_host!r} is not loopback")
+    if auth.enforcement == "enforce":
+        conflicts.append("auth.enforcement is 'enforce'")
+    if conflicts:
+        raise AuthConfigError(
+            "auth.local_development is true but the configuration is "
+            "production-shaped: " + "; ".join(conflicts)
+        )
+
+
 @dataclass(frozen=True)
 class ApiKey:
     """A single configured API key with a scope allowlist."""
@@ -40,8 +85,19 @@ class ApiKey:
     name: str = ""
     scopes: tuple[str, ...] = field(default_factory=lambda: (WILDCARD_SCOPE,))
 
-    def has_scope(self, required: str) -> bool:
-        return WILDCARD_SCOPE in self.scopes or required in self.scopes
+    def has_scope(self, required: str, *, enforce: bool = False) -> bool:
+        """Mirror of :meth:`VerifiedKey.has_scope` for static config keys.
+
+        The same two compatibility grants apply, and stop under ``enforce``:
+        ``write`` covers ``ingest``, and ``*`` covers everything.
+        """
+        if required in self.scopes:
+            return True
+        if enforce:
+            return False
+        if WILDCARD_SCOPE in self.scopes:
+            return True
+        return required == scopes.INGEST and scopes.WRITE in self.scopes
 
 
 def load_api_keys(auth_config: AuthConfig | None) -> list[ApiKey]:
@@ -60,10 +116,13 @@ def load_api_keys(auth_config: AuthConfig | None) -> list[ApiKey]:
 
         if isinstance(raw_scopes, (str, bytes)):
             raw_scopes = [raw_scopes]
-        scopes = tuple(str(s) for s in raw_scopes if str(s))
-        if not scopes:
-            scopes = (WILDCARD_SCOPE,)
-        keys.append(ApiKey(token=token, name=name, scopes=scopes))
+        # Not named ``scopes``: that shadows the module imported above, and a
+        # later reader adding scopes.INGEST here would get a confusing
+        # AttributeError on a tuple.
+        granted = tuple(str(s) for s in raw_scopes if str(s))
+        if not granted:
+            granted = (WILDCARD_SCOPE,)
+        keys.append(ApiKey(token=token, name=name, scopes=granted))
 
     if not keys:
         env_token = os.environ.get(ENV_KEY, "").strip()

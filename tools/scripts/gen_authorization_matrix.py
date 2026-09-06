@@ -62,6 +62,8 @@ def classify(fn) -> str | None:
             )
         cell = fn.__closure__[code.co_freevars.index("scope")]
         return f"scope:{cell.cell_contents}"
+    if qualname == "require_ingest_principal":
+        return "scope:ingest"
     if qualname == "require_principal":
         return "principal"
     return None

@@ -48,7 +48,9 @@ async def _client(gw: Gateway) -> AsyncClient:
 async def _key(gw: Gateway, tenant_id: str | None = None) -> str:
     await gw.storage._ensure_initialized()
     async with gw.storage._conn.session() as db:
-        created = await api_keys.create_api_key(db, name="bot", tenant_id=tenant_id)
+        created = await api_keys.create_api_key(
+            db, name="bot", tenant_id=tenant_id, scopes="read,write,ingest,admin"
+        )
     return created.plaintext
 
 

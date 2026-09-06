@@ -1,9 +1,9 @@
 {
   "case_id": "project_param_unscoped",
   "title": "The project identifier is never authorized against the caller",
-  "kind": "absence",
+  "kind": "characterization",
   "gap_id": "VG-SEC-002",
-  "rationale": "Project-level authorization is greenfield, so this case is an absence guard rather than a characterization: there is nothing to characterize because no surface exists to hold the check. 22 of the 89 routes accept a project identifier, by path parameter or query param, and none of them compares it to anything the caller is entitled to. The absent_surfaces below are the two places a project binding would have to live for such a check to be writable at all. Asserting they are missing is what makes the plan falsifiable: the day either appears, this case fails and must be rewritten as a characterization or a guarantee.",
+  "rationale": "API keys and principals can now carry project allowlists, and the exact-accounting routes enforce them. This characterization remains for legacy read routes that accept a project filter without checking that allowlist.",
   "actor": {
     "tenant_id": "acme",
     "role": "tenant"
@@ -26,17 +26,5 @@
       200
     ],
     "note": "Answered 200 and echoed the requested project back in the response body."
-  },
-  "absent_surfaces": [
-    {
-      "module": "voicegateway.server.api._deps",
-      "attribute": "Principal",
-      "field": "project"
-    },
-    {
-      "module": "voicegateway.repository.api_keys_repository",
-      "attribute": "VerifiedKey",
-      "field": "project"
-    }
-  ]
+  }
 }

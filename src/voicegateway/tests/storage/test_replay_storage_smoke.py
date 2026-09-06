@@ -85,7 +85,7 @@ async def test_synthetic_one_minute_under_600kb(tmp_path) -> None:
 
     # Persist the captured events via the real repo.
     async with storage._conn.session() as db:
-        n = await replay.bulk_write_events(db, captured)
+        n = await replay.bulk_write_events(db, captured, tenant_id=None)
         assert n == len(captured)
 
         # Sum the payload bytes (the dominant cost term).
@@ -130,7 +130,7 @@ async def test_storage_size_reported_via_aggregate(tmp_path) -> None:
     await capture.close_session("tiny")
 
     async with storage._conn.session() as db:
-        await replay.bulk_write_events(db, captured)
+        await replay.bulk_write_events(db, captured, tenant_id=None)
         size = await replay.aggregate_storage_per_session(db, "tiny")
 
     # 10 small STT chunks: each payload roughly 50 bytes JSON-encoded,

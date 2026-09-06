@@ -46,7 +46,9 @@ def _payload(rid: str) -> dict:
 async def _vk(gw: Gateway) -> str:
     await gw.storage._ensure_initialized()
     async with gw.storage._conn.session() as db:
-        created = await api_keys.create_api_key(db, name="bot")
+        created = await api_keys.create_api_key(
+            db, name="bot", scopes="read,write,ingest,admin"
+        )
     return created.plaintext
 
 

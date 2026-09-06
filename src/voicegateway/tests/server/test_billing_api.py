@@ -166,6 +166,7 @@ async def test_rate_card_models_lists_price_and_override(gateway) -> None:
                 project="default",
                 agent_id="a",
             ),
+            tenant_id=None,
         )
     client = await _client(gateway)
     async with client as c:

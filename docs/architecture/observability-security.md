@@ -43,13 +43,20 @@ opening one file at one line.
 
 ### VG-THREAT-001: cross-tenant write
 
-**VG-SEC-001** (gap, Wave 1) is live today. `POST /v1/ingest/tool-calls`
-admits `tenant_id` through its field allow-list, and the repository resolves
-the row tenant as the payload value when one is present, falling back to the
-key-derived tenant only when it is absent. A key scoped to one tenant can
-therefore write rows attributed to another. Measured against an unmodified
-checkout, a batch posted with one tenant's key produced one row tagged the
-other tenant and none tagged its own.
+**VG-SEC-001** (closed in 0.26.0) was live through Wave 0.
+`POST /v1/ingest/tool-calls` admitted `tenant_id` through its field
+allow-list, and the repository resolved the row tenant as the payload value
+when one was present, falling back to the key-derived tenant only when it was
+absent. A key scoped to one tenant could therefore write rows attributed to
+another. Measured against an unmodified checkout, a batch posted with one
+tenant's key produced one row tagged the other tenant and none tagged its own.
+
+Closed by making tenancy explicit rather than ambient. All seven writers now
+take `tenant_id` as a required keyword, `create_tool_calls` no longer reads
+the field off the row, and no module under `repository/` can import
+`current_tenant`. The fixture that characterized the defect is kept as a
+guarantee: it is the exact request that used to succeed, so it is the one
+that must keep failing to write.
 
 The sibling writers do not share this shape, which is what makes it a defect
 rather than a design. The turns and dead-air writers apply a single tenant,
@@ -82,17 +89,23 @@ without a row stating where its tenant comes from.
 
 ### VG-THREAT-002: cross-tenant and unauthenticated read
 
-**VG-SEC-004** (gap, Wave 1): 28 of the 89 routes resolve no auth dependency
+**VG-SEC-004** (gap, Wave 1): 28 of the 98 routes resolve no auth dependency
 at all and answer an unauthenticated caller regardless of configured keys. The
 set includes the audit log, costs, logs, metrics and the billing rate-card
 reads. `tests/server/test_auth.py::test_reads_open_regardless_of_auth` pins
 this as intended for the current slice, so that pin and this gap have to be
 closed in the same change.
 
-**VG-SEC-005** (gap, Wave 2): with no keys configured, the read path resolves
-a full admin principal with no tenant binding. This is the deliberate
-self-hosted default, but it means the difference between a locked deployment
-and an open one is a config block rather than a code path.
+**VG-SEC-005** (closed in 0.26.0) was the soft default: with no keys
+configured, the read path resolved a full admin principal with no tenant
+binding, so the difference between a locked deployment and an open one was
+a config block rather than a code path. It now runs through `decide()`,
+which refuses under `enforce`, serves with a `vg.auth.would_refuse` warning
+under `warn`, and stays silent only under the explicit
+`auth.local_development` flag. That flag is itself refused at startup in
+the company of configured keys, a non-loopback bind, or enforce mode, and
+the check runs in `build_app` as well as the serve CLI so the container
+entry point cannot bypass it.
 
 The read side is not uniformly weak, and the contract records what already
 works. A tenant-scoped key asking for another tenant's rows by query param is
@@ -103,27 +116,63 @@ regress unnoticed.
 
 ### VG-THREAT-003: missing project authorization
 
-**VG-SEC-002** (planned, Wave 1): project-level authorization does not exist
-in any form. There is no tenant column on managed projects, no project column
-on API keys, no project field on the principal, and no check on the project
-query parameter. 22 of the 89 routes accept a project identifier and none of
-them compares it against anything the caller is entitled to.
-
-Because there is no surface to hold the check, this is recorded as an absence
-guard rather than a characterization: the fixture asserts the two attributes a
-project binding would need do not exist yet.
+**VG-SEC-002** (partially closed; remaining gap, Wave 1): project authorization is now available to the
+exact-accounting surface: API keys and principals carry optional project
+allowlists, and accounting ingest and reports enforce them. Legacy APIs that
+accept project filters do not yet apply the allowlist, so the gap remains open
+and is recorded as a characterization rather than an absence.
 
 ### VG-THREAT-004: coarse and inert scopes
 
-**VG-SEC-003** (planned, Wave 1): there is no ingest scope. Telemetry ingest
-is gated by the same `write` scope that guards provider, model and project
-mutation, across 18 routes in total. An agent key that only needs to post
-telemetry can rewrite gateway configuration. Splitting this is semantic rather
-than a rename, which is why it is recorded before the endpoints multiply.
+**VG-SEC-003** (closed in 0.26.0): there was no ingest scope. Telemetry
+ingest was gated by the same `write` scope that guards provider, model and
+project mutation, across 18 routes in total, so an agent key that only needed
+to post telemetry could rewrite gateway configuration.
 
-**VG-SEC-006** (gap, Wave 1): every key the product mints defaults to the
-wildcard scope, and the scope check short-circuits on the wildcard. Scope
-enforcement runs and always passes.
+The eight ingest routes (`POST /v1/ingest`, `/v1/ingest/turns`,
+`/v1/ingest/tool-calls`, `/v1/ingest/dead-air`, `/v1/agents/heartbeat`,
+`/v1/calls/observations`, `/v1/accounting/prepare`, and
+`/v1/accounting/usage`) now sit behind `require_ingest_principal`, which
+enforces the `ingest` scope and returns the `Principal` whose `tenant_id` the
+handler stamps on every row it writes. `write` is left covering 12 routes, all
+of them config mutation.
+
+Two compatibility grants keep existing keys working and both stop under
+`auth.enforcement: enforce`:
+
+- a key holding `write` but not `ingest` is still admitted, and each such
+  request logs a warning naming the key id;
+- a wildcard (`*`) key still matches, as it always has.
+
+Both are withdrawn in 0.27.0. Minting a key that survives that is what
+VG-SEC-006 (below) makes possible: `--scopes` is now required at every mint,
+so an operator can issue `ingest`-only agent keys today.
+
+**VG-SEC-006** (closed in 0.26.0): every key the product minted defaulted to
+the wildcard scope, and the scope check short-circuits on the wildcard, so
+enforcement ran on every request and always passed. That is the worst of the
+three possible states: the key list, the matrix and this page all described a
+system of scopes that decided nothing.
+
+`scopes` is now required at all three mints, and each validates through the
+same `core.scopes.normalize_scopes`, so the doors cannot drift:
+
+| Mint | How scopes arrive |
+| --- | --- |
+| `voicegw keys create` | `--scopes` (required) |
+| `POST /v1/api-keys` | `scopes` on the body (required); a refusal is a 422 |
+| `POST /api/api_keys` | `scopes` on the body (required); a refusal is a 400 |
+
+The wildcard is refused, as is any name that is not a scope. Keys minted
+before 0.26.0 keep working and log a warning on every use naming the key id.
+`voicegw keys audit` lists exactly those keys and exits non-zero when it finds
+any, so it can be a deployment gate rather than only something to read.
+
+The refusal deliberately sits at the mint and not in `has_scope`: those are
+different populations. Refusing `*` at the check would lock out every key
+already in the field on upgrade; refusing it at the mint means no new inert
+key can be created while the existing ones keep working, loudly, until 0.27.0
+withdraws them.
 
 **VG-SEC-007** (gap, Wave 2): admin is enforced two ways, through a role
 column and through the scope list, so a key can satisfy one and not the other.
@@ -166,8 +215,8 @@ record does not imply absence of the event.
 
 ## Authorization matrix
 
-`authorization_matrix.json` carries one row per live route: 89 rows against 89
-routes, 49 enforced and 40 gaps. Rows are generated mechanically and then
+`authorization_matrix.json` carries one row per live route: 98 rows against 98
+routes, 62 enforced and 36 gaps. Rows are generated mechanically and then
 hand-classified where the classification carries meaning.
 
 Three tests keep it bound to reality:
@@ -192,18 +241,20 @@ To add a route, run the generator and paste what it prints:
 
 ## Content states
 
-Stored call content moves through five states: pending, stored, redacted,
-purged and unavailable. Transitions are one-way, so a purged recording cannot
-be resurrected by a later ingest replaying an older revision.
+Stored call content moves through five states: captured, redacted, truncated,
+expired and unavailable. These are the roadmap's frozen vocabulary, and Waves 3
+and 4 label content with exactly these words. Transitions are one-way, so an
+expired recording cannot be resurrected by a later ingest replaying an older
+revision, and a truncation is recorded rather than silently served as complete.
 
 `unavailable` is the projection an unauthorized caller sees, and it is the
 load-bearing part of the contract. A descriptor in that state may not report a
-byte count or an expiry. Either one would let a caller distinguish "purged"
+byte count or an expiry. Either one would let a caller distinguish "expired"
 from "not yours", which turns the endpoint into an existence oracle for
 session ids. This is the same rule the 404-not-403 fixture enforces at the
 request level, stated once in the type system so both surfaces inherit it.
 
-The rule is deliberately narrow. An authorized caller reading purged content
+The rule is deliberately narrow. An authorized caller reading expired content
 still gets the truth, including a zero byte count.
 
 ## Encryption envelope
@@ -252,7 +303,7 @@ that module exists anywhere in the schema package.
 | :--- | :--- |
 | `src/voicegateway/schemas/telemetry/security_schema.py` | All exported contract types |
 | `src/voicegateway/schemas/telemetry/threat_model.json` | The 14 gaps, with evidence |
-| `src/voicegateway/schemas/telemetry/authorization_matrix.json` | 89 route rows plus planned routes |
+| `src/voicegateway/schemas/telemetry/authorization_matrix.json` | 98 route rows plus planned routes |
 | `src/voicegateway/tests/fixtures/security/` | The five cross-tenant fixtures |
 | `src/voicegateway/tests/server/_telemetry_harness.py` | Shared app harness and route introspection |
 | `src/voicegateway/tests/server/test_telemetry_security_contract.py` | Contract shape and absence guards |

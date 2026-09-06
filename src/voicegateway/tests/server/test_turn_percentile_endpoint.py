@@ -59,7 +59,7 @@ def storage(tmp_path):
 async def _seed(storage, rows: list[TurnRow]) -> None:
     await storage._ensure_initialized()
     async with storage._conn.session() as db:
-        await turns.create_turns_bulk(db, rows)
+        await turns.create_turns_bulk(db, rows, tenant_id=None)
 
 
 # --------------------------------------------------------------------------

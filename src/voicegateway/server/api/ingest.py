@@ -23,11 +23,16 @@ from voicegateway.middleware.dead_air_detector_middleware import DeadAirEvent
 from voicegateway.middleware.turn_tracker_middleware import TurnRow
 from voicegateway.models.request_model import RequestRecord
 from voicegateway.models.tool_call_model import ToolCall
-from voicegateway.server.api._deps import get_gateway, require_scope
+from voicegateway.server.api._deps import (
+    Principal,
+    get_gateway,
+    require_ingest_principal,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
 
 _RECORD_FIELDS: frozenset[str] = frozenset(
     f.name for f in dataclasses.fields(RequestRecord)
@@ -88,7 +93,7 @@ def _rate_limit_key(request: Request) -> str:
 async def ingest(
     records: list[dict[str, Any]],
     request: Request,
-    _auth: None = Depends(require_scope("write")),
+    principal: Principal = Depends(require_ingest_principal),
 ) -> dict[str, int]:
     """Persist a batch of request records pushed by a fleet agent."""
     gateway = get_gateway(request)
@@ -172,7 +177,7 @@ async def ingest(
             continue
         gateway.cost_tracker.rate_record(record)
         try:
-            await storage.log_request(record)
+            await storage.log_request_as(record, tenant_id=principal.tenant_id)
             accepted += 1
         except IntegrityError:
             # Duplicate id: a sink retry re-sent an already-stored row.
@@ -205,7 +210,7 @@ def _turn_from_payload(raw: dict[str, Any]) -> TurnRow | None:
 async def ingest_turns(
     rows: list[dict[str, Any]],
     request: Request,
-    _auth: None = Depends(require_scope("write")),
+    principal: Principal = Depends(require_ingest_principal),
 ) -> dict[str, int]:
     """Persist a batch of conversation turns pushed by a fleet agent.
 
@@ -247,7 +252,7 @@ async def ingest_turns(
     accepted = 0
     if turns:
         try:
-            accepted = await storage.log_turns(turns)
+            accepted = await storage.log_turns(turns, tenant_id=principal.tenant_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "ingest/turns: failed to persist %d turn(s)", len(turns), exc_info=True
@@ -290,7 +295,7 @@ def _tool_call_from_payload(raw: dict[str, Any]) -> ToolCall | None:
 async def ingest_tool_calls(
     rows: list[dict[str, Any]],
     request: Request,
-    _auth: None = Depends(require_scope("write")),
+    principal: Principal = Depends(require_ingest_principal),
 ) -> dict[str, int]:
     """Persist per-tool-call rows pushed by a fleet agent.
 
@@ -337,7 +342,9 @@ async def ingest_tool_calls(
     accepted = 0
     if parsed:
         try:
-            accepted = await storage.log_tool_calls(parsed)
+            accepted = await storage.log_tool_calls(
+                parsed, tenant_id=principal.tenant_id
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "ingest/tool-calls: failed to persist %d row(s)",
@@ -358,7 +365,7 @@ async def ingest_tool_calls(
 async def ingest_dead_air(
     events: list[dict[str, Any]],
     request: Request,
-    _auth: None = Depends(require_scope("write")),
+    principal: Principal = Depends(require_ingest_principal),
 ) -> dict[str, int]:
     """Persist observed dead-air events pushed by a fleet agent.
 
@@ -396,7 +403,7 @@ async def ingest_dead_air(
     accepted = 0
     if parsed:
         try:
-            accepted = await storage.log_dead_air(parsed)
+            accepted = await storage.log_dead_air(parsed, tenant_id=principal.tenant_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "ingest/dead-air: failed to persist %d event(s)",

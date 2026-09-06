@@ -39,7 +39,11 @@ jobs:
           uv venv --seed --python 3.12
           uv pip install -e ".[dev,collector]"
       - name: Run the Postgres collector integration test
-        run: uv run pytest src/voicegateway/tests/integration/test_postgres_collector.py -v
+        run: >-
+          uv run pytest
+          src/voicegateway/tests/integration/test_postgres_collector.py
+          src/voicegateway/tests/integration/test_accounting_postgres_release.py
+          -v
 
   image-smoke:
     name: Image smoke (collector stack on Postgres)

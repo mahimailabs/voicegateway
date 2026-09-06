@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from voicegateway._version import __version__
 from voicegateway.inference.pricing import llm as _llm_pricing
@@ -38,7 +38,7 @@ router = APIRouter(tags=["dashboard"])
 
 
 @router.get("/status")
-async def get_status(gateway: Gateway = Depends(get_gateway)) -> dict:
+async def get_status(request: Request, gateway: Gateway = Depends(get_gateway)) -> dict:
     """Status of configured providers and the models the operator can call.
 
     Models are filtered to providers that are usable (a cloud key is set, or
@@ -78,8 +78,19 @@ async def get_status(gateway: Gateway = Depends(get_gateway)) -> dict:
         "tts": {"source": _tts_pricing.PRICING_SOURCE},
     }
 
+    # What an operator watches during the warn release: how many requests
+    # would already have been refused under enforce. Flipping the mode with
+    # this at zero is safe; flipping it at 400 is an outage.
+    auth_cfg = config.auth
+    auth = {
+        "enforcement": auth_cfg.enforcement,
+        "local_development": auth_cfg.local_development,
+        "would_refuse_count": getattr(request.app.state, "auth_would_refuse", 0),
+    }
+
     return {
         "version": _PUBLIC_VERSION,
+        "auth": auth,
         "providers": providers,
         "models": models,
         "fallbacks": config.fallbacks,

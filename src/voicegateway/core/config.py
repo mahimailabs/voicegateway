@@ -131,10 +131,21 @@ class ProjectConfig:
 
 @dataclass
 class AuthConfig:
-    """HTTP API authentication settings."""
+    """HTTP API authentication settings.
+
+    Mirrors ``schemas.config_schema.AuthConfig``, which validates the YAML;
+    this is the runtime shape the Gateway carries. A field added to one and
+    not the other is invisible until something reads it, so
+    ``tests/core/test_auth_config_parity.py`` asserts the two agree.
+    """
 
     api_keys: list[dict[str, Any]] = field(default_factory=list)
     cors_origins: list[str] = field(default_factory=list)
+    #: Explicit local mode: unauthenticated requests allowed, nothing logged.
+    #: Refused at startup alongside production-shaped config.
+    local_development: bool = False
+    #: ``warn`` serves and logs what it would refuse; ``enforce`` refuses.
+    enforcement: str = "warn"
 
 
 @dataclass
@@ -361,6 +372,8 @@ class GatewayConfig:
                 if isinstance(entry, dict)
             ],
             cors_origins=[str(o) for o in (auth_raw.get("cors_origins") or []) if o],
+            local_development=bool(auth_raw.get("local_development", False)),
+            enforcement=str(auth_raw.get("enforcement", "warn")),
         )
 
         default_project_raw = raw.get("default_project")

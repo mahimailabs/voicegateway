@@ -1,8 +1,8 @@
 """FastAPI router for api-key management.
 
 Auth is declared ONCE, here, for every route on this router. A minted key
-carries the wildcard scope (``api_keys_repository`` defaults ``scopes='*'``),
-so an ungated mint hands the caller write access to every ``/v1`` endpoint.
+names its scopes explicitly as of 0.26.0, but a mint is still an admin act:
+it hands out a credential.
 ``require_scope(ADMIN_SCOPE)`` is a no-op while no API keys are configured
 (the self-hosted single-operator default: ``core.auth.check_request``
 returns None on an empty key list), and enforces the admin scope once auth
@@ -13,7 +13,7 @@ route cannot forget to opt in.
 from __future__ import annotations
 
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from voicegateway.core.auth import ADMIN_SCOPE
 from voicegateway.core.container import Container
@@ -41,11 +41,22 @@ async def create_api_key(
     service: ApiKeyService = Depends(Provide[Container.api_key_service]),
 ) -> CreatedApiKey:
     """Mint a new virtual key. The plaintext is returned exactly once."""
-    created = await service.create_key(
-        name=payload.name,
-        tenant_id=payload.tenant_id,
-        issued_by=payload.issued_by,
-    )
+    try:
+        created = await service.create_key(
+            name=payload.name,
+            scopes=payload.scopes,
+            tenant_id=payload.tenant_id,
+            issued_by=payload.issued_by,
+            project_ids=(
+                ",".join(sorted(set(payload.project_ids)))
+                if payload.project_ids is not None
+                else None
+            ),
+        )
+    except ValueError as exc:
+        # A refused scope list is a bad request, not a server fault. 422 to
+        # match the shape pydantic already returns for this body.
+        raise HTTPException(status_code=422, detail=str(exc)) from None
     return CreatedApiKey(
         plaintext=created.plaintext,
         key=ApiKeyResponse.model_validate(created.row),

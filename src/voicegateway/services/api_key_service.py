@@ -8,6 +8,7 @@ from typing import Final
 
 import bcrypt
 
+from voicegateway.core.scopes import normalize_scopes
 from voicegateway.models.api_key_model import ApiKey
 from voicegateway.repository.api_key_repository import ApiKeyRepository
 from voicegateway.services.base_service import BaseService
@@ -34,6 +35,7 @@ class VerifiedKey:
     id: int
     tenant_id: str | None
     name: str
+    project_ids: str | None = None
 
 
 def _generate_plaintext_key() -> str:
@@ -74,19 +76,31 @@ class ApiKeyService(BaseService[ApiKey]):
         self,
         *,
         name: str,
+        scopes: str,
         tenant_id: str | None = None,
         issued_by: str | None = None,
+        project_ids: str | None = None,
     ) -> CreatedKey:
-        """Mint a new virtual key. The plaintext is returned exactly once."""
+        """Mint a new virtual key. The plaintext is returned exactly once.
+
+        ``scopes`` is required and goes through the same
+        :func:`~voicegateway.core.scopes.normalize_scopes` as the
+        function-style repository, so this door and that one refuse exactly
+        the same requests. Before 0.26.0 this path set no scopes at all and
+        the model default (``"*"``) applied, which is VG-SEC-006.
+        """
         if not name:
             raise ValueError("name must be non-empty")
+        granted = normalize_scopes(scopes)
         plaintext = _generate_plaintext_key()
         row = ApiKey(
             key_prefix=_visible_prefix(plaintext),
             key_hash=_hash(plaintext),
             name=name,
+            scopes=granted,
             tenant_id=tenant_id,
             issued_by=issued_by,
+            project_ids=project_ids,
         )
         persisted = await self._repository.create(row)
         return CreatedKey(plaintext=plaintext, row=persisted)
@@ -105,7 +119,12 @@ class ApiKeyService(BaseService[ApiKey]):
                 continue
             if _check(plaintext, row.key_hash):
                 assert row.id is not None
-                return VerifiedKey(id=row.id, tenant_id=row.tenant_id, name=row.name)
+                return VerifiedKey(
+                    id=row.id,
+                    tenant_id=row.tenant_id,
+                    name=row.name,
+                    project_ids=row.project_ids,
+                )
         return None
 
     async def mark_used(self, key_id: int) -> None:

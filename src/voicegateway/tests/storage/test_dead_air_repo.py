@@ -22,7 +22,7 @@ async def test_create_event_round_trip(tmp_path) -> None:
             duration_ms=3500,
             threshold_used_ms=3000,
         )
-        await dead_air.create_event(db, event)
+        await dead_air.create_event(db, event, tenant_id=None)
 
         listed = await dead_air.list_events_by_session(db, "s1")
         assert len(listed) == 1
@@ -38,7 +38,7 @@ async def test_list_events_ordered_by_started_at_asc(tmp_path) -> None:
             DeadAirEvent("s1", 2000, 100, 50),
         ]
         for e in events:
-            await dead_air.create_event(db, e)
+            await dead_air.create_event(db, e, tenant_id=None)
 
         listed = await dead_air.list_events_by_session(db, "s1")
         assert [e.started_at_ms for e in listed] == [1000, 2000, 3000]
@@ -48,8 +48,10 @@ async def test_count_events_by_session(tmp_path) -> None:
     storage = await _fresh_storage(tmp_path)
     async with storage._conn.session() as db:
         for i in range(4):
-            await dead_air.create_event(db, DeadAirEvent("s1", i * 1000, 100, 50))
-        await dead_air.create_event(db, DeadAirEvent("s2", 0, 100, 50))
+            await dead_air.create_event(
+                db, DeadAirEvent("s1", i * 1000, 100, 50), tenant_id=None
+            )
+        await dead_air.create_event(db, DeadAirEvent("s2", 0, 100, 50), tenant_id=None)
 
         assert await dead_air.count_events_by_filter(db, "s1") == 4
         assert await dead_air.count_events_by_filter(db, "s2") == 1
@@ -61,7 +63,9 @@ async def test_count_events_by_time_range(tmp_path) -> None:
     storage = await _fresh_storage(tmp_path)
     async with storage._conn.session() as db:
         for i in range(5):
-            await dead_air.create_event(db, DeadAirEvent("s1", i * 1000, 100, 50))
+            await dead_air.create_event(
+                db, DeadAirEvent("s1", i * 1000, 100, 50), tenant_id=None
+            )
 
         # [2000, 4000) -> started_at_ms in {2000, 3000} -> 2 events.
         n = await dead_air.count_events_by_filter(

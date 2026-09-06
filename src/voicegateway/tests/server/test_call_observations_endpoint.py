@@ -353,7 +353,9 @@ async def test_tenant_is_stamped_from_the_key_not_the_payload(gateway):
     """The tenant travels on the queued item, resolved from the verified key."""
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
-        created = await api_keys.create_api_key(db, name="agent", tenant_id="acme")
+        created = await api_keys.create_api_key(
+            db, name="agent", tenant_id="acme", scopes="read,write,ingest,admin"
+        )
 
     resp = await _post(
         gateway, _observation(), {"Authorization": f"Bearer {created.plaintext}"}

@@ -24,6 +24,7 @@ from voicegateway.schemas.telemetry.security_schema import (
     CONTENT_STATE_TRANSITIONS,
     EXISTING_SCOPES,
     FORBIDDEN_IMPORT_ROOT,
+    NON_READABLE_CONTENT_STATES,
     PLANNED_SCOPES,
     TELEMETRY_FIELD_BINDINGS,
     AuthorizationRule,
@@ -37,6 +38,7 @@ from voicegateway.schemas.telemetry.security_schema import (
     ScopeName,
     SealedValue,
     SensitiveAccessEvent,
+    ThreatEntry,
     ThreatModel,
     load_threat_model,
     may_transition,
@@ -111,6 +113,17 @@ def test_matrix_row_cannot_be_planned():
         AuthorizationRule.model_validate(_rule(status=ContractStatus.PLANNED))
 
 
+def test_matrix_row_cannot_be_closed():
+    """CLOSED is threat-model history. A closed route's row is ENFORCED.
+
+    Without this, a CLOSED row would fall through to the gap branch, be
+    required to carry a gap_id, and then be counted as open work by
+    everything that reads the matrix.
+    """
+    with pytest.raises(ValidationError, match="belongs to the threat"):
+        AuthorizationRule.model_validate(_rule(status=ContractStatus.CLOSED))
+
+
 def test_gap_id_format_is_enforced():
     """Free-form ids would break the verbatim join across the four places."""
     with pytest.raises(ValidationError):
@@ -129,22 +142,86 @@ def test_rows_are_frozen_and_reject_unknown_fields():
 
 
 # --------------------------------------------------------------------------
+# Closing a gap: the entry stays as history
+# --------------------------------------------------------------------------
+
+
+def _entry(**overrides) -> dict:
+    base = {
+        "gap_id": "VG-SEC-001",
+        "threat": "VG-THREAT-001",
+        "title": "t",
+        "description": "d",
+        "status": ContractStatus.GAP,
+        "wave": 1,
+        "evidence": "src/voicegateway/repository/tool_calls_repository.py:54",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_closed_entry_requires_release_and_commit():
+    """A closure with no release or commit is a claim with no receipt."""
+    with pytest.raises(ValidationError, match="closed_in and closed_by"):
+        ThreatEntry.model_validate(_entry(status=ContractStatus.CLOSED))
+    entry = ThreatEntry.model_validate(
+        _entry(status=ContractStatus.CLOSED, closed_in="0.26.0", closed_by="abc1234")
+    )
+    assert entry.closed_in == "0.26.0"
+
+
+def test_open_entry_cannot_carry_closure_fields():
+    """Closure fields on an open gap would read as closed to a skimmer."""
+    with pytest.raises(ValidationError, match="only a closed entry"):
+        ThreatEntry.model_validate(_entry(closed_in="0.26.0"))
+
+
+def test_threat_model_open_gap_ids_excludes_closed():
+    """gap_ids stays complete for the contiguity pin; open_gap_ids is the work."""
+    closed = _entry(
+        status=ContractStatus.CLOSED, closed_in="0.26.0", closed_by="abc1234"
+    )
+    open_entry = _entry(gap_id="VG-SEC-002", status=ContractStatus.PLANNED)
+    model = ThreatModel.model_validate([closed, open_entry])
+    assert model.gap_ids() == {"VG-SEC-001", "VG-SEC-002"}
+    assert model.open_gap_ids() == {"VG-SEC-002"}
+
+
+# --------------------------------------------------------------------------
 # Content state
 # --------------------------------------------------------------------------
+
+
+def test_content_state_vocabulary_matches_the_roadmap():
+    """Waves 3 and 4 enumerate these five verbatim."""
+    assert [s.value for s in ContentState] == [
+        "captured",
+        "redacted",
+        "truncated",
+        "expired",
+        "unavailable",
+    ]
 
 
 def test_content_transitions_are_one_way():
     """No state may reach a state that precedes it in the lifecycle."""
     order = [
-        ContentState.PENDING,
-        ContentState.STORED,
+        ContentState.CAPTURED,
+        ContentState.TRUNCATED,
         ContentState.REDACTED,
-        ContentState.PURGED,
+        ContentState.EXPIRED,
         ContentState.UNAVAILABLE,
     ]
     for index, source in enumerate(order):
         for target in CONTENT_STATE_TRANSITIONS[source]:
             assert order.index(target) > index, f"{source} -> {target} moves backward"
+
+
+def test_only_captured_is_readable():
+    """Every state but CAPTURED withholds plaintext from every caller."""
+    assert NON_READABLE_CONTENT_STATES == frozenset(ContentState) - {
+        ContentState.CAPTURED
+    }
 
 
 def test_every_state_is_in_the_transition_map():
@@ -155,13 +232,14 @@ def test_every_state_is_in_the_transition_map():
 def test_unavailable_is_terminal():
     """The unauthorized projection cannot become anything else."""
     assert CONTENT_STATE_TRANSITIONS[ContentState.UNAVAILABLE] == frozenset()
-    assert not may_transition(ContentState.UNAVAILABLE, ContentState.STORED)
+    assert not may_transition(ContentState.UNAVAILABLE, ContentState.CAPTURED)
 
 
-def test_purged_content_never_returns():
+def test_expired_content_never_returns():
     """A late ingest replaying an older revision must not resurrect content."""
-    assert not may_transition(ContentState.PURGED, ContentState.STORED)
-    assert not may_transition(ContentState.REDACTED, ContentState.STORED)
+    assert not may_transition(ContentState.EXPIRED, ContentState.CAPTURED)
+    assert not may_transition(ContentState.REDACTED, ContentState.CAPTURED)
+    assert not may_transition(ContentState.TRUNCATED, ContentState.CAPTURED)
 
 
 @pytest.mark.parametrize("field", ["byte_count", "expires_at"])
@@ -178,10 +256,10 @@ def test_unavailable_content_with_no_metadata_is_valid():
     assert descriptor.expires_at is None
 
 
-def test_purged_may_report_zero_bytes():
+def test_expired_may_report_zero_bytes():
     """The oracle rule is narrow: an authorized caller still gets the truth."""
     descriptor = ContentDescriptor.model_validate(
-        {"state": ContentState.PURGED, "byte_count": 0}
+        {"state": ContentState.EXPIRED, "byte_count": 0}
     )
     assert descriptor.byte_count == 0
 
@@ -323,10 +401,18 @@ def test_planned_scopes_are_absent_from_production():
 
 
 def test_existing_scopes_really_are_used():
-    """The other half of the claim: write and admin are live scope literals."""
+    """The other half of the claim: these scopes are live, not aspirational.
+
+    ``ingest`` joined the list in 0.26.0 and is spelled differently: it is
+    enforced by a named dependency rather than a ``require_scope`` literal,
+    because the route needs the resulting Principal and not just a pass/fail.
+    Asserting the dependency's own name keeps the claim honest without
+    pretending the two gates have the same shape.
+    """
     source = "\n".join(p.read_text(encoding="utf-8") for p in _server_sources())
     assert 'require_scope("write")' in source
     assert "require_scope(ADMIN_SCOPE)" in source
+    assert "require_ingest_principal" in source
 
 
 def test_require_scope_closure_shape_is_stable():

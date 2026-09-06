@@ -34,7 +34,12 @@ from voicegateway.server import build_app
 class _Harness:
     """Builds an app + Gateway over a fresh SQLite db, yields a client maker."""
 
-    def __init__(self) -> None:
+    def __init__(self, config_overrides: dict | None = None) -> None:
+        """Build the app. ``config_overrides`` merges into the yaml top level.
+
+        Used to vary the ``auth`` block per test (enforcement mode, local
+        development, configured keys) without a second harness.
+        """
         self._tmp = tempfile.TemporaryDirectory()
         tmp = self._tmp.name
         # See the module docstring: restoring this is what keeps the harness
@@ -48,6 +53,8 @@ class _Harness:
             "fallbacks": {"stt": [], "llm": [], "tts": []},
             "cost_tracking": {"enabled": True},
         }
+        if config_overrides:
+            cfg.update(config_overrides)
         cfg_path = os.path.join(tmp, "voicegw.yaml")
         with open(cfg_path, "w") as handle:
             yaml.dump(cfg, handle)
@@ -77,11 +84,22 @@ class _Harness:
         self._tmp.cleanup()
 
 
-async def _make_key(gateway, *, tenant_id=None, role="tenant"):
-    """Mint a vk_ key and return its plaintext token."""
-    async with gateway.storage._conn.session() as db:
+async def _make_key(gateway, *, tenant_id=None, role="tenant", scopes="read"):
+    """Mint a vk_ key and return its plaintext token.
+
+    ``scopes`` is explicit because 0.26.0 stops minting wildcard keys: a test
+    that wants to write must say so, exactly as an operator now must. The
+    default is ``read`` rather than the old ``*`` so that a test which needs
+    write authority fails loudly instead of passing on a scope that matched
+    everything.
+    """
+    async with gateway.storage.session() as db:
         created = await api_keys.create_api_key(
-            db, name=f"k-{tenant_id}-{role}", tenant_id=tenant_id, role=role
+            db,
+            name=f"k-{tenant_id}-{role}-{scopes}",
+            tenant_id=tenant_id,
+            role=role,
+            scopes=scopes,
         )
     return created.plaintext
 
@@ -123,6 +141,8 @@ def classify_dependency(fn) -> str | None:
         )
         cell = fn.__closure__[code.co_freevars.index("scope")]
         return f"scope:{cell.cell_contents}"
+    if qualname == "require_ingest_principal":
+        return "scope:ingest"
     if qualname == "require_principal":
         return "principal"
     return None

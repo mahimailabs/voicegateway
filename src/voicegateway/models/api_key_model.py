@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import ClassVar
 
-from sqlalchemy import DateTime
+from sqlalchemy import Column, DateTime, Text
 from sqlmodel import Field, SQLModel
 
 
@@ -25,6 +25,7 @@ class ApiKey(SQLModel, table=True):
     tenant_id: str | None = Field(default=None, index=True)
     role: str = Field(default="tenant")
     scopes: str = Field(default="*")
+    project_ids: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     issued_by: str | None = None
     issued_at: datetime = Field(  # type: ignore[call-overload]
         default_factory=_utcnow,
