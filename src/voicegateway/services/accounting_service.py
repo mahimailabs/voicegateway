@@ -1,18 +1,18 @@
 """Transactional immutable-pricing and usage-ledger operations."""
 
-# mypy: disable-error-code="arg-type,attr-defined,union-attr"
-
 from __future__ import annotations
 
 import hashlib
 import json
 import time
 import uuid
+from collections.abc import Sequence
 from decimal import Decimal
 
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import col
 
 from voicegateway.accounting.contracts import (
     OwnershipAssignment,
@@ -27,7 +27,6 @@ from voicegateway.accounting.contracts import (
 from voicegateway.accounting.rating import rate_usage
 from voicegateway.models.accounting_model import (
     AccountingOwnership,
-    AccountingProjection,
     AccountingRejection,
     AccountingUsage,
     PreparedPricingBinding,
@@ -50,9 +49,9 @@ class AccountingService:
         content = payload.canonical_content()
         digest = payload.content_hash()
         query = select(PricingRevision).where(
-            PricingRevision.tenant_id == self._tenant_id,
-            PricingRevision.side == payload.side.value,
-            PricingRevision.revision_id == payload.revision_id,
+            col(PricingRevision.tenant_id) == self._tenant_id,
+            col(PricingRevision.side) == payload.side.value,
+            col(PricingRevision.revision_id) == payload.revision_id,
         )
         existing = (await self._session.execute(query)).scalar_one_or_none()
         if existing is not None:
@@ -97,9 +96,9 @@ class AccountingService:
         self, side: PricingSide, revision_id: str
     ) -> PricingRevision | None:
         query = select(PricingRevision).where(
-            PricingRevision.tenant_id == self._tenant_id,
-            PricingRevision.side == side.value,
-            PricingRevision.revision_id == revision_id,
+            col(PricingRevision.tenant_id) == self._tenant_id,
+            col(PricingRevision.side) == side.value,
+            col(PricingRevision.revision_id) == revision_id,
         )
         return (await self._session.execute(query)).scalar_one_or_none()
 
@@ -117,12 +116,14 @@ class AccountingService:
             raise RevisionConflict("stored pricing revision hash mismatch")
         current = (
             await self._session.execute(
-                select(PricingRevision).where(
-                    PricingRevision.tenant_id == self._tenant_id,
-                    PricingRevision.side == side.value,
-                    PricingRevision.scope_key == row.scope_key,
-                    PricingRevision.active.is_(True),
+                select(PricingRevision)
+                .where(
+                    col(PricingRevision.tenant_id) == self._tenant_id,
+                    col(PricingRevision.side) == side.value,
+                    col(PricingRevision.scope_key) == row.scope_key,
+                    col(PricingRevision.active).is_(True),
                 )
+                .with_for_update()
             )
         ).scalar_one_or_none()
         if expected_current_revision_id is not None and (
@@ -132,15 +133,19 @@ class AccountingService:
         await self._session.execute(
             update(PricingRevision)
             .where(
-                PricingRevision.tenant_id == self._tenant_id,
-                PricingRevision.side == side.value,
-                PricingRevision.scope_key == row.scope_key,
+                col(PricingRevision.tenant_id) == self._tenant_id,
+                col(PricingRevision.side) == side.value,
+                col(PricingRevision.scope_key) == row.scope_key,
             )
             .values(active=False)
         )
         row.active = True
         self._session.add(row)
-        await self._session.commit()
+        try:
+            await self._session.commit()
+        except IntegrityError:
+            await self._session.rollback()
+            raise RevisionConflict("active revision changed") from None
         await self._session.refresh(row)
         return row
 
@@ -148,9 +153,9 @@ class AccountingService:
         self, assignment: OwnershipAssignment
     ) -> AccountingOwnership:
         query = select(AccountingOwnership).where(
-            AccountingOwnership.tenant_id == self._tenant_id,
-            AccountingOwnership.project_id == assignment.project_id,
-            AccountingOwnership.component == assignment.component,
+            col(AccountingOwnership.tenant_id) == self._tenant_id,
+            col(AccountingOwnership.project_id) == assignment.project_id,
+            col(AccountingOwnership.component) == assignment.component,
         )
         row = (await self._session.execute(query)).scalar_one_or_none()
         if row is None:
@@ -171,9 +176,9 @@ class AccountingService:
 
     async def prepare(self, request: PreparationRequest) -> PricingBinding:
         ownership_query = select(AccountingOwnership).where(
-            AccountingOwnership.tenant_id == self._tenant_id,
-            AccountingOwnership.project_id == request.project_id,
-            AccountingOwnership.component == request.component,
+            col(AccountingOwnership.tenant_id) == self._tenant_id,
+            col(AccountingOwnership.project_id) == request.project_id,
+            col(AccountingOwnership.component) == request.component,
         )
         ownership = (await self._session.execute(ownership_query)).scalar_one_or_none()
         mode = (
@@ -187,9 +192,9 @@ class AccountingService:
                 (
                     await self._session.execute(
                         select(PricingRevision).where(
-                            PricingRevision.tenant_id == self._tenant_id,
-                            PricingRevision.side == side.value,
-                            PricingRevision.active.is_(True),
+                            col(PricingRevision.tenant_id) == self._tenant_id,
+                            col(PricingRevision.side) == side.value,
+                            col(PricingRevision.active).is_(True),
                         )
                     )
                 )
@@ -244,9 +249,9 @@ class AccountingService:
         canonical = envelope.model_dump_json()
         digest = hashlib.sha256(canonical.encode()).hexdigest()
         query = select(AccountingUsage).where(
-            AccountingUsage.tenant_id == self._tenant_id,
-            AccountingUsage.project_id == envelope.project_id,
-            AccountingUsage.event_id == envelope.event_id,
+            col(AccountingUsage.tenant_id) == self._tenant_id,
+            col(AccountingUsage.project_id) == envelope.project_id,
+            col(AccountingUsage.event_id) == envelope.event_id,
         )
         existing = (await self._session.execute(query)).scalar_one_or_none()
         if existing is not None:
@@ -259,45 +264,79 @@ class AccountingService:
                 code="already_committed",
             )
 
+        effective = envelope
         if envelope.pricing_binding_id is not None:
             binding = await self._session.get(
                 PreparedPricingBinding, envelope.pricing_binding_id
             )
             if binding is None or binding.tenant_id != self._tenant_id:
                 return await self._reject(envelope, digest, "binding_not_found")
-            expected = (
+            expected_identity = (
                 binding.project_id,
                 binding.component,
                 binding.offering,
-                binding.ownership_mode,
-                binding.acquisition_revision_id,
-                binding.selling_revision_id,
             )
-            supplied = (
+            supplied_identity = (
                 envelope.project_id,
                 envelope.component,
                 envelope.offering,
-                envelope.ownership_mode.value,
-                envelope.acquisition_revision_id,
-                envelope.selling_revision_id,
             )
-            if expected != supplied:
+            if expected_identity != supplied_identity:
                 return await self._reject(envelope, digest, "binding_mismatch")
+            effective = envelope.model_copy(
+                update={
+                    "ownership_mode": OwnershipMode(binding.ownership_mode),
+                    "acquisition_revision_id": binding.acquisition_revision_id,
+                    "selling_revision_id": binding.selling_revision_id,
+                }
+            )
+        else:
+            ownership = (
+                await self._session.execute(
+                    select(AccountingOwnership).where(
+                        col(AccountingOwnership.tenant_id) == self._tenant_id,
+                        col(AccountingOwnership.project_id) == envelope.project_id,
+                        col(AccountingOwnership.component) == envelope.component,
+                    )
+                )
+            ).scalar_one_or_none()
+            expected_mode = (
+                OwnershipMode(ownership.mode)
+                if ownership is not None
+                else OwnershipMode.SDK
+            )
+            if envelope.ownership_mode is not expected_mode:
+                return await self._reject(envelope, digest, "ownership_mismatch")
 
         acquisition_total, acquisition_complete = await self._rate(
-            envelope, PricingSide.ACQUISITION
+            effective, PricingSide.ACQUISITION
         )
         selling_total, selling_complete = await self._rate(
-            envelope, PricingSide.SELLING
+            effective, PricingSide.SELLING
         )
         has_missing_measurement = any(
-            item.value is None for item in envelope.quantities
+            item.value is None for item in effective.quantities
         )
+        has_partial_total = any(
+            total is not None and not complete
+            for total, complete in (
+                (acquisition_total, acquisition_complete),
+                (selling_total, selling_complete),
+            )
+        )
+        provided_sides = [
+            complete
+            for revision_id, complete in (
+                (effective.acquisition_revision_id, acquisition_complete),
+                (effective.selling_revision_id, selling_complete),
+            )
+            if revision_id is not None
+        ]
         status = (
             "rated"
-            if acquisition_complete and selling_complete
+            if provided_sides and all(provided_sides)
             else "incomplete"
-            if has_missing_measurement
+            if has_missing_measurement or has_partial_total
             else "unrated"
         )
         receipt_id = str(uuid.uuid4())
@@ -313,10 +352,10 @@ class AccountingService:
             session_id=envelope.session_id,
             turn_id=envelope.turn_id,
             producer_id=envelope.producer_id,
-            ownership_mode=envelope.ownership_mode.value,
+            ownership_mode=effective.ownership_mode.value,
             pricing_binding_id=envelope.pricing_binding_id,
-            acquisition_revision_id=envelope.acquisition_revision_id,
-            selling_revision_id=envelope.selling_revision_id,
+            acquisition_revision_id=effective.acquisition_revision_id,
+            selling_revision_id=effective.selling_revision_id,
             occurred_at_ns=envelope.occurred_at_ns,
             payload_hash=digest,
             envelope_json=canonical,
@@ -329,14 +368,6 @@ class AccountingService:
             created_at_ns=time.time_ns(),
         )
         self._session.add(row)
-        self._session.add(
-            AccountingProjection(
-                tenant_id=self._tenant_id,
-                project_id=envelope.project_id,
-                event_id=envelope.event_id,
-                payload_json=canonical,
-            )
-        )
         try:
             await self._session.commit()
         except IntegrityError:
@@ -359,14 +390,20 @@ class AccountingService:
             code="committed",
         )
 
+    async def reject(self, envelope: UsageEnvelope, code: str) -> RecordReceipt:
+        """Persist a stable per-record rejection without attempting ingestion."""
+        canonical = envelope.model_dump_json()
+        digest = hashlib.sha256(canonical.encode()).hexdigest()
+        return await self._reject(envelope, digest, code)
+
     async def _reject(
         self, envelope: UsageEnvelope, payload_hash: str, code: str
     ) -> RecordReceipt:
         query = select(AccountingRejection).where(
-            AccountingRejection.tenant_id == self._tenant_id,
-            AccountingRejection.project_id == envelope.project_id,
-            AccountingRejection.event_id == envelope.event_id,
-            AccountingRejection.payload_hash == payload_hash,
+            col(AccountingRejection.tenant_id) == self._tenant_id,
+            col(AccountingRejection.project_id) == envelope.project_id,
+            col(AccountingRejection.event_id) == envelope.event_id,
+            col(AccountingRejection.payload_hash) == payload_hash,
         )
         existing = (await self._session.execute(query)).scalar_one_or_none()
         if existing is not None:
@@ -388,7 +425,17 @@ class AccountingService:
                 created_at_ns=time.time_ns(),
             )
         )
-        await self._session.commit()
+        try:
+            await self._session.commit()
+        except IntegrityError:
+            await self._session.rollback()
+            concurrent = (await self._session.execute(query)).scalar_one()
+            return RecordReceipt(
+                event_id=envelope.event_id,
+                outcome="rejected",
+                receipt_id=concurrent.receipt_id,
+                code=concurrent.code,
+            )
         return RecordReceipt(
             event_id=envelope.event_id,
             outcome="rejected",
@@ -423,11 +470,11 @@ class AccountingService:
         group_by: tuple[str, ...] = (),
         include_acquisition: bool = False,
     ) -> dict[str, object]:
-        conditions = [AccountingUsage.tenant_id == self._tenant_id]
+        conditions = [col(AccountingUsage.tenant_id) == self._tenant_id]
         if project_id is not None:
-            conditions.append(AccountingUsage.project_id == project_id)
+            conditions.append(col(AccountingUsage.project_id) == project_id)
         elif allowed_project_ids is not None:
-            conditions.append(AccountingUsage.project_id.in_(allowed_project_ids))
+            conditions.append(col(AccountingUsage.project_id).in_(allowed_project_ids))
         rows = (
             (
                 await self._session.execute(
@@ -437,10 +484,11 @@ class AccountingService:
             .scalars()
             .all()
         )
+        rated_rows = [row for row in rows if row.status == "rated"]
         selling = sum(
             (
                 Decimal(row.selling_total_usd)
-                for row in rows
+                for row in rated_rows
                 if row.selling_total_usd is not None
             ),
             start=Decimal(0),
@@ -448,7 +496,7 @@ class AccountingService:
         acquisition = sum(
             (
                 Decimal(row.acquisition_total_usd)
-                for row in rows
+                for row in rated_rows
                 if row.acquisition_total_usd is not None
             ),
             start=Decimal(0),
@@ -457,30 +505,15 @@ class AccountingService:
             name: sum(row.status == name for row in rows)
             for name in ("rated", "unrated", "incomplete", "rejected")
         }
-        projection_conditions = [AccountingProjection.tenant_id == self._tenant_id]
-        rejection_conditions = [AccountingRejection.tenant_id == self._tenant_id]
+        rejection_conditions = [col(AccountingRejection.tenant_id) == self._tenant_id]
         if project_id is not None:
-            projection_conditions.append(AccountingProjection.project_id == project_id)
-            rejection_conditions.append(AccountingRejection.project_id == project_id)
-        elif allowed_project_ids is not None:
-            projection_conditions.append(
-                AccountingProjection.project_id.in_(allowed_project_ids)
-            )
             rejection_conditions.append(
-                AccountingRejection.project_id.in_(allowed_project_ids)
+                col(AccountingRejection.project_id) == project_id
             )
-        pending = (
-            await self._session.execute(
-                select(func.count())
-                .select_from(AccountingProjection)
-                .where(
-                    and_(
-                        *projection_conditions,
-                        AccountingProjection.projected_at_ns.is_(None),
-                    )
-                )
+        elif allowed_project_ids is not None:
+            rejection_conditions.append(
+                col(AccountingRejection.project_id).in_(allowed_project_ids)
             )
-        ).scalar_one()
         counts["rejected"] = (
             await self._session.execute(
                 select(func.count())
@@ -490,12 +523,26 @@ class AccountingService:
         ).scalar_one()
         result: dict[str, object] = {
             "selling_total_usd": format(selling, "f"),
-            "counts": {**counts, "pending_delivery": pending},
+            "incomplete_selling_total_usd": format(
+                self._sum_side(rows, "selling_total_usd", status="incomplete"), "f"
+            ),
+            "unrated_selling_total_usd": format(
+                self._sum_side(rows, "selling_total_usd", status="unrated"), "f"
+            ),
+            "counts": counts,
             "records": len(rows),
         }
         if include_acquisition:
             result["acquisition_total_usd"] = format(acquisition, "f")
             result["margin_usd"] = format(selling - acquisition, "f")
+            result["incomplete_acquisition_total_usd"] = format(
+                self._sum_side(rows, "acquisition_total_usd", status="incomplete"),
+                "f",
+            )
+            result["unrated_acquisition_total_usd"] = format(
+                self._sum_side(rows, "acquisition_total_usd", status="unrated"),
+                "f",
+            )
         allowed_groups = {
             "session": "session_id",
             "component": "component",
@@ -519,6 +566,7 @@ class AccountingService:
                         (
                             Decimal(row.selling_total_usd)
                             for row in group_rows
+                            if row.status == "rated"
                             if row.selling_total_usd is not None
                         ),
                         start=Decimal(0),
@@ -529,3 +577,17 @@ class AccountingService:
             for key, group_rows in groups.items()
         ]
         return result
+
+    @staticmethod
+    def _sum_side(
+        rows: Sequence[AccountingUsage], field: str, *, status: str
+    ) -> Decimal:
+        return sum(
+            (
+                Decimal(value)
+                for row in rows
+                if row.status == status
+                if (value := getattr(row, field)) is not None
+            ),
+            start=Decimal(0),
+        )

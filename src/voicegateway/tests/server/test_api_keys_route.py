@@ -115,6 +115,31 @@ async def test_create_requires_scopes(client: AsyncClient) -> None:
     assert response.json()["type"] == "RequestValidationError"
 
 
+async def test_project_allowlist_is_validated_and_returned_as_a_list(
+    client: AsyncClient,
+) -> None:
+    comma = await client.post(
+        "/v1/api-keys",
+        json={"name": "comma", "scopes": "read", "project_ids": ["a,b"]},
+    )
+    assert comma.status_code == 422
+    empty = await client.post(
+        "/v1/api-keys",
+        json={"name": "empty", "scopes": "read", "project_ids": []},
+    )
+    assert empty.status_code == 422
+    created = await client.post(
+        "/v1/api-keys",
+        json={
+            "name": "scoped",
+            "scopes": "read",
+            "project_ids": ["project-b", "project-a", "project-a"],
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["key"]["project_ids"] == ["project-a", "project-b"]
+
+
 async def test_create_refuses_the_wildcard(client: AsyncClient) -> None:
     """The mint refuses ``*`` rather than minting an inert key."""
     response = await client.post("/v1/api-keys", json={"name": "wild", "scopes": "*"})

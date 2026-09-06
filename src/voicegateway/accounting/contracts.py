@@ -105,6 +105,8 @@ def canonical_decimal(value: str) -> str:
     if abs(exponent) > 18:
         raise ValueError("decimal value has more than 18 fractional digits")
     normalized = format(number, "f")
+    if number.is_zero():
+        return "0"
     if "." in normalized:
         normalized = normalized.rstrip("0").rstrip(".")
     return normalized or "0"
@@ -291,6 +293,18 @@ class PricingBinding(StrictModel):
     component: str
     offering: str
     acquisition_revision_id: str | None
+    selling_revision_id: str | None
+    ownership_mode: OwnershipMode
+    prepared_at_ns: int
+
+
+class PricingBindingResponse(StrictModel):
+    """Producer-visible binding; acquisition pricing is operator-only."""
+
+    binding_id: str
+    project_id: str
+    component: str
+    offering: str
     selling_revision_id: str | None
     ownership_mode: OwnershipMode
     prepared_at_ns: int

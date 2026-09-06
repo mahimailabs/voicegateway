@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decimal import Decimal, localcontext
+from decimal import ROUND_HALF_EVEN, Decimal, localcontext
 
 from voicegateway.accounting.contracts import (
     MeasurementStatus,
@@ -25,16 +25,18 @@ def rate_usage(
     complete = True
     with localcontext() as ctx:
         ctx.prec = 60
-        for dimension, quantity in quantities.items():
-            if quantity.value is None:
-                if not (
+        ctx.rounding = ROUND_HALF_EVEN
+        for dimension in PricingDimension:
+            quantity = quantities.get(dimension)
+            rate = rates.get(dimension)
+            if rate is None:
+                if quantity is not None and not (
                     quantity.status is MeasurementStatus.UNSUPPORTED
                     and dimension in unsupported
                 ):
                     complete = False
                 continue
-            rate = rates.get(dimension)
-            if rate is None:
+            if quantity is None or quantity.value is None:
                 complete = False
                 continue
             value = Decimal(quantity.value)
@@ -42,7 +44,7 @@ def rate_usage(
                 value -= sum(
                     Decimal(quantities[d].value or "0")
                     for d in (PricingDimension.CACHE_READ, PricingDimension.CACHE_WRITE)
-                    if d in quantities
+                    if d in quantities and d in rates
                 )
             total += value * rate
         return format(total.quantize(_QUANTUM), "f"), complete

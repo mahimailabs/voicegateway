@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_UP, Decimal, getcontext
 
 import pytest
 from pydantic import ValidationError
@@ -65,6 +65,11 @@ def usage(**overrides: object) -> UsageEnvelope:
                 status=MeasurementStatus.MEASURED,
             ),
             Quantity(
+                dimension=PricingDimension.CACHE_WRITE,
+                value="0",
+                status=MeasurementStatus.MEASURED,
+            ),
+            Quantity(
                 dimension=PricingDimension.TEXT_OUTPUT,
                 value="10",
                 status=MeasurementStatus.MEASURED,
@@ -81,6 +86,16 @@ def test_revision_hash_is_canonical_and_models_are_frozen() -> None:
     assert first.content_hash() == second.content_hash()
     with pytest.raises(ValidationError):
         first.currency = "EUR"  # type: ignore[misc]
+
+
+def test_revision_hash_normalizes_negative_zero() -> None:
+    first = revision()
+    raw = first.model_dump()
+    raw["rates"][0]["rate"] = "-0"
+    negative = PricingRevisionCreate.model_validate(raw)
+    raw["rates"][0]["rate"] = "0"
+    zero = PricingRevisionCreate.model_validate(raw)
+    assert negative.content_hash() == zero.content_hash()
 
 
 def test_revision_requires_complete_dimension_manifest() -> None:
@@ -161,8 +176,69 @@ def test_all_dimensions_have_exact_fixed_units(dimension, unit, quantity) -> Non
         ),
     )
     total, complete = rate_usage(envelope, price)
-    assert Decimal(total or "0") >= 0
+    assert Decimal(total or "0") == Decimal("0.000000000001")
     assert complete
+
+
+def test_missing_rated_dimension_marks_side_incomplete() -> None:
+    total, complete = rate_usage(
+        usage(
+            quantities=(Quantity(dimension="text_input", value="1", status="measured"),)
+        ),
+        revision(),
+    )
+    assert total == "0.000001000000"
+    assert complete is False
+
+
+def test_unpriced_cache_subset_stays_in_ordinary_input() -> None:
+    price = PricingRevisionCreate(
+        revision_id="input-only",
+        side="selling",
+        scope={"offering": "provider/model"},
+        rates=(DimensionRate(dimension="text_input", unit="token", rate="1"),),
+        unsupported_dimensions=tuple(
+            item for item in PricingDimension if item is not PricingDimension.TEXT_INPUT
+        ),
+    )
+    envelope = usage(
+        quantities=(
+            Quantity(dimension="text_input", value="100", status="measured"),
+            Quantity(dimension="cache_read", value="20", status="measured"),
+        )
+    )
+    total, complete = rate_usage(envelope, price)
+    assert total == "100.000000000000"
+    assert complete is False
+
+
+def test_rating_uses_profile_rounding_not_global_decimal_context() -> None:
+    original = getcontext().rounding
+    getcontext().rounding = ROUND_UP
+    try:
+        price = PricingRevisionCreate(
+            revision_id="rounding",
+            side="selling",
+            scope={"offering": "provider/model"},
+            rates=(
+                DimensionRate(
+                    dimension="audio_seconds", unit="second", rate="0.0000000000025"
+                ),
+            ),
+            unsupported_dimensions=tuple(
+                item
+                for item in PricingDimension
+                if item is not PricingDimension.AUDIO_SECONDS
+            ),
+        )
+        envelope = usage(
+            quantities=(
+                Quantity(dimension="audio_seconds", value="1", status="measured"),
+            )
+        )
+        assert rate_usage(envelope, price) == ("0.000000000002", True)
+    finally:
+        getcontext().rounding = original
 
 
 def test_non_audio_quantities_must_be_integer() -> None:

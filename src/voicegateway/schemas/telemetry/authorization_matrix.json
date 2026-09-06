@@ -803,7 +803,7 @@
     {
       "method": "PUT",
       "path": "/v1/accounting/ownership",
-      "auth": "principal",
+      "auth": "principal+scope:admin",
       "status": "enforced",
       "tenant_scoped": true,
       "note": "Operator-only ownership mutation; the target tenant is resolved from the authenticated principal or explicit operator filter."
@@ -827,7 +827,7 @@
     {
       "method": "POST",
       "path": "/v1/accounting/revisions",
-      "auth": "principal",
+      "auth": "principal+scope:admin",
       "status": "enforced",
       "tenant_scoped": true,
       "note": "Operator-only immutable revision creation."
@@ -835,7 +835,7 @@
     {
       "method": "POST",
       "path": "/v1/accounting/revisions/{side}/activate",
-      "auth": "principal",
+      "auth": "principal+scope:admin",
       "status": "enforced",
       "tenant_scoped": true,
       "note": "Operator-only scoped revision activation."

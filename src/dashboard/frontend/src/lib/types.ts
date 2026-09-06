@@ -41,13 +41,14 @@ export interface CostsResponse {
 
 export interface AccountingStatusResponse {
   selling_total_usd: string;
+  incomplete_selling_total_usd: string;
+  unrated_selling_total_usd: string;
   records: number;
   counts: {
     rated: number;
     unrated: number;
     incomplete: number;
     rejected: number;
-    pending_delivery: number;
   };
 }
 

@@ -15,8 +15,8 @@
     "gap_id": "VG-SEC-002",
     "threat": "VG-THREAT-003",
     "title": "Project-level authorization does not exist in any form",
-    "description": "There is no tenant_id on managed_projects, no project column on api_keys, no project field on Principal, and no check on the project query parameter. resolve_read_tenant narrows a read to a tenant and stops there, so any caller who clears the tenant gate sees every project within it.",
-    "status": "planned",
+    "description": "PARTIALLY CLOSED by exact accounting: API keys and principals now carry optional project allowlists, and accounting ingest and report routes enforce them. Legacy project-filtered reads still do not apply the allowlist, so a caller who clears the tenant gate may select another project within that tenant.",
+    "status": "gap",
     "wave": 1,
     "evidence": "src/voicegateway/server/api/_deps.py:183",
     "fixture": "project_param_unscoped.json"

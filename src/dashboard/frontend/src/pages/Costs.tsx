@@ -220,7 +220,7 @@ function CostsContent() {
             <div className="grid grid-cols-3 mb-lg">
               <StatusCard label="Exact selling total" value={`$${accounting.selling_total_usd}`} accent="green" icon="$" />
               <StatusCard label="Unrated / incomplete" value={`${accounting.counts.unrated + accounting.counts.incomplete}`} accent="pink" icon="!" />
-              <StatusCard label="Pending delivery" value={`${accounting.counts.pending_delivery}`} accent="yellow" icon="↻" />
+              <StatusCard label="Rejected" value={`${accounting.counts.rejected}`} accent="yellow" icon="×" />
             </div>
           )}
 

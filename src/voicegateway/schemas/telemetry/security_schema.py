@@ -121,6 +121,8 @@ class RouteAuth(StrEnum):
     OPEN = "open"
     #: Guarded by ``require_principal``.
     PRINCIPAL = "principal"
+    #: Guarded by both ``require_principal`` and ``require_scope("admin")``.
+    PRINCIPAL_SCOPE_ADMIN = "principal+scope:admin"
     #: Guarded by ``require_scope("write")``.
     SCOPE_WRITE = "scope:write"
     #: Guarded by ``require_scope("admin")``.

@@ -116,7 +116,7 @@ regress unnoticed.
 
 ### VG-THREAT-003: missing project authorization
 
-**VG-SEC-002** (planned, Wave 1): project authorization is now available to the
+**VG-SEC-002** (partially closed; remaining gap, Wave 1): project authorization is now available to the
 exact-accounting surface: API keys and principals carry optional project
 allowlists, and accounting ingest and reports enforce them. Legacy APIs that
 accept project filters do not yet apply the allowlist, so the gap remains open

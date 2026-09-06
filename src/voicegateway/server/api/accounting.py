@@ -12,12 +12,13 @@ from voicegateway.accounting.contracts import (
     AccountingCapabilities,
     OwnershipAssignment,
     PreparationRequest,
-    PricingBinding,
+    PricingBindingResponse,
     PricingRevisionCreate,
     PricingSide,
     UsageBatchResponse,
     UsageEnvelope,
 )
+from voicegateway.core.auth import ADMIN_SCOPE
 from voicegateway.models.accounting_model import PricingRevision
 from voicegateway.repository.request_log_repository import log_audit_event
 from voicegateway.server.api._deps import (
@@ -25,6 +26,7 @@ from voicegateway.server.api._deps import (
     get_session,
     require_ingest_principal,
     require_principal,
+    require_scope,
 )
 from voicegateway.services.accounting_service import AccountingService, RevisionConflict
 
@@ -39,6 +41,10 @@ class ActivationRequest(BaseModel):
 
 def _tenant(principal: Principal, requested: str | None = None) -> str:
     if principal.is_admin:
+        if principal.tenant_id is not None:
+            if requested is not None and requested != principal.tenant_id:
+                raise HTTPException(status_code=403, detail="tenant_not_authorized")
+            return principal.tenant_id
         return requested or ""
     if requested is not None and requested != principal.tenant_id:
         raise HTTPException(status_code=403, detail="tenant_not_authorized")
@@ -73,7 +79,11 @@ async def capabilities(
     return AccountingCapabilities()
 
 
-@router.post("/revisions", status_code=201)
+@router.post(
+    "/revisions",
+    status_code=201,
+    dependencies=[Depends(require_scope(ADMIN_SCOPE))],
+)
 async def create_revision(
     payload: PricingRevisionCreate,
     tenant: str | None = Query(None),
@@ -131,7 +141,10 @@ async def get_revision(
     return _revision_response(row, include_content=principal.is_admin)
 
 
-@router.post("/revisions/{side}/activate")
+@router.post(
+    "/revisions/{side}/activate",
+    dependencies=[Depends(require_scope(ADMIN_SCOPE))],
+)
 async def activate_revision(
     side: PricingSide,
     payload: ActivationRequest,
@@ -163,7 +176,10 @@ async def activate_revision(
     return _revision_response(row, include_content=True)
 
 
-@router.put("/ownership")
+@router.put(
+    "/ownership",
+    dependencies=[Depends(require_scope(ADMIN_SCOPE))],
+)
 async def set_ownership(
     payload: OwnershipAssignment,
     tenant: str | None = Query(None),
@@ -178,15 +194,24 @@ async def set_ownership(
     return {"project_id": row.project_id, "component": row.component, "mode": row.mode}
 
 
-@router.post("/prepare", response_model=PricingBinding)
+@router.post("/prepare", response_model=PricingBindingResponse)
 async def prepare(
     payload: PreparationRequest,
     principal: Principal = Depends(require_ingest_principal),
     session: AsyncSession = Depends(get_session),
-) -> PricingBinding:
+) -> PricingBindingResponse:
     _project(principal, payload.project_id)
-    return await AccountingService(session, tenant_id=_tenant(principal)).prepare(
+    binding = await AccountingService(session, tenant_id=_tenant(principal)).prepare(
         payload
+    )
+    return PricingBindingResponse(
+        binding_id=binding.binding_id,
+        project_id=binding.project_id,
+        component=binding.component,
+        offering=binding.offering,
+        selling_revision_id=binding.selling_revision_id,
+        ownership_mode=binding.ownership_mode,
+        prepared_at_ns=binding.prepared_at_ns,
     )
 
 
@@ -201,7 +226,12 @@ async def ingest_usage(
     service = AccountingService(session, tenant_id=_tenant(principal))
     receipts = []
     for envelope in payload:
-        _project(principal, envelope.project_id)
+        if (
+            principal.project_ids is not None
+            and envelope.project_id not in principal.project_ids
+        ):
+            receipts.append(await service.reject(envelope, "project_not_authorized"))
+            continue
         receipts.append(await service.ingest(envelope))
     return UsageBatchResponse(receipts=tuple(receipts))
 
@@ -218,6 +248,8 @@ async def report(
     if project is not None:
         _project(principal, project)
     if include_acquisition and not principal.is_admin:
+        raise HTTPException(status_code=403, detail="operator_required")
+    if "acquisition_revision" in group_by and not principal.is_admin:
         raise HTTPException(status_code=403, detail="operator_required")
     if include_acquisition:
         await log_audit_event(
