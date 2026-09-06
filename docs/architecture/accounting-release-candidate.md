@@ -78,6 +78,35 @@ uv build
 The final release record must attach the exact pass counts, skip/xfail
 classification, built artifact name, and SHA-256 digest from the candidate run.
 
+The 2026-09-05 candidate rehearsal produced this sanitized result:
+
+| Gate | Result | Release effect |
+| --- | --- | --- |
+| Complete Python suite with Pipecat installed | 4,001 passed, 33 skipped, 3 expected failures | pass |
+| Disposable PostgreSQL 16 collector + accounting matrix | 3 passed | pass |
+| Additional PostgreSQL dialect round trip | 1 passed | pass |
+| Ruff over `src` and `examples` | clean | pass |
+| Mypy over 310 source files | clean | pass |
+| Documentation | 85 pages validated | pass |
+| Dashboard production build | built successfully | pass; existing bundle-size advisory only |
+
+Skipped tests are classified by prerequisite and capability:
+
+| Count | Reason | Affected capability | Blocks accounting v1? |
+| ---: | --- | --- | --- |
+| 9 | optional load-test fixture bundle absent | load-generator report replay | no |
+| 15 | local node/exporter services not running | live infrastructure scrape | no |
+| 4 | provider-recorded streaming fixture bundle deferred | legacy provider replay fixtures | no; representative native SDK streaming is covered |
+| 4 | PostgreSQL environment variables absent from the all-tests process | PostgreSQL collector/accounting/dialect | no; all four passed separately on PostgreSQL 16 |
+| 1 | optional local-model plugin absent | local-model provider smoke | no |
+
+The three expected failures are pre-existing contracts outside the accounting
+v1 boundary: one storage-architecture reach-through and two open telemetry
+security gaps (unauthenticated audit-log read and an unscoped legacy project
+parameter). They do not affect the principal-aware `/v1/accounting/*`,
+dashboard accounting, or tenant-bound MCP accounting paths verified here. They
+do block claiming those separate architecture/security items complete.
+
 ## Deployment and forward recovery
 
 Deployment order:
