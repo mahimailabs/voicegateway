@@ -24,9 +24,10 @@ collector retries. A later price activation affects only later preparations.
 Missing revisions produce an `unrated` event; VoiceGateway never applies the
 current catalog retroactively.
 
-Usage commits transactionally with a per-record receipt and a projection
-outbox row. The SQL ledger (SQLite or PostgreSQL) is authoritative. ClickHouse
-is an asynchronous, rebuildable analytics projection. Duplicate event payloads
+Usage commits transactionally with a per-record receipt. The SQL ledger
+(SQLite or PostgreSQL) is authoritative. The reserved projection table is not
+written and `pending_delivery` is not reported until a real consumer ships;
+ClickHouse accounting projection remains deferred. Duplicate event payloads
 return their original receipt, while conflicting content or a second billable
 producer for the same provider attempt is durably rejected.
 
@@ -44,7 +45,9 @@ used by the version 1 rater.
 | requests | request |
 
 Cache quantities are subsets of text input. The rater subtracts cache read and
-write from ordinary input once, then applies the cache rates. A revision must
+write from ordinary input only when that cache dimension has its own rate. An
+unpriced cache subset stays in ordinary input and marks the side incomplete
+instead of silently discounting tokens. A revision must
 classify every dimension as rated or unsupported. Unknown prices, missing
 measurements, unsupported measurements, and explicit zero prices are distinct.
 
@@ -65,18 +68,27 @@ The usage schema is an allowlist. It has no fields for credentials, prompts,
 transcripts, caller values, arbitrary metadata, or tool arguments. Do not add
 these fields to accounting extensions.
 
+Pricing mutations require both an admin principal and the `admin` scope. A
+tenant-bound admin remains bound to that tenant. Producer-facing preparation
+responses omit acquisition revision IDs; during ingestion, the collector
+resolves acquisition, selling, and ownership from the stored binding.
+
 ## Producer delivery
 
 `AccountingOutbox.submit()` is the durable producer API. It writes the exact
-envelope and stable event ID to a bounded SQLite outbox before returning.
+envelope and stable event ID to a record- and byte-bounded SQLite outbox before
+returning.
 `enqueue_nowait()` is intended for the voice response path: it cannot block the
 call, but a process crash before the background write is a documented capture
 window. A full memory queue, full disk outbox, or persistence failure increments
-an explicit capture-failure signal and logs an error.
+an explicit capture-failure signal, persists that counter across restarts, and
+logs an error.
 
 The outbox never evicts persisted, unacknowledged usage. It deletes a row only
-after an `accepted` or `duplicate` durable receipt, quarantines terminal
-rejections, and retains retryable or missing-receipt rows across restarts.
+after an `accepted` or `duplicate` receipt with a receipt ID, quarantines
+terminal rejections and HTTP 4xx responses, and retains retryable or
+missing-receipt rows across restarts. Backoff is bounded and jittered; rows that
+exhaust the configured attempt limit are quarantined.
 Operators must monitor pending count, oldest pending age, rejected count, and
 capture failures. Bounded storage and an indefinitely unavailable collector
 cannot mathematically guarantee zero loss; this condition is visible rather
@@ -100,27 +112,40 @@ Rollout order:
 1. Back up the SQL database and upgrade collectors.
 2. Create and read back acquisition and selling revisions, verify their hashes,
    then activate each side independently.
-3. Configure ownership, upgrade producers, and monitor unrated and pending
-   counts side-by-side with legacy reporting.
+3. Configure ownership, upgrade producers, and monitor unrated ledger rows plus
+   each producer outbox's pending/rejected health side-by-side with legacy reporting.
 4. Switch invoice exports only after reconciliation passes.
 
 To roll back, stop new version 1 producers, drain or preserve their local
 outboxes, and deploy the earlier application. Do not downgrade the database:
 the additive tables are inert to older code and retain receipts for a later
-resume. A destructive Alembic downgrade removes the ledger and is not a normal
-rollback procedure.
+resume. Migration `a6c9e2f4b817` explicitly refuses destructive downgrade so a
+routine rollback cannot erase ledger data or project allowlists.
 
 ## Minimal SDK example
 
 ```python
+from voicegateway import attach
 from voicegateway.accounting.outbox import AccountingOutbox
 
-# Obtain an immutable preparation binding from the collector before the attempt,
-# build a strict UsageEnvelope from provider measurements, then persist it.
+# Obtain an immutable preparation binding from the collector before the attempt.
 outbox = AccountingOutbox("accounting-outbox.db", "https://collector.example")
-await outbox.submit(envelope)
-await outbox.drain()
+attach(
+    session,
+    accounting_outbox=outbox,
+    accounting_binding=prepared_binding,
+    accounting_producer_id="agent-worker",
+)
 ```
+
+Supplying `accounting_outbox` is the explicit opt-in. Normal telemetry continues
+through its configured sink, while usage-v1 capture persists without blocking
+the voice response. If prepared ownership is `external`, the SDK does not send
+a duplicate billable record.
+
+The read-only MCP accounting tool accepts no tenant argument. Bind it to one
+tenant with `VOICEGW_MCP_ACCOUNTING_TENANT`; without that setting it returns
+`accounting_tenant_not_configured` and no accounting data.
 
 Provider adapters must report unsupported measurements explicitly. They must
 not infer absent cache, realtime-audio, reasoning, or character measurements.

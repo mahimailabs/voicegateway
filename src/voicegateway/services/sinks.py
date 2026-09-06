@@ -23,6 +23,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from voicegateway.accounting.contracts import PricingBinding, PricingBindingResponse
+    from voicegateway.accounting.outbox import AccountingOutbox
     from voicegateway.middleware.dead_air_detector_middleware import DeadAirEvent
     from voicegateway.middleware.turn_tracker_middleware import TurnRow
     from voicegateway.models.request_model import RequestRecord
@@ -120,6 +122,63 @@ class LocalSqliteSink:
 
     async def finalize_session_replay(self, session_id: str) -> None:
         await self._storage.finalize_session_replay(session_id)
+
+
+class AccountingCaptureSink:
+    """Opt-in decorator that mirrors request measurements to usage v1."""
+
+    def __init__(
+        self,
+        sink: Sink,
+        outbox: AccountingOutbox,
+        *,
+        producer_id: str,
+        binding: PricingBinding | PricingBindingResponse | None = None,
+    ) -> None:
+        self._sink = sink
+        self._outbox = outbox
+        self._producer_id = producer_id
+        self._binding = binding
+
+    async def log_request(self, record: RequestRecord) -> None:
+        await self._sink.log_request(record)
+        from voicegateway.accounting.adapters import envelope_from_request_record
+        from voicegateway.accounting.contracts import OwnershipMode
+
+        if (
+            self._binding is not None
+            and self._binding.ownership_mode is OwnershipMode.EXTERNAL
+        ):
+            return
+        envelope = envelope_from_request_record(
+            record,
+            producer_id=self._producer_id,
+            binding=self._binding,
+            event_id=f"usage:{record.id}",
+            attempt_id=record.id,
+        )
+        self._outbox.enqueue_nowait(envelope)
+
+    async def log_turns(self, rows: list[TurnRow]) -> None:
+        await self._sink.log_turns(rows)
+
+    async def log_dead_air(self, events: list[DeadAirEvent]) -> None:
+        await self._sink.log_dead_air(events)
+
+    async def log_tool_calls(self, rows: list[ToolCall]) -> None:
+        await self._sink.log_tool_calls(rows)
+
+    async def flush(self) -> None:
+        await self._sink.flush()
+        await self._outbox.flush_memory()
+        await self._outbox.drain_with_backoff()
+
+    async def aclose(self) -> None:
+        await self._sink.aclose()
+        await self._outbox.aclose()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._sink, name)
 
 
 def _normalize_ingest_url(url: str) -> str:

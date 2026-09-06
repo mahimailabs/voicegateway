@@ -16,6 +16,8 @@ from voicegateway.inference.session.context import (
 )
 
 if TYPE_CHECKING:
+    from voicegateway.accounting.contracts import PricingBinding, PricingBindingResponse
+    from voicegateway.accounting.outbox import AccountingOutbox
     from voicegateway.middleware.cost_tracker_middleware import CostTracker
     from voicegateway.middleware.dead_air_detector_middleware import DeadAirDetector
     from voicegateway.middleware.turn_tracker_middleware import TurnTracker
@@ -396,6 +398,22 @@ def _build_default_sink(
     return LocalSqliteSink(StorageService(resolved_path))
 
 
+def _with_accounting(
+    sink: Sink,
+    outbox: AccountingOutbox | None,
+    binding: PricingBinding | PricingBindingResponse | None,
+    producer_id: str | None,
+) -> Sink:
+    """Apply the explicit invoice-accounting capture opt-in."""
+    if outbox is None:
+        return sink
+    if not producer_id:
+        raise ValueError("accounting_producer_id is required with accounting_outbox")
+    from voicegateway.services.sinks import AccountingCaptureSink
+
+    return AccountingCaptureSink(sink, outbox, producer_id=producer_id, binding=binding)
+
+
 # Strong refs to in-flight session-close finalize tasks; the event loop only
 # weak-refs scheduled tasks, so without this a close-time reconcile/flush can be
 # GC'd mid-write (the hazard MetricCapture._schedule guards against for writes).
@@ -429,6 +447,9 @@ def attach(
     snapshots: bool | None = None,
     turns: bool | None = None,
     dead_air: bool | None = None,
+    accounting_outbox: AccountingOutbox | None = None,
+    accounting_binding: PricingBinding | PricingBindingResponse | None = None,
+    accounting_producer_id: str | None = None,
 ) -> str:
     """Attach VoiceGateway to a LiveKit ``AgentSession`` or Pipecat ``PipelineTask``.
 
@@ -556,6 +577,13 @@ def attach(
             now, so a long utterance cannot trip it. Set ``VOICEGW_DEAD_AIR=0``
             to force it off fleet-wide. LiveKit-only, like ``turns``.
 
+        accounting_outbox: explicit invoice-accounting opt-in. Each captured
+            request is persisted to this bounded outbox before delivery.
+        accounting_binding: immutable pricing and ownership binding returned by
+            ``POST /v1/accounting/prepare``. The collector remains authoritative.
+        accounting_producer_id: stable producer identity. Required whenever an
+            ``accounting_outbox`` is supplied.
+
     Returns:
         The correlation session id stamped on every captured row.
     """
@@ -586,6 +614,9 @@ def attach(
             snapshots=snapshots,
             turns=turns,
             dead_air=dead_air,
+            accounting_outbox=accounting_outbox,
+            accounting_binding=accounting_binding,
+            accounting_producer_id=accounting_producer_id,
         )
     return _attach_livekit(
         session,
@@ -602,6 +633,9 @@ def attach(
         snapshots=snapshots,
         turns=turns,
         dead_air=dead_air,
+        accounting_outbox=accounting_outbox,
+        accounting_binding=accounting_binding,
+        accounting_producer_id=accounting_producer_id,
     )
 
 
@@ -1247,6 +1281,9 @@ def _attach_livekit(
     snapshots: bool = False,
     turns: bool = True,
     dead_air: bool = True,
+    accounting_outbox: AccountingOutbox | None = None,
+    accounting_binding: PricingBinding | PricingBindingResponse | None = None,
+    accounting_producer_id: str | None = None,
 ) -> str:
     """LiveKit ``attach()`` body: bind ``MetricCapture`` to an ``AgentSession``."""
     import asyncio
@@ -1267,6 +1304,9 @@ def _attach_livekit(
         set_tenant(tenant_id)
     if sink is None:
         sink = _build_default_sink(resolved_collector, resolved_key)
+    sink = _with_accounting(
+        sink, accounting_outbox, accounting_binding, accounting_producer_id
+    )
 
     # Built before MetricCapture, which needs the correction hook below.
     turn_tracker = (
@@ -1571,6 +1611,9 @@ def _attach_pipecat(
     snapshots: bool = False,
     turns: bool = True,
     dead_air: bool = True,
+    accounting_outbox: AccountingOutbox | None = None,
+    accounting_binding: PricingBinding | PricingBindingResponse | None = None,
+    accounting_producer_id: str | None = None,
 ) -> str:
     """Register a ``VoiceGatewayObserver`` on a Pipecat ``PipelineTask``.
 
@@ -1606,6 +1649,9 @@ def _attach_pipecat(
         set_tenant(tenant_id)
     if sink is None:
         sink = _build_default_sink(resolved_collector, resolved_key)
+    sink = _with_accounting(
+        sink, accounting_outbox, accounting_binding, accounting_producer_id
+    )
 
     resolved_channel = channel or _detect_pipecat_channel(task)
 

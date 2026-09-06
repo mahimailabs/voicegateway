@@ -10,6 +10,7 @@ from voicegateway.accounting.contracts import (
     MeasurementStatus,
     OwnershipMode,
     PricingBinding,
+    PricingBindingResponse,
     PricingDimension,
     Quantity,
     UsageEnvelope,
@@ -25,7 +26,7 @@ def envelope_from_request_record(
     record: RequestRecord,
     *,
     producer_id: str,
-    binding: PricingBinding | None = None,
+    binding: PricingBinding | PricingBindingResponse | None = None,
     event_id: str | None = None,
     attempt_id: str | None = None,
     component: str = "conversation",
@@ -81,7 +82,9 @@ def envelope_from_request_record(
         ownership_mode=ownership,
         pricing_binding_id=binding.binding_id if binding is not None else None,
         acquisition_revision_id=(
-            binding.acquisition_revision_id if binding is not None else None
+            binding.acquisition_revision_id
+            if isinstance(binding, PricingBinding)
+            else None
         ),
         selling_revision_id=(
             binding.selling_revision_id if binding is not None else None
