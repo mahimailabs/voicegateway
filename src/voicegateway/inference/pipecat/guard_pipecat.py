@@ -58,7 +58,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
 from pipecat.frames.frames import (
@@ -371,8 +371,17 @@ class GuardedTTSService(TTSService, _GuardProcessorMixin):
         self._control = control
         self._wrapped = wrapped
 
-    async def run_tts(self, text: str) -> Any:
-        async for frame in self._wrapped.run_tts(text):
+    async def run_tts(
+        self, text: str, context_id: str = ""
+    ) -> AsyncGenerator[Frame | None, None]:
+        """Delegate across both the Pipecat 1.5 and 1.8 TTS signatures."""
+        parameters = inspect.signature(self._wrapped.run_tts).parameters
+        stream = (
+            self._wrapped.run_tts(text, context_id)
+            if "context_id" in parameters
+            else self._wrapped.run_tts(text)
+        )
+        async for frame in stream:
             yield frame
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:

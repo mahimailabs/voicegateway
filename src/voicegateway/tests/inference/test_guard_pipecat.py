@@ -95,6 +95,7 @@ class _StubLLM(LLMService):
         self._settings.model = model
         self._fail = fail
         self.request_calls = 0
+        self.last_context_id: str | None = None
 
     async def run_request(self) -> list[Frame]:
         """Produce the response frames for one guarded LLM request.
@@ -140,8 +141,12 @@ class _StubTTS(TTSService):
         self._settings.model = model
         self._fail = fail
         self.request_calls = 0
+        self.last_context_id: str | None = None
 
-    async def run_tts(self, text: str) -> Any:  # pragma: no cover - not driven
+    async def run_tts(
+        self, text: str, context_id: str = ""
+    ) -> Any:  # pragma: no cover - not driven
+        self.last_context_id = context_id
         yield None
 
     async def run_request(self) -> list[Frame]:
@@ -204,6 +209,13 @@ def test_guard_tts_returns_pipecat_tts_service():
     primary = _StubTTS(provider="cartesia", model="sonic")
     guarded = voicegateway.guard(primary)
     assert isinstance(guarded, TTSService)
+
+
+async def test_guard_tts_forwards_required_context_id():
+    primary = _StubTTS(provider="cartesia", model="sonic")
+    guarded = voicegateway.guard(primary)
+    assert [frame async for frame in guarded.run_tts("hello", "context-1")] == [None]
+    assert primary.last_context_id == "context-1"
 
 
 def test_guard_llm_wrapper_is_a_frame_processor():
