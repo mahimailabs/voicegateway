@@ -8,8 +8,10 @@ import time
 import uuid
 from collections.abc import Sequence
 from decimal import Decimal
+from typing import Any, cast
 
 from sqlalchemy import and_, func, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
@@ -114,31 +116,28 @@ class AccountingService:
             raise LookupError("pricing revision not found")
         if hashlib.sha256(row.content_json.encode()).hexdigest() != row.content_hash:
             raise RevisionConflict("stored pricing revision hash mismatch")
-        current = (
-            await self._session.execute(
-                select(PricingRevision)
-                .where(
-                    col(PricingRevision.tenant_id) == self._tenant_id,
-                    col(PricingRevision.side) == side.value,
-                    col(PricingRevision.scope_key) == row.scope_key,
-                    col(PricingRevision.active).is_(True),
-                )
-                .with_for_update()
-            )
-        ).scalar_one_or_none()
-        if expected_current_revision_id is not None and (
-            current is None or current.revision_id != expected_current_revision_id
-        ):
-            raise RevisionConflict("active revision changed")
-        await self._session.execute(
-            update(PricingRevision)
-            .where(
-                col(PricingRevision.tenant_id) == self._tenant_id,
-                col(PricingRevision.side) == side.value,
-                col(PricingRevision.scope_key) == row.scope_key,
-            )
-            .values(active=False)
+        active_scope = (
+            col(PricingRevision.tenant_id) == self._tenant_id,
+            col(PricingRevision.side) == side.value,
+            col(PricingRevision.scope_key) == row.scope_key,
+            col(PricingRevision.active).is_(True),
         )
+        deactivate = update(PricingRevision).where(*active_scope)
+        if expected_current_revision_id is not None:
+            # A conditional UPDATE is the compare-and-swap. SQLite ignores
+            # SELECT ... FOR UPDATE, whereas concurrent writers serialize this
+            # statement and the loser observes a zero row count after the
+            # winner commits.
+            deactivate = deactivate.where(
+                col(PricingRevision.revision_id) == expected_current_revision_id
+            )
+        result = cast(
+            CursorResult[Any],
+            await self._session.execute(deactivate.values(active=False)),
+        )
+        if expected_current_revision_id is not None and result.rowcount != 1:
+            await self._session.rollback()
+            raise RevisionConflict("active revision changed")
         row.active = True
         self._session.add(row)
         try:
