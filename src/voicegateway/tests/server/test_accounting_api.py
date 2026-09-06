@@ -518,6 +518,26 @@ async def test_concurrent_duplicate_delivery_has_one_billable_row(
     assert report["records"] == 1
 
 
+async def test_rebatching_preserves_original_receipts(tmp_path, monkeypatch) -> None:
+    async with await _client(tmp_path, monkeypatch) as client:
+        await client.post("/v1/accounting/revisions", json=_revision())
+        first = await client.post(
+            "/v1/accounting/usage",
+            json=[_usage("event-1", "attempt-1"), _usage("event-2", "attempt-2")],
+        )
+        receipts = {
+            item["event_id"]: item["receipt_id"] for item in first.json()["receipts"]
+        }
+        rebatched = await client.post(
+            "/v1/accounting/usage",
+            json=[_usage("event-2", "attempt-2"), _usage("event-1", "attempt-1")],
+        )
+    assert all(item["outcome"] == "duplicate" for item in rebatched.json()["receipts"])
+    assert {
+        item["event_id"]: item["receipt_id"] for item in rebatched.json()["receipts"]
+    } == receipts
+
+
 async def test_non_admin_report_is_tenant_isolated(tmp_path, monkeypatch) -> None:
     gateway, client = await _gateway_client(tmp_path, monkeypatch)
     from voicegateway.accounting.contracts import UsageEnvelope
@@ -547,3 +567,32 @@ async def test_non_admin_report_is_tenant_isolated(tmp_path, monkeypatch) -> Non
         )
     assert response.json()["records"] == 1
     assert foreign.status_code == 403
+
+
+async def test_dashboard_never_exposes_acquisition_fields(
+    tmp_path, monkeypatch
+) -> None:
+    gateway, client = await _gateway_client(tmp_path, monkeypatch)
+    from voicegateway.accounting.contracts import PricingRevisionCreate, UsageEnvelope
+    from voicegateway.services.accounting_service import AccountingService
+
+    acquisition = _revision("cost-1", "0.1")
+    acquisition["side"] = "acquisition"
+    async with gateway.storage.session() as session:
+        service = AccountingService(session, tenant_id="tenant-a")
+        await service.create_revision(PricingRevisionCreate.model_validate(acquisition))
+        await service.create_revision(PricingRevisionCreate.model_validate(_revision()))
+        event = _usage()
+        event["acquisition_revision_id"] = "cost-1"
+        await service.ingest(UsageEnvelope.model_validate(event))
+        key = await create_api_key(
+            session, name="dashboard-reader", scopes="read", tenant_id="tenant-a"
+        )
+    async with client:
+        response = await client.get(
+            "/api/accounting",
+            headers={"Authorization": f"Bearer {key.plaintext}"},
+        )
+    assert response.status_code == 200
+    assert "acquisition" not in response.text.lower()
+    assert "margin" not in response.text.lower()
