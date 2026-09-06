@@ -78,11 +78,17 @@ resolves acquisition, selling, and ownership from the stored binding.
 `AccountingOutbox.submit()` is the durable producer API. It writes the exact
 envelope and stable event ID to a record- and byte-bounded SQLite outbox before
 returning.
-`enqueue_nowait()` is intended for the voice response path: it cannot block the
-call, but a process crash before the background write is a documented capture
-window. A full memory queue, full disk outbox, or persistence failure increments
-an explicit capture-failure signal, persists that counter across restarts, and
-logs an error.
+`attach()` registers its LiveKit component and session event handlers
+synchronously before it returns. When a native metric arrives, its sink work is
+scheduled outside provider execution and the accounting decorator calls
+`submit()` before writing ordinary telemetry. Collector I/O happens only during
+drain, so a collector outage cannot delay the voice response. A full disk
+outbox or persistence failure increments an explicit capture-failure signal,
+persists that counter when storage is available, and logs an error.
+
+`enqueue_nowait()` remains available for producers that cannot await even a
+local write. It has a documented process-crash window before its background
+worker persists the event. `attach()` does not use that weaker path.
 
 The outbox never evicts persisted, unacknowledged usage. It deletes a row only
 after an `accepted` or `duplicate` receipt with a receipt ID, quarantines
@@ -100,6 +106,21 @@ accounting are selected in an operator-managed ownership assignment. Diagnostic
 telemetry may still be emitted by the non-owner, but it must not be submitted
 as billable usage.
 
+Native LiveKit request IDs and streaming segment IDs are retained as
+non-content correlation metadata. They generate replay-stable accounting event
+IDs, so replaying one metric deduplicates while different TTS segments that
+share a request ID remain distinct. Realtime text, audio, and cached-audio token
+quantities are carried separately. An absent native measurement is emitted as
+`missing`, never as a measured zero.
+
+The remaining observation boundary is explicit: work completed before
+`attach()` returns, a provider that emits neither a metric nor cumulative
+session usage, and an abrupt process termination before the scheduled metric
+task starts cannot be reconstructed. Graceful session close reconciles missing
+per-call metrics from cumulative LiveKit usage. The Wave 0 tracing context does
+not create accounting records; enabling or propagating that context leaves the
+single accounting capture sink as the only billable producer.
+
 ## Compatibility and migration
 
 Database migration `a6c9e2f4b817` adds the ledger and optional project allowlists
@@ -116,6 +137,11 @@ Rollout order:
    each producer outbox's pending/rejected health side-by-side with legacy reporting.
 4. Switch invoice exports only after reconciliation passes.
 
+The existing `voicegw export-costs` command exports legacy request-cost rows.
+It is not an immutable-ledger export and contains no acquisition revision,
+acquisition total, or margin fields. A versioned exact-accounting export is
+deferred; use the tenant-scoped report API for supported ledger reads.
+
 To roll back, stop new version 1 producers, drain or preserve their local
 outboxes, and deploy the earlier application. Do not downgrade the database:
 the additive tables are inert to older code and retain receipts for a later
@@ -128,12 +154,16 @@ routine rollback cannot erase ledger data or project allowlists.
 from voicegateway import attach
 from voicegateway.accounting.outbox import AccountingOutbox
 
-# Obtain an immutable preparation binding from the collector before the attempt.
+# Obtain one immutable preparation binding per offering before execution.
 outbox = AccountingOutbox("accounting-outbox.db", "https://collector.example")
 attach(
     session,
     accounting_outbox=outbox,
-    accounting_binding=prepared_binding,
+    accounting_binding={
+        "provider/stt-model": prepared_stt_binding,
+        "provider/llm-model": prepared_llm_binding,
+        "provider/tts-model": prepared_tts_binding,
+    },
     accounting_producer_id="agent-worker",
 )
 ```
@@ -149,3 +179,9 @@ tenant with `VOICEGW_MCP_ACCOUNTING_TENANT`; without that setting it returns
 
 Provider adapters must report unsupported measurements explicitly. They must
 not infer absent cache, realtime-audio, reasoning, or character measurements.
+
+For a complete synchronization and delayed-delivery example, run
+`python examples/accounting_sync.py`. It discovers capabilities, synchronizes
+acquisition and selling independently, verifies readback hashes and dimension
+sets, prepares a binding, changes the active selling revision, and submits a
+delayed event against the pinned older revision with a per-record receipt.

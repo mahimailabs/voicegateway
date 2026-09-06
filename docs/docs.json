@@ -210,6 +210,7 @@
               "architecture/cost-tracking",
               "architecture/rating",
               "architecture/immutable-accounting",
+              "architecture/accounting-release-candidate",
               "architecture/config-layers",
               "architecture/storage",
               "architecture/security",

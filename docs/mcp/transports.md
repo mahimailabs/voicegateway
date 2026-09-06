@@ -27,6 +27,15 @@ Runs a Starlette/uvicorn server. Agents open a long-lived `GET /sse` connection 
 
 Controlled by `VOICEGW_MCP_TOKEN`. Unset (the default): every request is accepted. Set: every request needs a matching `Authorization: Bearer <token>` header, checked with `hmac.compare_digest` for constant-time comparison. A missing or malformed header gets `401` with body `Missing bearer token`; a wrong token gets `401 Invalid token`. Only the `Bearer` scheme is accepted. stdio ignores this variable entirely: there's no network boundary to protect.
 
+`VOICEGW_MCP_TOKEN` is one process-wide shared secret, not a user identity. All
+callers holding it receive the same MCP tool permissions; the server does not
+derive a tenant or project from each caller. In particular,
+`get_accounting_status` is bound to the single
+`VOICEGW_MCP_ACCOUNTING_TENANT` configured on that MCP process. This does not
+provide per-caller tenant isolation. For isolated accounting access, run a
+separate tenant-bound MCP process behind an authenticated proxy, or use the
+principal-aware HTTP accounting API instead.
+
 ```bash
 export VOICEGW_MCP_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 voicegw mcp --transport http --host 0.0.0.0 --port 8090
