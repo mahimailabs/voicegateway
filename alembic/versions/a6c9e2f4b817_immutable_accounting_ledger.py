@@ -47,6 +47,14 @@ def upgrade() -> None:
     op.create_index(
         "ix_pricing_revisions_scope_key", "pricing_revisions", ["scope_key"]
     )
+    op.create_index(
+        "uq_pricing_revisions_active_scope",
+        "pricing_revisions",
+        ["tenant_id", "side", "scope_key"],
+        unique=True,
+        sqlite_where=sa.text("active = 1"),
+        postgresql_where=sa.text("active"),
+    )
     op.create_table(
         "accounting_usage",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -76,7 +84,7 @@ def upgrade() -> None:
         sa.Column("receipt_id", sa.String(), nullable=False),
         sa.Column("created_at_ns", sa.BigInteger(), nullable=False),
         sa.UniqueConstraint("tenant_id", "project_id", "event_id"),
-        sa.UniqueConstraint("tenant_id", "project_id", "component", "attempt_id"),
+        sa.UniqueConstraint("tenant_id", "project_id", "attempt_id"),
     )
     for column in ("tenant_id", "project_id", "event_id", "session_id", "status"):
         op.create_index(f"ix_accounting_usage_{column}", "accounting_usage", [column])
@@ -157,10 +165,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("prepared_pricing_bindings")
-    op.drop_table("accounting_ownership")
-    op.drop_table("accounting_rejections")
-    op.drop_table("accounting_projection_outbox")
-    op.drop_table("accounting_usage")
-    op.drop_table("pricing_revisions")
-    op.drop_column("api_keys", "project_ids")
+    raise RuntimeError(
+        "This additive accounting migration has no destructive downgrade. "
+        "Roll back the application while retaining ledger tables and project allowlists."
+    )
