@@ -16,6 +16,7 @@ from voicegateway.repository import (
 from voicegateway.repository import (
     managed_rate_rule_repository as rate_rule_repo,
 )
+from voicegateway.repository.managed_rate_rule_repository import FxProvenance
 
 if TYPE_CHECKING:
     from voicegateway.core.database import Database
@@ -157,6 +158,11 @@ class ManagedConfigService:
         async with self._db.session() as s:
             return await rate_rule_repo.list_rules(s)
 
+    async def list_fx_rules(self) -> list[dict[str, Any]]:
+        """Rules whose price was converted from a foreign currency."""
+        async with self._db.session() as s:
+            return await rate_rule_repo.list_fx_rules(s)
+
     async def upsert_rate_rule(
         self,
         *,
@@ -172,6 +178,7 @@ class ManagedConfigService:
         cached_input_price_usd: float | None = None,
         output_price_usd: float | None = None,
         sets: str = "price",
+        fx: FxProvenance | None = None,
     ) -> str:
         async with self._db.session() as s:
             return await rate_rule_repo.upsert_rule(
@@ -188,6 +195,7 @@ class ManagedConfigService:
                 cached_input_price_usd=cached_input_price_usd,
                 output_price_usd=output_price_usd,
                 sets=sets,
+                fx=fx,
             )
 
     async def delete_rate_rule(self, rule_id: str) -> bool:

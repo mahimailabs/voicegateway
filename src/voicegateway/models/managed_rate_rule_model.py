@@ -43,5 +43,19 @@ class ManagedRateRule(SQLModel, table=True):
     input_price_usd: float | None = None
     cached_input_price_usd: float | None = None
     output_price_usd: float | None = None
+    # FX provenance. NULL on every rule entered directly in USD, which is the
+    # honest reading: no rate was involved. Populated only by
+    # ``voicegw prices set --from``, which converts once at set time and stores
+    # the result as a fixed figure, so the price never floats afterwards.
+    #
+    # Text rather than float for the published amount and the rate: this is
+    # evidence, and it has to still match the vendor page it was read from.
+    source_currency: str | None = None
+    source_amount: str | None = None
+    fx_rate: str | None = None
+    fx_source: str | None = None
+    #: When VG fetched the rate, not when the provider published it. The
+    #: staleness clock starts at the thing we can attest to.
+    fx_fetched_at: float | None = None
     created_at: float
     updated_at: float

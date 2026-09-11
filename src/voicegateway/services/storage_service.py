@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from voicegateway.core.config import GatewayConfig
 from voicegateway.core.database import Database, DatabaseAheadOfCode
 from voicegateway.models.request_model import RequestRecord
+from voicegateway.repository.managed_rate_rule_repository import FxProvenance
 from voicegateway.services.billing_service import BillingService
 from voicegateway.services.cost_service import CostService
 from voicegateway.services.latency_service import LatencyService
@@ -1134,6 +1135,11 @@ class StorageService:
         await self._ensure_initialized()
         return await self._managed_config_service.list_rate_rules()
 
+    async def list_fx_rules(self) -> list[dict[str, Any]]:
+        """Delegate to ManagedConfigService.list_fx_rules."""
+        await self._ensure_initialized()
+        return await self._managed_config_service.list_fx_rules()
+
     async def upsert_rate_rule(
         self,
         *,
@@ -1149,6 +1155,7 @@ class StorageService:
         cached_input_price_usd: float | None = None,
         output_price_usd: float | None = None,
         sets: str = "price",
+        fx: FxProvenance | None = None,
     ) -> str:
         """Delegate to ManagedConfigService.upsert_rate_rule."""
         await self._ensure_initialized()
@@ -1165,6 +1172,7 @@ class StorageService:
             cached_input_price_usd=cached_input_price_usd,
             output_price_usd=output_price_usd,
             sets=sets,
+            fx=fx,
         )
 
     async def delete_rate_rule(self, rule_id: str) -> bool:
