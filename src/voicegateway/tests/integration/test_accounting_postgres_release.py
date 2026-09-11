@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import pathlib
 import uuid
 from decimal import Decimal
 
 import pytest
 import yaml
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select, text
 from sqlalchemy.engine import make_url
@@ -209,6 +212,18 @@ class _ASGICollector:
         return response
 
 
+def _current_head() -> str:
+    """The single head of the revision chain, read from the migration scripts.
+
+    ``test_single_alembic_head`` separately guarantees there is exactly one, so
+    taking [0] here is safe and a fork fails there with a better message.
+    """
+    repo_root = pathlib.Path(__file__).resolve().parents[4]
+    cfg = Config(str(repo_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(repo_root / "alembic"))
+    return ScriptDirectory.from_config(cfg).get_heads()[0]
+
+
 async def test_accounting_release_matrix_on_restricted_postgres(
     tmp_path, monkeypatch
 ) -> None:
@@ -224,7 +239,12 @@ async def test_accounting_release_matrix_on_restricted_postgres(
                 text("SELECT version_num FROM alembic_version_voicegateway")
             )
         ).scalar_one()
-        assert version == "a6c9e2f4b817"
+        # Derived, not pinned. The assertion worth making is "the owner
+        # migrated all the way to head", and a literal revision id turns that
+        # into "the owner migrated to the head that existed the day this test
+        # was written", which fails on the next migration for no reason. It
+        # did exactly that when the FX provenance revision landed.
+        assert version == _current_head()
 
     app_url = await _provision_restricted_role(owner_url)
     monkeypatch.setenv("VOICEGW_DB_URL", app_url)
