@@ -3,7 +3,8 @@ name = "voicegateway"
 dynamic = ["version"]
 description = "Cost tracking and reconciliation for voice agents on LiveKit, Pipecat and OpenRTC: modality-aware unit accounting (audio-minutes, tokens, characters) backed by voice-prices."
 readme = "README.md"
-license = "MIT"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE", "LICENSE-MIT"]
 requires-python = ">=3.11"
 authors = [{name = "Mahimai Raja", email = "hello@mahimai.dev"}]
 keywords = ["voice-ai", "voicegateway", "inference", "gateway", "self-hosted", "ollama", "livekit"]
@@ -233,6 +234,7 @@ artifacts = [
 #                fails at runtime in _find_alembic_ini
 #   README.md    named by project.readme, required for metadata
 #   LICENSE      project.license is the SPDX string, the file still ships
+#   LICENSE-MIT  the MIT notice for code contributed before the AGPL change
 #   CHANGELOG.md so an unpacked sdist can say what changed
 [tool.hatch.build.targets.sdist]
 include = [
@@ -241,6 +243,7 @@ include = [
     "/alembic.ini",
     "/README.md",
     "/LICENSE",
+    "/LICENSE-MIT",
     "/CHANGELOG.md",
 ]
 

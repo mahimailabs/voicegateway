@@ -680,8 +680,8 @@ def _appendix_from_file(path: Path) -> dict[str, list[dict[str, str]]]:
     The entries live in a file the operator holds rather than in this
     repository, for two reasons. The commands belong to a particular engagement
     and have no business being compiled into a general tool. And the generator
-    they drive is AGPL-3.0 while this repository is MIT, so its scenarios and
-    configuration must not be copied here; flag names and command lines are
+    they drive is someone else's AGPL-3.0 code that could not be relicensed for
+    the hosted edition, so its scenarios and configuration must not be copied here; flag names and command lines are
     interface facts and travel fine.
 
     Every entry goes through :func:`appendix_entry`, which requires a citation

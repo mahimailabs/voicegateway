@@ -4,7 +4,7 @@
 
 <p>
   <a href="https://pypi.org/project/voicegateway"><img src="https://img.shields.io/pypi/v/voicegateway?color=cba6f7&labelColor=0a0a0a" alt="PyPI"/></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-cba6f7?labelColor=0a0a0a" alt="MIT License"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-cba6f7?labelColor=0a0a0a" alt="AGPL-3.0 License"/></a>
   <a href="https://docs.voicegateway.dev"><img src="https://img.shields.io/badge/docs-voicegateway.dev-cba6f7?labelColor=0a0a0a" alt="Docs"/></a>
   <a href="https://discord.gg/ysFaF4uSB"><img src="https://img.shields.io/badge/Discord-join-cba6f7?labelColor=0a0a0a&logo=discord&logoColor=white" alt="Discord"/></a>
 </p>
@@ -96,7 +96,7 @@ Click through the real dashboard with example data, no install and no login, at 
 
 ## License
 
-[MIT](LICENSE). Built in public by [Mahimai Raja](https://mahimai.dev), on [LiveKit Agents](https://github.com/livekit/agents), [Pipecat](https://github.com/pipecat-ai/pipecat) and [voice-prices](https://github.com/mahimailabs/voice-prices).
+[AGPL-3.0](LICENSE). Code contributed before the change, and every earlier release, stays under [MIT](LICENSE-MIT). Contributions need a signed [CLA](CLA.md). Built in public by [Mahimai Raja](https://mahimai.dev), on [LiveKit Agents](https://github.com/livekit/agents), [Pipecat](https://github.com/pipecat-ai/pipecat) and [voice-prices](https://github.com/mahimailabs/voice-prices).
 
 <!-- GitAds-Verify: B26PKZL6HHS6F2ZU9NAHRIA9OQHS919R -->
 

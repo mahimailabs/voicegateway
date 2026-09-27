@@ -7,8 +7,9 @@ why that section is contractual.
 
 The entries live in a file the operator holds rather than in this repository.
 Commands belong to a particular engagement and have no business compiled into a
-general tool, and the generator they drive is AGPL-3.0 while this repository is
-MIT, so its scenarios and configuration must never be copied here. Flag names
+general tool, and the generator they drive is someone else's AGPL-3.0 code that
+could not be relicensed for the hosted edition, so its scenarios and configuration
+must never be copied here. Flag names
 and command lines are interface facts and travel fine.
 """
 
