@@ -123,4 +123,4 @@ claude mcp add voicegateway \
 
 ## Source
 
-[github.com/mahimailabs/voicegateway](https://github.com/mahimailabs/voicegateway) -- MIT License
+[github.com/mahimailabs/voicegateway](https://github.com/mahimailabs/voicegateway) -- AGPL-3.0 License

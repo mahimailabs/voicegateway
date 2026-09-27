@@ -9,6 +9,14 @@ quick reference. Detailed guides live in
 We follow the [Contributor Covenant](CODE_OF_CONDUCT.md). Be respectful,
 be constructive, assume good intent.
 
+## License and CLA
+
+VoiceGateway is licensed under the [GNU Affero General Public License
+v3.0](LICENSE). Before your first pull request can merge, sign the
+[Contributor License Agreement](CLA.md): the CLA check comments on your pull
+request with the one line to reply with. You sign once and keep the copyright
+in your work. The CLA lets the project also be licensed for the hosted edition.
+
 ## Ways to contribute
 
 - **Pick up a good first issue.** Issues labelled

@@ -87,7 +87,7 @@ LABEL org.opencontainers.image.title="VoiceGateway" \
       org.opencontainers.image.documentation="https://docs.voicegateway.dev" \
       org.opencontainers.image.source="https://github.com/mahimailabs/voicegateway" \
       org.opencontainers.image.authors="Mahimai Raja J" \
-      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
       org.opencontainers.image.vendor="Mahimai Labs"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

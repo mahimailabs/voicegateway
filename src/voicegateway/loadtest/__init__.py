@@ -2,8 +2,9 @@
 
 VoiceGateway does not place calls. An external SIP generator does that, writes
 artifacts, and this package reads them. Keeping the generator out of this
-repository is deliberate: it is AGPL-3.0 and this project is MIT, so it runs as a
-separate binary and only its output files cross the boundary.
+repository is deliberate: it is someone else's AGPL-3.0 code, and anything copied
+from it could not be relicensed for the hosted edition. So it runs as a separate
+binary and only its output files cross the boundary.
 """
 
 from voicegateway.loadtest.artifacts import (

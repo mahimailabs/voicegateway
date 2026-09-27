@@ -8,9 +8,9 @@ defensive. They do NOT prove it matches what the generator actually writes.
 Nothing derived from them may be presented as measured: a report built from them
 carries ``data_provenance: synthetic`` until a captured artifact replaces them.
 
-Nothing in this module reads the generator's source. It is AGPL-3.0 and this
-project is MIT, so the binary runs separately and only its output files cross the
-boundary. Recovering an undocumented shape by reading that source is not an
+Nothing in this module reads the generator's source. It is someone else's
+AGPL-3.0 code that could not be relicensed for the hosted edition, so the binary
+runs separately and only its output files cross the boundary. Recovering an undocumented shape by reading that source is not an
 option available here, which is why an undocumented surface is skipped outright
 rather than guessed at.
 

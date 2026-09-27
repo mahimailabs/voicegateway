@@ -6,6 +6,15 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ## Unreleased
 
+### Changed
+
+- **VoiceGateway is now licensed under the GNU Affero General Public License
+  v3.0 (`AGPL-3.0-only`), previously MIT.** Anyone who modifies it and offers it
+  to users over a network must publish their changes. Every release before this
+  one stays MIT, and code contributed before the change keeps its MIT notice in
+  `LICENSE-MIT`. New contributions need a signed [CLA](CLA.md), which lets the
+  project also be licensed for the hosted edition.
+
 ### Added
 
 - **A test asserting every telemetry table's INSERT writes every one of its
