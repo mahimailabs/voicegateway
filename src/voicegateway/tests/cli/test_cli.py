@@ -154,6 +154,13 @@ def test_dashboard_help():
     assert "browser" in result.output
 
 
+def test_reconcile_help_lists_elevenlabs():
+    result = runner.invoke(app, ["reconcile", "--help"])
+
+    assert result.exit_code == 0
+    assert "elevenlabs" in result.output
+
+
 # --------------------------------------------------------------------
 # export-costs
 # --------------------------------------------------------------------
