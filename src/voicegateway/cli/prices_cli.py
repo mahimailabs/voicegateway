@@ -12,18 +12,21 @@ Subcommands:
 
 from __future__ import annotations
 
+import time
+from datetime import UTC, datetime
 from typing import Any
 
 import typer
 from rich.table import Table
 
+from voicegateway.billing import fx
 from voicegateway.billing.rate_card import RateCard, RateRule
 from voicegateway.billing.reconcile import margin_reconcile, sync_fixed_rules
 from voicegateway.cli._app import app, console
 from voicegateway.cli.base_cli import BaseCli
 from voicegateway.inference.pricing import catalog
 from voicegateway.repository import request_log_repository
-from voicegateway.repository.managed_rate_rule_repository import scope_key
+from voicegateway.repository.managed_rate_rule_repository import FxProvenance, scope_key
 from voicegateway.utils.cli._shared import _parse_iso_date_arg
 
 _cli = BaseCli()
@@ -185,6 +188,53 @@ def sync_cmd(
             _mark(ln.flag),
         )
     console.print(table)
+    _report_fx_age(config)
+
+
+#: Past this, a converted price is reported as stale. Not a hard failure: only
+#: the operator knows whether their FX basis is a daily mid-market rate or a
+#: contracted one they hold for a year.
+_FX_STALE_DAYS = 90
+
+
+def _report_fx_age(config: str | None) -> None:
+    """List rules whose price was converted, oldest rate first.
+
+    The reason the provenance columns exist. Without this, a converted price is
+    indistinguishable from a hand-typed one and its staleness is invisible
+    rather than absent, which is the failure this whole feature is against.
+    """
+    gw = _cli.require_gateway(config)
+    if gw.storage is None:
+        return
+    rows = _cli.async_run(gw.storage.list_fx_rules())
+    if not rows:
+        return
+    now = time.time()
+    table = Table(title="Converted prices (FX provenance)")
+    for col in ("scope", "published", "rate", "fetched", "age", "flag"):
+        table.add_column(col)
+    stale = 0
+    for row in rows:
+        age_days = (now - float(row["fx_fetched_at"])) / 86400.0
+        is_stale = age_days >= _FX_STALE_DAYS
+        stale += is_stale
+        table.add_row(
+            str(row["rule_id"]),
+            f"{row['source_amount']} {row['source_currency']}/{row['unit']}",
+            f"{row['fx_rate']} {row['source_currency']}/USD",
+            datetime.fromtimestamp(float(row["fx_fetched_at"]), tz=UTC).strftime(
+                "%Y-%m-%d"
+            ),
+            f"{age_days:.0f}d",
+            "[red]stale[/red]" if is_stale else "[green]ok[/green]",
+        )
+    console.print(table)
+    if stale:
+        console.print(
+            f"[yellow]{stale} converted price(s) older than {_FX_STALE_DAYS} "
+            "days. Re-run `voicegw prices set --from` to refresh.[/yellow]"
+        )
 
 
 @prices_app.command("set")
@@ -212,10 +262,52 @@ def set_cmd(
         "--unit",
         help="Unit for a fixed rule: minute | second | char | 1k_char | token | 1k_token | 1m_token | request.",
     ),
+    from_currency: str | None = typer.Option(
+        None,
+        "--from",
+        help=(
+            "Convert a published foreign-currency rate to USD once, now, e.g. "
+            "INR:3.00. Fetches a live rate and stores the fixed USD result "
+            "with its provenance. Mutually exclusive with --fixed."
+        ),
+    ),
 ) -> None:
-    """Upsert a DB rate-card override for a scope (one rule per scope)."""
+    """Upsert a DB rate-card override for a scope (one rule per scope).
+
+    ``--from`` converts at the moment you run it and stores a fixed figure, so
+    a recorded cost never moves afterwards. If the rate cannot be fetched the
+    command writes nothing and exits non-zero: a fallback rate is how a stale
+    number gets into a price list and stops looking stale.
+    """
     gw = _cli.require_gateway(config)
     storage = _cli.require_storage(gw)
+    provenance = None
+    if from_currency is not None:
+        if fixed is not None:
+            _cli.fail("--from and --fixed both set a price; use one.", code=2)
+        if unit is None:
+            _cli.fail("--from needs --unit, the same as --fixed.", code=2)
+        try:
+            currency, amount = fx.parse_money(from_currency)
+            quote = fx.fetch_rate(currency)
+            converted = fx.to_usd(amount, quote)
+        except fx.FxError as exc:
+            # Nothing is written. The operator sees why and can retry, set the
+            # rate by hand, or point VOICEGW_FX_URL somewhere reachable.
+            _cli.fail(f"FX conversion failed, no rule written: {exc}", code=3)
+        fixed = float(converted)
+        provenance = FxProvenance(
+            source_currency=quote.currency,
+            source_amount=str(amount),
+            fx_rate=str(quote.rate),
+            fx_source=quote.source,
+            fx_fetched_at=quote.fetched_at,
+        )
+        console.print(
+            f"[dim]{amount} {quote.currency} / {unit} at "
+            f"{quote.rate} {quote.currency}/USD -> "
+            f"${converted:.8f} / {unit}[/dim]"
+        )
     try:
         rid = _cli.async_run(
             storage.upsert_rate_rule(
@@ -227,6 +319,7 @@ def set_cmd(
                 markup=markup,
                 fixed=fixed,
                 unit=unit,
+                fx=provenance,
             )
         )
     except ValueError as exc:
