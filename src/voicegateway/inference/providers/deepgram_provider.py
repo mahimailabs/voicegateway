@@ -44,6 +44,9 @@ class DeepgramProvider(BaseProvider):
     async def health_check(self) -> bool:
         import httpx
 
+        if not self.api_key:
+            return False
+
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
