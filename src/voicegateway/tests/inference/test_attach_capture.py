@@ -474,7 +474,8 @@ async def test_reconcile_emits_correction_when_usage_exceeds_recorded(tmp_path):
     assert reconciled[0]["agent_id"] == "agent-r"
 
 
-async def test_reconcile_no_correction_when_totals_match(tmp_path):
+@pytest.mark.parametrize("usage_provider", ["openai", "OpenAI", "api.openai.com"])
+async def test_reconcile_no_correction_when_totals_match(tmp_path, usage_provider):
     """When session.usage matches the per-call rows, no correction is written."""
     storage = StorageService(str(tmp_path / "recon2.db"))
     sink = LocalSqliteSink(storage)
@@ -483,7 +484,10 @@ async def test_reconcile_no_correction_when_totals_match(tmp_path):
     usage = _FakeUsage(
         [
             _FakeLLMUsage(
-                prompt_tokens=1000, completion_tokens=500, prompt_cached_tokens=200
+                prompt_tokens=1000,
+                completion_tokens=500,
+                prompt_cached_tokens=200,
+                provider=usage_provider,
             )
         ]
     )
@@ -1135,3 +1139,18 @@ async def test_a_broken_tracker_never_breaks_the_cost_write(tmp_path):
     assert len(rows) == 1, "the cost row was lost to a failing hint"
     assert rows[0]["turn_index"] is None
     assert rows[0]["cost_usd"] > 0
+
+
+@pytest.mark.parametrize(
+    "label,expected",
+    [
+        ("Cartesia", "cartesia"),
+        ("Deepgram", "deepgram"),
+        ("api.openai.com", "openai"),
+        ("custom.example.com", "custom.example.com"),
+    ],
+)
+def test_livekit_usage_provider_names_match_component_ids(label, expected):
+    from voicegateway.inference.session.capture import _canonical_provider
+
+    assert _canonical_provider(label) == expected
