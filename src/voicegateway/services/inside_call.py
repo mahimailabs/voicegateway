@@ -30,8 +30,8 @@ class InsideCall:
 
         latency = getattr(record, "ttfb_ms", None)
         try:
-            latency = float(latency)
-            if not math.isfinite(latency) or latency < 0:
+            latency = float(latency) if latency is not None else None
+            if latency is not None and (not math.isfinite(latency) or latency < 0):
                 latency = None
         except (TypeError, ValueError):
             latency = None
