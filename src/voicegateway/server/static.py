@@ -75,6 +75,14 @@ def mount_frontend(app: FastAPI) -> None:
     Returns:
         None.
     """
+
+    @app.get("/inside-call/widget.js", include_in_schema=False)
+    async def inside_call_widget() -> FileResponse:
+        return FileResponse(
+            Path(__file__).parent / "embed" / "inside-call.js",
+            media_type="text/javascript",
+        )
+
     frontend_dir = _resolve_frontend_dir()
     if frontend_dir is not None:
         # Pre-resolve once so per-request path-traversal checks are
