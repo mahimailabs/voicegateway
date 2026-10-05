@@ -24,6 +24,10 @@ Rates move. Upgrading the catalog is a package upgrade:
 pip install --upgrade voice-prices
 ```
 
+## LiveKit session totals
+
+At session close, VoiceGateway compares cumulative usage with the individual metric rows and records only missing usage. Provider display names and the standard OpenAI API hostname resolve to the same provider IDs as those rows. Custom endpoint hostnames stay distinct. A different spelling alone does not create a second charge.
+
 ## Check against the invoice
 
 `voicegw reconcile` compares recorded usage with a provider's usage export, per model, on units and on cost. It supports three providers today, one per modality: `openai` (LLM), `deepgram` (STT) and `cartesia` (TTS).

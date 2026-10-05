@@ -215,6 +215,13 @@ def _stable_metric_record_id(
     return str(uuid.uuid5(uuid.NAMESPACE_URL, material))
 
 
+def _canonical_provider(provider: str) -> str:
+    # LiveKit component modules use lowercase ids, while cumulative usage uses
+    # display names or OpenAI's API hostname. Keep custom endpoints distinct.
+    provider = provider.strip().lower()
+    return canonical_provider({"api.openai.com": "openai"}.get(provider, provider))
+
+
 def _provider_name(component: object) -> str:
     """Best-effort provider id from a live plugin instance.
 
@@ -822,7 +829,7 @@ class MetricCapture:
             modality = _usage_modality(entry)
             if modality not in _MODALITIES:
                 continue
-            provider = str(getattr(entry, "provider", "") or "")
+            provider = _canonical_provider(str(getattr(entry, "provider", "") or ""))
             model = str(getattr(entry, "model", "") or "")
             model_id = (
                 f"{provider}/{model}" if provider and model else (model or "unknown")
