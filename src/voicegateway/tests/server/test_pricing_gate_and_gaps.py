@@ -179,15 +179,18 @@ async def test_gaps_ranks_unpriceable_models_by_traffic(tmp_path, monkeypatch) -
     client, gw = _client(tmp_path, monkeypatch)
     await gw.storage._ensure_initialized()
     for _ in range(3):
-        await _record(gw, "rime/mistv2")
-    await _record(gw, "lmnt/blizzard")
+        await _record(gw, "unlisted/missing-stt-model")
+    await _record(gw, "unlisted/other-missing-stt-model")
     await _record(gw, "deepgram/nova-3")  # priced, must not appear
 
     r = client.get("/v1/billing/rate-card/gaps")
     assert r.status_code == 200, r.text
     gaps = r.json()["gaps"]
     models = [g["model"] for g in gaps]
-    assert models == ["rime/mistv2", "lmnt/blizzard"], models
+    assert models == [
+        "unlisted/missing-stt-model",
+        "unlisted/other-missing-stt-model",
+    ], models
     assert "deepgram/nova-3" not in models
     assert gaps[0]["requests"] == 3
     assert gaps[0]["unknown_requests"] == 3

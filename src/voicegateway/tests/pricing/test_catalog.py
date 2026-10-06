@@ -32,7 +32,7 @@ def test_dispatch_tts_routes_to_tts_module() -> None:
     direct = tts.calculate_tts_cost("cartesia/sonic-3", 1000)
     via_facade = catalog.calculate_cost("tts", "cartesia/sonic-3", character_count=1000)
     assert via_facade == direct
-    assert via_facade == Decimal("0.04")
+    assert via_facade == Decimal("0.05")
 
 
 def test_dispatch_unknown_modality_returns_none() -> None:

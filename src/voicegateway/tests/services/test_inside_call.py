@@ -43,3 +43,32 @@ def test_missing_timing_is_not_zero_and_calls_are_isolated():
     )
     assert first.snapshot()["services"][0]["ttfb_ms"] is None
     assert second.snapshot()["services"] == []
+
+
+def test_realtime_duration_and_incomplete_price_are_visible():
+    summary = InsideCall()
+    for index in range(2):
+        summary.record(
+            SimpleNamespace(
+                id=str(index),
+                provider="openai",
+                model_id="openai/gpt-live-1",
+                modality="llm",
+                input_units=0,
+                output_units=0,
+                cost_usd=0,
+                ttfb_ms=-1,
+                metadata={
+                    "accounting_realtime_quantities": {
+                        "audio_seconds": 5,
+                        "secret": 99,
+                    },
+                    "pricing_complete": False,
+                },
+            )
+        )
+    service = summary.snapshot()["services"][0]
+    assert service["measurements"] == {"audio_seconds": 10}
+    assert service["pricing_complete"] is False
+    assert service["ttfb_ms"] is None
+    assert "secret" not in str(service)
