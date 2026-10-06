@@ -137,7 +137,7 @@ def test_migrate_when_yaml_corrupt(tmp_path):
 
     result = runner.invoke(app, ["migrate", "--config-home", str(home)])
     assert result.exit_code == 0, result.output  # informational, not fatal
-    assert "did not parse" in result.output
+    assert "did not parse" in " ".join(result.output.split())
     assert "voicegw init" in result.output
 
 
@@ -182,7 +182,7 @@ def test_migrate_warns_when_keys_fail_to_decrypt(tmp_path, monkeypatch):
     result = runner.invoke(app, ["migrate", "--config-home", str(home)])
     assert result.exit_code == 0, result.output
     assert "did not decrypt" in result.output
-    assert "voicegw rotate-secret" in result.output
+    assert "voicegw rotate-secret" in " ".join(result.output.split())
 
 
 # ---------------------------------------------------------------------------

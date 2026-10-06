@@ -35,6 +35,21 @@ class InsideCall:
                 latency = None
         except (TypeError, ValueError):
             latency = None
+        metadata = getattr(record, "metadata", {}) or {}
+        quantities = metadata.get("accounting_realtime_quantities", {})
+        allowed = {
+            "audio_seconds",
+            "text_input",
+            "text_output",
+            "cache_read",
+            "cache_write",
+            "realtime_audio_input",
+            "realtime_audio_output",
+            "realtime_audio_cache",
+        }
+        measurements = {
+            key: number(value) for key, value in quantities.items() if key in allowed
+        }
         self._records[record.id] = {
             "provider": str(record.provider)[:80],
             "model": str(record.model_id)[:120],
@@ -43,6 +58,8 @@ class InsideCall:
             "output_units": number(record.output_units),
             "cost_microusd": math.ceil(number(record.cost_usd) * 1_000_000),
             "ttfb_ms": number(latency) if latency is not None else None,
+            "measurements": measurements,
+            "pricing_complete": metadata.get("pricing_complete", not bool(quantities)),
         }
         self.revision += 1
 
@@ -58,10 +75,19 @@ class InsideCall:
                     "cost_microusd": 0,
                     "ttfb_ms": None,
                     "samples": [],
+                    "measurements": {},
+                    "pricing_complete": True,
                 }
             group = groups[key]
             for field in ("input_units", "output_units", "cost_microusd"):
                 group[field] += row[field]
+            group["pricing_complete"] = (
+                group["pricing_complete"] and row["pricing_complete"]
+            )
+            for dimension, value in row["measurements"].items():
+                group["measurements"][dimension] = (
+                    group["measurements"].get(dimension, 0.0) + value
+                )
             if row["ttfb_ms"] is not None:
                 group["samples"].append(row["ttfb_ms"])
         for group in groups.values():

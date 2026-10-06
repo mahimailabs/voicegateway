@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 import uuid
 from typing import TYPE_CHECKING, Any
@@ -58,7 +59,11 @@ def _ttfb_ms(metric: object) -> float | None:
     if value is None:
         value = getattr(metric, "ttfb", None)
     # ``is not None`` so a genuine 0.0 latency records as 0.0, not None.
-    return float(value) * 1000.0 if value is not None else None
+    if value is None:
+        return None
+    value = float(value)
+    # GPT-Live uses -1 when no first-token measurement exists.
+    return value * 1000.0 if math.isfinite(value) and value >= 0 else None
 
 
 def _duration_ms(metric: object) -> float | None:
@@ -155,16 +160,48 @@ def _accounting_metric_metadata(metric: object, modality: str) -> dict[str, Any]
     if isinstance(segment_id, str) and segment_id:
         result["provider_segment_id"] = segment_id
 
+    model = getattr(getattr(metric, "metadata", None), "model_name", "") or ""
+    if (
+        modality == "llm"
+        and "realtime" not in type(metric).__name__.lower()
+        and (
+            bool(getattr(metric, "cache_creation_tokens", 0)) or model == "gpt-5.6-luna"
+        )
+    ):
+        fields = {
+            "text_input": "prompt_tokens",
+            "text_output": "completion_tokens",
+            "cache_read": "prompt_cached_tokens",
+            "cache_write": "cache_creation_tokens",
+        }
+        result["accounting_realtime_quantities"] = {
+            dim: getattr(metric, attr)
+            for dim, attr in fields.items()
+            if getattr(metric, attr, None) is not None
+        }
+        result["accounting_missing_dimensions"] = [
+            dim for dim, attr in fields.items() if getattr(metric, attr, None) is None
+        ]
+        return result
     missing: list[str] = []
     if modality == "llm" and "realtime" in type(metric).__name__.lower():
         input_details = getattr(metric, "input_token_details", None)
         output_details = getattr(metric, "output_token_details", None)
         cached_details = getattr(input_details, "cached_tokens_details", None)
         cached_total = getattr(input_details, "cached_tokens", None)
+        if getattr(input_details, "image_tokens", 0):
+            missing.append("image_input")
         cache_text = getattr(cached_details, "text_tokens", None)
         cache_audio = getattr(cached_details, "audio_tokens", None)
         if cached_details is None and cached_total == 0:
             cache_text = cache_audio = 0
+        duration = getattr(metric, "session_duration", None)
+        metadata = getattr(metric, "metadata", None)
+        model = getattr(metadata, "model_name", "") or ""
+        if duration is not None and (duration > 0 or model.startswith("gpt-live-")):
+            result["accounting_realtime_quantities"] = {"audio_seconds": duration}
+            result["usage_kind"] = "session_duration"
+            return result
         values = {
             "text_input": getattr(input_details, "text_tokens", None),
             "text_output": getattr(output_details, "text_tokens", None),
@@ -314,7 +351,10 @@ def _metric_modality(metric: object) -> str:
 def _active_agent(session: object) -> object | None:
     """The session's currently-running Agent, best-effort across LK versions."""
     for attr in ("current_agent", "_agent", "agent"):
-        agent: object | None = getattr(session, attr, None)
+        try:
+            agent: object | None = getattr(session, attr, None)
+        except RuntimeError:
+            continue  # Native AgentSession has no current_agent before startup.
         if agent is not None:
             return agent
     return None
@@ -434,6 +474,7 @@ class MetricCapture:
         # Per-(provider, model_id) running tally of captured units, so the
         # close-time reconcile can diff against cumulative session.usage.
         self._recorded: dict[tuple[str, str], dict[str, float]] = {}
+        self._seen_metrics: set[str] = set()
         # Per-turn latch for time-to-first-partial-transcript (a turn-level STT
         # responsiveness metric): the moment the user started speaking, and the
         # first-interim delay relative to it. Stashed onto the EOU row and reset
@@ -446,6 +487,12 @@ class MetricCapture:
         """Subscribe to every component's metrics + the session error event."""
         self._session = session
         for modality, component in _iter_components(session):
+            # Realtime sessions emit metrics on AgentSession, not the reusable
+            # model object. DuplexRealtimeAdapter has the same event contract.
+            if any(
+                base.__name__ == "RealtimeModel" for base in type(component).__mro__
+            ):
+                continue
             self._session_modalities.add(modality)
             provider, model_id = component_identity(component)
             component.on(  # type: ignore[attr-defined]
@@ -482,6 +529,27 @@ class MetricCapture:
         session-level handler (Agent slots), so a metric is recorded identically
         no matter which event delivered it, and the reconcile tally stays right.
         """
+        # A duplex component emits both frontend duration and backend token
+        # metrics. The component name alone would charge backend work to the
+        # voice model; native metric metadata identifies the actual model.
+        native_metadata = getattr(metric, "metadata", None)
+        metric_model = getattr(native_metadata, "model_name", None)
+        metric_provider = getattr(native_metadata, "model_provider", None)
+        if isinstance(metric_provider, str) and metric_provider:
+            provider = _canonical_provider(metric_provider)
+        if isinstance(metric_model, str) and metric_model:
+            model_id = (
+                metric_model
+                if metric_model.startswith(f"{provider}/")
+                else f"{provider}/{metric_model}"
+            )
+        stable_id = _stable_metric_record_id(
+            metric, modality=modality, provider=provider, model_id=model_id
+        )
+        if stable_id is not None:
+            if stable_id in self._seen_metrics:
+                return
+            self._seen_metrics.add(stable_id)
         input_units, output_units, cached, ttfb_ms = units_from_metric(metric, modality)
         total_latency_ms = _duration_ms(metric)
         status = "cancelled" if bool(getattr(metric, "cancelled", False)) else "success"
@@ -530,6 +598,8 @@ class MetricCapture:
         }
         if metric_metadata:
             record.metadata = {**record.metadata, **metric_metadata}
+        if "accounting_realtime_quantities" in record.metadata:
+            self._cost_tracker.rate_realtime_record(record)
         self._stamp_context(record)
         tally = self._recorded.setdefault(
             (provider, model_id), {"input": 0.0, "output": 0.0, "cached": 0.0}
@@ -537,6 +607,9 @@ class MetricCapture:
         tally["input"] += input_units
         tally["output"] += output_units
         tally["cached"] += cached
+        realtime = record.metadata.get("accounting_realtime_quantities", {})
+        for dimension, quantity in realtime.items():
+            tally[dimension] = tally.get(dimension, 0.0) + quantity
         self._schedule(self._sink.log_request(record))
 
     def _on_error(self, event: object, *_args: Any, **_kwargs: Any) -> None:
@@ -617,6 +690,9 @@ class MetricCapture:
         identity resolved at bind time. Falls back to ``("unknown", "unknown")``
         (still records; cost falls to unpriced) if the agent or slot is absent.
         """
+        component = getattr(self._session, modality, None)
+        if component is not None:
+            return component_identity(component)
         agent = _active_agent(self._session)
         try:
             component = getattr(agent, modality, None) if agent is not None else None
@@ -812,6 +888,92 @@ class MetricCapture:
             return
         await asyncio.gather(*list(self._pending), return_exceptions=True)
 
+    async def _reconcile_realtime(
+        self, entry: object, provider: str, model_id: str
+    ) -> bool:
+        recorded = self._recorded.setdefault(
+            (provider, model_id), {"input": 0.0, "output": 0.0, "cached": 0.0}
+        )
+        duration = getattr(entry, "session_duration", 0.0) or 0.0
+        if duration > 0 or "/gpt-live-" in model_id or "audio_seconds" in recorded:
+            totals = {"audio_seconds": float(duration)}
+        elif (
+            getattr(entry, "input_cache_creation_tokens", 0)
+            or "cache_write" in recorded
+            or model_id == "openai/gpt-5.6-luna"
+        ):
+            totals = {
+                "text_input": float(getattr(entry, "input_tokens", 0)),
+                "text_output": float(getattr(entry, "output_tokens", 0)),
+                "cache_read": float(getattr(entry, "input_cached_tokens", 0)),
+                "cache_write": float(getattr(entry, "input_cache_creation_tokens", 0)),
+            }
+        elif (
+            getattr(entry, "input_audio_tokens", 0)
+            or getattr(entry, "output_audio_tokens", 0)
+            or "realtime_audio_input" in recorded
+            or "/gpt-realtime" in model_id
+        ):
+            fields = {
+                "text_input": "input_text_tokens",
+                "text_output": "output_text_tokens",
+                "cache_read": "input_cached_text_tokens",
+                "realtime_audio_input": "input_audio_tokens",
+                "realtime_audio_output": "output_audio_tokens",
+                "realtime_audio_cache": "input_cached_audio_tokens",
+            }
+            # Unknown detail cannot be reconstructed from aggregate tokens.
+            if any(getattr(entry, field, None) is None for field in fields.values()):
+                return True
+            totals = {
+                key: float(getattr(entry, field)) for key, field in fields.items()
+            }
+        else:
+            return False
+        delta = {
+            key: max(0.0, value - recorded.get(key, 0.0))
+            for key, value in totals.items()
+        }
+        if not any(value > _RECONCILE_EPSILON for value in delta.values()):
+            return True
+        record = RequestRecord(
+            id=str(
+                uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"{self._session_id}|{model_id}|{sorted(totals.items())}",
+                )
+            ),
+            timestamp=time.time(),
+            modality="llm",
+            model_id=model_id,
+            provider=provider,
+            project=self._project,
+            session_id=self._session_id,
+            agent_id=self._agent_id,
+            revision=self._revision,
+            input_units=delta.get("text_input", 0)
+            + delta.get("realtime_audio_input", 0),
+            output_units=delta.get("text_output", 0)
+            + delta.get("realtime_audio_output", 0),
+            cached_input_units=delta.get("cache_read", 0)
+            + delta.get("realtime_audio_cache", 0),
+            metadata={"reconciled": True, "accounting_realtime_quantities": delta},
+        )
+        if "audio_seconds" in delta:
+            record.metadata["usage_kind"] = "session_duration"
+        if getattr(entry, "input_image_tokens", 0):
+            record.metadata["accounting_missing_dimensions"] = ["image_input"]
+        if model_id == "openai/gpt-5.6-luna" and totals.get("text_input", 0) > 272000:
+            # Cumulative usage cannot recover each missing response's context tier.
+            record.metadata["accounting_missing_dimensions"] = ["context_tier"]
+        self._cost_tracker.rate_realtime_record(record)
+        self._stamp_context(record)
+        await self._sink.log_request(record)
+        recorded.update(
+            {key: max(recorded.get(key, 0.0), value) for key, value in totals.items()}
+        )
+        return True
+
     async def reconcile(self, session: object) -> None:
         """Diff cumulative ``session.usage`` against the per-call rows.
 
@@ -834,6 +996,10 @@ class MetricCapture:
             model_id = (
                 f"{provider}/{model}" if provider and model else (model or "unknown")
             )
+            if modality == "llm" and await self._reconcile_realtime(
+                entry, provider, model_id
+            ):
+                continue
             cum_in, cum_out, cum_cached = _usage_units(entry, modality)
             recorded = self._recorded.get(
                 (provider, model_id), {"input": 0.0, "output": 0.0, "cached": 0.0}

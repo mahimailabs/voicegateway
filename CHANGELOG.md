@@ -6,6 +6,21 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ## Unreleased
 
+### Realtime metering
+
+- Support LiveKit Agents 1.8 duplex sessions. Capture session metrics, preserve
+  backend model identity, deduplicate repeated events, and reconcile close-time
+  duration and cache-write usage.
+- Price realtime audio separately from text tokens. Add dated published-price
+  fallbacks for GPT-Live 1 session seconds and GPT-5.6 Luna backend tokens until
+  the catalogue includes them. Unknown or unsupported dimensions remain unpriced.
+- Expose unit-specific measurements and pricing completeness in Inside your call.
+  Unavailable native timing stays null. Correct STT display conversion from
+  stored minutes to seconds.
+- Update the voice-prices floor and lock to 0.11.0. Refresh catalogue fixtures;
+  gap-list tests use deliberately absent models rather than newly priced ones.
+
+
 ### Added
 
 - **A test asserting every telemetry table's INSERT writes every one of its

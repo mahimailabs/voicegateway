@@ -27,7 +27,7 @@ def test_llm_cost_calculation():
 def test_tts_cost_calculation():
     tracker = CostTracker()
     cost = tracker.calculate_cost("cartesia/sonic-3", "tts", input_units=100)
-    assert cost == pytest.approx(0.004)
+    assert cost == pytest.approx(0.005)
 
 
 def test_create_record_carries_agent_id():

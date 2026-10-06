@@ -102,6 +102,9 @@ class CostTracker:
         resolved from the context var (ingest sets it from the verified key),
         matching the ``tenant_id`` stamped at write time.
         """
+        if "accounting_realtime_quantities" in record.metadata:
+            self.rate_realtime_record(record)
+            return
         # The collector is the source of truth for what things cost: agents
         # record the catalogue figure because they carry no card. If this
         # collector declares a cost for the model, the ingested row is
@@ -135,6 +138,45 @@ class CostTracker:
         )
         record.rated_price_usd = rated.rated_price_usd
         record.rate_rule = rated.rate_rule
+
+    def rate_realtime_record(self, record: RequestRecord) -> None:
+        """Use separate audio/text or session-duration quantities for costing.
+
+        Legacy fixed token cards cannot represent these measurements. Apply
+        cost-plus rules only; dimension-specific contracts belong in the exact
+        accounting ledger, where audio_seconds and audio token rates are explicit.
+        """
+        from voicegateway.inference.pricing.realtime import price_realtime
+
+        total, source = price_realtime(
+            record.model_id,
+            record.metadata["accounting_realtime_quantities"],
+            record.metadata.get("accounting_missing_dimensions", []),
+        )
+        record.cost_usd = float(total) if total is not None else 0.0
+        record.pricing_source = source
+        record.metadata["pricing_complete"] = total is not None
+        card = self._rate_card or _PASSTHROUGH_CARD
+        rule = card.resolve(
+            modality=record.modality,
+            provider=record.provider,
+            model_id=record.model_id,
+            tenant=current_tenant(),
+        )
+        if rule is not None and rule.kind == "fixed":
+            record.rated_price_usd = record.cost_usd
+            record.rate_rule = "unsupported-realtime-fixed:pass-through"
+        else:
+            rated = self._rate(
+                record.model_id,
+                record.modality,
+                record.provider,
+                record.cost_usd,
+                0.0,
+                0.0,
+            )
+            record.rated_price_usd = rated.rated_price_usd
+            record.rate_rule = rated.rate_rule
 
     @staticmethod
     def _provider_of(model_id: str) -> str:
@@ -318,6 +360,9 @@ class CostTracker:
             cached_input_units=cached_input_units,
             cost_usd=cost,
             pricing_source=pricing_source,
+            metadata={
+                "pricing_complete": resolved.raw is not None and not resolved.unrated
+            },
             rated_price_usd=rated.rated_price_usd,
             rate_rule=rated.rate_rule,
             ttfb_ms=ttfb_ms,

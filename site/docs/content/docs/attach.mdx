@@ -38,6 +38,40 @@ LLM and TTS units come from the framework's own usage metrics. STT is derived fr
 `attach()` picks its framework from the type of the object you pass. Anything that is not a real `AgentSession` or `PipelineTask` records nothing, silently.
 </Callout>
 
+## Realtime and GPT-Live
+
+LiveKit realtime models emit metrics on `AgentSession`. VoiceGateway preserves the
+provider and model on each metric, so a GPT-Live voice session and its Responses
+backend appear as separate services.
+
+GPT-Live reports incremental session seconds, including a final usage update at
+close. These become `audio_seconds` in accounting quantities. VoiceGateway
+reconciles against cumulative `session.usage` and deduplicates repeated metric IDs.
+Keep the normal session shutdown path so the final usage can arrive.
+
+For the exact `openai/gpt-live-1` model, a dated fallback estimates voice cost at
+$0.05 per minute, billed per second, from
+[OpenAI's model pricing](https://developers.openai.com/api/docs/models/gpt-live-1)
+(checked October 5, 2026). Backend model tokens are additional. The exact `openai/gpt-5.6-luna`
+backend also has a dated official fallback: $0.20 per million input tokens,
+$0.02 per million cache reads, $0.25 per million cache writes, and $1.20 per
+million output tokens. Prompts above 272,000 input tokens apply the published
+2x input and 1.5x output multipliers. Native cache-write counts are preserved;
+reasoning tokens are already included in output tokens. This estimate
+excludes transport, hosting, taxes, and account-specific discounts. Future model
+names do not inherit this rate.
+
+Token-based realtime models keep text, audio, and cached usage separate. Missing
+quantities or rates set `metadata.pricing_complete` to `false`; a legacy zero cost
+column then means unpriced usage, not free usage. `InsideCall.snapshot()` exposes
+allowlisted `measurements` and `pricing_complete` for visitor interfaces.
+
+Unavailable native first-token times, including `-1`, remain null. They are not
+zero-latency observations or end-to-end response measurements. Legacy fixed-token
+sell-price cards cannot represent duration or mixed audio pricing: those rows are
+marked `unsupported-realtime-fixed:pass-through`. Use the dimension-specific
+accounting ledger for those contracts. Cost-plus cards still apply.
+
 ## Revision separates builds
 
 `revision` names the build of this agent's configuration: the prompt, the models, the voice. Pass a git sha, a content hash or a semver string. Two revisions live in the same window stay separate instead of blending into one p95. Leave it unset rather than inventing one; a made-up revision splits numbers that belong together.

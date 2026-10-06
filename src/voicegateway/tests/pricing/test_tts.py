@@ -27,8 +27,8 @@ def test_pricing_source_format() -> None:
 
 
 def test_cartesia_priced_correctly() -> None:
-    """1000 chars at voice-prices' Cartesia rate = $0.04."""
-    assert tts.calculate_tts_cost("cartesia/sonic-3", 1000) == Decimal("0.04")
+    """1000 chars at voice-prices' Cartesia rate = $0.05."""
+    assert tts.calculate_tts_cost("cartesia/sonic-3", 1000) == Decimal("0.05")
 
 
 def test_openai_tts1_priced_correctly() -> None:
@@ -57,8 +57,8 @@ def test_zero_chars_returns_zero_decimal() -> None:
 
 
 def test_character_count_scales_linearly() -> None:
-    """100 chars is one tenth of 1000 chars: $0.04 / 10 = $0.004."""
-    assert tts.calculate_tts_cost("cartesia/sonic-3", 100) == Decimal("0.004")
+    """100 chars is one tenth of 1000 chars: $0.05 / 10 = $0.005."""
+    assert tts.calculate_tts_cost("cartesia/sonic-3", 100) == Decimal("0.005")
 
 
 def test_negative_chars_raises() -> None:
