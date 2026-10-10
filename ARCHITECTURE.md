@@ -1,13 +1,13 @@
 # Architecture
 
 <!--
-How VoiceGateway is built. Product intent lives in PRODUCT.md; visual design lives in DESIGN.md.
+How VoiceGateway is built. The tables and lists below were drafted from the code; the lines starting with TODO are yours to write. Product intent lives in PRODUCT.md; visual design lives in DESIGN.md.
 Each major choice links to a record in docs/decisions/.
 -->
 
 ## Overview
 
-A Python package with two halves. The **agent side** (`attach()`, `guard()`) runs inside the user's voice agent, turns framework metrics into priced records and writes them through a sink. The **server side** (`voicegw serve`) is one FastAPI app that stores those records, ingests LiveKit webhooks and node samples, and serves the dashboard, the `/v1/*` API and the MCP server.
+TODO: Two or three sentences on the shape of the system, in your words. Name the two halves (what runs inside the user's agent, what runs in `voicegw serve`) and how they meet.
 
 ## Components
 
@@ -100,7 +100,7 @@ The full end-to-end model is in docs/specs/2026-07-29-end-to-end-profiling-scope
 
 ## Non-Functional Targets
 
-Not yet committed as numbers. The open targets for V1 are tracked in docs/progress.md: overhead `attach()` adds to a turn, dashboard load time, and reconciliation error against invoices.
+TODO: The numbers V1 must hit, each with how it is measured. Example: "`attach()` adds under 1 ms per turn (measured by a benchmark in tools/benchmarks/)."
 
 ## Security and Privacy
 
