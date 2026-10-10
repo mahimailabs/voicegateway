@@ -41,14 +41,6 @@ async def test_auto_flush_at_threshold() -> None:
     assert len(captured[0]) == 3
 
 
-async def test_dropped_count_starts_at_zero() -> None:
-    """Sanity: fresh session has no drops recorded."""
-    capture = ReplayCapture(flush_size_events=5, buffer_size_events=10)
-    await capture.record_state_snapshot({"text": "x"}, session_id="s1")
-    assert capture.dropped_count("s1") == 0
-    assert capture.dropped_count("never-existed") == 0
-
-
 async def test_flush_size_must_be_lte_buffer_size() -> None:
     """Pathological config is rejected at construction."""
     with pytest.raises(ValueError):

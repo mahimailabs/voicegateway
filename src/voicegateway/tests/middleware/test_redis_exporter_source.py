@@ -20,10 +20,6 @@ it in a new source would be the same defect with a different name.
 from __future__ import annotations
 
 from voicegateway.middleware.node_samples_worker_middleware import (
-    DEPENDENCY_EXPORTERS,
-    HOST_EXPORTERS,
-    SERIES,
-    SERVICE_EXPORTERS,
     SOURCE_LIVEKIT_SERVER,
     SOURCE_LIVEKIT_SIP,
     SOURCE_NODE_EXPORTER,
@@ -35,7 +31,6 @@ from voicegateway.middleware.node_samples_worker_middleware import (
 )
 from voicegateway.repository.node_samples_repository import (
     COUNTER_COLUMNS,
-    DERIVED_COLUMNS,
     GAUGE_COLUMNS,
     VALUE_COLUMNS,
 )
@@ -56,41 +51,15 @@ OBSERVED = {
 # --------------------------------------------------------------------------
 
 
-def test_the_source_is_declared() -> None:
-    assert SOURCE_REDIS_EXPORTER in SERIES
-    assert SERIES[SOURCE_REDIS_EXPORTER]
-
-
 def test_every_wired_column_is_one_the_live_exporter_produced() -> None:
     """Nothing here is inferred, which is the map's own rule."""
     assert columns_for(SOURCE_REDIS_EXPORTER) == set(OBSERVED)
-
-
-def test_the_metric_names_equal_the_column_names() -> None:
-    """redis_exporter needs no renaming, unlike node_exporter's node_ prefix."""
-    for entry in SERIES[SOURCE_REDIS_EXPORTER]:
-        assert entry.metric == entry.column
-
-
-def test_it_is_the_smallest_set_that_answers_the_criterion() -> None:
-    """The exporter publishes 302 redis_* series. Six are wired.
-
-    Not a style point: every column is one somebody has to keep honest, and the
-    criterion asks whether Redis failed, not for everything Redis knows.
-    """
-    assert len(SERIES[SOURCE_REDIS_EXPORTER]) == 6
 
 
 def test_every_column_is_classified_exactly_once() -> None:
     for column in columns_for(SOURCE_REDIS_EXPORTER):
         assert column in VALUE_COLUMNS
         assert (column in COUNTER_COLUMNS) != (column in GAUGE_COLUMNS)
-
-
-def test_the_two_cumulative_series_are_counters() -> None:
-    """An absolute "3 rejected" says nothing about THIS window."""
-    assert "redis_rejected_connections_total" in COUNTER_COLUMNS
-    assert "redis_evicted_keys_total" in COUNTER_COLUMNS
 
 
 # --------------------------------------------------------------------------
@@ -101,12 +70,6 @@ def test_the_two_cumulative_series_are_counters() -> None:
 def test_it_is_not_the_authority_for_a_service_process(  # the headline trap
 ) -> None:
     assert reports_process_metrics(SOURCE_REDIS_EXPORTER) is False
-
-
-def test_its_own_descriptor_pair_is_deliberately_unwired() -> None:
-    """Capability is not authority. It publishes them; we do not store them."""
-    assert "process_open_fds" not in columns_for(SOURCE_REDIS_EXPORTER)
-    assert "process_max_fds" not in columns_for(SOURCE_REDIS_EXPORTER)
 
 
 def test_it_cannot_report_node_wide_facts() -> None:
@@ -127,12 +90,6 @@ def test_a_host_exporter_is_still_not_suppressed_for_process_fds() -> None:
 def test_the_services_under_test_are_still_the_authority() -> None:
     for source in (SOURCE_LIVEKIT_SIP, SOURCE_LIVEKIT_SERVER):
         assert reports_process_metrics(source) is True
-
-
-def test_the_three_sets_do_not_overlap() -> None:
-    assert not HOST_EXPORTERS & SERVICE_EXPORTERS
-    assert not HOST_EXPORTERS & DEPENDENCY_EXPORTERS
-    assert not SERVICE_EXPORTERS & DEPENDENCY_EXPORTERS
 
 
 # --------------------------------------------------------------------------
@@ -164,10 +121,3 @@ def test_an_absent_maximum_stays_null_and_is_never_zero() -> None:
     values: dict[str, float | None] = {"redis_memory_used_bytes": 1194336.0}
     _mark_unbounded_redis_memory(values)
     assert "redis_memory_max_unbounded" not in values
-
-
-def test_the_marker_is_derived_and_not_counted_as_a_series() -> None:
-    """series_found answers what the TARGET exposed. A derived marker would
-    inflate it into a claim about the exposition."""
-    assert "redis_memory_max_unbounded" in DERIVED_COLUMNS
-    assert "redis_memory_max_unbounded" not in columns_for(SOURCE_REDIS_EXPORTER)

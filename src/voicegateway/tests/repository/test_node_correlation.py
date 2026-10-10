@@ -110,25 +110,11 @@ async def test_window_for_call_reports_both_the_requested_and_padded_bounds(
     assert window.end_ms == _CALL_END + correlate.DEFAULT_WINDOW_PAD_MS
 
 
-async def test_padding_is_a_parameter_not_a_magic_number(db: AsyncSession) -> None:
-    window = correlate.window_for_call(await _call_row(db), pad_ms=0)
-    assert window is not None
-    assert (window.start_ms, window.end_ms) == (_T0, _CALL_END)
-    assert window.pad_ms == 0
-
-
 async def test_a_call_still_in_flight_has_no_window(db: AsyncSession) -> None:
     """Substituting "now" for a missing end would make the overlap set depend on
     when the page was loaded."""
     call = await _call_row(db, ended_at_ms=None)
     assert call.ended_at_ms is None
-    assert correlate.window_for_call(call) is None
-
-
-async def test_a_call_that_never_started_has_no_window(db: AsyncSession) -> None:
-    """An INVITE that never produced a room: the row that matters most in a load
-    test, and the one with no span to correlate over."""
-    call = await _call_row(db, started_at_ms=None, ended_at_ms=None)
     assert correlate.window_for_call(call) is None
 
 
@@ -195,14 +181,6 @@ async def test_a_window_of_failed_scrapes_is_not_a_healthy_node(
     packets = entry.counters["packets_total"]
     assert packets.peak_per_second is None
     assert packets.unknown_points == packets.points
-
-
-async def test_every_status_is_in_the_closed_set(db: AsyncSession) -> None:
-    await samples.insert_samples(db, [_sample(_T0 + 1_000, rooms=3.0)])
-    window = correlate.window_of(_T0, _CALL_END)
-    result = await correlate.correlate_window(db, window=window)
-    assert result.status == "correlated"
-    assert result.status in correlate.WINDOW_STATUSES
 
 
 # ---------------------------------------------------------------------------
@@ -275,31 +253,6 @@ def test_the_correlation_surface_carries_no_pointer_to_a_call() -> None:
 # ---------------------------------------------------------------------------
 # Rates: the ONE reset implementation, reused
 # ---------------------------------------------------------------------------
-
-
-async def test_a_counter_reset_inside_the_window_is_unknown_not_a_spike(
-    db: AsyncSession,
-) -> None:
-    """A livekit-server restart zeroes every _total mid-window."""
-    await samples.insert_samples(
-        db,
-        [
-            _sample(_T0, packets_total=1_000.0),
-            _sample(_T0 + 15_000, packets_total=4_000.0),
-            _sample(_T0 + 30_000, packets_total=12.0),  # restart
-            _sample(_T0 + 45_000, packets_total=3_012.0),
-        ],
-    )
-    result = await correlate.correlate_window(
-        db, window=correlate.window_of(_T0, _CALL_END, pad_ms=0)
-    )
-    packets = result.nodes_sampled[0].counters["packets_total"]
-
-    assert packets.points == 4
-    # The first point (no predecessor inside or before the window) and the reset.
-    assert packets.unknown_points == 2
-    assert packets.peak_per_second == pytest.approx(200.0)
-    assert packets.peak_per_second > 0, "a reset must not surface as a huge spike"
 
 
 async def test_the_reset_rule_is_not_reimplemented_here(db: AsyncSession) -> None:

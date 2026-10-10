@@ -12,24 +12,17 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
 from voicegateway.services.storage_service import StorageService
 
 
-def test_embedded_storage_quiets_unconfigured_aiosqlite_logger(tmp_path):
-    lg = logging.getLogger("aiosqlite")
+@pytest.mark.parametrize("name", ["aiosqlite", "alembic"])
+def test_embedded_storage_quiets_unconfigured_dependency_loggers(tmp_path, name):
+    lg = logging.getLogger(name)
     lg.setLevel(logging.NOTSET)  # default: inherits root (DEBUG under console mode)
     try:
         StorageService(tmp_path / "x.db")
-        assert lg.level == logging.WARNING
-    finally:
-        lg.setLevel(logging.NOTSET)
-
-
-def test_embedded_storage_quiets_unconfigured_alembic_logger(tmp_path):
-    lg = logging.getLogger("alembic")
-    lg.setLevel(logging.NOTSET)
-    try:
-        StorageService(tmp_path / "y.db")
         assert lg.level == logging.WARNING
     finally:
         lg.setLevel(logging.NOTSET)

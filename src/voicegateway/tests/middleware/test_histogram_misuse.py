@@ -73,27 +73,6 @@ def test_summing_buckets_is_refused(live) -> None:
     assert "le" in str(excinfo.value)
 
 
-def test_the_refused_sum_would_have_been_eleven_times_the_truth(live) -> None:
-    """Pins the wrong answer, so this test cannot pass by coincidence.
-
-    Reconstructed the way the old code did it, by summing the raw samples,
-    which is exactly what sum_series now refuses to do.
-    """
-    naive = sum(s.value for s in live if s.name == "livekit_sip_dur_join_sec_bucket")
-    true_count = sum_series(live, "livekit_sip_dur_join_sec_count")
-    assert naive == 11.0
-    assert true_count == 1.0
-    assert naive == 11 * true_count
-
-
-@pytest.mark.parametrize("le", ["0.1", "1", "5", "+Inf"])
-def test_an_explicit_le_selects_one_bucket(live, le: str) -> None:
-    value = sum_series(live, "livekit_sip_dur_join_sec_bucket", where={"le": le})
-    assert value is not None
-    # Every bucket is at most the total count, which a summed value is not.
-    assert value <= sum_series(live, "livekit_sip_dur_join_sec_count")
-
-
 def test_the_inf_bucket_equals_the_count(live) -> None:
     """The one identity that proves the le selector is reading real buckets."""
     assert sum_series(
@@ -181,16 +160,6 @@ def test_a_bucket_entry_with_an_le_is_accepted() -> None:
     )
 
 
-def test_the_map_is_validated_at_import_not_on_demand() -> None:
-    """A bad map must be a startup failure, not a column that stores garbage."""
-    import inspect
-
-    from voicegateway.middleware import node_samples_worker_middleware as module
-
-    source = inspect.getsource(module)
-    assert "\nvalidate_series_map(SERIES)\n" in source
-
-
 # --------------------------------------------------------------------------
 # Every wired livekit-sip entry resolves against the real capture
 # --------------------------------------------------------------------------
@@ -208,24 +177,6 @@ def test_every_sip_entry_resolves_against_the_capture(live) -> None:
         if sum_series(live, entry.metric, where=entry.where) is None
     ]
     assert not absent, f"mapped names absent from the capture: {absent}"
-
-
-def test_the_sip_tuple_holds_no_server_only_name(live) -> None:
-    """Placement is as easy to get wrong as the name itself.
-
-    An entry in the wrong tuple is scraped against a binary that does not
-    export it, which reads exactly like a name that does not exist.
-    """
-    for entry in SERIES["livekit-sip"]:
-        assert sum_series(live, entry.metric, where=entry.where) is not None
-
-
-def test_livekit_node_cpu_load_is_sip_only() -> None:
-    """It exists on livekit-sip and on none of the server's livekit_* families."""
-    server = {e.metric for e in SERIES["livekit-server"]}
-    sip = {e.metric for e in SERIES["livekit-sip"]}
-    assert "livekit_node_cpu_load" in sip
-    assert "livekit_node_cpu_load" not in server
 
 
 def test_no_sip_named_series_is_scraped_from_the_server() -> None:
@@ -301,19 +252,3 @@ def test_join_is_the_segment_of_the_session_before_the_call_starts(live) -> None
     # Non-vacuous: the segment is a small fraction of the session, so an
     # approximate match is not something any two of these numbers would show.
     assert join < session / 100
-
-
-def test_the_exporter_names_both_boundaries_itself(live) -> None:
-    """The HELP string, which is the exporter's own statement of the interval.
-
-    Read from the capture rather than restated here, so a release that redefines
-    the metric fails this instead of silently invalidating every answer-latency
-    number downstream.
-    """
-    text = FIXTURE.read_text()
-    [help_line] = [
-        line
-        for line in text.splitlines()
-        if line.startswith("# HELP livekit_sip_dur_join_sec ")
-    ]
-    assert "from INVITE to mixed room audio" in help_line

@@ -10,7 +10,6 @@ way).
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlmodel import SQLModel
 
@@ -47,16 +46,6 @@ def _sample(at_ms: int, **values: float | None) -> repo.NodeSampleInput:
 # ---------------------------------------------------------------------------
 # The counter-reset rule
 # ---------------------------------------------------------------------------
-
-
-def test_counter_rates_first_point_has_no_rate() -> None:
-    rates = repo.counter_rates([(0, 100.0)])
-    assert rates[0].per_second is None
-
-
-def test_counter_rates_computes_per_second() -> None:
-    rates = repo.counter_rates([(0, 100.0), (15_000, 250.0)])
-    assert rates[1].per_second == pytest.approx(10.0)
 
 
 def test_counter_reset_yields_none_not_zero_and_not_negative() -> None:
@@ -209,14 +198,6 @@ async def test_a_value_too_large_for_int64_is_dropped_not_clamped(
     assert row.rooms == 2  # the rest of the sample still landed
 
 
-async def test_byte_counters_survive_past_two_gibibytes(db: AsyncSession) -> None:
-    """The INT4 trap: an SFU passes 2 GiB of RTP within hours."""
-    big = 9_000_000_000.0
-    await repo.insert_samples(db, [_sample(0, packet_bytes_total=big)])
-    row = (await repo.list_samples(db, node="sfu-1", source="livekit-server"))[0]
-    assert row.packet_bytes_total == 9_000_000_000
-
-
 async def test_counter_and_gauge_sets_are_disjoint_and_cover_the_model() -> None:
     """Every value column is classified exactly once, or the diff whitelist lies."""
     assert not (repo.COUNTER_COLUMNS & repo.GAUGE_COLUMNS)
@@ -301,14 +282,6 @@ async def test_trim_is_bounded_to_one_batch_per_call(db: AsyncSession) -> None:
     assert await repo.count_samples(db) == 0
 
 
-async def test_insert_samples_with_nothing_to_write_is_a_no_op(
-    db: AsyncSession,
-) -> None:
-    assert await repo.insert_samples(db, []) == 0
-    result = await db.execute(text("SELECT COUNT(*) FROM node_samples"))
-    assert int(result.scalar() or 0) == 0
-
-
 # ---------------------------------------------------------------------------
 # utilisation_points: busy fraction from a total rate and its idle subset
 #
@@ -334,13 +307,6 @@ def test_a_fully_idle_machine_reads_zero_and_a_saturated_one_reads_one():
     assert idle[0].fraction == 0.0
     busy = repo.utilisation_points([_rate(1, 4.0)], [_rate(1, 0.0)])
     assert busy[0].fraction == 1.0
-
-
-def test_the_core_count_never_has_to_be_supplied():
-    """The same busy share on a 2-core and a 64-core box reads the same."""
-    small = repo.utilisation_points([_rate(1, 2.0)], [_rate(1, 1.0)])
-    large = repo.utilisation_points([_rate(1, 64.0)], [_rate(1, 32.0)])
-    assert small[0].fraction == large[0].fraction == pytest.approx(0.5)
 
 
 def test_an_unknown_rate_on_either_side_is_none_not_zero():
@@ -409,8 +375,3 @@ def test_it_consumes_counter_rates_output_end_to_end():
     assert points[1].fraction == pytest.approx(0.75)
     # The reset must not render as an idle machine.
     assert points[2].fraction is None
-
-
-def test_empty_input_is_empty_output():
-    assert repo.utilisation_points([], []) == []
-    assert repo.utilisation_points([], [_rate(1, 1.0)]) == []

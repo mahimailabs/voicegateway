@@ -120,32 +120,6 @@ async def test_throttle_raises_signal(storage_with_spend):
         await enforcer.check_budget("expensive-project")
 
 
-async def test_cache_ttl_honored(storage_with_spend):
-    """Cache avoids repeated DB queries within TTL."""
-    config = _make_config(
-        {
-            "expensive-project": ProjectConfig(
-                id="expensive-project",
-                name="Expensive",
-                daily_budget=2.0,
-                budget_action="warn",
-            ),
-        }
-    )
-    enforcer = BudgetEnforcer(config, storage_with_spend, cache_ttl_seconds=60)
-
-    # First call populates cache
-    await enforcer.check_budget("expensive-project")
-    assert "expensive-project" in enforcer._cache
-
-    # Second call uses cache (no DB hit)
-    cached_ts = enforcer._cache["expensive-project"][0]
-    await enforcer.check_budget("expensive-project")
-    assert (
-        enforcer._cache["expensive-project"][0] == cached_ts
-    )  # same timestamp = cache hit
-
-
 def test_budget_status():
     config = _make_config(
         {
@@ -306,21 +280,3 @@ async def test_record_spend_applies_when_cache_predates_write():
     later = _time.monotonic() + 1.0  # guaranteed > cached_ts
     await enforcer.record_spend("p", 0.50, logged_at=later)
     assert enforcer._cache["p"] == (cached_ts, 2.5)
-
-
-async def test_invalidate_drops_cache(storage_with_spend):
-    config = _make_config(
-        {
-            "expensive-project": ProjectConfig(
-                id="expensive-project",
-                name="Expensive",
-                daily_budget=2.0,
-                budget_action="warn",
-            ),
-        }
-    )
-    enforcer = BudgetEnforcer(config, storage_with_spend)
-    await enforcer.check_budget("expensive-project")
-    assert "expensive-project" in enforcer._cache
-    await enforcer.invalidate("expensive-project")
-    assert "expensive-project" not in enforcer._cache

@@ -216,14 +216,6 @@ def test_the_httpx_logger_is_not_muzzled() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_a_malformed_entry_is_skipped_not_raised(caplog) -> None:
-    """A typo must not take down a process that is also serving the dashboard."""
-    with caplog.at_level(logging.WARNING):
-        targets = targets_from_env(_env(f"garbage-without-an-equals-{AUTHED_URL}"))
-    assert targets == []
-    assert caplog.records
-
-
 def test_the_warning_for_a_malformed_entry_hides_the_credential(caplog) -> None:
     """The trap. A skipped entry is where a credential is MOST likely present.
 

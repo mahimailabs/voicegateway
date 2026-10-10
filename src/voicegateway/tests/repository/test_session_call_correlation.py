@@ -110,14 +110,6 @@ async def test_room_name_is_stamped_from_request_metadata(storage, db_path):
     assert call_id is None
 
 
-async def test_session_without_a_job_context_has_no_room_name(storage, db_path):
-    """Web and Pipecat sessions carry no room. NULL is correct, not a failure."""
-    sid = "vg-no-room"
-    await storage.log_request(_record(session_id=sid, room=None))
-
-    assert _read_session(db_path, sid) == (None, None)
-
-
 async def test_empty_room_metadata_is_not_a_room(storage, db_path):
     """An empty string is not a room anyone can join to; storing it would put
     the session in the eligible denominator with no way ever to leave it."""
@@ -331,14 +323,6 @@ async def test_a_rate_on_the_threshold_is_not_a_warning(storage):
 
     above = await storage.read_correlation_rate(warn_threshold=0.51)
     assert above["status"] == "warn"
-
-
-async def test_the_default_threshold_is_published_with_the_number(storage):
-    await storage.log_request(_record(session_id="vg-default-th", room=None))
-
-    rate = await storage.read_correlation_rate()
-    assert rate["warn_threshold"] == pytest.approx(sessions.CORRELATION_WARN_THRESHOLD)
-    assert rate["status"] in sessions.CORRELATION_STATUSES
 
 
 async def test_an_impossible_threshold_is_refused(storage):

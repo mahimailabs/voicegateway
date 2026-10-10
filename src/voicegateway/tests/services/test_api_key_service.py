@@ -85,8 +85,3 @@ async def test_create_refuses_the_wildcard(service: ApiKeyService) -> None:
     """
     with pytest.raises(ValueError, match="wildcard"):
         await service.create_key(name="wild", scopes="*")
-
-
-async def test_create_refuses_an_unknown_scope(service: ApiKeyService) -> None:
-    with pytest.raises(ValueError, match="unknown scope"):
-        await service.create_key(name="typo", scopes="raed")

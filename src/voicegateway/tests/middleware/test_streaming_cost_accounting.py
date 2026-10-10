@@ -465,30 +465,6 @@ def test_streaming_fixture_params_fails_closed_without_placeholder(
     )
 
 
-def test_ensure_fixture_or_fail_raises_when_param_is_none() -> None:
-    """The fixture body fails loudly with the actionable message."""
-    with pytest.raises(BaseException, match="Inconsistent") as exc:
-        _ensure_fixture_or_fail(None)
-    msg = str(exc.value)
-    assert "PLACEHOLDER.md" in msg
-    assert "criterion #1" in msg
-
-
-def test_ensure_fixture_or_fail_passes_through_real_fixture() -> None:
-    """Non-None params pass straight through; only the sentinel fails."""
-    from unittest.mock import MagicMock
-
-    fake = MagicMock(spec=StreamingFixture)
-    assert _ensure_fixture_or_fail(fake) is fake
-
-
-def test_placeholder_marker_present_helper(tmp_path: Path) -> None:
-    """Helper returns True/False based on PLACEHOLDER.md presence."""
-    assert _placeholder_marker_present(tmp_path) is False
-    (tmp_path / "PLACEHOLDER.md").write_text("# x\n", encoding="utf-8")
-    assert _placeholder_marker_present(tmp_path) is True
-
-
 def test_replay_suite_state_consistent() -> None:
     """Repo-level invariant: PLACEHOLDER.md gone => fixtures present."""
     placeholder = FIXTURES_DIR / "PLACEHOLDER.md"

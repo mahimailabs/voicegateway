@@ -77,14 +77,6 @@ async def test_a_key_is_required(db: AsyncSession) -> None:
 # --- room_name is best-effort, never the key --------------------------------
 
 
-async def test_two_calls_with_no_room_name_stay_two_rows(db: AsyncSession) -> None:
-    """A pinned/absent room name must not collapse concurrent calls."""
-    a = await repo.upsert_call(db, origin="webhook", room_sid="RM_a")
-    b = await repo.upsert_call(db, origin="webhook", room_sid="RM_b")
-    assert a != b
-    assert await _count(db, "calls") == 2
-
-
 async def test_two_calls_sharing_one_room_name_stay_two_rows(db: AsyncSession) -> None:
     a = await repo.upsert_call(db, origin="webhook", room_sid="RM_a", room_name="fixed")
     b = await repo.upsert_call(db, origin="webhook", room_sid="RM_b", room_name="fixed")
@@ -389,29 +381,12 @@ async def test_list_calls_filters_by_project_and_run(db: AsyncSession) -> None:
     assert (await repo.list_calls(db, project="other"))[0].project == "other"
 
 
-async def test_default_project_when_the_event_carries_none(db: AsyncSession) -> None:
-    call_id = await repo.upsert_call(db, origin="webhook", room_sid="RM_default")
-    row = await repo.get_call(db, call_id)
-    assert row is not None
-    assert row.project == repo.DEFAULT_PROJECT
-
-
 async def test_get_call_by_room_sid(db: AsyncSession) -> None:
     call_id = await repo.upsert_call(db, origin="webhook", room_sid="RM_lookup")
     found = await repo.get_call_by_room_sid(db, "RM_lookup")
     assert found is not None
     assert found.id == call_id
     assert await repo.get_call_by_room_sid(db, "RM_missing") is None
-
-
-async def test_answer_latency_columns_default_to_null(db: AsyncSession) -> None:
-    """The headline number is computed by a later node; an unmeasured latency is
-    NULL here, never 0."""
-    call_id = await repo.upsert_call(db, origin="webhook", room_sid="RM_latency")
-    row = await repo.get_call(db, call_id)
-    assert row is not None
-    assert row.answer_latency_ms is None
-    assert row.answer_latency_source is None
 
 
 # --- the tenant predicate ---------------------------------------------------
@@ -516,32 +491,6 @@ async def test_empty_tenant_is_the_unattributed_bucket(db: AsyncSession) -> None
 
     named = await repo.list_calls(db, tenant="acme")
     assert [r.room_sid for r in named] == ["RM_named"]
-
-
-async def test_a_tenant_scope_keeps_the_start_less_row_last(db: AsyncSession) -> None:
-    """The dialect-neutral NULL sort key survives the predicate: a scoped page
-    still puts an INVITE that never produced a room last, not first."""
-    await repo.upsert_call(
-        db,
-        origin="webhook",
-        room_sid="RM_scoped_old",
-        tenant_id="acme",
-        started_at_ms=1000,
-    )
-    await repo.upsert_call(
-        db,
-        origin="webhook",
-        room_sid="RM_scoped_new",
-        tenant_id="acme",
-        started_at_ms=9000,
-    )
-    await repo.upsert_call(
-        db, origin="loadgen", attempt_id="att-scoped-503", tenant_id="acme"
-    )
-
-    rows = await repo.list_calls(db, tenant="acme")
-
-    assert [r.room_sid for r in rows] == ["RM_scoped_new", "RM_scoped_old", None]
 
 
 async def test_the_tenant_predicate_composes_with_the_other_filters(

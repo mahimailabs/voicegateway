@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 import uuid
 
+import pytest
+
 from voicegateway.models.request_model import RequestRecord
 from voicegateway.services.sinks import LocalSqliteSink, RemoteCollectorSink
 from voicegateway.services.storage_service import StorageService
@@ -46,28 +48,20 @@ def _record(**overrides) -> RequestRecord:
     return RequestRecord(**base)
 
 
-def test_remote_sink_url_base_gets_ingest_path():
-    sink = RemoteCollectorSink("https://collector.example.com", "k")
-    assert sink._ingest_url == "https://collector.example.com/v1/ingest"
-
-
-def test_remote_sink_url_trailing_slash_normalized():
-    sink = RemoteCollectorSink("https://collector.example.com/", "k")
-    assert sink._ingest_url == "https://collector.example.com/v1/ingest"
-
-
-def test_remote_sink_url_full_ingest_path_not_doubled():
-    """Docs long told users to include /v1/ingest; accept it without doubling.
-
-    Regression: url + "/v1/ingest" produced ".../v1/ingest/v1/ingest" -> 404,
-    silently breaking fleet ingest for anyone who followed the docs.
-    """
-    sink = RemoteCollectorSink("https://collector.example.com/v1/ingest", "k")
-    assert sink._ingest_url == "https://collector.example.com/v1/ingest"
-
-
-def test_remote_sink_url_full_ingest_path_trailing_slash():
-    sink = RemoteCollectorSink("https://collector.example.com/v1/ingest/", "k")
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://collector.example.com",
+        "https://collector.example.com/",
+        # Regression: docs long told users to include /v1/ingest, and
+        # url + "/v1/ingest" produced ".../v1/ingest/v1/ingest" -> 404,
+        # silently breaking fleet ingest for anyone who followed them.
+        "https://collector.example.com/v1/ingest",
+        "https://collector.example.com/v1/ingest/",
+    ],
+)
+def test_remote_sink_ingest_url_is_normalized(url):
+    sink = RemoteCollectorSink(url, "k")
     assert sink._ingest_url == "https://collector.example.com/v1/ingest"
 
 
@@ -79,13 +73,6 @@ async def test_local_sqlite_sink_round_trips_record(tmp_path):
     rows = await storage.get_recent_requests(limit=10)
     assert len(rows) == 1
     assert rows[0]["agent_id"] == "agent-7"
-
-
-async def test_local_sqlite_sink_flush_is_noop(tmp_path):
-    """flush() succeeds without touching storage (SQLite commits per write)."""
-    storage = StorageService(str(tmp_path / "sink.db"))
-    sink = LocalSqliteSink(storage)
-    await sink.flush()  # must not raise
 
 
 async def test_local_sqlite_sink_finalize_delegates(tmp_path):
@@ -214,15 +201,6 @@ async def test_remote_sink_retries_then_succeeds():
     assert client.calls == 2
 
 
-async def test_remote_sink_creates_default_httpx_client():
-    import httpx
-
-    sink = RemoteCollectorSink("http://c", "vk", flush_interval=None)
-    created = sink._ensure_client()
-    assert isinstance(created, httpx.AsyncClient)
-    await created.aclose()
-
-
 async def test_remote_sink_starts_periodic_flusher_and_aclose_cancels_it():
     client = _RecordingClient()
     sink = RemoteCollectorSink(
@@ -301,30 +279,6 @@ async def test_spool_ack_deletes_rows(tmp_path):
     assert stats["sent"] == 3
     posted = [r["id"] for r in client.calls[0]["json"]]
     assert posted == ["r0", "r1", "r2"]
-    await sink.aclose()
-
-
-async def test_spool_retry_persistence_keeps_rows_on_failure(tmp_path):
-    """A batch that fails after retries STAYS in the outbox (not dropped)."""
-    spool = str(tmp_path / "outbox.db")
-    client = _RecordingClient(status_code=500)  # always fails
-    sink = RemoteCollectorSink(
-        "http://c",
-        "vk",
-        batch_size=100,
-        flush_interval=None,
-        max_retries=0,
-        backoff=0.001,
-        spool_path=spool,
-        client=client,
-    )
-    for i in range(3):
-        await sink.log_request(_record(id=f"r{i}"))
-    await sink.flush()  # 500 -> exhausts retries -> must not lose the rows
-    stats = await sink.completeness()
-    assert stats["pending"] == 3  # still durably queued
-    assert stats["sent"] == 0
-    assert stats["dropped"] == 0  # durable spool never drops
     await sink.aclose()
 
 

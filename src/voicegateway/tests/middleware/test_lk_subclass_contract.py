@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from livekit.agents import llm as lk_llm
 from livekit.agents import stt as lk_stt
 from livekit.agents import tts as lk_tts
@@ -61,68 +62,39 @@ def _make_cost_tracker() -> MagicMock:
 
 
 # ---------------------------------------------------------------------------
-# isinstance gate — the literal contract LK's agent_activity checks.
+# isinstance gate + event bridge, per modality.
+#
+# LK's agent_activity._start_session only attaches metrics_collected listeners
+# to instances passing isinstance(x, lk_stt.STT / lk_llm.LLM / lk_tts.TTS).
+# Without that gate, SpeechHandle never observes speech completion and the 5s
+# INTERRUPTION_TIMEOUT cancels every speech (the AC-2 regression). The bridge
+# must then forward events emitted on the wrapped plugin to listeners attached
+# to the wrapper.
 # ---------------------------------------------------------------------------
 
 
-def test_instrumented_stt_isinstance_of_lk_stt() -> None:
-    wrapper = InstrumentedSTT(
-        wrapped=_RealSTT(),
+@pytest.mark.parametrize(
+    ("wrapper_cls", "fake_cls", "lk_base"),
+    [
+        (InstrumentedSTT, _RealSTT, lk_stt.STT),
+        (InstrumentedLLM, _RealLLM, lk_llm.LLM),
+        (InstrumentedTTS, _RealTTS, lk_tts.TTS),
+    ],
+)
+def test_wrapper_is_lk_instance_and_forwards_metrics_and_error(
+    wrapper_cls: type, fake_cls: type, lk_base: type
+) -> None:
+    wrapped = fake_cls()
+    wrapper = wrapper_cls(
+        wrapped=wrapped,
         model_id="t/m",
         provider="t",
         project="default",
         cost_tracker=_make_cost_tracker(),
         storage=None,
     )
-    assert isinstance(wrapper, lk_stt.STT), (
-        "agent_activity._start_session lines 669-671 only attach the "
-        "metrics_collected listener to STT instances passing this gate. "
-        "Without the subclass relation, every STT request would skip "
-        "metrics + error event handling under the real LK runtime."
-    )
+    assert isinstance(wrapper, lk_base)
 
-
-def test_instrumented_llm_isinstance_of_lk_llm() -> None:
-    wrapper = InstrumentedLLM(
-        wrapped=_RealLLM(),
-        model_id="t/m",
-        provider="t",
-        project="default",
-        cost_tracker=_make_cost_tracker(),
-        storage=None,
-    )
-    assert isinstance(wrapper, lk_llm.LLM), (
-        "agent_activity._start_session lines 665-667 only attach the "
-        "metrics_collected listener to LLM instances passing this gate."
-    )
-
-
-def test_instrumented_tts_isinstance_of_lk_tts() -> None:
-    wrapper = InstrumentedTTS(
-        wrapped=_RealTTS(),
-        model_id="t/m",
-        provider="t",
-        project="default",
-        cost_tracker=_make_cost_tracker(),
-        storage=None,
-    )
-    assert isinstance(wrapper, lk_tts.TTS), (
-        "agent_activity._start_session lines 673-675 only attach the "
-        "metrics_collected listener to TTS instances passing this gate. "
-        "Without it, SpeechHandle never observes speech completion and "
-        "the 5s INTERRUPTION_TIMEOUT cancels every speech under real "
-        "audio (the AC-2 regression)."
-    )
-
-
-# ---------------------------------------------------------------------------
-# Event bridge — the actual unblocker. LK attaches listeners to the
-# wrapper; the wrapped plugin emits the events; the bridge must forward.
-# ---------------------------------------------------------------------------
-
-
-def _assert_event_bridge(wrapper: Any, wrapped: Any) -> None:
-    """Listener registered on the wrapper receives events emitted on wrapped."""
     received_metrics: list[Any] = []
     received_errors: list[Any] = []
     wrapper.on("metrics_collected", lambda payload: received_metrics.append(payload))
@@ -133,56 +105,8 @@ def _assert_event_bridge(wrapper: Any, wrapped: Any) -> None:
     wrapped.emit("metrics_collected", sentinel_metric)
     wrapped.emit("error", sentinel_error)
 
-    assert received_metrics == [sentinel_metric], (
-        "metrics_collected listener attached to the wrapper did not "
-        "receive the event emitted on the wrapped plugin. The bridge "
-        "in _InstrumentedBase._init_instrumentation is broken; "
-        "SpeechHandle will never see speech completion."
-    )
-    assert received_errors == [sentinel_error], (
-        "error listener attached to the wrapper did not receive the "
-        "event emitted on the wrapped plugin. LK's _on_error path will "
-        "not fire and audio errors will go unsurfaced."
-    )
-
-
-def test_stt_event_bridge_forwards_metrics_and_error() -> None:
-    wrapped = _RealSTT()
-    wrapper = InstrumentedSTT(
-        wrapped=wrapped,
-        model_id="t/m",
-        provider="t",
-        project="default",
-        cost_tracker=_make_cost_tracker(),
-        storage=None,
-    )
-    _assert_event_bridge(wrapper, wrapped)
-
-
-def test_llm_event_bridge_forwards_metrics_and_error() -> None:
-    wrapped = _RealLLM()
-    wrapper = InstrumentedLLM(
-        wrapped=wrapped,
-        model_id="t/m",
-        provider="t",
-        project="default",
-        cost_tracker=_make_cost_tracker(),
-        storage=None,
-    )
-    _assert_event_bridge(wrapper, wrapped)
-
-
-def test_tts_event_bridge_forwards_metrics_and_error() -> None:
-    wrapped = _RealTTS()
-    wrapper = InstrumentedTTS(
-        wrapped=wrapped,
-        model_id="t/m",
-        provider="t",
-        project="default",
-        cost_tracker=_make_cost_tracker(),
-        storage=None,
-    )
-    _assert_event_bridge(wrapper, wrapped)
+    assert received_metrics == [sentinel_metric]
+    assert received_errors == [sentinel_error]
 
 
 # ---------------------------------------------------------------------------

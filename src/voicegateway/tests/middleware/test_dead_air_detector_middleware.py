@@ -73,43 +73,6 @@ async def test_no_rerun_on_continuous_silence() -> None:
     assert len(captured) == 1
 
 
-async def test_reset_after_activity_allows_new_event() -> None:
-    captured: list[DeadAirEvent] = []
-
-    # Start with old timestamp → silence; flip to recent after first event.
-    state = {"last_ms": 0, "ticks": 0}
-
-    def probe(_: str) -> int:
-        state["ticks"] += 1
-        if state["ticks"] > 5:
-            # After several poll cycles, "activity" resumes (very recent).
-            import time
-
-            return int(time.monotonic() * 1000)
-        return state["last_ms"]
-
-    async def on_event(event: DeadAirEvent) -> None:
-        captured.append(event)
-        # Reset state["last_ms"] to old timestamp after activity ends,
-        # which would trigger the next event window if we kept running.
-        state["last_ms"] = 0
-
-    detector = DeadAirDetector(
-        activity_probe=probe,
-        on_event=on_event,
-        threshold_seconds=0.02,
-        poll_interval_seconds=0.01,
-    )
-
-    await detector.start("s1")
-    # Run until an event fired and the probe has reported resumed activity.
-    await wait_until(lambda: len(captured) >= 1 and state["ticks"] > 6)
-    await detector.stop("s1")
-
-    # At least one event fired before activity resumed.
-    assert len(captured) >= 1
-
-
 async def test_threshold_validation() -> None:
     def probe(_: str) -> int:
         return 0

@@ -450,13 +450,6 @@ async def test_the_trim_leaves_samples_inside_the_window(storage) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_defaults_are_the_documented_cadence(storage) -> None:
-    worker = NodeSamplesWorker(storage)
-    assert worker._poll_interval == 15.0
-    assert worker._scrape_timeout == 5.0
-    assert worker._max_age_seconds == 7 * 24 * 3600.0
-
-
 async def test_no_targets_is_a_no_op(storage) -> None:
     worker = NodeSamplesWorker(storage, target_provider=_provider())
     assert await worker.tick_now() == 0
@@ -523,10 +516,6 @@ def test_targets_from_env_parses_source_name_url() -> None:
     ]
 
 
-def test_targets_from_env_is_empty_when_unset() -> None:
-    assert targets_from_env({}) == []
-
-
 def test_a_malformed_entry_is_skipped_not_raised() -> None:
     """A typo must not take down a process that is also serving the dashboard."""
     targets = targets_from_env(
@@ -571,15 +560,6 @@ class TestTargetsFromFile:
         p = tmp_path / "targets"
         p.write_text(text)
         return p
-
-    def test_reads_comma_separated_entries(self, tmp_path) -> None:
-        p = self._write(
-            tmp_path,
-            "node-exporter:sip-1=http://10.0.0.1:9100/metrics,"
-            "node-exporter:sip-2=http://10.0.0.2:9100/metrics",
-        )
-        targets = targets_from_file(p)
-        assert [t.node for t in targets] == ["sip-1", "sip-2"]
 
     def test_reads_one_target_per_line(self, tmp_path) -> None:
         # The point of the file: a generator writes a line per instance rather

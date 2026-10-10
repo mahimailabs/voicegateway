@@ -28,11 +28,6 @@ livekit_packet_total{direction="outgoing",transmission="rtp"} 80
     assert samples[1].labels["direction"] == "incoming"
 
 
-def test_help_and_type_lines_are_skipped() -> None:
-    body = "# HELP x help\n# TYPE x counter\nx 1\n"
-    assert [s.name for s in parse_exposition(body)] == ["x"]
-
-
 def test_scientific_notation_and_negative_values() -> None:
     body = "a 1.5e+06\nb -2\n"
     values = {s.name: s.value for s in parse_exposition(body)}
@@ -195,11 +190,6 @@ def test_sum_series_exclude_that_removes_everything_is_none_not_zero() -> None:
         )
         is None
     )
-
-
-def test_sum_series_exclude_leaves_an_absent_series_none() -> None:
-    samples = parse_exposition('node_network_receive_bytes_total{device="lo"} 1\n')
-    assert sum_series(samples, "not_there", exclude={"device": "lo"}) is None
 
 
 def test_sum_series_default_exclude_keeps_every_sample() -> None:

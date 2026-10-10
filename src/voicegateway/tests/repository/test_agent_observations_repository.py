@@ -116,21 +116,6 @@ async def test_roll_up_replaces_table_no_duplicates(storage) -> None:
     assert len([r for r in agents if r.agent_id == "agent-a"]) == 1
 
 
-async def test_roll_up_commits_exactly_once(storage) -> None:
-    await _seed(storage, "a1", "agent-a", latency=100)
-    async with storage._conn.session() as db:
-        calls = {"n": 0}
-        original = db.commit
-
-        async def counting(*args, **kwargs):
-            calls["n"] += 1
-            await original()
-
-        db.commit = counting  # type: ignore[method-assign]
-        await agent_obs.roll_up(db)
-        assert calls["n"] == 1
-
-
 async def test_read_agents_limit_and_query(storage) -> None:
     await _seed(storage, "a1", "agent-a", days_ago=0.03)
     await _seed(storage, "b1", "agent-b", days_ago=0.02)

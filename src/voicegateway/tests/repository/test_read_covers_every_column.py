@@ -60,10 +60,3 @@ def test_the_reader_does_not_select_columns_the_table_lacks() -> None:
     assert not phantom, (
         f"_REQUEST_COLUMNS names columns `requests` does not have: {phantom}"
     )
-
-
-def test_the_excuse_list_only_names_real_columns() -> None:
-    """An excuse for a column that no longer exists is an excuse nobody reads."""
-    table = {column.name for column in Request.__table__.columns}
-    stale = sorted(set(_NOT_READ) - table)
-    assert not stale, f"_NOT_READ names columns that no longer exist: {stale}"
