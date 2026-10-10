@@ -10,7 +10,7 @@ The dashboard used to run its own FastAPI process (`src/dashboard/api/main.py`) 
 ## Options
 
 1. Keep two processes: separation of concerns, at the cost of setup and drift between auth paths.
-2. One app: `voicegw serve` mounts `/health`, `/v1/*`, the dashboard router at `/api/*`, the openorca router and the built SPA at `/`.
+2. One app: `voicegw serve` mounts `/health`, `/v1/*`, the dashboard router at `/api/*` and the built SPA at `/`.
 
 ## Decision
 
@@ -20,4 +20,4 @@ Option 2. The dashboard routes moved to `server/api/dashboard/`; they did not go
 
 - One port and one container for API, dashboard and SPA.
 - Dashboard reads live under `/api/*` behind `require_principal`; writes and ingest stay under `/v1/*`.
-- `src/dashboard/api/` holds only branding images and no Python.
+- `src/dashboard/api/` no longer holds any Python.

@@ -20,16 +20,14 @@ TODO: Two or three sentences on the shape of the system, in your words. Name the
 | `services/sinks.py` | The write seam: embedded SQLite, remote collector (fleet mode) or ClickHouse | Where records go |
 | `accounting/` | Versioned wire contracts (decimal-string money) and `AccountingOutbox`, a restart-safe queue to a collector's `/v1/accounting/usage` | Fleet delivery |
 | `billing/` | Rate card, rating, margin reconciliation | Customer-facing price |
-| `middleware/` | Cost tracking, latency, rate limit, budget, turns, dead air, replay events, background workers (node samples, latency and agent observations) | Cross-cutting runtime behavior |
+| `middleware/` | Cost tracking, rate limit, budget, turns, dead air, state snapshots, background workers (node samples, latency and agent observations) | Cross-cutting runtime behavior |
 | `core/` | `Gateway` shared-state container for server, CLI and MCP; YAML config with `${ENV_VAR}`; dependency-injector wiring; canonical provider ids | Wiring and config |
 | `models/`, `repository/`, `services/` | SQLModel tables, repositories, `storage_service.py` facade | Persistence |
 | `alembic/` (repo root) | Migrations, including the `daily_costs` and `project_daily_costs` views | Schema |
-| `server/` | FastAPI app: `/health`, `/v1/*` (`server/api/`), `/api/*` dashboard router, openorca router, static SPA | HTTP surface |
+| `server/` | FastAPI app: `/health`, `/v1/*` (`server/api/`), `/api/*` dashboard router, static SPA | HTTP surface |
 | `server/mcp/` | MCP server behind `voicegw mcp` (stdio or http) | Agent surface |
-| `livekit_diag/`, `fleet/`, `loadtest/` | LiveKit diagnostics and probes, collector fleet, load runs | Layers below inference |
-| `providers/` | 11 `BaseProvider` classes in `core/registry.py`, for provider management and status endpoints, not metering | Provider status |
+| `livekit_diag/`, `fleet/` | LiveKit diagnostics and probes, collector fleet | Layers below inference |
 | `src/dashboard/frontend/` | React dashboard SPA, served by the server at `/` | Human UI |
-| `src/dashboard/console/` | Smaller SPA on `@openorca-ui/react` | Console UI |
 | `site/docs/`, `site/web/` | Docs site (Fumadocs) and landing page (Astro), sharing `site/theme.css` | Public web |
 | `ee/` | Enterprise Edition code under `ee/LICENSE`. Empty today | Commercial features |
 
@@ -82,9 +80,9 @@ Call path (layers below inference):
 
 - `requests`: the atomic metered unit (one STT, LLM or TTS call) with units and cost.
 - `sessions`: derived from requests, gains `room_name` and `call_id`.
-- `turns`, `transcript_turns`, `tool_calls`, `dead_air_events`, `replay_*` (STT events, LLM tokens, TTS frames, state snapshots): conversation detail per session.
+- `turns`, `transcript_turns`, `tool_calls`, `dead_air_events`, `replay_state_snapshots`: conversation detail per session.
 - `calls` and `call_legs`: one call per room, one leg per participant, created by any event (webhook, loadgen, agent).
-- `node_samples`, `latency_observations`, `agent_observations`, `agent_probe_results`, `diagnostics_runs`, `load_runs`, `workers`: infra, probe and runtime signals, correlated by node and time.
+- `node_samples`, `latency_observations`, `agent_observations`, `agent_probe_results`, `diagnostics_runs`, `workers`: infra, probe and runtime signals, correlated by node and time.
 - `managed_projects`, `managed_providers`, `managed_models`, `managed_rate_rules`, `api_keys`, `tenants`, `config_audit_log`: configuration and access.
 - `pricing_revisions`, `prepared_pricing_bindings`: which price version rated a record.
 - `accounting_*`: usage, ownership, rejections and the outbox shipped to a collector.
@@ -121,5 +119,4 @@ TODO: The numbers V1 must hit, each with how it is measured. Example: "`attach()
 
 - Server logs through Python `logging`; `/health` for liveness.
 - Prometheus exposition in `middleware/prometheus_exposition.py`.
-- An importable Grafana dashboard for load tests in `deploy/grafana/`.
 - When metering looks wrong, start with the `requests` rows and their `voice-prices-unrated` tags, then `voicegw reconcile`.
