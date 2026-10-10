@@ -10,9 +10,7 @@ the unscoped roster.
 
 from __future__ import annotations
 
-import logging
 import time
-from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -28,7 +26,6 @@ from voicegateway.server.api._deps import (
 )
 
 router = APIRouter(prefix="/agents", tags=["agents"])
-logger = logging.getLogger(__name__)
 
 
 def _memory_pct(rss: int | None, total: int | None) -> float | None:
@@ -57,55 +54,8 @@ async def heartbeat(request: Request) -> dict[str, str]:
     if gateway.storage is not None:
         async with gateway.storage.session() as db:
             await workers_repository.upsert_heartbeat(db, presence)
-        # The upsert is already committed above, so a publish failure must not
-        # change the 202: swallow and log it rather than fail the heartbeat.
-        try:
-            await _publish_fleet_update(gateway, presence)
-        except Exception:
-            logger.exception("Fleet SSE publish failed; heartbeat was still accepted")
 
     return {"status": "accepted"}
-
-
-async def _publish_fleet_update(gateway: Any, presence: dict[str, Any]) -> None:
-    """Push agent/fleet updates to connected OpenOrca dashboards.
-
-    The mapper/bus import stays lazy to avoid an import cycle (the openorca
-    routes module imports shared api dependencies that would otherwise pull
-    this module in at import time). A failure here must never break the
-    heartbeat write.
-
-    Every published event carries an internal ``_tenant`` tag so the SSE
-    fan-out can scope it to the owning tenant's subscribers only; the stream
-    strips that key before it reaches a client.
-    """
-    from voicegateway.server.api.openorca.mapper import build_snapshot
-    from voicegateway.server.api.openorca.routes import bus
-
-    tenant_id = presence.get("tenant_id")
-    async with gateway.storage.session() as db:
-        rows = await workers_repository.read_roster(
-            db,
-            tenant_id=tenant_id,
-            now=time.time(),
-            ttl_seconds=DEFAULT_TTL_SECONDS,
-        )
-    snap = build_snapshot(rows, generated_at=datetime.now(UTC).isoformat())
-    agent = next(
-        (a for a in snap["agents"] if a["id"] == presence.get("agent_name")),
-        None,
-    )
-    if agent is not None:
-        await bus.publish(
-            {"type": "agent.updated", "agent": agent, "_tenant": tenant_id}
-        )
-    await bus.publish(
-        {
-            "type": "fleet.updated",
-            "fleetHealth": snap["fleetHealth"],
-            "_tenant": tenant_id,
-        }
-    )
 
 
 @router.get("")

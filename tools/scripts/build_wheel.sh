@@ -31,9 +31,8 @@ if [[ -z "${SETUPTOOLS_SCM_PRETEND_VERSION:-}" \
   echo "==> pinning version to ${SETUPTOOLS_SCM_PRETEND_VERSION} (from tag ${GITHUB_REF_NAME})"
 fi
 
-# Build one Vite SPA (dashboard or console) reproducibly, failing loudly if its
-# lockfile or its dist is missing. Each SPA owns its own toolchain and lockfile
-# (the console peers on React 19 + Tailwind v4, the dashboard on React 18).
+# Build the dashboard SPA reproducibly, failing loudly if its lockfile or its
+# dist is missing.
 build_spa() {
   local src="$1"
   if [[ ! -d "$src" ]]; then
@@ -59,21 +58,15 @@ build_spa() {
 
 FRONTEND_SRC="src/dashboard/frontend"
 STAGED_DIST="src/voicegateway/_dashboard_dist"
-CONSOLE_SRC="src/dashboard/console"
-CONSOLE_STAGED_DIST="src/voicegateway/_console_dist"
 
 build_spa "$FRONTEND_SRC"
-build_spa "$CONSOLE_SRC"
 
-# Stage both dists into the voicegateway package dir so hatchling picks them up
-# via `packages = ["src/voicegateway"]`. ONE EXIT trap cleans both: a second
-# `trap ... EXIT` would replace the first, leaking a staged dir. The trap runs on
-# any exit so the source tree never carries a stale _dashboard_dist / _console_dist
-# across invocations.
-rm -rf "$STAGED_DIST" "$CONSOLE_STAGED_DIST"
-trap 'rm -rf "$STAGED_DIST" "$CONSOLE_STAGED_DIST"' EXIT
+# Stage the dist into the voicegateway package dir so hatchling picks it up via
+# `packages = ["src/voicegateway"]`. The EXIT trap runs on any exit so the
+# source tree never carries a stale _dashboard_dist across invocations.
+rm -rf "$STAGED_DIST"
+trap 'rm -rf "$STAGED_DIST"' EXIT
 cp -r "$FRONTEND_SRC/dist" "$STAGED_DIST"
-cp -r "$CONSOLE_SRC/dist" "$CONSOLE_STAGED_DIST"
 
 echo "==> uv build"
 uv build

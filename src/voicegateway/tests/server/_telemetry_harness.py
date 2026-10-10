@@ -236,7 +236,6 @@ def canonical_route_auth() -> dict[tuple[str, str], str]:
 import json
 from itertools import chain
 
-from voicegateway.server.api.openorca.routes import router as openorca_router
 from voicegateway.server.routes import api_router, dashboard_router, system_router
 from voicegateway.tests.server._telemetry_harness import live_route_auth
 
@@ -249,7 +248,6 @@ inventory = type(
                 system_router.routes,
                 api_router.routes,
                 dashboard_router.routes,
-                openorca_router.routes,
             )
         )
     },

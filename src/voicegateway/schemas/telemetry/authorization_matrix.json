@@ -329,38 +329,6 @@
     },
     {
       "method": "GET",
-      "path": "/openorca/events",
-      "auth": "principal",
-      "status": "enforced",
-      "tenant_scoped": true,
-      "note": "Tenant derived from the principal via resolve_read_tenant."
-    },
-    {
-      "method": "POST",
-      "path": "/openorca/interventions/resolve",
-      "auth": "principal",
-      "status": "enforced",
-      "tenant_scoped": true,
-      "note": "Tenant derived from the principal via resolve_read_tenant."
-    },
-    {
-      "method": "GET",
-      "path": "/openorca/runtime-info",
-      "auth": "open",
-      "status": "enforced",
-      "tenant_scoped": false,
-      "note": "Static capability probe. No data."
-    },
-    {
-      "method": "GET",
-      "path": "/openorca/snapshot",
-      "auth": "principal",
-      "status": "enforced",
-      "tenant_scoped": true,
-      "note": "Tenant derived from the principal via resolve_read_tenant."
-    },
-    {
-      "method": "GET",
       "path": "/v1/agents",
       "auth": "principal",
       "status": "enforced",
