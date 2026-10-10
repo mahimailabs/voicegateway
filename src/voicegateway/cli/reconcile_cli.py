@@ -17,7 +17,9 @@ _cli = BaseCli()
 @app.command(name="reconcile")
 def reconcile_cmd(
     provider: str = typer.Option(
-        ..., "--provider", help="Provider: openai, deepgram, or cartesia."
+        ...,
+        "--provider",
+        help="Provider: openai, deepgram, cartesia, or elevenlabs.",
     ),
     start: str = typer.Option(
         ..., "--start", help="Start date (YYYY-MM-DD, inclusive, UTC)."

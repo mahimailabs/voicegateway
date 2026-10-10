@@ -8,11 +8,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-SUPPORTED_PROVIDERS = ("openai", "deepgram", "cartesia")
+SUPPORTED_PROVIDERS = ("openai", "deepgram", "cartesia", "elevenlabs")
 _PROVIDER_MODALITY = {
     "openai": "llm",
     "deepgram": "stt",
     "cartesia": "tts",
+    "elevenlabs": "tts",
 }
 
 
@@ -136,7 +137,7 @@ def parse_provider_file(provider: str, path: Path) -> dict[str, dict[str, float]
             )
         elif provider == "deepgram":
             units = float(row.get("audio_seconds", 0) or 0)
-        else:  # cartesia
+        elif provider in ("cartesia", "elevenlabs"):
             units = float(row.get("characters", 0) or 0)
 
         out[model] = {
@@ -182,7 +183,7 @@ def aggregate_vg_records(
             bucket["units"] += input_units * 60.0
         elif provider == "openai":
             bucket["units"] += input_units + output_units
-        else:  # cartesia
+        elif provider in ("cartesia", "elevenlabs"):
             bucket["units"] += input_units
         bucket["cost"] += float(r.get("cost_usd", 0) or 0)
         bucket["n_requests"] += 1.0
@@ -258,6 +259,7 @@ def format_text(
         "openai": "tokens",
         "deepgram": "audio_s",
         "cartesia": "chars",
+        "elevenlabs": "chars",
     }.get(provider, "units")
     header = (
         f"{'Model':<35} {'VG ' + unit_label:>14} {'Provider ' + unit_label:>14} "

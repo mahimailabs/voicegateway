@@ -115,6 +115,13 @@ _CARTESIA_JSON = json.dumps(
             id="cartesia-json",
         ),
         pytest.param(
+            "elevenlabs",
+            "elevenlabs.json",
+            _CARTESIA_JSON,
+            {"sonic-3": {"units": 2_500_000}},
+            id="elevenlabs-json",
+        ),
+        pytest.param(
             "cartesia",
             "cartesia.csv",
             # characters and credits differ on purpose: units must come
@@ -232,6 +239,28 @@ def test_aggregate_vg_records_deepgram_minutes_to_seconds():
     agg = reconcile.aggregate_vg_records("deepgram", records)
     assert agg["nova-3"]["units"] == pytest.approx(3.5 * 60, abs=0.1)
     assert agg["nova-3"]["cost"] == pytest.approx(0.0175, abs=0.001)
+
+
+def test_aggregate_vg_records_elevenlabs_uses_tts_character_units():
+    records = [
+        {
+            "model_id": "elevenlabs/eleven_turbo_v2_5",
+            "modality": "tts",
+            "input_units": 500,
+            "cost_usd": 0.05,
+        },
+        {
+            "model_id": "elevenlabs/eleven_turbo_v2_5",
+            "modality": "llm",
+            "input_units": 250,
+            "cost_usd": 0.02,
+        },
+    ]
+
+    agg = reconcile.aggregate_vg_records("elevenlabs", records)
+
+    assert agg["eleven_turbo_v2_5"]["units"] == 500.0
+    assert agg["eleven_turbo_v2_5"]["cost"] == pytest.approx(0.05)
 
 
 def test_aggregate_vg_records_filters_other_providers():
@@ -761,6 +790,27 @@ def test_format_text_includes_header_and_columns():
     assert "Model" in out
     assert "nova-3" in out
     assert "audio_s" in out  # the unit label for deepgram
+
+
+def test_format_text_labels_elevenlabs_units_as_chars():
+    line = reconcile.ReconcileLine(
+        model="eleven_turbo_v2_5",
+        vg_units=500.0,
+        provider_units=500.0,
+        units_diff_abs=0.0,
+        units_diff_pct=0.0,
+        vg_cost=0.05,
+        provider_cost=0.05,
+        cost_diff_abs=0.0,
+        cost_diff_pct=0.0,
+        matched_in_vg=True,
+        matched_in_provider=True,
+    )
+
+    out = reconcile.format_text([line], "elevenlabs")
+
+    assert "VG chars" in out
+    assert "Provider chars" in out
 
 
 def test_format_text_unknown_provider_falls_back_to_units_label():
