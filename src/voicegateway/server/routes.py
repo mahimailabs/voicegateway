@@ -51,9 +51,6 @@ from voicegateway.server.api.dashboard import (
     auth_status as dashboard_auth_status,
 )
 from voicegateway.server.api.dashboard import (
-    branding as dashboard_branding,
-)
-from voicegateway.server.api.dashboard import (
     calls as dashboard_calls,
 )
 from voicegateway.server.api.dashboard import (
@@ -69,16 +66,10 @@ from voicegateway.server.api.dashboard import (
     health as dashboard_health,
 )
 from voicegateway.server.api.dashboard import (
-    loadtest as dashboard_loadtest,
-)
-from voicegateway.server.api.dashboard import (
     metrics as dashboard_metrics,
 )
 from voicegateway.server.api.dashboard import (
     nodes as dashboard_nodes,
-)
-from voicegateway.server.api.dashboard import (
-    nodes_live as dashboard_nodes_live,
 )
 from voicegateway.server.api.dashboard import (
     projects as dashboard_projects,
@@ -151,25 +142,12 @@ dashboard_router.include_router(dashboard_correlation.router)
 # is a weaker claim than "during this call" and a window nobody scraped is not a
 # healthy node.
 dashboard_router.include_router(dashboard_nodes.router)
-# GET /api/nodes/live. The same rows as /api/nodes above, asked the other
-# question: newest per (node, source) rather than overlapping a call's window,
-# so a caller polling during a load campaign can see the fleet now. Registered
-# after /api/nodes because both routers carry the /nodes prefix and the literal
-# /live path must not be shadowed by a parameterised sibling later.
-dashboard_router.include_router(dashboard_nodes_live.router)
-# GET /api/loadtest/runs. Read-only, so it belongs here behind
-# require_principal and NOT on the /v1/calls router, which carries
-# require_scope("write") on the router itself. Tests are embedded in each run
-# rather than served from a per-run path: the demo build answers by pathname
-# only, so a parameterised path is a shape it cannot render.
-dashboard_router.include_router(dashboard_loadtest.router)
 dashboard_router.include_router(dashboard_metrics.router)
 dashboard_router.include_router(dashboard_replay.router)
 dashboard_router.include_router(dashboard_agents.router)
 dashboard_router.include_router(dashboard_diagnostics.router)
 dashboard_router.include_router(dashboard_server.router)
 dashboard_router.include_router(dashboard_api_keys.router)
-dashboard_router.include_router(dashboard_branding.router)
 
 
 __all__ = ["api_router", "dashboard_router", "system_router"]

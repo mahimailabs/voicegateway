@@ -29,7 +29,7 @@ Visit `http://localhost:8080/health` to verify it's running.
 
 ---
 
-## Docker Compose (with dashboard)
+## Docker Compose
 
 ```yaml
 services:
@@ -46,21 +46,13 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-
-  dashboard:
-    image: mahimairaja/voicegateway-dashboard:latest
-    ports: ["9090:9090"]
-    volumes:
-      - ./voicegw-data:/data:ro
-    depends_on:
-      - voicegateway
 ```
 
 ```bash
 docker compose up -d
 ```
 
-Dashboard at `http://localhost:9090`.
+Dashboard at `http://localhost:8080`.
 
 ---
 

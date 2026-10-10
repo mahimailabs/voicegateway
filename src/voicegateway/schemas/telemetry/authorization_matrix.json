@@ -159,15 +159,6 @@
     },
     {
       "method": "GET",
-      "path": "/api/loadtest/runs",
-      "auth": "principal",
-      "status": "gap",
-      "tenant_scoped": false,
-      "gap_id": "VG-SEC-002",
-      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
-    },
-    {
-      "method": "GET",
       "path": "/api/metrics",
       "auth": "principal",
       "status": "gap",
@@ -178,14 +169,6 @@
     {
       "method": "GET",
       "path": "/api/nodes",
-      "auth": "principal",
-      "status": "enforced",
-      "tenant_scoped": false,
-      "note": "Tenant derived from the principal via resolve_read_tenant."
-    },
-    {
-      "method": "GET",
-      "path": "/api/nodes/live",
       "auth": "principal",
       "status": "enforced",
       "tenant_scoped": false,
@@ -208,33 +191,6 @@
       "tenant_scoped": true,
       "gap_id": "VG-SEC-004",
       "note": "Answers an unauthenticated caller regardless of configured keys."
-    },
-    {
-      "method": "GET",
-      "path": "/api/projects/{project_id}/branding",
-      "auth": "open",
-      "status": "gap",
-      "tenant_scoped": true,
-      "gap_id": "VG-SEC-004",
-      "note": "Answers an unauthenticated caller regardless of configured keys. Also takes a project identifier with no project check (VG-SEC-002)."
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/{project_id}/branding",
-      "auth": "scope:admin",
-      "status": "gap",
-      "tenant_scoped": true,
-      "gap_id": "VG-SEC-002",
-      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/{project_id}/branding/logo",
-      "auth": "scope:admin",
-      "status": "gap",
-      "tenant_scoped": true,
-      "gap_id": "VG-SEC-002",
-      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
     },
     {
       "method": "POST",
@@ -343,38 +299,6 @@
       "status": "enforced",
       "tenant_scoped": false,
       "note": "Liveness probe. No data."
-    },
-    {
-      "method": "GET",
-      "path": "/openorca/events",
-      "auth": "principal",
-      "status": "enforced",
-      "tenant_scoped": true,
-      "note": "Tenant derived from the principal via resolve_read_tenant."
-    },
-    {
-      "method": "POST",
-      "path": "/openorca/interventions/resolve",
-      "auth": "principal",
-      "status": "enforced",
-      "tenant_scoped": true,
-      "note": "Tenant derived from the principal via resolve_read_tenant."
-    },
-    {
-      "method": "GET",
-      "path": "/openorca/runtime-info",
-      "auth": "open",
-      "status": "enforced",
-      "tenant_scoped": false,
-      "note": "Static capability probe. No data."
-    },
-    {
-      "method": "GET",
-      "path": "/openorca/snapshot",
-      "auth": "principal",
-      "status": "enforced",
-      "tenant_scoped": true,
-      "note": "Tenant derived from the principal via resolve_read_tenant."
     },
     {
       "method": "GET",
@@ -683,14 +607,6 @@
       "note": "Config mutation behind require_scope(\"write\")."
     },
     {
-      "method": "POST",
-      "path": "/v1/providers/test",
-      "auth": "scope:write",
-      "status": "enforced",
-      "tenant_scoped": false,
-      "note": "Config mutation behind require_scope(\"write\")."
-    },
-    {
       "method": "DELETE",
       "path": "/v1/providers/{provider_id}",
       "auth": "scope:write",
@@ -701,14 +617,6 @@
     {
       "method": "PATCH",
       "path": "/v1/providers/{provider_id}",
-      "auth": "scope:write",
-      "status": "enforced",
-      "tenant_scoped": false,
-      "note": "Config mutation behind require_scope(\"write\")."
-    },
-    {
-      "method": "POST",
-      "path": "/v1/providers/{provider_id}/test",
       "auth": "scope:write",
       "status": "enforced",
       "tenant_scoped": false,

@@ -17,18 +17,11 @@ import ApiKeys from './pages/ApiKeys';
 import type { StatusResponse } from './lib/types';
 import { AUTH_REQUIRED_EVENT, clearToken, fetchJson, getToken } from './lib/api';
 import { DEMO_MODE } from './lib/demo';
-import { applyBrandingForProject } from './lib/branding';
 import NavIcon from './components/NavIcon';
 import BrandMark from './components/BrandMark';
 import AccountMenu from './components/AccountMenu';
 import CommandPalette from './components/CommandPalette';
 import { NAV, type NavLeaf } from './lib/nav';
-
-interface ActiveBranding {
-  logo_url?: string | null;
-  accent_color?: string | null;
-  product_name?: string | null;
-}
 
 type AuthState = 'checking' | 'needs-login' | 'ready';
 
@@ -68,14 +61,6 @@ export default function App() {
     fetchJson<StatusResponse>('/api/status').then(setStatus).catch(() => setStatus(null));
   }, [authState]);
 
-  const [branding, setBranding] = useState<ActiveBranding | null>(null);
-  useEffect(() => {
-    if (authState !== 'ready') return;
-    const params = new URLSearchParams(window.location.search);
-    const projectId = params.get('project');
-    applyBrandingForProject(projectId).then(setBranding).catch(() => setBranding(null));
-  }, [authState]);
-
   if (authState === 'checking') return null;
   if (authState === 'needs-login') {
     return <Login onAuthed={() => setAuthState('ready')} />;
@@ -88,7 +73,7 @@ export default function App() {
   return (
     <BrowserRouter basename={basename}>
       <div className="app-shell">
-        <Sidebar status={status} onSignOut={signOut} branding={branding} />
+        <Sidebar status={status} onSignOut={signOut} />
         <div className="main">
           {DEMO_MODE && <DemoBanner />}
           <main className="main-content">
@@ -158,17 +143,13 @@ function DemoBanner() {
 function Sidebar({
   status,
   onSignOut,
-  branding,
 }: {
   status: StatusResponse | null;
   onSignOut: () => void;
-  branding: ActiveBranding | null;
 }) {
   const providerCount = status ? Object.keys(status.providers).length : 0;
   const modelCount = status ? Object.keys(status.models).length : 0;
   const hasToken = !!getToken();
-  const isWhiteLabel = !!branding?.product_name;
-  const productName = branding?.product_name || 'VoiceGateway';
 
   const [collapsed, setCollapsed] = useState<boolean>(
     () => localStorage.getItem('vg-sidebar-collapsed') === '1',
@@ -197,12 +178,7 @@ function Sidebar({
       <div className="sidebar__header">
         {collapsed ? (
           /* Collapsed: the gauge brand-mark square */
-          <BrandMark size={28} label={productName} />
-        ) : isWhiteLabel ? (
-          <div className="sidebar__brand">
-            {branding?.logo_url && <img src={branding.logo_url} alt={`${productName} logo`} className="sidebar__mark" />}
-            <span className="sidebar__brandname">{productName}</span>
-          </div>
+          <BrandMark size={28} label="VoiceGateway" />
         ) : (
           <div className="sidebar__brand" style={{ gap: 10 }}>
             <BrandMark size={26} />
@@ -253,7 +229,7 @@ function Sidebar({
             {status?.version && <span className="version-pill">v{status.version}</span>}
           </div>
         )}
-        <AccountMenu label={productName} collapsed={collapsed} onSignOut={onSignOut} hasToken={hasToken} />
+        <AccountMenu label="VoiceGateway" collapsed={collapsed} onSignOut={onSignOut} hasToken={hasToken} />
       </div>
     </aside>
   );

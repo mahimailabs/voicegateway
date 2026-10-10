@@ -39,7 +39,6 @@ dependencies = [
     # unannounced, which an unbounded runtime dependency cannot prevent.
     "voice-prices>=0.11.0,<1",
     "bcrypt>=4.0",
-    "pillow>=10.0",
     "psutil>=5.9",
     # ORM + migration stack. Required at import time (voicegateway.models pulls
     # in SQLAlchemy/SQLModel) and at runtime for the embedded storage that
@@ -71,16 +70,13 @@ livekit = [
 pipecat = ["pipecat-ai>=1.5.0,<2.0"]
 
 # The self-host tool surface: HTTP API + web dashboard + MCP server.
-# FastAPI/uvicorn serve /v1/* and the React SPA; python-multipart backs the
-# logo upload; the DI/settings/logging stack backs the layered server; mcp
-# powers `voicegw mcp` (manage the gateway from coding agents). SQLAlchemy 2.x
-# async + SQLModel + Alembic are core (base) deps, so they are not relisted.
+# FastAPI/uvicorn serve /v1/* and the React SPA; the DI/logging stack backs
+# the layered server; mcp powers `voicegw mcp` (manage the gateway from coding
+# agents). SQLAlchemy 2.x async + SQLModel + Alembic are core (base) deps, so
+# they are not relisted.
 dashboard = [
     "fastapi>=0.115.0",
     "uvicorn>=0.32.0",
-    "python-multipart>=0.0.9",
-    "pydantic-settings>=2.0",
-    "asgi-correlation-id>=4.3",
     "loguru>=0.7",
     # Capped below 2.0: mcp 2.0.0 renamed Tool's ``inputSchema`` to
     # ``input_schema`` and moved the Server.list_tools/call_tool decorators,
@@ -160,18 +156,8 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-source = ["voicegateway", "dashboard"]
+source = ["voicegateway"]
 omit = [
-    # Provider implementations require external LiveKit plugins to test
-    "src/voicegateway/providers/openai_provider.py",
-    "src/voicegateway/providers/deepgram_provider.py",
-    "src/voicegateway/providers/anthropic_provider.py",
-    "src/voicegateway/providers/cartesia_provider.py",
-    "src/voicegateway/providers/elevenlabs_provider.py",
-    "src/voicegateway/providers/groq_provider.py",
-    "src/voicegateway/providers/assemblyai_provider.py",
-    "src/voicegateway/providers/kokoro_provider.py",
-    "src/voicegateway/providers/piper_provider.py",
     # Tests live inside the package directory but are excluded from the
     # wheel via [tool.hatch.build.targets.wheel] exclude below. Omit
     # from coverage too so the test code does not inflate its own
@@ -213,7 +199,6 @@ version-file = "src/voicegateway/_version.py"
 [tool.hatch.build]
 artifacts = [
     "src/voicegateway/_dashboard_dist/**/*",
-    "src/voicegateway/_console_dist/**/*",
     "src/voicegateway/livekit_diag/assets/*.wav",
 ]
 
@@ -261,8 +246,6 @@ exclude = [
     "src/voicegateway/tests",
     "src/voicegateway/Dockerfile",
     "src/voicegateway/README.dockerhub.md",
-    "src/dashboard/Dockerfile",
-    "src/dashboard/README.dockerhub.md",
     "src/dashboard/frontend/node_modules",
     "src/dashboard/frontend/src",
     "src/dashboard/frontend/package.json",
@@ -271,20 +254,8 @@ exclude = [
     "src/dashboard/frontend/tsconfig.node.json",
     "src/dashboard/frontend/tsconfig.tsbuildinfo",
     "src/dashboard/frontend/tsconfig.node.tsbuildinfo",
-    "src/dashboard/frontend/vite.config.js",
     "src/dashboard/frontend/vite.config.ts",
-    "src/dashboard/frontend/vite.config.d.ts",
     "src/dashboard/frontend/index.html",
-    # Console (React 19 + Tailwind) build inputs: the daemon only needs its
-    # built dist (staged into voicegateway/_console_dist), so keep the source
-    # and toolchain files out of the wheel, mirroring the frontend excludes.
-    "src/dashboard/console/node_modules",
-    "src/dashboard/console/src",
-    "src/dashboard/console/package.json",
-    "src/dashboard/console/package-lock.json",
-    "src/dashboard/console/tsconfig.json",
-    "src/dashboard/console/vite.config.ts",
-    "src/dashboard/console/index.html",
     # Keep compiled migration bytecode out of the force-included alembic tree.
     "alembic/__pycache__",
     "alembic/versions/__pycache__",

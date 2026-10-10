@@ -30,38 +30,9 @@ def temp_config(tmp_path):
     return cfg
 
 
-@pytest.fixture(autouse=True)
-def no_provider_network(monkeypatch):
-    """No test in this file may dial a provider's API. Autouse, so none can.
-
-    ``temp_config`` configures ``providers.openai``, which makes the doctor's
-    "Provider key valid" check run for real: it builds the OpenAI provider and
-    calls ``health_check``, which issues a live HTTPS GET to
-    ``api.openai.com/v1/models`` carrying the fake ``sk-test`` key.
-
-    That made two tests here depend on the public internet. When the request
-    answered quickly they passed in 0.4s; when it did not, the 5s validation
-    deadline fired and the test failed. Measured on an untouched tree: three
-    failures in thirty runs, and the same rate in CI on a different network.
-
-    ``all_pass`` already stubbed this for the tests that use it, which is why
-    only the two tests WITHOUT ``all_pass`` ever flaked. Making it autouse
-    closes the hole for every test in the file, including ones added later.
-    ``all_pass`` still installs its own "ok" stub over the top; this is the
-    floor, not a replacement.
-    """
-
-    async def _no_network(provider, key):
-        return "skipped", "provider validation stubbed: tests never dial out"
-
-    monkeypatch.setattr(
-        "voicegateway.utils.cli.doctor._validate_provider_key", _no_network
-    )
-
-
 @pytest.fixture
 def all_pass(monkeypatch):
-    """Stub the slow / OS-side calls so all 10 checks return ok or skip."""
+    """Stub the slow / OS-side calls so every check returns ok or skip."""
     # Daemon: registered + running + pid populated.
     fake_manager = MagicMock()
     fake_manager.status.return_value = {
@@ -88,14 +59,6 @@ def all_pass(monkeypatch):
     # psutil port-conflict: pretend nothing is on the port.
     monkeypatch.setattr("psutil.net_connections", lambda kind="inet": [])
 
-    # Provider key validation: ok.
-    async def _stub_validate(provider, key):
-        return "ok", None
-
-    monkeypatch.setattr(
-        "voicegateway.utils.cli.doctor._validate_provider_key", _stub_validate
-    )
-
     # Dashboard reachable: 200 OK.
     fake_response = MagicMock()
     fake_response.status_code = 200
@@ -113,13 +76,13 @@ def test_doctor_help_renders():
     assert "diagnostic checks" in result.output.lower()
 
 
-def test_doctor_renders_ten_numbered_rows(temp_config, all_pass):
-    """Every check shows up in a numbered row, 1..10."""
+def test_doctor_renders_nine_numbered_rows(temp_config, all_pass):
+    """Every check shows up in a numbered row, 1..9."""
     result = runner.invoke(app, ["doctor", "--config", str(temp_config)])
     out = result.output
-    # Numbered rows 1..10. Rich's table aligns the # column right with
+    # Numbered rows 1..9. Rich's table aligns the # column right with
     # spaces; check for the digits as standalone tokens.
-    for n in range(1, 11):
+    for n in range(1, 10):
         assert f" {n} " in out or f"\n{n} " in out, f"row {n} missing from output"
 
 
@@ -232,13 +195,6 @@ def _check_modules_with_fail_paths():
         _patch_psutil_port_in_use,
     )
 
-    yield (
-        "provider_key_missing",
-        d._check_provider_key_valid,
-        _build_empty_key_ctx,
-        None,
-    )
-
 
 def _force_python_version(monkeypatch, version):
     import sys
@@ -275,14 +231,6 @@ def _build_no_providers_ctx():
 
     fake_gw = MagicMock()
     fake_gw.config.providers = {}
-    return d._Context(config_path=None, gateway=fake_gw)
-
-
-def _build_empty_key_ctx():
-    from voicegateway.utils.cli import doctor as d
-
-    fake_gw = MagicMock()
-    fake_gw.config.providers = {"openai": {"api_key": ""}}
     return d._Context(config_path=None, gateway=fake_gw)
 
 

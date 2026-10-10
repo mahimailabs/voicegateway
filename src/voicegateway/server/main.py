@@ -28,7 +28,7 @@ from voicegateway.core.auth import (
 from voicegateway.core.events import lifespan
 from voicegateway.server.mcp.transport import mount_sse
 from voicegateway.server.routes import api_router, dashboard_router, system_router
-from voicegateway.server.static import mount_console, mount_frontend
+from voicegateway.server.static import mount_frontend
 from voicegateway.services.ingest_rate_limiter import IngestRateLimiter
 
 if TYPE_CHECKING:
@@ -125,22 +125,14 @@ class ApplicationBuilder:
         )
 
     def _configure_routers(self) -> None:
-        from voicegateway.server.api.dashboard.branding import mount_static_branding
-        from voicegateway.server.api.openorca.routes import router as openorca_router
-
         self.app.include_router(system_router)
         self.app.include_router(api_router)
         self.app.include_router(dashboard_router)
-        self.app.include_router(openorca_router)
-        mount_static_branding(self.app)
 
     def _mount_mcp_sse(self) -> None:
         mount_sse(self.app, self.gateway)
 
     def _mount_dashboard_spa(self) -> None:
-        # Console first: its /console mount must precede the dashboard's
-        # /{full_path:path} SPA fallback so the fallback does not shadow it.
-        mount_console(self.app)
         mount_frontend(self.app)
 
 

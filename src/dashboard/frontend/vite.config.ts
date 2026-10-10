@@ -22,7 +22,6 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/api': 'http://localhost:8080',
         '/v1': 'http://localhost:8080',
-        '/static/branding': { target: 'http://localhost:8080', changeOrigin: true },
       },
     },
     build: {

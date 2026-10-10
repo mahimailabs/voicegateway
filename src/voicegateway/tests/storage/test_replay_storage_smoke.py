@@ -16,37 +16,6 @@ _MAX_REPLAY_BYTES_PER_MINUTE = 600 * 1024  # 600 KB
 async def _synthesize_one_minute(capture: ReplayCapture, session_id: str) -> None:
     """Push a realistic 60-second conversation through ReplayCapture."""
     base_ts = 0
-    for i in range(40):
-        await capture.record_stt_chunk(
-            text=f"transcript chunk number {i} hello there",
-            is_final=(i % 4 == 3),
-            alternatives=[],
-            provider="deepgram",
-            cost_usd=0.0001,
-            session_id=session_id,
-            at_ms=base_ts + i * 1500,
-        )
-    for i in range(400):
-        await capture.record_llm_token(
-            token_text=f"tok{i:03d}",
-            role="assistant",
-            is_tool_invoke=False,
-            tool_args_partial=None,
-            provider="openai",
-            cost_usd=0.00002,
-            session_id=session_id,
-            at_ms=base_ts + i * 150,
-        )
-    for i in range(1200):
-        await capture.record_tts_frame(
-            frame_duration_ms=50,
-            underrun=False,
-            voice_id="sonic-3",
-            provider="cartesia",
-            cost_usd=0.000005,
-            session_id=session_id,
-            at_ms=base_ts + i * 50,
-        )
     for i in range(60):
         await capture.record_state_snapshot(
             {
@@ -117,13 +86,10 @@ async def test_storage_size_reported_via_aggregate(tmp_path) -> None:
         flush_size_events=10000,
         buffer_size_events=20000,
     )
-    # Smaller synthetic: just 10 STT chunks.
+    # Smaller synthetic: just 10 small snapshots.
     for i in range(10):
-        await capture.record_stt_chunk(
-            text=f"chunk-{i}",
-            is_final=True,
-            provider="deepgram",
-            cost_usd=0.0001,
+        await capture.record_state_snapshot(
+            {"message": f"chunk-{i}"},
             session_id="tiny",
             at_ms=i * 100,
         )
@@ -133,6 +99,6 @@ async def test_storage_size_reported_via_aggregate(tmp_path) -> None:
         await replay.bulk_write_events(db, captured, tenant_id=None)
         size = await replay.aggregate_storage_per_session(db, "tiny")
 
-    # 10 small STT chunks: each payload roughly 50 bytes JSON-encoded,
+    # 10 small snapshots: each payload a few dozen bytes JSON-encoded,
     # so 500 bytes total floor, a few KB ceiling.
     assert 100 < size < 5000

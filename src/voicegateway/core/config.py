@@ -408,10 +408,6 @@ class GatewayConfig:
             pricing=PricingConfig.model_validate(raw.get("pricing") or {}),
         )
 
-    def get_provider_config(self, provider_name: str) -> dict[str, Any]:
-        """Get the top-level (global) configuration for a provider."""
-        return self.providers.get(provider_name, {})
-
     def get_provider_config_for_project(
         self, provider_name: str, project_id: str | None
     ) -> dict[str, Any]:

@@ -23,8 +23,7 @@ handlers do not want the same gate:
   query.
 - the DELETE and the retention POST take ``require_scope(ADMIN_SCOPE)``,
   which is what every write on a dashboard router takes (the API-key
-  routers, the diagnostics run, the agent probe, the branding logo
-  upload). One destroys captured payloads outright and the other sets how
+  routers, the diagnostics run, the agent probe). One destroys captured payloads outright and the other sets how
   long any of them survive.
 
 A router-level dependency would have to be the strictest of those, and

@@ -73,7 +73,7 @@ GET_PROVIDER_STATUS_DOC = """Return the configured status of providers.
 Use this to answer "Is Deepgram configured?" or "Which providers are set up?"
 It reports whether each provider has credentials configured, its type
 (cloud/local), and how many models are registered against it. It does NOT
-make live network calls — for a connectivity check, use ``test_provider``.
+make live network calls.
 
 Args:
     provider_id: Optional — if set, returns only that provider. If omitted,

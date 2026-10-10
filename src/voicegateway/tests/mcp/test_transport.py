@@ -18,20 +18,14 @@ def gateway(temp_config, tmp_path, monkeypatch):
 
 
 async def test_list_tools_protocol(gateway):
-    """In admin mode the client sees all 26 tools (including exact accounting)."""
+    """In admin mode the client sees all 16 tools (including exact accounting)."""
     server = create_server(gateway, is_admin=True)
     async with create_connected_server_and_client_session(server) as client:
         await client.initialize()
         result = await client.list_tools()
-        assert len(result.tools) == 26
+        assert len(result.tools) == 16
         names = {t.name for t in result.tools}
         assert "get_health" in names
-        assert "add_provider" in names
-        assert "vg_add_provider" in names
-        assert "vg_remove_provider" in names
-        assert "vg_list_providers" in names
-        assert "vg_set_provider_key" in names
-        assert "vg_test_provider_key" in names
         assert "delete_project" in names
         assert "get_accounting_status" in names
 
@@ -50,9 +44,6 @@ async def test_list_tools_default_hides_admin(gateway):
         assert {"get_costs", "get_logs", "create_project", "list_projects"} <= names
         # Legacy provider-config + destructive tools are hidden.
         for hidden in (
-            "add_provider",
-            "vg_add_provider",
-            "vg_set_provider_key",
             "delete_project",
             "get_provider_status",
         ):
@@ -64,7 +55,7 @@ async def test_call_admin_tool_forbidden_by_default(gateway):
     server = create_server(gateway)  # is_admin defaults to False
     async with create_connected_server_and_client_session(server) as client:
         await client.initialize()
-        result = await client.call_tool("add_provider", {})
+        result = await client.call_tool("delete_project", {})
         data = json.loads(result.content[0].text)
         assert data["error"]["code"] == "FORBIDDEN"
 
@@ -83,16 +74,6 @@ async def test_call_tool_get_health(gateway):
         assert "version" in data
 
 
-async def test_call_tool_list_providers(gateway):
-    server = create_server(gateway, is_admin=True)
-    async with create_connected_server_and_client_session(server) as client:
-        await client.initialize()
-        result = await client.call_tool("list_providers", {})
-        data = json.loads(result.content[0].text)
-        assert "providers" in data
-        assert data["count"] >= 2
-
-
 async def test_call_tool_validation_error(gateway):
     """Invalid input is rejected by the MCP input schema validator."""
     server = create_server(gateway)
@@ -108,7 +89,10 @@ async def test_call_tool_domain_error(gateway):
     server = create_server(gateway, is_admin=True)
     async with create_connected_server_and_client_session(server) as client:
         await client.initialize()
-        result = await client.call_tool("get_provider", {"provider_id": "never-exists"})
+        result = await client.call_tool(
+            "register_model",
+            {"modality": "llm", "provider_id": "never-exists", "model_name": "m"},
+        )
         data = json.loads(result.content[0].text)
         assert data["error"]["code"] == "PROVIDER_NOT_FOUND"
 

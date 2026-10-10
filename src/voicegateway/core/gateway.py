@@ -12,9 +12,6 @@ from voicegateway.core.config import GatewayConfig, ProjectConfig
 from voicegateway.core.config_manager import ConfigManager
 from voicegateway.middleware.budget_enforcer_middleware import BudgetEnforcer
 from voicegateway.middleware.cost_tracker_middleware import CostTracker
-from voicegateway.middleware.latency_monitor_middleware import LatencyMonitor
-from voicegateway.middleware.logger_middleware import RequestLogger
-from voicegateway.middleware.rate_limiter_middleware import RateLimiter
 from voicegateway.services.sinks import LocalSqliteSink
 from voicegateway.services.storage_service import StorageService
 
@@ -90,14 +87,6 @@ class Gateway:
             else []
         )
         self._cost_tracker.set_rate_card(self._effective_rate_card(db_rate_rules))
-        self._latency_monitor = LatencyMonitor(
-            ttfb_warning_ms=self._config.latency.get("ttfb_warning_ms", 500.0)
-        )
-        self._rate_limiter = RateLimiter(self._config.rate_limits)
-        self._logger = RequestLogger()
-
-        obs = self._config.observability
-        self._latency_tracking = obs.get("latency_tracking", True)
 
         self._budget_enforcer = BudgetEnforcer(self._config, self._storage)
         self._cost_tracker.set_budget_enforcer(self._budget_enforcer)

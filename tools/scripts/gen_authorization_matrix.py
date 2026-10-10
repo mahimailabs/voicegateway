@@ -29,14 +29,12 @@ _SCOPE_QUALNAME = "require_scope.<locals>._dep"
 
 def _canonical_routes():
     """Return the routers ApplicationBuilder registers on every API app."""
-    from voicegateway.server.api.openorca.routes import router as openorca_router
     from voicegateway.server.routes import api_router, dashboard_router, system_router
 
     return chain(
         system_router.routes,
         api_router.routes,
         dashboard_router.routes,
-        openorca_router.routes,
     )
 
 

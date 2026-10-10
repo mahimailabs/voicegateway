@@ -122,119 +122,21 @@ async function extractErrorDetail(res: Response): Promise<string | null> {
   }
 }
 
-// ----------------------------------------------------------------------
-// v0.2.0 voice-conversation metrics typed fetchers (REQ-VG-METRICS-001..006).
-// Thin wrappers around fetchJson<T>() that pin the response type and the
-// path string. Callers should prefer these over raw `fetchJson` calls so
-// path / type drift is caught at compile time.
-// ----------------------------------------------------------------------
+// Typed fetchers: thin wrappers around fetchJson<T>() that pin the response
+// type and the path string, so path / type drift is caught at compile time.
 
 import type {
   AgentProbeResult,
-  AgentRow,
   AgentsResponse,
   ApiKey,
   CallsResponse,
   CorrelationRate,
   CreatedApiKey,
-  DeadAirEvent,
   DiagnosticRun,
   DiagnosticsCreds,
-  LoadRunsResponse,
-  LogoUploadResponse,
-  MetricsAggregate,
   NodeCorrelationResponse,
-  ProjectBranding,
-  ProjectBrandingResponse,
-  ReplayResponse,
-  RetentionWindow,
   ServerOverview,
-  TenantFilter,
-  TurnRow,
 } from './types';
-
-/**
- * Append the tenant filter to a URLSearchParams instance per the v0.4.0
- * convention. ``null`` is "no filter" (param not set); ``""`` is the
- * unattributed bucket (param set to empty string); any other value is
- * that exact tenant. Matches the backend's ``tenant`` query parsing on
- * /api/costs, /api/latency, /api/sessions, and /api/metrics.
- */
-export function appendTenantParam(
-  params: URLSearchParams,
-  tenant: TenantFilter | undefined,
-): void {
-  if (tenant === null || tenant === undefined) return;
-  params.set('tenant', tenant);
-}
-
-export function fetchMetricsSummary(
-  options: { project?: string; days?: number; tenant?: TenantFilter } = {},
-): Promise<MetricsAggregate> {
-  const params = new URLSearchParams();
-  if (options.project) params.set('project', options.project);
-  if (options.days !== undefined) params.set('days', String(options.days));
-  appendTenantParam(params, options.tenant);
-  const query = params.toString();
-  return fetchJson<MetricsAggregate>(
-    query ? `/api/metrics?${query}` : '/api/metrics',
-  );
-}
-
-export function fetchSessionTurns(
-  sessionId: string,
-): Promise<{ session_id: string; turns: TurnRow[] }> {
-  return fetchJson(`/api/sessions/${encodeURIComponent(sessionId)}/turns`);
-}
-
-export function fetchSessionDeadAir(
-  sessionId: string,
-): Promise<{ session_id: string; events: DeadAirEvent[] }> {
-  return fetchJson(`/api/sessions/${encodeURIComponent(sessionId)}/dead_air`);
-}
-
-// ----------------------------------------------------------------------
-// v0.3.0 conversation-replay typed fetchers (REQ-VG-REPLAY-001..006).
-// Same wrap-fetchJson pattern as the v0.2.0 metrics fetchers above.
-// ----------------------------------------------------------------------
-
-export function fetchSessionReplay(
-  sessionId: string,
-): Promise<ReplayResponse> {
-  return fetchJson<ReplayResponse>(
-    `/api/sessions/${encodeURIComponent(sessionId)}/replay`,
-  );
-}
-
-export function deleteSessionReplay(
-  sessionId: string,
-): Promise<{ session_id: string; deleted_rows: number }> {
-  return fetchJson(
-    `/api/sessions/${encodeURIComponent(sessionId)}/replay`,
-    { method: 'DELETE' },
-  );
-}
-
-export function fetchReplayStorage(): Promise<{
-  total_replay_size_bytes: number;
-  by_project: Array<{ project: string; replay_size_bytes: number }>;
-}> {
-  return fetchJson('/api/replay/storage');
-}
-
-export function updateReplayRetention(
-  projectId: string,
-  retentionDays: number,
-): Promise<RetentionWindow> {
-  return fetchJson<RetentionWindow>(
-    `/api/projects/${encodeURIComponent(projectId)}/replay/retention`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ retention_days: retentionDays }),
-    },
-  );
-}
 
 // ----------------------------------------------------------------------
 // Phase 2 fleet: per-agent typed fetchers (mirror tenant). Pages set the
@@ -249,10 +151,6 @@ export function fetchAgents(
   if (options.q !== undefined && options.q.length > 0) params.set('q', options.q);
   const query = params.toString();
   return fetchJson<AgentsResponse>(query ? `/api/agents?${query}` : '/api/agents');
-}
-
-export function fetchAgent(agentId: string): Promise<AgentRow> {
-  return fetchJson<AgentRow>(`/api/agents/${encodeURIComponent(agentId)}`);
 }
 
 /**
@@ -309,32 +207,6 @@ export function revokeApiKey(
   keyId: number,
 ): Promise<{ id: number; revoked: true; row: ApiKey }> {
   return fetchJson(`/api/api_keys/${keyId}/revoke`, { method: 'POST' });
-}
-
-// ----------------------------------------------------------------------
-// v0.5.0 cross-modality routing + white-label branding typed fetchers
-// (REQ-VG-ROUTE-001..004).
-// ----------------------------------------------------------------------
-
-export function fetchProjectBranding(
-  projectId: string,
-): Promise<ProjectBrandingResponse> {
-  return fetchJson<ProjectBrandingResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/branding`,
-  );
-}
-
-export function updateProjectBranding(
-  projectId: string,
-  branding: ProjectBranding,
-): Promise<ProjectBrandingResponse> {
-  return fetchJson<ProjectBrandingResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/branding`,
-    {
-      method: 'POST',
-      body: JSON.stringify(branding),
-    },
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -417,55 +289,3 @@ export function fetchServerOverview(): Promise<ServerOverview> {
   return fetchJson<ServerOverview>('/api/server/overview');
 }
 
-/**
- * Multipart logo upload. Uses raw ``fetch`` because ``fetchJson``
- * always sets ``Content-Type: application/json`` when a body is
- * provided; multipart needs the browser to set the boundary.
- *
- * Returns the served URL the operator can plug into
- * ``ProjectBranding.logo_url`` on the next branding POST.
- */
-export async function uploadBrandingLogo(
-  projectId: string,
-  file: File,
-): Promise<LogoUploadResponse> {
-  if (DEMO_MODE) throw new Error('This is a read-only demo.');
-  const fd = new FormData();
-  fd.append('file', file);
-  const headers: Record<string, string> = {};
-  const token = getToken();
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(
-    `/api/projects/${encodeURIComponent(projectId)}/branding/logo`,
-    { method: 'POST', body: fd, headers },
-  );
-  if (res.status === 401 || res.status === 403) {
-    clearToken();
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT));
-    }
-    throw new Error(`HTTP ${res.status}`);
-  }
-  if (!res.ok) {
-    let detail: string | null = null;
-    try {
-      const body = await res.json();
-      if (typeof body?.detail === 'string') detail = body.detail;
-    } catch {
-      // fall through
-    }
-    throw new Error(detail ?? `HTTP ${res.status}`);
-  }
-  return (await res.json()) as LogoUploadResponse;
-}
-
-
-/**
- * Imported load runs with their tests embedded.
- *
- * One request, no query string: the demo build answers by pathname only, so a
- * per-run path could not be fixtured and the page would throw in demo mode.
- */
-export async function fetchLoadRuns(): Promise<LoadRunsResponse> {
-  return fetchJson<LoadRunsResponse>('/api/loadtest/runs');
-}

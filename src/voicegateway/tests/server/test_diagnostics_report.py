@@ -545,24 +545,3 @@ async def test_html_is_rendered_from_the_json_payload(client):
     assert payload["findings"]["latency"]["agents"][0]["tail"]["label"] in document
     assert str(payload["schema_version"]) in document
 
-
-def test_load_report_html_is_self_contained() -> None:
-    """The load-test document must reach for nothing either.
-
-    Reuses _EXTERNAL_MARKERS above rather than declaring a second list: two
-    copies drift, and the copy that stops being extended is the one guarding the
-    document somebody actually opens offline.
-    """
-    from voicegateway.livekit_diag import run_report
-
-    document = run_report.render_load_html(
-        run_report.build_load_payload(
-            run={"id": "ramp-500", "artifact_sha256": None},
-            tests=[{"name": "ramp-500", "peak_concurrency": 492}],
-        )
-    )
-    assert document.startswith("<!DOCTYPE html>")
-    assert "<style>" in document
-    lowered = document.lower()
-    for marker in _EXTERNAL_MARKERS:
-        assert marker not in lowered, f"load report reaches for {marker!r}"

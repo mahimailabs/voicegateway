@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 # Roster liveness TTL: a worker whose last heartbeat has aged past this many
 # seconds is served ``offline``. Shared by the repository read default and by
-# the agents/openorca routes so the value is defined exactly once.
+# the agents routes so the value is defined exactly once.
 DEFAULT_TTL_SECONDS = 45.0
 
 

@@ -7,23 +7,6 @@ from typing import Any
 from fastapi import HTTPException, status
 
 
-def create_credential_exception(detail: str) -> HTTPException:
-    """401 with the WWW-Authenticate header that browsers expect."""
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=detail,
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-
-def create_service_unavailable_exception(detail: str) -> HTTPException:
-    """503 for "feature configured off / dependency missing" branches."""
-    return HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail=detail,
-    )
-
-
 class DuplicatedError(HTTPException):
     """400 — unique-constraint violation surfaced at the service layer."""
 

@@ -27,46 +27,19 @@ async def test_full_agent_workflow(gateway):
     async with create_connected_server_and_client_session(server) as client:
         await client.initialize()
 
-        # 1. list_providers — seeded YAML providers present
-        result = await client.call_tool("list_providers", {})
-        providers = _parse(result)
-        assert providers["count"] >= 2
-
-        # 2. add_provider — a new local provider (no credentials tested)
-        result = await client.call_tool(
-            "add_provider",
-            {
-                "provider_id": "ollama-local",
-                "provider_type": "ollama",
-                "api_key": "",
-                "base_url": "http://localhost:11434",
-            },
-        )
-        added = _parse(result)
-        assert added["created"] is True
-
-        # 3. test_provider — will fail (no Ollama actually running), but returns
-        # structured status, not an exception
-        result = await client.call_tool(
-            "test_provider", {"provider_id": "ollama-local"}
-        )
-        tested = _parse(result)
-        assert tested["status"] in ("ok", "failed")
-        assert "latency_ms" in tested
-
-        # 4. register_model — add a model from the new provider
+        # 1. register_model — add a model from a configured provider
         result = await client.call_tool(
             "register_model",
             {
                 "modality": "llm",
-                "provider_id": "ollama-local",
-                "model_name": "llama3.2",
+                "provider_id": "openai",
+                "model_name": "gpt-test",
             },
         )
         registered = _parse(result)
-        assert registered["model_id"] == "ollama-local/llama3.2"
+        assert registered["model_id"] == "openai/gpt-test"
 
-        # 5. create_project — a framework-agnostic project (label + budget)
+        # 2. create_project — a framework-agnostic project (label + budget)
         result = await client.call_tool(
             "create_project",
             {
@@ -80,44 +53,39 @@ async def test_full_agent_workflow(gateway):
         created = _parse(result)
         assert created["project_id"] == "acme-corp"
 
-        # 6. get_project — verify it's fully configured
+        # 3. get_project — verify it's fully configured
         result = await client.call_tool("get_project", {"project_id": "acme-corp"})
         fetched = _parse(result)
         assert fetched["id"] == "acme-corp"
         assert fetched["daily_budget"] == 10.0
 
-        # 7. get_logs — empty for this new project, no crash
+        # 4. get_logs — empty for this new project, no crash
         result = await client.call_tool("get_logs", {"project": "acme-corp"})
         logs = _parse(result)
         assert logs == [] or isinstance(logs, list)
 
-        # 8. delete_project without confirm — preview
+        # 5. delete_project without confirm — preview
         result = await client.call_tool("delete_project", {"project_id": "acme-corp"})
         preview = _parse(result)
         assert preview["error"]["code"] == "CONFIRMATION_REQUIRED"
         assert "total_spend_usd" in preview["error"]["details"]
 
-        # 9. delete_project with confirm=True — actually gone
+        # 6. delete_project with confirm=True — actually gone
         result = await client.call_tool(
             "delete_project", {"project_id": "acme-corp", "confirm": True}
         )
         deleted = _parse(result)
         assert deleted["action"] == "deleted"
 
-        # 10. list_projects — project is gone
+        # 7. list_projects — project is gone
         result = await client.call_tool("list_projects", {})
         after = _parse(result)
         ids = {p["id"] for p in after["projects"]}
         assert "acme-corp" not in ids
 
-        # 11. cleanup — delete the model and provider we added
+        # 8. cleanup — delete the model we added
         result = await client.call_tool(
-            "delete_model", {"model_id": "ollama-local/llama3.2", "confirm": True}
-        )
-        assert _parse(result)["action"] == "deleted"
-
-        result = await client.call_tool(
-            "delete_provider", {"provider_id": "ollama-local", "confirm": True}
+            "delete_model", {"model_id": "openai/gpt-test", "confirm": True}
         )
         assert _parse(result)["action"] == "deleted"
 

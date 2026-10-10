@@ -83,11 +83,11 @@ npm install
 npm run dev              # in another terminal
 ```
 
-The Vite dev server runs on `http://localhost:5173` and proxies `/api`, `/v1`, and `/static/branding` to `http://localhost:8080`. `npm run build` produces the production bundle the daemon serves from disk.
+The Vite dev server runs on `http://localhost:5173` and proxies `/api` and `/v1` to `http://localhost:8080`. `npm run build` produces the production bundle the daemon serves from disk.
 
 ## Documentation site
 
-Docs source lives in this repo under `docs/`. Mintlify renders it at `https://docs.voicegateway.dev` from the default branch. Change the docs in the same PR as any behavior or API change; see [Contributing](index.md).
+Docs source lives in this repo under `site/docs/` (a Fumadocs app, pages in `site/docs/content/docs/`), published at `https://docs.voicegateway.dev` from the default branch. Change the docs in the same PR as any behavior or API change; see [Contributing](index.md).
 
 ## Environment variables for development
 

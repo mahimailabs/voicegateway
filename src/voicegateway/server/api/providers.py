@@ -1,16 +1,13 @@
-"""Provider endpoints under /v1/providers (list, CRUD, test)."""
+"""Provider endpoints under /v1/providers (list and CRUD)."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import time
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from voicegateway.core import registry as _registry
 from voicegateway.core.crypto import decrypt, mask
 from voicegateway.server.api._deps import get_gateway, require_scope
 
@@ -27,8 +24,24 @@ logger = logging.getLogger(__name__)
 _HOSTS_CONFIG_KEY = "provider_base_url_hosts"
 _HOSTS_CONFIG_PATH = f"serve.{_HOSTS_CONFIG_KEY}"
 
-# The host each provider module already treats as its own endpoint, mirroring
-# the literals in voicegateway/inference/providers/*.py. Keeping these permitted
+# The provider types a managed provider entry may name.
+_PROVIDER_TYPES = frozenset(
+    {
+        "openai",
+        "deepgram",
+        "cartesia",
+        "anthropic",
+        "groq",
+        "elevenlabs",
+        "assemblyai",
+        "ollama",
+        "whisper",
+        "kokoro",
+        "piper",
+    }
+)
+
+# The host each provider treats as its own endpoint. Keeping these permitted
 # by default is what makes an unset allowlist a no-op for deployments that only
 # ever point a provider at its own vendor.
 _DEFAULT_PROVIDER_HOSTS: dict[str, tuple[str, ...]] = {
@@ -137,7 +150,7 @@ async def create_provider_endpoint(
 
     if not pid or not isinstance(pid, str):
         raise HTTPException(400, "provider_id is required and must be a string")
-    if ptype not in _registry._PROVIDER_REGISTRY:
+    if ptype not in _PROVIDER_TYPES:
         raise HTTPException(400, f"Unknown provider_type '{ptype}'")
     if pid in gateway.config.providers:
         is_managed = (
@@ -196,13 +209,13 @@ async def update_provider(
     api_key = body.get("api_key", current_key)
     base_url = body.get("base_url", existing.get("base_url"))
     ptype = body.get("provider_type", existing["provider_type"])
-    if ptype not in _registry._PROVIDER_REGISTRY:
+    if ptype not in _PROVIDER_TYPES:
         raise HTTPException(400, f"Unknown provider_type '{ptype}'")
 
     project = body.get("project", existing.get("project"))
 
-    # The dangerous shape is "new host + stored key": POST /test would then ship
-    # the operator's key to a host the caller picked. A request that carries its
+    # The dangerous shape is "new host + stored key": anything that later uses
+    # the entry would send the operator's key to a host the caller picked. A request that carries its
     # own api_key owns a key already, and an empty stored key is not a secret, so
     # both stay unconstrained. Default hosts come from the STORED provider_type,
     # the vendor that issued the stored key, not from a caller-supplied one.
@@ -255,103 +268,3 @@ async def delete_provider(
     )
     await gateway.refresh_config()
     return {"deleted": provider_id}
-
-
-async def _resolve_test_target(
-    gateway: Gateway,
-    provider_id: str,
-) -> tuple[str | None, dict[str, Any] | None]:
-    """Return ``(provider_type, provider_config)`` for the test path."""
-    cfg = gateway.config
-
-    if provider_id in cfg.providers:
-        pcfg = cfg.providers[provider_id]
-        if isinstance(pcfg, dict) and pcfg.get("_source") != "db":
-            return provider_id, dict(pcfg)
-
-    if gateway.storage is not None:
-        row = await gateway.storage.get_managed_provider(provider_id)
-        if row is not None:
-            return row["provider_type"], {
-                "api_key": decrypt(row.get("api_key_encrypted", "")),
-                "base_url": row.get("base_url"),
-                **(row.get("extra_config") or {}),
-            }
-
-    if ":" in provider_id:
-        project, _, provider_type = provider_id.partition(":")
-        project_cfg = cfg.projects.get(project)
-        if project_cfg is not None and provider_type in project_cfg.providers:
-            return provider_type, dict(project_cfg.providers[provider_type])
-
-    return None, None
-
-
-@router.post("/{provider_id}/test", dependencies=[write_dep])
-async def test_provider(
-    provider_id: str,
-    gateway: Gateway = Depends(get_gateway),
-) -> dict:
-    ptype, pcfg = await _resolve_test_target(gateway, provider_id)
-    if pcfg is None:
-        raise HTTPException(404, f"No provider '{provider_id}'")
-    if ptype not in _registry._PROVIDER_REGISTRY:
-        return {
-            "status": "failed",
-            "message": f"Unknown type '{ptype}'",
-            "latency_ms": 0,
-        }
-    try:
-        inst = _registry.create_provider(ptype, pcfg)
-        start = time.time()
-        ok = await asyncio.wait_for(inst.health_check(), timeout=10.0)
-        latency_ms = int((time.time() - start) * 1000)
-    except TimeoutError:
-        return {
-            "status": "failed",
-            "message": "Provider health check timed out",
-            "latency_ms": 10000,
-        }
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Provider test for '%s' failed: %s", provider_id, exc)
-        return {
-            "status": "failed",
-            "message": "Provider health check failed",
-            "latency_ms": 0,
-        }
-    return {"status": "ok" if ok else "failed", "latency_ms": latency_ms}
-
-
-@router.post("/test", dependencies=[write_dep])
-async def test_provider_stateless(body: dict[str, Any]) -> dict:
-    """Stateless health check: takes provider_type + api_key + base_url."""
-    ptype = body.get("provider_type", "")
-    if ptype not in _registry._PROVIDER_REGISTRY:
-        return {
-            "status": "failed",
-            "message": f"Unknown provider_type '{ptype}'",
-            "latency_ms": 0,
-        }
-    cfg: dict[str, Any] = {
-        "api_key": body.get("api_key", ""),
-        "base_url": body.get("base_url"),
-    }
-    try:
-        inst = _registry.create_provider(ptype, cfg)
-        start = time.time()
-        ok = await asyncio.wait_for(inst.health_check(), timeout=10.0)
-        latency_ms = int((time.time() - start) * 1000)
-    except TimeoutError:
-        return {
-            "status": "failed",
-            "message": "Provider health check timed out",
-            "latency_ms": 10000,
-        }
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Stateless provider test for '%s' failed: %s", ptype, exc)
-        return {
-            "status": "failed",
-            "message": "Provider health check failed",
-            "latency_ms": 0,
-        }
-    return {"status": "ok" if ok else "failed", "latency_ms": latency_ms}

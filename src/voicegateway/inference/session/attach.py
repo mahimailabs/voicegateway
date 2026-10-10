@@ -1516,8 +1516,8 @@ def _attach_livekit(
             # in the audio path: conversation_item_added fires once per
             # completed message and function_tools_executed once per resolved
             # tool batch, so this stays a passive observer like the rest of
-            # attach(). Capturing per-token or per-frame replay would NOT be,
-            # which is why the other three ReplayCapture modalities stay unwired.
+            # attach(). Per-token or per-frame replay would NOT be, which is
+            # why replay captures state snapshots only.
             on(
                 "conversation_item_added",
                 _emit_conversation_item(session_id, session, snapshotter),

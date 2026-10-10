@@ -11,8 +11,6 @@ src/voicegateway/tests/
 # should not be COPYed into the image they describe.
 src/voicegateway/Dockerfile
 src/voicegateway/README.dockerhub.md
-src/dashboard/Dockerfile
-src/dashboard/README.dockerhub.md
 
 # Frontend build output (regenerated inside the frontend-builder stage).
 src/dashboard/frontend/dist/

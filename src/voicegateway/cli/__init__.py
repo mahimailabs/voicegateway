@@ -25,7 +25,6 @@ from __future__ import annotations
 import typer
 
 from voicegateway.cli import baseline_cli as _baseline  # noqa: F401, E402
-from voicegateway.cli import brand_cli as _brand  # noqa: F401, E402
 from voicegateway.cli import calls_cli as _calls  # noqa: F401, E402
 from voicegateway.cli import check_cli as _check  # noqa: F401, E402
 from voicegateway.cli import costs_cli as _costs  # noqa: F401, E402
@@ -35,7 +34,6 @@ from voicegateway.cli import export_costs_cli as _export_costs  # noqa: F401, E4
 from voicegateway.cli import init_cli as _init  # noqa: F401, E402
 from voicegateway.cli import keys_cli as _keys  # noqa: F401, E402
 from voicegateway.cli import lifecycle_cli as _lifecycle  # noqa: F401, E402
-from voicegateway.cli import loadtest_cli as _loadtest  # noqa: F401, E402
 from voicegateway.cli import logs_cli as _logs  # noqa: F401, E402
 from voicegateway.cli import mcp_cli as _mcp  # noqa: F401, E402
 from voicegateway.cli import migrate_cli as _migrate  # noqa: F401, E402

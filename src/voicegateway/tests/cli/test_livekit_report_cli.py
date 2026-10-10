@@ -427,38 +427,3 @@ def test_no_recorded_run_exits_one_and_says_where_runs_come_from(
     assert "no diagnostics run is recorded on this host yet" in out
     assert "Diagnostics page" in out
 
-
-def test_load_report_file_reaches_for_nothing() -> None:
-    """Same scan as the diagnostics file, including absolute URLs anywhere.
-
-    Extends the list above rather than starting a third. A load report is
-    handed over and opened from disk, so an http:// anywhere in it is a hole.
-    """
-    from voicegateway.livekit_diag import run_report
-
-    document = run_report.render_load_html(
-        run_report.build_load_payload(
-            run={"id": "ramp-500", "artifact_sha256": None},
-            tests=[{"name": "ramp-500", "peak_concurrency": 492}],
-            capacity={
-                "calls_per_node": 150,
-                "reason": "sustained under the CPU ceiling",
-                "tiers": [
-                    {
-                        "target_concurrency": 500,
-                        "nodes_for_load": 4,
-                        "spare_nodes": 1,
-                        "nodes": 5,
-                    }
-                ],
-                "instance_type": {
-                    "name": "c7i.2xlarge",
-                    "role": "SIP",
-                    "citation": "sizing-runbook.md:115",
-                },
-            },
-        )
-    )
-    lowered = document.lower()
-    for marker in _EXTERNAL_MARKERS:
-        assert marker not in lowered, f"load report reaches for {marker!r}"

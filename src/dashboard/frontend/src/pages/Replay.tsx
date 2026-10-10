@@ -2,38 +2,21 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import ConversationStatePane from '../components/replay/ConversationStatePane';
-import ModelOutputPane from '../components/replay/ModelOutputPane';
 import PreV030Banner from '../components/replay/PreV030Banner';
-import RunningCostCounter from '../components/replay/RunningCostCounter';
 import Scrubber from '../components/replay/Scrubber';
-import SynthesisPane from '../components/replay/SynthesisPane';
-import TranscriptPane from '../components/replay/TranscriptPane';
 import { fetchJson } from '../lib/api';
 import type { ReplayEvent, ReplayResponse } from '../lib/types';
 
-// v0.3.0 Conversation Replay page (REQ-VG-REPLAY-001..006).
-//
-// Scaffolding for T11. The four panes + RunningCostCounter +
-// Scrubber subcomponents land in T12; PreV030Banner lands in T12 as
-// well. This file owns:
-//
-// - Reading `session_id` from the URL via `useParams`.
-// - Fetching the full replay on mount (OQ3 pre-fetch resolution;
-//   `Replay` events are bounded by per-minute capture + retention).
-// - Holding the scrubber `t_ms` state shared across the panes.
-// - Layout: StalenessBanner + PageHeader + scrubber row +
-//   four-pane grid + cost counter.
-// - The pre-v0.3.0 empty-events fallback (REQ-VG-REPLAY-001 AC-3).
-//
-// T12 swaps the placeholder card slots for the real components.
+// Conversation replay: the conversation-state snapshots attach() captured for
+// one session, scrubbable by time. Replay records state snapshots only; it
+// never sits in the STT/LLM/TTS streams.
 
 export default function Replay() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [data, setData] = useState<ReplayResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  // Playhead in ms relative to call start. Shared state so the four
-  // panes + cost counter (T12) all render the same moment.
+  // Playhead in ms relative to call start.
   const [playheadMs, setPlayheadMs] = useState<number>(0);
 
   useEffect(() => {
@@ -102,22 +85,9 @@ export default function Replay() {
             eventTimestampsMs={data.events.map((e) => e.t_ms)}
           />
 
-          <div className="grid grid-cols-2 gap-lg">
-            <TranscriptPane
-              events={eventsBeforePlayhead.filter((e) => e.modality === 'stt')}
-            />
-            <ModelOutputPane
-              events={eventsBeforePlayhead.filter((e) => e.modality === 'llm')}
-            />
-            <SynthesisPane
-              events={eventsBeforePlayhead.filter((e) => e.modality === 'tts')}
-            />
-            <ConversationStatePane
-              events={eventsBeforePlayhead.filter((e) => e.modality === 'state')}
-            />
-          </div>
-
-          <RunningCostCounter eventsBeforePlayhead={eventsBeforePlayhead} />
+          <ConversationStatePane
+            events={eventsBeforePlayhead.filter((e) => e.modality === 'state')}
+          />
         </>
       )}
     </div>

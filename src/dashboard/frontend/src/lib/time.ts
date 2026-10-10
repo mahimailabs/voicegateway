@@ -98,20 +98,6 @@ function toDate(value: string | number | Date): Date | null {
   return Number.isNaN(t) ? null : new Date(t);
 }
 
-/** Hours:minutes in the effective timezone (e.g. "14:32"). */
-export function formatTime(
-  value: string | number | Date | null | undefined,
-): string {
-  if (value == null) return '—';
-  const d = toDate(value);
-  if (!d) return String(value);
-  return d.toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: resolvedTimeZone(),
-  });
-}
-
 /** Short date + hours:minutes in the effective timezone (e.g. "Jul 24, 14:32"). */
 export function formatDateTime(
   value: string | number | Date | null | undefined,

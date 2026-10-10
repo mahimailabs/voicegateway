@@ -70,8 +70,8 @@ def rotate_secret(
         for pid in summary["failed"]:
             console.print(f"  - {pid}")
         console.print(
-            "Re-add the affected providers via the dashboard or "
-            "`vg_add_provider` (MCP) once the rotation finishes."
+            "Re-add the affected providers with POST /v1/providers "
+            "once the rotation finishes."
         )
         raise typer.Exit(2)
 

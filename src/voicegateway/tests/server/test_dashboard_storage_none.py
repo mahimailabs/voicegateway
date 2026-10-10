@@ -137,24 +137,3 @@ def test_api_keys_revoke_returns_503_when_storage_disabled(storage_disabled_clie
     resp = storage_disabled_client.post("/api/api_keys/1/revoke")
     assert resp.status_code == 503
 
-
-def test_branding_get_returns_503_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.get("/api/projects/anything/branding")
-    assert resp.status_code == 503
-
-
-def test_branding_post_returns_503_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.post(
-        "/api/projects/anything/branding", json={"accent_color": "#fff"}
-    )
-    assert resp.status_code == 503
-
-
-def test_branding_logo_upload_returns_503_when_storage_disabled(
-    storage_disabled_client,
-):
-    resp = storage_disabled_client.post(
-        "/api/projects/anything/branding/logo",
-        files={"file": ("logo.png", b"fake-png-bytes", "image/png")},
-    )
-    assert resp.status_code == 503
