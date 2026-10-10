@@ -17,7 +17,7 @@ catalog.calculate_cost("tts", "<provider>/<model>", character_count=1000)
 ### Add the model to voice-prices
 Add the model id, match pattern, and `prices` block in the relevant provider file under [voice-prices](https://github.com/mahimailabs/voice-prices)'s `prices/providers/`. Every entry carries a `prices_checked` date and a `pricing_source_url`. Publish a new `voice-prices` version.
 ### Bump the pin
-Update the `voice-prices` dependency spec in VoiceGateway's `pyproject.toml` (currently `voice-prices>=0.1.0,<0.2`) to require the new version, then confirm it resolves:
+Update the `voice-prices` dependency spec in VoiceGateway's `pyproject.toml` (currently `voice-prices>=0.11.0,<1`) to require the new version, then confirm it resolves:
 
 ```bash
 pytest src/voicegateway/tests/pricing/ -q
@@ -27,70 +27,6 @@ See [Refreshing Pricing](refreshing-pricing.md) for the full workflow, including
 ## Document it
 
 If the provider is new to VoiceGateway (not just a new model on an existing provider), add it to the provider table in the repository `README.md`. The docs site names no providers on purpose: pricing coverage lives in [voice-prices](https://prices.mahimai.ca).
-
-## Appendix: the BaseProvider health-check path (optional)
-
-This section is unrelated to cost tracking. Skip it unless you specifically want the provider to work with the dashboard's **Test Connection** button, `voicegw doctor`, or the MCP server's admin-only provider tools (`test_provider`, `vg_test_provider_key`, gated behind `VOICEGW_MCP_ADMIN=1`).
-
-Those three surfaces are the only production callers of `BaseProvider`. Its `create_stt()` / `create_llm()` / `create_tts()` methods have no other callers in the codebase; `attach()` and `guard()` never touch a `BaseProvider` instance.
-### Create the provider file
-Add `src/voicegateway/inference/providers/<name>_provider.py`, subclassing `BaseProvider` from `src/voicegateway/inference/providers/base_provider.py`. Use an existing provider as a template, for example `anthropic_provider.py`:
-
-```python
-from __future__ import annotations
-
-from typing import Any
-
-from voicegateway.inference.providers.base_provider import BaseProvider
-
-
-class <Name>Provider(BaseProvider):
-        def __init__(self, config: dict[str, Any]) -> None:
-            self.api_key = config.get("api_key", "")
-
-        def create_stt(self, model: str, **kwargs: Any) -> Any:
-            self._unsupported("stt")
-
-        def create_llm(self, model: str, **kwargs: Any) -> Any:
-            self._unsupported("llm")
-
-        def create_tts(self, model: str, voice: str | None = None, **kwargs: Any) -> Any:
-            self._unsupported("tts")
-
-        async def health_check(self) -> bool:
-            """Make a lightweight, authenticated API call and return True/False."""
-            ...
-```
-
-Call `self._unsupported("<modality>")` for whichever `create_*` methods do not apply. `health_check()` is the only method that runs in production; implement it against a cheap endpoint (see `anthropic_provider.py`'s `GET /v1/models` call for the pattern).
-### Register it
-Add an entry to `_PROVIDER_REGISTRY` in `src/voicegateway/core/registry.py`:
-
-```python
-"<name>": ("voicegateway.inference.providers.<name>_provider", "<Name>Provider"),
-```
-
-The registry lazily imports the module on first `create_provider()` call, so an uninstalled plugin does not break the rest of the install.
-### Add a fake key to test fixtures
-In `src/voicegateway/tests/conftest.py`, add `"<NAME>_API_KEY"` to the `_test_env` fixture's key list.
-### Write a health_check test
-Follow `src/voicegateway/tests/providers/test_cartesia_health_check.py`: mock `httpx.AsyncClient`, assert `health_check()` returns `True` on 200, `False` on a bad status, missing key, or a network error.
-## Registered providers
-> **Note**
-This table is `_PROVIDER_REGISTRY` in `src/voicegateway/core/registry.py`. It governs the health-check surface above, not what `attach()`/`guard()` can meter: those meter any `provider/model` id that resolves in voice-prices, registry membership notwithstanding.
-| Provider | Module | Class |
-|---|---|---|
-| openai | `openai_provider` | `OpenAIProvider` |
-| deepgram | `deepgram_provider` | `DeepgramProvider` |
-| anthropic | `anthropic_provider` | `AnthropicProvider` |
-| groq | `groq_provider` | `GroqProvider` |
-| cartesia | `cartesia_provider` | `CartesiaProvider` |
-| elevenlabs | `elevenlabs_provider` | `ElevenLabsProvider` |
-| assemblyai | `assemblyai_provider` | `AssemblyAIProvider` |
-| ollama | `ollama_provider` | `OllamaProvider` |
-| whisper | `whisper_provider` | `WhisperProvider` |
-| kokoro | `kokoro_provider` | `KokoroProvider` |
-| piper | `piper_provider` | `PiperProvider` |
 
 ## Related pages
 

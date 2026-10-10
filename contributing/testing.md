@@ -96,28 +96,6 @@ File-name pattern: `test_<module>.py`. Function-name pattern: `test_<behaviour>`
 
 Write plain `async def test_...` functions; `asyncio_mode = "auto"` picks them up without a decorator. The next section has a full example.
 
-### Mocking a provider's health check
-
-`BaseProvider.health_check()` is the only method a provider subclass exercises in production (the health-check surface: dashboard **Test Connection**, `voicegw doctor`, the MCP server's admin `test_provider` tool). Follow `src/voicegateway/tests/providers/test_cartesia_health_check.py`: mock `httpx.AsyncClient`, not the provider method itself.
-
-```python
-from unittest.mock import AsyncMock, MagicMock, patch
-
-from voicegateway.inference.providers.cartesia_provider import CartesiaProvider
-
-
-async def test_health_check_returns_false_on_400():
-provider = CartesiaProvider({"api_key": "sk_car_test"})
-response = MagicMock(status_code=400)
-client = MagicMock()
-client.get = AsyncMock(return_value=response)
-ctx = MagicMock()
-ctx.__aenter__ = AsyncMock(return_value=client)
-ctx.__aexit__ = AsyncMock(return_value=None)
-with patch("httpx.AsyncClient", return_value=ctx):
-        assert await provider.health_check() is False
-```
-
 ### Testing cost calculations
 
 ```python
