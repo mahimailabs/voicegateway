@@ -10,6 +10,7 @@ SQLite and Postgres).
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
@@ -99,17 +100,37 @@ def validate_rule(
     raise ValueError("a rate rule needs either markup or a fixed price")
 
 
+@dataclass(frozen=True)
+class FxProvenance:
+    """Where a converted price came from, stored beside the price.
+
+    Without this a rule set from a foreign-currency figure is
+    indistinguishable from a hand-typed one, which makes its staleness
+    invisible rather than absent. Amount and rate are strings because they are
+    evidence: they have to still match the vendor page they were read from,
+    and a float would quietly stop doing that.
+    """
+
+    source_currency: str
+    source_amount: str
+    fx_rate: str
+    fx_source: str
+    fx_fetched_at: float
+
+
 _RULE_UPSERT = text(
     """
     INSERT INTO managed_rate_rules (
         rule_id, modality, provider, model, tenant, plan,
         sets, kind, markup, unit_price_usd, unit,
         input_price_usd, cached_input_price_usd, output_price_usd,
+        source_currency, source_amount, fx_rate, fx_source, fx_fetched_at,
         created_at, updated_at
     ) VALUES (
         :rule_id, :modality, :provider, :model, :tenant, :plan,
         :sets, :kind, :markup, :unit_price_usd, :unit,
         :input_price_usd, :cached_input_price_usd, :output_price_usd,
+        :source_currency, :source_amount, :fx_rate, :fx_source, :fx_fetched_at,
         :now, :now
     )
     ON CONFLICT(rule_id) DO UPDATE SET
@@ -121,6 +142,11 @@ _RULE_UPSERT = text(
         input_price_usd=excluded.input_price_usd,
         cached_input_price_usd=excluded.cached_input_price_usd,
         output_price_usd=excluded.output_price_usd,
+        source_currency=excluded.source_currency,
+        source_amount=excluded.source_amount,
+        fx_rate=excluded.fx_rate,
+        fx_source=excluded.fx_source,
+        fx_fetched_at=excluded.fx_fetched_at,
         updated_at=excluded.updated_at
     """
 )
@@ -156,6 +182,34 @@ async def list_rules(session: AsyncSession) -> list[dict[str, Any]]:
     return [_row_to_dict(r) for r in result.scalars().all()]
 
 
+async def list_fx_rules(session: AsyncSession) -> list[dict[str, Any]]:
+    """Rules whose price was converted from a foreign currency, oldest rate first.
+
+    Deliberately not folded into :func:`list_rules`. That one is shaped 1:1 to
+    ``RateRule`` and feeds ``RateCard.with_overrides``; extra keys there would
+    reach a constructor that does not expect them. Provenance is an operator
+    concern, not a pricing one, so it gets its own read.
+    """
+    result = await session.execute(
+        select(ManagedRateRule)
+        .where(ManagedRateRule.fx_fetched_at.is_not(None))  # type: ignore[union-attr]
+        .order_by(ManagedRateRule.fx_fetched_at.asc())  # type: ignore[union-attr]
+    )
+    return [
+        {
+            "rule_id": r.rule_id,
+            "unit": r.unit,
+            "unit_price_usd": r.unit_price_usd,
+            "source_currency": r.source_currency,
+            "source_amount": r.source_amount,
+            "fx_rate": r.fx_rate,
+            "fx_source": r.fx_source,
+            "fx_fetched_at": r.fx_fetched_at,
+        }
+        for r in result.scalars().all()
+    ]
+
+
 async def upsert_rule(
     session: AsyncSession,
     *,
@@ -171,6 +225,7 @@ async def upsert_rule(
     cached_input_price_usd: float | None = None,
     output_price_usd: float | None = None,
     sets: str = "price",
+    fx: FxProvenance | None = None,
 ) -> str:
     """Insert or update one rule (keyed by scope). Returns the ``rule_id``."""
     kind = validate_rule(
@@ -210,6 +265,11 @@ async def upsert_rule(
                 cached_input_price_usd if kind == "fixed" else None
             ),
             "output_price_usd": output_price_usd if kind == "fixed" else None,
+            "source_currency": fx.source_currency if fx else None,
+            "source_amount": fx.source_amount if fx else None,
+            "fx_rate": fx.fx_rate if fx else None,
+            "fx_source": fx.fx_source if fx else None,
+            "fx_fetched_at": fx.fx_fetched_at if fx else None,
             "now": time.time(),
         },
     )
@@ -227,6 +287,8 @@ async def delete_rule(session: AsyncSession, rule_id: str) -> bool:
 
 
 __all__ = [
+    "FxProvenance",
+    "list_fx_rules",
     "delete_rule",
     "list_rules",
     "scope_key",
