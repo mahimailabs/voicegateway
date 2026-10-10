@@ -11,11 +11,9 @@ These tests drive the chain end to end against a real SQLite file, because that
 is the part that was missing: unit tests over the two components passed for
 months while the feature was unreachable.
 
-**The other three replay modalities stay unwired on purpose.**
-``record_stt_chunk``, ``record_llm_token`` and ``record_tts_frame`` are per
-chunk, per token and per frame. No ``AgentSession`` event carries data at that
-granularity, so capturing them means sitting inside the STT/LLM/TTS streams,
-which is the audio path VoiceGateway stays out of. Snapshots are different:
+**Replay captures state snapshots only.** Per-chunk, per-token or per-frame
+capture would mean sitting inside the STT/LLM/TTS streams, which is the audio
+path VoiceGateway stays out of. Snapshots are different:
 ``conversation_item_added`` and ``function_tools_executed`` fire once per
 completed message and once per resolved tool batch, so this stays a passive
 observer.
@@ -310,22 +308,6 @@ async def test_attach_subscribes_both_events_only_when_enabled(tmp_path) -> None
     assert "function_tools_executed" in on.handlers
     # And the close handler survives alongside them.
     assert "close" in on.handlers
-
-
-async def test_the_events_are_not_in_the_audio_path() -> None:
-    """The reason this could be wired at all, pinned so nobody adds the others.
-
-    The three unwired ReplayCapture modalities are per-chunk, per-token and
-    per-frame; capturing them means sitting inside the media/inference streams.
-    attach() must keep subscribing only to message- and tool-level events.
-    """
-    import inspect
-
-    src = inspect.getsource(attach_mod._attach_livekit)
-    for forbidden in ("record_stt_chunk", "record_llm_token", "record_tts_frame"):
-        assert forbidden not in src, (
-            f"attach() reached into the audio path: {forbidden}"
-        )
 
 
 def test_pipecat_accepts_the_flag_without_capturing() -> None:
