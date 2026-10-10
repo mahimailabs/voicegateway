@@ -1,0 +1,34 @@
+name: Agent docs
+
+# The files coding agents read first (CLAUDE.md and the docs it points to).
+# A leftover TODO: placeholder or an em dash here ends up copied into code,
+# commits and the published docs, so both fail the PR.
+
+on:
+  pull_request:
+    paths:
+      - 'CLAUDE.md'
+      - 'AGENTS.md'
+      - 'PRODUCT.md'
+      - 'ARCHITECTURE.md'
+      - 'DESIGN.md'
+      - 'docs/**'
+      - '.claude/commands/**'
+      - 'tools/scripts/check-placeholders.sh'
+      - '.github/workflows/agent-docs.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: agent docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: No placeholders left
+        run: tools/scripts/check-placeholders.sh
+      - name: No em dashes
+        run: '! grep -n "—" CLAUDE.md AGENTS.md PRODUCT.md ARCHITECTURE.md DESIGN.md docs/progress.md docs/decisions/*.md .claude/commands/*.md'

@@ -1,6 +1,11 @@
 default_language_version:
     python: python3
 
+# .claude/skills/impeccable/ is a vendored third-party skill, kept byte for
+# byte so `npx impeccable update` diffs cleanly. Its font index is over the
+# size cap by design.
+exclude: ^\.claude/skills/impeccable/
+
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

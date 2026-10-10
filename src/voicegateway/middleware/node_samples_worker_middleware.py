@@ -29,7 +29,7 @@ unless a target reported 0.
 WHERE THESE NAMES CAME FROM: ALL OF THEM MEASURED
 -------------------------------------------------
 These names were originally taken from
-``docs/superpowers/specs/2026-07-29-end-to-end-profiling-scope.md`` (§2 "What is
+``docs/specs/2026-07-29-end-to-end-profiling-scope.md`` (§2 "What is
 actually observable"), which was written against the SDKs installed here rather
 than against a running binary. A Python SDK version does not pin the
 livekit-server or livekit-sip BINARY an operator runs, and inferring a metric

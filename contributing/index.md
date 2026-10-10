@@ -21,7 +21,7 @@ We follow the [Contributor Covenant Code of Conduct](https://www.contributor-cov
 
 ### Submit a pull request
 ### Fork and branch
-Naming convention: `feat/<description>`, `fix/<description>`, `docs/<description>`, `test/<description>`.
+Naming convention: `feat/<description>`, `fix/<description>` or `chore/<description>`.
 ### Set up your environment
 Follow [Development Setup](development-setup.md).
 ### Make your changes

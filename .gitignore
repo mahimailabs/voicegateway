@@ -1,4 +1,13 @@
-.claude
+# Claude Code: the shared setup (commands, skills, agents, settings.json) is
+# committed; personal settings and impeccable's downloaded engine are not.
+.claude/*
+!.claude/commands/
+!.claude/skills/
+!.claude/agents/
+!.claude/settings.json
+.claude/skills/impeccable/scripts/bin/
+.impeccable/config.local.json
+.mcp.json
 prompt.md
 src/voicegateway/_version.py
 .venv
