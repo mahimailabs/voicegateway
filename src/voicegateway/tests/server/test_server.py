@@ -583,11 +583,6 @@ async def test_patch_provider(client):
     assert resp.json()["updated"] is True
 
 
-async def test_test_provider_not_found(client):
-    resp = await client.post("/v1/providers/nonexistent/test")
-    assert resp.status_code == 404
-
-
 # --------------------------------------------------------------------
 # CRUD — Models
 # --------------------------------------------------------------------

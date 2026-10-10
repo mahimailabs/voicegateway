@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import shutil
 import sys
 from dataclasses import dataclass, field
 from typing import Any
 
 import typer
-
-from voicegateway.core.constants import VALIDATION_TIMEOUT_S
 
 
 @dataclass
@@ -160,107 +157,6 @@ def _check_provider_configured(ctx: _Context) -> CheckResult:
     )
 
 
-def _check_provider_key_valid(ctx: _Context) -> CheckResult:
-    """Best-effort: validate at most one configured provider's key."""
-    if ctx.gateway is None:
-        return CheckResult(
-            "Provider key valid",
-            "skip",
-            "(skipped because voicegw.yaml could not be loaded)",
-        )
-    providers = ctx.gateway.config.providers
-    if not providers:
-        return CheckResult(
-            "Provider key valid",
-            "skip",
-            "(skipped because no provider is configured)",
-        )
-
-    name, cfg = next(iter(providers.items()))
-    api_key = cfg.get("api_key", "")
-    if not api_key:
-        return CheckResult(
-            "Provider key valid",
-            "fail",
-            f"Provider '{name}' has no api_key set. Set it directly in "
-            "voicegw.yaml under providers.",
-        )
-
-    status, message = asyncio.run(_validate_provider_key(name, api_key))
-    if status == "ok":
-        return CheckResult("Provider key valid", "ok", f"{name}: validated")
-    if status == "skipped":
-        return CheckResult("Provider key valid", "skip", f"{name}: {message}")
-    if status == "timeout":
-        return CheckResult(
-            "Provider key valid",
-            "skip",
-            f"{name}: validation timed out (your key may still be correct)",
-        )
-    return CheckResult(
-        "Provider key valid",
-        "fail",
-        f"{name} key was rejected ({message}). Re-check the value in your "
-        "provider dashboard, then update it in voicegw.yaml.",
-    )
-
-
-async def _validate_provider_key(provider: str, api_key: str) -> tuple[str, str | None]:
-    """Drive a configured provider's ``health_check`` under a short timeout.
-
-    Legacy provider-validation path used by the doctor "Provider key valid"
-    check. In the framework-agnostic model most configs carry no ``providers:``
-    block, so this only runs when the operator has set one explicitly.
-    """
-    from voicegateway.core.registry import _PROVIDER_REGISTRY, create_provider
-
-    if provider not in _PROVIDER_REGISTRY:
-        return "skipped", f"unknown provider name '{provider}'"
-
-    try:
-        instance = create_provider(provider, {"api_key": api_key})
-    except ImportError as exc:
-        return "skipped", f"plugin not installed ({exc})"
-    except Exception as exc:  # noqa: BLE001
-        return "failed", f"{type(exc).__name__}: {exc}"
-
-    try:
-        ok = await asyncio.wait_for(
-            instance.health_check(), timeout=VALIDATION_TIMEOUT_S
-        )
-    except TimeoutError:
-        return "timeout", None
-    except asyncio.CancelledError:
-        # ALSO a timeout, and the reason `voicegw doctor` used to die with a
-        # traceback on a slow network.
-        #
-        # ``wait_for`` normally rewrites the cancellation it delivers into
-        # TimeoutError. It only does so while ``task.uncancel() <=
-        # self._cancelling``, so one cancel it did not account for defeats the
-        # conversion and the raw CancelledError comes out instead. The provider
-        # supplies that extra cancel by construction: ``health_check`` runs
-        # inside ``async with httpx.AsyncClient()``, and draining that pool on
-        # the way out awaits again under anyio's own cancel scope.
-        #
-        # Nothing between here and the CLI catches it, because CancelledError
-        # derives from BaseException and every handler on the path is
-        # ``except Exception``. So the whole command crashed, at a rate set by
-        # how fast api.openai.com happened to answer.
-        #
-        # Swallowing a cancellation is normally wrong: it hides a caller who
-        # wanted to stop us. It is right HERE because this coroutine is only
-        # ever driven by ``asyncio.run`` from synchronous CLI code (see the
-        # caller above), so there is no caller above capable of cancelling it.
-        # The only possible source is the deadline we set ourselves.
-        return "timeout", None
-    except Exception as exc:  # noqa: BLE001
-        return "failed", f"{type(exc).__name__}: {exc}"
-
-    if ok:
-        return "ok", None
-    return "failed", "authentication declined"
-
-
 def _check_recent_error_count(ctx: _Context) -> CheckResult:
     """Count failed request rows in the last hour."""
     if ctx.gateway is None or ctx.gateway.storage is None:
@@ -350,7 +246,6 @@ _CHECKS = (
     _check_daemon_running,
     _check_port_conflict,
     _check_provider_configured,
-    _check_provider_key_valid,
     _check_recent_error_count,
     _check_dashboard_reachable,
     _check_mcp_responsive,

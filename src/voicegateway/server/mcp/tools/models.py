@@ -121,9 +121,9 @@ async def _handle_list_models(
 
 REGISTER_MODEL_DOC = """Register a new model (e.g. deepgram/nova-3).
 
-Use this after ``add_provider`` when the user wants to expose a specific
-model from that provider. The generated model id is "{provider_id}/{model_name}".
-The provider must already exist (either in YAML or added via add_provider).
+Use this when the user wants to expose a specific model from a configured
+provider. The generated model id is "{provider_id}/{model_name}".
+The provider must already exist (in YAML or added via POST /v1/providers).
 
 Args:
     modality: "stt", "llm", or "tts".
@@ -158,7 +158,7 @@ async def _handle_register_model(
     if not _provider_exists(gateway, payload.provider_id, managed_providers):
         raise ProviderNotFoundError(
             f"Provider '{payload.provider_id}' is not configured. "
-            "Call add_provider first.",
+            "Add it to voicegw.yaml or POST /v1/providers first.",
             details={"provider_id": payload.provider_id},
         )
 

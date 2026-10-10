@@ -147,6 +147,5 @@ __all__ = [
     "UnattributedAggregates",
     "agent_latency_p95",
     "get_agent",
-    "get_unattributed_aggregates",
     "list_agents",
 ]

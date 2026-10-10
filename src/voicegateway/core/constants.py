@@ -24,4 +24,3 @@ SMOKE_MODALITIES: tuple[tuple[str, str], ...] = (
 )
 
 SMOKE_TEST_TIMEOUT_S = 10.0
-VALIDATION_TIMEOUT_S = 5.0

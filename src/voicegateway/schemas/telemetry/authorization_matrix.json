@@ -683,14 +683,6 @@
       "note": "Config mutation behind require_scope(\"write\")."
     },
     {
-      "method": "POST",
-      "path": "/v1/providers/test",
-      "auth": "scope:write",
-      "status": "enforced",
-      "tenant_scoped": false,
-      "note": "Config mutation behind require_scope(\"write\")."
-    },
-    {
       "method": "DELETE",
       "path": "/v1/providers/{provider_id}",
       "auth": "scope:write",
@@ -701,14 +693,6 @@
     {
       "method": "PATCH",
       "path": "/v1/providers/{provider_id}",
-      "auth": "scope:write",
-      "status": "enforced",
-      "tenant_scoped": false,
-      "note": "Config mutation behind require_scope(\"write\")."
-    },
-    {
-      "method": "POST",
-      "path": "/v1/providers/{provider_id}/test",
       "auth": "scope:write",
       "status": "enforced",
       "tenant_scoped": false,

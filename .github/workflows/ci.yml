@@ -76,4 +76,4 @@ jobs:
       - name: Pytest
         # Integration tests (testcontainers ClickHouse, real Postgres) run in
         # their dedicated jobs; the unit matrix deselects them by marker.
-        run: uv run pytest -q -n auto -m "not integration" --ignore=src/voicegateway/tests/test_providers/test_ollama.py
+        run: uv run pytest -q -n auto -m "not integration"

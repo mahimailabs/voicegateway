@@ -70,7 +70,7 @@ jobs:
         # measures each worker and combines them into .coverage, which the
         # xml and report steps below read as before.
         run: |
-          uv run pytest -n auto --cov --cov-report= src/voicegateway/tests/ -m "not integration" --ignore=src/voicegateway/tests/test_providers/test_ollama.py
+          uv run pytest -n auto --cov --cov-report= src/voicegateway/tests/ -m "not integration"
           uv run coverage xml
           uv run coverage report
 

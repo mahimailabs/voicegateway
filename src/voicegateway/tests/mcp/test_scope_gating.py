@@ -14,14 +14,6 @@ def _scope(name: str) -> str | None:
 def test_legacy_and_destructive_tools_are_admin_scoped():
     """Provider-config (legacy) + destructive tools require admin mode."""
     for name in (
-        "list_providers",
-        "add_provider",
-        "delete_provider",
-        "test_provider",
-        "vg_add_provider",
-        "vg_remove_provider",
-        "vg_set_provider_key",
-        "vg_test_provider_key",
         "register_model",
         "delete_model",
         "delete_project",

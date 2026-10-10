@@ -34,7 +34,7 @@ jobs:
         # they run in their dedicated jobs, and running them here both emits
         # "Event loop is closed" teardown noise and leaks VOICEGW_DB_PATH into
         # later unit tests. Matches ci.yml and test-coverage.yml.
-        run: uv run pytest --tb=short -m "not integration" --ignore=src/voicegateway/tests/providers
+        run: uv run pytest --tb=short -m "not integration"
 
   # Build each architecture on its NATIVE runner (no QEMU emulation) and push
   # by digest. arm64 builds on a GitHub-hosted arm runner instead of emulated

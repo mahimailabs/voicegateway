@@ -160,18 +160,8 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-source = ["voicegateway", "dashboard"]
+source = ["voicegateway"]
 omit = [
-    # Provider implementations require external LiveKit plugins to test
-    "src/voicegateway/providers/openai_provider.py",
-    "src/voicegateway/providers/deepgram_provider.py",
-    "src/voicegateway/providers/anthropic_provider.py",
-    "src/voicegateway/providers/cartesia_provider.py",
-    "src/voicegateway/providers/elevenlabs_provider.py",
-    "src/voicegateway/providers/groq_provider.py",
-    "src/voicegateway/providers/assemblyai_provider.py",
-    "src/voicegateway/providers/kokoro_provider.py",
-    "src/voicegateway/providers/piper_provider.py",
     # Tests live inside the package directory but are excluded from the
     # wheel via [tool.hatch.build.targets.wheel] exclude below. Omit
     # from coverage too so the test code does not inflate its own
