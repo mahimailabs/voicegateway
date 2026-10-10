@@ -218,7 +218,9 @@ async def test_a_full_turn_from_only_the_real_event_set(tmp_path) -> None:
     assert turn.turn_index == 0
     assert turn.caller_speak_start_ms is not None
     assert turn.caller_speak_end_ms is not None
-    assert turn.agent_speak_start_ms is not None, "no agent start: the turn never closed"
+    assert turn.agent_speak_start_ms is not None, (
+        "no agent start: the turn never closed"
+    )
     assert turn.agent_speak_end_ms is not None
     assert turn.response_speed_ms is not None
     assert turn.response_speed_ms >= 0

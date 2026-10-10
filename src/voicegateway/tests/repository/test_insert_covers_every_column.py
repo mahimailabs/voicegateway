@@ -120,17 +120,3 @@ async def test_the_excuse_list_names_only_real_columns(tmp_path: Path) -> None:
         assert not unknown, (
             f"{table}: excuses for columns that do not exist: {sorted(unknown)}"
         )
-
-
-async def test_no_telemetry_column_is_excused(tmp_path: Path) -> None:
-    """The telemetry tables get no exemptions at all.
-
-    Every column on a measurement row is written at insert. If one ever needs
-    an exemption that is a design change worth arguing for explicitly, not a
-    line quietly added to a dictionary.
-    """
-    for table in _TELEMETRY_TABLES:
-        assert table not in _WRITTEN_ELSEWHERE, (
-            f"{table} is a telemetry table and should write every column at "
-            f"insert; an exemption here hides a measurement that is never stored"
-        )

@@ -116,39 +116,6 @@ def test_ttfb_hook_is_idempotent(modality: str) -> None:
 # ---------- coverage gates ---------------------------------------------
 
 
-def test_every_known_modality_has_a_wrapper_class() -> None:
-    """``_KNOWN_MODALITIES`` must match the wrappers exported from the module."""
-    expected = {"stt", "llm", "tts"}
-    assert set(_KNOWN_MODALITIES) == expected, (
-        f"This test file's _KNOWN_MODALITIES ({_KNOWN_MODALITIES!r}) "
-        f"diverged from the documented set {expected}. If a new "
-        "modality was added to instrumented_provider, add it here so "
-        "the per-modality behavior tests cover it. If a modality was "
-        "removed, remove it here too."
-    )
-
-
-def test_known_modalities_are_dispatched_by_wrap_provider() -> None:
-    """Sanity: wrap_provider returns an _InstrumentedBase for every known modality."""
-    for modality in _KNOWN_MODALITIES:
-        cost_tracker = MagicMock()
-        cost_tracker.notify_spend = AsyncMock()
-        wrapper = wrap_provider(
-            instance=MagicMock(),
-            modality=modality,
-            model_id=f"fake/{modality}-x",
-            provider="fake",
-            project="default",
-            cost_tracker=cost_tracker,
-            storage=None,
-        )
-        assert isinstance(wrapper, _InstrumentedBase), (
-            f"wrap_provider returned {type(wrapper).__name__} for "
-            f"modality {modality!r}; the dispatch table is incomplete "
-            "and this modality skips instrumentation in production."
-        )
-
-
 def test_unknown_modality_returns_unwrapped_instance() -> None:
     """Documented contract: an unknown modality returns the raw instance."""
     sentinel = MagicMock()

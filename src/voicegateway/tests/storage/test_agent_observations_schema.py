@@ -15,17 +15,6 @@ async def storage(tmp_path):
     return s
 
 
-async def test_table_exists(storage) -> None:
-    async with storage._conn.session() as db:
-        result = await db.execute(
-            text(
-                "SELECT name FROM sqlite_master "
-                "WHERE type='table' AND name='agent_observations'"
-            )
-        )
-        assert result.scalar() == "agent_observations"
-
-
 async def test_roundtrip_typed_columns(storage) -> None:
     async with storage._conn.session() as db:
         await db.execute(

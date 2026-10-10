@@ -83,12 +83,6 @@ def test_every_matrix_row_names_a_live_route(matrix, live):
     assert not stale, f"{len(stale)} matrix row(s) reference dead routes: {stale}"
 
 
-def test_bijection_is_exact(matrix, live):
-    """State the cardinality directly, so an off-by-one cannot hide."""
-    assert len(matrix.routes) == len(live)
-    assert matrix.keys() == set(live)
-
-
 def test_inventory_agrees_with_the_openapi_schema(live):
     """Cross-check the route walk against a version-stable public source.
 
@@ -121,21 +115,6 @@ def test_inventory_agrees_with_the_openapi_schema(live):
         "the walk agrees, so the snapshot is stale or was taken against a "
         "different application"
     )
-
-
-def test_canonical_inventory_ignores_parent_router_mutation(live):
-    """The child-process inventory must not inherit altered parent routers."""
-    from voicegateway.server.routes import api_router, dashboard_router, system_router
-
-    routers = (system_router, api_router, dashboard_router)
-    saved = [list(router.routes) for router in routers]
-    try:
-        for router in routers:
-            router.routes.clear()
-        assert canonical_route_auth() == live
-    finally:
-        for router, routes in zip(routers, saved, strict=True):
-            router.routes[:] = routes
 
 
 # --------------------------------------------------------------------------

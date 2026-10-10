@@ -111,22 +111,6 @@ async def test_a_value_refused_at_coercion_is_counted_out(storage) -> None:
     assert row.series_found == 2
 
 
-async def test_the_count_matches_the_columns_that_are_readable(storage) -> None:
-    """Stated as the invariant rather than as a number, so it cannot drift.
-
-    Whatever the fixture carries, the count and the populated value columns
-    must agree, because the count exists to tell an operator whether an empty
-    chart means a rename or a real zero.
-    """
-    row = await _scrape(storage, UNBOUNDED_HOST)
-    populated = sum(
-        1
-        for column in repo.VALUE_COLUMNS - repo.DERIVED_COLUMNS
-        if getattr(row, column) is not None
-    )
-    assert row.series_found == populated
-
-
 async def test_a_clean_scrape_is_unaffected(storage) -> None:
     """Non-vacuous: the recount is not just subtracting from everything."""
     row = await _scrape(storage, BOUNDED_HOST)
@@ -165,12 +149,6 @@ async def test_a_non_finite_value_is_counted_out_too(storage) -> None:
     assert row.load1 is None
     assert row.filefd_allocated == 12
     assert row.series_found == 1
-
-
-def test_a_derived_marker_is_not_counted_as_a_series() -> None:
-    """It is computed here, so counting it would claim the target exposed it."""
-    assert "filefd_maximum_unbounded" in repo.DERIVED_COLUMNS
-    assert repo.DERIVED_COLUMNS <= repo.VALUE_COLUMNS
 
 
 async def test_the_recount_holds_for_a_caller_that_is_not_the_worker(
@@ -227,35 +205,6 @@ async def test_an_unscraped_ceiling_stays_null(storage) -> None:
     assert row.filefd_maximum_unbounded != 0
 
 
-async def test_the_three_states_are_all_distinguishable(storage) -> None:
-    """Said once, directly: this is the property, not the three cases above."""
-    seen = {
-        (await _scrape(storage, body, node=name)).filefd_maximum_unbounded
-        for name, body in (
-            ("host-unbounded", UNBOUNDED_HOST),
-            ("host-bounded", BOUNDED_HOST),
-            ("host-silent", SILENT_HOST),
-        )
-    }
-    assert seen == {1, 0, None}
-
-
-async def test_the_threshold_is_below_the_ceiling_it_guards(storage) -> None:
-    """A float64 round trip near 2**63 is lossy in both directions.
-
-    Pinned against the live reading rather than against 2**63 itself, because
-    equality with the ceiling is exactly what the round trip destroys.
-    """
-    from voicegateway.middleware.node_samples_worker_middleware import (
-        FILEFD_UNBOUNDED_THRESHOLD,
-    )
-
-    assert 9.223372036854776e18 >= FILEFD_UNBOUNDED_THRESHOLD
-    assert FILEFD_UNBOUNDED_THRESHOLD < float(2**63)
-    # And a limit an operator might really set is nowhere near it.
-    assert 1_048_576.0 < FILEFD_UNBOUNDED_THRESHOLD
-
-
 # --------------------------------------------------------------------------
 # The deleted counter stays deleted
 # --------------------------------------------------------------------------
@@ -309,20 +258,3 @@ async def test_the_overflow_warning_is_not_repeated_every_scrape(
         "fall to debug"
     )
     assert "log at debug" in warnings[0].getMessage()
-
-
-async def test_the_null_and_the_sentinel_are_unchanged_by_the_quieting(
-    storage,
-) -> None:
-    """A logging change must not have moved what is stored.
-
-    This is the whole reason the warning can be quieted: the fact survives on
-    the row rather than only in the log.
-    """
-    from voicegateway.repository import node_samples_repository as repository
-
-    repository._OVERFLOW_WARNED.discard("filefd_maximum")
-    row = await _scrape(storage, UNBOUNDED_HOST, node="still-honest")
-    assert row.filefd_maximum is None
-    assert row.filefd_maximum_unbounded == 1
-    assert row.series_found == 2

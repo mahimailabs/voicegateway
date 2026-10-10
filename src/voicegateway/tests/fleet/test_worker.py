@@ -45,6 +45,8 @@ def test_register_populates_presence(monkeypatch):
     assert p["project"] == "p"
     assert p["tenant_id"] == "t"
     assert p["version"]  # from _version
+    # The resource sample rides along; the contract allows None on a failed sample.
+    assert {"memory_rss_bytes", "memory_total_bytes", "cpu_pct"} <= p.keys()
 
 
 def test_dispatch_name_defaults_to_agent_name(monkeypatch):
@@ -234,25 +236,6 @@ async def _poll_worker_row(db_path: str, agent_id: str, timeout: float = 6.0):
     raise AssertionError(f"no worker row for {agent_id!r} within {timeout}s")
 
 
-async def test_local_heartbeat_self_migrates_a_fresh_db(tmp_path, monkeypatch):
-    """An idle agent booting against a DB with no schema (no dashboard up, no call
-    yet to migrate it) must bring the file to head itself and write cleanly.
-
-    Regression: adding workers.dispatch_name used to make such an agent fail every
-    heartbeat with 'no such column' until something else ran a migration. The DB is
-    deliberately NOT pre-created here (no _ensure_db), so the row only appears if
-    the heartbeat thread ran the migration on startup.
-    """
-    monkeypatch.setenv("VOICEGW_AGENT_ID", "w-fresh")
-    monkeypatch.delenv("VOICEGW_COLLECTOR_URL", raising=False)
-    db = str(tmp_path / "fresh.db")
-    worker.register_worker("reception", local=True, db_path=db, interval=0.05)
-    agent_name, dispatch_name = await _poll_worker_row(db, "w-fresh")
-    assert agent_name == "reception"
-    # The column the migration added, populated: proves the schema is at head.
-    assert dispatch_name == "reception"
-
-
 async def test_local_heartbeat_reflects_busy_after_bump(tmp_path, monkeypatch):
     monkeypatch.setenv("VOICEGW_AGENT_ID", "w-busy")
     monkeypatch.delenv("VOICEGW_COLLECTOR_URL", raising=False)
@@ -308,9 +291,13 @@ async def test_local_heartbeat_migrates_stamped_not_seeded(tmp_path, monkeypatch
     monkeypatch.setenv("VOICEGW_AGENT_ID", "w-migrate")
     monkeypatch.delenv("VOICEGW_COLLECTOR_URL", raising=False)
     db = str(tmp_path / "fresh.db")
-    worker.register_worker("agent", local=True, db_path=db, interval=0.02)
+    worker.register_worker("reception", local=True, db_path=db, interval=0.02)
     # Wait for the write, which only happens after the startup migration.
-    await _poll_worker_row(db, "w-migrate")
+    # Regression: workers.dispatch_name once made an idle agent on a fresh file
+    # fail every heartbeat with 'no such column'; a populated column proves head.
+    agent_name, dispatch_name = await _poll_worker_row(db, "w-migrate")
+    assert agent_name == "reception"
+    assert dispatch_name == "reception"
     assert _table_exists(db, "workers")
     # The engine stamps a NAMED version table (alembic_version_voicegateway, so it
     # can share a file with other alembic trees). Its presence is what proves this

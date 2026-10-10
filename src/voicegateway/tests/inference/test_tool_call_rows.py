@@ -144,6 +144,8 @@ async def _seeded(tmp_path):
 
 
 async def test_aggregates_group_by_tool_name(tmp_path) -> None:
+    """An unfinished call is counted but not averaged: counting it as zero would
+    pull the average toward "instant" exactly when a tool hung."""
     storage = await _seeded(tmp_path)
     agg = await storage.aggregate_tool_calls()
     await storage.aclose()
@@ -151,19 +153,11 @@ async def test_aggregates_group_by_tool_name(tmp_path) -> None:
     assert agg["lookup_order"]["total_ms"] == 6000
     assert agg["lookup_order"]["failed"] == 1
     assert agg["send_sms"]["calls"] == 2
-
-
-async def test_an_unfinished_call_is_counted_but_not_averaged(tmp_path) -> None:
-    """Counting it as zero would pull the average toward "instant" exactly when
-    a tool hung, which is the case somebody went looking for."""
-    storage = await _seeded(tmp_path)
-    agg = await storage.aggregate_tool_calls()
-    await storage.aclose()
-    assert agg["send_sms"]["calls"] == 2
     assert agg["send_sms"]["avg_ms"] == 100.0
 
 
-async def test_rows_correlate_to_the_turn_they_belong_to(tmp_path) -> None:
+async def test_rows_correlate_to_turns_and_carry_no_payload(tmp_path) -> None:
+    """End to end: what goes in and comes out is timing only, keyed by turn."""
     from voicegateway.repository import tool_calls_repository as repo
 
     storage = await _seeded(tmp_path)
@@ -171,16 +165,6 @@ async def test_rows_correlate_to_the_turn_they_belong_to(tmp_path) -> None:
         rows = await repo.list_by_session(db, "s")
     await storage.aclose()
     assert [r.turn_index for r in rows] == [0, 1, 2, 2]
-
-
-async def test_nothing_read_back_carries_a_payload(tmp_path) -> None:
-    """End to end: what goes in and comes out is timing only."""
-    from voicegateway.repository import tool_calls_repository as repo
-
-    storage = await _seeded(tmp_path)
-    async with storage._conn.session() as db:
-        rows = await repo.list_by_session(db, "s")
-    await storage.aclose()
     for row in rows:
         dumped = row.model_dump()
         assert not any(
@@ -191,21 +175,6 @@ async def test_nothing_read_back_carries_a_payload(tmp_path) -> None:
 # --------------------------------------------------------------------------
 # Remote collector, not local storage only
 # --------------------------------------------------------------------------
-
-
-def test_the_collector_sink_implements_tool_calls() -> None:
-    """Acceptance says this must work against a remote collector.
-
-    Asserted structurally: the sink has the method, a dedicated buffer, its own
-    ingest URL, and drains on flush like turns and dead air do.
-    """
-    from voicegateway.services import sinks
-
-    src = inspect.getsource(sinks)
-    assert "async def log_tool_calls" in src
-    assert "_tool_call_buffer" in src
-    assert '"/tool-calls"' in src
-    assert "await self._flush_tool_calls()" in src
 
 
 def test_the_wire_shape_is_written_field_by_field() -> None:

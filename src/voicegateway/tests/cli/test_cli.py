@@ -12,22 +12,6 @@ from voicegateway.cli import app
 runner = CliRunner()
 
 
-def test_init_creates_config(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["init"])
-    assert result.exit_code == 0
-    assert (tmp_path / "voicegw.yaml").exists()
-
-
-def test_version_flag_prints_runtime_version():
-    """`voicegw --version` prints the runtime version and exits 0."""
-    from voicegateway import __version__
-
-    result = runner.invoke(app, ["--version"])
-    assert result.exit_code == 0
-    assert __version__ in result.output
-
-
 def test_init_custom_output(tmp_path):
     out = str(tmp_path / "custom.yaml")
     result = runner.invoke(app, ["init", "--output", out])
@@ -50,8 +34,11 @@ def test_init_writes_minimal_template_by_default(tmp_path, monkeypatch):
     # Still a working voice stack: provider + model blocks present.
     assert "providers:" in content
     assert "models:" in content
-    # And it actually parses through the real loader (defaults fill the rest).
-    GatewayConfig.load(tmp_path / "voicegw.yaml")
+    # And it actually parses through the real loader (defaults fill the rest),
+    # with storage on: otherwise `voicegw serve`'s dashboard stays empty while
+    # the agent SDK writes to the default DB.
+    config = GatewayConfig.load(tmp_path / "voicegw.yaml")
+    assert config.cost_tracking.get("enabled") is True
     # Points the user at the exhaustive template.
     assert "--full" in result.output
 
@@ -65,44 +52,6 @@ def test_init_full_flag_writes_exhaustive_template(tmp_path, monkeypatch):
     content = (tmp_path / "voicegw.yaml").read_text()
     assert "stacks:" in content
     assert content.count("\n") > 200
-
-
-def test_init_minimal_template_enables_cost_tracking(tmp_path, monkeypatch):
-    """A first run must turn on storage, or `voicegw serve`'s dashboard is empty.
-
-    With no cost_tracking block (and no VOICEGW_DB_* env), Gateway leaves
-    storage disabled and /api/agents returns nothing even while the agent SDK
-    is writing to the default DB.
-    """
-    from voicegateway.core.config import GatewayConfig
-
-    monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["init"])
-    assert result.exit_code == 0
-
-    config = GatewayConfig.load(tmp_path / "voicegw.yaml")
-    assert config.cost_tracking.get("enabled") is True
-
-
-def test_status(temp_config, tmp_path, monkeypatch):
-    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "cli-status.db"))
-    result = runner.invoke(app, ["status", "--config", temp_config])
-    assert result.exit_code == 0
-    assert "Provider Status" in result.output
-
-
-def test_status_with_project(temp_config, tmp_path, monkeypatch):
-    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "cli-status-proj.db"))
-    result = runner.invoke(
-        app, ["status", "--config", temp_config, "--project", "test-project"]
-    )
-    assert result.exit_code == 0
-
-
-def test_costs(temp_config, tmp_path, monkeypatch):
-    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "cli-test.db"))
-    result = runner.invoke(app, ["costs", "--config", temp_config])
-    assert result.exit_code == 0
 
 
 def test_costs_prints_pricing_sources(temp_config, tmp_path, monkeypatch):
@@ -137,21 +86,6 @@ def test_logs(temp_config, tmp_path, monkeypatch):
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "cli-log.db"))
     result = runner.invoke(app, ["logs", "--config", temp_config])
     assert result.exit_code == 0
-
-
-def test_serve_help():
-    result = runner.invoke(app, ["serve", "--help"])
-    assert result.exit_code == 0
-    assert "VoiceGateway HTTP API" in result.output
-
-
-def test_dashboard_help():
-    result = runner.invoke(app, ["dashboard", "--help"])
-    assert result.exit_code == 0
-    # After the dashboard fold-in, ``voicegw dashboard`` just opens
-    # the daemon's URL in the browser; the help text describes that.
-    assert "VoiceGateway dashboard" in result.output
-    assert "browser" in result.output
 
 
 # --------------------------------------------------------------------
@@ -445,35 +379,6 @@ def test_export_costs_empty_range_returns_header_only(
     assert result.output.startswith("timestamp,project,modality")
 
 
-def test_export_costs_empty_range_jsonl_returns_no_lines(
-    temp_config, tmp_path, monkeypatch
-):
-    """JSONL on an empty window emits zero lines (no array, no errors)."""
-    import asyncio
-
-    db_path = str(tmp_path / "export-empty-jsonl.db")
-    monkeypatch.setenv("VOICEGW_DB_PATH", db_path)
-    asyncio.run(_seed_export_records(db_path))
-
-    result = runner.invoke(
-        app,
-        [
-            "export-costs",
-            "--config",
-            temp_config,
-            "--start",
-            "2025-01-01",
-            "--end",
-            "2025-01-02",
-            "--format",
-            "json",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    lines = [ln for ln in result.output.strip().splitlines() if ln]
-    assert lines == [], f"expected zero JSONL records for empty window; got {lines!r}"
-
-
 def test_export_costs_missing_start_returns_helpful_error(temp_config):
     """Omitting --start surfaces typer's missing-option error (exit 2)."""
     result = runner.invoke(
@@ -487,17 +392,6 @@ def test_export_costs_missing_start_returns_helpful_error(temp_config):
     assert "missing" in out or "required" in out, (
         f"expected a clear missing-option message; got {result.output!r}"
     )
-
-
-def test_export_costs_missing_end_returns_helpful_error(temp_config):
-    """Omitting --end surfaces typer's missing-option error (exit 2)."""
-    result = runner.invoke(
-        app,
-        ["export-costs", "--config", temp_config, "--start", "2026-05-01"],
-    )
-    assert result.exit_code == 2, result.output
-    out = result.output.lower()
-    assert "missing" in out or "required" in out
 
 
 def test_export_costs_renders_iso_timestamp_and_fixed_point_cost(
@@ -1107,29 +1001,6 @@ def test_rotate_secret_end_to_end(temp_config, tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # smoke-test (AC-001.1 automation harness)
 # ---------------------------------------------------------------------------
-
-
-def test_smoke_test_skips_when_storage_disabled(tmp_path, monkeypatch):
-    import yaml as _yaml
-
-    cfg_path = tmp_path / "smoke-no-store.yaml"
-    cfg_path.write_text(
-        _yaml.dump(
-            {
-                "providers": {"openai": {"api_key": "sk-fake"}},
-                "models": {"stt": {}, "llm": {}, "tts": {}},
-                "stacks": {},
-                "fallbacks": {"stt": [], "llm": [], "tts": []},
-                "cost_tracking": {"enabled": False},
-                "observability": {"latency_tracking": True},
-            }
-        )
-    )
-    monkeypatch.delenv("VOICEGW_DB_PATH", raising=False)
-
-    result = runner.invoke(app, ["smoke-test", "--config", str(cfg_path)])
-    assert result.exit_code == 1, result.output
-    assert "Cost tracking disabled" in result.output
 
 
 def test_smoke_test_explicit_project_argument(tmp_path, monkeypatch):

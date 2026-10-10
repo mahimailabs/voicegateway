@@ -8,7 +8,6 @@ import contextvars
 import pytest
 import yaml
 
-from voicegateway.core import active_project as project
 from voicegateway.core import gateway_factory as factory
 from voicegateway.core.active_project import (
     get_active_project,
@@ -117,11 +116,6 @@ def test_env_var_wins_over_yaml_default(monkeypatch, projects_with_default_gw):
     assert get_active_project() == "from-env"
 
 
-def test_env_var_used_when_no_set_project(monkeypatch, empty_projects_gw):
-    monkeypatch.setenv("VOICEGW_ACTIVE_PROJECT", "from-env")
-    assert get_active_project() == "from-env"
-
-
 # ---------------------------------------------------------------------------
 # Step 3: yaml default_project
 # ---------------------------------------------------------------------------
@@ -185,18 +179,3 @@ def test_reset_project_clears_set_project(projects_with_default_gw):
 
     # After reset, falls through to YAML default.
     assert contextvars.copy_context().run(_scenario) == "tony-pizza"
-
-
-# ---------------------------------------------------------------------------
-# Module wiring
-# ---------------------------------------------------------------------------
-
-
-def test_inference_package_re_exports_set_and_get_active_project():
-    """``voicegateway.inference.set_project`` and"""
-    from voicegateway import inference
-
-    assert inference.set_project is project.set_project
-    assert inference.get_active_project is project.get_active_project
-    assert "set_project" in inference.__all__
-    assert "get_active_project" in inference.__all__

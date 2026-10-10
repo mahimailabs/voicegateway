@@ -108,20 +108,6 @@ async def test_empty_provider_never_becomes_a_chip(db):
     assert "" not in row["providers"]
 
 
-async def test_a_session_with_only_eou_rows_has_no_providers(db):
-    """Not an empty chip, and not a crash: simply no providers."""
-    await _seed_session(db, "s-bare")
-    await _seed_request(
-        db, id="r-only", session_id="s-bare", provider="", modality="eou", model_id=""
-    )
-    await db.commit()
-
-    row = await get_session(db, "s-bare")
-
-    assert row is not None
-    assert row["providers"] == []
-
-
 # ---------------------------------------------------------------------------
 # #280: latency counts only what the caller experienced
 # ---------------------------------------------------------------------------

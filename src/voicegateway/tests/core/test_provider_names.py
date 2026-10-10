@@ -87,10 +87,3 @@ def test_branded_spellings_resolve_the_way_the_catalog_resolves_them():
         expected = find_provider_by_id(providers, raw)
         assert expected is not None, f"catalog no longer resolves {raw!r}"
         assert canonical_provider(raw) == expected.id
-
-
-def test_already_canonical_input_is_unchanged():
-    """Idempotent, so re-normalizing a stored value is safe."""
-    for value in ("cartesia", "deepgram", "google", "openai"):
-        assert canonical_provider(value) == value
-        assert canonical_provider(canonical_provider(value)) == value

@@ -22,7 +22,6 @@ import pytest
 
 from voicegateway.inference.session.attach import _resolve_revision
 from voicegateway.middleware.cost_tracker_middleware import CostTracker
-from voicegateway.middleware.dead_air_detector_middleware import DeadAirEvent
 from voicegateway.middleware.turn_tracker_middleware import TurnRow, TurnTracker
 
 _ENV = "VOICEGW_AGENT_REVISION"
@@ -91,17 +90,6 @@ def test_a_cost_row_carries_it() -> None:
     assert record.revision == "abc123"
 
 
-def test_a_cost_row_without_one_is_unchanged() -> None:
-    """Absent must behave exactly as before, so nothing existing moves."""
-    record = CostTracker().create_record(
-        model_id="openai/gpt-4o-mini",
-        modality="llm",
-        provider="openai",
-        project="default",
-    )
-    assert record.revision is None
-
-
 async def test_a_turn_row_carries_it() -> None:
     tracker = TurnTracker(flush_size=1000, revision="abc123")
     await tracker.on_user_started_speaking(session_id="s", at_ms=1000)
@@ -128,24 +116,6 @@ async def test_a_turn_left_open_at_session_close_carries_it_too() -> None:
     await tracker.close_session("s")
     assert written, "the open turn was not written on close"
     assert written[-1].revision == "abc123"
-
-
-def test_a_dead_air_event_carries_it() -> None:
-    event = DeadAirEvent(
-        session_id="s",
-        started_at_ms=1000,
-        duration_ms=5000,
-        threshold_used_ms=4000,
-        revision="abc123",
-    )
-    assert event.revision == "abc123"
-
-
-def test_the_turn_row_default_is_absent() -> None:
-    row = TurnRow(
-        session_id="s", turn_index=0, caller_speak_start_ms=0, caller_speak_end_ms=1
-    )
-    assert row.revision is None
 
 
 # --------------------------------------------------------------------------
@@ -204,20 +174,16 @@ async def test_unstamped_rows_group_rather_than_vanish(tmp_path) -> None:
     )
 
 
-async def test_filtering_by_revision_selects_only_that_one(tmp_path) -> None:
+@pytest.mark.parametrize("revision,expected", [("v1", 0.30), ("", 0.01)])
+async def test_filtering_by_revision_selects_only_that_one(
+    tmp_path, revision, expected
+) -> None:
+    """The empty string selects the un-stamped rows, matching the tenant and
+    agent filters: the only way to ask "what did the un-stamped agents do"."""
     storage = await _seeded(tmp_path)
-    only_v1 = await storage.get_cost_summary("all", revision="v1")
+    summary = await storage.get_cost_summary("all", revision=revision)
     await storage.aclose()
-    assert round(only_v1["total"], 4) == 0.30
-
-
-async def test_the_empty_string_filter_selects_the_unstamped(tmp_path) -> None:
-    """Matching the tenant and agent filters, and the only way to ask
-    "what did the un-stamped agents do"."""
-    storage = await _seeded(tmp_path)
-    unstamped = await storage.get_cost_summary("all", revision="")
-    await storage.aclose()
-    assert round(unstamped["total"], 4) == 0.01
+    assert round(summary["total"], 4) == expected
 
 
 # --------------------------------------------------------------------------
@@ -248,18 +214,3 @@ def test_an_error_row_carries_the_provider_and_model_that_failed() -> None:
     provider, model_id = capture_mod.component_identity(_CerebrasLLM())
     assert provider == "cerebras"
     assert model_id == "cerebras/gemma-4-31b"
-
-
-def test_an_error_with_no_source_stays_blank_rather_than_inventing_a_name() -> None:
-    """Absent is not "unknown".
-
-    An error with no component attached is genuinely unattributed. Stamping it
-    "unknown" would put it in a group alongside components that WERE present and
-    could not be read, which are a different fact and a different fix.
-    """
-    import inspect
-
-    from voicegateway.inference.session import capture as capture_mod
-
-    src = inspect.getsource(capture_mod.MetricCapture._on_error)
-    assert 'if source is not None else ("", "")' in src

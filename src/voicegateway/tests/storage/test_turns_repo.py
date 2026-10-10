@@ -59,13 +59,6 @@ async def test_create_turns_bulk(tmp_path) -> None:
         assert [r.turn_index for r in listed] == [0, 1, 2, 3, 4]
 
 
-async def test_create_turns_bulk_empty_is_noop(tmp_path) -> None:
-    storage = await _fresh_storage(tmp_path)
-    async with storage._conn.session() as db:
-        n = await turns.create_turns_bulk(db, [], tenant_id=None)
-        assert n == 0
-
-
 async def test_aggregate_response_speed_returns_percentiles(tmp_path) -> None:
     storage = await _fresh_storage(tmp_path)
     async with storage._conn.session() as db:

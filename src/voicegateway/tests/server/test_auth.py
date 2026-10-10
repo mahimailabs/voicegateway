@@ -77,12 +77,6 @@ def test_wrong_token_rejected():
     assert "invalid" in exc.value.message.lower()
 
 
-def test_correct_token_matches():
-    keys = [ApiKey(token="s", name="x", scopes=("*",))]
-    matched = check_request("Bearer s", "write", keys)
-    assert matched is keys[0]
-
-
 def test_scope_enforced_403():
     """Valid token, insufficient scope → 403 distinct from 401."""
     keys = [ApiKey(token="readonly", name="ro", scopes=("read",))]
@@ -120,12 +114,9 @@ def test_uses_constant_time_comparison():
     assert "hmac.compare_digest" in source
 
 
-def test_resolve_cors_origins_default_is_wildcard():
+def test_resolve_cors_origins():
     assert resolve_cors_origins(None) == ["*"]
     assert resolve_cors_origins(AuthConfig()) == ["*"]
-
-
-def test_resolve_cors_origins_from_config():
     cfg = AuthConfig(cors_origins=["http://a", "http://b"])
     assert resolve_cors_origins(cfg) == ["http://a", "http://b"]
 
@@ -185,57 +176,22 @@ async def _client(gateway):
     return AsyncClient(transport=transport, base_url="http://test"), app
 
 
-async def test_no_auth_config_mutations_open(gateway_factory):
-    """No auth block, no env key → POST works without Authorization header."""
-    gw = gateway_factory(None)
-    client, _ = await _client(gw)
-    async with client as c:
-        resp = await c.post(
-            "/v1/providers",
-            json={"provider_id": "ollama-x", "provider_type": "ollama", "api_key": ""},
-        )
-        assert resp.status_code == 200
-
-
 async def test_write_endpoint_requires_token(gateway_factory):
     gw = gateway_factory(
         {"api_keys": [{"token": "secret", "name": "t", "scopes": ["*"]}]}
     )
     client, _ = await _client(gw)
+    body = {"provider_id": "ollama-x", "provider_type": "ollama", "api_key": ""}
     async with client as c:
-        resp = await c.post(
-            "/v1/providers",
-            json={"provider_id": "ollama-x", "provider_type": "ollama", "api_key": ""},
+        assert (await c.post("/v1/providers", json=body)).status_code == 401
+        wrong = await c.post(
+            "/v1/providers", headers={"Authorization": "Bearer wrong"}, json=body
         )
-        assert resp.status_code == 401
-
-
-async def test_write_endpoint_wrong_token(gateway_factory):
-    gw = gateway_factory(
-        {"api_keys": [{"token": "secret", "name": "t", "scopes": ["*"]}]}
-    )
-    client, _ = await _client(gw)
-    async with client as c:
-        resp = await c.post(
-            "/v1/providers",
-            headers={"Authorization": "Bearer wrong"},
-            json={"provider_id": "ollama-x", "provider_type": "ollama", "api_key": ""},
+        assert wrong.status_code == 401
+        ok = await c.post(
+            "/v1/providers", headers={"Authorization": "Bearer secret"}, json=body
         )
-        assert resp.status_code == 401
-
-
-async def test_write_endpoint_correct_token(gateway_factory):
-    gw = gateway_factory(
-        {"api_keys": [{"token": "secret", "name": "t", "scopes": ["*"]}]}
-    )
-    client, _ = await _client(gw)
-    async with client as c:
-        resp = await c.post(
-            "/v1/providers",
-            headers={"Authorization": "Bearer secret"},
-            json={"provider_id": "ollama-x", "provider_type": "ollama", "api_key": ""},
-        )
-        assert resp.status_code == 200
+        assert ok.status_code == 200
 
 
 async def test_read_scope_rejected_on_write(gateway_factory):

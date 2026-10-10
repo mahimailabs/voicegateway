@@ -17,6 +17,8 @@ letting a reader assume either answer.
 
 from __future__ import annotations
 
+import pytest
+
 from voicegateway.livekit_diag import run_report
 from voicegateway.livekit_diag.run_report import RunRecord
 
@@ -53,46 +55,27 @@ def _payload(run: RunRecord, environment: str | None = None) -> dict:
 # --------------------------------------------------------------------------
 
 
-def test_turns_are_summed_across_agents_so_nobody_adds_a_column_by_hand() -> None:
-    basis = _payload(
-        _run([_agent("a", 3, "vg-probe-a"), _agent("b", 4, "vg-probe-b")])
-    )["basis"]
-    assert basis["turns"] == 7
+# fmt: off
+_COUNTS = [
+    # Turns are summed; sessions are the distinct rooms a measured turn ran in.
+    ([_agent("a", 3, "vg-probe-a"), _agent("b", 4, "vg-probe-b")], 2, 7),
+    # An agent that answered nothing records no session (and carries no room).
+    ([_agent("a", 3, "vg-probe-a"), _agent("b", 0, None)], 1, 3),
+    # Distinct rooms, not agent count: a fixed --room-name reuses one.
+    ([_agent("a", 2, "shared"), _agent("b", 2, "shared")], 1, 4),
+    # Zero is a measurement here: the run genuinely produced none.
+    ([], 0, 0),
+    # Counted off the measurements, not off a room field left populated, and the
+    # guard drops only the empty room, not the measured one.
+    ([_agent("quiet", 0, "vg-probe-quiet"), _agent("busy", 5, "vg-probe-busy")], 1, 5),
+]
+# fmt: on
 
 
-def test_sessions_counts_distinct_probe_rooms() -> None:
-    """A session here IS the room a probed agent's counted turns ran in."""
-    basis = _payload(
-        _run([_agent("a", 3, "vg-probe-a"), _agent("b", 4, "vg-probe-b")])
-    )["basis"]
-    assert basis["sessions"] == 2
-
-
-def test_an_agent_that_answered_nothing_records_no_session() -> None:
-    """It attempted; it produced no measurement. Counting it would inflate the
-    denominator of a report whose whole job is to say what it measured."""
-    basis = _payload(_run([_agent("a", 3, "vg-probe-a"), _agent("b", 0, None)]))[
-        "basis"
-    ]
-    assert basis["sessions"] == 1
-    assert basis["turns"] == 3
-
-
-def test_two_agents_sharing_one_room_are_one_session() -> None:
-    """Distinct rooms, not agent count: a fixed --room-name reuses one."""
-    basis = _payload(_run([_agent("a", 2, "shared"), _agent("b", 2, "shared")]))[
-        "basis"
-    ]
-    assert basis["sessions"] == 1
-    assert basis["turns"] == 4
-
-
-def test_a_run_that_probed_nothing_reports_zero_not_null() -> None:
-    """Zero sessions is a measurement here, unlike a zero latency: the run
-    genuinely produced none, and that is the finding."""
-    basis = _payload(_run([]))["basis"]
-    assert basis["sessions"] == 0
-    assert basis["turns"] == 0
+@pytest.mark.parametrize(("agents", "sessions", "turns"), _COUNTS)
+def test_basis_counts(agents: list[dict], sessions: int, turns: int) -> None:
+    basis = _payload(_run(agents))["basis"]
+    assert (basis["sessions"], basis["turns"]) == (sessions, turns)
 
 
 # --------------------------------------------------------------------------
@@ -167,26 +150,3 @@ def test_an_undeclared_environment_is_not_left_blank(monkeypatch) -> None:
     html = run_report.render_html(_payload(_run([])))
     assert "not declared" in html
     assert run_report.ENVIRONMENT_ENV_VAR in html
-
-
-def test_a_room_with_zero_trials_is_not_a_measured_session() -> None:
-    """The count is read off the MEASUREMENTS, not off a field being present.
-
-    ``LatencyResult.room`` is documented as None when no turn completed, so in
-    practice a zero-trial agent carries no room and the two agree. This pins the
-    stated contract ("sessions that produced a measurement") against the case
-    where a caller upstream leaves the room populated anyway, rather than
-    trusting a field it does not own to be cleared.
-    """
-    basis = _payload(_run([_agent("a", 0, "vg-probe-a")]))["basis"]
-    assert basis["sessions"] == 0
-    assert basis["turns"] == 0
-
-
-def test_a_zero_trial_agent_does_not_hide_a_real_one() -> None:
-    """Non-vacuous: the guard drops the empty room, not the measured one."""
-    basis = _payload(
-        _run([_agent("quiet", 0, "vg-probe-quiet"), _agent("busy", 5, "vg-probe-busy")])
-    )["basis"]
-    assert basis["sessions"] == 1
-    assert basis["turns"] == 5

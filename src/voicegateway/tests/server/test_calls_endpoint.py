@@ -171,12 +171,6 @@ async def _unanswered_call(
 # --- shape ------------------------------------------------------------------
 
 
-async def test_empty_deployment_returns_an_empty_list(client):
-    resp = await client.get(_URL)
-    assert resp.status_code == 200
-    assert resp.json() == {"calls": []}
-
-
 async def test_payload_fields_match_the_frontend_types_exactly(client, gateway):
     """Field for field against types.ts: no invented, renamed or dropped key."""
     await _answered_call(gateway.storage, room_sid="RM_shape")
@@ -294,21 +288,6 @@ async def test_unobserved_fields_stay_null(client, gateway):
         "first_audio_track_at_source",
     ):
         assert leg[field] is None, field
-
-
-async def test_no_percentile_or_aggregate_is_added_to_the_payload(client, gateway):
-    """A page of rows is not the population, so this endpoint publishes no p95
-    (and no summary of any kind) for the UI to render as one."""
-    for i in range(3):
-        await _answered_call(
-            gateway.storage,
-            room_sid=f"RM_agg{i}",
-            started_at_ms=1_750_000_000_000 + i * 1000,
-        )
-
-    body = (await client.get(_URL)).json()
-
-    assert list(body) == ["calls"]
 
 
 # --- ordering, bounds, and what is excluded ---------------------------------

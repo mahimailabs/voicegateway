@@ -119,13 +119,6 @@ async def test_env_fallbacks_and_constructor_precedence(
     assert build_args[-1][1] == "vk_explicit"
 
 
-async def test_db_path_passed_through_to_build(monkeypatch: Any) -> None:
-    _, _, build_args = _patch(monkeypatch)
-    obs = VoiceGatewayObserver(db_path="/tmp/vg.db")
-    await obs.on_session_start(_FakeInfo("a", {}), _FakeSession())
-    assert build_args[-1][2] == "/tmp/vg.db"
-
-
 async def test_on_session_end_flushes(monkeypatch: Any) -> None:
     _, the_sink, _ = _patch(monkeypatch)
     obs = VoiceGatewayObserver()

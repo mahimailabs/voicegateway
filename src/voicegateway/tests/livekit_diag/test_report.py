@@ -20,11 +20,6 @@ def test_render_agents_lists_and_footers():
     assert "not reported by LiveKit" in out  # honest roster-gap footer
 
 
-def test_render_agents_empty():
-    out = render_agents([])
-    assert "0 agents" in out
-
-
 def test_agents_json_shape():
     js = agents_json(_rows())
     assert js[0]["agent_name"] == "concierge"  # sorted

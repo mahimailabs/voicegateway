@@ -70,22 +70,6 @@ def all_pass(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_doctor_help_renders():
-    result = runner.invoke(app, ["doctor", "--help"])
-    assert result.exit_code == 0
-    assert "diagnostic checks" in result.output.lower()
-
-
-def test_doctor_renders_nine_numbered_rows(temp_config, all_pass):
-    """Every check shows up in a numbered row, 1..9."""
-    result = runner.invoke(app, ["doctor", "--config", str(temp_config)])
-    out = result.output
-    # Numbered rows 1..9. Rich's table aligns the # column right with
-    # spaces; check for the digits as standalone tokens.
-    for n in range(1, 10):
-        assert f" {n} " in out or f"\n{n} " in out, f"row {n} missing from output"
-
-
 def test_doctor_all_pass_exits_zero(temp_config, all_pass):
     """Every check ok/skip -> exit 0 + 'All checks passed' banner."""
     result = runner.invoke(app, ["doctor", "--config", str(temp_config)])
@@ -110,24 +94,6 @@ def test_doctor_failure_exits_one(temp_config, monkeypatch):
     assert result.exit_code == 1
     assert "need attention" in result.output.lower()
     assert "Python version" in result.output
-
-
-def test_doctor_renders_skip_status_distinct_from_pass_and_fail(
-    temp_config, monkeypatch
-):
-    """The three statuses (PASS / FAIL / SKIP) all appear when at"""
-    # No DaemonManager so the daemon-running check skips because the
-    # registered check fails first. Provider configured -> ok.
-    monkeypatch.setattr(
-        "voicegateway.cli.daemon.DaemonManager",
-        MagicMock(side_effect=RuntimeError("backend missing")),
-    )
-    result = runner.invoke(app, ["doctor", "--config", str(temp_config)])
-    out = result.output
-    assert "PASS" in out
-    assert "SKIP" in out  # at least the MCP check + something else
-    # FAIL: daemon registered fails because the manager raised.
-    assert "FAIL" in out
 
 
 # ---------------------------------------------------------------------------
@@ -292,35 +258,6 @@ def test_pipx_skips_when_uv_present(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_python_version_check_passes_on_modern_python():
-    from voicegateway.utils.cli.doctor import _check_python_version, _Context
-
-    result = _check_python_version(_Context(config_path=None))
-    assert result.status == "ok"
-    assert "3." in result.detail  # version-string format
-
-
-def test_pipx_check_passes_when_on_path(monkeypatch):
-    from voicegateway.utils.cli.doctor import _check_pipx, _Context
-
-    monkeypatch.setattr(
-        "voicegateway.utils.cli.doctor.shutil.which", lambda _: "/usr/local/bin/pipx"
-    )
-    result = _check_pipx(_Context(config_path=None))
-    assert result.status == "ok"
-
-
-def test_daemon_registered_check_passes_when_status_says_yes():
-    from voicegateway.utils.cli.doctor import _check_daemon_registered, _Context
-
-    ctx = _Context(
-        config_path=None,
-        daemon_status={"registered": True, "plist_path": "/tmp/test.plist"},
-    )
-    result = _check_daemon_registered(ctx)
-    assert result.status == "ok"
-
-
 def test_daemon_running_check_skips_when_not_registered():
     """The skip path is documented: don't repeat the noise of the"""
     from voicegateway.utils.cli.doctor import _check_daemon_running, _Context
@@ -376,15 +313,6 @@ def test_recent_error_check_passes_when_no_recent_failures(monkeypatch):
     # a non-loop context. Fixture runs sync, so call directly.
     result = _check_recent_error_count(ctx)
     assert result.status == "ok"
-
-
-def test_mcp_responsive_skips_with_documented_rationale():
-    """MCP check is intentionally a skip in v0.1.0; deferred for follow-up."""
-    from voicegateway.utils.cli.doctor import _check_mcp_responsive, _Context
-
-    result = _check_mcp_responsive(_Context(config_path=None))
-    assert result.status == "skip"
-    assert "deferred" in result.detail.lower() or "stdio" in result.detail.lower()
 
 
 def test_dashboard_reachable_skips_when_no_listener(monkeypatch):

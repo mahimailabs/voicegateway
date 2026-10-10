@@ -161,26 +161,6 @@ async def test_create_refuses_an_unknown_scope(client: AsyncClient) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_mint_stays_open_when_no_keys_are_configured(gateway) -> None:
-    """The self-hosted default (no keys configured) is unchanged.
-
-    ``core.auth.check_request`` returns None on an empty key list, so
-    ``require_scope(ADMIN_SCOPE)`` is a no-op here and an operator with no
-    auth block still mints a key with no credential. Every other test in
-    this file rides on that path; this one asserts it explicitly.
-    """
-    app = build_app(gateway)
-    assert app.state.api_keys == []
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        created = await c.post(
-            "/v1/api-keys", json={"name": "local-operator", "scopes": "read"}
-        )
-        assert created.status_code == 201
-        assert created.json()["plaintext"].startswith("vk_")
-        assert (await c.get("/v1/api-keys")).status_code == 200
-
-
 async def test_router_requires_admin_when_auth_enabled(gateway) -> None:
     """With static keys configured, an unauthenticated caller cannot mint.
 

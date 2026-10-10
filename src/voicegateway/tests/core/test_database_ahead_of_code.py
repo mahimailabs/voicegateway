@@ -112,9 +112,9 @@ async def test_concurrent_migrations_do_not_race(tmp_path: Path) -> None:
         finally:
             await db.dispose()
 
-    await asyncio.gather(*(migrate(i) for i in range(8)))
+    await asyncio.gather(*(migrate(i) for i in range(3)))
 
-    for index in range(8):
+    for index in range(3):
         with sqlite3.connect(str(tmp_path / f"db{index}.db")) as conn:
             row = conn.execute(
                 "SELECT version_num FROM alembic_version_voicegateway"

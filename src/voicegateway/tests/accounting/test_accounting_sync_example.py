@@ -10,6 +10,7 @@ import yaml
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
+from voicegateway.repository import api_keys_repository
 from voicegateway.repository.api_keys_repository import create_api_key
 from voicegateway.server import build_app
 
@@ -43,6 +44,9 @@ async def test_sync_readback_and_delayed_pinned_usage_example(
     )
     monkeypatch.delenv("VOICEGW_DB_URL", raising=False)
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "example.db"))
+    # Every request verifies the key with bcrypt; the minimum cost keeps the
+    # example's ~20 calls from dominating the suite's runtime.
+    monkeypatch.setattr(api_keys_repository, "_BCRYPT_COST", 4)
     gateway = Gateway(config_path=str(config))
     async with gateway.storage.session() as session:
         key = await create_api_key(

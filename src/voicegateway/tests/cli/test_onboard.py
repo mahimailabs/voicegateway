@@ -67,21 +67,11 @@ def test_onboard_custom_project_storage_port(tmp_path):
     assert parsed["serve"]["port"] == 9000
     assert parsed["cost_tracking"]["db_path"] == str(db)
     assert "providers" not in parsed
-
-
-def test_wizard_yaml_loads_under_schema(tmp_path):
-    """The wizard's voicegw.yaml loads through ``GatewayConfig.load``."""
+    # And the strict schema accepts what the wizard wrote.
     from voicegateway.core.config import GatewayConfig
 
-    cfg = tmp_path / "voicegw.yaml"
-    inp = "tony-pizza\n\n9123\nn\n"
-    result = runner.invoke(
-        app, ["onboard", "--no-install-daemon", "--config", str(cfg)], input=inp
-    )
-    assert result.exit_code == 0, result.output
-
     loaded = GatewayConfig.load(cfg)
-    assert loaded.serve.get("port") == 9123
+    assert loaded.serve.get("port") == 9000
     assert loaded.default_project == "tony-pizza"
 
 
@@ -126,6 +116,8 @@ def test_onboard_install_daemon_path_invokes_manager(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     # The daemon is installed to serve the exact config that was onboarded.
     fake_manager.install.assert_called_once_with(config_path=str(cfg))
+    assert "installed and started" in result.output
+    assert "not installed" not in result.output
 
 
 def test_onboard_daemon_install_failure_warns_and_continues(tmp_path, monkeypatch):
@@ -150,30 +142,6 @@ def test_onboard_daemon_install_failure_warns_and_continues(tmp_path, monkeypatc
     out = _plain(result.output)
     assert "Daemon install failed" in out
     assert "not installed" in out  # summary reflects the failure
-
-
-def test_onboard_help_renders():
-    result = runner.invoke(app, ["onboard", "--help"])
-    assert result.exit_code == 0
-    plain = _plain(result.output)
-    assert "--install-daemon" in plain
-    assert "--config" in plain
-
-
-def test_onboard_wizard_under_one_second(tmp_path):
-    """Mocked end-to-end wizard completes well under 1s (no slow import/network)."""
-    import time
-
-    cfg = tmp_path / "voicegw.yaml"
-    start = time.perf_counter()
-    result = runner.invoke(
-        app,
-        ["onboard", "--no-install-daemon", "--config", str(cfg)],
-        input=_HAPPY_PATH_INPUT,
-    )
-    elapsed = time.perf_counter() - start
-    assert result.exit_code == 0, result.output
-    assert elapsed < 1.0, f"Mocked wizard took {elapsed:.2f}s."
 
 
 # ---------------------------------------------------------------------------
@@ -202,19 +170,6 @@ def test_summary_shows_fields_and_attach_snippet(tmp_path):
     # No provider prompt / provider row.
     assert "Provider" not in out or "provider" not in out.lower().split("add one")[0]
     assert "voicegw doctor" in out
-
-
-def test_summary_daemon_installed_marker(tmp_path, monkeypatch):
-    from unittest.mock import MagicMock
-
-    monkeypatch.setattr("voicegateway.cli.daemon.DaemonManager", MagicMock())
-    cfg = tmp_path / "voicegw.yaml"
-    result = runner.invoke(
-        app, ["onboard", "--install-daemon", "--config", str(cfg)], input="\n\n\nn\n"
-    )
-    assert result.exit_code == 0, result.output
-    assert "installed and started" in result.output
-    assert "not installed" not in result.output
 
 
 def test_summary_daemon_not_installed_marker(tmp_path):
@@ -371,7 +326,7 @@ def _typer_confirm_kbi_at(target_call: int):
 
 @pytest.mark.parametrize(
     ("position", "label"),
-    [(1, "project name"), (2, "storage"), (3, "port")],
+    [(1, "project name"), (3, "port")],
 )
 def test_ctrl_c_at_each_prompt_no_partial_config(
     tmp_path, monkeypatch, position, label

@@ -83,48 +83,6 @@ class _FakeSession:
 # --- unit mapping --------------------------------------------------------
 
 
-def test_units_from_llm_metric():
-    inp, out, cached, ttfb_ms = units_from_metric(_LLMMetric(), "llm")
-    assert inp == 1000.0
-    assert out == 500.0
-    assert cached == 200.0
-    assert ttfb_ms == 250.0
-
-
-def test_units_from_stt_metric_converts_seconds_to_minutes():
-    inp, out, cached, ttfb_ms = units_from_metric(_STTMetric(), "stt")
-    assert inp == 2.0  # 120s / 60 -> minutes (cost path multiplies back by 60)
-    assert out == 0.0
-    assert cached == 0.0
-    assert ttfb_ms is None
-
-
-def test_units_from_tts_metric():
-    inp, out, cached, ttfb_ms = units_from_metric(_TTSMetric(), "tts")
-    assert inp == 350.0
-    assert out == 0.0
-    assert ttfb_ms == 100.0
-
-
-def test_duration_and_network_helpers():
-    from voicegateway.inference.session.capture import _duration_ms, _network_meta
-
-    # duration (seconds) -> total latency ms; absent -> None.
-    assert _duration_ms(_LLMMetric()) == 1800.0
-    assert _duration_ms(object()) is None
-
-    # acquire_time -> acquire_ms + connection_reused; absent -> {}.
-    assert _network_meta(_STTMetric()) == {
-        "acquire_ms": 50.0,
-        "connection_reused": True,
-    }
-    assert _network_meta(_TTSMetric()) == {
-        "acquire_ms": 30.0,
-        "connection_reused": False,
-    }
-    assert _network_meta(_LLMMetric()) == {}  # LLM metrics carry no acquire_time
-
-
 # --- capture binding -----------------------------------------------------
 
 
@@ -188,15 +146,13 @@ def _blank_record():
     )
 
 
-def test_stamp_context_adds_channel_when_set():
-    """attach()'s telephony/web classification rides on each request's metadata."""
+def test_stamp_context_channel():
+    """attach()'s telephony/web classification rides on each request's
+    metadata; no classification means no channel key, not a guess."""
     record = _blank_record()
     _stamp_capture("telephony")._stamp_context(record)
     assert record.metadata["channel"] == "telephony"
 
-
-def test_stamp_context_omits_channel_when_unknown():
-    """No classification means the row carries no channel key, not a guess."""
     record = _blank_record()
     _stamp_capture(None)._stamp_context(record)
     assert "channel" not in record.metadata
@@ -611,8 +567,8 @@ async def test_metric_capture_stamps_tenant_in_metadata():
     assert sink.rows[0].metadata.get("tenant_id") == "org_realtor_42"
 
 
-async def test_metric_capture_omits_tenant_when_unset():
-    """No tenant_id -> no ``tenant_id`` key added to metadata (stays empty)."""
+async def test_metric_capture_omits_tenant_and_room_when_unset():
+    """No tenant_id / room -> no key added to metadata, rather than a blank."""
     sink = _FlushRecordingSink()
     cost_tracker = CostTracker(sink)
     llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
@@ -630,6 +586,7 @@ async def test_metric_capture_omits_tenant_when_unset():
     await capture.drain()
 
     assert "tenant_id" not in sink.rows[0].metadata
+    assert "room" not in sink.rows[0].metadata
 
 
 async def test_metric_capture_error_row_carries_tenant():
@@ -684,38 +641,14 @@ class _EOUMetric:
     transcription_delay = 0.05
 
 
-async def test_metric_capture_records_eou(tmp_path):
-    from voicegateway.inference.session.capture import MetricCapture
-
-    sink = _FlushRecordingSink()
-    cost_tracker = CostTracker(sink)
-    session = _FakeSession(llm=_FakeEmitter(model="gpt-4o-mini", provider="openai"))
-    capture = MetricCapture(
-        cost_tracker=cost_tracker,
-        sink=sink,
-        project="p",
-        agent_id="a",
-        session_id="s",
-        tenant_id="t",
-    )
-    capture.bind(session)
-    session.emit("metrics_collected", _EOUMetric())
-    await capture.drain()
-    eou = [r for r in sink.rows if r.metadata.get("eou")]
-    assert len(eou) == 1
-    assert eou[0].modality == "eou"
-    assert eou[0].metadata["eou"]["end_of_utterance_delay"] == 0.12
-    assert eou[0].metadata["tenant_id"] == "t"
-
-
 class _MetricsCollectedEvent:
     def __init__(self, metrics):
         self.metrics = metrics
 
 
-async def test_metric_capture_records_eou_wrapped():
-    from voicegateway.inference.session.capture import MetricCapture
-
+@pytest.mark.parametrize("wrapped", [False, True])
+async def test_metric_capture_records_eou(wrapped):
+    """Bare EOUMetrics and the MetricsCollectedEvent wrapper both land a row."""
     sink = _FlushRecordingSink()
     cost_tracker = CostTracker(sink)
     session = _FakeSession(llm=_FakeEmitter(model="gpt-4o-mini", provider="openai"))
@@ -728,7 +661,10 @@ async def test_metric_capture_records_eou_wrapped():
         tenant_id="t",
     )
     capture.bind(session)
-    session.emit("metrics_collected", _MetricsCollectedEvent(_EOUMetric()))
+    metric = _EOUMetric()
+    session.emit(
+        "metrics_collected", _MetricsCollectedEvent(metric) if wrapped else metric
+    )
     await capture.drain()
     eou = [r for r in sink.rows if r.metadata.get("eou")]
     assert len(eou) == 1
@@ -804,26 +740,6 @@ async def test_metric_capture_stamps_room_in_metadata():
     await capture.drain()
 
     assert sink.rows[0].metadata.get("room") == "vg-probe-realty-abc123"
-
-
-async def test_metric_capture_omits_room_when_unset():
-    """No room -> no ``room`` key added (normal in-production capture)."""
-    sink = _FlushRecordingSink()
-    llm = _FakeEmitter(model="gpt-4o-mini", provider="openai")
-    session = _FakeSession(llm=llm)
-
-    capture = MetricCapture(
-        cost_tracker=CostTracker(sink),
-        sink=sink,
-        project="p",
-        agent_id="a",
-        session_id="s",
-    )
-    capture.bind(session)
-    llm.emit("metrics_collected", _LLMMetric())
-    await capture.drain()
-
-    assert "room" not in sink.rows[0].metadata
 
 
 async def test_eou_row_carries_room():

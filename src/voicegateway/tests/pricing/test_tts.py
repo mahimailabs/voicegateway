@@ -19,54 +19,33 @@ _SUPPORTED_CLOUD_TTS = [
 ]
 
 
-def test_pricing_source_format() -> None:
-    """PRICING_SOURCE follows the `voice-prices@<version>` shape."""
-    assert tts.PRICING_SOURCE.startswith("voice-prices@")
-    version = tts.PRICING_SOURCE.split("@", 1)[1]
-    assert version, "version segment should be non-empty"
-
-
-def test_cartesia_priced_correctly() -> None:
-    """1000 chars at voice-prices' Cartesia rate = $0.05."""
-    assert tts.calculate_tts_cost("cartesia/sonic-3", 1000) == Decimal("0.05")
-
-
-def test_openai_tts1_priced_correctly() -> None:
-    """1000 chars at voice-prices' OpenAI TTS rate = $0.015."""
-    assert tts.calculate_tts_cost("openai/tts-1", 1000) == Decimal("0.015")
+@pytest.mark.parametrize(
+    "model,chars,expected",
+    [
+        ("cartesia/sonic-3", 1000, "0.05"),
+        ("cartesia/sonic-3", 100, "0.005"),
+        ("cartesia/sonic-3", 0, "0"),
+        ("openai/tts-1", 1000, "0.015"),
+    ],
+)
+def test_tts_cost_is_exact_decimal(model: str, chars: int, expected: str) -> None:
+    cost = tts.calculate_tts_cost(model, chars)
+    assert isinstance(cost, Decimal)
+    assert cost == Decimal(expected)
 
 
 @pytest.mark.parametrize("model", _SUPPORTED_CLOUD_TTS)
 def test_supported_cloud_models_are_priced(model: str) -> None:
-    """Every supported cloud TTS model resolves to a positive price."""
     cost = tts.calculate_tts_cost(model, 1000)
     assert cost is not None, f"{model} is not priced by voice-prices"
     assert cost > Decimal("0")
 
 
 def test_unknown_model_returns_none() -> None:
-    """Unknown model returns None (no silent zero contract)."""
     assert tts.calculate_tts_cost("foo/bar-baz", 1000) is None
-
-
-def test_zero_chars_returns_zero_decimal() -> None:
-    """Zero usage returns Decimal('0'), not None."""
-    cost = tts.calculate_tts_cost("cartesia/sonic-3", 0)
-    assert cost is not None
-    assert cost == Decimal("0")
-
-
-def test_character_count_scales_linearly() -> None:
-    """100 chars is one tenth of 1000 chars: $0.05 / 10 = $0.005."""
-    assert tts.calculate_tts_cost("cartesia/sonic-3", 100) == Decimal("0.005")
 
 
 def test_negative_chars_raises() -> None:
     """A negative character count is a programming error, not a $0 request."""
     with pytest.raises(ValueError):
         tts.calculate_tts_cost("cartesia/sonic-3", -1)
-
-
-def test_return_type_is_decimal() -> None:
-    cost = tts.calculate_tts_cost("cartesia/sonic-3", 1000)
-    assert isinstance(cost, Decimal)

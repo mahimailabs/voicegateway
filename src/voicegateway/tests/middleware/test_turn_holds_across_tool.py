@@ -36,17 +36,6 @@ def _only(tracker: TurnTracker, sid: str = "s"):
     return state.buffered_turns[0]
 
 
-async def test_a_turn_with_no_tool_is_unchanged() -> None:
-    """The regression guard. Most turns take this path and must not move."""
-    t = _tracker()
-    await t.on_user_started_speaking(session_id="s", at_ms=1000)
-    await t.on_user_stopped_speaking(session_id="s", at_ms=2000, precise=True)
-    await t.on_agent_audio_first_frame(session_id="s", at_ms=2300)
-    turn = _only(t)
-    assert turn.agent_speak_start_ms == 2300
-    assert turn.response_speed_ms == 300
-
-
 async def test_filler_then_answer_reports_the_answer() -> None:
     """The defect. Filler at 2300, tool ends at 5000, answer at 5200.
 

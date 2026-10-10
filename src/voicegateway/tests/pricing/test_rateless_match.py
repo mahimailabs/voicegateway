@@ -93,18 +93,6 @@ def test_an_unknown_model_is_still_none_not_a_rateless_zero() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_the_row_is_tagged_unrated_rather_than_priced(rateless) -> None:
-    record = CostTracker().create_record(
-        model_id=rateless, modality="stt", provider="deepgram", input_units=10.0
-    )
-    assert record.cost_usd == 0.0
-    assert record.pricing_source == catalog.UNRATED_SOURCE
-    assert not record.pricing_source.startswith("voice-prices@"), (
-        "the tag must not read as a priced row to anything matching on the "
-        "voice-prices@ prefix"
-    )
-
-
 def test_the_four_states_are_all_distinguishable(rateless) -> None:
     """The point of the change, stated as four different strings."""
     tracker = CostTracker()

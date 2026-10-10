@@ -2,6 +2,8 @@
 
 import asyncio
 import os
+import sqlite3
+import threading
 import time
 
 # pytest's thread-exception hook imports tracemalloc lazily, from the dying
@@ -12,6 +14,7 @@ import time
 import tracemalloc  # noqa: F401
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 import yaml
@@ -188,3 +191,70 @@ async def seeded_storage(tmp_path):
     for r in records:
         await storage.log_request(r)
     return storage
+
+
+_TEMPLATE: dict[str, Path] = {}
+_TEMPLATE_LOCK = threading.Lock()
+
+
+def _has_schema(path: Path) -> bool:
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    with sqlite3.connect(path) as conn:
+        return bool(conn.execute("select count(*) from sqlite_master").fetchone()[0])
+
+
+def _sqlite_copy(src: Path, dst: Path) -> None:
+    with sqlite3.connect(src) as s, sqlite3.connect(dst) as d:
+        s.backup(d)
+
+
+@pytest.fixture(autouse=True)
+def _migrated_sqlite_template(request, monkeypatch, tmp_path_factory):
+    """Seed each fresh SQLite file from one migrated template.
+
+    A fresh ``alembic upgrade head`` costs about a second, and nearly every
+    test opens its own database. The real upgrade still runs on every
+    file (it is a no-op check at head), so the migration path is unchanged;
+    only the repeated table creation is skipped. Migrations themselves are
+    covered by the alembic tests.
+    """
+    name = request.node.path.name
+    if (
+        "migrat" in name
+        or "schema" in name
+        or name.startswith("test_database_")
+        or request.node.get_closest_marker("real_migrations")
+    ):
+        # Tests about the migration path itself run the real upgrade.
+        yield
+        return
+
+    from voicegateway.core import database as db_mod
+
+    original = db_mod.Database._run_alembic_upgrade
+
+    def seeded(self) -> None:
+        url = db_mod.resolve_database_url(self.config)
+        prefix = "sqlite+aiosqlite:///"
+        if not url.startswith(prefix):
+            return original(self)
+        target = Path(url[len(prefix) :])
+        with _TEMPLATE_LOCK:
+            template = _TEMPLATE.get("path")
+            if template is None:
+                if _has_schema(target):
+                    # A test that pre-built a legacy schema; never let its
+                    # rows become the template.
+                    return original(self)
+                original(self)
+                template = tmp_path_factory.getbasetemp() / "migrated-template.db"
+                _sqlite_copy(target, template)
+                _TEMPLATE["path"] = template
+                return None
+            if not _has_schema(target):
+                _sqlite_copy(template, target)
+        return original(self)
+
+    monkeypatch.setattr(db_mod.Database, "_run_alembic_upgrade", seeded)
+    yield

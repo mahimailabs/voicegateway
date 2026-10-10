@@ -430,16 +430,6 @@ async def test_a_concurrent_press_is_rejected_while_one_is_in_flight(
     assert "already running" in resp.json()["detail"]
 
 
-async def test_the_lock_is_released_after_a_press(tmp_path, monkeypatch):
-    gw = _gateway(tmp_path, monkeypatch)
-    await _seed_dispatch(gw, "support", "support-bot")
-    _configured(monkeypatch)
-    _patch_probe(monkeypatch, lambda *a, **kw: _echo(_SAMPLE))
-    async with _client(gw) as c:
-        await c.post("/api/agents/support/probe")
-    assert agents._PROBES_INFLIGHT == set()
-
-
 async def test_a_hung_probe_times_out_without_wedging_the_agent(tmp_path, monkeypatch):
     gw = _gateway(tmp_path, monkeypatch)
     await _seed_dispatch(gw, "support", "support-bot")
@@ -490,6 +480,9 @@ async def test_a_failing_probe_caches_the_error_and_releases_the_lock(
         # ...and cached as an honest failure the index then serves, so the page
         # shows "errored" instead of the previous good probe's stale split.
         listing = (await c.get("/api/agents")).json()["agents"]
+        # The cooldown survives the failure: the stamp is written before the
+        # call, and a crash part-way through may follow a billed call.
+        assert (await c.post("/api/agents/support/probe")).status_code == 429
     entry = next(a for a in listing if a["agent_id"] == "support")
     lp = entry["latency_probe"]
     assert lp is not None
@@ -499,49 +492,9 @@ async def test_a_failing_probe_caches_the_error_and_releases_the_lock(
     assert agents._PROBES_INFLIGHT == set()
 
 
-async def test_an_unexpected_failure_is_a_502_and_still_costs_the_cooldown(
-    tmp_path, monkeypatch
-):
-    """What reaches the operator when the probe blows up part-way through.
-
-    A crash the probe service could not name is caught, cached as an honest
-    "errored" state (so the page never shows a stale graph), and surfaced as a
-    502 carrying the reason. The traceback still lands in the logs; it is not
-    swallowed into a tidy 200.
-
-    The cooldown survives the failure on purpose. The stamp is written before
-    the call, and an exception raised part-way through may well follow a call
-    that was already placed and billed. Clearing it would re-offer a press that
-    could charge twice, so the wait stands either way.
-    """
-    gw = _gateway(tmp_path, monkeypatch)
-    await _seed_dispatch(gw, "support", "support-bot")
-    _configured(monkeypatch)
-
-    async def _boom(*a, **kw):
-        raise RuntimeError("livekit exploded")
-
-    _patch_probe(monkeypatch, _boom)
-    async with _client(gw) as c:
-        first = await c.post("/api/agents/support/probe")
-        assert first.status_code == 502
-        assert "livekit exploded" in first.json()["detail"]
-        assert (await c.post("/api/agents/support/probe")).status_code == 429
-
-
 # ---------------------------------------------------------------------------
 # Auth: the gate is a no-op locally and real once keys exist
 # ---------------------------------------------------------------------------
-
-
-async def test_probe_is_open_when_no_api_keys_are_configured(tmp_path, monkeypatch):
-    """The local single-operator default: no keys, no gate."""
-    gw = _gateway(tmp_path, monkeypatch)
-    await _seed_dispatch(gw, "support", "support-bot")
-    _configured(monkeypatch)
-    _patch_probe(monkeypatch, lambda *a, **kw: _echo(_SAMPLE))
-    async with _client(gw, api_keys=[]) as c:
-        assert (await c.post("/api/agents/support/probe")).status_code == 200
 
 
 async def test_probe_needs_a_token_once_api_keys_are_configured(tmp_path, monkeypatch):

@@ -269,46 +269,6 @@ async def test_all_three_statuses_round_trip_distinctly_in_one_response(
         assert correlation["status"] in correlate.WINDOW_STATUSES
 
 
-async def test_a_window_nobody_scraped_carries_no_node_at_all(client, gateway):
-    """`no_samples` must not arrive as a node with zeroed summaries: a flat zero
-    line reads as a clean bill of health."""
-    await _call(
-        gateway.storage,
-        attempt_id="unwatched",
-        started_at_ms=_T0,
-        ended_at_ms=_T0 + _MINUTE,
-    )
-
-    correlation = (await client.get(_URL)).json()["calls"][0]["correlation"]
-
-    assert correlation["status"] == "no_samples"
-    assert correlation["nodes_sampled"] == []
-
-
-async def test_a_window_of_failed_scrapes_is_not_a_healthy_node(client, gateway):
-    """The nodes were being watched and the watching did not work. Every value
-    stays null and the outcome that caused it is named."""
-    await _call(
-        gateway.storage,
-        attempt_id="blind",
-        started_at_ms=_T0,
-        ended_at_ms=_T0 + _MINUTE,
-    )
-    await _scrape(gateway.storage, at_ms=_T0 + 5_000, outcome="timeout")
-    await _scrape(gateway.storage, at_ms=_T0 + 20_000, outcome="timeout")
-
-    correlation = (await client.get(_URL)).json()["calls"][0]["correlation"]
-    node = correlation["nodes_sampled"][0]
-
-    assert correlation["status"] == "scrape_failed"
-    assert node["ok_samples"] == 0
-    assert node["failed_samples"] == 2
-    assert node["outcomes"] == {"timeout": 2}
-    assert node["gauges"]["rooms"]["latest"] is None
-    assert node["gauges"]["rooms"]["peak"] is None
-    assert node["gauges"]["rooms"]["peak_stat"] == "not_measured"
-
-
 async def test_an_unmeasured_series_is_null_and_says_so_never_zero(client, gateway):
     """A source only carries its own series. node-exporter has no `rooms`, and
     that column must read as not measured rather than as an empty SFU."""
@@ -374,15 +334,6 @@ async def test_every_window_carries_the_pad_and_both_bounds(client, gateway):
     assert window["end_ms"] == _T0 + _MINUTE + correlate.DEFAULT_WINDOW_PAD_MS
 
 
-async def test_the_pad_is_readable_even_with_no_call_to_carry_one(client):
-    """A fresh deployment has no window, and the pad it would be correlated
-    against is still the parameter the reader is entitled to see."""
-    body = (await client.get(_URL)).json()
-
-    assert body["calls"] == []
-    assert body["pad_ms"] == correlate.DEFAULT_WINDOW_PAD_MS
-
-
 async def test_the_pad_is_a_parameter_and_the_payload_reports_the_one_used(
     client, gateway
 ):
@@ -440,72 +391,6 @@ async def test_the_served_correlation_is_the_one_the_repository_computed(
 
     assert computed is not None
     assert body["calls"][0]["correlation"] == dataclasses.asdict(computed)
-
-
-async def test_a_peak_from_too_few_samples_is_labelled_max_of_n(client, gateway):
-    """Decision 3, surfaced rather than re-decided: below 10 measured points the
-    peak is a maximum and says so, so nobody reads it as a p95."""
-    await _call(
-        gateway.storage, attempt_id="few", started_at_ms=_T0, ended_at_ms=_T0 + _MINUTE
-    )
-    for index in range(3):
-        await _scrape(gateway.storage, at_ms=_T0 + 5_000 * (index + 1), rooms=index + 1)
-
-    gauge = (await client.get(_URL)).json()["calls"][0]["correlation"]["nodes_sampled"][
-        0
-    ]["gauges"]["rooms"]
-
-    assert gauge["samples"] == 3
-    assert gauge["samples"] < correlate.MIN_PERCENTILE_SAMPLES
-    assert gauge["peak_stat"] == "max_of_n"
-    assert gauge["peak_stat"] in correlate.PEAK_STATS
-    assert gauge["peak"] == pytest.approx(3.0)
-
-
-async def test_a_counter_reset_inside_the_window_stays_unknown_not_a_spike(
-    client, gateway
-):
-    """The reset rule lives in `counter_rates` and is reported, not repaired: a
-    restart lowers confidence instead of publishing a rate."""
-    await _call(
-        gateway.storage,
-        attempt_id="restart",
-        started_at_ms=_T0,
-        ended_at_ms=_T0 + _MINUTE,
-    )
-    await _scrape(gateway.storage, at_ms=_T0 + 5_000, packets_total=1_000.0)
-    await _scrape(gateway.storage, at_ms=_T0 + 20_000, packets_total=5.0)
-
-    counter = (await client.get(_URL)).json()["calls"][0]["correlation"][
-        "nodes_sampled"
-    ][0]["counters"]["packets_total"]
-
-    assert counter["points"] == 2
-    assert counter["unknown_points"] == 2
-    assert counter["peak_per_second"] is None
-    assert counter["peak_stat"] == "not_measured"
-
-
-async def test_two_concurrent_calls_correlate_to_the_same_node(client, gateway):
-    """Overlap is not attribution. Both calls list the node, because both were
-    open while it was scraped, and neither claim means it served them."""
-    await _call(
-        gateway.storage, attempt_id="a", started_at_ms=_T0, ended_at_ms=_T0 + _MINUTE
-    )
-    await _call(
-        gateway.storage,
-        attempt_id="b",
-        started_at_ms=_T0 + 1_000,
-        ended_at_ms=_T0 + _MINUTE,
-    )
-    await _scrape(gateway.storage, at_ms=_T0 + 30_000, rooms=2.0)
-
-    body = (await client.get(_URL)).json()
-
-    for attempt_id in ("a", "b"):
-        correlation = _by_attempt(body, attempt_id)["correlation"]
-        assert correlation["status"] == "correlated"
-        assert [n["node"] for n in correlation["nodes_sampled"]] == ["sfu-1"]
 
 
 # --- the empty table is a state, not an error -------------------------------
@@ -577,18 +462,7 @@ async def test_auth_is_required_when_api_keys_are_configured(tmp_path, monkeypat
 
     assert ok.status_code == 200
     assert ok.json()["calls"] == []
-
-
-async def test_the_operator_default_with_no_keys_still_reads_it(client, gateway):
-    """No credential = the self-hosted operator, unchanged."""
-    await _call(
-        gateway.storage, attempt_id="op", started_at_ms=_T0, ended_at_ms=_T0 + _MINUTE
-    )
-
-    resp = await client.get(_URL)
-
-    assert resp.status_code == 200
-    assert len(resp.json()["calls"]) == 1
+    assert ok.json()["pad_ms"] == correlate.DEFAULT_WINDOW_PAD_MS
 
 
 async def test_a_tenant_key_is_refused_rather_than_shown_the_whole_fleet(

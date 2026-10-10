@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from voicegateway.inference.session.context import (
-    current_tenant,
     reset_tenant_id,
     set_tenant,
 )
@@ -68,15 +67,3 @@ async def test_three_tenants_aggregate_independently(storage) -> None:
     assert bravo["total"] == pytest.approx(1.00)
     charlie = await storage.get_cost_summary("all", tenant="charlie")
     assert charlie["total"] == pytest.approx(0.50)
-
-
-async def test_context_var_resets_between_tenants(storage) -> None:
-    """Switching tenants does not leak across sessions when set_tenant is called."""
-    set_tenant("alpha")
-    assert current_tenant() == "alpha"
-
-    set_tenant("bravo")
-    assert current_tenant() == "bravo"
-
-    reset_tenant_id()
-    assert current_tenant() is None

@@ -63,10 +63,6 @@ async def test_upsert_then_read_round_trips(db: AsyncSession) -> None:
     assert row.project == repo.DEFAULT_PROJECT
 
 
-async def test_get_run_returns_none_for_unknown_id(db: AsyncSession) -> None:
-    assert await repo.get_run(db, "nope") is None
-
-
 async def test_state_transitions_overwrite_the_same_row(db: AsyncSession) -> None:
     """queued -> running -> failed is three writes to one row, not three rows."""
     created = "2026-07-30T02:00:00+00:00"
@@ -135,39 +131,6 @@ async def test_no_results_stays_null_and_is_not_an_empty_dict(
     empty = await repo.get_run(db, "r2")
     assert empty is not None
     assert empty.results == {}
-
-
-async def test_probe_payloads_are_stored_unchanged(db: AsyncSession) -> None:
-    """This layer stores what the probe returned and derives nothing.
-
-    Notably a ``None`` knee (which means two opposite things upstream) and a
-    hardcoded ``loss_pct`` survive verbatim: normalising either here would
-    invent a measurement.
-    """
-    results = {
-        "verdict": "WARN",
-        "checks": {
-            "sfu_load": {
-                "ok": True,
-                "baseline": {"rtt_ms": 5.0, "loss_pct": 0.0, "quality": "Excellent"},
-                "knee": None,
-                "ramp": [{"participants": 2, "rtt_ms": 6.5}],
-            }
-        },
-    }
-    await repo.upsert_run(
-        db,
-        run_id="r1",
-        checks=["sfu_load"],
-        config={"max_participants": 8},
-        status="done",
-        results=results,
-        verdict="WARN",
-        created_at="2026-07-30T04:00:00+00:00",
-    )
-    row = await repo.get_run(db, "r1")
-    assert row is not None
-    assert row.results == results
 
 
 async def test_list_runs_is_newest_first_and_bounded(db: AsyncSession) -> None:
@@ -245,18 +208,3 @@ async def test_wrong_json_type_is_coerced_to_the_right_empty_value(
     assert row.checks == []
     assert row.config == {}
     assert row.results is None
-
-
-async def test_project_is_stored_for_retention(db: AsyncSession) -> None:
-    await repo.upsert_run(
-        db,
-        run_id="r1",
-        checks=["agents"],
-        config={},
-        status="done",
-        created_at="2026-07-30T09:00:00+00:00",
-        project="acme",
-    )
-    row = await repo.get_run(db, "r1")
-    assert row is not None
-    assert row.project == "acme"

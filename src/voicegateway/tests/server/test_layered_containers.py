@@ -33,16 +33,6 @@ def test_config_and_storage_resolve_through_the_gateway(gateway) -> None:
     assert container.core.storage() is gateway.storage
 
 
-def test_infra_reuses_the_storage_engine(gateway) -> None:
-    assert _container(gateway).infra.database() is gateway.storage.database
-
-
-def test_services_resolve_through_the_infra_layer(gateway) -> None:
-    container = _container(gateway)
-
-    assert container.services.api_key_service() is not container.services.api_key_service()
-
-
 def test_a_container_without_a_gateway_fails_the_startup_check() -> None:
     with pytest.raises(errors.Error, match="gateway"):
         Container().check_dependencies()

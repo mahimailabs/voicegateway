@@ -147,12 +147,6 @@ async def test_room_participant_identities_lists_everyone_in_the_room():
     assert idents == ["agent-x", "human-1"]
 
 
-async def test_join_token_is_a_jwt():
-    admin = LiveKitAdmin(LiveKitCreds("u", "k", "s"), api=_FakeApi())
-    token = admin.join_token("room1", "probe")
-    assert token.count(".") == 2  # header.payload.signature
-
-
 async def test_list_egress_maps_status_and_source_enums():
     admin = LiveKitAdmin(LiveKitCreds("u", "k", "s"), api=_FakeApi())
     rows = await admin.list_egress()

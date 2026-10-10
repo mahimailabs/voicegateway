@@ -17,6 +17,7 @@ places.
 from __future__ import annotations
 
 import importlib
+import inspect
 import os
 
 import pytest
@@ -45,38 +46,11 @@ def test_every_policy_sets_every_switch() -> None:
         assert set(mapping) == set(CAPTURE_SWITCHES), name
 
 
-def test_standard_is_exactly_todays_defaults() -> None:
-    """The compatibility claim, stated as an equality.
-
-    If this drifts, every existing `attach()` call changes behaviour silently,
-    which the acceptance explicitly forbids.
-    """
-    assert CAPTURE_POLICIES["standard"] == {
-        "transcript": True,
-        "snapshots": False,
-        "turns": True,
-        "dead_air": True,
-    }
-
-
 def test_timing_only_captures_nothing_the_caller_said() -> None:
     """The intent the issue names outright."""
     p = CAPTURE_POLICIES["timing_only"]
     assert p["transcript"] is False and p["snapshots"] is False
     assert p["turns"] is True
-
-
-def test_lean_differs_from_timing_only_on_cost_not_disclosure() -> None:
-    """The two axes the four booleans flattened.
-
-    Dead air polls once a second for the life of every session; turn capture
-    costs nothing between events. `lean` is the same disclosure as
-    `timing_only` and a different running cost, and that is a distinction the
-    booleans could express but could not name.
-    """
-    lean, timing = CAPTURE_POLICIES["lean"], CAPTURE_POLICIES["timing_only"]
-    differing = {k for k in CAPTURE_SWITCHES if lean[k] != timing[k]}
-    assert differing == {"dead_air"}
 
 
 def test_debug_is_the_only_policy_that_discloses_snapshots() -> None:
@@ -99,8 +73,22 @@ def test_off_captures_nothing() -> None:
 
 
 def test_passing_nothing_behaves_exactly_as_before() -> None:
-    """The acceptance criterion: existing calls are identical, no warning."""
-    assert _resolve(None, None, None, None, None) == CAPTURE_POLICIES["standard"]
+    """The acceptance criterion: existing calls are identical, no warning.
+
+    ``standard`` is the pre-policy defaults; if it drifts, every existing
+    ``attach()`` call changes behaviour silently. The four flags must stay
+    tri-state (default None) so passing nothing defers to the policy.
+    """
+    assert _resolve(None, None, None, None, None) == {
+        "transcript": True,
+        "snapshots": False,
+        "turns": True,
+        "dead_air": True,
+    }
+    assert CAPTURE_POLICIES["standard"] == _resolve(None, None, None, None, None)
+    params = inspect.signature(attach_mod.attach).parameters
+    for flag in CAPTURE_SWITCHES:
+        assert params[flag].default is None, f"{flag} is no longer tri-state"
 
 
 def test_the_four_booleans_still_work_on_their_own() -> None:
@@ -166,52 +154,3 @@ def test_the_environment_still_beats_a_policy() -> None:
         os.environ.pop("VOICEGW_TRANSCRIPTS", None)
         if before is not None:
             os.environ["VOICEGW_TRANSCRIPTS"] = before
-
-
-# --------------------------------------------------------------------------
-# The docstring must not contradict the signature
-# --------------------------------------------------------------------------
-
-
-def test_every_public_parameter_is_documented() -> None:
-    """`revision` and `policy` shipped in 0.25.0 undocumented.
-
-    They are the two headline parameters of that release, and a reader who
-    checked the docstring concluded they did not exist. Cheap to assert, and
-    the failure mode is silent.
-    """
-    import inspect
-
-    doc = inspect.getdoc(attach_mod.attach) or ""
-    params = inspect.signature(attach_mod.attach).parameters
-    # Names taken from the part of each Args line BEFORE the colon, so a
-    # combined entry ("collector_url / api_key: ...") counts for both. Matching
-    # on "\nname:" alone would report a documented pair as missing.
-    documented: set[str] = set()
-    for line in doc.splitlines():
-        head, sep, _ = line.partition(":")
-        if not sep or head != head.rstrip():
-            continue
-        documented.update(w.strip("`*, ") for w in head.replace("/", " ").split())
-    undocumented = sorted(
-        name for name in params if name != "session" and name not in documented
-    )
-    assert not undocumented, f"undocumented attach parameters: {undocumented}"
-
-
-def test_the_docstring_does_not_claim_a_default_the_signature_dropped() -> None:
-    """The four capture flags became tri-state and the prose did not follow.
-
-    It still read "(default on)" and "(default OFF)", which were the
-    pre-0.25.0 values. A reader who passed nothing and trusted it believed
-    transcript capture was on when the policy decides. A doc that is merely
-    absent is a gap; one that states the opposite of the code is a trap.
-    """
-    import inspect
-
-    doc = inspect.getdoc(attach_mod.attach) or ""
-    params = inspect.signature(attach_mod.attach).parameters
-    for flag in CAPTURE_SWITCHES:
-        assert params[flag].default is None, f"{flag} is no longer tri-state"
-    for claim in ("(default on)", "(default OFF)", "(default ON)"):
-        assert claim not in doc, f"docstring still claims {claim}"

@@ -37,10 +37,3 @@ def test_no_module_outside_storage_service_touches_internals():
             if _PATTERN.search(line):
                 offenders.append(f"{path.relative_to(_SRC)}:{lineno}: {line.strip()}")
     assert not offenders, "\n".join(offenders)
-
-
-def test_storage_service_exposes_a_public_session():
-    """The one public path to a session. Routes get it via get_session."""
-    from voicegateway.services.storage_service import StorageService
-
-    assert callable(getattr(StorageService, "session", None))

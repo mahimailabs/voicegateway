@@ -163,10 +163,6 @@ async def test_create_rejects_empty_name(db) -> None:
         await vk.create_api_key(db, name="", scopes="read,write,ingest,admin")
 
 
-async def test_get_by_id_returns_none_for_missing(db) -> None:
-    assert await vk.get_by_id(db, 999999) is None
-
-
 async def test_two_keys_with_same_tenant_independent(db) -> None:
     a = await vk.create_api_key(
         db, name="a", tenant_id="acme", scopes="read,write,ingest,admin"

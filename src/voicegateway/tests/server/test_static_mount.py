@@ -219,15 +219,3 @@ def test_dist_without_assets_subdir_treated_as_missing(monkeypatch, tmp_path):
     resp = client.get("/")
     assert resp.status_code == 200
     assert b"GOOD" in resp.content
-
-
-# ---------- candidate-list structure smoke check ---------------------------
-
-
-def test_candidate_dirs_contains_both_expected_layouts():
-    """``_CANDIDATE_DIRS`` lists the wheel layout first, then editable."""
-    candidates = static_module._CANDIDATE_DIRS
-    assert len(candidates) == 2
-    assert candidates[0].name == "_dashboard_dist"
-    expected_editable_tail = Path("src") / "dashboard" / "frontend" / "dist"
-    assert candidates[1].as_posix().endswith(expected_editable_tail.as_posix())

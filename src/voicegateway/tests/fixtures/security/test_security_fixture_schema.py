@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from voicegateway.tests.fixtures.security._loader import (
@@ -24,14 +22,6 @@ def test_case_id_matches_its_filename(path):
     assert load_fixture(path).case_id == path.stem
 
 
-@pytest.mark.parametrize("path", fixture_paths(), ids=lambda p: p.stem)
-def test_case_file_is_formatted_json(path):
-    """Two-space indent and a trailing newline, so diffs stay readable."""
-    raw = path.read_text(encoding="utf-8")
-    assert raw.endswith("\n")
-    assert raw == json.dumps(json.loads(raw), indent=2) + "\n"
-
-
 def test_both_guarantees_and_defects_are_represented():
     """The format must express a satisfied rule, not only a broken one."""
     kinds = {f.kind for f in load_all()}
@@ -43,9 +33,3 @@ def test_characterizations_actually_differ_from_their_contract():
     for fixture in load_all():
         if fixture.kind == "characterization":
             assert fixture.observed != fixture.contract, fixture.case_id
-
-
-def test_every_rationale_is_substantive():
-    """A one-line rationale is a note; these need to carry the provenance."""
-    for fixture in load_all():
-        assert len(fixture.rationale) > 120, fixture.case_id

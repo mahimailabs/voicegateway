@@ -11,7 +11,6 @@ from voicegateway.middleware.agent_observations_worker_middleware import (
     AgentObservationsWorker,
 )
 from voicegateway.models.request_model import RequestRecord
-from voicegateway.services.retention_service import RetentionWorker
 from voicegateway.services.storage_service import StorageService
 
 
@@ -44,22 +43,6 @@ async def test_tick_now_runs_one_pass(storage) -> None:
     assert n == 3  # agent-a, agent-b, unattributed
 
 
-async def test_default_poll_interval_is_900(storage) -> None:
-    w = AgentObservationsWorker(storage)
-    assert w._poll_interval == 900
-    # Companion assertion for the retention cadence (spec decision 8).
-    assert RetentionWorker(storage)._poll_interval == 3600
-
-
-async def test_start_stop_idempotent(storage) -> None:
-    w = AgentObservationsWorker(storage, poll_interval_seconds=0.1)
-    await w.start()
-    await w.start()
-    await asyncio.sleep(0.25)
-    await w.stop()
-    await w.stop()
-
-
 async def test_custom_window_provider_flows_through(storage) -> None:
     await storage.log_request(_req("a1", "agent-a"))
     captured: list[int] = []
@@ -83,8 +66,11 @@ async def test_loop_continues_on_tick_exception(storage) -> None:
         storage, window_provider=boom, poll_interval_seconds=0.1
     )
     await w.start()
-    await asyncio.sleep(0.25)
+    await w.start()  # idempotent: a second start is a no-op
+    await asyncio.sleep(0.25)  # let at least two failing ticks fire
+    assert w._task is not None and not w._task.done()
     await w.stop()
+    await w.stop()  # idempotent
 
 
 async def test_poll_interval_validation(storage) -> None:

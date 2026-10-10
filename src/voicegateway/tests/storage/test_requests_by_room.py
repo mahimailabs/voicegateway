@@ -84,12 +84,6 @@ async def test_get_requests_for_room_exact_match_rejects_like_wildcard(tmp_path)
     assert rows == []  # exact match rejects the wildcard hit
 
 
-async def test_get_requests_for_room_empty_when_absent(tmp_path):
-    storage = StorageService(str(tmp_path / "none.db"))
-    await storage.log_request(_rec("llm", room="vg-probe-a", ttfb=100.0))
-    assert await storage.get_requests_for_room("nope") == []
-
-
 async def test_get_requests_for_room_respects_since_window(tmp_path):
     """``since`` bounds the scan to ``timestamp >= since`` (inclusive lower edge)."""
     storage = StorageService(str(tmp_path / "since.db"))

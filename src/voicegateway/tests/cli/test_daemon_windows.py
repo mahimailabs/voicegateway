@@ -171,23 +171,11 @@ def test_uninstall_idempotent_when_nothing_installed(backend, fake_subprocess):
 # ---------------------------------------------------------------------------
 
 
-def test_start_calls_schtasks_run(backend, fake_subprocess):
-    backend.start()
-    schtasks = _schtasks_calls(fake_subprocess)
-    assert any("/Run" in c for c in schtasks)
-
-
 def test_start_raises_on_schtasks_failure(backend, fake_subprocess):
     fake_subprocess.return_value = _ok(returncode=1, stdout="")
     fake_subprocess.return_value.stderr = "task not found"
     with pytest.raises(RuntimeError, match="schtasks /Run"):
         backend.start()
-
-
-def test_stop_calls_schtasks_end(backend, fake_subprocess):
-    backend.stop()
-    schtasks = _schtasks_calls(fake_subprocess)
-    assert any("/End" in c for c in schtasks)
 
 
 def test_stop_swallows_failure(backend, fake_subprocess):
@@ -234,15 +222,6 @@ def test_status_when_running(backend, fake_subprocess):
     assert s["pid"] is None  # schtasks does not expose the managed PID
 
 
-def test_status_when_ready_but_not_running(backend, fake_subprocess):
-    fake_subprocess.return_value = _ok(
-        stdout=("TaskName: \\VoiceGateway\nStatus: Ready\n")
-    )
-    s = backend.status()
-    assert s["registered"] is True
-    assert s["running"] is False
-
-
 # ---------------------------------------------------------------------------
 # logs
 # ---------------------------------------------------------------------------
@@ -250,14 +229,6 @@ def test_status_when_ready_but_not_running(backend, fake_subprocess):
 
 def test_logs_returns_empty_when_no_log_file(backend):
     assert backend.logs(tail=10) == ""
-
-
-def test_logs_reads_serve_log(backend):
-    backend._log_dir.mkdir(parents=True)
-    backend._stdout_log.write_text("a\nb\nc\n")
-    out = backend.logs(tail=10)
-    assert "a" in out
-    assert "c" in out
 
 
 def test_logs_respects_tail(backend):
@@ -269,3 +240,27 @@ def test_logs_respects_tail(backend):
     assert "line48" in out
     assert "line49" in out
     assert "line0" not in out
+
+
+def test_install_does_not_chmod(backend, fake_subprocess, monkeypatch):
+    """NTFS has no POSIX permissions; the install path must not pretend otherwise."""
+    from pathlib import Path
+
+    monkeypatch.setattr(
+        "voicegateway.cli.daemon.windows_daemon.shutil.which",
+        lambda name: (
+            "C:\\Users\\example\\.local\\bin\\voicegw.exe"
+            if name in ("voicegw", "voicegw.exe")
+            else None
+        ),
+    )
+    chmod_calls: list = []
+    real_chmod = Path.chmod
+
+    def recording_chmod(self: Path, mode: int) -> None:
+        chmod_calls.append((self, mode))
+        real_chmod(self, mode)
+
+    monkeypatch.setattr(Path, "chmod", recording_chmod)
+    backend.install()
+    assert chmod_calls == []

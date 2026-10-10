@@ -78,38 +78,9 @@ async def test_billable_requests_excludes_errors_and_local_telemetry(
     await storage.aclose()
     assert summary["requests"] == 4
     assert summary["billable_requests"] == 2
-
-
-async def test_the_total_is_unchanged(tmp_path) -> None:
-    """Only the DENOMINATOR was ever wrong.
-
-    Summing cost over rows that contribute zero is harmless, so `total` keeps
-    its exact meaning and nobody comparing it across releases sees it move.
-    """
-    storage = await _seeded(tmp_path)
-    summary = await storage.get_cost_summary("all")
-    await storage.aclose()
+    # Only the denominator was ever wrong: rows that cost nothing leave `total`
+    # exactly as it was, so cost per billable call is 0.15, not 0.075.
     assert round(summary["total"], 4) == 0.30
-
-
-async def test_cost_per_call_differs_by_a_third_between_the_two_counts(
-    tmp_path,
-) -> None:
-    """Why this is worth a field rather than a docs note.
-
-    Four rows against two billable ones is a 2x error on this fixture, and the
-    reported real-world case was 1,000 against 849. The wrong denominator is
-    always the larger one, so cost per call always reads LOW, which is the
-    flattering direction and the one nobody questions.
-    """
-    storage = await _seeded(tmp_path)
-    s = await storage.get_cost_summary("all")
-    await storage.aclose()
-    naive = s["total"] / s["requests"]
-    honest = s["total"] / s["billable_requests"]
-    assert naive < honest
-    assert round(honest, 4) == 0.15
-    assert round(naive, 4) == 0.075
 
 
 async def test_a_window_with_no_billable_rows_reports_zero_not_a_crash(

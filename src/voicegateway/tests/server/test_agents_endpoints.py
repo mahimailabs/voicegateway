@@ -76,6 +76,8 @@ async def test_heartbeat_then_roster_shows_busy(harness) -> None:
         "active_sessions": 2,
         "status": "busy",
         "started_at": 100.0,
+        "memory_rss_bytes": 268_435_456,
+        "memory_total_bytes": 536_870_912,
         "ts": 9e12,  # far future -> never stale
     }
     async with harness.client() as c:
@@ -93,5 +95,7 @@ async def test_heartbeat_then_roster_shows_busy(harness) -> None:
     assert worker["status"] == "busy"
     assert worker["active_sessions"] == 2
     assert worker["region"] == "us-east"
+    assert worker["memory_rss_bytes"] == 268_435_456
+    assert worker["memory_pct"] == 50.0
     # tenant_id is a server-side concern and is not echoed to the roster.
     assert "tenant_id" not in worker

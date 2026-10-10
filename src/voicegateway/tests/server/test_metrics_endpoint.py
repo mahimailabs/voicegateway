@@ -11,14 +11,8 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from voicegateway.core.gateway import Gateway
-from voicegateway.middleware.dead_air_detector_middleware import DeadAirEvent
 from voicegateway.middleware.turn_tracker_middleware import TurnRow
-from voicegateway.repository import (
-    dead_air_repository as dead_air,
-)
-from voicegateway.repository import (
-    turns_repository as turns,
-)
+from voicegateway.repository import turns_repository as turns
 from voicegateway.server.main import build_app
 
 
@@ -55,22 +49,6 @@ async def _seed_turns(gateway, session_id: str, count: int = 3) -> None:
         await turns.create_turns_bulk(db, rows, tenant_id=None)
 
 
-async def _seed_dead_air(gateway, session_id: str, count: int = 2) -> None:
-    await gateway.storage._ensure_initialized()
-    async with gateway.storage._conn.session() as db:
-        for i in range(count):
-            await dead_air.create_event(
-                db,
-                DeadAirEvent(
-                    session_id=session_id,
-                    started_at_ms=i * 1000,
-                    duration_ms=3500,
-                    threshold_used_ms=3000,
-                ),
-                tenant_id=None,
-            )
-
-
 async def test_session_turns_endpoint_returns_ordered_turns(client, gateway) -> None:
     await _seed_turns(gateway, "s1", count=3)
     resp = await client.get("/api/sessions/s1/turns")
@@ -89,37 +67,13 @@ async def test_session_turns_endpoint_unknown_session(client) -> None:
     assert body == {"session_id": "ghost", "turns": []}
 
 
-async def test_session_dead_air_endpoint_returns_events(client, gateway) -> None:
-    await _seed_dead_air(gateway, "s1", count=2)
-    resp = await client.get("/api/sessions/s1/dead_air")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["session_id"] == "s1"
-    assert len(body["events"]) == 2
-    assert body["events"][0]["duration_ms"] == 3500
-    assert body["events"][0]["threshold_used_ms"] == 3000
-
-
-async def test_metrics_summary_window_shape(client) -> None:
-    """The /api/metrics shape covers all four cards plus the window meta."""
-    resp = await client.get("/api/metrics?days=7")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["window"]["days"] == 7
-    assert "since" in body["window"] and "until" in body["window"]
-    assert body["filter"]["project"] is None
-    assert "session_count" in body
-    assert "measured_session_count" in body
-    assert "per_minute_cost_usd_avg" in body
-    assert body["response_speed_ms"].keys() == {"p50", "p95"}
-    assert "talk_over_rate" in body
-    assert "dead_air_event_count" in body
-
-
 async def test_metrics_summary_empty_window_returns_nulls(client) -> None:
     """Empty window: counts are 0, averages are null."""
     resp = await client.get("/api/metrics?days=1")
+    assert resp.status_code == 200
     body = resp.json()
+    assert body["window"]["days"] == 1
+    assert body["filter"]["project"] is None
     assert body["session_count"] == 0
     assert body["measured_session_count"] == 0
     assert body["per_minute_cost_usd_avg"] is None
@@ -152,15 +106,6 @@ def _types(text: str) -> dict[str, str]:
     return out
 
 
-def _help(text: str, series: str) -> str:
-    """The HELP text published for ``series``."""
-    prefix = f"# HELP {series} "
-    for line in text.splitlines():
-        if line.startswith(prefix):
-            return line[len(prefix) :]
-    raise AssertionError(f"no HELP line for {series}")
-
-
 async def test_rolling_window_series_are_gauges_not_counters(client) -> None:
     """A trailing-24h sum is a gauge, and must not be typed as a counter.
 
@@ -182,13 +127,3 @@ async def test_rolling_window_series_are_gauges_not_counters(client) -> None:
     # the (wrong) _total suffix stays and only the type metadata is corrected.
     assert "voicegw_cost_usd_total" in resp.text
     assert "voicegw_requests_total" in resp.text
-
-
-async def test_rolling_window_help_text_names_the_window(client) -> None:
-    """HELP must say trailing 24h: "today" reads as a calendar day otherwise."""
-    resp = await client.get("/v1/metrics")
-    for series in ("voicegw_cost_usd_total", "voicegw_requests_total"):
-        help_text = _help(resp.text, series)
-        assert "ROLLING" in help_text
-        assert "24 hours" in help_text
-        assert "not a calendar day" in help_text

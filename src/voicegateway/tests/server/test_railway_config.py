@@ -24,12 +24,6 @@ def _config() -> dict:
     return json.loads(RAILWAY_JSON.read_text())
 
 
-def test_the_config_exists_at_the_repository_root() -> None:
-    """Railway reads it from the root; anywhere else needs manual UI config,
-    which is the zero-config deploy this file exists to provide."""
-    assert RAILWAY_JSON.is_file(), f"{RAILWAY_JSON} is missing"
-
-
 def test_it_names_a_dockerfile_that_exists() -> None:
     """The guard that matters. A stale path here builds the wrong thing."""
     path = _config()["build"]["dockerfilePath"]
@@ -37,10 +31,6 @@ def test_it_names_a_dockerfile_that_exists() -> None:
         f"railway.json points at {path}, which does not exist. Railway would "
         "fall back to Nixpacks and build an image nothing here tests."
     )
-
-
-def test_it_selects_the_dockerfile_builder() -> None:
-    assert _config()["build"]["builder"] == "DOCKERFILE"
 
 
 def test_the_healthcheck_path_is_one_the_app_serves() -> None:

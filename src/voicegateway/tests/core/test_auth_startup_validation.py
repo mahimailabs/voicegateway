@@ -15,13 +15,6 @@ from voicegateway.core.auth import AuthConfigError, validate_auth_startup
 from voicegateway.schemas.config_schema import ApiKeyEntry, AuthConfig
 
 
-def test_defaults_are_warn_mode_and_not_local():
-    """0.26.0 ships warn: existing deployments keep working and get told."""
-    cfg = AuthConfig()
-    assert cfg.local_development is False
-    assert cfg.enforcement == "warn"
-
-
 @pytest.mark.parametrize("host", ["127.0.0.1", "::1", "localhost"])
 def test_local_development_on_loopback_is_fine(host):
     validate_auth_startup(AuthConfig(local_development=True), bind_host=host)

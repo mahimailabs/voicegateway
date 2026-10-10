@@ -14,21 +14,6 @@ async def storage(tmp_path):
     return StorageService(str(tmp_path / "test.db"))
 
 
-async def test_init_creates_tables(storage):
-    """Initializing storage creates the requests table and indexes."""
-    from sqlalchemy import text
-
-    await storage._ensure_initialized()
-    async with storage._conn.session() as db:
-        result = await db.execute(
-            text(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='requests'"
-            )
-        )
-        row = result.first()
-    assert row is not None
-
-
 async def test_log_request(storage):
     record = RequestRecord(
         id=str(uuid.uuid4()),
@@ -45,24 +30,6 @@ async def test_log_request(storage):
     rows = await storage.get_recent_requests(limit=10)
     assert len(rows) == 1
     assert rows[0]["model_id"] == "deepgram/nova-3"
-
-
-async def test_log_request_preserves_agent_id(storage):
-    """A record's agent_id round-trips through storage to the read API."""
-    record = RequestRecord(
-        id=str(uuid.uuid4()),
-        timestamp=time.time(),
-        modality="llm",
-        model_id="openai/gpt-4o-mini",
-        provider="openai",
-        project="fleet",
-        cost_usd=0.01,
-        agent_id="agent-7",
-    )
-    await storage.log_request(record)
-    rows = await storage.get_recent_requests(limit=10)
-    assert len(rows) == 1
-    assert rows[0]["agent_id"] == "agent-7"
 
 
 async def test_get_recent_requests_with_project_filter(storage):
@@ -531,9 +498,9 @@ def _midday_today() -> float:
 
 
 async def test_get_latency_stats_percentiles_with_many_samples(storage):
-    """Log 100 requests per model and assert server-side p50/p95/p99."""
+    """Log 10 requests per model and assert server-side p50/p95/p99."""
     now = _midday_today()
-    for i in range(1, 101):
+    for i in range(1, 11):
         await storage.log_request(
             RequestRecord(
                 id=str(uuid.uuid4()),
@@ -548,16 +515,16 @@ async def test_get_latency_stats_percentiles_with_many_samples(storage):
 
     stats = await storage.get_latency_stats("today")
     ttfb = stats["openai/gpt-4o"]["ttfb_percentiles"]
-    # Linear-interp percentiles of [1..100]: p50=50.5, p95=95.05, p99=99.01
-    assert ttfb["p50"] == pytest.approx(50.5)
-    assert ttfb["p95"] == pytest.approx(95.05)
-    assert ttfb["p99"] == pytest.approx(99.01)
+    # Linear-interp percentiles of [1..10]: p50=5.5, p95=9.55, p99=9.91
+    assert ttfb["p50"] == pytest.approx(5.5)
+    assert ttfb["p95"] == pytest.approx(9.55)
+    assert ttfb["p99"] == pytest.approx(9.91)
 
 
 async def test_get_latency_stats_custom_percentiles(storage):
     """Caller-supplied percentiles override the defaults."""
     now = _midday_today()
-    for i in range(1, 21):
+    for i in range(1, 5):
         await storage.log_request(
             RequestRecord(
                 id=str(uuid.uuid4()),

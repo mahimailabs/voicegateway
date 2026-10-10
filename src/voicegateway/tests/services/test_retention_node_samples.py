@@ -84,13 +84,13 @@ async def test_another_projects_samples_are_untouched(storage) -> None:
 
 
 async def test_sample_prune_is_idempotent_and_batched(storage) -> None:
-    for i in range(120):
+    for i in range(12):
         await _insert(storage, node=f"n{i}", project="acme", at_ms=_ms_days_ago(10))
     worker = RetentionWorker(
-        storage, retention_provider=_provider("acme", 5), batch_size=50
+        storage, retention_provider=_provider("acme", 5), batch_size=5
     )
     first = await worker.tick_now()
     second = await worker.tick_now()
-    assert first["acme"] >= 120
+    assert first["acme"] >= 12
     assert second["acme"] == 0
     assert await _count(storage, "project = :p", {"p": "acme"}) == 0

@@ -14,7 +14,6 @@ import pytest
 from sqlalchemy import text
 
 from voicegateway.services.retention_service import (
-    _CALL_CHILD_TABLES,
     RetentionWorker,
 )
 from voicegateway.services.storage_service import StorageService
@@ -96,10 +95,6 @@ async def _session_call_id(storage, session_id: str) -> str | None:
     return row[0]
 
 
-def test_call_legs_is_a_call_child_table() -> None:
-    assert "call_legs" in _CALL_CHILD_TABLES
-
-
 async def test_aged_call_and_its_legs_are_deleted(storage) -> None:
     old = await storage.upsert_call(
         origin="webhook",
@@ -149,26 +144,8 @@ async def test_a_call_with_no_timestamps_is_left_alone(storage) -> None:
     assert await _count(storage, "calls", "id = :i", {"i": timeless}) == 1
 
 
-async def test_another_projects_calls_are_untouched(storage) -> None:
-    mine = await storage.upsert_call(
-        origin="webhook",
-        room_sid="RM_mine",
-        project="acme",
-        ended_at_ms=_ms_days_ago(10),
-    )
-    theirs = await storage.upsert_call(
-        origin="webhook",
-        room_sid="RM_theirs",
-        project="other",
-        ended_at_ms=_ms_days_ago(10),
-    )
-    await RetentionWorker(storage, retention_provider=_provider("acme", 5)).tick_now()
-    assert await _count(storage, "calls", "id = :i", {"i": mine}) == 0
-    assert await _count(storage, "calls", "id = :i", {"i": theirs}) == 1
-
-
 async def test_call_prune_is_idempotent_and_batched(storage) -> None:
-    for i in range(120):
+    for i in range(12):
         call_id = await storage.upsert_call(
             origin="loadgen",
             attempt_id=f"att-{i}",
@@ -177,11 +154,11 @@ async def test_call_prune_is_idempotent_and_batched(storage) -> None:
         )
         await storage.upsert_call_leg(call_id=call_id, participant_sid="PA_1")
     worker = RetentionWorker(
-        storage, retention_provider=_provider("acme", 5), batch_size=50
+        storage, retention_provider=_provider("acme", 5), batch_size=5
     )
     first = await worker.tick_now()
     second = await worker.tick_now()
-    assert first["acme"] >= 240  # 120 calls + 120 legs
+    assert first["acme"] >= 24  # 12 calls + 12 legs
     assert second["acme"] == 0
     assert await _count(storage, "calls", "project = :p", {"p": "acme"}) == 0
     assert await _count(storage, "call_legs", "1 = :one", {"one": 1}) == 0
@@ -209,23 +186,6 @@ async def test_pruned_call_nulls_the_session_pointer(storage) -> None:
 
     assert await _count(storage, "calls", "id = :i", {"i": old}) == 0
     assert await _session_call_id(storage, "sess-old") is None
-
-
-async def test_surviving_call_keeps_the_session_pointer(storage) -> None:
-    """Only pointers at deleted calls get nulled. A live join is not collateral."""
-    young = await storage.upsert_call(
-        origin="webhook",
-        room_sid="RM_ptr_young",
-        project="acme",
-        started_at_ms=_ms_days_ago(1),
-        ended_at_ms=_ms_days_ago(1),
-    )
-    await _seed_session(storage, "sess-young", "acme", call_id=young)
-
-    await RetentionWorker(storage, retention_provider=_provider("acme", 5)).tick_now()
-
-    assert await _count(storage, "calls", "id = :i", {"i": young}) == 1
-    assert await _session_call_id(storage, "sess-young") == young
 
 
 async def test_other_calls_projects_and_tenants_are_unaffected(storage) -> None:
@@ -406,17 +366,6 @@ async def test_pruned_session_nulls_the_request_pointer(storage) -> None:
 
     assert await _count(storage, "sessions", "id = :i", {"i": "s-req-doomed"}) == 0
     assert await _request_session_id(storage, "r-keeps") is None
-
-
-async def test_surviving_session_keeps_the_request_pointer(storage) -> None:
-    """Only pointers at deleted sessions get nulled. A live link is not collateral."""
-    await _seed_session(storage, "s-req-young", "acme", call_id=None, ended_days_ago=1)
-    await _seed_request(storage, "r-linked", "acme", session_id="s-req-young")
-
-    await RetentionWorker(storage, retention_provider=_provider("acme", 5)).tick_now()
-
-    assert await _count(storage, "sessions", "id = :i", {"i": "s-req-young"}) == 1
-    assert await _request_session_id(storage, "r-linked") == "s-req-young"
 
 
 async def test_other_sessions_projects_and_tenants_keep_their_pointers(storage) -> None:

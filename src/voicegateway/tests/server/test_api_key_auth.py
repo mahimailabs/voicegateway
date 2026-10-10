@@ -62,13 +62,10 @@ def test_is_api_key_token_recognizes_vk_prefix():
     assert is_api_key_token("vk_AABBCCDDEEFFGG") is False  # missing Bearer
 
 
-def test_check_tenant_body_conflict_allows_when_either_none():
+def test_check_tenant_body_conflict_allows_none_or_matching():
     check_tenant_body_conflict(key_tenant_id=None, body_tenant_id="acme")
     check_tenant_body_conflict(key_tenant_id="acme", body_tenant_id=None)
     check_tenant_body_conflict(key_tenant_id=None, body_tenant_id=None)
-
-
-def test_check_tenant_body_conflict_allows_matching():
     check_tenant_body_conflict(key_tenant_id="acme", body_tenant_id="acme")
 
 
@@ -103,16 +100,11 @@ async def test_verify_api_key_rejects_revoked(gateway):
     assert ei.value.status_code == 401
 
 
-async def test_verify_api_key_rejects_non_vk_prefix(gateway):
+async def test_verify_api_key_rejects_non_vk_or_missing_header(gateway):
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
         with pytest.raises(AuthError):
             await verify_api_key("Bearer sk-static", db)
-
-
-async def test_verify_api_key_rejects_missing_header(gateway):
-    await gateway.storage._ensure_initialized()
-    async with gateway.storage._conn.session() as db:
         with pytest.raises(AuthError) as ei:
             await verify_api_key(None, db)
     assert ei.value.status_code == 401
@@ -127,26 +119,6 @@ async def _client(gw: Gateway):
     app = build_app(gw)
     transport = ASGITransport(app=app)
     return AsyncClient(transport=transport, base_url="http://test")
-
-
-async def test_api_key_authenticates_write_request(gateway):
-    """A valid scoped virtual key satisfies the write dep."""
-    await gateway.storage._ensure_initialized()
-    async with gateway.storage._conn.session() as db:
-        created = await api_keys.create_api_key(
-            db, name="bot", tenant_id="acme", scopes="read,write,ingest,admin"
-        )
-
-    client = await _client(gateway)
-    async with client as c:
-        resp = await c.post(
-            "/v1/providers",
-            headers={"Authorization": f"Bearer {created.plaintext}"},
-            json={"provider_id": "ollama-x", "provider_type": "ollama", "api_key": ""},
-        )
-        # /v1/providers requires the write scope. A default vk_ key has
-        # wildcard scopes ('*') and tenant role, so it passes write checks.
-        assert resp.status_code == 200
 
 
 async def test_api_key_revoked_returns_401(gateway):
@@ -171,7 +143,7 @@ async def test_api_key_revoked_returns_401(gateway):
 
 
 async def test_api_key_marks_last_used(gateway):
-    """Successful verify bumps last_used_at via mark_used."""
+    """A valid key authenticates a write and bumps last_used_at."""
     await gateway.storage._ensure_initialized()
     async with gateway.storage._conn.session() as db:
         created = await api_keys.create_api_key(
@@ -181,35 +153,19 @@ async def test_api_key_marks_last_used(gateway):
 
     client = await _client(gateway)
     async with client as c:
-        await c.post(
+        resp = await c.post(
             "/v1/providers",
             headers={"Authorization": f"Bearer {created.plaintext}"},
             json={"provider_id": "ollama-x", "provider_type": "ollama", "api_key": ""},
         )
+    # A valid scoped virtual key satisfies the write dep.
+    assert resp.status_code == 200
 
     # Re-read the row through a fresh session.
     async with gateway.storage._conn.session() as db2:
         row = await api_keys.get_by_id(db2, created.id)
     assert row is not None
     assert row.last_used_at is not None
-
-
-async def test_api_key_authenticates_write_request_default_scope(gateway):
-    """A default (wildcard-scoped) virtual key satisfies the write dep."""
-    await gateway.storage._ensure_initialized()
-    async with gateway.storage._conn.session() as db:
-        created = await api_keys.create_api_key(
-            db, name="bot", tenant_id="acme", scopes="read,write,ingest,admin"
-        )
-
-    client = await _client(gateway)
-    async with client as c:
-        resp = await c.post(
-            "/v1/providers",
-            headers={"Authorization": f"Bearer {created.plaintext}"},
-            json={"provider_id": "ollama-x", "provider_type": "ollama", "api_key": ""},
-        )
-        assert resp.status_code == 200
 
 
 async def test_require_scope_admin_denies_tenant_key(gateway):

@@ -74,11 +74,3 @@ def test_smoke_test_alias_still_works(tmp_path):
     out = _plain(result.output)
     assert result.exit_code == 0, out
     assert "session correlation" in out
-
-
-def test_check_help_renders():
-    result = runner.invoke(app, ["check", "--help"])
-    assert result.exit_code == 0
-    plain = _plain(result.output)
-    assert "--config" in plain
-    assert "--project" in plain

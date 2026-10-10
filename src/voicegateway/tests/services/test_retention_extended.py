@@ -128,17 +128,23 @@ async def test_prune_deletes_session_dependents(storage) -> None:
                 "VALUES ('s-old', 0, 100, 3000)"
             )
         )
+        await db.execute(
+            text(
+                "INSERT INTO transcript_turns (session_id, seq, role, text) "
+                "VALUES ('s-old', 0, 'user', 'hi')"
+            )
+        )
         await db.commit()
     await RetentionWorker(storage, retention_provider=_provider("acme", 5)).tick_now()
-    for table in ("turns", "dead_air_events"):
+    for table in ("turns", "dead_air_events", "transcript_turns"):
         assert await _count(storage, table, "session_id = :s", {"s": "s-old"}) == 0
 
 
 async def test_request_prune_is_batched(storage) -> None:
-    for i in range(120):
+    for i in range(12):
         await _seed_request(storage, f"r{i}", "acme", days_ago=10, session_id=None)
     worker = RetentionWorker(
-        storage, retention_provider=_provider("acme", 5), batch_size=50
+        storage, retention_provider=_provider("acme", 5), batch_size=5
     )
     await worker.tick_now()
     assert await _count(storage, "requests", "project = :p", {"p": "acme"}) == 0

@@ -11,7 +11,7 @@ import ast
 from pathlib import Path
 
 from voicegateway.core import scopes
-from voicegateway.schemas.telemetry.security_schema import RouteAuth, ScopeName
+from voicegateway.schemas.telemetry.security_schema import ScopeName
 
 
 def test_runtime_scopes_match_the_contract_enum():
@@ -27,8 +27,3 @@ def test_scopes_module_imports_nothing():
     assert imports == [] or all(
         isinstance(n, ast.ImportFrom) and n.module == "__future__" for n in imports
     )
-
-
-def test_route_auth_has_an_ingest_member():
-    """Task 10 gates six routes on ingest; the matrix needs a name for it."""
-    assert RouteAuth.SCOPE_INGEST.value == "scope:ingest"

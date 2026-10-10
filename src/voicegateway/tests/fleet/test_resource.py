@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from voicegateway.fleet import resource
 
 
@@ -24,38 +26,20 @@ def test_sample_cpu_first_call_primes_then_reports_a_share(monkeypatch) -> None:
     assert 0.0 <= second <= 100.0
 
 
-def test_cgroup_limit_reads_v2_integer(tmp_path) -> None:
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        ("536870912\n", 536870912),  # 512 MiB, below any real machine's total
+        ("max\n", None),  # unlimited
+        ("9223372036854771712\n", None),  # >= system total is "no real cap"
+        (None, None),  # neither file exists
+    ],
+)
+def test_cgroup_limit(tmp_path, content, expected) -> None:
     p = tmp_path / "memory.max"
-    p.write_text("536870912\n")  # 512 MiB, below any real machine's total
+    if content is not None:
+        p.write_text(content)
     assert (
         resource._read_cgroup_limit(v2_path=str(p), v1_path=str(tmp_path / "nope"))
-        == 536870912
-    )
-
-
-def test_cgroup_limit_max_means_unlimited(tmp_path) -> None:
-    p = tmp_path / "memory.max"
-    p.write_text("max\n")
-    assert (
-        resource._read_cgroup_limit(v2_path=str(p), v1_path=str(tmp_path / "nope"))
-        is None
-    )
-
-
-def test_cgroup_limit_missing_files_returns_none(tmp_path) -> None:
-    assert (
-        resource._read_cgroup_limit(
-            v2_path=str(tmp_path / "a"), v1_path=str(tmp_path / "b")
-        )
-        is None
-    )
-
-
-def test_cgroup_limit_ignores_limit_at_or_above_total(tmp_path) -> None:
-    # A limit >= system total is "no real cap" (the v1 unlimited sentinel is huge).
-    p = tmp_path / "memory.max"
-    p.write_text("9223372036854771712\n")
-    assert (
-        resource._read_cgroup_limit(v2_path=str(p), v1_path=str(tmp_path / "nope"))
-        is None
+        == expected
     )

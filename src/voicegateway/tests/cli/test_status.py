@@ -65,18 +65,7 @@ def test_status_renders_daemon_section_before_provider_section(
     assert daemon_idx < provider_idx, (
         "decision 4: daemon section must come BEFORE provider section"
     )
-
-
-def test_status_running_daemon_shows_pid(temp_config, monkeypatch):
-    _patch_manager(
-        monkeypatch,
-        {"registered": True, "running": True, "pid": 12345},
-    )
-    result = runner.invoke(app, ["status", "--config", str(temp_config)])
-    assert result.exit_code == 0, result.output
-    assert "12345" in result.output
-    # "yes" appears for both Registered and Running rows.
-    assert result.output.count("yes") >= 2
+    assert "12345" in out  # running daemon shows its pid
 
 
 def test_status_unregistered_daemon_points_at_onboard(temp_config, monkeypatch):

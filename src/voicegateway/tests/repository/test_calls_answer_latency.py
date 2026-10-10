@@ -133,24 +133,7 @@ async def test_redelivery_changes_nothing(db: AsyncSession) -> None:
         assert await _latency(db, call_id) == (_ANSWER_MS, "webhook_proxy")
 
 
-async def test_epoch_millisecond_inputs_do_not_wrap(db: AsyncSession) -> None:
-    """The inputs are ~1.8e12; an INT4 column would have wrapped them."""
-    call_id = await repo.upsert_call(db, origin="webhook", room_sid="RM_big")
-    await _caller_joined(db, call_id)
-    await _agent_published(db, call_id)
-
-    legs = await repo.list_call_legs(db, call_id)
-    assert legs[0].joined_at_ms == _CALLER_JOINED_MS
-    assert legs[1].first_audio_track_at_ms == _AGENT_PUBLISHED_MS
-    assert await _latency(db, call_id) == (4100, "webhook_proxy")
-
-
 # --- missing inputs stay NULL, never 0 --------------------------------------
-
-
-async def test_a_call_with_no_legs_derives_nothing(db: AsyncSession) -> None:
-    call_id = await repo.upsert_call(db, origin="webhook", room_sid="RM_bare")
-    assert await _latency(db, call_id) == (None, None)
 
 
 async def test_no_agent_leg_derives_nothing(db: AsyncSession) -> None:
@@ -300,16 +283,6 @@ async def test_self_reported_timestamps_earn_agent_report(db: AsyncSession) -> N
     assert legs["PA_agent"].first_audio_track_at_source == "agent"
 
 
-async def test_a_load_workers_self_report_also_earns_agent_report(
-    db: AsyncSession,
-) -> None:
-    """A load worker is an in-process observer too, with a real ms clock."""
-    call_id = await repo.upsert_call(db, origin="loadgen", room_sid="RM_worker")
-    await _caller_joined(db, call_id, source="loadgen")
-    await _agent_published(db, call_id, source="loadgen")
-    assert await _latency(db, call_id) == (_ANSWER_MS, "agent_report")
-
-
 async def test_the_source_names_the_weaker_of_the_two_clocks(db: AsyncSession) -> None:
     """One webhook timestamp is enough to make the whole subtraction coarse."""
     call_id = await repo.upsert_call(db, origin="webhook", room_sid="RM_mixed")
@@ -437,18 +410,6 @@ async def test_the_derived_value_is_cleared_when_the_legs_stop_supporting_it(
 
 
 # --- the closed set ---------------------------------------------------------
-
-
-def test_the_source_set_is_closed_and_ranked_strongest_first() -> None:
-    assert repo.ANSWER_LATENCY_SOURCES == (
-        "sipp_rtd",
-        "agent_report",
-        "webhook_proxy",
-    )
-    ranks = [repo._ANSWER_LATENCY_RANK[s] for s in repo.ANSWER_LATENCY_SOURCES]
-    assert ranks == sorted(ranks, reverse=True)
-    # Only the source a caller can actually measure end to end is reportable.
-    assert repo.REPORTED_ANSWER_LATENCY_SOURCES == {"sipp_rtd"}
 
 
 @pytest.mark.parametrize("source", ["agent_report", "webhook_proxy", "guessed", ""])

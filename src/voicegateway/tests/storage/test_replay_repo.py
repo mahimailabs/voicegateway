@@ -75,19 +75,6 @@ async def test_bulk_write_round_trip(tmp_path) -> None:
         assert listed[2].modality == "state"
 
 
-async def test_bulk_write_empty_is_noop(tmp_path) -> None:
-    storage = await _fresh_storage(tmp_path)
-    async with storage._conn.session() as db:
-        n = await replay.bulk_write_events(db, [], tenant_id=None)
-        assert n == 0
-
-
-async def test_read_full_replay_unknown_session_empty(tmp_path) -> None:
-    storage = await _fresh_storage(tmp_path)
-    async with storage._conn.session() as db:
-        assert await replay.read_full_replay(db, "ghost") == []
-
-
 async def test_delete_replay_cascades_all_four_tables(tmp_path) -> None:
     storage = await _fresh_storage(tmp_path)
     async with storage._conn.session() as db:

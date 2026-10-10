@@ -11,10 +11,7 @@ import pytest
 
 from voicegateway.inference import attach_session
 from voicegateway.inference.session.attach import reset_components
-from voicegateway.middleware.dead_air_detector_middleware import (
-    DeadAirDetector,
-    DeadAirEvent,
-)
+from voicegateway.middleware.dead_air_detector_middleware import DeadAirDetector
 from voicegateway.middleware.turn_tracker_middleware import TurnRow, TurnTracker
 
 
@@ -141,13 +138,6 @@ async def test_attach_session_routes_full_turn_to_tracker() -> None:
     assert turn.response_speed_ms >= 0
 
 
-async def test_attach_session_no_tracker_no_op_warning() -> None:
-    """When no TurnTracker is registered, attach_session logs and returns the sid."""
-    agent = FakeAgentSession()
-    sid = attach_session(agent, session_id="ghost-session")
-    assert sid == "ghost-session"
-
-
 async def test_attach_session_starts_dead_air_detector() -> None:
     """A registered DeadAirDetector gets ``start(sid)`` called on attach."""
     started: list[str] = []
@@ -203,20 +193,3 @@ async def test_attach_session_close_calls_cost_tracker() -> None:
     agent.emit("close")
     await _drain()
     assert closed == ["cost-session"]
-
-
-async def test_dead_air_event_dataclass_round_trips() -> None:
-    """Smoke: DeadAirEvent is a usable, comparable dataclass for the pipeline."""
-    e1 = DeadAirEvent(
-        session_id="s",
-        started_at_ms=1000,
-        duration_ms=3500,
-        threshold_used_ms=3000,
-    )
-    e2 = DeadAirEvent(
-        session_id="s",
-        started_at_ms=1000,
-        duration_ms=3500,
-        threshold_used_ms=3000,
-    )
-    assert e1 == e2

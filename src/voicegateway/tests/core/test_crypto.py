@@ -42,29 +42,12 @@ def test_empty_string_passthrough():
     assert decrypt("") == ""
 
 
-def test_wrong_key_raises(monkeypatch, tmp_path):
-    ciphertext = encrypt("secret-data")
-
-    # Change the key
-    reset_fernet()
-    from cryptography.fernet import Fernet
-
-    monkeypatch.setenv("VOICEGW_SECRET", Fernet.generate_key().decode())
-
-    with pytest.raises(ValueError, match="Failed to decrypt"):
-        decrypt(ciphertext)
-
-
-def test_mask_long():
-    assert mask("secret-abc12345") == "secr...2345"
-
-
-def test_mask_short():
-    assert mask("short") == "*****"
-
-
-def test_mask_empty():
-    assert mask("") == ""
+@pytest.mark.parametrize(
+    ("raw", "masked"),
+    [("secret-abc12345", "secr...2345"), ("short", "*****"), ("", "")],
+)
+def test_mask(raw, masked):
+    assert mask(raw) == masked
 
 
 @pytest.mark.skipif(

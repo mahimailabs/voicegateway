@@ -169,7 +169,9 @@ async def test_list_merges_worker_memory_pct(tmp_path, monkeypatch) -> None:
     assert entry["memory_pct"] == 25.0
 
 
-async def test_list_memory_pct_null_when_no_worker(tmp_path, monkeypatch) -> None:
+async def test_list_telemetry_only_agent_has_null_worker_fields(
+    tmp_path, monkeypatch
+) -> None:
     gw = _gateway(tmp_path, monkeypatch)
     # An agent seen in telemetry but with no heartbeating worker row: the field
     # is present and null, never absent.
@@ -187,6 +189,7 @@ async def test_list_memory_pct_null_when_no_worker(tmp_path, monkeypatch) -> Non
         data = (await c.get("/api/agents")).json()
     entry = next(x for x in data["agents"] if x["agent_id"] == "rollup-only")
     assert entry["memory_pct"] is None
+    assert entry["fleet_status"] is None
 
 
 async def test_list_attaches_last_seen_model_cascade(tmp_path, monkeypatch) -> None:
@@ -258,6 +261,7 @@ async def test_list_includes_registered_worker_without_telemetry(tmp_path, monke
     assert entry["request_count"] == 0
     assert entry["total_cost_usd"] == 0.0
     assert entry["p95_latency_ms"] is None
+    assert entry["latency_ms"] == {"stt": None, "llm": None, "tts": None}
     assert entry["error_rate"] == 0.0
     assert entry["fleet_status"] == "idle"
     assert entry["memory_pct"] == 25.0
@@ -327,24 +331,6 @@ async def test_list_dedups_same_agent_id_across_tenants_keeping_freshest(
     dups = [a for a in data["agents"] if a["agent_id"] == "dup"]
     assert len(dups) == 1  # deduped, not doubled
     assert dups[0]["fleet_status"] == "busy"  # freshest heartbeat wins
-
-
-async def test_list_fleet_status_null_for_telemetry_only(tmp_path, monkeypatch):
-    gw = _gateway(tmp_path, monkeypatch)
-    await _insert_obs(
-        gw,
-        agent_id="past-run",
-        request_count=2,
-        total_cost_usd=0.0,
-        error_count=0,
-        last_seen=1000.0,
-        window_start="ws",
-        window_end="we",
-    )
-    async with _client(gw) as c:
-        data = (await c.get("/api/agents")).json()
-    entry = next(x for x in data["agents"] if x["agent_id"] == "past-run")
-    assert entry["fleet_status"] is None
 
 
 async def test_list_skips_offline_roster_only_worker(tmp_path, monkeypatch):
@@ -449,23 +435,6 @@ async def test_list_latency_stack_is_windowed_to_24h(tmp_path, monkeypatch):
         data = (await c.get("/api/agents")).json()
     entry = next(x for x in data["agents"] if x["agent_id"] == "win-agent")
     assert entry["latency_ms"]["stt"] == pytest.approx(100.0)
-
-
-async def test_list_latency_stack_null_for_roster_only_worker(tmp_path, monkeypatch):
-    gw = _gateway(tmp_path, monkeypatch)
-    now = time.time()
-    await _insert_worker(
-        gw,
-        agent_id="idle-lat",
-        agent_name="idle-lat",
-        project="default",
-        status="idle",
-        last_seen=now,
-    )
-    async with _client(gw) as c:
-        data = (await c.get("/api/agents")).json()
-    entry = next(x for x in data["agents"] if x["agent_id"] == "idle-lat")
-    assert entry["latency_ms"] == {"stt": None, "llm": None, "tts": None}
 
 
 async def test_list_q_filter_covers_roster_only_workers(tmp_path, monkeypatch):

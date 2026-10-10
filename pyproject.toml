@@ -128,6 +128,7 @@ asyncio_mode = "auto"
 testpaths = ["src/voicegateway/tests"]
 markers = [
     "integration: marks tests that run only in the integration CI job",
+    "real_migrations: run the real alembic upgrade instead of seeding from the migrated template",
 ]
 # Silence one specific teardown race, and nothing else.
 #

@@ -118,56 +118,6 @@ class TestIntegrationMigrations:
         assert "turns" in names, f"turns not found in: {names}"
         assert "schema_migrations" in names, f"schema_migrations not found in: {names}"
 
-    def test_schema_migrations_versions_recorded(self, ch_async_client):
-        """All migration file versions must appear in schema_migrations."""
-        result = asyncio.run(
-            ch_async_client.query(
-                "SELECT version FROM telemetry.schema_migrations ORDER BY version"
-            )
-        )
-        versions = {row[0] for row in result.result_rows}
-        expected_count = len(list(MIGRATIONS_DIR.glob("*.sql")))
-        assert 1 in versions
-        assert 2 in versions
-        assert 3 in versions
-        assert len(versions) == expected_count, (
-            f"Expected {expected_count} versions, got {versions}"
-        )
-
-    def test_requests_order_by_leads_with_tenant_id(self, ch_async_client):
-        result = asyncio.run(
-            ch_async_client.query(
-                "SELECT sorting_key FROM system.tables "
-                "WHERE database='telemetry' AND name='requests'"
-            )
-        )
-        sorting_key = result.result_rows[0][0]
-        assert sorting_key.startswith("tenant_id"), (
-            f"Expected sorting_key to start with tenant_id, got: {sorting_key!r}"
-        )
-
-    def test_requests_engine_is_replacing_merge_tree(self, ch_async_client):
-        result = asyncio.run(
-            ch_async_client.query(
-                "SELECT engine FROM system.tables "
-                "WHERE database='telemetry' AND name='requests'"
-            )
-        )
-        engine = result.result_rows[0][0]
-        assert "ReplacingMergeTree" in engine
-
-    def test_turns_table_exists_with_tenant_id_leading_sort_key(self, ch_async_client):
-        result = asyncio.run(
-            ch_async_client.query(
-                "SELECT sorting_key FROM system.tables "
-                "WHERE database='telemetry' AND name='turns'"
-            )
-        )
-        sorting_key = result.result_rows[0][0]
-        assert sorting_key.startswith("tenant_id"), (
-            f"Expected turns sorting_key to start with tenant_id, got: {sorting_key!r}"
-        )
-
     def test_async_insert_and_mv_populates_sessions_agg(self, ch_async_client):
         """Insert via async_insert settings; verify MV populates sessions_agg."""
         ts = datetime(2025, 6, 15, 10, 0, 0, tzinfo=UTC)

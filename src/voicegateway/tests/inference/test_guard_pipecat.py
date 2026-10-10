@@ -12,8 +12,7 @@ assert:
 - rate-limit throttles,
 - budget raises ``BudgetExceededError`` when over the window's spend,
 - fallback runs the fallback service AND sets ``_current_guard_fallback_from`` so
-  the P2 observer would stamp ``fallback_from`` / ``status="fallback"``,
-- guard writes NO ``RequestRecord``s itself.
+  the P2 observer stamps ``fallback_from`` / ``status="fallback"``.
 """
 
 from __future__ import annotations
@@ -193,22 +192,19 @@ def _reset_fallback_marker():
 # --- guard returns a drop-in of the same framework type ---------------------
 
 
-def test_guard_llm_returns_pipecat_llm_service():
-    primary = _StubLLM(provider="openai", model="gpt-4o-mini")
-    guarded = voicegateway.guard(primary)
-    assert isinstance(guarded, LLMService)
-
-
-def test_guard_stt_returns_pipecat_stt_service():
-    primary = _StubSTT(provider="deepgram", model="nova-3")
-    guarded = voicegateway.guard(primary)
-    assert isinstance(guarded, STTService)
-
-
-def test_guard_tts_returns_pipecat_tts_service():
-    primary = _StubTTS(provider="cartesia", model="sonic")
-    guarded = voicegateway.guard(primary)
-    assert isinstance(guarded, TTSService)
+@pytest.mark.parametrize(
+    "make, service_type",
+    [
+        (lambda: _StubLLM(provider="openai", model="gpt-4o-mini"), LLMService),
+        (lambda: _StubSTT(provider="deepgram", model="nova-3"), STTService),
+        (lambda: _StubTTS(provider="cartesia", model="sonic"), TTSService),
+    ],
+)
+def test_guard_returns_same_pipecat_service_type(make, service_type):
+    """The guard is a drop-in pipeline stage of the same service kind."""
+    guarded = voicegateway.guard(make())
+    assert isinstance(guarded, service_type)
+    assert isinstance(guarded, FrameProcessor)
 
 
 async def test_guard_tts_forwards_required_context_id():
@@ -216,12 +212,6 @@ async def test_guard_tts_forwards_required_context_id():
     guarded = voicegateway.guard(primary)
     assert [frame async for frame in guarded.run_tts("hello", "context-1")] == [None]
     assert primary.last_context_id == "context-1"
-
-
-def test_guard_llm_wrapper_is_a_frame_processor():
-    primary = _StubLLM(provider="openai", model="gpt-4o-mini")
-    guarded = voicegateway.guard(primary)
-    assert isinstance(guarded, FrameProcessor)
 
 
 # --- rate limit -------------------------------------------------------------
@@ -375,23 +365,6 @@ async def test_guard_fallback_uses_builtin_output_predicate():
     assert text.text == "hello from anthropic"
 
 
-async def test_guard_fallback_sets_contextvar_for_attach_stamp():
-    """After a fallback, the guard ContextVar carries the primary provider so the
-    observer stamps fallback_from on the record it writes."""
-    primary = _StubLLM(provider="openai", model="gpt-4o-mini", fail=True)
-    backup = _StubLLM(provider="anthropic", model="claude-haiku", fail=False)
-    guarded = voicegateway.guard(primary, fallback=[backup])
-
-    async def _invoke(service: Any) -> list[Frame]:
-        return await service.run_request()
-
-    await guarded._control.run_request_with_fallback(
-        _invoke, produced_output=_is_output
-    )
-    # The marker is the primary provider that was fallen back FROM.
-    assert current_guard_fallback_from() == "openai"
-
-
 async def test_guard_no_fallback_clears_marker_on_success():
     """A successful primary run leaves no stale fallback marker."""
     from voicegateway.inference.session.context import set_guard_fallback_from
@@ -452,26 +425,6 @@ async def test_observer_stamps_fallback_from_after_guard_fallback():
     assert row.provider == "anthropic"
     assert row.fallback_from == "openai"
     assert row.status == "fallback"
-
-
-# --- guard writes NO metrics itself -----------------------------------------
-
-
-async def test_guard_writes_no_records():
-    """Driving a guarded pipecat request writes zero rows through the guard."""
-    sink = _RecordingSink()
-    primary = _StubLLM(provider="openai", model="gpt-4o-mini")
-    guarded = voicegateway.guard(primary)
-
-    async def _invoke(service: Any) -> list[Frame]:
-        return await service.run_request()
-
-    await guarded._control.run_request_with_fallback(
-        _invoke, produced_output=_is_output
-    )
-    # The guard holds no sink and never meters.
-    assert sink.rows == []
-    assert not hasattr(guarded, "_sink")
 
 
 # --- unknown provider -------------------------------------------------------

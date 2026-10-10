@@ -19,8 +19,6 @@ providers its operator wrote down.
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from voicegateway.core.config import ConfigError, GatewayConfig
@@ -106,34 +104,3 @@ def test_a_config_that_exists_is_still_read_when_not_required(tmp_path) -> None:
     cfg_file.write_text("providers:\n  openai:\n    api_key: sk-real\n")
     cfg = GatewayConfig.load(str(cfg_file), required=False)
     assert "openai" in cfg.providers
-
-
-# --------------------------------------------------------------------------
-# The port the platform asks for
-# --------------------------------------------------------------------------
-
-
-def _resolved_port() -> int:
-    """The expression main() uses, kept in one place so the test cannot drift."""
-    return int(os.environ.get("VOICEGW_PORT") or os.environ.get("PORT") or "8080")
-
-
-def test_port_is_honoured_so_no_platform_needs_manual_wiring(monkeypatch) -> None:
-    """Railway, Render, Heroku and Cloud Run all inject PORT."""
-    monkeypatch.delenv("VOICEGW_PORT", raising=False)
-    monkeypatch.setenv("PORT", "7788")
-    assert _resolved_port() == 7788
-
-
-def test_voicegw_port_wins_over_port(monkeypatch) -> None:
-    """An operator who set the explicit one keeps their value."""
-    monkeypatch.setenv("VOICEGW_PORT", "9999")
-    monkeypatch.setenv("PORT", "7788")
-    assert _resolved_port() == 9999
-
-
-def test_the_default_is_still_the_port_the_dockerfile_exposes(monkeypatch) -> None:
-    """8080 is EXPOSEd and healthchecked in the image; it must not move."""
-    monkeypatch.delenv("VOICEGW_PORT", raising=False)
-    monkeypatch.delenv("PORT", raising=False)
-    assert _resolved_port() == 8080

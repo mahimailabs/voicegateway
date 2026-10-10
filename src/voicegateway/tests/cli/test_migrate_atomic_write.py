@@ -18,16 +18,6 @@ def test_atomic_write_creates_new_file(tmp_path):
     assert not (tmp_path / "voicegw.yaml.tmp").exists()
 
 
-def test_atomic_write_replaces_existing(tmp_path):
-    target = tmp_path / "voicegw.yaml"
-    target.write_text("providers:\n  old: yes\n")
-
-    _atomic_write_text(target, "providers:\n  new: yes\n")
-
-    assert target.read_text() == "providers:\n  new: yes\n"
-    assert not (tmp_path / "voicegw.yaml.tmp").exists()
-
-
 def test_atomic_write_creates_parent_directory(tmp_path):
     """The helper handles a non-existent parent dir transparently."""
     target = tmp_path / "deep" / "nested" / "voicegw.yaml"

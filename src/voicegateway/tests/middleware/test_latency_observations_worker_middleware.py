@@ -50,15 +50,6 @@ async def test_tick_now_runs_one_pass(storage) -> None:
     assert n == 1  # one (provider, modality) group
 
 
-async def test_start_stop_idempotent(storage) -> None:
-    w = LatencyObservationsWorker(storage, poll_interval_seconds=0.1)
-    await w.start()
-    await w.start()  # No-op second call.
-    await asyncio.sleep(0.25)  # Let at least one tick fire.
-    await w.stop()
-    await w.stop()  # No-op second call.
-
-
 async def test_custom_window_provider(storage) -> None:
     """Window provider value flows through to roll_up."""
     await storage.log_request(_req(0, 200))
@@ -76,7 +67,7 @@ async def test_custom_window_provider(storage) -> None:
 
 
 async def test_loop_continues_on_tick_exception(storage) -> None:
-    """A failing window_provider does not crash the loop; the worker"""
+    """A failing tick does not crash the loop; start/stop are idempotent."""
 
     async def boom() -> int:
         raise RuntimeError("boom")
@@ -85,8 +76,11 @@ async def test_loop_continues_on_tick_exception(storage) -> None:
         storage, window_provider=boom, poll_interval_seconds=0.1
     )
     await w.start()
-    await asyncio.sleep(0.25)
+    await w.start()  # idempotent: a second start is a no-op
+    await asyncio.sleep(0.25)  # let at least two failing ticks fire
+    assert w._task is not None and not w._task.done()
     await w.stop()
+    await w.stop()  # idempotent
 
 
 async def test_negative_window_clamps_to_default(storage) -> None:

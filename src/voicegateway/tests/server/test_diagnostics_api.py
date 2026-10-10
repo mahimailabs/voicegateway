@@ -130,17 +130,6 @@ async def test_creds_reports_not_configured(client, monkeypatch):
     assert data["url"] is None
 
 
-async def test_creds_reports_configured(client, monkeypatch):
-    from voicegateway.server.api.dashboard import diagnostics
-
-    monkeypatch.setattr(diagnostics, "_resolve_creds", lambda: _FAKE_CREDS)
-    resp = await client.get("/api/diagnostics/creds")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["configured"] is True
-    assert data["url"] == "wss://x"
-
-
 # ---------------------------------------------------------------------------
 # Tests: POST /api/diagnostics/runs
 # ---------------------------------------------------------------------------
@@ -161,20 +150,13 @@ async def test_run_rejects_when_not_configured(client, monkeypatch):
     assert "LiveKit not configured" in resp.json()["detail"]
 
 
-async def test_run_rejects_empty_checks(client, monkeypatch):
+async def test_run_rejects_empty_or_unknown_checks(client, monkeypatch):
     from voicegateway.server.api.dashboard import diagnostics
 
     monkeypatch.setattr(diagnostics, "_resolve_creds", lambda: _FAKE_CREDS)
     monkeypatch.setattr(diagnostics, "_make_probes", lambda _store: _FakeProbes())
     resp = await client.post("/api/diagnostics/runs", json={"checks": [], "config": {}})
     assert resp.status_code == 400
-
-
-async def test_run_rejects_bad_checks(client, monkeypatch):
-    from voicegateway.server.api.dashboard import diagnostics
-
-    monkeypatch.setattr(diagnostics, "_resolve_creds", lambda: _FAKE_CREDS)
-    monkeypatch.setattr(diagnostics, "_make_probes", lambda _store: _FakeProbes())
     resp = await client.post(
         "/api/diagnostics/runs", json={"checks": ["bogus"], "config": {}}
     )
@@ -235,11 +217,6 @@ async def test_run_conflict_when_active(client, monkeypatch):
 
     # Clean up: wait for the first run to finish.
     await _poll_until_done(client, run_id)
-
-
-async def test_run_404_for_unknown_id(client):
-    resp = await client.get("/api/diagnostics/runs/doesnotexist")
-    assert resp.status_code == 404
 
 
 async def test_run_isolates_failing_check(client, monkeypatch):

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
 from voicegateway.core.config import GatewayConfig
 from voicegateway.core.database import Database
 
@@ -20,19 +22,10 @@ def _config(tmp_path) -> GatewayConfig:
     return GatewayConfig(cost_tracking={"db_path": str(tmp_path / "hb.db")})
 
 
-def test_database_quiets_unconfigured_aiosqlite_logger(tmp_path):
-    lg = logging.getLogger("aiosqlite")
+@pytest.mark.parametrize("name", ["aiosqlite", "alembic"])
+def test_database_quiets_unconfigured_logger(tmp_path, name):
+    lg = logging.getLogger(name)
     lg.setLevel(logging.NOTSET)  # inherits root (DEBUG under console mode)
-    try:
-        Database(_config(tmp_path))
-        assert lg.level == logging.WARNING
-    finally:
-        lg.setLevel(logging.NOTSET)
-
-
-def test_database_quiets_unconfigured_alembic_logger(tmp_path):
-    lg = logging.getLogger("alembic")
-    lg.setLevel(logging.NOTSET)
     try:
         Database(_config(tmp_path))
         assert lg.level == logging.WARNING

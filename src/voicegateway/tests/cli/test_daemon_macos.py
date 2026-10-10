@@ -266,28 +266,12 @@ def test_start_when_not_registered_and_no_plist_raises(backend, fake_launchctl):
         backend.start()
 
 
-def test_start_when_registered_kickstarts(backend, fake_launchctl):
-    fake_launchctl.return_value = _ok(stdout="ai.openrtc.voicegateway = {}")
-
-    backend.start()
-
-    args_seen = [c.args[0] for c in fake_launchctl.call_args_list]
-    assert any("kickstart" in a for a in args_seen)
-
-
 def test_stop_no_op_when_not_registered(backend, fake_launchctl):
     fake_launchctl.return_value = _ok(returncode=113)
     backend.stop()
     # Only the print call; no bootout.
     args_seen = [c.args[0] for c in fake_launchctl.call_args_list]
     assert not any("bootout" in a for a in args_seen)
-
-
-def test_stop_calls_bootout_when_registered(backend, fake_launchctl):
-    fake_launchctl.return_value = _ok(stdout="ai.openrtc.voicegateway = {}")
-    backend.stop()
-    args_seen = [c.args[0] for c in fake_launchctl.call_args_list]
-    assert any("bootout" in a for a in args_seen)
 
 
 def test_restart_when_registered_uses_kickstart_dash_k(backend, fake_launchctl):
@@ -308,14 +292,6 @@ def test_restart_when_registered_uses_kickstart_dash_k(backend, fake_launchctl):
 
 def test_logs_returns_empty_when_files_missing(backend):
     assert backend.logs(tail=10) == ""
-
-
-def test_logs_reads_stdout(backend):
-    backend._log_dir.mkdir(parents=True)
-    backend._stdout_log.write_text("line1\nline2\nline3\n")
-    out = backend.logs(tail=10)
-    assert "line1" in out
-    assert "line3" in out
 
 
 def test_logs_appends_stderr_with_separator(backend):

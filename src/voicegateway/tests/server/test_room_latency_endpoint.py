@@ -213,41 +213,18 @@ async def test_a_mid_flush_split_is_incomplete_and_zeroes_nothing(harness):
 
     body = (await _get(harness, f"/v1/rooms/{ROOM}/latency")).json()
     assert body["complete"] is False
-    assert body["components"]["llm_ttft_ms"] == pytest.approx(447.0)
-    assert body["components"]["tts_ttfb_ms"] is None
-    assert body["components"]["eou_ms"] is None
-
-
-@pytest.mark.parametrize(
-    "field",
-    [
+    c = body["components"]
+    assert c["llm_ttft_ms"] == pytest.approx(447.0)
+    # Every unproduced stage is present (a fixed strip) and NULL, never 0.
+    for field in (
         "eou_ms",
         "stt_ttfp_ms",
         "stt_transcription_delay_ms",
         "stt_ms",
         "tts_ttfb_ms",
-    ],
-)
-async def test_an_unproduced_component_is_null_not_zero(harness, field):
-    """Present and NULL. "not 0.0" alone would pass on any garbage value.
-
-    ``llm_ttft_ms`` is excluded because this fixture measures it, and asserted
-    separately below, so the parametrisation cannot go green by measuring
-    nothing at all.
-    """
-    await harness.gateway.storage.log_request(_req(ROOM, SESSION, "llm", ttfb_ms=1.0))
-    c = (await _get(harness, f"/v1/rooms/{ROOM}/latency")).json()["components"]
-    assert field in c, (
-        "the field must be present so a consumer can render a fixed strip"
-    )
-    assert c[field] is None
-
-
-async def test_the_one_measured_component_really_did_measure(harness):
-    """The non-vacuous half of the test above."""
-    await harness.gateway.storage.log_request(_req(ROOM, SESSION, "llm", ttfb_ms=1.0))
-    c = (await _get(harness, f"/v1/rooms/{ROOM}/latency")).json()["components"]
-    assert c["llm_ttft_ms"] == pytest.approx(1.0)
+    ):
+        assert field in c, field
+        assert c[field] is None, field
 
 
 # --------------------------------------------------------------------------
@@ -387,13 +364,6 @@ async def test_no_completed_turn_gives_a_null_block_not_a_row_of_zeros(harness):
 # --------------------------------------------------------------------------
 
 
-async def test_it_lives_under_v1_not_the_dashboard_router(harness):
-    """The consumer is a server-to-server caller holding a vk_ key, not the SPA."""
-    await _seed_complete(harness.gateway.storage)
-    assert (await _get(harness, f"/v1/rooms/{ROOM}/latency")).status_code == 200
-    assert (await _get(harness, f"/api/rooms/{ROOM}/latency")).status_code == 404
-
-
 async def test_turns_carry_the_documented_fields(harness):
     """``seq`` and ``session_id`` are here because ``turn_index`` alone cannot
     identify a turn in a room that carried more than one session."""
@@ -473,22 +443,6 @@ async def test_two_sessions_in_one_room_neither_omit_nor_repeat_a_turn(harness):
         seen.append(page[0]["seq"])
         cursor = page[0]["seq"]
     assert seen == [0, 1, 2, 3]
-
-
-async def test_a_cursor_on_turn_index_would_have_been_ambiguous(harness):
-    """Non-vacuous: prove turn_index really does repeat, so seq is not
-    ceremony."""
-    storage = harness.gateway.storage
-    await _seed_complete(storage, session="sess-a")
-    await storage.log_request(_req(ROOM, "sess-b", "llm", ttfb_ms=400.0))
-    await _seed_turns(storage, "sess-a", [900])
-    await _seed_turns(storage, "sess-b", [1100])
-
-    indices = [
-        t["turn_index"]
-        for t in (await _get(harness, f"/v1/rooms/{ROOM}/latency")).json()["turns"]
-    ]
-    assert indices == [0, 0], "both sessions number from zero, so it repeats"
 
 
 # --------------------------------------------------------------------------

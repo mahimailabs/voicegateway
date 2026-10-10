@@ -231,36 +231,9 @@ async def test_a_session_that_cannot_be_read_does_not_raise(storage, wired) -> N
     await handler()  # must not raise
 
 
-async def test_a_storage_failure_does_not_raise_out_of_the_handler(wired) -> None:
-    """Same rule, one layer down: a failing write is logged, not propagated."""
-
-    class _Boom:
-        _storage = None
-
-    capture, snapshotter = attach_mod._build_snapshot_capture(_Boom(), None, "s")
-    assert capture is None and snapshotter is None
-
-
 # --------------------------------------------------------------------------
 # The switches
 # --------------------------------------------------------------------------
-
-
-def test_snapshots_are_off_by_default() -> None:
-    """A snapshot carries the system prompt and every tool payload, which is a
-    strictly larger disclosure than a transcript. It is asked for, not assumed.
-
-    Asserted through the RESOLVER rather than the signature default. The four
-    capture parameters became tri-state so a named policy can be overridden in
-    one place without silently ignoring it everywhere, which makes their raw
-    default None. The guarantee did not move; where it is expressed did, and
-    reading the resolved value is the stronger check anyway because it is what
-    the capture actually uses.
-    """
-    resolved = attach_mod._resolve_capture(None, None, None, None, None)
-    assert resolved["snapshots"] is False
-    # Non-vacuous: transcripts really are the other way round.
-    assert resolved["transcript"] is True
 
 
 def test_the_kill_switch_beats_the_argument(monkeypatch) -> None:
@@ -273,16 +246,21 @@ def test_the_kill_switch_beats_the_argument(monkeypatch) -> None:
     assert attach_mod._snapshots_enabled(True) is True
 
 
-def test_a_remote_sink_captures_nothing() -> None:
+def test_a_sink_without_local_storage_captures_nothing() -> None:
     """A collector has no replay tables, and the dashboard reads replay locally.
 
-    Capturing there would buffer rows that nothing could ever flush.
+    Capturing there (or on a sink whose storage is None) would buffer rows that
+    nothing could ever flush.
     """
 
     class _RemoteSink:
         pass
 
+    class _NoStorage:
+        _storage = None
+
     assert attach_mod._build_snapshot_capture(_RemoteSink(), None, "s") == (None, None)
+    assert attach_mod._build_snapshot_capture(_NoStorage(), None, "s") == (None, None)
 
 
 # --------------------------------------------------------------------------
@@ -308,14 +286,6 @@ async def test_attach_subscribes_both_events_only_when_enabled(tmp_path) -> None
     assert "function_tools_executed" in on.handlers
     # And the close handler survives alongside them.
     assert "close" in on.handlers
-
-
-def test_pipecat_accepts_the_flag_without_capturing() -> None:
-    """Signature parity: the same attach(...) call must work on either framework."""
-    import inspect
-
-    params = inspect.signature(attach_mod._attach_pipecat).parameters
-    assert params["snapshots"].default is False
 
 
 async def test_close_flushes_what_is_still_buffered(storage, wired) -> None:

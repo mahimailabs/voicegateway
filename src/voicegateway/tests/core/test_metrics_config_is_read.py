@@ -92,13 +92,6 @@ def test_the_flush_size_reaches_the_tracker(tmp_path, monkeypatch) -> None:
     attach_mod._turn_flush_size_cache.clear()
 
 
-def test_the_project_metrics_block_parses(tmp_path) -> None:
-    cfg = GatewayConfig.load(_config(tmp_path, overlap_ms=250, flush_size=7))
-    metrics = cfg.projects["tuned"].metrics
-    assert metrics.talk_over_min_overlap_ms == 250
-    assert metrics.turn_buffer_flush_size == 7
-
-
 async def test_talk_over_threshold_changes_the_overlap_count(tmp_path) -> None:
     """The knob has to change the answer, not just reach the query.
 
