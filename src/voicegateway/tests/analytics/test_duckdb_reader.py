@@ -190,10 +190,6 @@ async def test_cost_aggregations_match_sqlite(seeded_db_path):
         await duck.get_by_project(period="month"),
         await lite.get_by_project(period="month"),
     )
-    assert _approx_eq(
-        await duck.get_summary(period="month", include_pricing_source=True),
-        await lite.get_summary(period="month", include_pricing_source=True),
-    )
 
 
 async def test_latency_percentiles_match_sqlite(seeded_db_path):

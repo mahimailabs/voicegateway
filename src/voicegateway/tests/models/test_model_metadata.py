@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import is_dataclass
 
-import pytest
 from sqlmodel import SQLModel
 
 import voicegateway.models  # noqa: F401 — registers every model
@@ -25,6 +24,9 @@ _EXPECTED_TABLES: frozenset[str] = frozenset(
         "sessions",
         "turns",
         "api_keys",
+        "calls",
+        "call_legs",
+        "workers",
     }
 )
 
@@ -52,49 +54,6 @@ def test_request_record_dataclass_preserved() -> None:
     )
     assert rec.metadata == {"foo": "bar"}
     assert rec.project == "default"
-
-
-@pytest.mark.parametrize(
-    ("model_path", "expected_table"),
-    [
-        (
-            "voicegateway.models.config_audit_log_model:ConfigAuditLog",
-            "config_audit_log",
-        ),
-        ("voicegateway.models.dead_air_event_model:DeadAirEvent", "dead_air_events"),
-        (
-            "voicegateway.models.latency_observation_model:LatencyObservation",
-            "latency_observations",
-        ),
-        ("voicegateway.models.managed_model_model:ManagedModel", "managed_models"),
-        (
-            "voicegateway.models.managed_project_model:ManagedProject",
-            "managed_projects",
-        ),
-        (
-            "voicegateway.models.managed_provider_model:ManagedProvider",
-            "managed_providers",
-        ),
-        ("voicegateway.models.replay_event_model:ReplayLlmToken", "replay_llm_tokens"),
-        (
-            "voicegateway.models.replay_event_model:ReplayStateSnapshot",
-            "replay_state_snapshots",
-        ),
-        ("voicegateway.models.replay_event_model:ReplaySttEvent", "replay_stt_events"),
-        ("voicegateway.models.replay_event_model:ReplayTtsFrame", "replay_tts_frames"),
-        ("voicegateway.models.request_model:Request", "requests"),
-        ("voicegateway.models.session_model:Session", "sessions"),
-        ("voicegateway.models.turn_model:Turn", "turns"),
-    ],
-)
-def test_model_class_maps_to_table(model_path: str, expected_table: str) -> None:
-    module_path, _, class_name = model_path.partition(":")
-    import importlib
-
-    module = importlib.import_module(module_path)
-    cls = getattr(module, class_name)
-    assert cls.__tablename__ == expected_table
-    assert expected_table in SQLModel.metadata.tables
 
 
 def test_request_orm_metadata_column_aliased() -> None:

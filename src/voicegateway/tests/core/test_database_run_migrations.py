@@ -48,6 +48,12 @@ async def test_run_migrations_on_fresh_db_builds_baseline(tmp_path: Path) -> Non
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             )
         }
+        views = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'view'"
+            )
+        }
     # The old generic table must NOT be present; only the namespaced one.
     assert "alembic_version" not in names, "old alembic_version table should not exist"
     expected = {
@@ -69,6 +75,7 @@ async def test_run_migrations_on_fresh_db_builds_baseline(tmp_path: Path) -> Non
         "api_keys",
     }
     assert expected.issubset(names), f"missing tables: {sorted(expected - names)}"
+    assert {"daily_costs", "project_daily_costs"}.issubset(views)
 
 
 @pytest.mark.asyncio
@@ -87,25 +94,6 @@ async def test_run_migrations_is_idempotent(tmp_path: Path) -> None:
             "SELECT version_num FROM alembic_version_voicegateway"
         ).fetchall()
     assert rows == [(head,)]
-
-
-@pytest.mark.asyncio
-async def test_views_created(tmp_path: Path) -> None:
-    db_path = tmp_path / "voicegw.db"
-    db = Database(_build_config(db_path))
-    try:
-        await db.run_migrations()
-    finally:
-        await db.dispose()
-
-    with sqlite3.connect(str(db_path)) as conn:
-        views = {
-            row[0]
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'view'"
-            )
-        }
-    assert {"daily_costs", "project_daily_costs"}.issubset(views)
 
 
 @pytest.mark.asyncio

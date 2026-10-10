@@ -21,18 +21,14 @@ from voicegateway.models.call_model import Call
 from voicegateway.models.session_model import Session
 
 
-async def test_call_tables_create() -> None:
+async def test_all_tables_create() -> None:
+    """The whole metadata (calls, call_legs, workers, ...) creates on SQLite."""
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     try:
         async with engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
     finally:
         await engine.dispose()
-
-    assert Call.__tablename__ == "calls"
-    assert CallLeg.__tablename__ == "call_legs"
-    assert "calls" in SQLModel.metadata.tables
-    assert "call_legs" in SQLModel.metadata.tables
 
 
 @pytest.mark.parametrize(

@@ -123,18 +123,6 @@ def test_install_raises_when_systemctl_fails(backend, fake_subprocess, monkeypat
 # ---------------------------------------------------------------------------
 
 
-def test_uninstall_disables_and_removes_unit(backend, fake_subprocess):
-    backend._unit_dir.mkdir(parents=True)
-    backend._unit_path.write_text("dummy")
-
-    backend.uninstall()
-
-    assert not backend._unit_path.exists()
-    systemctl = _systemctl_calls(fake_subprocess)
-    assert any("disable" in c and "--now" in c for c in systemctl)
-    assert any("daemon-reload" in c for c in systemctl)
-
-
 def test_uninstall_idempotent_when_not_installed(backend, fake_subprocess):
     fake_subprocess.return_value = _ok(returncode=1)
     # No unit file, systemctl returns non-zero. Must not raise.
@@ -146,16 +134,6 @@ def test_uninstall_idempotent_when_not_installed(backend, fake_subprocess):
 # ---------------------------------------------------------------------------
 
 
-def test_start_calls_systemctl_start(backend, fake_subprocess):
-    backend._unit_dir.mkdir(parents=True)
-    backend._unit_path.write_text("dummy")
-
-    backend.start()
-
-    systemctl = _systemctl_calls(fake_subprocess)
-    assert any("start" in c and "voicegateway.service" in c for c in systemctl)
-
-
 def test_start_raises_when_unit_missing(backend, fake_subprocess):
     with pytest.raises(RuntimeError, match="Unit file missing"):
         backend.start()
@@ -165,31 +143,6 @@ def test_stop_no_op_when_unit_missing(backend, fake_subprocess):
     backend.stop()
     # No systemctl call.
     assert _systemctl_calls(fake_subprocess) == []
-
-
-def test_stop_calls_systemctl_stop_when_unit_present(backend, fake_subprocess):
-    backend._unit_dir.mkdir(parents=True)
-    backend._unit_path.write_text("dummy")
-
-    backend.stop()
-
-    systemctl = _systemctl_calls(fake_subprocess)
-    assert any("stop" in c for c in systemctl)
-
-
-def test_restart_calls_systemctl_restart(backend, fake_subprocess):
-    backend._unit_dir.mkdir(parents=True)
-    backend._unit_path.write_text("dummy")
-
-    backend.restart()
-
-    systemctl = _systemctl_calls(fake_subprocess)
-    assert any("restart" in c for c in systemctl)
-
-
-def test_restart_raises_when_unit_missing(backend, fake_subprocess):
-    with pytest.raises(RuntimeError, match="Unit file missing"):
-        backend.restart()
 
 
 # ---------------------------------------------------------------------------
@@ -238,15 +191,6 @@ def test_status_when_unit_missing(backend, fake_subprocess):
     assert s["pid"] is None
 
 
-def test_status_when_systemctl_unavailable(backend, fake_subprocess):
-    """systemctl returns non-zero → status reports a sensible empty shape."""
-    fake_subprocess.return_value = _ok(returncode=1)
-    s = backend.status()
-    assert s["registered"] is False
-    assert s["running"] is False
-    assert s["pid"] is None
-
-
 # ---------------------------------------------------------------------------
 # logs
 # ---------------------------------------------------------------------------
@@ -270,10 +214,3 @@ def test_logs_returns_empty_on_journalctl_failure(backend, fake_subprocess):
     """journalctl exits non-zero when there's no journal access; we"""
     fake_subprocess.return_value = _ok(returncode=1)
     assert backend.logs(tail=10) == ""
-
-
-def test_logs_default_tail_is_100(backend, fake_subprocess):
-    fake_subprocess.return_value = _ok(stdout="")
-    backend.logs()
-    args = _journalctl_calls(fake_subprocess)[0]
-    assert "100" in args

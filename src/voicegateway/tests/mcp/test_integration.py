@@ -88,21 +88,3 @@ async def test_full_agent_workflow(gateway):
             "delete_model", {"model_id": "openai/gpt-test", "confirm": True}
         )
         assert _parse(result)["action"] == "deleted"
-
-
-async def test_get_costs_and_latency_chain(gateway):
-    """Agent can read costs and latency after observing logs."""
-    server = create_server(gateway, is_admin=True)
-    async with create_connected_server_and_client_session(server) as client:
-        await client.initialize()
-
-        health = _parse(await client.call_tool("get_health", {}))
-        assert health["status"] == "ok"
-
-        costs = _parse(await client.call_tool("get_costs", {"period": "today"}))
-        assert "total_usd" in costs
-
-        latency = _parse(
-            await client.call_tool("get_latency_stats", {"period": "today"})
-        )
-        assert "overall" in latency

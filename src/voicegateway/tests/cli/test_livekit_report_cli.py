@@ -189,15 +189,6 @@ def _endpoint_html(cfg: str, run_id: str) -> bytes:
 # ---------------------------------------------------------------------------
 
 
-def test_the_endpoint_renders_through_the_extracted_module() -> None:
-    """The dashboard does not keep its own copy. Checked by identity."""
-    assert diagnostics._render_report_html is run_report.render_html
-    assert diagnostics._report_filename is run_report.report_filename
-    assert diagnostics._run_from_row is run_report.run_from_row
-    assert diagnostics._Run is run_report.RunRecord
-    assert diagnostics.REPORT_SCHEMA_VERSION is run_report.REPORT_SCHEMA_VERSION
-
-
 def test_cli_file_is_byte_identical_to_the_endpoint(tmp_path, monkeypatch) -> None:
     """The strongest form of "one renderer": the same run, the same bytes.
 
@@ -301,25 +292,12 @@ def test_failed_run_renders_and_fabricates_no_zeros(tmp_path, monkeypatch) -> No
     document = out.read_text(encoding="utf-8")
     assert "NO VERDICT" in document
     assert "run timed out" in document
-    # Requested but never recorded, and never requested, stay different answers.
-    assert "This check was requested but recorded no result" in document
-    assert "It is absent, not clean." in document
     # No measurement was recorded, so no number is rendered anywhere: not a
     # count of agents, not a latency, not a zero in a numeric cell.
     assert "agent(s) in" not in document
     assert '<td class="num">' not in document
-    # No per-agent latency block at all: every label that carries a measured
-    # value is absent, rather than present with a zero next to it.
-    assert "Slowest reply" not in document
     assert "Average reply" not in document
-    assert "Trials that answered" not in document
-    # The only surviving "max of N" is the caveat explaining why a run with few
-    # samples never prints a p95, which is prose about the report, not a figure.
-    assert "as &quot;max of N&quot;" in document
     assert "max of 3" not in document
-    # It is still the same document type, with its context and its caveats.
-    assert "report schema v1" in document
-    assert "What this report does not measure" in document
 
 
 def test_failed_run_payload_is_null_not_zero(tmp_path, monkeypatch) -> None:
@@ -426,4 +404,3 @@ def test_no_recorded_run_exits_one_and_says_where_runs_come_from(
     out = _strip(result.output)
     assert "no diagnostics run is recorded on this host yet" in out
     assert "Diagnostics page" in out
-

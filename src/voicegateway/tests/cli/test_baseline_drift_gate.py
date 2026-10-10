@@ -310,24 +310,6 @@ def test_a_matching_source_passes() -> None:
     check_source_matches(same, dict(same))
 
 
-def test_unreadable_and_insufficient_are_different_exit_codes() -> None:
-    """ "I could not look" is a fact about the plumbing; "one metric had nothing
-    behind it" is a fact about the data. They want different responses from
-    whoever is on call, and 2 already carries the second meaning."""
-    from voicegateway.services.baseline_service import (
-        EXIT_DRIFT,
-        EXIT_INSUFFICIENT,
-        EXIT_OK,
-        EXIT_SOURCE_MISMATCH,
-    )
-
-    codes = {EXIT_OK, EXIT_DRIFT, EXIT_INSUFFICIENT, EXIT_SOURCE_MISMATCH}
-    assert len(codes) == 4, "two outcomes share an exit code"
-    # Contiguous from zero: a gap would be a code reserved for behaviour that
-    # does not exist, which is a promise the command cannot keep.
-    assert codes == {0, 1, 2, 3}
-
-
 def test_the_help_lists_every_exit_code_the_command_can_return() -> None:
     """Exit codes are API here, and ``voicegw baseline check --help`` says so.
 

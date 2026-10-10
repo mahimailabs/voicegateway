@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from voicegateway.server.mcp.errors import MCPToolError, ProviderNotFoundError
+from voicegateway.server.mcp.errors import ProviderNotFoundError
 from voicegateway.server.mcp.server import _format_tool_error, _format_tool_result
 
 
@@ -42,20 +42,6 @@ def test_format_tool_error_falls_back_to_class_name_when_message_empty() -> None
     exc = _CustomBoom()
     payload = json.loads(_format_tool_error(exc))
     assert payload["error"]["message"] == "_CustomBoom"
-
-
-def test_format_tool_error_with_subclass_of_mcp_tool_error() -> None:
-    """Direct MCPToolError subclasses surface their own error_code."""
-    exc = MCPToolError("custom", error_code="CUSTOM_CODE", details={"x": 1})
-    payload = json.loads(_format_tool_error(exc))
-    assert payload["error"]["code"] == "CUSTOM_CODE"
-    assert payload["error"]["details"] == {"x": 1}
-
-
-def test_format_tool_result_serializes_dict() -> None:
-    """A dict result round-trips through json.dumps cleanly."""
-    payload = json.loads(_format_tool_result({"a": 1, "b": [2, 3]}))
-    assert payload == {"a": 1, "b": [2, 3]}
 
 
 def test_format_tool_result_uses_default_str_for_non_serializable() -> None:

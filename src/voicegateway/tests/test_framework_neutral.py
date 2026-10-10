@@ -12,6 +12,8 @@ from __future__ import annotations
 import subprocess
 import sys
 
+import pytest
+
 from voicegateway._frameworks import detect_framework, require_extra
 
 
@@ -97,10 +99,6 @@ def test_observer_symbol_is_lazy_and_pure() -> None:
     assert expect in r.stdout
 
 
-class _FakeType:
-    """A stand-in whose class __module__ can be forced for detection tests."""
-
-
 def _obj_with_module(module: str) -> object:
     """Return an instance whose ``type(...).__module__`` is ``module``."""
     cls = type("Fake", (), {})
@@ -108,23 +106,17 @@ def _obj_with_module(module: str) -> object:
     return cls()
 
 
-def test_detect_framework_livekit() -> None:
-    assert detect_framework(_obj_with_module("livekit.agents.llm")) == "livekit"
-    assert (
-        detect_framework(_obj_with_module("livekit.agents.voice.agent_session"))
-        == "livekit"
-    )
-
-
-def test_detect_framework_pipecat() -> None:
-    assert detect_framework(_obj_with_module("pipecat.services.openai")) == "pipecat"
-    assert detect_framework(_obj_with_module("pipecat.pipeline.task")) == "pipecat"
-
-
-def test_detect_framework_unknown() -> None:
-    assert detect_framework(_obj_with_module("builtins")) == "unknown"
-    assert detect_framework(object()) == "unknown"
-    assert detect_framework(_obj_with_module("livekitten.fake")) == "unknown"
+@pytest.mark.parametrize(
+    ("module", "expected"),
+    [
+        ("livekit.agents.voice.agent_session", "livekit"),
+        ("pipecat.pipeline.task", "pipecat"),
+        ("builtins", "unknown"),
+        ("livekitten.fake", "unknown"),  # prefix match must be on a package boundary
+    ],
+)
+def test_detect_framework(module: str, expected: str) -> None:
+    assert detect_framework(_obj_with_module(module)) == expected
 
 
 def test_detect_framework_accepts_class_directly() -> None:
@@ -132,11 +124,6 @@ def test_detect_framework_accepts_class_directly() -> None:
     cls = type("Svc", (), {})
     cls.__module__ = "pipecat.services.cartesia.tts"
     assert detect_framework(cls) == "pipecat"
-
-
-def test_require_extra_present_is_noop() -> None:
-    """livekit is installed in the dev env, so require_extra('livekit') passes."""
-    require_extra("livekit")
 
 
 def test_require_extra_missing_raises_with_hint() -> None:

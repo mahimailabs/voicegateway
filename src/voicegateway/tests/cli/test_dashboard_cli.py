@@ -49,7 +49,9 @@ def test_dashboard_command_prints_url_and_calls_webbrowser_open(
     result = runner.invoke(app, ["dashboard", "--config", str(cli_config)])
 
     assert result.exit_code == 0
+    # serve.host is 0.0.0.0; the URL is rewritten to localhost so browsers open it.
     assert "http://localhost:8085" in result.output
+    assert "0.0.0.0" not in result.output
     assert calls == ["http://localhost:8085"]
 
 
@@ -86,36 +88,3 @@ def test_dashboard_command_warns_when_browser_open_fails(cli_config, monkeypatch
 
     assert result.exit_code == 0
     assert "Could not auto-launch a browser" in result.output
-
-
-def test_dashboard_command_rewrites_zero_zero_zero_zero_to_localhost(
-    tmp_path, monkeypatch
-):
-    """``0.0.0.0`` becomes ``localhost`` so browsers can open the URL."""
-    cfg = tmp_path / "voicegw.yaml"
-    cfg.write_text(
-        yaml.dump(
-            {
-                "providers": {"openai": {"api_key": "test"}},
-                "models": {"stt": {}, "llm": {}, "tts": {}},
-                "stacks": {},
-                "fallbacks": {"stt": [], "llm": [], "tts": []},
-                "cost_tracking": {"enabled": False},
-                "serve": {"host": "0.0.0.0", "port": 9091},
-            }
-        )
-    )
-    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "cli2.db"))
-
-    captured: list[str] = []
-    monkeypatch.setattr(
-        "webbrowser.open", lambda url, *_a, **_k: captured.append(url) or True
-    )
-
-    runner = CliRunner()
-    result = runner.invoke(app, ["dashboard", "--config", str(cfg)])
-
-    assert result.exit_code == 0
-    assert captured == ["http://localhost:9091"]
-    # The printed URL also uses localhost, not 0.0.0.0.
-    assert "0.0.0.0" not in result.output

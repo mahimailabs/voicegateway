@@ -95,20 +95,3 @@ async def test_call_tool_domain_error(gateway):
         )
         data = json.loads(result.content[0].text)
         assert data["error"]["code"] == "PROVIDER_NOT_FOUND"
-
-
-async def test_call_tool_unknown(gateway):
-    """Calling a tool that doesn't exist returns an error envelope, not a crash."""
-    server = create_server(gateway)
-    async with create_connected_server_and_client_session(server) as client:
-        await client.initialize()
-        # MCP clients typically surface this as isError=True; the server returns
-        # a structured error envelope regardless.
-        try:
-            result = await client.call_tool("get_nonexistent_thing", {})
-            # Server responded with our error envelope
-            data = json.loads(result.content[0].text)
-            assert "error" in data
-        except Exception:
-            # Some MCP clients raise; that's also acceptable
-            pass

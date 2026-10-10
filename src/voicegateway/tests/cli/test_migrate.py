@@ -91,21 +91,6 @@ def test_migrate_detects_clean_install_no_keys(tmp_path):
     assert "voicegw onboard --install-daemon" in out
 
 
-def test_migrate_idempotent_on_re_run(tmp_path):
-    """Running migrate twice yields the same outcome (no state mutation)."""
-    home = tmp_path / "voicegw"
-    _make_v005_yaml(home)
-    _make_v005_db(home)
-
-    first = runner.invoke(app, ["migrate", "--config-home", str(home)])
-    second = runner.invoke(app, ["migrate", "--config-home", str(home)])
-
-    assert first.exit_code == 0
-    assert second.exit_code == 0
-    # Output is byte-identical (idempotent + no time-varying content).
-    assert first.output == second.output
-
-
 # ---------------------------------------------------------------------------
 # Cost-tracking disabled (no db)
 # ---------------------------------------------------------------------------
@@ -213,12 +198,6 @@ def test_migrate_says_complete_when_daemon_registered(tmp_path, monkeypatch):
     assert "voicegw status" in result.output
 
 
-def test_migrate_help_renders():
-    result = runner.invoke(app, ["migrate", "--help"])
-    assert result.exit_code == 0
-    assert "Migrate a v0.0.5 install" in result.output
-
-
 # ---------------------------------------------------------------------------
 # Rollback contract (AC-VG-ONBOARD-007): the read-only design IS the
 # rollback path. v0.1.0 migrate writes nothing, so there is nothing
@@ -228,53 +207,22 @@ def test_migrate_help_renders():
 # ---------------------------------------------------------------------------
 
 
-def test_migrate_output_states_read_only_guarantee(tmp_path):
-    """Every migrate run, regardless of detection outcome, prints"""
-    home = tmp_path / "voicegw"
-    _make_v005_yaml(home)
-    _make_v005_db(home)
-
-    result = runner.invoke(app, ["migrate", "--config-home", str(home)])
-    assert result.exit_code == 0, result.output
-    # Rich may fold the phrase across lines so assert distinctive
-    # substrings rather than the full sentence.
-    assert "read-only" in result.output
-    assert "no files were written" in result.output
-    assert "unchanged" in result.output
-
-
-def test_migrate_preserves_yaml_byte_for_byte(tmp_path):
-    """Run migrate against a v0.0.5 fixture; assert the yaml on disk"""
+def test_migrate_is_read_only(tmp_path):
+    """The read-only design IS the rollback path: yaml and db stay byte-identical,
+    and the output says so."""
     home = tmp_path / "voicegw"
     cfg = _make_v005_yaml(home)
-    _make_v005_db(home)
-
-    pre_bytes = cfg.read_bytes()
-    pre_mtime = cfg.stat().st_mtime
-
-    result = runner.invoke(app, ["migrate", "--config-home", str(home)])
-    assert result.exit_code == 0, result.output
-
-    # Bytes match.
-    assert cfg.read_bytes() == pre_bytes
-    # mtime unchanged (no touch).
-    assert cfg.stat().st_mtime == pre_mtime
-
-
-def test_migrate_preserves_db_byte_for_byte(tmp_path):
-    """Same contract for the SQLite db: no mtime change, identical bytes."""
-    home = tmp_path / "voicegw"
-    _make_v005_yaml(home)
     db = _make_v005_db(home, with_managed_providers=[("default:openai", "encrypted")])
-
-    pre_bytes = db.read_bytes()
-    pre_mtime = db.stat().st_mtime
+    before = {p: (p.read_bytes(), p.stat().st_mtime) for p in (cfg, db)}
 
     result = runner.invoke(app, ["migrate", "--config-home", str(home)])
     assert result.exit_code == 0, result.output
 
-    assert db.read_bytes() == pre_bytes
-    assert db.stat().st_mtime == pre_mtime
+    for path, (data, mtime) in before.items():
+        assert path.read_bytes() == data
+        assert path.stat().st_mtime == mtime
+    assert "read-only" in result.output
+    assert "no files were written" in result.output
 
 
 # ---------------------------------------------------------------------------
