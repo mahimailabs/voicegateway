@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "voicegateway": {
+      "type": "stdio",
+      "command": "voicegw",
+      "args": ["mcp"]
+    },
+    "livekit-docs": {
+      "type": "http",
+      "url": "https://docs.livekit.io/mcp"
+    }
+  }
+}

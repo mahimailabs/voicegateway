@@ -22,7 +22,7 @@ be constructive, assume good intent.
 - **Suggest a feature.** Open an issue using the **Feature Request**
   template. Describe the use case, not just the solution.
 - **Submit a pull request.** Fork, branch (`feat/<desc>`,
-  `fix/<desc>`, `docs/<desc>`, `test/<desc>`), commit, and open the PR
+  `fix/<desc>` or `chore/<desc>`), commit, and open the PR
   against `main` with a clear description of what and why. We aim to
   review within 48 hours.
 - **Report a security issue.** Do NOT open a public issue. See
@@ -34,6 +34,22 @@ Contributions outside `ee/` directories are released under the MIT license
 in [LICENSE](LICENSE). Code under any `ee/` directory is covered by the
 Enterprise Edition license in [ee/LICENSE](ee/LICENSE). Keep new open-source
 features out of `ee/`, and do not import `ee/` code from MIT code paths.
+
+## Working with a coding agent
+
+The repo is set up for Claude Code, Codex, Cursor and similar tools.
+[CLAUDE.md](CLAUDE.md) holds the rules (AGENTS.md points to it), and it
+points to the facts: [PRODUCT.md](PRODUCT.md), [ARCHITECTURE.md](ARCHITECTURE.md),
+[DESIGN.md](DESIGN.md), decision records in [docs/decisions/](docs/decisions/)
+and [docs/progress.md](docs/progress.md).
+
+For larger work, plan in phases with the commands in `.claude/commands/`:
+`/new-spec` drafts a spec in `docs/specs/` with numeric acceptance checks,
+`/start-phase` builds it, and `/close-phase` records it and opens the PR.
+UI work can use the bundled [impeccable](https://github.com/pbakaus/impeccable)
+design skill in `.claude/skills/impeccable/` (Apache-2.0, see its LICENSE).
+Copy `.mcp.json.example` to `.mcp.json` to give your agent the VoiceGateway
+and LiveKit docs MCP servers.
 
 ## PR checklist
 
@@ -120,7 +136,11 @@ site/docs/             # the Fumadocs site (docs.voicegateway.dev): MDX pages in
 site/web/              # the landing page (voicegateway.dev), Astro on Workers
 site/theme.css         # the palette both sites share
 contributing/          # contributor guides: setup, tests, style, providers
-specs/                 # internal design specs, not published
+docs/                  # agent and maintainer docs, not published:
+  decisions/           # one record per lasting choice (never edited once accepted)
+  specs/               # design specs and phase specs
+  progress.md          # what is done, what is next
+.claude/               # shared Claude Code commands, skills and agents
 examples/              # runnable files that docs/examples/*.md link to by
                        # blob URL; moving them breaks published links
 deploy/
