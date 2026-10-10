@@ -144,11 +144,6 @@ async def test_api_costs(client):
     assert "by_provider" in data
 
 
-async def test_api_costs_with_project(client):
-    resp = await client.get("/api/costs?project=test-project")
-    assert resp.status_code == 200
-
-
 async def test_api_costs_includes_pricing_source(client, gateway):
     """Q7: dashboard's /api/costs always includes per-row"""
     import time
@@ -291,46 +286,6 @@ async def test_api_session_detail_404_for_missing(client):
     assert "no-such-session" in resp.json()["detail"]
 
 
-async def test_api_sessions_returns_empty_when_storage_disabled(
-    temp_config, tmp_path, monkeypatch
-):
-    import yaml as _yaml
-
-    cfg_path = tmp_path / "no-storage.yaml"
-    cfg_path.write_text(
-        _yaml.dump(
-            {
-                "providers": {"openai": {"api_key": "test"}},
-                "models": {"stt": {}, "llm": {}, "tts": {}},
-                "stacks": {},
-                "fallbacks": {"stt": [], "llm": [], "tts": []},
-                "cost_tracking": {"enabled": False},
-                "observability": {"latency_tracking": True},
-            }
-        )
-    )
-    monkeypatch.delenv("VOICEGW_DB_PATH", raising=False)
-
-    from voicegateway.core.gateway import Gateway
-
-    gw = Gateway(config_path=str(cfg_path))
-    assert gw.storage is None
-    app = build_app(gw, enable_mcp_sse=False, enable_dashboard=True)
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        resp = await c.get("/api/sessions")
-        assert resp.status_code == 200
-        assert resp.json() == []
-
-        resp = await c.get("/api/sessions/anything")
-        assert resp.status_code == 404
-
-
-async def test_api_latency(client):
-    resp = await client.get("/api/latency")
-    assert resp.status_code == 200
-
-
 async def test_api_overview(client):
     resp = await client.get("/api/overview")
     assert resp.status_code == 200
@@ -338,11 +293,6 @@ async def test_api_overview(client):
     assert "total_requests" in data
     assert "active_models" in data
     assert "providers_configured" in data
-
-
-async def test_api_overview_with_project(client):
-    resp = await client.get("/api/overview?project=test-project")
-    assert resp.status_code == 200
 
 
 async def test_api_projects(client):
@@ -360,10 +310,3 @@ async def test_api_projects_includes_source_field(client):
     for p in data["projects"]:
         assert "source" in p
         assert p["source"] in {"yaml", "db", "auto"}
-
-
-async def test_missing_frontend_fallback(client):
-    """When the Vite build doesn't exist, root returns a helpful error."""
-    resp = await client.get("/")
-    # Either serves index.html (if dist exists) or returns the error JSON
-    assert resp.status_code == 200

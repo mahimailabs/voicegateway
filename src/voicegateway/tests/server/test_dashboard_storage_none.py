@@ -49,10 +49,39 @@ def test_costs_returns_empty_payload_when_storage_disabled(storage_disabled_clie
     assert body["by_project"] == {}
 
 
-def test_latency_returns_empty_dict_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.get("/api/latency")
-    assert resp.status_code == 200
-    assert resp.json() == {}
+@pytest.mark.parametrize(
+    ("method", "path", "body", "status", "payload"),
+    [
+        ("get", "/api/latency", None, 200, {}),
+        ("get", "/api/sessions", None, 200, []),
+        ("get", "/api/sessions/anything", None, 404, None),
+        ("get", "/api/metrics", None, 503, None),
+        ("get", "/api/sessions/anything/turns", None, 503, None),
+        ("get", "/api/sessions/anything/dead_air", None, 503, None),
+        ("get", "/api/sessions/anything/replay", None, 503, None),
+        ("delete", "/api/sessions/anything/replay", None, 503, None),
+        ("get", "/api/replay/storage", None, 503, None),
+        # Missing project 404s before the storage check.
+        (
+            "post",
+            "/api/projects/anything/replay/retention",
+            {"retention_days": 7},
+            404,
+            None,
+        ),
+        ("get", "/api/api_keys", None, 200, {"keys": []}),
+        ("post", "/api/api_keys", {"name": "test", "scopes": "read"}, 503, None),
+        ("post", "/api/api_keys/1/revoke", None, 503, None),
+    ],
+)
+def test_endpoints_degrade_when_storage_disabled(
+    storage_disabled_client, method, path, body, status, payload
+):
+    kwargs = {"json": body} if body is not None else {}
+    resp = getattr(storage_disabled_client, method)(path, **kwargs)
+    assert resp.status_code == status
+    if payload is not None:
+        assert resp.json() == payload
 
 
 def test_overview_returns_zero_counts_when_storage_disabled(storage_disabled_client):
@@ -62,78 +91,3 @@ def test_overview_returns_zero_counts_when_storage_disabled(storage_disabled_cli
     assert body["total_requests"] == 0
     assert body["total_cost"] == 0.0
     assert body["active_models"] == 0
-
-
-def test_sessions_list_returns_empty_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.get("/api/sessions")
-    assert resp.status_code == 200
-    assert resp.json() == []
-
-
-def test_session_detail_returns_404_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.get("/api/sessions/anything")
-    assert resp.status_code == 404
-
-
-def test_metrics_returns_503_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.get("/api/metrics")
-    assert resp.status_code == 503
-
-
-def test_session_turns_returns_503_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.get("/api/sessions/anything/turns")
-    assert resp.status_code == 503
-
-
-def test_session_dead_air_returns_503_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.get("/api/sessions/anything/dead_air")
-    assert resp.status_code == 503
-
-
-def test_session_replay_returns_503_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.get("/api/sessions/anything/replay")
-    assert resp.status_code == 503
-
-
-def test_session_replay_delete_returns_503_when_storage_disabled(
-    storage_disabled_client,
-):
-    resp = storage_disabled_client.delete("/api/sessions/anything/replay")
-    assert resp.status_code == 503
-
-
-def test_replay_storage_returns_503_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.get("/api/replay/storage")
-    assert resp.status_code == 503
-
-
-def test_project_replay_retention_returns_503_when_storage_disabled(
-    storage_disabled_client,
-):
-    resp = storage_disabled_client.post(
-        "/api/projects/anything/replay/retention",
-        json={"retention_days": 7},
-    )
-    # 422 fires before storage check when body is malformed; with a valid
-    # body the handler reaches the 404 on missing project (storage is None
-    # so gw.config.projects.get returns None too in this minimal config).
-    assert resp.status_code == 404
-
-
-def test_api_keys_list_returns_empty_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.get("/api/api_keys")
-    assert resp.status_code == 200
-    assert resp.json() == {"keys": []}
-
-
-def test_api_keys_create_returns_503_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.post(
-        "/api/api_keys", json={"name": "test", "scopes": "read"}
-    )
-    assert resp.status_code == 503
-
-
-def test_api_keys_revoke_returns_503_when_storage_disabled(storage_disabled_client):
-    resp = storage_disabled_client.post("/api/api_keys/1/revoke")
-    assert resp.status_code == 503
-

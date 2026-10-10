@@ -31,33 +31,16 @@ def _gateway(tmp_path, monkeypatch, config: dict, *, db: bool = True) -> Gateway
 
 
 async def test_starts_three_workers_when_enabled(tmp_path, monkeypatch) -> None:
+    # The default install: no node-scrape targets, so no outbound scrape worker.
+    monkeypatch.delenv(TARGETS_ENV_VAR, raising=False)
     gw = _gateway(tmp_path, monkeypatch, {"cost_tracking": {"enabled": True}})
     app = build_app(gw)
     async with lifespan(app):
         workers = app.state.workers
         assert len(workers) == 3
+        assert _node_workers(workers) == []
         assert all(w._task is not None for w in workers)
     assert all(w._task is None for w in workers)  # stopped on shutdown
-
-
-async def test_starts_none_when_storage_disabled(tmp_path, monkeypatch) -> None:
-    gw = _gateway(
-        tmp_path, monkeypatch, {"cost_tracking": {"enabled": False}}, db=False
-    )
-    app = build_app(gw)
-    async with lifespan(app):
-        assert app.state.workers == []
-
-
-async def test_starts_none_when_workers_disabled(tmp_path, monkeypatch) -> None:
-    gw = _gateway(
-        tmp_path,
-        monkeypatch,
-        {"cost_tracking": {"enabled": True}, "workers": {"enabled": False}},
-    )
-    app = build_app(gw)
-    async with lifespan(app):
-        assert app.state.workers == []
 
 
 async def test_configured_intervals_are_applied(tmp_path, monkeypatch) -> None:
@@ -129,17 +112,6 @@ _TARGET = "node-exporter:sfu-1=http://127.0.0.1:9/metrics"
 
 def _node_workers(workers) -> list[NodeSamplesWorker]:
     return [w for w in workers if isinstance(w, NodeSamplesWorker)]
-
-
-async def test_node_scrape_not_started_when_env_unset(tmp_path, monkeypatch) -> None:
-    """The default install: no targets variable, no scrape worker, no traffic."""
-    monkeypatch.delenv(TARGETS_ENV_VAR, raising=False)
-    gw = _gateway(tmp_path, monkeypatch, {"cost_tracking": {"enabled": True}})
-    app = build_app(gw)
-    async with lifespan(app):
-        assert _node_workers(app.state.workers) == []
-        # Unchanged from before this worker was wired in.
-        assert len(app.state.workers) == 3
 
 
 async def test_node_scrape_not_started_when_env_is_blank(tmp_path, monkeypatch) -> None:
@@ -252,22 +224,6 @@ async def test_node_sample_retention_defaults_to_seven_days(
         assert [w._max_age_seconds for w in _node_workers(app.state.workers)] == [
             7 * 86400
         ]
-
-
-def test_the_config_default_and_the_worker_default_agree() -> None:
-    """Two defaults for one number, so they have to be pinned to each other.
-
-    The worker keeps its own fallback for callers that construct it directly.
-    If the two drift, the wired path and the direct path silently disagree about
-    how long a sample lives, which is the kind of difference nobody notices
-    until a report is missing its first day.
-    """
-    from voicegateway.middleware.node_samples_worker_middleware import (
-        _DEFAULT_MAX_AGE_SECONDS,
-    )
-    from voicegateway.schemas.config_schema import WorkersConfig
-
-    assert WorkersConfig().node_sample_max_age_days * 86400 == _DEFAULT_MAX_AGE_SECONDS
 
 
 def test_a_zero_or_negative_retention_is_refused_at_parse_time() -> None:

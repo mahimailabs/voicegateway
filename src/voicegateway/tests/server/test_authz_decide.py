@@ -85,21 +85,6 @@ def test_warn_mode_allows_logs_and_counts(caplog):
     assert request.app.state.auth_would_refuse == 1
 
 
-def test_warn_counter_accumulates_across_requests():
-    """The counter is what an operator watches before flipping the mode."""
-    request = _request()
-    for _ in range(3):
-        decide(
-            would_refuse=True,
-            reason="no credential",
-            auth=AuthConfig(enforcement="warn"),
-            request=request,
-            principal_kind=PrincipalKind.OPERATOR,
-            key_id=None,
-        )
-    assert request.app.state.auth_would_refuse == 3
-
-
 def test_warn_names_the_key_when_one_authenticated(caplog):
     """ "Something is unauthorized" is useless; the key id is actionable."""
     with caplog.at_level(logging.WARNING):

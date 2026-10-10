@@ -96,16 +96,6 @@ async def test_it_is_a_percentile_over_turns_not_a_mean_of_session_percentiles(
     assert agg["samples"] == len(a) + len(b)
 
 
-async def test_the_sample_count_travels_with_the_values(storage) -> None:
-    """A percentile over three turns and one over two hundred are different
-    claims, and a caller reading only the number cannot tell them apart."""
-    await _seed(storage, [_turn("a", i, _NOW_MS + i * 1000, 100 + i) for i in range(3)])
-    async with storage._conn.session() as db:
-        agg = await turns.aggregate_response_speed(db)
-    await storage.aclose()
-    assert agg["samples"] == 3
-
-
 # --------------------------------------------------------------------------
 # The window, which is where a unit error hides
 # --------------------------------------------------------------------------

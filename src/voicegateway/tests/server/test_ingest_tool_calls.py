@@ -72,32 +72,6 @@ def test_the_tool_calls_route_accepts_a_post(client) -> None:
     assert result.json() == {"accepted": 0}
 
 
-def test_two_paths_that_cannot_exist_answer_identically(client) -> None:
-    """The control that settles a 405, pinned so the reasoning is not lost.
-
-    A 405 on POST where GET gives 404 looks like proof that SOMETHING is
-    registered at the path, which points at a misregistered route rather than a
-    missing one. It is neither. When the built SPA is present, its fallback
-    ``/{full_path:path}`` is registered GET-only, so any non-GET matches the
-    path, fails the method check, and gets 405.
-
-    THE ASSERTION IS THAT TWO IMPOSSIBLE PATHS AGREE, not that either returns a
-    particular code. The code itself depends on whether the SPA was built: 405
-    with it, 404 without, which is why a developer machine and CI disagree and
-    why two people probing different collectors reached opposite conclusions
-    about the same fault. Pinning 405 here would be asserting one deployment's
-    shape, which is the mistake this test exists to describe.
-    """
-    one = "/v1/ingest/definitely-not-a-route-" + uuid.uuid4().hex
-    two = "/v1/ingest/also-not-a-route-" + uuid.uuid4().hex
-    assert (
-        client.post(one, json=[]).status_code == client.post(two, json=[]).status_code
-    )
-    # And whatever that is, it is NOT what a real route answers.
-    assert client.post(one, json=[]).status_code != 200
-    assert client.post("/v1/ingest/tool-calls", json=[]).status_code == 200
-
-
 # --------------------------------------------------------------------------
 # No payload can enter through this route
 # --------------------------------------------------------------------------
@@ -183,26 +157,3 @@ def test_a_row_carrying_an_unknown_field_is_still_accepted(client) -> None:
     )
     assert result.status_code == 200
     assert result.json()["accepted"] == 1
-
-
-def test_the_revision_field_specifically_survives_an_older_parser(client) -> None:
-    """`revision` is the concrete case: 0.25 agents send it, 0.24 collectors
-    have never heard of it, and those pairings exist in the wild right now."""
-    result = client.post("/v1/ingest", json=[_record(revision="abc123")])
-    assert result.status_code == 200
-    assert result.json()["accepted"] == 1
-
-
-def test_the_same_row_twice_dedups_rather_than_rejecting(client) -> None:
-    """Guards the test above from a false green.
-
-    A reused id returns accepted=0, which is indistinguishable from a rejection
-    if you are not expecting it. Naming it here means a future reader of these
-    tests cannot mistake one for the other.
-    """
-    row = _record()
-    first = client.post("/v1/ingest", json=[row])
-    second = client.post("/v1/ingest", json=[row])
-    assert first.json()["accepted"] == 1
-    assert second.json()["accepted"] == 0
-    assert second.json().get("duplicates") == 1

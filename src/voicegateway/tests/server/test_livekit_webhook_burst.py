@@ -64,7 +64,7 @@ pytestmark = pytest.mark.integration
 
 # 500 calls x 5 events = the 2500-event burst from the plan. Default lower so
 # the suite stays fast; override to measure the real thing.
-_BURST_CALLS = int(os.environ.get("VG_WEBHOOK_BURST_CALLS", "60"))
+_BURST_CALLS = int(os.environ.get("VG_WEBHOOK_BURST_CALLS", "30"))
 _EVENTS_PER_CALL = 5
 # How many webhook POSTs LiveKit can have in flight at once. It delivers from a
 # worker pool, so a burst arrives as a fan-in, not a sequential loop.

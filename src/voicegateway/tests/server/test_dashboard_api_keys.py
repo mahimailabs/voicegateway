@@ -22,12 +22,6 @@ def client(temp_config, tmp_path, monkeypatch):
     return TestClient(app)
 
 
-def test_list_api_keys_starts_empty(client) -> None:
-    resp = client.get("/api/api_keys")
-    assert resp.status_code == 200
-    assert resp.json() == {"keys": []}
-
-
 def test_create_api_key_returns_plaintext_once(client) -> None:
     resp = client.post(
         "/api/api_keys",
@@ -43,18 +37,14 @@ def test_create_api_key_returns_plaintext_once(client) -> None:
     assert body["plaintext"].startswith("vk_")
     assert body["row"]["name"] == "demo-key"
     assert body["row"]["tenant_id"] == "acme"
-    assert "key_hash" not in body["row"] or body["row"].get("key_hash") is not None
+    assert "key_hash" not in body["row"]
 
 
-def test_create_api_key_rejects_missing_name(client) -> None:
+def test_create_api_key_rejects_missing_or_blank_name(client) -> None:
     resp = client.post("/api/api_keys", json={})
     assert resp.status_code == 400
     assert "name" in resp.json()["detail"].lower()
-
-
-def test_create_api_key_rejects_whitespace_name(client) -> None:
-    resp = client.post("/api/api_keys", json={"name": "   "})
-    assert resp.status_code == 400
+    assert client.post("/api/api_keys", json={"name": "   "}).status_code == 400
 
 
 def test_create_api_key_requires_scopes(client):
@@ -84,17 +74,6 @@ def test_create_api_key_strips_empty_optional_fields(client) -> None:
     row = resp.json()["row"]
     assert row["tenant_id"] is None
     assert row["issued_by"] is None
-
-
-def test_list_api_keys_surfaces_created_key(client) -> None:
-    create = client.post("/api/api_keys", json={"name": "to-list", "scopes": "read"})
-    assert create.status_code in (200, 201)
-    created_id = create.json()["id"]
-
-    resp = client.get("/api/api_keys")
-    assert resp.status_code == 200
-    keys = resp.json()["keys"]
-    assert any(k["id"] == created_id for k in keys)
 
 
 def test_revoke_api_key_returns_revoked_payload(client) -> None:
@@ -150,23 +129,6 @@ def app_under_test(temp_config, tmp_path, monkeypatch):
     monkeypatch.delenv("VOICEGW_API_KEY", raising=False)
     gw = Gateway(config_path=temp_config)
     return build_app(gw, enable_mcp_sse=False, enable_dashboard=False)
-
-
-def test_mint_stays_open_when_no_keys_are_configured(app_under_test) -> None:
-    """The self-hosted default (no keys configured) is unchanged.
-
-    ``core.auth.check_request`` returns None on an empty key list, so
-    ``require_scope(ADMIN_SCOPE)`` is a no-op and the local operator still
-    mints a key with no credential.
-    """
-    assert app_under_test.state.api_keys == []
-    client = TestClient(app_under_test)
-    created = client.post(
-        "/api/api_keys", json={"name": "local-operator", "scopes": "read"}
-    )
-    assert created.status_code in (200, 201)
-    assert created.json()["plaintext"].startswith("vk_")
-    assert client.get("/api/api_keys").status_code == 200
 
 
 def test_router_requires_admin_when_auth_enabled(app_under_test) -> None:

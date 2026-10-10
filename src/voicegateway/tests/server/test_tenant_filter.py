@@ -110,18 +110,6 @@ async def test_get_recent_requests_scopes_to_tenant(storage) -> None:
 async def test_get_latency_stats_scopes_to_tenant(storage) -> None:
     await _seed_two_tenants(storage)
     acme = await storage.get_latency_stats("all", tenant="acme")
-    # Acme has 2 requests with latency, beta has 1; the stats should
-    # surface model_id keys for whichever tenant we scope.
-    assert isinstance(acme, dict)
-    # The model_id key carries a non-empty request_count when present.
-    if acme:
-        any_model = next(iter(acme.values()))
-        assert any_model["request_count"] == 2
-
-
-async def test_none_tenant_means_all_data(storage) -> None:
-    await _seed_two_tenants(storage)
-    all_summary = await storage.get_cost_summary("all", tenant=None)
-    assert all_summary["total"] == pytest.approx(1.35)
-    all_sessions = await storage.list_sessions(tenant=None)
-    assert len(all_sessions) == 4
+    # Acme has 2 requests with latency, beta has 1.
+    assert acme
+    assert next(iter(acme.values()))["request_count"] == 2

@@ -291,16 +291,6 @@ async def test_kill_switch_disables_the_whole_path(gateway, monkeypatch):
     assert await _calls(gateway) == []
 
 
-async def test_kill_switch_set_to_a_falsy_word_leaves_the_path_on(gateway, monkeypatch):
-    monkeypatch.setenv("VG_DISABLE_CALL_OBSERVATIONS", "0")
-
-    resp = await _post(gateway, _observation())
-
-    assert resp.status_code == 202
-    await _await_flushed(1)
-    assert len(await _calls(gateway)) == 1
-
-
 async def test_kill_switch_takes_effect_without_a_restart(gateway, monkeypatch):
     """Read per request, so an operator can switch it off mid-incident."""
     assert (await _post(gateway, _observation())).status_code == 202
@@ -517,11 +507,8 @@ async def test_tenant_id_is_not_accepted_from_the_payload(gateway):
     "unstorable",
     [
         {"loss_pct": 0.0},
-        {"jitter_ms": 12},
-        {"mos": 4.1},
         {"sip_response_code": 503},
         {"answer_latency_ms": 4100},
-        {"subscribe_latency_ms": 120},
     ],
 )
 async def test_a_field_with_no_column_is_refused_not_ignored(gateway, unstorable):

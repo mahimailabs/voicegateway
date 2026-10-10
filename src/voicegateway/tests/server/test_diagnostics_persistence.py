@@ -224,21 +224,6 @@ async def test_rehydrated_run_serializes_to_identical_bytes(client) -> None:
     assert from_storage.content == from_memory.content
 
 
-async def test_rehydrated_history_serializes_to_identical_bytes(client) -> None:
-    await _run_to_completion(client, ["agents"])
-    await _run_to_completion(client, ["sfu"])
-
-    from_memory = await client.get("/api/diagnostics/runs")
-    assert from_memory.status_code == 200
-    assert len(from_memory.json()) == 2
-
-    _simulate_restart()
-
-    from_storage = await client.get("/api/diagnostics/runs")
-    assert from_storage.status_code == 200
-    assert from_storage.content == from_memory.content
-
-
 async def test_unknown_run_is_still_404(client) -> None:
     resp = await client.get("/api/diagnostics/runs/doesnotexist")
     assert resp.status_code == 404

@@ -63,6 +63,8 @@ async def test_caller_with_tenant_tags_session(storage) -> None:
 
     tenant = await _fetch_tenant(storage, "sessions", "id", "s1")
     assert tenant == "acme"
+    # tenant_id propagates to the requests row as well.
+    assert await _fetch_tenant(storage, "requests", "session_id", "s1") == "acme"
 
 
 async def test_caller_with_no_tenant_writes_null(storage) -> None:
@@ -71,15 +73,6 @@ async def test_caller_with_no_tenant_writes_null(storage) -> None:
 
     tenant = await _fetch_tenant(storage, "sessions", "id", "s2")
     assert tenant is None
-
-
-async def test_requests_row_also_carries_tenant(storage) -> None:
-    """T08: tenant_id propagates to the requests row as well."""
-    set_tenant("acme")
-    await storage.log_request(_record("s3"))
-
-    tenant = await _fetch_tenant(storage, "requests", "session_id", "s3")
-    assert tenant == "acme"
 
 
 async def test_coalesce_keeps_first_tenant_on_conflict(storage) -> None:

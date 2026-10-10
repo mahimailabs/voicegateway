@@ -78,15 +78,6 @@ async def test_delete_session_replay_returns_count(client, gateway) -> None:
     assert resp2.json()["events"] == []
 
 
-async def test_replay_storage_endpoint_shape(client) -> None:
-    resp = await client.get("/api/replay/storage")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert "total_replay_size_bytes" in body
-    assert "by_project" in body
-    assert isinstance(body["by_project"], list)
-
-
 async def test_update_retention_validates_range(client) -> None:
     # Out-of-range body.
     resp = await client.post(

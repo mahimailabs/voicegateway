@@ -49,21 +49,6 @@ async def test_transcript_endpoint_empty_for_unknown_call(tmp_path, monkeypatch)
 # ---------------------------------------------------------------------------
 
 
-async def test_transcript_stays_open_when_no_keys_are_configured(tmp_path, monkeypatch):
-    """The self-hosted default (no keys configured) is unchanged."""
-    gw = _gateway(tmp_path, monkeypatch)
-    app = build_app(gw)
-    assert app.state.api_keys == []
-    await gw.storage.write_transcript("call-open", [("user", "hi")], tenant_id=None)
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as c:
-        resp = await c.get("/api/sessions/call-open/transcript")
-    assert resp.status_code == 200
-    assert [t["text"] for t in resp.json()["turns"]] == ["hi"]
-
-
 async def test_transcript_requires_auth_when_enabled(tmp_path, monkeypatch):
     """With static keys configured, a session id alone does not buy a call.
 

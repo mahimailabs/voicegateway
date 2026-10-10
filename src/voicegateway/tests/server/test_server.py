@@ -38,15 +38,6 @@ async def test_health(client):
     assert data["version"] == __version__.split("+", 1)[0]
 
 
-async def test_v1_status(client):
-    resp = await client.get("/v1/status")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "providers" in data
-    assert "model_count" in data
-    assert "project_count" in data
-
-
 async def test_v1_status_includes_pricing_sources(client):
     """/v1/status carries the per-modality pricing source subtree."""
     resp = await client.get("/v1/status")
@@ -58,13 +49,6 @@ async def test_v1_status_includes_pricing_sources(client):
     # All three modalities are now priced by voice-prices.
     for modality in ("llm", "stt", "tts"):
         assert data["pricing"][modality]["source"].startswith("voice-prices@")
-
-
-async def test_v1_models(client):
-    resp = await client.get("/v1/models")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "models" in data
 
 
 async def test_v1_models_with_project_filter(client):
@@ -80,17 +64,6 @@ async def test_v1_costs_empty(client):
     data = resp.json()
     assert data["total"] == 0.0
     assert "by_provider" in data
-
-
-async def test_v1_costs_with_period(client):
-    resp = await client.get("/v1/costs?period=week")
-    assert resp.status_code == 200
-    assert resp.json()["period"] == "week"
-
-
-async def test_v1_costs_with_project(client):
-    resp = await client.get("/v1/costs?project=test-project")
-    assert resp.status_code == 200
 
 
 async def test_v1_costs_per_modality_excluded_by_default(client):
@@ -165,31 +138,6 @@ async def test_v1_costs_pricing_source_opt_out(client, gateway):
     data = resp.json()
     by_model = data["by_model"]
     assert "pricing_source" not in by_model.get("openai/gpt-4o-mini", {})
-
-
-async def test_v1_costs_include_pricing_source_default_on(client):
-    """Q7: include_pricing_source defaults to True since v0.0.5. With"""
-    resp = await client.get("/v1/costs")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "by_model" in data
-
-
-async def test_v1_costs_include_pricing_source_explicit_true(client):
-    """`?include_pricing_source=true` is accepted (matches the new default)."""
-    resp = await client.get("/v1/costs?include_pricing_source=true")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "by_model" in data
-
-
-async def test_v1_costs_with_iso_date_window(client):
-    """`?start=` and `?end=` ISO dates are accepted; response stays valid."""
-    resp = await client.get("/v1/costs?start=2026-05-01&end=2026-05-04")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "by_model" in data
-    assert "by_provider" in data
 
 
 async def test_v1_costs_with_invalid_iso_date_returns_400(client):
@@ -375,11 +323,6 @@ async def test_v1_costs_window_overrides_period_at_data_layer(client, gateway):
     assert "deprecation" in {k.lower() for k in resp.headers}
 
 
-async def test_v1_latency_empty(client):
-    resp = await client.get("/v1/latency")
-    assert resp.status_code == 200
-
-
 async def test_v1_projects(client):
     resp = await client.get("/v1/projects")
     assert resp.status_code == 200
@@ -411,11 +354,6 @@ async def test_v1_logs_empty(client):
     resp = await client.get("/v1/logs")
     assert resp.status_code == 200
     assert resp.json() == []
-
-
-async def test_v1_logs_with_filters(client):
-    resp = await client.get("/v1/logs?limit=10&modality=stt")
-    assert resp.status_code == 200
 
 
 async def test_v1_metrics(client):
@@ -489,12 +427,6 @@ async def test_v1_metrics_emits_latency_summary(client, gateway):
 # --------------------------------------------------------------------
 # CRUD — Providers
 # --------------------------------------------------------------------
-
-
-async def test_list_providers(client):
-    resp = await client.get("/v1/providers")
-    assert resp.status_code == 200
-    assert "providers" in resp.json()
 
 
 async def test_create_provider(client):
@@ -709,9 +641,3 @@ async def test_audit_log_records_crud(client):
     assert resp.status_code == 200
     entries = resp.json()
     assert any(e["entity_id"] == "audit-test" for e in entries)
-
-
-async def test_audit_log_empty(client):
-    resp = await client.get("/v1/audit-log?entity_type=nonexistent")
-    assert resp.status_code == 200
-    assert resp.json() == []

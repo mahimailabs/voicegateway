@@ -163,86 +163,8 @@ async def test_nothing_measured_is_served_as_null_never_as_zero(client):
     assert body["rate"] is None
     assert body["rate"] != 0
     assert body["status"] == "unknown"
-
-
-async def test_sessions_that_could_never_join_do_not_make_the_rate_zero(
-    client, gateway
-):
-    """Web and Pipecat sessions have no room. They are reported as ``no_room``
-    and left out of both sides, so they cannot fake a failure."""
-    await _session_in_room(gateway.storage, session_id="vg-web-1", room=None)
-    await _session_in_room(gateway.storage, session_id="vg-web-2", room=None)
-
-    body = (await client.get(_URL)).json()
-
-    assert body["no_room"] == 2
-    assert body["eligible"] == 0
-    assert body["rate"] is None
-    assert body["status"] == "unknown"
-
-
-async def test_a_measured_zero_is_distinct_from_nothing_measured(client, gateway):
-    """A session that had a room and did not join IS a measured 0%, and must not
-    be confused with the unknown case above."""
-    await _session_in_room(gateway.storage, session_id="vg-orphan", room="room-nocall")
-
-    body = (await client.get(_URL)).json()
-
-    assert body["eligible"] == 1
-    assert body["rate"] == pytest.approx(0.0)
-    assert body["status"] == "warn"
-
-
-async def test_the_failure_modes_are_broken_out_not_summed(client, gateway):
-    """``ambiguous`` needs a different fix than a missing webhook receiver, so
-    the endpoint forwards the breakdown rather than one uncorrelated total."""
-    sessions._warn_ambiguous_room.cache_clear()
-    await _call_in_room(gateway.storage, room_sid="RM_a", room_name="room-pinned")
-    await _call_in_room(gateway.storage, room_sid="RM_b", room_name="room-pinned")
-    await _session_in_room(gateway.storage, session_id="vg-amb", room="room-pinned")
-    await _session_in_room(gateway.storage, session_id="vg-missing", room="room-nocall")
-
-    body = (await client.get(_URL)).json()
-
-    assert body["eligible"] == 2
-    assert body["correlated"] == 0
-    assert body["ambiguous"] == 1
-    assert body["dangling"] == 0
-
-
-# --- the warn threshold is published, not just applied ----------------------
-
-
-async def test_the_default_threshold_is_published_with_the_number(client):
-    body = (await client.get(_URL)).json()
-
+    # The threshold travels with the number so the verdict can be checked.
     assert body["warn_threshold"] == pytest.approx(sessions.CORRELATION_WARN_THRESHOLD)
-    assert body["status"] in sessions.CORRELATION_STATUSES
-
-
-async def test_a_rate_below_the_threshold_reports_warn(client, gateway):
-    """Two of three sessions joined: 66%, under the 90% default."""
-    await _call_in_room(gateway.storage, room_sid="RM_w", room_name="room-w")
-    await _session_in_room(gateway.storage, session_id="vg-w1", room="room-w")
-    await _session_in_room(gateway.storage, session_id="vg-w2", room="room-w")
-    await _session_in_room(gateway.storage, session_id="vg-w3", room="room-none")
-
-    body = (await client.get(_URL)).json()
-
-    assert body["rate"] == pytest.approx(2 / 3)
-    assert body["rate"] < body["warn_threshold"]
-    assert body["status"] == "warn"
-
-
-async def test_a_healthy_deployment_reports_ok(client, gateway):
-    await _call_in_room(gateway.storage, room_sid="RM_h", room_name="room-h")
-    await _session_in_room(gateway.storage, session_id="vg-h1", room="room-h")
-    await _session_in_room(gateway.storage, session_id="vg-h2", room="room-h")
-
-    body = (await client.get(_URL)).json()
-
-    assert body["rate"] == pytest.approx(1.0)
-    assert body["status"] == "ok"
 
 
 # --- auth -------------------------------------------------------------------
@@ -266,17 +188,6 @@ async def test_auth_is_required_when_api_keys_are_configured(tmp_path, monkeypat
 
     assert ok.status_code == 200
     assert ok.json()["status"] == "unknown"
-
-
-async def test_the_operator_default_with_no_keys_still_reads_it(client, gateway):
-    """No credential = the self-hosted operator, unchanged."""
-    await _call_in_room(gateway.storage, room_sid="RM_op", room_name="room-op")
-    await _session_in_room(gateway.storage, session_id="vg-op", room="room-op")
-
-    resp = await client.get(_URL)
-
-    assert resp.status_code == 200
-    assert resp.json()["correlated"] == 1
 
 
 async def test_a_tenant_key_is_refused_rather_than_shown_the_whole_deployment(

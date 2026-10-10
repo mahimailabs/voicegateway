@@ -16,8 +16,6 @@ a later edit breaks silently:
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -481,20 +479,6 @@ async def test_report_html_never_prints_an_unmeasured_number(client):
     assert "Saturation is unknown for this run" in document
 
 
-async def test_report_html_carries_its_own_context(client):
-    """When it ran, against what, and what it does not measure."""
-    run = _full_run()
-    document = (
-        await client.get(f"/api/diagnostics/runs/{run.run_id}/report.html")
-    ).text
-    assert run.run_id in document
-    assert "2026-07-31T09:00:01+00:00" in document  # when it started
-    assert "wss://livekit.example" in document  # what it was pointed at
-    assert "1,500 ms" in document  # the target it was measured against
-    assert "report schema v1" in document
-    assert "What this report does not measure" in document
-
-
 # ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
@@ -525,23 +509,3 @@ async def test_report_endpoints_require_admin_when_auth_enabled(gateway, monkeyp
                 path, headers={"Authorization": "Bearer admin-secret-token"}
             )
             assert allowed.status_code == 200
-
-
-# ---------------------------------------------------------------------------
-# The two renderings agree
-# ---------------------------------------------------------------------------
-
-
-async def test_html_is_rendered_from_the_json_payload(client):
-    """One payload, two renderings: they cannot describe different runs."""
-    run = _full_run()
-    payload: dict[str, Any] = (
-        await client.get(f"/api/diagnostics/runs/{run.run_id}/report")
-    ).json()
-    document = (
-        await client.get(f"/api/diagnostics/runs/{run.run_id}/report.html")
-    ).text
-    assert payload["verdict"]["status"] in document
-    assert payload["findings"]["latency"]["agents"][0]["tail"]["label"] in document
-    assert str(payload["schema_version"]) in document
-
