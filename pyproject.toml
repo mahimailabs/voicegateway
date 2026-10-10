@@ -261,8 +261,6 @@ exclude = [
     "src/voicegateway/tests",
     "src/voicegateway/Dockerfile",
     "src/voicegateway/README.dockerhub.md",
-    "src/dashboard/Dockerfile",
-    "src/dashboard/README.dockerhub.md",
     "src/dashboard/frontend/node_modules",
     "src/dashboard/frontend/src",
     "src/dashboard/frontend/package.json",
@@ -271,9 +269,7 @@ exclude = [
     "src/dashboard/frontend/tsconfig.node.json",
     "src/dashboard/frontend/tsconfig.tsbuildinfo",
     "src/dashboard/frontend/tsconfig.node.tsbuildinfo",
-    "src/dashboard/frontend/vite.config.js",
     "src/dashboard/frontend/vite.config.ts",
-    "src/dashboard/frontend/vite.config.d.ts",
     "src/dashboard/frontend/index.html",
     # Console (React 19 + Tailwind) build inputs: the daemon only needs its
     # built dist (staged into voicegateway/_console_dist), so keep the source

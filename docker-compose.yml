@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   voicegateway:
     build:
@@ -14,7 +12,6 @@ services:
     environment:
       - VOICEGW_CONFIG=/app/voicegw.yaml
       - VOICEGW_DB_PATH=/data/voicegw.db
-      - VOICEGW_PROFILE=${VOICEGW_PROFILE:-production}
       # Provider API keys (pass from .env or host env)
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -29,25 +26,6 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-    networks:
-      - voicegw-net
-
-  dashboard:
-    build:
-      context: .
-      dockerfile: src/dashboard/Dockerfile
-    container_name: voicegateway-dash
-    ports:
-      - "9090:9090"
-    volumes:
-      - voicegw-data:/data:ro
-    environment:
-      - VOICEGW_API_URL=http://voicegateway:8080
-      - VOICEGW_DB_PATH=/data/voicegw.db
-    depends_on:
-      voicegateway:
-        condition: service_healthy
-    restart: unless-stopped
     networks:
       - voicegw-net
 

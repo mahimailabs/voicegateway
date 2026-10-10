@@ -12,7 +12,6 @@ concurrency:
 env:
   REGISTRY: docker.io
   CORE_IMAGE: mahimairaja/voicegateway
-  DASHBOARD_IMAGE: mahimairaja/voicegateway-dashboard
 
 jobs:
   test:
@@ -63,22 +62,6 @@ jobs:
             dockerfile: ./src/voicegateway/Dockerfile
             title: VoiceGateway
             description: Cost tracking and reconciliation for LiveKit voice agents, with MCP server for coding agents
-            platform: linux/arm64
-            arch: arm64
-            runner: ubuntu-24.04-arm
-          - image: dashboard
-            slug: mahimairaja/voicegateway-dashboard
-            dockerfile: ./src/dashboard/Dockerfile
-            title: VoiceGateway Dashboard
-            description: Web dashboard for VoiceGateway with full CRUD
-            platform: linux/amd64
-            arch: amd64
-            runner: ubuntu-24.04
-          - image: dashboard
-            slug: mahimairaja/voicegateway-dashboard
-            dockerfile: ./src/dashboard/Dockerfile
-            title: VoiceGateway Dashboard
-            description: Web dashboard for VoiceGateway with full CRUD
             platform: linux/arm64
             arch: arm64
             runner: ubuntu-24.04-arm
@@ -159,10 +142,6 @@ jobs:
             slug: mahimairaja/voicegateway
             readme: ./src/voicegateway/README.dockerhub.md
             short: "Cost tracking and reconciliation for LiveKit voice agents, with MCP"
-          - image: dashboard
-            slug: mahimairaja/voicegateway-dashboard
-            readme: ./src/dashboard/README.dockerhub.md
-            short: "Web dashboard for VoiceGateway"
     steps:
       # Checkout so the Docker Hub README files are on disk for the
       # dockerhub-description step below (the manifest is built from the
@@ -242,8 +221,6 @@ jobs:
 
             - `mahimairaja/voicegateway:${{ steps.version.outputs.version }}`
             - `mahimairaja/voicegateway:latest`
-            - `mahimairaja/voicegateway-dashboard:${{ steps.version.outputs.version }}`
-            - `mahimairaja/voicegateway-dashboard:latest`
 
             Built for `linux/amd64` and `linux/arm64`.
 

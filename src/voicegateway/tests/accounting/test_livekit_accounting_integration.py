@@ -16,7 +16,6 @@ from voicegateway import attach
 from voicegateway.accounting.contracts import OwnershipMode, PricingBindingResponse
 from voicegateway.accounting.outbox import AccountingOutbox
 from voicegateway.models.request_model import RequestRecord
-from voicegateway.telemetry import SpanContext, reset_trace_context, set_trace_context
 
 
 class _NativeSTT(stt.STT):
@@ -264,28 +263,22 @@ async def test_attach_captures_native_stt_tts_llm_and_realtime_without_duplicate
             streamed=True,
         ),
     )
-    trace_token = set_trace_context(
-        SpanContext(trace_id="1" * 32, span_id="2" * 16, trace_flags=1)
+    native_llm.emit(
+        "metrics_collected",
+        LLMMetrics(
+            label="llm",
+            request_id="llm-1",
+            timestamp=1_800_000_001.0,
+            duration=0.8,
+            ttft=0.1,
+            cancelled=False,
+            completion_tokens=7,
+            prompt_tokens=20,
+            prompt_cached_tokens=3,
+            total_tokens=27,
+            tokens_per_second=10,
+        ),
     )
-    try:
-        native_llm.emit(
-            "metrics_collected",
-            LLMMetrics(
-                label="llm",
-                request_id="llm-1",
-                timestamp=1_800_000_001.0,
-                duration=0.8,
-                ttft=0.1,
-                cancelled=False,
-                completion_tokens=7,
-                prompt_tokens=20,
-                prompt_cached_tokens=3,
-                total_tokens=27,
-                tokens_per_second=10,
-            ),
-        )
-    finally:
-        reset_trace_context(trace_token)
     for segment, timestamp in (
         ("segment-a", 1_800_000_002.0),
         ("segment-b", 1_800_000_003.0),

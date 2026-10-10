@@ -1735,11 +1735,6 @@ def _render_load_tests(payload: dict[str, Any]) -> str:
     )
 
 
-def _ms_to_minutes(value: Any) -> float | None:
-    ms = _as_float(value)
-    return None if ms is None else ms / 60_000.0
-
-
 #: Below this, a duration is shown in seconds. A ramp step is commonly a minute
 #: or two, and one decimal of a minute cannot tell 62 seconds from 66: both read
 #: "1.1 min". A reader comparing this against their own timing needs the unit

@@ -108,33 +108,6 @@ async def get_agent(session: AsyncSession, agent_id: str) -> AgentRow | None:
     return _row_to_agent(row) if row is not None else None
 
 
-async def get_unattributed_aggregates(
-    session: AsyncSession,
-) -> UnattributedAggregates:
-    """Return aggregates for the ``agent_id IS NULL`` bucket."""
-    result = await session.execute(
-        text(
-            f"""SELECT COUNT(*) AS request_count,
-                       COALESCE(SUM(cost_usd), 0.0) AS total_cost_usd,
-                       MAX(timestamp) AS last_seen,
-                       {_ERROR_RATE} AS error_rate
-                FROM requests
-                WHERE agent_id IS NULL"""
-        )
-    )
-    row = result.fetchone()
-    if row is None or int(row[0]) == 0:
-        return UnattributedAggregates(
-            request_count=0, total_cost_usd=0.0, last_seen=None, error_rate=0.0
-        )
-    return UnattributedAggregates(
-        request_count=int(row[0]),
-        total_cost_usd=float(row[1] or 0.0),
-        last_seen=None if row[2] is None else float(row[2]),
-        error_rate=float(row[3] or 0.0),
-    )
-
-
 async def agent_latency_p95(
     session: AsyncSession,
     *,

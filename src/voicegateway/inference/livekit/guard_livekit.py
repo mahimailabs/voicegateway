@@ -40,36 +40,6 @@ from voicegateway.middleware.rate_limiter_middleware import RateLimiter
 logger = logging.getLogger(__name__)
 
 
-def _default_spend_reader(project: str, period: str) -> float:
-    """Read accumulated spend for ``project`` over ``period`` from the gateway.
-
-    Returns 0.0 when there is no configured storage (nothing to enforce
-    against). Never raises: a spend-read failure must not wedge the call path,
-    so guard fails open (treats spend as 0) and logs.
-    """
-    try:
-        from voicegateway.core.gateway_factory import get_gateway
-
-        gateway = get_gateway()
-        storage = gateway.storage
-    except Exception:  # noqa: BLE001 - no gateway/storage configured
-        return 0.0
-    if storage is None:
-        return 0.0
-    try:
-        import asyncio
-
-        summary = asyncio.run(storage.get_cost_summary(period, project=project))
-        return float(summary.get("total", 0.0) or 0.0)
-    except RuntimeError:
-        # Already inside a running loop; the async control path uses the async
-        # reader instead. This sync path is a best-effort fallback only.
-        return 0.0
-    except Exception:  # noqa: BLE001
-        logger.warning("guard: spend read failed; treating as $0", exc_info=True)
-        return 0.0
-
-
 async def _async_default_spend_reader(project: str, period: str) -> float:
     """Async accumulated-spend read from the gateway storage (fails open at 0)."""
     try:

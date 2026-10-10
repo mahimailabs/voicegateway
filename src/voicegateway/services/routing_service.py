@@ -80,12 +80,6 @@ def _load_baselines() -> dict[tuple[str, str], int]:
     return _baselines_cache
 
 
-def _reset_baselines_cache() -> None:
-    """Test helper: drop the module-level cache so tests can rewire."""
-    global _baselines_cache  # noqa: PLW0603
-    _baselines_cache = None
-
-
 async def route_session(
     db: AsyncSession,
     *,

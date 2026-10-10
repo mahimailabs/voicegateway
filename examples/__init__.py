@@ -1,1 +1,0 @@
-"""Executable VoiceGateway integration examples."""
