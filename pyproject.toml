@@ -233,6 +233,7 @@ artifacts = [
 #                fails at runtime in _find_alembic_ini
 #   README.md    named by project.readme, required for metadata
 #   LICENSE      project.license is the SPDX string, the file still ships
+#   ee/LICENSE   the root LICENSE points at it for anything under ee/
 #   CHANGELOG.md so an unpacked sdist can say what changed
 [tool.hatch.build.targets.sdist]
 include = [
@@ -241,6 +242,7 @@ include = [
     "/alembic.ini",
     "/README.md",
     "/LICENSE",
+    "/ee/LICENSE",
     "/CHANGELOG.md",
 ]
 

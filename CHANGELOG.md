@@ -6,6 +6,13 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ## Unreleased
 
+### Licensing
+
+- Move to an open-core license. Everything outside `ee/` directories stays MIT.
+  Code under any `ee/` directory is covered by the new Enterprise Edition
+  license in `ee/LICENSE`. No EE code exists yet, and past releases keep their
+  MIT license.
+
 ### Realtime metering
 
 - Support LiveKit Agents 1.8 duplex sessions. Capture session metrics, preserve

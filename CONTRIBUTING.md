@@ -28,6 +28,13 @@ be constructive, assume good intent.
 - **Report a security issue.** Do NOT open a public issue. See
   [SECURITY.md](SECURITY.md) for the disclosure policy.
 
+## Licensing
+
+Contributions outside `ee/` directories are released under the MIT license
+in [LICENSE](LICENSE). Code under any `ee/` directory is covered by the
+Enterprise Edition license in [ee/LICENSE](ee/LICENSE). Keep new open-source
+features out of `ee/`, and do not import `ee/` code from MIT code paths.
+
 ## PR checklist
 
 Before opening your PR, verify locally:
