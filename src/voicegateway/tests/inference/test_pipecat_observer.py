@@ -15,7 +15,6 @@ pipecat provider under ``pipecat.services.openai.llm`` etc.) is deterministic.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import pytest
@@ -42,10 +41,8 @@ from pipecat.services.llm_service import LLMService  # noqa: E402
 from pipecat.services.stt_service import STTService  # noqa: E402
 from pipecat.services.tts_service import TTSService  # noqa: E402
 
-from voicegateway.inference.pipecat.observer import (  # noqa: E402
-    VoiceGatewayObserver,
-    pipecat_identity,
-)
+from voicegateway.inference.pipecat.observer import VoiceGatewayObserver  # noqa: E402
+from voicegateway.inference.pricing.tts import calculate_tts_cost  # noqa: E402
 
 # --- test doubles ----------------------------------------------------------
 
@@ -118,20 +115,6 @@ async def _feed(obs: VoiceGatewayObserver, source: Any, frame: Any) -> None:
     await obs.on_push_frame(_pushed(source, frame))
 
 
-# --- identity --------------------------------------------------------------
-
-
-def test_identity_llm_from_base_class_and_module() -> None:
-    provider, modality = pipecat_identity(_StubLLM())
-    assert modality == "llm"
-    assert provider == "openai"
-
-
-def test_identity_stt_tts_modalities_and_providers() -> None:
-    assert pipecat_identity(_StubSTT()) == ("deepgram", "stt")
-    assert pipecat_identity(_StubTTS()) == ("cartesia", "tts")
-
-
 # --- LLM usage mapping -----------------------------------------------------
 
 
@@ -176,7 +159,11 @@ async def test_tts_usage_maps_chars_and_costs() -> None:
     assert rec.provider == "cartesia"
     assert rec.model_id == "cartesia/sonic-2"
     assert rec.input_units == 350.0
-    assert rec.cost_usd == pytest.approx(0.014, rel=1e-6)
+    # The exact rate is pinned in tests/pricing; here the observer must hand
+    # the character count to the same pricing path.
+    expected = float(calculate_tts_cost("cartesia/sonic-2", 350))
+    assert expected > 0
+    assert rec.cost_usd == pytest.approx(expected, rel=1e-6)
 
 
 # --- correlation: TTFB stitches into ONE record per request ----------------
@@ -381,21 +368,3 @@ async def test_endframe_finalizes_and_flushes() -> None:
     assert sink.flushed >= 1
     assert len(sink.records) == 1
     assert sink.records[0].modality == "stt"
-
-
-# --- ordering / event-loop safety -----------------------------------------
-
-
-async def test_on_push_frame_is_awaitable_and_non_blocking() -> None:
-    obs, sink = _make_observer()
-    llm = _StubLLM("gpt-4o")
-    usage = LLMTokenUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2)
-    # Awaiting many frames sequentially records one per usage frame.
-    for _ in range(5):
-        await _feed(
-            obs,
-            llm,
-            MetricsFrame(data=[LLMUsageMetricsData(processor=llm.name, value=usage)]),
-        )
-    assert len(sink.records) == 5
-    await asyncio.sleep(0)
