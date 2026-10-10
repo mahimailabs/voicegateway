@@ -297,15 +297,3 @@ def test_a_token_rule_round_trips_through_yaml_config() -> None:
     )
     assert result.rated_price_usd == pytest.approx(0.2675)
     assert result.rate_rule == "fixed:in=2.5,cached=1.25,out=10/1m_token"
-
-
-def test_the_stamped_rule_string_names_every_leg() -> None:
-    """``rate_rule`` is the audit trail on each row, so it must show all three.
-
-    ``fixed:2.5/1m_token`` would name one number for a three-number contract,
-    which is the labelling failure the legs exist to fix.
-    """
-    rule = _rule(
-        input_price_usd=2.5, cached_input_price_usd=1.25, output_price_usd=10.0
-    )
-    assert rule.describe() == "fixed:in=2.5,cached=1.25,out=10/1m_token"

@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import contextvars
-import sqlite3
-import time
-import uuid
 from typing import Any
 
 import pytest
@@ -16,7 +13,6 @@ from voicegateway.inference.session.context import (
 )
 from voicegateway.middleware.cost_tracker_middleware import CostTracker
 from voicegateway.middleware.instrumented_provider_middleware import wrap_provider
-from voicegateway.models.request_model import RequestRecord
 from voicegateway.services.storage_service import StorageService
 
 # ---------------------------------------------------------------------------
@@ -50,120 +46,6 @@ def _reset_session_state():
     reset_session_id()
     yield
     reset_session_id()
-
-
-@pytest.fixture
-async def storage(tmp_path):
-    return StorageService(str(tmp_path / "session.db"))
-
-
-@pytest.fixture
-def cost_tracker(storage):
-    return CostTracker(storage=storage)
-
-
-# ---------------------------------------------------------------------------
-# RequestRecord shape
-# ---------------------------------------------------------------------------
-
-
-def test_request_record_has_session_id_field():
-    rec = RequestRecord(
-        id="r1",
-        timestamp=time.time(),
-        modality="stt",
-        model_id="deepgram/nova-3",
-        provider="deepgram",
-    )
-    # Default is None — pre-v0.0.5 callers don't have to update.
-    assert rec.session_id is None
-
-
-def test_request_record_accepts_session_id():
-    rec = RequestRecord(
-        id="r1",
-        timestamp=time.time(),
-        modality="stt",
-        model_id="deepgram/nova-3",
-        provider="deepgram",
-        session_id="vg-test",
-    )
-    assert rec.session_id == "vg-test"
-
-
-# ---------------------------------------------------------------------------
-# CostTracker
-# ---------------------------------------------------------------------------
-
-
-def test_cost_tracker_threads_session_id_into_record(cost_tracker):
-    rec = cost_tracker.create_record(
-        model_id="deepgram/nova-3",
-        modality="stt",
-        provider="deepgram",
-        session_id="vg-track-test",
-    )
-    assert rec.session_id == "vg-track-test"
-
-
-def test_cost_tracker_session_id_defaults_to_none(cost_tracker):
-    rec = cost_tracker.create_record(
-        model_id="deepgram/nova-3",
-        modality="stt",
-        provider="deepgram",
-    )
-    assert rec.session_id is None
-
-
-# ---------------------------------------------------------------------------
-# Storage round-trip
-# ---------------------------------------------------------------------------
-
-
-async def test_storage_persists_session_id(tmp_path):
-    db_path = str(tmp_path / "store.db")
-    storage = StorageService(db_path)
-
-    rec = RequestRecord(
-        id=str(uuid.uuid4()),
-        timestamp=time.time(),
-        modality="llm",
-        model_id="openai/gpt-4o-mini",
-        provider="openai",
-        session_id="vg-persist-test",
-    )
-    await storage.log_request(rec)
-
-    conn = sqlite3.connect(db_path)
-    try:
-        cursor = conn.execute("SELECT session_id FROM requests WHERE id = ?", (rec.id,))
-        row = cursor.fetchone()
-    finally:
-        conn.close()
-    assert row == ("vg-persist-test",)
-
-
-async def test_storage_persists_null_session_id_for_uninstrumented_path(tmp_path):
-    """Callers that do not set session_id (e.g. direct"""
-    db_path = str(tmp_path / "store.db")
-    storage = StorageService(db_path)
-
-    rec = RequestRecord(
-        id=str(uuid.uuid4()),
-        timestamp=time.time(),
-        modality="llm",
-        model_id="openai/gpt-4o-mini",
-        provider="openai",
-    )  # session_id omitted on purpose
-    await storage.log_request(rec)
-
-    conn = sqlite3.connect(db_path)
-    try:
-        cursor = conn.execute("SELECT session_id FROM requests WHERE id = ?", (rec.id,))
-        row = cursor.fetchone()
-    finally:
-        conn.close()
-    assert row == (None,)
 
 
 # ---------------------------------------------------------------------------

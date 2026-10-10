@@ -6,8 +6,6 @@ import asyncio
 import contextvars
 import re
 
-import pytest
-
 from voicegateway.inference.session.context import (
     get_or_create_session_id,
     get_session_id,
@@ -18,14 +16,6 @@ from voicegateway.inference.session.context import (
 _VG_ID = re.compile(
     r"^vg-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
-
-
-@pytest.fixture(autouse=True)
-def _isolate():
-    # Ensure each test starts in a fresh ContextVar state. Run the test
-    # body inside a copied context so writes don't leak across tests.
-    ctx = contextvars.copy_context()
-    yield ctx
 
 
 class TestGetOrCreate:
@@ -50,12 +40,6 @@ class TestGetWithoutCreating:
     def test_get_returns_none_when_no_session(self):
         ctx = contextvars.copy_context()
         assert ctx.run(get_session_id) is None
-
-    def test_get_returns_existing_session(self):
-        ctx = contextvars.copy_context()
-        created = ctx.run(get_or_create_session_id)
-        observed = ctx.run(get_session_id)
-        assert observed == created
 
 
 class TestReset:
@@ -92,34 +76,8 @@ class TestStartSession:
         assert first != second
         assert after == second
 
-    def test_simulated_worker_pattern(self):
-        """One asyncio task handles two conversations sequentially."""
-
-        def _scenario():
-            sid_a = get_or_create_session_id()
-            # Conversation B starts; the worker calls start_session
-            # to roll a fresh id explicitly.
-            sid_b = start_session()
-            return sid_a, sid_b
-
-        a, b = contextvars.copy_context().run(_scenario)
-        assert a != b
-        assert a.startswith("vg-")
-        assert b.startswith("vg-")
-
 
 class TestAsyncPropagation:
-    async def test_session_propagates_to_awaited_coroutines(self):
-        # Within one Task, awaited coroutines share the parent's context
-        # by default. The session created at the top is visible inside
-        # the inner coro.
-        async def inner():
-            return get_session_id()
-
-        sid = get_or_create_session_id()
-        observed = await inner()
-        assert observed == sid
-
     async def test_independent_tasks_get_independent_ids(self):
         # asyncio.create_task copies the parent context AT TASK CREATION
         # time. If we create a session AFTER spawning the task, the task

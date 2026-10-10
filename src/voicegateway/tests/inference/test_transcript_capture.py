@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from voicegateway.inference.session.attach import (
     _capture_transcript_from_history,
     _transcripts_enabled,
@@ -67,18 +69,23 @@ async def test_capture_never_raises_on_bad_storage():
     )
 
 
-def test_transcripts_enabled_defaults_to_param(monkeypatch):
-    monkeypatch.delenv("VOICEGW_TRANSCRIPTS", raising=False)
-    assert _transcripts_enabled(True) is True
-    assert _transcripts_enabled(False) is False
-
-
-def test_transcripts_killswitch_disables(monkeypatch):
-    for v in ("0", "false", "no", "off", "OFF"):
-        monkeypatch.setenv("VOICEGW_TRANSCRIPTS", v)
-        assert _transcripts_enabled(True) is False
-
-
-def test_transcripts_killswitch_truthy_keeps_param(monkeypatch):
-    monkeypatch.setenv("VOICEGW_TRANSCRIPTS", "1")
-    assert _transcripts_enabled(True) is True
+@pytest.mark.parametrize(
+    "env,param,expected",
+    [
+        (None, True, True),
+        (None, False, False),
+        ("0", True, False),
+        ("false", True, False),
+        ("off", True, False),
+        ("OFF", True, False),
+        ("no", True, False),
+        ("1", True, True),
+    ],
+)
+def test_transcripts_kill_switch(monkeypatch, env, param, expected):
+    """VOICEGW_TRANSCRIPTS falsy disables capture; unset or truthy keeps the param."""
+    if env is None:
+        monkeypatch.delenv("VOICEGW_TRANSCRIPTS", raising=False)
+    else:
+        monkeypatch.setenv("VOICEGW_TRANSCRIPTS", env)
+    assert _transcripts_enabled(param) is expected

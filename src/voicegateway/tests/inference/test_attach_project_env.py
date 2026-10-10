@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Minimal fakes (mirroring the pattern in test_attach_capture.py)
 # ---------------------------------------------------------------------------
@@ -67,70 +69,29 @@ class _CaptureSink:
         pass
 
 
-# ---------------------------------------------------------------------------
-# 1. Explicit project= wins even when VOICEGW_PROJECT is set
-# ---------------------------------------------------------------------------
-
-
-async def test_attach_explicit_project_wins_over_env(monkeypatch):
-    """attach(project='explicit') uses 'explicit' even when VOICEGW_PROJECT is set."""
+@pytest.mark.parametrize(
+    "env, kwargs, expected",
+    [
+        ("from-env", {"project": "explicit"}, "explicit"),  # explicit arg wins
+        ("from-env", {}, "from-env"),  # env used when no arg
+        (None, {}, "default"),  # neither set
+    ],
+)
+async def test_attach_project_resolution(monkeypatch, env, kwargs, expected):
     import voicegateway
 
-    monkeypatch.setenv("VOICEGW_PROJECT", "from-env")
+    if env is None:
+        monkeypatch.delenv("VOICEGW_PROJECT", raising=False)
+    else:
+        monkeypatch.setenv("VOICEGW_PROJECT", env)
 
     sink = _CaptureSink()
     llm = _FakeEmitter()
     session = _FakeSession(llm=llm)
 
-    voicegateway.attach(session, project="explicit", sink=sink)
+    voicegateway.attach(session, sink=sink, **kwargs)
     llm.emit("metrics_collected", _LLMMetric())
     await session._vg_capture.drain()
 
     assert len(sink.rows) == 1
-    assert sink.rows[0].project == "explicit"
-
-
-# ---------------------------------------------------------------------------
-# 2. VOICEGW_PROJECT is used when no explicit project= is given
-# ---------------------------------------------------------------------------
-
-
-async def test_attach_uses_voicegw_project_env_when_no_arg(monkeypatch):
-    """attach() without project= picks up VOICEGW_PROJECT from the environment."""
-    import voicegateway
-
-    monkeypatch.setenv("VOICEGW_PROJECT", "from-env")
-
-    sink = _CaptureSink()
-    llm = _FakeEmitter()
-    session = _FakeSession(llm=llm)
-
-    voicegateway.attach(session, sink=sink)
-    llm.emit("metrics_collected", _LLMMetric())
-    await session._vg_capture.drain()
-
-    assert len(sink.rows) == 1
-    assert sink.rows[0].project == "from-env"
-
-
-# ---------------------------------------------------------------------------
-# 3. Falls back to "default" when neither arg nor env is set
-# ---------------------------------------------------------------------------
-
-
-async def test_attach_falls_back_to_default_when_neither_set(monkeypatch):
-    """attach() with no project= and no VOICEGW_PROJECT uses 'default'."""
-    import voicegateway
-
-    monkeypatch.delenv("VOICEGW_PROJECT", raising=False)
-
-    sink = _CaptureSink()
-    llm = _FakeEmitter()
-    session = _FakeSession(llm=llm)
-
-    voicegateway.attach(session, sink=sink)
-    llm.emit("metrics_collected", _LLMMetric())
-    await session._vg_capture.drain()
-
-    assert len(sink.rows) == 1
-    assert sink.rows[0].project == "default"
+    assert sink.rows[0].project == expected

@@ -81,7 +81,7 @@ async def test_end_to_end_pipeline_produces_record() -> None:
     runner = PipelineRunner()
 
     async def _stop() -> None:
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.05)
         await task.stop_when_done()
 
     await asyncio.gather(runner.run(task), _stop())
@@ -112,7 +112,7 @@ async def test_observer_export_usable_in_task_constructor() -> None:
     runner = PipelineRunner()
 
     async def _stop() -> None:
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.05)
         await task.stop_when_done()
 
     await asyncio.gather(runner.run(task), _stop())

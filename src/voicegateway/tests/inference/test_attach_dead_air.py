@@ -316,18 +316,18 @@ async def test_the_16_listening_transition_ends_speech(tmp_path, ticking_clock) 
     )
 
 
-async def test_dead_air_false_builds_no_detector(tmp_path) -> None:
+@pytest.mark.parametrize(
+    "env, dead_air",
+    [(None, False), ("0", True)],  # the env kill-switch beats the argument
+)
+async def test_dead_air_off_builds_no_detector(
+    tmp_path, monkeypatch, env, dead_air
+) -> None:
+    if env is not None:
+        monkeypatch.setenv("VOICEGW_DEAD_AIR", env)
     sink = _sink(tmp_path)
     session = _Session()
-    voicegateway.attach(session, project="p", sink=sink, dead_air=False)
-    assert getattr(session, "_vg_dead_air", None) is None
-
-
-async def test_env_kill_switch_beats_the_argument(tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("VOICEGW_DEAD_AIR", "0")
-    sink = _sink(tmp_path)
-    session = _Session()
-    voicegateway.attach(session, project="p", sink=sink, dead_air=True)
+    voicegateway.attach(session, project="p", sink=sink, dead_air=dead_air)
     assert getattr(session, "_vg_dead_air", None) is None
 
 

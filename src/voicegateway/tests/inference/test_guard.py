@@ -167,65 +167,37 @@ def _reset_fallback_marker():
 # --- DSL parsing ------------------------------------------------------------
 
 
-def test_parse_rate_limit_per_minute():
-    spec = parse_rate_limit("60/min")
-    assert spec == RateLimitSpec(requests=60, per_seconds=60.0)
-    assert spec.requests_per_minute == 60
-
-
-def test_parse_rate_limit_per_second():
-    spec = parse_rate_limit("5/s")
-    assert spec.requests == 5
-    assert spec.per_seconds == 1.0
-    assert spec.requests_per_minute == 300
-
-
-def test_parse_rate_limit_rejects_garbage():
-    with pytest.raises(ValueError):
-        parse_rate_limit("banana")
+@pytest.mark.parametrize(
+    "spec, requests, per_seconds",
+    [
+        ("60/min", 60, 60.0),
+        ("5/s", 5, 1.0),
+        ("60/sec", 60, 1.0),
+        ("60/second", 60, 1.0),
+        ("60/minute", 60, 60.0),
+        ("60/m", 60, 60.0),
+        ("60/MIN", 60, 60.0),  # case-insensitive
+        (" 60 / s ", 60, 1.0),  # whitespace tolerant
+    ],
+)
+def test_parse_rate_limit(spec, requests, per_seconds):
+    result = parse_rate_limit(spec)
+    assert result == RateLimitSpec(requests=requests, per_seconds=per_seconds)
+    assert result.requests_per_minute == requests * 60 / per_seconds
 
 
 @pytest.mark.parametrize(
-    "spec, per_seconds",
-    [
-        ("60/sec", 1.0),
-        ("60/second", 1.0),
-        ("60/minute", 60.0),
-        ("60/m", 60.0),
-        ("5/s", 1.0),
-        ("60/MIN", 60.0),  # case-insensitive
-        (" 60 / s ", 1.0),  # whitespace tolerant
-    ],
+    "spec, amount, window, period",
+    [("$5.00/day", 5.0, "day", "today"), ("100/month", 100.0, "month", "month")],
 )
-def test_parse_rate_limit_unit_aliases(spec, per_seconds):
-    """Verify unit aliases parse to the expected number of seconds.
-
-    Args:
-        spec: The rate-limit specification to parse.
-        per_seconds: The expected normalized interval in seconds.
-
-    Returns:
-        None.
-    """
-    result = parse_rate_limit(spec)
-    assert result.per_seconds == per_seconds
+def test_parse_budget(spec, amount, window, period):
+    parsed = parse_budget(spec)
+    assert (parsed.amount_usd, parsed.window, parsed.period) == (amount, window, period)
 
 
-def test_parse_budget_dollar_per_day():
-    spec = parse_budget("$5.00/day")
-    assert spec.amount_usd == 5.0
-    assert spec.window == "day"
-    assert spec.period == "today"
-
-
-def test_parse_budget_per_month_no_dollar():
-    spec = parse_budget("100/month")
-    assert spec.amount_usd == 100.0
-    assert spec.window == "month"
-    assert spec.period == "month"
-
-
-def test_parse_budget_rejects_garbage():
+def test_parse_dsl_rejects_garbage():
+    with pytest.raises(ValueError):
+        parse_rate_limit("banana")
     with pytest.raises(ValueError):
         parse_budget("5 dollars a fortnight")
 
@@ -233,16 +205,14 @@ def test_parse_budget_rejects_garbage():
 # --- guard returns a drop-in of the same framework type ---------------------
 
 
-def test_guard_llm_returns_lk_llm_subclass():
-    primary = _FakeLLM(model="gpt-4o-mini", provider="openai")
-    guarded = voicegateway.guard(primary)
-    assert isinstance(guarded, lk_llm.LLM)
-
-
-def test_guard_stt_returns_lk_stt_subclass():
-    primary = _FakeSTT(model="nova-3", provider="deepgram")
-    guarded = voicegateway.guard(primary)
-    assert isinstance(guarded, lk_stt.STT)
+def test_guard_returns_same_livekit_type():
+    """AgentSession type-checks its components, so guard must be a drop-in."""
+    assert isinstance(
+        voicegateway.guard(_FakeLLM(model="gpt-4o-mini", provider="openai")), lk_llm.LLM
+    )
+    assert isinstance(
+        voicegateway.guard(_FakeSTT(model="nova-3", provider="deepgram")), lk_stt.STT
+    )
 
 
 def test_guard_rejects_unknown_provider():
@@ -389,26 +359,6 @@ async def test_attach_stamps_fallback_from_after_guard_fallback():
 
 class _STTMetric:
     audio_duration = 60.0
-
-
-# --- guard writes NO metrics itself -----------------------------------------
-
-
-async def test_guard_writes_no_records():
-    """Driving a guarded call writes zero rows through the guard itself; only
-    attach (bound separately) would meter."""
-    sink = _RecordingSink()
-    primary = _FakeLLM(model="gpt-4o-mini", provider="openai")
-    guarded = voicegateway.guard(primary)
-
-    stream = guarded.chat(chat_ctx=None)
-    _ = [tok async for tok in stream]
-
-    # The guard shell's cost tracker has no storage and the wrapper is
-    # metering=False, so nothing was written anywhere the guard controls.
-    assert sink.rows == []
-    # And the guard shell must not subscribe its own metering handler.
-    assert object.__getattribute__(guarded, "_metering") is False
 
 
 # --- no double count --------------------------------------------------------

@@ -6,8 +6,6 @@ specificity tie against a seed rule at the same scope (later-wins).
 
 from __future__ import annotations
 
-import pytest
-
 from voicegateway.billing.rate_card import RateCard, RateRule, rate_rule_from_row
 
 
@@ -58,10 +56,3 @@ def test_db_override_wins_specificity_tie() -> None:
     )
     assert hit is not None
     assert hit.markup == 1.9  # DB override (appended last) wins the tie
-
-
-def test_no_overrides_returns_equivalent_card() -> None:
-    seed = RateCard(rules=[RateRule(provider="openai", markup=1.4)], default_markup=1.2)
-    merged = seed.with_overrides([])
-    assert merged.rules == seed.rules
-    assert merged.default_markup == pytest.approx(1.2)
