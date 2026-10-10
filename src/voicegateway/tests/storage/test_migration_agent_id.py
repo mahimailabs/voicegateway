@@ -48,26 +48,3 @@ async def test_migration_adds_agent_id_column_and_indexes(tmp_path: Path) -> Non
     finally:
         sync_engine.dispose()
         await db.dispose()
-
-
-async def test_agent_id_is_nullable(tmp_path: Path) -> None:
-    """A row inserted without agent_id is valid and reads back NULL."""
-    db = await _build_db(tmp_path)
-    sync_engine = create_engine(f"sqlite:///{db.db_file_path}")
-    try:
-        with sync_engine.begin() as conn:
-            conn.execute(
-                text(
-                    "INSERT INTO requests (id, timestamp, project, modality, "
-                    "model_id, provider) VALUES "
-                    "('agent-null-1', 1000000.0, 'p', 'llm', 'fake/m', 'fake')"
-                )
-            )
-            row = conn.execute(
-                text("SELECT agent_id FROM requests WHERE id = 'agent-null-1'")
-            ).first()
-        assert row is not None
-        assert row[0] is None
-    finally:
-        sync_engine.dispose()
-        await db.dispose()

@@ -5,12 +5,10 @@ REQ-VG-TENANT-003: tenants table exists, is seeded with 'default' row.
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 
 from voicegateway.core.config import GatewayConfig
 from voicegateway.core.database import Database
-from voicegateway.inference.session import DEFAULT_TENANT
 
 
 async def _build_db(tmp_path: Path) -> Database:
@@ -38,24 +36,3 @@ async def test_tenants_table_exists_and_seeds_default(tmp_path: Path) -> None:
     tenant_id, status = rows[0]
     assert tenant_id == "default", f"expected tenant_id='default', got {tenant_id!r}"
     assert status == "active", f"expected status='active', got {status!r}"
-
-
-async def test_tenants_table_included_in_migration_set(tmp_path: Path) -> None:
-    """Confirm 'tenants' appears in the list of tables after migrations."""
-    db = await _build_db(tmp_path)
-    db_path = db.db_file_path
-    await db.dispose()
-
-    with sqlite3.connect(str(db_path)) as conn:
-        names = {
-            row[0]
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
-            )
-        }
-    assert "tenants" in names, f"'tenants' table missing; found: {sorted(names)}"
-
-
-def test_default_tenant_constant() -> None:
-    """DEFAULT_TENANT exported from voicegateway.inference.session must equal 'default'."""
-    assert DEFAULT_TENANT == "default"

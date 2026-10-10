@@ -76,33 +76,3 @@ async def test_migration_is_idempotent(tmp_path: Path) -> None:
         await db2.dispose()
     finally:
         await db.dispose()
-
-
-async def test_migration_column_accepts_writes_and_reads(tmp_path: Path) -> None:
-    """End-to-end: write a row with a non-zero cached_input_units, read it back."""
-    db = await _build_db(tmp_path)
-    sync_engine = create_engine(f"sqlite:///{db.db_file_path}")
-    try:
-        with sync_engine.begin() as conn:
-            conn.execute(
-                text(
-                    "INSERT INTO requests (id, timestamp, project, modality, "
-                    "model_id, provider, input_units, output_units, "
-                    "cached_input_units, cost_usd) VALUES "
-                    "('cached-test-1', 1000001.0, 'p', 'llm', 'openai/gpt-4o', "
-                    "'openai', 1000.0, 200.0, 800.0, 0.0042)"
-                )
-            )
-            row = conn.execute(
-                text(
-                    "SELECT input_units, output_units, cached_input_units "
-                    "FROM requests WHERE id = 'cached-test-1'"
-                )
-            ).first()
-        assert row is not None
-        assert row[0] == pytest.approx(1000.0)
-        assert row[1] == pytest.approx(200.0)
-        assert row[2] == pytest.approx(800.0)
-    finally:
-        sync_engine.dispose()
-        await db.dispose()

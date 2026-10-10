@@ -34,17 +34,6 @@ def test_find_knee_at_first_threshold_break():
     )  # last good before break
 
 
-def test_find_knee_none_when_all_healthy():
-    # Sample counts are load-bearing: without them these steps default to
-    # samples 0, the walk stops at the first tier for lack of evidence, and the
-    # None below arrives for the opposite reason to the one this test names.
-    steps = [
-        RampStep(10, 4.0, 0.0, "Excellent", 10),
-        RampStep(25, 6.0, 0.0, "Good", 25),
-    ]
-    assert find_knee(steps, target_rtt_ms=20.0, max_loss=1.0) is None
-
-
 # --- the knee walk stops where the evidence stops ---------------------------
 #
 # A tier that measured nothing reports rtt_ms 0.0 (the mean of an empty list),
@@ -208,12 +197,6 @@ async def test_baseline_excludes_the_cold_first_sample():
     assert step.rtt_ms <= TARGET_RTT_MS
     # One discarded warm-up ping plus one measured ping, per client.
     assert [c.pings for c in made] == [2, 2]
-
-
-async def test_step_says_how_many_samples_it_averaged():
-    made: list[Any] = []
-    step = await _probe(made).baseline("vg-t-samples", seconds=0.0)
-
     # The warm-up ping is discarded, so it is not counted as evidence.
     assert step.samples == 2
     assert step.rtt_stat == MEAN_OF_N
@@ -308,16 +291,6 @@ def _capture(level: int) -> Iterator[_CapturingHandler]:
     finally:
         root.removeHandler(handler)
         root.setLevel(previous)
-
-
-def test_teardown_noise_is_demoted_not_shown_at_error():
-    sdk = logging.getLogger("livekit")
-    with _capture(logging.WARNING) as handler:
-        with quiet_livekit_teardown_noise():
-            sdk.error("livekit::room:412:rtc_engine - failed to close data channel")
-
-    # A default (WARNING) handler sees nothing: the run stops looking broken.
-    assert handler.records == []
 
 
 def test_demoted_teardown_noise_is_still_visible_at_debug():

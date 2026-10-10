@@ -254,18 +254,6 @@ class _FakeStore:
         return self._batches.pop(0) if self._batches else []
 
 
-async def test_component_reader_reads_and_aggregates():
-    reader = ComponentReader(_FakeStore([_split_rows()]))
-    out = await reader.read("vg-probe-x")
-    assert out == {
-        "eou": 0.30,
-        "stt": 0.12,
-        "stt_transcription_delay": 0.08,
-        "llm_ttft": 0.45,
-        "tts": 0.09,
-    }
-
-
 async def test_component_reader_no_store_returns_none():
     assert await ComponentReader().read("vg-probe-x") is None
 

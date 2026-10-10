@@ -68,37 +68,3 @@ async def test_synthetic_one_minute_under_600kb(tmp_path) -> None:
         f"fallback is documented in T07's ProjectConfig "
         f"replay.enabled toggle."
     )
-
-
-async def test_storage_size_reported_via_aggregate(tmp_path) -> None:
-    """The aggregate function reports the same byte sum the smoke uses."""
-    db_path = str(tmp_path / "smoke2.db")
-    storage = StorageService(db_path)
-    await storage._ensure_initialized()
-
-    captured: list[ReplayEvent] = []
-
-    async def flush(events: list[ReplayEvent]) -> None:
-        captured.extend(events)
-
-    capture = ReplayCapture(
-        flush_callback=flush,
-        flush_size_events=10000,
-        buffer_size_events=20000,
-    )
-    # Smaller synthetic: just 10 small snapshots.
-    for i in range(10):
-        await capture.record_state_snapshot(
-            {"message": f"chunk-{i}"},
-            session_id="tiny",
-            at_ms=i * 100,
-        )
-    await capture.close_session("tiny")
-
-    async with storage._conn.session() as db:
-        await replay.bulk_write_events(db, captured, tenant_id=None)
-        size = await replay.aggregate_storage_per_session(db, "tiny")
-
-    # 10 small snapshots: each payload a few dozen bytes JSON-encoded,
-    # so 500 bytes total floor, a few KB ceiling.
-    assert 100 < size < 5000

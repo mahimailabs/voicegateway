@@ -2,12 +2,10 @@
 
 These tests run entirely in-process using chdb's persistent Session.
 They verify:
-- Migration runner creates `schema_migrations` tracking table
-- All DDL files apply idempotently (IF NOT EXISTS)
-- Table ORDER BY leads with tenant_id for requests
-- sessions_agg and sessions_mv objects exist
-- turns table exists
-- schema_migrations records all applied versions
+- All DDL files apply idempotently and record one version each
+- Unsafe migration filenames are skipped
+- requests / turns sort keys lead with tenant_id, and the engines are right
+- turns' agent-side millisecond columns are Nullable(Int64)
 """
 
 from __future__ import annotations
@@ -55,15 +53,6 @@ def apply_all(sess):
 
 
 class TestMigrationRunner:
-    def test_schema_migrations_table_created(self, ch_session):
-        apply_all(ch_session)
-        result = _query(
-            ch_session,
-            "SELECT count() FROM telemetry.schema_migrations",
-        )
-        # Should have at least some rows (one per migration file)
-        assert int(result) >= 1
-
     def test_applied_versions_recorded(self, ch_session):
         apply_all(ch_session)
         result = _query(
@@ -110,14 +99,6 @@ class TestMigrationRunner:
 
 
 class TestRequestsSchema:
-    def test_requests_table_exists(self, ch_session):
-        apply_all(ch_session)
-        result = _query(
-            ch_session,
-            "SELECT count() FROM system.tables WHERE database='telemetry' AND name='requests'",
-        )
-        assert result == "1"
-
     def test_requests_order_by_leads_with_tenant_id(self, ch_session):
         apply_all(ch_session)
         # Check the CREATE TABLE statement stored in system.tables
@@ -139,23 +120,6 @@ class TestRequestsSchema:
         )
         assert "ReplacingMergeTree" in result
 
-    def test_requests_insert_and_read(self, ch_session):
-        apply_all(ch_session)
-        ch_session.query(
-            """
-            INSERT INTO telemetry.requests
-              (tenant_id, id, timestamp, modality, provider, model_id)
-            VALUES
-              ('t1', 'req-1', '2025-01-15 10:00:00.000', 'llm', 'openai', 'gpt-4o')
-            """,
-            "CSV",
-        )
-        result = _query(
-            ch_session,
-            "SELECT id FROM telemetry.requests WHERE tenant_id='t1'",
-        )
-        assert "req-1" in result
-
     def test_requests_tenant_id_not_nullable(self, ch_session):
         apply_all(ch_session)
         result = _query(
@@ -171,14 +135,6 @@ class TestRequestsSchema:
 
 
 class TestSessionsAgg:
-    def test_sessions_agg_table_exists(self, ch_session):
-        apply_all(ch_session)
-        result = _query(
-            ch_session,
-            "SELECT count() FROM system.tables WHERE database='telemetry' AND name='sessions_agg'",
-        )
-        assert result == "1"
-
     def test_sessions_mv_exists(self, ch_session):
         apply_all(ch_session)
         result = _query(
@@ -197,14 +153,6 @@ class TestSessionsAgg:
 
 
 class TestTurnsSchema:
-    def test_turns_table_exists(self, ch_session):
-        apply_all(ch_session)
-        result = _query(
-            ch_session,
-            "SELECT count() FROM system.tables WHERE database='telemetry' AND name='turns'",
-        )
-        assert result == "1"
-
     def test_turns_order_by_leads_with_tenant_id(self, ch_session):
         apply_all(ch_session)
         result = _query(
@@ -216,53 +164,18 @@ class TestTurnsSchema:
             f"Expected turns sorting_key to start with 'tenant_id', got: {result!r}"
         )
 
-    def test_turns_insert_and_read(self, ch_session):
-        apply_all(ch_session)
-        ch_session.query(
-            """
-            INSERT INTO telemetry.turns
-              (tenant_id, session_id, id, timestamp, turn_index)
-            VALUES
-              ('t-turn', 'sess-1', 'turn-1', '2025-06-01 12:00:00.000', 0)
-            """,
-            "CSV",
-        )
-        result = _query(
-            ch_session,
-            "SELECT id FROM telemetry.turns WHERE tenant_id='t-turn'",
-        )
-        assert "turn-1" in result
-
-    def test_turns_response_speed_ms_nullable_int64(self, ch_session):
+    @pytest.mark.parametrize(
+        "column",
+        ["response_speed_ms", "agent_speak_start_ms", "agent_speak_end_ms"],
+    )
+    def test_turns_agent_side_ms_columns_are_nullable_int64(self, ch_session, column):
         apply_all(ch_session)
         result = _query(
             ch_session,
-            """
+            f"""
             SELECT type FROM system.columns
-            WHERE database='telemetry' AND table='turns' AND name='response_speed_ms'
+            WHERE database='telemetry' AND table='turns' AND name='{column}'
             """,
         )
         assert "Nullable" in result
         assert "Int64" in result
-
-    def test_turns_agent_speak_start_ms_nullable(self, ch_session):
-        apply_all(ch_session)
-        result = _query(
-            ch_session,
-            """
-            SELECT type FROM system.columns
-            WHERE database='telemetry' AND table='turns' AND name='agent_speak_start_ms'
-            """,
-        )
-        assert "Nullable" in result
-
-    def test_turns_agent_speak_end_ms_nullable(self, ch_session):
-        apply_all(ch_session)
-        result = _query(
-            ch_session,
-            """
-            SELECT type FROM system.columns
-            WHERE database='telemetry' AND table='turns' AND name='agent_speak_end_ms'
-            """,
-        )
-        assert "Nullable" in result

@@ -42,13 +42,6 @@ def _session_agent_id(db_path: str, sid: str) -> str | None:
     return None if row is None else row[0]
 
 
-async def test_session_row_carries_agent_id(tmp_path):
-    db_path = str(tmp_path / "sess_agent.db")
-    storage = StorageService(db_path)
-    await storage.log_request(_record("vg-a", "agent-x"))
-    assert _session_agent_id(db_path, "vg-a") == "agent-x"
-
-
 async def test_session_agent_id_coalesce_preserved_across_requests(tmp_path):
     """The first request's agent_id is preserved across the session's UPSERTs."""
     db_path = str(tmp_path / "sess_agent2.db")

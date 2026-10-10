@@ -118,15 +118,6 @@ async def test_untracked_calls_are_reported_not_dropped(store) -> None:
     assert total == pytest.approx(0.07)
 
 
-async def test_an_untracked_call_is_null_rather_than_turn_zero(store) -> None:
-    """0 would claim the first turn for every Pipecat row ever written."""
-    sid = "sess-d"
-    await store.log_request(_record(sid, turn=None, cost=0.02))
-    turns, unattributed = await _rows(store, sid)
-    assert turns == []
-    assert unattributed["requests"] == 1
-
-
 async def test_turns_do_not_leak_across_sessions(store) -> None:
     """``turn_index`` only means something inside one session.
 

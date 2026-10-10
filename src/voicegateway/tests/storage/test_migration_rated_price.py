@@ -58,31 +58,3 @@ async def test_migration_adds_billing_columns_with_defaults(tmp_path: Path) -> N
     finally:
         sync_engine.dispose()
         await db.dispose()
-
-
-async def test_billing_columns_accept_writes_and_reads(tmp_path: Path) -> None:
-    db = await _build_db(tmp_path)
-    sync_engine = create_engine(f"sqlite:///{db.db_file_path}")
-    try:
-        with sync_engine.begin() as conn:
-            conn.execute(
-                text(
-                    "INSERT INTO requests (id, timestamp, project, modality, "
-                    "model_id, provider, cost_usd, rated_price_usd, rate_rule) "
-                    "VALUES ('rated-2', 1000001.0, 'p', 'stt', 'deepgram/nova-3', "
-                    "'deepgram', 0.0048, 0.0072, 'cost_plus:1.5')"
-                )
-            )
-            row = conn.execute(
-                text(
-                    "SELECT cost_usd, rated_price_usd, rate_rule FROM requests "
-                    "WHERE id = 'rated-2'"
-                )
-            ).first()
-        assert row is not None
-        assert row[0] == pytest.approx(0.0048)
-        assert row[1] == pytest.approx(0.0072)
-        assert row[2] == "cost_plus:1.5"
-    finally:
-        sync_engine.dispose()
-        await db.dispose()

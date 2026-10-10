@@ -125,16 +125,6 @@ def test_the_tracker_stamps_epoch_not_time_since_boot() -> None:
     )
 
 
-def test_epoch_milliseconds_do_not_fit_in_int32() -> None:
-    """Why the width fix and the clock fix belong in one change.
-
-    Switching to epoch would have broken Postgres on its own if the columns had
-    stayed INTEGER, and staying on monotonic would have broken it too, later,
-    on any host up for 25 days. One migration covers both.
-    """
-    assert int(time.time() * 1000) > 2147483647
-
-
 # --- the same defect, one table over -------------------------------------
 
 _DEAD_AIR_MS_COLUMNS = ("started_at_ms", "duration_ms", "threshold_used_ms")

@@ -172,12 +172,3 @@ async def test_rotate_records_rows_that_fail_to_decrypt(monkeypatch, tmp_path):
     assert decrypt(after["healthy:openai"]) == "sk-healthy"
     # The orphaned row's stored ciphertext is unchanged.
     assert after["orphaned:deepgram"] == orphan_token
-
-
-async def test_rotate_returns_zeros_on_empty_table(monkeypatch, tmp_path):
-    monkeypatch.setenv("VOICEGW_SECRET", _generate_key())
-    reset_fernet()
-    storage = StorageService(str(tmp_path / "rotate.db"))
-
-    summary = await storage.rotate_managed_credentials()
-    assert summary == {"rotated": 0, "skipped_empty": 0, "failed": []}

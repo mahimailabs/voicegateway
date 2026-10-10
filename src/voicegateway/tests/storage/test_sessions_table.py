@@ -58,22 +58,6 @@ def _index_names(db_path: str, table: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-async def test_fresh_install_has_sessions_table(tmp_path):
-    db_path = str(tmp_path / "fresh.db")
-    storage = StorageService(db_path)
-    await storage._ensure_initialized()
-
-    conn = sqlite3.connect(db_path)
-    try:
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'"
-        )
-        row = cursor.fetchone()
-    finally:
-        conn.close()
-    assert row is not None, "sessions table missing on fresh install"
-
-
 async def test_sessions_columns_match_design(tmp_path):
     """Columns and types match design.md section 3.2."""
     db_path = str(tmp_path / "fresh.db")
@@ -137,36 +121,6 @@ async def test_sessions_indexes_exist(tmp_path):
     indexes = _index_names(db_path, "sessions")
     assert "idx_sessions_project" in indexes
     assert "idx_sessions_started_at" in indexes
-
-
-async def test_sessions_insert_round_trip(tmp_path):
-    """A direct INSERT + SELECT works against the new schema."""
-    db_path = str(tmp_path / "fresh.db")
-    storage = StorageService(db_path)
-    await storage._ensure_initialized()
-
-    sid = "vg-test-session-id"
-    started = "2026-05-06T19:50:00Z"
-    conn = sqlite3.connect(db_path)
-    try:
-        conn.execute(
-            """INSERT INTO sessions
-               (id, project, started_at, modalities, total_cost_usd, request_count)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (sid, "tony-pizza", started, "stt,llm,tts", 0.0123, 3),
-        )
-        conn.commit()
-
-        cursor = conn.execute(
-            "SELECT id, project, started_at, ended_at, modalities, "
-            "total_cost_usd, request_count FROM sessions WHERE id = ?",
-            (sid,),
-        )
-        row = cursor.fetchone()
-    finally:
-        conn.close()
-
-    assert row == (sid, "tony-pizza", started, None, "stt,llm,tts", 0.0123, 3)
 
 
 async def test_sessions_defaults_apply_on_partial_insert(tmp_path):

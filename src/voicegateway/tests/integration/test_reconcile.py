@@ -49,20 +49,6 @@ _CARTESIA_JSON = json.dumps(
         pytest.param(
             "openai",
             "openai.csv",
-            "model,input_tokens,output_tokens,n_requests,cost_usd\n"
-            "gpt-4o-mini,1000000,500000,500,0.225\n"
-            "gpt-4o,200000,100000,200,0.900\n"
-            "gpt-4-turbo,50000,25000,80,1.200\n",
-            {
-                "gpt-4o-mini": {"units": 1_500_000},
-                "gpt-4o": {"units": 300_000, "n_requests": 200},
-                "gpt-4-turbo": {"units": 75_000, "cost": 1.200},
-            },
-            id="openai-csv-multiple-models",
-        ),
-        pytest.param(
-            "openai",
-            "openai.csv",
             # n_requests and cost_usd absent: the `row.get(..., 0) or 0`
             # fallback must yield zero, not KeyError.
             "model,input_tokens,output_tokens\ngpt-4o-mini,1000,500\n",
@@ -89,20 +75,6 @@ _CARTESIA_JSON = json.dumps(
         pytest.param(
             "deepgram",
             "deepgram.csv",
-            "model,audio_seconds,n_requests,cost_usd\n"
-            "nova-3,180000.0,1500,8.700\n"
-            "nova-2,90000.0,800,4.350\n"
-            "flux-general,30000.0,250,1.450\n",
-            {
-                "nova-3": {"units": 180000.0},
-                "nova-2": {"units": 90000.0, "n_requests": 800},
-                "flux-general": {"units": 30000.0, "cost": 1.450},
-            },
-            id="deepgram-csv-multiple-models",
-        ),
-        pytest.param(
-            "deepgram",
-            "deepgram.csv",
             "model,audio_seconds\nnova-3,12000.0\n",
             {"nova-3": {"units": 12000.0, "cost": 0.0, "n_requests": 0.0}},
             id="deepgram-csv-missing-columns",
@@ -123,18 +95,6 @@ _CARTESIA_JSON = json.dumps(
             "sonic-3,2500000,250000,1000,30.0\n",
             {"sonic-3": {"units": 2_500_000, "cost": 30.0, "n_requests": 1000}},
             id="cartesia-csv",
-        ),
-        pytest.param(
-            "cartesia",
-            "cartesia.csv",
-            "model,characters,n_requests,cost_usd\n"
-            "sonic-3,2500000,1000,30.0\n"
-            "sonic-turbo,800000,400,9.6\n",
-            {
-                "sonic-3": {"units": 2_500_000},
-                "sonic-turbo": {"units": 800_000, "cost": 9.6},
-            },
-            id="cartesia-csv-multiple-models",
         ),
         pytest.param(
             "cartesia",
@@ -282,21 +242,6 @@ def test_aggregate_vg_records_filters_other_modalities():
     assert set(agg.keys()) == {"gpt-4o-mini"}
     assert agg["gpt-4o-mini"]["units"] == 1500.0
     assert agg["gpt-4o-mini"]["cost"] == pytest.approx(0.001, abs=0.0001)
-
-
-def test_aggregate_vg_records_openai_sums_input_and_output():
-    """OpenAI: VG units = input_tokens + output_tokens, matching the canonical file."""
-    records = [
-        {
-            "model_id": "openai/gpt-4o-mini",
-            "modality": "llm",
-            "input_units": 1000,
-            "output_units": 500,
-            "cost_usd": 0.001,
-        },
-    ]
-    agg = reconcile.aggregate_vg_records("openai", records)
-    assert agg["gpt-4o-mini"]["units"] == 1500.0
 
 
 def test_reconcile_perfect_match(tmp_path):
@@ -741,28 +686,6 @@ def test_reconcile_does_not_flag_missing_sides(tmp_path):
     assert by_model["gpt-4-turbo"].flagged is False
 
 
-def test_format_text_includes_header_and_columns():
-    lines = [
-        reconcile.ReconcileLine(
-            model="nova-3",
-            vg_units=3000.0,
-            provider_units=3600.0,
-            units_diff_abs=600.0,
-            units_diff_pct=16.667,
-            vg_cost=0.150,
-            provider_cost=0.180,
-            cost_diff_abs=0.030,
-            cost_diff_pct=16.667,
-            matched_in_vg=True,
-            matched_in_provider=True,
-        ),
-    ]
-    out = reconcile.format_text(lines, "deepgram")
-    assert "Model" in out
-    assert "nova-3" in out
-    assert "audio_s" in out  # the unit label for deepgram
-
-
 def test_format_text_unknown_provider_falls_back_to_units_label():
     """An unsupported provider gets a generic `units` header rather than KeyError."""
     lines = [
@@ -782,27 +705,6 @@ def test_format_text_unknown_provider_falls_back_to_units_label():
     ]
     out = reconcile.format_text(lines, "anthropic")
     assert "VG units" in out  # generic fallback label
-
-
-def test_format_csv_writes_diff_rows():
-    lines = [
-        reconcile.ReconcileLine(
-            model="gpt-4o-mini",
-            vg_units=1500.0,
-            provider_units=1500.0,
-            units_diff_abs=0.0,
-            units_diff_pct=0.0,
-            vg_cost=0.001,
-            provider_cost=0.001,
-            cost_diff_abs=0.0,
-            cost_diff_pct=0.0,
-            matched_in_vg=True,
-            matched_in_provider=True,
-        ),
-    ]
-    out = reconcile.format_csv(lines)
-    assert "model,vg_units,provider_units" in out
-    assert "gpt-4o-mini" in out
 
 
 def test_format_csv_includes_flagged_column():

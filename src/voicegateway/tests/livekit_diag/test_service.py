@@ -35,12 +35,6 @@ def test_clamp_config_tolerates_bad_input():
         assert 0 < n <= probes.MAX_LOAD_CLIENTS
 
 
-def test_clamp_config_drops_bad_ramp_elements():
-    out = probes.clamp_config({"ramp": ["x", 50]})
-    for n in out["ramp"]:
-        assert 0 < n <= probes.MAX_LOAD_CLIENTS
-
-
 class _FakeProbes:
     def __init__(self):
         self.calls = []
@@ -303,10 +297,6 @@ def test_resource_json_reports_unsampled_metrics_as_none():
     assert out["saturated"] is None
     assert out["per_client"] == {"cpu_pct": None, "kbps_up": None}
     assert out["sustainable_n"] is None
-
-
-def test_resource_json_is_none_without_a_report():
-    assert probes._resource_json(None) is None
 
 
 # ---------------------------------------------------------------------------

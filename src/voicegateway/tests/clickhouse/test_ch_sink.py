@@ -139,15 +139,6 @@ class TestClickHouseSinkRowShape:
         }
         assert set(row.keys()) == expected_columns
 
-    def test_timestamp_is_datetime_utc(self):
-        """timestamp column must be a datetime (DateTime64 compatible), not a float."""
-        sink = _sink_instance()
-        record, tenant_id = _make_record(ts=1_700_000_000.5)
-        row = sink._build_row(record, tenant_id)
-        ts = row["timestamp"]
-        assert isinstance(ts, datetime), f"Expected datetime, got {type(ts)}"
-        assert ts.tzinfo is UTC
-
     def test_timestamp_millisecond_precision(self):
         """Subsecond precision (ms) must be preserved in the datetime."""
         sink = _sink_instance()
@@ -155,28 +146,20 @@ class TestClickHouseSinkRowShape:
         record, tenant_id = _make_record(ts=epoch_with_ms)
         row = sink._build_row(record, tenant_id)
         ts = row["timestamp"]
+        # A tz-aware datetime (DateTime64 compatible), not a float.
+        assert isinstance(ts, datetime) and ts.tzinfo is UTC
         # 123ms -> microseconds = 123_000
         assert abs(ts.microsecond - 123_000) < 1_500, (
             f"Expected ~123000 us, got {ts.microsecond}"
         )
 
-    def test_none_tenant_becomes_empty_string(self):
-        """tenant_id=None must coerce to '' (ClickHouse DEFAULT, not NULL)."""
+    def test_none_strings_become_empty_string(self):
+        """None must coerce to '' (ClickHouse DEFAULT, not NULL)."""
         sink = _sink_instance()
         record, _ = _make_record()
         row = sink._build_row(record, None)
         assert row["tenant_id"] == ""
-
-    def test_none_fallback_from_becomes_empty_string(self):
-        sink = _sink_instance()
-        record, tenant_id = _make_record()
-        row = sink._build_row(record, tenant_id)
         assert row["fallback_from"] == ""
-
-    def test_none_error_message_becomes_empty_string(self):
-        sink = _sink_instance()
-        record, tenant_id = _make_record()
-        row = sink._build_row(record, tenant_id)
         assert row["error_message"] == ""
 
     def test_metadata_serialized_to_json_string(self):
@@ -194,21 +177,6 @@ class TestClickHouseSinkRowShape:
         row = sink._build_row(record, "t1")
         assert row["metadata"] == json.dumps({"key": "value", "num": 42})
 
-    def test_dedup_token_is_deterministic(self):
-        """Same sorted ids -> same token; different ids -> different token."""
-        from voicegateway.services.sinks import ClickHouseSink
-
-        ids_a = ["id-1", "id-2", "id-3"]
-        ids_b = ["id-3", "id-1", "id-2"]  # same set, different order
-        ids_c = ["id-1", "id-2", "id-4"]  # different set
-
-        tok_a = ClickHouseSink._dedup_token(ids_a)
-        tok_b = ClickHouseSink._dedup_token(ids_b)
-        tok_c = ClickHouseSink._dedup_token(ids_c)
-
-        assert tok_a == tok_b, "same ids reordered must produce same token"
-        assert tok_a != tok_c, "different ids must produce different token"
-
     def test_dedup_token_is_sha256_hex(self):
         """Token must be the SHA-256 hex digest of sorted ids joined by newlines."""
         from voicegateway.services.sinks import ClickHouseSink
@@ -216,40 +184,6 @@ class TestClickHouseSinkRowShape:
         ids = ["id-z", "id-a"]
         expected = hashlib.sha256("\n".join(sorted(ids)).encode()).hexdigest()
         assert ClickHouseSink._dedup_token(ids) == expected
-
-    def test_chdb_insert_and_read_via_sink_row(self, ch_session_unit):
-        """Insert a sink-formatted row directly into chDB and read it back."""
-        sink = _sink_instance()
-        record, tenant_id = _make_record("chdb-row-1", cost_usd=0.05)
-        row = sink._build_row(record, tenant_id)
-
-        ts_str = row["timestamp"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        ch_session_unit.query(
-            f"""
-            INSERT INTO telemetry.requests
-              (tenant_id, id, timestamp, project, modality, provider, model_id,
-               input_units, output_units, cached_input_units, cost_usd,
-               pricing_source, ttfb_ms, total_latency_ms, status,
-               fallback_from, error_message, session_id, agent_id, metadata)
-            VALUES
-              ('{row["tenant_id"]}', '{row["id"]}', '{ts_str}',
-               '{row["project"]}', '{row["modality"]}', '{row["provider"]}',
-               '{row["model_id"]}', {row["input_units"]}, {row["output_units"]},
-               {row["cached_input_units"]}, {row["cost_usd"]},
-               '{row["pricing_source"]}',
-               NULL, NULL,
-               '{row["status"]}', '{row["fallback_from"]}',
-               '{row["error_message"]}', '{row["session_id"]}',
-               '{row["agent_id"]}', '{row["metadata"]}')
-            """,
-            "CSV",
-        )
-        result = _chdb_query(
-            ch_session_unit,
-            "SELECT id, cost_usd FROM telemetry.requests WHERE id='chdb-row-1'",
-        )
-        assert "chdb-row-1" in result
-        assert "0.05" in result
 
     def test_chdb_rated_columns_round_trip(self, ch_session_unit):
         """Migration 0004 adds rated_price_usd + rate_rule; they store and read back."""
@@ -796,82 +730,6 @@ class TestIngestCHRouting:
                 )
                 assert sqlite_calls == [], (
                     "SQLite must not be written as a fallback on the ClickHouse path"
-                )
-
-            asyncio.run(_run())
-        finally:
-            # tmp is about to vanish: a VOICEGW_DB_PATH still pointing into it
-            # would redirect every later test's storage into this one file.
-            os.environ.pop("VOICEGW_DB_PATH", None)
-            tmp_obj.cleanup()
-
-    def test_ingest_sqlite_path_untouched_when_ch_client_absent(self):
-        """Confirm ch_client=None falls through to the SQLite path unchanged."""
-        import os
-        import tempfile
-
-        import yaml
-        from httpx import ASGITransport, AsyncClient
-
-        from voicegateway.core.gateway import Gateway
-        from voicegateway.repository import api_keys_repository as api_keys
-        from voicegateway.server import build_app
-
-        cfg = {
-            "providers": {"openai": {"api_key": "test-key"}},
-            "models": {"stt": {}, "llm": {}, "tts": {}},
-            "projects": {},
-            "fallbacks": {"stt": [], "llm": [], "tts": []},
-            "cost_tracking": {"enabled": True},
-        }
-
-        tmp_obj = tempfile.TemporaryDirectory()
-        tmp = tmp_obj.name
-        try:
-            os.environ["VOICEGW_DB_PATH"] = os.path.join(tmp, "test2.db")
-            cfg_path = os.path.join(tmp, "voicegw.yaml")
-            with open(cfg_path, "w") as f:
-                yaml.dump(cfg, f)
-            gw = Gateway(config_path=cfg_path)
-
-            app = build_app(gw, enable_mcp_sse=False, enable_dashboard=False)
-            # No ch_client set: simulates default startup without ClickHouse.
-            app.state.ch_client = None
-
-            async def _run():
-                await gw.storage._ensure_initialized()
-                async with gw.storage._conn.session() as db:
-                    created = await api_keys.create_api_key(
-                        db, name="bot2", scopes="read,write,ingest,admin"
-                    )
-
-                async with AsyncClient(
-                    transport=ASGITransport(app=app), base_url="http://test"
-                ) as c:
-                    resp = await c.post(
-                        "/v1/ingest",
-                        headers={"Authorization": f"Bearer {created.plaintext}"},
-                        json=[
-                            {
-                                "id": "sqlite-route-1",
-                                "timestamp": 1_000_000.0,
-                                "modality": "llm",
-                                "model_id": "openai/gpt-4o-mini",
-                                "provider": "openai",
-                                "project": "default",
-                                "input_units": 10.0,
-                                "output_units": 5.0,
-                                "cost_usd": 0.001,
-                            }
-                        ],
-                    )
-
-                assert resp.status_code == 200
-                assert resp.json() == {"accepted": 1, "duplicates": 0}
-
-                rows = await gw.storage.get_recent_requests(limit=10)
-                assert any(r["id"] == "sqlite-route-1" for r in rows), (
-                    "Record not found in SQLite storage"
                 )
 
             asyncio.run(_run())

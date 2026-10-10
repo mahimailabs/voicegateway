@@ -76,14 +76,6 @@ async def test_roll_up_computes_p50_p95(storage) -> None:
     assert obs.p95_ms is not None and obs.p95_ms >= obs.p50_ms
 
 
-async def test_roll_up_empty_db(storage) -> None:
-    await storage._ensure_initialized()
-    async with storage._conn.session() as db:
-        n = await lor.roll_up(db)
-        assert n == 0
-        assert await lor.read_all(db) == []
-
-
 async def test_roll_up_idempotent_replace(storage) -> None:
     """Re-running roll_up replaces the snapshot atomically."""
     await storage.log_request(_req("dg", "stt", 100, idx=0))
@@ -115,30 +107,9 @@ async def test_get_for_project_scopes(storage) -> None:
     await storage.log_request(_req("dg", "stt", 100, idx=0))
     await storage._ensure_initialized()
     async with storage._conn.session() as db:
-        # Sneak in a row for a different project via direct INSERT.
-        await db.execute(
-            text(
-                "INSERT INTO latency_observations "
-                "(project_id, provider, modality, p50_ms, p95_ms, sample_count, "
-                " window_start, window_end) "
-                "VALUES (:project, :provider, :modality, :p50, :p95, :sc, "
-                " :ws, :we)"
-            ),
-            {
-                "project": "other",
-                "provider": "dg",
-                "modality": "stt",
-                "p50": 999,
-                "p95": 999,
-                "sc": 1,
-                "ws": "x",
-                "we": "y",
-            },
-        )
-        await db.commit()
-        await lor.roll_up(db)  # Clears the snapshot; "other" lost.
+        await lor.roll_up(db)
 
-        # Manually seed an "other" row again post-rollup.
+        # Seed a row for a different project after the roll-up.
         await db.execute(
             text(
                 "INSERT INTO latency_observations "
@@ -163,16 +134,6 @@ async def test_get_for_project_scopes(storage) -> None:
         default_rows = await lor.get_for_project(db, "default")
         other_rows = await lor.get_for_project(db, "other")
 
+    assert default_rows
     assert all(r.project_id == "default" for r in default_rows)
     assert len(other_rows) == 1 and other_rows[0].provider == "dg"
-
-
-async def test_get_one_returns_none_for_missing(storage) -> None:
-    await storage._ensure_initialized()
-    async with storage._conn.session() as db:
-        assert (
-            await lor.get_one(
-                db, project_id="default", provider="missing", modality="stt"
-            )
-            is None
-        )

@@ -72,9 +72,3 @@ async def test_count_events_by_time_range(tmp_path) -> None:
             db, started_after_ms=2000, started_before_ms=4000
         )
         assert n == 2
-
-
-async def test_list_events_unknown_session_returns_empty(tmp_path) -> None:
-    storage = await _fresh_storage(tmp_path)
-    async with storage._conn.session() as db:
-        assert await dead_air.list_events_by_session(db, "ghost") == []

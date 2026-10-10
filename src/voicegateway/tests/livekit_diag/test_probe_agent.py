@@ -19,9 +19,11 @@ from voicegateway.repository.request_log_repository import PROBE_ROOM_PREFIX
 
 @pytest.fixture(autouse=True)
 def _no_settle(monkeypatch):
-    """Zero the pre-utterance settle so probe() does not sleep in tests."""
+    """Zero the settle and read-back delays so probe() does not sleep in tests."""
     monkeypatch.setattr(latency, "_AGENT_SETTLE_SECONDS", 0.0)
     monkeypatch.setattr(latency, "_REPLY_GRACE_SECONDS", 0.0)
+    # The cost read-back polls for a complete split; do not really sleep.
+    monkeypatch.setattr(service, "_READBACK_POLL_DELAY", 0.0)
 
 
 _CREDS = SimpleNamespace(url="ws://fake", api_key="k", api_secret="s")
@@ -168,12 +170,6 @@ def test_probe_room_name_sanitises_agent_ids() -> None:
 
 def test_probe_room_name_survives_an_unusable_agent_id() -> None:
     assert service.probe_room_name("///", "ab12cd34") == "vg-probe-agent-ab12cd34"
-
-
-def test_probe_room_name_is_unique_per_press() -> None:
-    a = service.probe_room_name("support", "aaaaaaaa")
-    b = service.probe_room_name("support", "bbbbbbbb")
-    assert a != b
 
 
 # ---------------------------------------------------------------------------

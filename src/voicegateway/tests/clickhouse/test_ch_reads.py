@@ -416,10 +416,6 @@ class TestGetRecentRequests:
         row = next(r for r in result if r["id"] == "req-acme-1")
         assert row["metadata"] == {"k": "v"}
 
-    async def test_limit_respected(self, seeded_client):
-        result = await rr.get_recent_requests(seeded_client, **_ACME, limit=2)
-        assert len(result) <= 2
-
 
 class TestListSessions:
     async def test_values_scope_and_order(self, seeded_client):
@@ -435,7 +431,7 @@ class TestListSessions:
 
     async def test_limit_respected(self, seeded_client):
         result = await rr.list_sessions(seeded_client, tenant="acme", limit=1)
-        assert len(result) <= 1
+        assert len(result) == 1  # acme has two sessions
 
 
 async def test_cost_by_tenant_admin_spans_all_tenants(seeded_client):
