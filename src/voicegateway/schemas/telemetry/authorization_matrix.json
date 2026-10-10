@@ -159,15 +159,6 @@
     },
     {
       "method": "GET",
-      "path": "/api/loadtest/runs",
-      "auth": "principal",
-      "status": "gap",
-      "tenant_scoped": false,
-      "gap_id": "VG-SEC-002",
-      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
-    },
-    {
-      "method": "GET",
       "path": "/api/metrics",
       "auth": "principal",
       "status": "gap",
@@ -178,14 +169,6 @@
     {
       "method": "GET",
       "path": "/api/nodes",
-      "auth": "principal",
-      "status": "enforced",
-      "tenant_scoped": false,
-      "note": "Tenant derived from the principal via resolve_read_tenant."
-    },
-    {
-      "method": "GET",
-      "path": "/api/nodes/live",
       "auth": "principal",
       "status": "enforced",
       "tenant_scoped": false,

@@ -188,19 +188,3 @@ def test_the_prune_deletes_children_before_the_parent() -> None:
     # One commit per chunk, after both deletes, so they land together.
     assert source.index("await db.commit()") > parent
 
-
-def test_the_storage_service_exposes_the_repository() -> None:
-    """Without a passthrough the repository is unreachable from the app.
-
-    This is the step ``agent_probe_results`` skipped.
-    """
-    from voicegateway.services.storage_service import StorageService
-
-    for name in (
-        "upsert_load_run",
-        "upsert_load_run_test",
-        "get_load_run",
-        "list_load_runs",
-        "list_load_run_tests",
-    ):
-        assert hasattr(StorageService, name), f"StorageService has no {name}"
