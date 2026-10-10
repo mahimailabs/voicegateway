@@ -204,19 +204,6 @@ wheels = [
 ]
 
 [[package]]
-name = "asgi-correlation-id"
-version = "4.3.4"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "packaging" },
-    { name = "starlette" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/f4/ff/a6538245ac1eaa7733ec6740774e9d5add019e2c63caa29e758c16c0afdd/asgi_correlation_id-4.3.4.tar.gz", hash = "sha256:ea6bc310380373cb9f731dc2e8b2b6fb978a76afe33f7a2384f697b8d6cd811d", size = 20075, upload-time = "2024-10-17T11:44:30.324Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d9/ab/6936e2663c47a926e0659437b9333ad87d1ff49b1375d239026e0a268eba/asgi_correlation_id-4.3.4-py3-none-any.whl", hash = "sha256:36ce69b06c7d96b4acb89c7556a4c4f01a972463d3d49c675026cbbd08e9a0a2", size = 15262, upload-time = "2024-10-17T11:44:28.739Z" },
-]
-
-[[package]]
 name = "asyncpg"
 version = "0.31.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3412,7 +3399,7 @@ resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "numpy", marker = "python_full_version < '3.12'" },
+    { name = "numpy" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7a/97/5a3609c4f8d58b039179648e62dd220f89864f56f7357f5d4f45c29eb2cc/scipy-1.17.1.tar.gz", hash = "sha256:95d8e012d8cb8816c226aef832200b1d45109ed4464303e997c5b13122b297c0", size = 30573822, upload-time = "2026-02-23T00:26:24.851Z" }
 wheels = [
@@ -3494,7 +3481,7 @@ resolution-markers = [
     "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "numpy", marker = "python_full_version >= '3.12'" },
+    { name = "numpy" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a7/25/c2700dfaf6442b4effaa91af24ebce5dc9d31bb4a69706313aae70d72cd0/scipy-1.18.0.tar.gz", hash = "sha256:67b2ad2ad54c72ca6d04975a9b2df8c3638c34ddd5b28738e94fc2b57929d378", size = 30774447, upload-time = "2026-06-19T15:01:43.456Z" }
 wheels = [
@@ -3918,7 +3905,6 @@ dependencies = [
     { name = "cryptography" },
     { name = "dependency-injector" },
     { name = "httpx" },
-    { name = "pillow" },
     { name = "psutil" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -3931,27 +3917,20 @@ dependencies = [
 
 [package.optional-dependencies]
 collector = [
-    { name = "asgi-correlation-id" },
     { name = "asyncpg" },
     { name = "duckdb" },
     { name = "fastapi" },
     { name = "loguru" },
     { name = "mcp" },
-    { name = "pydantic-settings" },
-    { name = "python-multipart" },
     { name = "uvicorn" },
 ]
 dashboard = [
-    { name = "asgi-correlation-id" },
     { name = "fastapi" },
     { name = "loguru" },
     { name = "mcp" },
-    { name = "pydantic-settings" },
-    { name = "python-multipart" },
     { name = "uvicorn" },
 ]
 dev = [
-    { name = "asgi-correlation-id" },
     { name = "chdb" },
     { name = "duckdb" },
     { name = "fastapi" },
@@ -3962,12 +3941,10 @@ dev = [
     { name = "mcp" },
     { name = "platformdirs" },
     { name = "psutil" },
-    { name = "pydantic-settings" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
-    { name = "python-multipart" },
     { name = "respx" },
     { name = "testcontainers", extra = ["clickhouse"] },
     { name = "uvicorn" },
@@ -3985,9 +3962,6 @@ pipecat = [
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20.0" },
     { name = "alembic", specifier = ">=1.13" },
-    { name = "asgi-correlation-id", marker = "extra == 'collector'", specifier = ">=4.3" },
-    { name = "asgi-correlation-id", marker = "extra == 'dashboard'", specifier = ">=4.3" },
-    { name = "asgi-correlation-id", marker = "extra == 'dev'", specifier = ">=4.3" },
     { name = "asyncpg", marker = "extra == 'collector'", specifier = ">=0.29" },
     { name = "bcrypt", specifier = ">=4.0" },
     { name = "chdb", marker = "extra == 'dev'", specifier = ">=3.0" },
@@ -4012,22 +3986,15 @@ requires-dist = [
     { name = "mcp", marker = "extra == 'collector'", specifier = ">=1.2.0,<2" },
     { name = "mcp", marker = "extra == 'dashboard'", specifier = ">=1.2.0,<2" },
     { name = "mcp", marker = "extra == 'dev'", specifier = ">=1.2.0,<2" },
-    { name = "pillow", specifier = ">=10.0" },
     { name = "pipecat-ai", marker = "extra == 'pipecat'", specifier = ">=1.5.0,<2.0" },
     { name = "platformdirs", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "psutil", specifier = ">=5.9" },
     { name = "psutil", marker = "extra == 'dev'", specifier = ">=5.9" },
     { name = "pydantic", specifier = ">=2.0" },
-    { name = "pydantic-settings", marker = "extra == 'collector'", specifier = ">=2.0" },
-    { name = "pydantic-settings", marker = "extra == 'dashboard'", specifier = ">=2.0" },
-    { name = "pydantic-settings", marker = "extra == 'dev'", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6" },
-    { name = "python-multipart", marker = "extra == 'collector'", specifier = ">=0.0.9" },
-    { name = "python-multipart", marker = "extra == 'dashboard'", specifier = ">=0.0.9" },
-    { name = "python-multipart", marker = "extra == 'dev'", specifier = ">=0.0.9" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "respx", marker = "extra == 'dev'", specifier = ">=0.21.0" },
     { name = "rich", specifier = ">=13.0.0" },

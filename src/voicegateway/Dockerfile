@@ -99,7 +99,6 @@ COPY --from=builder --chown=voicegw:voicegw \
     /install/lib/python3.12/site-packages/voicegateway/_version.py \
     /app/voicegateway/_version.py
 COPY --chown=voicegw:voicegw src/dashboard/__init__.py /app/dashboard/
-COPY --chown=voicegw:voicegw src/dashboard/api/static/ /app/dashboard/api/static/
 COPY --from=frontend-builder --chown=voicegw:voicegw /build/frontend/dist /app/dashboard/frontend/dist
 
 # Ship the migrations. On first DB access the runtime runs `alembic upgrade

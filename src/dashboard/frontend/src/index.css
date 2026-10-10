@@ -545,7 +545,6 @@ a:hover { color: var(--vg-teal-deep); }
 .sidebar__wordmark--dark { display: none; }
 [data-theme="dark"] .sidebar__wordmark--light { display: none; }
 [data-theme="dark"] .sidebar__wordmark--dark { display: block; }
-.sidebar__mark { height: 26px; width: auto; display: block; }
 .sidebar__brand {
   display: flex; align-items: center; gap: 9px;
   font-weight: 800; font-size: 17px; letter-spacing: -0.4px; min-width: 0;

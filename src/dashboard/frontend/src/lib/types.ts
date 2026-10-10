@@ -383,7 +383,7 @@ export interface CreatedApiKey {
 }
 
 // ----------------------------------------------------------------------
-// v0.5.0 cross-modality routing + white-label branding (REQ-VG-ROUTE-001..004).
+// v0.5.0 cross-modality routing (REQ-VG-ROUTE-001..003).
 // ----------------------------------------------------------------------
 
 /**
@@ -398,27 +398,6 @@ export interface RoutedTriple {
   tts: string;
   predicted_ms: number;
   budget_overrun: boolean;
-}
-
-/** White-label branding payload (REQ-VG-ROUTE-004). All fields optional. */
-export interface ProjectBranding {
-  logo_url?: string | null;
-  accent_color?: string | null;
-  product_name?: string | null;
-}
-
-/** ``GET /api/projects/{id}/branding`` response. */
-export interface ProjectBrandingResponse {
-  project_id: string;
-  branding: ProjectBranding | null;
-}
-
-/** ``POST /api/projects/{id}/branding/logo`` response. */
-export interface LogoUploadResponse {
-  project_id: string;
-  logo_url: string;
-  bytes: number;
-  format: 'PNG' | 'SVG';
 }
 
 // ---------------------------------------------------------------------------

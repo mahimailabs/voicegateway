@@ -39,7 +39,6 @@ dependencies = [
     # unannounced, which an unbounded runtime dependency cannot prevent.
     "voice-prices>=0.11.0,<1",
     "bcrypt>=4.0",
-    "pillow>=10.0",
     "psutil>=5.9",
     # ORM + migration stack. Required at import time (voicegateway.models pulls
     # in SQLAlchemy/SQLModel) and at runtime for the embedded storage that
@@ -71,16 +70,13 @@ livekit = [
 pipecat = ["pipecat-ai>=1.5.0,<2.0"]
 
 # The self-host tool surface: HTTP API + web dashboard + MCP server.
-# FastAPI/uvicorn serve /v1/* and the React SPA; python-multipart backs the
-# logo upload; the DI/settings/logging stack backs the layered server; mcp
-# powers `voicegw mcp` (manage the gateway from coding agents). SQLAlchemy 2.x
-# async + SQLModel + Alembic are core (base) deps, so they are not relisted.
+# FastAPI/uvicorn serve /v1/* and the React SPA; the DI/logging stack backs
+# the layered server; mcp powers `voicegw mcp` (manage the gateway from coding
+# agents). SQLAlchemy 2.x async + SQLModel + Alembic are core (base) deps, so
+# they are not relisted.
 dashboard = [
     "fastapi>=0.115.0",
     "uvicorn>=0.32.0",
-    "python-multipart>=0.0.9",
-    "pydantic-settings>=2.0",
-    "asgi-correlation-id>=4.3",
     "loguru>=0.7",
     # Capped below 2.0: mcp 2.0.0 renamed Tool's ``inputSchema`` to
     # ``input_schema`` and moved the Server.list_tools/call_tool decorators,

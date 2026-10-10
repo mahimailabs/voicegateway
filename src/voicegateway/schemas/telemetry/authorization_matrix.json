@@ -193,33 +193,6 @@
       "note": "Answers an unauthenticated caller regardless of configured keys."
     },
     {
-      "method": "GET",
-      "path": "/api/projects/{project_id}/branding",
-      "auth": "open",
-      "status": "gap",
-      "tenant_scoped": true,
-      "gap_id": "VG-SEC-004",
-      "note": "Answers an unauthenticated caller regardless of configured keys. Also takes a project identifier with no project check (VG-SEC-002)."
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/{project_id}/branding",
-      "auth": "scope:admin",
-      "status": "gap",
-      "tenant_scoped": true,
-      "gap_id": "VG-SEC-002",
-      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/{project_id}/branding/logo",
-      "auth": "scope:admin",
-      "status": "gap",
-      "tenant_scoped": true,
-      "gap_id": "VG-SEC-002",
-      "note": "Tenant is enforced; this legacy route does not yet apply the principal project allowlist."
-    },
-    {
       "method": "POST",
       "path": "/api/projects/{project_id}/replay/retention",
       "auth": "scope:admin",

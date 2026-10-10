@@ -38,7 +38,6 @@ import type {
   NodePeakStat,
   NodeSamplesInWindow,
   OverviewResponse,
-  ProjectBrandingResponse,
   ReplayResponse,
   ServerOverview,
   SessionDetail,
@@ -663,17 +662,6 @@ const PROJECTS: { projects: ProjectEntry[]; stats: Record<string, ProjectStats> 
     default: { requests_today: 612, cost_today: 0.62 },
   },
 };
-
-function projectBranding(projectId: string): ProjectBrandingResponse {
-  return {
-    project_id: projectId,
-    branding: {
-      logo_url: null,
-      accent_color: null,
-      product_name: null,
-    },
-  };
-}
 
 // ---------------------------------------------------------------------------
 // sessions (Calls). started_at / ended_at are ISO 8601 UTC strings.
@@ -2255,10 +2243,6 @@ export async function demoFetch<T>(path: string, init?: RequestInit): Promise<T>
   // /turns, /dead_air, /replay so it only catches the bare id.
   const sessionId = matchOne(pathname, '/api/sessions/');
   if (sessionId !== null) return sessionDetail(sessionId) as T;
-
-  // /api/projects/{id}/branding
-  const brandingId = matchOne(pathname, '/api/projects/', '/branding');
-  if (brandingId !== null) return projectBranding(brandingId) as T;
 
   // /api/diagnostics/runs/{id}
   const runId = matchOne(pathname, '/api/diagnostics/runs/');

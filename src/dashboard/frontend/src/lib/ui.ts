@@ -38,13 +38,6 @@ export function latencyBadgeClass(ms: number | undefined | null): string {
   return 'neo-badge--offline';
 }
 
-export function statusBadgeClass(status: string | undefined): string {
-  if (!status) return 'neo-badge--black';
-  if (status === 'success') return 'neo-badge--online';
-  if (status === 'fallback') return 'neo-badge--yellow';
-  return 'neo-badge--offline';
-}
-
 // ---------------------------------------------------------------------------
 // Phase 2 fleet: agent telemetry-recency status (active / idle / dormant).
 // ---------------------------------------------------------------------------

@@ -83,7 +83,7 @@ npm install
 npm run dev              # in another terminal
 ```
 
-The Vite dev server runs on `http://localhost:5173` and proxies `/api`, `/v1`, and `/static/branding` to `http://localhost:8080`. `npm run build` produces the production bundle the daemon serves from disk.
+The Vite dev server runs on `http://localhost:5173` and proxies `/api` and `/v1` to `http://localhost:8080`. `npm run build` produces the production bundle the daemon serves from disk.
 
 ## Documentation site
 
