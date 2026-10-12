@@ -3,6 +3,7 @@ actually thinks in (a call/session), not per model request."""
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 import typer
@@ -34,6 +35,9 @@ def calls(
     sort: str = typer.Option(
         "recent", "--sort", "-s", help="Order: recent (default) or cost"
     ),
+    as_json: bool = typer.Option(
+        False, "--json", help="Output raw JSON instead of a table"
+    ),
 ) -> None:
     """List recent calls with per-call cost and activity."""
     gw = _cli.require_gateway(config)
@@ -48,6 +52,11 @@ def calls(
     rows = _cli.async_run(
         gw.storage.list_sessions(limit=limit, project=project, order_by=order_by)
     )
+
+    if as_json:
+        print(json.dumps(rows, indent=2, default=str))
+        return
+
     if not rows:
         console.print("[dim]No calls recorded yet.[/dim]")
         raise typer.Exit(0)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import typer
 from rich.panel import Panel
 from rich.table import Table
@@ -15,9 +17,26 @@ _cli = BaseCli()
 @app.command(name="projects")
 def projects_cmd(
     config: str = typer.Option(None, "--config", "-c", help="Path to voicegw.yaml"),
+    as_json: bool = typer.Option(
+        False, "--json", help="Output raw JSON instead of a table"
+    ),
 ) -> None:
     """List all configured projects."""
     gw = _cli.require_gateway(config)
+    data = [
+        {
+            "id": pid,
+            "name": pcfg.name,
+            "tags": list(pcfg.tags),
+            "daily_budget": pcfg.daily_budget,
+            "default_stack": pcfg.default_stack,
+        }
+        for pid, pcfg in sorted(gw.config.projects.items())
+    ]
+
+    if as_json:
+        print(json.dumps(data, indent=2, default=str))
+        return
 
     if not gw.config.projects:
         console.print(

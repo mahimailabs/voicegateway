@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 
 import typer
 from rich.table import Table
@@ -19,6 +20,9 @@ def logs_cmd(
     project: str = typer.Option(None, "--project", "-p", help="Filter by project"),
     tail: int = typer.Option(20, "--tail", "-n", help="Number of rows"),
     modality: str = typer.Option(None, "--modality", "-m", help="stt, llm, or tts"),
+    as_json: bool = typer.Option(
+        False, "--json", help="Output raw JSON instead of a table"
+    ),
 ) -> None:
     """Show recent request logs."""
     gw = _cli.require_gateway(config)
@@ -29,6 +33,11 @@ def logs_cmd(
     rows = _cli.async_run(
         gw.storage.get_recent_requests(limit=tail, modality=modality, project=project)
     )
+
+    if as_json:
+        print(json.dumps(rows, indent=2, default=str))
+        return
+
     if not rows:
         console.print("[dim]No logs found.[/dim]")
         return

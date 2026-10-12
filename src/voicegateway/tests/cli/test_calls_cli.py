@@ -96,3 +96,17 @@ def test_calls_rejects_unknown_sort(tmp_path, monkeypatch) -> None:
     result = runner.invoke(app, ["calls", "-c", cfg, "--sort", "bogus"])
     assert result.exit_code == 2
     assert "Unknown sort" in _strip(result.output)
+
+
+def test_calls_json_outputs_array(tmp_path, monkeypatch) -> None:
+    import json
+
+    cfg = _seed(tmp_path, monkeypatch)
+    result = runner.invoke(app, ["calls", "-c", cfg, "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert isinstance(payload, list)
+    assert len(payload) == 1
+    assert payload[0]["id"] == "call-001"
+    assert payload[0]["request_count"] == 3

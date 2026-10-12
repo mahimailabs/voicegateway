@@ -1128,3 +1128,25 @@ def test_rotate_secret_surfaces_failed_rows(temp_config, tmp_path, monkeypatch):
     result = runner.invoke(app, ["rotate-secret", "--config", temp_config, "--yes"])
     assert result.exit_code == 2, result.output
     assert "orphan:deepgram" in result.output
+
+
+def test_logs_json_outputs_array(temp_config, tmp_path, monkeypatch) -> None:
+    import json
+
+    monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "cli-log-json.db"))
+    result = runner.invoke(app, ["logs", "--config", temp_config, "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload == []
+
+
+def test_projects_json_outputs_array(temp_config) -> None:
+    import json
+
+    result = runner.invoke(app, ["projects", "--config", temp_config, "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert isinstance(payload, list)
+    assert any(project["name"] == "Test Project" for project in payload)
