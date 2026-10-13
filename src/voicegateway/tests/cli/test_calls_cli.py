@@ -99,6 +99,7 @@ def test_calls_rejects_unknown_sort(tmp_path, monkeypatch) -> None:
 
 
 def test_calls_json_outputs_array(tmp_path, monkeypatch) -> None:
+    """Verify that calls JSON output is a valid array."""
     import json
 
     cfg = _seed(tmp_path, monkeypatch)

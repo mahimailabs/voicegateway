@@ -39,7 +39,18 @@ def calls(
         False, "--json", help="Output raw JSON instead of a table"
     ),
 ) -> None:
-    """List recent calls with per-call cost and activity."""
+    """List recent calls with per-call cost and activity.
+
+    Args:
+        config: Path to the configuration file.
+        project: Optional project ID filter.
+        limit: Maximum number of calls to display.
+        sort: Ordering method, either recent or cost.
+        as_json: Whether to output JSON instead of a table.
+
+    Returns:
+        None.
+    """
     gw = _cli.require_gateway(config)
     if gw.storage is None:
         _cli.warn("Cost tracking is not enabled in voicegw.yaml")

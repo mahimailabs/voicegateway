@@ -1131,6 +1131,7 @@ def test_rotate_secret_surfaces_failed_rows(temp_config, tmp_path, monkeypatch):
 
 
 def test_logs_json_outputs_array(temp_config, tmp_path, monkeypatch) -> None:
+    """Verify that logs JSON output is a valid array."""
     import json
 
     monkeypatch.setenv("VOICEGW_DB_PATH", str(tmp_path / "cli-log-json.db"))
@@ -1142,6 +1143,7 @@ def test_logs_json_outputs_array(temp_config, tmp_path, monkeypatch) -> None:
 
 
 def test_projects_json_outputs_array(temp_config) -> None:
+    """Verify that projects JSON output is a valid array."""
     import json
 
     result = runner.invoke(app, ["projects", "--config", temp_config, "--json"])

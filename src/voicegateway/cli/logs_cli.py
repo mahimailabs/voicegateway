@@ -24,7 +24,18 @@ def logs_cmd(
         False, "--json", help="Output raw JSON instead of a table"
     ),
 ) -> None:
-    """Show recent request logs."""
+    """Show recent request logs.
+
+    Args:
+        config: Path to the configuration file.
+        project: Optional project filter.
+        tail: Maximum number of rows to display.
+        modality: Optional modality filter (STT, LLM, or TTS).
+        as_json: Whether to output JSON instead of a table.
+
+    Returns:
+        None.
+    """
     gw = _cli.require_gateway(config)
     if gw.storage is None:
         _cli.warn("Cost tracking is not enabled in voicegw.yaml")

@@ -21,7 +21,15 @@ def projects_cmd(
         False, "--json", help="Output raw JSON instead of a table"
     ),
 ) -> None:
-    """List all configured projects."""
+    """List all configured projects.
+
+    Args:
+        config: Path to the configuration file.
+        as_json: Whether to output JSON instead of a table.
+
+    Returns:
+        None.
+    """
     gw = _cli.require_gateway(config)
     data = [
         {
