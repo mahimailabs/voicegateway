@@ -75,3 +75,7 @@ The current landing page is imported into `site/landing`, with its prebuilt cont
 ### 2026-10-15: dashboard contributor baseline repair
 
 PR #329 adds the root console commands from issue #326. Reconcile them with the existing landing targets, include TypeScript in `make lint`, and restore the four local `dashboard/src/lib` helpers previously swallowed by the root `lib/` ignore rule. Keep the contributor's ignore exception and original commits. Add a clean-checkout dashboard CI job so missing source files fail before merge. `make test` runs five threshold-storage regression checks, including malformed values and unavailable storage. Calls-list, call-detail and unknown-value UI tests remain issue #324. This repair does not complete the API contract, mock API, generated types or Phase 1.
+
+### 2026-10-15: contributor layout and Connect execution plan
+
+PR #329 is merged with restored helpers, root commands, five threshold regressions and passing clean-checkout Dashboard CI. This completes the contributor-baseline milestone, not Phase 1 or the eight broad Connect outcomes. Detailed contributor guides and the optional legacy MCP example now live under `docs/contributing/`; root CONTRIBUTING separates current V1 setup from published Python maintenance. The Connect plan in `docs/specs/v1-connect-plan.md` records the root-file audit, ownership, dependencies, PR slices and goal-mode acceptance gates. Active legacy packaging, migrations, Compose and public installer paths are retained until replacement-release proof exists.
